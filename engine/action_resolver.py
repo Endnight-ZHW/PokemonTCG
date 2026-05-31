@@ -229,7 +229,7 @@ class ActionResolver:
             if not ok:
                 return ActionResult(False, reason)
         elif card.is_trainer_stadium:
-            ok, reason = can_play_stadium(self.state, player_idx)
+            ok, reason = can_play_stadium(self.state, player_idx, card)
             if not ok:
                 return ActionResult(False, reason)
         elif card.is_trainer_tool:
@@ -268,6 +268,7 @@ class ActionResolver:
             if self.state.stadium_card:
                 player.discard.append(self.state.stadium_card)
             self.state.stadium_card = card
+            player.stadium_played_this_turn = True
 
         # Only discard supporter/item if no pending action (e.g. search prompts).
         # If there IS a pending action, the card is consumed when the action completes.
@@ -303,7 +304,10 @@ class ActionResolver:
             if ability.name.lower() == ability_name.lower():
                 msg = f"{player.name}使用了{pokemon.card.name}的特性{ability.name}。"
                 self.state._log(msg)
-                return self._execute_effects(ability.effects, player_idx, slot)
+                result = self._execute_effects(ability.effects, player_idx, slot)
+                if result.success:
+                    pokemon.used_abilities.add(ability.name)
+                return result
 
         return ActionResult(False, f"未找到特性'{ability_name}'。")
 
@@ -557,7 +561,7 @@ class ActionResolver:
 
                 if StatusType.PARALYZED in active.status_conditions:
                     # PTCG rule: Paralyzed cures at end of the paralyzed player's NEXT turn.
-                    if self.state.turn_number > active.paralyzed_since_turn + 1:
+                    if self.state.turn_number > active.paralyzed_since_turn:
                         active.status_conditions.remove(StatusType.PARALYZED)
                         results.append(f"{name}的麻痹治愈了。")
                     else:

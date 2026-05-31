@@ -2,13 +2,13 @@
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
-    UI_BG_DARK, UI_TEXT_PRIMARY, UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOVER,
+    UI_BG_DARK, UI_TEXT_PRIMARY, UI_HIGHLIGHT,
     PLAYER1_COLOR, PLAYER2_COLOR,
 )
 from ui.font_manager import get_font
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from ui.transitions import SlideTransition
-from ui.render_helpers import draw_gradient_button
+from ui.ui_theme import draw_panel, draw_button
 
 
 class HelpScreen(Screen):
@@ -34,6 +34,9 @@ class HelpScreen(Screen):
               "3. 主要阶段: 打出宝可梦、附着能量、使用训练家卡",
               "4. 攻击阶段: 使用招式攻击对手",
               "5. 宝可梦检测: 检查状态和击倒"]),
+            ("属性克制/抵抗",
+             ["默认关闭；可在主页面开关中开启。",
+              "联机对战按主机设置；AI挑战固定关闭。"]),
             ("快捷键",
              ["1-9: 选手牌   A: 攻击   E: 结束回合",
               "R: 撤退   Space: 确认   Esc: 取消",
@@ -58,6 +61,7 @@ class HelpScreen(Screen):
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((10, 10, 30, 230))
         surface.blit(overlay, (0, 0))
+        draw_panel(surface, pygame.Rect(SCREEN_WIDTH // 2 - 330, 28, 660, SCREEN_HEIGHT - 120))
 
         # Title
         title = self.font_title.render("游戏规则", True, UI_HIGHLIGHT)
@@ -82,6 +86,5 @@ class HelpScreen(Screen):
             y += 12
 
         # Back button
-        draw_gradient_button(surface, self.back_btn, self.back_hover)
-        txt = self.font_body.render("返回", True, UI_TEXT_PRIMARY)
-        surface.blit(txt, txt.get_rect(center=self.back_btn.center))
+        draw_button(surface, self.back_btn, "返回", self.font_body,
+                    hovered=self.back_hover)

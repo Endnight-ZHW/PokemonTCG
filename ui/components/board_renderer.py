@@ -16,19 +16,12 @@ from ui.colors import (
     ZONE_LABEL_COLOR,
 )
 from ui.render_helpers import draw_rect_alpha
+from ui.energy_icons import draw_energy_stack
+from ui.layout_model import DEFAULT_GAME_LAYOUT
+from ui.ui_theme import tint
 from engine.enums import TurnPhase
 from ui.components.game_layout import (
-    LOG_W, LOG_X, PLAY_AREA_W,
     FIELD_ACTIVE_W, FIELD_ACTIVE_H, FIELD_BENCH_W, FIELD_BENCH_H,
-    OPP_INFO_Y, OPP_BENCH_Y, OPP_ACTIVE_Y,
-    DIVIDER_Y, DIVIDER_H,
-    PLAYER_ACTIVE_Y, PLAYER_BENCH_Y, PLAYER_INFO_Y,
-    HAND_Y, BTN_W, BTN_H, BTN_GAP, BTN_ROW1_Y, BTN_ROW2_Y,
-    DECK_ZONE_W, DECK_ZONE_H, DECK_DISCARD_GAP,
-    OPP_DECK_ZONE_X, OPP_DECK_ZONE_Y, OPP_DISCARD_ZONE_X, OPP_DISCARD_ZONE_Y,
-    PLAYER_DECK_ZONE_X, PLAYER_DECK_ZONE_Y,
-    PLAYER_DISCARD_ZONE_X, PLAYER_DISCARD_ZONE_Y,
-    STADIUM_X, STADIUM_Y,
     SLOT_OPP_ACTIVE, SLOT_PLAYER_ACTIVE,
 )
 
@@ -178,7 +171,8 @@ def stadium_btn_rect(gs) -> pygame.Rect | None:
     if not stadium_is_activatable(gs):
         return None
     # Button at bottom of stadium card
-    return pygame.Rect(STADIUM_X + 8, STADIUM_Y + CARD_HEIGHT - 32, CARD_WIDTH - 16, 26)
+    rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).stadium
+    return pygame.Rect(rect.x + 8, rect.y + rect.h - 32, rect.w - 16, 26)
 
 
 def _draw_hidden_card(gs, surface, rect, card_back_img, hovered=False):
@@ -207,6 +201,10 @@ def _draw_hidden_card(gs, surface, rect, card_back_img, hovered=False):
 
 def draw_opponent_side(gs, surface, hide_cards=False):
     opponent = gs._get_opponent()
+    layout = getattr(gs, "layout", DEFAULT_GAME_LAYOUT)
+    tint(surface, pygame.Rect(layout.board.x + 8, layout.board.y + 8,
+                              layout.board.w - 16, layout.divider.y - layout.board.y - 16),
+         (55, 70, 96, 28), radius=8)
 
     # Info bar
     if gs.state.phase != TurnPhase.SETUP:
@@ -214,7 +212,7 @@ def draw_opponent_side(gs, surface, hide_cards=False):
             f"{opponent.name} | 牌库:{len(opponent.deck)} | 手牌:{opponent.hand_count} | 奖品:{len(opponent.prizes)}",
             True, UI_TEXT_SECONDARY
         )
-        surface.blit(info_txt, (12, OPP_INFO_Y))
+        surface.blit(info_txt, (layout.opponent_info.x, layout.opponent_info.y))
 
     # Battle row: Active Pokemon (centered, large)
     if opponent.active:
@@ -227,8 +225,9 @@ def draw_opponent_side(gs, surface, hide_cards=False):
                                    is_opponent=True, hovered=gs.hovered_opp_active)
 
     # Bench row: 5 bench slots
-    visible_bench = [(i, p) for i, p in enumerate(opponent.bench) if p is not None]
-    for idx, (i, pokemon) in enumerate(visible_bench):
+    for i, pokemon in enumerate(opponent.bench):
+        if pokemon is None:
+            continue
         rect = gs._opp_bench_rect(i)
         is_selected = (gs._selecting_bench_targets is not None
                        and i in gs._selected_bench_targets)
@@ -239,7 +238,9 @@ def draw_opponent_side(gs, surface, hide_cards=False):
             draw_bench_card(gs, surface, rect.x, rect.y, pokemon,
                             hovered=(gs.hovered_opp_bench == i),
                             selected=is_selected)
-    for i in range(len(visible_bench), 5):
+    for i, pokemon in enumerate(opponent.bench):
+        if pokemon is not None:
+            continue
         rect = gs._opp_bench_rect(i)
         is_targetable = (gs._selecting_bench_targets is not None
                          and gs._selecting_bench_targets.target_player == "opponent"
@@ -253,13 +254,17 @@ def draw_opponent_side(gs, surface, hide_cards=False):
 
 def draw_player_side(gs, surface):
     player = gs._get_display_player()
+    layout = getattr(gs, "layout", DEFAULT_GAME_LAYOUT)
+    tint(surface, pygame.Rect(layout.board.x + 8, layout.divider.bottom + 8,
+                              layout.board.w - 16, layout.hand.bottom - layout.divider.bottom - 16),
+         (75, 70, 48, 28), radius=8)
 
     # Player info
     info_txt = gs.font_small.render(
         f"{player.name} | 奖品:{len(player.prizes)}",
         True, UI_TEXT_PRIMARY
     )
-    surface.blit(info_txt, (12, PLAYER_INFO_Y))
+    surface.blit(info_txt, (layout.player_info.x, layout.player_info.y))
 
     # Battle row: Active Pokemon (centered, large)
     if player.active:
@@ -269,15 +274,18 @@ def draw_player_side(gs, surface):
                                is_opponent=False, hovered=gs.hovered_active)
 
     # Bench row: 5 bench slots
-    visible_bench = [(i, p) for i, p in enumerate(player.bench) if p is not None]
-    for idx, (i, pokemon) in enumerate(visible_bench):
+    for i, pokemon in enumerate(player.bench):
+        if pokemon is None:
+            continue
         rect = gs._player_bench_rect(i)
         is_selected = (gs._selecting_bench_targets is not None
                        and i in gs._selected_bench_targets)
         draw_bench_card(gs, surface, rect.x, rect.y, pokemon,
                         hovered=(gs.hovered_bench == i),
                         selected=is_selected)
-    for i in range(len(visible_bench), 5):
+    for i, pokemon in enumerate(player.bench):
+        if pokemon is not None:
+            continue
         rect = gs._player_bench_rect(i)
         is_targetable = (gs._selecting_bench_targets is not None
                          and gs._selecting_bench_targets.target_player != "opponent"
@@ -290,10 +298,12 @@ def draw_player_side(gs, surface):
 
 
 def draw_divider(gs, surface):
-    pygame.draw.rect(surface, UI_BG_DARK, (0, DIVIDER_Y, SCREEN_WIDTH, DIVIDER_H))
-    pygame.draw.line(surface, UI_BORDER, (0, DIVIDER_Y), (SCREEN_WIDTH, DIVIDER_Y), 2)
-    pygame.draw.line(surface, UI_BORDER, (0, DIVIDER_Y + DIVIDER_H),
-                     (SCREEN_WIDTH, DIVIDER_Y + DIVIDER_H), 1)
+    layout = getattr(gs, "layout", DEFAULT_GAME_LAYOUT)
+    rect = layout.divider
+    pygame.draw.rect(surface, UI_BG_DARK, rect, border_radius=8)
+    pygame.draw.rect(surface, UI_BORDER, rect, 1, border_radius=8)
+    pygame.draw.line(surface, (75, 88, 112), (rect.x + 10, rect.y + 1),
+                     (rect.right - 10, rect.y + 1), 1)
 
     if gs.state.phase == TurnPhase.SETUP:
         phase = "准备阶段"
@@ -302,7 +312,7 @@ def draw_divider(gs, surface):
 
     info = f"第 {gs.state.turn_number} 回合  |  {phase}  |  {gs._get_display_player().name}"
     txt = gs.font_body.render(info, True, UI_HIGHLIGHT)
-    surface.blit(txt, (16, DIVIDER_Y + 8))
+    surface.blit(txt, (rect.x + 14, rect.y + 11))
 
 
 def draw_setup_status(gs, surface):
@@ -318,15 +328,15 @@ def draw_setup_status(gs, surface):
         color = UI_HIGHLIGHT if gs.setup_player_idx == pi else UI_TEXT_SECONDARY
         info = f"玩家{pi+1}: 战斗区={active_name} | 备战区={bench_count}只 | {status}"
         txt = gs.font_small.render(info, True, color)
-        surface.blit(txt, (12, OPP_INFO_Y + pi * 20))
+        surface.blit(txt, (gs.layout.opponent_info.x, gs.layout.opponent_info.y + pi * 20))
 
     instruct = (
         f">>> 玩家{gs.setup_player_idx + 1}："
         "请从手牌中选择基础宝可梦放置到战斗区（必须）和备战区（可选），然后点击「完成准备」"
     )
     inst_txt = gs.font_small.render(instruct, True, UI_HIGHLIGHT)
-    inst_x = (PLAY_AREA_W - inst_txt.get_width()) // 2
-    surface.blit(inst_txt, (inst_x, DIVIDER_Y - 20))
+    inst_x = gs.layout.divider.centerx - inst_txt.get_width() // 2
+    surface.blit(inst_txt, (inst_x, gs.layout.divider.y - 22))
 
 
 def draw_stadium(gs, surface):
@@ -336,12 +346,13 @@ def draw_stadium(gs, surface):
     is_activatable = stadium_is_activatable(gs)
     player = gs._get_display_player()
 
-    sx, sy = STADIUM_X, STADIUM_Y
-    rect = pygame.Rect(sx, sy, CARD_WIDTH, CARD_HEIGHT)
+    rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).stadium
+    sx, sy = rect.x, rect.y
 
     img = get_card_image_surface(gs, card.name, CARD_WIDTH, CARD_HEIGHT, card.api_id)
     if img is not None:
-        surface.blit(img, (sx, sy))
+        img = pygame.transform.smoothscale(img, rect.size)
+        surface.blit(img, rect.topleft)
         if is_activatable:
             border_color = (220, 160, 60)
         else:
@@ -453,9 +464,9 @@ def _draw_card_stack_with_count(gs, surface, x, y, w, h, card_surface, count,
                 img = pygame.transform.smoothscale(img, (w, h))
                 surface.blit(img, (x, y))
             else:
-                _draw_zone_card_fallback(surface, x, y, w, h, top_card_name)
+                _draw_zone_card_fallback(gs, surface, x, y, w, h, top_card_name)
         else:
-            _draw_zone_card_fallback(surface, x, y, w, h, None)
+            _draw_zone_card_fallback(gs, surface, x, y, w, h, None)
     else:
         # Deck: show card back stack (layers vary by card count)
         if count <= 0:
@@ -540,7 +551,7 @@ def _draw_card_stack_with_count(gs, surface, x, y, w, h, card_surface, count,
         surface.blit(top_label, (top_x, top_y))
 
 
-def _draw_zone_card_fallback(surface, x, y, w, h, card_name=None):
+def _draw_zone_card_fallback(gs, surface, x, y, w, h, card_name=None):
     """Draw a procedural card for zone (deck fallback or discard fallback)."""
     bg_rect = pygame.Rect(x, y, w, h)
     # Gradient fill
@@ -554,7 +565,7 @@ def _draw_zone_card_fallback(surface, x, y, w, h, card_name=None):
     pygame.draw.rect(surface, DISCARD_ZONE_BORDER, bg_rect, 1, border_radius=8)
     if card_name:
         name_short = card_name[:4]
-        n_txt = pygame.font.SysFont("simhei", 10).render(name_short, True, (200, 200, 220))
+        n_txt = gs.font_card_tiny.render(name_short, True, (200, 200, 220))
         surface.blit(n_txt, (x + 4, y + h // 2 - 6))
 
 
@@ -566,18 +577,22 @@ def draw_opponent_deck(gs, surface):
         return
     card_back = gs.card_back_img if hasattr(gs, 'card_back_img') else None
     o_idx = 0 if opponent is gs.state.p1 else 1
+    rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).opponent_deck
     _draw_card_stack_with_count(gs, surface,
-        OPP_DECK_ZONE_X, OPP_DECK_ZONE_Y, DECK_ZONE_W, DECK_ZONE_H,
+        rect.x, rect.y, rect.w, rect.h,
         card_back, max(0, count),
         "对手牌库", is_discard=False,
         hovered=getattr(gs, 'hovered_opp_deck', False),
         zone_key=f"shuffle_{o_idx}")
 
 
-def _get_visible_top(disc, hidden_idx):
+def _get_visible_top(disc, hidden_idx, hidden_indices=None):
     """Get the top card name and effective count, skipping the hidden index."""
-    if hidden_idx is not None and 0 <= hidden_idx < len(disc):
-        visible = disc[:hidden_idx] + disc[hidden_idx + 1:]
+    hidden = set(hidden_indices or [])
+    if hidden_idx is not None:
+        hidden.add(hidden_idx)
+    if hidden:
+        visible = [card for i, card in enumerate(disc) if i not in hidden]
     else:
         visible = disc
     count = len(visible)
@@ -588,16 +603,18 @@ def draw_opponent_discard(gs, surface):
     """Draw opponent's discard pile showing top card."""
     opponent = gs._get_opponent()
     disc = opponent.discard
+    rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).opponent_discard
     hidden_discard = getattr(gs, '_hidden_discard_idx', None)
-    count, top_card_name, top_card_obj = _get_visible_top(disc, hidden_discard)
+    hidden_set = getattr(gs, '_hidden_discard_indices', set())
+    count, top_card_name, top_card_obj = _get_visible_top(disc, hidden_discard, hidden_set)
     top_card_id = top_card_obj.api_id if top_card_obj else ""
     top_card_img = None
     if top_card_name and hasattr(gs, 'image_mgr'):
         raw = gs.image_mgr.get_card_image(top_card_name, top_card_id)
         if raw:
-            top_card_img = pygame.transform.smoothscale(raw, (DECK_ZONE_W, DECK_ZONE_H))
+            top_card_img = pygame.transform.smoothscale(raw, rect.size)
     _draw_card_stack_with_count(gs, surface,
-        OPP_DISCARD_ZONE_X, OPP_DISCARD_ZONE_Y, DECK_ZONE_W, DECK_ZONE_H,
+        rect.x, rect.y, rect.w, rect.h,
         None, max(0, count),
         "弃牌区", is_discard=True,
         hovered=getattr(gs, 'hovered_opp_discard_zone', False),
@@ -611,28 +628,36 @@ def draw_player_deck(gs, surface):
     count = len(player.deck)
     card_back = gs.card_back_img if hasattr(gs, 'card_back_img') else None
     p_idx = 0 if player is gs.state.p1 else 1
+    rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).player_deck
     _draw_card_stack_with_count(gs, surface,
-        PLAYER_DECK_ZONE_X, PLAYER_DECK_ZONE_Y, DECK_ZONE_W, DECK_ZONE_H,
+        rect.x, rect.y, rect.w, rect.h,
         card_back, max(0, count),
         "牌库", is_discard=False,
         hovered=getattr(gs, 'hovered_player_deck', False),
         zone_key=f"shuffle_{p_idx}")
+    alpha = gs.draw_flash.get_alpha() if hasattr(gs, "draw_flash") else 0
+    if alpha > 0:
+        glow = pygame.Surface((rect.w + 12, rect.h + 12), pygame.SRCALPHA)
+        pygame.draw.rect(glow, (100, 170, 255, alpha), glow.get_rect(), border_radius=10)
+        surface.blit(glow, (rect.x - 6, rect.y - 6))
 
 
 def draw_player_discard(gs, surface):
     """Draw player's discard pile showing top card."""
     player = gs._get_display_player()
     disc = player.discard
+    rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).player_discard
     hidden_discard = getattr(gs, '_hidden_discard_idx', None)
-    count, top_card_name, top_card_obj = _get_visible_top(disc, hidden_discard)
+    hidden_set = getattr(gs, '_hidden_discard_indices', set())
+    count, top_card_name, top_card_obj = _get_visible_top(disc, hidden_discard, hidden_set)
     top_card_id = top_card_obj.api_id if top_card_obj else ""
     top_card_img = None
     if top_card_name and hasattr(gs, 'image_mgr'):
         raw = gs.image_mgr.get_card_image(top_card_name, top_card_id)
         if raw:
-            top_card_img = pygame.transform.smoothscale(raw, (DECK_ZONE_W, DECK_ZONE_H))
+            top_card_img = pygame.transform.smoothscale(raw, rect.size)
     _draw_card_stack_with_count(gs, surface,
-        PLAYER_DISCARD_ZONE_X, PLAYER_DISCARD_ZONE_Y, DECK_ZONE_W, DECK_ZONE_H,
+        rect.x, rect.y, rect.w, rect.h,
         None, max(0, count),
         "弃牌区", is_discard=True,
         hovered=getattr(gs, 'hovered_player_discard_zone', False),
@@ -738,46 +763,13 @@ def draw_field_pokemon(gs, surface, x, y, pokemon, is_opponent=False, hovered=Fa
 
         # Energy / tool indicators — bottom-center above HP bar
         info_y = y + h - 38
-        has_info = False
 
-        # Energy attachments (centered row of circles at bottom)
+        # Energy attachments: draw actual attached cards, including special energy.
         if pokemon.energy_cards:
-            has_info = True
-            nrg = pokemon.available_energy[:7]
-            total_w_e = len(nrg) * 16
-            en_x = x + (w - total_w_e) // 2
-            for etype in nrg:
-                ec = ENERGY_COLORS.get(etype, (200, 200, 200))
-                pygame.draw.circle(surface, ec, (en_x + 7, info_y + 6), 6)
-                pygame.draw.circle(surface, (0, 0, 0), (en_x + 7, info_y + 6), 6, 1)
-                cn = ENERGY_CN.get(etype, etype[:1])
-                e_txt = gs.font_card_tiny.render(cn, True, (255, 255, 255))
-                # Black outline for readability
-                e_sk = gs.font_card_tiny.render(cn, True, (0, 0, 0))
-                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    surface.blit(e_sk, e_sk.get_rect(center=(en_x + 7 + dx, info_y + 6 + dy)))
-                surface.blit(e_txt, e_txt.get_rect(center=(en_x + 7, info_y + 6)))
-                en_x += 16
-            if len(pokemon.energy_cards) > 7:
-                more = gs.font_card_tiny.render(f"+{len(pokemon.energy_cards) - 7}", True, (220, 220, 120))
-                surface.blit(more, (en_x, info_y + 3))
-            info_y -= 14
-
-        # Special energy
-        if pokemon.energy_cards:
-            specials = [c for c in pokemon.energy_cards if c.is_special_energy]
-            if specials:
-                has_info = True
-                sp_names = "/".join(sc.name for sc in specials)
-                sp_txt = gs.font_card_tiny.render(f"特能:{sp_names}", True, (255, 255, 255))
-                sp_sk = gs.font_card_tiny.render(f"特能:{sp_names}", True, (0, 0, 0))
-                tw = sp_txt.get_width() + 8
-                sp_bg = pygame.Rect(x + (w - tw) // 2, info_y, tw, 12)
-                pygame.draw.rect(surface, (40, 100, 40), sp_bg, border_radius=3)
-                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    surface.blit(sp_sk, (x + (w - tw) // 2 + 4 + dx, info_y + dy))
-                surface.blit(sp_txt, (x + (w - tw) // 2 + 4, info_y))
-                info_y -= 14
+            energy_rect = pygame.Rect(x + 5, info_y - 2, w - 10, 20)
+            draw_energy_stack(surface, gs.image_mgr, pokemon.energy_cards,
+                              energy_rect, gs.font_card_tiny, max_icons=7)
+            info_y -= 21
 
         # Tool badge (centered)
         if pokemon.attached_tool:
@@ -875,30 +867,13 @@ def draw_field_pokemon(gs, surface, x, y, pokemon, is_opponent=False, hovered=Fa
         status_x += 20
 
     # ── Energy row ──
+    sp_en_y = y + 62
     if pokemon.energy_cards:
-        en_x = x + 8
         en_y = y + 62 if not pokemon.status_conditions else y + 64
-        for etype in pokemon.available_energy[:7]:
-            ec = ENERGY_COLORS.get(etype, (200, 200, 200))
-            pygame.draw.circle(surface, ec, (en_x + 8, en_y + 8), 9)
-            pygame.draw.circle(surface, (0, 0, 0), (en_x + 8, en_y + 8), 9, 1)
-            cn = ENERGY_CN.get(etype, etype[:1])
-            e_txt = gs.font_card_tiny.render(cn, True, (0, 0, 0))
-            surface.blit(e_txt, e_txt.get_rect(center=(en_x + 8, en_y + 8)))
-            en_x += 20
-        if len(pokemon.energy_cards) > 7:
-            more = gs.font_card_tiny.render(f"+{len(pokemon.energy_cards) - 7}", True, (200, 200, 100))
-            surface.blit(more, (en_x, en_y + 4))
-
-    # ── Special energy display ──
-    sp_en_y = y + 86 if pokemon.energy_cards else y + 62
-    if pokemon.energy_cards:
-        specials = [c for c in pokemon.energy_cards if c.is_special_energy]
-        if specials:
-            sp_names = "/".join(sc.name for sc in specials)
-            sp_txt = gs.font_card_tiny.render(f"特能:{sp_names}", True, (180, 220, 180))
-            surface.blit(sp_txt, (x + 8, sp_en_y))
-            sp_en_y += 16
+        energy_rect = pygame.Rect(x + 6, en_y - 1, w - 12, 22)
+        draw_energy_stack(surface, gs.image_mgr, pokemon.energy_cards,
+                          energy_rect, gs.font_card_tiny, max_icons=7)
+        sp_en_y = en_y + 23
 
     # ── Tool ──
     tool_y = sp_en_y
@@ -1042,17 +1017,13 @@ def draw_bench_card(gs, surface, x, y, pokemon, hovered=False, selected=False):
         # Bottom info row: energy count + tool + status
         info_y = y + h - 28
 
-        # Energy count badge (bottom-left)
+        # Energy attachments (bottom-left)
         if pokemon.energy_cards:
-            en_count = len(pokemon.energy_cards)
-            en_txt = gs.font_card_tiny.render(f"能:{en_count}", True, (255, 255, 255))
-            en_sk = gs.font_card_tiny.render(f"能:{en_count}", True, (0, 0, 0))
-            en_bg = pygame.Rect(x + 2, info_y, 34, 11)
-            pygame.draw.rect(surface, (40, 80, 40), en_bg, border_radius=2)
-            for ddx, ddy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                surface.blit(en_sk, (x + 4 + ddx, info_y + ddy))
-            surface.blit(en_txt, (x + 4, info_y))
-            info_y -= 13
+            energy_rect = pygame.Rect(x + 3, info_y - 3, w - 6, 18)
+            draw_energy_stack(surface, gs.image_mgr, pokemon.energy_cards,
+                              energy_rect, gs.font_card_tiny,
+                              max_icons=3, compact=True)
+            info_y -= 17
 
         # Tool indicator (bottom-left, below energy)
         if pokemon.attached_tool:
@@ -1159,11 +1130,13 @@ def draw_bench_card(gs, surface, x, y, pokemon, hovered=False, selected=False):
         surface.blit(dmg_txt, (x + 4, row_y))
         row_y += 14
 
-    # Energy count
+    # Energy attachments
     if pokemon.energy_cards:
-        en_txt = gs.font_card_tiny.render(f"能:{len(pokemon.energy_cards)}", True, (210, 210, 100))
-        surface.blit(en_txt, (x + 4, row_y))
-        row_y += 14
+        energy_rect = pygame.Rect(x + 3, row_y - 2, w - 6, 18)
+        draw_energy_stack(surface, gs.image_mgr, pokemon.energy_cards,
+                          energy_rect, gs.font_card_tiny,
+                          max_icons=3, compact=True)
+        row_y += 18
 
     # First attack (abbreviated)
     if card.attacks:
@@ -1221,45 +1194,6 @@ def draw_bench_card(gs, surface, x, y, pokemon, hovered=False, selected=False):
 
 
 def draw_field_tooltips(gs, surface):
-    """Show detailed tooltips when hovering over field Pokemon or hand cards."""
-    from ui.components.card_detail import draw_tooltip_box, pokemon_extra_info
-
-    player = gs._get_display_player()
-    opponent = gs._get_opponent()
-
-    # Hand card tooltip
-    if gs.hovered_hand is not None and gs.hovered_hand < len(player.hand):
-        card = player.hand[gs.hovered_hand]
-        draw_tooltip_box(gs, surface, card, 10, SCREEN_HEIGHT - 260)
-
-    # Player active tooltip
-    if gs.hovered_active and player.active:
-        rect = gs._player_active_rect()
-        if rect:
-            draw_tooltip_box(gs, surface, player.active.card,
-                             rect.x + FIELD_ACTIVE_W + 10, rect.y,
-                             extra_info=pokemon_extra_info(gs, player.active))
-
-    # Player bench tooltip
-    if gs.hovered_bench is not None and player.bench[gs.hovered_bench]:
-        rect = gs._player_bench_rect(gs.hovered_bench)
-        poke = player.bench[gs.hovered_bench]
-        draw_tooltip_box(gs, surface, poke.card,
-                         rect.x + FIELD_BENCH_W + 8, rect.y,
-                         extra_info=pokemon_extra_info(gs, poke))
-
-    # Opponent active tooltip
-    if gs.hovered_opp_active and opponent.active:
-        rect = gs._opp_active_rect()
-        if rect:
-            draw_tooltip_box(gs, surface, opponent.active.card,
-                             rect.x + FIELD_ACTIVE_W + 10, rect.y,
-                             extra_info=pokemon_extra_info(gs, opponent.active))
-
-    # Opponent bench tooltip
-    if gs.hovered_opp_bench is not None and opponent.bench[gs.hovered_opp_bench]:
-        rect = gs._opp_bench_rect(gs.hovered_opp_bench)
-        poke = opponent.bench[gs.hovered_opp_bench]
-        draw_tooltip_box(gs, surface, poke.card,
-                         rect.x + FIELD_BENCH_W + 8, rect.y,
-                         extra_info=pokemon_extra_info(gs, poke))
+    """Show card details in the right-side detail panel."""
+    from ui.components.card_detail import draw_hover_detail_panel
+    draw_hover_detail_panel(gs, surface)

@@ -22,6 +22,7 @@ class PokemonInPlay:
     attack_locked: bool = False  # For attack_lock_basic effect (雪暴马 冻结)
     attack_locked_names: dict = field(default_factory=dict)  # attack_name → turn_applied (岩窟冲撞 self-lock)
     dazzled: bool = False  # For dazzling_beam (炫目光束): next attack requires coin flip
+    used_abilities: set[str] = field(default_factory=set)
     paralyzed_since_turn: int = 0  # Track which turn paralysis was applied for correct duration
 
     @property
@@ -75,19 +76,20 @@ class PokemonInPlay:
         if has_lume and has_other:
             available = ["Colorless" if e == "Rainbow" else e for e in available]
 
+        # Match specific (non-Colorless) requirements first
         for required in cost:
             if required == "Colorless":
-                if not available:
-                    return False
-                available.pop(0)
+                continue
+            if required in available:
+                available.remove(required)
+            elif "Rainbow" in available:
+                available.remove("Rainbow")
             else:
-                if required in available:
-                    available.remove(required)
-                elif "Rainbow" in available:
-                    available.remove("Rainbow")
-                else:
-                    return False
-        return True
+                return False
+
+        # Remaining energy must cover Colorless requirements
+        colorless_count = sum(1 for c in cost if c == "Colorless")
+        return len(available) >= colorless_count
 
 
 class PlayerState:
@@ -106,6 +108,7 @@ class PlayerState:
         self.supporter_played_this_turn: bool = False
         self.energy_attached_this_turn: bool = False
         self.retreated_this_turn: bool = False
+        self.stadium_played_this_turn: bool = False
         self.stadium_used_this_turn: bool = False
         self.healed_this_turn: bool = False  # Track if any healing happened this turn
 
@@ -316,6 +319,7 @@ class PlayerState:
 
         # Reset evolution flag
         target.can_evolve_this_turn = False
+        target.used_abilities.clear()
 
         return old_card
 
@@ -326,6 +330,7 @@ class PlayerState:
         self.supporter_played_this_turn = False
         self.energy_attached_this_turn = False
         self.retreated_this_turn = False
+        self.stadium_played_this_turn = False
         self.stadium_used_this_turn = False
         self.healed_this_turn = False
         self.was_ko_by_attack = False  # Reset KO tracking for conditional effects
@@ -340,6 +345,8 @@ class PlayerState:
         # Reset evolution flags
         if self.active:
             self.active.can_evolve_this_turn = True
+            self.active.used_abilities.clear()
         for pokemon in self.bench:
             if pokemon:
                 pokemon.can_evolve_this_turn = True
+                pokemon.used_abilities.clear()

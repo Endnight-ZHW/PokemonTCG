@@ -112,7 +112,7 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         opponent_idx = 1 - player_idx
         return _handle_switch_opponent(state, opponent, params, opponent_idx)
     elif effect_type == "energy_attach":
-        return _handle_energy_attach(state, player, params, source_slot)
+        return _handle_energy_attach(state, player, player_idx, params, source_slot)
     elif effect_type == "energy_discard":
         return _handle_energy_discard(state, player, opponent, params, source_slot)
     elif effect_type == "coin_flip":
@@ -138,7 +138,7 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
     elif effect_type == "damage_per_energy":
         return _handle_damage_per_energy(state, player, opponent, params)
     elif effect_type == "attach_from_discard":
-        return _handle_attach_from_discard(state, player, params, source_slot)
+        return _handle_attach_from_discard(state, player, player_idx, params, source_slot)
     elif effect_type == "judge":
         return _handle_judge(state, player_idx, params)
     elif effect_type == "tool":
@@ -178,7 +178,7 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
     elif effect_type == "hand_to_bottom_draw":
         return _handle_hand_to_bottom_draw(state, player, params)
     elif effect_type == "energy_relocate":
-        return _handle_energy_relocate(state, player, params)
+        return _handle_energy_relocate(state, player, player_idx, params)
     elif effect_type == "coin_flip_triple":
         return _handle_coin_flip_triple(state, player, opponent, params)
     elif effect_type == "discard_then_draw":

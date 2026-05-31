@@ -105,6 +105,28 @@ class ImageManager:
             logger.warning("failed to load image: %s", path)
         return surface
 
+    def _mapping_path(self, key: str) -> Optional[str]:
+        """Resolve a custom mapping key to an existing absolute path."""
+        rel = self._custom_map.get(key)
+        if not rel:
+            return None
+        path = rel if os.path.isabs(rel) else os.path.join(
+            os.path.dirname(CARD_IMAGE_MAPPING_FILE), "..", rel)
+        path = os.path.normpath(path)
+        return path if os.path.exists(path) else None
+
+    def _ambiguous_card_name(self, card_name: str, card_id: str) -> bool:
+        """Return True when a name points to multiple distinct card IDs."""
+        if not card_name or not card_id:
+            return False
+        try:
+            from data.card_registry import CardRegistry
+            matches = CardRegistry.get_by_name(card_name)
+        except Exception:
+            return False
+        ids = {getattr(card, "api_id", "") for card in matches}
+        return len(ids) > 1 and card_id in ids
+
     # ── Public API ──
 
     def get_card_image(self, card_name: str, card_id: str = "") -> Optional[pygame.Surface]:
@@ -117,27 +139,21 @@ class ImageManager:
         if cache_key in self._surface_cache:
             return self._surface_cache[cache_key]
 
-        # Check custom mappings: try card_id first, then card_name
+        # Check custom mappings: try card_id first. Same-name cards must not
+        # silently fall back to another variant's generic name mapping.
         path = None
         if card_id:
-            rel = self._custom_map.get(card_id)
-            if rel:
-                path = rel if os.path.isabs(rel) else os.path.join(
-                    os.path.dirname(CARD_IMAGE_MAPPING_FILE), "..", rel)
-                path = os.path.normpath(path)
+            path = self._mapping_path(card_id)
 
-        if not path:
-            rel = self._custom_map.get(card_name)
-            if rel:
-                path = rel if os.path.isabs(rel) else os.path.join(
-                    os.path.dirname(CARD_IMAGE_MAPPING_FILE), "..", rel)
-                path = os.path.normpath(path)
+        ambiguous_name = self._ambiguous_card_name(card_name, card_id)
+        if not path and not ambiguous_name:
+            path = self._mapping_path(card_name)
 
         if not path:
             # Auto-discovered: try card_id first, then card_name
             if card_id:
                 path = self._image_map.get(card_id)
-            if not path:
+            if not path and not ambiguous_name:
                 path = self._image_map.get(card_name)
 
         if path and os.path.exists(path):

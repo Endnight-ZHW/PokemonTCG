@@ -12,6 +12,20 @@ import threading
 import time
 import websockets.sync.server
 import websockets.sync.client
+from network.message_protocol import (
+    COALESCABLE_MESSAGES,
+    LEGACY_MESSAGE_TYPES,
+    MSG_CONNECTION_FAILED,
+    MSG_ERROR,
+    MSG_OPPONENT_DISCONNECTED,
+    MSG_PING,
+    MSG_PONG,
+    envelope_message,
+    is_newer_sequence,
+    is_protocol_compatible,
+    is_protocol_message,
+    next_seq,
+)
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,8 +45,12 @@ class NetworkManager:
         self._last_error: str | None = None
         self._server = None  # Keep reference for shutdown
         self._last_message_time: float = time.time()
+        self._last_recv_time: float = time.time()
         self._last_send_time: float = time.time()
         self._heartbeat_interval: float = 15.0  # send ping if idle this long
+        self._recv_timeout: float = 0.05
+        self._send_seq: int = 0
+        self._last_recv_seq: int = 0
         self._is_relay = False
         self._relay_room_code: str | None = None
 
@@ -43,6 +61,10 @@ class NetworkManager:
         self._is_host = True
         self._running = True
         self._last_error = None
+        self._last_recv_time = time.time()
+        self._last_send_time = self._last_recv_time
+        self._send_seq = 0
+        self._last_recv_seq = 0
         self._thread = threading.Thread(
             target=self._run_host, args=(port,),
             daemon=True, name="net-host"
@@ -54,6 +76,10 @@ class NetworkManager:
         self._is_host = False
         self._running = True
         self._last_error = None
+        self._last_recv_time = time.time()
+        self._last_send_time = self._last_recv_time
+        self._send_seq = 0
+        self._last_recv_seq = 0
         self._thread = threading.Thread(
             target=self._run_client, args=(host, port),
             daemon=True, name="net-client"
@@ -71,6 +97,10 @@ class NetworkManager:
         self._is_relay = True
         self._running = True
         self._last_error = None
+        self._last_recv_time = time.time()
+        self._last_send_time = self._last_recv_time
+        self._send_seq = 0
+        self._last_recv_seq = 0
         self._relay_room_code = room_code
         self._thread = threading.Thread(
             target=self._run_relay,
@@ -112,12 +142,12 @@ class NetworkManager:
         if not self._connected.is_set():
             return False
         from config import NETWORK_TIMEOUT
-        return time.time() - self._last_message_time > NETWORK_TIMEOUT
+        return time.time() - self._last_recv_time > NETWORK_TIMEOUT
 
-    def poll(self) -> list[dict]:
+    def poll(self, max_messages: int | None = None) -> list[dict]:
         """Called each frame from main thread. Returns all pending messages."""
         messages = []
-        while True:
+        while max_messages is None or len(messages) < max_messages:
             try:
                 messages.append(self._incoming.get_nowait())
             except queue.Empty:
@@ -127,7 +157,47 @@ class NetworkManager:
     def send(self, message: dict):
         """Queue a message for the network thread to send."""
         if self._running:
-            self._outgoing.put(message)
+            self._put_outgoing(message)
+
+    def _next_envelope(self, message: dict) -> dict:
+        self._send_seq = next_seq(self._send_seq)
+        return envelope_message(message, self._send_seq)
+
+    def _put_coalesced(self, q: queue.Queue, message: dict):
+        """Put a message, replacing older queued state updates when safe."""
+        msg_type = message.get("type")
+        if msg_type not in COALESCABLE_MESSAGES:
+            q.put(message)
+            return
+
+        retained = []
+        while True:
+            try:
+                queued = q.get_nowait()
+            except queue.Empty:
+                break
+            if queued is None or queued.get("type") != msg_type:
+                retained.append(queued)
+        for queued in retained:
+            q.put(queued)
+        q.put(message)
+
+    def _put_outgoing(self, message: dict):
+        self._put_coalesced(self._outgoing, message)
+
+    def _put_incoming(self, message: dict):
+        self._put_coalesced(self._incoming, message)
+
+    def _connection_failed(self, error: str):
+        self._last_error = error
+        self._running = False
+        self._put_incoming({
+            "type": MSG_CONNECTION_FAILED,
+            "error": error,
+        })
+
+    def _opponent_disconnected(self):
+        self._put_incoming({"type": MSG_OPPONENT_DISCONNECTED})
 
     def stop(self):
         """Shutdown the network connection and thread.
@@ -180,7 +250,7 @@ class NetworkManager:
             except Exception as e:
                 logger.error("Host connection error: %s", e)
                 self._last_error = str(e)
-                self._incoming.put({"type": "opponent_disconnected"})
+                self._opponent_disconnected()
             finally:
                 self._connected.clear()
                 self._websocket = None
@@ -211,20 +281,10 @@ class NetworkManager:
                 self._message_loop(websocket)
         except OSError as e:
             logger.error("Client connection failed: %s", e)
-            self._last_error = str(e)
-            self._running = False
-            self._incoming.put({
-                "type": "connection_failed",
-                "error": str(e),
-            })
+            self._connection_failed(str(e))
         except Exception as e:
             logger.error("Client error: %s", e)
-            self._last_error = str(e)
-            self._running = False
-            self._incoming.put({
-                "type": "connection_failed",
-                "error": str(e),
-            })
+            self._connection_failed(str(e))
 
     # ── Network thread (relay) ───────────────────────────────────
 
@@ -247,20 +307,20 @@ class NetworkManager:
                     response = json.loads(websocket.recv(timeout=10))
                     if response.get("type") == "room_created":
                         self._relay_room_code = response["room_id"]
-                        self._incoming.put({
+                        self._put_incoming({
                             "type": "room_created",
                             "room_id": self._relay_room_code,
                         })
                         logger.info("Relay room created: %s", self._relay_room_code)
                     elif response.get("type") == "error":
-                        self._incoming.put({
-                            "type": "connection_failed",
+                        self._put_incoming({
+                            "type": MSG_CONNECTION_FAILED,
                             "error": response.get("message", "创建房间失败"),
                         })
                         return
                     else:
-                        self._incoming.put({
-                            "type": "connection_failed",
+                        self._put_incoming({
+                            "type": MSG_CONNECTION_FAILED,
                             "error": f"非预期的响应: {response.get('type')}",
                         })
                         return
@@ -272,14 +332,14 @@ class NetworkManager:
                     if response.get("type") == "room_joined":
                         logger.info("Joined relay room: %s", room_code)
                     elif response.get("type") == "error":
-                        self._incoming.put({
-                            "type": "connection_failed",
+                        self._put_incoming({
+                            "type": MSG_CONNECTION_FAILED,
                             "error": response.get("message", "加入房间失败"),
                         })
                         return
                     else:
-                        self._incoming.put({
-                            "type": "connection_failed",
+                        self._put_incoming({
+                            "type": MSG_CONNECTION_FAILED,
                             "error": f"非预期的响应: {response.get('type')}",
                         })
                         return
@@ -288,18 +348,19 @@ class NetworkManager:
                 response = json.loads(websocket.recv(timeout=120))
                 if response.get("type") == "opponent_joined":
                     self._connected.set()
+                    self._last_recv_time = time.time()
                     self._last_message_time = time.time()
-                    self._incoming.put({"type": "opponent_joined"})
+                    self._put_incoming({"type": "opponent_joined"})
                     logger.info("Opponent joined relay room")
                 elif response.get("type") == "error":
-                    self._incoming.put({
-                        "type": "connection_failed",
+                    self._put_incoming({
+                        "type": MSG_CONNECTION_FAILED,
                         "error": response.get("message", "等待对手失败"),
                     })
                     return
                 else:
-                    self._incoming.put({
-                        "type": "connection_failed",
+                    self._put_incoming({
+                        "type": MSG_CONNECTION_FAILED,
                         "error": f"非预期的响应: {response.get('type')}",
                     })
                     return
@@ -309,20 +370,10 @@ class NetworkManager:
 
         except OSError as e:
             logger.error("Relay connection failed: %s", e)
-            self._last_error = str(e)
-            self._running = False
-            self._incoming.put({
-                "type": "connection_failed",
-                "error": str(e),
-            })
+            self._connection_failed(str(e))
         except Exception as e:
             logger.error("Relay error: %s", e)
-            self._last_error = str(e)
-            self._running = False
-            self._incoming.put({
-                "type": "connection_failed",
-                "error": str(e),
-            })
+            self._connection_failed(str(e))
 
     # ── Shared message loop ──────────────────────────────────────
 
@@ -336,11 +387,11 @@ class NetworkManager:
                     if msg is None:  # Sentinel to stop
                         return
                     try:
-                        websocket.send(json.dumps(msg, ensure_ascii=False))
-                        self._last_message_time = time.time()
+                        wire_msg = self._next_envelope(msg)
+                        websocket.send(json.dumps(wire_msg, ensure_ascii=False))
                         self._last_send_time = time.time()
                     except Exception:
-                        self._incoming.put({"type": "opponent_disconnected"})
+                        self._opponent_disconnected()
                         return
             except queue.Empty:
                 pass
@@ -349,35 +400,76 @@ class NetworkManager:
             now = time.time()
             if now - self._last_send_time > self._heartbeat_interval:
                 try:
-                    websocket.send(json.dumps({"type": "ping"}))
+                    websocket.send(json.dumps(
+                        self._next_envelope({"type": MSG_PING}),
+                        ensure_ascii=False,
+                    ))
                     self._last_send_time = now
                 except Exception:
-                    self._incoming.put({"type": "opponent_disconnected"})
+                    self._opponent_disconnected()
                     return
 
-            # Receive one incoming message (10ms timeout to stay responsive)
+            # Receive one incoming message. A short timeout keeps outgoing
+            # latency low without burning a CPU core in an empty tight loop.
             try:
-                data = websocket.recv(timeout=0.01)
+                data = websocket.recv(timeout=self._recv_timeout)
                 msg = json.loads(data)
                 msg_type = msg.get("type", "")
+
+                if is_protocol_message(msg):
+                    if not is_protocol_compatible(msg):
+                        self._put_incoming({
+                            "type": MSG_ERROR,
+                            "message": "协议版本不兼容，请双方更新到同一版本。",
+                            "expected_version": 2,
+                            "actual_version": msg.get("version"),
+                        })
+                        continue
+                    if not is_newer_sequence(msg, self._last_recv_seq):
+                        continue
+                    self._last_recv_seq = msg.get("seq", self._last_recv_seq)
+                    if msg_type in LEGACY_MESSAGE_TYPES:
+                        self._put_incoming({
+                            "type": MSG_ERROR,
+                            "message": "Received a deprecated multiplayer v1 message type; update both clients to v2.",
+                        })
+                        continue
+
                 # Handle heartbeat
-                if msg_type == "ping":
+                if msg_type == MSG_PING:
                     # Reply with pong immediately
-                    websocket.send(json.dumps({"type": "pong"}))
+                    websocket.send(json.dumps(
+                        self._next_envelope({"type": MSG_PONG}),
+                        ensure_ascii=False,
+                    ))
                     self._last_send_time = time.time()
-                elif msg_type == "pong":
-                    # Pong received — update liveness but don't queue to game
-                    self._last_message_time = time.time()
+                    self._last_recv_time = time.time()
+                    self._last_message_time = self._last_recv_time
+                elif msg_type == MSG_PONG:
+                    # Pong received: update liveness but don't queue to game.
+                    self._last_recv_time = time.time()
+                    self._last_message_time = self._last_recv_time
+                elif not is_protocol_message(msg):
+                    if msg_type in {MSG_OPPONENT_DISCONNECTED, MSG_CONNECTION_FAILED, MSG_ERROR}:
+                        self._last_recv_time = time.time()
+                        self._last_message_time = self._last_recv_time
+                        self._put_incoming(msg)
+                    else:
+                        self._put_incoming({
+                            "type": MSG_ERROR,
+                            "message": "收到旧版联机消息，请双方更新到联机协议 v2。",
+                        })
                 else:
                     # Regular game message
+                    self._last_recv_time = time.time()
                     self._last_message_time = time.time()
-                    self._incoming.put(msg)
+                    self._put_incoming(msg)
             except TimeoutError:
                 pass
             except websockets.exceptions.ConnectionClosed:
-                self._incoming.put({"type": "opponent_disconnected"})
+                self._opponent_disconnected()
                 break
             except Exception as e:
                 logger.error("Receive error: %s", e)
-                self._incoming.put({"type": "opponent_disconnected"})
+                self._opponent_disconnected()
                 break

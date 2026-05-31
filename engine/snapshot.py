@@ -29,6 +29,7 @@ class PlayerSnapshot:
     supporter_played: bool = False
     energy_attached: bool = False
     retreated: bool = False
+    stadium_played: bool = False
     stadium_used: bool = False
     healed: bool = False
     vstar_used: bool = False
@@ -46,6 +47,7 @@ class PokemonSnapshot:
     evolution_stack_ids: list[str] = field(default_factory=list)
     can_evolve_this_turn: bool = True
     placed_this_turn: bool = True
+    used_abilities: list[str] = field(default_factory=list)
     damage_prevented: bool = False
     all_prevented: bool = False
     attack_locked: bool = False
@@ -65,6 +67,7 @@ class GameSnapshot:
     p2: PlayerSnapshot
     stadium_card_id: Optional[str] = None
     winner: Optional[int] = None
+    apply_type_matchups: bool = False
     mulligan_bonus_given: list[int] = field(default_factory=list)
 
 
@@ -137,6 +140,7 @@ def snapshot_state(state: GameState) -> GameSnapshot:
         p2=_snapshot_player(state.p2),
         stadium_card_id=state.stadium_card.api_id if state.stadium_card else None,
         winner=state.winner,
+        apply_type_matchups=getattr(state, "apply_type_matchups", False),
         mulligan_bonus_given=list(state._mulligan_bonus_given),
     )
 
@@ -150,6 +154,7 @@ def restore_state(state: GameState, snap: GameSnapshot):
     state.active_player_idx = snap.active_player_idx
     state.first_player_idx = snap.first_player_idx
     state.winner = snap.winner
+    state.apply_type_matchups = snap.apply_type_matchups
     state.pending_promotion_player = -1
     state._piercing_attack = False
     state._ko_from_attack = False
@@ -173,6 +178,7 @@ def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
         supporter_played=player.supporter_played_this_turn,
         energy_attached=player.energy_attached_this_turn,
         retreated=player.retreated_this_turn,
+        stadium_played=player.stadium_played_this_turn,
         stadium_used=player.stadium_used_this_turn,
         healed=player.healed_this_turn,
         vstar_used=player.vstar_power_used,
@@ -191,6 +197,7 @@ def _restore_player(player: PlayerState, snap: PlayerSnapshot):
     player.supporter_played_this_turn = snap.supporter_played
     player.energy_attached_this_turn = snap.energy_attached
     player.retreated_this_turn = snap.retreated
+    player.stadium_played_this_turn = snap.stadium_played
     player.stadium_used_this_turn = snap.stadium_used
     player.healed_this_turn = snap.healed
     player.vstar_power_used = snap.vstar_used
@@ -207,6 +214,7 @@ def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
         evolution_stack_ids=[c.api_id for c in p.evolution_stack],
         can_evolve_this_turn=p.can_evolve_this_turn,
         placed_this_turn=p.placed_this_turn,
+        used_abilities=sorted(p.used_abilities),
         damage_prevented=p.damage_prevented_next_turn,
         all_prevented=p.all_prevented_next_turn,
         attack_locked=p.attack_locked,
@@ -228,6 +236,7 @@ def _restore_pokemon(snap: PokemonSnapshot) -> PokemonInPlay:
     pokemon.evolution_stack = [_require_card(cid) for cid in snap.evolution_stack_ids]
     pokemon.can_evolve_this_turn = snap.can_evolve_this_turn
     pokemon.placed_this_turn = snap.placed_this_turn
+    pokemon.used_abilities = set(snap.used_abilities)
     pokemon.damage_prevented_next_turn = snap.damage_prevented
     pokemon.all_prevented_next_turn = snap.all_prevented
     pokemon.attack_locked = snap.attack_locked

@@ -8,9 +8,8 @@ logger = get_logger(__name__)
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
     UI_TEXT_PRIMARY, UI_BUTTON, UI_BUTTON_HOVER, UI_HIGHLIGHT,
-    TYPE_COLORS,
 )
-from ui.render_helpers import draw_gradient_button
+from ui.ui_theme import draw_button
 from ui.font_manager import get_font, get_font_size
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, CARD_WIDTH, CARD_HEIGHT
 
@@ -30,13 +29,21 @@ class TitleScreen(Screen):
         self.start_button = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
         self.start_hover = False
 
-        remote_btn_y = btn_y + btn_h + 16
+        challenge_btn_y = btn_y + btn_h + 16
+        self.challenge_button = pygame.Rect(btn_x, challenge_btn_y, btn_w, btn_h)
+        self.challenge_hover = False
+
+        remote_btn_y = challenge_btn_y + btn_h + 16
         self.remote_button = pygame.Rect(btn_x, remote_btn_y, btn_w, btn_h)
         self.remote_hover = False
 
         img_btn_y = remote_btn_y + btn_h + 16
         self.cardimg_button = pygame.Rect(btn_x, img_btn_y, btn_w, btn_h)
         self.cardimg_hover = False
+
+        toggle_y = img_btn_y + btn_h + 18
+        self.matchup_toggle = pygame.Rect(btn_x, toggle_y, btn_w, 44)
+        self.matchup_hover = False
 
         # Help button (small "?" in top-right corner)
         help_size = 36
@@ -132,16 +139,24 @@ class TitleScreen(Screen):
     def handle_event(self, event: pygame.event.Event):
         if event.type == pygame.MOUSEMOTION:
             self.start_hover = self.start_button.collidepoint(event.pos)
+            self.challenge_hover = self.challenge_button.collidepoint(event.pos)
             self.remote_hover = self.remote_button.collidepoint(event.pos)
             self.cardimg_hover = self.cardimg_button.collidepoint(event.pos)
+            self.matchup_hover = self.matchup_toggle.collidepoint(event.pos)
             self.help_hover = self.help_button.collidepoint(event.pos)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.start_hover:
                 self._start_game()
+            elif self.challenge_hover:
+                self._start_challenge()
             elif self.remote_hover:
                 self._start_remote_game()
             elif self.cardimg_hover:
                 self._open_card_image_manager()
+            elif self.matchup_hover:
+                app = getattr(self.manager, "_app", None)
+                if app:
+                    app.apply_type_matchups = not app.apply_type_matchups
             elif self.help_hover:
                 self._show_help()
 
@@ -156,7 +171,7 @@ class TitleScreen(Screen):
         from ui.screens.card_image_screen import CardImageScreen
         self.manager.push_screen(CardImageScreen(self.manager))
 
-    def _start_game(self):
+    def _load_available_decks(self):
         from data.deck_definitions import (FIRE_DECK, WATER_DECK, PSYCHIC_DECK_NATU,
                                             LIGHTNING_DECK, FIGHTING_DECK, COLORLESS_DECK,
                                             DRAGON_DECK, GRASS_DECK, ALL_CARD_IDS)
@@ -184,8 +199,21 @@ class TitleScreen(Screen):
             "grass": GRASS_DECK,
         }
 
+        return available_decks
+
+    def _start_game(self):
+        available_decks = self._load_available_decks()
+
         from ui.screens.deck_select import DeckSelectScreen
         self.manager.push_screen(DeckSelectScreen(self.manager, available_decks))
+
+    def _start_challenge(self):
+        available_decks = self._load_available_decks()
+
+        from ui.screens.deck_select import DeckSelectScreen
+        self.manager.push_screen(
+            DeckSelectScreen(self.manager, available_decks, mode="challenge")
+        )
 
     def _show_help(self):
         """Show a help overlay with game rules."""
@@ -228,13 +256,14 @@ class TitleScreen(Screen):
         from ui.screens.lobby_screen import LobbyScreen
         lobby = LobbyScreen(self.manager)
         if app.auto_connect == "relay":
-            lobby.mode = "relay"
             if app.auto_relay_room:
-                lobby.sub_mode = "client"
-                lobby.room_code_input = app.auto_relay_room
+                lobby.auto_mode = "relay_client"
+                if lobby._room_code_input:
+                    lobby._room_code_input.text = app.auto_relay_room
             else:
-                lobby.sub_mode = "host"
-            lobby._auto_relay_connect = True
+                lobby.auto_mode = "relay_host"
+            if lobby._relay_host_input:
+                lobby._relay_host_input.text = host
         else:
             lobby.auto_mode = app.auto_connect
         app.auto_connect = None
@@ -312,24 +341,8 @@ class TitleScreen(Screen):
                 rotated = pygame.transform.rotate(card_surf, angle)
             surface.blit(rotated, rotated.get_rect(center=(cx, cy)))
 
-        # Energy circle decorations around title
-        energy_colors_list = [
-            TYPE_COLORS["Fire"], TYPE_COLORS["Water"], TYPE_COLORS["Grass"],
-            TYPE_COLORS["Lightning"], TYPE_COLORS["Psychic"],
-        ]
-        for i, color in enumerate(energy_colors_list):
-            a = self._bg_time * 0.4 + i * 2 * math.pi / len(energy_colors_list)
-            radius = 200 + 30 * math.sin(self._bg_time * 1.2 + i)
-            dx = math.cos(a) * radius
-            dy = math.sin(a) * radius * 0.35
-            cx = SCREEN_WIDTH // 2 + dx
-            cy = SCREEN_HEIGHT // 3 + 20 + dy
-            alpha = int(50 + 20 * math.sin(self._bg_time * 2.0 + i * 0.7))
-            r = 6 + int(3 * math.sin(self._bg_time * 1.5 + i))
-            pygame.draw.circle(surface, (*color, alpha), (int(cx), int(cy)), r)
-
-        # Title with pulsing glow
-        glow_alpha = int(40 + 20 * math.sin(self._bg_time * 1.5))
+        # Title with a restrained glow
+        glow_alpha = int(18 + 8 * math.sin(self._bg_time * 1.1))
         title_txt = self.font_title.render("宝可梦卡牌对战", True, UI_HIGHLIGHT)
         title_glow = self.font_title.render("宝可梦卡牌对战", True, (255, 230, 100))
         title_rect = title_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3))
@@ -341,7 +354,7 @@ class TitleScreen(Screen):
                 center=(SCREEN_WIDTH // 2 + dx, SCREEN_HEIGHT // 3 + dy)))
         surface.blit(title_txt, title_rect)
 
-        sub_txt = self.font_body.render("双人游戏", True, UI_TEXT_PRIMARY)
+        sub_txt = self.font_body.render("双人对战", True, UI_TEXT_PRIMARY)
         sub_rect = sub_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 55))
         surface.blit(sub_txt, sub_rect)
 
@@ -349,28 +362,52 @@ class TitleScreen(Screen):
         if not self._entrance_done:
             t = min(1.0, self._entrance_time / 0.6)
             ease = 1 - (1 - t) ** 3
-            entry_offset = int((1 - ease) * 300)
+            entry_offset = int((1 - ease) * 90)
         else:
             entry_offset = 0
 
         # Draw buttons with staggered entrance
         # Start button (slides first)
         start_rect = self.start_button.move(0, entry_offset // 3)
-        draw_gradient_button(surface, start_rect, self.start_hover)
-        btn_txt = self.font_body.render("开始游戏", True, UI_TEXT_PRIMARY)
-        surface.blit(btn_txt, btn_txt.get_rect(center=start_rect.center))
+        draw_button(surface, start_rect, "开始游戏", self.font_body,
+                    hovered=self.start_hover)
 
         # Remote button (slides second)
-        remote_rect = self.remote_button.move(0, entry_offset // 2)
-        draw_gradient_button(surface, remote_rect, self.remote_hover)
-        remote_btn_txt = self.font_body.render("远程对战", True, UI_TEXT_PRIMARY)
-        surface.blit(remote_btn_txt, remote_btn_txt.get_rect(center=remote_rect.center))
+        challenge_rect = self.challenge_button.move(0, entry_offset // 2)
+        draw_button(surface, challenge_rect, "挑战 AI", self.font_body,
+                    hovered=self.challenge_hover)
+
+        remote_rect = self.remote_button.move(0, entry_offset * 2 // 3)
+        draw_button(surface, remote_rect, "远程对战", self.font_body,
+                    hovered=self.remote_hover)
 
         # Card image button (slides third)
         cardimg_rect = self.cardimg_button.move(0, entry_offset)
-        draw_gradient_button(surface, cardimg_rect, self.cardimg_hover)
-        img_btn_txt = self.font_body.render("卡图管理", True, UI_TEXT_PRIMARY)
-        surface.blit(img_btn_txt, img_btn_txt.get_rect(center=cardimg_rect.center))
+        draw_button(surface, cardimg_rect, "卡图管理", self.font_body,
+                    hovered=self.cardimg_hover)
+
+        app = getattr(self.manager, "_app", None)
+        matchup_enabled = bool(getattr(app, "apply_type_matchups", False))
+        toggle_rect = self.matchup_toggle.move(0, entry_offset)
+        bg = UI_BUTTON_HOVER if self.matchup_hover else UI_BUTTON
+        border = UI_HIGHLIGHT if matchup_enabled else UI_TEXT_PRIMARY
+        pygame.draw.rect(surface, bg, toggle_rect, border_radius=8)
+        pygame.draw.rect(surface, border, toggle_rect, 1, border_radius=8)
+        knob_rect = pygame.Rect(
+            toggle_rect.right - 54 if matchup_enabled else toggle_rect.x + 12,
+            toggle_rect.y + 8,
+            42,
+            toggle_rect.h - 16,
+        )
+        pygame.draw.rect(
+            surface,
+            UI_HIGHLIGHT if matchup_enabled else (110, 116, 138),
+            knob_rect,
+            border_radius=7,
+        )
+        label = f"属性克制/抵抗：{'开' if matchup_enabled else '关'}"
+        label_surf = self.font_small.render(label, True, UI_TEXT_PRIMARY)
+        surface.blit(label_surf, label_surf.get_rect(center=toggle_rect.center))
 
         # Help button
         help_rect = self.help_button.move(0, entry_offset // 4)

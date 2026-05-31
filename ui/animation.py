@@ -229,13 +229,14 @@ class CardFlyAnimation:
                  start_x: float, start_y: float,
                  end_x: float, end_y: float,
                  duration: float, arc_style: str,
-                 on_complete: Optional[Callable] = None):
+                 on_complete: Optional[Callable] = None,
+                 delay: float = 0.0):
         """Internal: queue a card fly animation."""
         self.active.append({
             "surface": card_surface.copy(),
             "start_x": start_x, "start_y": start_y,
             "end_x": end_x, "end_y": end_y,
-            "elapsed": 0.0,
+            "elapsed": -delay,
             "duration": duration,
             "arc_style": arc_style,
             "on_complete": on_complete,
@@ -245,33 +246,39 @@ class CardFlyAnimation:
             start_x: float, start_y: float,
             end_x: float, end_y: float,
             duration: float = 0.35,
-            on_complete: Optional[Callable] = None):
+            on_complete: Optional[Callable] = None,
+            delay: float = 0.0):
         """Standard card fly with a high upward arc."""
         self._add_fly(card_surface, start_x, start_y, end_x, end_y,
-                      duration, "high", on_complete)
+                      duration, "high", on_complete, delay)
 
     def fly_from_deck(self, card_surface: pygame.Surface,
                       deck_x: float, deck_y: float,
                       target_x: float, target_y: float,
                       duration: float = 0.45,
-                      on_complete: Optional[Callable] = None):
+                      on_complete: Optional[Callable] = None,
+                      delay: float = 0.0):
         """Card flies from deck position with a lower arc (for draws)."""
         self._add_fly(card_surface, deck_x, deck_y, target_x, target_y,
-                      duration, "low", on_complete)
+                      duration, "low", on_complete, delay)
 
     def fly_to_discard(self, card_surface: pygame.Surface,
                        start_x: float, start_y: float,
                        discard_x: float, discard_y: float,
                        duration: float = 0.4,
-                       on_complete: Optional[Callable] = None):
+                       on_complete: Optional[Callable] = None,
+                       delay: float = 0.0):
         """Card flies from play area to discard pile with a downward arc."""
         self._add_fly(card_surface, start_x, start_y, discard_x, discard_y,
-                      duration, "down", on_complete)
+                      duration, "down", on_complete, delay)
 
     def update(self, dt: float):
         still_active = []
         for item in self.active:
             item["elapsed"] += dt
+            if item["elapsed"] < 0:
+                still_active.append(item)
+                continue
             if item["elapsed"] >= item["duration"]:
                 if item["on_complete"]:
                     item["on_complete"]()
@@ -313,6 +320,8 @@ class CardFlyAnimation:
 
     def draw(self, surface: pygame.Surface):
         for item in self.active:
+            if item["elapsed"] < 0:
+                continue
             t = item["elapsed"] / max(item["duration"], 0.001)
             t = min(1.0, t)
             t_eased = 1 - (1 - t) ** 3  # ease out cubic

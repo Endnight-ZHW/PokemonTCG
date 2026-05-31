@@ -3,10 +3,11 @@ import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
     UI_BG_DARK, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY,
-    UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOVER, UI_BORDER, TYPE_COLORS,
+    UI_HIGHLIGHT, UI_BORDER, TYPE_COLORS,
 )
 from ui.image_manager import get_image_manager
 from ui.font_manager import get_font, get_font_size
+from ui.ui_theme import draw_panel, draw_button
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, CARD_WIDTH, CARD_HEIGHT
 from engine.game_state import ActionRequest
 
@@ -129,10 +130,11 @@ class SearchScreen(Screen):
         pass
 
     def draw(self, surface: pygame.Surface):
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.set_alpha(210)
-        overlay.fill(UI_BG_DARK)
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((8, 10, 18, 225))
         surface.blit(overlay, (0, 0))
+        content_rect = pygame.Rect(28, 22, SCREEN_WIDTH - 56, SCREEN_HEIGHT - 44)
+        draw_panel(surface, content_rect)
 
         title_txt = self.font_title.render(self.request.prompt, True, UI_HIGHLIGHT)
         surface.blit(title_txt, (50, 30))
@@ -167,28 +169,22 @@ class SearchScreen(Screen):
 
         # Confirm button (hidden in read-only mode)
         if not is_readonly:
-            bc = UI_BUTTON_HOVER if self.confirm_hover else UI_BUTTON
-            pygame.draw.rect(surface, bc, self.confirm_btn, border_radius=10)
-            pygame.draw.rect(surface, UI_TEXT_PRIMARY, self.confirm_btn, 2, border_radius=10)
-            bt = self.font_body.render("确 认", True, UI_TEXT_PRIMARY)
-            surface.blit(bt, bt.get_rect(center=self.confirm_btn.center))
+            draw_button(surface, self.confirm_btn, "确认", self.font_body,
+                        hovered=self.confirm_hover)
 
         # Magnified card preview on hover
         if self.hovered_idx is not None and self.hovered_idx < len(self.request.card_list):
             self._draw_magnified_card(surface, self.request.card_list[self.hovered_idx])
 
         # Close / Cancel button
-        cc = UI_BUTTON_HOVER if self.cancel_hover else (80, 80, 100)
         close_rect = self.cancel_btn
         if is_readonly:
             # Center the close button where confirm button would be
             close_rect = self.confirm_btn
-            cc = UI_BUTTON_HOVER if self.confirm_hover else UI_BUTTON
-        pygame.draw.rect(surface, cc, close_rect, border_radius=10)
-        pygame.draw.rect(surface, UI_TEXT_PRIMARY, close_rect, 2, border_radius=10)
         label = "关 闭" if is_readonly else "取 消"
-        ct = self.font_body.render(label, True, UI_TEXT_PRIMARY)
-        surface.blit(ct, ct.get_rect(center=close_rect.center))
+        draw_button(surface, close_rect, label, self.font_body,
+                    hovered=(self.confirm_hover if is_readonly else self.cancel_hover),
+                    danger=not is_readonly)
 
     def _draw_mini_card(self, surface, x, y, card, selected=False, hover=False):
         # Resolve string card IDs from network deserialization first
@@ -267,8 +263,7 @@ class SearchScreen(Screen):
 
         # Dark backdrop for the whole detail panel
         panel_rect = pygame.Rect(MAG_X - 8, MAG_Y - 8, PANEL_W + 16, SCREEN_HEIGHT - MAG_Y - 40)
-        pygame.draw.rect(surface, (20, 20, 30), panel_rect, border_radius=8)
-        pygame.draw.rect(surface, (80, 80, 100), panel_rect, 1, border_radius=8)
+        draw_panel(surface, panel_rect)
 
         # Card image
         img = self.image_mgr.get_card_image(card_name, card_id)

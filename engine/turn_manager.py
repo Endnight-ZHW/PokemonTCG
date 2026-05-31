@@ -11,7 +11,6 @@ class TurnManager:
     def __init__(self, state: GameState):
         self.state = state
         self.resolver = ActionResolver(state)
-        self.pending_mulligans: list[int] = []  # Queue of players needing mulligans
         self.setup_complete: bool = False
 
     # ---- Phase Management ----
@@ -50,15 +49,13 @@ class TurnManager:
 
     def _handle_draw_phase(self):
         """Draw phase: active player draws 1 card.
-        Note: The player going first does NOT draw on their first turn."""
+        Per official PTCG rules, the player who goes first does NOT draw on
+        their first turn. The second player draws normally on their first turn."""
         player = self.state.get_active_player()
 
-        is_first_players_first_turn = (
-            self.state.turn_number == 1
-            and self.state.active_player_idx == self.state.first_player_idx
-        )
-
-        if not is_first_players_first_turn:
+        if self.state.is_first_turn():
+            self.state._log(f"{player.name}先攻第一回合不抽卡。（第1回合）")
+        else:
             drawn = player.draw_cards(1)
             if not drawn:
                 opponent_idx = 1 - self.state.active_player_idx
@@ -68,8 +65,6 @@ class TurnManager:
                                 f"{self.state.get_player(opponent_idx).name}获胜！")
                 return
             self.state._log(f"{player.name}抽了1张卡。（第{self.state.turn_number}回合）")
-        else:
-            self.state._log(f"{player.name}先攻第一回合不抽卡。")
 
         self.state.phase = TurnPhase.MAIN
 
@@ -124,9 +119,8 @@ class TurnManager:
                 return ActionResult(False, "不是你的回合。")
 
         # During setup, only PLAY_BASIC is allowed
-        if action not in (PlayerAction.PLAY_BASIC,) and self.state.phase == TurnPhase.SETUP:
-            if action != PlayerAction.PLAY_BASIC:
-                return ActionResult(False, "Only place Basics during Setup.")
+        if self.state.phase == TurnPhase.SETUP and action != PlayerAction.PLAY_BASIC:
+            return ActionResult(False, "Only place Basics during Setup.")
 
         result = self.resolver.resolve(action, player_idx=player_idx, **params)
 

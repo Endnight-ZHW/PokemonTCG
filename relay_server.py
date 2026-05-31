@@ -14,16 +14,52 @@ import threading
 import time
 
 import websockets.sync.server
+from network.message_protocol import (
+    MSG_ERROR,
+    MSG_OPPONENT_DISCONNECTED,
+    PROTOCOL_VERSION,
+    is_protocol_compatible,
+    is_protocol_message,
+)
 
 logger = logging.getLogger("relay")
+
+ROOM_WAIT_TIMEOUT = 120
+ROOM_TTL = 60 * 60
+RELAY_RECV_TIMEOUT = 30
 
 # 房间表: room_id -> {"p1": ws | None, "p2": ws | None, "created_at": float, "p2_joined": threading.Event}
 rooms: dict[str, dict] = {}
 rooms_lock = threading.Lock()
 
 
+def _send_error(websocket, message: str):
+    websocket.send(json.dumps({
+        "type": MSG_ERROR,
+        "message": message,
+        "expected_version": PROTOCOL_VERSION,
+    }, ensure_ascii=False))
+
+
+def cleanup_expired_rooms():
+    """Remove rooms that have waited too long without a completed match."""
+    now = time.time()
+    expired: list[str] = []
+    with rooms_lock:
+        for code, room in rooms.items():
+            if now - room.get("created_at", now) > ROOM_TTL:
+                expired.append(code)
+        for code in expired:
+            room = rooms.pop(code, None)
+            if room:
+                room["p2_joined"].set()
+    for code in expired:
+        logger.info("房间 %s 已过期并清理", code)
+
+
 def generate_room_code() -> str:
     """生成未使用的4位数字房间号."""
+    cleanup_expired_rooms()
     with rooms_lock:
         existing = set(rooms.keys())
     for _ in range(100):
@@ -47,7 +83,7 @@ def handle_client(websocket):
 
     try:
         # 阶段1: 等待控制命令
-        raw = websocket.recv(timeout=30)
+        raw = websocket.recv(timeout=RELAY_RECV_TIMEOUT)
         msg = json.loads(raw)
         msg_type = msg.get("type", "")
 
@@ -67,6 +103,7 @@ def handle_client(websocket):
             logger.info("房间 %s 已创建 (房主: %s:%s)", code, *remote)
 
         elif msg_type == "join_room":
+            cleanup_expired_rooms()
             code = str(msg.get("room_id", ""))
             with rooms_lock:
                 room = rooms.get(code)
@@ -110,7 +147,7 @@ def handle_client(websocket):
             with rooms_lock:
                 room = rooms.get(my_room)
             if room:
-                if not room["p2_joined"].wait(timeout=120):
+                if not room["p2_joined"].wait(timeout=ROOM_WAIT_TIMEOUT):
                     websocket.send(json.dumps({
                         "type": "error", "message": "等待对手超时",
                     }, ensure_ascii=False))
@@ -122,8 +159,19 @@ def handle_client(websocket):
         opponent_role = "p2" if my_role == "p1" else "p1"
         while True:
             try:
-                raw = websocket.recv(timeout=30)
+                raw = websocket.recv(timeout=RELAY_RECV_TIMEOUT)
             except TimeoutError:
+                continue
+
+            try:
+                forwarded = json.loads(raw)
+            except json.JSONDecodeError:
+                _send_error(websocket, "收到无效JSON。")
+                continue
+
+            if (not is_protocol_message(forwarded)
+                    or not is_protocol_compatible(forwarded)):
+                _send_error(websocket, "协议版本不兼容，请双方更新到联机协议 v2。")
                 continue
 
             with rooms_lock:
@@ -157,7 +205,7 @@ def handle_client(websocket):
                 if opponent:
                     try:
                         opponent.send(json.dumps({
-                            "type": "opponent_disconnected",
+                            "type": MSG_OPPONENT_DISCONNECTED,
                         }, ensure_ascii=False))
                     except Exception:
                         pass

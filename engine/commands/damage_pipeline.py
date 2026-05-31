@@ -49,8 +49,9 @@ def resolve_damage(
                 current = max(0, current + delta)
                 logs.append(f"{source}效果：伤害{delta:+d}。")
 
-    # Step 2: Weakness & resistance (unless piercing)
-    if not piercing and defender and defender.card:
+    # Step 2: Weakness & resistance (unless piercing or disabled by match rules)
+    if (not piercing and getattr(state, "apply_type_matchups", False)
+            and defender and defender.card):
         current = calculate_damage(
             current, attacker_type,
             defender.card, defender.card.weaknesses,

@@ -56,7 +56,7 @@ FIRE_DECK = [
 
 WATER_DECK = [
     # Pokemon (18)
-    ("sv2-38", 3),      # 呱呱泡蛙 - 60 HP, Basic
+    ("sv2-38", 3),      # 呱呱泡蛙 - 70 HP, Basic
     ("sv2-39", 2),      # 呱头蛙 - 90 HP, Stage 1
     ("sv2-grex", 2),    # 甲贺忍蛙ex - 300 HP, Stage 2 ex
     ("sv1-49", 1),      # 拉普拉斯 - 130 HP, Basic (Freeze Beam: Paralyze)

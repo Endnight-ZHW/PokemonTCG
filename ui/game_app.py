@@ -9,6 +9,22 @@ from ui.screens.title_screen import TitleScreen
 class GameApp:
     """Main application singleton managing the Pygame window and screen stack."""
 
+    def _initial_window_size(self) -> tuple[int, int]:
+        """Choose a first window size that fits the current desktop."""
+        try:
+            desktop_w, desktop_h = pygame.display.get_desktop_sizes()[0]
+        except (pygame.error, IndexError, AttributeError):
+            info = pygame.display.Info()
+            desktop_w, desktop_h = info.current_w, info.current_h
+
+        if desktop_w <= 0 or desktop_h <= 0:
+            return SCREEN_WIDTH, SCREEN_HEIGHT
+
+        max_w = max(320, desktop_w - 80)
+        max_h = max(240, desktop_h - 120)
+        scale = min(1.0, max_w / SCREEN_WIDTH, max_h / SCREEN_HEIGHT)
+        return max(1, int(SCREEN_WIDTH * scale)), max(1, int(SCREEN_HEIGHT * scale))
+
     def __init__(self):
         # Ensure drag-and-drop events are enabled (SDL2 may disable by default on some builds)
         pygame.init()
@@ -21,14 +37,13 @@ class GameApp:
             pass  # Drop events not available on this platform
 
         pygame.display.set_caption("宝可梦卡牌对战 - Pokemon TCG Battle")
+        self.win_w, self.win_h = self._initial_window_size()
         self.screen = pygame.display.set_mode(
-            (SCREEN_WIDTH, SCREEN_HEIGHT),
-            pygame.RESIZABLE | pygame.SCALED
+            (self.win_w, self.win_h),
+            pygame.RESIZABLE
         )
         # Virtual surface at design resolution — display-compatible format
         self.virtual = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)).convert()
-        self.win_w = SCREEN_WIDTH
-        self.win_h = SCREEN_HEIGHT
         # Letterbox state (computed each frame)
         self._lb_scale = 1.0
         self._lb_ox = 0
@@ -43,6 +58,7 @@ class GameApp:
         self.network_manager = None
         self.is_remote_host = False
         self.is_remote_client = False
+        self.apply_type_matchups = False
 
         # Auto-connect support (set by main.py CLI args before run())
         self.auto_connect: str | None = None       # "host", "client", or "relay"
@@ -136,6 +152,7 @@ class GameApp:
         from ui.screens.game_screen import GameScreen
 
         self.game_state = GameState()
+        self.game_state.apply_type_matchups = self.apply_type_matchups
         self.game_state.setup_game(deck1_cards, deck2_cards)
         self.turn_manager = TurnManager(self.game_state)
         game_screen = GameScreen(self.screen_manager, self.game_state, self.turn_manager)

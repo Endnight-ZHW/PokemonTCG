@@ -18,6 +18,8 @@ def can_play_basic(state: GameState, player_idx: int, card: Card,
     player = state.get_player(player_idx)
 
     if target == "active":
+        if state.phase != TurnPhase.SETUP:
+            return False, "主要阶段不能从手牌将基础宝可梦放到战斗区。"
         if player.active is not None:
             return False, "战斗区已有宝可梦。"
     elif target.startswith("bench_"):
@@ -51,6 +53,16 @@ def can_evolve(state: GameState, player_idx: int, slot: str,
     if evolution_card.evolves_from.lower() != target.card.name.lower():
         return False, (f"{evolution_card.name}是从{evolution_card.evolves_from}"
                        f"进化而来，不是{target.card.name}。")
+
+    allows_first_turn_evo = False
+    if target.attached_tool and hasattr(target.attached_tool, 'trainer_effects'):
+        for eff in target.attached_tool.trainer_effects:
+            if eff.params.get("effect") == "can_evolve_on_first_turn":
+                allows_first_turn_evo = True
+                break
+
+    if state.is_player_first_turn(player_idx) and not allows_first_turn_evo:
+        return False, "First-turn evolution is not allowed."
 
     if target.placed_this_turn:
         allows_first_turn_evo = False
@@ -102,9 +114,7 @@ def can_play_supporter(state: GameState, player_idx: int) -> tuple[bool, str]:
     if player.supporter_played_this_turn:
         return False, "本回合已经使用过支援者了。"
 
-    if (state.is_first_turn() and
-            state.active_player_idx == state.first_player_idx and
-            player_idx == state.first_player_idx):
+    if state.is_first_turn():
         return False, "先攻玩家的第一回合不能使用支援者。"
 
     return True, ""
@@ -117,10 +127,19 @@ def can_play_item(state: GameState, player_idx: int) -> tuple[bool, str]:
     return True, ""
 
 
-def can_play_stadium(state: GameState, player_idx: int) -> tuple[bool, str]:
+def can_play_stadium(state: GameState, player_idx: int,
+                     stadium_card: Card | None = None) -> tuple[bool, str]:
     """Check if a Stadium card can be played."""
     if state.phase != TurnPhase.MAIN:
         return False, "只能在主要阶段使用竞技场卡。"
+    player = state.get_player(player_idx)
+    if player.stadium_played_this_turn:
+        return False, "You can play only 1 Stadium card during your turn."
+    if stadium_card is not None and state.stadium_card is not None:
+        same_id = getattr(state.stadium_card, "api_id", None) == getattr(stadium_card, "api_id", None)
+        same_name = state.stadium_card.name.lower() == stadium_card.name.lower()
+        if same_id or same_name:
+            return False, "不能打出与场上同名的竞技场卡。"
     return True, ""
 
 
@@ -179,16 +198,14 @@ def can_declare_attack(state: GameState, player_idx: int,
     """Check if the Active Pokemon can declare an attack."""
     if state.phase != TurnPhase.ATTACK:
         if state.phase != TurnPhase.MAIN:
-            return False, "只能在攻击阶段进行攻击。"
+            return False, "只能在主要阶段或攻击阶段进行攻击。"
 
     player = state.get_player(player_idx)
 
     if player.active is None:
         return False, "没有战斗宝可梦。"
 
-    if (state.is_first_turn() and
-            state.active_player_idx == state.first_player_idx and
-            player_idx == state.first_player_idx):
+    if state.is_first_turn():
         return False, "先攻玩家的第一回合不能攻击。"
 
     if not (0 <= attack_idx < len(player.active.card.attacks)):
@@ -232,6 +249,14 @@ def can_use_ability(state: GameState, player_idx: int,
     if ability is None:
         return False, f"{pokemon.card.name}没有名为'{ability_name}'的特性。"
 
+    trigger = getattr(ability, "trigger", "")
+    if trigger in ("passive", "on_enter_play", "on_damaged"):
+        return False, f"特性'{ability_name}'不是可手动发动的特性。"
+    if trigger not in ("", "on_turn"):
+        return False, f"特性'{ability_name}'不能在主要阶段手动发动。"
+    if ability.name in pokemon.used_abilities:
+        return False, f"本回合已经使用过特性'{ability_name}'。"
+
     return True, ""
 
 
@@ -258,6 +283,35 @@ def is_ace_spec(card: Card) -> bool:
 def is_radiant(card: Card) -> bool:
     """Check if a card is a Radiant Pokemon."""
     return "Radiant" in card.subtypes or "Radiant" in card.name
+
+
+def validate_deck(deck: list[Card], deck_name: str = "") -> tuple[bool, str]:
+    """Validate a deck against PTCG construction rules.
+    Returns (is_valid, error_message)."""
+    label = f"「{deck_name}」" if deck_name else "卡组"
+
+    if len(deck) != 60:
+        return False, f"{label}必须有60张卡，当前有{len(deck)}张。"
+
+    name_counts: dict[str, int] = {}
+    for card in deck:
+        if card.is_basic_energy:
+            continue  # Basic Energy cards are exempt from the 4-copy rule
+        name_key = card.name.lower()
+        name_counts[name_key] = name_counts.get(name_key, 0) + 1
+    for name, count in name_counts.items():
+        if count > 4:
+            return False, f"{label}中「{name}」有{count}张，超过同名卡最多4张的限制。"
+
+    ace_spec_count = sum(1 for c in deck if is_ace_spec(c))
+    if ace_spec_count > 1:
+        return False, f"{label}中有{ace_spec_count}张ACE SPEC卡，最多只能有1张。"
+
+    radiant_count = sum(1 for c in deck if is_radiant(c))
+    if radiant_count > 1:
+        return False, f"{label}中有{radiant_count}张光辉宝可梦，最多只能有1张。"
+
+    return True, ""
 
 
 def _get_effective_retreat_cost(state, player) -> int:

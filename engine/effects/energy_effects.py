@@ -7,7 +7,7 @@ from config import DAMAGE_PER_COUNTER
 from engine.game_state import GameState, ActionResult, ActionRequest
 
 
-def _handle_energy_attach(state, player, params, source_slot):
+def _handle_energy_attach(state, player, player_idx, params, source_slot):
     """Attach energy from hand or deck to a Pokemon."""
     amount = params.get("amount", 1)
     from_zone = params.get("from_zone", "hand")
@@ -23,7 +23,37 @@ def _handle_energy_attach(state, player, params, source_slot):
 
     if to_target == "self":
         target_slot = source_slot
-    elif to_target in ("bench", "any"):
+    elif to_target == "any":
+        all_slots = []
+        if player.active:
+            all_slots.append(("active", player.active))
+        all_slots.extend([(f"bench_{i}", p) for i, p in enumerate(player.bench) if p is not None])
+        if not all_slots:
+            if optional:
+                return ActionResult(True, "场上没有宝可梦。")
+            return ActionResult(False, "场上没有宝可梦可附着能量。")
+        if len(all_slots) == 1:
+            target_slot = all_slots[0][0]
+        else:
+            def _do_any_attach(selected_cards):
+                for card in selected_cards:
+                    for slot_name, poke in all_slots:
+                        if poke.card.api_id == card.api_id:
+                            _attach_energy_to_target(state, player, from_zone, filter_type, amount, poke, optional)
+                            return
+            any_cards = [p.card for _, p in all_slots]
+            return ActionResult(True, "选择1只宝可梦附着能量。",
+                                pending_action=ActionRequest(
+                                    request_type="search_deck",
+                                    player=player_idx,
+                                    prompt="选择1只宝可梦附着能量。",
+                                    min_select=1,
+                                    max_select=1,
+                                    from_zone="board",
+                                    card_list=any_cards,
+                                    callback=_do_any_attach,
+                                ))
+    elif to_target == "bench":
         bench_slots = [(i, p) for i, p in enumerate(player.bench) if p is not None]
         if not bench_slots:
             if optional:
@@ -43,7 +73,7 @@ def _handle_energy_attach(state, player, params, source_slot):
             return ActionResult(True, "选择备战宝可梦附着能量。",
                                 pending_action=ActionRequest(
                                     request_type="select_own_bench_energy",
-                                    player=0,
+                                    player=player_idx,
                                     prompt="选择1只备战宝可梦附着能量。",
                                     max_select=1,
                                     bench_indices=bench_indices,
@@ -83,7 +113,7 @@ def _handle_energy_attach(state, player, params, source_slot):
             return ActionResult(True, f"分配能量 — {from_zone_name}",
                                 pending_action=ActionRequest(
                                     request_type="distribute_energy",
-                                    player=0,
+                                    player=player_idx,
                                     prompt=f"分配能量 — 从{from_zone_name}附着",
                                     card_list=energy_to_distribute,
                                     target_info=targets_info,
@@ -92,20 +122,35 @@ def _handle_energy_attach(state, player, params, source_slot):
                                     callback=_on_distributed,
                                 ))
     elif to_target == "self_basic":
-        source = player.get_pokemon(source_slot)
-        if source and source.card.is_basic_pokemon:
-            target_slot = source_slot
+        basic_pokemon = []
+        if player.active and player.active.card.is_basic_pokemon:
+            basic_pokemon.append(("active", player.active))
+        for i, p in enumerate(player.bench):
+            if p and p.card.is_basic_pokemon:
+                basic_pokemon.append((f"bench_{i}", p))
+        if not basic_pokemon:
+            return ActionResult(False, "没有基础宝可梦可附着能量。")
+        if len(basic_pokemon) == 1:
+            target_slot = basic_pokemon[0][0]
         else:
-            found = False
-            for i, p in enumerate(player.bench):
-                if p and p.card.is_basic_pokemon:
-                    target_slot = f"bench_{i}"
-                    found = True
-                    break
-            if not found and source:
-                target_slot = source_slot
-            elif not found:
-                return ActionResult(False, "没有基础宝可梦可附着能量。")
+            def _do_basic_attach(selected_cards):
+                for card in selected_cards:
+                    for slot_name, poke in basic_pokemon:
+                        if poke.card.api_id == card.api_id:
+                            _attach_energy_to_target(state, player, from_zone, filter_type, amount, poke, optional)
+                            return
+            basic_cards = [p.card for _, p in basic_pokemon]
+            return ActionResult(True, "选择1只基础宝可梦附着能量。",
+                                pending_action=ActionRequest(
+                                    request_type="search_deck",
+                                    player=player_idx,
+                                    prompt="选择1只基础宝可梦附着能量。",
+                                    min_select=1,
+                                    max_select=1,
+                                    from_zone="board",
+                                    card_list=basic_cards,
+                                    callback=_do_basic_attach,
+                                ))
     else:
         target_slot = to_target
 
@@ -187,7 +232,7 @@ def _do_energy_relocate(state, source_poke, target_poke, move_count):
     state._log(f"将{moved}个能量从{source_poke.card.name}转附到{target_poke.card.name}。")
 
 
-def _handle_energy_relocate(state, player, params):
+def _handle_energy_relocate(state, player, player_idx, params):
     """Move energy between Pokemon. Used by 波琵, 代欧奇希斯, etc."""
     amount = params.get("amount", 2)
     from_self = params.get("from_self", False)
@@ -237,7 +282,7 @@ def _handle_energy_relocate(state, player, params):
         return ActionResult(True, "选择能量卡分配到备战宝可梦。",
                             pending_action=ActionRequest(
                                 request_type="distribute_energy",
-                                player=0,
+                                player=player_idx,
                                 prompt=f"分配能量 — {source_poke.card.name}",
                                 card_list=energy_cards_to_move,
                                 target_info=targets_info,
@@ -308,7 +353,7 @@ def _handle_energy_relocate(state, player, params):
 
         return ActionRequest(
             request_type="distribute_energy",
-            player=0,
+            player=player_idx,
             prompt=f"分配能量 — {src.card.name}",
             card_list=energy_cards_to_move,
             target_info=targets_info,
@@ -323,7 +368,7 @@ def _handle_energy_relocate(state, player, params):
     return ActionResult(True, "选择来源宝可梦。",
                         pending_action=ActionRequest(
                             request_type="distribute_energy",
-                            player=0,
+                            player=player_idx,
                             prompt="选择来源宝可梦",
                             card_list=[],  # No energy cards — just selecting source
                             target_info=source_options,
@@ -333,7 +378,7 @@ def _handle_energy_relocate(state, player, params):
                         ))
 
 
-def _handle_attach_from_discard(state, player, params, source_slot):
+def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
     """Attach basic energy from discard pile to Pokemon(s)."""
     amount = params.get("amount", 1)
     energy_type = params.get("energy_type", "any")
@@ -372,7 +417,7 @@ def _handle_attach_from_discard(state, player, params, source_slot):
             return ActionResult(True, "选择备战宝可梦附着能量。",
                                 pending_action=ActionRequest(
                                     request_type="select_own_bench_energy",
-                                    player=0,
+                                    player=player_idx,
                                     prompt="选择1只备战宝可梦附着能量。",
                                     max_select=1,
                                     bench_indices=[i for i, _ in bench_slots],
@@ -399,7 +444,7 @@ def _handle_attach_from_discard(state, player, params, source_slot):
             return ActionResult(True, "分配能量到备战宝可梦。",
                                 pending_action=ActionRequest(
                                     request_type="distribute_energy",
-                                    player=0,
+                                    player=player_idx,
                                     prompt="分配能量 — 从弃牌区附着",
                                     card_list=energy_to_distribute,
                                     target_info=targets_info,
@@ -409,10 +454,35 @@ def _handle_attach_from_discard(state, player, params, source_slot):
                                 ))
 
     elif target_spec == "self_or_bench":
-        target_pokemon = player.active
-        if target_pokemon is None:
+        all_pokemon = []
+        if player.active:
+            all_pokemon.append(("active", player.active))
+        for i, p in enumerate(player.bench):
+            if p is not None:
+                all_pokemon.append((f"bench_{i}", p))
+        if not all_pokemon:
             return ActionResult(False, "没有目标宝可梦。")
-        _attach_cards_to_pokemon(state, player, matching, count, target_pokemon, energy_type)
+        if len(all_pokemon) == 1:
+            _attach_cards_to_pokemon(state, player, matching, count, all_pokemon[0][1], energy_type)
+        else:
+            def _do_any_attach(selected_cards):
+                for card in selected_cards:
+                    for slot_name, poke in all_pokemon:
+                        if poke.card.api_id == card.api_id:
+                            _attach_cards_to_pokemon(state, player, matching, count, poke, energy_type)
+                            return
+            any_cards = [p.card for _, p in all_pokemon]
+            return ActionResult(True, "选择1只宝可梦附着能量。",
+                                pending_action=ActionRequest(
+                                    request_type="search_deck",
+                                    player=player_idx,
+                                    prompt="选择1只宝可梦附着能量。",
+                                    min_select=1,
+                                    max_select=1,
+                                    from_zone="board",
+                                    card_list=any_cards,
+                                    callback=_do_any_attach,
+                                ))
 
     else:
         return ActionResult(False, f"未知目标: {target_spec}")

@@ -39,7 +39,8 @@ def _handle_draw_until(state, player, params):
 
     drawn = player.draw_cards(to_draw)
     state._log(f"{player.name}抽取了{len(drawn)}张卡，现在手牌有{len(player.hand)}张。")
-    return ActionResult(True, f"Drew {len(drawn)} cards to reach {target}.")
+    return ActionResult(True, f"Drew {len(drawn)} cards to reach {target}.",
+                        cards_drawn=drawn)
 
 
 def _handle_discard_draw(state, player, params):
@@ -47,6 +48,7 @@ def _handle_discard_draw(state, player, params):
     discard_hand = params.get("discard_hand", False)
     draw_amount = params.get("draw", 7)
 
+    discarded_count = len(player.hand) if discard_hand else 0
     if discard_hand:
         player.discard_entire_hand()
 
@@ -54,7 +56,8 @@ def _handle_discard_draw(state, player, params):
 
     player_name = player.name
     state._log(f"{player_name}丢弃了手牌并抽取了{len(drawn)}张卡。")
-    return ActionResult(True, f"Discarded and drew {len(drawn)}.")
+    return ActionResult(True, f"Discarded and drew {len(drawn)}.",
+                        cards_drawn=drawn, cards_discarded=discarded_count)
 
 
 def _handle_shuffle_draw(state, player, params):
@@ -72,7 +75,8 @@ def _handle_shuffle_draw(state, player, params):
 
     drawn = player.draw_cards(draw_amount)
     state._log(f"{player.name}抽取了{len(drawn)}张卡。")
-    return ActionResult(True, f"洗回手牌并抽取了{len(drawn)}张卡。")
+    return ActionResult(True, f"洗回手牌并抽取了{len(drawn)}张卡。",
+                        cards_drawn=drawn)
 
 
 def _handle_discard_then_draw(state, player, player_idx, params):
@@ -90,7 +94,8 @@ def _handle_discard_then_draw(state, player, player_idx, params):
         state._log(f"{player.name}丢弃了最后1张手牌。")
         drawn = player.draw_cards(draw_amount)
         state._log(f"抽取了{len(drawn)}张卡。")
-        return ActionResult(True, f"丢弃1张手牌并抽取了{len(drawn)}张。")
+        return ActionResult(True, f"丢弃1张手牌并抽取了{len(drawn)}张。",
+                            cards_drawn=drawn, cards_discarded=1)
 
     def discard_callback(selected_cards):
         count = 0
@@ -102,6 +107,8 @@ def _handle_discard_then_draw(state, player, player_idx, params):
         state._log(f"{player.name}丢弃了{count}张手牌。")
         drawn = player.draw_cards(draw_amount)
         state._log(f"抽取了{len(drawn)}张卡。")
+        return ActionResult(True, f"丢弃{count}张手牌并抽取了{len(drawn)}张。",
+                            cards_drawn=drawn, cards_discarded=count)
 
     return ActionResult(True, f"选择{discard_amount}张手牌丢弃。",
                         pending_action=ActionRequest(
@@ -133,6 +140,8 @@ def _handle_hand_to_bottom_draw(state, player, params):
         state._log(f"{player.name}将{count}张手牌放回牌库底。")
         drawn = player.draw_cards(count)
         state._log(f"{player.name}抽取了{len(drawn)}张卡。")
+        return ActionResult(True, f"放回{count}张并抽取了{len(drawn)}张。",
+                            cards_drawn=drawn)
 
     caitlin_player_idx = 0 if player is state.p1 else 1
     return ActionResult(True, f"选择任意张手牌放回牌库底。",
@@ -209,7 +218,8 @@ def _handle_houb(state, player, params):
         to_draw = max(0, target - len(player.hand))
         drawn = player.draw_cards(to_draw)
         state._log(f"{player.name}将1张手牌放回牌库底，抽取了{len(drawn)}张。")
-        return ActionResult(True, f"抽取了{len(drawn)}张卡，现在手牌{len(player.hand)}张。")
+        return ActionResult(True, f"抽取了{len(drawn)}张卡，现在手牌{len(player.hand)}张。",
+                            cards_drawn=drawn)
 
     # Player chooses which card to put to bottom
     def houb_callback(selected_cards):
@@ -221,6 +231,8 @@ def _handle_houb(state, player, params):
         to_draw = max(0, target - len(player.hand))
         drawn = player.draw_cards(to_draw)
         state._log(f"{player.name}将1张手牌放回牌库底，抽取了{len(drawn)}张。")
+        return ActionResult(True, f"抽取了{len(drawn)}张卡。",
+                            cards_drawn=drawn)
 
     # Exclude the 凰檗 card itself from choices (it was already discarded)
     houb_player_idx = 0 if player is state.p1 else 1
@@ -297,4 +309,4 @@ def _handle_draw_until_more(state, player, params):
 
     drawn = player.draw_cards(to_draw)
     state._log(f"{player.name}抽取了{len(drawn)}张卡（目标比对手多1张，抽了{to_draw}张）。")
-    return ActionResult(True, f"抽取了{len(drawn)}张卡。")
+    return ActionResult(True, f"抽取了{len(drawn)}张卡。", cards_drawn=drawn)

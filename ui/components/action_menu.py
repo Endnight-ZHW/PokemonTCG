@@ -1,110 +1,47 @@
 """Action buttons, attack menu, and ability menu rendering."""
 import pygame
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, ENERGY_NAME_CN as ENERGY_CN
+from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from ui.colors import (
-    UI_BORDER, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY,
-    UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOVER, UI_BUTTON_ACTIVE,
-    ENERGY_COLORS,
-    BTN_GRADIENT_TOP, BTN_GRADIENT_BOT, BTN_ATTACK_GRADIENT_TOP, BTN_ATTACK_GRADIENT_BOT,
+    UI_BORDER, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY, UI_HIGHLIGHT,
 )
+from ui.layout_model import DEFAULT_GAME_LAYOUT
+from ui.energy_icons import draw_energy_icon
+from ui.ui_theme import draw_panel, draw_button, draw_text_fit
 from engine.enums import TurnPhase, PlayerAction
-from ui.components.game_layout import (
-    BTN_W, BTN_H, BTN_GAP, BTN_ROW1_Y, BTN_ROW2_Y, PLAY_AREA_W,
-)
+from engine.rules_validator import can_declare_attack
 
 
-def build_action_buttons(gs):
-    """Build action buttons in 2 rows below player info."""
-    gs.action_buttons.clear()
-
-    if gs.state and gs.state.phase == TurnPhase.SETUP:
-        actions = [
-            ("放到战斗区", "PLACE_ACTIVE"),
-            ("放到备战区", "PLACE_BENCH"),
-            ("完成准备", "SETUP_DONE"),
-        ]
-    elif gs.state and gs.state.phase == TurnPhase.ATTACK:
-        # After declaring an attack, only End Turn is available
-        actions = [("结束回合", PlayerAction.END_TURN)]
-    else:
-        actions = [
-            ("打出基础", PlayerAction.PLAY_BASIC),
-            ("进化", PlayerAction.EVOLVE),
-            ("附着能量", PlayerAction.ATTACH_ENERGY),
-            ("训练家", PlayerAction.PLAY_TRAINER),
-            ("特性", PlayerAction.USE_ABILITY),
-            ("撤退", PlayerAction.RETREAT),
-            ("攻击!", PlayerAction.DECLARE_ATTACK),
-        ]
-        if gs.state and gs.state.stadium_card and gs.state.phase == TurnPhase.MAIN:
-            # Only show button for activatable stadiums
-            for effect in gs.state.stadium_card.trainer_effects:
-                if hasattr(effect, 'params') and effect.params.get("stadium_type") == "activatable":
-                    stadium_name = gs.state.stadium_card.name[:6]
-                    actions.append((f"竞技场:{stadium_name}", PlayerAction.USE_STADIUM))
-                    break
-        actions.append(("结束回合", PlayerAction.END_TURN))
-
-    per_row = 5
-    rows = (len(actions) + per_row - 1) // per_row
-    for i, (label, action) in enumerate(actions):
-        row = i // per_row
-        col = i % per_row
-        row_count = min(per_row, len(actions) - row * per_row)
-        row_w = row_count * BTN_W + (row_count - 1) * BTN_GAP
-        row_x = (PLAY_AREA_W - row_w) // 2
-        x = row_x + col * (BTN_W + BTN_GAP)
-        y = BTN_ROW1_Y + row * (BTN_H + 4)
-        rect = pygame.Rect(x, y, BTN_W, BTN_H)
-        gs.action_buttons.append((rect, label, action))
+def _display_player(gs):
+    return gs._get_display_player() if hasattr(gs, "_get_display_player") else None
 
 
-def _draw_button_gradient(surface, rect, is_hover, is_selected, is_attack=False):
-    """Draw a button with gradient fill, top highlight, and state-aware colors."""
-    if is_selected:
-        top_color, bot_color = (50, 120, 80), (40, 90, 60)
-    elif is_hover:
-        if is_attack:
-            top_color, bot_color = BTN_ATTACK_GRADIENT_TOP, BTN_ATTACK_GRADIENT_BOT
-        else:
-            top_color, bot_color = BTN_GRADIENT_TOP, BTN_GRADIENT_BOT
-    else:
-        if is_attack:
-            top_color, bot_color = (180, 60, 40), (140, 30, 20)
-        else:
-            # Subtle gradient for normal state too, adding depth
-            top_color = (70, 90, 150)
-            bot_color = (50, 65, 120)
-
-    # Gradient fill
-    for gy in range(rect.height):
-        t = gy / rect.height
-        r = int(top_color[0] + (bot_color[0] - top_color[0]) * t)
-        g = int(top_color[1] + (bot_color[1] - top_color[1]) * t)
-        b = int(top_color[2] + (bot_color[2] - top_color[2]) * t)
-        pygame.draw.line(surface, (r, g, b),
-                       (rect.x, rect.y + gy), (rect.x + rect.w, rect.y + gy))
-
-    pygame.draw.rect(surface, UI_BORDER, rect, 1, border_radius=6)
-
-    # Top highlight line
-    hl_color = (min(255, top_color[0] + 60), min(255, top_color[1] + 60), min(255, top_color[2] + 60))
-    pygame.draw.line(surface, hl_color, (rect.x + 4, rect.y + 1), (rect.x + rect.w - 4, rect.y + 1), 1)
+def _display_player_idx(gs, player) -> int:
+    state = getattr(gs, "state", None)
+    if state is None or player is None:
+        return -1
+    if player is state.p1:
+        return 0
+    if player is state.p2:
+        return 1
+    return getattr(state, "active_player_idx", -1)
 
 
-def draw_action_buttons(gs, surface):
-    for i, (rect, label, action) in enumerate(gs.action_buttons):
-        is_hover = i == gs.hovered_button
-        is_selected = (
-            gs.selected_action is not None
-            and gs.selected_action == action
-        )
-        is_attack = action == PlayerAction.DECLARE_ATTACK
-
-        _draw_button_gradient(surface, rect, is_hover, is_selected, is_attack)
-
-        txt = gs.font_action.render(label, True, UI_TEXT_PRIMARY)
-        surface.blit(txt, txt.get_rect(center=rect.center))
+def _manual_ability_exists(gs, player) -> bool:
+    if not player:
+        return False
+    checker = getattr(gs, "_has_manual_ability", None)
+    if player.active and checker and checker(player.active):
+        return True
+    if player.active and not checker and player.active.card.abilities:
+        return True
+    for poke in player.bench:
+        if not poke:
+            continue
+        if checker and checker(poke):
+            return True
+        if not checker and poke.card.abilities:
+            return True
+    return False
 
 
 def _draw_menu_item_border(surface, rect, is_hover):
@@ -158,15 +95,13 @@ def draw_attack_menu(gs, surface):
         _draw_menu_item_border(surface, rect, is_hover)
 
         # Row 1: energy cost circles + attack name + damage
-        cost_x = mx + 10
+        cost_x = mx + 14
         row1_y = item_y + 6
         for etype in attack.cost:
-            ec = ENERGY_COLORS.get(etype, (200, 200, 200))
-            pygame.draw.circle(surface, ec, (cost_x + 8, row1_y + 8), 8)
-            if etype in ENERGY_CN:
-                etxt = gs.font_card_tiny.render(ENERGY_CN[etype], True, (0, 0, 0))
-                surface.blit(etxt, etxt.get_rect(center=(cost_x + 8, row1_y + 8)))
-            cost_x += 20
+            draw_energy_icon(surface, gs.image_mgr, etype,
+                             (cost_x + 9, row1_y + 10), 18,
+                             gs.font_card_tiny)
+            cost_x += 22
 
         dmg_part = f"伤害:{attack.damage}" if attack.damage > 0 else ""
         atk_str = f"{attack.name}  {dmg_part}"
@@ -256,3 +191,125 @@ def draw_ability_menu(gs, surface):
             effect_str = ab.text[:55]
             eff_txt = gs.font_card_tiny.render(effect_str, True, UI_TEXT_SECONDARY)
             surface.blit(eff_txt, (mx + 12, item_y + 24))
+
+
+# Phase controls replace the old catch-all action button panel.  These
+# definitions intentionally come last so older helper names keep working for
+# GameScreen imports while producing the new UI.
+def _action_state(gs, action) -> tuple[bool, str, str]:
+    state = getattr(gs, "state", None)
+    player = _display_player(gs)
+    if state is None or player is None:
+        return False, "没有游戏状态", "normal"
+
+    if action == "SETUP_DONE":
+        return player.active is not None, "请先设置战斗宝可梦", "primary"
+
+    if action == "ENTER_ATTACK":
+        if state.phase != TurnPhase.MAIN:
+            return False, "只能从主要阶段进入攻击", "attack"
+        player_idx = _display_player_idx(gs, player)
+        if player_idx < 0 or not player.active:
+            return False, "没有可攻击的战斗宝可梦", "attack"
+        reasons: list[str] = []
+        for attack_idx, _ in enumerate(player.active.card.attacks):
+            ok, reason = can_declare_attack(state, player_idx, attack_idx)
+            if ok:
+                return True, "", "attack"
+            if reason:
+                reasons.append(reason)
+        return False, reasons[0] if reasons else "没有可用招式", "attack"
+
+    if action == PlayerAction.END_TURN:
+        return state.phase in (TurnPhase.MAIN, TurnPhase.ATTACK), "", "danger"
+
+    return False, "", "normal"
+
+
+def build_action_buttons(gs):
+    """Build the right-side phase controls."""
+    gs.action_buttons.clear()
+
+    if gs.state and gs.state.phase == TurnPhase.SETUP:
+        actions = [("完成准备", "SETUP_DONE")]
+    elif gs.state and gs.state.phase == TurnPhase.MAIN:
+        actions = [
+            ("攻击阶段", "ENTER_ATTACK"),
+            ("结束回合", PlayerAction.END_TURN),
+        ]
+    elif gs.state and gs.state.phase == TurnPhase.ATTACK:
+        actions = [("结束回合", PlayerAction.END_TURN)]
+    else:
+        actions = []
+
+    layout = getattr(gs, "layout", DEFAULT_GAME_LAYOUT)
+    panel = pygame.Rect(layout.action_panel.x + 12, layout.action_panel.y + 92,
+                        layout.action_panel.w - 24, layout.action_panel.h - 104)
+    gap = 8
+    btn_h = 38
+    btn_w = panel.w
+    for i, (label, action) in enumerate(actions):
+        rect = pygame.Rect(panel.x, panel.y + i * (btn_h + gap), btn_w, btn_h)
+        enabled, reason, style = _action_state(gs, action)
+        gs.action_buttons.append({
+            "rect": rect,
+            "label": label,
+            "action": action,
+            "enabled": enabled,
+            "reason": reason,
+            "style": style,
+        })
+    gs.phase_buttons = gs.action_buttons
+
+
+def draw_action_buttons(gs, surface):
+    layout = getattr(gs, "layout", DEFAULT_GAME_LAYOUT)
+    inner = draw_panel(surface, layout.action_panel, "回合阶段", gs.font_small)
+    state = getattr(gs, "state", None)
+    if state:
+        player = gs._get_display_player()
+        info_rect = pygame.Rect(inner.x, inner.y - 4, inner.w, 18)
+        turn_txt = f"第{state.turn_number}回合 · {player.name}"
+        draw_text_fit(surface, gs.font_card_tiny, turn_txt,
+                      UI_TEXT_SECONDARY, info_rect)
+
+        steps = [
+            (TurnPhase.DRAW, "抽牌"),
+            (TurnPhase.MAIN, "主要"),
+            (TurnPhase.ATTACK, "攻击"),
+            (TurnPhase.POKEMON_CHECKUP, "检查"),
+        ]
+        step_y = inner.y + 24
+        step_gap = 6
+        step_w = max(48, (inner.w - step_gap * (len(steps) - 1)) // len(steps))
+        for idx, (phase_key, label) in enumerate(steps):
+            rect = pygame.Rect(inner.x + idx * (step_w + step_gap), step_y,
+                               step_w, 24)
+            active = state.phase == phase_key
+            bg = (70, 95, 130) if active else (34, 40, 58)
+            border = UI_HIGHLIGHT if active else UI_BORDER
+            pygame.draw.rect(surface, bg, rect, border_radius=6)
+            pygame.draw.rect(surface, border, rect, 1, border_radius=6)
+            color = UI_TEXT_PRIMARY if active else UI_TEXT_SECONDARY
+            draw_text_fit(surface, gs.font_card_tiny, label, color,
+                          rect.inflate(-6, 0))
+
+    disabled_reason = ""
+    for i, item in enumerate(gs.action_buttons):
+        rect = item["rect"]
+        enabled = item.get("enabled", True)
+        style = item.get("style", "normal")
+        is_hover = i == gs.hovered_button
+        if is_hover and not enabled:
+            disabled_reason = item.get("reason", "")
+        draw_button(
+            surface, rect, item["label"], gs.font_action,
+            hovered=is_hover, selected=False, enabled=enabled,
+            danger=(style == "danger"), attack=(style == "attack"),
+        )
+
+    if disabled_reason:
+        hint_rect = pygame.Rect(inner.x, layout.action_panel.bottom - 28,
+                                inner.w, 18)
+        draw_text_fit(surface, gs.font_card_tiny, disabled_reason,
+                      UI_TEXT_SECONDARY, hint_rect)

@@ -4,11 +4,11 @@ import random
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
-    UI_BG_DARK, UI_TEXT_PRIMARY, UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOVER,
+    UI_BG_DARK, UI_TEXT_PRIMARY, UI_HIGHLIGHT,
     PLAYER1_COLOR, PLAYER2_COLOR, VICTORY_GOLD_LIGHT, VICTORY_GOLD_DARK,
 )
 from ui.font_manager import get_font, get_font_size
-from ui.render_helpers import draw_gradient_button
+from ui.ui_theme import draw_button
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 
 
@@ -56,7 +56,19 @@ class EndScreen(Screen):
                     (*PLAYER1_COLOR,), (*PLAYER2_COLOR,),
                 ]),
                 "phase": random.uniform(0, math.pi * 2),
+                "shape": "rect" if random.random() < 0.3 else "circle",
             })
+        self._bg_surface = self._create_background()
+
+    def _create_background(self) -> pygame.Surface:
+        bg = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        for y in range(0, SCREEN_HEIGHT, 2):
+            t = y / SCREEN_HEIGHT
+            r = int(VICTORY_GOLD_DARK[0] + (UI_BG_DARK[0] - VICTORY_GOLD_DARK[0]) * t)
+            g = int(VICTORY_GOLD_DARK[1] + (UI_BG_DARK[1] - VICTORY_GOLD_DARK[1]) * t)
+            b = int(VICTORY_GOLD_DARK[2] + (UI_BG_DARK[2] - VICTORY_GOLD_DARK[2]) * t)
+            pygame.draw.rect(bg, (r, g, b), (0, y, SCREEN_WIDTH, 2))
+        return bg
 
     def handle_event(self, event: pygame.event.Event):
         if event.type == pygame.MOUSEMOTION:
@@ -91,13 +103,7 @@ class EndScreen(Screen):
                 p["x"] = random.uniform(0, SCREEN_WIDTH)
 
     def draw(self, surface: pygame.Surface):
-        # Golden gradient background
-        for y in range(SCREEN_HEIGHT):
-            t = y / SCREEN_HEIGHT
-            r = int(VICTORY_GOLD_DARK[0] + (UI_BG_DARK[0] - VICTORY_GOLD_DARK[0]) * t)
-            g = int(VICTORY_GOLD_DARK[1] + (UI_BG_DARK[1] - VICTORY_GOLD_DARK[1]) * t)
-            b = int(VICTORY_GOLD_DARK[2] + (UI_BG_DARK[2] - VICTORY_GOLD_DARK[2]) * t)
-            pygame.draw.line(surface, (r, g, b), (0, y), (SCREEN_WIDTH, y))
+        surface.blit(self._bg_surface, (0, 0))
 
         # Victory confetti
         for p in self._particles:
@@ -105,7 +111,7 @@ class EndScreen(Screen):
             alpha = max(0, min(255, alpha))
             color = (*p["color"][:3], alpha) if len(p["color"]) == 3 else p["color"]
             p_surf = pygame.Surface((int(p["size"] * 2), int(p["size"] * 2)), pygame.SRCALPHA)
-            if random.random() < 0.3:
+            if p["shape"] == "rect":
                 # Rectangular confetti pieces
                 pygame.draw.rect(p_surf, color, (0, 0, int(p["size"] * 2), int(p["size"])))
             else:
@@ -154,13 +160,8 @@ class EndScreen(Screen):
         prizes_rect = prizes_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 100))
         surface.blit(prizes_txt, prizes_rect)
 
-        # Rematch button with gradient
-        draw_gradient_button(surface, self.rematch_btn, self.rematch_hover)
-        rt = self.font_body.render("再来一局", True, UI_TEXT_PRIMARY)
-        surface.blit(rt, rt.get_rect(center=self.rematch_btn.center))
-
-        # Quit button with gradient
-        draw_gradient_button(surface, self.quit_btn, self.quit_hover)
-        qt = self.font_body.render("返回标题", True, UI_TEXT_PRIMARY)
-        surface.blit(qt, qt.get_rect(center=self.quit_btn.center))
+        draw_button(surface, self.rematch_btn, "再来一局", self.font_body,
+                    hovered=self.rematch_hover)
+        draw_button(surface, self.quit_btn, "返回标题", self.font_body,
+                    hovered=self.quit_hover)
 

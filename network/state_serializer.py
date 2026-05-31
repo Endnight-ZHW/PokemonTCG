@@ -36,6 +36,7 @@ def serialize_pokemon(p: PokemonInPlay) -> dict:
         "evolution_stack": [_card_id(c) for c in p.evolution_stack],
         "can_evolve_this_turn": p.can_evolve_this_turn,
         "placed_this_turn": p.placed_this_turn,
+        "used_abilities": sorted(p.used_abilities),
         "attack_locked": p.attack_locked,
         "attack_locked_names": [[n, t] for n, t in p.attack_locked_names.items()] if p.attack_locked_names else [],
         "dazzled": p.dazzled,
@@ -65,6 +66,7 @@ def deserialize_pokemon(data: dict) -> Optional[PokemonInPlay]:
     ]
     p.can_evolve_this_turn = data.get("can_evolve_this_turn", True)
     p.placed_this_turn = data.get("placed_this_turn", True)
+    p.used_abilities = set(data.get("used_abilities", []))
     p.attack_locked = data.get("attack_locked", False)
     p.attack_locked_names = dict(data.get("attack_locked_names", []))
     p.dazzled = data.get("dazzled", False)
@@ -86,6 +88,7 @@ def serialize_player_state(ps: PlayerState, hide_hand: bool) -> dict:
         "supporter_used": ps.supporter_played_this_turn,
         "energy_attached": ps.energy_attached_this_turn,
         "retreated": ps.retreated_this_turn,
+        "stadium_played": ps.stadium_played_this_turn,
         "stadium_used": ps.stadium_used_this_turn,
         "vstar_used": ps.vstar_power_used,
     }
@@ -126,6 +129,7 @@ def deserialize_player_state(data: dict) -> PlayerState:
     ps.supporter_played_this_turn = data.get("supporter_used", False)
     ps.energy_attached_this_turn = data.get("energy_attached", False)
     ps.retreated_this_turn = data.get("retreated", False)
+    ps.stadium_played_this_turn = data.get("stadium_played", False)
     ps.stadium_used_this_turn = data.get("stadium_used", False)
     ps.vstar_power_used = data.get("vstar_used", False)
     return ps
@@ -143,6 +147,7 @@ def serialize_game_state(state: GameState, for_player_idx: int) -> dict:
         "first_player_idx": state.first_player_idx,
         "stadium_card": _card_id(state.stadium_card) if state.stadium_card else None,
         "winner": state.winner,
+        "apply_type_matchups": getattr(state, "apply_type_matchups", False),
         "action_log": state.action_log[-50:],
         "mulligan_count": list(state.mulligan_count),
         "extra_draws": list(state.extra_draws),
@@ -160,6 +165,7 @@ def deserialize_game_state(data: dict, for_player_idx: int) -> GameState:
     state.active_player_idx = data["active_player_idx"]
     state.first_player_idx = data.get("first_player_idx", 0)
     state.winner = data.get("winner")
+    state.apply_type_matchups = data.get("apply_type_matchups", False)
     state.action_log = data.get("action_log", [])
     state.mulligan_count = tuple(data.get("mulligan_count", [0, 0]))
     state.extra_draws = tuple(data.get("extra_draws", [0, 0]))
@@ -182,6 +188,7 @@ def serialize_action_request(req: ActionRequest) -> dict:
     """Serialize a pending ActionRequest for network transmission."""
     return {
         "request_type": req.request_type,
+        "player": req.player,
         "prompt": req.prompt,
         "min_select": req.min_select,
         "max_select": req.max_select,
@@ -194,6 +201,12 @@ def serialize_action_request(req: ActionRequest) -> dict:
         "bench_indices": req.bench_indices,
         "allow_duplicates": req.allow_duplicates,
         "flip_count": req.flip_count,
+        "until_tails": req.until_tails,
+        "distribute_mode": req.distribute_mode,
+        "target_info": list(req.target_info),
+        "max_per_target": req.max_per_target,
+        "source_name": req.source_name,
+        "request_id": req.request_id,
         "pending_card_id": _card_id(req.pending_card) if req.pending_card else None,
     }
 
@@ -223,6 +236,12 @@ def deserialize_action_request(data: dict) -> ActionRequest:
         bench_indices=data.get("bench_indices", []),
         allow_duplicates=data.get("allow_duplicates", False),
         flip_count=data.get("flip_count", 1),
+        until_tails=data.get("until_tails", False),
+        distribute_mode=data.get("distribute_mode", ""),
+        target_info=data.get("target_info", []),
+        max_per_target=data.get("max_per_target", 99),
+        source_name=data.get("source_name", ""),
+        request_id=data.get("request_id", ""),
     )
 
     pending_card_id = data.get("pending_card_id")

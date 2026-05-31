@@ -151,7 +151,6 @@ class Card:
         """How many prize cards this Pokemon is worth when KO'd."""
         if not self.is_pokemon:
             return 0
-        name_lower = self.name.lower()
         subtypes_upper = [s.upper() for s in self.subtypes]
         if "VMAX" in subtypes_upper or "TAG TEAM" in subtypes_upper:
             return 3

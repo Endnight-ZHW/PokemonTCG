@@ -8,6 +8,8 @@ from ui.colors import (
     UI_BORDER, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY, UI_HIGHLIGHT,
 )
 from ui.render_helpers import draw_rect_alpha
+from ui.layout_model import DEFAULT_GAME_LAYOUT
+from ui.ui_theme import draw_panel, draw_text_fit, draw_badge
 from ui.components.game_layout import (
     LOG_W, PLAY_AREA_W,
     FIELD_ACTIVE_W, FIELD_ACTIVE_H, FIELD_BENCH_W, FIELD_BENCH_H,
@@ -36,6 +38,10 @@ def _build_status_cn():
 STATUS_CN = _build_status_cn()
 
 
+def _has_card_image(gs, card) -> bool:
+    return gs.image_mgr.has_image(card.api_id) or gs.image_mgr.has_image(card.name)
+
+
 def get_hovered_card_with_image(gs):
     """Return the Card object if a card with a real image is being hovered, else None."""
     player = gs._get_display_player()
@@ -44,34 +50,148 @@ def get_hovered_card_with_image(gs):
     # Hand card hover
     if gs.hovered_hand is not None and gs.hovered_hand < len(player.hand):
         card = player.hand[gs.hovered_hand]
-        if gs.image_mgr.has_image(card.name):
+        if _has_card_image(gs, card):
             return card
 
     # Player active
     if gs.hovered_active and player.active:
         card = player.active.card
-        if gs.image_mgr.has_image(card.name):
+        if _has_card_image(gs, card):
             return card
 
     # Player bench
     if gs.hovered_bench is not None:
         poke = player.bench[gs.hovered_bench]
-        if poke and gs.image_mgr.has_image(poke.card.name):
+        if poke and _has_card_image(gs, poke.card):
             return poke.card
 
     # Opponent active
     if gs.hovered_opp_active and opponent.active:
         card = opponent.active.card
-        if gs.image_mgr.has_image(card.name):
+        if _has_card_image(gs, card):
             return card
 
     # Opponent bench
     if gs.hovered_opp_bench is not None:
         poke = opponent.bench[gs.hovered_opp_bench]
-        if poke and gs.image_mgr.has_image(poke.card.name):
+        if poke and _has_card_image(gs, poke.card):
             return poke.card
 
     return None
+
+
+def get_hovered_card_context(gs):
+    """Return (card, extra_info, label) for the current hover target."""
+    player = gs._get_display_player()
+    opponent = gs._get_opponent()
+
+    if gs.hovered_hand is not None and gs.hovered_hand < len(player.hand):
+        return player.hand[gs.hovered_hand], None, "手牌"
+    if gs.hovered_active and player.active:
+        return player.active.card, pokemon_extra_info(gs, player.active), "我方战斗区"
+    if gs.hovered_bench is not None:
+        poke = player.bench[gs.hovered_bench]
+        if poke:
+            return poke.card, pokemon_extra_info(gs, poke), f"我方备战区 {gs.hovered_bench + 1}"
+    if gs.hovered_opp_active and opponent.active:
+        return opponent.active.card, pokemon_extra_info(gs, opponent.active), "对手战斗区"
+    if gs.hovered_opp_bench is not None:
+        poke = opponent.bench[gs.hovered_opp_bench]
+        if poke:
+            return poke.card, pokemon_extra_info(gs, poke), f"对手备战区 {gs.hovered_opp_bench + 1}"
+    return None, None, ""
+
+
+def _card_detail_lines(card, extra_info=None) -> list[str]:
+    if card is None:
+        return []
+    lines: list[str] = []
+    if card.is_pokemon:
+        if not extra_info:
+            lines.append(f"HP: {card.hp}")
+        if card.evolves_from:
+            lines.append(f"进化自: {card.evolves_from}")
+        if card.abilities:
+            for ab in card.abilities[:2]:
+                lines.append(f"特性: {ab.name}")
+                if ab.text:
+                    lines.extend(_wrap_text(ab.text, 24)[:2])
+        if card.attacks:
+            for atk in card.attacks[:3]:
+                cost = "".join(ENERGY_CN.get(c, c[:1]) for c in atk.cost)
+                dmg = f" {atk.damage}" if atk.damage else ""
+                lines.append(f"[{cost or '无'}] {atk.name}{dmg}")
+                if atk.text:
+                    lines.extend(_wrap_text(atk.text, 24)[:2])
+        if card.weaknesses:
+            w = card.weaknesses[0]
+            lines.append(f"弱点: {ENERGY_CN.get(w.energy_type, w.energy_type)}{w.value}")
+        if card.resistances:
+            r = card.resistances[0]
+            lines.append(f"抗性: {ENERGY_CN.get(r.energy_type, r.energy_type)}{r.value}")
+        lines.append(f"撤退费用: {card.retreat_cost}")
+        if extra_info:
+            lines.insert(0, "— 场上状态 —")
+            lines = list(extra_info) + ["— 卡牌文本 —"] + lines
+    elif card.is_trainer:
+        trainer_type = card.trainer_type or (card.subtypes[0] if card.subtypes else "训练家")
+        lines.append(f"类型: {trainer_type}")
+        for rule_text in (card.rules if card.rules else [card.trainer_text])[:4]:
+            lines.extend(_wrap_text(rule_text or "", 24))
+    elif card.is_energy:
+        lines.append("特殊能量" if card.is_special_energy else "基本能量")
+        lines.append(f"提供: {'/'.join(card.provides_energy)}")
+        for rule_text in (card.rules or [])[:3]:
+            lines.extend(_wrap_text(rule_text, 24))
+    return lines
+
+
+def draw_hover_detail_panel(gs, surface):
+    """Draw the right-side card detail panel for the current hover target."""
+    layout = getattr(gs, "layout", DEFAULT_GAME_LAYOUT)
+    card, extra, label = get_hovered_card_context(gs)
+    inner = draw_panel(surface, layout.detail_panel, "卡牌详情", gs.font_small)
+
+    if card is None:
+        msg = "悬停卡牌查看详情"
+        draw_text_fit(surface, gs.font_body, msg, UI_TEXT_SECONDARY,
+                      pygame.Rect(inner.x, inner.y + 92, inner.w, 24),
+                      align="center")
+        return
+
+    img = gs.image_mgr.get_card_image(card.name, card.api_id)
+    preview_rect = pygame.Rect(inner.x, inner.y, 86, 122)
+    if img:
+        scaled = pygame.transform.smoothscale(img, preview_rect.size)
+        surface.blit(scaled, preview_rect.topleft)
+    else:
+        pygame.draw.rect(surface, (42, 48, 70), preview_rect, border_radius=7)
+        name = gs.font_card_tiny.render(card.name[:6], True, UI_TEXT_PRIMARY)
+        surface.blit(name, name.get_rect(center=preview_rect.center))
+    pygame.draw.rect(surface, UI_BORDER, preview_rect, 1, border_radius=7)
+
+    title_rect = pygame.Rect(preview_rect.right + 10, inner.y, inner.right - preview_rect.right - 10, 24)
+    draw_text_fit(surface, gs.font_info, card.name, UI_HIGHLIGHT, title_rect)
+    subtypes = "/".join(card.subtypes) if getattr(card, "subtypes", None) else card.supertype
+    draw_text_fit(surface, gs.font_card_tiny, subtypes, UI_TEXT_SECONDARY,
+                  pygame.Rect(title_rect.x, title_rect.y + 28, title_rect.w, 16))
+    if label:
+        badge = pygame.Rect(title_rect.x, title_rect.y + 52, min(128, title_rect.w), 22)
+        draw_badge(surface, badge, label, gs.font_card_tiny,
+                   fill=(38, 48, 72), border=UI_BORDER)
+
+    y = preview_rect.bottom + 12
+    line_h = 16
+    for line in _card_detail_lines(card, extra):
+        if y + line_h > inner.bottom:
+            break
+        if line.startswith("—"):
+            pygame.draw.line(surface, UI_BORDER, (inner.x, y + 8),
+                             (inner.right, y + 8), 1)
+        else:
+            draw_text_fit(surface, gs.font_card_tiny, line, UI_TEXT_SECONDARY,
+                          pygame.Rect(inner.x, y, inner.w, line_h))
+        y += line_h
 
 
 def draw_magnified_card(gs, surface):
@@ -128,8 +248,10 @@ def pokemon_extra_info(gs, pokemon) -> list[str]:
     if pokemon.damage_counters > 0:
         lines.append(f"伤害指示物: {pokemon.damage_counters * 10}")
     if pokemon.energy_cards:
-        lines.append(f"能量: {len(pokemon.energy_cards)}个 ({'/'.join(pokemon.available_energy[:5])})")
-    if pokemon.energy_cards:
+        names = "/".join(c.name for c in pokemon.energy_cards[:4])
+        if len(pokemon.energy_cards) > 4:
+            names += f"/+{len(pokemon.energy_cards) - 4}"
+        lines.append(f"能量: {len(pokemon.energy_cards)}个 ({names})")
         specials = [sc for sc in pokemon.energy_cards if sc.is_special_energy]
         if specials:
             sp_names = "/".join(sc.name for sc in specials)

@@ -33,6 +33,7 @@ class ActionRequest:
     target_info: list = field(default_factory=list)  # For distribute_energy: list of {slot, name, bench_idx}
     max_per_target: int = 99  # For paired mode: max energy per target
     source_name: str = ""  # For distribute_energy: source Pokemon name
+    request_id: str = ""  # Network choice request correlation id
 
 
 @dataclass
@@ -62,6 +63,7 @@ class GameState:
         self.first_player_idx: int = 0
         self.stadium_card: Optional["Card"] = None
         self.winner: Optional[int] = None
+        self.apply_type_matchups: bool = False
         self.action_log: list[str] = []
         self.mulligan_count: tuple[int, int] = (0, 0)  # (p1_mulligans, p2_mulligans)
         self.extra_draws: tuple[int, int] = (0, 0)  # Extra draws from opponent mulligans
@@ -85,6 +87,12 @@ class GameState:
     def is_first_turn(self) -> bool:
         return self.turn_number == 1
 
+    def is_player_first_turn(self, player_idx: int) -> bool:
+        """Return True during the first turn taken by the given player."""
+        if player_idx == self.first_player_idx:
+            return self.turn_number == 1
+        return self.turn_number == 2
+
     # ---- Game Setup ----
 
     def setup_game(self, deck1: list[str], deck2: list[str]):
@@ -104,6 +112,14 @@ class GameState:
 
         self.p1.deck = build_deck(deck1)
         self.p2.deck = build_deck(deck2)
+
+        # Validate both decks
+        from engine.rules_validator import validate_deck
+        for name, deck_obj in [("玩家1", self.p1.deck), ("玩家2", self.p2.deck)]:
+            valid, msg = validate_deck(deck_obj, name)
+            if not valid:
+                logger.error("Deck validation failed: %s", msg)
+                raise ValueError(msg)
 
         # Shuffle both decks
         self.p1.shuffle_deck()

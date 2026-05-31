@@ -1,15 +1,14 @@
 """Hand card display functions."""
 import math
 import pygame
-from config import CARD_WIDTH, CARD_HEIGHT, ENERGY_NAME_CN as ENERGY_CN
+from config import CARD_WIDTH, CARD_HEIGHT
 from ui.colors import (
     UI_BORDER, UI_HIGHLIGHT, CARD_HOVER_LIFT,
-    TYPE_COLORS, ENERGY_COLORS,
+    TYPE_COLORS,
 )
-from ui.components.game_layout import (
-    PLAY_AREA_W, HAND_Y,
-)
+from ui.layout_model import DEFAULT_GAME_LAYOUT
 from ui.components.board_renderer import get_card_image_surface, _draw_card_shadow
+from ui.energy_icons import draw_energy_icon
 
 
 def get_hand_layout(gs):
@@ -20,16 +19,19 @@ def get_hand_layout(gs):
         return []
 
     n = len(hand)
-    margin = 30
-    available = PLAY_AREA_W - margin * 2
-    max_overlap = 42
+    layout = getattr(gs, "layout", DEFAULT_GAME_LAYOUT)
+    hand_rect = layout.hand
+    margin = 16
+    available = hand_rect.w - margin * 2
+    max_overlap = 54
     if n <= 1:
         spacing = CARD_WIDTH
     else:
         spacing = min(CARD_WIDTH - max_overlap, (available - CARD_WIDTH) // max(n - 1, 1))
 
     total_width = CARD_WIDTH + (n - 1) * spacing
-    start_x = max(margin, (PLAY_AREA_W - total_width) // 2)
+    start_x = hand_rect.x + max(margin, (hand_rect.w - total_width) // 2)
+    base_y = hand_rect.y + 12
 
     # Smooth lift animation: use _card_lift_offset dict if available
     lift_offsets = getattr(gs, '_card_lift_offset', {})
@@ -37,14 +39,17 @@ def get_hand_layout(gs):
     result = []
     for i in range(n):
         x = int(start_x + i * spacing)
+        center_bias = 0 if n <= 1 else abs(i - (n - 1) / 2) / max((n - 1) / 2, 1)
+        fan_drop = int(center_bias * 6)
         # Use smooth animated lift offset, or fall back to binary hover lift
         if lift_offsets and i in lift_offsets:
             lift = lift_offsets[i]
         else:
             hovered = gs.hovered_hand == i
             lift = CARD_HOVER_LIFT if hovered else 0
-        rect = pygame.Rect(x, HAND_Y - lift, CARD_WIDTH, CARD_HEIGHT)
-        result.append((x, HAND_Y - lift, rect))
+        y = base_y + fan_drop - lift
+        rect = pygame.Rect(x, y, CARD_WIDTH, CARD_HEIGHT)
+        result.append((x, y, rect))
     return result
 
 
@@ -54,11 +59,12 @@ def draw_hand(gs, surface, player):
     hand = player.hand
     animating_idx = getattr(gs, '_animating_hand_idx', None)
     hidden_idx = getattr(gs, '_hidden_hand_idx', None)
+    hidden_set = getattr(gs, '_hidden_hand_indices', set())
     for i, (card_x, card_y, rect) in enumerate(layout):
         if i < len(hand):
             if i == animating_idx:
                 continue  # Card is being animated (fly away), skip it
-            if i == hidden_idx:
+            if i == hidden_idx or i in hidden_set:
                 continue  # Card hidden during draw animation
             highlight = (i == gs.selected_hand_idx or i == gs.hovered_hand)
             draw_hand_card(gs, surface, card_x, card_y, hand[i], highlight=highlight)
@@ -141,12 +147,10 @@ def draw_hand_card(gs, surface, x, y, card, highlight=False):
             atk_y = atk_start_y + ai * atk_h
             cost_x = x + 4
             for energy_type in attack.cost[:4]:
-                ec = ENERGY_COLORS.get(energy_type, (200, 200, 200))
-                pygame.draw.circle(surface, ec, (cost_x + 6, atk_y + 5), 5)
-                if energy_type in ENERGY_CN:
-                    etxt = gs.font_card_tiny.render(ENERGY_CN[energy_type], True, (0, 0, 0))
-                    surface.blit(etxt, (cost_x + 3, atk_y + 1))
-                cost_x += 13
+                draw_energy_icon(surface, gs.image_mgr, energy_type,
+                                 (cost_x + 6, atk_y + 6), 12,
+                                 gs.font_card_tiny)
+                cost_x += 14
 
             dmg_str = str(attack.damage) if attack.damage > 0 else ""
             atk_name = attack.name[:6]
@@ -171,10 +175,8 @@ def draw_hand_card(gs, surface, x, y, card, highlight=False):
                 surface.blit(eff_txt, (x + 4, y + 38 + li * 14))
 
     elif card.is_energy:
-        etype = card.name.replace("能量", "").replace(" Energy", "")
-        ec = ENERGY_COLORS.get(etype, (200, 200, 200))
-        pygame.draw.circle(surface, ec, (x + CARD_WIDTH // 2, y + CARD_HEIGHT // 2), 22)
-        e_txt = gs.font_card_name.render(etype[:2], True, (0, 0, 0))
-        surface.blit(e_txt, e_txt.get_rect(center=(x + CARD_WIDTH // 2, y + CARD_HEIGHT // 2)))
+        draw_energy_icon(surface, gs.image_mgr, card,
+                         (x + CARD_WIDTH // 2, y + CARD_HEIGHT // 2),
+                         48, gs.font_card_name)
 
     surface.set_clip(None)

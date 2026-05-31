@@ -2,10 +2,11 @@
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
-    UI_BG_DARK, UI_TEXT_PRIMARY, UI_BUTTON, UI_BUTTON_HOVER,
+    UI_TEXT_PRIMARY,
     PLAYER1_COLOR, PLAYER2_COLOR, UI_HIGHLIGHT
 )
 from ui.font_manager import get_font, get_font_size
+from ui.ui_theme import draw_panel, draw_button, draw_text_fit
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 
 
@@ -90,7 +91,8 @@ class DeckSelectScreen(Screen):
     """卡组选择——双方各选择自己的卡组后开始对战."""
 
     def __init__(self, manager: ScreenManager, available_decks: dict[str, list[tuple]],
-                 is_remote: bool = False, network_manager=None, my_player_idx: int = 0):
+                 is_remote: bool = False, network_manager=None,
+                 my_player_idx: int = 0, mode: str = "local"):
         super().__init__(manager)
         self.available_decks = available_decks  # {deck_key: deck_spec}
         self.deck_keys = list(available_decks.keys())
@@ -100,6 +102,9 @@ class DeckSelectScreen(Screen):
 
         self.p1_idx = 0
         self.p2_idx = 1
+
+        self.mode = mode
+        self.is_challenge = mode == "challenge"
 
         # Remote mode fields
         self.is_remote = is_remote
@@ -158,9 +163,20 @@ class DeckSelectScreen(Screen):
         p2_deck = expand_deck(self.available_decks[deck_key2])
 
         game_state = GameState()
+        app = getattr(self.manager, "_app", None)
+        game_state.apply_type_matchups = (
+            False if self.is_challenge else bool(getattr(app, "apply_type_matchups", False))
+        )
         game_state.setup_game(p1_deck, p2_deck)
         turn_manager = TurnManager(game_state)
-        game_screen = GameScreen(self.manager, game_state, turn_manager)
+        game_screen = GameScreen(
+            self.manager,
+            game_state,
+            turn_manager,
+            challenge_mode=self.is_challenge,
+            human_player_idx=0,
+            ai_player_idx=1,
+        )
         self.manager.replace_top(game_screen)
 
     def _start_remote_battle(self):
@@ -183,6 +199,8 @@ class DeckSelectScreen(Screen):
             opp_deck_ids = expand_deck(self.available_decks[opp_key])
 
             game_state = GameState()
+            app = getattr(self.manager, "_app", None)
+            game_state.apply_type_matchups = bool(getattr(app, "apply_type_matchups", False))
             game_state.setup_game(my_deck_ids, opp_deck_ids)
             turn_manager = TurnManager(game_state)
 
@@ -195,7 +213,7 @@ class DeckSelectScreen(Screen):
             # Send initial state from CLIENT's perspective (player 1)
             state_data = serialize_game_state(game_state, for_player_idx=1)
             self.network_manager.send({
-                "type": "state_sync",
+                "type": "state_update",
                 "state": state_data,
             })
 
@@ -242,7 +260,7 @@ class DeckSelectScreen(Screen):
                 self._remote_game_started = True
                 self._remote_status = "对手已确认，准备进入对战..."
 
-            elif msg_type == "state_sync":
+            elif msg_type == "state_update":
                 # Client receives initial game state
                 if not self._remote_game_started:
                     continue
@@ -265,40 +283,50 @@ class DeckSelectScreen(Screen):
                 self.is_remote = False
 
     def draw(self, surface: pygame.Surface):
-        surface.fill(UI_BG_DARK)
+        surface.fill((13, 16, 27))
 
         if self.is_remote:
             self._draw_remote(surface)
+            return
+
+        if self.is_challenge:
+            title_txt = self.font_title.render("挑战模式：选择卡组", True, UI_TEXT_PRIMARY)
+            title_rect = title_txt.get_rect(center=(SCREEN_WIDTH // 2, 30))
+            surface.blit(title_txt, title_rect)
+
+            self._draw_player_selection(surface, "玩家", self.p1_idx, self.p1_buttons,
+                                        86, PLAYER1_COLOR, "left")
+            self._draw_player_selection(surface, "AI", self.p2_idx, self.p2_buttons,
+                                        86, PLAYER2_COLOR, "right")
+
+            vs_txt = self.font_title.render("VS", True, UI_TEXT_PRIMARY)
+            vs_rect = vs_txt.get_rect(center=(SCREEN_WIDTH // 2, 76))
+            surface.blit(vs_txt, vs_rect)
+
+            self._draw_challenge_deck_detail(surface)
+            draw_button(surface, self.start_button, "开始挑战", self.font_body,
+                        hovered=self.start_hover, attack=True)
             return
 
         title_txt = self.font_title.render("选择你的卡组", True, UI_TEXT_PRIMARY)
         title_rect = title_txt.get_rect(center=(SCREEN_WIDTH // 2, 30))
         surface.blit(title_txt, title_rect)
 
-        # Player 1 selection (left half)
-        end_y1 = self._draw_player_selection(surface, "玩家 1", self.p1_idx, self.p1_buttons,
-                                             60, PLAYER1_COLOR, "left")
-
-        # Player 2 selection (right half)
-        end_y2 = self._draw_player_selection(surface, "玩家 2", self.p2_idx, self.p2_buttons,
-                                             60, PLAYER2_COLOR, "right")
+        # Player deck lists flank a compact comparison panel.
+        self._draw_player_selection(surface, "玩家 1", self.p1_idx, self.p1_buttons,
+                                    86, PLAYER1_COLOR, "left")
+        self._draw_player_selection(surface, "玩家 2", self.p2_idx, self.p2_buttons,
+                                    86, PLAYER2_COLOR, "right")
 
         # VS divider
         vs_txt = self.font_title.render("VS", True, UI_TEXT_PRIMARY)
-        vs_rect = vs_txt.get_rect(center=(SCREEN_WIDTH // 2, 90))
+        vs_rect = vs_txt.get_rect(center=(SCREEN_WIDTH // 2, 76))
         surface.blit(vs_txt, vs_rect)
 
-        # Deck detail section — positioned below the button lists
-        detail_y = max(end_y1, end_y2) + 20
-        self._draw_deck_detail(surface, detail_y)
+        self._draw_deck_detail(surface)
 
-        # Start button
-        btn_color = UI_BUTTON_HOVER if self.start_hover else UI_BUTTON
-        pygame.draw.rect(surface, btn_color, self.start_button, border_radius=10)
-        pygame.draw.rect(surface, UI_TEXT_PRIMARY, self.start_button, 2, border_radius=10)
-        btn_txt = self.font_body.render("开始对战！", True, UI_TEXT_PRIMARY)
-        btn_rect = btn_txt.get_rect(center=self.start_button.center)
-        surface.blit(btn_txt, btn_rect)
+        draw_button(surface, self.start_button, "开始对战", self.font_body,
+                    hovered=self.start_hover, attack=True)
 
     def _draw_remote(self, surface):
         """Draw remote mode deck selection (single player)."""
@@ -325,7 +353,7 @@ class DeckSelectScreen(Screen):
             opp_color = PLAYER2_COLOR if self._my_player_idx == 0 else PLAYER1_COLOR
             opp_deck = DECK_OPTIONS[self._opponent_deck_idx]
             opp_txt = self.font_body.render(
-                f"对手卡组: {opp_deck['type_icon']} {opp_deck['name']}",
+                f"对手卡组: {opp_deck['name']}",
                 True, opp_color
             )
             opp_rect = opp_txt.get_rect(center=(SCREEN_WIDTH // 2, 500))
@@ -343,40 +371,39 @@ class DeckSelectScreen(Screen):
             (self._my_player_idx == 1 and not self._remote_deck_sent)
         )
         if can_start:
-            btn_color = UI_BUTTON_HOVER if self.start_hover else UI_BUTTON
-            pygame.draw.rect(surface, btn_color, self.start_button, border_radius=10)
-            pygame.draw.rect(surface, UI_TEXT_PRIMARY, self.start_button, 2, border_radius=10)
-            btn_txt = self.font_body.render("开始对战！", True, UI_TEXT_PRIMARY)
-            btn_rect = btn_txt.get_rect(center=self.start_button.center)
-            surface.blit(btn_txt, btn_rect)
+            draw_button(surface, self.start_button, "开始对战", self.font_body,
+                        hovered=self.start_hover, attack=True)
 
     def _draw_player_selection(self, surface, label, selected_idx, buttons_list,
                                  y_start, player_color, side):
         label_txt = self.font_body.render(label, True, player_color)
 
         if side == "left":
-            label_x = 80
-            start_x = 60
-            panel_w = (SCREEN_WIDTH // 2) - 100
+            start_x = 54
+            panel_w = 500
+            label_x = start_x
         elif side == "right":
-            label_x = SCREEN_WIDTH - 80 - label_txt.get_width()
-            start_x = SCREEN_WIDTH // 2 + 40
-            panel_w = (SCREEN_WIDTH // 2) - 100
+            panel_w = 500
+            start_x = SCREEN_WIDTH - panel_w - 54
+            label_x = start_x + panel_w - label_txt.get_width()
         else:  # center
             panel_w = min(600, SCREEN_WIDTH - 200)
             start_x = (SCREEN_WIDTH - panel_w) // 2
             label_x = start_x
 
+        num_decks = len(DECK_OPTIONS)
+        btn_h = 36 if num_decks <= 8 else 32
+        gap = 6 if num_decks <= 8 else 4
+        panel_h = 54 + num_decks * (btn_h + gap)
+        panel_rect = pygame.Rect(start_x - 14, y_start - 14, panel_w + 28, panel_h)
+        draw_panel(surface, panel_rect)
         surface.blit(label_txt, (label_x, y_start))
 
         buttons_list.clear()
         btn_w = panel_w
-        num_decks = len(DECK_OPTIONS)
-        btn_h = min(28, 22 if num_decks > 7 else 28)
-        gap = 2 if num_decks > 7 else 3
         for i, deck in enumerate(DECK_OPTIONS):
             btn_x = start_x
-            btn_y = y_start + 30 + i * (btn_h + gap)
+            btn_y = y_start + 36 + i * (btn_h + gap)
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
             buttons_list.append(btn_rect)
 
@@ -388,43 +415,100 @@ class DeckSelectScreen(Screen):
             pygame.draw.rect(surface, bg, btn_rect, border_radius=6)
             pygame.draw.rect(surface, border, btn_rect, border_w, border_radius=6)
 
-            deck_label = f"{deck['type_icon']} {deck['name']}"
-            txt = self.font_small.render(deck_label, True, UI_TEXT_PRIMARY)
-            surface.blit(txt, (btn_x + 10, btn_y + max(2, btn_h // 2 - txt.get_height() // 2)))
+            swatch = pygame.Rect(btn_x + 10, btn_y + btn_h // 2 - 6, 12, 12)
+            pygame.draw.rect(surface, deck["color"], swatch, border_radius=3)
+            pygame.draw.rect(surface, (230, 230, 240), swatch, 1, border_radius=3)
+
+            deck_label = deck["name"]
+            draw_text_fit(surface, self.font_small, deck_label, UI_TEXT_PRIMARY,
+                          pygame.Rect(btn_x + 30, btn_y, btn_w - 40, btn_h))
 
         # Return the bottom y of the last button
-        return y_start + 30 + num_decks * (btn_h + gap)
+        return y_start + 36 + num_decks * (btn_h + gap)
 
-    def _draw_deck_detail(self, surface, detail_y=300):
-        """Draw detailed info for both selected decks.
-        detail_y is the y-coordinate where the detail section starts."""
-        for pi, (idx, color, label) in enumerate([
+    def _draw_challenge_deck_detail(self, surface):
+        """Draw challenge-mode deck comparison with player/AI labels."""
+        panel = pygame.Rect(SCREEN_WIDTH // 2 - 220, 112, 440, 708)
+        inner = draw_panel(surface, panel, "卡组比较", self.font_body)
+
+        blocks = [
+            (self.p1_idx, PLAYER1_COLOR, "玩家"),
+            (self.p2_idx, PLAYER2_COLOR, "AI"),
+        ]
+        y = inner.y + 4
+        for idx, color, label in blocks:
+            deck = DECK_OPTIONS[idx]
+            header_rect = pygame.Rect(inner.x, y, inner.w, 28)
+            pygame.draw.rect(surface, (28, 34, 52), header_rect, border_radius=6)
+            pygame.draw.rect(surface, color, header_rect, 1, border_radius=6)
+            swatch = pygame.Rect(header_rect.x + 8, header_rect.y + 8, 12, 12)
+            pygame.draw.rect(surface, deck["color"], swatch, border_radius=3)
+            pygame.draw.rect(surface, (230, 230, 240), swatch, 1, border_radius=3)
+            draw_text_fit(surface, self.font_small,
+                          f"{label}: {deck['name']}",
+                          UI_TEXT_PRIMARY,
+                          pygame.Rect(header_rect.x + 28, header_rect.y,
+                                      header_rect.w - 36, header_rect.h))
+            y += 38
+
+            strategy_lines = self._wrap_text(deck["strategy"], self.font_small, inner.w - 12)
+            for line in strategy_lines[:3]:
+                draw_text_fit(surface, self.font_small, line, (180, 184, 198),
+                              pygame.Rect(inner.x + 6, y, inner.w - 12, 18))
+                y += 19
+            y += 4
+
+            draw_text_fit(surface, self.font_small, f"核心: {deck['ace']}",
+                          UI_HIGHLIGHT, pygame.Rect(inner.x + 6, y, inner.w - 12, 20))
+            y += 24
+            draw_text_fit(surface, self.font_small, f"支援: {deck['support']}",
+                          (170, 176, 192), pygame.Rect(inner.x + 6, y, inner.w - 12, 20))
+            y += 24
+            draw_text_fit(surface, self.font_small, f"难度: {deck['difficulty']}",
+                          (150, 158, 176), pygame.Rect(inner.x + 6, y, inner.w - 12, 20))
+            y += 44
+
+    def _draw_deck_detail(self, surface):
+        """Draw compact side-by-side deck comparison in the center column."""
+        panel = pygame.Rect(SCREEN_WIDTH // 2 - 220, 112, 440, 708)
+        inner = draw_panel(surface, panel, "卡组比较", self.font_body)
+
+        blocks = [
             (self.p1_idx, PLAYER1_COLOR, "玩家1"),
             (self.p2_idx, PLAYER2_COLOR, "玩家2"),
-        ]):
+        ]
+        y = inner.y + 4
+        for idx, color, label in blocks:
             deck = DECK_OPTIONS[idx]
-            x_start = 80 if pi == 0 else SCREEN_WIDTH // 2 + 20
+            header_rect = pygame.Rect(inner.x, y, inner.w, 28)
+            pygame.draw.rect(surface, (28, 34, 52), header_rect, border_radius=6)
+            pygame.draw.rect(surface, color, header_rect, 1, border_radius=6)
+            swatch = pygame.Rect(header_rect.x + 8, header_rect.y + 8, 12, 12)
+            pygame.draw.rect(surface, deck["color"], swatch, border_radius=3)
+            pygame.draw.rect(surface, (230, 230, 240), swatch, 1, border_radius=3)
+            draw_text_fit(surface, self.font_small,
+                          f"{label}: {deck['name']}",
+                          UI_TEXT_PRIMARY,
+                          pygame.Rect(header_rect.x + 28, header_rect.y,
+                                      header_rect.w - 36, header_rect.h))
+            y += 38
 
-            # Player label
-            pl_txt = self.font_body.render(f"{label} 选择了:", True, color)
-            surface.blit(pl_txt, (x_start, detail_y))
+            strategy_lines = self._wrap_text(deck["strategy"], self.font_small, inner.w - 12)
+            for line in strategy_lines[:3]:
+                draw_text_fit(surface, self.font_small, line, (180, 184, 198),
+                              pygame.Rect(inner.x + 6, y, inner.w - 12, 18))
+                y += 19
+            y += 4
 
-            # Deck name
-            name_txt = self.font_body.render(f"{deck['type_icon']} {deck['name']}", True, UI_TEXT_PRIMARY)
-            surface.blit(name_txt, (x_start, detail_y + 35))
-
-            # Strategy
-            strat_lines = self._wrap_text(deck["strategy"], self.font_small, 560)
-            for i, line in enumerate(strat_lines):
-                txt = self.font_small.render(line, True, (180, 180, 190))
-                surface.blit(txt, (x_start, detail_y + 70 + i * 20))
-
-            # Ace and difficulty
-            ace_txt = self.font_small.render(f"核心: {deck['ace']}", True, UI_HIGHLIGHT)
-            surface.blit(ace_txt, (x_start, detail_y + 120))
-
-            diff_txt = self.font_small.render(f"难度: {deck['difficulty']}", True, (160, 160, 180))
-            surface.blit(diff_txt, (x_start, detail_y + 142))
+            draw_text_fit(surface, self.font_small, f"核心: {deck['ace']}",
+                          UI_HIGHLIGHT, pygame.Rect(inner.x + 6, y, inner.w - 12, 20))
+            y += 24
+            draw_text_fit(surface, self.font_small, f"支援: {deck['support']}",
+                          (170, 176, 192), pygame.Rect(inner.x + 6, y, inner.w - 12, 20))
+            y += 24
+            draw_text_fit(surface, self.font_small, f"难度: {deck['difficulty']}",
+                          (150, 158, 176), pygame.Rect(inner.x + 6, y, inner.w - 12, 20))
+            y += 44
 
     def _wrap_text(self, text, font, max_width):
         """Simple text wrapping for Chinese text."""

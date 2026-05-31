@@ -83,6 +83,7 @@ class LobbyScreen(Screen):
         self._pulse: float = 0.0
         self.host_port: int = NETWORK_PORT
         self.room_code_display: str = ""
+        self._connect_origin_state: int = LobbyState.MODE_SELECT
 
         # ── Input fields ───────────────────────────────────────────
         self._ip_input: TextInput | None = None
@@ -123,6 +124,7 @@ class LobbyScreen(Screen):
         # Back button
         self.back_btn = pygame.Rect(24, 16, 100, 36)
         self.back_hover = False
+        self._mouse_pos = (-1, -1)
 
     # ── Helpers ────────────────────────────────────────────────────
 
@@ -180,27 +182,63 @@ class LobbyScreen(Screen):
         self._state = new_state
         self.status_text = ""
         self.error_text = ""
+        self._blur_inputs()
+
+    def _blur_inputs(self):
+        for w in (self._chat_input, self._ip_input, self._port_input,
+                  self._room_code_input, self._relay_host_input):
+            if w:
+                w.blur()
+
+    def _stop_network(self):
+        nm = self._nm
+        if nm:
+            nm.stop()
+        self._nm = None
+        app = self._get_app()
+        if app and getattr(app, "network_manager", None) is nm:
+            app.network_manager = None
+            app.is_remote_host = False
+            app.is_remote_client = False
+
+    def _is_hovered(self, rect: pygame.Rect) -> bool:
+        return rect.collidepoint(self._mouse_pos)
 
     def _go_back(self):
         if self._state == LobbyState.CONNECTING:
-            return
-        if self._connection_started:
+            self._stop_network()
             self._connection_started = False
-            if self._nm:
-                self._nm.stop()
-                self._nm = None
+            self.connected = False
+            self._transition_to(self._connect_origin_state)
+            self.status_text = "已取消连接"
+            return
         if self._state in (LobbyState.LAN_HOST, LobbyState.LAN_CLIENT,
                            LobbyState.RELAY_HOST, LobbyState.RELAY_CLIENT,
                            LobbyState.RELAY_CONNECTED):
-            self._transition_to(LobbyState.MODE_SELECT)
-        elif self._state == LobbyState.CONNECTING:
+            self._connection_started = False
+            self.connected = False
+            self.room_code_display = ""
+            self._stop_network()
             self._transition_to(LobbyState.MODE_SELECT)
         else:
+            self._stop_network()
             self.manager.pop_screen()
 
     # ── Event handling ─────────────────────────────────────────────
 
     def handle_event(self, event: pygame.event.Event):
+        if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+            self._mouse_pos = event.pos
+
+        # Global keyboard actions should work even while a text field is focused.
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self._go_back()
+                return
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self._on_enter_key()
+                return
+
         # TextInput widgets consume events first
         if self._chat_input and self._state == LobbyState.RELAY_CONNECTED:
             if self._chat_input.handle_event(event):
@@ -222,26 +260,19 @@ class LobbyScreen(Screen):
             return
 
         if event.type == pygame.MOUSEMOTION:
-            self.back_hover = self.back_btn.collidepoint(event.pos)
+            self.back_hover = self._is_hovered(self.back_btn)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.back_hover:
+            pos = event.pos
+            if self._is_hovered(self.back_btn):
                 self._go_back()
                 return
-            pos = event.pos
             for ctrl in self._controls:
                 if ctrl.get("rect") and ctrl["rect"].collidepoint(pos):
                     self._pressing_btn = ctrl["name"]
                     self._press_anim = 0.0
                     self._handle_button(ctrl["name"])
                     return
-
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                self._go_back()
-                return
-            if event.key == pygame.K_RETURN:
-                self._on_enter_key()
 
     def _handle_button(self, name: str):
         if self._connection_started:
@@ -289,6 +320,7 @@ class LobbyScreen(Screen):
         if self._state == LobbyState.LAN_HOST:
             self._is_host = True
             self._connection_started = True
+            self._connect_origin_state = self._state
             self._state = LobbyState.CONNECTING
             self.status_text = f"等待对手连接... (端口: {self.host_port})"
             self.error_text = ""
@@ -316,6 +348,7 @@ class LobbyScreen(Screen):
                 return
             self._is_host = False
             self._connection_started = True
+            self._connect_origin_state = self._state
             self._state = LobbyState.CONNECTING
             self.status_text = f"正在连接到 {ip_text}:{port}..."
             self.error_text = ""
@@ -342,6 +375,7 @@ class LobbyScreen(Screen):
         if self._state == LobbyState.RELAY_HOST:
             self._is_host = True
             self._connection_started = True
+            self._connect_origin_state = self._state
             self._state = LobbyState.CONNECTING
             self.status_text = "正在连接中继服务器并创建房间..."
             self.error_text = ""
@@ -359,6 +393,7 @@ class LobbyScreen(Screen):
                 return
             self._is_host = False
             self._connection_started = True
+            self._connect_origin_state = self._state
             self._state = LobbyState.CONNECTING
             self.status_text = f"正在连接中继服务器并加入房间 {room_code}..."
             self.error_text = ""
@@ -439,6 +474,7 @@ class LobbyScreen(Screen):
             if pair:
                 self._state, self._is_host = pair
                 self._connection_started = True
+                self._connect_origin_state = self._state
                 app = self._get_app()
                 if app:
                     self._nm = app.network_manager
@@ -446,14 +482,23 @@ class LobbyScreen(Screen):
                 if self._state == LobbyState.LAN_HOST:
                     self.status_text = f"等待对手连接... (端口: {self.host_port})"
                 elif self._state == LobbyState.LAN_CLIENT:
-                    self.status_text = f"正在连接到 {app.auto_client_ip}:{app.auto_client_port}..."
+                    ip = getattr(app, "auto_client_ip", "") if app else ""
+                    port = getattr(app, "auto_client_port", NETWORK_PORT) if app else NETWORK_PORT
+                    self.status_text = f"正在连接到 {ip}:{port}..."
                 elif self._state == LobbyState.RELAY_HOST:
                     self.status_text = "正在连接中继服务器并创建房间..."
+                elif self._state == LobbyState.RELAY_CLIENT:
+                    room_code = self._room_code_input.text if self._room_code_input else ""
+                    self.status_text = f"正在连接中继服务器并加入房间 {room_code}..."
 
         if self._auto_relay_connect and not self._connection_started:
             self._auto_relay_connect = False
-            self._connection_started = True
-            self._do_relay_connect()
+            app = self._get_app()
+            if app and getattr(app, "network_manager", None):
+                self.auto_mode = ("relay_client" if self._room_code_input
+                                  and self._room_code_input.text else "relay_host")
+            else:
+                self._do_relay_connect()
 
         # Poll network. Also poll during RELAY_HOST / RELAY_CONNECTED states
         # because _connection_started is set to False after room_created/opponent_joined,
@@ -583,6 +628,7 @@ class LobbyScreen(Screen):
             surface.blit(dot, (int(e["x"] - e["radius"]), int(e["y"] - e["radius"])))
 
     def _draw_top_bar(self, surface: pygame.Surface):
+        self.back_hover = self._is_hovered(self.back_btn)
         bc = UI_BUTTON_HOVER if self.back_hover else UI_BUTTON
         pygame.draw.rect(surface, bc, self.back_btn, border_radius=8)
         pygame.draw.rect(surface, UI_TEXT_PRIMARY, self.back_btn, 1, border_radius=8)
@@ -607,8 +653,8 @@ class LobbyScreen(Screen):
             shake_x = int(math.sin(progress * math.pi * 4) * 3 * (1 - progress))
             draw_rect = card_rect.move(shake_x, 0)
 
-        pygame.draw.rect(surface, (22, 25, 48), draw_rect, border_radius=16)
-        pygame.draw.rect(surface, border_color, draw_rect, 2, border_radius=16)
+        pygame.draw.rect(surface, (22, 25, 48), draw_rect, border_radius=8)
+        pygame.draw.rect(surface, border_color, draw_rect, 2, border_radius=8)
         self._draw_content_for_state(surface, self._state)
 
     def _draw_content_for_state(self, surface: pygame.Surface, state: int):
@@ -640,7 +686,7 @@ class LobbyScreen(Screen):
             ("relay", "服务器联机", "云服务器中转 · 跨网络联机", "Fire", COL2_X),
         ]:
             col_rect = pygame.Rect(col_x, card_rect.y + 70, COL_W, 340)
-            is_hover = col_rect.collidepoint(pygame.mouse.get_pos())
+            is_hover = self._is_hovered(col_rect)
 
             # Column background
             bg = (28, 32, 55) if is_hover else (20, 23, 42)
@@ -650,7 +696,7 @@ class LobbyScreen(Screen):
 
             if is_hover:
                 draw_rect_alpha(surface, (*UI_HIGHLIGHT, 15),
-                                col_rect.inflate(4, 4), border_radius=16)
+                                col_rect.inflate(4, 4), border_radius=8)
 
             # Energy icon
             ec = ENERGY_COLORS.get(energy_type, (200, 200, 200))
@@ -675,7 +721,7 @@ class LobbyScreen(Screen):
             create_btn = pygame.Rect(col_rect.centerx - SMALL_BTN_W // 2,
                                       col_rect.y + 148, SMALL_BTN_W, SMALL_BTN_H)
             self._add_ctrl(f"{col_type}_create", "button", create_btn)
-            create_hover = create_btn.collidepoint(pygame.mouse.get_pos())
+            create_hover = self._is_hovered(create_btn)
             is_press = self._pressing_btn == f"{col_type}_create"
             draw_gradient_button(surface, create_btn, create_hover or is_press,
                                  top_color=(60, 130, 80), bot_color=(40, 100, 60),
@@ -688,7 +734,7 @@ class LobbyScreen(Screen):
             join_btn = pygame.Rect(col_rect.centerx - SMALL_BTN_W // 2,
                                     col_rect.y + 210, SMALL_BTN_W, SMALL_BTN_H)
             self._add_ctrl(f"{col_type}_join", "button", join_btn)
-            join_hover = join_btn.collidepoint(pygame.mouse.get_pos())
+            join_hover = self._is_hovered(join_btn)
             is_press_j = self._pressing_btn == f"{col_type}_join"
             draw_gradient_button(surface, join_btn, join_hover or is_press_j,
                                  top_color=(60, 100, 180), bot_color=(40, 70, 140),
@@ -719,7 +765,7 @@ class LobbyScreen(Screen):
         surface.blit(info, info.get_rect(center=(cx, card_rect.y + 150)))
 
         btn_rect = pygame.Rect(cx - BTN_W // 2, card_rect.y + 210, BTN_W, BTN_H)
-        btn_hover = btn_rect.collidepoint(pygame.mouse.get_pos())
+        btn_hover = self._is_hovered(btn_rect)
         is_press = self._pressing_btn == "lan_start_btn"
         draw_gradient_button(surface, btn_rect, btn_hover or is_press,
                              top_color=(60, 130, 80), bot_color=(40, 100, 60),
@@ -732,7 +778,7 @@ class LobbyScreen(Screen):
         surface.blit(hint, hint.get_rect(center=(cx, card_rect.y + 290)))
 
         back_btn = pygame.Rect(cx - 60, card_rect.y + 350, 120, 30)
-        back_hover = back_btn.collidepoint(pygame.mouse.get_pos())
+        back_hover = self._is_hovered(back_btn)
         bc = UI_BUTTON_HOVER if back_hover else UI_BUTTON
         pygame.draw.rect(surface, bc, back_btn, border_radius=6)
         back_label = self.font_small.render("← 返回", True, UI_TEXT_PRIMARY)
@@ -760,7 +806,7 @@ class LobbyScreen(Screen):
             self._port_input.draw(surface)
 
         btn_rect = pygame.Rect(cx - BTN_W // 2, card_rect.y + 240, BTN_W, BTN_H)
-        btn_hover = btn_rect.collidepoint(pygame.mouse.get_pos())
+        btn_hover = self._is_hovered(btn_rect)
         is_press = self._pressing_btn == "lan_connect_btn"
         draw_gradient_button(surface, btn_rect, btn_hover or is_press,
                              top_color=(60, 130, 80), bot_color=(40, 100, 60),
@@ -774,7 +820,7 @@ class LobbyScreen(Screen):
         surface.blit(hint, hint.get_rect(center=(cx, card_rect.y + 320)))
 
         back_btn = pygame.Rect(cx - 60, card_rect.y + 370, 120, 30)
-        back_hover = back_btn.collidepoint(pygame.mouse.get_pos())
+        back_hover = self._is_hovered(back_btn)
         bc = UI_BUTTON_HOVER if back_hover else UI_BUTTON
         pygame.draw.rect(surface, bc, back_btn, border_radius=6)
         back_label = self.font_small.render("← 返回", True, UI_TEXT_PRIMARY)
@@ -829,7 +875,7 @@ class LobbyScreen(Screen):
             surface.blit(info, info.get_rect(center=(cx, card_rect.y + 125)))
 
             btn_rect = pygame.Rect(cx - BTN_W // 2, card_rect.y + 190, BTN_W, BTN_H)
-            btn_hover = btn_rect.collidepoint(pygame.mouse.get_pos())
+            btn_hover = self._is_hovered(btn_rect)
             is_press = self._pressing_btn == "relay_start_btn"
             draw_gradient_button(surface, btn_rect, btn_hover or is_press,
                                  top_color=(200, 80, 40), bot_color=(160, 50, 20),
@@ -843,7 +889,7 @@ class LobbyScreen(Screen):
             surface.blit(hint, hint.get_rect(center=(cx, card_rect.y + 260)))
 
         back_btn = pygame.Rect(cx - 60, card_rect.y + 370, 120, 30)
-        back_hover = back_btn.collidepoint(pygame.mouse.get_pos())
+        back_hover = self._is_hovered(back_btn)
         bc = UI_BUTTON_HOVER if back_hover else UI_BUTTON
         pygame.draw.rect(surface, bc, back_btn, border_radius=6)
         back_label = self.font_small.render("← 返回", True, UI_TEXT_PRIMARY)
@@ -902,7 +948,7 @@ class LobbyScreen(Screen):
             self._room_code_input.rect = pygame.Rect(start_x, box_y, total_w, digit_size)
 
         btn_rect = pygame.Rect(cx - BTN_W // 2, card_rect.y + 265, BTN_W, BTN_H)
-        btn_hover = btn_rect.collidepoint(pygame.mouse.get_pos())
+        btn_hover = self._is_hovered(btn_rect)
         is_press = self._pressing_btn == "relay_join_btn"
         draw_gradient_button(surface, btn_rect, btn_hover or is_press,
                              top_color=(200, 80, 40), bot_color=(160, 50, 20),
@@ -916,7 +962,7 @@ class LobbyScreen(Screen):
         surface.blit(hint, hint.get_rect(center=(cx, card_rect.y + 330)))
 
         back_btn = pygame.Rect(cx - 60, card_rect.y + 380, 120, 30)
-        back_hover = back_btn.collidepoint(pygame.mouse.get_pos())
+        back_hover = self._is_hovered(back_btn)
         bc = UI_BUTTON_HOVER if back_hover else UI_BUTTON
         pygame.draw.rect(surface, bc, back_btn, border_radius=6)
         back_label = self.font_small.render("← 返回", True, UI_TEXT_PRIMARY)
@@ -969,7 +1015,7 @@ class LobbyScreen(Screen):
 
             send_btn = pygame.Rect(card_rect.x + CARD_W - 116,
                                     card_rect.y + CARD_H - 64, 96, 40)
-            send_hover = send_btn.collidepoint(pygame.mouse.get_pos())
+            send_hover = self._is_hovered(send_btn)
             is_press = self._pressing_btn == "relay_chat_send_btn"
             draw_gradient_button(surface, send_btn, send_hover or is_press,
                                  top_color=(60, 100, 160), bot_color=(40, 70, 120))
@@ -980,7 +1026,7 @@ class LobbyScreen(Screen):
         # Start battle button
         start_btn = pygame.Rect(cx - BTN_W // 2, card_rect.y + CARD_H - 118,
                                 BTN_W, BTN_H)
-        start_hover = start_btn.collidepoint(pygame.mouse.get_pos())
+        start_hover = self._is_hovered(start_btn)
         is_press = self._pressing_btn == "relay_start_game_btn"
         draw_gradient_button(surface, start_btn, start_hover or is_press,
                              top_color=(60, 180, 80), bot_color=(30, 140, 60),

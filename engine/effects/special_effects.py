@@ -248,32 +248,65 @@ def _handle_conditional(state, params, player_idx, source_slot):
 
 
 def _handle_evolve_skip(state, player, params):
-    """Rare Candy: evolve a Basic Pokemon directly to Stage 2.
-    Traces the evolution chain: Stage2 -> Stage1 -> Basic.
+    """神奇糖果 (Rare Candy): evolve a Basic Pokemon directly to Stage 2.
+
+    Official Rare Candy restrictions:
+    - Cannot use on player's first turn.
+    - Cannot use on a Pokemon placed this turn.
+    - Cannot evolve a Pokemon that already evolved this turn.
     """
-    # Find all Basic Pokemon the player controls
+    from engine.commands.modifier_registration import (
+        register_pokemon_modifiers,
+        unregister_pokemon_modifiers,
+    )
+    from engine.commands.resolution_stack import ResolutionStack
+    from engine.commands.registry import build_command
+
+    player_idx = 0 if state.p1 is player else 1
+
+    # Find eligible Basic Pokemon, respecting all Rare Candy restrictions
     basic_slots = []
     for slot_name, pokemon in player.get_all_pokemon():
-        if pokemon and pokemon.card.is_basic_pokemon:
-            matching_stage2 = [
-                c for c in player.hand
-                if c.is_stage2 and _find_basic_for_stage2(c, pokemon.card.name)
-            ]
-            if matching_stage2:
-                basic_slots.append((slot_name, pokemon, matching_stage2))
+        if not pokemon or not pokemon.card.is_basic_pokemon:
+            continue
+        if state.is_player_first_turn(player_idx):
+            continue
+        if pokemon.placed_this_turn:
+            continue
+        if not pokemon.can_evolve_this_turn:
+            continue
+        matching_stage2 = [
+            c for c in player.hand
+            if c.is_stage2 and _find_basic_for_stage2(c, pokemon.card.name)
+        ]
+        if matching_stage2:
+            basic_slots.append((slot_name, pokemon, matching_stage2))
 
     if not basic_slots:
-        state._log(f"{player.name}场上没有能够用神奇糖果进化的基础宝可梦。")
+        state._log(f"{player.name}场上没有符合条件的基础宝可梦可以使用神奇糖果。")
         return ActionResult(False, "没有有效的进化目标，卡牌保留在手牌中。")
 
-    # Auto-evolve with the first match
     slot_name, pokemon, stage2_cards = basic_slots[0]
     stage2 = stage2_cards[0]
     old_name = pokemon.card.name
+    old_api_id = pokemon.card.api_id
 
     hand_idx = player.hand.index(stage2)
     player.hand.pop(hand_idx)
     player.evolve_pokemon(slot_name, stage2)
+
+    # Re-register ability modifiers for the new evolution card
+    unregister_pokemon_modifiers(old_api_id, slot_name, event_bus=state.event_bus)
+    register_pokemon_modifiers(pokemon, player_idx, slot_name, event_bus=state.event_bus)
+
+    # Trigger on_enter_play abilities on the new Stage 2 card
+    for ability in stage2.abilities:
+        if ability.trigger == "on_enter_play":
+            stack = ResolutionStack(state)
+            commands = [build_command(e) for e in ability.effects]
+            stack.push_many(commands)
+            stack.resolve_all(player_idx, slot_name)
+
     state._log(f"{player.name}使用神奇糖果将{old_name}进化成了{stage2.name}！")
     return ActionResult(True, f"Rare Candy: {old_name} -> {stage2.name}")
 
@@ -760,7 +793,6 @@ def _handle_ability_discard_revive(state, player, params, player_idx):
     place it on bench and draw 3 cards.
     Used by 帝王拿波 紧急上浮."""
     card_id = params.get("card_id", "")
-    registry = CardRegistry()
 
     # Check: is this card in player's discard?
     target_card = None

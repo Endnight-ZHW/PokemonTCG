@@ -20,5 +20,8 @@ env/
 .DS_Store
 Thumbs.db
 
+# Claude Code
+.claude/
+
 # Test output
 test_log_output.txt

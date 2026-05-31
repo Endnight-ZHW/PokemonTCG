@@ -15,11 +15,13 @@ from typing import Optional, Callable
 from ui.screen_manager import Screen
 from ui.colors import (
     UI_BG_DARK, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY,
-    UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOVER, UI_BORDER,
+    UI_HIGHLIGHT, UI_BORDER,
     TYPE_COLORS,
 )
 from ui.image_manager import get_image_manager
+from ui.energy_icons import draw_energy_icon
 from ui.font_manager import get_font
+from ui.ui_theme import draw_panel, draw_button
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, CARD_WIDTH, CARD_HEIGHT
 from data.card_models import Card
 
@@ -27,10 +29,12 @@ from data.card_models import Card
 class EnergyDistributionScreen(Screen):
     """Modal screen for distributing energy cards to Pokemon."""
 
-    def __init__(self, manager, request, on_complete: Callable):
+    def __init__(self, manager, request, on_complete: Callable,
+                 on_cancel: Optional[Callable] = None):
         super().__init__(manager)
         self.request = request
         self.on_complete = on_complete
+        self.on_cancel = on_cancel
         self.image_mgr = get_image_manager()
         self.font_title = get_font("heading")
         self.font_body = get_font("info")
@@ -81,7 +85,7 @@ class EnergyDistributionScreen(Screen):
             if self._confirm_hover:
                 self._confirm()
             elif self._cancel_hover:
-                self.manager.pop_screen()
+                self._cancel()
             elif is_source_select and self._hovered_target is not None:
                 # Source select mode: clicking a target selects it and confirms
                 self._assigned = [(0, self._hovered_target)]
@@ -97,7 +101,7 @@ class EnergyDistributionScreen(Screen):
 
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                self.manager.pop_screen()
+                self._cancel()
             elif event.key == pygame.K_RETURN:
                 self._confirm()
 
@@ -138,14 +142,19 @@ class EnergyDistributionScreen(Screen):
         self.manager.pop_screen()
         self.on_complete(result)
 
+    def _cancel(self):
+        self.manager.pop_screen()
+        if self.on_cancel:
+            self.on_cancel()
+
     # ── Drawing ─────────────────────────────────────────────
 
     def draw(self, surface: pygame.Surface):
         # Dark overlay
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.set_alpha(200)
-        overlay.fill(UI_BG_DARK)
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((8, 10, 18, 220))
         surface.blit(overlay, (0, 0))
+        draw_panel(surface, pygame.Rect(28, 22, SCREEN_WIDTH - 56, SCREEN_HEIGHT - 44))
 
         # Title
         title_txt = self.font_title.render(
@@ -207,30 +216,25 @@ class EnergyDistributionScreen(Screen):
             self._draw_target_card(surface, rect, tgt["name"], count, is_hover)
 
         # ═══ Buttons ═══
-        bc = UI_BUTTON_HOVER if self._confirm_hover else UI_BUTTON
-        pygame.draw.rect(surface, bc, self.confirm_btn, border_radius=10)
-        pygame.draw.rect(surface, UI_TEXT_PRIMARY, self.confirm_btn, 2, border_radius=10)
-        bt = self.font_body.render("确 认", True, UI_TEXT_PRIMARY)
-        surface.blit(bt, bt.get_rect(center=self.confirm_btn.center))
+        draw_button(surface, self.confirm_btn, "确认", self.font_body,
+                    hovered=self._confirm_hover)
 
-        cc = UI_BUTTON_HOVER if self._cancel_hover else (80, 80, 100)
-        pygame.draw.rect(surface, cc, self.cancel_btn, border_radius=10)
-        pygame.draw.rect(surface, UI_TEXT_PRIMARY, self.cancel_btn, 2, border_radius=10)
-        ct = self.font_body.render("取 消", True, UI_TEXT_PRIMARY)
-        surface.blit(ct, ct.get_rect(center=self.cancel_btn.center))
+        draw_button(surface, self.cancel_btn, "取消", self.font_body,
+                    hovered=self._cancel_hover, danger=True)
 
     def _draw_energy_card(self, surface, rect, card, assigned, selected, hover):
         """Draw a single energy card in the distribution row."""
-        x, y, w, h = rect
+        draw_rect = rect.copy()
+        if selected:
+            draw_rect.y -= 8
+        elif hover:
+            draw_rect.y -= 3
 
-        if assigned:
-            # Dimmed — already assigned
-            alpha_surf = pygame.Surface((w, h), pygame.SRCALPHA)
-            alpha_surf.fill((40, 40, 50, 200))
-            surface.blit(alpha_surf, (x, y))
-            name = self.font_small.render("已分配", True, (100, 100, 110))
-            surface.blit(name, name.get_rect(center=rect.center))
-            return
+        x, y, w, h = draw_rect
+
+        shadow = pygame.Surface((w + 8, h + 8), pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (0, 0, 0, 95), shadow.get_rect(), border_radius=8)
+        surface.blit(shadow, (x - 2, y + 4))
 
         # Try card image
         img = self.image_mgr.get_card_image(card.name, card.api_id)
@@ -248,6 +252,16 @@ class EnergyDistributionScreen(Screen):
                 et = self.font_small.render(etype, True, (220, 220, 220))
                 surface.blit(et, (x + 3, y + 22))
 
+        if assigned:
+            alpha_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            alpha_surf.fill((8, 10, 18, 165))
+            surface.blit(alpha_surf, (x, y))
+            name = self.font_small.render("已分配", True, (180, 180, 190))
+            surface.blit(name, name.get_rect(center=draw_rect.center))
+
+        icon_center = (draw_rect.right - 18, draw_rect.bottom - 18)
+        draw_energy_icon(surface, self.image_mgr, card, icon_center, 28, self.font_small)
+
         # Border
         if selected:
             border_c = UI_HIGHLIGHT
@@ -258,7 +272,7 @@ class EnergyDistributionScreen(Screen):
         else:
             border_c = UI_BORDER
             border_w = 1
-        pygame.draw.rect(surface, border_c, rect, border_w, border_radius=6)
+        pygame.draw.rect(surface, border_c, draw_rect, border_w, border_radius=6)
 
     def _draw_target_card(self, surface, rect, name, assigned_count, hover):
         """Draw a target Pokemon card."""

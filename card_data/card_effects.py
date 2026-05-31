@@ -19,20 +19,6 @@ CARD_EFFECTS: dict[str, dict] = {}
 # 💧 水系卡组宝可梦 - Water Deck Pokemon
 # ============================================================
 
-# 呱呱泡蛙 Froakie (sv2-38)
-CARD_EFFECTS["sv2-38"] = {
-    "attacks": {
-        "拍击": {"effects": []},
-    }
-}
-
-# 呱头蛙 Frogadier (sv2-39)
-CARD_EFFECTS["sv2-39"] = {
-    "attacks": {
-        "水枪": {"effects": []},
-    }
-}
-
 # 拉普拉斯 Lapras (sv1-49) - 愤怒冷冻: conditional paralyze
 CARD_EFFECTS["sv1-49"] = {
     "attacks": {
@@ -394,7 +380,7 @@ CARD_EFFECTS["svi-chiy"] = {
         "闪焰生成": {
             "effects": [
                 {"effect_type": "attach_from_discard",
-                 "params": {"amount": 2, "energy_type": "fire", "target": "self"}},
+                 "params": {"amount": 2, "energy_type": "fire", "target": "self_or_bench"}},
             ]
         },
         "嫉妒业火": {
@@ -424,7 +410,7 @@ CARD_EFFECTS["svi-sqwk"] = {
                          {"effect_type": "damage", "params": {"amount": 60, "target": "opponent_active"}},
                          {"effect_type": "prevent_all", "params": {}},
                      ],
-                     "on_tails": [],
+                     "on_tails": [{"effect_type": "attack_fail", "params": {}}],
                  }},
             ]
         },
@@ -440,7 +426,7 @@ CARD_EFFECTS["svi-mela"] = {
             "cost": None,
             "on_pay": [
                 {"effect_type": "attach_from_discard",
-                 "params": {"amount": 1, "energy_type": "fire", "target": "self"}},
+                 "params": {"amount": 1, "energy_type": "fire", "target": "self_or_bench"}},
                 {"effect_type": "draw_until",
                  "params": {"target_hand_size": 6}},
             ]

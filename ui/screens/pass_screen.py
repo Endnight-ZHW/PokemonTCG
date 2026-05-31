@@ -3,10 +3,11 @@ import math
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
-    UI_BG_DARK, UI_TEXT_PRIMARY, UI_HIGHLIGHT,
-    PLAYER1_COLOR, PLAYER2_COLOR, PASS_PLAYER1_BAR, PASS_PLAYER2_BAR,
+    UI_BG_DARK, UI_TEXT_SECONDARY,
+    PLAYER1_COLOR, PLAYER2_COLOR,
 )
-from ui.font_manager import get_font, get_font_size
+from ui.font_manager import get_font
+from ui.ui_theme import draw_panel, draw_button
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 
 
@@ -30,16 +31,6 @@ class PassScreen(Screen):
         # Sidebars
         self.sidebar_w = 60
         self.player_color = PLAYER1_COLOR if next_player == 0 else PLAYER2_COLOR
-        self.player_bar_alpha = PASS_PLAYER1_BAR if next_player == 0 else PASS_PLAYER2_BAR
-
-        # Decorative dots around the border
-        self._dots = []
-        for i in range(12):
-            self._dots.append({
-                "angle": i * (2 * math.pi / 12),
-                "radius": 120,
-                "phase": i * 0.5,
-            })
 
     def handle_event(self, event: pygame.event.Event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
@@ -72,17 +63,8 @@ class PassScreen(Screen):
         surface.blit(accent_surf, (self.sidebar_w, 0))
         surface.blit(accent_surf, (SCREEN_WIDTH - self.sidebar_w - 4, 0))
 
-        # Decorative rotating dots
-        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 40
-        for dot in self._dots:
-            angle = dot["angle"] + self.pulse * 0.5
-            dx = math.cos(angle) * dot["radius"]
-            dy = math.sin(angle) * dot["radius"] * 0.4
-            dot_alpha = int(80 + 60 * math.sin(self.pulse * 3.0 + dot["phase"]))
-            dot_color = (*pc, min(255, dot_alpha))
-            dot_surf = pygame.Surface((8, 8), pygame.SRCALPHA)
-            pygame.draw.circle(dot_surf, dot_color, (4, 4), 3)
-            surface.blit(dot_surf, (cx + dx - 4, cy + dy - 4))
+        panel_rect = pygame.Rect(SCREEN_WIDTH // 2 - 380, SCREEN_HEIGHT // 2 - 210, 760, 420)
+        draw_panel(surface, panel_rect)
 
         # Main turn banner
         player_name = f"玩家{self.next_player + 1}"
@@ -94,35 +76,21 @@ class PassScreen(Screen):
         else:
             turn_str = f"第{self.turn_number}回合 — {player_name}的回合开始"
             title_txt = self.font_title.render(turn_str, True, player_color_text)
-        title_rect = title_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3))
+        title_rect = title_txt.get_rect(center=(SCREEN_WIDTH // 2, panel_rect.y + 78))
         surface.blit(title_txt, title_rect)
 
         # Decorative line under title
         line_w = min(300, title_txt.get_width())
-        line_y = SCREEN_HEIGHT // 3 + 30
+        line_y = title_rect.bottom + 18
         line_alpha = int(100 + 80 * math.sin(self.pulse * 2.5))
         line_color = (*player_color_text, min(255, line_alpha))
         line_surf = pygame.Surface((line_w, 2), pygame.SRCALPHA)
         line_surf.fill(line_color)
         surface.blit(line_surf, (SCREEN_WIDTH // 2 - line_w // 2, line_y))
 
-        # Pulsing prompt
-        alpha = int(180 + 75 * pygame.math.Vector2(0, 1).rotate_rad(
-            self.pulse * 3.0
-        ).y)
-        alpha = max(0, min(255, alpha))
-        if self.network_manager:
-            prompt_text = "请耐心等待..."
-        else:
-            prompt_text = "点击屏幕或按空格键开始你的回合"
-        prompt = self.font_body.render(prompt_text, True, UI_HIGHLIGHT)
-        prompt.set_alpha(alpha)
-        prompt_rect = prompt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 60))
-        surface.blit(prompt, prompt_rect)
-
         # Player icon/indicator
         icon_size = 50
-        icon_y = SCREEN_HEIGHT // 2 + 110
+        icon_y = panel_rect.y + 150
         icon_surf = pygame.Surface((icon_size, icon_size), pygame.SRCALPHA)
         pygame.draw.circle(icon_surf, (*pc, 180), (icon_size // 2, icon_size // 2), icon_size // 2)
         pygame.draw.circle(icon_surf, (255, 255, 255, 200), (icon_size // 2, icon_size // 2), icon_size // 2, 2)
@@ -131,11 +99,20 @@ class PassScreen(Screen):
         surface.blit(num_txt, num_txt.get_rect(center=(SCREEN_WIDTH // 2, icon_y + icon_size // 2)))
 
         if self.network_manager:
+            prompt_text = "请耐心等待..."
+        else:
+            prompt_text = "点击屏幕或按空格键开始"
+        prompt_rect = pygame.Rect(SCREEN_WIDTH // 2 - 180, panel_rect.y + 245, 360, 42)
+        draw_button(surface, prompt_rect, prompt_text, self.font_body,
+                    hovered=not self.network_manager,
+                    enabled=not self.network_manager)
+
+        if self.network_manager:
             reminder_text = "两名玩家在不同设备上对战，无需移开视线"
         else:
             reminder_text = "对手操作时请移开视线，避免看到对方的棋盘信息"
-        reminder = self.font_small.render(reminder_text, True, (120, 120, 160))
+        reminder = self.font_small.render(reminder_text, True, UI_TEXT_SECONDARY)
         reminder_rect = reminder.get_rect(
-            center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 80)
+            center=(SCREEN_WIDTH // 2, panel_rect.bottom - 62)
         )
         surface.blit(reminder, reminder_rect)

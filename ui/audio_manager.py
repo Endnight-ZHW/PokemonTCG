@@ -45,13 +45,17 @@ class AudioManager:
         sample_rate = 22050
 
         self._sounds["click"] = self._make_sound(
-            self._gen_tone(sample_rate, 800, 0.03, "square") +
-            self._gen_tone(sample_rate, 1200, 0.015, "square", delay=0.01),
+            self._mix(
+                self._gen_tone(sample_rate, 800, 0.03, "square"),
+                self._gen_tone(sample_rate, 1200, 0.015, "square", delay=0.01),
+            ),
             sample_rate
         )
         self._sounds["card_place"] = self._make_sound(
-            self._gen_tone(sample_rate, 200, 0.06, "sine") +
-            self._gen_noise(0.03, 0.3),
+            self._mix(
+                self._gen_tone(sample_rate, 200, 0.06, "sine"),
+                self._gen_noise(0.03, 0.3, sample_rate),
+            ),
             sample_rate
         )
         self._sounds["card_draw"] = self._make_sound(
@@ -59,38 +63,60 @@ class AudioManager:
             sample_rate
         )
         self._sounds["attack_hit"] = self._make_sound(
-            self._gen_noise(0.06, 0.7) +
-            self._gen_tone(sample_rate, 150, 0.08, "sine"),
+            self._mix(
+                self._gen_noise(0.06, 0.7, sample_rate),
+                self._gen_tone(sample_rate, 150, 0.08, "sine"),
+            ),
             sample_rate
         )
         self._sounds["energy_attach"] = self._make_sound(
-            self._gen_tone(sample_rate, 600, 0.05, "sine") +
-            self._gen_tone(sample_rate, 900, 0.03, "sine", delay=0.03),
+            self._mix(
+                self._gen_tone(sample_rate, 600, 0.05, "sine"),
+                self._gen_tone(sample_rate, 900, 0.03, "sine", delay=0.03),
+            ),
             sample_rate
         )
         self._sounds["evolution"] = self._make_sound(
-            self._gen_sweep(sample_rate, 300, 1200, 0.15) +
-            self._gen_tone(sample_rate, 1200, 0.05, "sine", delay=0.12) +
-            self._gen_tone(sample_rate, 1600, 0.08, "sine", delay=0.15),
+            self._mix(
+                self._gen_sweep(sample_rate, 300, 1200, 0.15),
+                self._gen_tone(sample_rate, 1200, 0.05, "sine", delay=0.12),
+                self._gen_tone(sample_rate, 1600, 0.08, "sine", delay=0.15),
+            ),
             sample_rate
         )
         self._sounds["pokemon_ko"] = self._make_sound(
-            self._gen_sweep(sample_rate, 600, 80, 0.2) +
-            self._gen_noise(0.1, 0.3),
+            self._mix(
+                self._gen_sweep(sample_rate, 600, 80, 0.2),
+                self._gen_noise(0.1, 0.3, sample_rate),
+            ),
             sample_rate
         )
         self._sounds["turn_change"] = self._make_sound(
-            self._gen_tone(sample_rate, 500, 0.06, "sine") +
-            self._gen_tone(sample_rate, 700, 0.06, "sine", delay=0.06),
+            self._mix(
+                self._gen_tone(sample_rate, 500, 0.06, "sine"),
+                self._gen_tone(sample_rate, 700, 0.06, "sine", delay=0.06),
+            ),
             sample_rate
         )
         self._sounds["victory"] = self._make_sound(
-            self._gen_tone(sample_rate, 500, 0.1, "sine") +
-            self._gen_tone(sample_rate, 700, 0.1, "sine", delay=0.1) +
-            self._gen_tone(sample_rate, 900, 0.15, "sine", delay=0.2) +
-            self._gen_tone(sample_rate, 1100, 0.2, "sine", delay=0.3),
+            self._mix(
+                self._gen_tone(sample_rate, 500, 0.1, "sine"),
+                self._gen_tone(sample_rate, 700, 0.1, "sine", delay=0.1),
+                self._gen_tone(sample_rate, 900, 0.15, "sine", delay=0.2),
+                self._gen_tone(sample_rate, 1100, 0.2, "sine", delay=0.3),
+            ),
             sample_rate
         )
+
+    def _mix(self, *waves):
+        """Pad generated waveforms to the same length, then mix them."""
+        if not waves:
+            return np.zeros(1)
+        max_len = max(len(wave) for wave in waves)
+        mixed = np.zeros(max_len)
+        for wave in waves:
+            mixed[:len(wave)] += wave
+        return np.clip(mixed, -1.0, 1.0)
 
     def _gen_tone(self, sample_rate: int, freq: float, duration: float,
                   shape: str = "sine", delay: float = 0.0):

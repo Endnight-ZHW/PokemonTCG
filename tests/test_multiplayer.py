@@ -22,7 +22,7 @@ from engine.turn_manager import TurnManager
 from engine.enums import TurnPhase, PlayerAction
 from network.network_manager import NetworkManager
 from network.state_serializer import serialize_game_state, deserialize_game_state
-from network.message_protocol import ACTION_TO_STRING, STRING_TO_ACTION
+from network.message_protocol import ACTION_TO_STRING, STRING_TO_ACTION, MSG_STATE_UPDATE
 from data.card_registry import CardRegistry
 from data.deck_definitions import FIRE_DECK, WATER_DECK, ALL_CARD_IDS, expand_deck
 
@@ -77,6 +77,28 @@ def drain_poll(nm: NetworkManager, timeout: float = 2.0) -> list[dict]:
         else:
             time.sleep(0.02)
     return messages
+
+
+def resolve_pending_promotion(state: GameState, tm: TurnManager) -> bool:
+    """Resolve the mandatory active promotion used by non-UI integration tests."""
+    player_idx = state.pending_promotion_player
+    if player_idx < 0:
+        return False
+    player = state.get_player(player_idx)
+    if player.active is None:
+        bench_options = [(i, p) for i, p in enumerate(player.bench) if p is not None]
+        if not bench_options:
+            state.winner = 1 - player_idx
+            state.phase = TurnPhase.GAME_OVER
+            return True
+        bench_idx, pokemon = bench_options[0]
+        player.promote_from_bench(bench_idx)
+        print(f"    Promoted {pokemon.card.name} from bench")
+    if state.phase == TurnPhase.DRAW:
+        tm.continue_after_promotion()
+    else:
+        state.pending_promotion_player = -1
+    return True
 
 
 # ── Test: MyPlayerIdx Conditions ──────────────────────────────────────
@@ -311,16 +333,16 @@ def test_full_game_flow():
 
     state_data_0 = serialize_game_state(state, for_player_idx=1)  # For client (player 1)
     host_nm.send({
-        "type": "state_sync",
+        "type": MSG_STATE_UPDATE,
         "state": state_data_0,
     })
 
     time.sleep(0.2)
     client_msgs = drain_poll(client_nm, timeout=2.0)
-    state_sync_msgs = [m for m in client_msgs if m.get("type") == "state_sync"]
-    assert len(state_sync_msgs) >= 1, f"Client did not receive state_sync (got {len(client_msgs)} messages)"
+    state_update_msgs = [m for m in client_msgs if m.get("type") == MSG_STATE_UPDATE]
+    assert len(state_update_msgs) >= 1, f"Client did not receive state_update (got {len(client_msgs)} messages)"
 
-    client_state = deserialize_game_state(state_sync_msgs[0]["state"], for_player_idx=1)
+    client_state = deserialize_game_state(state_update_msgs[0]["state"], for_player_idx=1)
     assert client_state.phase != TurnPhase.SETUP, "Client state should be past SETUP"
     print(f"[OK] Client received state: phase={client_state.phase.name}, "
           f"p1_active={client_state.p1.active.card.name if client_state.p1.active else 'None'}, "
@@ -338,6 +360,11 @@ def test_full_game_flow():
         active_pi = state.active_player_idx
 
         print(f"\n  Turn {current_turn}, Player {active_pi + 1}")
+        if resolve_pending_promotion(state, tm):
+            if state.phase == TurnPhase.GAME_OVER:
+                game_over = True
+                break
+            active_pi = state.active_player_idx
 
         # Draw phase check
         if state.phase == TurnPhase.GAME_OVER:
@@ -373,6 +400,7 @@ def test_full_game_flow():
                             print(f"    Dealt {result.damage_dealt} damage")
                         if result.pokemon_ko:
                             print(f"    KO'd: {result.pokemon_ko}")
+                            resolve_pending_promotion(state, tm)
                         can_attack = True
                     break
             if not can_attack:
@@ -392,16 +420,16 @@ def test_full_game_flow():
         # Broadcast state to client after turn change
         state_data = serialize_game_state(state, for_player_idx=1)
         host_nm.send({
-            "type": "state_sync",
+            "type": MSG_STATE_UPDATE,
             "state": state_data,
         })
 
         # Client verifies state consistency
         time.sleep(0.1)
         client_msgs = drain_poll(client_nm, timeout=1.0)
-        state_syncs = [m for m in client_msgs if m.get("type") == "state_sync"]
-        if state_syncs:
-            client_state = deserialize_game_state(state_syncs[-1]["state"], for_player_idx=1)
+        state_updates = [m for m in client_msgs if m.get("type") == MSG_STATE_UPDATE]
+        if state_updates:
+            client_state = deserialize_game_state(state_updates[-1]["state"], for_player_idx=1)
             # Basic consistency checks
             assert client_state.turn_number == state.turn_number, \
                 f"Turn mismatch: client={client_state.turn_number}, host={state.turn_number}"
@@ -481,9 +509,9 @@ def test_ability_protocol():
     active_player = state.get_active_player()
     if active_player.active and active_player.active.card.abilities:
         abilities = active_player.active.card.abilities
-        # Find a non-passive, non-on-enter-play ability
+        # Find a manually usable ability.
         for ab in abilities:
-            if getattr(ab, 'trigger', '') not in ('on_enter_play', 'passive'):
+            if getattr(ab, 'trigger', '') in ('', 'on_turn'):
                 result = tm.perform_action(
                     PlayerAction.USE_ABILITY,
                     player_idx=state.active_player_idx,

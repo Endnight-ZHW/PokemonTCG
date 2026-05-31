@@ -4,12 +4,13 @@ import tempfile
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
-    UI_BG_DARK, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY, UI_BUTTON, UI_BUTTON_HOVER,
-    UI_HIGHLIGHT, UI_BORDER, UI_SUCCESS, UI_DANGER, TYPE_COLORS,
+    UI_BG_DARK, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY,
+    UI_HIGHLIGHT, UI_BORDER, TYPE_COLORS,
 )
 from ui.image_manager import get_image_manager
-from ui.font_manager import get_font, get_font_size
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, CARD_WIDTH, CARD_HEIGHT, ENERGY_NAME_CN as ENERGY_CN, SUBTYPE_CN
+from ui.font_manager import get_font
+from ui.ui_theme import draw_panel, draw_button
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, ENERGY_NAME_CN as ENERGY_CN, SUBTYPE_CN
 
 # ── Layout constants ──
 HEADER_H = 44
@@ -834,8 +835,7 @@ class CardImageScreen(Screen):
     def _draw_filter_bar(self, surface):
         bar_y = HEADER_H
         bar_rect = pygame.Rect(12, bar_y, SCREEN_WIDTH - 24, FILTER_H - 4)
-        pygame.draw.rect(surface, (18, 22, 36), bar_rect, border_radius=6)
-        pygame.draw.rect(surface, UI_BORDER, bar_rect, 1, border_radius=6)
+        draw_panel(surface, bar_rect)
 
         # Search box
         search_rect = pygame.Rect(24, bar_y + 7, SEARCH_BOX_W, SEARCH_BOX_H)
@@ -881,10 +881,7 @@ class CardImageScreen(Screen):
         sort_labels = {"name": "按名称", "type": "按类型", "status": "缺图优先"}
         sort_label = sort_labels.get(self.sort_mode, "排序")
         sort_rect = pygame.Rect(SCREEN_WIDTH - 120, bar_y + 7, 100, TYPE_TAB_H)
-        pygame.draw.rect(surface, (50, 55, 70), sort_rect, border_radius=4)
-        pygame.draw.rect(surface, UI_BORDER, sort_rect, 1, border_radius=4)
-        sort_txt = self.font_small.render(sort_label, True, UI_TEXT_PRIMARY)
-        surface.blit(sort_txt, sort_txt.get_rect(center=sort_rect.center))
+        draw_button(surface, sort_rect, sort_label, self.font_small)
 
     # ── Preview area ──
 
@@ -894,8 +891,7 @@ class CardImageScreen(Screen):
 
         # ── Left: Card Image Preview ──
         left_rect = pygame.Rect(20, py, PREVIEW_BOX_W, ph)
-        pygame.draw.rect(surface, (20, 25, 40), left_rect, border_radius=8)
-        pygame.draw.rect(surface, UI_BORDER, left_rect, 1, border_radius=8)
+        draw_panel(surface, left_rect)
         lbl = self.font_tiny.render("卡牌预览", True, UI_TEXT_SECONDARY)
         surface.blit(lbl, (left_rect.x + 4, left_rect.y + 2))
 
@@ -925,8 +921,7 @@ class CardImageScreen(Screen):
         # ── Right: Hovered Image Preview ──
         rpx = SCREEN_WIDTH - PREVIEW_BOX_W - 20
         right_rect = pygame.Rect(rpx, py, PREVIEW_BOX_W, ph)
-        pygame.draw.rect(surface, (20, 25, 40), right_rect, border_radius=8)
-        pygame.draw.rect(surface, UI_BORDER, right_rect, 1, border_radius=8)
+        draw_panel(surface, right_rect)
         rlbl = self.font_tiny.render("悬停图像预览", True, UI_TEXT_SECONDARY)
         surface.blit(rlbl, (rpx + 4, py + 2))
 
@@ -1138,8 +1133,7 @@ class CardImageScreen(Screen):
 
     def _draw_card_panel(self, surface):
         panel_rect = pygame.Rect(12, PANEL_TOP, LEFT_PANEL_W - 16, PANEL_H)
-        pygame.draw.rect(surface, (18, 22, 36), panel_rect, border_radius=8)
-        pygame.draw.rect(surface, UI_BORDER, panel_rect, 1, border_radius=8)
+        draw_panel(surface, panel_rect)
 
         surface.set_clip(panel_rect)
 
@@ -1216,8 +1210,7 @@ class CardImageScreen(Screen):
 
     def _draw_image_panel(self, surface):
         panel_rect = pygame.Rect(RIGHT_PANEL_X, PANEL_TOP, RIGHT_PANEL_W, PANEL_H)
-        pygame.draw.rect(surface, (18, 22, 36), panel_rect, border_radius=8)
-        pygame.draw.rect(surface, UI_BORDER, panel_rect, 1, border_radius=8)
+        draw_panel(surface, panel_rect)
 
         surface.set_clip(panel_rect)
         img_y = PANEL_TOP - self.image_scroll
@@ -1273,23 +1266,14 @@ class CardImageScreen(Screen):
             "clear": "清除绑定",
             "return": "返回",
         }
-        colors = {
-            "paste": (40, 140, 80),
-            "rescan": (60, 120, 200),
-            "clear": (200, 80, 80),
-            "return": (120, 120, 120),
-        }
-
         for btn_name, rect in buttons.items():
             is_hovered = (self.hovered_button == btn_name)
-            base = colors[btn_name]
-            if is_hovered:
-                r, g, b = base
-                base = (min(r + 40, 255), min(g + 40, 255), min(b + 40, 255))
-            pygame.draw.rect(surface, base, rect, border_radius=6)
-            pygame.draw.rect(surface, UI_HIGHLIGHT, rect, 1, border_radius=6)
-            lbl_txt = self.font_small.render(labels[btn_name], True, (255, 255, 255))
-            surface.blit(lbl_txt, lbl_txt.get_rect(center=rect.center))
+            draw_button(
+                surface, rect, labels[btn_name], self.font_small,
+                hovered=is_hovered,
+                danger=(btn_name == "clear"),
+                selected=(btn_name == "paste"),
+            )
 
         if self.selected_card:
             sel_txt = self.font_small.render(f"已选中: {self.selected_card.name}", True, (255, 220, 100))
@@ -1324,29 +1308,21 @@ class CardImageScreen(Screen):
         surface.blit(dim, (0, 0))
 
         rect = self._confirm_dialog_rect()
-        pygame.draw.rect(surface, (30, 35, 55), rect, border_radius=10)
-        pygame.draw.rect(surface, UI_BORDER, rect, 2, border_radius=10)
-
-        title = self.font_body.render("确认清除", True, UI_HIGHLIGHT)
-        surface.blit(title, (rect.x + 24, rect.y + 20))
+        draw_panel(surface, rect, "确认清除", self.font_body)
 
         body = self.font_small.render(
             "确定要清除所有自定义图像绑定吗？", True, UI_TEXT_PRIMARY)
-        surface.blit(body, (rect.x + 24, rect.y + 56))
+        surface.blit(body, (rect.x + 24, rect.y + 62))
         body2 = self.font_small.render(
             "此操作不会删除图像文件，仅移除绑定关系。", True, UI_TEXT_SECONDARY)
-        surface.blit(body2, (rect.x + 24, rect.y + 80))
+        surface.blit(body2, (rect.x + 24, rect.y + 86))
 
         # Yes button
         yes_rect = pygame.Rect(rect.x + 100, rect.y + 120, 80, 36)
-        yes_color = (200, 70, 70) if not self._confirm_hover_yes else (230, 90, 90)
-        pygame.draw.rect(surface, yes_color, yes_rect, border_radius=6)
-        yes_txt = self.font_small.render("确认", True, (255, 255, 255))
-        surface.blit(yes_txt, yes_txt.get_rect(center=yes_rect.center))
+        draw_button(surface, yes_rect, "确认", self.font_small,
+                    hovered=self._confirm_hover_yes, danger=True)
 
         # No button
         no_rect = pygame.Rect(rect.x + 220, rect.y + 120, 80, 36)
-        no_color = (100, 100, 120) if not self._confirm_hover_no else (130, 130, 150)
-        pygame.draw.rect(surface, no_color, no_rect, border_radius=6)
-        no_txt = self.font_small.render("取消", True, (255, 255, 255))
-        surface.blit(no_txt, no_txt.get_rect(center=no_rect.center))
+        draw_button(surface, no_rect, "取消", self.font_small,
+                    hovered=self._confirm_hover_no)

@@ -259,7 +259,7 @@ OFFLINE_CARD_TEMPLATES = {
         "abilities": [],
         "attacks": [
             {"name": "踢飞", "cost": ["Colorless"], "damage": "20", "text": ""},
-            {"name": "队列之力", "cost": ["Water", "Colorless"], "damage": "0",
+            {"name": "队列之力", "cost": ["Water", "Colorless"], "damage": "10+",
              "text": "追加造成自己备战宝可梦数量×20点伤害。"},
         ],
         "weaknesses": [{"type": "Lightning", "value": "×2"}], "resistances": [],
@@ -538,7 +538,6 @@ OFFLINE_CARD_TEMPLATES = {
         "trainer_type": "Supporter",
     },
 
-    # 米莉亚姆 Miriam (sv1-179) - Heal + shuffle Pokemon from discard
     # -------- Items --------
 
     # 宝可梦交替 Switch (sv1-150)
@@ -558,7 +557,7 @@ OFFLINE_CARD_TEMPLATES = {
     # 神奇糖果 Rare Candy (sv1-152)
     "sv1-152": {
         "name": "神奇糖果", "supertype": "Trainer", "subtypes": ["Item"],
-        "rules": ["选择自己场上的1只基础宝可梦。若手牌中有从那宝可梦进化而来的2阶进化卡，则将其置于该基础宝可梦身上完成进化。"],
+        "rules": ["选择自己场上的1只基础宝可梦。若手牌中有从那宝可梦进化而来的2阶进化卡，则将其置于该基础宝可梦身上完成进化。此卡无法在自己的第一回合使用，也无法对当回合上场的基础宝可梦使用。"],
         "trainer_type": "Item",
     },
 
@@ -632,6 +631,9 @@ OFFLINE_CARD_TEMPLATES = {
     },
     "sv1-ener-6": {
         "name": "斗能量", "supertype": "Energy", "subtypes": ["Basic"],
+    },
+    "sv1-ener-7": {
+        "name": "恶能量", "supertype": "Energy", "subtypes": ["Basic"],
     },
     "sv1-ener-8": {
         "name": "钢能量", "supertype": "Energy", "subtypes": ["Basic"],
@@ -1248,7 +1250,7 @@ OFFLINE_CARD_TEMPLATES = {
         "name": "老翁龙", "supertype": "Pokémon", "subtypes": ["Basic"],
         "hp": 120, "types": ["Dragon"], "evolvesFrom": "",
         "attacks": [
-            {"name": "逆鳞", "cost": ["Colorless", "Colorless"], "damage": "0",
+            {"name": "逆鳞", "cost": ["Colorless", "Colorless"], "damage": "60+",
              "text": "追加造成这只宝可梦身上放置的伤害指示物数量×10伤害。"},
         ],
         "weaknesses": [{"type": "Fighting", "value": "×2"}], "resistances": [],
@@ -1273,7 +1275,7 @@ OFFLINE_CARD_TEMPLATES = {
         "name": "大奶罐", "supertype": "Pokémon", "subtypes": ["Basic"],
         "hp": 120, "types": ["Colorless"], "evolvesFrom": "",
         "attacks": [
-            {"name": "活泼冲撞", "cost": ["Colorless", "Colorless"], "damage": "0",
+            {"name": "活泼冲撞", "cost": ["Colorless", "Colorless"], "damage": "60+",
              "text": "在这个回合，如果回复了这只宝可梦的HP的话，则追加造成90伤害。"},
         ],
         "weaknesses": [{"type": "Fighting", "value": "×2"}], "resistances": [],
@@ -1407,7 +1409,7 @@ OFFLINE_CARD_TEMPLATES = {
         "attacks": [
             {"name": "唤群之歌", "cost": ["Grass"], "damage": "0",
              "text": "选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。如果是后攻玩家的最初回合的话，则可加入手牌的G宝可梦的张数变为最多3张。"},
-            {"name": "反复鞭挞", "cost": ["Colorless", "Colorless", "Colorless"], "damage": "0",
+            {"name": "反复鞭挞", "cost": ["Colorless", "Colorless", "Colorless"], "damage": "60+",
              "text": "追加造成这只宝可梦身上附有的G能量数量×20点伤害。"},
         ],
         "weaknesses": [{"type": "Fire", "value": "×2"}], "resistances": [],
