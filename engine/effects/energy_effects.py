@@ -204,6 +204,12 @@ def _handle_energy_discard(state, player, opponent, params, source_slot):
     if target is None:
         return ActionResult(False, "没有可丢弃能量的目标。")
 
+    # Check if opponent's active is immune to attack effects
+    if from_target != "self" and getattr(target, 'all_prevented_next_turn', False):
+        target.all_prevented_next_turn = False
+        state._log(f"{target.card.name}免疫了能量丢弃的效果！")
+        return ActionResult(True, "免疫了效果。")
+
     discarded = 0
     remaining = []
     for card in target.energy_cards:

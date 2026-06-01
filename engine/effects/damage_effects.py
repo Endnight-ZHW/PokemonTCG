@@ -4,6 +4,26 @@ from config import DAMAGE_PER_COUNTER
 from engine.game_state import GameState, ActionResult, ActionRequest
 
 
+def _check_effect_damage_prevented(defender, state) -> bool:
+    """Check if damage from attack effects should be prevented.
+    Returns True if damage should be skipped.
+    Checks both damage_prevented_next_turn (full damage prevention) and
+    all_prevented_next_turn (effect-only prevention from 七夕青鸟ex 光之波動).
+    Consumes the relevant immunity flag."""
+    if getattr(defender, 'damage_prevented_next_turn', False):
+        defender.damage_prevented_next_turn = False
+        # Also consume all_prevented if both were set (prevent_all)
+        if getattr(defender, 'all_prevented_next_turn', False):
+            defender.all_prevented_next_turn = False
+        state._log(f"{defender.card.name}免疫了伤害！")
+        return True
+    if getattr(defender, 'all_prevented_next_turn', False):
+        defender.all_prevented_next_turn = False
+        state._log(f"{defender.card.name}免疫了附加效果伤害！")
+        return True
+    return False
+
+
 def _handle_damage(state, player, opponent, params, source_slot):
     amount = params.get("amount", 0)
     target_str = params.get("target", "opponent_active")
@@ -11,11 +31,10 @@ def _handle_damage(state, player, opponent, params, source_slot):
     if target_str == "opponent_active" and opponent.active:
         defender = opponent.active
         damage = amount
-        if not defender.damage_prevented_next_turn:
-            defender.damage_counters += damage // DAMAGE_PER_COUNTER
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
 
+        defender.damage_counters += damage // DAMAGE_PER_COUNTER
         msg = f"对{defender.card.name}造成{damage}点伤害。"
         state._log(msg)
         return ActionResult(True, msg, damage_dealt=damage)
@@ -53,7 +72,8 @@ def _handle_bench_damage(state, player, opponent, params):
         return ActionResult(True, "Bench protected by ability.")
 
     bench_indices = [i for i, p in enumerate(target_state.bench)
-                     if p is not None and not p.damage_prevented_next_turn]
+                     if p is not None and not p.damage_prevented_next_turn
+                     and not getattr(p, 'all_prevented_next_turn', False)]
 
     if not bench_indices:
         state._log(f"{target_state.name}的备战区没有可攻击的宝可梦。")
@@ -116,11 +136,10 @@ def _handle_damage_per_prize(state, player, opponent, params):
 
     if opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
         state._log(f"对{defender.card.name}造成{total}点伤害（基础{base_damage}+{per_prize}×{prizes_taken}张奖品卡）。")
         return ActionResult(True, f"伤害: {total}", damage_dealt=total)
     return ActionResult(False, "没有目标。")
@@ -152,11 +171,10 @@ def _handle_damage_per_energy(state, player, opponent, params):
 
     if target_str == "opponent_active" and opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
         state._log(f"对{defender.card.name}造成{total}点伤害。")
         return ActionResult(True, f"伤害: {total}", damage_dealt=total)
     return ActionResult(False, "没有目标。")
@@ -182,28 +200,23 @@ def _handle_any_pokemon_damage(state, player, opponent, params):
     if len(targets) == 1:
         # Auto-select the only target
         slot_name, target_poke = targets[0]
-        if not target_poke.damage_prevented_next_turn:
-            counters = amount // DAMAGE_PER_COUNTER
-            target_poke.damage_counters += counters
-            state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
-            return ActionResult(True, f"对{target_poke.card.name}造成{amount}点伤害。", damage_dealt=amount)
-        else:
-            target_poke.damage_prevented_next_turn = False
-            state._log(f"{target_poke.card.name}免疫了伤害。")
+        if _check_effect_damage_prevented(target_poke, state):
             return ActionResult(True, "伤害被免疫。")
+        counters = amount // DAMAGE_PER_COUNTER
+        target_poke.damage_counters += counters
+        state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
+        return ActionResult(True, f"对{target_poke.card.name}造成{amount}点伤害。", damage_dealt=amount)
 
     # Let player choose target
     def any_damage_callback(selected_cards):
         for card in selected_cards:
             for slot_name, target_poke in targets:
                 if target_poke.card.api_id == card.api_id:
-                    if not target_poke.damage_prevented_next_turn:
-                        counters = amount // DAMAGE_PER_COUNTER
-                        target_poke.damage_counters += counters
-                        state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
-                    else:
-                        target_poke.damage_prevented_next_turn = False
-                        state._log(f"{target_poke.card.name}免疫了伤害。")
+                    if _check_effect_damage_prevented(target_poke, state):
+                        break
+                    counters = amount // DAMAGE_PER_COUNTER
+                    target_poke.damage_counters += counters
+                    state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
                     break
             break
 
@@ -230,41 +243,35 @@ def _handle_conditional_damage_bonus(state, player, opponent, params):
 
     if condition == "opponent_active_damaged" and opponent.active:
         if opponent.active.damage_counters > 0:
-            if not opponent.active.damage_prevented_next_turn:
-                counters = bonus // DAMAGE_PER_COUNTER
-                opponent.active.damage_counters += counters
-                state._log(f"追加造成{bonus}点伤害！（激流斩条件触发）")
-                return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
-            else:
-                opponent.active.damage_prevented_next_turn = False
-                state._log(f"免疫了激流斩的追加伤害。")
+            if _check_effect_damage_prevented(opponent.active, state):
+                return ActionResult(True, "追加伤害被免疫。")
+            counters = bonus // DAMAGE_PER_COUNTER
+            opponent.active.damage_counters += counters
+            state._log(f"追加造成{bonus}点伤害！（激流斩条件触发）")
+            return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
 
     if condition == "ko_by_attack_last_turn":
         if player.was_ko_by_attack:
             player.was_ko_by_attack = False
             if opponent.active:
-                if not opponent.active.damage_prevented_next_turn:
-                    counters = bonus // DAMAGE_PER_COUNTER
-                    opponent.active.damage_counters += counters
-                    state._log(f"追加造成{bonus}点伤害！（嫉妒业火条件触发）")
-                    return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
-                else:
-                    opponent.active.damage_prevented_next_turn = False
-                    state._log(f"免疫了嫉妒业火的追加伤害。")
+                if _check_effect_damage_prevented(opponent.active, state):
+                    return ActionResult(True, "追加伤害被免疫。")
+                counters = bonus // DAMAGE_PER_COUNTER
+                opponent.active.damage_counters += counters
+                state._log(f"追加造成{bonus}点伤害！（嫉妒业火条件触发）")
+                return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
         else:
             state._log("上个对手回合没有宝可梦因招式伤害昏厥，嫉妒业火追加伤害不触发。")
 
     if condition == "opponent_active_evolved" and opponent.active:
         # 摔角鹰人 挥落: if opponent active is evolved +30
         if not opponent.active.card.is_basic_pokemon:
-            if not opponent.active.damage_prevented_next_turn:
-                counters = bonus // DAMAGE_PER_COUNTER
-                opponent.active.damage_counters += counters
-                state._log(f"追加造成{bonus}点伤害！（对手为进化宝可梦）")
-                return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
-            else:
-                opponent.active.damage_prevented_next_turn = False
-                state._log(f"免疫了挥落的追加伤害。")
+            if _check_effect_damage_prevented(opponent.active, state):
+                return ActionResult(True, "追加伤害被免疫。")
+            counters = bonus // DAMAGE_PER_COUNTER
+            opponent.active.damage_counters += counters
+            state._log(f"追加造成{bonus}点伤害！（对手为进化宝可梦）")
+            return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
         else:
             state._log("对手战斗宝可梦不是进化宝可梦，挥落追加伤害不触发。")
 
@@ -276,14 +283,12 @@ def _handle_conditional_damage_bonus(state, player, opponent, params):
                 total_energy += len(poke.energy_cards)
         if total_energy >= 5:
             if opponent.active:
-                if not opponent.active.damage_prevented_next_turn:
-                    counters = bonus // DAMAGE_PER_COUNTER
-                    opponent.active.damage_counters += counters
-                    state._log(f"追加造成{bonus}点伤害！（场上能量{total_energy}≥5）")
-                    return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
-                else:
-                    opponent.active.damage_prevented_next_turn = False
-                    state._log(f"免疫了光子镭射的追加伤害。")
+                if _check_effect_damage_prevented(opponent.active, state):
+                    return ActionResult(True, "追加伤害被免疫。")
+                counters = bonus // DAMAGE_PER_COUNTER
+                opponent.active.damage_counters += counters
+                state._log(f"追加造成{bonus}点伤害！（场上能量{total_energy}≥5）")
+                return ActionResult(True, f"追加{bonus}点伤害。", damage_dealt=bonus)
         else:
             state._log(f"场上能量{total_energy}不足5个，光子镭射追加伤害不触发。")
 
@@ -304,11 +309,10 @@ def _handle_damage_plus_bench(state, player, opponent, params):
 
     if opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
         state._log(f"对{defender.card.name}造成{total}点伤害（基础{base}+备战{bench_count}只×{per_bench}）。")
         return ActionResult(True, f"伤害: {total}", damage_dealt=total)
     return ActionResult(False, "没有目标。")
@@ -402,13 +406,11 @@ def _handle_mill_and_damage_per_energy(state, player, opponent, params):
 
     if total_damage > 0 and opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total_damage // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-            state._log(f"对{defender.card.name}造成{total_damage}点伤害！")
-        else:
-            defender.damage_prevented_next_turn = False
-            state._log(f"{defender.card.name}免疫了伤害。")
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total_damage // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
+        state._log(f"对{defender.card.name}造成{total_damage}点伤害！")
         return ActionResult(True, f"螺旋业火: {total_damage}伤害。", damage_dealt=total_damage)
 
     return ActionResult(True, "螺旋业火: 无能量卡，造成0伤害。")
@@ -432,11 +434,10 @@ def _handle_damage_per_self_energy(state, player, opponent, params):
 
     if opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
         state._log(f"对{defender.card.name}造成{total}点伤害（基础{base}+{per_energy}×{matching}张火能量）。")
         return ActionResult(True, f"伤害: {total}", damage_dealt=total)
     return ActionResult(False, "没有目标。")
@@ -450,11 +451,10 @@ def _handle_damage_per_hand_size(state, player, opponent, params):
 
     if total > 0 and opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
         state._log(f"造成{total}点伤害（手牌{hand_size}张×{per}）。")
         return ActionResult(True, f"伤害: {total}", damage_dealt=total)
 
@@ -477,11 +477,10 @@ def _handle_damage_per_discard_psychic(state, player, opponent, params):
 
     if opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
         state._log(f"对{defender.card.name}造成{total}点伤害（基础{base}+弃牌区{psychic_count}只超宝可梦×{per_card}）。")
         return ActionResult(True, f"扫墓: {total}伤害。", damage_dealt=total)
 
@@ -506,11 +505,10 @@ def _handle_discard_hand_conditional_bonus(state, player, opponent, params, sour
 
     if opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-        else:
-            defender.damage_prevented_next_turn = False
+        if _check_effect_damage_prevented(defender, state):
+            return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
         state._log(f"对{defender.card.name}造成{total}点伤害。")
         return ActionResult(True, f"倾倒一空: {total}伤害。", damage_dealt=total)
 
@@ -530,11 +528,10 @@ def _handle_coin_flip_triple(state, player, opponent, params):
 
         if total > 0 and opponent.active:
             defender = opponent.active
-            if not defender.damage_prevented_next_turn:
-                counters = total // DAMAGE_PER_COUNTER
-                defender.damage_counters += counters
-            else:
-                defender.damage_prevented_next_turn = False
+            if _check_effect_damage_prevented(defender, state):
+                return ActionResult(True, "伤害被免疫。")
+            counters = total // DAMAGE_PER_COUNTER
+            defender.damage_counters += counters
             return ActionResult(True, f"三连突刺: {total}伤害。", damage_dealt=total)
 
         return ActionResult(True, f"三连突刺: 0伤害。")
@@ -561,6 +558,8 @@ def _handle_coin_flip_double_ko(state, player, opponent, player_idx, source_slot
 
         if results[0] and results[1]:
             if opponent.active:
+                if _check_effect_damage_prevented(opponent.active, state):
+                    return ActionResult(True, "击倒效果被免疫。")
                 remaining = opponent.active.current_hp
                 counters = max(1, (remaining + 9) // DAMAGE_PER_COUNTER)
                 opponent.active.damage_counters += counters
@@ -609,14 +608,11 @@ def _handle_discard_fighting_energy_damage(state, player, opponent, params):
     state._log(f"丢弃了{fighting_count}个斗能量，造成{total_damage}点伤害。")
 
     if opponent.active and total_damage > 0:
-        if not opponent.active.damage_prevented_next_turn:
-            counters = total_damage // DAMAGE_PER_COUNTER
-            opponent.active.damage_counters += counters
-            return ActionResult(True, f"连续波导弹造成{total_damage}点伤害。", damage_dealt=total_damage)
-        else:
-            opponent.active.damage_prevented_next_turn = False
-            state._log(f"{opponent.active.card.name}免疫了连续波导弹的伤害。")
+        if _check_effect_damage_prevented(opponent.active, state):
             return ActionResult(True, "伤害被免疫。")
+        counters = total_damage // DAMAGE_PER_COUNTER
+        opponent.active.damage_counters += counters
+        return ActionResult(True, f"连续波导弹造成{total_damage}点伤害。", damage_dealt=total_damage)
 
     return ActionResult(True, f"丢弃了{fighting_count}个斗能量。")
 
@@ -635,16 +631,13 @@ def _handle_damage_per_self_damage(state, player, opponent, params):
 
         if opponent.active:
             defender = opponent.active
-            if not defender.damage_prevented_next_turn:
-                counters = total // DAMAGE_PER_COUNTER
-                defender.damage_counters += counters
-                state._log(f"对{defender.card.name}造成{total}点伤害。"
-                          f"（基础{base}+伤害指示物{source.damage_counters}个×{per_counter}）")
-                return ActionResult(True, f"伤害: {total}", damage_dealt=total)
-            else:
-                defender.damage_prevented_next_turn = False
-                state._log(f"{defender.card.name}免疫了伤害。")
+            if _check_effect_damage_prevented(defender, state):
                 return ActionResult(True, "伤害被免疫。")
+            counters = total // DAMAGE_PER_COUNTER
+            defender.damage_counters += counters
+            state._log(f"对{defender.card.name}造成{total}点伤害。"
+                      f"（基础{base}+伤害指示物{source.damage_counters}个×{per_counter}）")
+            return ActionResult(True, f"伤害: {total}", damage_dealt=total)
     return ActionResult(False, "没有目标。")
 
 
@@ -662,16 +655,13 @@ def _handle_damage_self_penalty(state, player, opponent, params):
 
         if opponent.active:
             defender = opponent.active
-            if not defender.damage_prevented_next_turn:
-                counters = total // DAMAGE_PER_COUNTER
-                defender.damage_counters += counters
-                state._log(f"对{defender.card.name}造成{total}点伤害。"
-                          f"（{base}−伤害指示物{source.damage_counters}个×{per_counter}）")
-                return ActionResult(True, f"伤害: {total}", damage_dealt=total)
-            else:
-                defender.damage_prevented_next_turn = False
-                state._log(f"{defender.card.name}免疫了伤害。")
+            if _check_effect_damage_prevented(defender, state):
                 return ActionResult(True, "伤害被免疫。")
+            counters = total // DAMAGE_PER_COUNTER
+            defender.damage_counters += counters
+            state._log(f"对{defender.card.name}造成{total}点伤害。"
+                      f"（{base}−伤害指示物{source.damage_counters}个×{per_counter}）")
+            return ActionResult(True, f"伤害: {total}", damage_dealt=total)
     return ActionResult(False, "没有目标。")
 
 
@@ -686,16 +676,13 @@ def _handle_conditional_damage_heal(state, player, opponent, params):
 
     if opponent.active:
         defender = opponent.active
-        if not defender.damage_prevented_next_turn:
-            counters = total // DAMAGE_PER_COUNTER
-            defender.damage_counters += counters
-            heal_msg = "（本回合回复过HP，追加90伤害！）" if healed_flag else ""
-            state._log(f"对{defender.card.name}造成{total}点伤害。{heal_msg}")
-            return ActionResult(True, f"伤害: {total}", damage_dealt=total)
-        else:
-            defender.damage_prevented_next_turn = False
-            state._log(f"{defender.card.name}免疫了伤害。")
+        if _check_effect_damage_prevented(defender, state):
             return ActionResult(True, "伤害被免疫。")
+        counters = total // DAMAGE_PER_COUNTER
+        defender.damage_counters += counters
+        heal_msg = "（本回合回复过HP，追加90伤害！）" if healed_flag else ""
+        state._log(f"对{defender.card.name}造成{total}点伤害。{heal_msg}")
+        return ActionResult(True, f"伤害: {total}", damage_dealt=total)
 
     return ActionResult(False, "没有目标。")
 
@@ -714,16 +701,14 @@ def _handle_damage_per_evolved(state, player, opponent, params):
 
     if opponent.active:
         defender = opponent.active
-        if total > 0 and not defender.damage_prevented_next_turn:
+        if total > 0:
+            if _check_effect_damage_prevented(defender, state):
+                return ActionResult(True, "伤害被免疫。")
             counters = total // DAMAGE_PER_COUNTER
             defender.damage_counters += counters
             state._log(f"对{defender.card.name}造成{total}点伤害。"
                       f"（{per_evolved}×{evolved_count}只进化宝可梦）")
             return ActionResult(True, f"伤害: {total}", damage_dealt=total)
-        elif defender.damage_prevented_next_turn:
-            defender.damage_prevented_next_turn = False
-            state._log(f"{defender.card.name}免疫了伤害。")
-            return ActionResult(True, "伤害被免疫。")
         else:
             state._log("场上没有进化宝可梦，进化压制造成0点伤害。")
             return ActionResult(True, "进化压制造成0点伤害。")
@@ -748,16 +733,13 @@ def _handle_damage_per_self_energy_type(state, player, opponent, params):
 
         if opponent.active:
             defender = opponent.active
-            if not defender.damage_prevented_next_turn:
-                counters = total // DAMAGE_PER_COUNTER
-                defender.damage_counters += counters
-                state._log(f"对{defender.card.name}造成{total}点伤害。"
-                          f"（{base}+{per_energy}×{type_energy_count}个{energy_type}能量）")
-                return ActionResult(True, f"伤害: {total}", damage_dealt=total)
-            else:
-                defender.damage_prevented_next_turn = False
-                state._log(f"{defender.card.name}免疫了伤害。")
+            if _check_effect_damage_prevented(defender, state):
                 return ActionResult(True, "伤害被免疫。")
+            counters = total // DAMAGE_PER_COUNTER
+            defender.damage_counters += counters
+            state._log(f"对{defender.card.name}造成{total}点伤害。"
+                      f"（{base}+{per_energy}×{type_energy_count}个{energy_type}能量）")
+            return ActionResult(True, f"伤害: {total}", damage_dealt=total)
 
     return ActionResult(False, "没有目标。")
 
@@ -772,13 +754,12 @@ def _handle_damage_and_self_heal(state, player, opponent, params):
 
     # Deal damage
     if opponent.active and damage > 0:
-        if not opponent.active.damage_prevented_next_turn:
+        if _check_effect_damage_prevented(opponent.active, state):
+            pass  # damage prevented, continue to heal
+        else:
             counters = damage // DAMAGE_PER_COUNTER
             opponent.active.damage_counters += counters
             state._log(f"对{opponent.active.card.name}造成{damage}点伤害。")
-        else:
-            opponent.active.damage_prevented_next_turn = False
-            state._log(f"{opponent.active.card.name}免疫了伤害。")
 
     # Heal self
     if source and heal > 0:

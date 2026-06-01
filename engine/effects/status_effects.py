@@ -111,6 +111,10 @@ def _handle_dazzling_beam(state, opponent, params):
     """炫目光束: mark opponent's active Pokemon with dazzled status.
     Next turn when that Pokemon attacks, flip a coin; tails = attack fails."""
     if opponent.active:
+        if getattr(opponent.active, 'all_prevented_next_turn', False):
+            opponent.active.all_prevented_next_turn = False
+            state._log(f"{opponent.active.card.name}免疫了炫目光束的效果！")
+            return ActionResult(True, "免疫了效果。")
         opponent.active.dazzled = True
         state._log(f"{opponent.active.card.name}被炫目光束命中！下次使用招式时将掷硬币。")
         return ActionResult(True, f"{opponent.active.card.name}被炫目光束命中。")
@@ -123,6 +127,11 @@ def _handle_attack_lock_basic(state, opponent, params):
     target_poke = opponent.active
     if target_poke is None:
         return ActionResult(True, "没有目标。")
+
+    if getattr(target_poke, 'all_prevented_next_turn', False):
+        target_poke.all_prevented_next_turn = False
+        state._log(f"{target_poke.card.name}免疫了攻击封锁的效果！")
+        return ActionResult(True, "免疫了效果。")
 
     if target_poke.card.is_basic_pokemon:
         target_poke.attack_locked = True
@@ -150,6 +159,16 @@ def _handle_prevent_damage(state, player, params, source_slot):
         target.damage_prevented_next_turn = True
         state._log(f"{target.card.name}下回合将免疫所有伤害。")
     return ActionResult(True, "已设置伤害免疫。")
+
+
+def _handle_prevent_effects(state, player, params, source_slot):
+    """Set immunity to attack effects (NOT base damage) next turn.
+    Used by 七夕青鸟ex 光之波动."""
+    target = player.get_pokemon(source_slot)
+    if target:
+        target.all_prevented_next_turn = True
+        state._log(f"{target.card.name}下回合将免疫招式的附加效果！")
+    return ActionResult(True, "已设置效果免疫。")
 
 
 def _handle_prevent_all(state, player, params, source_slot):

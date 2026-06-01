@@ -53,6 +53,9 @@ class DealDamage:
                 defender.damage_prevented_next_turn = False
                 defender.all_prevented_next_turn = False
                 return CommandResult.ok(f"{defender.card.name}免疫了所有伤害！")
+            if getattr(defender, 'all_prevented_next_turn', False):
+                defender.all_prevented_next_turn = False
+                return CommandResult.ok(f"{defender.card.name}免疫了附加效果伤害！")
             counters = damage // DAMAGE_PER_COUNTER
             defender.damage_counters += counters
             result.damage_dealt = damage

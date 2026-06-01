@@ -17,8 +17,8 @@ class PokemonInPlay:
     evolution_stack: list["Card"] = field(default_factory=list)
     can_evolve_this_turn: bool = True
     placed_this_turn: bool = True
-    damage_prevented_next_turn: bool = False  # For prevent_damage effects
-    all_prevented_next_turn: bool = False  # For prevent_all (飞翔: immune to damage + effects)
+    damage_prevented_next_turn: bool = False  # For prevent_damage / prevent_all effects (blocks all damage)
+    all_prevented_next_turn: bool = False  # For prevent_effects / prevent_all effects (blocks additional effects only)
     attack_locked: bool = False  # For attack_lock_basic effect (雪暴马 冻结)
     attack_locked_names: dict = field(default_factory=dict)  # attack_name → turn_applied (岩窟冲撞 self-lock)
     dazzled: bool = False  # For dazzling_beam (炫目光束): next attack requires coin flip

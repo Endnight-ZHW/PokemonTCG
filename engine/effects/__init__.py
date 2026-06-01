@@ -33,6 +33,8 @@ from engine.effects.status_effects import (
     _handle_attack_lock_basic,
     _handle_self_attack_lock,
     _handle_prevent_all,
+    _handle_prevent_damage,
+    _handle_prevent_effects,
 )
 from engine.effects.draw_effects import (
     _handle_draw,
@@ -151,8 +153,12 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         return _handle_mill_and_damage_per_energy(state, player, opponent, params)
     elif effect_type == "damage_per_self_energy":
         return _handle_damage_per_self_energy(state, player, opponent, params)
+    elif effect_type == "prevent_damage":
+        return _handle_prevent_damage(state, player, params, source_slot)
     elif effect_type == "prevent_all":
         return _handle_prevent_all(state, player, params, source_slot)
+    elif effect_type == "prevent_effects":
+        return _handle_prevent_effects(state, player, params, source_slot)
     elif effect_type == "aura_damage_reduction":
         # Passive aura abilities like 炎帝 压迫感 — handled automatically
         # in action_resolver._declare_attack, no manual execution needed

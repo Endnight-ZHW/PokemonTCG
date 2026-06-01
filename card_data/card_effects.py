@@ -1057,12 +1057,12 @@ CARD_EFFECTS["svf-farf"] = {
     }
 }
 
-# 代拉基翁 Terrakion (svf-terr) - 岩窟冲撞: 120 + prevent_all next turn + can't use consecutively
+# 代拉基翁 Terrakion (svf-terr) - 岩窟冲撞: 120 + prevent_damage next turn + can't use consecutively
 CARD_EFFECTS["svf-terr"] = {
     "attacks": {
         "岩窟冲撞": {
             "effects": [
-                {"effect_type": "prevent_all", "params": {}},
+                {"effect_type": "prevent_damage", "params": {}},
                 {"effect_type": "self_attack_lock", "params": {"attack_name": "岩窟冲撞"}},
             ]
         },
@@ -1128,7 +1128,7 @@ CARD_EFFECTS["svg-swa"] = {
     }
 }
 
-# 七夕青鸟ex Altaria ex (svg-alt) - 哼唱治愈: heal 20 all / 光之波动: 140 + prevent_all
+# 七夕青鸟ex Altaria ex (svg-alt) - 哼唱治愈: heal 20 all / 光之波动: 140 + prevent_effects (block effects only, not base damage)
 CARD_EFFECTS["svg-alt"] = {
     "abilities": {
         "哼唱治愈": {
@@ -1142,7 +1142,7 @@ CARD_EFFECTS["svg-alt"] = {
     "attacks": {
         "光之波动": {
             "effects": [
-                {"effect_type": "prevent_all", "params": {}},
+                {"effect_type": "prevent_effects", "params": {}},
             ]
         },
     }

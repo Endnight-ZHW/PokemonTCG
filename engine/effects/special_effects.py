@@ -132,6 +132,12 @@ def _handle_switch_opponent(state, opponent, params, opponent_idx=1):
     """Force opponent to switch their active. Like Boss's Orders."""
     you_choose = params.get("you_choose", False)
 
+    # Check if opponent's active is immune to attack effects
+    if opponent.active and getattr(opponent.active, 'all_prevented_next_turn', False):
+        opponent.active.all_prevented_next_turn = False
+        state._log(f"{opponent.active.card.name}免疫了强制替换的效果！")
+        return ActionResult(True, "免疫了效果。")
+
     bench_with_pokemon = [
         i for i, p in enumerate(opponent.bench) if p is not None
     ]
@@ -390,11 +396,14 @@ def _handle_return_to_hand(state, player_idx, params, source_slot):
     # Deal 30 damage to opponent's active
     damage = 30
     if opponent.active:
-        if not opponent.active.damage_prevented_next_turn:
+        if not opponent.active.damage_prevented_next_turn and not getattr(opponent.active, 'all_prevented_next_turn', False):
             opponent.active.damage_counters += damage // DAMAGE_PER_COUNTER
             state._log(f"对{opponent.active.card.name}造成了{damage}点伤害。")
         else:
-            opponent.active.damage_prevented_next_turn = False
+            if opponent.active.damage_prevented_next_turn:
+                opponent.active.damage_prevented_next_turn = False
+            if getattr(opponent.active, 'all_prevented_next_turn', False):
+                opponent.active.all_prevented_next_turn = False
 
     # Return tool
     if source.attached_tool:
@@ -721,11 +730,14 @@ def _handle_coin_flip_until_tails(state, params, player_idx, source_slot):
         state._log(f"掷硬币: {'、'.join(cn_results)}。正面次数: {heads}，造成{damage}点伤害。")
 
         if damage > 0 and opponent.active:
-            if not opponent.active.damage_prevented_next_turn:
+            if not opponent.active.damage_prevented_next_turn and not getattr(opponent.active, 'all_prevented_next_turn', False):
                 counters = damage // DAMAGE_PER_COUNTER
                 opponent.active.damage_counters += counters
             else:
-                opponent.active.damage_prevented_next_turn = False
+                if opponent.active.damage_prevented_next_turn:
+                    opponent.active.damage_prevented_next_turn = False
+                if getattr(opponent.active, 'all_prevented_next_turn', False):
+                    opponent.active.all_prevented_next_turn = False
 
         return ActionResult(True, f"连续旋转: {heads}次正面，{damage}点伤害。", damage_dealt=damage)
 
