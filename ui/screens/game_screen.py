@@ -26,7 +26,7 @@ from config import (
     GAME_SPEED, GAME_SPEED_OPTIONS,
 )
 from engine.enums import TurnPhase, PlayerAction, StatusType
-from engine.ai import ChallengeAI
+from engine.ai import ChallengeAI, create_challenge_ai
 from engine.game_state import GameState, ActionRequest, ActionResult
 from engine.turn_manager import TurnManager
 from engine.rules_validator import (
@@ -112,6 +112,7 @@ class GameScreen(Screen):
                  challenge_mode: bool = False,
                  human_player_idx: int = 0,
                  ai_player_idx: int = 1,
+                 ai_deck_key: str | None = None,
                  ai_controller: ChallengeAI | None = None):
         super().__init__(manager)
         self.state = game_state if game_state is not None else initial_state
@@ -121,7 +122,10 @@ class GameScreen(Screen):
         self.challenge_mode = challenge_mode
         self.human_player_idx = human_player_idx
         self.ai_player_idx = ai_player_idx
-        self.ai_controller = ai_controller or (ChallengeAI() if challenge_mode else None)
+        self.ai_controller = ai_controller or (
+            create_challenge_ai(ai_deck_key) if challenge_mode and ai_deck_key else
+            ChallengeAI() if challenge_mode else None
+        )
         self._ai_action_delay = 0.25
         self._ai_thinking_timer = 0.0
         self._ai_pending_action: ActionRequest | None = None
@@ -261,7 +265,9 @@ class GameScreen(Screen):
         # Animation action deferral (play animation before game logic)
         self._animating_action: bool = False
         self._animating_hand_idx: int | None = None
+        self._animating_hand_idx_player: int | None = None
         self._last_action_source: tuple[float, float] | None = None  # For discard animation direction
+        self._last_action_player_idx: int | None = None
         self._pending_trainer_card = None  # Trainer card awaiting pending action resolution
         self._last_action_card_name: str | None = None  # Card name for deferred discard animation
         self._last_action_card_obj = None  # Card object for deferred discard animation
@@ -269,8 +275,12 @@ class GameScreen(Screen):
         # Cards temporarily hidden from rendering during animations (index-based)
         self._hidden_hand_idx: int | None = None  # Hand index hidden during draw anim
         self._hidden_discard_idx: int | None = None  # Discard index hidden during discard anim
+        self._hidden_hand_idx_player: int | None = None
+        self._hidden_discard_idx_player: int | None = None
         self._hidden_hand_indices: set[int] = set()
         self._hidden_discard_indices: set[int] = set()
+        self._hidden_hand_indices_by_player: dict[int, set[int]] = {0: set(), 1: set()}
+        self._hidden_discard_indices_by_player: dict[int, set[int]] = {0: set(), 1: set()}
 
         # Shortcuts and speed
         self._show_shortcuts: bool = True  # auto-show first few turns
@@ -281,6 +291,53 @@ class GameScreen(Screen):
         """Build action buttons in 2 rows below player info."""
         build_action_buttons(self)
         self.phase_buttons = self.action_buttons
+
+    def _set_last_action_context(self, player_idx: int, source: tuple[float, float],
+                                 card_name: str | None = None, card_obj=None) -> None:
+        self._last_action_source = source
+        self._last_action_player_idx = player_idx
+        self._last_action_card_name = card_name
+        self._last_action_card_obj = card_obj
+
+    def _clear_last_action_context(self) -> None:
+        self._last_action_source = None
+        self._last_action_player_idx = None
+        self._last_action_card_name = None
+        self._last_action_card_obj = None
+
+    def _last_action_source_for(self, player_idx: int) -> tuple[float, float] | None:
+        if self._last_action_player_idx == player_idx:
+            return self._last_action_source
+        return None
+
+    def _should_animate_hand_for_player(self, player_idx: int) -> bool:
+        if self.challenge_mode and player_idx == self.ai_player_idx:
+            return False
+        if (self._is_remote_client or self._is_remote_host) and player_idx != self.my_player_idx:
+            return False
+        return True
+
+    def _hidden_hand_indices_for(self, player_idx: int) -> set[int]:
+        return self._hidden_hand_indices_by_player.setdefault(player_idx, set())
+
+    def _hidden_discard_indices_for(self, player_idx: int) -> set[int]:
+        return self._hidden_discard_indices_by_player.setdefault(player_idx, set())
+
+    def _hide_hand_index(self, player_idx: int, hand_idx: int) -> None:
+        self._hidden_hand_idx = None
+        self._hidden_hand_idx_player = None
+        self._hidden_hand_indices_for(player_idx).add(hand_idx)
+
+    def _unhide_hand_index(self, player_idx: int, hand_idx: int) -> None:
+        self._hidden_hand_indices_for(player_idx).discard(hand_idx)
+
+    def _hide_discard_index(self, player_idx: int, discard_idx: int) -> None:
+        self._hidden_discard_idx = None
+        self._hidden_discard_idx_player = None
+        self._hidden_discard_indices_for(player_idx).add(discard_idx)
+
+    def _unhide_discard_index(self, player_idx: int, discard_idx: int) -> None:
+        self._hidden_discard_indices_for(player_idx).discard(discard_idx)
 
     def _refresh_interaction_controls(self):
         """Recompute cached controls after state changes outside normal actions."""
@@ -595,6 +652,15 @@ class GameScreen(Screen):
             other_idx = 1 - self.setup_player_idx
             return self.state.get_player(other_idx)
         return self.state.get_opponent()
+
+    def _get_display_player_idx(self) -> int:
+        if self.challenge_mode:
+            return self.human_player_idx
+        if self._is_remote_host or self._is_remote_client:
+            return self.my_player_idx
+        if self.state.phase == TurnPhase.SETUP:
+            return self.setup_player_idx
+        return self.state.active_player_idx
 
     # ── Position helpers ────────────────────────────────────────
 
@@ -1398,6 +1464,7 @@ class GameScreen(Screen):
 
             self._animating_action = True
             self._animating_hand_idx = self.selected_hand_idx
+            self._animating_hand_idx_player = player_idx
 
             def on_anim_done():
                 self._animating_action = False
@@ -1444,6 +1511,7 @@ class GameScreen(Screen):
 
         self._animating_action = True
         self._animating_hand_idx = self.selected_hand_idx
+        self._animating_hand_idx_player = captured_player_idx
 
         def on_animation_done():
             result = self.tm.setup_place_basic(captured_player_idx, captured_hand_idx, captured_target)
@@ -1630,6 +1698,7 @@ class GameScreen(Screen):
 
             self._animating_action = True
             self._animating_hand_idx = self.selected_hand_idx
+            self._animating_hand_idx_player = player_idx
 
             def on_anim_done():
                 self._animating_action = False
@@ -1675,6 +1744,7 @@ class GameScreen(Screen):
 
         self._animating_action = True
         self._animating_hand_idx = self.selected_hand_idx
+        self._animating_hand_idx_player = captured_player_idx
 
         def on_animation_done():
             result = self.tm.perform_action(
@@ -1714,6 +1784,7 @@ class GameScreen(Screen):
 
             self._animating_action = True
             self._animating_hand_idx = self.selected_hand_idx
+            self._animating_hand_idx_player = player_idx
 
             def on_anim_done():
                 self._animating_action = False
@@ -1739,6 +1810,7 @@ class GameScreen(Screen):
 
         self._animating_action = True
         self._animating_hand_idx = self.selected_hand_idx
+        self._animating_hand_idx_player = captured_player_idx
 
         def on_animation_done():
             result = self.tm.perform_action(
@@ -1788,6 +1860,7 @@ class GameScreen(Screen):
 
             self._animating_action = True
             self._animating_hand_idx = self.selected_hand_idx
+            self._animating_hand_idx_player = player_idx
 
             def on_anim_done():
                 self._animating_action = False
@@ -1813,6 +1886,7 @@ class GameScreen(Screen):
 
         self._animating_action = True
         self._animating_hand_idx = self.selected_hand_idx
+        self._animating_hand_idx_player = captured_player_idx
 
         def on_animation_done():
             result = self.tm.perform_action(
@@ -1846,6 +1920,7 @@ class GameScreen(Screen):
 
             self._animating_action = True
             self._animating_hand_idx = self.selected_hand_idx
+            self._animating_hand_idx_player = captured_player_idx
 
             # Send to host immediately, play fly animation in parallel
             self._send_client_action("PLAY_TRAINER", {
@@ -1863,10 +1938,9 @@ class GameScreen(Screen):
             # card visually flies from "played" position → discard pile.
             target_x = PLAY_AREA_W // 2
             target_y = HAND_Y + CARD_HEIGHT // 2
-            self._last_action_source = (target_x, target_y)
             card_name = player.hand[self.selected_hand_idx].name if self.selected_hand_idx < len(player.hand) else None
-            self._last_action_card_name = card_name
-            self._last_action_card_obj = player.hand[self.selected_hand_idx] if self.selected_hand_idx < len(player.hand) else None
+            card_obj = player.hand[self.selected_hand_idx] if self.selected_hand_idx < len(player.hand) else None
+            self._set_last_action_context(captured_player_idx, (target_x, target_y), card_name, card_obj)
             self._fly_card_from_hand(target_x, target_y, card_name, on_complete=on_anim_done)
 
             self._clear_selection()
@@ -1889,14 +1963,18 @@ class GameScreen(Screen):
         # Hide card from hand during action
         self._animating_action = True
         self._animating_hand_idx = self.selected_hand_idx
+        self._animating_hand_idx_player = captured_player_idx
 
         # Record source position and card info for potential discard animation
         hand_layout = self._get_hand_layout()
         if captured_hand_idx < len(hand_layout):
             sx, sy, _ = hand_layout[captured_hand_idx]
-            self._last_action_source = (sx + CARD_WIDTH // 2, sy + CARD_HEIGHT // 2)
-            self._last_action_card_name = card.name
-            self._last_action_card_obj = card
+            self._set_last_action_context(
+                captured_player_idx,
+                (sx + CARD_WIDTH // 2, sy + CARD_HEIGHT // 2),
+                card.name,
+                card,
+            )
 
         result = self.tm.perform_action(
             PlayerAction.PLAY_TRAINER, player_idx=captured_player_idx,
@@ -1913,9 +1991,10 @@ class GameScreen(Screen):
             self._animating_action = False
             self._animating_hand_idx = None
             if result.success:
+                action_source = self._last_action_source_for(captured_player_idx)
                 fallback = (
-                    self._last_action_source[0] if self._last_action_source else PLAY_AREA_W // 2,
-                    self._last_action_source[1] if self._last_action_source else HAND_Y + CARD_HEIGHT // 2,
+                    action_source[0] if action_source else PLAY_AREA_W // 2,
+                    action_source[1] if action_source else HAND_Y + CARD_HEIGHT // 2,
                 )
                 discard_cards = list(player.discard[before_discard_count:])
                 drawn_cards = self._result_draw_cards(result, player, before_deck_count)
@@ -1923,9 +2002,7 @@ class GameScreen(Screen):
                     discard_cards, before_hand, before_layout,
                     played_card=card, played_idx=saved_hand_idx, fallback=fallback,
                 )
-                self._last_action_source = None
-                self._last_action_card_name = None
-                self._last_action_card_obj = None
+                self._clear_last_action_context()
                 self._suppress_result_draw_anim = bool(drawn_cards)
                 self._animate_discard_draw_sequence(
                     captured_player_idx,
@@ -1937,9 +2014,7 @@ class GameScreen(Screen):
                 )
                 self._sync_tracking_counts()
             else:
-                self._last_action_source = None
-                self._last_action_card_name = None
-                self._last_action_card_obj = None
+                self._clear_last_action_context()
 
         self._show_result(result)
         self._clear_selection()
@@ -1960,6 +2035,7 @@ class GameScreen(Screen):
 
             self._animating_action = True
             self._animating_hand_idx = hand_idx
+            self._animating_hand_idx_player = player_idx
 
             def on_anim_done():
                 self._animating_action = False
@@ -1970,10 +2046,9 @@ class GameScreen(Screen):
             target_y = HAND_Y + CARD_HEIGHT // 2
             # Record play position and card info as discard animation source so
             # the card flies from the "played" position to the discard pile.
-            self._last_action_source = (target_x, target_y)
             card_name = player.hand[hand_idx].name if hand_idx < len(player.hand) else None
-            self._last_action_card_name = card_name
-            self._last_action_card_obj = player.hand[hand_idx] if hand_idx < len(player.hand) else None
+            card_obj = player.hand[hand_idx] if hand_idx < len(player.hand) else None
+            self._set_last_action_context(player_idx, (target_x, target_y), card_name, card_obj)
             self._fly_card_from_hand(target_x, target_y, card_name, on_complete=on_anim_done)
 
             self._clear_selection()
@@ -2729,6 +2804,15 @@ class GameScreen(Screen):
                 result, action=action, attacker_player_idx=attacker_player_idx
             )
 
+        if result.success and (
+            self.state.winner is not None
+            or self.state.phase == TurnPhase.GAME_OVER
+        ):
+            if self.state.winner is not None:
+                self.state.phase = TurnPhase.GAME_OVER
+            self._show_end_screen()
+            return
+
         # Challenge mode has no PassScreen; handle KO promotion immediately.
         if self.challenge_mode and self.state.pending_promotion_player >= 0:
             self._check_promotion_needed()
@@ -2739,6 +2823,7 @@ class GameScreen(Screen):
     def _finish_promotion_flow(self) -> None:
         if self.state.pending_promotion_player < 0:
             return
+        self._awaiting_promotion = False
         if self.state.phase == TurnPhase.DRAW and self.tm is not None:
             self.tm.continue_after_promotion()
         else:
@@ -2747,11 +2832,19 @@ class GameScreen(Screen):
     def _check_promotion_needed(self) -> None:
         if self.state.phase == TurnPhase.GAME_OVER:
             return
+        if self._awaiting_promotion:
+            return  # Already waiting for user to pick a bench Pokemon
         player_idx = self.state.pending_promotion_player
         if player_idx < 0:
             player_idx = self.my_player_idx if (self._is_remote_host or self._is_remote_client) else (
                 self.setup_player_idx if self.state.phase == TurnPhase.SETUP else self.state.active_player_idx
             )
+        # In challenge mode, KO promotion must resolve immediately after the
+        # attack, even though the affected player is usually not the active
+        # turn owner. Otherwise pending AI promotion blocks both players.
+        if self.state.phase not in (TurnPhase.SETUP, TurnPhase.DRAW):
+            if player_idx != self.state.active_player_idx and not self.challenge_mode:
+                return
         player = self.state.get_player(player_idx)
         if player.active is None:
             bench_pokes = [(i, p) for i, p in enumerate(player.bench) if p is not None]
@@ -2946,12 +3039,11 @@ class GameScreen(Screen):
                     self._animating_action = False
                     self._animating_hand_idx = None
                     # Trigger discard animation from hand position
-                    src_x = self._last_action_source[0] if self._last_action_source else PLAY_AREA_W // 2
-                    src_y = self._last_action_source[1] if self._last_action_source else HAND_Y + CARD_HEIGHT // 2
+                    source = self._last_action_source_for(action_req.player)
+                    src_x = source[0] if source else PLAY_AREA_W // 2
+                    src_y = source[1] if source else HAND_Y + CARD_HEIGHT // 2
                     src_slot = f"hand_{saved_hand_idx}" if saved_hand_idx is not None else None
-                    self._last_action_source = None
-                    self._last_action_card_name = None
-                    self._last_action_card_obj = None
+                    self._clear_last_action_context()
                     discard_cards = list(player.discard[before_discard_count:])
                     drawn_cards = (
                         self._result_draw_cards(call_result, player, before_deck_count)
@@ -3057,11 +3149,10 @@ class GameScreen(Screen):
                     self._pending_trainer_card = None
                     self._animating_action = False
                     self._animating_hand_idx = None
-                    src_x = self._last_action_source[0] if self._last_action_source else PLAY_AREA_W // 2
-                    src_y = self._last_action_source[1] if self._last_action_source else HAND_Y + CARD_HEIGHT // 2
-                    self._last_action_source = None
-                    self._last_action_card_name = None
-                    self._last_action_card_obj = None
+                    source = self._last_action_source_for(action_req.player)
+                    src_x = source[0] if source else PLAY_AREA_W // 2
+                    src_y = source[1] if source else HAND_Y + CARD_HEIGHT // 2
+                    self._clear_last_action_context()
                     self._animate_discard(action_req.player, src_x, src_y, card.name, card)
                     # Broadcast updated state
                     if self._is_remote_host:
@@ -3416,8 +3507,6 @@ class GameScreen(Screen):
             return False
         if self._ai_pending_action is not None:
             return True
-        if self.state.pending_promotion_player == self.human_player_idx:
-            return False
         if self.state.pending_promotion_player == self.ai_player_idx:
             return True
         if self.state.phase == TurnPhase.SETUP:
@@ -3602,9 +3691,7 @@ class GameScreen(Screen):
                 target = self._get_card_screen_pos(self.ai_player_idx, params["target_slot"]) or target
             elif card is not None and getattr(card, "is_trainer_stadium", False):
                 target = self.layout.stadium.center
-            self._last_action_source = target
-            self._last_action_card_name = None
-            self._last_action_card_obj = None
+            self._set_last_action_context(self.ai_player_idx, target)
 
         self.card_fly.fly(
             self._ai_card_back_surface(),
@@ -3838,16 +3925,15 @@ class GameScreen(Screen):
             #    because the hand was refilled by the search. _last_action_source
             #    signals that a trainer card was recently played.
             if new_discard > old_discard:
-                if self._last_action_source:
+                source = self._last_action_source_for(self.my_player_idx)
+                if source:
                     # Trainer card was played recently — use its play position
                     # and stored card info for correct card image in animation
                     discarded = new_discard - old_discard
-                    src_x, src_y = self._last_action_source
-                    self._last_action_source = None
+                    src_x, src_y = source
                     card_name = self._last_action_card_name
                     card_obj = self._last_action_card_obj
-                    self._last_action_card_name = None
-                    self._last_action_card_obj = None
+                    self._clear_last_action_context()
                     for _ in range(discarded):
                         self._animate_discard(self.my_player_idx, src_x, src_y,
                                              card_name, card_obj)
@@ -4313,13 +4399,14 @@ class GameScreen(Screen):
         discard_cards = list(discard_cards or [])
         draw_cards = list(draw_cards or [])
         source_positions = source_positions or []
-        if discard_cards and draw_cards and draw_start_idx is not None:
+        animate_hand = self._should_animate_hand_for_player(player_idx)
+        if animate_hand and discard_cards and draw_cards and draw_start_idx is not None:
             player = self.state.get_player(player_idx)
             hand_count = len(player.hand) if player else 0
             for offset in range(len(draw_cards)):
                 idx = draw_start_idx + offset
                 if 0 <= idx < hand_count:
-                    self._hidden_hand_indices.add(idx)
+                    self._hide_hand_index(player_idx, idx)
 
         def start_draws():
             for offset, draw_card in enumerate(draw_cards):
@@ -4357,10 +4444,7 @@ class GameScreen(Screen):
     def _animate_draw(self, player_idx: int, card_name: str = None,
                       card_obj=None, hand_idx: int | None = None):
         """Animate a card being drawn from deck to hand."""
-        if self.challenge_mode and player_idx == self.ai_player_idx:
-            return
-        # In remote mode, skip draw animation for opponent (hand is hidden)
-        if (self._is_remote_client or self._is_remote_host) and player_idx != self.my_player_idx:
+        if not self._should_animate_hand_for_player(player_idx):
             return
 
         deck_x, deck_y = self._get_deck_pos(player_idx)
@@ -4377,8 +4461,7 @@ class GameScreen(Screen):
         drawn_card = card_obj or player.hand[target_idx]
         if card_name is None and drawn_card is not None:
             card_name = drawn_card.name
-        self._hidden_hand_idx = None
-        self._hidden_hand_indices.add(target_idx)
+        self._hide_hand_index(player_idx, target_idx)
 
         layout = self._get_hand_layout()
         if target_idx < len(layout):
@@ -4403,7 +4486,7 @@ class GameScreen(Screen):
             card_surf.fill((80, 100, 180, 240))
 
         def on_complete():
-            self._hidden_hand_indices.discard(target_idx)
+            self._unhide_hand_index(player_idx, target_idx)
             if get_audio():
                 get_audio().play("card_place")
 
@@ -4439,8 +4522,7 @@ class GameScreen(Screen):
             hidden_idx = discard_idx if discard_idx is not None else len(player.discard) - 1
             if hidden_idx < 0 or hidden_idx >= len(player.discard):
                 hidden_idx = len(player.discard) - 1
-            self._hidden_discard_idx = None
-            self._hidden_discard_indices.add(hidden_idx)
+            self._hide_discard_index(player_idx, hidden_idx)
 
         w, h = CARD_WIDTH * 3 // 4, CARD_HEIGHT * 3 // 4
         if card_name:
@@ -4455,7 +4537,7 @@ class GameScreen(Screen):
 
         def inner_on_complete():
             if hidden_idx is not None:
-                self._hidden_discard_indices.discard(hidden_idx)
+                self._unhide_discard_index(player_idx, hidden_idx)
             if on_complete:
                 on_complete()
 
@@ -4533,6 +4615,7 @@ class GameScreen(Screen):
             discard_delta = max(0, dc - last_dc)
             deck_delta = max(0, last_mc - mc)
             hand_delta = hc - last_hc
+            action_source = self._last_action_source_for(pi)
 
             discarded = 0
             drawn = 0
@@ -4543,14 +4626,14 @@ class GameScreen(Screen):
                 and deck_delta > 0
                 and hand_delta == 0
                 and discard_delta == deck_delta
-                and not self._last_action_source
+                and not action_source
             )
             if looks_like_mill:
                 milled = min(discard_delta, deck_delta)
             else:
                 if deck_delta > 0 and (hand_delta > 0 or discard_delta > 0):
                     drawn = min(deck_delta, hc)
-                if discard_delta > 0 and (hand_delta < 0 or drawn > 0 or self._last_action_source):
+                if discard_delta > 0 and (hand_delta < 0 or drawn > 0 or action_source):
                     discarded = discard_delta
 
             # Skip opponent animations in remote mode (hand/field position would be wrong)
@@ -4564,9 +4647,9 @@ class GameScreen(Screen):
                 # Animate discards first, chain draws after.
                 src_x = PLAY_AREA_W // 2
                 src_y = HAND_Y + CARD_HEIGHT // 2
-                if self._last_action_source:
-                    src_x, src_y = self._last_action_source
-                    self._last_action_source = None
+                if action_source:
+                    src_x, src_y = action_source
+                    self._clear_last_action_context()
 
                 discard_cards = list(player.discard[last_dc:dc])
                 draw_start = max(0, len(player.hand) - drawn)
@@ -4595,13 +4678,11 @@ class GameScreen(Screen):
                     src_y = HAND_Y + CARD_HEIGHT // 2
                     card_name = None
                     card_obj = None
-                    if self._last_action_source:
-                        src_x, src_y = self._last_action_source
-                        self._last_action_source = None
+                    if action_source:
+                        src_x, src_y = action_source
                         card_name = self._last_action_card_name
                         card_obj = self._last_action_card_obj
-                        self._last_action_card_name = None
-                        self._last_action_card_obj = None
+                        self._clear_last_action_context()
                     discard_cards = list(player.discard[last_dc:dc])
                     for i, discard_card in enumerate(discard_cards):
                         anim_name = card_name or self._card_anim_name(discard_card)

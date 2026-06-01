@@ -124,9 +124,11 @@ class TurnManager:
 
         result = self.resolver.resolve(action, player_idx=player_idx, **params)
 
-        # After attack, stay in ATTACK phase until player clicks End Turn
+        # After attack, stay in ATTACK phase until player clicks End Turn.
+        # A final KO may already have moved the game to GAME_OVER.
         if action == PlayerAction.DECLARE_ATTACK and result.success:
-            self.state.phase = TurnPhase.ATTACK
+            if self.state.winner is None and self.state.phase != TurnPhase.GAME_OVER:
+                self.state.phase = TurnPhase.ATTACK
 
         elif action == PlayerAction.END_TURN and result.success:
             if self.state.phase in (TurnPhase.MAIN, TurnPhase.ATTACK):

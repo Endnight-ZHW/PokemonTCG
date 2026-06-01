@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "created_at": 1780295876,
+    "elapsed_seconds": 2541.443,
+    "eval_games": 20,
+    "games_per_deck": 60,
+    "search": {
+      "beam_width": 10,
+      "coin_sample_count": 6,
+      "deterministic_search": true,
+      "max_sequence_depth": 5,
+      "max_turn_actions": 24,
+      "opponent_response_actions": 8,
+      "opponent_response_weight": 0.55,
+      "thinking_time_seconds": 0.0
+    },
+    "trainer": "cross_entropy_balanced_v2"
+  },
+  "policies": {
+    "fire": {
+      "eval": {
+        "baseline": {
+          "avg_score": 503926.8,
+          "draws": 0,
+          "losses": 5,
+          "wins": 15
+        },
+        "games": 20,
+        "trained": {
+          "avg_score": 202996.9,
+          "draws": 0,
+          "losses": 8,
+          "wins": 12
+        }
+      },
+      "metadata": {
+        "accepted": false,
+        "best_score": 1022286.0,
+        "generations": 6,
+        "population": 10,
+        "search": {
+          "beam_width": 10,
+          "coin_sample_count": 6,
+          "deterministic_search": true,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "thinking_time_seconds": 0.0
+        },
+        "seed": 17
+      },
+      "stats": {
+        "draws": 0,
+        "losses": 26,
+        "wins": 34
+      },
+      "training_games": 60,
+      "weights": {
+        "bench_count": 10.3305,
+        "core_in_hand": 24.0206,
+        "core_in_play": 83.6862,
+        "damaged_self": -0.197,
+        "engine_in_hand": 17.1457,
+        "engine_in_play": 47.0249,
+        "evolved_count": 39.2795,
+        "hand_size": 4.3511,
+        "ko_pressure": 1.2796,
+        "low_hp_targets": 25.3809,
+        "matching_energy_attached": 17.2825,
+        "matching_energy_hand": 7.8455,
+        "preferred_bench": 18.4012,
+        "trainer_in_hand": 12.5965
+      }
+    }
+  },
+  "seed": 17,
+  "version": 1
+}

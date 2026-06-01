@@ -57,9 +57,23 @@ def draw_hand(gs, surface, player):
     """Draw hand cards at the bottom of the screen."""
     layout = get_hand_layout(gs)
     hand = player.hand
+    if hasattr(gs, "_get_display_player_idx"):
+        display_player_idx = gs._get_display_player_idx()
+    else:
+        display_player_idx = 0 if player is getattr(gs.state, "p1", None) else 1
     animating_idx = getattr(gs, '_animating_hand_idx', None)
+    animating_idx_player = getattr(gs, '_animating_hand_idx_player', display_player_idx)
+    if animating_idx_player is not None and animating_idx_player != display_player_idx:
+        animating_idx = None
     hidden_idx = getattr(gs, '_hidden_hand_idx', None)
-    hidden_set = getattr(gs, '_hidden_hand_indices', set())
+    hidden_idx_player = getattr(gs, '_hidden_hand_idx_player', display_player_idx)
+    if hidden_idx_player is not None and hidden_idx_player != display_player_idx:
+        hidden_idx = None
+    hidden_by_player = getattr(gs, '_hidden_hand_indices_by_player', None)
+    if isinstance(hidden_by_player, dict):
+        hidden_set = hidden_by_player.get(display_player_idx, set())
+    else:
+        hidden_set = getattr(gs, '_hidden_hand_indices', set())
     for i, (card_x, card_y, rect) in enumerate(layout):
         if i < len(hand):
             if i == animating_idx:

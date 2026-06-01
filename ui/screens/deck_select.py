@@ -176,6 +176,7 @@ class DeckSelectScreen(Screen):
             challenge_mode=self.is_challenge,
             human_player_idx=0,
             ai_player_idx=1,
+            ai_deck_key=deck_key2 if self.is_challenge else None,
         )
         self.manager.replace_top(game_screen)
 

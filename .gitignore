@@ -25,3 +25,5 @@ Thumbs.db
 
 # Test output
 test_log_output.txt
+data/ai_policies_candidate.json
+data/ai_training_progress*.jsonl

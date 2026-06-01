@@ -599,13 +599,26 @@ def _get_visible_top(disc, hidden_idx, hidden_indices=None):
     top = visible[-1] if visible else None
     return count, top.name if top else None, top
 
+
+def _hidden_discard_state(gs, player_idx):
+    hidden_idx = getattr(gs, '_hidden_discard_idx', None)
+    hidden_idx_player = getattr(gs, '_hidden_discard_idx_player', player_idx)
+    if hidden_idx_player is not None and hidden_idx_player != player_idx:
+        hidden_idx = None
+    hidden_by_player = getattr(gs, '_hidden_discard_indices_by_player', None)
+    if isinstance(hidden_by_player, dict):
+        hidden_set = hidden_by_player.get(player_idx, set())
+    else:
+        hidden_set = getattr(gs, '_hidden_discard_indices', set())
+    return hidden_idx, hidden_set
+
 def draw_opponent_discard(gs, surface):
     """Draw opponent's discard pile showing top card."""
     opponent = gs._get_opponent()
     disc = opponent.discard
     rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).opponent_discard
-    hidden_discard = getattr(gs, '_hidden_discard_idx', None)
-    hidden_set = getattr(gs, '_hidden_discard_indices', set())
+    opponent_idx = 0 if opponent is gs.state.p1 else 1
+    hidden_discard, hidden_set = _hidden_discard_state(gs, opponent_idx)
     count, top_card_name, top_card_obj = _get_visible_top(disc, hidden_discard, hidden_set)
     top_card_id = top_card_obj.api_id if top_card_obj else ""
     top_card_img = None
@@ -647,8 +660,8 @@ def draw_player_discard(gs, surface):
     player = gs._get_display_player()
     disc = player.discard
     rect = getattr(gs, "layout", DEFAULT_GAME_LAYOUT).player_discard
-    hidden_discard = getattr(gs, '_hidden_discard_idx', None)
-    hidden_set = getattr(gs, '_hidden_discard_indices', set())
+    player_idx = 0 if player is gs.state.p1 else 1
+    hidden_discard, hidden_set = _hidden_discard_state(gs, player_idx)
     count, top_card_name, top_card_obj = _get_visible_top(disc, hidden_discard, hidden_set)
     top_card_id = top_card_obj.api_id if top_card_obj else ""
     top_card_img = None

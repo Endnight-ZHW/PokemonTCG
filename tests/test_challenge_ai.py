@@ -1,7 +1,12 @@
 """Challenge AI unit tests."""
+import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
+from concurrent.futures.process import BrokenProcessPool
+from unittest.mock import patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -11,7 +16,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.card_models import AbilityDef, AttackDef, Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK, expand_deck
-from engine.ai import AIAction, AIConfig, ChallengeAI
+from engine.ai import AIAction, AIConfig, ChallengeAI, create_challenge_ai, DECK_AI_PROFILES
+from engine.ai.profiles import load_policy_weights
+from engine.ai.training import (
+    PlayGameTask,
+    TrainingConfig,
+    _run_play_game_tasks,
+    benchmark_policies,
+    clamp_weight,
+    play_game,
+    play_match,
+    run_training,
+    train_deck,
+)
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import ActionRequest, GameState
 from engine.player_state import PokemonInPlay
@@ -88,6 +105,248 @@ class ChallengeAITests(unittest.TestCase):
                 result = ai._apply_action_for_sim(sim, 1, action)
                 self.assertIsNotNone(result)
                 self.assertTrue(result.success, result.log_message)
+
+    def test_deck_specific_ai_factory_covers_all_profiles(self):
+        for deck_key in DECK_AI_PROFILES:
+            with self.subTest(deck_key=deck_key):
+                ai = create_challenge_ai(deck_key, AIConfig(policy_path=None))
+                self.assertEqual(ai.profile.key, deck_key)
+                self.assertGreater(ai.config.thinking_time_seconds, 5.0)
+
+    def test_ai_layers_are_present_and_delegate(self):
+        state = self._simple_public_state()
+        ai = create_challenge_ai("water", AIConfig(policy_path=None, max_turn_actions=8))
+
+        self.assertIs(ai.enumerator.ai, ai)
+        self.assertIs(ai.simulator.ai, ai)
+        self.assertIs(ai.evaluator.ai, ai)
+        self.assertIs(ai.choice_policy.ai, ai)
+        self.assertEqual(ai.legal_actions(state, 1), ai.enumerator.legal_actions(state, 1))
+        self.assertEqual(ai.evaluate_state(state, 1), ai.evaluator.evaluate_state(state, 1))
+
+    def test_deck_profiles_change_card_priorities(self):
+        state = self._simple_public_state()
+        pikachu = CardRegistry.get("svl-pikaex")
+        greninja = CardRegistry.get("sv2-grex")
+        lightning_ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        water_ai = create_challenge_ai("water", AIConfig(policy_path=None))
+
+        self.assertGreater(
+            lightning_ai._card_value(state, 1, pikachu),
+            water_ai._card_value(state, 1, pikachu),
+        )
+        self.assertGreater(
+            water_ai._card_value(state, 1, greninja),
+            lightning_ai._card_value(state, 1, greninja),
+        )
+
+    def test_policy_file_failures_fall_back_to_profile_weights(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+            fh.write("{bad json")
+            policy_path = fh.name
+        try:
+            ai = create_challenge_ai("fire", AIConfig(policy_path=policy_path))
+            self.assertEqual(ai.profile.key, "fire")
+            self.assertIn("core_in_play", ai.policy_weights)
+        finally:
+            os.unlink(policy_path)
+
+    def test_policy_loader_rejects_bad_eval_candidate(self):
+        payload = {
+            "version": 1,
+            "policies": {
+                "water": {
+                    "weights": {"core_in_play": 120.0},
+                    "eval": {
+                        "games": 4,
+                        "baseline": {"wins": 3, "losses": 1, "draws": 0, "avg_score": 500.0},
+                        "trained": {"wins": 1, "losses": 3, "draws": 0, "avg_score": -500.0},
+                    },
+                },
+                "fire": {
+                    "weights": {"core_in_play": 111.0},
+                    "eval": {
+                        "games": 4,
+                        "baseline": {"wins": 1, "losses": 3, "draws": 0, "avg_score": -500.0},
+                        "trained": {"wins": 3, "losses": 1, "draws": 0, "avg_score": 500.0},
+                    },
+                },
+            },
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+            json.dump(payload, fh)
+            policy_path = fh.name
+        try:
+            self.assertEqual(load_policy_weights("water", policy_path), {})
+            self.assertEqual(load_policy_weights("fire", policy_path)["core_in_play"], 111.0)
+        finally:
+            os.unlink(policy_path)
+
+    def test_training_script_small_run_writes_policy_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = os.path.join(tmpdir, "ai_policies.json")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/train_challenge_ai.py",
+                    "--deck",
+                    "fire",
+                    "--games",
+                    "1",
+                    "--eval-games",
+                    "0",
+                    "--output",
+                    output,
+                ],
+                cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+                text=True,
+                capture_output=True,
+                timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with open(output, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            self.assertEqual(payload["version"], 1)
+            self.assertIn("fire", payload["policies"])
+            self.assertIn("weights", payload["policies"]["fire"])
+            self.assertEqual(payload["policies"]["fire"]["training_games"], 1)
+
+    def test_training_exact_game_budget_and_weight_clamps(self):
+        calls = []
+
+        def fake_play(deck_key, weights, opponent_key, seed, max_steps=160, candidate_player_idx=0):
+            calls.append((deck_key, opponent_key, seed, candidate_player_idx))
+            winner = 0 if len(calls) % 3 else 1
+            return winner, float(len(calls))
+
+        with patch("engine.ai.training.play_game", side_effect=fake_play):
+            result = train_deck("fire", 1, 123, workers=1)
+            self.assertEqual(result["training_games"], 1)
+            self.assertEqual(len(calls), 1)
+
+            calls.clear()
+            result = train_deck("fire", 200, 123, workers=1)
+            self.assertEqual(result["training_games"], 200)
+            self.assertEqual(len(calls), 200)
+
+        self.assertEqual(clamp_weight("damaged_self", 12.0), 0.0)
+        self.assertEqual(clamp_weight("damaged_self", -9.0), -1.5)
+        self.assertEqual(clamp_weight("ko_pressure", 99.0), 3.0)
+        self.assertEqual(clamp_weight("ko_pressure", -4.0), 0.1)
+
+    def test_training_parallel_scheduling_preserves_task_order(self):
+        seen = []
+
+        def fake_runner(tasks, workers):
+            rows = []
+            for task in tasks:
+                seen.append((workers, task.deck_key, task.opponent_key, task.seed, task.seat))
+                winner = 0 if task.seed % 2 == 0 else 1
+                rows.append((winner, float(task.seed % 100)))
+            return rows
+
+        with patch("engine.ai.training._run_play_game_tasks", side_effect=fake_runner):
+            train_deck("fire", 12, 123, workers=1)
+            single_worker_seen = list(seen)
+            seen.clear()
+            train_deck("fire", 12, 123, workers=4)
+            multi_worker_seen = list(seen)
+
+        self.assertEqual(
+            [row[1:] for row in single_worker_seen],
+            [row[1:] for row in multi_worker_seen],
+        )
+        self.assertTrue(all(row[0] == 1 for row in single_worker_seen))
+        self.assertTrue(all(row[0] == 4 for row in multi_worker_seen))
+
+    def test_parallel_game_tasks_fall_back_to_serial_on_broken_pool(self):
+        class BrokenExecutor:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def map(self, func, tasks):
+                raise BrokenProcessPool("worker terminated")
+
+        tasks = [PlayGameTask("fire", None, "water", 17, 0)]
+        with patch("engine.ai.training.ProcessPoolExecutor", BrokenExecutor), \
+             patch("engine.ai.training._execute_play_game_task", return_value=(0, 12.0)) as execute:
+            self.assertEqual(_run_play_game_tasks(tasks, workers=4), [(0, 12.0)])
+        execute.assert_called_once_with(tasks[0])
+
+    def test_training_play_game_is_seed_deterministic(self):
+        first = play_game("fire", None, "water", 2025, max_steps=8)
+        second = play_game("fire", None, "water", 2025, max_steps=8)
+        self.assertEqual(first, second)
+
+    def test_play_match_accepts_custom_weights(self):
+        weights = {"core_in_play": 72.0, "ko_pressure": 1.1}
+        result = play_match("fire", weights, "water", None, 2026, seat=1, max_steps=8)
+        self.assertEqual(len(result), 2)
+        self.assertIn(result[0], (0, 1, None))
+
+    def test_training_progress_jsonl_and_candidate_policy_are_loadable(self):
+        def fake_play(deck_key, weights, opponent_key, seed, max_steps=160, candidate_player_idx=0):
+            winner = 0 if seed % 2 == 0 else 1
+            return winner, float(seed % 100)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = os.path.join(tmpdir, "candidate.json")
+            progress = os.path.join(tmpdir, "progress.jsonl")
+            config = TrainingConfig(
+                deck="fire",
+                games=3,
+                seed=7,
+                output=output,
+                eval_games=0,
+                progress_jsonl=progress,
+                workers=1,
+            )
+            with patch("engine.ai.training.play_game", side_effect=fake_play):
+                payload = run_training(config)
+
+            self.assertEqual(payload["policies"]["fire"]["training_games"], 3)
+            with open(progress, "r", encoding="utf-8") as fh:
+                events = [json.loads(line) for line in fh if line.strip()]
+            self.assertEqual(events[0]["type"], "run_started")
+            self.assertEqual(events[-1]["type"], "run_finished")
+            totals = [
+                event["total_games_played"]
+                for event in events
+                if "total_games_played" in event
+            ]
+            self.assertEqual(totals, sorted(totals))
+
+            loaded = load_policy_weights("fire", output)
+            self.assertIn("core_in_play", loaded)
+            self.assertIn("damaged_self", loaded)
+
+    def test_benchmark_payload_contains_matrix_before_after_and_ranking(self):
+        policies = {
+            "fire": {"weights": {"core_in_play": 80.0}},
+            "water": {"weights": {"core_in_play": 75.0}},
+        }
+
+        def fake_game_runner(tasks, workers):
+            return [(0 if task.seed % 2 == 0 else 1, float(task.seed % 10)) for task in tasks]
+
+        def fake_match_runner(tasks, workers):
+            return [(0 if task.seed % 2 == 0 else 1, float(task.seed % 10)) for task in tasks]
+
+        with patch("engine.ai.training._run_play_game_tasks", side_effect=fake_game_runner), \
+             patch("engine.ai.training._run_play_match_tasks", side_effect=fake_match_runner):
+            payload = benchmark_policies(policies, 17, 2, workers=4)
+
+        self.assertEqual(payload["games_per_matchup"], 2)
+        self.assertIn("fire", payload["before_after"])
+        self.assertIn("fire", payload["matrix"])
+        self.assertIn("water", payload["matrix"]["fire"])
+        self.assertEqual([row["rank"] for row in payload["rankings"]], [1, 2])
 
     def test_core_rules_reject_main_phase_active_basic_and_same_stadium(self):
         state = self._simple_public_state()
@@ -178,6 +437,22 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(action_a.params, action_b.params)
         self.assertEqual(action_a.terminal, action_b.terminal)
 
+    def test_fow_placeholders_survive_repeated_masking_and_clone(self):
+        state = self._simple_public_state()
+        special_energy = CardRegistry.get("svi-dte") or CardRegistry.get("svg2-lume")
+        if special_energy is None:
+            self.skipTest("No special energy card available")
+        state.p1.hand = [special_energy]
+        state.p1.deck = [special_energy] * 3
+
+        ai = ChallengeAI(AIConfig(policy_path=None))
+        first_masked = ai._masked_clone_for_eval(state, 1)
+        second_masked = ai._masked_clone_for_eval(state, 1)
+
+        self.assertTrue(second_masked.p1.hand[0].api_id.startswith("_fow_"))
+        cloned_first = ai._clone_state(first_masked)
+        self.assertTrue(cloned_first.p1.hand[0].api_id.startswith("_fow_"))
+
     def test_pending_choice_strategies_cover_common_requests(self):
         state = self._simple_public_state()
         ai = ChallengeAI(AIConfig(random_seed=3))
@@ -210,7 +485,8 @@ class ChallengeAITests(unittest.TestCase):
 
         coin_req = ActionRequest("coin_flip", 1, "coin", flip_count=3)
         self.assertEqual(len(ai.resolve_pending_action(state, coin_req).coin_results), 3)
-        sim_choice = ai._resolve_pending_for_sim(state, ActionRequest("coin_flip", 1, "coin", flip_count=4))
+        sim_choice = ai._resolve_pending_for_sim(state, ActionRequest("coin_flip", 1, "coin", flip_count=20))
+        self.assertEqual(len(sim_choice.coin_results), 20)
         self.assertIn(True, sim_choice.coin_results)
         self.assertIn(False, sim_choice.coin_results)
 
@@ -224,6 +500,84 @@ class ChallengeAITests(unittest.TestCase):
             max_per_target=2,
         )
         self.assertTrue(ai.resolve_pending_action(state, energy_req).assignments)
+
+    def test_tactical_damage_estimation_covers_dynamic_effects(self):
+        base = CardRegistry.get("sv2-delib")
+        attacker = Card(
+            api_id="test-dynamic-attacker",
+            name="Dynamic Attacker",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=100,
+            energy_types=["Colorless"],
+            attacks=[
+                AttackDef(
+                    "Hand Burst",
+                    [],
+                    0,
+                    "",
+                    effects=[{"effect_type": "damage_per_hand_size", "params": {"per": 20}}],
+                ),
+                AttackDef(
+                    "Energy Punish",
+                    [],
+                    0,
+                    "",
+                    effects=[{"effect_type": "damage_per_energy", "params": {"count_from": "opponent_active", "per_energy": 30}}],
+                ),
+            ],
+        )
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(base)
+        state.p2.active = PokemonInPlay(attacker)
+        state.p2.hand = [base, base, base, base]
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-3")]
+
+        ai = ChallengeAI(AIConfig(policy_path=None))
+        self.assertEqual(ai._estimated_attack_damage(state, 1, 0), 80)
+        self.assertEqual(ai._estimated_attack_damage(state, 1, 1), 60)
+
+    def test_final_ko_attack_preserves_game_over_phase(self):
+        base = CardRegistry.get("sv2-delib")
+        attacker = Card(
+            api_id="test-final-ko-attacker",
+            name="Final KO Attacker",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=100,
+            energy_types=["Colorless"],
+            attacks=[AttackDef("Finish", [], 120, "")],
+        )
+        defender = Card(
+            api_id="test-final-ko-defender",
+            name="Final KO Defender",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=60,
+            energy_types=["Colorless"],
+        )
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(defender)
+        state.p2.active = PokemonInPlay(attacker)
+        state.p1.deck = [base]
+        state.p2.deck = [base]
+        state.p1.prizes = [base] * 6
+        state.p2.prizes = [base] * 6
+
+        result = TurnManager(state).declare_attack(1, 0)
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(state.winner, 1)
+        self.assertEqual(state.phase, TurnPhase.GAME_OVER)
+        self.assertFalse(state.p1.has_any_pokemon_in_play())
 
     def test_attack_simulation_includes_forced_end_turn(self):
         base = CardRegistry.get("sv2-delib")

@@ -4,7 +4,9 @@ Run with:
     python -B tests/test_ui_smoke.py
 """
 import os
+import json
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -35,10 +37,12 @@ from network.state_serializer import (
     deserialize_game_state,
 )
 from ui.screen_manager import ScreenManager
+from ui.components import board_renderer, hand_display
 from ui.components.game_layout import SLOT_OPP_ACTIVE, SLOT_PLAYER_ACTIVE
 from ui.screens.deck_select import DeckSelectScreen
 from ui.screens.end_screen import EndScreen
 from ui.screens.attached_cards_screen import AttachedCardsScreen
+from ui.screens.ai_training_screen import AITrainingScreen
 from ui.screens.energy_distribution_screen import EnergyDistributionScreen
 from ui.screens.game_screen import GameScreen
 from ui.screens.help_screen import HelpScreen
@@ -139,6 +143,7 @@ class UiSmokeTests(unittest.TestCase):
 
         screens = [
             TitleScreen(self._manager()),
+            AITrainingScreen(self._manager()),
             DeckSelectScreen(self._manager(), self.available_decks),
             DeckSelectScreen(self._manager(), self.available_decks, mode="challenge"),
             GameScreen(self._manager(), state, tm),
@@ -176,6 +181,197 @@ class UiSmokeTests(unittest.TestCase):
             with self.subTest(screen=screen.__class__.__name__):
                 screen.update(1 / 60)
                 screen.draw(self.surface)
+
+    def test_ai_training_screen_progress_states_draw(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            candidate = os.path.join(tmpdir, "candidate.json")
+            policy = os.path.join(tmpdir, "policy.json")
+            progress = os.path.join(tmpdir, "progress.jsonl")
+            old_payload = {
+                "version": 1,
+                "policies": {
+                    "fire": {
+                        "weights": {
+                            "core_in_play": 70.0,
+                            "damaged_self": -0.18,
+                            "ko_pressure": 0.9,
+                        }
+                    }
+                },
+            }
+            new_payload = {
+                "version": 1,
+                "policies": {
+                    "fire": {
+                        "stats": {"wins": 2, "losses": 1, "draws": 0},
+                        "eval": {
+                            "games": 2,
+                            "trained": {"wins": 1, "losses": 1, "draws": 0},
+                            "baseline": {"wins": 0, "losses": 2, "draws": 0},
+                        },
+                        "weights": {
+                            "core_in_play": 86.0,
+                            "damaged_self": -0.42,
+                            "ko_pressure": 1.6,
+                        },
+                    }
+                },
+                "benchmark": {
+                    "games_per_matchup": 2,
+                    "deck_keys": ["fire", "water"],
+                    "before_after": {
+                        "fire": {
+                            "before": {"wins": 0, "losses": 2, "draws": 0, "win_rate": 0.0},
+                            "after": {"wins": 1, "losses": 1, "draws": 0, "win_rate": 0.5},
+                            "delta_win_rate": 0.5,
+                        }
+                    },
+                    "matrix": {
+                        "fire": {"water": {"wins": 1, "losses": 1, "draws": 0, "win_rate": 0.5}},
+                        "water": {"fire": {"wins": 1, "losses": 1, "draws": 0, "win_rate": 0.5}},
+                    },
+                    "rankings": [
+                        {"rank": 1, "deck": "fire", "wins": 1, "losses": 1, "draws": 0, "point_rate": 0.5},
+                        {"rank": 2, "deck": "water", "wins": 1, "losses": 1, "draws": 0, "point_rate": 0.5},
+                    ],
+                },
+            }
+            with open(policy, "w", encoding="utf-8") as fh:
+                json.dump(old_payload, fh)
+            with open(candidate, "w", encoding="utf-8") as fh:
+                json.dump(new_payload, fh)
+
+            screen = AITrainingScreen(
+                self._manager(),
+                output_path=candidate,
+                policy_path=policy,
+                progress_path=progress,
+            )
+            screen._apply_progress_event({
+                "type": "run_started",
+                "total_training_games": 3,
+                "games_per_deck": 3,
+            })
+            screen.status = "running"
+            screen._apply_progress_event({
+                "type": "deck_started",
+                "deck": "fire",
+                "target_games": 3,
+            })
+            screen._apply_progress_event({
+                "type": "generation_finished",
+                "deck": "fire",
+                "generation": 1,
+                "games_played": 3,
+                "target_games": 3,
+                "total_games_played": 3,
+                "total_training_games": 3,
+                "stats": {"wins": 2, "losses": 1, "draws": 0},
+                "win_rate": 2 / 3,
+            })
+            screen._apply_progress_event({
+                "type": "benchmark_started",
+                "deck_keys": ["fire", "water"],
+                "games_per_matchup": 2,
+            })
+            screen._apply_progress_event({
+                "type": "matchup_finished",
+                "deck_a": "fire",
+                "deck_b": "water",
+                "stats_a": {"wins": 1, "losses": 1, "draws": 0, "win_rate": 0.5},
+                "stats_b": {"wins": 1, "losses": 1, "draws": 0, "win_rate": 0.5},
+            })
+            screen.draw(self.surface)
+
+            screen._apply_progress_event({
+                "type": "benchmark_finished",
+                "benchmark": new_payload["benchmark"],
+            })
+            for view in ("matrix", "before", "ranking", "weights"):
+                screen.result_view = view
+                screen.draw(self.surface)
+
+            screen._apply_progress_event({
+                "type": "run_finished",
+                "output": candidate,
+                "policy_count": 1,
+                "total_games_played": 3,
+                "total_training_games": 3,
+                "elapsed_seconds": 4.0,
+            })
+            screen.draw(self.surface)
+            self.assertTrue(screen._can_apply())
+            self.assertEqual(screen.status, "completed")
+
+    def test_ai_training_screen_clears_stale_run_files_and_validates_apply(self):
+        class FakeProcess:
+            def poll(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            candidate = os.path.join(tmpdir, "candidate.json")
+            progress = os.path.join(tmpdir, "progress.jsonl")
+            with open(candidate, "w", encoding="utf-8") as fh:
+                json.dump({"version": 1, "policies": {"fire": {"weights": {}}}}, fh)
+            with open(progress, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "type": "generation_finished",
+                    "total_games_played": 99,
+                    "total_training_games": 99,
+                }) + "\n")
+
+            screen = AITrainingScreen(
+                self._manager(),
+                output_path=candidate,
+                policy_path=os.path.join(tmpdir, "policy.json"),
+                progress_path=progress,
+            )
+            with patch("ui.screens.ai_training_screen.subprocess.Popen",
+                       return_value=FakeProcess()) as popen_mock:
+                screen._start_training()
+
+            self.assertEqual(screen.status, "running")
+            cmd = popen_mock.call_args.args[0]
+            self.assertIn("--workers", cmd)
+            self.assertIn(str(screen.workers), cmd)
+            self.assertIn("--benchmark-games", cmd)
+            self.assertIn(str(screen.benchmark_games), cmd)
+            self.assertFalse(os.path.exists(candidate))
+            self.assertFalse(os.path.exists(progress))
+            screen._read_progress_events()
+            self.assertEqual(screen.total_games_played, 0)
+
+            with open(candidate, "w", encoding="utf-8") as fh:
+                fh.write("{bad json")
+            screen.status = "completed"
+            screen._candidate_payload = None
+            self.assertFalse(screen._can_apply())
+
+    def test_ai_training_screen_apply_supports_root_relative_policy_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            candidate = os.path.join(tmpdir, "candidate.json")
+            payload = {
+                "version": 1,
+                "policies": {"fire": {"weights": {"core_in_play": 80.0}}},
+            }
+            with open(candidate, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh)
+
+            screen = AITrainingScreen(
+                self._manager(),
+                output_path=candidate,
+                policy_path="policy.json",
+                progress_path=os.path.join(tmpdir, "progress.jsonl"),
+            )
+            screen.repo_root = tmpdir
+            screen.status = "completed"
+            screen._load_candidate_payload()
+            self.assertTrue(screen._can_apply())
+            screen._apply_candidate_policy()
+
+            self.assertEqual(screen.status, "applied")
+            with open(os.path.join(tmpdir, "policy.json"), "r", encoding="utf-8") as fh:
+                self.assertEqual(json.load(fh), payload)
 
     def test_game_layout_bounds_and_non_overlap(self):
         state, tm = self._game()
@@ -516,6 +712,174 @@ class UiSmokeTests(unittest.TestCase):
         screen.update(1.0)
         self.assertEqual(state.active_player_idx, 0)
         self.assertEqual(state.phase, TurnPhase.MAIN)
+
+    def test_challenge_ai_final_ko_shows_end_screen(self):
+        base = CardRegistry.get("sv2-delib")
+        attacker = Card(
+            api_id="test-challenge-ai-final-ko-attacker",
+            name="Challenge AI Final KO Attacker",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=100,
+            energy_types=["Colorless"],
+            attacks=[AttackDef("Finish", [], 120, "")],
+        )
+        defender = Card(
+            api_id="test-challenge-human-final-ko-defender",
+            name="Challenge Human Final KO Defender",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=60,
+            energy_types=["Colorless"],
+        )
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(defender)
+        state.p2.active = PokemonInPlay(attacker)
+        state.p1.deck = [base]
+        state.p2.deck = [base]
+        state.p1.prizes = [base] * 6
+        state.p2.prizes = [base] * 6
+
+        class ScriptedAI:
+            def choose_action(self, game_state, player_idx):
+                return AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+
+            def resolve_pending_action(self, game_state, action_request):
+                return ChallengeAI().resolve_pending_action(game_state, action_request)
+
+            def apply_choice(self, game_state, action_request, choice):
+                return ChallengeAI().apply_choice(game_state, action_request, choice)
+
+        manager = self._manager()
+        screen = GameScreen(
+            manager, state, TurnManager(state),
+            challenge_mode=True,
+            human_player_idx=0,
+            ai_player_idx=1,
+            ai_controller=ScriptedAI(),
+        )
+        manager.push_screen(screen)
+
+        screen.update(1.0)
+
+        self.assertEqual(state.winner, 1)
+        self.assertEqual(state.phase, TurnPhase.GAME_OVER)
+        self.assertIsInstance(manager.top, EndScreen)
+
+    def test_challenge_human_ko_ai_promotes_without_blocking(self):
+        base = CardRegistry.get("sv2-delib")
+        attacker = Card(
+            api_id="test-human-ko-attacker",
+            name="Human KO Attacker",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=100,
+            energy_types=["Colorless"],
+            attacks=[AttackDef("Knock Out", [], 120, "")],
+        )
+        ai_active = Card(
+            api_id="test-ai-ko-defender",
+            name="AI KO Defender",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=60,
+            energy_types=["Colorless"],
+        )
+        ai_bench = Card(
+            api_id="test-ai-promotion-bench",
+            name="AI Promotion Bench",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=90,
+            energy_types=["Colorless"],
+        )
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(attacker)
+        state.p2.active = PokemonInPlay(ai_active)
+        state.p2.bench[0] = PokemonInPlay(ai_bench)
+        state.p1.deck = [base]
+        state.p2.deck = [base]
+        state.p1.prizes = [base] * 6
+        state.p2.prizes = [base] * 6
+
+        screen = GameScreen(
+            self._manager(), state, TurnManager(state),
+            challenge_mode=True,
+            human_player_idx=0,
+            ai_player_idx=1,
+        )
+        result = screen.tm.declare_attack(0, 0)
+        self.assertTrue(result.success, result.log_message)
+        self.assertGreaterEqual(state.pending_promotion_player, 0)
+
+        screen._show_result(result, attacker_player_idx=0, action=PlayerAction.DECLARE_ATTACK)
+
+        self.assertEqual(state.pending_promotion_player, -1)
+        self.assertEqual(state.phase, TurnPhase.ATTACK)
+        self.assertEqual(state.p2.active.card.api_id, "test-ai-promotion-bench")
+        self.assertFalse(screen._should_block_challenge_input())
+
+    def test_challenge_ai_animation_state_does_not_hide_human_hand_or_discard(self):
+        base = CardRegistry.get("sv2-delib")
+        energy = CardRegistry.get("sv1-ener-3")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(base)
+        state.p2.active = PokemonInPlay(base)
+        state.p1.hand = [base, energy]
+        state.p2.hand = [base, energy]
+        state.p1.discard = [base, energy]
+        state.p2.discard = [base, energy]
+        screen = GameScreen(
+            self._manager(), state, TurnManager(state),
+            challenge_mode=True,
+            human_player_idx=0,
+            ai_player_idx=1,
+        )
+
+        screen._hide_hand_index(1, 0)
+        with patch.object(hand_display, "draw_hand_card") as draw_card:
+            hand_display.draw_hand(screen, self.surface, state.p1)
+        self.assertEqual(draw_card.call_count, len(state.p1.hand))
+
+        screen._hide_discard_index(1, 1)
+        captured = {}
+
+        def capture_stack(*args, **kwargs):
+            captured["count"] = args[7]
+            captured["top_card_name"] = kwargs.get("top_card_name")
+
+        with patch.object(board_renderer, "_draw_card_stack_with_count",
+                          side_effect=capture_stack):
+            board_renderer.draw_player_discard(screen, self.surface)
+        self.assertEqual(captured["count"], len(state.p1.discard))
+        self.assertEqual(captured["top_card_name"], energy.name)
+
+        with patch.object(board_renderer, "_draw_card_stack_with_count",
+                          side_effect=capture_stack):
+            board_renderer.draw_opponent_discard(screen, self.surface)
+        self.assertEqual(captured["count"], 1)
+        self.assertEqual(captured["top_card_name"], base.name)
+
+        screen._sync_tracking_counts()
+        screen._set_last_action_context(1, (123, 45), energy.name, energy)
+        state.p1.deck = [energy]
+        screen._last_deck_counts[0] = 1
+        state.p1.deck.pop()
+        state.p1.hand.append(energy)
+        screen._detect_state_changes()
+        self.assertEqual(screen._last_action_player_idx, 1)
 
     def test_hand_card_context_menu_builds_card_actions(self):
         state, tm = self._game()

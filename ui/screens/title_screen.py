@@ -23,25 +23,30 @@ class TitleScreen(Screen):
         self.font_body = get_font("body")
         self.font_small = get_font("normal")
 
-        btn_w, btn_h = 300, 60
+        btn_w, btn_h = 300, 54
+        btn_gap = 12
         btn_x = (SCREEN_WIDTH - btn_w) // 2
-        btn_y = SCREEN_HEIGHT // 2 + 50
+        btn_y = SCREEN_HEIGHT // 2 + 20
         self.start_button = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
         self.start_hover = False
 
-        challenge_btn_y = btn_y + btn_h + 16
+        challenge_btn_y = btn_y + btn_h + btn_gap
         self.challenge_button = pygame.Rect(btn_x, challenge_btn_y, btn_w, btn_h)
         self.challenge_hover = False
 
-        remote_btn_y = challenge_btn_y + btn_h + 16
+        training_btn_y = challenge_btn_y + btn_h + btn_gap
+        self.training_button = pygame.Rect(btn_x, training_btn_y, btn_w, btn_h)
+        self.training_hover = False
+
+        remote_btn_y = training_btn_y + btn_h + btn_gap
         self.remote_button = pygame.Rect(btn_x, remote_btn_y, btn_w, btn_h)
         self.remote_hover = False
 
-        img_btn_y = remote_btn_y + btn_h + 16
+        img_btn_y = remote_btn_y + btn_h + btn_gap
         self.cardimg_button = pygame.Rect(btn_x, img_btn_y, btn_w, btn_h)
         self.cardimg_hover = False
 
-        toggle_y = img_btn_y + btn_h + 18
+        toggle_y = img_btn_y + btn_h + 16
         self.matchup_toggle = pygame.Rect(btn_x, toggle_y, btn_w, 44)
         self.matchup_hover = False
 
@@ -140,6 +145,7 @@ class TitleScreen(Screen):
         if event.type == pygame.MOUSEMOTION:
             self.start_hover = self.start_button.collidepoint(event.pos)
             self.challenge_hover = self.challenge_button.collidepoint(event.pos)
+            self.training_hover = self.training_button.collidepoint(event.pos)
             self.remote_hover = self.remote_button.collidepoint(event.pos)
             self.cardimg_hover = self.cardimg_button.collidepoint(event.pos)
             self.matchup_hover = self.matchup_toggle.collidepoint(event.pos)
@@ -149,6 +155,8 @@ class TitleScreen(Screen):
                 self._start_game()
             elif self.challenge_hover:
                 self._start_challenge()
+            elif self.training_hover:
+                self._open_ai_training()
             elif self.remote_hover:
                 self._start_remote_game()
             elif self.cardimg_hover:
@@ -214,6 +222,10 @@ class TitleScreen(Screen):
         self.manager.push_screen(
             DeckSelectScreen(self.manager, available_decks, mode="challenge")
         )
+
+    def _open_ai_training(self):
+        from ui.screens.ai_training_screen import AITrainingScreen
+        self.manager.push_screen(AITrainingScreen(self.manager))
 
     def _show_help(self):
         """Show a help overlay with game rules."""
@@ -376,6 +388,10 @@ class TitleScreen(Screen):
         challenge_rect = self.challenge_button.move(0, entry_offset // 2)
         draw_button(surface, challenge_rect, "挑战 AI", self.font_body,
                     hovered=self.challenge_hover)
+
+        training_rect = self.training_button.move(0, entry_offset * 3 // 5)
+        draw_button(surface, training_rect, "AI训练", self.font_body,
+                    hovered=self.training_hover)
 
         remote_rect = self.remote_button.move(0, entry_offset * 2 // 3)
         draw_button(surface, remote_rect, "远程对战", self.font_body,
