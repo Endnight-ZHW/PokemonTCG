@@ -347,6 +347,128 @@ class UiSmokeTests(unittest.TestCase):
             screen._candidate_payload = None
             self.assertFalse(screen._can_apply())
 
+    def test_ai_training_screen_rl_mode_command_progress_and_apply(self):
+        class FakeProcess:
+            def poll(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            screen = AITrainingScreen(
+                self._manager(),
+                policy_path=os.path.join("data", "ai_policies.json"),
+                progress_path=os.path.join("data", "ai_training_progress.jsonl"),
+            )
+            screen.repo_root = tmpdir
+            screen.training_kind = "rl"
+            screen.result_view = "curve"
+            screen.selected_deck = "fire"
+            screen.games = 1
+            screen.bootstrap_games = 1
+            screen.eval_games = 1
+            screen.max_steps = 40
+            screen.rl_device = "cuda"
+
+            stale_model = screen._abs_path(screen._rl_candidate_model_path())
+            stale_meta = os.path.splitext(stale_model)[0] + ".json"
+            progress = screen._abs_path(screen.progress_path)
+            os.makedirs(os.path.dirname(stale_model), exist_ok=True)
+            os.makedirs(os.path.dirname(progress), exist_ok=True)
+            with open(stale_model, "w", encoding="utf-8") as fh:
+                fh.write("stale")
+            with open(stale_meta, "w", encoding="utf-8") as fh:
+                json.dump({"stale": True}, fh)
+            with open(progress, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "old"}) + "\n")
+
+            with patch("ui.screens.ai_training_screen.subprocess.Popen",
+                       return_value=FakeProcess()) as popen_mock:
+                screen._start_training()
+
+            self.assertEqual(screen.status, "running")
+            cmd = popen_mock.call_args.args[0]
+            self.assertEqual(cmd[:4], ["conda", "run", "-n", "DL"])
+            self.assertIn("train_deep_ai.py", cmd[6])
+            self.assertIn("--progress-jsonl", cmd)
+            self.assertIn("--max-steps", cmd)
+            self.assertIn(screen._rl_candidate_model_path(), cmd)
+            self.assertFalse(os.path.exists(stale_model))
+            self.assertFalse(os.path.exists(stale_meta))
+            self.assertFalse(os.path.exists(progress))
+
+            screen._apply_progress_event({
+                "type": "run_started",
+                "trainer": "rl_ai",
+                "deck": "fire",
+                "total_training_games": 3,
+                "device": "cuda",
+                "max_steps": 40,
+            })
+            screen._apply_progress_event({
+                "type": "bootstrap_finished",
+                "deck": "fire",
+                "games_played": 1,
+                "examples": 2,
+                "total_games_played": 1,
+                "total_training_games": 3,
+            })
+            screen._apply_progress_event({
+                "type": "self_play_game_finished",
+                "deck": "fire",
+                "game": 1,
+                "target_games": 1,
+                "stats": {"wins": 1, "losses": 0, "draws": 0},
+                "win_rate": 1.0,
+                "avg_score": 42.0,
+                "examples": 3,
+                "total_games_played": 2,
+                "total_training_games": 3,
+            })
+            screen._apply_progress_event({
+                "type": "train_phase_finished",
+                "deck": "fire",
+                "phase": "self_play",
+                "policy_loss": 0.4,
+                "value_loss": 0.1,
+                "total_loss": 0.5,
+                "examples": 3,
+                "total_games_played": 2,
+                "total_training_games": 3,
+            })
+            screen._apply_progress_event({
+                "type": "eval_finished",
+                "deck": "fire",
+                "eval": {"games": 1, "wins": 1, "losses": 0, "draws": 0},
+                "win_rate": 1.0,
+                "total_games_played": 3,
+                "total_training_games": 3,
+            })
+
+            with open(stale_model, "w", encoding="utf-8") as fh:
+                fh.write("model")
+            with open(stale_meta, "w", encoding="utf-8") as fh:
+                json.dump({"metadata": {"trainer": "test", "summary": {"fire": {"eval": {"games": 1, "wins": 1}}}}}, fh)
+
+            screen._apply_progress_event({
+                "type": "run_finished",
+                "trainer": "rl_ai",
+                "output": screen._rl_candidate_model_path(),
+                "sidecar": screen._active_sidecar_path(),
+                "total_games_played": 3,
+                "total_training_games": 3,
+                "elapsed_seconds": 2.0,
+            })
+
+            for view in ("curve", "loss", "eval", "summary"):
+                screen.result_view = view
+                screen.draw(self.surface)
+
+            self.assertTrue(screen._can_apply())
+            screen._apply_candidate_policy()
+            self.assertEqual(screen.status, "applied")
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", "ai_models", "fire.pt")))
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", "ai_models", "fire.json")))
+            self.assertFalse(os.path.exists(os.path.join(tmpdir, "data", "ai_policies.json")))
+
     def test_ai_training_screen_apply_supports_root_relative_policy_path(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             candidate = os.path.join(tmpdir, "candidate.json")

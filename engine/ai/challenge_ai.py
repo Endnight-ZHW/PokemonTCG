@@ -423,6 +423,8 @@ class ChallengeAI:
         return filtered
 
     def _beam_search_action(self, state: GameState, player_idx: int, deadline: float) -> AIAction:
+        self._cleanup_fow_registry()
+        self._fow_cache.clear()
         root_actions = self.legal_actions(state, player_idx)
         if not root_actions:
             return AIAction(PlayerAction.END_TURN, {}, terminal=True)

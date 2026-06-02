@@ -1,5 +1,0 @@
-pygame>=2.5.0
-pokemontcgsdk>=2.0.0
-requests>=2.28.0
-Pillow>=10.0.0
-websockets>=12.0

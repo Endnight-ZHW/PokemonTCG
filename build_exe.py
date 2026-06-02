@@ -107,6 +107,18 @@ def build(onefile=False):
     cmd.extend(["--exclude-module", "tests"])
     cmd.extend(["--exclude-module", "scripts"])
 
+    # Exclude DL / conda packages — these are only for AI training,
+    # not needed at runtime, and would bloat the exe by several GB.
+    dl_excludes = [
+        "torch", "torchvision", "torchaudio", "torchtext",
+        "numpy", "numpy._core", "numpy.linalg", "numpy.random",
+        "matplotlib", "matplotlib.pyplot", "matplotlib.backends",
+        "scipy", "pandas", "sklearn", "tensorflow", "keras",
+        "jax", "onnx", "onnxruntime",
+    ]
+    for mod in dl_excludes:
+        cmd.extend(["--exclude-module", mod])
+
     cmd.append(MAIN_SCRIPT)
 
     print("=" * 60)

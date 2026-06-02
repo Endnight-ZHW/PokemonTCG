@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "bootstrap_games": 1,
+    "created_at": 1780362933,
+    "deck": "fire",
+    "deck_keys": [
+      "fire"
+    ],
+    "elapsed_seconds": 13.349,
+    "eval_games": 0,
+    "games": 0,
+    "summary": {
+      "fire": {
+        "bootstrap": {
+          "examples": 20,
+          "loss": 2.188618
+        },
+        "eval": {
+          "avg_score": 0.0,
+          "draws": 0,
+          "games": 0,
+          "losses": 0,
+          "wins": 0
+        },
+        "self_play": {
+          "examples": 0,
+          "loss": 0.0
+        },
+        "self_play_stats": {
+          "draws": 0,
+          "losses": 0,
+          "wins": 0
+        }
+      }
+    },
+    "trainer": "bootstrap_plus_policy_gradient_v1",
+    "workers": 1
+  },
+  "model_path": "data/ai_models/smoke_test.pt"
+}

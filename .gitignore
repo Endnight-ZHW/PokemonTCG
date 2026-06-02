@@ -20,6 +20,15 @@ env/
 .DS_Store
 Thumbs.db
 
+# Conda environment
+.conda/
+*.conda
+
+# PyTorch
+*.pth
+*.pkl
+torch_cache/
+
 # Claude Code
 .claude/
 

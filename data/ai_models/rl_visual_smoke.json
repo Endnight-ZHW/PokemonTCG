@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "bootstrap_games": 1,
+    "created_at": 1780365058,
+    "deck": "fire",
+    "deck_keys": [
+      "fire"
+    ],
+    "elapsed_seconds": 9.509,
+    "eval_games": 1,
+    "games": 1,
+    "summary": {
+      "fire": {
+        "bootstrap": {
+          "examples": 20,
+          "loss": 2.153541,
+          "policy_loss": 2.153526,
+          "total_loss": 2.153541,
+          "value_loss": 7.1e-05
+        },
+        "eval": {
+          "avg_score": -1204.456,
+          "draws": 1,
+          "games": 1,
+          "losses": 0,
+          "wins": 0
+        },
+        "self_play": {
+          "examples": 20,
+          "loss": -0.002867,
+          "policy_loss": -0.002896,
+          "total_loss": -0.002867,
+          "value_loss": 0.000145
+        },
+        "self_play_stats": {
+          "draws": 1,
+          "losses": 0,
+          "wins": 0
+        }
+      }
+    },
+    "trainer": "bootstrap_plus_policy_gradient_v1",
+    "workers": 1
+  },
+  "model_path": "data/ai_models/rl_visual_smoke.pt"
+}

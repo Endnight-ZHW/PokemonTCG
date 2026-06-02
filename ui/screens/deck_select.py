@@ -105,6 +105,8 @@ class DeckSelectScreen(Screen):
 
         self.mode = mode
         self.is_challenge = mode == "challenge"
+        self.ai_kind = "challenge"
+        self.ai_kind_buttons: list[dict] = []
 
         # Remote mode fields
         self.is_remote = is_remote
@@ -134,6 +136,12 @@ class DeckSelectScreen(Screen):
             if self.start_hover:
                 self._start_battle()
                 return
+
+            if self.is_challenge:
+                for button in self.ai_kind_buttons:
+                    if button["rect"].collidepoint(event.pos):
+                        self.ai_kind = button["kind"]
+                        return
 
             # Check player 1 deck selection
             for i, btn in enumerate(self.p1_buttons):
@@ -177,6 +185,7 @@ class DeckSelectScreen(Screen):
             human_player_idx=0,
             ai_player_idx=1,
             ai_deck_key=deck_key2 if self.is_challenge else None,
+            ai_kind=self.ai_kind if self.is_challenge else "challenge",
         )
         self.manager.replace_top(game_screen)
 
@@ -305,6 +314,7 @@ class DeckSelectScreen(Screen):
             surface.blit(vs_txt, vs_rect)
 
             self._draw_challenge_deck_detail(surface)
+            self._draw_ai_kind_selector(surface)
             draw_button(surface, self.start_button, "开始挑战", self.font_body,
                         hovered=self.start_hover, attack=True)
             return
@@ -426,6 +436,26 @@ class DeckSelectScreen(Screen):
 
         # Return the bottom y of the last button
         return y_start + 36 + num_decks * (btn_h + gap)
+
+    def _draw_ai_kind_selector(self, surface):
+        """Draw challenge-mode AI backend selector."""
+        self.ai_kind_buttons.clear()
+        panel = pygame.Rect(SCREEN_WIDTH // 2 - 220, 834, 440, 58)
+        draw_panel(surface, panel)
+        label = self.font_small.render("AI Type", True, UI_TEXT_PRIMARY)
+        surface.blit(label, (panel.x + 14, panel.y + 18))
+
+        x = panel.x + 118
+        for kind, text in (("challenge", "Rules AI"), ("deep_learning", "Deep AI")):
+            rect = pygame.Rect(x, panel.y + 12, 146, 34)
+            self.ai_kind_buttons.append({"kind": kind, "rect": rect})
+            selected = self.ai_kind == kind
+            pygame.draw.rect(surface, (44, 56, 74) if selected else (30, 34, 46), rect, border_radius=6)
+            pygame.draw.rect(surface, UI_HIGHLIGHT if selected else (86, 92, 110), rect,
+                             2 if selected else 1, border_radius=6)
+            draw_text_fit(surface, self.font_small, text, UI_TEXT_PRIMARY,
+                          pygame.Rect(rect.x + 8, rect.y, rect.w - 16, rect.h))
+            x += 156
 
     def _draw_challenge_deck_detail(self, surface):
         """Draw challenge-mode deck comparison with player/AI labels."""

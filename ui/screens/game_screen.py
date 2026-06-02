@@ -26,7 +26,7 @@ from config import (
     GAME_SPEED, GAME_SPEED_OPTIONS,
 )
 from engine.enums import TurnPhase, PlayerAction, StatusType
-from engine.ai import ChallengeAI, create_challenge_ai
+from engine.ai import ChallengeAI, create_ai_controller
 from engine.game_state import GameState, ActionRequest, ActionResult
 from engine.turn_manager import TurnManager
 from engine.rules_validator import (
@@ -113,6 +113,7 @@ class GameScreen(Screen):
                  human_player_idx: int = 0,
                  ai_player_idx: int = 1,
                  ai_deck_key: str | None = None,
+                 ai_kind: str = "challenge",
                  ai_controller: ChallengeAI | None = None):
         super().__init__(manager)
         self.state = game_state if game_state is not None else initial_state
@@ -122,9 +123,9 @@ class GameScreen(Screen):
         self.challenge_mode = challenge_mode
         self.human_player_idx = human_player_idx
         self.ai_player_idx = ai_player_idx
+        self.ai_kind = ai_kind
         self.ai_controller = ai_controller or (
-            create_challenge_ai(ai_deck_key) if challenge_mode and ai_deck_key else
-            ChallengeAI() if challenge_mode else None
+            create_ai_controller(ai_kind, ai_deck_key) if challenge_mode else None
         )
         self._ai_action_delay = 0.25
         self._ai_thinking_timer = 0.0

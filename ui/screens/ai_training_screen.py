@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 
@@ -71,18 +72,26 @@ class AITrainingScreen(Screen):
         self.policy_path = policy_path
         self.progress_path = progress_path
 
+        self.training_kind = "rules"
         self.deck_keys = ["all", *DECK_SPECS.keys()]
         self.selected_deck = "all"
-        self.games = 120
+        self.games = 500
+        self.bootstrap_games = 200
+        self.bootstrap_epochs = 10
+        self.self_play_epochs = 10
         self.seed = 17
-        self.eval_games = 20
+        self.eval_games = 100
         self.workers = DEFAULT_WORKERS
         self.benchmark_games = 2
+        self.max_steps = 120
+        self.batch_size = 64
+        self.rl_device = "cuda"
         self.result_view = "matrix"
 
         self.status = "idle"
         self.status_message = "配置参数后开始训练。"
         self.process: subprocess.Popen | None = None
+        self._stderr_file: str | None = None
         self.started_at: float | None = None
         self.elapsed_seconds = 0.0
         self.total_training_games = 0
@@ -91,6 +100,12 @@ class AITrainingScreen(Screen):
         self.current_stats = {"wins": 0, "losses": 0, "draws": 0}
         self.deck_results: dict[str, dict[str, Any]] = {}
         self.benchmark_results: dict[str, Any] = {}
+        self.rl_phase = ""
+        self.rl_examples = 0
+        self.rl_avg_score = 0.0
+        self.rl_history: list[dict[str, Any]] = []
+        self.rl_loss_history: list[dict[str, Any]] = []
+        self.rl_eval_results: dict[str, Any] = {}
         self.events: list[dict[str, Any]] = []
         self._progress_offset = 0
 
@@ -151,22 +166,53 @@ class AITrainingScreen(Screen):
             return
 
         name = clicked["name"]
-        if name.startswith("deck:") and self.status != "running":
+        if name.startswith("kind:") and self.status != "running":
+            self.training_kind = name.split(":", 1)[1]
+            self.result_view = "matrix" if self.training_kind == "rules" else "curve"
+        elif name.startswith("deck:") and self.status != "running":
             self.selected_deck = name.split(":", 1)[1]
         elif name.startswith("view:"):
             self.result_view = name.split(":", 1)[1]
         elif name == "games_minus" and self.status != "running":
-            self.games = max(1, self.games - 20)
+            step = 1 if self.training_kind == "rl" else 20
+            self.games = max(0 if self.training_kind == "rl" else 1, self.games - step)
         elif name == "games_plus" and self.status != "running":
-            self.games = min(2000, self.games + 20)
+            step = 1 if self.training_kind == "rl" else 20
+            self.games = min(2000, self.games + step)
+        elif name == "bootstrap_minus" and self.status != "running":
+            self.bootstrap_games = max(0, self.bootstrap_games - 10)
+        elif name == "bootstrap_plus" and self.status != "running":
+            self.bootstrap_games = min(1000, self.bootstrap_games + 10)
+        elif name == "bootstrap_epochs_minus" and self.status != "running":
+            self.bootstrap_epochs = max(1, self.bootstrap_epochs - 1)
+        elif name == "bootstrap_epochs_plus" and self.status != "running":
+            self.bootstrap_epochs = min(100, self.bootstrap_epochs + 1)
+        elif name == "self_play_epochs_minus" and self.status != "running":
+            self.self_play_epochs = max(1, self.self_play_epochs - 1)
+        elif name == "self_play_epochs_plus" and self.status != "running":
+            self.self_play_epochs = min(100, self.self_play_epochs + 1)
         elif name == "seed_minus" and self.status != "running":
             self.seed = max(1, self.seed - 1)
         elif name == "seed_plus" and self.status != "running":
             self.seed += 1
         elif name == "eval_minus" and self.status != "running":
-            self.eval_games = max(0, self.eval_games - 1)
+            step = 10 if self.training_kind == "rl" else 1
+            self.eval_games = max(0, self.eval_games - step)
         elif name == "eval_plus" and self.status != "running":
-            self.eval_games = min(50, self.eval_games + 1)
+            step = 10 if self.training_kind == "rl" else 1
+            self.eval_games = min(500 if self.training_kind == "rl" else 50, self.eval_games + step)
+        elif name == "steps_minus" and self.status != "running":
+            self.max_steps = max(20, self.max_steps - 20)
+        elif name == "steps_plus" and self.status != "running":
+            self.max_steps = min(400, self.max_steps + 20)
+        elif name == "batch_minus" and self.status != "running":
+            self.batch_size = max(8, self.batch_size - 8)
+        elif name == "batch_plus" and self.status != "running":
+            self.batch_size = min(512, self.batch_size + 8)
+        elif name == "device:cpu" and self.status != "running":
+            self.rl_device = "cpu"
+        elif name == "device:cuda" and self.status != "running":
+            self.rl_device = "cuda"
         elif name == "workers_minus" and self.status != "running":
             self.workers = max(1, self.workers - 1)
         elif name == "workers_plus" and self.status != "running":
@@ -184,22 +230,6 @@ class AITrainingScreen(Screen):
         elif name == "back" and self.status != "running":
             self.manager.pop_screen()
 
-    def update(self, dt: float):
-        if self.status == "running" and self.started_at is not None:
-            self.elapsed_seconds = time.time() - self.started_at
-            self._read_progress_events()
-            if self.process and self.process.poll() is not None:
-                self._read_progress_events()
-                if self.process.returncode == 0:
-                    if self.status == "running":
-                        self.status = "completed"
-                        self.status_message = "训练完成，可预览并应用候选策略。"
-                    self._load_candidate_payload()
-                elif self.status not in ("cancelled", "error"):
-                    self.status = "error"
-                    self.status_message = f"训练进程退出码 {self.process.returncode}"
-                self.process = None
-
     def draw(self, surface: pygame.Surface):
         surface.blit(self._bg_surface, (0, 0))
         self._controls.clear()
@@ -212,59 +242,6 @@ class AITrainingScreen(Screen):
         self._draw_results_panel(surface)
         self._draw_events_panel(surface)
 
-    def _draw_config_panel(self, surface: pygame.Surface):
-        panel = pygame.Rect(42, 90, 420, 820)
-        inner = draw_panel(surface, panel, "训练设置", self.font_body)
-
-        draw_text_fit(surface, self.font_small, "卡组", UI_TEXT_SECONDARY,
-                      pygame.Rect(inner.x, inner.y, inner.w, 24))
-        y = inner.y + 34
-        for idx, key in enumerate(self.deck_keys):
-            col = idx % 3
-            row = idx // 3
-            rect = pygame.Rect(inner.x + col * 126, y + row * 42, 116, 34)
-            self._add_button(surface, rect, f"deck:{key}", DECK_LABELS[key],
-                             selected=self.selected_deck == key,
-                             enabled=self.status != "running")
-
-        y += 142
-        self._draw_stepper(surface, "训练局数", self.games, "games_minus", "games_plus", inner.x, y)
-        y += 74
-        self._draw_stepper(surface, "随机种子", self.seed, "seed_minus", "seed_plus", inner.x, y)
-        y += 74
-        self._draw_stepper(surface, "评估局数", self.eval_games, "eval_minus", "eval_plus", inner.x, y)
-
-        y += 74
-        self._draw_stepper(surface, "并行进程", self.workers, "workers_minus", "workers_plus", inner.x, y)
-        y += 74
-        self._draw_stepper(surface, "基准赛局", self.benchmark_games, "benchmark_minus", "benchmark_plus", inner.x, y)
-
-        y += 74
-        start_rect = pygame.Rect(inner.x, y, 178, 46)
-        cancel_rect = pygame.Rect(inner.x + 190, y, 178, 46)
-        self._add_button(surface, start_rect, "start", "开始训练",
-                         enabled=self.status != "running", attack=True)
-        self._add_button(surface, cancel_rect, "cancel", "取消",
-                         enabled=self.status == "running", danger=True)
-
-        y += 64
-        apply_rect = pygame.Rect(inner.x, y, 178, 46)
-        back_rect = pygame.Rect(inner.x + 190, y, 178, 46)
-        self._add_button(surface, apply_rect, "apply", "应用候选",
-                         enabled=self._can_apply(), selected=self.status == "applied")
-        self._add_button(surface, back_rect, "back", "返回",
-                         enabled=self.status != "running")
-
-        y += 60
-        for line in [
-            f"候选文件: {self.output_path}",
-            f"正式策略: {self.policy_path}",
-            "训练完成前不会覆盖正式策略。",
-        ]:
-            draw_text_fit(surface, self.font_tiny, line, UI_TEXT_SECONDARY,
-                          pygame.Rect(inner.x, y, inner.w, 20))
-            y += 22
-
     def _draw_stepper(
         self,
         surface: pygame.Surface,
@@ -274,9 +251,10 @@ class AITrainingScreen(Screen):
         plus_name: str,
         x: int,
         y: int,
+        w: int = 368,
     ):
-        draw_text_fit(surface, self.font_small, label, UI_TEXT_SECONDARY, pygame.Rect(x, y, 180, 24))
-        rect = pygame.Rect(x, y + 30, 368, 42)
+        draw_text_fit(surface, self.font_small, label, UI_TEXT_SECONDARY, pygame.Rect(x, y, w, 24))
+        rect = pygame.Rect(x, y + 30, w, 42)
         pygame.draw.rect(surface, (24, 30, 46), rect, border_radius=8)
         pygame.draw.rect(surface, (64, 74, 104), rect, 1, border_radius=8)
         self._add_button(surface, pygame.Rect(rect.x + 8, rect.y + 6, 44, 30),
@@ -286,88 +264,9 @@ class AITrainingScreen(Screen):
         value_surf = self.font_body.render(str(value), True, UI_TEXT_PRIMARY)
         surface.blit(value_surf, value_surf.get_rect(center=rect.center))
 
-    def _draw_progress_panel(self, surface: pygame.Surface):
-        panel = pygame.Rect(500, 90, 1058, 236)
-        inner = draw_panel(surface, panel, "训练进度", self.font_body)
-
-        status_color = {
-            "completed": UI_SUCCESS,
-            "applied": UI_SUCCESS,
-            "error": UI_DANGER,
-            "cancelled": UI_DANGER,
-            "running": UI_HIGHLIGHT,
-        }.get(self.status, UI_TEXT_SECONDARY)
-        status_line = f"{self.status.upper()} - {self.status_message}"
-        draw_text_fit(surface, self.font_small, status_line, status_color,
-                      pygame.Rect(inner.x, inner.y, inner.w, 28))
-
-        progress_rect = pygame.Rect(inner.x, inner.y + 48, inner.w, 30)
-        pygame.draw.rect(surface, (24, 30, 46), progress_rect, border_radius=8)
-        pygame.draw.rect(surface, (70, 82, 116), progress_rect, 1, border_radius=8)
-        ratio = self._progress_ratio()
-        fill = progress_rect.copy()
-        fill.w = int(progress_rect.w * ratio)
-        if fill.w > 0:
-            pygame.draw.rect(surface, (68, 158, 116), fill, border_radius=8)
-        label = f"{self.total_games_played}/{self.total_training_games or self._planned_training_games()} 局"
-        label_surf = self.font_small.render(label, True, UI_TEXT_PRIMARY)
-        surface.blit(label_surf, label_surf.get_rect(center=progress_rect.center))
-
-        metric_y = inner.y + 102
-        metrics = [
-            ("当前卡组", self.current_deck or "-"),
-            ("用时", self._format_seconds(self.elapsed_seconds)),
-            ("ETA", self._format_seconds(self._eta_seconds())),
-            ("胜/负/平", self._stats_text(self.current_stats)),
-        ]
-        for idx, (name, value) in enumerate(metrics):
-            box = pygame.Rect(inner.x + idx * 252, metric_y, 236, 64)
-            pygame.draw.rect(surface, (24, 30, 46), box, border_radius=8)
-            pygame.draw.rect(surface, (54, 66, 96), box, 1, border_radius=8)
-            draw_text_fit(surface, self.font_tiny, name, UI_TEXT_SECONDARY,
-                          pygame.Rect(box.x + 10, box.y + 8, box.w - 20, 18))
-            draw_text_fit(surface, self.font_small, str(value), UI_TEXT_PRIMARY,
-                          pygame.Rect(box.x + 10, box.y + 30, box.w - 20, 24))
-
-    def _draw_results_panel_legacy(self, surface: pygame.Surface):
-        panel = pygame.Rect(500, 350, 512, 560)
-        inner = draw_panel(surface, panel, "训练效果", self.font_body)
-
-        if not self.deck_results and not self._candidate_payload:
-            lines = ["等待训练事件。", "完成后这里会显示候选策略的评估表现。"]
-            y = inner.y + 4
-            for line in lines:
-                draw_text_fit(surface, self.font_small, line, UI_TEXT_SECONDARY,
-                              pygame.Rect(inner.x, y, inner.w, 24))
-                y += 28
-            return
-
-        payload = self._candidate_payload or {}
-        policies = payload.get("policies") or {}
-        keys = list(policies) or list(self.deck_results)
-        y = inner.y
-        for deck_key in keys[:8]:
-            result = policies.get(deck_key) or self.deck_results.get(deck_key) or {}
-            stats = result.get("stats", {})
-            eval_data = result.get("eval", {})
-            header = f"{DECK_LABELS.get(deck_key, deck_key)}  训练: {self._stats_text(stats)}"
-            draw_text_fit(surface, self.font_small, header, UI_TEXT_PRIMARY,
-                          pygame.Rect(inner.x, y, inner.w, 24))
-            y += 26
-            trained = (eval_data.get("trained") or {})
-            baseline = (eval_data.get("baseline") or {})
-            eval_line = (
-                f"评估: 训练 {self._stats_text(trained)} "
-                f"基线 {self._stats_text(baseline)}"
-            )
-            draw_text_fit(surface, self.font_tiny, eval_line, UI_TEXT_SECONDARY,
-                          pygame.Rect(inner.x + 8, y, inner.w - 8, 22))
-            y += 30
-            if y > inner.bottom - 42:
-                break
-
-        y += 10
-        self._draw_weight_delta(surface, pygame.Rect(inner.x, y, inner.w, inner.bottom - y))
+    @staticmethod
+    def _stepper_row_height() -> int:
+        return 76
 
     def _draw_weight_delta(self, surface: pygame.Surface, rect: pygame.Rect):
         deltas = self._weight_deltas()
@@ -383,40 +282,6 @@ class AITrainingScreen(Screen):
             draw_text_fit(surface, self.font_tiny, line, color,
                           pygame.Rect(rect.x + 8, y, rect.w - 8, 22))
             y += 24
-
-    def _draw_results_panel(self, surface: pygame.Surface):
-        panel = pygame.Rect(500, 350, 512, 560)
-        inner = draw_panel(surface, panel, "AI 表现", self.font_body)
-
-        if not self.deck_results and not self._candidate_payload:
-            lines = ["等待训练事件。", "完成后这里会显示胜率矩阵、前后对比和排行。"]
-            y = inner.y + 4
-            for line in lines:
-                draw_text_fit(surface, self.font_small, line, UI_TEXT_SECONDARY,
-                              pygame.Rect(inner.x, y, inner.w, 24))
-                y += 28
-            return
-
-        tabs = [
-            ("matrix", "矩阵"),
-            ("before", "前后"),
-            ("ranking", "排行"),
-            ("weights", "权重"),
-        ]
-        tab_w = max(72, (inner.w - 12) // len(tabs))
-        for idx, (key, label) in enumerate(tabs):
-            rect = pygame.Rect(inner.x + idx * (tab_w + 4), inner.y, tab_w, 30)
-            self._add_button(surface, rect, f"view:{key}", label, selected=self.result_view == key)
-
-        content = pygame.Rect(inner.x, inner.y + 42, inner.w, inner.h - 42)
-        if self.result_view == "matrix":
-            self._draw_matrix_view(surface, content)
-        elif self.result_view == "before":
-            self._draw_before_after_view(surface, content)
-        elif self.result_view == "ranking":
-            self._draw_ranking_view(surface, content)
-        else:
-            self._draw_weight_delta(surface, content)
 
     def _benchmark_payload(self) -> dict[str, Any]:
         if self._candidate_payload is None:
@@ -552,10 +417,6 @@ class AITrainingScreen(Screen):
             attack=attack,
         )
 
-    def _planned_training_games(self) -> int:
-        decks = len(DECK_SPECS) if self.selected_deck == "all" else 1
-        return max(1, self.games) * decks
-
     def _progress_ratio(self) -> float:
         total = self.total_training_games or self._planned_training_games()
         return max(0.0, min(1.0, self.total_games_played / max(1, total)))
@@ -565,89 +426,6 @@ class AITrainingScreen(Screen):
         if self.status != "running" or ratio <= 0:
             return 0.0
         return max(0.0, self.elapsed_seconds * (1.0 / ratio - 1.0))
-
-    def _can_apply(self) -> bool:
-        if self.status not in ("completed", "applied"):
-            return False
-        if not os.path.exists(self._abs_path(self.output_path)):
-            return False
-        if self._candidate_payload is None:
-            self._load_candidate_payload()
-        if not isinstance(self._candidate_payload, dict):
-            return False
-        policies = self._candidate_payload.get("policies")
-        return self._candidate_payload.get("version") == 1 and isinstance(policies, dict) and bool(policies)
-
-    def _start_training(self):
-        if self.process is not None:
-            return
-        if not self._reset_training_files():
-            return
-        self.status = "running"
-        self.status_message = "训练进程已启动。"
-        self.started_at = time.time()
-        self.elapsed_seconds = 0.0
-        self.total_training_games = self._planned_training_games()
-        self.total_games_played = 0
-        self.current_deck = ""
-        self.current_stats = {"wins": 0, "losses": 0, "draws": 0}
-        self.deck_results.clear()
-        self.benchmark_results.clear()
-        self.events.clear()
-        self._candidate_payload = None
-        self._progress_offset = 0
-
-        progress_abs = self._abs_path(self.progress_path)
-        progress_dir = os.path.dirname(progress_abs)
-        if progress_dir:
-            os.makedirs(progress_dir, exist_ok=True)
-
-        script = os.path.join(self.repo_root, "scripts", "train_challenge_ai.py")
-        cmd = [
-            sys.executable,
-            "-B",
-            script,
-            "--deck",
-            self.selected_deck,
-            "--games",
-            str(max(1, self.games)),
-            "--seed",
-            str(self.seed),
-            "--eval-games",
-            str(max(0, self.eval_games)),
-            "--output",
-            self.output_path,
-            "--progress-jsonl",
-            self.progress_path,
-            "--workers",
-            str(max(1, self.workers)),
-            "--benchmark-games",
-            str(max(0, self.benchmark_games)),
-        ]
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        try:
-            self.process = subprocess.Popen(
-                cmd,
-                cwd=self.repo_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creationflags,
-            )
-        except OSError as exc:
-            self.process = None
-            self.status = "error"
-            self.status_message = str(exc)
-
-    def _reset_training_files(self) -> bool:
-        for path in (self._abs_path(self.progress_path), self._abs_path(self.output_path)):
-            try:
-                if os.path.exists(path):
-                    os.unlink(path)
-            except OSError as exc:
-                self.status = "error"
-                self.status_message = f"无法清理旧训练文件: {exc}"
-                return False
-        return True
 
     def _cancel_training(self):
         if self.process and self.process.poll() is None:
@@ -662,21 +440,7 @@ class AITrainingScreen(Screen):
         self.status = "cancelled"
         self.status_message = "训练已取消。"
         self.process = None
-
-    def _apply_candidate_policy(self):
-        try:
-            src = self._abs_path(self.output_path)
-            dst = self._abs_path(self.policy_path)
-            dst_dir = os.path.dirname(dst)
-            if dst_dir:
-                os.makedirs(dst_dir, exist_ok=True)
-            shutil.copyfile(src, dst)
-        except OSError as exc:
-            self.status = "error"
-            self.status_message = f"应用失败: {exc}"
-            return
-        self.status = "applied"
-        self.status_message = "候选策略已应用到正式策略文件。"
+        self._cleanup_stderr()
 
     def _read_progress_events(self):
         progress_abs = self._abs_path(self.progress_path)
@@ -688,6 +452,7 @@ class AITrainingScreen(Screen):
             with open(progress_abs, "r", encoding="utf-8") as fh:
                 fh.seek(self._progress_offset)
                 while True:
+                    pos_before = fh.tell()
                     line = fh.readline()
                     if not line:
                         break
@@ -697,78 +462,12 @@ class AITrainingScreen(Screen):
                     try:
                         self._apply_progress_event(json.loads(line))
                     except json.JSONDecodeError:
-                        continue
+                        # Partial write — rewind and retry next tick
+                        fh.seek(pos_before)
+                        break
                 self._progress_offset = fh.tell()
         except OSError:
             return
-
-    def _apply_progress_event(self, event: dict[str, Any]):
-        self.events.append(event)
-        self.events = self.events[-120:]
-        etype = event.get("type")
-        if etype == "run_started":
-            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
-            self.workers = int(event.get("workers") or self.workers)
-            self.benchmark_games = int(event.get("benchmark_games") or self.benchmark_games)
-            self.status_message = "正在训练候选策略。"
-        elif etype == "deck_started":
-            self.current_deck = str(event.get("deck") or "")
-            self.current_stats = {"wins": 0, "losses": 0, "draws": 0}
-        elif etype == "generation_finished":
-            self.current_deck = str(event.get("deck") or self.current_deck)
-            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
-            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
-            stats = event.get("stats") or {}
-            self.current_stats = {
-                "wins": int(stats.get("wins", 0)),
-                "losses": int(stats.get("losses", 0)),
-                "draws": int(stats.get("draws", 0)),
-            }
-        elif etype == "deck_finished":
-            deck = str(event.get("deck") or "")
-            if deck:
-                self.deck_results[deck] = {
-                    "stats": event.get("stats") or {},
-                    "eval": event.get("eval") or {},
-                    "training_games": event.get("training_games", 0),
-                }
-            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
-        elif etype == "benchmark_started":
-            self.status_message = "正在运行基准赛和胜率矩阵..."
-            self.benchmark_results = {
-                "games_per_matchup": int(event.get("games_per_matchup") or 0),
-                "deck_keys": event.get("deck_keys") or [],
-                "before_after": {},
-                "matrix": {},
-                "rankings": [],
-            }
-        elif etype == "matchup_finished":
-            deck_a = str(event.get("deck_a") or "")
-            deck_b = str(event.get("deck_b") or "")
-            if deck_a and deck_b:
-                matrix = self.benchmark_results.setdefault("matrix", {})
-                matrix.setdefault(deck_a, {})[deck_b] = event.get("stats_a") or {}
-                matrix.setdefault(deck_b, {})[deck_a] = event.get("stats_b") or {}
-        elif etype == "benchmark_finished":
-            self.benchmark_results = event.get("benchmark") or self.benchmark_results
-            self.status_message = "基准赛完成，正在写入候选策略..."
-        elif etype == "run_finished":
-            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
-            self.elapsed_seconds = float(event.get("elapsed_seconds") or self.elapsed_seconds)
-            self.status = "completed"
-            self.status_message = "训练完成，可预览并应用候选策略。"
-            self._load_candidate_payload()
-        elif etype == "error":
-            self.status = "error"
-            self.status_message = str(event.get("message") or "训练失败。")
-
-    def _load_candidate_payload(self):
-        try:
-            with open(self._abs_path(self.output_path), "r", encoding="utf-8") as fh:
-                self._candidate_payload = json.load(fh)
-            self.benchmark_results = self._candidate_payload.get("benchmark") or self.benchmark_results
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            self._candidate_payload = None
 
     def _load_policy_payload(self) -> dict[str, Any]:
         try:
@@ -797,17 +496,784 @@ class AITrainingScreen(Screen):
         rows.sort(key=lambda row: abs(row[3]), reverse=True)
         return rows
 
+    def _read_stderr(self) -> str:
+        if not self._stderr_file:
+            return ""
+        try:
+            with open(self._stderr_file, "r", encoding="utf-8", errors="replace") as fh:
+                return fh.read().strip()
+        except OSError:
+            return ""
+
+    def _cleanup_stderr(self):
+        if self._stderr_file is not None:
+            try:
+                os.unlink(self._stderr_file)
+            except OSError:
+                pass
+            self._stderr_file = None
+
+    def _is_rl_mode(self) -> bool:
+        return self.training_kind == "rl"
+
+    def _rl_candidate_model_path(self) -> str:
+        deck = "default" if self.selected_deck == "all" else self.selected_deck
+        return os.path.join("data", "ai_models", f"candidate_{deck}.pt")
+
+    def _rl_deck_model_path(self, deck_key: str) -> str:
+        return os.path.join("data", "ai_models", f"{deck_key}.pt")
+
+    def _rl_default_model_path(self) -> str:
+        deck = "default" if self.selected_deck == "all" else self.selected_deck
+        return os.path.join("data", "ai_models", f"{deck}.pt")
+
+    def _rl_model_paths(self) -> list[str]:
+        """Return the list of per-deck model paths this training run will produce."""
+        if self.selected_deck == "all":
+            return [self._rl_deck_model_path(k) for k in DECK_SPECS]
+        return [self._rl_deck_model_path(self.selected_deck)]
+
+    def _active_output_path(self) -> str:
+        return self._rl_candidate_model_path() if self._is_rl_mode() else self.output_path
+
+    def _active_sidecar_path(self) -> str:
+        return os.path.splitext(self._active_output_path())[0] + ".json"
+
+    def update(self, dt: float):
+        if self.status != "running" or self.started_at is None:
+            return
+        self.elapsed_seconds = time.time() - self.started_at
+        self._read_progress_events()
+        if self.process and self.process.poll() is not None:
+            self._read_progress_events()
+            if self.process.returncode == 0:
+                if self.status == "running":
+                    self.status = "completed"
+                    if self._is_rl_mode():
+                        self.rl_phase = "finished"
+                        self.status_message = "训练完成，可预览并应用模型。"
+                    else:
+                        self.status_message = "训练完成，可预览并应用候选策略。"
+                self._load_candidate_payload()
+            elif self.status not in ("cancelled", "error"):
+                self.status = "error"
+                msg = f"Training process exited with code {self.process.returncode}"
+                stderr_text = self._read_stderr()
+                if stderr_text:
+                    msg += f"\n{stderr_text[-500:]}"
+                self.status_message = msg
+            self.process = None
+            self._cleanup_stderr()
+
+    def _draw_config_panel(self, surface: pygame.Surface):
+        panel = pygame.Rect(42, 6, 420, 936)
+        inner = draw_panel(surface, panel, "训练设置", self.font_body)
+        is_rl = self._is_rl_mode()
+        ROW = 74
+        HW = (inner.w - 16) // 2
+
+        draw_text_fit(surface, self.font_small, "训练类型", UI_TEXT_SECONDARY,
+                      pygame.Rect(inner.x, inner.y, inner.w, 22))
+        y = inner.y + 28
+        self._add_button(surface, pygame.Rect(inner.x, y, 178, 34), "kind:rules", "规则 AI",
+                         selected=not is_rl, enabled=self.status != "running")
+        self._add_button(surface, pygame.Rect(inner.x + 190, y, 178, 34), "kind:rl", "强化 AI",
+                         selected=is_rl, enabled=self.status != "running")
+
+        y += 54
+        draw_text_fit(surface, self.font_small, "卡组", UI_TEXT_SECONDARY,
+                      pygame.Rect(inner.x, y, inner.w, 22))
+        y += 28
+        for idx, key in enumerate(self.deck_keys):
+            col = idx % 3
+            row = idx // 3
+            rect = pygame.Rect(inner.x + col * 126, y + row * 38, 116, 32)
+            label = "全部" if key == "all" else DECK_LABELS.get(key, key)
+            self._add_button(surface, rect, f"deck:{key}", label,
+                             selected=self.selected_deck == key,
+                             enabled=self.status != "running")
+
+        y += 120
+        self._draw_stepper(surface, "训练局数", self.games,
+                           "games_minus", "games_plus", inner.x, y)
+        y += ROW
+
+        if is_rl:
+            self._draw_stepper(surface, "引导局数", self.bootstrap_games,
+                               "bootstrap_minus", "bootstrap_plus", inner.x, y)
+            y += ROW
+
+            self._draw_stepper(surface, "引导 Epochs", self.bootstrap_epochs,
+                               "bootstrap_epochs_minus", "bootstrap_epochs_plus",
+                               inner.x, y, HW)
+            self._draw_stepper(surface, "自对弈 Epochs", self.self_play_epochs,
+                               "self_play_epochs_minus", "self_play_epochs_plus",
+                               inner.x + HW + 16, y, HW)
+            y += ROW
+
+            self._draw_stepper(surface, "评估局数", self.eval_games,
+                               "eval_minus", "eval_plus", inner.x, y)
+            y += ROW
+
+            self._draw_stepper(surface, "最大步数", self.max_steps,
+                               "steps_minus", "steps_plus", inner.x, y, HW)
+            self._draw_stepper(surface, "批次大小", self.batch_size,
+                               "batch_minus", "batch_plus",
+                               inner.x + HW + 16, y, HW)
+            y += ROW
+
+            draw_text_fit(surface, self.font_small, "设备", UI_TEXT_SECONDARY,
+                          pygame.Rect(inner.x, y, inner.w, 22))
+            y += 30
+            self._add_button(surface, pygame.Rect(inner.x, y, 178, 34), "device:cuda", "CUDA",
+                             selected=self.rl_device == "cuda", enabled=self.status != "running")
+            self._add_button(surface, pygame.Rect(inner.x + 190, y, 178, 34), "device:cpu", "CPU",
+                             selected=self.rl_device == "cpu", enabled=self.status != "running")
+            y += 54
+        else:
+            self._draw_stepper(surface, "随机种子", self.seed,
+                               "seed_minus", "seed_plus", inner.x, y)
+            y += ROW
+            self._draw_stepper(surface, "评估局数", self.eval_games,
+                               "eval_minus", "eval_plus", inner.x, y)
+            y += ROW
+            self._draw_stepper(surface, "并行进程", self.workers,
+                               "workers_minus", "workers_plus", inner.x, y)
+            y += ROW
+            self._draw_stepper(surface, "基准赛局", self.benchmark_games,
+                               "benchmark_minus", "benchmark_plus", inner.x, y)
+            y += ROW
+
+        start_rect = pygame.Rect(inner.x, y, 178, 42)
+        cancel_rect = pygame.Rect(inner.x + 190, y, 178, 42)
+        self._add_button(surface, start_rect, "start", "开始训练",
+                         enabled=self.status != "running", attack=True)
+        self._add_button(surface, cancel_rect, "cancel", "取消",
+                         enabled=self.status == "running", danger=True)
+
+        y += 56
+        apply_rect = pygame.Rect(inner.x, y, 178, 42)
+        back_rect = pygame.Rect(inner.x + 190, y, 178, 42)
+        self._add_button(surface, apply_rect, "apply",
+                         "应用模型" if is_rl else "应用候选",
+                         enabled=self._can_apply(), selected=self.status == "applied")
+        self._add_button(surface, back_rect, "back", "返回",
+                         enabled=self.status != "running")
+
+        y += 54
+        if is_rl:
+            lines = [
+                f"卡组: {self.selected_deck}",
+                f"模型路径: data/ai_models/{{deck}}.pt",
+                "各卡组独立模型，不会写入 data/ai_policies.json。",
+            ]
+        else:
+            lines = [
+                f"候选文件: {self.output_path}",
+                f"正式策略: {self.policy_path}",
+                "训练完成前不会覆盖正式策略。",
+            ]
+        for line in lines:
+            draw_text_fit(surface, self.font_tiny, line, UI_TEXT_SECONDARY,
+                          pygame.Rect(inner.x, y, inner.w, 20))
+            y += 22
+
+    def _draw_progress_panel(self, surface: pygame.Surface):
+        panel = pygame.Rect(500, 90, 1058, 236)
+        inner = draw_panel(surface, panel, "Training Progress", self.font_body)
+
+        status_color = {
+            "completed": UI_SUCCESS,
+            "applied": UI_SUCCESS,
+            "error": UI_DANGER,
+            "cancelled": UI_DANGER,
+            "running": UI_HIGHLIGHT,
+        }.get(self.status, UI_TEXT_SECONDARY)
+        mode = "强化 AI" if self._is_rl_mode() else "规则 AI"
+        status_line = f"{mode} | {self.status.upper()} - {self.status_message}"
+        draw_text_fit(surface, self.font_small, status_line, status_color,
+                      pygame.Rect(inner.x, inner.y, inner.w, 28))
+
+        progress_rect = pygame.Rect(inner.x, inner.y + 48, inner.w, 30)
+        pygame.draw.rect(surface, (24, 30, 46), progress_rect, border_radius=8)
+        pygame.draw.rect(surface, (70, 82, 116), progress_rect, 1, border_radius=8)
+        ratio = self._progress_ratio()
+        fill = progress_rect.copy()
+        fill.w = int(progress_rect.w * ratio)
+        if fill.w > 0:
+            pygame.draw.rect(surface, (68, 158, 116), fill, border_radius=8)
+        total = self.total_training_games or self._planned_training_games()
+        label = f"{self.total_games_played}/{total} 局"
+        label_surf = self.font_small.render(label, True, UI_TEXT_PRIMARY)
+        surface.blit(label_surf, label_surf.get_rect(center=progress_rect.center))
+
+        if self._is_rl_mode():
+            stats_value = self._stats_text(self.current_stats)
+            win_rate = 0.0
+            played = sum(int(self.current_stats.get(k, 0)) for k in ("wins", "losses", "draws"))
+            if played:
+                win_rate = int(self.current_stats.get("wins", 0)) / played
+            metrics = [
+                ("阶段", self.rl_phase or "-"),
+                ("卡组", self.current_deck or "-"),
+                ("胜率", f"{win_rate:.0%} {stats_value}"),
+                ("样本数", str(self.rl_examples)),
+            ]
+        else:
+            metrics = [
+                ("卡组", self.current_deck or "-"),
+                ("已用时间", self._format_seconds(self.elapsed_seconds)),
+                ("预计剩余", self._format_seconds(self._eta_seconds())),
+                ("胜/负/平", self._stats_text(self.current_stats)),
+            ]
+
+        metric_y = inner.y + 102
+        for idx, (name, value) in enumerate(metrics):
+            box = pygame.Rect(inner.x + idx * 252, metric_y, 236, 64)
+            pygame.draw.rect(surface, (24, 30, 46), box, border_radius=8)
+            pygame.draw.rect(surface, (54, 66, 96), box, 1, border_radius=8)
+            draw_text_fit(surface, self.font_tiny, name, UI_TEXT_SECONDARY,
+                          pygame.Rect(box.x + 10, box.y + 8, box.w - 20, 18))
+            draw_text_fit(surface, self.font_small, str(value), UI_TEXT_PRIMARY,
+                          pygame.Rect(box.x + 10, box.y + 30, box.w - 20, 24))
+
+    def _planned_training_games(self) -> int:
+        decks = len(DECK_SPECS) if self.selected_deck == "all" else 1
+        if self._is_rl_mode():
+            return max(1, (max(0, self.games) + max(0, self.bootstrap_games) + max(0, self.eval_games)) * decks)
+        return max(1, self.games) * decks
+
+    def _can_apply(self) -> bool:
+        if self.status not in ("completed", "applied"):
+            return False
+        if self._is_rl_mode():
+            if self.selected_deck == "all":
+                for model_path in self._rl_model_paths():
+                    path = self._abs_path(model_path)
+                    if not os.path.exists(path) or os.path.getsize(path) <= 0:
+                        return False
+                return True
+            path = self._abs_path(self._rl_candidate_model_path())
+            return os.path.exists(path) and os.path.getsize(path) > 0
+        if not os.path.exists(self._abs_path(self.output_path)):
+            return False
+        if self._candidate_payload is None:
+            self._load_candidate_payload()
+        if not isinstance(self._candidate_payload, dict):
+            return False
+        policies = self._candidate_payload.get("policies")
+        return self._candidate_payload.get("version") == 1 and isinstance(policies, dict) and bool(policies)
+
+    def _start_training(self):
+        if self.process is not None:
+            return
+        if not self._reset_training_files():
+            return
+        self.status = "running"
+        self.status_message = "训练进程已启动。"
+        self.started_at = time.time()
+        self.elapsed_seconds = 0.0
+        self.total_training_games = self._planned_training_games()
+        self.total_games_played = 0
+        self.current_deck = ""
+        self.current_stats = {"wins": 0, "losses": 0, "draws": 0}
+        self.deck_results.clear()
+        self.benchmark_results.clear()
+        self.rl_phase = ""
+        self.rl_examples = 0
+        self.rl_avg_score = 0.0
+        self.rl_history.clear()
+        self.rl_loss_history.clear()
+        self.rl_eval_results.clear()
+        self.events.clear()
+        self._candidate_payload = None
+        self._progress_offset = 0
+
+        progress_abs = self._abs_path(self.progress_path)
+        progress_dir = os.path.dirname(progress_abs)
+        if progress_dir:
+            os.makedirs(progress_dir, exist_ok=True)
+
+        if self._is_rl_mode():
+            output_path = self._rl_candidate_model_path()
+            output_abs = self._abs_path(output_path)
+            output_dir = os.path.dirname(output_abs)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+            script = os.path.join(self.repo_root, "scripts", "train_deep_ai.py")
+            cmd = [
+                "conda",
+                "run",
+                "-n",
+                "DL",
+                "python",
+                "-B",
+                script,
+                "--deck",
+                self.selected_deck,
+                "--games",
+                str(max(0, self.games)),
+                "--seed",
+                str(self.seed),
+                "--eval-games",
+                str(max(0, self.eval_games)),
+                "--bootstrap-games",
+                str(max(0, self.bootstrap_games)),
+                "--bootstrap-epochs",
+                str(max(1, self.bootstrap_epochs)),
+                "--self-play-epochs",
+                str(max(1, self.self_play_epochs)),
+                "--batch-size",
+                str(max(8, self.batch_size)),
+                "--output",
+                output_path,
+                "--device",
+                self.rl_device,
+                "--workers",
+                str(max(1, self.workers)),
+                "--max-steps",
+                str(max(20, self.max_steps)),
+                "--progress-jsonl",
+                self.progress_path,
+            ]
+        else:
+            script = os.path.join(self.repo_root, "scripts", "train_challenge_ai.py")
+            cmd = [
+                sys.executable,
+                "-B",
+                script,
+                "--deck",
+                self.selected_deck,
+                "--games",
+                str(max(1, self.games)),
+                "--seed",
+                str(self.seed),
+                "--eval-games",
+                str(max(0, self.eval_games)),
+                "--output",
+                self.output_path,
+                "--progress-jsonl",
+                self.progress_path,
+                "--workers",
+                str(max(1, self.workers)),
+                "--benchmark-games",
+                str(max(0, self.benchmark_games)),
+            ]
+
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        data_dir = self._abs_path("data")
+        os.makedirs(data_dir, exist_ok=True)
+        stderr_fd, stderr_path = tempfile.mkstemp(suffix=".log", prefix="ai_train_", dir=data_dir)
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                cwd=self.repo_root,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_fd,
+                creationflags=creationflags,
+            )
+        except OSError as exc:
+            os.close(stderr_fd)
+            os.unlink(stderr_path)
+            self._stderr_file = None
+            self.process = None
+            self.status = "error"
+            self.status_message = str(exc)
+        else:
+            os.close(stderr_fd)
+            self._stderr_file = stderr_path
+
+    def _reset_training_files(self) -> bool:
+        paths = [self._abs_path(self.progress_path)]
+        if self._is_rl_mode():
+            if self.selected_deck == "all":
+                paths.extend(self._abs_path(p) for p in self._rl_model_paths())
+                paths.extend(self._abs_path(os.path.splitext(p)[0] + ".json") for p in self._rl_model_paths())
+            else:
+                paths.append(self._abs_path(self._active_output_path()))
+                paths.append(self._abs_path(self._active_sidecar_path()))
+        else:
+            paths.append(self._abs_path(self._active_output_path()))
+        for path in paths:
+            try:
+                if os.path.exists(path):
+                    os.unlink(path)
+            except OSError as exc:
+                self.status = "error"
+                self.status_message = f"无法清理旧训练文件: {exc}"
+                return False
+        return True
+
+    def _apply_candidate_policy(self):
+        if self._is_rl_mode():
+            try:
+                if self.selected_deck == "all":
+                    # Models saved directly to per-deck paths by the trainer.
+                    applied = self._rl_model_paths()
+                else:
+                    src = self._abs_path(self._rl_candidate_model_path())
+                    dst = self._abs_path(self._rl_default_model_path())
+                    dst_dir = os.path.dirname(dst)
+                    if dst_dir:
+                        os.makedirs(dst_dir, exist_ok=True)
+                    shutil.copyfile(src, dst)
+                    src_meta = os.path.splitext(src)[0] + ".json"
+                    dst_meta = os.path.splitext(dst)[0] + ".json"
+                    if os.path.exists(src_meta):
+                        shutil.copyfile(src_meta, dst_meta)
+                    applied = [dst]
+            except OSError as exc:
+                self.status = "error"
+                self.status_message = f"应用失败: {exc}"
+                return
+            self.status = "applied"
+            paths_text = ", ".join(applied)
+            self.status_message = f"RL 模型已应用至 {paths_text}。"
+            return
+
+        try:
+            src = self._abs_path(self.output_path)
+            dst = self._abs_path(self.policy_path)
+            dst_dir = os.path.dirname(dst)
+            if dst_dir:
+                os.makedirs(dst_dir, exist_ok=True)
+            shutil.copyfile(src, dst)
+        except OSError as exc:
+            self.status = "error"
+            self.status_message = f"应用失败: {exc}"
+            return
+        self.status = "applied"
+        self.status_message = "候选策略已复制到正式策略文件。"
+
+    def _apply_progress_event(self, event: dict[str, Any]):
+        self.events.append(event)
+        self.events = self.events[-120:]
+        etype = event.get("type")
+        trainer = str(event.get("trainer") or "")
+        if trainer == "rl_ai":
+            self.training_kind = "rl"
+            if self.result_view not in ("curve", "loss", "eval", "summary"):
+                self.result_view = "curve"
+
+        if etype == "run_started":
+            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
+            self.workers = int(event.get("workers") or self.workers)
+            if self._is_rl_mode():
+                self.rl_phase = "starting"
+                self.rl_device = str(event.get("device") or self.rl_device)
+                self.max_steps = int(event.get("max_steps") or self.max_steps)
+                self.status_message = "正在运行 RL 引导/自我对弈训练。"
+            else:
+                self.benchmark_games = int(event.get("benchmark_games") or self.benchmark_games)
+                self.status_message = "正在训练候选策略。"
+        elif etype == "deck_started":
+            self.current_deck = str(event.get("deck") or "")
+            self.current_stats = {"wins": 0, "losses": 0, "draws": 0}
+            if self._is_rl_mode():
+                self.rl_phase = "deck"
+        elif etype == "bootstrap_finished":
+            self.current_deck = str(event.get("deck") or self.current_deck)
+            self.rl_phase = "bootstrap"
+            self.rl_examples = int(event.get("examples") or self.rl_examples)
+            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
+            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
+        elif etype == "generation_finished":
+            self.current_deck = str(event.get("deck") or self.current_deck)
+            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
+            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
+            stats = event.get("stats") or {}
+            self.current_stats = {
+                "wins": int(stats.get("wins", 0)),
+                "losses": int(stats.get("losses", 0)),
+                "draws": int(stats.get("draws", 0)),
+            }
+        elif etype == "self_play_game_finished":
+            self.current_deck = str(event.get("deck") or self.current_deck)
+            self.rl_phase = "self-play"
+            stats = event.get("stats") or {}
+            self.current_stats = {
+                "wins": int(stats.get("wins", 0)),
+                "losses": int(stats.get("losses", 0)),
+                "draws": int(stats.get("draws", 0)),
+            }
+            self.rl_examples = int(event.get("examples") or self.rl_examples)
+            self.rl_avg_score = float(event.get("avg_score") or self.rl_avg_score)
+            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
+            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
+            self.rl_history.append(dict(event))
+            self.rl_history = self.rl_history[-500:]
+        elif etype == "train_phase_finished":
+            self.current_deck = str(event.get("deck") or self.current_deck)
+            self.rl_phase = str(event.get("phase") or "train")
+            self.rl_examples = int(event.get("examples") or self.rl_examples)
+            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
+            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
+            self.rl_loss_history.append(dict(event))
+            self.rl_loss_history = self.rl_loss_history[-500:]
+        elif etype == "eval_finished":
+            self.current_deck = str(event.get("deck") or self.current_deck)
+            self.rl_phase = "eval"
+            deck = self.current_deck or str(event.get("deck") or "")
+            if deck:
+                self.rl_eval_results[deck] = event.get("eval") or {}
+                self.rl_eval_results[deck]["win_rate"] = float(event.get("win_rate") or 0.0)
+            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
+            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
+        elif etype == "deck_finished":
+            deck = str(event.get("deck") or "")
+            if deck:
+                self.deck_results[deck] = {
+                    "stats": event.get("stats") or {},
+                    "eval": event.get("eval") or {},
+                    "training_games": event.get("training_games", 0),
+                }
+            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
+        elif etype == "benchmark_started":
+            self.status_message = "正在运行基准测试。"
+            self.benchmark_results = {
+                "games_per_matchup": int(event.get("games_per_matchup") or 0),
+                "deck_keys": event.get("deck_keys") or [],
+                "before_after": {},
+                "matrix": {},
+                "rankings": [],
+            }
+        elif etype == "matchup_finished":
+            deck_a = str(event.get("deck_a") or "")
+            deck_b = str(event.get("deck_b") or "")
+            if deck_a and deck_b:
+                matrix = self.benchmark_results.setdefault("matrix", {})
+                matrix.setdefault(deck_a, {})[deck_b] = event.get("stats_a") or {}
+                matrix.setdefault(deck_b, {})[deck_a] = event.get("stats_b") or {}
+        elif etype == "benchmark_finished":
+            self.benchmark_results = event.get("benchmark") or self.benchmark_results
+            self.status_message = "基准测试完成；正在写入候选策略。"
+        elif etype == "run_finished":
+            self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
+            self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
+            self.elapsed_seconds = float(event.get("elapsed_seconds") or self.elapsed_seconds)
+            self.status = "completed"
+            self.status_message = "训练完成，可预览并应用候选。"
+            if self._is_rl_mode():
+                self.rl_phase = "finished"
+            self._load_candidate_payload()
+        elif etype == "error":
+            self.status = "error"
+            self.status_message = str(event.get("message") or "训练失败。")
+
+    def _load_candidate_payload(self):
+        try:
+            if self._is_rl_mode() and self.selected_deck == "all":
+                # Per-deck models: load summary from first available sidecar.
+                for deck_key in DECK_SPECS:
+                    sidecar = os.path.join("data", "ai_models", f"{deck_key}.json")
+                    spath = self._abs_path(sidecar)
+                    if os.path.exists(spath):
+                        with open(spath, "r", encoding="utf-8") as fh:
+                            self._candidate_payload = json.load(fh)
+                        metadata = (self._candidate_payload or {}).get("metadata") or {}
+                        summary = metadata.get("summary") or {}
+                        for deck, row in summary.items():
+                            eval_data = dict(row.get("eval") or {})
+                            games = int(eval_data.get("games") or 0)
+                            wins = int(eval_data.get("wins") or 0)
+                            eval_data["win_rate"] = wins / max(1, games) if games else 0.0
+                            self.rl_eval_results.setdefault(deck, eval_data)
+                        return
+                self._candidate_payload = None
+                return
+
+            path = self._active_sidecar_path() if self._is_rl_mode() else self.output_path
+            with open(self._abs_path(path), "r", encoding="utf-8") as fh:
+                self._candidate_payload = json.load(fh)
+            if self._is_rl_mode():
+                metadata = (self._candidate_payload or {}).get("metadata") or {}
+                summary = metadata.get("summary") or {}
+                for deck, row in summary.items():
+                    eval_data = dict(row.get("eval") or {})
+                    games = int(eval_data.get("games") or 0)
+                    wins = int(eval_data.get("wins") or 0)
+                    eval_data["win_rate"] = wins / max(1, games) if games else 0.0
+                    self.rl_eval_results.setdefault(deck, eval_data)
+            else:
+                self.benchmark_results = self._candidate_payload.get("benchmark") or self.benchmark_results
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            self._candidate_payload = None
+
+    def _draw_results_panel(self, surface: pygame.Surface):
+        if self._is_rl_mode():
+            self._draw_rl_results_panel(surface)
+            return
+
+        panel = pygame.Rect(500, 350, 512, 560)
+        inner = draw_panel(surface, panel, "规则 AI 结果", self.font_body)
+
+        if not self.deck_results and not self._candidate_payload:
+            lines = ["Waiting for training events.", "After completion this panel shows matrix, rankings, and weights."]
+            y = inner.y + 4
+            for line in lines:
+                draw_text_fit(surface, self.font_small, line, UI_TEXT_SECONDARY,
+                              pygame.Rect(inner.x, y, inner.w, 24))
+                y += 28
+            return
+
+        tabs = [
+            ("matrix", "矩阵"),
+            ("before", "前后对比"),
+            ("ranking", "排名"),
+            ("weights", "权重"),
+        ]
+        if self.result_view not in {key for key, _ in tabs}:
+            self.result_view = "matrix"
+        tab_w = max(72, (inner.w - 12) // len(tabs))
+        for idx, (key, label) in enumerate(tabs):
+            rect = pygame.Rect(inner.x + idx * (tab_w + 4), inner.y, tab_w, 30)
+            self._add_button(surface, rect, f"view:{key}", label, selected=self.result_view == key)
+
+        content = pygame.Rect(inner.x, inner.y + 42, inner.w, inner.h - 42)
+        if self.result_view == "matrix":
+            self._draw_matrix_view(surface, content)
+        elif self.result_view == "before":
+            self._draw_before_after_view(surface, content)
+        elif self.result_view == "ranking":
+            self._draw_ranking_view(surface, content)
+        else:
+            self._draw_weight_delta(surface, content)
+
+    def _draw_rl_results_panel(self, surface: pygame.Surface):
+        panel = pygame.Rect(500, 350, 512, 560)
+        inner = draw_panel(surface, panel, "强化 AI 结果", self.font_body)
+        tabs = [
+            ("curve", "胜率"),
+            ("loss", "损失"),
+            ("eval", "评估"),
+            ("summary", "摘要"),
+        ]
+        if self.result_view not in {key for key, _ in tabs}:
+            self.result_view = "curve"
+        tab_w = max(72, (inner.w - 12) // len(tabs))
+        for idx, (key, label) in enumerate(tabs):
+            rect = pygame.Rect(inner.x + idx * (tab_w + 4), inner.y, tab_w, 30)
+            self._add_button(surface, rect, f"view:{key}", label, selected=self.result_view == key)
+
+        content = pygame.Rect(inner.x, inner.y + 44, inner.w, inner.h - 44)
+        if self.result_view == "curve":
+            self._draw_line_chart(
+                surface,
+                content,
+                [float(row.get("win_rate") or 0.0) for row in self.rl_history],
+                1.0,
+                "Rolling self-play win rate",
+            )
+        elif self.result_view == "loss":
+            losses = [float(row.get("total_loss", row.get("loss", 0.0)) or 0.0) for row in self.rl_loss_history]
+            max_loss = max(losses, default=1.0)
+            self._draw_line_chart(surface, content, losses, max(0.01, max_loss), "Training loss")
+        elif self.result_view == "eval":
+            self._draw_rl_eval_view(surface, content)
+        else:
+            self._draw_rl_summary_view(surface, content)
+
+    def _draw_line_chart(self, surface: pygame.Surface, rect: pygame.Rect, values: list[float], max_value: float, title: str):
+        draw_text_fit(surface, self.font_small, title, UI_TEXT_PRIMARY,
+                      pygame.Rect(rect.x, rect.y, rect.w, 24))
+        chart = pygame.Rect(rect.x, rect.y + 34, rect.w, rect.h - 70)
+        pygame.draw.rect(surface, (24, 30, 46), chart, border_radius=8)
+        pygame.draw.rect(surface, (64, 74, 104), chart, 1, border_radius=8)
+        for i in range(1, 4):
+            y = chart.y + int(chart.h * i / 4)
+            pygame.draw.line(surface, (38, 46, 64), (chart.x + 8, y), (chart.right - 8, y), 1)
+        if not values:
+            draw_text_fit(surface, self.font_small, "Waiting for RL progress events.",
+                          UI_TEXT_SECONDARY, chart.inflate(-24, -24))
+            return
+        max_value = max(0.0001, max_value)
+        points = []
+        for idx, value in enumerate(values):
+            x = chart.x + 14 if len(values) == 1 else chart.x + 14 + int((chart.w - 28) * idx / (len(values) - 1))
+            normalized = max(0.0, min(1.0, value / max_value))
+            y = chart.bottom - 14 - int((chart.h - 28) * normalized)
+            points.append((x, y))
+        if len(points) >= 2:
+            pygame.draw.lines(surface, UI_HIGHLIGHT, False, points, 3)
+        for point in points[-20:]:
+            pygame.draw.circle(surface, UI_SUCCESS, point, 4)
+        last = values[-1]
+        draw_text_fit(surface, self.font_tiny, f"latest {last:.4f} | samples {len(values)}",
+                      UI_TEXT_SECONDARY, pygame.Rect(rect.x, chart.bottom + 10, rect.w, 22))
+
+    def _draw_rl_eval_view(self, surface: pygame.Surface, rect: pygame.Rect):
+        if not self.rl_eval_results:
+            self._load_candidate_payload()
+        if not self.rl_eval_results:
+            draw_text_fit(surface, self.font_small, "Waiting for eval results.",
+                          UI_TEXT_SECONDARY, rect)
+            return
+        y = rect.y
+        for deck, result in list(self.rl_eval_results.items())[:10]:
+            games = int(result.get("games") or 0)
+            wins = int(result.get("wins") or 0)
+            losses = int(result.get("losses") or 0)
+            draws = int(result.get("draws") or 0)
+            win_rate = float(result.get("win_rate") or (wins / max(1, games) if games else 0.0))
+            draw_text_fit(surface, self.font_tiny, f"{deck.title()} eval {wins}/{losses}/{draws}",
+                          UI_TEXT_PRIMARY, pygame.Rect(rect.x, y, 150, 22))
+            bar = pygame.Rect(rect.x + 156, y + 4, rect.w - 250, 14)
+            pygame.draw.rect(surface, (28, 34, 48), bar, border_radius=5)
+            fill = bar.copy()
+            fill.w = int(bar.w * max(0.0, min(1.0, win_rate)))
+            if fill.w:
+                pygame.draw.rect(surface, UI_SUCCESS, fill, border_radius=5)
+            pygame.draw.rect(surface, (68, 78, 108), bar, 1, border_radius=5)
+            draw_text_fit(surface, self.font_tiny, f"{win_rate:.0%}",
+                          UI_TEXT_SECONDARY, pygame.Rect(bar.right + 8, y, 82, 22))
+            y += 34
+            if y > rect.bottom - 24:
+                break
+
+    def _draw_rl_summary_view(self, surface: pygame.Surface, rect: pygame.Rect):
+        lines = [
+            f"Phase: {self.rl_phase or '-'}",
+            f"Deck: {self.current_deck or self.selected_deck}",
+            f"Self-play: {self._stats_text(self.current_stats)}",
+            f"Examples: {self.rl_examples}",
+            f"Average score: {self.rl_avg_score:.2f}",
+            f"Candidate: {self._rl_candidate_model_path()}",
+            f"Default target: {self._rl_default_model_path()}",
+        ]
+        payload = self._candidate_payload or {}
+        metadata = payload.get("metadata") or {}
+        if metadata:
+            lines.append(f"Trainer: {metadata.get('trainer', '-')}")
+        y = rect.y
+        for line in lines:
+            draw_text_fit(surface, self.font_small, line, UI_TEXT_SECONDARY,
+                          pygame.Rect(rect.x, y, rect.w, 24))
+            y += 30
+
     def _event_line(self, event: dict[str, Any]) -> str:
         etype = event.get("type", "")
         deck = event.get("deck", "")
+        if etype == "bootstrap_finished":
+            return f"{deck} bootstrap {event.get('games_played', 0)} games, {event.get('examples', 0)} examples"
+        if etype == "self_play_game_finished":
+            stats = self._stats_text(event.get("stats") or {})
+            return (
+                f"{deck} self-play {event.get('game')}/{event.get('target_games')} "
+                f"win {float(event.get('win_rate') or 0.0):.0%} {stats}"
+            )
+        if etype == "train_phase_finished":
+            loss = event.get("total_loss", event.get("loss", 0.0))
+            return f"{deck} {event.get('phase', 'train')} loss {float(loss or 0.0):.4f} ex {event.get('examples', 0)}"
+        if etype == "eval_finished":
+            return f"{deck} eval win {float(event.get('win_rate') or 0.0):.0%}"
         if etype == "generation_finished":
             return (
                 f"{deck} gen {event.get('generation')} "
                 f"{event.get('games_played')}/{event.get('target_games')} "
-                f"win {event.get('win_rate', 0):.0%}"
+                f"win {float(event.get('win_rate') or 0.0):.0%}"
             )
         if etype == "deck_finished":
-            return f"{deck} 完成 {self._stats_text(event.get('stats') or {})}"
+            return f"{deck} finished {self._stats_text(event.get('stats') or {})}"
         if etype == "benchmark_started":
             return f"benchmark {event.get('games_per_matchup', 0)} games/matchup"
         if etype == "matchup_finished":
@@ -815,9 +1281,9 @@ class AITrainingScreen(Screen):
         if etype == "benchmark_finished":
             return "benchmark finished"
         if etype == "run_finished":
-            return f"全部完成，用时 {self._format_seconds(float(event.get('elapsed_seconds') or 0))}"
+            return f"run finished in {self._format_seconds(float(event.get('elapsed_seconds') or 0))}"
         if etype == "error":
-            return f"错误: {event.get('message', '')}"
+            return f"error: {event.get('message', '')}"
         return f"{etype} {deck}".strip()
 
     @staticmethod

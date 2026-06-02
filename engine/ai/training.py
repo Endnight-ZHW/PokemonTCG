@@ -247,7 +247,7 @@ def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int):
     return create_challenge_ai(deck_key, config)
 
 
-def _finish_setup(state: GameState, tm: TurnManager, ais: list[Any]) -> None:
+def finish_setup(state: GameState, tm: TurnManager, ais: list[Any]) -> None:
     for player_idx, ai in enumerate(ais):
         for _ in range(10):
             if tm.needs_mulligan(player_idx):
@@ -285,7 +285,7 @@ def _force_setup_basic(tm: TurnManager, player_idx: int) -> None:
             return
 
 
-def _force_end_turn(state: GameState, player_idx: int) -> None:
+def force_end_turn(state: GameState, player_idx: int) -> None:
     if state.phase in (TurnPhase.MAIN, TurnPhase.ATTACK):
         TurnManager(state).perform_action(PlayerAction.END_TURN, player_idx=player_idx)
 
@@ -359,7 +359,7 @@ def _play_match_impl(
         ai0 = _make_ai(deck_b, weights_b, seed + 29)
         ai1 = _make_ai(deck_a, weights_a, seed + 11)
     ais = [ai0, ai1]
-    _finish_setup(state, tm, ais)
+    finish_setup(state, tm, ais)
 
     failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
     for _ in range(max_steps):
@@ -377,14 +377,12 @@ def _play_match_impl(
 
         player_idx = state.active_player_idx
         action = ais[player_idx].choose_action(state, player_idx)
-        before = (state.turn_number, state.phase, state.active_player_idx, state.winner)
         result = ais[player_idx]._apply_action_for_sim(state, player_idx, action)
         signature = (action.action, tuple(sorted(action.params.items())))
-        after = (state.turn_number, state.phase, state.active_player_idx, state.winner)
-        if result is None or not result.success or before == after:
+        if result is None or not result.success:
             failed_signatures[player_idx].add(signature)
             if len(failed_signatures[player_idx]) >= 3:
-                _force_end_turn(state, player_idx)
+                force_end_turn(state, player_idx)
                 failed_signatures[player_idx].clear()
         else:
             failed_signatures[player_idx].clear()
@@ -392,11 +390,11 @@ def _play_match_impl(
     deck_a_ai = ais[deck_a_player_idx]
     if state.winner is not None:
         logical_winner = 0 if state.winner == deck_a_player_idx else 1
-        return logical_winner, _terminal_training_score(state, deck_a_player_idx)
+        return logical_winner, terminal_training_score(state, deck_a_player_idx)
     return None, deck_a_ai.evaluate_state(state, deck_a_player_idx)
 
 
-def _terminal_training_score(state: GameState, candidate_player_idx: int) -> float:
+def terminal_training_score(state: GameState, candidate_player_idx: int) -> float:
     candidate = state.get_player(candidate_player_idx)
     opponent = state.get_player(1 - candidate_player_idx)
     candidate_won = state.winner == candidate_player_idx
