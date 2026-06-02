@@ -726,6 +726,7 @@ def _train_examples(
     _normalize_advantages(examples)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    bs = max(1, int(batch_size))
     total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
     scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, start_factor=1.0, end_factor=0.3, total_iters=total_steps,
@@ -735,7 +736,6 @@ def _train_examples(
     total_value_loss = 0.0
     total_entropy = 0.0
     steps = 0
-    bs = max(1, int(batch_size))
 
     for _ in range(max(1, int(epochs))):
         random.shuffle(examples)
@@ -858,13 +858,13 @@ def _train_choice_examples(
 
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    bs = max(1, int(batch_size))
     total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
     scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, start_factor=1.0, end_factor=0.3, total_iters=total_steps,
     )
     total_loss = 0.0
     steps = 0
-    bs = max(1, int(batch_size))
     for _ in range(max(1, int(epochs))):
         random.shuffle(examples)
         for batch_start in range(0, len(examples), bs):
