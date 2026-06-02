@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 3
+CHECKPOINT_VERSION = 4
 
 
 if TORCH_AVAILABLE:
@@ -77,11 +77,6 @@ if TORCH_AVAILABLE:
                 nn.ReLU(),
                 nn.Linear(hidden_size // 2, 1),
             )
-            self.choice_value_head = nn.Sequential(
-                nn.Linear(hidden_size, hidden_size // 2),
-                nn.ReLU(),
-                nn.Linear(hidden_size // 2, 1),
-            )
 
         def _state_hidden(self, state_numeric, state_card_ids):
             state_embeds = self.card_embedding(state_card_ids.long())
@@ -109,8 +104,7 @@ if TORCH_AVAILABLE:
             state_hidden = self._state_hidden(state_numeric, state_card_ids)
             scorer = self.choice_net if self.choice_head_enabled else self.action_net
             logits = self._score_candidates(state_hidden, choice_numeric, choice_card_ids, scorer, choice_mask)
-            value = self.choice_value_head(state_hidden).squeeze(-1)
-            return logits, value
+            return logits
 
 else:
 
@@ -198,7 +192,7 @@ def load_checkpoint(path: str, device: str = "cpu"):
         config = dict(payload.get("model_config") or {})
         config.setdefault("choice_head_enabled", version >= 3)
         model = create_model(**config)
-        model.load_state_dict(payload["model_state"], strict=version >= 3)
+        model.load_state_dict(payload["model_state"], strict=version >= 4)
         model.to(device)
         model.eval()
         return model, payload

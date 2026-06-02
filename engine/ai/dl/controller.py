@@ -193,7 +193,7 @@ class DeepLearningAI:
             )
             choice_cards = torch.tensor([[a.card_id for a in encoded_choices]], dtype=torch.long, device=device)
             if hasattr(self.model, "score_choices"):
-                logits, _ = self.model.score_choices(state_numeric, state_cards, choice_numeric, choice_cards)
+                logits = self.model.score_choices(state_numeric, state_cards, choice_numeric, choice_cards)
             else:
                 logits, _ = self.model(state_numeric, state_cards, choice_numeric, choice_cards)
             probs = torch.softmax(logits[0] / max(0.05, float(self.config.temperature)), dim=0)

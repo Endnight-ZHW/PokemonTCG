@@ -16,7 +16,7 @@ from data.deck_definitions import ALL_CARD_IDS, expand_deck
 from engine.ai.challenge_ai import AIAction, AIConfig, create_challenge_ai
 from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, ActionStateEncoder, EncodedAction, EncodedState
 from engine.ai.dl.model import TORCH_AVAILABLE, create_model, load_checkpoint, save_checkpoint, torch
-from engine.ai.dl.replay import ReplayBuffer
+
 from engine.ai.training import DECK_SPECS, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
@@ -665,7 +665,7 @@ def _forward_choice_batch(model, examples: list[ChoiceTrainingExample], device: 
         choice_mask[i, :n] = True
 
     if hasattr(model, "score_choices"):
-        logits, _ = model.score_choices(state_numeric, state_cards, choice_numeric, choice_cards, choice_mask)
+        logits = model.score_choices(state_numeric, state_cards, choice_numeric, choice_cards, choice_mask)
     else:
         logits, _ = model(state_numeric, state_cards, choice_numeric, choice_cards, choice_mask)
     return logits, choice_mask
@@ -726,6 +726,10 @@ def _train_examples(
     _normalize_advantages(examples)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
+    scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=1.0, end_factor=0.3, total_iters=total_steps,
+    )
     total_loss = 0.0
     total_policy_loss = 0.0
     total_value_loss = 0.0
@@ -741,46 +745,82 @@ def _train_examples(
             if logits is None:
                 continue
 
-            value_targets = torch.tensor([_value_target_for(ex) for ex in batch], dtype=torch.float32, device=device)
-            policy_loss = torch.tensor(0.0, device=device)
-            entropy_total = torch.tensor(0.0, device=device)
-            valid_examples = 0
+            B = len(batch)
+            sp_indices = [i for i, ex in enumerate(batch) if ex.source == "self_play"]
 
+            # Vectorized: compute log_softmax/softmax once for all examples
+            # Masked (invalid) positions have logit=-1e9, so softmax≈0, log_softmax≈-1e9
+            log_probs = F.log_softmax(logits, dim=-1)  # [B, max_actions]
+            probs = torch.softmax(logits, dim=-1)
+
+            # Per-example entropy (padded positions contribute ~0)
+            entropy_per_ex = -(probs * log_probs).sum(dim=-1)
+
+            # Build validity mask
+            action_counts = action_mask.sum(dim=-1)
+            target_idx = torch.tensor(
+                [max(0, ex.target_index) for ex in batch], dtype=torch.long, device=device,
+            )
+            valid = action_counts > 0
             for i, ex in enumerate(batch):
-                action_count = int(action_mask[i].sum().item())
-                if not ex.actions or action_count <= 0 or ex.target_index >= action_count:
-                    continue
-                valid_examples += 1
-                current_logits = logits[i, :action_count]
-                log_probs = F.log_softmax(current_logits, dim=-1)
-                probs = torch.softmax(current_logits, dim=-1)
-                entropy_total = entropy_total + (-(probs * log_probs).sum())
-                selected_log_prob = log_probs[ex.target_index]
-                advantage = _advantage_for(ex)
+                if not ex.actions or ex.target_index >= int(action_counts[i].item()):
+                    valid[i] = False
 
-                if ex.source == "self_play" and advantage is not None:
-                    adv = torch.tensor(max(-3.0, min(3.0, float(advantage))), dtype=torch.float32, device=device)
-                    if ex.behavior_log_prob is not None:
-                        old_log_prob = torch.tensor(float(ex.behavior_log_prob), dtype=torch.float32, device=device)
-                        ratio = torch.exp(selected_log_prob - old_log_prob)
-                        clipped = torch.clamp(ratio, 1.0 - ppo_clip, 1.0 + ppo_clip)
-                        loss_i = -torch.minimum(ratio * adv, clipped * adv)
-                    else:
-                        loss_i = -selected_log_prob * adv
-                else:
-                    loss_i = F.cross_entropy(current_logits.unsqueeze(0), torch.tensor([ex.target_index], device=device))
-                policy_loss = policy_loss + loss_i
+            # Gather selected log probs
+            selected_lp = log_probs[torch.arange(B, device=device), target_idx]
 
-            divisor = max(1, valid_examples)
-            policy_loss = policy_loss / divisor
-            entropy = entropy_total / divisor
-            value_loss = F.mse_loss(value, value_targets)
+            # Mask tensors for loss type routing
+            is_rl = torch.tensor([ex.source == "self_play" for ex in batch], device=device)
+            has_adv = torch.tensor(
+                [_advantage_for(ex) is not None for ex in batch], device=device,
+            )
+            has_old_lp = torch.tensor(
+                [ex.behavior_log_prob is not None for ex in batch], device=device,
+            )
+            advs = torch.tensor(
+                [max(-3.0, min(3.0, float(_advantage_for(ex) or 0.0))) for ex in batch],
+                device=device,
+            )
+            old_lp = torch.tensor(
+                [float(ex.behavior_log_prob or 0.0) for ex in batch], device=device,
+            )
+
+            loss_per_ex = torch.zeros(B, device=device)
+
+            # PPO clipped loss: self_play + advantage + old log prob
+            ppo = valid & is_rl & has_adv & has_old_lp
+            if ppo.any():
+                ratio = torch.exp(selected_lp - old_lp)
+                clipped_ratio = torch.clamp(ratio, 1.0 - ppo_clip, 1.0 + ppo_clip)
+                ppo_loss = -torch.minimum(ratio * advs, clipped_ratio * advs)
+                loss_per_ex = loss_per_ex + ppo_loss * ppo.float()
+
+            # Simple policy gradient: self_play + advantage, no old log prob
+            pg = valid & is_rl & has_adv & ~has_old_lp
+            if pg.any():
+                loss_per_ex = loss_per_ex + (-selected_lp * advs) * pg.float()
+
+            # Supervised (cross-entropy): teacher/dagger examples
+            sl = valid & ~is_rl
+            if sl.any():
+                loss_per_ex = loss_per_ex + (-selected_lp) * sl.float()
+
+            divisor = max(1, int(valid.sum().item()))
+            policy_loss = loss_per_ex.sum() / divisor
+            entropy = (entropy_per_ex * valid.float()).sum() / divisor
+            if sp_indices:
+                sp_value = value[sp_indices]
+                sp_targets = torch.tensor([float(ex.value_target) for i, ex in enumerate(batch) if i in sp_indices], dtype=torch.float32, device=device)
+                value_loss = F.mse_loss(sp_value, sp_targets)
+            else:
+                value_loss = torch.tensor(0.0, device=device)
             loss = policy_loss + 0.2 * value_loss - entropy_coef * entropy
 
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
             optimizer.step()
+            scheduler.step()
 
             total_loss += float(loss.detach().cpu().item())
             total_policy_loss += float(policy_loss.detach().cpu().item())
@@ -818,6 +858,10 @@ def _train_choice_examples(
 
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
+    scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=1.0, end_factor=0.3, total_iters=total_steps,
+    )
     total_loss = 0.0
     steps = 0
     bs = max(1, int(batch_size))
@@ -847,6 +891,7 @@ def _train_choice_examples(
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
             optimizer.step()
+            scheduler.step()
             total_loss += float(loss.detach().cpu().item())
             steps += 1
 
@@ -879,7 +924,7 @@ def _select_model_action(
         scaled_logits = logits[0] / max(0.05, temperature)
         probs = torch.softmax(scaled_logits, dim=0)
         target_index = int(torch.multinomial(probs, 1).item())
-        log_probs = torch.log(probs.clamp_min(1e-8))
+        log_probs = torch.log(probs.clamp_min(1e-7)).clamp(min=-10.0)
         predicted_value = float(value[0].detach().cpu().item())
         behavior_log_prob = float(log_probs[target_index].detach().cpu().item())
     return actions[target_index], TrainingExample(
@@ -975,17 +1020,44 @@ def _finalize_episode_examples(
     terminal_reward: float,
     *,
     gamma: float = 0.99,
+    gae_lambda: float = 0.95,
 ) -> list[TrainingExample]:
-    discounted = float(terminal_reward)
-    for ex in reversed(examples):
-        if ex.source != "self_play":
-            continue
-        predicted_v = float(ex.value_target)
-        discounted = float(ex.reward) + gamma * discounted
-        ex.return_target = discounted
-        ex.value_target = discounted
-        ex.advantage = discounted - predicted_v
-        ex.policy_advantage = ex.advantage
+    """Compute GAE advantages and value targets for self-play examples.
+
+    GAE: A_t = δ_t + γλ·A_{t+1}  where δ_t = r_t + γ·V(s_{t+1}) - V(s_t)
+    value_target = A_t + V(s_t)
+    """
+    sp_indices = []
+    sp_values = []
+    for i, ex in enumerate(examples):
+        if ex.source == "self_play":
+            sp_indices.append(i)
+            sp_values.append(float(ex.value_target))
+    if not sp_indices:
+        return examples
+    sp_values.append(0.0)  # V(s_T) = 0
+
+    n = len(sp_indices)
+    last_gae = 0.0
+    gae_advantages = []
+    for i in range(n - 1, -1, -1):
+        cur_v = sp_values[i]
+        next_v = sp_values[i + 1]
+        if i == n - 1:
+            delta = terminal_reward - cur_v
+        else:
+            r = float(examples[sp_indices[i]].reward)
+            delta = r + gamma * next_v - cur_v
+        last_gae = delta + gamma * gae_lambda * last_gae
+        gae_advantages.append(last_gae)
+
+    gae_advantages.reverse()
+    for idx, gae_adv in zip(sp_indices, gae_advantages):
+        ex = examples[idx]
+        ex.advantage = gae_adv
+        ex.policy_advantage = gae_adv
+        ex.value_target = gae_adv + float(ex.value_target)
+        ex.return_target = ex.value_target
     return examples
 
 
@@ -1438,7 +1510,6 @@ def _train_deck_pipeline(
         "total_training_games": total_training_games,
     })
 
-    buffer = ReplayBuffer(capacity=50000, seed=deck_seed)
     rng = random.Random(deck_seed)
 
     bootstrap = _collect_bootstrap_examples_parallel(
@@ -1449,14 +1520,12 @@ def _train_deck_pipeline(
         workers=worker_count,
         teacher_search_preset=teacher_search_preset,
     )
-    buffer.extend(bootstrap)
     total_done += bootstrap_games
     emit({
         "type": "bootstrap_finished",
         "deck": deck_key,
         "games_played": bootstrap_games,
         "examples": len(bootstrap),
-        "buffer_size": buffer.size,
         "total_games_played": total_done,
         "total_training_games": total_training_games,
     })
@@ -1529,7 +1598,6 @@ def _train_deck_pipeline(
             labeled_examples = [ex for ex in examples if ex.source == "dagger"]
             dagger_examples.extend(labeled_examples)
             choice_batch_examples.extend(choices)
-            buffer.extend(labeled_examples)
             dagger_score_total += score
             if winner == 0:
                 dagger_wins += 1
@@ -1551,7 +1619,6 @@ def _train_deck_pipeline(
                 "avg_score": round(dagger_score_total / max(1, games_played), 3),
                 "examples": len(labeled_examples),
                 "choice_examples": len(choices),
-                "buffer_size": buffer.size,
                 "total_games_played": total_done,
                 "total_training_games": total_training_games,
             })
@@ -1571,7 +1638,7 @@ def _train_deck_pipeline(
             learning_rate=config.learning_rate * 0.6,
             epochs=updates_per_rollout,
             batch_size=config.batch_size,
-            entropy_coef=0.0,
+            entropy_coef=0.005,
         )
         choice_result = _train_choice_examples(
             model,
@@ -1628,8 +1695,6 @@ def _train_deck_pipeline(
             batch_examples.extend(self_play_examples)
             batch_dagger_examples.extend(dagger_examples)
             choice_batch_examples.extend(choices)
-            buffer.extend(self_play_examples)
-            buffer.extend(dagger_examples)
             score_total += score
             if winner == 0:
                 wins += 1
@@ -1652,7 +1717,6 @@ def _train_deck_pipeline(
                 "examples": len(self_play_examples),
                 "dagger_examples": len(dagger_examples),
                 "choice_examples": len(choices),
-                "buffer_size": buffer.size,
                 "total_games_played": total_done,
                 "total_training_games": total_training_games,
             })

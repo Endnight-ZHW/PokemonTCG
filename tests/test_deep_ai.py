@@ -503,7 +503,7 @@ class DeepAITests(unittest.TestCase):
             self.assertFalse(run_started["cuda_available"])
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
-    def test_v3_checkpoint_saves_and_restores_choice_head(self):
+    def test_v4_checkpoint_saves_and_restores_choice_head(self):
         from engine.ai.dl.model import create_model, load_checkpoint, save_checkpoint
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -512,10 +512,12 @@ class DeepAITests(unittest.TestCase):
             save_checkpoint(path, model, {"trainer": "test"})
             restored, payload = load_checkpoint(path, "cpu")
 
-        self.assertEqual(payload.get("version"), 3)
+        self.assertEqual(payload.get("version"), 4)
         self.assertTrue(payload.get("model_config", {}).get("choice_head_enabled"))
         self.assertTrue(getattr(restored, "choice_head_enabled", False))
         self.assertTrue(hasattr(restored, "choice_net"))
+        self.assertTrue(hasattr(restored, "score_choices"))
+        self.assertFalse(hasattr(restored, "choice_value_head"))
 
     def test_challenge_deck_screen_exposes_ai_kind_selector(self):
         import pygame

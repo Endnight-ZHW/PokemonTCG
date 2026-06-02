@@ -175,7 +175,6 @@ class ActionStateEncoder:
         card_ids.extend(card_bucket(card) for card in list(player.discard)[-12:])
         card_ids.extend(card_bucket(card) for card in list(opponent.discard)[-12:])
         card_ids.append(card_bucket(getattr(state, "stadium_card", None)))
-        card_ids.extend(card_bucket(card) for card in list(player.deck)[-4:])
 
         return EncodedState(
             numeric=_pad(numeric, STATE_NUMERIC_SIZE),
@@ -276,10 +275,11 @@ class ActionStateEncoder:
         ]
 
     def _deck_context(self, player) -> list[float]:
-        zones = [player.deck, player.hand, player.discard]
-        values: list[float] = []
-        for zone in zones:
-            values.extend(self._zone_context(zone))
+        values = [
+            _norm(len(player.deck), 60.0),
+        ]
+        values.extend(self._zone_context(player.hand))
+        values.extend(self._zone_context(player.discard))
         return values
 
     def _zone_context(self, zone) -> list[float]:

@@ -15,7 +15,6 @@ from engine.ai.dl.encoder import (
     EncodedState,
 )
 from engine.ai.dl.model import TORCH_AVAILABLE
-from engine.ai.dl.replay import ReplayBuffer
 
 __all__ = [
     "ACTION_NUMERIC_SIZE",
@@ -26,6 +25,5 @@ __all__ = [
     "DeepLearningAIConfig",
     "EncodedAction",
     "EncodedState",
-    "ReplayBuffer",
     "TORCH_AVAILABLE",
 ]
