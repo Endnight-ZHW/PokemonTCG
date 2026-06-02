@@ -117,6 +117,19 @@ class ScreenManager:
             self._to_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
             screen.draw(self._to_surface)
 
+    def shutdown(self):
+        """Run cleanup hooks for every screen before the app exits."""
+        while self._screens:
+            screen = self._screens.pop()
+            try:
+                screen.on_exit()
+            except Exception:
+                pass
+        self._transition = None
+        self._from_surface = None
+        self._to_surface = None
+        self._old_top = None
+
     def handle_event(self, event: pygame.event.Event):
         if not self.in_transition and self.top:
             self.top.handle_event(event)

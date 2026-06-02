@@ -16,6 +16,7 @@ from config import SCREEN_HEIGHT, SCREEN_WIDTH
 from engine.ai.training import DEFAULT_CANDIDATE_OUTPUT, DEFAULT_WORKERS, DECK_SPECS, TRAINABLE_KEYS
 from ui.colors import UI_DANGER, UI_HIGHLIGHT, UI_SUCCESS, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY
 from ui.font_manager import get_font
+from ui.process_utils import terminate_process_tree
 from ui.screen_manager import Screen, ScreenManager
 from ui.ui_theme import draw_button, draw_panel, draw_text_fit
 
@@ -75,8 +76,9 @@ class AITrainingScreen(Screen):
         self.training_kind = "rules"
         self.deck_keys = ["all", *DECK_SPECS.keys()]
         self.selected_deck = "all"
-        self.games = 500
-        self.bootstrap_games = 200
+        self.games = 300
+        self.bootstrap_games = 800
+        self.dagger_games = 300
         self.bootstrap_epochs = 10
         self.self_play_epochs = 10
         self.seed = 17
@@ -85,6 +87,13 @@ class AITrainingScreen(Screen):
         self.benchmark_games = 2
         self.max_steps = 120
         self.batch_size = 64
+        self.rollout_batch_games = 16
+        self.updates_per_rollout = 2
+        self.teacher_search_preset = "quality"
+        self.choice_head_enabled = True
+        self.acceptance_metric = "wins"
+        self.min_win_delta = 1
+        self.teacher_label_model_states = True
         self.rl_device = "cuda"
         self.result_view = "matrix"
 
@@ -135,6 +144,10 @@ class AITrainingScreen(Screen):
         for y in range(0, SCREEN_HEIGHT, 80):
             pygame.draw.line(bg, (32, 40, 58), (0, y), (SCREEN_WIDTH, y), 1)
         return bg
+
+    def on_exit(self):
+        if self.status == "running":
+            self._cancel_training()
 
     def handle_event(self, event: pygame.event.Event):
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -428,15 +441,8 @@ class AITrainingScreen(Screen):
         return max(0.0, self.elapsed_seconds * (1.0 / ratio - 1.0))
 
     def _cancel_training(self):
-        if self.process and self.process.poll() is None:
-            try:
-                self.process.terminate()
-                self.process.wait(timeout=1.0)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait(timeout=1.0)
-            except OSError:
-                pass
+        if self.process is not None:
+            terminate_process_tree(self.process, timeout=3.0)
         self.status = "cancelled"
         self.status_message = "训练已取消。"
         self.process = None
@@ -516,9 +522,14 @@ class AITrainingScreen(Screen):
     def _is_rl_mode(self) -> bool:
         return self.training_kind == "rl"
 
-    def _rl_candidate_model_path(self) -> str:
-        deck = "default" if self.selected_deck == "all" else self.selected_deck
+    def _rl_candidate_model_path(self, deck_key: str | None = None) -> str:
+        deck = deck_key or ("default" if self.selected_deck == "all" else self.selected_deck)
         return os.path.join("data", "ai_models", f"candidate_{deck}.pt")
+
+    def _rl_candidate_model_paths(self) -> list[str]:
+        if self.selected_deck == "all":
+            return [self._rl_candidate_model_path(k) for k in DECK_SPECS]
+        return [self._rl_candidate_model_path(self.selected_deck)]
 
     def _rl_deck_model_path(self, deck_key: str) -> str:
         return os.path.join("data", "ai_models", f"{deck_key}.pt")
@@ -740,21 +751,23 @@ class AITrainingScreen(Screen):
     def _planned_training_games(self) -> int:
         decks = len(DECK_SPECS) if self.selected_deck == "all" else 1
         if self._is_rl_mode():
-            return max(1, (max(0, self.games) + max(0, self.bootstrap_games) + max(0, self.eval_games)) * decks)
+            return max(1, (
+                max(0, self.games)
+                + max(0, self.bootstrap_games)
+                + max(0, self.dagger_games)
+                + max(0, self.eval_games)
+            ) * decks)
         return max(1, self.games) * decks
 
     def _can_apply(self) -> bool:
         if self.status not in ("completed", "applied"):
             return False
         if self._is_rl_mode():
-            if self.selected_deck == "all":
-                for model_path in self._rl_model_paths():
-                    path = self._abs_path(model_path)
-                    if not os.path.exists(path) or os.path.getsize(path) <= 0:
-                        return False
-                return True
-            path = self._abs_path(self._rl_candidate_model_path())
-            return os.path.exists(path) and os.path.getsize(path) > 0
+            for model_path in self._rl_candidate_model_paths():
+                path = self._abs_path(model_path)
+                if not os.path.exists(path) or os.path.getsize(path) <= 0:
+                    return False
+            return True
         if not os.path.exists(self._abs_path(self.output_path)):
             return False
         if self._candidate_payload is None:
@@ -819,12 +832,26 @@ class AITrainingScreen(Screen):
                 str(max(0, self.eval_games)),
                 "--bootstrap-games",
                 str(max(0, self.bootstrap_games)),
+                "--dagger-games",
+                str(max(0, self.dagger_games)),
                 "--bootstrap-epochs",
                 str(max(1, self.bootstrap_epochs)),
                 "--self-play-epochs",
                 str(max(1, self.self_play_epochs)),
                 "--batch-size",
                 str(max(8, self.batch_size)),
+                "--rollout-batch-games",
+                str(max(1, self.rollout_batch_games)),
+                "--updates-per-rollout",
+                str(max(1, self.updates_per_rollout)),
+                "--teacher-search-preset",
+                self.teacher_search_preset,
+                "--choice-head-enabled" if self.choice_head_enabled else "--no-choice-head-enabled",
+                "--acceptance-metric",
+                self.acceptance_metric,
+                "--min-win-delta",
+                str(max(1, self.min_win_delta)),
+                "--teacher-label-model-states" if self.teacher_label_model_states else "--no-teacher-label-model-states",
                 "--output",
                 output_path,
                 "--device",
@@ -861,9 +888,14 @@ class AITrainingScreen(Screen):
             ]
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if os.name == "nt":
+            creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         data_dir = self._abs_path("data")
         os.makedirs(data_dir, exist_ok=True)
         stderr_fd, stderr_path = tempfile.mkstemp(suffix=".log", prefix="ai_train_", dir=data_dir)
+        popen_kwargs: dict[str, Any] = {}
+        if os.name != "nt":
+            popen_kwargs["preexec_fn"] = os.setsid
         try:
             self.process = subprocess.Popen(
                 cmd,
@@ -871,6 +903,7 @@ class AITrainingScreen(Screen):
                 stdout=subprocess.DEVNULL,
                 stderr=stderr_fd,
                 creationflags=creationflags,
+                **popen_kwargs,
             )
         except OSError as exc:
             os.close(stderr_fd)
@@ -886,12 +919,12 @@ class AITrainingScreen(Screen):
     def _reset_training_files(self) -> bool:
         paths = [self._abs_path(self.progress_path)]
         if self._is_rl_mode():
-            if self.selected_deck == "all":
-                paths.extend(self._abs_path(p) for p in self._rl_model_paths())
-                paths.extend(self._abs_path(os.path.splitext(p)[0] + ".json") for p in self._rl_model_paths())
-            else:
-                paths.append(self._abs_path(self._active_output_path()))
-                paths.append(self._abs_path(self._active_sidecar_path()))
+            for candidate_path in self._rl_candidate_model_paths():
+                paths.append(self._abs_path(candidate_path))
+                paths.append(self._abs_path(os.path.splitext(candidate_path)[0] + ".json"))
+                rejected = os.path.splitext(candidate_path)[0] + ".rejected.pt"
+                paths.append(self._abs_path(rejected))
+                paths.append(self._abs_path(os.path.splitext(rejected)[0] + ".json"))
         else:
             paths.append(self._abs_path(self._active_output_path()))
         for path in paths:
@@ -908,8 +941,19 @@ class AITrainingScreen(Screen):
         if self._is_rl_mode():
             try:
                 if self.selected_deck == "all":
-                    # Models saved directly to per-deck paths by the trainer.
-                    applied = self._rl_model_paths()
+                    applied = []
+                    for deck_key in DECK_SPECS:
+                        src = self._abs_path(self._rl_candidate_model_path(deck_key))
+                        dst = self._abs_path(self._rl_deck_model_path(deck_key))
+                        dst_dir = os.path.dirname(dst)
+                        if dst_dir:
+                            os.makedirs(dst_dir, exist_ok=True)
+                        shutil.copyfile(src, dst)
+                        src_meta = os.path.splitext(src)[0] + ".json"
+                        dst_meta = os.path.splitext(dst)[0] + ".json"
+                        if os.path.exists(src_meta):
+                            shutil.copyfile(src_meta, dst_meta)
+                        applied.append(dst)
                 else:
                     src = self._abs_path(self._rl_candidate_model_path())
                     dst = self._abs_path(self._rl_default_model_path())
@@ -987,9 +1031,9 @@ class AITrainingScreen(Screen):
                 "losses": int(stats.get("losses", 0)),
                 "draws": int(stats.get("draws", 0)),
             }
-        elif etype == "self_play_game_finished":
+        elif etype in ("self_play_game_finished", "dagger_game_finished"):
             self.current_deck = str(event.get("deck") or self.current_deck)
-            self.rl_phase = "self-play"
+            self.rl_phase = "dagger" if etype == "dagger_game_finished" else "self-play"
             stats = event.get("stats") or {}
             self.current_stats = {
                 "wins": int(stats.get("wins", 0)),
@@ -1017,6 +1061,10 @@ class AITrainingScreen(Screen):
             if deck:
                 self.rl_eval_results[deck] = event.get("eval") or {}
                 self.rl_eval_results[deck]["win_rate"] = float(event.get("win_rate") or 0.0)
+                self.rl_eval_results[deck]["baseline_eval"] = event.get("baseline_eval")
+                self.rl_eval_results[deck]["accepted"] = bool(event.get("accepted", True))
+                self.rl_eval_results[deck]["delta_wins"] = event.get("delta_wins")
+                self.rl_eval_results[deck]["delta_point_rate"] = event.get("delta_point_rate")
             self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
             self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
         elif etype == "deck_finished":
@@ -1025,6 +1073,10 @@ class AITrainingScreen(Screen):
                 self.deck_results[deck] = {
                     "stats": event.get("stats") or {},
                     "eval": event.get("eval") or {},
+                    "baseline_eval": event.get("baseline_eval"),
+                    "accepted": bool(event.get("accepted", True)),
+                    "delta_wins": event.get("delta_wins"),
+                    "delta_point_rate": event.get("delta_point_rate"),
                     "training_games": event.get("training_games", 0),
                 }
             self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
@@ -1065,7 +1117,7 @@ class AITrainingScreen(Screen):
             if self._is_rl_mode() and self.selected_deck == "all":
                 # Per-deck models: load summary from first available sidecar.
                 for deck_key in DECK_SPECS:
-                    sidecar = os.path.join("data", "ai_models", f"{deck_key}.json")
+                    sidecar = os.path.splitext(self._rl_candidate_model_path(deck_key))[0] + ".json"
                     spath = self._abs_path(sidecar)
                     if os.path.exists(spath):
                         with open(spath, "r", encoding="utf-8") as fh:
@@ -1244,6 +1296,17 @@ class AITrainingScreen(Screen):
         metadata = payload.get("metadata") or {}
         if metadata:
             lines.append(f"Trainer: {metadata.get('trainer', '-')}")
+        eval_result = self.rl_eval_results.get(self.current_deck or self.selected_deck) or {}
+        if eval_result:
+            baseline = eval_result.get("baseline_eval") or {}
+            if baseline:
+                lines.append(
+                    f"Baseline/Candidate wins: {baseline.get('wins', 0)} -> {eval_result.get('wins', 0)}"
+                )
+            if eval_result.get("delta_wins") is not None:
+                lines.append(
+                    f"Delta wins: {eval_result.get('delta_wins')} | accepted: {bool(eval_result.get('accepted', True))}"
+                )
         y = rect.y
         for line in lines:
             draw_text_fit(surface, self.font_small, line, UI_TEXT_SECONDARY,
@@ -1255,17 +1318,21 @@ class AITrainingScreen(Screen):
         deck = event.get("deck", "")
         if etype == "bootstrap_finished":
             return f"{deck} bootstrap {event.get('games_played', 0)} games, {event.get('examples', 0)} examples"
-        if etype == "self_play_game_finished":
+        if etype in ("self_play_game_finished", "dagger_game_finished"):
             stats = self._stats_text(event.get("stats") or {})
+            label = "dagger" if etype == "dagger_game_finished" else "self-play"
             return (
-                f"{deck} self-play {event.get('game')}/{event.get('target_games')} "
+                f"{deck} {label} {event.get('game')}/{event.get('target_games')} "
                 f"win {float(event.get('win_rate') or 0.0):.0%} {stats}"
             )
         if etype == "train_phase_finished":
             loss = event.get("total_loss", event.get("loss", 0.0))
             return f"{deck} {event.get('phase', 'train')} loss {float(loss or 0.0):.4f} ex {event.get('examples', 0)}"
         if etype == "eval_finished":
-            return f"{deck} eval win {float(event.get('win_rate') or 0.0):.0%}"
+            delta = event.get("delta_wins")
+            accepted = bool(event.get("accepted", True))
+            suffix = f" delta wins {delta} accepted {accepted}" if delta is not None else ""
+            return f"{deck} eval win {float(event.get('win_rate') or 0.0):.0%}{suffix}"
         if etype == "generation_finished":
             return (
                 f"{deck} gen {event.get('generation')} "

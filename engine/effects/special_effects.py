@@ -128,7 +128,7 @@ def _handle_switch_self(state, player, params, player_idx=0):
                         ))
 
 
-def _handle_switch_opponent(state, opponent, params, opponent_idx=1):
+def _handle_switch_opponent(state, opponent, params, opponent_idx=1, player_idx=None):
     """Force opponent to switch their active. Like Boss's Orders."""
     you_choose = params.get("you_choose", False)
 
@@ -152,10 +152,11 @@ def _handle_switch_opponent(state, opponent, params, opponent_idx=1):
         state._log(f"{opponent.name}的战斗宝可梦被替换了。")
         return ActionResult(True, "对手替换了。")
 
+    chooser = player_idx if (you_choose and player_idx is not None) else opponent_idx
     return ActionResult(True, "选择对手的新战斗宝可梦。",
                         pending_action=ActionRequest(
                             request_type="select_opponent_bench",
-                            player=opponent_idx,
+                            player=chooser,
                             prompt="选择对手的新战斗宝可梦。",
                             max_select=1,
                         ))

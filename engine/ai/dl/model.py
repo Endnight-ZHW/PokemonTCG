@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 1
+CHECKPOINT_VERSION = 3
 
 
 if TORCH_AVAILABLE:
@@ -40,6 +40,7 @@ if TORCH_AVAILABLE:
             card_bucket_count: int = CARD_BUCKET_COUNT,
             card_embed_dim: int = 32,
             hidden_size: int = 192,
+            choice_head_enabled: bool = True,
         ):
             super().__init__()
             self.state_numeric_size = state_numeric_size
@@ -48,6 +49,7 @@ if TORCH_AVAILABLE:
             self.card_bucket_count = card_bucket_count
             self.card_embed_dim = card_embed_dim
             self.hidden_size = hidden_size
+            self.choice_head_enabled = bool(choice_head_enabled)
 
             self.card_embedding = nn.Embedding(card_bucket_count, card_embed_dim, padding_idx=0)
             self.state_net = nn.Sequential(
@@ -63,26 +65,51 @@ if TORCH_AVAILABLE:
                 nn.ReLU(),
                 nn.Linear(hidden_size // 2, 1),
             )
+            self.choice_net = nn.Sequential(
+                nn.Linear(hidden_size + action_numeric_size + card_embed_dim, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_size // 2, 1),
+            )
             self.value_head = nn.Sequential(
                 nn.Linear(hidden_size, hidden_size // 2),
                 nn.ReLU(),
                 nn.Linear(hidden_size // 2, 1),
             )
+            self.choice_value_head = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_size // 2, 1),
+            )
 
-        def forward(self, state_numeric, state_card_ids, action_numeric, action_card_ids, action_mask=None):
+        def _state_hidden(self, state_numeric, state_card_ids):
             state_embeds = self.card_embedding(state_card_ids.long())
             mask = (state_card_ids != 0).float().unsqueeze(-1)
             pooled = (state_embeds * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)
-            state_hidden = self.state_net(torch.cat([state_numeric.float(), pooled], dim=-1))
+            return self.state_net(torch.cat([state_numeric.float(), pooled], dim=-1))
 
-            action_embeds = self.card_embedding(action_card_ids.long())
-            batch, action_count, _ = action_numeric.shape
-            expanded_state = state_hidden.unsqueeze(1).expand(batch, action_count, state_hidden.shape[-1])
-            action_input = torch.cat([expanded_state, action_numeric.float(), action_embeds], dim=-1)
-            logits = self.action_net(action_input).squeeze(-1)
-            if action_mask is not None:
-                logits = logits.masked_fill(~action_mask.bool(), -1_000_000_000.0)
+        def _score_candidates(self, state_hidden, candidate_numeric, candidate_card_ids, scorer, candidate_mask=None):
+            candidate_embeds = self.card_embedding(candidate_card_ids.long())
+            batch, candidate_count, _ = candidate_numeric.shape
+            expanded_state = state_hidden.unsqueeze(1).expand(batch, candidate_count, state_hidden.shape[-1])
+            candidate_input = torch.cat([expanded_state, candidate_numeric.float(), candidate_embeds], dim=-1)
+            logits = scorer(candidate_input).squeeze(-1)
+            if candidate_mask is not None:
+                logits = logits.masked_fill(~candidate_mask.bool(), -1_000_000_000.0)
+            return logits
+
+        def forward(self, state_numeric, state_card_ids, action_numeric, action_card_ids, action_mask=None):
+            state_hidden = self._state_hidden(state_numeric, state_card_ids)
+            logits = self._score_candidates(state_hidden, action_numeric, action_card_ids, self.action_net, action_mask)
             value = self.value_head(state_hidden).squeeze(-1)
+            return logits, value
+
+        def score_choices(self, state_numeric, state_card_ids, choice_numeric, choice_card_ids, choice_mask=None):
+            state_hidden = self._state_hidden(state_numeric, state_card_ids)
+            scorer = self.choice_net if self.choice_head_enabled else self.action_net
+            logits = self._score_candidates(state_hidden, choice_numeric, choice_card_ids, scorer, choice_mask)
+            value = self.choice_value_head(state_hidden).squeeze(-1)
             return logits, value
 
 else:
@@ -105,6 +132,12 @@ def checkpoint_payload(model, metadata: dict[str, Any] | None = None) -> dict[st
         "version": CHECKPOINT_VERSION,
         "model_state": model.state_dict(),
         "metadata": metadata or {},
+        "encoder_config": {
+            "state_numeric_size": model.state_numeric_size,
+            "state_card_slots": model.state_card_slots,
+            "action_numeric_size": model.action_numeric_size,
+            "card_bucket_count": model.card_bucket_count,
+        },
         "model_config": {
             "state_numeric_size": model.state_numeric_size,
             "state_card_slots": model.state_card_slots,
@@ -112,8 +145,37 @@ def checkpoint_payload(model, metadata: dict[str, Any] | None = None) -> dict[st
             "card_bucket_count": model.card_bucket_count,
             "card_embed_dim": model.card_embed_dim,
             "hidden_size": model.hidden_size,
+            "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
         },
+        "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
     }
+
+
+def _infer_model_config_from_state_dict(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Infer enough config to load pre-v1 raw state_dict checkpoints."""
+    config: dict[str, Any] = {}
+    try:
+        card_weight = state_dict["card_embedding.weight"]
+        config["card_bucket_count"] = int(card_weight.shape[0])
+        config["card_embed_dim"] = int(card_weight.shape[1])
+    except Exception:
+        config["card_bucket_count"] = CARD_BUCKET_COUNT
+        config["card_embed_dim"] = 32
+    try:
+        state_weight = state_dict["state_net.0.weight"]
+        hidden_size = int(state_weight.shape[0])
+        config["hidden_size"] = hidden_size
+        config["state_numeric_size"] = int(state_weight.shape[1]) - int(config["card_embed_dim"])
+    except Exception:
+        config["hidden_size"] = 192
+        config["state_numeric_size"] = STATE_NUMERIC_SIZE
+    try:
+        action_weight = state_dict["action_net.0.weight"]
+        config["action_numeric_size"] = int(action_weight.shape[1]) - int(config["hidden_size"]) - int(config["card_embed_dim"])
+    except Exception:
+        config["action_numeric_size"] = ACTION_NUMERIC_SIZE
+    config["state_card_slots"] = 32
+    return config
 
 
 def save_checkpoint(path: str, model, metadata: dict[str, Any] | None = None) -> None:
@@ -132,14 +194,18 @@ def load_checkpoint(path: str, device: str = "cpu"):
         raise RuntimeError("PyTorch is not installed.")
     payload = torch.load(path, map_location=device)
     if isinstance(payload, dict) and "model_state" in payload:
-        config = payload.get("model_config") or {}
+        version = int(payload.get("version") or 0)
+        config = dict(payload.get("model_config") or {})
+        config.setdefault("choice_head_enabled", version >= 3)
         model = create_model(**config)
-        model.load_state_dict(payload["model_state"])
+        model.load_state_dict(payload["model_state"], strict=version >= 3)
         model.to(device)
         model.eval()
         return model, payload
-    model = create_model()
-    model.load_state_dict(payload)
+    config = _infer_model_config_from_state_dict(payload)
+    config["choice_head_enabled"] = False
+    model = create_model(**config)
+    model.load_state_dict(payload, strict=False)
     model.to(device)
     model.eval()
-    return model, {"version": 0, "metadata": {}, "model_config": {}}
+    return model, {"version": 0, "metadata": {}, "model_config": config}

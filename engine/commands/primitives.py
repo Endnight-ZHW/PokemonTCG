@@ -265,14 +265,20 @@ class FlipCoin:
 class SwitchPokemon:
     target: str = "self"  # 'self' or 'opponent'
     optional: bool = False
+    you_choose: bool = False  # When True and target="opponent", the card player chooses
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult
         from engine.game_state import ActionRequest
 
         player = ctx.player if self.target == "self" else ctx.opponent
-        player_idx = ctx.player_idx if self.target == "self" else (1 - ctx.player_idx)
         target_player = self.target
+        if self.you_choose and self.target == "opponent":
+            chooser_idx = ctx.player_idx
+            request_type = "select_opponent_bench"
+        else:
+            chooser_idx = ctx.player_idx if self.target == "self" else (1 - ctx.player_idx)
+            request_type = "select_bench"
 
         if not player.active or player.bench_count() == 0:
             if self.optional:
@@ -292,8 +298,8 @@ class SwitchPokemon:
                     return None
                 # Multiple bench: return a bench selection request
                 return ActionRequest(
-                    request_type="select_bench",
-                    player=player_idx,
+                    request_type=request_type,
+                    player=chooser_idx,
                     prompt="选择要替换上场的宝可梦",
                     min_select=1, max_select=1,
                     target_player=target_player,
@@ -304,7 +310,7 @@ class SwitchPokemon:
                 "请选择是否替换宝可梦。",
                 pending_choice=ActionRequest(
                     request_type="confirm",
-                    player=player_idx,
+                    player=chooser_idx,
                     prompt="是否替换战斗宝可梦？",
                     callback=on_confirm,
                 ),
@@ -314,8 +320,8 @@ class SwitchPokemon:
         return CommandResult.ok(
             "选择替换的宝可梦。",
             pending_choice=ActionRequest(
-                request_type="select_bench",
-                player=player_idx,
+                request_type=request_type,
+                player=chooser_idx,
                 prompt="选择要替换上场的宝可梦",
                 min_select=1, max_select=1,
                 target_player=target_player,

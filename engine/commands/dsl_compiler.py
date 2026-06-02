@@ -170,6 +170,7 @@ def _make_switch_opponent(params: dict, **_kw):
     from engine.commands.primitives import SwitchPokemon
     return SwitchPokemon(
         target="opponent",
+        you_choose=params.get("you_choose", False),
     )
 
 

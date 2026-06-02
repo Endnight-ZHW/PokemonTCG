@@ -1,0 +1,71 @@
+{
+  "metadata": {
+    "accepted": true,
+    "bootstrap_games": 200,
+    "created_at": 1780382142,
+    "cuda_available": true,
+    "deck": "fire",
+    "device": "cuda",
+    "elapsed_seconds": 963.105,
+    "eval_games": 100,
+    "games": 500,
+    "gpu_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
+    "preserved_existing": false,
+    "requested_device": "cuda",
+    "requested_output_path": "data\\ai_models\\candidate_fire.pt",
+    "rollout_batch_games": 32,
+    "summary": {
+      "fire": {
+        "accepted": true,
+        "baseline_eval": {
+          "avg_score": -394720.374,
+          "draws": 11,
+          "games": 100,
+          "losses": 64,
+          "wins": 25
+        },
+        "bootstrap": {
+          "entropy": 1.351727,
+          "examples": 8204,
+          "loss": 1.346437,
+          "policy_loss": 1.346433,
+          "total_loss": 1.346437,
+          "value_loss": 2e-05
+        },
+        "eval": {
+          "avg_score": -344311.383,
+          "draws": 16,
+          "games": 100,
+          "losses": 59,
+          "wins": 25
+        },
+        "old_eval": {
+          "games": 0
+        },
+        "rollout_batch_games": 32,
+        "self_play": {
+          "entropy": 0.835713,
+          "examples": 19510,
+          "loss": 0.587773,
+          "policy_loss": 0.347372,
+          "total_loss": 0.587773,
+          "value_loss": 1.243794
+        },
+        "self_play_stats": {
+          "draws": 65,
+          "losses": 303,
+          "wins": 132
+        },
+        "teacher_search_preset": "fast",
+        "updates_per_rollout": 3
+      }
+    },
+    "teacher_search_preset": "fast",
+    "torch_cuda": "11.8",
+    "torch_version": "2.3.1+cu118",
+    "trainer": "bootstrap_plus_ppo_v2",
+    "updates_per_rollout": 3,
+    "workers": 8
+  },
+  "model_path": "data\\ai_models\\candidate_fire.pt"
+}

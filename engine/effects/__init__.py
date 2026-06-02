@@ -112,7 +112,7 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         return _handle_switch_self(state, player, params, player_idx)
     elif effect_type == "switch_opponent":
         opponent_idx = 1 - player_idx
-        return _handle_switch_opponent(state, opponent, params, opponent_idx)
+        return _handle_switch_opponent(state, opponent, params, opponent_idx, player_idx)
     elif effect_type == "energy_attach":
         return _handle_energy_attach(state, player, player_idx, params, source_slot)
     elif effect_type == "energy_discard":

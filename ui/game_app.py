@@ -83,66 +83,68 @@ class GameApp:
 
     def run(self):
         """Main game loop."""
-        while self.running:
-            dt = self.clock.tick(FPS) / 1000.0
+        try:
+            while self.running:
+                dt = self.clock.tick(FPS) / 1000.0
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.running = False
 
-                elif event.type == pygame.VIDEORESIZE:
-                    self.win_w, self.win_h = event.w, event.h
-                    self.screen = pygame.display.set_mode(
-                        (event.w, event.h), pygame.RESIZABLE
-                    )
+                    elif event.type == pygame.VIDEORESIZE:
+                        self.win_w, self.win_h = event.w, event.h
+                        self.screen = pygame.display.set_mode(
+                            (event.w, event.h), pygame.RESIZABLE
+                        )
 
-                elif event.type == pygame.MOUSEMOTION:
-                    vx, vy = self._to_virtual(*event.pos)
-                    event = pygame.event.Event(event.type, {
-                        'pos': (vx, vy), 'rel': event.rel,
-                        'buttons': event.buttons,
-                    })
+                    elif event.type == pygame.MOUSEMOTION:
+                        vx, vy = self._to_virtual(*event.pos)
+                        event = pygame.event.Event(event.type, {
+                            'pos': (vx, vy), 'rel': event.rel,
+                            'buttons': event.buttons,
+                        })
 
-                elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
-                    vx, vy = self._to_virtual(*event.pos)
-                    event = pygame.event.Event(event.type, {
-                        'pos': (vx, vy), 'button': event.button,
-                    })
+                    elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                        vx, vy = self._to_virtual(*event.pos)
+                        event = pygame.event.Event(event.type, {
+                            'pos': (vx, vy), 'button': event.button,
+                        })
 
-                elif event.type == pygame.MOUSEWHEEL:
-                    mx, my = pygame.mouse.get_pos()
-                    vx, vy = self._to_virtual(mx, my)
-                    event = pygame.event.Event(event.type, {
-                        'pos': (vx, vy), 'x': event.x, 'y': event.y,
-                        'flipped': getattr(event, 'flipped', False),
-                    })
+                    elif event.type == pygame.MOUSEWHEEL:
+                        mx, my = pygame.mouse.get_pos()
+                        vx, vy = self._to_virtual(mx, my)
+                        event = pygame.event.Event(event.type, {
+                            'pos': (vx, vy), 'x': event.x, 'y': event.y,
+                            'flipped': getattr(event, 'flipped', False),
+                        })
 
-                self.screen_manager.handle_event(event)
+                    self.screen_manager.handle_event(event)
 
-            # Update
-            self.screen_manager.update(dt)
+                # Update
+                self.screen_manager.update(dt)
 
-            # Draw to virtual surface at design resolution
-            self.screen_manager.draw(self.virtual)
+                # Draw to virtual surface at design resolution
+                self.screen_manager.draw(self.virtual)
 
-            # Compute letterbox: scale to fit, preserve aspect ratio
-            scale = min(self.win_w / SCREEN_WIDTH, self.win_h / SCREEN_HEIGHT)
-            self._lb_scale = scale
-            sw = int(SCREEN_WIDTH * scale)
-            sh = int(SCREEN_HEIGHT * scale)
-            self._lb_ox = (self.win_w - sw) // 2
-            self._lb_oy = (self.win_h - sh) // 2
+                # Compute letterbox: scale to fit, preserve aspect ratio
+                scale = min(self.win_w / SCREEN_WIDTH, self.win_h / SCREEN_HEIGHT)
+                self._lb_scale = scale
+                sw = int(SCREEN_WIDTH * scale)
+                sh = int(SCREEN_HEIGHT * scale)
+                self._lb_ox = (self.win_w - sw) // 2
+                self._lb_oy = (self.win_h - sh) // 2
 
-            # Scale and center on screen (smoothscale for quality at any window size)
-            if sw == SCREEN_WIDTH and sh == SCREEN_HEIGHT:
-                scaled = self.virtual
-            else:
-                scaled = pygame.transform.smoothscale(self.virtual, (sw, sh))
-            self.screen.fill((0, 0, 0))
-            self.screen.blit(scaled, (self._lb_ox, self._lb_oy))
-            pygame.display.flip()
-
-        pygame.quit()
+                # Scale and center on screen (smoothscale for quality at any window size)
+                if sw == SCREEN_WIDTH and sh == SCREEN_HEIGHT:
+                    scaled = self.virtual
+                else:
+                    scaled = pygame.transform.smoothscale(self.virtual, (sw, sh))
+                self.screen.fill((0, 0, 0))
+                self.screen.blit(scaled, (self._lb_ox, self._lb_oy))
+                pygame.display.flip()
+        finally:
+            self.screen_manager.shutdown()
+            pygame.quit()
         sys.exit()
 
     def start_game(self, deck1_cards: list[str], deck2_cards: list[str]):

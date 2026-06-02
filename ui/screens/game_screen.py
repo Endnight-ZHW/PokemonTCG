@@ -2931,7 +2931,9 @@ class GameScreen(Screen):
             return
         # Use explicit player index from ActionRequest if valid, otherwise fall back
         # to the active player (for self-switch) or opponent (for opponent-switch)
-        if hasattr(action_req, 'player') and action_req.player >= 0:
+        if action_req.request_type == "select_opponent_bench":
+            player = self.state.get_opponent()
+        elif hasattr(action_req, 'player') and action_req.player >= 0:
             player = self.state.get_player(action_req.player)
         elif action_req.request_type == "select_bench":
             player = self.state.get_active_player()

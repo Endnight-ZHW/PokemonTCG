@@ -14,9 +14,9 @@ from engine.enums import PlayerAction, TurnPhase
 
 
 CARD_BUCKET_COUNT = 4096
-STATE_NUMERIC_SIZE = 256
-STATE_CARD_SLOTS = 32
-ACTION_NUMERIC_SIZE = 96
+STATE_NUMERIC_SIZE = 768
+STATE_CARD_SLOTS = 96
+ACTION_NUMERIC_SIZE = 128
 
 ACTION_TYPES = [
     "NOOP",
@@ -32,6 +32,17 @@ ACTION_TYPES = [
     PlayerAction.END_TURN.name,
 ]
 
+CHOICE_TYPES = [
+    "search_deck",
+    "select_hand_to_discard",
+    "select_bench",
+    "select_opponent_bench",
+    "select_own_bench_energy",
+    "select_bench_targets",
+    "distribute_energy",
+    "confirm",
+]
+
 ENERGY_TYPES = [
     "Grass",
     "Fire",
@@ -44,6 +55,21 @@ ENERGY_TYPES = [
     "Dragon",
     "Colorless",
     "Rainbow",
+]
+
+EFFECT_TYPES = [
+    "draw",
+    "search",
+    "discard",
+    "energy",
+    "attach",
+    "heal",
+    "coin",
+    "switch",
+    "damage",
+    "prevent",
+    "lock",
+    "evolve",
 ]
 
 
@@ -131,6 +157,8 @@ class ActionStateEncoder:
         numeric.extend(self._player_summary(player, own=True))
         numeric.extend(self._player_summary(opponent, own=False))
         numeric.extend(self._deck_context(player))
+        numeric.extend(self._zone_context(opponent.discard))
+        numeric.extend(self._card_features(getattr(state, "stadium_card", None)))
         numeric.extend(self._deck_key_features(deck_key))
 
         for _, pokemon in player.get_all_pokemon():
@@ -141,10 +169,13 @@ class ActionStateEncoder:
         card_ids = []
         card_ids.extend(card_bucket(p.card) if p else 0 for _, p in player.get_all_pokemon())
         card_ids.extend(card_bucket(p.card) if p else 0 for _, p in opponent.get_all_pokemon())
-        card_ids.extend(card_bucket(card) for card in list(player.hand)[:12])
-        card_ids.extend(card_bucket(card) for card in list(player.discard)[-4:])
+        card_ids.extend(card_bucket(getattr(p, "attached_tool", None)) if p else 0 for _, p in player.get_all_pokemon())
+        card_ids.extend(card_bucket(getattr(p, "attached_tool", None)) if p else 0 for _, p in opponent.get_all_pokemon())
+        card_ids.extend(card_bucket(card) for card in list(player.hand)[:16])
+        card_ids.extend(card_bucket(card) for card in list(player.discard)[-12:])
+        card_ids.extend(card_bucket(card) for card in list(opponent.discard)[-12:])
         card_ids.append(card_bucket(getattr(state, "stadium_card", None)))
-        card_ids.extend(card_bucket(card) for card in list(player.deck)[-3:])
+        card_ids.extend(card_bucket(card) for card in list(player.deck)[-4:])
 
         return EncodedState(
             numeric=_pad(numeric, STATE_NUMERIC_SIZE),
@@ -179,6 +210,35 @@ class ActionStateEncoder:
         else:
             numeric.append(0.0)
 
+        return EncodedAction(
+            numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
+            card_id=card_bucket(card),
+        )
+
+    def encode_choice(self, state, player_idx: int, request_type: str, candidate: Any, index: int = 0) -> EncodedAction:
+        """Encode one pending ActionRequest candidate for the optional choice head."""
+        numeric: list[float] = []
+        numeric.extend(
+            _one_hot(CHOICE_TYPES.index(request_type), len(CHOICE_TYPES))
+            if request_type in CHOICE_TYPES else [0.0] * len(CHOICE_TYPES)
+        )
+        numeric.extend([
+            _norm(index + 1, 64.0),
+            _bool(hasattr(candidate, "api_id")),
+            _bool(isinstance(candidate, int)),
+            _bool(isinstance(candidate, bool)),
+        ])
+        if isinstance(candidate, int):
+            numeric.extend(_one_hot(candidate, 6))
+        else:
+            numeric.extend([0.0] * 6)
+        if isinstance(candidate, bool):
+            numeric.extend([1.0, 0.0] if candidate else [0.0, 1.0])
+        else:
+            numeric.extend([0.0, 0.0])
+
+        card = candidate if hasattr(candidate, "api_id") else None
+        numeric.extend(self._card_features(card))
         return EncodedAction(
             numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
             card_id=card_bucket(card),
@@ -219,17 +279,28 @@ class ActionStateEncoder:
         zones = [player.deck, player.hand, player.discard]
         values: list[float] = []
         for zone in zones:
-            total = max(1, len(zone))
-            values.extend([
-                sum(1 for c in zone if getattr(c, "is_pokemon", False)) / total,
-                sum(1 for c in zone if getattr(c, "is_trainer", False)) / total,
-                sum(1 for c in zone if getattr(c, "is_energy", False)) / total,
-            ])
-            energy_seen = set()
-            for card in zone:
-                energy_seen.update(getattr(card, "provides_energy", []) or [])
-                energy_seen.update(getattr(card, "energy_types", []) or [])
-            values.extend(_bool(t in energy_seen) for t in ENERGY_TYPES)
+            values.extend(self._zone_context(zone))
+        return values
+
+    def _zone_context(self, zone) -> list[float]:
+        total = max(1, len(zone))
+        values = [
+            _norm(len(zone), 60.0),
+            sum(1 for c in zone if getattr(c, "is_pokemon", False)) / total,
+            sum(1 for c in zone if getattr(c, "is_trainer", False)) / total,
+            sum(1 for c in zone if getattr(c, "is_energy", False)) / total,
+            sum(1 for c in zone if getattr(c, "is_basic_pokemon", False)) / total,
+            sum(1 for c in zone if getattr(c, "is_trainer_supporter", False)) / total,
+            sum(1 for c in zone if getattr(c, "is_trainer_item", False)) / total,
+        ]
+        energy_seen = set()
+        effect_seen = set()
+        for card in zone:
+            energy_seen.update(getattr(card, "provides_energy", []) or [])
+            energy_seen.update(getattr(card, "energy_types", []) or [])
+            effect_seen.update(self._card_effect_names(card))
+        values.extend(_bool(t in energy_seen) for t in ENERGY_TYPES)
+        values.extend(_bool(t in effect_seen) for t in EFFECT_TYPES)
         return values
 
     def _deck_key_features(self, deck_key: str | None) -> list[float]:
@@ -237,10 +308,16 @@ class ActionStateEncoder:
 
     def _pokemon_features(self, pokemon) -> list[float]:
         if pokemon is None:
-            return [0.0] * 18
+            return [0.0] * 34
         card = pokemon.card
         status_count = len(getattr(pokemon, "status_conditions", []) or [])
-        return [
+        available_energy = list(getattr(pokemon, "available_energy", []) or [])
+        energy_counts = [_norm(available_energy.count(t), 4.0) for t in ENERGY_TYPES]
+        attack_missing = [self._missing_energy_count(pokemon, getattr(atk, "cost", []) or []) for atk in getattr(card, "attacks", []) or []]
+        ready_attacks = sum(1 for missing in attack_missing if missing <= 0)
+        best_missing = min(attack_missing or [0])
+        max_damage = max((getattr(atk, "damage", 0) for atk in getattr(card, "attacks", []) or []), default=0)
+        features = [
             1.0,
             _norm(pokemon.current_hp, 340.0),
             _norm(getattr(card, "hp", 0), 340.0),
@@ -259,18 +336,22 @@ class ActionStateEncoder:
             _bool(getattr(pokemon, "all_prevented_next_turn", False)),
             _bool(getattr(pokemon, "attack_locked", False)),
             _norm(len(getattr(pokemon, "available_energy", []) or []), 8.0),
+            _norm(ready_attacks, 4.0),
+            _norm(best_missing, 5.0),
+            _norm(max_damage, 340.0),
+            _norm(len(getattr(card, "attacks", []) or []), 4.0),
+            _bool(getattr(card, "abilities", [])),
         ]
+        features.extend(energy_counts)
+        return features
 
     def _card_features(self, card) -> list[float]:
         if card is None:
-            return [0.0] * 20
-        text = " ".join(getattr(card, "rules", []) or [])
-        if getattr(card, "trainer_text", ""):
-            text += " " + str(getattr(card, "trainer_text", ""))
-        text = text.lower()
+            return [0.0] * 40
         energy_types = set(getattr(card, "energy_types", []) or [])
         energy_types.update(getattr(card, "provides_energy", []) or [])
-        return [
+        effect_names = self._card_effect_names(card)
+        features = [
             1.0,
             _bool(getattr(card, "is_pokemon", False)),
             _bool(getattr(card, "is_basic_pokemon", False)),
@@ -287,34 +368,77 @@ class ActionStateEncoder:
             _norm(len(getattr(card, "attacks", []) or []), 4.0),
             _norm(getattr(card, "retreat_cost", 0), 5.0),
             _norm(getattr(card, "prize_value", 0), 3.0),
-            _bool("draw" in text),
-            _bool("search" in text),
-            _bool("discard" in text),
             _bool(energy_types),
         ]
+        features.extend(_bool(t in energy_types) for t in ENERGY_TYPES)
+        features.extend(_bool(t in effect_names) for t in EFFECT_TYPES)
+        return features
 
     def _attack_features(self, state, player_idx: int, action) -> list[float]:
         if action.action != PlayerAction.DECLARE_ATTACK:
-            return [0.0] * 12
+            return [0.0] * 24
         player = state.get_player(player_idx)
         attack_idx = (getattr(action, "params", {}) or {}).get("attack_idx")
         if not player.active or not isinstance(attack_idx, int) or attack_idx >= len(player.active.card.attacks):
-            return [0.0] * 12
+            return [0.0] * 24
         attack = player.active.card.attacks[attack_idx]
         effects = getattr(attack, "effects", []) or []
         effect_names = [str(getattr(e, "effect_type", e.get("effect_type", "")) if isinstance(e, dict) else getattr(e, "effect_type", "")) for e in effects]
-        joined = " ".join(effect_names).lower()
-        return [
+        joined_names = self._normalized_effect_tokens(effect_names)
+        features = [
             1.0,
             _norm(getattr(attack, "damage", 0), 340.0),
             _norm(len(getattr(attack, "cost", []) or []), 5.0),
             _norm(len(effects), 6.0),
-            _bool("draw" in joined),
-            _bool("search" in joined),
-            _bool("energy" in joined or "attach" in joined),
-            _bool("heal" in joined),
-            _bool("coin" in joined),
-            _bool("switch" in joined),
-            _bool("discard" in joined),
-            _bool("prevent" in joined or "lock" in joined),
         ]
+        features.extend(_bool(t in joined_names) for t in EFFECT_TYPES)
+        features.extend(_bool(t in getattr(attack, "cost", []) or []) for t in ENERGY_TYPES[:8])
+        return features
+
+    def _missing_energy_count(self, pokemon, cost: list[str]) -> int:
+        available = list(getattr(pokemon, "available_energy", []) or [])
+        missing = 0
+        for required in cost:
+            if required == "Colorless":
+                continue
+            if required in available:
+                available.remove(required)
+            elif "Rainbow" in available:
+                available.remove("Rainbow")
+            else:
+                missing += 1
+        colorless = sum(1 for c in cost if c == "Colorless")
+        return missing + max(0, colorless - len(available))
+
+    def _card_effect_names(self, card) -> set[str]:
+        names: list[str] = []
+        for attack in getattr(card, "attacks", []) or []:
+            for effect in getattr(attack, "effects", []) or []:
+                names.append(self._effect_name(effect))
+            names.append(getattr(attack, "text", "") or "")
+        for ability in getattr(card, "abilities", []) or []:
+            names.append(getattr(ability, "text", "") or "")
+            for effect in getattr(ability, "effects", []) or []:
+                names.append(self._effect_name(effect))
+        for effect in getattr(card, "trainer_effects", []) or []:
+            names.append(self._effect_name(effect))
+        names.extend(getattr(card, "rules", []) or [])
+        names.append(getattr(card, "trainer_text", "") or "")
+        return self._normalized_effect_tokens(names)
+
+    def _effect_name(self, effect) -> str:
+        if isinstance(effect, dict):
+            return str(effect.get("effect_type", ""))
+        return str(getattr(effect, "effect_type", effect))
+
+    def _normalized_effect_tokens(self, names) -> set[str]:
+        joined = " ".join(str(name) for name in names).lower()
+        tokens = set()
+        for token in EFFECT_TYPES:
+            if token in joined:
+                tokens.add(token)
+        if "attach" in joined:
+            tokens.add("energy")
+        if "prevent" in joined:
+            tokens.add("prevent")
+        return tokens
