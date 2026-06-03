@@ -1,0 +1,97 @@
+{
+  "metadata": {
+    "acceptance_metric": "score",
+    "accepted": true,
+    "bootstrap_games": 2,
+    "choice_head_enabled": true,
+    "created_at": 1780455598,
+    "cuda_available": true,
+    "dagger_games": 0,
+    "deck": "fire",
+    "device": "cpu",
+    "elapsed_seconds": 14.946,
+    "eval_games": 0,
+    "games": 0,
+    "gpu_name": null,
+    "min_win_delta": 0,
+    "preserved_existing": false,
+    "requested_device": "cpu",
+    "requested_output_path": "data\\ai_models\\fire.pt",
+    "rollout_batch_games": 4,
+    "summary": {
+      "fire": {
+        "acceptance_metric": "score",
+        "accepted": true,
+        "baseline_eval": {
+          "games": 0
+        },
+        "bootstrap": {
+          "entropy": 1.728978,
+          "examples": 19,
+          "loss": 1.507475,
+          "policy_loss": 1.507475,
+          "total_loss": 1.507475,
+          "value_loss": 0.0
+        },
+        "choice": {
+          "choice_examples": 0,
+          "choice_loss": 0.0
+        },
+        "choice_head_enabled": true,
+        "dagger": {
+          "entropy": 0.0,
+          "examples": 0,
+          "loss": 0.0,
+          "policy_loss": 0.0,
+          "total_loss": 0.0,
+          "value_loss": 0.0
+        },
+        "dagger_stats": {
+          "draws": 0,
+          "losses": 0,
+          "wins": 0
+        },
+        "delta_avg_score": null,
+        "delta_point_rate": null,
+        "delta_wins": null,
+        "eval": {
+          "avg_score": 0.0,
+          "draws": 0,
+          "games": 0,
+          "losses": 0,
+          "wins": 0
+        },
+        "eval_seed": 900017,
+        "min_win_delta": 0,
+        "old_eval": {
+          "games": 0
+        },
+        "rollout_batch_games": 4,
+        "self_play": {
+          "entropy": 0.0,
+          "examples": 0,
+          "loss": 0.0,
+          "policy_loss": 0.0,
+          "total_loss": 0.0,
+          "value_loss": 0.0
+        },
+        "self_play_stats": {
+          "draws": 0,
+          "losses": 0,
+          "wins": 0
+        },
+        "teacher_label_model_states": true,
+        "teacher_search_preset": "quality",
+        "updates_per_rollout": 2
+      }
+    },
+    "teacher_label_model_states": true,
+    "teacher_search_preset": "quality",
+    "torch_cuda": "11.8",
+    "torch_version": "2.3.1+cu118",
+    "trainer": "teacher_dagger_rl_v3",
+    "updates_per_rollout": 2,
+    "workers": 1
+  },
+  "model_path": "data\\ai_models\\fire.pt"
+}

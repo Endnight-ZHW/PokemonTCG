@@ -28,12 +28,12 @@ def _fit_sequence(values: list, size: int, pad):
 class DeepLearningAIConfig:
     model_path: str | None = None
     device: str = "cpu"
-    temperature: float = 0.85
-    deterministic: bool = False
+    temperature: float = 0.35
+    deterministic: bool = True
     fallback_enabled: bool = True
     random_seed: int = 17
     fallback_config: AIConfig | None = None
-    choice_confidence_threshold: float = 0.45
+    choice_confidence_threshold: float = 0.30
 
 
 class DeepLearningAI:
@@ -45,8 +45,8 @@ class DeepLearningAI:
         fallback_config = self.config.fallback_config or AIConfig(
             thinking_time_seconds=0.0,
             deterministic_search=True,
-            max_sequence_depth=2,
-            max_turn_actions=64,
+            max_sequence_depth=3,
+            max_turn_actions=128,
         )
         self.fallback: ChallengeAI = create_challenge_ai(deck_key or "", fallback_config)
         self.encoder = ActionStateEncoder()

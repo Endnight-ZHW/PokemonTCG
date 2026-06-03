@@ -14,8 +14,9 @@ from typing import Any, Callable
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, expand_deck
 from engine.ai.challenge_ai import AIAction, AIConfig, create_challenge_ai
-from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, ActionStateEncoder, EncodedAction, EncodedState
+from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, CARD_SEMANTIC_SIZE, ActionStateEncoder, EncodedAction, EncodedState
 from engine.ai.dl.model import TORCH_AVAILABLE, create_model, load_checkpoint, save_checkpoint, torch
+from engine.ai.dl.opponent_pool import OpponentPool, save_opponent_pool, load_opponent_pool
 
 from engine.ai.training import DECK_SPECS, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
@@ -29,7 +30,7 @@ FAST_TRAINING_AI_SEARCH = {
     "thinking_time_seconds": 0.0,
     "beam_width": 4,
     "max_sequence_depth": 2,
-    "max_turn_actions": 64,
+    "max_turn_actions": 96,
     "coin_sample_count": 2,
     "opponent_response_actions": 2,
     "opponent_response_weight": 0.25,
@@ -38,12 +39,12 @@ FAST_TRAINING_AI_SEARCH = {
 
 QUALITY_TRAINING_AI_SEARCH = {
     "thinking_time_seconds": 0.0,
-    "beam_width": 6,
-    "max_sequence_depth": 3,
-    "max_turn_actions": 64,
+    "beam_width": 8,
+    "max_sequence_depth": 4,
+    "max_turn_actions": 128,
     "coin_sample_count": 4,
-    "opponent_response_actions": 4,
-    "opponent_response_weight": 0.35,
+    "opponent_response_actions": 6,
+    "opponent_response_weight": 0.45,
     "deterministic_search": True,
 }
 
@@ -57,27 +58,27 @@ TEACHER_SEARCH_PRESETS = {
 @dataclass(frozen=True)
 class DeepTrainingConfig:
     deck: str = "all"
-    games: int = 300
+    games: int = 800
     seed: int = 17
     model: str | None = None
     output: str | None = None
     device: str = "cpu"
-    bootstrap_games: int = 800
-    dagger_games: int = 300
+    bootstrap_games: int = 2000
+    dagger_games: int = 500
     bootstrap_epochs: int = 10
     self_play_epochs: int = 10
-    eval_games: int = 100
+    eval_games: int = 200
     workers: int = 1
     max_steps: int = 120
-    learning_rate: float = 1e-3
+    learning_rate: float = 5e-4
     batch_size: int = 64
     progress_jsonl: str | None = None
     rollout_batch_games: int = 16
     updates_per_rollout: int = 2
     teacher_search_preset: str = "quality"
     choice_head_enabled: bool = True
-    acceptance_metric: str = "wins"
-    min_win_delta: int = 1
+    acceptance_metric: str = "score"
+    min_win_delta: int = 0
     teacher_label_model_states: bool = True
 
 
@@ -131,6 +132,8 @@ class ModelGameTask:
     temperature: float = 0.9
     teacher_label_model_states: bool = True
     phase_tag: str = "rl"
+    opponent_model_state: dict[str, Any] | None = None
+    opponent_model_config: dict[str, Any] | None = None
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -370,8 +373,9 @@ def _model_payload_for_worker(model) -> tuple[dict[str, Any], dict[str, Any]]:
         "action_numeric_size": int(getattr(model, "action_numeric_size", ACTION_NUMERIC_SIZE)),
         "card_bucket_count": int(getattr(model, "card_bucket_count", ActionStateEncoder.card_bucket_count)),
         "card_embed_dim": int(getattr(model, "card_embed_dim", 32)),
-        "hidden_size": int(getattr(model, "hidden_size", 192)),
+        "hidden_size": int(getattr(model, "hidden_size", 384)),
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
+        "use_attention": bool(getattr(model, "use_attention", True)),
     }
     return state, config
 
@@ -708,8 +712,8 @@ def _train_examples(
     learning_rate: float,
     epochs: int = 1,
     batch_size: int = 64,
-    entropy_coef: float = 0.01,
-    ppo_clip: float = 0.2,
+    entropy_coef: float = 0.02,
+    ppo_clip: float = 0.15,
 ) -> dict[str, Any]:
     if not examples:
         return {
@@ -728,8 +732,8 @@ def _train_examples(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     bs = max(1, int(batch_size))
     total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
-    scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer, start_factor=1.0, end_factor=0.3, total_iters=total_steps,
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=total_steps, eta_min=learning_rate * 0.1,
     )
     total_loss = 0.0
     total_policy_loss = 0.0
@@ -814,7 +818,7 @@ def _train_examples(
                 value_loss = F.mse_loss(sp_value, sp_targets)
             else:
                 value_loss = torch.tensor(0.0, device=device)
-            loss = policy_loss + 0.2 * value_loss - entropy_coef * entropy
+            loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy
 
             optimizer.zero_grad()
             loss.backward()
@@ -860,8 +864,8 @@ def _train_choice_examples(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     bs = max(1, int(batch_size))
     total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
-    scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer, start_factor=1.0, end_factor=0.3, total_iters=total_steps,
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=total_steps, eta_min=learning_rate * 0.1,
     )
     total_loss = 0.0
     steps = 0
@@ -921,9 +925,13 @@ def _select_model_action(
     with torch.no_grad():
         example = TrainingExample(encoded_state, encoded_actions, 0, source="self_play")
         logits, value = _forward_example(model, example, device)
-        scaled_logits = logits[0] / max(0.05, temperature)
-        probs = torch.softmax(scaled_logits, dim=0)
-        target_index = int(torch.multinomial(probs, 1).item())
+        if temperature <= 0:
+            target_index = int(torch.argmax(logits[0]).item())
+            probs = torch.softmax(logits[0], dim=0)
+        else:
+            scaled_logits = logits[0] / max(0.05, temperature)
+            probs = torch.softmax(scaled_logits, dim=0)
+            target_index = int(torch.multinomial(probs, 1).item())
         log_probs = torch.log(probs.clamp_min(1e-7)).clamp(min=-10.0)
         predicted_value = float(value[0].detach().cpu().item())
         behavior_log_prob = float(log_probs[target_index].detach().cpu().item())
@@ -975,6 +983,8 @@ def _snapshot_metrics(state, player_idx: int, evaluator=None) -> dict[str, float
     eval_score = 0.0
     if evaluator is not None:
         eval_score = float(evaluator.evaluate_state(state, player_idx))
+    own_pokemon = [p for _, p in player.get_all_pokemon() if p]
+    opp_pokemon = [p for _, p in opponent.get_all_pokemon() if p]
     return {
         "prizes_taken": float(6 - len(player.prizes)),
         "opp_prizes_taken": float(6 - len(opponent.prizes)),
@@ -983,24 +993,49 @@ def _snapshot_metrics(state, player_idx: int, evaluator=None) -> dict[str, float
         "hand_count": float(len(player.hand)),
         "opp_hand_count": float(opponent.hand_count),
         "eval_score": eval_score,
+        "own_pokemon_count": float(len(own_pokemon)),
+        "opp_pokemon_count": float(len(opp_pokemon)),
+        "own_total_energy": float(sum(len(getattr(p, "energy_cards", []) or []) for p in own_pokemon)),
+        "opp_active_damage": float(getattr(opponent.active, "damage_counters", 0) if opponent.active else 0),
     }
 
 
 def _step_reward(before: dict[str, float], after: dict[str, float], *, invalid: bool = False) -> float:
-    """Dense reward aligned to a single target-player action."""
+    """Dense reward with intermediate signals: prizes, KOs, damage, energy."""
     reward = 0.0
+
+    # Prize delta (boosted from 0.4 to 0.5)
     prize_delta = after.get("prizes_taken", 0.0) - before.get("prizes_taken", 0.0)
     opp_prize_delta = after.get("opp_prizes_taken", 0.0) - before.get("opp_prizes_taken", 0.0)
-    reward += prize_delta * 0.4
-    reward -= opp_prize_delta * 0.4
+    reward += prize_delta * 0.5
+    reward -= opp_prize_delta * 0.5
 
+    # KO reward — pokemon-in-play count decrease means a KO happened
+    opp_ko = max(0.0, before.get("opp_pokemon_count", 0.0) - after.get("opp_pokemon_count", 0.0))
+    own_ko = max(0.0, before.get("own_pokemon_count", 0.0) - after.get("own_pokemon_count", 0.0))
+    reward += opp_ko * 0.3
+    reward -= own_ko * 0.3
+
+    # Damage dealt to opponent active (damage counters increased)
+    opp_damage_delta = after.get("opp_active_damage", 0.0) - before.get("opp_active_damage", 0.0)
+    if opp_damage_delta > 0:
+        reward += min(0.15, opp_damage_delta * 0.02)
+
+    # Energy attached to own pokemon
+    energy_delta = after.get("own_total_energy", 0.0) - before.get("own_total_energy", 0.0)
+    if energy_delta > 0:
+        reward += min(0.1, energy_delta * 0.05)
+
+    # Teacher evaluation score delta
     score_delta = after.get("eval_score", 0.0) - before.get("eval_score", 0.0)
     reward += max(-0.25, min(0.25, score_delta / 2500.0))
 
+    # Bench / hand deltas
     bench_delta = after.get("bench_count", 0.0) - before.get("bench_count", 0.0)
     hand_delta = after.get("hand_count", 0.0) - before.get("hand_count", 0.0)
     reward += max(-0.05, min(0.05, bench_delta * 0.03))
     reward += max(-0.04, min(0.04, hand_delta * 0.01))
+
     if invalid:
         reward -= 0.15
     return max(-1.0, min(1.0, float(reward)))
@@ -1061,6 +1096,41 @@ def _finalize_episode_examples(
     return examples
 
 
+class _ModelOpponentActor:
+    """Thin adapter that lets a PyTorch model act as an opponent in self-play."""
+
+    def __init__(self, opponent_model, fallback_ai, device: str, deck_key: str):
+        self._model = opponent_model
+        self._fallback = fallback_ai
+        self._device = device
+        self._deck_key = deck_key
+        self._encoder = ActionStateEncoder()
+
+    def legal_actions(self, state, player_idx: int):
+        return self._fallback.legal_actions(state, player_idx)
+
+    def choose_action(self, state, player_idx: int):
+        from engine.ai.dl.training import _select_model_action as _select
+
+        try:
+            action, _ = _select(
+                self._model, self._encoder, state, player_idx,
+                self._deck_key, self._fallback, self._device, temperature=0.5,
+            )
+            return action
+        except Exception:
+            return self._fallback.choose_action(state, player_idx)
+
+    def _apply_action_for_sim(self, state, player_idx, action):
+        return self._fallback._apply_action_for_sim(state, player_idx, action)
+
+    def _auto_promote_for_sim(self, state):
+        return self._fallback._auto_promote_for_sim(state)
+
+    def evaluate_state(self, state, player_idx: int) -> float:
+        return self._fallback.evaluate_state(state, player_idx)
+
+
 def _play_model_game(
     model,
     deck_key: str,
@@ -1073,6 +1143,7 @@ def _play_model_game(
     temperature: float = 0.9,
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
+    opponent_model: Any = None,
 ) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]:
     encoder = ActionStateEncoder()
     opponent_key = _opponent_for(deck_key, seed)
@@ -1080,6 +1151,10 @@ def _play_model_game(
     state, _, ais, target_player_idx, rng_state = _setup_match(
         deck_key, opponent_key, seed, seat, teacher_search_preset
     )
+    # Replace opponent AI with model-based actor when self-play is requested
+    opponent_idx = 1 - target_player_idx
+    if opponent_model is not None:
+        ais[opponent_idx] = _ModelOpponentActor(opponent_model, ais[opponent_idx], device, deck_key)
     examples: list[TrainingExample] = []
     choice_examples: list[ChoiceTrainingExample] = []
     target_ai = ais[target_player_idx]
@@ -1181,6 +1256,9 @@ def _play_model_game(
 def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]:
     _ensure_cards_loaded()
     model = _model_from_worker_payload(task.model_state, task.model_config)
+    opponent_model = None
+    if task.opponent_model_state is not None:
+        opponent_model = _model_from_worker_payload(task.opponent_model_state, task.opponent_model_config or {})
     return _play_model_game(
         model,
         task.deck_key,
@@ -1192,6 +1270,7 @@ def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, li
         temperature=task.temperature,
         teacher_label_model_states=task.teacher_label_model_states,
         phase_tag=task.phase_tag,
+        opponent_model=opponent_model,
     )
 
 
@@ -1220,10 +1299,18 @@ def _model_game_tasks(
     temperature: float = 0.9,
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
+    opponent_pool: Any = None,
 ) -> list[ModelGameTask]:
     model_state, model_config = _model_payload_for_worker(model)
-    return [
-        ModelGameTask(
+    tasks = []
+    for i, seed in enumerate(seeds):
+        opp_state = None
+        opp_config = None
+        if opponent_pool is not None and len(opponent_pool) > 0 and (i % 2 == 1):
+            sampled = opponent_pool.sample()
+            if sampled is not None:
+                opp_state, opp_config = sampled
+        tasks.append(ModelGameTask(
             deck_key,
             seed,
             max_steps,
@@ -1234,9 +1321,10 @@ def _model_game_tasks(
             temperature,
             teacher_label_model_states,
             phase_tag,
-        )
-        for seed in seeds
-    ]
+            opponent_model_state=opp_state,
+            opponent_model_config=opp_config,
+        ))
+    return tasks
 
 
 def evaluate_model(
@@ -1265,6 +1353,7 @@ def evaluate_model(
                 max_steps=max_steps,
                 record=False,
                 teacher_search_preset=teacher_search_preset,
+                temperature=0.0,
                 teacher_label_model_states=False,
             )
             for game_seed in seeds
@@ -1278,6 +1367,7 @@ def evaluate_model(
                 max_steps=max_steps,
                 record=False,
                 teacher_search_preset=teacher_search_preset,
+                temperature=0.0,
                 teacher_label_model_states=False,
                 phase_tag="eval",
             ),
@@ -1354,7 +1444,7 @@ def _accepts_candidate(
         return True
     metric = acceptance_metric if acceptance_metric in ("wins", "points", "score") else "wins"
     if metric == "wins":
-        required_delta = max(1, int(min_win_delta))
+        required_delta = max(0, int(min_win_delta))
         candidate_wins = int(eval_result.get("wins", 0))
         for baseline in (baseline_eval, old_eval):
             if not baseline or int(baseline.get("games") or 0) <= 0:
@@ -1434,12 +1524,21 @@ def _collect_rollout_batch(
     teacher_search_preset: str,
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
+    opponent_pool: Any = None,
 ) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]]:
     if not seeds:
         return []
     if _normalized_workers(workers) <= 1:
-        return [
-            _play_model_game(
+        pool = opponent_pool
+        results = []
+        for i, game_seed in enumerate(seeds):
+            opp_model = None
+            if pool is not None and len(pool) > 0 and (i % 2 == 1):
+                sampled = pool.sample()
+                if sampled is not None:
+                    opp_state, opp_config = sampled
+                    opp_model = _model_from_worker_payload(opp_state, opp_config)
+            results.append(_play_model_game(
                 model,
                 deck_key,
                 game_seed,
@@ -1449,9 +1548,9 @@ def _collect_rollout_batch(
                 teacher_search_preset=teacher_search_preset,
                 teacher_label_model_states=teacher_label_model_states,
                 phase_tag=phase_tag,
-            )
-            for game_seed in seeds
-        ]
+                opponent_model=opp_model,
+            ))
+        return results
     return _run_model_game_tasks(
         _model_game_tasks(
             model,
@@ -1462,6 +1561,7 @@ def _collect_rollout_batch(
             teacher_search_preset=teacher_search_preset,
             teacher_label_model_states=teacher_label_model_states,
             phase_tag=phase_tag,
+            opponent_pool=opponent_pool,
         ),
         workers,
     )
@@ -1488,7 +1588,7 @@ def _train_deck_pipeline(
     worker_count = _normalized_workers(config.workers)
     teacher_search_preset = config.teacher_search_preset if config.teacher_search_preset in TEACHER_SEARCH_PRESETS else "quality"
     acceptance_metric = config.acceptance_metric if config.acceptance_metric in ("wins", "points", "score") else "wins"
-    min_win_delta = max(1, int(config.min_win_delta))
+    min_win_delta = max(0, int(config.min_win_delta))
     eval_seed = deck_seed + 900_000
 
     emit({
@@ -1669,6 +1769,11 @@ def _train_deck_pipeline(
     self_play_train_results: list[dict[str, Any]] = []
     self_play_choice_results: list[dict[str, Any]] = []
 
+    # Self-play opponent pool: model plays against past versions of itself
+    opponent_pool = OpponentPool(max_snapshots=3)
+    model_snapshot, model_snapshot_config = _model_payload_for_worker(model)
+    opponent_pool.add(model_snapshot, model_snapshot_config)
+
     for batch_start in range(0, self_play_games, rollout_batch_games):
         batch_count = min(rollout_batch_games, self_play_games - batch_start)
         seeds = [
@@ -1685,6 +1790,7 @@ def _train_deck_pipeline(
             teacher_search_preset=teacher_search_preset,
             teacher_label_model_states=bool(config.teacher_label_model_states),
             phase_tag="rl",
+            opponent_pool=opponent_pool,
         )
         batch_examples: list[TrainingExample] = []
         batch_dagger_examples: list[TrainingExample] = []
@@ -1737,7 +1843,6 @@ def _train_deck_pipeline(
             learning_rate=config.learning_rate * 0.35,
             epochs=updates_per_rollout,
             batch_size=config.batch_size,
-            entropy_coef=0.01,
         )
         choice_result = _train_choice_examples(
             model,
@@ -1749,6 +1854,11 @@ def _train_deck_pipeline(
         )
         self_play_train_results.append(train_result)
         self_play_choice_results.append(choice_result)
+
+        # Update opponent pool with latest model snapshot for future self-play
+        model_snapshot, model_snapshot_config = _model_payload_for_worker(model)
+        opponent_pool.add(model_snapshot, model_snapshot_config)
+
         emit({
             "type": "train_phase_finished",
             "deck": deck_key,
@@ -1759,6 +1869,7 @@ def _train_deck_pipeline(
             "self_play_examples": len(batch_examples),
             "dagger_examples": len(batch_dagger_examples),
             "teacher_examples": len(teacher_mix),
+            "opponent_pool_size": len(opponent_pool),
             "total_games_played": total_done,
             "total_training_games": total_training_games,
         })

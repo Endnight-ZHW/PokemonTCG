@@ -96,6 +96,12 @@ class DeepAITests(unittest.TestCase):
             [(candidate.action, candidate.params) for candidate in legal],
         )
 
+    def test_dl_runtime_defaults_are_eval_stable(self):
+        config = DeepLearningAIConfig()
+        self.assertTrue(config.deterministic)
+        self.assertLessEqual(config.temperature, 0.35)
+        self.assertLessEqual(config.choice_confidence_threshold, 0.30)
+
     def test_encoder_outputs_stable_shapes_and_handles_new_card_id(self):
         state = self._simple_state()
         new_card = Card(
@@ -121,6 +127,38 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(len(encoded_state.card_ids), STATE_CARD_SLOTS)
         self.assertEqual(len(encoded_action.numeric), ACTION_NUMERIC_SIZE)
         self.assertGreater(encoded_action.card_id, 0)
+
+    def test_encoder_adds_deck_profile_action_context(self):
+        state = self._simple_state()
+        action = AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": 1, "target": "bench_0"})
+
+        fire_encoder = ActionStateEncoder()
+        fire_encoder.encode_state(state, 1, "fire")
+        fire_action = fire_encoder.encode_action(state, 1, action)
+
+        water_encoder = ActionStateEncoder()
+        water_encoder.encode_state(state, 1, "water")
+        water_action = water_encoder.encode_action(state, 1, action)
+
+        self.assertEqual(len(fire_action.numeric), ACTION_NUMERIC_SIZE)
+        self.assertEqual(len(water_action.numeric), ACTION_NUMERIC_SIZE)
+        self.assertNotEqual(fire_action.numeric, water_action.numeric)
+
+    def test_encoder_does_not_read_exact_own_hidden_deck_composition(self):
+        state = self._simple_state()
+        encoder = ActionStateEncoder()
+        first = encoder.encode_state(state, 1, "water")
+
+        energy = CardRegistry.get("sv1-ener-3")
+        unrelated_basic = CardRegistry.get("svi-chim")
+        state.p2.deck = [unrelated_basic] * len(state.p2.deck)
+        second = encoder.encode_state(state, 1, "water")
+        state.p2.deck = [energy] * len(state.p2.deck)
+        third = encoder.encode_state(state, 1, "water")
+
+        self.assertEqual(first.numeric, second.numeric)
+        self.assertEqual(second.numeric, third.numeric)
+        self.assertEqual(first.card_ids, second.card_ids)
 
     def test_training_cli_help_and_missing_torch_behavior(self):
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -503,7 +541,7 @@ class DeepAITests(unittest.TestCase):
             self.assertFalse(run_started["cuda_available"])
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
-    def test_v4_checkpoint_saves_and_restores_choice_head(self):
+    def test_v5_checkpoint_saves_and_restores_choice_head(self):
         from engine.ai.dl.model import create_model, load_checkpoint, save_checkpoint
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -512,12 +550,13 @@ class DeepAITests(unittest.TestCase):
             save_checkpoint(path, model, {"trainer": "test"})
             restored, payload = load_checkpoint(path, "cpu")
 
-        self.assertEqual(payload.get("version"), 4)
+        self.assertEqual(payload.get("version"), 5)
         self.assertTrue(payload.get("model_config", {}).get("choice_head_enabled"))
         self.assertTrue(getattr(restored, "choice_head_enabled", False))
         self.assertTrue(hasattr(restored, "choice_net"))
         self.assertTrue(hasattr(restored, "score_choices"))
         self.assertFalse(hasattr(restored, "choice_value_head"))
+        self.assertTrue(getattr(restored, "use_attention", False))
 
     def test_challenge_deck_screen_exposes_ai_kind_selector(self):
         import pygame

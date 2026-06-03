@@ -39,22 +39,22 @@ def main() -> int:
         description="Train optional deep-learning AI via bootstrap + self-play. Each deck trains an independent model."
     )
     parser.add_argument("--deck", default="all", choices=["all", *DECK_SPECS.keys()])
-    parser.add_argument("--games", type=int, default=300,
-                        help="RL fine-tune self-play games per deck (default: 300).")
+    parser.add_argument("--games", type=int, default=800,
+                        help="RL fine-tune self-play games per deck (default: 800).")
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--model", default=None, help="Existing checkpoint to fine-tune (single-deck only).")
     parser.add_argument("--output", default=None, help="Output .pt checkpoint path (single-deck; ignored for --deck all).")
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--bootstrap-games", type=int, default=800,
-                        help="Teacher imitation games per deck (default: 800).")
-    parser.add_argument("--dagger-games", type=int, default=300,
-                        help="DAgger games where the model acts and teacher labels visited states (default: 300).")
+    parser.add_argument("--bootstrap-games", type=int, default=2000,
+                        help="Teacher imitation games per deck (default: 2000).")
+    parser.add_argument("--dagger-games", type=int, default=500,
+                        help="DAgger games where the model acts and teacher labels visited states (default: 500).")
     parser.add_argument("--bootstrap-epochs", type=int, default=10,
                         help="Epochs over bootstrap examples (default: 10).")
     parser.add_argument("--self-play-epochs", type=int, default=10,
                         help="Epochs over self-play examples (default: 10).")
-    parser.add_argument("--eval-games", type=int, default=100,
-                        help="Evaluation games per deck (default: 100).")
+    parser.add_argument("--eval-games", type=int, default=200,
+                        help="Evaluation games per deck (default: 200).")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--max-steps", type=int, default=120)
     parser.add_argument("--batch-size", type=int, default=64,
@@ -67,9 +67,9 @@ def main() -> int:
                         help="ChallengeAI search budget used for teacher/fallback simulation.")
     parser.add_argument("--choice-head-enabled", action=argparse.BooleanOptionalAction, default=True,
                         help="Train and use the pending-choice scorer (default: enabled).")
-    parser.add_argument("--acceptance-metric", default="wins", choices=["wins", "points", "score"],
+    parser.add_argument("--acceptance-metric", default="score", choices=["wins", "points", "score"],
                         help="Metric used to decide whether the candidate replaces the previous model.")
-    parser.add_argument("--min-win-delta", type=int, default=1,
+    parser.add_argument("--min-win-delta", type=int, default=0,
                         help="Minimum candidate win improvement over each baseline when --acceptance-metric wins.")
     parser.add_argument("--teacher-label-model-states", action=argparse.BooleanOptionalAction, default=True,
                         help="Collect teacher labels for model-visited rollout states (default: enabled).")
@@ -102,7 +102,7 @@ def main() -> int:
         teacher_search_preset=args.teacher_search_preset,
         choice_head_enabled=bool(args.choice_head_enabled),
         acceptance_metric=args.acceptance_metric,
-        min_win_delta=max(1, args.min_win_delta),
+        min_win_delta=max(0, args.min_win_delta),
         teacher_label_model_states=bool(args.teacher_label_model_states),
         progress_jsonl=args.progress_jsonl,
     )

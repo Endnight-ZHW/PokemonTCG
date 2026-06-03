@@ -12,6 +12,7 @@ from engine.ai.dl.encoder import (
     CARD_BUCKET_COUNT,
     STATE_CARD_SLOTS,
     STATE_NUMERIC_SIZE,
+    CARD_SEMANTIC_SIZE,
 )
 
 try:  # pragma: no cover - exercised only when torch is installed.
@@ -23,13 +24,17 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 4
+CHECKPOINT_VERSION = 5
 
 
 if TORCH_AVAILABLE:
 
     class DeepActionModel(nn.Module):
-        """Score each legal candidate action and estimate state value."""
+        """Score each legal candidate action and estimate state value.
+
+        v5 upgrades: doubled hidden_size (384), self-attention over card slots,
+        BatchNorm for training stability, deeper value head.
+        """
 
         def __init__(
             self,
@@ -39,8 +44,9 @@ if TORCH_AVAILABLE:
             action_numeric_size: int = ACTION_NUMERIC_SIZE,
             card_bucket_count: int = CARD_BUCKET_COUNT,
             card_embed_dim: int = 32,
-            hidden_size: int = 192,
+            hidden_size: int = 384,
             choice_head_enabled: bool = True,
+            use_attention: bool = True,
         ):
             super().__init__()
             self.state_numeric_size = state_numeric_size
@@ -50,14 +56,30 @@ if TORCH_AVAILABLE:
             self.card_embed_dim = card_embed_dim
             self.hidden_size = hidden_size
             self.choice_head_enabled = bool(choice_head_enabled)
+            self.use_attention = bool(use_attention) and (card_embed_dim >= 4)
 
+            # Card identity embedding (hash-bucket based)
             self.card_embedding = nn.Embedding(card_bucket_count, card_embed_dim, padding_idx=0)
+
+            # Multi-head self-attention over card slots for relational reasoning
+            if self.use_attention:
+                self.card_attn = nn.MultiheadAttention(card_embed_dim, num_heads=4, batch_first=True)
+                self.card_attn_norm = nn.LayerNorm(card_embed_dim)
+            else:
+                self.card_attn = None
+                self.card_attn_norm = None
+
+            # State encoder: [numeric + pooled_card_embed] -> hidden
             self.state_net = nn.Sequential(
                 nn.Linear(state_numeric_size + card_embed_dim, hidden_size),
+                nn.BatchNorm1d(hidden_size),
                 nn.ReLU(),
                 nn.Linear(hidden_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
                 nn.ReLU(),
             )
+
+            # Action scorer: [state_hidden + action_numeric + action_card_embed] -> logit
             self.action_net = nn.Sequential(
                 nn.Linear(hidden_size + action_numeric_size + card_embed_dim, hidden_size),
                 nn.ReLU(),
@@ -72,17 +94,30 @@ if TORCH_AVAILABLE:
                 nn.ReLU(),
                 nn.Linear(hidden_size // 2, 1),
             )
+
+            # Value head: hidden -> scalar
             self.value_head = nn.Sequential(
                 nn.Linear(hidden_size, hidden_size // 2),
                 nn.ReLU(),
-                nn.Linear(hidden_size // 2, 1),
+                nn.Linear(hidden_size // 2, hidden_size // 4),
+                nn.ReLU(),
+                nn.Linear(hidden_size // 4, 1),
             )
 
         def _state_hidden(self, state_numeric, state_card_ids):
-            state_embeds = self.card_embedding(state_card_ids.long())
+            state_embeds = self.card_embedding(state_card_ids.long())  # [B, slots, embed_dim]
+
+            # Self-attention: let card slots attend to each other
+            if self.card_attn is not None:
+                attn_out, _ = self.card_attn(state_embeds, state_embeds, state_embeds)
+                state_embeds = self.card_attn_norm(state_embeds + attn_out)
+
+            # Mean-pool embeddings over card slots (masking pad slots)
             mask = (state_card_ids != 0).float().unsqueeze(-1)
             pooled = (state_embeds * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)
-            return self.state_net(torch.cat([state_numeric.float(), pooled], dim=-1))
+
+            x = torch.cat([state_numeric.float(), pooled], dim=-1)
+            return self.state_net(x)
 
         def _score_candidates(self, state_hidden, candidate_numeric, candidate_card_ids, scorer, candidate_mask=None):
             candidate_embeds = self.card_embedding(candidate_card_ids.long())
@@ -140,6 +175,7 @@ def checkpoint_payload(model, metadata: dict[str, Any] | None = None) -> dict[st
             "card_embed_dim": model.card_embed_dim,
             "hidden_size": model.hidden_size,
             "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
+            "use_attention": bool(getattr(model, "use_attention", True)),
         },
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
     }
@@ -161,7 +197,7 @@ def _infer_model_config_from_state_dict(state_dict: dict[str, Any]) -> dict[str,
         config["hidden_size"] = hidden_size
         config["state_numeric_size"] = int(state_weight.shape[1]) - int(config["card_embed_dim"])
     except Exception:
-        config["hidden_size"] = 192
+        config["hidden_size"] = 384
         config["state_numeric_size"] = STATE_NUMERIC_SIZE
     try:
         action_weight = state_dict["action_net.0.weight"]
@@ -191,8 +227,10 @@ def load_checkpoint(path: str, device: str = "cpu"):
         version = int(payload.get("version") or 0)
         config = dict(payload.get("model_config") or {})
         config.setdefault("choice_head_enabled", version >= 3)
+        config.setdefault("use_attention", version >= 5)
         model = create_model(**config)
-        model.load_state_dict(payload["model_state"], strict=version >= 4)
+        strict = version >= 5
+        model.load_state_dict(payload["model_state"], strict=strict)
         model.to(device)
         model.eval()
         return model, payload
