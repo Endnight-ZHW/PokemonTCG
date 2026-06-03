@@ -10,6 +10,7 @@ import random
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
+from math import comb
 from typing import Any
 
 from engine.enums import PlayerAction, StatusType, TurnPhase
@@ -58,6 +59,10 @@ class AIConfig:
     search_algorithm: str = "hybrid"  # "hybrid", "beam", or "minimax"
     minimax_max_depth: int = 3  # full turn-pairs (MAX+MIN = one pair)
     minimax_determinizations: int = 3  # opponent-hand worlds for PIMC
+    search_node_budget: int = 0  # 0 means unlimited; training presets use a fixed deterministic cap.
+    chance_branch_limit: int = 4
+    response_branch_limit: int = 0  # 0 falls back to opponent_response_actions.
+    skip_effect_dry_run: bool = False
 
 
 @dataclass(frozen=True)
@@ -151,6 +156,7 @@ class ChallengeAI:
         )
         self.policy_weights = merged_profile_weights(self.profile, loaded_weights)
         self.random = random.Random(self.config.random_seed)
+        self._forced_coin_results: list[list[bool]] = []
         self._fow_cache: dict[str, Any] = {}
         self._fow_counter: dict[str, int] = defaultdict(int)
         self.enumerator = ActionEnumerator(self)
@@ -420,7 +426,8 @@ class ChallengeAI:
                     add(AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": attack_idx}, terminal=True))
 
         add(AIAction(PlayerAction.END_TURN, {}, terminal=True))
-        actions = self._filter_currently_executable_actions(state, player_idx, actions)
+        if not self.config.skip_effect_dry_run:
+            actions = self._filter_currently_executable_actions(state, player_idx, actions)
         actions.sort(key=lambda a: self._quick_action_priority(state, player_idx, a), reverse=True)
         result = actions[: self.config.max_turn_actions]
         # END_TURN must always be available as a legal terminal action
@@ -501,11 +508,13 @@ class ChallengeAI:
                             self._score_simulated_outcome(sim, player_idx, action, result, deadline),
                             sim,
                             result,
+                            weight,
                         )
-                        for sim, result in outcomes
+                        for sim, result, weight in outcomes
                     ]
-                    score = sum(row[0] for row in scored) / len(scored)
-                    _, sim, result = max(scored, key=lambda row: row[0])
+                    total_weight = sum(row[3] for row in scored) or 1.0
+                    score = sum(row[0] * row[3] for row in scored) / total_weight
+                    _, sim, result, _weight = max(scored, key=lambda row: row[0])
                     root = action if first_action.action == "NOOP" else first_action
                     if action.terminal or sim.phase != TurnPhase.MAIN or sim.winner is not None:
                         if score > best_score:
@@ -525,17 +534,20 @@ class ChallengeAI:
 
     def _simulate_action_outcomes(
         self, state: GameState, player_idx: int, action: AIAction, deadline: float | None = None
-    ) -> list[tuple[GameState, ActionResult | None]]:
-        samples = 1
-        if self._action_uses_coin(state, player_idx, action):
-            samples = max(1, min(12, int(self.config.coin_sample_count)))
-        outcomes: list[tuple[GameState, ActionResult | None]] = []
-        for _ in range(samples):
+    ) -> list[tuple[GameState, ActionResult | None, float]]:
+        branches = self._action_coin_branches(state, player_idx, action)
+        outcomes: list[tuple[GameState, ActionResult | None, float]] = []
+        for coin_results, weight in branches:
             if deadline is not None and time.perf_counter() >= deadline:
                 break
             sim = self._clone_state(state)
-            result = self._apply_action_for_sim(sim, player_idx, action)
-            outcomes.append((sim, result))
+            if coin_results is None:
+                result = self._apply_action_for_sim(sim, player_idx, action)
+            else:
+                result = self._apply_action_for_sim_with_coin_results(
+                    sim, player_idx, action, coin_results
+                )
+            outcomes.append((sim, result, weight))
         return outcomes
 
     def _score_simulated_outcome(
@@ -575,6 +587,7 @@ class ChallengeAI:
             return 0.0
 
         base_score = self.evaluate_state(response_root, player_idx)
+        response_limit = int(self.config.response_branch_limit or self.config.opponent_response_actions)
         actions = [
             action for action in self.legal_actions(response_root, opponent_idx)
             if action.action in (
@@ -583,7 +596,7 @@ class ChallengeAI:
                 PlayerAction.RETREAT,
                 PlayerAction.END_TURN,
             )
-        ][: max(1, int(self.config.opponent_response_actions))]
+        ][: max(1, response_limit)]
         if not actions:
             return 0.0
 
@@ -598,6 +611,103 @@ class ChallengeAI:
                 score += 75
             worst_score = min(worst_score, score)
         return max(-650.0, min(120.0, worst_score - base_score))
+
+    def _action_coin_branches(
+        self, state: GameState, player_idx: int, action: AIAction
+    ) -> list[tuple[list[bool] | None, float]]:
+        profile = self._action_coin_profile(state, player_idx, action)
+        if profile is None:
+            return [(None, 1.0)]
+        flip_count, until_tails = profile
+        return [
+            (results, weight)
+            for results, weight in self._coin_outcome_branches(flip_count, until_tails)
+        ]
+
+    def _coin_outcome_branches(self, flip_count: int = 1, until_tails: bool = False) -> list[tuple[list[bool], float]]:
+        """Return deterministic weighted representative coin outcomes."""
+        branch_limit = max(1, int(self.config.chance_branch_limit or self.config.coin_sample_count or 1))
+        if until_tails:
+            max_heads = max(0, branch_limit - 1)
+            branches: list[tuple[list[bool], float]] = []
+            for heads in range(max_heads):
+                branches.append(([True] * heads + [False], 0.5 ** (heads + 1)))
+            branches.append(([True] * max_heads + [False], 0.5 ** max_heads))
+            return branches
+
+        flips = max(1, int(flip_count or 1))
+        all_head_counts = list(range(flips + 1))
+        head_counts = list(all_head_counts)
+        if len(head_counts) > branch_limit:
+            if branch_limit <= 1:
+                selected = {round(flips / 2)}
+            elif branch_limit == 2:
+                selected = {flips // 2, flips}
+            else:
+                selected = {0, round(flips / 2), flips}
+            for count in all_head_counts:
+                if len(selected) >= branch_limit:
+                    break
+                selected.add(count)
+            head_counts = sorted(selected)
+        weights_by_heads = {heads: 0.0 for heads in head_counts}
+        for heads in all_head_counts:
+            weight = comb(flips, heads) * (0.5 ** flips)
+            target = heads if heads in weights_by_heads else min(
+                head_counts,
+                key=lambda selected_heads: (abs(selected_heads - heads), selected_heads),
+            )
+            weights_by_heads[target] += weight
+        branches = []
+        for heads in head_counts:
+            results = [True] * heads + [False] * (flips - heads)
+            branches.append((results, weights_by_heads[heads]))
+        return branches or [([False] * flips, 1.0)]
+
+    def _action_coin_profile(
+        self, state: GameState, player_idx: int, action: AIAction
+    ) -> tuple[int, bool] | None:
+        effects: list[Any] = []
+        if action.action == PlayerAction.DECLARE_ATTACK:
+            player = state.get_player(player_idx)
+            attack_idx = action.params.get("attack_idx")
+            if player.active and isinstance(attack_idx, int) and 0 <= attack_idx < len(player.active.card.attacks):
+                effects = player.active.card.attacks[attack_idx].effects
+        elif action.action == PlayerAction.PLAY_TRAINER:
+            player = state.get_player(player_idx)
+            hand_idx = action.params.get("hand_idx")
+            if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
+                effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
+        elif action.action == PlayerAction.USE_ABILITY:
+            player = state.get_player(player_idx)
+            pokemon = player.get_pokemon(action.params.get("slot") or "active")
+            if pokemon:
+                for ability in pokemon.card.abilities:
+                    if ability.name == action.params.get("ability_name"):
+                        effects = getattr(ability, "effects", []) or []
+                        break
+        return self._effects_coin_profile(effects)
+
+    def _effects_coin_profile(self, effects: list[Any]) -> tuple[int, bool] | None:
+        for effect in effects or []:
+            etype = self._effect_type(effect)
+            params = self._effect_params(effect)
+            if etype in ("coin_flip", "coin_flip_energy_discard"):
+                return (1, False)
+            if etype == "coin_flip_until_tails":
+                return (1, True)
+            if etype == "coin_flip_triple":
+                return (int(params.get("flips", 3) or 3), False)
+            if etype == "coin_flip_double_ko":
+                return (2, False)
+            for key in ("on_heads", "on_tails", "on_success", "on_fail"):
+                branch = params.get(key) or []
+                if isinstance(branch, dict):
+                    branch = [branch]
+                nested = self._effects_coin_profile(branch)
+                if nested is not None:
+                    return nested
+        return None
 
     def _action_uses_coin(self, state: GameState, player_idx: int, action: AIAction) -> bool:
         if action.action == PlayerAction.DECLARE_ATTACK:
@@ -637,6 +747,20 @@ class ChallengeAI:
         self, state: GameState, player_idx: int, action: AIAction
     ) -> ActionResult | None:
         return self.simulator.apply_action(state, player_idx, action)
+
+    def _apply_action_for_sim_with_coin_results(
+        self,
+        state: GameState,
+        player_idx: int,
+        action: AIAction,
+        coin_results: list[bool],
+    ) -> ActionResult | None:
+        previous = self._forced_coin_results
+        self._forced_coin_results = [list(coin_results)]
+        try:
+            return self._apply_action_for_sim(state, player_idx, action)
+        finally:
+            self._forced_coin_results = previous
 
     def _apply_action_for_sim_impl(
         self, state: GameState, player_idx: int, action: AIAction
@@ -740,6 +864,17 @@ class ChallengeAI:
 
     def _resolve_pending_for_sim(self, state: GameState, req: ActionRequest) -> AIChoice:
         if req.request_type == "coin_flip":
+            if self._forced_coin_results:
+                forced = list(self._forced_coin_results.pop(0))
+                if getattr(req, "until_tails", False):
+                    if not forced or all(forced):
+                        forced.append(False)
+                    first_tail = next((i for i, result in enumerate(forced) if not result), len(forced) - 1)
+                    return AIChoice(coin_results=forced[: first_tail + 1])
+                flips = max(1, req.flip_count)
+                if len(forced) < flips:
+                    forced.extend([False] * (flips - len(forced)))
+                return AIChoice(coin_results=forced[:flips])
             if getattr(req, "until_tails", False):
                 results = []
                 max_flips = max(2, min(16, int(self.config.coin_sample_count) * 2))

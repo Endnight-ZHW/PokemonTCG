@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from concurrent.futures.process import BrokenProcessPool
 from unittest.mock import patch
@@ -20,6 +21,7 @@ from engine.ai import AIAction, AIConfig, ChallengeAI, create_challenge_ai, DECK
 from engine.ai.profiles import load_policy_weights
 from engine.ai.training import (
     PlayGameTask,
+    TrainingTaskRunner,
     TrainingConfig,
     _run_play_game_tasks,
     benchmark_policies,
@@ -31,7 +33,7 @@ from engine.ai.training import (
     train_deck,
 )
 from engine.enums import PlayerAction, TurnPhase
-from engine.game_state import ActionRequest, GameState
+from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.player_state import PokemonInPlay
 from engine.rules_validator import can_play_basic, can_play_stadium, can_use_ability
 from engine.turn_manager import TurnManager
@@ -218,18 +220,19 @@ class ChallengeAITests(unittest.TestCase):
         calls = []
 
         def fake_play(deck_key, weights, opponent_key, seed, max_steps=160,
-                      candidate_player_idx=0, search_preset="beam"):
+                      candidate_player_idx=0, search_preset="beam",
+                      search_quality="standard"):
             calls.append((deck_key, opponent_key, seed, candidate_player_idx))
             winner = 0 if len(calls) % 3 else 1
             return winner, float(len(calls))
 
         with patch("engine.ai.training.play_game", side_effect=fake_play):
-            result = train_deck("fire", 1, 123, workers=1)
+            result = train_deck("fire", 1, 123, workers=1, search_preset="beam")
             self.assertEqual(result["training_games"], 1)
             self.assertEqual(len(calls), 1)
 
             calls.clear()
-            result = train_deck("fire", 200, 123, workers=1)
+            result = train_deck("fire", 200, 123, workers=1, search_preset="beam")
             self.assertEqual(result["training_games"], 200)
             self.assertEqual(len(calls), 200)
 
@@ -296,7 +299,8 @@ class ChallengeAITests(unittest.TestCase):
 
     def test_training_progress_jsonl_and_candidate_policy_are_loadable(self):
         def fake_play(deck_key, weights, opponent_key, seed, max_steps=160,
-                      candidate_player_idx=0, search_preset="beam"):
+                      candidate_player_idx=0, search_preset="beam",
+                      search_quality="standard"):
             winner = 0 if seed % 2 == 0 else 1
             return winner, float(seed % 100)
 
@@ -367,6 +371,104 @@ class ChallengeAITests(unittest.TestCase):
             evaluate_policy("fire", {}, {}, 17, 2, workers=1, search_preset="minimax")
 
         self.assertEqual(seen_batches, [["minimax", "minimax"], ["minimax", "minimax"]])
+
+    def test_beam_coin_branches_are_deterministic_and_weighted(self):
+        ai = ChallengeAI(AIConfig(policy_path=None, chance_branch_limit=4))
+        branches = ai._coin_outcome_branches(1, False)
+        self.assertEqual(len(branches), 2)
+        self.assertAlmostEqual(sum(weight for _results, weight in branches), 1.0)
+        self.assertEqual({tuple(results) for results, _weight in branches}, {(False,), (True,)})
+
+        state = self._simple_public_state()
+        action = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        calls = []
+
+        def fake_apply(sim, player_idx, action, coin_results):
+            calls.append(tuple(coin_results))
+            return ActionResult(True, "")
+
+        with patch.object(ai, "_action_coin_profile", return_value=(1, False)), \
+                patch.object(ai, "_apply_action_for_sim_with_coin_results", side_effect=fake_apply):
+            outcomes = ai._simulate_action_outcomes(state, 1, action)
+
+        self.assertEqual(len(outcomes), 2)
+        self.assertAlmostEqual(sum(weight for _sim, _result, weight in outcomes), 1.0)
+        self.assertEqual(set(calls), {(False,), (True,)})
+
+    def test_minimax_chance_executes_each_coin_branch_once(self):
+        from engine.ai.minimax import MinimaxSearcher
+
+        state = self._simple_public_state()
+        action = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        ai = ChallengeAI(AIConfig(policy_path=None, chance_branch_limit=2, search_node_budget=10))
+        searcher = MinimaxSearcher(ai)
+        searcher.max_turn_depth = 1
+        searcher.node_budget = 10
+        searcher.nodes_searched = 0
+        calls = []
+
+        def fake_apply(sim, player_idx, action, coin_results):
+            calls.append(tuple(coin_results))
+            sim.winner = player_idx if coin_results[0] else 1 - player_idx
+            sim.phase = TurnPhase.GAME_OVER
+            return ActionResult(True, "")
+
+        with patch.object(ai, "_action_coin_branches", return_value=[([True], 0.5), ([False], 0.5)]), \
+                patch.object(ai, "_apply_action_for_sim_with_coin_results", side_effect=fake_apply):
+            value = searcher._chance_value(state, 1, 1, action, 0, 0, -float("inf"), float("inf"), float("inf"))
+
+        self.assertEqual(calls, [(True,), (False,)])
+        self.assertEqual(value, 0.0)
+
+    def test_budgeted_hybrid_search_returns_quickly(self):
+        state = self._simple_public_state()
+        ai = ChallengeAI(AIConfig(
+            policy_path=None,
+            deterministic_search=True,
+            search_algorithm="hybrid",
+            beam_width=4,
+            max_turn_actions=8,
+            minimax_max_depth=2,
+            minimax_determinizations=1,
+            search_node_budget=20,
+            skip_effect_dry_run=True,
+        ))
+        started = time.perf_counter()
+        action = ai.choose_action(state, 1)
+        elapsed = time.perf_counter() - started
+        self.assertIsInstance(action, AIAction)
+        self.assertLess(elapsed, 5.0)
+
+    def test_training_task_runner_reuses_executor(self):
+        class CountingExecutor:
+            created = 0
+
+            def __init__(self, *args, **kwargs):
+                CountingExecutor.created += 1
+
+            def map(self, func, tasks):
+                return [func(task) for task in tasks]
+
+            def shutdown(self, wait=True):
+                pass
+
+        tasks_a = [
+            PlayGameTask("fire", None, "water", 17, 0),
+            PlayGameTask("fire", None, "water", 18, 1),
+        ]
+        tasks_b = [
+            PlayGameTask("water", None, "fire", 19, 0),
+            PlayGameTask("water", None, "fire", 20, 1),
+        ]
+
+        with patch("engine.ai.training.ProcessPoolExecutor", CountingExecutor), \
+                patch("engine.ai.training._execute_play_game_task",
+                      side_effect=lambda task: (0, float(task.seed))):
+            with TrainingTaskRunner(4) as runner:
+                self.assertEqual(len(runner.run_play_game_tasks(tasks_a)), 2)
+                self.assertEqual(len(runner.run_play_game_tasks(tasks_b)), 2)
+
+        self.assertEqual(CountingExecutor.created, 1)
 
     def test_hybrid_search_prunes_root_actions_then_uses_minimax(self):
         from engine.ai.challenge_ai import AIAction, AIConfig, ChallengeAI

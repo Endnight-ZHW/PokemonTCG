@@ -82,11 +82,14 @@ TRAINING_AI_SEARCH = {
     "beam_width": 10,
     "max_sequence_depth": 5,
     "max_turn_actions": 24,
-    "coin_sample_count": 6,
+    "coin_sample_count": 4,
+    "chance_branch_limit": 4,
     "opponent_response_actions": 8,
+    "response_branch_limit": 4,
     "opponent_response_weight": 0.55,
     "deterministic_search": True,
     "search_algorithm": "beam",
+    "skip_effect_dry_run": True,
 }
 
 TRAINING_AI_SEARCH_MINIMAX = {
@@ -95,12 +98,16 @@ TRAINING_AI_SEARCH_MINIMAX = {
     "max_sequence_depth": 4,
     "max_turn_actions": 24,
     "coin_sample_count": 4,
+    "chance_branch_limit": 3,
     "opponent_response_actions": 6,
+    "response_branch_limit": 3,
     "opponent_response_weight": 0.45,
     "deterministic_search": True,
     "search_algorithm": "minimax",
     "minimax_max_depth": 2,
     "minimax_determinizations": 2,
+    "search_node_budget": 1200,
+    "skip_effect_dry_run": True,
 }
 
 TRAINING_AI_SEARCH_HYBRID = dict(
@@ -112,6 +119,35 @@ SEARCH_PRESETS = {
     "beam": TRAINING_AI_SEARCH,
     "hybrid": TRAINING_AI_SEARCH_HYBRID,
     "minimax": TRAINING_AI_SEARCH_MINIMAX,
+}
+
+FAST_SEARCH_PRESETS = {
+    "beam": dict(
+        TRAINING_AI_SEARCH,
+        beam_width=8,
+        max_sequence_depth=4,
+        response_branch_limit=2,
+        opponent_response_weight=0.35,
+    ),
+    "hybrid": dict(
+        TRAINING_AI_SEARCH_HYBRID,
+        beam_width=5,
+        max_turn_actions=16,
+        minimax_determinizations=1,
+        search_node_budget=450,
+        chance_branch_limit=2,
+        response_branch_limit=2,
+        opponent_response_weight=0.30,
+    ),
+    "minimax": dict(
+        TRAINING_AI_SEARCH_MINIMAX,
+        max_turn_actions=16,
+        minimax_determinizations=1,
+        search_node_budget=450,
+        chance_branch_limit=2,
+        response_branch_limit=2,
+        opponent_response_weight=0.30,
+    ),
 }
 
 WEIGHT_BOUNDS: dict[str, tuple[float, float]] = {
@@ -173,6 +209,7 @@ class PlayGameTask:
     seat: int
     max_steps: int = 160
     search_preset: str = "hybrid"
+    search_quality: str = "standard"
 
 
 @dataclass(frozen=True)
@@ -185,6 +222,7 @@ class PlayMatchTask:
     seat: int
     max_steps: int = 160
     search_preset: str = "hybrid"
+    search_quality: str = "standard"
 
 
 def clamp_weight(key: str, value: float) -> float:
@@ -226,6 +264,7 @@ def _execute_play_game_task(task: PlayGameTask) -> tuple[int | None, float]:
         max_steps=task.max_steps,
         candidate_player_idx=task.seat,
         search_preset=task.search_preset,
+        search_quality=task.search_quality,
     )
 
 
@@ -240,37 +279,72 @@ def _execute_play_match_task(task: PlayMatchTask) -> tuple[int | None, float]:
         seat=task.seat,
         max_steps=task.max_steps,
         search_preset=task.search_preset,
+        search_quality=task.search_quality,
     )
+
+
+class TrainingTaskRunner:
+    """Reusable process-pool runner for a full training run."""
+
+    def __init__(self, workers: int | None):
+        self.worker_count = _normalized_workers(workers)
+        self.executor: ProcessPoolExecutor | None = None
+        self._broken = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.executor is not None:
+            self.executor.shutdown(wait=True)
+            self.executor = None
+        return False
+
+    def _ensure_executor(self, task_count: int) -> ProcessPoolExecutor | None:
+        if self._broken or self.worker_count <= 1 or task_count <= 1:
+            return None
+        if self.executor is None:
+            max_workers = max(1, min(self.worker_count, task_count))
+            self.executor = ProcessPoolExecutor(max_workers=max_workers, initializer=_worker_init)
+        return self.executor
+
+    def run_play_game_tasks(self, tasks: list[PlayGameTask]) -> list[tuple[int | None, float]]:
+        executor = self._ensure_executor(len(tasks))
+        if executor is None:
+            return [_execute_play_game_task(task) for task in tasks]
+        try:
+            return list(executor.map(_execute_play_game_task, tasks))
+        except BrokenProcessPool:
+            self._broken = True
+            return [_execute_play_game_task(task) for task in tasks]
+
+    def run_play_match_tasks(self, tasks: list[PlayMatchTask]) -> list[tuple[int | None, float]]:
+        executor = self._ensure_executor(len(tasks))
+        if executor is None:
+            return [_execute_play_match_task(task) for task in tasks]
+        try:
+            return list(executor.map(_execute_play_match_task, tasks))
+        except BrokenProcessPool:
+            self._broken = True
+            return [_execute_play_match_task(task) for task in tasks]
 
 
 def _run_play_game_tasks(tasks: list[PlayGameTask], workers: int | None) -> list[tuple[int | None, float]]:
     worker_count = _normalized_workers(workers)
-    if worker_count <= 1 or len(tasks) <= 1:
-        return [_execute_play_game_task(task) for task in tasks]
-    try:
-        with ProcessPoolExecutor(max_workers=worker_count, initializer=_worker_init) as executor:
-            return list(executor.map(_execute_play_game_task, tasks))
-    except BrokenProcessPool:
-        # On Windows a worker can be terminated by the OS under memory pressure.
-        # Replaying the same deterministic tasks serially preserves the training
-        # schedule and avoids losing the whole run.
-        return [_execute_play_game_task(task) for task in tasks]
+    with TrainingTaskRunner(min(worker_count, max(1, len(tasks)))) as runner:
+        return runner.run_play_game_tasks(tasks)
 
 
 def _run_play_match_tasks(tasks: list[PlayMatchTask], workers: int | None) -> list[tuple[int | None, float]]:
     worker_count = _normalized_workers(workers)
-    if worker_count <= 1 or len(tasks) <= 1:
-        return [_execute_play_match_task(task) for task in tasks]
-    try:
-        with ProcessPoolExecutor(max_workers=worker_count, initializer=_worker_init) as executor:
-            return list(executor.map(_execute_play_match_task, tasks))
-    except BrokenProcessPool:
-        return [_execute_play_match_task(task) for task in tasks]
+    with TrainingTaskRunner(min(worker_count, max(1, len(tasks)))) as runner:
+        return runner.run_play_match_tasks(tasks)
 
 
 def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int,
-              search_preset: str = "hybrid"):
-    search_kwargs = SEARCH_PRESETS.get(search_preset, TRAINING_AI_SEARCH_HYBRID)
+              search_preset: str = "hybrid", search_quality: str = "standard"):
+    presets = FAST_SEARCH_PRESETS if search_quality == "fast" else SEARCH_PRESETS
+    search_kwargs = presets.get(search_preset, TRAINING_AI_SEARCH_HYBRID)
     config = AIConfig(
         **search_kwargs,
         random_seed=seed,
@@ -331,6 +405,7 @@ def play_game(
     max_steps: int = 160,
     candidate_player_idx: int = 0,
     search_preset: str = "hybrid",
+    search_quality: str = "standard",
 ) -> tuple[int | None, float]:
     return play_match(
         deck_key,
@@ -341,6 +416,7 @@ def play_game(
         seat=candidate_player_idx,
         max_steps=max_steps,
         search_preset=search_preset,
+        search_quality=search_quality,
     )
 
 
@@ -354,6 +430,7 @@ def play_match(
     seat: int = 0,
     max_steps: int = 160,
     search_preset: str = "hybrid",
+    search_quality: str = "standard",
 ) -> tuple[int | None, float]:
     """Play two deck policies and score the result from deck_a's perspective."""
     rng_state = random.getstate()
@@ -368,6 +445,7 @@ def play_match(
             seat=seat,
             max_steps=max_steps,
             search_preset=search_preset,
+            search_quality=search_quality,
         )
     finally:
         random.setstate(rng_state)
@@ -383,6 +461,7 @@ def _play_match_impl(
     seat: int = 0,
     max_steps: int = 160,
     search_preset: str = "hybrid",
+    search_quality: str = "standard",
 ) -> tuple[int | None, float]:
     deck_a_player_idx = 1 if seat == 1 else 0
     state = GameState()
@@ -391,11 +470,11 @@ def _play_match_impl(
     state.setup_game(expand_deck(DECK_SPECS[deck1_key]), expand_deck(DECK_SPECS[deck2_key]))
     tm = TurnManager(state)
     if deck_a_player_idx == 0:
-        ai0 = _make_ai(deck_a, weights_a, seed + 11, search_preset)
-        ai1 = _make_ai(deck_b, weights_b, seed + 29, search_preset)
+        ai0 = _make_ai(deck_a, weights_a, seed + 11, search_preset, search_quality)
+        ai1 = _make_ai(deck_b, weights_b, seed + 29, search_preset, search_quality)
     else:
-        ai0 = _make_ai(deck_b, weights_b, seed + 29, search_preset)
-        ai1 = _make_ai(deck_a, weights_a, seed + 11, search_preset)
+        ai0 = _make_ai(deck_b, weights_b, seed + 29, search_preset, search_quality)
+        ai1 = _make_ai(deck_a, weights_a, seed + 11, search_preset, search_quality)
     ais = [ai0, ai1]
     finish_setup(state, tm, ais)
 
@@ -520,6 +599,7 @@ def train_deck(
     total_offset: int = 0,
     total_training_games: int | None = None,
     search_preset: str = "hybrid",
+    task_runner: TrainingTaskRunner | None = None,
 ) -> dict[str, Any]:
     """Train one deck for exactly ``games`` self-play candidate games."""
     if deck_key not in DECK_SPECS:
@@ -536,9 +616,16 @@ def train_deck(
     best_seen_score = float("-inf")
     current_center = dict(base_weights)
     stats = _stats()
+    refinement_games = 0
+
+    def run_game_tasks(tasks: list[PlayGameTask]) -> list[tuple[int | None, float]]:
+        if task_runner is not None:
+            return task_runner.run_play_game_tasks(tasks)
+        return _run_play_game_tasks(tasks, workers)
 
     while games_played < target_games:
         generation += 1
+        batch_start = games_played
         batch_size = min(population, target_games - games_played)
         candidates = [dict(best_seen_weights)]
         if batch_size > 1 and current_center != best_seen_weights:
@@ -555,17 +642,44 @@ def train_deck(
             game_seed = seed + generation * 1009 + game_idx * 37 + candidate_idx
             seat = (generation + game_idx + candidate_idx) % 2
             tasks.append(PlayGameTask(deck_key, weights, opponent_key, game_seed, seat,
-                                          search_preset=search_preset))
+                                      search_preset=search_preset, search_quality="fast"))
             task_weights.append(weights)
 
         scored: list[tuple[float, dict[str, float], dict[str, int]]] = []
-        for weights, (winner, eval_score) in zip(task_weights, _run_play_game_tasks(tasks, workers)):
+        for weights, (winner, eval_score) in zip(task_weights, run_game_tasks(tasks)):
             score, local = _score_game(winner, eval_score)
             scored.append((score, weights, local))
             _merge_stats(stats, local)
             games_played += 1
 
         scored.sort(key=lambda row: row[0], reverse=True)
+        if search_preset in ("hybrid", "minimax") and len(scored) > 1:
+            refine_count = max(1, min(len(scored), len(scored) // 3))
+            refine_tasks: list[PlayGameTask] = []
+            refine_rows = scored[:refine_count]
+            for refine_idx, (_fast_score, weights, _local) in enumerate(refine_rows):
+                refine_game_idx = batch_start + refine_idx
+                opponent_key = _opponent_for(deck_key, refine_game_idx, generation + 97)
+                game_seed = seed + 900_000 + generation * 1009 + refine_game_idx * 53 + refine_idx
+                seat = (generation + refine_game_idx + refine_idx + 1) % 2
+                refine_tasks.append(PlayGameTask(
+                    deck_key,
+                    weights,
+                    opponent_key,
+                    game_seed,
+                    seat,
+                    search_preset=search_preset,
+                    search_quality="standard",
+                ))
+            refined: list[tuple[float, dict[str, float], dict[str, int]]] = []
+            for row, (winner, eval_score) in zip(refine_rows, run_game_tasks(refine_tasks)):
+                refine_score, _local = _score_game(winner, eval_score)
+                combined_score = refine_score * 0.70 + row[0] * 0.30
+                refined.append((combined_score, row[1], row[2]))
+            refinement_games += len(refined)
+            scored = refined + scored[refine_count:]
+            scored.sort(key=lambda row: row[0], reverse=True)
+
         top_score, top_weights, _ = scored[0]
         if top_score > best_seen_score:
             best_seen_score = top_score
@@ -586,6 +700,7 @@ def train_deck(
                 "stats": dict(stats),
                 "win_rate": stats["wins"] / max(1, games_played),
                 "best_score": round(float(best_seen_score), 3),
+                "refinement_games": refinement_games,
             })
 
     trained_weights = clamp_weights(best_seen_weights)
@@ -599,6 +714,7 @@ def train_deck(
             eval_games,
             workers=workers,
             search_preset=search_preset,
+            task_runner=task_runner,
         )
     accepted = _eval_accepts_trained(base_eval)
 
@@ -613,7 +729,9 @@ def train_deck(
             "population": population,
             "generations": generation,
             "accepted": accepted,
+            "refinement_games": refinement_games,
             "search": dict(SEARCH_PRESETS.get(search_preset, TRAINING_AI_SEARCH_HYBRID)),
+            "fast_search": dict(FAST_SEARCH_PRESETS.get(search_preset, TRAINING_AI_SEARCH_HYBRID)),
             "workers": _normalized_workers(workers),
         },
     }
@@ -628,6 +746,7 @@ def evaluate_policy(
     *,
     workers: int = DEFAULT_WORKERS,
     search_preset: str = "hybrid",
+    task_runner: TrainingTaskRunner | None = None,
 ) -> dict[str, Any]:
     """Compare baseline and trained weights against the same holdout schedule."""
     target_games = max(0, int(games))
@@ -652,12 +771,18 @@ def evaluate_policy(
         trained_tasks.append(PlayGameTask(deck_key, trained_weights, opponent_key, game_seed, seat,
                                             search_preset=search_preset))
 
-    for winner, eval_score in _run_play_game_tasks(baseline_tasks, workers):
+    run_game_tasks = (
+        task_runner.run_play_game_tasks
+        if task_runner is not None
+        else lambda tasks: _run_play_game_tasks(tasks, workers)
+    )
+
+    for winner, eval_score in run_game_tasks(baseline_tasks):
         baseline_score += eval_score
         _, local = _score_game(winner, eval_score)
         _merge_stats(result["baseline"], local)
 
-    for winner, eval_score in _run_play_game_tasks(trained_tasks, workers):
+    for winner, eval_score in run_game_tasks(trained_tasks):
         trained_score += eval_score
         _, local = _score_game(winner, eval_score)
         _merge_stats(result["trained"], local)
@@ -714,6 +839,7 @@ def _before_after_benchmark(
     games_per_matchup: int,
     workers: int,
     search_preset: str = "hybrid",
+    task_runner: TrainingTaskRunner | None = None,
 ) -> dict[str, Any]:
     before_after: dict[str, Any] = {}
     for idx, deck_key in enumerate(deck_keys):
@@ -725,6 +851,7 @@ def _before_after_benchmark(
             games_per_matchup,
             workers=workers,
             search_preset=search_preset,
+            task_runner=task_runner,
         )
         before = dict(result.get("baseline") or {})
         after = dict(result.get("trained") or {})
@@ -752,6 +879,7 @@ def benchmark_policies(
     workers: int = DEFAULT_WORKERS,
     progress_callback: ProgressCallback | None = None,
     search_preset: str = "hybrid",
+    task_runner: TrainingTaskRunner | None = None,
 ) -> dict[str, Any]:
     """Run diagnostic policy benchmarks for UI visualization.
 
@@ -790,6 +918,7 @@ def benchmark_policies(
         target_games,
         worker_count,
         search_preset,
+        task_runner,
     )
 
     matrix: dict[str, dict[str, Any]] = {
@@ -829,7 +958,11 @@ def benchmark_policies(
             b_stats = _stats()
             a_score_total = 0.0
             b_score_total = 0.0
-            for winner, eval_score in _run_play_match_tasks(tasks, worker_count):
+            if task_runner is not None:
+                task_results = task_runner.run_play_match_tasks(tasks)
+            else:
+                task_results = _run_play_match_tasks(tasks, worker_count)
+            for winner, eval_score in task_results:
                 a_score_total += eval_score
                 b_score_total -= eval_score
                 if winner == 0:
@@ -935,48 +1068,54 @@ def run_training(config: TrainingConfig, progress_callback: ProgressCallback | N
 
         policies: dict[str, Any] = {}
         total_done = 0
+        total_refinement_games = 0
         started = time.time()
-        for offset, deck_key in enumerate(deck_keys):
-            deck_seed = config.seed + offset * 1009
-            emit({
-                "type": "deck_started",
-                "deck": deck_key,
-                "seed": deck_seed,
-                "target_games": games_per_deck,
-                "total_games_played": total_done,
-                "total_training_games": total_training_games,
-            })
-            policy = train_deck(
-                deck_key,
-                games_per_deck,
-                deck_seed,
-                eval_games=max(0, int(config.eval_games)),
-                workers=worker_count,
-                progress_callback=emit,
-                total_offset=total_done,
-                total_training_games=total_training_games,
-                search_preset=config.search_preset,
-            )
-            policies[deck_key] = policy
-            total_done += policy["training_games"]
-            emit({
-                "type": "deck_finished",
-                "deck": deck_key,
-                "training_games": policy["training_games"],
-                "stats": policy["stats"],
-                "eval": policy.get("eval", {}),
-                "total_games_played": total_done,
-                "total_training_games": total_training_games,
-            })
+        with TrainingTaskRunner(worker_count) as task_runner:
+            for offset, deck_key in enumerate(deck_keys):
+                deck_seed = config.seed + offset * 1009
+                emit({
+                    "type": "deck_started",
+                    "deck": deck_key,
+                    "seed": deck_seed,
+                    "target_games": games_per_deck,
+                    "total_games_played": total_done,
+                    "total_training_games": total_training_games,
+                })
+                policy = train_deck(
+                    deck_key,
+                    games_per_deck,
+                    deck_seed,
+                    eval_games=max(0, int(config.eval_games)),
+                    workers=worker_count,
+                    progress_callback=emit,
+                    total_offset=total_done,
+                    total_training_games=total_training_games,
+                    search_preset=config.search_preset,
+                    task_runner=task_runner,
+                )
+                policies[deck_key] = policy
+                total_done += policy["training_games"]
+                total_refinement_games += int((policy.get("metadata") or {}).get("refinement_games") or 0)
+                emit({
+                    "type": "deck_finished",
+                    "deck": deck_key,
+                    "training_games": policy["training_games"],
+                    "refinement_games": (policy.get("metadata") or {}).get("refinement_games", 0),
+                    "stats": policy["stats"],
+                    "eval": policy.get("eval", {}),
+                    "total_games_played": total_done,
+                    "total_training_games": total_training_games,
+                })
 
-        benchmark = benchmark_policies(
-            policies,
-            config.seed,
-            benchmark_games,
-            workers=worker_count,
-            search_preset=config.search_preset,
-            progress_callback=emit,
-        )
+            benchmark = benchmark_policies(
+                policies,
+                config.seed,
+                benchmark_games,
+                workers=worker_count,
+                search_preset=config.search_preset,
+                progress_callback=emit,
+                task_runner=task_runner,
+            )
 
         payload = {
             "version": POLICY_VERSION,
@@ -986,10 +1125,12 @@ def run_training(config: TrainingConfig, progress_callback: ProgressCallback | N
                 "games_per_deck": games_per_deck,
                 "eval_games": max(0, int(config.eval_games)),
                 "benchmark_games": benchmark_games,
+                "refinement_games": total_refinement_games,
                 "workers": worker_count,
                 "created_at": int(time.time()),
                 "elapsed_seconds": round(time.time() - started, 3),
                 "search": dict(SEARCH_PRESETS.get(config.search_preset, TRAINING_AI_SEARCH_HYBRID)),
+                "fast_search": dict(FAST_SEARCH_PRESETS.get(config.search_preset, TRAINING_AI_SEARCH_HYBRID)),
             },
             "policies": policies,
             "benchmark": benchmark,

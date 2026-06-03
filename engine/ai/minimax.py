@@ -37,6 +37,10 @@ class MinimaxSearcher:
 
     def __init__(self, ai: ChallengeAI):
         self.ai = ai
+        self.max_turn_depth = 0
+        self.ply_depth_limit = 8
+        self.node_budget = 0
+        self.nodes_searched = 0
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -61,12 +65,15 @@ class MinimaxSearcher:
             from engine.ai.challenge_ai import AIAction
             return AIAction(PlayerAction.END_TURN, {}, terminal=True)
 
+        self.node_budget = max(0, int(getattr(self.ai.config, "search_node_budget", 0) or 0))
+        self.ply_depth_limit = max(4, int(getattr(self.ai.config, "max_sequence_depth", 8) or 8))
+        self.nodes_searched = 0
         best_action = root_actions[-1]
         best_score = -float("inf")
 
         # Iterative deepening: try depth 1, 2, ... up to max_depth
         for depth in range(1, max_depth + 1):
-            if time.perf_counter() >= deadline:
+            if self._search_stopped(deadline):
                 break
             action, score = self._search_at_depth(
                 state, player_idx, root_actions, depth, deadline, determinizations,
@@ -140,20 +147,11 @@ class MinimaxSearcher:
         # Order actions for better pruning (higher priority first for MAX)
         ordered = self._order_actions_max(state, player_idx, actions)
         for orig_idx, action in ordered:
-            if time.perf_counter() >= deadline:
+            if self._search_stopped(deadline):
                 break
-            sim = self.ai._clone_state(state)
-            result = self.ai._apply_action_for_sim(sim, player_idx, action)
-
-            if self._is_terminal(sim, 0, deadline):
-                child_v = self.ai.evaluate_state(sim, player_idx)
-            elif self._action_uses_chance(state, player_idx, action):
-                child_v = self._chance_value(sim, player_idx, action, 0, alpha, beta, deadline)
-            elif sim.active_player_idx == player_idx:
-                child_v = self._max_value(sim, player_idx, 0, alpha, beta, deadline)
-            else:
-                child_v = self._min_value(sim, player_idx, 0, alpha, beta, deadline)
-
+            child_v = self._score_child_from_action(
+                state, player_idx, player_idx, action, 0, 0, alpha, beta, deadline,
+            )
             scored[orig_idx] = child_v
             alpha = max(alpha, child_v)
 
@@ -171,9 +169,10 @@ class MinimaxSearcher:
         alpha: float,
         beta: float,
         deadline: float,
+        ply_depth: int = 0,
     ) -> float:
         """MAX node: AI chooses action to maximize score."""
-        if self._is_terminal(state, depth, deadline):
+        if ply_depth >= self.ply_depth_limit or self._is_terminal(state, depth, deadline):
             return self.ai.evaluate_state(state, player_idx)
 
         self._resolve_pending(state)
@@ -184,20 +183,11 @@ class MinimaxSearcher:
         ordered = self._order_actions_max(state, player_idx, actions)
         v = -float("inf")
         for _orig_idx, action in ordered:
-            if time.perf_counter() >= deadline:
+            if self._search_stopped(deadline):
                 break
-            sim = self.ai._clone_state(state)
-            result = self.ai._apply_action_for_sim(sim, player_idx, action)
-
-            if self._is_terminal(sim, depth, deadline):
-                child_v = self.ai.evaluate_state(sim, player_idx)
-            elif self._action_uses_chance(state, player_idx, action):
-                child_v = self._chance_value(sim, player_idx, action, depth, alpha, beta, deadline)
-            elif sim.active_player_idx == player_idx:
-                child_v = self._max_value(sim, player_idx, depth, alpha, beta, deadline)
-            else:
-                child_v = self._min_value(sim, player_idx, depth, alpha, beta, deadline)
-
+            child_v = self._score_child_from_action(
+                state, player_idx, player_idx, action, depth, ply_depth, alpha, beta, deadline,
+            )
             v = max(v, child_v)
             alpha = max(alpha, v)
             if alpha >= beta:
@@ -217,13 +207,14 @@ class MinimaxSearcher:
         alpha: float,
         beta: float,
         deadline: float,
+        ply_depth: int = 0,
     ) -> float:
         """MIN node: opponent chooses action to minimize AI's score.
 
         After the opponent's turn ends, depth increases by 1 (a full turn pair
         has completed: MAX + MIN).
         """
-        if self._is_terminal(state, depth, deadline):
+        if ply_depth >= self.ply_depth_limit or self._is_terminal(state, depth, deadline):
             return self.ai.evaluate_state(state, player_idx)
 
         opponent_idx = 1 - player_idx
@@ -235,21 +226,11 @@ class MinimaxSearcher:
         ordered = self._order_actions_min(state, opponent_idx, actions)
         v = float("inf")
         for _orig_idx, action in ordered:
-            if time.perf_counter() >= deadline:
+            if self._search_stopped(deadline):
                 break
-            sim = self.ai._clone_state(state)
-            result = self.ai._apply_action_for_sim(sim, opponent_idx, action)
-
-            if self._is_terminal(sim, depth, deadline):
-                child_v = self.ai.evaluate_state(sim, player_idx)
-            elif self._action_uses_chance(state, opponent_idx, action):
-                child_v = self._chance_value(sim, player_idx, action, depth, alpha, beta, deadline)
-            elif sim.active_player_idx == opponent_idx:
-                child_v = self._min_value(sim, player_idx, depth, alpha, beta, deadline)
-            else:
-                # Opponent's turn ended → AI's turn → depth increases
-                child_v = self._max_value(sim, player_idx, depth + 1, alpha, beta, deadline)
-
+            child_v = self._score_child_from_action(
+                state, player_idx, opponent_idx, action, depth, ply_depth, alpha, beta, deadline,
+            )
             v = min(v, child_v)
             beta = min(beta, v)
             if alpha >= beta:
@@ -265,33 +246,80 @@ class MinimaxSearcher:
         self,
         state: GameState,
         player_idx: int,
+        actor_idx: int,
         action: AIAction,
         depth: int,
+        ply_depth: int,
         alpha: float,
         beta: float,
         deadline: float,
     ) -> float:
-        """CHANCE node: expected value over coin-flip samples."""
-        samples = max(1, min(6, int(getattr(self.ai.config, 'coin_sample_count', 8) // 2)))
-        actor_idx = state.active_player_idx
-
+        """CHANCE node: expected value over deterministic weighted coin branches."""
         total = 0.0
-        actual_samples = 0
-        for _ in range(samples):
-            if time.perf_counter() >= deadline:
+        total_weight = 0.0
+        branches = [
+            (results, weight)
+            for results, weight in self.ai._action_coin_branches(state, actor_idx, action)
+            if results is not None
+        ]
+        for coin_results, weight in branches:
+            if self._search_stopped(deadline):
+                break
+            if not self._consume_node(deadline):
                 break
             sim = self.ai._clone_state(state)
-            result = self.ai._apply_action_for_sim(sim, actor_idx, action)
-            actual_samples += 1
+            result = self.ai._apply_action_for_sim_with_coin_results(
+                sim, actor_idx, action, coin_results
+            )
+            total += weight * self._value_after_action(
+                sim, player_idx, actor_idx, depth, ply_depth + 1, alpha, beta, deadline,
+            )
+            total_weight += weight
 
-            if self._is_terminal(sim, depth, deadline):
-                total += self.ai.evaluate_state(sim, player_idx)
-            elif sim.active_player_idx == actor_idx:
-                total += self._max_value(sim, player_idx, depth, alpha, beta, deadline)
-            else:
-                total += self._min_value(sim, player_idx, depth, alpha, beta, deadline)
+        if total_weight <= 0:
+            return self.ai.evaluate_state(state, player_idx)
+        return total / total_weight
 
-        return total / max(1, actual_samples)
+    def _score_child_from_action(
+        self,
+        state: GameState,
+        player_idx: int,
+        actor_idx: int,
+        action: AIAction,
+        depth: int,
+        ply_depth: int,
+        alpha: float,
+        beta: float,
+        deadline: float,
+    ) -> float:
+        if self._action_uses_chance(state, actor_idx, action):
+            return self._chance_value(state, player_idx, actor_idx, action, depth, ply_depth, alpha, beta, deadline)
+        if not self._consume_node(deadline):
+            return self.ai.evaluate_state(state, player_idx)
+        sim = self.ai._clone_state(state)
+        result = self.ai._apply_action_for_sim(sim, actor_idx, action)
+        return self._value_after_action(sim, player_idx, actor_idx, depth, ply_depth + 1, alpha, beta, deadline)
+
+    def _value_after_action(
+        self,
+        state: GameState,
+        player_idx: int,
+        actor_idx: int,
+        depth: int,
+        ply_depth: int,
+        alpha: float,
+        beta: float,
+        deadline: float,
+    ) -> float:
+        if ply_depth >= self.ply_depth_limit or self._is_terminal(state, depth, deadline):
+            return self.ai.evaluate_state(state, player_idx)
+        if state.active_player_idx == actor_idx:
+            if actor_idx == player_idx:
+                return self._max_value(state, player_idx, depth, alpha, beta, deadline, ply_depth)
+            return self._min_value(state, player_idx, depth, alpha, beta, deadline, ply_depth)
+        if actor_idx == player_idx:
+            return self._min_value(state, player_idx, depth, alpha, beta, deadline, 0)
+        return self._max_value(state, player_idx, depth + 1, alpha, beta, deadline, 0)
 
     # ------------------------------------------------------------------
     # Action ordering (for better pruning)
@@ -324,7 +352,7 @@ class MinimaxSearcher:
     # ------------------------------------------------------------------
 
     def _is_terminal(self, state: GameState, depth: int, deadline: float) -> bool:
-        if time.perf_counter() >= deadline:
+        if self._search_stopped(deadline):
             return True
         if state.winner is not None:
             return True
@@ -333,6 +361,17 @@ class MinimaxSearcher:
         if depth >= self.max_turn_depth:
             return True
         return False
+
+    def _search_stopped(self, deadline: float) -> bool:
+        if time.perf_counter() >= deadline:
+            return True
+        return self.node_budget > 0 and self.nodes_searched >= self.node_budget
+
+    def _consume_node(self, deadline: float) -> bool:
+        if self._search_stopped(deadline):
+            return False
+        self.nodes_searched += 1
+        return True
 
     # ------------------------------------------------------------------
     # Pending resolution
