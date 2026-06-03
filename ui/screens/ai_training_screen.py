@@ -89,7 +89,8 @@ class AITrainingScreen(Screen):
         self.batch_size = 64
         self.rollout_batch_games = 16
         self.updates_per_rollout = 2
-        self.teacher_search_preset = "quality"
+        self.teacher_search_preset = "hybrid"
+        self.search_preset = "hybrid"
         self.choice_head_enabled = True
         self.acceptance_metric = "wins"
         self.min_win_delta = 1
@@ -522,6 +523,9 @@ class AITrainingScreen(Screen):
     def _is_rl_mode(self) -> bool:
         return self.training_kind == "rl"
 
+    def _effective_teacher_preset(self) -> str:
+        return "hybrid"
+
     def _rl_candidate_model_path(self, deck_key: str | None = None) -> str:
         deck = deck_key or ("default" if self.selected_deck == "all" else self.selected_deck)
         return os.path.join("data", "ai_models", f"candidate_{deck}.pt")
@@ -605,6 +609,13 @@ class AITrainingScreen(Screen):
                              enabled=self.status != "running")
 
         y += 120
+        draw_text_fit(surface, self.font_small, "搜索策略", UI_TEXT_SECONDARY,
+                      pygame.Rect(inner.x, y, inner.w, 22))
+        y += 28
+        draw_text_fit(surface, self.font_small, "自动混合（Beam 裁剪 + Minimax 评估）", UI_TEXT_PRIMARY,
+                      pygame.Rect(inner.x, y, inner.w, 26))
+        y += 44
+
         self._draw_stepper(surface, "训练局数", self.games,
                            "games_minus", "games_plus", inner.x, y)
         y += ROW
@@ -845,7 +856,7 @@ class AITrainingScreen(Screen):
                 "--updates-per-rollout",
                 str(max(1, self.updates_per_rollout)),
                 "--teacher-search-preset",
-                self.teacher_search_preset,
+                self._effective_teacher_preset(),
                 "--choice-head-enabled" if self.choice_head_enabled else "--no-choice-head-enabled",
                 "--acceptance-metric",
                 self.acceptance_metric,
@@ -885,6 +896,8 @@ class AITrainingScreen(Screen):
                 str(max(1, self.workers)),
                 "--benchmark-games",
                 str(max(0, self.benchmark_games)),
+                "--search-preset",
+                self.search_preset,
             ]
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)

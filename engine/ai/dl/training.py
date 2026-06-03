@@ -35,6 +35,7 @@ FAST_TRAINING_AI_SEARCH = {
     "opponent_response_actions": 2,
     "opponent_response_weight": 0.25,
     "deterministic_search": True,
+    "search_algorithm": "beam",
 }
 
 QUALITY_TRAINING_AI_SEARCH = {
@@ -46,12 +47,49 @@ QUALITY_TRAINING_AI_SEARCH = {
     "opponent_response_actions": 6,
     "opponent_response_weight": 0.45,
     "deterministic_search": True,
+    "search_algorithm": "beam",
 }
 
 TRAINING_AI_SEARCH = FAST_TRAINING_AI_SEARCH
+MINIMAX_FAST_SEARCH = {
+    "thinking_time_seconds": 0.0,
+    "beam_width": 4,
+    "max_sequence_depth": 2,
+    "max_turn_actions": 96,
+    "coin_sample_count": 2,
+    "opponent_response_actions": 2,
+    "opponent_response_weight": 0.25,
+    "deterministic_search": True,
+    "search_algorithm": "minimax",
+    "minimax_max_depth": 1,
+    "minimax_determinizations": 1,
+}
+
+MINIMAX_QUALITY_SEARCH = {
+    "thinking_time_seconds": 0.0,
+    "beam_width": 6,
+    "max_sequence_depth": 3,
+    "max_turn_actions": 96,
+    "coin_sample_count": 4,
+    "opponent_response_actions": 4,
+    "opponent_response_weight": 0.40,
+    "deterministic_search": True,
+    "search_algorithm": "minimax",
+    "minimax_max_depth": 2,
+    "minimax_determinizations": 2,
+}
+
+HYBRID_QUALITY_SEARCH = dict(
+    MINIMAX_QUALITY_SEARCH,
+    search_algorithm="hybrid",
+)
+
 TEACHER_SEARCH_PRESETS = {
     "fast": FAST_TRAINING_AI_SEARCH,
     "quality": QUALITY_TRAINING_AI_SEARCH,
+    "hybrid": HYBRID_QUALITY_SEARCH,
+    "minimax_fast": MINIMAX_FAST_SEARCH,
+    "minimax": MINIMAX_QUALITY_SEARCH,
 }
 
 
@@ -75,7 +113,7 @@ class DeepTrainingConfig:
     progress_jsonl: str | None = None
     rollout_batch_games: int = 16
     updates_per_rollout: int = 2
-    teacher_search_preset: str = "quality"
+    teacher_search_preset: str = "hybrid"
     choice_head_enabled: bool = True
     acceptance_metric: str = "score"
     min_win_delta: int = 0
@@ -195,7 +233,7 @@ def _candidate_output_path(config: DeepTrainingConfig, deck_key: str, multi_deck
 
 
 def _search_config(preset: str | None) -> dict[str, Any]:
-    return dict(TEACHER_SEARCH_PRESETS.get(preset or "quality", QUALITY_TRAINING_AI_SEARCH))
+    return dict(TEACHER_SEARCH_PRESETS.get(preset or "hybrid", HYBRID_QUALITY_SEARCH))
 
 
 def _action_signature(action: AIAction) -> tuple:
@@ -309,14 +347,14 @@ def _opponent_for(deck_key: str, index: int) -> str:
     return opponents[index % len(opponents)]
 
 
-def _make_teacher(deck_key: str, seed: int, teacher_search_preset: str = "fast"):
+def _make_teacher(deck_key: str, seed: int, teacher_search_preset: str = "hybrid"):
     return create_challenge_ai(
         deck_key,
         AIConfig(**_search_config(teacher_search_preset), random_seed=seed, policy_path=None),
     )
 
 
-def _setup_match(deck_key: str, opponent_key: str, seed: int, seat: int, teacher_search_preset: str = "fast"):
+def _setup_match(deck_key: str, opponent_key: str, seed: int, seat: int, teacher_search_preset: str = "hybrid"):
     rng_state = random.getstate()
     random.seed(seed)
     try:
@@ -376,6 +414,7 @@ def _model_payload_for_worker(model) -> tuple[dict[str, Any], dict[str, Any]]:
         "hidden_size": int(getattr(model, "hidden_size", 384)),
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
         "use_attention": bool(getattr(model, "use_attention", True)),
+        "state_norm": getattr(model, "state_norm", "layer"),
     }
     return state, config
 
@@ -446,7 +485,7 @@ def collect_bootstrap_examples(
     max_steps: int = 120,
     encoder: ActionStateEncoder | None = None,
     game_offset: int = 0,
-    teacher_search_preset: str = "fast",
+    teacher_search_preset: str = "hybrid",
 ) -> list[TrainingExample]:
     """Collect imitation examples from ChallengeAI self-play."""
     _ensure_cards_loaded()
@@ -1139,7 +1178,7 @@ def _play_model_game(
     device: str,
     max_steps: int,
     record: bool,
-    teacher_search_preset: str = "fast",
+    teacher_search_preset: str = "hybrid",
     temperature: float = 0.9,
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
@@ -1336,7 +1375,7 @@ def evaluate_model(
     device: str,
     max_steps: int = 120,
     workers: int = 1,
-    teacher_search_preset: str = "fast",
+    teacher_search_preset: str = "hybrid",
 ) -> dict[str, Any]:
     stats = {"wins": 0, "losses": 0, "draws": 0, "avg_score": 0.0, "games": max(0, int(games))}
     if games <= 0:
@@ -1586,7 +1625,7 @@ def _train_deck_pipeline(
     rollout_batch_games = max(1, int(config.rollout_batch_games))
     updates_per_rollout = max(1, int(config.updates_per_rollout))
     worker_count = _normalized_workers(config.workers)
-    teacher_search_preset = config.teacher_search_preset if config.teacher_search_preset in TEACHER_SEARCH_PRESETS else "quality"
+    teacher_search_preset = config.teacher_search_preset if config.teacher_search_preset in TEACHER_SEARCH_PRESETS else "hybrid"
     acceptance_metric = config.acceptance_metric if config.acceptance_metric in ("wins", "points", "score") else "wins"
     min_win_delta = max(0, int(config.min_win_delta))
     eval_seed = deck_seed + 900_000

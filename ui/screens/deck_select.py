@@ -1,9 +1,11 @@
 """卡组选择画面 - 双方各选自己的卡组."""
+import os
+
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
-    UI_TEXT_PRIMARY,
-    PLAYER1_COLOR, PLAYER2_COLOR, UI_HIGHLIGHT
+    UI_TEXT_PRIMARY, UI_TEXT_SECONDARY,
+    PLAYER1_COLOR, PLAYER2_COLOR, UI_HIGHLIGHT, UI_SUCCESS, UI_DANGER,
 )
 from ui.font_manager import get_font, get_font_size
 from ui.ui_theme import draw_panel, draw_button, draw_text_fit
@@ -106,7 +108,11 @@ class DeckSelectScreen(Screen):
         self.mode = mode
         self.is_challenge = mode == "challenge"
         self.ai_kind = "challenge"
+        self.ai_search_algorithm = "hybrid"
         self.ai_kind_buttons: list[dict] = []
+        self.ai_search_buttons: list[dict] = []
+        self.ai_config_panel_rect: pygame.Rect | None = None
+        self.challenge_detail_panel_rect: pygame.Rect | None = None
 
         # Remote mode fields
         self.is_remote = is_remote
@@ -186,6 +192,7 @@ class DeckSelectScreen(Screen):
             ai_player_idx=1,
             ai_deck_key=deck_key2 if self.is_challenge else None,
             ai_kind=self.ai_kind if self.is_challenge else "challenge",
+            ai_search_algorithm=self.ai_search_algorithm if self.is_challenge else "hybrid",
         )
         self.manager.replace_top(game_screen)
 
@@ -438,16 +445,19 @@ class DeckSelectScreen(Screen):
         return y_start + 36 + num_decks * (btn_h + gap)
 
     def _draw_ai_kind_selector(self, surface):
-        """Draw challenge-mode AI backend selector."""
+        """Draw challenge-mode AI configuration panel."""
         self.ai_kind_buttons.clear()
-        panel = pygame.Rect(SCREEN_WIDTH // 2 - 220, 834, 440, 58)
-        draw_panel(surface, panel)
-        label = self.font_small.render("AI Type", True, UI_TEXT_PRIMARY)
-        surface.blit(label, (panel.x + 14, panel.y + 18))
+        self.ai_search_buttons.clear()
+        panel = pygame.Rect(SCREEN_WIDTH // 2 - 220, 786, 440, 104)
+        self.ai_config_panel_rect = panel.copy()
+        draw_panel(surface, panel, "AI 配置", self.font_small)
 
+        # Row 1: AI Engine
+        engine_label = self.font_small.render("引擎", True, UI_TEXT_PRIMARY)
+        surface.blit(engine_label, (panel.x + 14, panel.y + 34))
         x = panel.x + 118
         for kind, text in (("challenge", "Rules AI"), ("deep_learning", "Deep AI")):
-            rect = pygame.Rect(x, panel.y + 12, 146, 34)
+            rect = pygame.Rect(x, panel.y + 26, 146, 34)
             self.ai_kind_buttons.append({"kind": kind, "rect": rect})
             selected = self.ai_kind == kind
             pygame.draw.rect(surface, (44, 56, 74) if selected else (30, 34, 46), rect, border_radius=6)
@@ -457,9 +467,32 @@ class DeckSelectScreen(Screen):
                           pygame.Rect(rect.x + 8, rect.y, rect.w - 16, rect.h))
             x += 156
 
+        draw_text_fit(surface, self.font_small, "搜索：自动混合（Beam 裁剪 + Minimax 评估）", UI_TEXT_SECONDARY,
+                      pygame.Rect(panel.x + 14, panel.y + 68, panel.w - 28, 18))
+
+        status, status_color = self._ai_model_status()
+        draw_text_fit(surface, self.font_small, status, status_color,
+                      pygame.Rect(panel.x + 14, panel.y + 88, panel.w - 28, 18))
+
+    def _ai_model_status(self) -> tuple[str, tuple[int, int, int]]:
+        if self.ai_kind != "deep_learning":
+            return "规则 AI 使用自动混合搜索", UI_TEXT_SECONDARY
+        if self._deep_ai_model_available():
+            return "Deep 模型可用", UI_SUCCESS
+        return "Deep 未训练，将使用规则 AI fallback", UI_DANGER
+
+    def _deep_ai_model_available(self) -> bool:
+        if not self.deck_keys:
+            return False
+        deck_idx = max(0, min(self.p2_idx, len(self.deck_keys) - 1))
+        deck_key = self.deck_keys[deck_idx]
+        path = os.path.abspath(os.path.join("data", "ai_models", f"{deck_key}.pt"))
+        return os.path.exists(path) and os.path.getsize(path) > 0
+
     def _draw_challenge_deck_detail(self, surface):
         """Draw challenge-mode deck comparison with player/AI labels."""
-        panel = pygame.Rect(SCREEN_WIDTH // 2 - 220, 112, 440, 708)
+        panel = pygame.Rect(SCREEN_WIDTH // 2 - 220, 112, 440, 660)
+        self.challenge_detail_panel_rect = panel.copy()
         inner = draw_panel(surface, panel, "卡组比较", self.font_body)
 
         blocks = [

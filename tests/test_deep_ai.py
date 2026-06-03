@@ -65,10 +65,11 @@ class DeepAITests(unittest.TestCase):
             DeepLearningAIConfig(
                 model_path=os.path.join("missing", "model.pt"),
                 fallback_config=AIConfig(
-                    thinking_time_seconds=0.0,
-                    deterministic_search=True,
-                    max_sequence_depth=1,
+                    thinking_time_seconds=0.01,
+                    deterministic_search=False,
+                    max_sequence_depth=0,
                     max_turn_actions=8,
+                    search_algorithm="beam",
                 ),
             ),
         )
@@ -82,10 +83,11 @@ class DeepAITests(unittest.TestCase):
             DeepLearningAIConfig(
                 model_path=os.path.join("missing", "model.pt"),
                 fallback_config=AIConfig(
-                    thinking_time_seconds=0.0,
-                    deterministic_search=True,
-                    max_sequence_depth=1,
+                    thinking_time_seconds=0.01,
+                    deterministic_search=False,
+                    max_sequence_depth=0,
                     max_turn_actions=8,
+                    search_algorithm="beam",
                 ),
             ),
         )
@@ -263,6 +265,31 @@ class DeepAITests(unittest.TestCase):
             self.assertIn("total_loss", train_event)
             self.assertIn("examples", train_event)
 
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_deep_training_accepts_single_example_batch(self):
+        from engine.ai.dl.encoder import EncodedAction, EncodedState
+        from engine.ai.dl.model import create_model
+        from engine.ai.dl.training import TrainingExample, _train_examples
+
+        model = create_model()
+        example = TrainingExample(
+            EncodedState([0.0] * STATE_NUMERIC_SIZE, [0] * STATE_CARD_SLOTS),
+            [EncodedAction([0.0] * ACTION_NUMERIC_SIZE, 0)],
+            0,
+            source="teacher",
+        )
+        result = _train_examples(
+            model,
+            [example],
+            device="cpu",
+            learning_rate=1e-3,
+            epochs=1,
+            batch_size=64,
+        )
+
+        self.assertEqual(result["examples"], 1)
+        self.assertEqual(getattr(model, "state_norm", ""), "layer")
+
     def test_self_play_returns_are_assigned_only_to_recorded_target_examples(self):
         from engine.ai.dl.training import TrainingExample, _finalize_episode_examples, _step_reward
         from engine.ai.dl.encoder import EncodedState
@@ -323,6 +350,7 @@ class DeepAITests(unittest.TestCase):
                 deterministic_search=True,
                 max_sequence_depth=1,
                 max_turn_actions=8,
+                search_algorithm="beam",
             ),
         )
         example = _teacher_label_state(ActionStateEncoder(), state, 1, "water", teacher)
@@ -541,22 +569,60 @@ class DeepAITests(unittest.TestCase):
             self.assertFalse(run_started["cuda_available"])
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
-    def test_v5_checkpoint_saves_and_restores_choice_head(self):
-        from engine.ai.dl.model import create_model, load_checkpoint, save_checkpoint
+    def test_v6_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
+        from engine.ai.dl.model import checkpoint_payload, create_model, load_checkpoint, save_checkpoint, torch
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "model.pt")
+            path = os.path.join(tmpdir, "model_v6.pt")
             model = create_model(choice_head_enabled=True)
             save_checkpoint(path, model, {"trainer": "test"})
             restored, payload = load_checkpoint(path, "cpu")
 
-        self.assertEqual(payload.get("version"), 5)
+            legacy_path = os.path.join(tmpdir, "model_v5.pt")
+            legacy_model = create_model(choice_head_enabled=True, state_norm="batch")
+            legacy_payload = checkpoint_payload(legacy_model, {"trainer": "legacy"})
+            legacy_payload["version"] = 5
+            legacy_payload.get("model_config", {}).pop("state_norm", None)
+            torch.save(legacy_payload, legacy_path)
+            legacy_restored, legacy_loaded = load_checkpoint(legacy_path, "cpu")
+
+        self.assertEqual(payload.get("version"), 6)
         self.assertTrue(payload.get("model_config", {}).get("choice_head_enabled"))
+        self.assertEqual(payload.get("model_config", {}).get("state_norm"), "layer")
         self.assertTrue(getattr(restored, "choice_head_enabled", False))
         self.assertTrue(hasattr(restored, "choice_net"))
         self.assertTrue(hasattr(restored, "score_choices"))
         self.assertFalse(hasattr(restored, "choice_value_head"))
         self.assertTrue(getattr(restored, "use_attention", False))
+        self.assertEqual(getattr(restored, "state_norm", ""), "layer")
+        self.assertEqual(legacy_loaded.get("version"), 5)
+        self.assertTrue(getattr(legacy_restored, "choice_head_enabled", False))
+        self.assertEqual(getattr(legacy_restored, "state_norm", ""), "batch")
+
+    def test_game_screen_deep_ai_uses_selected_fallback_search(self):
+        import pygame
+        from engine.turn_manager import TurnManager
+        from ui.screens.game_screen import GameScreen
+
+        pygame.init()
+        pygame.font.init()
+
+        class Manager:
+            _app = None
+
+        state = self._simple_state()
+        screen = GameScreen(
+            Manager(),
+            state,
+            TurnManager(state),
+            challenge_mode=True,
+            ai_deck_key="missing_deck",
+            ai_kind="deep_learning",
+            ai_search_algorithm="minimax",
+        )
+
+        self.assertEqual(screen.ai_controller.fallback.config.search_algorithm, "minimax")
+        self.assertIn("fallback", screen._ai_runtime_label())
 
     def test_challenge_deck_screen_exposes_ai_kind_selector(self):
         import pygame
@@ -577,12 +643,24 @@ class DeepAITests(unittest.TestCase):
             mode="challenge",
         )
         self.assertEqual(screen.ai_kind, "challenge")
+        self.assertEqual(screen.ai_search_algorithm, "hybrid")
         surface = pygame.Surface((1600, 1000))
         screen.draw(surface)
         self.assertEqual(
             [button["kind"] for button in screen.ai_kind_buttons],
             ["challenge", "deep_learning"],
         )
+        self.assertEqual(screen.ai_search_buttons, [])
+        self.assertIsNotNone(screen.challenge_detail_panel_rect)
+        self.assertIsNotNone(screen.ai_config_panel_rect)
+        assert screen.challenge_detail_panel_rect is not None
+        assert screen.ai_config_panel_rect is not None
+        self.assertLessEqual(
+            screen.challenge_detail_panel_rect.bottom,
+            screen.ai_config_panel_rect.y,
+        )
+        self.assertLessEqual(screen.ai_config_panel_rect.bottom, screen.start_button.y)
+        self.assertFalse(screen.ai_config_panel_rect.colliderect(screen.start_button))
 
 
 if __name__ == "__main__":

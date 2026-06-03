@@ -86,6 +86,32 @@ TRAINING_AI_SEARCH = {
     "opponent_response_actions": 8,
     "opponent_response_weight": 0.55,
     "deterministic_search": True,
+    "search_algorithm": "beam",
+}
+
+TRAINING_AI_SEARCH_MINIMAX = {
+    "thinking_time_seconds": 0.0,
+    "beam_width": 8,
+    "max_sequence_depth": 4,
+    "max_turn_actions": 24,
+    "coin_sample_count": 4,
+    "opponent_response_actions": 6,
+    "opponent_response_weight": 0.45,
+    "deterministic_search": True,
+    "search_algorithm": "minimax",
+    "minimax_max_depth": 2,
+    "minimax_determinizations": 2,
+}
+
+TRAINING_AI_SEARCH_HYBRID = dict(
+    TRAINING_AI_SEARCH_MINIMAX,
+    search_algorithm="hybrid",
+)
+
+SEARCH_PRESETS = {
+    "beam": TRAINING_AI_SEARCH,
+    "hybrid": TRAINING_AI_SEARCH_HYBRID,
+    "minimax": TRAINING_AI_SEARCH_MINIMAX,
 }
 
 WEIGHT_BOUNDS: dict[str, tuple[float, float]] = {
@@ -135,6 +161,7 @@ class TrainingConfig:
     progress_jsonl: str | None = None
     workers: int = DEFAULT_WORKERS
     benchmark_games: int = 0
+    search_preset: str = "hybrid"  # "hybrid", "beam", or "minimax"
 
 
 @dataclass(frozen=True)
@@ -145,6 +172,7 @@ class PlayGameTask:
     seed: int
     seat: int
     max_steps: int = 160
+    search_preset: str = "hybrid"
 
 
 @dataclass(frozen=True)
@@ -156,6 +184,7 @@ class PlayMatchTask:
     seed: int
     seat: int
     max_steps: int = 160
+    search_preset: str = "hybrid"
 
 
 def clamp_weight(key: str, value: float) -> float:
@@ -196,6 +225,7 @@ def _execute_play_game_task(task: PlayGameTask) -> tuple[int | None, float]:
         task.seed,
         max_steps=task.max_steps,
         candidate_player_idx=task.seat,
+        search_preset=task.search_preset,
     )
 
 
@@ -209,6 +239,7 @@ def _execute_play_match_task(task: PlayMatchTask) -> tuple[int | None, float]:
         task.seed,
         seat=task.seat,
         max_steps=task.max_steps,
+        search_preset=task.search_preset,
     )
 
 
@@ -237,9 +268,11 @@ def _run_play_match_tasks(tasks: list[PlayMatchTask], workers: int | None) -> li
         return [_execute_play_match_task(task) for task in tasks]
 
 
-def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int):
+def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int,
+              search_preset: str = "hybrid"):
+    search_kwargs = SEARCH_PRESETS.get(search_preset, TRAINING_AI_SEARCH_HYBRID)
     config = AIConfig(
-        **TRAINING_AI_SEARCH,
+        **search_kwargs,
         random_seed=seed,
         policy_path=None,
         policy_weights=weights,
@@ -297,6 +330,7 @@ def play_game(
     seed: int,
     max_steps: int = 160,
     candidate_player_idx: int = 0,
+    search_preset: str = "hybrid",
 ) -> tuple[int | None, float]:
     return play_match(
         deck_key,
@@ -306,6 +340,7 @@ def play_game(
         seed,
         seat=candidate_player_idx,
         max_steps=max_steps,
+        search_preset=search_preset,
     )
 
 
@@ -318,6 +353,7 @@ def play_match(
     *,
     seat: int = 0,
     max_steps: int = 160,
+    search_preset: str = "hybrid",
 ) -> tuple[int | None, float]:
     """Play two deck policies and score the result from deck_a's perspective."""
     rng_state = random.getstate()
@@ -331,6 +367,7 @@ def play_match(
             seed,
             seat=seat,
             max_steps=max_steps,
+            search_preset=search_preset,
         )
     finally:
         random.setstate(rng_state)
@@ -345,6 +382,7 @@ def _play_match_impl(
     *,
     seat: int = 0,
     max_steps: int = 160,
+    search_preset: str = "hybrid",
 ) -> tuple[int | None, float]:
     deck_a_player_idx = 1 if seat == 1 else 0
     state = GameState()
@@ -353,11 +391,11 @@ def _play_match_impl(
     state.setup_game(expand_deck(DECK_SPECS[deck1_key]), expand_deck(DECK_SPECS[deck2_key]))
     tm = TurnManager(state)
     if deck_a_player_idx == 0:
-        ai0 = _make_ai(deck_a, weights_a, seed + 11)
-        ai1 = _make_ai(deck_b, weights_b, seed + 29)
+        ai0 = _make_ai(deck_a, weights_a, seed + 11, search_preset)
+        ai1 = _make_ai(deck_b, weights_b, seed + 29, search_preset)
     else:
-        ai0 = _make_ai(deck_b, weights_b, seed + 29)
-        ai1 = _make_ai(deck_a, weights_a, seed + 11)
+        ai0 = _make_ai(deck_b, weights_b, seed + 29, search_preset)
+        ai1 = _make_ai(deck_a, weights_a, seed + 11, search_preset)
     ais = [ai0, ai1]
     finish_setup(state, tm, ais)
 
@@ -481,6 +519,7 @@ def train_deck(
     progress_callback: ProgressCallback | None = None,
     total_offset: int = 0,
     total_training_games: int | None = None,
+    search_preset: str = "hybrid",
 ) -> dict[str, Any]:
     """Train one deck for exactly ``games`` self-play candidate games."""
     if deck_key not in DECK_SPECS:
@@ -515,7 +554,8 @@ def train_deck(
             opponent_key = _opponent_for(deck_key, game_idx, generation)
             game_seed = seed + generation * 1009 + game_idx * 37 + candidate_idx
             seat = (generation + game_idx + candidate_idx) % 2
-            tasks.append(PlayGameTask(deck_key, weights, opponent_key, game_seed, seat))
+            tasks.append(PlayGameTask(deck_key, weights, opponent_key, game_seed, seat,
+                                          search_preset=search_preset))
             task_weights.append(weights)
 
         scored: list[tuple[float, dict[str, float], dict[str, int]]] = []
@@ -558,6 +598,7 @@ def train_deck(
             seed + 500_000,
             eval_games,
             workers=workers,
+            search_preset=search_preset,
         )
     accepted = _eval_accepts_trained(base_eval)
 
@@ -572,7 +613,7 @@ def train_deck(
             "population": population,
             "generations": generation,
             "accepted": accepted,
-            "search": dict(TRAINING_AI_SEARCH),
+            "search": dict(SEARCH_PRESETS.get(search_preset, TRAINING_AI_SEARCH_HYBRID)),
             "workers": _normalized_workers(workers),
         },
     }
@@ -586,6 +627,7 @@ def evaluate_policy(
     games: int,
     *,
     workers: int = DEFAULT_WORKERS,
+    search_preset: str = "hybrid",
 ) -> dict[str, Any]:
     """Compare baseline and trained weights against the same holdout schedule."""
     target_games = max(0, int(games))
@@ -605,8 +647,10 @@ def evaluate_policy(
         opponent_key = _opponent_for(deck_key, idx, 99)
         game_seed = seed + idx * 101
         seat = idx % 2
-        baseline_tasks.append(PlayGameTask(deck_key, baseline_weights, opponent_key, game_seed, seat))
-        trained_tasks.append(PlayGameTask(deck_key, trained_weights, opponent_key, game_seed, seat))
+        baseline_tasks.append(PlayGameTask(deck_key, baseline_weights, opponent_key, game_seed, seat,
+                                             search_preset=search_preset))
+        trained_tasks.append(PlayGameTask(deck_key, trained_weights, opponent_key, game_seed, seat,
+                                            search_preset=search_preset))
 
     for winner, eval_score in _run_play_game_tasks(baseline_tasks, workers):
         baseline_score += eval_score
@@ -669,6 +713,7 @@ def _before_after_benchmark(
     seed: int,
     games_per_matchup: int,
     workers: int,
+    search_preset: str = "hybrid",
 ) -> dict[str, Any]:
     before_after: dict[str, Any] = {}
     for idx, deck_key in enumerate(deck_keys):
@@ -679,6 +724,7 @@ def _before_after_benchmark(
             seed + idx * 3001,
             games_per_matchup,
             workers=workers,
+            search_preset=search_preset,
         )
         before = dict(result.get("baseline") or {})
         after = dict(result.get("trained") or {})
@@ -705,6 +751,7 @@ def benchmark_policies(
     *,
     workers: int = DEFAULT_WORKERS,
     progress_callback: ProgressCallback | None = None,
+    search_preset: str = "hybrid",
 ) -> dict[str, Any]:
     """Run diagnostic policy benchmarks for UI visualization.
 
@@ -742,6 +789,7 @@ def benchmark_policies(
         seed + 700_000,
         target_games,
         worker_count,
+        search_preset,
     )
 
     matrix: dict[str, dict[str, Any]] = {
@@ -773,6 +821,7 @@ def benchmark_policies(
                     trained_weights[deck_b],
                     seed + 800_000 + pair_idx * 10007 + game_idx * 101,
                     game_idx % 2,
+                    search_preset=search_preset,
                 )
                 for game_idx in range(target_games)
             ]
@@ -906,6 +955,7 @@ def run_training(config: TrainingConfig, progress_callback: ProgressCallback | N
                 progress_callback=emit,
                 total_offset=total_done,
                 total_training_games=total_training_games,
+                search_preset=config.search_preset,
             )
             policies[deck_key] = policy
             total_done += policy["training_games"]
@@ -924,6 +974,7 @@ def run_training(config: TrainingConfig, progress_callback: ProgressCallback | N
             config.seed,
             benchmark_games,
             workers=worker_count,
+            search_preset=config.search_preset,
             progress_callback=emit,
         )
 
@@ -938,7 +989,7 @@ def run_training(config: TrainingConfig, progress_callback: ProgressCallback | N
                 "workers": worker_count,
                 "created_at": int(time.time()),
                 "elapsed_seconds": round(time.time() - started, 3),
-                "search": dict(TRAINING_AI_SEARCH),
+                "search": dict(SEARCH_PRESETS.get(config.search_preset, TRAINING_AI_SEARCH_HYBRID)),
             },
             "policies": policies,
             "benchmark": benchmark,

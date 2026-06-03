@@ -54,6 +54,10 @@ class AIConfig:
     policy_path: str | None = DEFAULT_POLICY_PATH
     policy_weights: dict[str, float] | None = None
     profile: DeckAIProfile | None = None
+    # Search settings. "hybrid" uses beam-style root pruning plus minimax scoring.
+    search_algorithm: str = "hybrid"  # "hybrid", "beam", or "minimax"
+    minimax_max_depth: int = 3  # full turn-pairs (MAX+MIN = one pair)
+    minimax_determinizations: int = 3  # opponent-hand worlds for PIMC
 
 
 @dataclass(frozen=True)
@@ -171,7 +175,52 @@ class ChallengeAI:
             if self.config.deterministic_search
             else time.perf_counter() + max(0.01, self.config.thinking_time_seconds)
         )
+        if self.config.search_algorithm == "minimax":
+            return self._minimax_search_action(state, player_idx, deadline)
+        if self.config.search_algorithm == "hybrid":
+            return self._hybrid_search_action(state, player_idx, deadline)
         return self._beam_search_action(state, player_idx, deadline)
+
+    def _minimax_search_action(
+        self, state: GameState, player_idx: int, deadline: float
+    ) -> AIAction:
+        from engine.ai.minimax import MinimaxSearcher
+
+        searcher = MinimaxSearcher(self)
+        return searcher.search(
+            state,
+            player_idx,
+            deadline,
+            max_depth=self.config.minimax_max_depth,
+            determinizations=self.config.minimax_determinizations,
+        )
+
+    def _hybrid_search_action(
+        self, state: GameState, player_idx: int, deadline: float
+    ) -> AIAction:
+        """Prune root moves with ChallengeAI ordering, then score them with minimax."""
+        root_actions = self.legal_actions(state, player_idx)
+        if not root_actions:
+            return AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        candidate_limit = max(1, min(len(root_actions), int(self.config.beam_width)))
+        candidates = list(root_actions[:candidate_limit])
+
+        end_turn = next((action for action in root_actions if action.action == PlayerAction.END_TURN), None)
+        if end_turn is not None and not any(action.action == PlayerAction.END_TURN for action in candidates):
+            candidates.append(end_turn)
+
+        from engine.ai.minimax import MinimaxSearcher
+
+        searcher = MinimaxSearcher(self)
+        return searcher.search(
+            state,
+            player_idx,
+            deadline,
+            max_depth=self.config.minimax_max_depth,
+            determinizations=self.config.minimax_determinizations,
+            root_actions=candidates,
+        )
 
     def resolve_pending_action(self, state: GameState, action_request: ActionRequest) -> AIChoice:
         return self.choice_policy.resolve_pending_action(state, action_request)
@@ -891,6 +940,7 @@ class ChallengeAI:
                 if damage >= opponent.active.current_hp:
                     pressure += 260 + opponent.active.card.prize_value * 110
                 pressure += self._effect_tactical_value(state, player_idx, attack.effects)
+        pressure += self._target_immunity_penalty(opponent.active) * 0.5
         return pressure
 
     def _best_available_damage(self, state: GameState, player_idx: int) -> int:
@@ -964,6 +1014,8 @@ class ChallengeAI:
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
         if not player.active or not opponent.active:
+            return 0
+        if getattr(opponent.active, 'damage_prevented_next_turn', False):
             return 0
         attack = player.active.card.attacks[attack_idx]
         damage = attack.damage
@@ -1096,6 +1148,7 @@ class ChallengeAI:
     def _effect_tactical_value(self, state: GameState, player_idx: int, effects: list[Any]) -> float:
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
+        target_immune_effects = getattr(opponent.active, 'all_prevented_next_turn', False) if opponent.active else False
         if isinstance(effects, dict):
             effects = [effects]
         value = 0.0
@@ -1109,13 +1162,22 @@ class ChallengeAI:
             elif etype in ("energy_attach", "attach_from_discard", "draw_and_attach_energy"):
                 value += 45
             elif etype in ("energy_discard", "coin_flip_energy_discard"):
-                value += 55 if opponent.active and opponent.active.energy_cards else 18
+                if target_immune_effects:
+                    value += 0
+                else:
+                    value += 55 if opponent.active and opponent.active.energy_cards else 18
             elif etype in ("switch_self", "return_to_hand"):
                 value += 35 if player.bench_count() else 0
             elif etype == "switch_opponent":
-                value += 65 if opponent.bench_count() else 0
+                if target_immune_effects:
+                    value += 0
+                else:
+                    value += 65 if opponent.bench_count() else 0
             elif etype in ("prevent_all", "attack_lock_basic", "self_attack_lock"):
-                value += 70
+                if target_immune_effects and etype != "self_attack_lock":
+                    value += 0
+                else:
+                    value += 70
             elif etype in ("heal", "heal_all", "potion_heal", "damage_and_self_heal", "conditional_damage_heal"):
                 damaged = sum(max(0, p.card.hp - p.current_hp) for _, p in player.get_all_pokemon() if p)
                 value += min(80, damaged * 0.6)
@@ -1125,7 +1187,15 @@ class ChallengeAI:
                     p for p in [opponent.active, *opponent.bench]
                     if p is not None and p.current_hp <= max(90, amount)
                 ]
-                value += amount * 0.35 + (90 if low_targets else 0)
+                # Filter out immune targets for bench/active targeting
+                snipeable = [p for p in low_targets
+                             if not getattr(p, 'all_prevented_next_turn', False)]
+                if not snipeable and not low_targets:
+                    value += 0
+                elif not snipeable:
+                    value += amount * 0.15  # reduced: active immune but bench may not be
+                else:
+                    value += amount * 0.35 + (90 if snipeable else 0)
             elif "coin" in etype:
                 value += 12
         return value
@@ -1407,7 +1477,19 @@ class ChallengeAI:
             value += self.policy_weights.get("low_hp_targets", 0.0)
         if "ex" in getattr(pokemon.card, "subtypes", []):
             value += self.policy_weights.get("ko_pressure", 1.0) * 35
+        value += self._target_immunity_penalty(pokemon)
         return value
+
+    def _target_immunity_penalty(self, pokemon) -> float:
+        """Penalty for targeting a Pokemon with active immunity/prevention flags."""
+        if pokemon is None:
+            return 0.0
+        penalty = 0.0
+        if getattr(pokemon, 'damage_prevented_next_turn', False):
+            penalty -= 120.0
+        if getattr(pokemon, 'all_prevented_next_turn', False):
+            penalty -= 80.0
+        return penalty
 
     def _pokemon_development_value(self, pokemon) -> float:
         if pokemon is None:

@@ -63,8 +63,9 @@ def main() -> int:
                         help="Rollout games collected before each training update (default: 16).")
     parser.add_argument("--updates-per-rollout", type=int, default=2,
                         help="Training epochs after each rollout batch (default: 2).")
-    parser.add_argument("--teacher-search-preset", default="quality", choices=["fast", "quality"],
-                        help="ChallengeAI search budget used for teacher/fallback simulation.")
+    parser.add_argument("--teacher-search-preset", default="hybrid",
+                        choices=["hybrid", "fast", "quality", "minimax_fast", "minimax"],
+                        help="ChallengeAI search config used for teacher/fallback (hybrid prunes with beam and scores with minimax).")
     parser.add_argument("--choice-head-enabled", action=argparse.BooleanOptionalAction, default=True,
                         help="Train and use the pending-choice scorer (default: enabled).")
     parser.add_argument("--acceptance-metric", default="score", choices=["wins", "points", "score"],

@@ -29,7 +29,7 @@ from engine.enums import PlayerAction, TurnPhase
 CARD_BUCKET_COUNT = 4096
 STATE_NUMERIC_SIZE = 896
 STATE_CARD_SLOTS = 96
-ACTION_NUMERIC_SIZE = 160
+ACTION_NUMERIC_SIZE = 162
 CARD_SEMANTIC_SIZE = 48
 
 ACTION_TYPES = [
@@ -701,6 +701,8 @@ class ActionStateEncoder:
             _bool(opponent.active and attack_damage >= opponent.active.current_hp),
             _norm(getattr(opponent.active.card, "prize_value", 0) if opponent.active else 0, 3.0),
             _bool(action.action == PlayerAction.RETREAT and target is not None and self._best_attack_damage(target) > self._best_attack_damage(player.active)),
+            _bool(getattr(target, 'damage_prevented_next_turn', False) if target else False),
+            _bool(getattr(target, 'all_prevented_next_turn', False) if target else False),
         ]
         values.extend(self._profile_card_flags(card, getattr(self, "_active_deck_key", None)))
         return values

@@ -26,7 +26,7 @@ from config import (
     GAME_SPEED, GAME_SPEED_OPTIONS,
 )
 from engine.enums import TurnPhase, PlayerAction, StatusType
-from engine.ai import ChallengeAI, create_ai_controller
+from engine.ai import ChallengeAI, DeepLearningAIConfig, create_ai_controller
 from engine.game_state import GameState, ActionRequest, ActionResult
 from engine.turn_manager import TurnManager
 from engine.rules_validator import (
@@ -114,6 +114,7 @@ class GameScreen(Screen):
                  ai_player_idx: int = 1,
                  ai_deck_key: str | None = None,
                  ai_kind: str = "challenge",
+                 ai_search_algorithm: str = "hybrid",
                  ai_controller: ChallengeAI | None = None):
         super().__init__(manager)
         self.state = game_state if game_state is not None else initial_state
@@ -124,9 +125,23 @@ class GameScreen(Screen):
         self.human_player_idx = human_player_idx
         self.ai_player_idx = ai_player_idx
         self.ai_kind = ai_kind
-        self.ai_controller = ai_controller or (
-            create_ai_controller(ai_kind, ai_deck_key) if challenge_mode else None
-        )
+        self.ai_search_algorithm = ai_search_algorithm
+        if ai_controller is not None:
+            self.ai_controller = ai_controller
+        elif challenge_mode:
+            from engine.ai.challenge_ai import AIConfig
+            fallback_config = AIConfig(
+                deck_key=ai_deck_key or "",
+                search_algorithm=ai_search_algorithm,
+            )
+            config = (
+                DeepLearningAIConfig(fallback_config=fallback_config)
+                if ai_kind == "deep_learning"
+                else fallback_config
+            )
+            self.ai_controller = create_ai_controller(ai_kind, ai_deck_key, config)
+        else:
+            self.ai_controller = None
         self._ai_action_delay = 0.25
         self._ai_thinking_timer = 0.0
         self._ai_pending_action: ActionRequest | None = None
@@ -2323,8 +2338,12 @@ class GameScreen(Screen):
             ("Tab", f"{self._speed_value}x速"),
             ("F1", "隐藏"),
         ]
+        if self.challenge_mode:
+            algo = getattr(self, "ai_search_algorithm", "beam")
+            algo_short = "自动混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
+            hints.append(("", f"搜索: {algo_short}"))
 
-        panel_w = 135
+        panel_w = 170
         panel_h = len(hints) * 18 + 10
         panel_x = SCREEN_WIDTH - panel_w - 10
         panel_y = SCREEN_HEIGHT - panel_h - 30
@@ -3459,7 +3478,10 @@ class GameScreen(Screen):
             else:
                 self.waiting_indicator.hide()
         elif self._is_ai_turn_context():
-            self.waiting_indicator.show("AI 思考中...")
+            algo = getattr(self, "ai_search_algorithm", "beam")
+            algo_label = "自动混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
+            ai_label = self._ai_runtime_label()
+            self.waiting_indicator.show(f"{ai_label} 思考中 ({algo_label})...")
         else:
             self.waiting_indicator.hide()
         self.waiting_indicator.update(sdt)
@@ -3515,6 +3537,13 @@ class GameScreen(Screen):
         if self.state.phase == TurnPhase.SETUP:
             return self.setup_player_idx == self.ai_player_idx
         return self.state.active_player_idx == self.ai_player_idx
+
+    def _ai_runtime_label(self) -> str:
+        if self.ai_kind != "deep_learning":
+            return "规则 AI"
+        if self.ai_controller is not None and getattr(self.ai_controller, "model_available", False):
+            return "Deep AI 模型"
+        return "Deep AI 未训练，规则 AI fallback"
 
     def _is_ai_pending_request(self, action_req: ActionRequest | None) -> bool:
         if not self.challenge_mode or action_req is None:

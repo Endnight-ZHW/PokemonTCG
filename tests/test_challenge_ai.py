@@ -24,6 +24,7 @@ from engine.ai.training import (
     _run_play_game_tasks,
     benchmark_policies,
     clamp_weight,
+    evaluate_policy,
     play_game,
     play_match,
     run_training,
@@ -195,6 +196,8 @@ class ChallengeAITests(unittest.TestCase):
                     "1",
                     "--eval-games",
                     "0",
+                    "--search-preset",
+                    "beam",
                     "--output",
                     output,
                 ],
@@ -214,7 +217,8 @@ class ChallengeAITests(unittest.TestCase):
     def test_training_exact_game_budget_and_weight_clamps(self):
         calls = []
 
-        def fake_play(deck_key, weights, opponent_key, seed, max_steps=160, candidate_player_idx=0):
+        def fake_play(deck_key, weights, opponent_key, seed, max_steps=160,
+                      candidate_player_idx=0, search_preset="beam"):
             calls.append((deck_key, opponent_key, seed, candidate_player_idx))
             winner = 0 if len(calls) % 3 else 1
             return winner, float(len(calls))
@@ -280,18 +284,19 @@ class ChallengeAITests(unittest.TestCase):
         execute.assert_called_once_with(tasks[0])
 
     def test_training_play_game_is_seed_deterministic(self):
-        first = play_game("fire", None, "water", 2025, max_steps=8)
-        second = play_game("fire", None, "water", 2025, max_steps=8)
+        first = play_game("fire", None, "water", 2025, max_steps=8, search_preset="beam")
+        second = play_game("fire", None, "water", 2025, max_steps=8, search_preset="beam")
         self.assertEqual(first, second)
 
     def test_play_match_accepts_custom_weights(self):
         weights = {"core_in_play": 72.0, "ko_pressure": 1.1}
-        result = play_match("fire", weights, "water", None, 2026, seat=1, max_steps=8)
+        result = play_match("fire", weights, "water", None, 2026, seat=1, max_steps=8, search_preset="beam")
         self.assertEqual(len(result), 2)
         self.assertIn(result[0], (0, 1, None))
 
     def test_training_progress_jsonl_and_candidate_policy_are_loadable(self):
-        def fake_play(deck_key, weights, opponent_key, seed, max_steps=160, candidate_player_idx=0):
+        def fake_play(deck_key, weights, opponent_key, seed, max_steps=160,
+                      candidate_player_idx=0, search_preset="beam"):
             winner = 0 if seed % 2 == 0 else 1
             return winner, float(seed % 100)
 
@@ -325,6 +330,68 @@ class ChallengeAITests(unittest.TestCase):
             loaded = load_policy_weights("fire", output)
             self.assertIn("core_in_play", loaded)
             self.assertIn("damaged_self", loaded)
+
+    def test_training_eval_games_preserve_search_preset(self):
+        for preset in ("beam", "hybrid", "minimax"):
+            seen_presets = []
+
+            def fake_runner(tasks, workers):
+                seen_presets.extend(task.search_preset for task in tasks)
+                return [(0, 1.0) for _ in tasks]
+
+            with patch("engine.ai.training._run_play_game_tasks", side_effect=fake_runner):
+                policy = train_deck(
+                    "fire",
+                    1,
+                    123,
+                    eval_games=1,
+                    workers=1,
+                    search_preset=preset,
+                )
+
+            self.assertTrue(seen_presets)
+            self.assertTrue(all(value == preset for value in seen_presets))
+            self.assertEqual(
+                policy["metadata"]["search"].get("search_algorithm", "beam"),
+                preset,
+            )
+
+    def test_evaluate_policy_uses_selected_search_preset(self):
+        seen_batches = []
+
+        def fake_runner(tasks, workers):
+            seen_batches.append([task.search_preset for task in tasks])
+            return [(None, 0.0) for _ in tasks]
+
+        with patch("engine.ai.training._run_play_game_tasks", side_effect=fake_runner):
+            evaluate_policy("fire", {}, {}, 17, 2, workers=1, search_preset="minimax")
+
+        self.assertEqual(seen_batches, [["minimax", "minimax"], ["minimax", "minimax"]])
+
+    def test_hybrid_search_prunes_root_actions_then_uses_minimax(self):
+        from engine.ai.challenge_ai import AIAction, AIConfig, ChallengeAI
+        from engine.enums import PlayerAction
+
+        ai = ChallengeAI(AIConfig(beam_width=2, policy_path=None, deterministic_search=True))
+        actions = [
+            AIAction(PlayerAction.PLAY_BASIC, {"slot": "active"}),
+            AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0}),
+            AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}),
+            AIAction(PlayerAction.END_TURN, {}, terminal=True),
+        ]
+        captured = {}
+
+        def fake_search(self, state, player_idx, deadline, max_depth=3,
+                        determinizations=3, root_actions=None):
+            captured["root_actions"] = root_actions
+            return root_actions[0]
+
+        with patch.object(ai, "legal_actions", return_value=actions), \
+                patch("engine.ai.minimax.MinimaxSearcher.search", new=fake_search):
+            result = ai._hybrid_search_action(object(), 0, float("inf"))
+
+        self.assertIs(result, actions[0])
+        self.assertEqual(captured["root_actions"], [actions[0], actions[1], actions[3]])
 
     def test_benchmark_payload_contains_matrix_before_after_and_ranking(self):
         policies = {
@@ -429,6 +496,7 @@ class ChallengeAITests(unittest.TestCase):
             max_sequence_depth=2,
             max_turn_actions=8,
             random_seed=99,
+            search_algorithm="beam",
         )
         action_a = ChallengeAI(config).choose_action(base_state, 1)
         action_b = ChallengeAI(config).choose_action(hidden_changed, 1)

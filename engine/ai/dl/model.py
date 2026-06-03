@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 5
+CHECKPOINT_VERSION = 6
 
 
 if TORCH_AVAILABLE:
@@ -32,8 +32,8 @@ if TORCH_AVAILABLE:
     class DeepActionModel(nn.Module):
         """Score each legal candidate action and estimate state value.
 
-        v5 upgrades: doubled hidden_size (384), self-attention over card slots,
-        BatchNorm for training stability, deeper value head.
+        v6 upgrades: doubled hidden_size (384), self-attention over card slots,
+        LayerNorm for small-batch stability, deeper value head.
         """
 
         def __init__(
@@ -47,6 +47,7 @@ if TORCH_AVAILABLE:
             hidden_size: int = 384,
             choice_head_enabled: bool = True,
             use_attention: bool = True,
+            state_norm: str = "layer",
         ):
             super().__init__()
             self.state_numeric_size = state_numeric_size
@@ -57,6 +58,7 @@ if TORCH_AVAILABLE:
             self.hidden_size = hidden_size
             self.choice_head_enabled = bool(choice_head_enabled)
             self.use_attention = bool(use_attention) and (card_embed_dim >= 4)
+            self.state_norm = "batch" if str(state_norm).lower() == "batch" else "layer"
 
             # Card identity embedding (hash-bucket based)
             self.card_embedding = nn.Embedding(card_bucket_count, card_embed_dim, padding_idx=0)
@@ -69,13 +71,18 @@ if TORCH_AVAILABLE:
                 self.card_attn = None
                 self.card_attn_norm = None
 
+            def make_state_norm():
+                if self.state_norm == "batch":
+                    return nn.BatchNorm1d(hidden_size)
+                return nn.LayerNorm(hidden_size)
+
             # State encoder: [numeric + pooled_card_embed] -> hidden
             self.state_net = nn.Sequential(
                 nn.Linear(state_numeric_size + card_embed_dim, hidden_size),
-                nn.BatchNorm1d(hidden_size),
+                make_state_norm(),
                 nn.ReLU(),
                 nn.Linear(hidden_size, hidden_size),
-                nn.BatchNorm1d(hidden_size),
+                make_state_norm(),
                 nn.ReLU(),
             )
 
@@ -176,6 +183,7 @@ def checkpoint_payload(model, metadata: dict[str, Any] | None = None) -> dict[st
             "hidden_size": model.hidden_size,
             "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
             "use_attention": bool(getattr(model, "use_attention", True)),
+            "state_norm": getattr(model, "state_norm", "layer"),
         },
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
     }
@@ -205,6 +213,7 @@ def _infer_model_config_from_state_dict(state_dict: dict[str, Any]) -> dict[str,
     except Exception:
         config["action_numeric_size"] = ACTION_NUMERIC_SIZE
     config["state_card_slots"] = 32
+    config["state_norm"] = "batch"
     return config
 
 
@@ -228,6 +237,7 @@ def load_checkpoint(path: str, device: str = "cpu"):
         config = dict(payload.get("model_config") or {})
         config.setdefault("choice_head_enabled", version >= 3)
         config.setdefault("use_attention", version >= 5)
+        config.setdefault("state_norm", "layer" if version >= 6 else "batch")
         model = create_model(**config)
         strict = version >= 5
         model.load_state_dict(payload["model_state"], strict=strict)
@@ -236,6 +246,7 @@ def load_checkpoint(path: str, device: str = "cpu"):
         return model, payload
     config = _infer_model_config_from_state_dict(payload)
     config["choice_head_enabled"] = False
+    config["state_norm"] = "batch"
     model = create_model(**config)
     model.load_state_dict(payload, strict=False)
     model.to(device)

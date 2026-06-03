@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--progress-jsonl", default=None)
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--benchmark-games", type=int, default=0)
+    parser.add_argument("--search-preset", default="hybrid", choices=["hybrid", "beam", "minimax"])
     args = parser.parse_args()
 
     config = TrainingConfig(
@@ -31,6 +32,7 @@ def main() -> None:
         progress_jsonl=args.progress_jsonl,
         workers=args.workers if args.workers is not None else DEFAULT_WORKERS,
         benchmark_games=max(0, args.benchmark_games),
+        search_preset=args.search_preset,
     )
     payload = run_training(config)
     print(f"Wrote {args.output} with {len(payload['policies'])} trained deck policy set(s).")
