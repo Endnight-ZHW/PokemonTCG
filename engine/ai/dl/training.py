@@ -18,7 +18,7 @@ from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, CARD_SEMANTIC_SIZE, Action
 from engine.ai.dl.model import TORCH_AVAILABLE, create_model, load_checkpoint, save_checkpoint, torch
 from engine.ai.dl.opponent_pool import OpponentPool, save_opponent_pool, load_opponent_pool
 
-from engine.ai.training import DECK_SPECS, finish_setup, force_end_turn, terminal_training_score
+from engine.ai.training import DECK_SPECS, _determine_soft_winner, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
 from engine.turn_manager import TurnManager
@@ -107,7 +107,7 @@ class DeepTrainingConfig:
     self_play_epochs: int = 10
     eval_games: int = 200
     workers: int = 1
-    max_steps: int = 120
+    max_steps: int = 250
     learning_rate: float = 5e-4
     batch_size: int = 64
     progress_jsonl: str | None = None
@@ -482,7 +482,7 @@ def collect_bootstrap_examples(
     games: int,
     seed: int,
     *,
-    max_steps: int = 120,
+    max_steps: int = 250,
     encoder: ActionStateEncoder | None = None,
     game_offset: int = 0,
     teacher_search_preset: str = "hybrid",
@@ -1222,6 +1222,7 @@ def _play_model_game(
             target_ai._resolve_pending_for_sim = record_choice
 
         failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
+        prev_player_idx: int | None = None
         for _ in range(max_steps):
             if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
                 break
@@ -1236,6 +1237,10 @@ def _play_model_game(
                 continue
 
             player_idx = state.active_player_idx if state.phase != TurnPhase.SETUP else target_player_idx
+            # 切换玩家时重置失败计数，防止上一回合的失败累积
+            if prev_player_idx is not None and player_idx != prev_player_idx:
+                failed_signatures[player_idx].clear()
+            prev_player_idx = player_idx
             example: TrainingExample | None = None
             before_metrics: dict[str, float] | None = None
             if player_idx == target_player_idx:
@@ -1267,7 +1272,7 @@ def _play_model_game(
             invalid = result is None or not result.success
             if invalid:
                 failed_signatures[player_idx].add(signature)
-                if len(failed_signatures[player_idx]) >= 3:
+                if len(failed_signatures[player_idx]) >= 2:
                     force_end_turn(state, player_idx)
                     failed_signatures[player_idx].clear()
             else:
@@ -1282,8 +1287,10 @@ def _play_model_game(
             logical_winner = 0 if state.winner == target_player_idx else 1
             score = terminal_training_score(state, target_player_idx)
         else:
-            logical_winner = None
-            score = target_ai.evaluate_state(state, target_player_idx)
+            soft_winner = _determine_soft_winner(state)
+            state.winner = soft_winner
+            logical_winner = 0 if soft_winner == target_player_idx else 1
+            score = terminal_training_score(state, target_player_idx)
         _finalize_episode_examples(examples, _terminal_reward(logical_winner, score))
         return logical_winner, score, examples, choice_examples
     finally:
@@ -1450,7 +1457,7 @@ def _score_points(result: dict[str, Any] | None) -> tuple[int, float]:
     wins = int(result.get("wins", 0))
     losses = int(result.get("losses", 0))
     draws = int(result.get("draws", 0))
-    return wins - losses, wins + draws * 0.5
+    return wins - losses, wins + draws * 0.25
 
 
 def _point_rate(result: dict[str, Any] | None) -> float:

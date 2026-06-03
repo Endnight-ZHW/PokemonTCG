@@ -85,7 +85,7 @@ class AITrainingScreen(Screen):
         self.eval_games = 100
         self.workers = DEFAULT_WORKERS
         self.benchmark_games = 2
-        self.max_steps = 120
+        self.max_steps = 250
         self.batch_size = 64
         self.rollout_batch_games = 16
         self.updates_per_rollout = 2

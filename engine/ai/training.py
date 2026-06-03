@@ -124,29 +124,29 @@ SEARCH_PRESETS = {
 FAST_SEARCH_PRESETS = {
     "beam": dict(
         TRAINING_AI_SEARCH,
-        beam_width=8,
-        max_sequence_depth=4,
-        response_branch_limit=2,
-        opponent_response_weight=0.35,
+        beam_width=10,
+        max_sequence_depth=5,
+        response_branch_limit=3,
+        opponent_response_weight=0.45,
     ),
     "hybrid": dict(
         TRAINING_AI_SEARCH_HYBRID,
-        beam_width=5,
-        max_turn_actions=16,
+        beam_width=8,
+        max_turn_actions=20,
         minimax_determinizations=1,
-        search_node_budget=450,
-        chance_branch_limit=2,
-        response_branch_limit=2,
-        opponent_response_weight=0.30,
+        search_node_budget=800,
+        chance_branch_limit=3,
+        response_branch_limit=3,
+        opponent_response_weight=0.45,
     ),
     "minimax": dict(
         TRAINING_AI_SEARCH_MINIMAX,
-        max_turn_actions=16,
+        max_turn_actions=20,
         minimax_determinizations=1,
-        search_node_budget=450,
-        chance_branch_limit=2,
-        response_branch_limit=2,
-        opponent_response_weight=0.30,
+        search_node_budget=800,
+        chance_branch_limit=3,
+        response_branch_limit=3,
+        opponent_response_weight=0.45,
     ),
 }
 
@@ -207,7 +207,7 @@ class PlayGameTask:
     opponent_key: str
     seed: int
     seat: int
-    max_steps: int = 160
+    max_steps: int = 300
     search_preset: str = "hybrid"
     search_quality: str = "standard"
 
@@ -220,7 +220,7 @@ class PlayMatchTask:
     weights_b: dict[str, float] | None
     seed: int
     seat: int
-    max_steps: int = 160
+    max_steps: int = 300
     search_preset: str = "hybrid"
     search_quality: str = "standard"
 
@@ -479,6 +479,7 @@ def _play_match_impl(
     finish_setup(state, tm, ais)
 
     failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
+    prev_player_idx: int | None = None
     for _ in range(max_steps):
         if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
             break
@@ -493,12 +494,16 @@ def _play_match_impl(
             continue
 
         player_idx = state.active_player_idx
+        # 切换玩家时重置失败计数，防止上一回合的失败累积
+        if prev_player_idx is not None and player_idx != prev_player_idx:
+            failed_signatures[player_idx].clear()
+        prev_player_idx = player_idx
         action = ais[player_idx].choose_action(state, player_idx)
         result = ais[player_idx]._apply_action_for_sim(state, player_idx, action)
         signature = (action.action, tuple(sorted(action.params.items())))
         if result is None or not result.success:
             failed_signatures[player_idx].add(signature)
-            if len(failed_signatures[player_idx]) >= 3:
+            if len(failed_signatures[player_idx]) >= 2:
                 force_end_turn(state, player_idx)
                 failed_signatures[player_idx].clear()
         else:
@@ -508,7 +513,41 @@ def _play_match_impl(
     if state.winner is not None:
         logical_winner = 0 if state.winner == deck_a_player_idx else 1
         return logical_winner, terminal_training_score(state, deck_a_player_idx)
-    return None, deck_a_ai.evaluate_state(state, deck_a_player_idx)
+    soft_winner = _determine_soft_winner(state)
+    state.winner = soft_winner
+    logical_winner = 0 if soft_winner == deck_a_player_idx else 1
+    return logical_winner, terminal_training_score(state, deck_a_player_idx)
+
+
+def _determine_soft_winner(state: GameState) -> int:
+    """当 max_steps 耗尽且无明确胜负时，根据游戏状态判定胜者。
+
+    优先级：奖品卡数 > 场上宝可梦数 > 剩余牌库数 > 当前行动方判负。
+    """
+    # 第一优先级：已拿取的奖品卡数量
+    p1_prizes = 6 - len(state.p1.prizes)
+    p2_prizes = 6 - len(state.p2.prizes)
+    if p1_prizes > p2_prizes:
+        return 0
+    if p2_prizes > p1_prizes:
+        return 1
+
+    # 第二优先级：场上的宝可梦数量（含战斗区）
+    p1_pokemon = state.p1.bench_count() + (1 if state.p1.active else 0)
+    p2_pokemon = state.p2.bench_count() + (1 if state.p2.active else 0)
+    if p1_pokemon > p2_pokemon:
+        return 0
+    if p2_pokemon > p1_pokemon:
+        return 1
+
+    # 第三优先级：剩余牌库数量（越多越有利）
+    if len(state.p1.deck) > len(state.p2.deck):
+        return 0
+    if len(state.p2.deck) > len(state.p1.deck):
+        return 1
+
+    # 兜底：当前行动方略微不利（对方时间耗尽）
+    return 1 - state.active_player_idx
 
 
 def terminal_training_score(state: GameState, candidate_player_idx: int) -> float:
@@ -544,6 +583,7 @@ def _score_game(winner: int | None, eval_score: float) -> tuple[float, dict[str,
         score -= 10000.0
     else:
         local["draws"] = 1
+        score -= 2000.0  # 惩罚：平局比慢慢输掉更差
     return score, local
 
 
@@ -809,7 +849,7 @@ def _rate(stats: dict[str, Any], key: str = "wins") -> float:
     if games <= 0:
         return 0.0
     if key == "points":
-        points = int(stats.get("wins", 0)) + int(stats.get("draws", 0)) * 0.5
+        points = int(stats.get("wins", 0)) + int(stats.get("draws", 0)) * 0.25
         return round(points / games, 4)
     return round(int(stats.get(key, 0)) / games, 4)
 
@@ -827,8 +867,17 @@ def _finalize_stats(stats: dict[str, Any], score_total: float = 0.0) -> dict[str
     }
     if games > 0:
         result["win_rate"] = round(result["wins"] / games, 4)
-        result["point_rate"] = round((result["wins"] + result["draws"] * 0.5) / games, 4)
+        result["point_rate"] = round((result["wins"] + result["draws"] * 0.25) / games, 4)
         result["avg_score"] = round(score_total / games, 3)
+        draw_rate = round(result["draws"] / games, 4)
+        if draw_rate > 0.20:
+            import logging
+            logging.getLogger("ai.training").warning(
+                "平局率过高: %.1f%% (%d/%d 局)，可能 max_steps 不足或 AI 搜索质量过低",
+                draw_rate * 100,
+                result["draws"],
+                games,
+            )
     return result
 
 
