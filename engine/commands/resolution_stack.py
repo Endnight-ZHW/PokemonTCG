@@ -5,7 +5,7 @@ effect continues — modeling the nested trigger tree correctly.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from engine.commands.base import CommandResult
 
@@ -86,7 +86,9 @@ class ResolutionStack:
 
             if cr.pending_choice:
                 # Pause for UI input — store remaining stack for resume
-                result.pending_choice = cr.pending_choice
+                result.pending_choice = self._wrap_pending_choice(
+                    cr.pending_choice, player_idx, source_slot
+                )
                 return result
 
             # Side effects are already on the stack (pushed via ctx.push_side
@@ -105,3 +107,96 @@ class ResolutionStack:
 
     def clear(self):
         self._stack.clear()
+
+    # ---- Pending continuation helpers ---------------------------------
+
+    def _wrap_pending_choice(self, req, player_idx: int, source_slot: str):
+        """Resume the remaining command stack after a pending choice resolves.
+
+        A ResolutionStack can pause in the middle of a multi-effect card, for
+        example "choose a Pokemon, attach an energy, then draw 2". The old
+        callback resolved only the choice effect and then dropped the remaining
+        commands because the local stack was no longer reachable. Wrapping the
+        callback keeps the rest of the effect chain alive for UI, AI simulation,
+        and training.
+        """
+        if req is None or getattr(req, "_resolution_stack_wrapped", False):
+            return req
+
+        original_callback = req.callback
+        setattr(req, "_resolution_stack_wrapped", True)
+
+        def chained(choice):
+            original_result = (
+                original_callback(choice) if original_callback else None
+            )
+            return self._continue_after_callback_result(
+                original_result, player_idx, source_slot
+            )
+
+        req.callback = chained
+        return req
+
+    def _continue_after_callback_result(
+        self,
+        original_result,
+        player_idx: int,
+        source_slot: str,
+    ):
+        from engine.game_state import ActionRequest, ActionResult
+
+        if isinstance(original_result, ActionRequest):
+            return self._wrap_pending_choice(
+                original_result, player_idx, source_slot
+            )
+
+        if isinstance(original_result, ActionResult):
+            if original_result.pending_action:
+                original_result.pending_action = self._wrap_pending_choice(
+                    original_result.pending_action, player_idx, source_slot
+                )
+                return original_result
+            if not original_result.success:
+                return original_result
+
+        if not self._stack:
+            return original_result
+
+        continuation = self._to_action_result(
+            self.resume_after_choice(player_idx, source_slot)
+        )
+        if isinstance(original_result, ActionResult):
+            return self._merge_action_results(original_result, continuation)
+        return continuation
+
+    @staticmethod
+    def _to_action_result(rr: ResolutionResult):
+        from engine.game_state import ActionResult
+
+        return ActionResult(
+            success=rr.success,
+            log_message=" ".join(rr.log_messages),
+            damage_dealt=rr.damage_dealt,
+            cards_drawn=rr.cards_drawn,
+            pokemon_ko=rr.pokemon_ko,
+            status_applied=rr.status_applied,
+            pending_action=rr.pending_choice,
+            attack_failed=rr.attack_failed,
+        )
+
+    @staticmethod
+    def _merge_action_results(first, second):
+        if second.log_message:
+            first.log_message = (
+                f"{first.log_message} {second.log_message}".strip()
+                if first.log_message else second.log_message
+            )
+        first.success = first.success and second.success
+        first.damage_dealt += second.damage_dealt
+        first.cards_drawn.extend(second.cards_drawn)
+        first.pokemon_ko.extend(second.pokemon_ko)
+        first.status_applied.extend(second.status_applied)
+        first.attack_failed = first.attack_failed or second.attack_failed
+        if second.pending_action:
+            first.pending_action = second.pending_action
+        return first

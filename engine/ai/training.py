@@ -27,6 +27,7 @@ from engine.ai.challenge_ai import AIConfig, create_challenge_ai
 from engine.ai.profiles import (
     DEFAULT_POLICY_PATH,
     DECK_AI_PROFILES,
+    MIN_GLOBAL_POINT_RATE,
     POLICY_VERSION,
     load_policy_weights,
     merged_profile_weights,
@@ -89,25 +90,25 @@ TRAINING_AI_SEARCH = {
     "opponent_response_weight": 0.55,
     "deterministic_search": True,
     "search_algorithm": "beam",
-    "skip_effect_dry_run": True,
+    "skip_effect_dry_run": False,
 }
 
 TRAINING_AI_SEARCH_MINIMAX = {
     "thinking_time_seconds": 0.0,
-    "beam_width": 8,
+    "beam_width": 6,
     "max_sequence_depth": 4,
-    "max_turn_actions": 24,
-    "coin_sample_count": 4,
-    "chance_branch_limit": 3,
-    "opponent_response_actions": 6,
-    "response_branch_limit": 3,
+    "max_turn_actions": 18,
+    "coin_sample_count": 3,
+    "chance_branch_limit": 2,
+    "opponent_response_actions": 4,
+    "response_branch_limit": 2,
     "opponent_response_weight": 0.45,
     "deterministic_search": True,
     "search_algorithm": "minimax",
     "minimax_max_depth": 2,
-    "minimax_determinizations": 2,
-    "search_node_budget": 1200,
-    "skip_effect_dry_run": True,
+    "minimax_determinizations": 1,
+    "search_node_budget": 350,
+    "skip_effect_dry_run": False,
 }
 
 TRAINING_AI_SEARCH_HYBRID = dict(
@@ -128,25 +129,31 @@ FAST_SEARCH_PRESETS = {
         max_sequence_depth=5,
         response_branch_limit=3,
         opponent_response_weight=0.45,
+        skip_effect_dry_run=True,
     ),
     "hybrid": dict(
         TRAINING_AI_SEARCH_HYBRID,
-        beam_width=8,
-        max_turn_actions=20,
+        beam_width=6,
+        max_turn_actions=18,
+        max_sequence_depth=8,
+        coin_sample_count=8,
         minimax_determinizations=1,
-        search_node_budget=800,
-        chance_branch_limit=3,
-        response_branch_limit=3,
-        opponent_response_weight=0.45,
+        search_node_budget=180,
+        chance_branch_limit=4,
+        opponent_response_actions=8,
+        response_branch_limit=0,
+        opponent_response_weight=0.55,
+        skip_effect_dry_run=False,
     ),
     "minimax": dict(
         TRAINING_AI_SEARCH_MINIMAX,
-        max_turn_actions=20,
+        max_turn_actions=16,
         minimax_determinizations=1,
-        search_node_budget=800,
-        chance_branch_limit=3,
-        response_branch_limit=3,
+        search_node_budget=180,
+        chance_branch_limit=2,
+        response_branch_limit=2,
         opponent_response_weight=0.45,
+        skip_effect_dry_run=True,
     ),
 }
 
@@ -347,6 +354,7 @@ def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int,
     search_kwargs = presets.get(search_preset, TRAINING_AI_SEARCH_HYBRID)
     config = AIConfig(
         **search_kwargs,
+        deck_key=deck_key,
         random_seed=seed,
         policy_path=None,
         policy_weights=weights,
@@ -647,8 +655,7 @@ def train_deck(
 
     target_games = max(1, int(games))
     rng = random.Random(seed)
-    profile = DECK_AI_PROFILES[deck_key]
-    base_weights = clamp_weights(merged_profile_weights(profile))
+    base_weights = _training_base_weights(deck_key)
     population = max(1, min(10, target_games))
     games_played = 0
     generation = 0
@@ -842,6 +849,13 @@ def _official_or_profile_weights(deck_key: str) -> dict[str, float]:
     return clamp_weights(merged_profile_weights(profile, load_policy_weights(deck_key, DEFAULT_POLICY_PATH)))
 
 
+def _training_base_weights(deck_key: str) -> dict[str, float]:
+    """Continue from the accepted deployed policy, falling back to the profile."""
+    profile = DECK_AI_PROFILES[deck_key]
+    deployed = load_policy_weights(deck_key, DEFAULT_POLICY_PATH)
+    return clamp_weights(merged_profile_weights(profile, deployed))
+
+
 def _rate(stats: dict[str, Any], key: str = "wins") -> float:
     games = int(stats.get("games") or 0)
     if games <= 0:
@@ -932,8 +946,8 @@ def benchmark_policies(
 ) -> dict[str, Any]:
     """Run diagnostic policy benchmarks for UI visualization.
 
-    These games are deliberately separate from training acceptance.  They never
-    decide whether a candidate policy is accepted.
+    These games are deliberately separate from the optimizer.  A small
+    before/after guard later rejects candidates that clearly regress here.
     """
     deck_keys = [key for key in policies if key in DECK_SPECS]
     target_games = max(0, int(games_per_matchup))
@@ -1068,6 +1082,55 @@ def benchmark_policies(
     return benchmark
 
 
+def apply_benchmark_acceptance_guard(policies: dict[str, Any], benchmark: dict[str, Any]) -> None:
+    """Mark policies rejected when holdout benchmarks show weak or regressed play."""
+    before_after = (benchmark or {}).get("before_after") or {}
+    rankings = {
+        row.get("deck"): row
+        for row in ((benchmark or {}).get("rankings") or [])
+        if isinstance(row, dict)
+    }
+    for deck_key, policy in policies.items():
+        if not isinstance(policy, dict):
+            continue
+        row = before_after.get(deck_key)
+        games = 0
+        delta_point_rate = 0.0
+        delta_win_rate = 0.0
+        if isinstance(row, dict):
+            try:
+                games = int(row.get("games") or 0)
+                delta_point_rate = float(row.get("delta_point_rate", 0.0))
+                delta_win_rate = float(row.get("delta_win_rate", 0.0))
+            except (TypeError, ValueError):
+                continue
+
+        rejection_reason: str | None = None
+        if games > 0 and (delta_point_rate < -0.0001 or delta_win_rate < -0.0001):
+            rejection_reason = "benchmark_regressed"
+
+        ranking = rankings.get(deck_key)
+        if isinstance(ranking, dict):
+            try:
+                ranking_games = int(ranking.get("games") or 0)
+                point_rate = float(ranking.get("point_rate", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if (
+                ranking_games > 0
+                and point_rate < MIN_GLOBAL_POINT_RATE
+                and delta_point_rate <= 0.0001
+                and rejection_reason is None
+            ):
+                rejection_reason = "benchmark_low_global_rate"
+
+        if rejection_reason is None:
+            continue
+        metadata = policy.setdefault("metadata", {})
+        metadata["accepted"] = False
+        metadata["rejection_reason"] = rejection_reason
+
+
 def _open_progress_writer(path: str | None):
     if not path:
         return None
@@ -1165,6 +1228,7 @@ def run_training(config: TrainingConfig, progress_callback: ProgressCallback | N
                 progress_callback=emit,
                 task_runner=task_runner,
             )
+            apply_benchmark_acceptance_guard(policies, benchmark)
 
         payload = {
             "version": POLICY_VERSION,

@@ -64,12 +64,21 @@ class DealDamage:
                           target_slot="opponent_active")
 
         elif self.target == "self":
-            active = ctx.player.active
+            slot = ctx.source_slot
+            active = ctx.player.get_pokemon(slot) or ctx.player.active
             if active:
                 counters = damage // DAMAGE_PER_COUNTER
                 active.damage_counters += counters
                 result.damage_dealt = damage
                 result.log_message = f"{active.card.name}受到了{damage}点伤害。"
+                if active.is_knocked_out:
+                    ko_slots: list[str] = []
+                    from engine.effects.damage_effects import _handle_effect_ko_if_needed
+
+                    if ctx.player.get_pokemon(slot) is None:
+                        slot = "active"
+                    _handle_effect_ko_if_needed(ctx.state, ctx.player_idx, slot, active, ko_slots)
+                    result.pokemon_ko.extend(ko_slots)
 
         elif self.target == "any_opponent":
             opponent = ctx.opponent

@@ -1,7 +1,80 @@
 """Damage-related effect handlers."""
 import random
 from config import DAMAGE_PER_COUNTER
+from engine.enums import TurnPhase
 from engine.game_state import GameState, ActionResult, ActionRequest
+
+
+def _discard_pokemon_for_effect(state: GameState, player_idx: int, slot: str):
+    """Discard a Pokemon from play and unregister its event modifiers."""
+    player = state.get_player(player_idx)
+    pokemon = player.get_pokemon(slot)
+    if pokemon is None:
+        return None
+    try:
+        from engine.commands.modifier_registration import unregister_pokemon_modifiers
+
+        unregister_pokemon_modifiers(
+            pokemon.card.api_id,
+            slot,
+            event_bus=state.event_bus,
+        )
+    except Exception:
+        pass
+    state.discard_pokemon(player_idx, slot)
+    return pokemon
+
+
+def _award_prizes_for_effect_ko(state: GameState, knocked_player_idx: int, pokemon) -> None:
+    prize_taker_idx = 1 - knocked_player_idx
+    prize_taker = state.get_player(prize_taker_idx)
+    for _ in range(getattr(pokemon.card, "prize_value", 1)):
+        if prize_taker.prizes:
+            prize_taker.take_prize()
+            state._log(
+                f"{prize_taker.name}获得了奖品卡！"
+                f"（剩余{len(prize_taker.prizes)}张）"
+            )
+
+
+def _set_promotion_or_game_over(state: GameState, player_idx: int) -> None:
+    player = state.get_player(player_idx)
+    opponent = state.get_player(1 - player_idx)
+    if player.active is not None:
+        return
+    if not player.has_any_pokemon_in_play():
+        state.winner = 1 - player_idx
+        state.phase = TurnPhase.GAME_OVER
+        state._log(f"{opponent.name}获胜——对手场上没有宝可梦了！")
+        return
+    state.pending_promotion_player = player_idx
+
+
+def _handle_effect_ko_if_needed(
+    state: GameState,
+    player_idx: int,
+    slot: str,
+    pokemon,
+    ko_slots: list[str],
+) -> None:
+    if pokemon is None or not pokemon.is_knocked_out:
+        return
+    knocked = _discard_pokemon_for_effect(state, player_idx, slot)
+    if knocked is None:
+        return
+    ko_slots.append(f"p{player_idx}_{slot}")
+    state._log(f"{state.get_player(player_idx).name}的{knocked.card.name}被击倒了！")
+    _award_prizes_for_effect_ko(state, player_idx, knocked)
+    from engine.rules_validator import check_win_condition
+
+    winner = check_win_condition(state)
+    if winner is not None:
+        state.winner = winner
+        state.phase = TurnPhase.GAME_OVER
+        state._log(f"{state.get_player(winner).name}获胜！")
+        return
+    if slot == "active":
+        state.pending_promotion_player = player_idx
 
 
 def _check_effect_damage_prevented(defender, state) -> bool:
@@ -119,11 +192,14 @@ def _handle_bench_damage(state, player, opponent, params):
 
 def _handle_damage_counter_self(state, player, params, source_slot):
     amount = params.get("amount", 0)
-    target = player.active
+    player_idx = 0 if state.p1 is player else 1
+    target = player.get_pokemon(source_slot)
+    ko_slots: list[str] = []
     if target:
         target.damage_counters += amount // DAMAGE_PER_COUNTER
         state._log(f"{target.card.name}对自己放置了{amount}点伤害。")
-    return ActionResult(True, f"Self damage counters: {amount}.")
+        _handle_effect_ko_if_needed(state, player_idx, source_slot, target, ko_slots)
+    return ActionResult(True, f"Self damage counters: {amount}.", pokemon_ko=ko_slots)
 
 
 def _handle_damage_per_prize(state, player, opponent, params):
@@ -324,6 +400,7 @@ def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, sour
     target = params.get("target", "opponent_any")
 
     player = state.get_player(player_idx)
+    ko_slots: list[str] = []
 
     # Collect all opponent's Pokemon as targets
     targets = []
@@ -340,12 +417,16 @@ def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, sour
         # Place damage counters
         target_poke.damage_counters += counters
         state._log(f"在{target_poke.card.name}身上放置了{counters}个伤害指示物。")
+        _handle_effect_ko_if_needed(state, 1 - player_idx, slot_name, target_poke, ko_slots)
+        if state.phase == TurnPhase.GAME_OVER:
+            return
 
         # Then self KO: discard this Pokemon and all attachments
-        source = player.get_pokemon(source_slot)
+        source = _discard_pokemon_for_effect(state, player_idx, source_slot)
         if source:
-            state.discard_pokemon(player_idx, source_slot)
             state._log(f"{source.card.name}被放置于弃牌区。")
+            if source_slot == "active":
+                _set_promotion_or_game_over(state, player_idx)
 
     if len(targets) == 1:
         _do_mystic_comet(*targets[0])
@@ -356,8 +437,9 @@ def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, sour
                 for slot_name, target_poke in targets:
                     if target_poke.card.api_id == card.api_id:
                         _do_mystic_comet(slot_name, target_poke)
-                        break
+                        return ActionResult(True, "神秘彗星结算完毕。", pokemon_ko=list(ko_slots))
                 break
+            return ActionResult(True, "神秘彗星没有选择目标。")
 
         target_cards = [t[1].card for t in targets]
 
@@ -373,7 +455,7 @@ def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, sour
                                 callback=comet_callback,
                             ))
 
-    return ActionResult(True, "神秘彗星结算完毕。")
+    return ActionResult(True, "神秘彗星结算完毕。", pokemon_ko=list(ko_slots))
 
 
 def _handle_mill_and_damage_per_energy(state, player, opponent, params):
@@ -622,11 +704,10 @@ def _handle_damage_per_self_damage(state, player, opponent, params):
     Used by 老翁龙 逆鳞: 60 + self damage counters × 10."""
     base = params.get("base", 60)
     per_counter = params.get("per_counter", 10)
-    per_counter_in_dmg = per_counter // DAMAGE_PER_COUNTER  # Convert HP to counter units
 
     source = player.active
     if source:
-        bonus = source.damage_counters * per_counter_in_dmg
+        bonus = source.damage_counters * per_counter
         total = base + bonus
 
         if opponent.active:

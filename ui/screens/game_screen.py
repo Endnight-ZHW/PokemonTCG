@@ -3675,6 +3675,8 @@ class GameScreen(Screen):
             self._queue_ai_pending_action(result)
         elif isinstance(result, ActionResult):
             self._show_result(result, attacker_player_idx=self.ai_player_idx)
+            if result.pending_action:
+                self._queue_ai_pending_action(result.pending_action)
 
         self._pending_bench_select = None
         self._selecting_bench_targets = None

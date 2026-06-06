@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from concurrent.futures.process import BrokenProcessPool
+from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -17,18 +18,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.card_models import AbilityDef, AttackDef, Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK, expand_deck
-from engine.ai import AIAction, AIConfig, ChallengeAI, create_challenge_ai, DECK_AI_PROFILES
+from engine.ai import AIAction, AIChoice, AIConfig, ChallengeAI, create_challenge_ai, DECK_AI_PROFILES
 from engine.ai.profiles import load_policy_weights
 from engine.ai.training import (
     PlayGameTask,
     TrainingTaskRunner,
     TrainingConfig,
     _run_play_game_tasks,
+    apply_benchmark_acceptance_guard,
     benchmark_policies,
     clamp_weight,
     evaluate_policy,
     play_game,
     play_match,
+    _make_ai,
     run_training,
     train_deck,
 )
@@ -36,6 +39,7 @@ from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.player_state import PokemonInPlay
 from engine.rules_validator import can_play_basic, can_play_stadium, can_use_ability
+from engine.snapshot import snapshot_state
 from engine.turn_manager import TurnManager
 
 
@@ -143,6 +147,48 @@ class ChallengeAITests(unittest.TestCase):
             lightning_ai._card_value(state, 1, greninja),
         )
 
+    def test_lightning_setup_keeps_pikachu_on_bench_when_pivot_available(self):
+        state = GameState()
+        state.phase = TurnPhase.SETUP
+        state.p1.hand = [
+            CardRegistry.get("svl-pikaex"),
+            CardRegistry.get("svl-thun"),
+            CardRegistry.get("svl-emol"),
+        ]
+
+        action = create_challenge_ai("lightning", AIConfig(policy_path=None))._choose_setup_action(state, 0)
+
+        self.assertNotEqual(action.params.get("hand_idx"), 0)
+        self.assertEqual(action.params.get("target"), "active")
+
+    def test_fighting_setup_keeps_riolu_on_bench_when_pivot_available(self):
+        state = GameState()
+        state.phase = TurnPhase.SETUP
+        state.p1.hand = [
+            CardRegistry.get("svf-rio"),
+            CardRegistry.get("svf-farf"),
+            CardRegistry.get("svf-hawl"),
+        ]
+
+        action = create_challenge_ai("fighting", AIConfig(policy_path=None))._choose_setup_action(state, 0)
+
+        self.assertNotEqual(action.params.get("hand_idx"), 0)
+        self.assertEqual(action.params.get("target"), "active")
+
+    def test_psychic_setup_keeps_natu_and_latios_on_bench_when_pivot_available(self):
+        state = GameState()
+        state.phase = TurnPhase.SETUP
+        state.p1.hand = [
+            CardRegistry.get("sv1-107"),
+            CardRegistry.get("sv1-111"),
+            CardRegistry.get("sv1-113"),
+        ]
+
+        action = create_challenge_ai("psychic", AIConfig(policy_path=None))._choose_setup_action(state, 0)
+
+        self.assertEqual(action.params.get("hand_idx"), 2)
+        self.assertEqual(action.params.get("target"), "active")
+
     def test_policy_file_failures_fall_back_to_profile_weights(self):
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
             fh.write("{bad json")
@@ -184,6 +230,275 @@ class ChallengeAITests(unittest.TestCase):
             self.assertEqual(load_policy_weights("fire", policy_path)["core_in_play"], 111.0)
         finally:
             os.unlink(policy_path)
+
+    def test_policy_loader_rejects_benchmark_regression(self):
+        payload = {
+            "version": 1,
+            "policies": {
+                "lightning": {
+                    "weights": {"core_in_play": 120.0},
+                    "eval": {
+                        "games": 4,
+                        "baseline": {"wins": 1, "losses": 3, "draws": 0, "avg_score": -500.0},
+                        "trained": {"wins": 3, "losses": 1, "draws": 0, "avg_score": 500.0},
+                    },
+                    "metadata": {"accepted": True},
+                },
+            },
+            "benchmark": {
+                "before_after": {
+                    "lightning": {
+                        "games": 4,
+                        "delta_win_rate": -0.25,
+                        "delta_point_rate": -0.25,
+                    },
+                },
+            },
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+            json.dump(payload, fh)
+            policy_path = fh.name
+        try:
+            self.assertEqual(load_policy_weights("lightning", policy_path), {})
+        finally:
+            os.unlink(policy_path)
+
+    def test_policy_loader_rejects_low_global_benchmark_without_gain(self):
+        payload = {
+            "version": 1,
+            "policies": {
+                "lightning": {
+                    "weights": {"core_in_play": 120.0},
+                    "eval": {
+                        "games": 4,
+                        "baseline": {"wins": 1, "losses": 3, "draws": 0, "avg_score": -500.0},
+                        "trained": {"wins": 3, "losses": 1, "draws": 0, "avg_score": 500.0},
+                    },
+                    "metadata": {"accepted": True},
+                },
+            },
+            "benchmark": {
+                "before_after": {
+                    "lightning": {
+                        "games": 4,
+                        "delta_win_rate": 0.0,
+                        "delta_point_rate": 0.0,
+                    },
+                },
+                "rankings": [
+                    {
+                        "deck": "lightning",
+                        "games": 28,
+                        "point_rate": 0.25,
+                    },
+                ],
+            },
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+            json.dump(payload, fh)
+            policy_path = fh.name
+        try:
+            self.assertEqual(load_policy_weights("lightning", policy_path), {})
+        finally:
+            os.unlink(policy_path)
+
+    def test_benchmark_acceptance_guard_rejects_low_global_rate(self):
+        policies = {
+            "colorless": {
+                "weights": {"core_in_play": 80.0},
+                "metadata": {"accepted": True},
+            },
+        }
+        benchmark = {
+            "before_after": {
+                "colorless": {
+                    "games": 4,
+                    "delta_win_rate": 0.0,
+                    "delta_point_rate": 0.0,
+                },
+            },
+            "rankings": [
+                {
+                    "deck": "colorless",
+                    "games": 28,
+                    "point_rate": 0.25,
+                },
+            ],
+        }
+
+        apply_benchmark_acceptance_guard(policies, benchmark)
+
+        metadata = policies["colorless"]["metadata"]
+        self.assertFalse(metadata["accepted"])
+        self.assertEqual(metadata["rejection_reason"], "benchmark_low_global_rate")
+
+    def test_hand_cost_selection_avoids_core_cards(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.active_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(CardRegistry.get("svf-rio"))
+        lucario = CardRegistry.get("svf-luca")
+        potion = CardRegistry.get("svf-potion")
+        off_plan = CardRegistry.get("sv2-delib")
+        state.p1.hand = [lucario, potion, off_plan]
+        req = ActionRequest(
+            request_type="search_deck",
+            player=0,
+            prompt="选择1张手牌放回牌库底部，然后抽到5张（凰檗）",
+            min_select=1,
+            max_select=1,
+            from_zone="hand",
+            card_list=list(state.p1.hand),
+        )
+
+        choice = create_challenge_ai("fighting", AIConfig(policy_path=None)).resolve_pending_action(state, req)
+
+        self.assertEqual(len(choice.selected_cards), 1)
+        self.assertNotEqual(choice.selected_cards[0].api_id, lucario.api_id)
+
+    def test_energy_switch_moves_from_single_source_to_better_target(self):
+        energy_switch = CardRegistry.get("svf-ensw2")
+        energy = CardRegistry.get("sv1-ener-6")
+        passimian = CardRegistry.get("svf-pass")
+        lucario = CardRegistry.get("svf-luca")
+        opponent = CardRegistry.get("sv2-delib")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.active_player_idx = 0
+        state.first_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(passimian)
+        state.p1.active.energy_cards = [energy]
+        state.p1.bench[0] = PokemonInPlay(lucario)
+        state.p1.hand = [energy_switch]
+        state.p1.deck = [energy] * 5
+        state.p2.active = PokemonInPlay(opponent)
+        state.p2.deck = [opponent] * 5
+        state.p1.prizes = [opponent] * 6
+        state.p2.prizes = [opponent] * 6
+
+        ai = create_challenge_ai("fighting", AIConfig(policy_path=None))
+        result = ai._apply_action_for_sim(
+            state,
+            0,
+            AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}),
+        )
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(len(state.p1.active.energy_cards), 0)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
+
+    def test_search_fallback_takes_available_ko_before_ending_turn(self):
+        energy = CardRegistry.get("sv1-ener-6")
+        passimian = CardRegistry.get("svf-pass")
+        opponent = CardRegistry.get("sv2-delib")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.active_player_idx = 0
+        state.first_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(passimian)
+        state.p1.active.energy_cards = [energy, energy]
+        state.p2.active = PokemonInPlay(opponent)
+        state.p2.active.damage_counters = 2
+        state.p1.prizes = [opponent] * 6
+        state.p2.prizes = [opponent] * 6
+        ai = create_challenge_ai("fighting", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 0)
+
+        selected = ai._validated_or_fallback_action(
+            state,
+            0,
+            AIAction(PlayerAction.END_TURN, {}, terminal=True),
+            actions,
+        )
+
+        self.assertEqual(selected.action, PlayerAction.DECLARE_ATTACK)
+        self.assertEqual(selected.params.get("attack_idx"), 0)
+
+    def test_search_fallback_uses_productive_draw_attack_before_ending_turn(self):
+        energy = CardRegistry.get("svi-jete")
+        indeedee = CardRegistry.get("svi-inde")
+        opponent = CardRegistry.get("sv2-delib")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.active_player_idx = 0
+        state.first_player_idx = 1
+        state.turn_number = 4
+        state.p1.active = PokemonInPlay(indeedee)
+        state.p1.active.energy_cards = [energy]
+        state.p1.hand = []
+        state.p1.deck = [opponent] * 6
+        state.p2.active = PokemonInPlay(opponent)
+        state.p1.prizes = [opponent] * 6
+        state.p2.prizes = [opponent] * 6
+        ai = create_challenge_ai("colorless", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 0)
+
+        selected = ai._validated_or_fallback_action(
+            state,
+            0,
+            AIAction(PlayerAction.END_TURN, {}, terminal=True),
+            actions,
+        )
+
+        self.assertEqual(selected.action, PlayerAction.DECLARE_ATTACK)
+        self.assertEqual(selected.params.get("attack_idx"), 0)
+
+    def test_colorless_search_prioritizes_tandemaus_for_maushold_line(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.active_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-skwv"))
+        state.p1.deck = [
+            CardRegistry.get("svi-inde"),
+            CardRegistry.get("svi-aipo"),
+            CardRegistry.get("svi-tand"),
+        ]
+        req = ActionRequest(
+            request_type="search_deck",
+            player=0,
+            prompt="search basic pokemon",
+            min_select=1,
+            max_select=1,
+            card_list=list(state.p1.deck),
+        )
+
+        choice = create_challenge_ai("colorless", AIConfig(policy_path=None)).resolve_pending_action(state, req)
+
+        self.assertEqual(choice.selected_cards[0].api_id, "svi-tand")
+
+    def test_basic_energy_discard_attach_matches_any_basic_energy(self):
+        energy = CardRegistry.get("sv1-ener-6")
+        hawlucha = CardRegistry.get("svf-hawl")
+        lucario = CardRegistry.get("svf-luca")
+        opponent = CardRegistry.get("sv2-delib")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.active_player_idx = 0
+        state.first_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(hawlucha)
+        state.p1.active.energy_cards = [energy]
+        state.p1.bench[0] = PokemonInPlay(lucario)
+        state.p1.discard = [energy, energy]
+        state.p1.deck = [energy] * 5
+        state.p2.active = PokemonInPlay(opponent)
+        state.p2.deck = [opponent] * 5
+        state.p1.prizes = [opponent] * 6
+        state.p2.prizes = [opponent] * 6
+
+        ai = create_challenge_ai("fighting", AIConfig(policy_path=None))
+        result = ai._apply_action_for_sim(
+            state,
+            0,
+            AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True),
+        )
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 2)
 
     def test_training_script_small_run_writes_policy_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -372,6 +687,21 @@ class ChallengeAITests(unittest.TestCase):
 
         self.assertEqual(seen_batches, [["minimax", "minimax"], ["minimax", "minimax"]])
 
+    def test_training_fast_hybrid_matches_debuggable_search_quality(self):
+        ai = _make_ai("lightning", {}, 17, search_preset="hybrid", search_quality="fast")
+
+        self.assertEqual(ai.config.deck_key, "lightning")
+        self.assertEqual(ai.config.search_algorithm, "hybrid")
+        self.assertEqual(ai.config.beam_width, 6)
+        self.assertEqual(ai.config.max_turn_actions, 18)
+        self.assertEqual(ai.config.max_sequence_depth, 8)
+        self.assertEqual(ai.config.coin_sample_count, 8)
+        self.assertEqual(ai.config.opponent_response_actions, 8)
+        self.assertEqual(ai.config.response_branch_limit, 0)
+        self.assertEqual(ai.config.opponent_response_weight, 0.55)
+        self.assertEqual(ai.config.chance_branch_limit, 4)
+        self.assertFalse(ai.config.skip_effect_dry_run)
+
     def test_beam_coin_branches_are_deterministic_and_weighted(self):
         ai = ChallengeAI(AIConfig(policy_path=None, chance_branch_limit=4))
         branches = ai._coin_outcome_branches(1, False)
@@ -419,6 +749,122 @@ class ChallengeAITests(unittest.TestCase):
 
         self.assertEqual(calls, [(True,), (False,)])
         self.assertEqual(value, 0.0)
+
+    def test_minimax_iterative_deepening_uses_deepest_complete_result(self):
+        from engine.ai.minimax import MinimaxSearcher
+
+        state = self._simple_public_state()
+        shallow = AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": 0, "target": "bench_0"})
+        deep = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        ai = ChallengeAI(AIConfig(policy_path=None, deterministic_search=True))
+        searcher = MinimaxSearcher(ai)
+        seen_node_counts = []
+
+        def fake_depth(self, state, player_idx, root_actions, max_depth, deadline, determinizations):
+            seen_node_counts.append(self.nodes_searched)
+            self.nodes_searched = 99
+            if max_depth == 1:
+                return SimpleNamespace(action=shallow, score=1000.0, complete=True)
+            return SimpleNamespace(action=deep, score=-100.0, complete=True)
+
+        with patch.object(MinimaxSearcher, "_search_at_depth", new=fake_depth):
+            result = searcher.search(
+                state,
+                1,
+                float("inf"),
+                max_depth=2,
+                determinizations=1,
+                root_actions=[shallow, deep],
+            )
+
+        self.assertIs(result, deep)
+        self.assertEqual(seen_node_counts, [0, 0])
+
+    def test_minimax_uses_partial_result_when_first_depth_is_incomplete(self):
+        from engine.ai.minimax import MinimaxSearcher
+
+        state = self._simple_public_state()
+        partial = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
+        end_turn = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        ai = ChallengeAI(AIConfig(policy_path=None, deterministic_search=True))
+
+        def fake_depth(self, state, player_idx, root_actions, max_depth, deadline, determinizations):
+            return SimpleNamespace(action=partial, score=10.0, complete=False)
+
+        with patch.object(MinimaxSearcher, "_search_at_depth", new=fake_depth):
+            result = MinimaxSearcher(ai).search(
+                state,
+                1,
+                float("inf"),
+                max_depth=2,
+                determinizations=1,
+                root_actions=[partial, end_turn],
+            )
+
+        self.assertIs(result, partial)
+
+    def test_minimax_min_node_orders_opponent_threats_first(self):
+        from engine.ai.minimax import MinimaxSearcher
+
+        state = self._simple_public_state()
+        ai = ChallengeAI(AIConfig(policy_path=None))
+        actions = [
+            AIAction(PlayerAction.END_TURN, {}, terminal=True),
+            AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True),
+            AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": 0, "target": "bench_0"}),
+        ]
+
+        ordered = [action for _idx, action in MinimaxSearcher(ai)._order_actions_min(state, 1, actions)]
+
+        self.assertEqual(ordered[0].action, PlayerAction.DECLARE_ATTACK)
+        self.assertEqual(ordered[-1].action, PlayerAction.END_TURN)
+
+    def test_minimax_rejects_failed_root_action(self):
+        from engine.ai.minimax import MinimaxSearcher
+
+        state = self._simple_public_state()
+        bad = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 99})
+        good = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        ai = ChallengeAI(AIConfig(policy_path=None, deterministic_search=True))
+
+        def fake_apply(sim, player_idx, action):
+            if action is bad:
+                return ActionResult(False, "bad action")
+            sim.winner = player_idx
+            sim.phase = TurnPhase.GAME_OVER
+            return ActionResult(True, "ok")
+
+        with patch.object(ai, "_apply_action_for_sim", side_effect=fake_apply):
+            result = MinimaxSearcher(ai).search(
+                state,
+                1,
+                float("inf"),
+                max_depth=1,
+                determinizations=1,
+                root_actions=[bad, good],
+            )
+
+        self.assertIs(result, good)
+
+    def test_hybrid_choose_action_does_not_mutate_real_state(self):
+        state = self._simple_public_state()
+        before = snapshot_state(state)
+        ai = ChallengeAI(AIConfig(
+            policy_path=None,
+            deterministic_search=True,
+            search_algorithm="hybrid",
+            beam_width=4,
+            max_turn_actions=8,
+            minimax_max_depth=2,
+            minimax_determinizations=1,
+            search_node_budget=30,
+            skip_effect_dry_run=True,
+        ))
+
+        action = ai.choose_action(state, 1)
+
+        self.assertIsInstance(action, AIAction)
+        self.assertEqual(before, snapshot_state(state))
 
     def test_budgeted_hybrid_search_returns_quickly(self):
         state = self._simple_public_state()
@@ -489,6 +935,7 @@ class ChallengeAITests(unittest.TestCase):
             return root_actions[0]
 
         with patch.object(ai, "legal_actions", return_value=actions), \
+                patch.object(ai, "_action_executes_successfully", return_value=True), \
                 patch("engine.ai.minimax.MinimaxSearcher.search", new=fake_search):
             result = ai._hybrid_search_action(object(), 0, float("inf"))
 
@@ -583,6 +1030,35 @@ class ChallengeAITests(unittest.TestCase):
 
         state.p1.reset_turn_flags()
         self.assertTrue(can_use_ability(state, 0, "active", "Focus")[0])
+
+    def test_bench_self_damage_ability_targets_source_pokemon(self):
+        riolu = CardRegistry.get("svf-rio")
+        lucario = CardRegistry.get("svf-luca")
+        energy = CardRegistry.get("sv1-ener-6")
+        base = CardRegistry.get("sv2-delib")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(riolu)
+        state.p1.bench[0] = PokemonInPlay(lucario)
+        state.p1.deck = [energy]
+        state.p1.prizes = [base] * 6
+        state.p2.active = PokemonInPlay(base)
+        state.p2.prizes = [base] * 6
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.USE_ABILITY,
+            player_idx=0,
+            slot="bench_0",
+            ability_name="旺盛斗气",
+        )
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(state.p1.active.damage_counters, 0)
+        self.assertEqual(state.p1.bench[0].damage_counters, 2)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
 
     def test_fairness_ignores_opponent_hidden_card_identities(self):
         base_state = self._simple_public_state()
@@ -711,6 +1187,633 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(ai._estimated_attack_damage(state, 1, 0), 80)
         self.assertEqual(ai._estimated_attack_damage(state, 1, 1), 60)
 
+    def test_attach_priority_favors_active_attack_readiness(self):
+        base = CardRegistry.get("sv2-delib")
+        energy = CardRegistry.get("sv1-ener-6")
+        attacker = Card(
+            api_id="test-ready-attacker",
+            name="Ready Attacker",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=100,
+            energy_types=["Fighting"],
+            attacks=[AttackDef("Punch", ["Fighting"], 40, "")],
+        )
+        bench_attacker = Card(
+            api_id="test-bench-attacker",
+            name="Bench Attacker",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=130,
+            energy_types=["Fighting"],
+            attacks=[AttackDef("Bench Punch", ["Fighting"], 50, "")],
+        )
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(base)
+        state.p2.active = PokemonInPlay(attacker)
+        state.p2.bench[0] = PokemonInPlay(bench_attacker)
+        state.p2.hand = [energy]
+
+        ai = ChallengeAI(AIConfig(policy_path=None))
+        active_attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
+        bench_attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "bench_0"})
+
+        self.assertGreater(
+            ai._quick_action_priority(state, 1, active_attach),
+            ai._quick_action_priority(state, 1, bench_attach),
+        )
+
+    def test_lightning_core_attacker_gets_second_energy_over_small_ready_bench(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-4")]
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("svl-mare2"))
+        state.p2.hand = [CardRegistry.get("sv1-ener-4")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        active_attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
+        bench_attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "bench_0"})
+
+        self.assertGreater(
+            ai._quick_action_priority(state, 1, active_attach),
+            ai._quick_action_priority(state, 1, bench_attach),
+        )
+
+    def test_weak_attack_waits_for_obvious_core_energy_development(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-4")]
+        state.p2.hand = [CardRegistry.get("sv1-ener-4")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        weak_attack = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, weak_attack, [weak_attack, attach, end])
+
+        self.assertEqual(selected.action, PlayerAction.ATTACH_ENERGY)
+        self.assertEqual(selected.params["target_slot"], "active")
+
+    def test_weak_attack_waits_for_productive_draw_trainer(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-104"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-5")]
+        state.p2.hand = [CardRegistry.get("sv1-180")]
+        state.p2.deck = [CardRegistry.get("sv1-ener-5")] * 5
+        state.p1.deck = [CardRegistry.get("sv1-ener-5")] * 5
+        state.p1.prizes = [CardRegistry.get("sv1-ener-5")] * 6
+        state.p2.prizes = [CardRegistry.get("sv1-ener-5")] * 6
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        weak_attack = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        draw = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, weak_attack, [weak_attack, draw, end])
+
+        self.assertEqual(selected.action, PlayerAction.PLAY_TRAINER)
+
+    def test_attach_from_discard_ability_requires_matching_discard_energy(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-emol"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("svl-flaa2"))
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+        self.assertFalse(
+            any(action.action == PlayerAction.USE_ABILITY for action in actions)
+        )
+
+        state.p2.discard = [CardRegistry.get("sv1-ener-4")]
+        actions = ai.legal_actions(state, 1)
+        self.assertTrue(
+            any(action.action == PlayerAction.USE_ABILITY for action in actions)
+        )
+
+    def test_discard_search_trainer_requires_matching_discard_resource(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-104"))
+        state.p2.hand = [CardRegistry.get("sv1-171")]
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+        self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+
+        state.p2.discard = [CardRegistry.get("sv1-ener-5")]
+        actions = ai.legal_actions(state, 1)
+        self.assertTrue(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+
+    def test_single_bench_energy_choice_prefers_core_attack_plan(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-emol"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("svl-flaa2"))
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        req = ActionRequest(
+            "select_own_bench_energy",
+            1,
+            "attach to bench",
+            bench_indices=[0, 1],
+        )
+
+        self.assertEqual(ai.resolve_pending_action(state, req).selected_bench_slot, 0)
+
+    def test_psychic_bench_energy_choice_prefers_attacker_over_xatu_engine(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-104"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-108"))
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("sv1-111"))
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        req = ActionRequest(
+            "select_own_bench_energy",
+            1,
+            "attach to bench",
+            bench_indices=[0, 1],
+        )
+
+        self.assertEqual(ai.resolve_pending_action(state, req).selected_bench_slot, 1)
+
+    def test_end_turn_fallback_uses_productive_ability(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-108"))
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("sv1-111"))
+        state.p2.hand = [CardRegistry.get("sv1-ener-5")]
+        state.p2.deck = [CardRegistry.get("sv1-180")] * 5
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        ability = AIAction(PlayerAction.USE_ABILITY, {"slot": "bench_0", "ability_name": "以太感知"})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, end, [ability, end])
+
+        self.assertEqual(selected.action, PlayerAction.USE_ABILITY)
+
+    def test_pending_effect_chain_resumes_after_xatu_energy_choice(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-108"))
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("sv1-111"))
+        state.p2.hand = [CardRegistry.get("sv1-ener-5")]
+        state.p2.deck = [CardRegistry.get("sv1-180"), CardRegistry.get("sv1-189")]
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.USE_ABILITY,
+            player_idx=1,
+            slot="bench_0",
+            ability_name="以太感知",
+        )
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_action)
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        followup = ai.apply_choice(
+            state,
+            result.pending_action,
+            AIChoice(selected_bench_slot=1),
+        )
+
+        self.assertIsInstance(followup, ActionResult)
+        self.assertEqual(len(followup.cards_drawn), 2)
+        self.assertEqual(len(state.p2.hand), 2)
+        self.assertEqual(len(state.p2.bench[1].energy_cards), 1)
+
+    def test_major_draw_waits_for_xatu_energy_ability(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-108"))
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("sv1-111"))
+        state.p2.hand = [CardRegistry.get("sv1-ener-5"), CardRegistry.get("sv1-189")]
+        state.p2.deck = [CardRegistry.get("sv1-180")] * 5
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        ability = AIAction(PlayerAction.USE_ABILITY, {"slot": "bench_0", "ability_name": "以太感知"})
+        draw = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 1})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, draw, [draw, ability, end])
+
+        self.assertEqual(selected.action, PlayerAction.USE_ABILITY)
+
+    def test_major_draw_waits_for_manual_energy_attachment(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-104"))
+        state.p2.hand = [CardRegistry.get("sv1-ener-5"), CardRegistry.get("sv1-189")]
+        state.p2.deck = [CardRegistry.get("sv1-180")] * 5
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
+        draw = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 1})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, draw, [draw, attach, end])
+
+        self.assertEqual(selected.action, PlayerAction.ATTACH_ENERGY)
+
+    def test_low_deck_filters_xatu_draw_ability(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 9
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-108"))
+        state.p2.deck = [CardRegistry.get("sv1-180"), CardRegistry.get("sv1-189")]
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+
+        self.assertFalse(any(action.action == PlayerAction.USE_ABILITY for action in actions))
+
+    def test_low_deck_filters_large_draw_trainer(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 9
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.hand = [CardRegistry.get("sv1-180")]
+        state.p2.deck = [CardRegistry.get("sv1-ener-5")] * 3
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+
+        self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+
+    def test_low_deck_filters_search_trainer(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 9
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.hand = [CardRegistry.get("svl-ensw")]
+        state.p2.deck = [CardRegistry.get("sv1-ener-5")] * 5
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+
+        self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+
+    def test_low_deck_filters_arven_search_trainer(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 9
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.hand = [CardRegistry.get("sv1-204")]
+        state.p2.deck = [
+            CardRegistry.get("sv1-151"),
+            CardRegistry.get("svl-vitb"),
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("sv1-ener-5"),
+        ]
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+
+        self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+
+    def test_arven_without_item_or_tool_targets_is_not_productive(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.hand = [CardRegistry.get("sv1-204")]
+        state.p2.deck = [CardRegistry.get("sv1-ener-5")] * 12
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+
+        self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+
+    def test_low_deck_avoids_draw_attack(self):
+        base = CardRegistry.get("sv2-delib")
+        draw_attacker = Card(
+            api_id="test-low-deck-draw-attacker",
+            name="Low Deck Draw Attacker",
+            supertype=base.supertype,
+            subtypes=["Basic"],
+            hp=100,
+            energy_types=["Colorless"],
+            attacks=[AttackDef("Cycle", [], 0, "", effects=[{"effect_type": "draw", "params": {"amount": 2}}])],
+        )
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 9
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(draw_attacker)
+        state.p2.deck = [CardRegistry.get("sv1-ener-5")] * 2
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        attack = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, attack, [attack, end])
+
+        self.assertEqual(selected.action, PlayerAction.END_TURN)
+
+    def test_weak_attack_does_not_feed_dangerous_outrage_retaliation(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-8")]
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-zera"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-4"), CardRegistry.get("sv1-ener-4")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        attack = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, attack, [attack, end])
+
+        self.assertEqual(selected.action, PlayerAction.END_TURN)
+
+        selected = ai._validated_or_fallback_action(state, 1, end, [attack, end])
+
+        self.assertEqual(selected.action, PlayerAction.END_TURN)
+
+    def test_outrage_dynamic_damage_does_not_double_count_base_damage(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 0
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-8")]
+        state.p1.active.damage_counters = 3
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+
+        result = TurnManager(state).perform_action(PlayerAction.DECLARE_ATTACK, player_idx=0, attack_idx=0)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.damage_dealt, 90)
+        self.assertEqual(state.p2.active.current_hp, 100)
+
+    def test_cresselia_field_energy_bonus_is_estimated_for_attack_and_promotion(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        psychic_energy = CardRegistry.get("sv1-ener-5")
+        state.p1.active = PokemonInPlay(CardRegistry.get("sv2-keldeo"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-107"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-113"))
+        state.p2.bench[0].energy_cards = [psychic_energy, psychic_energy]
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("sv1-108"))
+        state.p2.bench[1].energy_cards = [psychic_energy, psychic_energy, psychic_energy]
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        original_active = state.p2.active
+        state.p2.active = state.p2.bench[0]
+        try:
+            damage = ai._estimated_attack_damage(state, 1, 1)
+        finally:
+            state.p2.active = original_active
+
+        self.assertEqual(damage, 120)
+        self.assertGreater(
+            ai._promotion_value_for_state(state, 1, state.p2.bench[0]),
+            ai._promotion_value_for_state(state, 1, state.p2.bench[1]),
+        )
+
+    def test_houndstone_estimate_counts_discarded_psychic_pokemon_not_energy(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("sv2-keldeo"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-106"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-5"), CardRegistry.get("sv1-ener-5")]
+        state.p2.discard = [
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("sv1-107"),
+            CardRegistry.get("sv1-109"),
+        ]
+
+        damage = create_challenge_ai("psychic", AIConfig(policy_path=None))._estimated_attack_damage(state, 1, 0)
+
+        self.assertEqual(damage, 100)
+
+    def test_forced_promotion_preserves_unready_core_attacker_under_ko_pressure(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 0
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("sv2-grex"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-3")]
+        state.p2.active = None
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-113"))
+        state.p2.bench[0].energy_cards = [CardRegistry.get("sv1-ener-5")]
+        state.p2.bench[1] = PokemonInPlay(CardRegistry.get("sv1-107"))
+        state.pending_promotion_player = 1
+
+        create_challenge_ai("psychic", AIConfig(policy_path=None))._auto_promote_for_sim(state)
+
+        self.assertEqual(state.p2.active.card.api_id, "sv1-107")
+        self.assertIsNotNone(state.p2.bench[0])
+        self.assertEqual(state.p2.bench[0].card.api_id, "sv1-113")
+
+    def test_pikachu_punch_does_not_charge_drampa_outrage(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-8")]
+        state.p1.active.damage_counters = 1
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-4")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        attack = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, attack, [attack, end])
+
+        self.assertEqual(selected.action, PlayerAction.END_TURN)
+
+    def test_weak_attack_respects_next_turn_outrage_attachment(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-8")]
+        state.p1.hand = [CardRegistry.get("sv1-ener-3")]
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-4"), CardRegistry.get("sv1-ener-4")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        attack = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, attack, [attack, end])
+
+        self.assertEqual(selected.action, PlayerAction.END_TURN)
+
+    def test_retreat_waits_for_energy_acceleration_item(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.bench[0].energy_cards = [CardRegistry.get("sv1-ener-4")]
+        state.p2.hand = [CardRegistry.get("sv1-170")]
+        state.p2.deck = [CardRegistry.get("sv1-151")] * 5 + [CardRegistry.get("sv1-ener-4")] * 5
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        retreat = AIAction(PlayerAction.RETREAT, {"bench_idx": 0})
+        generator = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+        selected = ai._validated_or_fallback_action(state, 1, retreat, [retreat, generator, end])
+
+        self.assertEqual(selected.action, PlayerAction.PLAY_TRAINER)
+
+    def test_retreat_avoids_promoting_target_that_current_attacker_can_ko(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-8")]
+        state.p1.active.damage_counters = 6
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("svl-zera"))
+        state.p2.bench[0].energy_cards = [CardRegistry.get("sv1-ener-4")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        retreat = AIAction(PlayerAction.RETREAT, {"bench_idx": 0})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        actions = ai._filter_strategically_relevant_actions(state, 1, [retreat, end])
+
+        self.assertFalse(any(action.action == PlayerAction.RETREAT for action in actions))
+
+    def test_retreat_keeps_healthy_attacker_over_weak_engine_pivot(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svf-hawl"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-110"))
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-5")]
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-107"))
+        state.p2.bench[0].energy_cards = [CardRegistry.get("sv1-ener-5")]
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        retreat = AIAction(PlayerAction.RETREAT, {"bench_idx": 0})
+        end = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        actions = ai._filter_strategically_relevant_actions(state, 1, [retreat, end])
+
+        self.assertFalse(any(action.action == PlayerAction.RETREAT for action in actions))
+
+    def test_switch_confirmation_keeps_unready_engine_on_bench(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 1
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv1-104"))
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv1-107"))
+        state.p2.hand = [CardRegistry.get("sv1-150")]
+
+        ai = create_challenge_ai("psychic", AIConfig(policy_path=None))
+        req = ActionRequest("confirm", 1, "switch active with bench")
+
+        self.assertFalse(ai._confirm_pending(state, 1, req))
+        actions = ai.legal_actions(state, 1)
+        self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+
     def test_final_ko_attack_preserves_game_over_phase(self):
         base = CardRegistry.get("sv2-delib")
         attacker = Card(
@@ -748,6 +1851,63 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(state.winner, 1)
         self.assertEqual(state.phase, TurnPhase.GAME_OVER)
         self.assertFalse(state.p1.has_any_pokemon_in_play())
+
+    def test_self_discard_ability_requires_active_promotion(self):
+        starmie = CardRegistry.get("sv2-starm")
+        base = CardRegistry.get("sv2-delib")
+        benched = CardRegistry.get("svi-chim")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 0
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(starmie)
+        state.p1.bench[0] = PokemonInPlay(benched)
+        state.p2.active = PokemonInPlay(base)
+        state.p1.deck = [base]
+        state.p2.deck = [base]
+        state.p1.prizes = [base] * 6
+        state.p2.prizes = [base] * 6
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.USE_ABILITY,
+            player_idx=0,
+            slot="active",
+            ability_name="神秘彗星",
+        )
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(state.p2.active.damage_counters, 2)
+        self.assertIsNone(state.p1.active)
+        self.assertEqual(state.pending_promotion_player, 0)
+
+        ChallengeAI(AIConfig(policy_path=None))._auto_promote_for_sim(state)
+
+        self.assertIsNotNone(state.p1.active)
+        self.assertEqual(state.p1.active.card.api_id, benched.api_id)
+        self.assertEqual(state.pending_promotion_player, -1)
+
+    def test_auto_promotion_prefers_ready_dynamic_attacker(self):
+        lucario = CardRegistry.get("svf-luca")
+        kleavor = CardRegistry.get("svf-klea")
+        energy = CardRegistry.get("sv1-ener-6")
+        base = CardRegistry.get("sv2-delib")
+        state = GameState()
+        state.phase = TurnPhase.DRAW
+        state.first_player_idx = 0
+        state.active_player_idx = 0
+        state.turn_number = 5
+        state.pending_promotion_player = 0
+        state.p1.bench[0] = PokemonInPlay(kleavor)
+        state.p1.bench[1] = PokemonInPlay(lucario)
+        state.p1.bench[1].energy_cards = [energy, energy, energy]
+        state.p2.active = PokemonInPlay(base)
+
+        ChallengeAI(AIConfig(deck_key="fighting", policy_path=None))._auto_promote_for_sim(state)
+
+        self.assertIsNotNone(state.p1.active)
+        self.assertEqual(state.p1.active.card.api_id, lucario.api_id)
+        self.assertEqual(state.pending_promotion_player, -1)
 
     def test_attack_simulation_includes_forced_end_turn(self):
         base = CardRegistry.get("sv2-delib")

@@ -8,6 +8,7 @@ from typing import Any
 
 POLICY_VERSION = 1
 DEFAULT_POLICY_PATH = os.path.join("data", "ai_policies.json")
+MIN_GLOBAL_POINT_RATE = 0.35
 
 
 @dataclass(frozen=True)
@@ -79,10 +80,10 @@ DECK_AI_PROFILES: dict[str, DeckAIProfile] = {
     "psychic": DeckAIProfile(
         key="psychic",
         name="Xatu psychic acceleration",
-        core_cards={"sv1-108", "sv1-111", "sv1-113"},
-        engine_cards={"sv1-107", "sv1-109", "sv1-114", "sv1-171"},
-        setup_active={"sv1-107", "sv1-109", "sv1-111", "sv1-113"},
-        preferred_bench={"sv1-107", "sv1-113", "sv1-114", "sv1-104"},
+        core_cards={"sv1-106", "sv1-110", "sv1-111", "sv1-112", "sv1-113"},
+        engine_cards={"sv1-107", "sv1-108", "sv1-109", "sv1-114", "sv1-171"},
+        setup_active={"sv1-109", "sv1-110", "sv1-113", "sv1-114", "sv1-104"},
+        preferred_bench={"sv1-107", "sv1-110", "sv1-111", "sv1-112", "sv1-113", "sv1-114", "sv1-104"},
         evolution_cards={"sv1-108", "sv1-106"},
         energy_types={"Psychic"},
         trainer_cards={"sv1-171", "sv1-204", "sv1-153"},
@@ -93,8 +94,8 @@ DECK_AI_PROFILES: dict[str, DeckAIProfile] = {
         key="lightning",
         name="Pikachu ex tempo",
         core_cards={"svl-pikaex", "svl-flaa2"},
-        engine_cards={"svl-mare2", "svl-ensw", "sv1-170", "svl-trks"},
-        setup_active={"svl-pikaex", "svl-mare2", "svl-chin", "svl-emol"},
+        engine_cards={"svl-mare2", "svl-thun", "svl-chat", "svl-ensw", "sv1-170", "svl-trks"},
+        setup_active={"svl-thun", "svl-emol", "svl-chat", "svl-mare2", "svl-chin"},
         preferred_bench={"svl-pikaex", "svl-mare2", "svl-chin"},
         evolution_cards={"svl-flaa2", "svl-lant"},
         energy_types={"Lightning"},
@@ -107,7 +108,7 @@ DECK_AI_PROFILES: dict[str, DeckAIProfile] = {
         name="Lucario fighting burst",
         core_cards={"svf-luca", "svf-klea"},
         engine_cards={"svf-rio", "svf-pass", "svf-farf", "svf-hawl", "svf-ensw2"},
-        setup_active={"svf-rio", "svf-scyt", "svf-pass", "svf-terr"},
+        setup_active={"svf-farf", "svf-hawl", "svf-pass", "svf-terr", "svf-scyt"},
         preferred_bench={"svf-rio", "svf-scyt", "svf-farf"},
         evolution_cards={"svf-luca", "svf-klea"},
         energy_types={"Fighting"},
@@ -118,8 +119,8 @@ DECK_AI_PROFILES: dict[str, DeckAIProfile] = {
     "colorless": DeckAIProfile(
         key="colorless",
         name="Maushold hand-size pressure",
-        core_cards={"svi-maus", "svi-ambi", "svi-gree"},
-        engine_cards={"svi-tand", "svi-aipo", "svi-skwv", "svi-inde", "svi-cait"},
+        core_cards={"svi-tand", "svi-maus", "svi-ambi", "svi-gree"},
+        engine_cards={"svi-aipo", "svi-skwv", "svi-inde", "svi-cait"},
         setup_active={"svi-tand", "svi-aipo", "svi-skwv", "svi-inde"},
         preferred_bench={"svi-tand", "svi-aipo", "svi-skwv", "svi-inde"},
         evolution_cards={"svi-maus", "svi-ambi", "svi-gree"},
@@ -175,7 +176,7 @@ def load_policy_weights(deck_key: str | None, policy_path: str | None = DEFAULT_
     if payload.get("version") != POLICY_VERSION:
         return {}
     policy = ((payload.get("policies") or {}).get(deck_key) or {})
-    if not _policy_eval_passes(policy):
+    if not _policy_eval_passes(policy, payload, deck_key):
         return {}
     weights = policy.get("weights") or {}
     if not isinstance(weights, dict):
@@ -189,13 +190,46 @@ def load_policy_weights(deck_key: str | None, policy_path: str | None = DEFAULT_
     return loaded
 
 
-def _policy_eval_passes(policy: dict[str, Any]) -> bool:
+def _policy_eval_passes(
+    policy: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+    deck_key: str | None = None,
+) -> bool:
     """Reject candidate policies that evaluated worse than their profile baseline."""
     if not isinstance(policy, dict):
         return False
     metadata = policy.get("metadata") or {}
     if metadata.get("accepted") is False:
         return False
+    if payload is not None and deck_key:
+        benchmark = (payload.get("benchmark") or {}) if isinstance(payload, dict) else {}
+        benchmark_row = ((benchmark.get("before_after") or {}).get(deck_key))
+        if isinstance(benchmark_row, dict):
+            try:
+                games = int(benchmark_row.get("games") or 0)
+                delta_point_rate = float(benchmark_row.get("delta_point_rate", 0.0))
+                delta_win_rate = float(benchmark_row.get("delta_win_rate", 0.0))
+            except (TypeError, ValueError):
+                return False
+            if games > 0 and (delta_point_rate < -0.0001 or delta_win_rate < -0.0001):
+                return False
+        ranking_rows = benchmark.get("rankings") or []
+        if isinstance(ranking_rows, list):
+            for row in ranking_rows:
+                if not isinstance(row, dict) or row.get("deck") != deck_key:
+                    continue
+                try:
+                    games = int(row.get("games") or 0)
+                    point_rate = float(row.get("point_rate", 0.0))
+                    delta_point_rate = (
+                        float(benchmark_row.get("delta_point_rate", 0.0))
+                        if isinstance(benchmark_row, dict) else 0.0
+                    )
+                except (TypeError, ValueError):
+                    return False
+                if games > 0 and point_rate < MIN_GLOBAL_POINT_RATE and delta_point_rate <= 0.0001:
+                    return False
+                break
     eval_info = policy.get("eval") or {}
     try:
         games = int(eval_info.get("games") or 0)

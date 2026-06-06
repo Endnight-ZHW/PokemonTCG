@@ -7,6 +7,20 @@ from config import DAMAGE_PER_COUNTER
 from engine.game_state import GameState, ActionResult, ActionRequest
 
 
+def _energy_source(player, from_zone):
+    return (player.hand, "手牌") if from_zone == "hand" else (player.deck, "牌库")
+
+
+def _matching_energy_cards(source_zone, filter_type):
+    return [
+        c for c in source_zone
+        if c.is_energy and (
+            filter_type == "any" or
+            any(et.lower() == filter_type.lower() for et in c.provides_energy)
+        )
+    ]
+
+
 def _handle_energy_attach(state, player, player_idx, params, source_slot):
     """Attach energy from hand or deck to a Pokemon."""
     amount = params.get("amount", 1)
@@ -20,6 +34,10 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
         if state.is_first_turn and player == state.get_player(1):
             amount = going_second_bonus
             state._log(f"后攻最初回合！可附着最多{amount}张能量。")
+
+    source_pool, zone_name = _energy_source(player, from_zone)
+    if not _matching_energy_cards(source_pool, filter_type):
+        return ActionResult(True, f"{zone_name}中无匹配的能量。")
 
     if to_target == "self":
         target_slot = source_slot
@@ -81,14 +99,8 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
                                 ))
         else:
             # Multiple energy: use distribution screen
-            from_zone_name = "手牌" if from_zone == "hand" else "牌库"
-            source_pool = player.hand if from_zone == "hand" else player.deck
-            matching = [
-                c for c in source_pool
-                if c.is_energy and (filter_type == "any" or
-                                    any(et.lower() == filter_type.lower()
-                                        for et in c.provides_energy))
-            ]
+            from_zone_name = zone_name
+            matching = _matching_energy_cards(source_pool, filter_type)
             energy_to_distribute = matching[:amount]
             targets_info = [
                 {"slot": f"bench_{i}", "name": p.card.name, "bench_idx": i}
@@ -165,15 +177,8 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
 
 def _attach_energy_to_target(state, player, from_zone, filter_type, amount, target, optional=False):
     """Attach energy cards from hand/deck to a specific target Pokemon."""
-    source_zone = player.hand if from_zone == "hand" else player.deck
-    zone_name = "手牌" if from_zone == "hand" else "牌库"
-
-    matching = [
-        c for c in source_zone
-        if c.is_energy and (filter_type == "any" or
-                            any(et.lower() == filter_type.lower()
-                                for et in c.provides_energy))
-    ]
+    source_zone, zone_name = _energy_source(player, from_zone)
+    matching = _matching_energy_cards(source_zone, filter_type)
     if not matching and optional:
         return ActionResult(True, f"{zone_name}中无匹配的能量。")
 
@@ -305,8 +310,8 @@ def _handle_energy_relocate(state, player, player_idx, params):
     if not all_pokemon:
         return ActionResult(True, "场上没有宝可梦附着能量。")
 
-    if len(all_pokemon) == 1:
-        return ActionResult(True, "只有一只宝可梦有能量，无法转移。")
+    if sum(1 for _, p in player.get_all_pokemon() if p is not None) <= 1:
+        return ActionResult(True, "没有其他宝可梦可转附能量。")
 
     # Step 1: choose source Pokemon
     source_options = []
@@ -392,7 +397,7 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
 
     matching = [
         c for c in player.discard
-        if c.is_basic_energy and (energy_type == "any" or
+        if c.is_basic_energy and (energy_type in ("any", "basic", "basic_energy") or
                                   any(et.lower() == energy_type.lower()
                                       for et in c.provides_energy))
     ]

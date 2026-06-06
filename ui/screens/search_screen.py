@@ -9,7 +9,7 @@ from ui.image_manager import get_image_manager
 from ui.font_manager import get_font, get_font_size
 from ui.ui_theme import draw_panel, draw_button
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, CARD_WIDTH, CARD_HEIGHT
-from engine.game_state import ActionRequest
+from engine.game_state import ActionRequest, ActionResult
 
 
 class SearchScreen(Screen):
@@ -106,7 +106,9 @@ class SearchScreen(Screen):
             if i < len(self.request.card_list)
         ]
         result = self.on_complete(selected_cards)
-        # If callback returns a new ActionRequest, chain into it
+        # If callback returns a new pending request, chain into it.
+        if isinstance(result, ActionResult) and result.pending_action:
+            result = result.pending_action
         if result is not None and isinstance(result, ActionRequest):
             if result.request_type in ("search_deck", "select_hand_to_discard"):
                 self._reinit_with_request(result)
