@@ -118,6 +118,21 @@ class DeepTrainingConfig:
     acceptance_metric: str = "score"
     min_win_delta: int = 0
     teacher_label_model_states: bool = True
+    # --- New: Pure RL & MCTS settings ---
+    pure_rl_games: int = 400
+    mcts_simulations: int = 200
+    mcts_chance_nodes: bool = True
+    use_mcts_training: bool = True
+    teacher_warmup_ratio: float = 0.6
+    # --- New: Curiosity exploration ---
+    curiosity_beta: float = 0.05
+    use_curiosity: bool = False
+    # --- New: Same-deal replay ---
+    replay_same_deal: int = 50
+    # --- New: Fair evaluation ---
+    eval_same_seeds: bool = True
+    # --- New: Deck embedding ---
+    deck_embed_dim: int = 0  # 0 = disabled, 16 = enabled
 
 
 @dataclass
@@ -1183,6 +1198,11 @@ def _play_model_game(
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
     opponent_model: Any = None,
+    pure_rl: bool = False,
+    use_mcts: bool = False,
+    mcts_simulations: int = 200,
+    mcts_chance_nodes: bool = True,
+    curiosity_tracker: Any = None,
 ) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]:
     encoder = ActionStateEncoder()
     opponent_key = _opponent_for(deck_key, seed)
@@ -1198,8 +1218,23 @@ def _play_model_game(
     choice_examples: list[ChoiceTrainingExample] = []
     target_ai = ais[target_player_idx]
     original_choice_resolver = None
+
+    # Set up MCTS searcher if enabled
+    mcts_searcher = None
+    if use_mcts and model is not None:
+        from engine.ai.dl.mcts import MCTSGuidedSearch
+        mcts_searcher = MCTSGuidedSearch(
+            model, encoder, target_ai,
+            num_simulations=mcts_simulations,
+            temperature=temperature,
+            use_chance_nodes=mcts_chance_nodes,
+            device=device,
+            add_dirichlet_noise=True,
+            dirichlet_epsilon=0.25,
+        )
+
     try:
-        if record:
+        if record and not pure_rl:
             original_choice_resolver = target_ai._resolve_pending_for_sim
 
             def record_choice(state_arg, req_arg):
@@ -1237,7 +1272,6 @@ def _play_model_game(
                 continue
 
             player_idx = state.active_player_idx if state.phase != TurnPhase.SETUP else target_player_idx
-            # 切换玩家时重置失败计数，防止上一回合的失败累积
             if prev_player_idx is not None and player_idx != prev_player_idx:
                 failed_signatures[player_idx].clear()
             prev_player_idx = player_idx
@@ -1245,7 +1279,9 @@ def _play_model_game(
             before_metrics: dict[str, float] | None = None
             if player_idx == target_player_idx:
                 before_metrics = _snapshot_metrics(state, target_player_idx, target_ai) if record else None
-                if record and teacher_label_model_states:
+
+                # Teacher labeling (skip in pure RL mode)
+                if record and teacher_label_model_states and not pure_rl:
                     teacher_example = _teacher_label_state(
                         encoder,
                         state,
@@ -1257,11 +1293,34 @@ def _play_model_game(
                     )
                     if teacher_example is not None:
                         examples.append(teacher_example)
-                action, example = _select_model_action(
-                    model, encoder, state, player_idx, deck_key, target_ai, device, temperature=temperature
-                )
-                if example is not None:
-                    example.phase_tag = phase_tag
+
+                # Action selection: MCTS or direct model
+                if mcts_searcher is not None:
+                    action = mcts_searcher.select_action(
+                        state, player_idx, deck_key,
+                        deterministic=(temperature <= 0.05),
+                    )
+                    # Create a self-play example from MCTS result
+                    actions = target_ai.legal_actions(state, player_idx)
+                    encoded_state = encoder.encode_state(state, player_idx, deck_key)
+                    encoded_actions = [encoder.encode_action(state, player_idx, a) for a in actions]
+                    action_idx = _find_action_index(actions, action)
+                    if action_idx is not None:
+                        with torch.no_grad():
+                            logits, value = _forward_example(model, TrainingExample(encoded_state, encoded_actions, 0, source="self_play"), device)
+                            predicted_value = float(value[0].detach().cpu().item())
+                        example = TrainingExample(
+                            encoded_state, encoded_actions, action_idx,
+                            source="self_play",
+                            value_target=predicted_value,
+                            phase_tag=phase_tag,
+                        )
+                else:
+                    action, example = _select_model_action(
+                        model, encoder, state, player_idx, deck_key, target_ai, device, temperature=temperature
+                    )
+                    if example is not None:
+                        example.phase_tag = phase_tag
                 ai = target_ai
             else:
                 ai = ais[player_idx]
@@ -1280,7 +1339,14 @@ def _play_model_game(
 
             if record and example is not None and before_metrics is not None:
                 after_metrics = _snapshot_metrics(state, target_player_idx, target_ai)
-                example.reward = _step_reward(before_metrics, after_metrics, invalid=invalid)
+                step_r = _step_reward(before_metrics, after_metrics, invalid=invalid)
+
+                # Add curiosity bonus if tracker is active
+                if curiosity_tracker is not None:
+                    curiosity_bonus = curiosity_tracker.bonus(state, target_player_idx)
+                    step_r += curiosity_bonus
+
+                example.reward = step_r
                 examples.append(example)
 
         if state.winner is not None:
@@ -1937,6 +2003,165 @@ def _train_deck_pipeline(
             **empty_result,
             "total_games_played": total_done,
             "total_training_games": total_training_games,
+        })
+
+    # ------------------------------------------------------------------
+    # Phase 5 [NEW]: Same-deal replay — fixed seeds, different strategies
+    # ------------------------------------------------------------------
+    same_deal_games = max(0, int(config.replay_same_deal))
+    same_deal_examples: list[TrainingExample] = []
+    if same_deal_games > 0:
+        emit({
+            "type": "phase_started",
+            "deck": deck_key,
+            "phase": "same_deal_replay",
+            "target_games": same_deal_games,
+        })
+        trajectories_per_game = 3
+        for game_idx in range(same_deal_games):
+            if config.use_mcts_training and model is not None:
+                base_seed = deck_seed + 700_000 + game_idx * 113
+                # Play 3 trajectories on the same seed with different temperatures
+                for traj_idx, temp in enumerate([0.0, 0.5, 0.9]):
+                    mcts_sims = int(config.mcts_simulations)
+                    winner, score, game_examples, _ = _play_model_game(
+                        model, deck_key, base_seed,
+                        device=config.device, max_steps=max_steps, record=True,
+                        teacher_search_preset=teacher_search_preset,
+                        temperature=temp,
+                        teacher_label_model_states=False,
+                        phase_tag="same_deal",
+                        use_mcts=True, mcts_simulations=mcts_sims,
+                        mcts_chance_nodes=bool(config.mcts_chance_nodes),
+                        pure_rl=True,
+                    )
+                    # Mark self-play examples
+                    sp_examples = [ex for ex in game_examples if ex.source == "self_play"]
+                    for ex in sp_examples:
+                        ex.phase_tag = "same_deal"
+                    same_deal_examples.extend(sp_examples)
+                    total_done += 1
+            emit({
+                "type": "same_deal_game_finished",
+                "deck": deck_key,
+                "game": game_idx + 1,
+                "target_games": same_deal_games,
+                "total_games_played": total_done,
+                "total_training_games": total_training_games,
+            })
+        emit({
+            "type": "phase_finished",
+            "deck": deck_key,
+            "phase": "same_deal_replay",
+            "examples": len(same_deal_examples),
+            "total_games_played": total_done,
+        })
+
+    # ------------------------------------------------------------------
+    # Phase 6 [NEW]: Pure RL exploration — no teacher, MCTS + curiosity
+    # ------------------------------------------------------------------
+    pure_rl_games = max(0, int(config.pure_rl_games))
+    pure_rl_examples: list[TrainingExample] = []
+    pure_rl_choice_examples: list[ChoiceTrainingExample] = []
+    pure_rl_wins = pure_rl_losses = pure_rl_draws = 0
+    pure_rl_score_total = 0.0
+
+    if pure_rl_games > 0:
+        use_mcts_training = bool(config.use_mcts_training)
+        use_curiosity = bool(config.use_curiosity)
+        curiosity_tracker = None
+        if use_curiosity:
+            from engine.ai.dl.exploration import StateNoveltyTracker
+            curiosity_tracker = StateNoveltyTracker(
+                beta=float(config.curiosity_beta),
+                beta_anneal_rate=0.9995,
+                min_beta=0.005,
+            )
+
+        emit({
+            "type": "phase_started",
+            "deck": deck_key,
+            "phase": "pure_rl",
+            "target_games": pure_rl_games,
+            "use_mcts": use_mcts_training,
+            "use_curiosity": use_curiosity,
+        })
+
+        for batch_start in range(0, pure_rl_games, rollout_batch_games):
+            batch_count = min(rollout_batch_games, pure_rl_games - batch_start)
+            seeds = [
+                deck_seed + 800_000 + (batch_start + idx) * 117
+                for idx in range(batch_count)
+            ]
+            batch_examples: list[TrainingExample] = []
+            batch_choices: list[ChoiceTrainingExample] = []
+
+            for row_idx, game_seed in enumerate(seeds):
+                mcts_sims = int(config.mcts_simulations) if use_mcts_training else 0
+                winner, score, game_examples, game_choices = _play_model_game(
+                    model, deck_key, game_seed,
+                    device=config.device, max_steps=max_steps, record=True,
+                    teacher_search_preset=teacher_search_preset,
+                    temperature=0.7,
+                    teacher_label_model_states=False,
+                    phase_tag="pure_rl",
+                    pure_rl=True,
+                    use_mcts=use_mcts_training and mcts_sims > 0,
+                    mcts_simulations=mcts_sims,
+                    mcts_chance_nodes=bool(config.mcts_chance_nodes),
+                    curiosity_tracker=curiosity_tracker,
+                )
+                sp_examples = [ex for ex in game_examples if ex.source == "self_play"]
+                batch_examples.extend(sp_examples)
+                batch_choices.extend(game_choices)
+                pure_rl_score_total += score
+                if winner == 0:
+                    pure_rl_wins += 1
+                elif winner == 1:
+                    pure_rl_losses += 1
+                else:
+                    pure_rl_draws += 1
+                total_done += 1
+
+            pure_rl_examples.extend(batch_examples)
+            pure_rl_choice_examples.extend(batch_choices)
+
+            # Train on pure RL batch
+            if batch_examples:
+                train_result = _train_examples(
+                    model, batch_examples,
+                    device=config.device,
+                    learning_rate=config.learning_rate * 0.25,
+                    epochs=updates_per_rollout,
+                    batch_size=config.batch_size,
+                )
+                self_play_train_results.append(train_result)
+                emit({
+                    "type": "train_phase_finished",
+                    "deck": deck_key,
+                    "phase": "pure_rl_batch",
+                    "batch": (batch_start // rollout_batch_games) + 1,
+                    **train_result,
+                    "examples": len(batch_examples),
+                    "total_games_played": total_done,
+                    "total_training_games": total_training_games,
+                })
+
+        # Curiosity stats
+        curiosity_stats = {}
+        if curiosity_tracker is not None:
+            curiosity_stats = curiosity_tracker.stats()
+
+        emit({
+            "type": "phase_finished",
+            "deck": deck_key,
+            "phase": "pure_rl",
+            "examples": len(pure_rl_examples),
+            "stats": {"wins": pure_rl_wins, "losses": pure_rl_losses, "draws": pure_rl_draws},
+            "win_rate": round(pure_rl_wins / max(1, pure_rl_games), 4),
+            "avg_score": round(pure_rl_score_total / max(1, pure_rl_games), 3),
+            "curiosity": curiosity_stats,
+            "total_games_played": total_done,
         })
 
     dagger_result = _aggregate_train_results(dagger_train_results, total_dagger_examples)

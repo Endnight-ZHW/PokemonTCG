@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 6
+CHECKPOINT_VERSION = 7  # +deck_embed_dim (optional deck embedding)
 
 
 if TORCH_AVAILABLE:
@@ -48,6 +48,8 @@ if TORCH_AVAILABLE:
             choice_head_enabled: bool = True,
             use_attention: bool = True,
             state_norm: str = "layer",
+            deck_embed_dim: int = 0,
+            num_decks: int = 8,
         ):
             super().__init__()
             self.state_numeric_size = state_numeric_size
@@ -59,9 +61,16 @@ if TORCH_AVAILABLE:
             self.choice_head_enabled = bool(choice_head_enabled)
             self.use_attention = bool(use_attention) and (card_embed_dim >= 4)
             self.state_norm = "batch" if str(state_norm).lower() == "batch" else "layer"
+            self.deck_embed_dim = max(0, int(deck_embed_dim))
 
             # Card identity embedding (hash-bucket based)
             self.card_embedding = nn.Embedding(card_bucket_count, card_embed_dim, padding_idx=0)
+
+            # Deck embedding (optional, for per-deck strategy learning)
+            if self.deck_embed_dim > 0:
+                self.deck_embedding = nn.Embedding(max(1, int(num_decks)), self.deck_embed_dim)
+            else:
+                self.deck_embedding = None
 
             # Multi-head self-attention over card slots for relational reasoning
             if self.use_attention:
@@ -76,9 +85,10 @@ if TORCH_AVAILABLE:
                     return nn.BatchNorm1d(hidden_size)
                 return nn.LayerNorm(hidden_size)
 
-            # State encoder: [numeric + pooled_card_embed] -> hidden
+            # State encoder: [numeric + pooled_card_embed + optional deck_embed] -> hidden
+            state_input_dim = state_numeric_size + card_embed_dim + self.deck_embed_dim
             self.state_net = nn.Sequential(
-                nn.Linear(state_numeric_size + card_embed_dim, hidden_size),
+                nn.Linear(state_input_dim, hidden_size),
                 make_state_norm(),
                 nn.ReLU(),
                 nn.Linear(hidden_size, hidden_size),
@@ -111,7 +121,7 @@ if TORCH_AVAILABLE:
                 nn.Linear(hidden_size // 4, 1),
             )
 
-        def _state_hidden(self, state_numeric, state_card_ids):
+        def _state_hidden(self, state_numeric, state_card_ids, deck_idx=None):
             state_embeds = self.card_embedding(state_card_ids.long())  # [B, slots, embed_dim]
 
             # Self-attention: let card slots attend to each other
@@ -123,7 +133,18 @@ if TORCH_AVAILABLE:
             mask = (state_card_ids != 0).float().unsqueeze(-1)
             pooled = (state_embeds * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)
 
-            x = torch.cat([state_numeric.float(), pooled], dim=-1)
+            parts = [state_numeric.float(), pooled]
+
+            # Optional deck embedding
+            if self.deck_embedding is not None and deck_idx is not None:
+                deck_emb = self.deck_embedding(deck_idx.long())
+                parts.append(deck_emb)
+            elif self.deck_embed_dim > 0:
+                # No deck_idx provided — use zero embedding
+                batch = state_numeric.shape[0]
+                parts.append(torch.zeros(batch, self.deck_embed_dim, device=state_numeric.device))
+
+            x = torch.cat(parts, dim=-1)
             return self.state_net(x)
 
         def _score_candidates(self, state_hidden, candidate_numeric, candidate_card_ids, scorer, candidate_mask=None):
@@ -136,14 +157,14 @@ if TORCH_AVAILABLE:
                 logits = logits.masked_fill(~candidate_mask.bool(), -1_000_000_000.0)
             return logits
 
-        def forward(self, state_numeric, state_card_ids, action_numeric, action_card_ids, action_mask=None):
-            state_hidden = self._state_hidden(state_numeric, state_card_ids)
+        def forward(self, state_numeric, state_card_ids, action_numeric, action_card_ids, action_mask=None, deck_idx=None):
+            state_hidden = self._state_hidden(state_numeric, state_card_ids, deck_idx)
             logits = self._score_candidates(state_hidden, action_numeric, action_card_ids, self.action_net, action_mask)
             value = self.value_head(state_hidden).squeeze(-1)
             return logits, value
 
-        def score_choices(self, state_numeric, state_card_ids, choice_numeric, choice_card_ids, choice_mask=None):
-            state_hidden = self._state_hidden(state_numeric, state_card_ids)
+        def score_choices(self, state_numeric, state_card_ids, choice_numeric, choice_card_ids, choice_mask=None, deck_idx=None):
+            state_hidden = self._state_hidden(state_numeric, state_card_ids, deck_idx)
             scorer = self.choice_net if self.choice_head_enabled else self.action_net
             logits = self._score_candidates(state_hidden, choice_numeric, choice_card_ids, scorer, choice_mask)
             return logits
@@ -184,6 +205,8 @@ def checkpoint_payload(model, metadata: dict[str, Any] | None = None) -> dict[st
             "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
             "use_attention": bool(getattr(model, "use_attention", True)),
             "state_norm": getattr(model, "state_norm", "layer"),
+            "deck_embed_dim": getattr(model, "deck_embed_dim", 0),
+            "num_decks": getattr(getattr(model, "deck_embedding", None), "num_embeddings", 8) if getattr(model, "deck_embedding", None) is not None else 8,
         },
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
     }
@@ -238,6 +261,8 @@ def load_checkpoint(path: str, device: str = "cpu"):
         config.setdefault("choice_head_enabled", version >= 3)
         config.setdefault("use_attention", version >= 5)
         config.setdefault("state_norm", "layer" if version >= 6 else "batch")
+        config.setdefault("deck_embed_dim", 0)  # v6 and older: no deck embedding
+        config.setdefault("num_decks", 8)
         model = create_model(**config)
         strict = version >= 5
         model.load_state_dict(payload["model_state"], strict=strict)

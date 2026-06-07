@@ -34,6 +34,12 @@ class DeepLearningAIConfig:
     random_seed: int = 17
     fallback_config: AIConfig | None = None
     choice_confidence_threshold: float = 0.30
+    # MCTS settings
+    use_mcts: bool = False
+    mcts_simulations: int = 200
+    mcts_c_puct: float = 1.4
+    mcts_chance_nodes: bool = True
+    mcts_dirichlet_noise: bool = False  # False for inference, True for training
 
 
 class DeepLearningAI:
@@ -70,6 +76,8 @@ class DeepLearningAI:
             return self._fallback_action(state, player_idx)
 
         try:
+            if self.config.use_mcts:
+                return self._choose_with_mcts(state, player_idx, actions)
             return self._choose_with_model(state, player_idx, actions)
         except Exception as exc:
             _logger.debug("deep-learning action selection failed, falling back: %s", exc)
@@ -131,6 +139,46 @@ class DeepLearningAI:
                 probs = torch.softmax(logits / temperature, dim=0)
                 idx = int(torch.multinomial(probs, 1).item())
         return actions[max(0, min(idx, len(actions) - 1))]
+
+    def _choose_with_mcts(self, state, player_idx: int, actions: list[AIAction]) -> AIAction:
+        """Select an action using MCTS guided by the neural network."""
+        from engine.ai.dl.mcts import MCTSGuidedSearch
+
+        searcher = MCTSGuidedSearch(
+            self.model,
+            self.encoder,
+            self.fallback,
+            num_simulations=int(self.config.mcts_simulations),
+            c_puct=float(self.config.mcts_c_puct),
+            temperature=float(self.config.temperature),
+            use_chance_nodes=bool(self.config.mcts_chance_nodes),
+            device=self.config.device,
+            add_dirichlet_noise=bool(self.config.mcts_dirichlet_noise),
+        )
+        return searcher.select_action(
+            state,
+            player_idx,
+            self.deck_key,
+            actions=actions,
+            deterministic=self.config.deterministic,
+        )
+
+    @property
+    def mcts_search(self):
+        """Create a fresh MCTS searcher for external use (e.g., training)."""
+        from engine.ai.dl.mcts import MCTSGuidedSearch
+
+        return MCTSGuidedSearch(
+            self.model,
+            self.encoder,
+            self.fallback,
+            num_simulations=int(self.config.mcts_simulations),
+            c_puct=float(self.config.mcts_c_puct),
+            temperature=float(self.config.temperature),
+            use_chance_nodes=bool(self.config.mcts_chance_nodes),
+            device=self.config.device,
+            add_dirichlet_noise=bool(self.config.mcts_dirichlet_noise),
+        )
 
     def _pending_choice_candidates(self, state, req) -> tuple[list[Any], str] | None:
         request_type = getattr(req, "request_type", "")

@@ -7,6 +7,7 @@ additions work through card metadata plus hashed card identity features.
 from __future__ import annotations
 
 import hashlib
+import math
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
@@ -27,7 +28,7 @@ from engine.enums import PlayerAction, TurnPhase
 
 
 CARD_BUCKET_COUNT = 4096
-STATE_NUMERIC_SIZE = 896
+STATE_NUMERIC_SIZE = 928  # +32 for probability-aware features (v7)
 STATE_CARD_SLOTS = 96
 ACTION_NUMERIC_SIZE = 162
 CARD_SEMANTIC_SIZE = 48
@@ -192,6 +193,7 @@ class ActionStateEncoder:
         numeric.extend(self._deck_key_features(deck_key))
         numeric.extend(self._profile_context(state, player_idx, deck_key))
         numeric.extend(self._board_tactics(state, player_idx))
+        numeric.extend(self._probability_features(state, player_idx, deck_key))
 
         for _, pokemon in player.get_all_pokemon():
             numeric.extend(self._pokemon_features(pokemon))
@@ -496,6 +498,165 @@ class ActionStateEncoder:
             ])
         else:
             values.extend([0.0, 0.0, 0.0])
+        return values
+
+    def _probability_features(self, state, player_idx: int, deck_key: str | None) -> list[float]:
+        """Probability-aware features for draw/deck estimation.
+
+        Adds ~32 dimensions encoding:
+        - Probability of drawing key card types next turn
+        - Deck composition ratios for known/unknown cards
+        - Prize card probability estimates
+
+        This helps the model distinguish between "good strategy" and "good draw luck",
+        and make decisions based on remaining deck composition.
+        """
+        player = state.get_player(player_idx)
+        deck = player.deck
+        deck_size = max(1, len(deck))
+        unknown = self._estimated_unknown_cards(state, player_idx, deck_key)
+        unknown_size = max(1, len(unknown))
+
+        values: list[float] = []
+
+        # --- Known deck composition ---
+        # Proportions of each card type still in deck
+        pokemon_in_deck = sum(1 for c in deck if getattr(c, "is_pokemon", False)) / deck_size
+        trainer_in_deck = sum(1 for c in deck if getattr(c, "is_trainer", False)) / deck_size
+        energy_in_deck = sum(1 for c in deck if getattr(c, "is_energy", False)) / deck_size
+        basic_in_deck = sum(1 for c in deck if getattr(c, "is_basic_pokemon", False)) / deck_size
+        evo_in_deck = sum(1 for c in deck if getattr(c, "is_stage1", False) or getattr(c, "is_stage2", False)) / deck_size
+        supporter_in_deck = sum(1 for c in deck if getattr(c, "is_trainer_supporter", False)) / deck_size
+        item_in_deck = sum(1 for c in deck if getattr(c, "is_trainer_item", False)) / deck_size
+        values.extend([
+            pokemon_in_deck,
+            trainer_in_deck,
+            energy_in_deck,
+            basic_in_deck,
+            evo_in_deck,
+            supporter_in_deck,
+            item_in_deck,
+            _norm(deck_size, 60.0),
+        ])
+
+        # --- Estimated unknown card composition (deck tracking) ---
+        # How many of each type are probably still in unknown zones?
+        unk_pokemon = sum(1 for c in unknown if getattr(c, "is_pokemon", False)) / unknown_size
+        unk_energy = sum(1 for c in unknown if getattr(c, "is_energy", False)) / unknown_size
+        unk_trainer = sum(1 for c in unknown if getattr(c, "is_trainer", False)) / unknown_size
+        values.extend([
+            unk_pokemon,
+            unk_energy,
+            unk_trainer,
+            _norm(unknown_size, 60.0),
+        ])
+
+        # --- Profile-card probabilities ---
+        # What's the probability of drawing a core/engine/evolution card?
+        profile = get_deck_ai_profile(deck_key)
+        core_in_unknown = sum(
+            1 for c in unknown if str(getattr(c, "api_id", "")) in profile.core_cards
+        ) / unknown_size if unknown_size > 0 else 0.0
+        engine_in_unknown = sum(
+            1 for c in unknown if str(getattr(c, "api_id", "")) in profile.engine_cards
+        ) / unknown_size if unknown_size > 0 else 0.0
+        evo_in_unknown = sum(
+            1 for c in unknown if str(getattr(c, "api_id", "")) in profile.evolution_cards
+        ) / unknown_size if unknown_size > 0 else 0.0
+        energy_match = profile.energy_types
+        energy_match_in_unknown = sum(
+            1 for c in unknown
+            if getattr(c, "is_energy", False) and (
+                set(getattr(c, "provides_energy", []) or []) & energy_match
+                or "Rainbow" in (getattr(c, "provides_energy", []) or [])
+            )
+        ) / unknown_size if unknown_size > 0 else 0.0
+        values.extend([
+            core_in_unknown,
+            engine_in_unknown,
+            evo_in_unknown,
+            energy_match_in_unknown,
+        ])
+
+        # --- Prize card estimation ---
+        # Rough probability that a key card is stuck in prizes
+        prizes_left = len(player.prizes)
+        core_in_deck = sum(
+            1 for c in deck if str(getattr(c, "api_id", "")) in profile.core_cards
+        )
+        # If we've seen fewer core cards than expected, some may be prized
+        total_core = len(profile.core_cards)
+        seen_core = sum(
+            1 for _, p in player.get_all_pokemon() if p
+            and str(getattr(getattr(p, "card", None), "api_id", "")) in profile.core_cards
+        )
+        seen_core += sum(
+            1 for c in player.hand if str(getattr(c, "api_id", "")) in profile.core_cards
+        )
+        seen_core += sum(
+            1 for c in player.discard if str(getattr(c, "api_id", "")) in profile.core_cards
+        )
+        unaccounted_core = max(0, total_core - seen_core - core_in_deck)
+        prob_core_prized = unaccounted_core / max(1, prizes_left) if prizes_left > 0 else 0.0
+
+        # Similar for energy
+        total_energy_need = 8  # rough estimate
+        energy_on_board = sum(
+            len(getattr(p, "energy_cards", []) or [])
+            for _, p in player.get_all_pokemon() if p
+        )
+        energy_seen = energy_on_board + sum(
+            1 for c in player.hand if getattr(c, "is_energy", False)
+        ) + sum(
+            1 for c in player.discard if getattr(c, "is_energy", False)
+        )
+        energy_in_current_deck = sum(1 for c in deck if getattr(c, "is_energy", False))
+        energy_unaccounted = max(0, total_energy_need * 2 - energy_seen - energy_in_current_deck)
+        prob_energy_prized = energy_unaccounted / max(1, prizes_left) if prizes_left > 0 else 0.0
+
+        values.extend([
+            _norm(prizes_left, 6.0),
+            prob_core_prized,
+            prob_energy_prized,
+        ])
+
+        # --- Draw pressure indicators ---
+        # How many more turns can we survive with current deck?
+        draw_per_turn = 1.0
+        turns_left = deck_size / max(1, draw_per_turn)
+        values.append(_norm(turns_left, 30.0))
+
+        # Deck diversity: entropy-like measure of deck composition
+        type_counts = [
+            sum(1 for c in deck if getattr(c, "is_pokemon", False)),
+            sum(1 for c in deck if getattr(c, "is_trainer", False)),
+            sum(1 for c in deck if getattr(c, "is_energy", False)),
+        ]
+        total_cards = max(1, sum(type_counts))
+        entropy = -sum(
+            (c / total_cards) * (math.log(c / total_cards) if c > 0 else 0)
+            for c in type_counts
+        )
+        values.append(min(1.0, entropy / 1.5))
+
+        # Chance of drawing at least 1 energy in next 2 draws
+        energy_left = sum(1 for c in deck if getattr(c, "is_energy", False))
+        if deck_size >= 2:
+            prob_no_energy = 1.0
+            remaining = deck_size
+            no_energy_count = energy_left
+            for _ in range(2):
+                if remaining > 0:
+                    prob_no_energy *= (remaining - no_energy_count) / remaining
+                    remaining -= 1
+            values.append(max(0.0, min(1.0, 1.0 - prob_no_energy)))
+        else:
+            values.append(0.0)
+
+        # Chance of drawing a basic Pokemon in next draw
+        basics_left = sum(1 for c in deck if getattr(c, "is_basic_pokemon", False))
+        values.append(_norm(basics_left, deck_size) if deck_size > 0 else 0.0)
+
         return values
 
     def _pokemon_features(self, pokemon) -> list[float]:
