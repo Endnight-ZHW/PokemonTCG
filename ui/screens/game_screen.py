@@ -1,4 +1,6 @@
 """Main game screen - board display and player interaction."""
+from concurrent.futures import Future, ThreadPoolExecutor
+
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
@@ -146,6 +148,10 @@ class GameScreen(Screen):
         self._ai_thinking_timer = 0.0
         self._ai_pending_action: ActionRequest | None = None
         self._ai_failed_actions: set[tuple] = set()
+        self._ai_executor: ThreadPoolExecutor | None = None
+        self._ai_action_future: Future | None = None
+        self._ai_action_job_key: tuple | None = None
+        self._ai_shutdown = False
         self.setup_player_idx: int = 0
         self.setup_pass_done: dict[int, bool] = {0: False, 1: False}
         self._is_remote_host = network_manager is not None and turn_manager is not None
@@ -361,7 +367,28 @@ class GameScreen(Screen):
         self.hovered_button = None
         self.hovered_card_action = None
 
+    def _ensure_ai_executor(self) -> None:
+        if not self.challenge_mode or self.ai_controller is None:
+            return
+        if self._ai_executor is None:
+            self._ai_executor = ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="challenge-ai",
+            )
+        self._ai_shutdown = False
+
+    def _shutdown_ai_executor(self) -> None:
+        self._ai_shutdown = True
+        if self._ai_action_future is not None:
+            self._ai_action_future.cancel()
+            self._ai_action_future = None
+            self._ai_action_job_key = None
+        if self._ai_executor is not None:
+            self._ai_executor.shutdown(wait=False, cancel_futures=True)
+            self._ai_executor = None
+
     def on_enter(self):
+        self._ensure_ai_executor()
         self._build_action_buttons()
         self._has_attacked = False
         # Initialize state tracking counts for animation detection
@@ -370,6 +397,13 @@ class GameScreen(Screen):
         if self.state.phase == TurnPhase.SETUP and not self._setup_initialized:
             if not self._is_remote_client:
                 self._init_setup()
+
+    def on_exit(self):
+        # ScreenManager calls on_exit both when this screen is covered and when
+        # it is removed.  Keep the AI worker alive for temporary overlays.
+        if self.manager.top is self:
+            return
+        self._shutdown_ai_executor()
 
     def _setup_shuffle_callbacks(self):
         """Wire shuffle animation triggers to player state."""
@@ -3555,12 +3589,71 @@ class GameScreen(Screen):
             and action_req.player not in (self.human_player_idx, 1 - self.ai_player_idx)
         )
 
+    def _ai_state_job_key(self) -> tuple:
+        return (
+            self.state.turn_number,
+            self.state.phase,
+            self.state.active_player_idx,
+            self.setup_player_idx,
+            self.state.pending_promotion_player,
+        )
+
+    def _ai_animation_busy(self) -> bool:
+        return (
+            self._pending_turn_end > 0
+            or self._animating_action
+            or self.coin_flip.active
+            or bool(self.card_fly.active)
+        )
+
+    def _start_ai_action_search(self) -> None:
+        if self._ai_action_future is not None:
+            return
+        self._ensure_ai_executor()
+        if self._ai_executor is None or self.ai_controller is None:
+            return
+        self._ai_action_job_key = self._ai_state_job_key()
+        self._ai_action_future = self._ai_executor.submit(
+            self.ai_controller.choose_action,
+            self.state,
+            self.ai_player_idx,
+        )
+
+    def _finish_ai_action_search(self) -> None:
+        future = self._ai_action_future
+        job_key = self._ai_action_job_key
+        self._ai_action_future = None
+        self._ai_action_job_key = None
+        if future is None:
+            return
+        if future.cancelled() or self._ai_shutdown:
+            return
+        if not self._is_ai_turn_context() or job_key != self._ai_state_job_key():
+            self._ai_thinking_timer = 0.0
+            return
+        try:
+            action = future.result()
+        except Exception as exc:
+            self.state._log(f"AI思考失败: {exc}")
+            self._ai_thinking_timer = self._ai_action_delay
+            return
+        self._execute_ai_action(action)
+
     def _update_challenge_ai(self, dt: float) -> None:
+        if self._ai_action_future is not None:
+            if self.state.winner is not None or self.state.phase == TurnPhase.GAME_OVER:
+                self._ai_action_future.cancel()
+                self._ai_action_future = None
+                self._ai_action_job_key = None
+                return
+            if self._ai_action_future.done() and not self._ai_animation_busy():
+                self._finish_ai_action_search()
+            return
         if not self._is_ai_turn_context() or self.tm is None or self.ai_controller is None:
             return
         if self.state.winner is not None or self.state.phase == TurnPhase.GAME_OVER:
             return
-        if self._pending_turn_end > 0 or self._animating_action or self.coin_flip.active:
+        if self._ai_animation_busy():
             return
         if self._ai_pending_action is not None:
             self._ai_thinking_timer -= dt
@@ -3582,8 +3675,7 @@ class GameScreen(Screen):
             return
         self._ai_thinking_timer = self._ai_action_delay
 
-        action = self.ai_controller.choose_action(self.state, self.ai_player_idx)
-        self._execute_ai_action(action)
+        self._start_ai_action_search()
 
     def _execute_ai_action(self, ai_action) -> None:
         if self.tm is None:

@@ -6,7 +6,7 @@ Run with:
 import os
 import json
 import sys
-import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -52,6 +52,7 @@ from ui.screens.search_screen import SearchScreen
 from ui.screens.title_screen import TitleScreen
 from ui.coin_flip import CoinFlipAnimation
 from ui.energy_icons import get_energy_icon_surface
+from tests.temp_utils import temp_dir
 
 
 class UiSmokeTests(unittest.TestCase):
@@ -106,6 +107,15 @@ class UiSmokeTests(unittest.TestCase):
         callback = kwargs.get("on_complete")
         if callback:
             callback()
+
+    def _pump_until(self, screen, predicate, frames=80, dt=0.2):
+        for _ in range(frames):
+            screen.update(dt)
+            if predicate():
+                return
+            if getattr(screen, "_ai_action_future", None) is not None:
+                time.sleep(0.005)
+        self.fail("condition was not reached while pumping screen updates")
 
     def _phase_button(self, screen, action):
         return next(item for item in screen.action_buttons
@@ -183,7 +193,7 @@ class UiSmokeTests(unittest.TestCase):
                 screen.draw(self.surface)
 
     def test_ai_training_screen_progress_states_draw(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             candidate = os.path.join(tmpdir, "candidate.json")
             policy = os.path.join(tmpdir, "policy.json")
             progress = os.path.join(tmpdir, "progress.jsonl")
@@ -308,7 +318,7 @@ class UiSmokeTests(unittest.TestCase):
             def poll(self):
                 return None
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             candidate = os.path.join(tmpdir, "candidate.json")
             progress = os.path.join(tmpdir, "progress.jsonl")
             with open(candidate, "w", encoding="utf-8") as fh:
@@ -352,7 +362,7 @@ class UiSmokeTests(unittest.TestCase):
             def poll(self):
                 return None
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             screen = AITrainingScreen(
                 self._manager(),
                 policy_path=os.path.join("data", "ai_policies.json"),
@@ -470,7 +480,7 @@ class UiSmokeTests(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(tmpdir, "data", "ai_policies.json")))
 
     def test_ai_training_screen_apply_supports_root_relative_policy_path(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             candidate = os.path.join(tmpdir, "candidate.json")
             payload = {
                 "version": 1,
@@ -765,8 +775,10 @@ class UiSmokeTests(unittest.TestCase):
         self.assertTrue(result.success, result.log_message)
         screen._setup_done(0)
 
-        for _ in range(12):
-            screen.update(1.0)
+        self._pump_until(
+            screen,
+            lambda: state.p2.active is not None and state.phase != TurnPhase.SETUP,
+        )
 
         self.assertIs(screen._get_display_player(), state.p1)
         self.assertIs(screen._get_opponent(), state.p2)
@@ -826,12 +838,15 @@ class UiSmokeTests(unittest.TestCase):
         )
         screen._sync_tracking_counts()
 
-        screen.update(1.0)
+        self._pump_until(screen, lambda: state.phase == TurnPhase.ATTACK)
         self.assertEqual(state.phase, TurnPhase.ATTACK)
         self.assertIn(SLOT_PLAYER_ACTIVE, screen.damage_flash._flashes)
         self.assertIn(SLOT_OPP_ACTIVE, screen.attack_shake._shakes)
 
-        screen.update(1.0)
+        self._pump_until(
+            screen,
+            lambda: state.active_player_idx == 0 and state.phase == TurnPhase.MAIN,
+        )
         self.assertEqual(state.active_player_idx, 0)
         self.assertEqual(state.phase, TurnPhase.MAIN)
 
@@ -886,11 +901,61 @@ class UiSmokeTests(unittest.TestCase):
         )
         manager.push_screen(screen)
 
-        screen.update(1.0)
+        self._pump_until(
+            screen,
+            lambda: state.winner == 1 and isinstance(manager.top, EndScreen),
+        )
 
         self.assertEqual(state.winner, 1)
         self.assertEqual(state.phase, TurnPhase.GAME_OVER)
         self.assertIsInstance(manager.top, EndScreen)
+
+    def test_challenge_ai_search_does_not_block_update_loop(self):
+        base = CardRegistry.get("sv2-delib")
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 3
+        state.p1.active = PokemonInPlay(base)
+        state.p2.active = PokemonInPlay(base)
+        state.p1.deck = [base]
+        state.p2.deck = [base]
+        state.p1.prizes = [base] * 6
+        state.p2.prizes = [base] * 6
+
+        class SlowAI:
+            def choose_action(self, game_state, player_idx):
+                time.sleep(0.2)
+                return AIAction(PlayerAction.END_TURN, {}, terminal=True)
+
+            def resolve_pending_action(self, game_state, action_request):
+                return ChallengeAI().resolve_pending_action(game_state, action_request)
+
+            def apply_choice(self, game_state, action_request, choice):
+                return ChallengeAI().apply_choice(game_state, action_request, choice)
+
+        screen = GameScreen(
+            self._manager(), state, TurnManager(state),
+            challenge_mode=True,
+            human_player_idx=0,
+            ai_player_idx=1,
+            ai_controller=SlowAI(),
+        )
+
+        started = time.perf_counter()
+        screen.update(1.0)
+        elapsed = time.perf_counter() - started
+
+        self.assertLess(elapsed, 0.1)
+        self.assertIsNotNone(screen._ai_action_future)
+        self.assertEqual(state.active_player_idx, 1)
+
+        self._pump_until(
+            screen,
+            lambda: state.active_player_idx == 0 and state.phase == TurnPhase.MAIN,
+            frames=120,
+        )
 
     def test_challenge_human_ko_ai_promotes_without_blocking(self):
         base = CardRegistry.get("sv2-delib")

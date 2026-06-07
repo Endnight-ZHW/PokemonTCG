@@ -514,10 +514,7 @@ class AITrainingScreen(Screen):
 
     def _cleanup_stderr(self):
         if self._stderr_file is not None:
-            try:
-                os.unlink(self._stderr_file)
-            except OSError:
-                pass
+            self._discard_training_file(self._stderr_file)
             self._stderr_file = None
 
     def _is_rl_mode(self) -> bool:
@@ -920,7 +917,7 @@ class AITrainingScreen(Screen):
             )
         except OSError as exc:
             os.close(stderr_fd)
-            os.unlink(stderr_path)
+            self._discard_training_file(stderr_path)
             self._stderr_file = None
             self.process = None
             self.status = "error"
@@ -928,6 +925,21 @@ class AITrainingScreen(Screen):
         else:
             os.close(stderr_fd)
             self._stderr_file = stderr_path
+
+    def _discard_training_file(self, path: str) -> bool:
+        """Remove a stale training file, or truncate it if removal is blocked."""
+        if not os.path.exists(path):
+            return True
+        try:
+            os.unlink(path)
+            return True
+        except OSError:
+            try:
+                with open(path, "wb"):
+                    pass
+                return True
+            except OSError:
+                return False
 
     def _reset_training_files(self) -> bool:
         paths = [self._abs_path(self.progress_path)]
@@ -941,12 +953,9 @@ class AITrainingScreen(Screen):
         else:
             paths.append(self._abs_path(self._active_output_path()))
         for path in paths:
-            try:
-                if os.path.exists(path):
-                    os.unlink(path)
-            except OSError as exc:
+            if not self._discard_training_file(path):
                 self.status = "error"
-                self.status_message = f"无法清理旧训练文件: {exc}"
+                self.status_message = f"无法清理旧训练文件: {path}"
                 return False
         return True
 

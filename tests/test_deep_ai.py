@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from unittest import mock
 
@@ -30,6 +29,7 @@ from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, STATE_CARD_SLOTS, STATE_NU
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
+from tests.temp_utils import temp_dir
 
 
 class DeepAITests(unittest.TestCase):
@@ -181,7 +181,7 @@ class DeepAITests(unittest.TestCase):
         self.assertIn("--min-win-delta", help_result.stdout)
         self.assertIn("--teacher-label-model-states", help_result.stdout)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "model.pt")
             progress = os.path.join(tmpdir, "progress.jsonl")
             result = subprocess.run(
@@ -229,7 +229,7 @@ class DeepAITests(unittest.TestCase):
     def test_deep_training_writes_progress_events_and_sidecar(self):
         from engine.ai.dl.training import DeepTrainingConfig, run_deep_training
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "model.pt")
             progress = os.path.join(tmpdir, "progress.jsonl")
             payload = run_deep_training(
@@ -508,7 +508,7 @@ class DeepAITests(unittest.TestCase):
         class Manager:
             _app = None
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             model_dir = os.path.join(tmpdir, "data", "ai_models")
             os.makedirs(model_dir, exist_ok=True)
             applied = os.path.join(model_dir, "fire.pt")
@@ -544,7 +544,7 @@ class DeepAITests(unittest.TestCase):
     def test_cuda_request_falls_back_to_cpu_when_cuda_unavailable(self):
         from engine.ai.dl import training as dl_training
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "model.pt")
             progress = os.path.join(tmpdir, "progress.jsonl")
             events = []
@@ -572,7 +572,7 @@ class DeepAITests(unittest.TestCase):
     def test_v6_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
         from engine.ai.dl.model import checkpoint_payload, create_model, load_checkpoint, save_checkpoint, torch
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             path = os.path.join(tmpdir, "model_v6.pt")
             model = create_model(choice_head_enabled=True)
             save_checkpoint(path, model, {"trainer": "test"})

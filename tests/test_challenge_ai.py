@@ -3,7 +3,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from concurrent.futures.process import BrokenProcessPool
@@ -41,6 +40,7 @@ from engine.player_state import PokemonInPlay
 from engine.rules_validator import can_play_basic, can_play_stadium, can_use_ability
 from engine.snapshot import snapshot_state
 from engine.turn_manager import TurnManager
+from tests.temp_utils import best_effort_unlink, temp_dir, temp_file_path
 
 
 class ChallengeAITests(unittest.TestCase):
@@ -190,15 +190,15 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(action.params.get("target"), "active")
 
     def test_policy_file_failures_fall_back_to_profile_weights(self):
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+        policy_path = temp_file_path(prefix="policy", suffix=".json")
+        with open(policy_path, "w", encoding="utf-8") as fh:
             fh.write("{bad json")
-            policy_path = fh.name
         try:
             ai = create_challenge_ai("fire", AIConfig(policy_path=policy_path))
             self.assertEqual(ai.profile.key, "fire")
             self.assertIn("core_in_play", ai.policy_weights)
         finally:
-            os.unlink(policy_path)
+            best_effort_unlink(policy_path)
 
     def test_policy_loader_rejects_bad_eval_candidate(self):
         payload = {
@@ -222,14 +222,14 @@ class ChallengeAITests(unittest.TestCase):
                 },
             },
         }
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+        policy_path = temp_file_path(prefix="policy", suffix=".json")
+        with open(policy_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh)
-            policy_path = fh.name
         try:
             self.assertEqual(load_policy_weights("water", policy_path), {})
             self.assertEqual(load_policy_weights("fire", policy_path)["core_in_play"], 111.0)
         finally:
-            os.unlink(policy_path)
+            best_effort_unlink(policy_path)
 
     def test_policy_loader_rejects_benchmark_regression(self):
         payload = {
@@ -255,13 +255,13 @@ class ChallengeAITests(unittest.TestCase):
                 },
             },
         }
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+        policy_path = temp_file_path(prefix="policy", suffix=".json")
+        with open(policy_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh)
-            policy_path = fh.name
         try:
             self.assertEqual(load_policy_weights("lightning", policy_path), {})
         finally:
-            os.unlink(policy_path)
+            best_effort_unlink(policy_path)
 
     def test_policy_loader_rejects_low_global_benchmark_without_gain(self):
         payload = {
@@ -294,13 +294,13 @@ class ChallengeAITests(unittest.TestCase):
                 ],
             },
         }
-        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
+        policy_path = temp_file_path(prefix="policy", suffix=".json")
+        with open(policy_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh)
-            policy_path = fh.name
         try:
             self.assertEqual(load_policy_weights("lightning", policy_path), {})
         finally:
-            os.unlink(policy_path)
+            best_effort_unlink(policy_path)
 
     def test_benchmark_acceptance_guard_rejects_low_global_rate(self):
         policies = {
@@ -501,7 +501,7 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(len(state.p1.bench[0].energy_cards), 2)
 
     def test_training_script_small_run_writes_policy_json(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "ai_policies.json")
             result = subprocess.run(
                 [
@@ -619,7 +619,7 @@ class ChallengeAITests(unittest.TestCase):
             winner = 0 if seed % 2 == 0 else 1
             return winner, float(seed % 100)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "candidate.json")
             progress = os.path.join(tmpdir, "progress.jsonl")
             config = TrainingConfig(
