@@ -1,7 +1,7 @@
 """Main Pygame application with game loop and proportional letterbox scaling."""
 import pygame
 import sys
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, NETWORK_PORT
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS
 from ui.screen_manager import ScreenManager
 from ui.screens.title_screen import TitleScreen
 
@@ -59,15 +59,6 @@ class GameApp:
         self.is_remote_host = False
         self.is_remote_client = False
         self.apply_type_matchups = False
-
-        # Auto-connect support (set by main.py CLI args before run())
-        self.auto_connect: str | None = None       # "host", "client", or "relay"
-        self.auto_host_port: int = NETWORK_PORT
-        self.auto_client_ip: str = "localhost"
-        self.auto_client_port: int = NETWORK_PORT
-        self.auto_relay_host: str = ""
-        self.auto_relay_port: int = 8766
-        self.auto_relay_room: str | None = None
 
         self.screen_manager.push_screen(TitleScreen(self.screen_manager))
 

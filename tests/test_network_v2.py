@@ -55,7 +55,7 @@ class ProtocolV2Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not CardRegistry.is_initialized():
-            CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+            CardRegistry.initialize(ALL_CARD_IDS)
 
     def test_action_request_roundtrip_keeps_all_network_fields(self):
         card = CardRegistry.get("sv2-delib")

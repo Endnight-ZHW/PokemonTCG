@@ -29,14 +29,14 @@ from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, STATE_CARD_SLOTS, STATE_NU
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
-from tests.temp_utils import temp_dir
+from tests.temp_utils import supports_file_delete, temp_dir
 
 
 class DeepAITests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not CardRegistry.is_initialized():
-            CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+            CardRegistry.initialize(ALL_CARD_IDS)
 
     def _simple_state(self):
         basic = CardRegistry.get("sv2-delib")
@@ -499,6 +499,9 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(screen.status, "cancelled")
 
     def test_rl_all_reset_does_not_delete_applied_models(self):
+        if not supports_file_delete():
+            self.skipTest("Current sandbox does not allow deleting test files")
+
         import pygame
         from ui.screens.ai_training_screen import AITrainingScreen
 

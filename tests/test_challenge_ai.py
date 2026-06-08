@@ -47,7 +47,7 @@ class ChallengeAITests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not CardRegistry.is_initialized():
-            CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+            CardRegistry.initialize(ALL_CARD_IDS)
 
     def _started_game(self):
         state = GameState()

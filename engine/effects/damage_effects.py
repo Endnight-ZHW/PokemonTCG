@@ -1,6 +1,6 @@
 """Damage-related effect handlers."""
 import random
-from config import DAMAGE_PER_COUNTER
+from engine.rules_constants import DAMAGE_PER_COUNTER
 from engine.enums import TurnPhase
 from engine.game_state import GameState, ActionResult, ActionRequest
 

@@ -71,12 +71,6 @@ class LobbyScreen(Screen):
         self.connected: bool = False
         self._is_host: bool = False
 
-        # Auto-connect (CLI flags)
-        self.auto_mode: str | None = None
-        self._auto_relay_connect = False
-        self._auto_connect_pending = False
-        self._auto_connect_delay: float = 0.0
-
         # ── Network ────────────────────────────────────────────────
         self._nm = None
         self._connection_started = False
@@ -87,9 +81,11 @@ class LobbyScreen(Screen):
 
         # ── Input fields ───────────────────────────────────────────
         self._ip_input: TextInput | None = None
+        self._host_port_input: TextInput | None = None
         self._port_input: TextInput | None = None
         self._room_code_input: TextInput | None = None
         self._relay_host_input: TextInput | None = None
+        self._relay_port_input: TextInput | None = None
 
         # ── Chat ───────────────────────────────────────────────────
         self._chat_messages: list[dict] = []
@@ -159,6 +155,13 @@ class LobbyScreen(Screen):
                                      placeholder="8765", max_length=5)
         self._port_input.text = str(NETWORK_PORT)
 
+        # Port input (LAN host)
+        host_port_rect = pygame.Rect(CARD_X + (CARD_W - 100) // 2,
+                                     CARD_Y + 115, 100, INPUT_H)
+        self._host_port_input = TextInput(host_port_rect, get_font_size(20),
+                                          placeholder="8765", max_length=5)
+        self._host_port_input.text = str(NETWORK_PORT)
+
         # Room code input (relay client)
         code_rect = pygame.Rect(CARD_X + (CARD_W - 260) // 2,
                                  CARD_Y + 140, 260, 56)
@@ -167,12 +170,19 @@ class LobbyScreen(Screen):
                                           validator=lambda s: s == "" or (s.isdigit() and len(s) <= 4))
 
         # Relay server host input (relay host/client)
-        from config import RELAY_SERVER_HOST
+        from config import RELAY_SERVER_HOST, RELAY_SERVER_PORT
         relay_host_rect = pygame.Rect(CARD_X + CARD_W // 2 - INPUT_W // 2,
                                        CARD_Y + 78, INPUT_W, INPUT_H)
         self._relay_host_input = TextInput(relay_host_rect, get_font_size(18),
                                            placeholder="输入服务器地址", max_length=40)
         self._relay_host_input.text = RELAY_SERVER_HOST
+        self._relay_port_input = TextInput(
+            pygame.Rect(relay_host_rect.right + 8, relay_host_rect.y, 90, INPUT_H),
+            get_font_size(18),
+            placeholder="8766",
+            max_length=5,
+        )
+        self._relay_port_input.text = str(RELAY_SERVER_PORT)
 
     # ── State management ──────────────────────────────────────────
 
@@ -185,8 +195,9 @@ class LobbyScreen(Screen):
         self._blur_inputs()
 
     def _blur_inputs(self):
-        for w in (self._chat_input, self._ip_input, self._port_input,
-                  self._room_code_input, self._relay_host_input):
+        for w in (self._chat_input, self._ip_input, self._host_port_input,
+                  self._port_input, self._room_code_input,
+                  self._relay_host_input, self._relay_port_input):
             if w:
                 w.blur()
 
@@ -246,6 +257,9 @@ class LobbyScreen(Screen):
         if self._ip_input and self._state == LobbyState.LAN_CLIENT:
             if self._ip_input.handle_event(event):
                 return
+        if self._host_port_input and self._state == LobbyState.LAN_HOST:
+            if self._host_port_input.handle_event(event):
+                return
         if self._port_input and self._state == LobbyState.LAN_CLIENT:
             if self._port_input.handle_event(event):
                 return
@@ -254,6 +268,9 @@ class LobbyScreen(Screen):
                 return
         if self._relay_host_input and self._state in (LobbyState.RELAY_HOST, LobbyState.RELAY_CLIENT):
             if self._relay_host_input.handle_event(event):
+                return
+        if self._relay_port_input and self._state in (LobbyState.RELAY_HOST, LobbyState.RELAY_CLIENT):
+            if self._relay_port_input.handle_event(event):
                 return
 
         if self._state == LobbyState.CONNECTING:
@@ -312,12 +329,30 @@ class LobbyScreen(Screen):
 
     # ── Connection ─────────────────────────────────────────────────
 
+    def _read_port(self, widget: TextInput | None, default: int, label: str) -> int | None:
+        text = widget.text if widget else str(default)
+        text = text.strip() or str(default)
+        try:
+            port = int(text)
+            if not 1 <= port <= 65535:
+                raise ValueError
+            return port
+        except ValueError:
+            self.error_text = f"{label}无效（1-65535）"
+            self._trigger_error_shake()
+            self.toasts.show(f"{label}无效", "error", 3.0)
+            return None
+
     def _do_connect(self):
         if self._connection_started:
             return
         app = self._get_app()
 
         if self._state == LobbyState.LAN_HOST:
+            port = self._read_port(self._host_port_input, NETWORK_PORT, "监听端口")
+            if port is None:
+                return
+            self.host_port = port
             self._is_host = True
             self._connection_started = True
             self._connect_origin_state = self._state
@@ -331,20 +366,13 @@ class LobbyScreen(Screen):
 
         elif self._state == LobbyState.LAN_CLIENT:
             ip_text = self._ip_input.text if self._ip_input else ""
-            port_text = self._port_input.text if self._port_input else str(NETWORK_PORT)
             if not ip_text.strip():
                 self.error_text = "请输入对手的 IP 地址"
                 self._trigger_error_shake()
                 self.toasts.show("请输入对手的 IP 地址", "error", 3.0)
                 return
-            try:
-                port = int(port_text)
-                if port < 1 or port > 65535:
-                    raise ValueError
-            except ValueError:
-                self.error_text = "端口号无效（1-65535）"
-                self._trigger_error_shake()
-                self.toasts.show("端口号无效", "error", 3.0)
+            port = self._read_port(self._port_input, NETWORK_PORT, "端口号")
+            if port is None:
                 return
             self._is_host = False
             self._connection_started = True
@@ -371,6 +399,9 @@ class LobbyScreen(Screen):
             self._trigger_error_shake()
             self.toasts.show("请输入服务器地址", "error", 3.0)
             return
+        relay_port = self._read_port(self._relay_port_input, RELAY_SERVER_PORT, "服务器端口")
+        if relay_port is None:
+            return
 
         if self._state == LobbyState.RELAY_HOST:
             self._is_host = True
@@ -381,7 +412,7 @@ class LobbyScreen(Screen):
             self.error_text = ""
             self.toasts.show("正在连接服务器...", "info", 5.0)
             if app:
-                app.start_relay_host(relay_host, RELAY_SERVER_PORT)
+                app.start_relay_host(relay_host, relay_port)
                 self._nm = app.network_manager
 
         elif self._state == LobbyState.RELAY_CLIENT:
@@ -399,7 +430,7 @@ class LobbyScreen(Screen):
             self.error_text = ""
             self.toasts.show(f"正在加入房间 {room_code}...", "info", 5.0)
             if app:
-                app.start_relay_client(relay_host, RELAY_SERVER_PORT, room_code)
+                app.start_relay_client(relay_host, relay_port, room_code)
                 self._nm = app.network_manager
 
     def _trigger_error_shake(self):
@@ -437,7 +468,9 @@ class LobbyScreen(Screen):
         if self._chat_send_cooldown > 0:
             self._chat_send_cooldown = max(0, self._chat_send_cooldown - dt)
 
-        for w in (self._chat_input, self._ip_input, self._port_input, self._room_code_input, self._relay_host_input):
+        for w in (self._chat_input, self._ip_input, self._host_port_input,
+                  self._port_input, self._room_code_input,
+                  self._relay_host_input, self._relay_port_input):
             if w:
                 w.update(dt)
 
@@ -455,50 +488,6 @@ class LobbyScreen(Screen):
                 e["y"] = SCREEN_HEIGHT + 40
             if e["y"] > SCREEN_HEIGHT + 60:
                 e["y"] = -40
-
-        # Auto-connect
-        if self._auto_connect_pending:
-            self._auto_connect_delay -= dt
-            if self._auto_connect_delay <= 0:
-                self._auto_connect_pending = False
-                self._execute_auto_connect()
-
-        if self.auto_mode and not self._connection_started:
-            mapping = {
-                "host": (LobbyState.LAN_HOST, True),
-                "client": (LobbyState.LAN_CLIENT, False),
-                "relay_host": (LobbyState.RELAY_HOST, True),
-                "relay_client": (LobbyState.RELAY_CLIENT, False),
-            }
-            pair = mapping.get(self.auto_mode)
-            if pair:
-                self._state, self._is_host = pair
-                self._connection_started = True
-                self._connect_origin_state = self._state
-                app = self._get_app()
-                if app:
-                    self._nm = app.network_manager
-                self.auto_mode = None
-                if self._state == LobbyState.LAN_HOST:
-                    self.status_text = f"等待对手连接... (端口: {self.host_port})"
-                elif self._state == LobbyState.LAN_CLIENT:
-                    ip = getattr(app, "auto_client_ip", "") if app else ""
-                    port = getattr(app, "auto_client_port", NETWORK_PORT) if app else NETWORK_PORT
-                    self.status_text = f"正在连接到 {ip}:{port}..."
-                elif self._state == LobbyState.RELAY_HOST:
-                    self.status_text = "正在连接中继服务器并创建房间..."
-                elif self._state == LobbyState.RELAY_CLIENT:
-                    room_code = self._room_code_input.text if self._room_code_input else ""
-                    self.status_text = f"正在连接中继服务器并加入房间 {room_code}..."
-
-        if self._auto_relay_connect and not self._connection_started:
-            self._auto_relay_connect = False
-            app = self._get_app()
-            if app and getattr(app, "network_manager", None):
-                self.auto_mode = ("relay_client" if self._room_code_input
-                                  and self._room_code_input.text else "relay_host")
-            else:
-                self._do_relay_connect()
 
         # Poll network. Also poll during RELAY_HOST / RELAY_CONNECTED states
         # because _connection_started is set to False after room_created/opponent_joined,
@@ -550,12 +539,6 @@ class LobbyScreen(Screen):
                 if self._nm:
                     self._nm.stop()
 
-    def _execute_auto_connect(self):
-        if self._is_host and self._state in (LobbyState.LAN_HOST,):
-            self._do_connect()
-        elif self._state in (LobbyState.RELAY_HOST, LobbyState.RELAY_CLIENT):
-            self._do_relay_connect()
-
     def _start_network_game(self):
         from data.deck_definitions import (
             FIRE_DECK, WATER_DECK, PSYCHIC_DECK_NATU,
@@ -567,11 +550,9 @@ class LobbyScreen(Screen):
 
         if not CardRegistry.is_initialized():
             try:
-                CardRegistry.initialize(ALL_CARD_IDS, use_api=True)
+                CardRegistry.initialize(ALL_CARD_IDS)
             except Exception:
-                from data.card_registry import create_offline_cards
-                CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
-                create_offline_cards(ALL_CARD_IDS)
+                CardRegistry.initialize(ALL_CARD_IDS)
 
         available_decks = {
             "fire": FIRE_DECK, "water": WATER_DECK,
@@ -758,13 +739,16 @@ class LobbyScreen(Screen):
         title = self.font_subtitle.render("局域网联机 · 创建房间", True, UI_HIGHLIGHT)
         surface.blit(title, title.get_rect(center=(cx, card_rect.y + 40)))
 
-        port_label = self.font_small.render(f"监听端口: {self.host_port}", True, (160, 160, 190))
-        surface.blit(port_label, port_label.get_rect(center=(cx, card_rect.y + 100)))
+        port_label = self.font_small.render("监听端口:", True, UI_TEXT_PRIMARY)
+        surface.blit(port_label, (cx - 120, card_rect.y + 112))
+        if self._host_port_input:
+            self._host_port_input.rect = pygame.Rect(cx - 15, card_rect.y + 104, 110, INPUT_H)
+            self._host_port_input.draw(surface)
 
         info = self.font_small.render("等待同一局域网内的对手连接到此端口...", True, (140, 140, 170))
-        surface.blit(info, info.get_rect(center=(cx, card_rect.y + 150)))
+        surface.blit(info, info.get_rect(center=(cx, card_rect.y + 165)))
 
-        btn_rect = pygame.Rect(cx - BTN_W // 2, card_rect.y + 210, BTN_W, BTN_H)
+        btn_rect = pygame.Rect(cx - BTN_W // 2, card_rect.y + 220, BTN_W, BTN_H)
         btn_hover = self._is_hovered(btn_rect)
         is_press = self._pressing_btn == "lan_start_btn"
         draw_gradient_button(surface, btn_rect, btn_hover or is_press,
@@ -775,7 +759,7 @@ class LobbyScreen(Screen):
         self._add_ctrl("lan_start_btn", "button", btn_rect)
 
         hint = self.font_hint.render("提示: 告诉对手你的 IP 地址和端口号", True, (120, 120, 150))
-        surface.blit(hint, hint.get_rect(center=(cx, card_rect.y + 290)))
+        surface.blit(hint, hint.get_rect(center=(cx, card_rect.y + 300)))
 
         back_btn = pygame.Rect(cx - 60, card_rect.y + 350, 120, 30)
         back_hover = self._is_hovered(back_btn)
@@ -836,15 +820,22 @@ class LobbyScreen(Screen):
         title = self.font_subtitle.render("服务器联机 · 创建房间", True, UI_HIGHLIGHT)
         surface.blit(title, title.get_rect(center=(cx, card_rect.y + 40)))
 
-        # Server address input (centered)
+        # Server address and port inputs (centered)
         server_label = self.font_small.render("服务器:", True, (140, 140, 170))
-        total_w = server_label.get_width() + 8 + 280
+        port_label = self.font_small.render("端口:", True, (140, 140, 170))
+        total_w = server_label.get_width() + 8 + 280 + 14 + port_label.get_width() + 8 + 90
         label_x = cx - total_w // 2
         surface.blit(server_label, (label_x, card_rect.y + 78))
+        port_label_x = label_x + server_label.get_width() + 8 + 280 + 14
+        surface.blit(port_label, (port_label_x, card_rect.y + 78))
         if self._relay_host_input:
             self._relay_host_input.rect = pygame.Rect(
                 label_x + server_label.get_width() + 8, card_rect.y + 72, 280, INPUT_H)
             self._relay_host_input.draw(surface)
+        if self._relay_port_input:
+            self._relay_port_input.rect = pygame.Rect(
+                port_label_x + port_label.get_width() + 8, card_rect.y + 72, 90, INPUT_H)
+            self._relay_port_input.draw(surface)
 
         if self.room_code_display:
             code_label = self.font_small.render("房间号 (告诉对手):", True, (140, 140, 170))
@@ -905,15 +896,22 @@ class LobbyScreen(Screen):
         title = self.font_subtitle.render("服务器联机 · 加入房间", True, UI_HIGHLIGHT)
         surface.blit(title, title.get_rect(center=(cx, card_rect.y + 40)))
 
-        # Server address input (centered)
+        # Server address and port inputs (centered)
         server_label = self.font_small.render("服务器:", True, (140, 140, 170))
-        total_w = server_label.get_width() + 8 + 280
+        port_label = self.font_small.render("端口:", True, (140, 140, 170))
+        total_w = server_label.get_width() + 8 + 280 + 14 + port_label.get_width() + 8 + 90
         label_x = cx - total_w // 2
         surface.blit(server_label, (label_x, card_rect.y + 78))
+        port_label_x = label_x + server_label.get_width() + 8 + 280 + 14
+        surface.blit(port_label, (port_label_x, card_rect.y + 78))
         if self._relay_host_input:
             self._relay_host_input.rect = pygame.Rect(
                 label_x + server_label.get_width() + 8, card_rect.y + 72, 280, INPUT_H)
             self._relay_host_input.draw(surface)
+        if self._relay_port_input:
+            self._relay_port_input.rect = pygame.Rect(
+                port_label_x + port_label.get_width() + 8, card_rect.y + 72, 90, INPUT_H)
+            self._relay_port_input.draw(surface)
 
         code_label = self.font_small.render("输入对手给出的4位房间号:", True, UI_TEXT_PRIMARY)
         surface.blit(code_label, code_label.get_rect(center=(cx, card_rect.y + 140)))

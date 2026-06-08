@@ -198,7 +198,7 @@ def is_torch_available() -> bool:
 
 def _ensure_cards_loaded() -> None:
     if not CardRegistry.is_initialized():
-        CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+        CardRegistry.initialize(ALL_CARD_IDS)
 
 
 def _worker_init() -> None:

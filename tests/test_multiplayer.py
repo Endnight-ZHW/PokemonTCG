@@ -34,7 +34,7 @@ TEST_PORT = 18765  # Use a different port to avoid conflicts
 def init_cards():
     """Initialize CardRegistry with offline data."""
     if not CardRegistry.is_initialized():
-        CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+        CardRegistry.initialize(ALL_CARD_IDS)
     print("[OK] CardRegistry initialized")
 
 

@@ -1,6 +1,6 @@
 """Action resolver - executes game actions and mutates GameState."""
 import random
-from config import DAMAGE_PER_COUNTER, COIN_FLIP_THRESHOLD
+from engine.rules_constants import DAMAGE_PER_COUNTER, COIN_FLIP_THRESHOLD
 from engine.enums import TurnPhase, StatusType, PlayerAction, EventType
 from engine.game_state import GameState, ActionResult, ActionRequest
 from engine.rules_validator import (

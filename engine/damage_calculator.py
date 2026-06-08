@@ -1,5 +1,5 @@
 """Damage calculator - applies weakness, resistance, and modifiers."""
-from config import DAMAGE_PER_COUNTER
+from engine.rules_constants import DAMAGE_PER_COUNTER
 from data.card_models import Card, WeakRes
 from engine.player_state import PokemonInPlay
 

@@ -9,15 +9,15 @@ from __future__ import annotations
 import random
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from math import comb
 from typing import Any
 
 from engine.enums import PlayerAction, StatusType, TurnPhase
 from engine.game_state import ActionRequest, ActionResult, GameState
+from engine.ai.challenge.layers import ActionEnumerator, ChoicePolicy, Evaluator, Simulator
+from engine.ai.challenge.types import AIAction, AIChoice, AIConfig
 from engine.ai.profiles import (
-    DEFAULT_POLICY_PATH,
-    DeckAIProfile,
     get_deck_ai_profile,
     load_policy_weights,
     merged_profile_weights,
@@ -38,97 +38,6 @@ from utils.logger import get_logger
 _logger = get_logger(__name__)
 from engine.snapshot import restore_state, snapshot_state
 from engine.turn_manager import TurnManager
-
-
-@dataclass(frozen=True)
-class AIConfig:
-    thinking_time_seconds: float = 6.0
-    beam_width: int = 16
-    max_sequence_depth: int = 8
-    max_turn_actions: int = 30
-    coin_sample_count: int = 8
-    opponent_response_actions: int = 8
-    opponent_response_weight: float = 0.55
-    deterministic_search: bool = False
-    random_seed: int = 17
-    deck_key: str | None = None
-    policy_path: str | None = DEFAULT_POLICY_PATH
-    policy_weights: dict[str, float] | None = None
-    profile: DeckAIProfile | None = None
-    # Search settings. "hybrid" uses beam-style root pruning plus minimax scoring.
-    search_algorithm: str = "hybrid"  # "hybrid", "beam", or "minimax"
-    minimax_max_depth: int = 3  # full turn-pairs (MAX+MIN = one pair)
-    minimax_determinizations: int = 3  # opponent-hand worlds for PIMC
-    search_node_budget: int = 0  # 0 means unlimited; training presets use a fixed deterministic cap.
-    chance_branch_limit: int = 4
-    response_branch_limit: int = 0  # 0 falls back to opponent_response_actions.
-    skip_effect_dry_run: bool = False
-
-
-@dataclass(frozen=True)
-class AIAction:
-    action: PlayerAction | str
-    params: dict[str, Any] = field(default_factory=dict)
-    terminal: bool = False
-
-
-@dataclass
-class AIChoice:
-    selected_cards: list[Any] = field(default_factory=list)
-    selected_bench_slot: int | None = None
-    selected_bench_targets: list[int] = field(default_factory=list)
-    coin_results: list[bool] = field(default_factory=list)
-    confirmed: bool = True
-    assignments: list[tuple[int, str]] = field(default_factory=list)
-    cancelled: bool = False
-
-
-class ActionEnumerator:
-    """Legal action generation layer for ChallengeAI."""
-
-    def __init__(self, ai: Any):
-        self.ai = ai
-
-    def legal_actions(self, state: GameState, player_idx: int) -> list[AIAction]:
-        return self.ai._legal_actions_impl(state, player_idx)
-
-
-class Simulator:
-    """State transition and pending-choice resolution layer for ChallengeAI."""
-
-    def __init__(self, ai: Any):
-        self.ai = ai
-
-    def apply_action(self, state: GameState, player_idx: int, action: AIAction) -> ActionResult | None:
-        return self.ai._apply_action_for_sim_impl(state, player_idx, action)
-
-    def apply_choice(
-        self,
-        state: GameState,
-        action_request: ActionRequest,
-        choice: AIChoice | None = None,
-    ) -> ActionRequest | ActionResult | None:
-        return self.ai._apply_choice_impl(state, action_request, choice)
-
-
-class Evaluator:
-    """Tactical state evaluation layer for ChallengeAI."""
-
-    def __init__(self, ai: Any):
-        self.ai = ai
-
-    def evaluate_state(self, state: GameState, player_idx: int) -> float:
-        return self.ai._evaluate_state_impl(state, player_idx)
-
-
-class ChoicePolicy:
-    """Context-aware choices for searches, discards, switches, and coin flips."""
-
-    def __init__(self, ai: Any):
-        self.ai = ai
-
-    def resolve_pending_action(self, state: GameState, action_request: ActionRequest) -> AIChoice:
-        return self.ai._resolve_pending_action_impl(state, action_request)
 
 
 class ChallengeAI:

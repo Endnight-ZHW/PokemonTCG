@@ -245,7 +245,7 @@ def clamp_weights(weights: dict[str, float]) -> dict[str, float]:
 
 def _ensure_cards_loaded() -> None:
     if not CardRegistry.is_initialized():
-        CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+        CardRegistry.initialize(ALL_CARD_IDS)
 
 
 def _worker_init() -> None:

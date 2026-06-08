@@ -42,7 +42,6 @@ def main() -> int:
     parser.add_argument("--games", type=int, default=800,
                         help="RL fine-tune self-play games per deck (default: 800).")
     parser.add_argument("--seed", type=int, default=17)
-    parser.add_argument("--model", default=None, help="Existing checkpoint to fine-tune (single-deck only).")
     parser.add_argument("--output", default=None, help="Output .pt checkpoint path (single-deck; ignored for --deck all).")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--bootstrap-games", type=int, default=2000,
@@ -74,33 +73,6 @@ def main() -> int:
                         help="Minimum candidate win improvement over each baseline when --acceptance-metric wins.")
     parser.add_argument("--teacher-label-model-states", action=argparse.BooleanOptionalAction, default=True,
                         help="Collect teacher labels for model-visited rollout states (default: enabled).")
-    # --- New: Pure RL & MCTS training ---
-    parser.add_argument("--pure-rl-games", type=int, default=400,
-                        help="Pure RL self-play games per deck with no teacher (default: 400).")
-    parser.add_argument("--mcts-simulations", type=int, default=200,
-                        help="MCTS simulations per action during self-play (default: 200).")
-    parser.add_argument("--mcts-chance-nodes", action=argparse.BooleanOptionalAction, default=True,
-                        help="Enable chance nodes in MCTS for modeling draw randomness (default: enabled).")
-    parser.add_argument("--use-mcts-training", action=argparse.BooleanOptionalAction, default=True,
-                        help="Use MCTS-guided action selection during self-play training (default: enabled).")
-    parser.add_argument("--teacher-warmup", type=float, default=0.6,
-                        help="Fraction of training using teacher guidance before pure RL (default: 0.6).")
-    # --- New: Curiosity exploration ---
-    parser.add_argument("--curiosity-beta", type=float, default=0.05,
-                        help="Intrinsic curiosity reward coefficient (default: 0.05).")
-    parser.add_argument("--use-curiosity", action=argparse.BooleanOptionalAction, default=False,
-                        help="Enable curiosity-driven exploration bonus (default: disabled).")
-    # --- New: Same-deal replay ---
-    parser.add_argument("--replay-same-deal", type=int, default=50,
-                        help="Same-deal replay games with different strategies (default: 50).")
-    # --- New: Fair evaluation ---
-    parser.add_argument("--eval-same-seeds", action=argparse.BooleanOptionalAction, default=True,
-                        help="Use same random seeds for baseline vs candidate evaluation (default: enabled).")
-    parser.add_argument("--synergy-pretrain", action=argparse.BooleanOptionalAction, default=False,
-                        help="Pre-train card embeddings on deck synergy before bootstrap (default: disabled).")
-    # --- New: Deck embedding ---
-    parser.add_argument("--deck-embed-dim", type=int, default=0,
-                        help="Per-deck embedding dimension (0=disabled, 16=enabled; default: 0).")
     parser.add_argument("--progress-jsonl", default=None)
     args = parser.parse_args()
 
@@ -114,7 +86,6 @@ def main() -> int:
         deck=args.deck,
         games=max(0, args.games),
         seed=args.seed,
-        model=args.model,
         output=args.output,
         device=args.device,
         bootstrap_games=max(0, args.bootstrap_games),
@@ -133,17 +104,6 @@ def main() -> int:
         min_win_delta=max(0, args.min_win_delta),
         teacher_label_model_states=bool(args.teacher_label_model_states),
         progress_jsonl=args.progress_jsonl,
-        # New parameters
-        pure_rl_games=max(0, args.pure_rl_games),
-        mcts_simulations=max(1, args.mcts_simulations),
-        mcts_chance_nodes=bool(args.mcts_chance_nodes),
-        use_mcts_training=bool(args.use_mcts_training),
-        teacher_warmup_ratio=max(0.01, min(1.0, args.teacher_warmup)),
-        curiosity_beta=max(0.0, args.curiosity_beta),
-        use_curiosity=bool(args.use_curiosity),
-        replay_same_deal=max(0, args.replay_same_deal),
-        eval_same_seeds=bool(args.eval_same_seeds),
-        deck_embed_dim=max(0, args.deck_embed_dim),
     )
     payload = run_deep_training(config)
     if "model_paths" in payload:

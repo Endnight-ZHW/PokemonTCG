@@ -8,7 +8,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
-from config import DAMAGE_PER_COUNTER, COIN_FLIP_THRESHOLD
+from engine.rules_constants import DAMAGE_PER_COUNTER, COIN_FLIP_THRESHOLD
 from engine.enums import StatusType
 
 if TYPE_CHECKING:

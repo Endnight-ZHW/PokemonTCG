@@ -2,7 +2,7 @@
 import random
 from dataclasses import dataclass, field
 from typing import Optional
-from config import DAMAGE_PER_COUNTER, TOOL_HP_BOOST
+from engine.rules_constants import DAMAGE_PER_COUNTER, MAX_BENCH_SIZE, PRIZE_CARDS, TOOL_HP_BOOST
 from engine.enums import StatusType
 
 
@@ -102,7 +102,7 @@ class PlayerState:
         self.discard: list["Card"] = []
         self.prizes: list["Card"] = []
         self.active: Optional[PokemonInPlay] = None
-        self.bench: list[Optional[PokemonInPlay]] = [None] * 5
+        self.bench: list[Optional[PokemonInPlay]] = [None] * MAX_BENCH_SIZE
 
         # Once-per-turn flags
         self.supporter_played_this_turn: bool = False
@@ -179,7 +179,7 @@ class PlayerState:
         self.discard.extend(milled)
         return milled
 
-    def set_prizes(self, count: int = 6):
+    def set_prizes(self, count: int = PRIZE_CARDS):
         """Take top `count` cards from deck as prize cards."""
         for _ in range(count):
             if self.deck:
@@ -218,7 +218,7 @@ class PlayerState:
         """Place a Basic Pokemon on the Bench."""
         if slot_idx is None:
             slot_idx = self.find_empty_bench_slot()
-        if slot_idx is None or slot_idx < 0 or slot_idx >= 5:
+        if slot_idx is None or slot_idx < 0 or slot_idx >= MAX_BENCH_SIZE:
             raise ValueError(f"Invalid bench slot: {slot_idx}")
         pokemon = PokemonInPlay(card=card)
         self.bench[slot_idx] = pokemon
@@ -269,7 +269,7 @@ class PlayerState:
             return self.active
         elif slot.startswith("bench_"):
             idx = int(slot.split("_")[1])
-            if 0 <= idx < 5:
+            if 0 <= idx < MAX_BENCH_SIZE:
                 return self.bench[idx]
         return None
 

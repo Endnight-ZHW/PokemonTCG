@@ -3,6 +3,7 @@ from typing import Optional
 from engine.enums import TurnPhase, PlayerAction, StatusType
 from engine.game_state import GameState
 from engine.player_state import PlayerState, PokemonInPlay
+from engine.rules_constants import DECK_SIZE, MAX_BENCH_SIZE, MAX_COPIES_PER_CARD
 from data.card_models import Card
 
 
@@ -24,10 +25,10 @@ def can_play_basic(state: GameState, player_idx: int, card: Card,
             return False, "战斗区已有宝可梦。"
     elif target.startswith("bench_"):
         idx = int(target.split("_")[1])
-        if not (0 <= idx < 5):
+        if not (0 <= idx < MAX_BENCH_SIZE):
             return False, f"无效的备战区位置: {idx}。"
         if not player.bench_has_space():
-            return False, "备战区已满（最多5只）。"
+            return False, f"备战区已满（最多{MAX_BENCH_SIZE}只）。"
         if player.bench[idx] is not None:
             return False, f"备战区位置{idx}已被占用。"
     else:
@@ -290,8 +291,8 @@ def validate_deck(deck: list[Card], deck_name: str = "") -> tuple[bool, str]:
     Returns (is_valid, error_message)."""
     label = f"「{deck_name}」" if deck_name else "卡组"
 
-    if len(deck) != 60:
-        return False, f"{label}必须有60张卡，当前有{len(deck)}张。"
+    if len(deck) != DECK_SIZE:
+        return False, f"{label}必须有{DECK_SIZE}张卡，当前有{len(deck)}张。"
 
     name_counts: dict[str, int] = {}
     for card in deck:
@@ -300,8 +301,11 @@ def validate_deck(deck: list[Card], deck_name: str = "") -> tuple[bool, str]:
         name_key = card.name.lower()
         name_counts[name_key] = name_counts.get(name_key, 0) + 1
     for name, count in name_counts.items():
-        if count > 4:
-            return False, f"{label}中「{name}」有{count}张，超过同名卡最多4张的限制。"
+        if count > MAX_COPIES_PER_CARD:
+            return False, (
+                f"{label}中「{name}」有{count}张，"
+                f"超过同名卡最多{MAX_COPIES_PER_CARD}张的限制。"
+            )
 
     ace_spec_count = sum(1 for c in deck if is_ace_spec(c))
     if ace_spec_count > 1:

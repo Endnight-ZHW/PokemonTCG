@@ -95,7 +95,7 @@ class TitleScreen(Screen):
 
         if not CardRegistry.is_initialized():
             try:
-                CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+                CardRegistry.initialize(ALL_CARD_IDS)
             except Exception:
                 return
 
@@ -173,7 +173,7 @@ class TitleScreen(Screen):
         from data.card_registry import CardRegistry
         if not CardRegistry.is_initialized():
             try:
-                CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+                CardRegistry.initialize(ALL_CARD_IDS)
             except Exception:
                 pass
         from ui.screens.card_image_screen import CardImageScreen
@@ -187,14 +187,10 @@ class TitleScreen(Screen):
 
         if not CardRegistry.is_initialized():
             try:
-                CardRegistry.initialize(ALL_CARD_IDS, use_api=True)
+                CardRegistry.initialize(ALL_CARD_IDS)
             except Exception as e:
                 logger.error("card loading error: %s", e)
-                CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
-
-        if len(CardRegistry._cards) == 0:
-            from data.card_registry import create_offline_cards
-            create_offline_cards(ALL_CARD_IDS)
+                CardRegistry.initialize(ALL_CARD_IDS)
 
         available_decks = {
             "fire": FIRE_DECK,
@@ -238,55 +234,6 @@ class TitleScreen(Screen):
         from ui.screens.lobby_screen import LobbyScreen
         self.manager.push_screen(LobbyScreen(self.manager))
 
-    def _do_auto_connect(self):
-        """Auto-start network and go to lobby with auto-connect enabled."""
-        app = getattr(self.manager, '_app', None)
-        if not app:
-            return
-
-        from data.deck_definitions import ALL_CARD_IDS
-        from data.card_registry import CardRegistry
-        if not CardRegistry.is_initialized():
-            try:
-                CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
-            except Exception:
-                pass
-
-        if app.auto_connect == "relay":
-            from config import RELAY_SERVER_HOST, RELAY_SERVER_PORT
-            host = app.auto_relay_host or RELAY_SERVER_HOST
-            port = app.auto_relay_port or RELAY_SERVER_PORT
-            if app.auto_relay_room:
-                app.start_relay_client(host, port, app.auto_relay_room)
-            else:
-                app.start_relay_host(host, port)
-        elif app.auto_connect == "host":
-            app.start_remote_host(app.auto_host_port)
-        elif app.auto_connect == "client":
-            app.start_remote_client(app.auto_client_ip, app.auto_client_port)
-
-        from ui.screens.lobby_screen import LobbyScreen
-        lobby = LobbyScreen(self.manager)
-        if app.auto_connect == "relay":
-            if app.auto_relay_room:
-                lobby.auto_mode = "relay_client"
-                if lobby._room_code_input:
-                    lobby._room_code_input.text = app.auto_relay_room
-            else:
-                lobby.auto_mode = "relay_host"
-            if lobby._relay_host_input:
-                lobby._relay_host_input.text = host
-        else:
-            lobby.auto_mode = app.auto_connect
-        app.auto_connect = None
-        self.manager.push_screen(lobby)
-
-    def on_enter(self):
-        """Check for auto-connect CLI flags and skip to lobby if set."""
-        app = getattr(self.manager, '_app', None)
-        if app and app.auto_connect:
-            self._auto_connect_delay = 0.3
-
     def update(self, dt: float):
         self._bg_time += dt
         if not self._entrance_done:
@@ -294,11 +241,6 @@ class TitleScreen(Screen):
             if self._entrance_time >= 0.6:
                 self._entrance_done = True
         self._featured_timer += dt
-
-        if hasattr(self, '_auto_connect_delay') and self._auto_connect_delay > 0:
-            self._auto_connect_delay -= dt
-            if self._auto_connect_delay <= 0:
-                self._do_auto_connect()
 
     def draw(self, surface: pygame.Surface):
         # Playmat background

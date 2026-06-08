@@ -52,7 +52,7 @@ from ui.screens.search_screen import SearchScreen
 from ui.screens.title_screen import TitleScreen
 from ui.coin_flip import CoinFlipAnimation
 from ui.energy_icons import get_energy_icon_surface
-from tests.temp_utils import temp_dir
+from tests.temp_utils import supports_file_delete, temp_dir
 
 
 class UiSmokeTests(unittest.TestCase):
@@ -61,7 +61,7 @@ class UiSmokeTests(unittest.TestCase):
         pygame.init()
         pygame.display.set_mode((1, 1))
         if not CardRegistry.is_initialized():
-            CardRegistry.initialize(ALL_CARD_IDS, use_api=False)
+            CardRegistry.initialize(ALL_CARD_IDS)
         cls.available_decks = {
             "fire": FIRE_DECK,
             "water": WATER_DECK,
@@ -314,6 +314,9 @@ class UiSmokeTests(unittest.TestCase):
             self.assertEqual(screen.status, "completed")
 
     def test_ai_training_screen_clears_stale_run_files_and_validates_apply(self):
+        if not supports_file_delete():
+            self.skipTest("Current sandbox does not allow deleting test files")
+
         class FakeProcess:
             def poll(self):
                 return None
@@ -358,6 +361,9 @@ class UiSmokeTests(unittest.TestCase):
             self.assertFalse(screen._can_apply())
 
     def test_ai_training_screen_rl_mode_command_progress_and_apply(self):
+        if not supports_file_delete():
+            self.skipTest("Current sandbox does not allow deleting test files")
+
         class FakeProcess:
             def poll(self):
                 return None
@@ -1395,36 +1401,30 @@ class UiSmokeTests(unittest.TestCase):
         self.assertEqual(screen._state, LobbyState.LAN_HOST)
         self.assertFalse(screen._connection_started)
 
-    def test_lobby_relay_auto_mode_attaches_existing_connection(self):
+    def test_lobby_lan_host_uses_editable_port(self):
         manager = self._manager()
-        network = self._FakeNetwork()
-        network.is_connected = False
+
         app = type("App", (), {
-            "network_manager": network,
-            "is_remote_host": False,
-            "is_remote_client": True,
-            "auto_client_ip": "127.0.0.1",
-            "auto_client_port": 8765,
+            "network_manager": None,
+            "started": None,
+            "start_remote_host": lambda self, port: setattr(self, "started", ("host", port)),
         })()
         manager._app = app
         screen = LobbyScreen(manager)
-        screen.auto_mode = "relay_client"
-        screen._room_code_input.text = "1234"
+        screen._transition_to(LobbyState.LAN_HOST)
+        screen._host_port_input.text = "19001"
 
-        screen.update(1 / 60)
-        self.assertIs(screen.network_manager, network)
-        self.assertEqual(screen._state, LobbyState.RELAY_CLIENT)
+        screen._do_connect()
+
+        self.assertEqual(app.started, ("host", 19001))
         self.assertTrue(screen._connection_started)
-        self.assertIn("1234", screen.status_text)
+        self.assertIn("19001", screen.status_text)
 
-    def test_title_auto_relay_sets_lobby_state_used_by_lobby_screen(self):
+    def test_lobby_relay_uses_editable_port(self):
         manager = self._manager()
 
         class FakeApp:
-            auto_connect = "relay"
-            auto_relay_host = "relay.example.test"
-            auto_relay_port = 9999
-            auto_relay_room = "4321"
+            network_manager = None
             started = None
 
             def start_relay_client(self, host, port, room_code):
@@ -1435,16 +1435,26 @@ class UiSmokeTests(unittest.TestCase):
 
         app = FakeApp()
         manager._app = app
-        title = TitleScreen(manager)
+        screen = LobbyScreen(manager)
+        screen._transition_to(LobbyState.RELAY_CLIENT)
+        screen._relay_host_input.text = "relay.example.test"
+        screen._relay_port_input.text = "9999"
+        screen._room_code_input.text = "4321"
 
-        title._do_auto_connect()
+        screen._do_relay_connect()
 
         self.assertEqual(app.started, ("client", "relay.example.test", 9999, "4321"))
-        self.assertIsInstance(manager.top, LobbyScreen)
-        self.assertEqual(manager.top.auto_mode, "relay_client")
-        self.assertEqual(manager.top._room_code_input.text, "4321")
-        self.assertEqual(manager.top._relay_host_input.text, "relay.example.test")
-        self.assertIsNone(app.auto_connect)
+        self.assertTrue(screen._connection_started)
+
+    def test_lobby_rejects_invalid_port_inputs(self):
+        screen = LobbyScreen(self._manager())
+        screen._transition_to(LobbyState.LAN_HOST)
+        screen._host_port_input.text = "70000"
+
+        screen._do_connect()
+
+        self.assertFalse(screen._connection_started)
+        self.assertIn("监听端口无效", screen.error_text)
 
 
 if __name__ == "__main__":

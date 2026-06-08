@@ -3,7 +3,7 @@
 All energy operations use PokemonInPlay.energy_cards, a single unified
 list of Card objects (basic and special energy together).
 """
-from config import DAMAGE_PER_COUNTER
+from engine.rules_constants import DAMAGE_PER_COUNTER
 from engine.game_state import GameState, ActionResult, ActionRequest
 
 

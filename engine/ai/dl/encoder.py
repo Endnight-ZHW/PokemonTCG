@@ -512,22 +512,21 @@ class ActionStateEncoder:
         and make decisions based on remaining deck composition.
         """
         player = state.get_player(player_idx)
-        deck = player.deck
-        deck_size = max(1, len(deck))
+        deck_size = max(1, len(player.deck))
         unknown = self._estimated_unknown_cards(state, player_idx, deck_key)
         unknown_size = max(1, len(unknown))
 
         values: list[float] = []
 
-        # --- Known deck composition ---
-        # Proportions of each card type still in deck
-        pokemon_in_deck = sum(1 for c in deck if getattr(c, "is_pokemon", False)) / deck_size
-        trainer_in_deck = sum(1 for c in deck if getattr(c, "is_trainer", False)) / deck_size
-        energy_in_deck = sum(1 for c in deck if getattr(c, "is_energy", False)) / deck_size
-        basic_in_deck = sum(1 for c in deck if getattr(c, "is_basic_pokemon", False)) / deck_size
-        evo_in_deck = sum(1 for c in deck if getattr(c, "is_stage1", False) or getattr(c, "is_stage2", False)) / deck_size
-        supporter_in_deck = sum(1 for c in deck if getattr(c, "is_trainer_supporter", False)) / deck_size
-        item_in_deck = sum(1 for c in deck if getattr(c, "is_trainer_item", False)) / deck_size
+        # --- Estimated deck composition ---
+        # Deck identities are hidden; use public decklist minus known cards.
+        pokemon_in_deck = sum(1 for c in unknown if getattr(c, "is_pokemon", False)) / unknown_size
+        trainer_in_deck = sum(1 for c in unknown if getattr(c, "is_trainer", False)) / unknown_size
+        energy_in_deck = sum(1 for c in unknown if getattr(c, "is_energy", False)) / unknown_size
+        basic_in_deck = sum(1 for c in unknown if getattr(c, "is_basic_pokemon", False)) / unknown_size
+        evo_in_deck = sum(1 for c in unknown if getattr(c, "is_stage1", False) or getattr(c, "is_stage2", False)) / unknown_size
+        supporter_in_deck = sum(1 for c in unknown if getattr(c, "is_trainer_supporter", False)) / unknown_size
+        item_in_deck = sum(1 for c in unknown if getattr(c, "is_trainer_item", False)) / unknown_size
         values.extend([
             pokemon_in_deck,
             trainer_in_deck,
@@ -581,8 +580,8 @@ class ActionStateEncoder:
         # --- Prize card estimation ---
         # Rough probability that a key card is stuck in prizes
         prizes_left = len(player.prizes)
-        core_in_deck = sum(
-            1 for c in deck if str(getattr(c, "api_id", "")) in profile.core_cards
+        core_in_unknown_count = sum(
+            1 for c in unknown if str(getattr(c, "api_id", "")) in profile.core_cards
         )
         # If we've seen fewer core cards than expected, some may be prized
         total_core = len(profile.core_cards)
@@ -596,8 +595,10 @@ class ActionStateEncoder:
         seen_core += sum(
             1 for c in player.discard if str(getattr(c, "api_id", "")) in profile.core_cards
         )
-        unaccounted_core = max(0, total_core - seen_core - core_in_deck)
-        prob_core_prized = unaccounted_core / max(1, prizes_left) if prizes_left > 0 else 0.0
+        prob_core_prized = (
+            (core_in_unknown_count / unknown_size) * (prizes_left / 6.0)
+            if prizes_left > 0 else 0.0
+        )
 
         # Similar for energy
         total_energy_need = 8  # rough estimate
@@ -610,8 +611,9 @@ class ActionStateEncoder:
         ) + sum(
             1 for c in player.discard if getattr(c, "is_energy", False)
         )
-        energy_in_current_deck = sum(1 for c in deck if getattr(c, "is_energy", False))
-        energy_unaccounted = max(0, total_energy_need * 2 - energy_seen - energy_in_current_deck)
+        energy_in_unknown_count = sum(1 for c in unknown if getattr(c, "is_energy", False))
+        estimated_energy_drawable = energy_in_unknown_count * (deck_size / unknown_size)
+        energy_unaccounted = max(0, total_energy_need * 2 - energy_seen - estimated_energy_drawable)
         prob_energy_prized = energy_unaccounted / max(1, prizes_left) if prizes_left > 0 else 0.0
 
         values.extend([
@@ -628,9 +630,9 @@ class ActionStateEncoder:
 
         # Deck diversity: entropy-like measure of deck composition
         type_counts = [
-            sum(1 for c in deck if getattr(c, "is_pokemon", False)),
-            sum(1 for c in deck if getattr(c, "is_trainer", False)),
-            sum(1 for c in deck if getattr(c, "is_energy", False)),
+            sum(1 for c in unknown if getattr(c, "is_pokemon", False)),
+            sum(1 for c in unknown if getattr(c, "is_trainer", False)),
+            sum(1 for c in unknown if getattr(c, "is_energy", False)),
         ]
         total_cards = max(1, sum(type_counts))
         entropy = -sum(
@@ -640,7 +642,7 @@ class ActionStateEncoder:
         values.append(min(1.0, entropy / 1.5))
 
         # Chance of drawing at least 1 energy in next 2 draws
-        energy_left = sum(1 for c in deck if getattr(c, "is_energy", False))
+        energy_left = int(round(energy_in_unknown_count * (deck_size / unknown_size)))
         if deck_size >= 2:
             prob_no_energy = 1.0
             remaining = deck_size
@@ -654,7 +656,9 @@ class ActionStateEncoder:
             values.append(0.0)
 
         # Chance of drawing a basic Pokemon in next draw
-        basics_left = sum(1 for c in deck if getattr(c, "is_basic_pokemon", False))
+        basics_left = int(round(
+            sum(1 for c in unknown if getattr(c, "is_basic_pokemon", False)) * (deck_size / unknown_size)
+        ))
         values.append(_norm(basics_left, deck_size) if deck_size > 0 else 0.0)
 
         return values

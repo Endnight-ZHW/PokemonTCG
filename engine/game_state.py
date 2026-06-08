@@ -8,6 +8,7 @@ logger = get_logger(__name__)
 from engine.enums import TurnPhase, EventType, PlayerAction
 from engine.player_state import PlayerState, PokemonInPlay
 from engine.events.game_events import GameEventStream
+from engine.rules_constants import COIN_FLIP_THRESHOLD, HAND_SIZE_INITIAL, PRIZE_CARDS
 
 
 @dataclass
@@ -126,23 +127,21 @@ class GameState:
         self.p2.shuffle_deck()
 
         # Determine first player (coin flip)
-        from config import COIN_FLIP_THRESHOLD
         self.first_player_idx = 0 if random.random() < COIN_FLIP_THRESHOLD else 1
         self.active_player_idx = self.first_player_idx
         self.turn_number = 1
 
-        # Deal 7 cards to each player
-        self.p1.draw_cards(7)
-        self.p2.draw_cards(7)
+        self.p1.draw_cards(HAND_SIZE_INITIAL)
+        self.p2.draw_cards(HAND_SIZE_INITIAL)
 
         self.phase = TurnPhase.SETUP
         self._log(f"游戏开始！{self.get_active_player().name}先攻。")
 
     def set_prizes(self):
         """Set prize cards for both players."""
-        self.p1.set_prizes(6)
-        self.p2.set_prizes(6)
-        self._log("双方各放置6张奖品卡。")
+        self.p1.set_prizes(PRIZE_CARDS)
+        self.p2.set_prizes(PRIZE_CARDS)
+        self._log(f"双方各放置{PRIZE_CARDS}张奖品卡。")
 
     def do_mulligan(self, player_idx: int) -> bool:
         """Perform a mulligan for a player. Returns True if mulligan was done."""
@@ -154,12 +153,12 @@ class GameState:
         if has_basic:
             return False
 
-        # Mulligan: shuffle hand back into deck, draw 7 new cards
+        # Mulligan: shuffle hand back into deck, draw a new starting hand
         # Opponent gets 1 extra draw only on the first mulligan
         player.deck.extend(player.hand)
         player.hand.clear()
         player.shuffle_deck()
-        player.draw_cards(7)
+        player.draw_cards(HAND_SIZE_INITIAL)
 
         if player_idx not in self._mulligan_bonus_given:
             opponent.draw_cards(1)
