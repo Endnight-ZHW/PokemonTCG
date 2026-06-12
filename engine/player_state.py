@@ -268,7 +268,10 @@ class PlayerState:
         if slot == "active":
             return self.active
         elif slot.startswith("bench_"):
-            idx = int(slot.split("_")[1])
+            try:
+                idx = int(slot.split("_")[1])
+            except (ValueError, IndexError):
+                return None
             if 0 <= idx < MAX_BENCH_SIZE:
                 return self.bench[idx]
         return None

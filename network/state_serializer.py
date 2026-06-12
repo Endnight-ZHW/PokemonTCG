@@ -202,6 +202,7 @@ def serialize_action_request(req: ActionRequest) -> dict:
         "allow_duplicates": req.allow_duplicates,
         "flip_count": req.flip_count,
         "until_tails": req.until_tails,
+        "predetermined_flips": getattr(req, "predetermined_flips", None),
         "distribute_mode": req.distribute_mode,
         "target_info": list(req.target_info),
         "max_per_target": req.max_per_target,
@@ -243,6 +244,10 @@ def deserialize_action_request(data: dict) -> ActionRequest:
         source_name=data.get("source_name", ""),
         request_id=data.get("request_id", ""),
     )
+    # Propagate host-generated coin results for server-authoritative flips
+    predetermined = data.get("predetermined_flips")
+    if predetermined is not None:
+        setattr(ar, "predetermined_flips", list(predetermined))
 
     pending_card_id = data.get("pending_card_id")
     if pending_card_id:

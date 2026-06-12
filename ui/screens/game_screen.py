@@ -2362,11 +2362,11 @@ class GameScreen(GameScreenAIMixin, GameScreenNetworkMixin, GameScreenRenderingM
             surface.blit(desc_txt, (panel_x + 44, by))
 
     def _start_coin_flip(self, flip_count: int = 1, on_result: callable = None,
-                         until_tails: bool = False):
+                         until_tails: bool = False, predetermined: list | None = None):
         """Start the coin flip animation with N flips and result callback."""
         if not self.coin_flip.active:
             self.coin_flip.start(flip_count=flip_count, on_result=on_result,
-                                until_tails=until_tails)
+                                until_tails=until_tails, predetermined=predetermined)
 
     def _draw_confirm_dialog(self, surface):
         """Draw a modal confirmation dialog."""
@@ -2843,9 +2843,9 @@ class GameScreen(GameScreenAIMixin, GameScreenNetworkMixin, GameScreenRenderingM
             return
         self._awaiting_promotion = False
         if self.state.phase == TurnPhase.DRAW and self.tm is not None:
-            self.tm.continue_after_promotion()
+            self.tm.continue_after_promotion()  # Pops one, handles remaining queue
         else:
-            self.state.pending_promotion_player = -1
+            self.state.pop_pending_promotion()  # Pop just this one
 
     def _check_promotion_needed(self) -> None:
         if self.state.phase == TurnPhase.GAME_OVER:
@@ -2959,10 +2959,13 @@ class GameScreen(GameScreenAIMixin, GameScreenNetworkMixin, GameScreenRenderingM
         if player.bench[bench_idx] is None:
             self.state._log("该位置没有宝可梦。")
             return
-        player.switch_active_to_bench(bench_idx)
-        self.state._log(f"{player.name}的战斗宝可梦被替换了。")
         if action_req.callback:
+            # Delegate to callback: it performs the switch in the engine layer
             action_req.callback(bench_idx)
+        else:
+            # Fallback for legacy requests without callback
+            player.switch_active_to_bench(bench_idx)
+        self.state._log(f"{player.name}的战斗宝可梦被替换了。")
         if self._is_remote_host:
             self._broadcast_state()
 
@@ -3284,6 +3287,8 @@ class GameScreen(GameScreenAIMixin, GameScreenNetworkMixin, GameScreenRenderingM
             # For bench selection, use local handling but send result back
             self._handle_bench_select_prompt_client(action_req)
         elif action_req.request_type == "coin_flip":
+            # Use predetermined results from host if available (server authority)
+            predetermined = getattr(action_req, 'predetermined_flips', None)
             def on_flip_done(results):
                 self._resolving_remote_pending = False
                 self._send_choice_response({
@@ -3294,6 +3299,7 @@ class GameScreen(GameScreenAIMixin, GameScreenNetworkMixin, GameScreenRenderingM
                 flip_count=getattr(action_req, 'flip_count', 1),
                 on_result=on_flip_done,
                 until_tails=getattr(action_req, 'until_tails', False),
+                predetermined=predetermined,
             )
         elif action_req.request_type == "select_bench_targets":
             self._selecting_bench_targets = action_req

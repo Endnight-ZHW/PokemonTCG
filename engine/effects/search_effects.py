@@ -262,11 +262,17 @@ def _handle_search_any_and_switch(state, player_idx, params):
                         player.switch_active_to_bench(idx)
                         state._log(f"将{player.active.card.name}与{player.bench[idx].card.name}互换了。")
                         return None
+
+                    def _on_multi_bench_select(bench_idx):
+                        player.switch_active_to_bench(bench_idx)
+                        return None
+
                     return ActionRequest(
                         request_type="select_bench",
                         player=player_idx,
                         prompt="选择替换战斗区的宝可梦。",
                         max_select=1,
+                        callback=_on_multi_bench_select,
                     )
                 return ActionRequest(
                     request_type="confirm",

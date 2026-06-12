@@ -41,18 +41,30 @@ class CoinFlipAnimation:
         self._wobble_phase = 0.0
 
     def start(self, flip_count: int = 1, on_result: callable = None,
-              until_tails: bool = False):
-        """Begin a coin flip sequence."""
+              until_tails: bool = False, predetermined: list[bool] | None = None):
+        """Begin a coin flip sequence.
+
+        If *predetermined* is provided, the sequence uses those results
+        instead of generating random ones. This lets the host decide coin
+        outcomes so that a cheating client cannot force favorable flips.
+        """
         self.active = True
         self.until_tails = until_tails
-        self.flip_count = max(1, flip_count)
+        self._predetermined = list(predetermined) if predetermined else None
+        if predetermined:
+            self.flip_count = len(predetermined)
+        else:
+            self.flip_count = max(1, flip_count)
         self.flip_index = 0
         self.results = []
         self.on_result = on_result
         self._start_flip()
 
     def _start_flip(self):
-        self.result = random.random() >= 0.5
+        if self._predetermined and self.flip_index < len(self._predetermined):
+            self.result = self._predetermined[self.flip_index]
+        else:
+            self.result = random.random() >= 0.5
         self.phase = "flipping"
         self.elapsed = 0.0
         self._sparkles.clear()

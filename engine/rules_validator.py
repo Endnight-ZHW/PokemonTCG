@@ -1,10 +1,62 @@
 """Rules validator - checks if actions are legal under PTCG rules."""
-from typing import Optional
+from typing import Optional, Tuple
 from engine.enums import TurnPhase, PlayerAction, StatusType
 from engine.game_state import GameState
 from engine.player_state import PlayerState, PokemonInPlay
 from engine.rules_constants import DECK_SIZE, MAX_BENCH_SIZE, MAX_COPIES_PER_CARD
 from data.card_models import Card
+
+
+def parse_bench_idx(value) -> Tuple[bool, int]:
+    """Safely parse a bench index from a string or int.
+
+    Returns (ok, idx) where ok is False if the input is malformed or out of
+    range, and idx is the parsed integer (only meaningful when ok=True).
+    """
+    if isinstance(value, int):
+        idx = value
+    elif isinstance(value, str):
+        try:
+            idx = int(value)
+        except (ValueError, TypeError):
+            return False, -1
+    else:
+        return False, -1
+    if not (0 <= idx < MAX_BENCH_SIZE):
+        return False, -1
+    return True, idx
+
+
+def parse_slot(slot: str) -> Tuple[bool, str, int]:
+    """Safely parse a slot string like 'active' or 'bench_2'.
+
+    Returns (ok, slot_type, bench_idx) where:
+      - slot_type is 'active' or 'bench'
+      - bench_idx is the integer index (only valid when slot_type=='bench')
+    """
+    if not isinstance(slot, str):
+        return False, "", -1
+    if slot == "active":
+        return True, "active", -1
+    if slot.startswith("bench_"):
+        parts = slot.split("_", 1)
+        if len(parts) != 2:
+            return False, "", -1
+        try:
+            idx = int(parts[1])
+        except (ValueError, TypeError):
+            return False, "", -1
+        if not (0 <= idx < MAX_BENCH_SIZE):
+            return False, "", -1
+        return True, "bench", idx
+    return False, "", -1
+
+
+def check_bench_bounds(bench_idx: int) -> Tuple[bool, str]:
+    """Check that a bench index is within valid range."""
+    if not (0 <= bench_idx < MAX_BENCH_SIZE):
+        return False, f"无效的备战区位置: {bench_idx}（有效范围 0-{MAX_BENCH_SIZE - 1}）。"
+    return True, ""
 
 
 def can_play_basic(state: GameState, player_idx: int, card: Card,
@@ -24,7 +76,10 @@ def can_play_basic(state: GameState, player_idx: int, card: Card,
         if player.active is not None:
             return False, "战斗区已有宝可梦。"
     elif target.startswith("bench_"):
-        idx = int(target.split("_")[1])
+        try:
+            idx = int(target.split("_")[1])
+        except (ValueError, IndexError):
+            return False, f"无效的备战区位置: {target}。"
         if not (0 <= idx < MAX_BENCH_SIZE):
             return False, f"无效的备战区位置: {idx}。"
         if not player.bench_has_space():
@@ -180,6 +235,10 @@ def can_retreat(state: GameState, player_idx: int,
                      "PARALYZED": "麻痹", "CONFUSED": "混乱"}
         cn = [status_cn.get(c, c) for c in conditions]
         return False, f"在{', '.join(cn)}状态下不能撤退。"
+
+    ok, msg = check_bench_bounds(bench_idx)
+    if not ok:
+        return False, msg
 
     target = player.bench[bench_idx]
     if target is None:

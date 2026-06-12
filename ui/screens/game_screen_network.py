@@ -101,6 +101,7 @@ class GameScreenNetworkMixin:
     ):
         if not self.network_manager or not self._is_remote_host:
             return
+        import random
         from network.state_serializer import serialize_action_request, serialize_game_state
 
         remote_idx = 1 - self.my_player_idx
@@ -119,7 +120,24 @@ class GameScreenNetworkMixin:
                 pending_action = result.pending_action
         if pending_action is not None:
             self._ensure_request_id(pending_action)
-            msg["pending_action"] = serialize_action_request(pending_action)
+            pending_payload = serialize_action_request(pending_action)
+            # Host generates coin results to prevent client cheating
+            if pending_action.request_type == "coin_flip":
+                if getattr(pending_action, 'until_tails', False):
+                    flips = []
+                    while True:
+                        flips.append(random.random() >= 0.5)
+                        if not flips[-1]:
+                            break
+                    pending_payload["predetermined_flips"] = flips
+                else:
+                    fc = getattr(pending_action, 'flip_count', 1)
+                    pending_payload["predetermined_flips"] = [
+                        random.random() >= 0.5 for _ in range(max(1, fc))
+                    ]
+                # Store on the action request for later resolution
+                setattr(pending_action, "_host_coin_results", pending_payload["predetermined_flips"])
+            msg["pending_action"] = pending_payload
         self.network_manager.send(msg)
 
     def _broadcast_result(self, result, action=None, attacker_player_idx=None):
@@ -346,6 +364,11 @@ class GameScreenNetworkMixin:
                     slot=params.get("slot", "active"),
                     ability_name=params.get("ability_name", ""),
                 )
+            elif action == PlayerAction.USE_STADIUM:
+                result = self.tm.perform_action(
+                    PlayerAction.USE_STADIUM,
+                    player_idx=remote_idx,
+                )
             else:
                 return
 
@@ -447,28 +470,96 @@ class GameScreenNetworkMixin:
 
         if pending.request_type in ("search_deck", "select_hand_to_discard"):
             selected = msg.get("selected_indices", [])
-            cards = [pending.card_list[i] for i in selected if i < len(pending.card_list)]
+            card_list_len = len(pending.card_list)
+            # Validate selection count and bounds
+            min_sel = getattr(pending, 'min_select', 0)
+            max_sel = getattr(pending, 'max_select', 1)
+            valid_selected = [i for i in selected if isinstance(i, int) and 0 <= i < card_list_len]
+            if len(valid_selected) != len(selected):
+                self.state._log("警告：远程选择包含无效索引。")
+            if len(valid_selected) < min_sel:
+                self.state._log(f"警告：远程选择不足，需要至少{min_sel}项。")
+                self._broadcast_state()
+                return
+            if len(valid_selected) > max_sel:
+                valid_selected = valid_selected[:max_sel]
+            cards = [pending.card_list[i] for i in valid_selected]
             from data.card_registry import CardRegistry
             card_objects = [CardRegistry.get(c) if isinstance(c, str) else c for c in cards]
             result = callback(card_objects)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type in ("select_bench", "select_opponent_bench", "select_own_bench_energy"):
             selected = msg.get("selected_bench_slot", 0)
+            # Validate bench slot is a valid integer
+            if not isinstance(selected, int) or selected < 0:
+                self.state._log("警告：远程选择了无效的备战区位置。")
+                self._broadcast_state()
+                return
+            bench_indices = getattr(pending, 'bench_indices', [])
+            if bench_indices and selected not in bench_indices:
+                self.state._log("警告：远程选择了不允许的备战区位置。")
+                self._broadcast_state()
+                return
             result = callback(selected)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "coin_flip":
-            results = msg.get("coin_results", [])
-            result = callback(results)
+            # Use host-generated results (server authority), ignore client input
+            host_results = getattr(pending, '_host_coin_results', None)
+            if host_results:
+                result = callback(list(host_results))
+            else:
+                # Fallback: validate client results
+                results = msg.get("coin_results", [])
+                if not isinstance(results, list) or not all(isinstance(r, bool) for r in results):
+                    self.state._log("警告：远程硬币结果格式无效。")
+                    self._broadcast_state()
+                    return
+                result = callback(results)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "select_bench_targets":
             selected = msg.get("selected_bench_targets", [])
-            result = callback(selected)
+            max_sel = getattr(pending, 'max_select', 1)
+            # Validate: must be ints, within allowed bench_indices, no duplicates unless allowed
+            if not isinstance(selected, list):
+                self.state._log("警告：远程备战目标格式无效。")
+                self._broadcast_state()
+                return
+            valid_targets = [t for t in selected if isinstance(t, int) and t >= 0]
+            allowed = getattr(pending, 'bench_indices', [])
+            if allowed:
+                valid_targets = [t for t in valid_targets if t in allowed]
+            if not getattr(pending, 'allow_duplicates', False):
+                seen = set()
+                valid_targets = [t for t in valid_targets if t not in seen and not seen.add(t)]
+            valid_targets = valid_targets[:max_sel]
+            result = callback(valid_targets)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "confirm":
             result = callback(bool(msg.get("confirmed", False)))
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "distribute_energy":
-            result = callback(msg.get("assignments", []))
+            assignments = msg.get("assignments", [])
+            max_per = getattr(pending, 'max_per_target', 99)
+            # Validate: each assignment should be a valid (energy_idx, target_slot) pair
+            if not isinstance(assignments, list):
+                self.state._log("警告：远程能量分配格式无效。")
+                self._broadcast_state()
+                return
+            valid_assignments = []
+            energy_count = len(pending.card_list)
+            target_slots = set(t["slot"] for t in getattr(pending, 'target_info', []))
+            for a in assignments:
+                if not isinstance(a, (list, tuple)) or len(a) != 2:
+                    continue
+                ei, tgt = a
+                if not isinstance(ei, int) or ei < 0 or ei >= energy_count:
+                    continue
+                if tgt not in target_slots:
+                    continue
+                valid_assignments.append([ei, tgt])
+            if len(valid_assignments) > energy_count:
+                valid_assignments = valid_assignments[:energy_count]
+            result = callback(valid_assignments)
             self._handle_remote_resolve_result(result, pending)
 
     def _handle_remote_resolve_result(self, result, pending):

@@ -96,11 +96,17 @@ def _handle_switch_self(state, player, params, player_idx=0):
                 player.switch_active_to_bench(idx)
                 state._log(f"将{player.active.card.name}与{player.bench[idx].card.name}互换了。")
                 return None
+
+            def _on_multi_bench_select(bench_idx):
+                player.switch_active_to_bench(bench_idx)
+                return None
+
             return ActionRequest(
                 request_type="select_bench",
                 player=player_idx,
                 prompt="选择替换战斗区的宝可梦。",
                 max_select=1,
+                callback=_on_multi_bench_select,
             )
         return ActionResult(True, "请选择是否替换宝可梦。",
                             pending_action=ActionRequest(
@@ -119,12 +125,17 @@ def _handle_switch_self(state, player, params, player_idx=0):
         state._log(f"将{active_name}与{bench_name}互换了。")
         return ActionResult(True, f"互换了{active_name}与{bench_name}。")
 
+    def _on_bench_select_non_opt(bench_idx):
+        player.switch_active_to_bench(bench_idx)
+        return None
+
     return ActionResult(True, "选择替换的宝可梦。",
                         pending_action=ActionRequest(
                             request_type="select_bench",
                             player=player_idx,
                             prompt="选择替换战斗区的宝可梦。",
                             max_select=1,
+                            callback=_on_bench_select_non_opt,
                         ))
 
 
@@ -153,12 +164,18 @@ def _handle_switch_opponent(state, opponent, params, opponent_idx=1, player_idx=
         return ActionResult(True, "对手替换了。")
 
     chooser = player_idx if (you_choose and player_idx is not None) else opponent_idx
+
+    def _on_switch_opponent_bench(selected_bench_idx):
+        opponent.switch_active_to_bench(selected_bench_idx)
+        return None
+
     return ActionResult(True, "选择对手的新战斗宝可梦。",
                         pending_action=ActionRequest(
                             request_type="select_opponent_bench",
                             player=chooser,
                             prompt="选择对手的新战斗宝可梦。",
                             max_select=1,
+                            callback=_on_switch_opponent_bench,
                         ))
 
 
@@ -187,6 +204,9 @@ def _handle_coin_flip(state, params, player_idx, source_slot):
                     result_action.damage_dealt += eff_result.damage_dealt
                     result_action.pending_action = eff_result.pending_action or result_action.pending_action
                     result_action.attack_failed = result_action.attack_failed or eff_result.attack_failed
+                    if not eff_result.success:
+                        result_action.success = False
+                        break
                 return result_action
             else:
                 return execute_effect(state, branch, player_idx, source_slot)
@@ -782,11 +802,12 @@ def _handle_coin_flip_energy_discard(state, params, player_idx, source_slot):
         # Auto-select: first Pokemon with energy (usually active)
         target_slot, target_poke, energy_count = energy_targets[0]
 
-        # Discard 1 energy from unified energy_cards
+        # Discard 1 energy and place it in the owner's discard pile
         if target_poke.energy_cards:
-            target_poke.energy_cards.pop()
+            discarded_energy = target_poke.energy_cards.pop()
+            opponent.discard.append(discarded_energy)
 
-        state._log(f"从{target_poke.card.name}身上丢弃了1个能量。")
+        state._log(f"从{target_poke.card.name}身上丢弃了1个能量到弃牌区。")
         return ActionResult(True, f"粉碎之锤：丢弃了{target_poke.card.name}的1个能量。")
 
     return ActionResult(

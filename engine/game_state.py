@@ -68,7 +68,7 @@ class GameState:
         self.action_log: list[str] = []
         self.mulligan_count: tuple[int, int] = (0, 0)  # (p1_mulligans, p2_mulligans)
         self.extra_draws: tuple[int, int] = (0, 0)  # Extra draws from opponent mulligans
-        self.pending_promotion_player: int = -1  # player_idx who needs to promote a bench Pokemon
+        self.pending_promotions: list[int] = []  # Queue of player_idx who need to promote a bench Pokemon (supports simultaneous KOs)
         self._piercing_attack: bool = False  # Set during attack resolution for piercing effects
         self._ko_from_attack: bool = False  # Flag set when a KO is from attack damage
         self._mulligan_bonus_given: set[int] = set()
@@ -81,6 +81,23 @@ class GameState:
 
     def get_opponent(self) -> PlayerState:
         return self.p2 if self.active_player_idx == 0 else self.p1
+
+    @property
+    def pending_promotion_player(self) -> int:
+        """Backward-compatible accessor — returns the first pending promotion or -1."""
+        return self.pending_promotions[0] if self.pending_promotions else -1
+
+    @pending_promotion_player.setter
+    def pending_promotion_player(self, value: int):
+        """Backward-compatible setter — queues a promotion or clears all."""
+        if value < 0:
+            self.pending_promotions.clear()
+        elif value not in self.pending_promotions:
+            self.pending_promotions.append(value)
+
+    def pop_pending_promotion(self) -> int:
+        """Pop the next pending promotion from the queue. Returns -1 if empty."""
+        return self.pending_promotions.pop(0) if self.pending_promotions else -1
 
     def get_player(self, idx: int) -> PlayerState:
         return self.p1 if idx == 0 else self.p2
@@ -203,11 +220,18 @@ class GameState:
         if slot == "active":
             player.active = None
         elif slot.startswith("bench_"):
-            idx = int(slot.split("_")[1])
-            player.bench[idx] = None
+            try:
+                idx = int(slot.split("_")[1])
+            except (ValueError, IndexError):
+                return
+            if 0 <= idx < MAX_BENCH_SIZE:
+                player.bench[idx] = None
 
     def move_active_to_bench(self, player_idx: int, bench_idx: int):
         """Move Active Pokemon to a bench slot (for retreat / switch effects)."""
+        from engine.rules_constants import MAX_BENCH_SIZE
+        if bench_idx < 0 or bench_idx >= MAX_BENCH_SIZE:
+            return
         player = self.get_player(player_idx)
         if player.active is None or player.bench[bench_idx] is None:
             return

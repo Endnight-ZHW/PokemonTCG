@@ -73,6 +73,14 @@ def main() -> int:
                         help="Minimum candidate win improvement over each baseline when --acceptance-metric wins.")
     parser.add_argument("--teacher-label-model-states", action=argparse.BooleanOptionalAction, default=True,
                         help="Collect teacher labels for model-visited rollout states (default: enabled).")
+    parser.add_argument("--pure-rl-games", type=int, default=400,
+                        help="Pure RL exploration games per deck after self-play (default: 400).")
+    parser.add_argument("--replay-same-deal", type=int, default=50,
+                        help="Same-deal replay seeds per deck (default: 50; use 0 for smoke tests).")
+    parser.add_argument("--mcts-simulations", type=int, default=200,
+                        help="MCTS simulations for MCTS-guided training phases (default: 200).")
+    parser.add_argument("--use-mcts-training", action=argparse.BooleanOptionalAction, default=True,
+                        help="Use MCTS-guided training where configured (default: enabled).")
     parser.add_argument("--progress-jsonl", default=None)
     args = parser.parse_args()
 
@@ -103,6 +111,10 @@ def main() -> int:
         acceptance_metric=args.acceptance_metric,
         min_win_delta=max(0, args.min_win_delta),
         teacher_label_model_states=bool(args.teacher_label_model_states),
+        pure_rl_games=max(0, args.pure_rl_games),
+        replay_same_deal=max(0, args.replay_same_deal),
+        mcts_simulations=max(1, args.mcts_simulations),
+        use_mcts_training=bool(args.use_mcts_training),
         progress_jsonl=args.progress_jsonl,
     )
     payload = run_deep_training(config)

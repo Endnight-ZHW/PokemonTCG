@@ -68,6 +68,8 @@ class ChallengeAI:
         self._forced_coin_results: list[list[bool]] = []
         self._fow_cache: dict[str, Any] = {}
         self._fow_counter: dict[str, int] = defaultdict(int)
+        self.last_decision_trace: dict[str, Any] = {}
+        self._last_legal_action_trace: dict[str, Any] = {}
         self.enumerator = ActionEnumerator(self)
         self.simulator = Simulator(self)
         self.evaluator = Evaluator(self)
@@ -79,11 +81,17 @@ class ChallengeAI:
 
     def choose_action(self, state: GameState, player_idx: int) -> AIAction:
         if state.phase == TurnPhase.SETUP:
-            return self._choose_setup_action(state, player_idx)
+            selected = self._choose_setup_action(state, player_idx)
+            self._record_decision_trace(state, player_idx, selected)
+            return selected
         if state.phase == TurnPhase.ATTACK:
-            return AIAction(PlayerAction.END_TURN, {}, terminal=True)
+            selected = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+            self._record_decision_trace(state, player_idx, selected)
+            return selected
         if state.phase != TurnPhase.MAIN:
-            return AIAction(PlayerAction.END_TURN, {}, terminal=True)
+            selected = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+            self._record_decision_trace(state, player_idx, selected)
+            return selected
 
         deadline = (
             float("inf")
@@ -91,10 +99,21 @@ class ChallengeAI:
             else time.perf_counter() + max(0.01, self.config.thinking_time_seconds)
         )
         if self.config.search_algorithm == "minimax":
-            return self._minimax_search_action(state, player_idx, deadline)
+            selected = self._minimax_search_action(state, player_idx, deadline)
+            self._record_decision_trace(state, player_idx, selected)
+            return selected
         if self.config.search_algorithm == "hybrid":
-            return self._hybrid_search_action(state, player_idx, deadline)
-        return self._beam_search_action(state, player_idx, deadline)
+            selected = self._hybrid_search_action(state, player_idx, deadline)
+            self._record_decision_trace(state, player_idx, selected)
+            return selected
+        selected = self._beam_search_action(state, player_idx, deadline)
+        self._record_decision_trace(state, player_idx, selected)
+        return selected
+
+    def explain_legal_actions(self, state: GameState, player_idx: int) -> dict[str, Any]:
+        """Return the last legal-action trace after recomputing candidates."""
+        self.legal_actions(state, player_idx)
+        return dict(self._last_legal_action_trace)
 
     def _minimax_search_action(
         self, state: GameState, player_idx: int, deadline: float
@@ -1017,8 +1036,10 @@ class ChallengeAI:
             target_player = self._request_target_player(state, req)
             if slot is not None and 0 <= slot < len(target_player.bench) and target_player.bench[slot]:
                 if req.callback:
+                    # Callback does the switch in the engine layer (unified semantics)
                     result = req.callback(slot)
                 else:
+                    # Legacy fallback: switch directly
                     target_player.switch_active_to_bench(slot)
 
         elif req.request_type == "select_bench_targets":
@@ -1058,12 +1079,20 @@ class ChallengeAI:
         player = state.get_player(player_idx)
         actions: list[AIAction] = []
         seen: set[tuple] = set()
+        trace: dict[str, Any] = {
+            "player_idx": player_idx,
+            "phase": getattr(state.phase, "name", str(state.phase)),
+            "generated": [],
+            "rejected": [],
+            "accepted": [],
+        }
 
         def add(action: AIAction, card_key: str = ""):
             key = self._action_key(state, player_idx, action, card_key)
             if key not in seen:
                 seen.add(key)
                 actions.append(action)
+                trace["generated"].append(self._trace_action(action))
 
         empty_slots = [f"bench_{i}" for i, p in enumerate(player.bench) if p is None]
         for hand_idx, card in enumerate(player.hand):
@@ -1118,9 +1147,9 @@ class ChallengeAI:
                     add(AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": attack_idx}, terminal=True))
 
         add(AIAction(PlayerAction.END_TURN, {}, terminal=True))
-        actions = self._filter_strategically_relevant_actions(state, player_idx, actions)
+        actions = self._filter_strategically_relevant_actions(state, player_idx, actions, trace)
         if not self.config.skip_effect_dry_run:
-            actions = self._filter_currently_executable_actions(state, player_idx, actions)
+            actions = self._filter_currently_executable_actions(state, player_idx, actions, trace)
         actions.sort(key=lambda a: self._quick_action_priority(state, player_idx, a), reverse=True)
         result = actions[: self.config.max_turn_actions]
         # END_TURN must always be available as a legal terminal action
@@ -1128,10 +1157,16 @@ class ChallengeAI:
             end_turn = [a for a in actions if a.action == PlayerAction.END_TURN]
             if end_turn:
                 result.append(end_turn[0])
+        trace["accepted"] = [self._trace_action(action) for action in result]
+        self._last_legal_action_trace = trace
         return result
 
     def _filter_strategically_relevant_actions(
-        self, state: GameState, player_idx: int, actions: list[AIAction]
+        self,
+        state: GameState,
+        player_idx: int,
+        actions: list[AIAction],
+        trace: dict[str, Any] | None = None,
     ) -> list[AIAction]:
         filtered: list[AIAction] = []
         player = state.get_player(player_idx)
@@ -1141,18 +1176,22 @@ class ChallengeAI:
                 if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                     effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
                     if self._draw_pressure_is_unsafe(state, player_idx, effects):
+                        self._trace_rejection(trace, action, "draw_or_search_deck_pressure")
                         continue
                     if effects and not self._effects_have_available_value(state, player_idx, effects):
+                        self._trace_rejection(trace, action, "effect_has_no_available_value")
                         continue
                     if self._effects_include_type(effects, "switch_self") and not self._switch_self_has_good_target(
                         state, player_idx
                     ):
+                        self._trace_rejection(trace, action, "switch_self_has_no_good_target")
                         continue
             elif action.action == PlayerAction.RETREAT:
                 bench_idx = action.params.get("bench_idx")
                 if isinstance(bench_idx, int) and not self._retreat_has_good_target(
                     state, player_idx, bench_idx
                 ):
+                    self._trace_rejection(trace, action, "retreat_has_no_good_target")
                     continue
             filtered.append(action)
         return filtered
@@ -1248,7 +1287,11 @@ class ChallengeAI:
         return target_value > active_value + 25
 
     def _filter_currently_executable_actions(
-        self, state: GameState, player_idx: int, actions: list[AIAction]
+        self,
+        state: GameState,
+        player_idx: int,
+        actions: list[AIAction],
+        trace: dict[str, Any] | None = None,
     ) -> list[AIAction]:
         """Drop generated actions whose effect layer currently has no valid resolution.
 
@@ -1286,6 +1329,11 @@ class ChallengeAI:
             result = self._apply_action_for_sim(sim, player_idx, action)
             if result is not None and result.success:
                 filtered.append(action)
+            else:
+                reason = "dry_run_failed"
+                if result is not None and getattr(result, "log_message", ""):
+                    reason = f"{reason}: {result.log_message}"
+                self._trace_rejection(trace, action, reason)
         return filtered
 
     def _ability_has_available_value(
@@ -1390,8 +1438,11 @@ class ChallengeAI:
         player_idx: int,
         effects: list[Any],
         source_slot: str | None = None,
+        _depth: int = 0,
     ) -> bool:
-        if isinstance(effects, dict):
+        if _depth > 8:
+            return False
+        if isinstance(effects, dict) or hasattr(effects, "effect_type"):
             effects = [effects]
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
@@ -1402,6 +1453,14 @@ class ChallengeAI:
             if etype in ("draw", "shuffle_draw", "discard_draw", "discard_then_draw", "draw_until", "draw_until_more"):
                 saw_known_resource_effect = True
                 if player.deck:
+                    return True
+            elif etype in ("hand_to_bottom_draw", "judge", "trekking_shoes", "houb"):
+                saw_known_resource_effect = True
+                if player.deck:
+                    return True
+            elif etype == "zinnia_resolve":
+                saw_known_resource_effect = True
+                if player.deck and ((1 if opponent.active else 0) + opponent.bench_count()) > 1:
                     return True
             elif etype in ("energy_attach", "attach_from_discard", "draw_and_attach_energy"):
                 saw_known_resource_effect = True
@@ -1420,6 +1479,10 @@ class ChallengeAI:
                 saw_known_resource_effect = True
                 if any(p and p.current_hp < p.card.hp for _, p in player.get_all_pokemon()):
                     return True
+            elif etype in ("damage_and_self_heal", "conditional_damage_heal"):
+                saw_known_resource_effect = True
+                if opponent.active is not None or any(p and p.current_hp < p.card.hp for _, p in player.get_all_pokemon()):
+                    return True
             elif etype in ("search", "look_top_deck", "conditional_search_extra", "search_any_and_switch"):
                 saw_known_resource_effect = True
                 if self._search_effect_has_available_value(state, player_idx, params):
@@ -1432,20 +1495,124 @@ class ChallengeAI:
                 saw_known_resource_effect = True
                 if self._discard_search_has_available_value(state, player_idx, params):
                     return True
-            elif etype in (
-                "any_pokemon_damage",
-                "place_counters_and_self_ko",
-                "switch_opponent",
-                "energy_discard",
-                "coin_flip_energy_discard",
-                "prevent_all",
-                "attack_lock_basic",
-                "damage_counter_self",
-            ):
-                return opponent.active is not None
+            elif etype == "switch_self":
+                saw_known_resource_effect = True
+                if player.active is not None and player.bench_count() > 0:
+                    return True
+            elif etype == "switch_opponent":
+                saw_known_resource_effect = True
+                if (
+                    opponent.active is not None
+                    and opponent.bench_count() > 0
+                    and not getattr(opponent.active, "all_prevented_next_turn", False)
+                ):
+                    return True
+            elif etype in ("energy_discard", "coin_flip_energy_discard"):
+                saw_known_resource_effect = True
+                if (
+                    opponent.active is not None
+                    and bool(getattr(opponent.active, "energy_cards", []) or [])
+                    and not getattr(opponent.active, "all_prevented_next_turn", False)
+                ):
+                    return True
+            elif etype in ("any_pokemon_damage", "place_counters_and_self_ko"):
+                saw_known_resource_effect = True
+                if any(
+                    p is not None and not getattr(p, "all_prevented_next_turn", False)
+                    for p in [opponent.active, *opponent.bench]
+                ):
+                    return True
+            elif etype in ("prevent_all", "attack_lock_basic"):
+                saw_known_resource_effect = True
+                if opponent.active is not None and not getattr(opponent.active, "all_prevented_next_turn", False):
+                    return True
+            elif etype == "damage_counter_self":
+                saw_known_resource_effect = True
+                source = player.get_pokemon(source_slot) if source_slot else player.active
+                amount = int(params.get("amount", 0) or 0)
+                if source is not None and source.current_hp > amount:
+                    return True
+            elif etype == "conditional":
+                saw_known_resource_effect = True
+                if self._conditional_effect_has_available_value(
+                    state, player_idx, params, source_slot, _depth=_depth + 1
+                ):
+                    return True
+            elif etype in ("coin_flip",):
+                saw_known_resource_effect = True
+                if self._coin_branch_has_available_value(
+                    state, player_idx, params, source_slot, _depth=_depth + 1
+                ):
+                    return True
             elif etype:
                 return True
         return not saw_known_resource_effect
+
+    def _conditional_effect_has_available_value(
+        self,
+        state: GameState,
+        player_idx: int,
+        params: dict[str, Any],
+        source_slot: str | None,
+        *,
+        _depth: int,
+    ) -> bool:
+        player = state.get_player(player_idx)
+        condition = str(params.get("condition", "") or "")
+        if condition == "ko_by_attack_last_turn" and not player.was_ko_by_attack:
+            return False
+
+        cost = params.get("cost")
+        if cost and not bool(params.get("optional", False)):
+            if not self._effect_cost_is_payable(state, player_idx, cost):
+                return False
+
+        on_pay = params.get("on_pay") or []
+        if isinstance(on_pay, dict) or hasattr(on_pay, "effect_type"):
+            on_pay = [on_pay]
+        if not on_pay:
+            return True
+        return self._effects_have_available_value(
+            state, player_idx, on_pay, source_slot=source_slot, _depth=_depth
+        )
+
+    def _coin_branch_has_available_value(
+        self,
+        state: GameState,
+        player_idx: int,
+        params: dict[str, Any],
+        source_slot: str | None,
+        *,
+        _depth: int,
+    ) -> bool:
+        for key in ("on_heads", "on_tails", "on_success", "on_fail"):
+            branch = params.get(key) or []
+            if isinstance(branch, dict) or hasattr(branch, "effect_type"):
+                branch = [branch]
+            if branch and self._effects_have_available_value(
+                state, player_idx, branch, source_slot=source_slot, _depth=_depth
+            ):
+                return True
+        return False
+
+    def _effect_cost_is_payable(self, state: GameState, player_idx: int, cost: Any) -> bool:
+        if not cost:
+            return True
+        costs = cost if isinstance(cost, list) else [cost]
+        player = state.get_player(player_idx)
+        for item in costs:
+            etype = self._effect_type(item)
+            params = self._effect_params(item)
+            if etype == "discard":
+                from_zone = str(params.get("from", params.get("from_zone", "hand")) or "hand")
+                amount = int(params.get("amount", 1) or 1)
+                if from_zone == "hand":
+                    # Trainer cards are popped before resolving their costs.
+                    if max(0, len(player.hand) - 1) < amount:
+                        return False
+                elif from_zone == "discard" and len(player.discard) < amount:
+                    return False
+        return True
 
     def _arven_has_available_value(self, state: GameState, player_idx: int) -> bool:
         player = state.get_player(player_idx)
@@ -1815,7 +1982,9 @@ class ChallengeAI:
         except Exception as exc:
             _logger.debug("action simulation failed: %s %s -> %s", action.action, action.params, exc)
             return ActionResult(False, str(exc))
-        self._resolve_result_pending_for_sim(state, result)
+        resolved_result = self._resolve_result_pending_for_sim(state, result)
+        if resolved_result is not None:
+            result = resolved_result
         self._auto_promote_for_sim(state)
         if (
             action.action == PlayerAction.DECLARE_ATTACK
@@ -1827,11 +1996,13 @@ class ChallengeAI:
                 end_result = tm.perform_action(PlayerAction.END_TURN, player_idx=player_idx)
             except Exception:
                 return result
-            self._resolve_result_pending_for_sim(state, end_result)
+            resolved_end = self._resolve_result_pending_for_sim(state, end_result)
+            if resolved_end is not None:
+                end_result = resolved_end
             self._auto_promote_for_sim(state)
         return result
 
-    def _resolve_result_pending_for_sim(self, state: GameState, result: ActionResult):
+    def _resolve_result_pending_for_sim(self, state: GameState, result: ActionResult) -> ActionResult | None:
         guard = 0
         while result and result.pending_action and guard < 8:
             guard += 1
@@ -1845,19 +2016,18 @@ class ChallengeAI:
             else:
                 result.pending_action = None
             self._auto_promote_for_sim(state)
+        return result
 
     def _auto_promote_for_sim(self, state: GameState) -> None:
         guard = 0
-        while state.pending_promotion_player >= 0 and guard < 4 and state.winner is None:
+        while state.pending_promotions and guard < 4 and state.winner is None:
             guard += 1
-            player_idx = state.pending_promotion_player
+            player_idx = state.pop_pending_promotion()
             player = state.get_player(player_idx)
             if player.active is not None:
-                state.pending_promotion_player = -1
                 continue
             candidates = [(i, p) for i, p in enumerate(player.bench) if p is not None]
             if not candidates:
-                state.pending_promotion_player = -1
                 if not player.has_any_pokemon_in_play():
                     state.winner = 1 - player_idx
                     state.phase = TurnPhase.GAME_OVER
@@ -1869,8 +2039,7 @@ class ChallengeAI:
             player.promote_from_bench(bench_idx)
             if state.phase == TurnPhase.DRAW:
                 TurnManager(state).continue_after_promotion()
-            else:
-                state.pending_promotion_player = -1
+            # continue loop if more promotions queued
         if state.winner is not None:
             return
         for player_idx in (0, 1):
@@ -3537,6 +3706,40 @@ class ChallengeAI:
             return (action.action, card_key, params)
         return (action.action, params)
 
+    def _trace_action(self, action: AIAction) -> dict[str, Any]:
+        action_name = action.action.name if isinstance(action.action, PlayerAction) else str(action.action)
+        return {
+            "action": action_name,
+            "params": dict(action.params or {}),
+            "terminal": bool(getattr(action, "terminal", False)),
+        }
+
+    def _trace_rejection(
+        self,
+        trace: dict[str, Any] | None,
+        action: AIAction,
+        reason: str,
+    ) -> None:
+        if trace is None:
+            return
+        row = self._trace_action(action)
+        row["reason"] = reason
+        trace.setdefault("rejected", []).append(row)
+
+    def _record_decision_trace(
+        self,
+        state: GameState,
+        player_idx: int,
+        selected: AIAction,
+    ) -> None:
+        self.last_decision_trace = {
+            "player_idx": player_idx,
+            "phase": getattr(state.phase, "name", str(state.phase)),
+            "search_algorithm": self.config.search_algorithm,
+            "selected": self._trace_action(selected),
+            "legal_actions": dict(self._last_legal_action_trace),
+        }
+
     # ------------------------------------------------------------------
     # Fog-of-war masking (opponent hidden-zone scrubbing)
     # ------------------------------------------------------------------
@@ -3706,7 +3909,7 @@ class ChallengeAI:
         clone = GameState()
         restore_state(clone, snapshot_state(state))
         clone.action_log = list(state.action_log)
-        clone.pending_promotion_player = state.pending_promotion_player
+        clone.pending_promotions = list(state.pending_promotions)
         self._rebuild_event_bus(clone)
         return clone
 

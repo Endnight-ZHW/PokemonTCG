@@ -125,6 +125,7 @@ class ResolutionStack:
 
         original_callback = req.callback
         setattr(req, "_resolution_stack_wrapped", True)
+        setattr(req, "_resolution_stack_had_callback", original_callback is not None)
 
         def chained(choice):
             original_result = (

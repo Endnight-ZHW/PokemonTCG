@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 7  # +deck_embed_dim (optional deck embedding)
+CHECKPOINT_VERSION = 8  # +tactical situation/action feasibility features
 
 
 if TORCH_AVAILABLE:

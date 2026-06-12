@@ -1185,6 +1185,22 @@ class _ModelOpponentActor:
         return self._fallback.evaluate_state(state, player_idx)
 
 
+def _action_has_no_available_target(ai: Any, state, player_idx: int, action: AIAction) -> bool:
+    if action.action != PlayerAction.PLAY_TRAINER:
+        return False
+    if not hasattr(ai, "_effects_have_available_value"):
+        return False
+    try:
+        player = state.get_player(player_idx)
+        hand_idx = action.params.get("hand_idx")
+        if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
+            return True
+        effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
+        return bool(effects) and not ai._effects_have_available_value(state, player_idx, effects)
+    except Exception:
+        return False
+
+
 def _play_model_game(
     model,
     deck_key: str,
@@ -1203,7 +1219,7 @@ def _play_model_game(
     mcts_simulations: int = 200,
     mcts_chance_nodes: bool = True,
     curiosity_tracker: Any = None,
-) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]:
+) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]:
     encoder = ActionStateEncoder()
     opponent_key = _opponent_for(deck_key, seed)
     seat = seed % 2
@@ -1216,6 +1232,7 @@ def _play_model_game(
         ais[opponent_idx] = _ModelOpponentActor(opponent_model, ais[opponent_idx], device, deck_key)
     examples: list[TrainingExample] = []
     choice_examples: list[ChoiceTrainingExample] = []
+    diagnostics = {"actions": 0, "invalid_actions": 0, "no_target_actions": 0}
     target_ai = ais[target_player_idx]
     original_choice_resolver = None
 
@@ -1326,9 +1343,15 @@ def _play_model_game(
                 ai = ais[player_idx]
                 action = ai.choose_action(state, player_idx)
 
+            if player_idx == target_player_idx:
+                diagnostics["actions"] += 1
+                if _action_has_no_available_target(ai, state, player_idx, action):
+                    diagnostics["no_target_actions"] += 1
             result = ai._apply_action_for_sim(state, player_idx, action)
             signature = _action_signature(action)
             invalid = result is None or not result.success
+            if player_idx == target_player_idx and invalid:
+                diagnostics["invalid_actions"] += 1
             if invalid:
                 failed_signatures[player_idx].add(signature)
                 if len(failed_signatures[player_idx]) >= 2:
@@ -1358,14 +1381,14 @@ def _play_model_game(
             logical_winner = 0 if soft_winner == target_player_idx else 1
             score = terminal_training_score(state, target_player_idx)
         _finalize_episode_examples(examples, _terminal_reward(logical_winner, score))
-        return logical_winner, score, examples, choice_examples
+        return logical_winner, score, examples, choice_examples, diagnostics
     finally:
         if original_choice_resolver is not None:
             target_ai._resolve_pending_for_sim = original_choice_resolver
         _restore_rng(rng_state)
 
 
-def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]:
+def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]:
     _ensure_cards_loaded()
     model = _model_from_worker_payload(task.model_state, task.model_config)
     opponent_model = None
@@ -1389,7 +1412,7 @@ def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, li
 def _run_model_game_tasks(
     tasks: list[ModelGameTask],
     workers: int | None,
-) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]]:
+) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]]:
     worker_count = _normalized_workers(workers)
     if worker_count <= 1 or len(tasks) <= 1:
         return [_execute_model_game_task(task) for task in tasks]
@@ -1450,7 +1473,18 @@ def evaluate_model(
     workers: int = 1,
     teacher_search_preset: str = "hybrid",
 ) -> dict[str, Any]:
-    stats = {"wins": 0, "losses": 0, "draws": 0, "avg_score": 0.0, "games": max(0, int(games))}
+    stats = {
+        "wins": 0,
+        "losses": 0,
+        "draws": 0,
+        "avg_score": 0.0,
+        "games": max(0, int(games)),
+        "actions": 0,
+        "invalid_actions": 0,
+        "no_target_actions": 0,
+        "invalid_action_rate": 0.0,
+        "no_target_action_rate": 0.0,
+    }
     if games <= 0:
         return stats
     score_total = 0.0
@@ -1485,7 +1519,9 @@ def evaluate_model(
             ),
             workers,
         )
-    for winner, score, _, _ in rows:
+    for row in rows:
+        winner, score = row[0], row[1]
+        diagnostics = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
         score_total += score
         if winner == 0:
             stats["wins"] += 1
@@ -1493,7 +1529,13 @@ def evaluate_model(
             stats["losses"] += 1
         else:
             stats["draws"] += 1
+        stats["actions"] += int(diagnostics.get("actions", 0))
+        stats["invalid_actions"] += int(diagnostics.get("invalid_actions", 0))
+        stats["no_target_actions"] += int(diagnostics.get("no_target_actions", 0))
     stats["avg_score"] = round(score_total / max(1, games), 3)
+    action_count = max(1, int(stats["actions"]))
+    stats["invalid_action_rate"] = round(float(stats["invalid_actions"]) / action_count, 6)
+    stats["no_target_action_rate"] = round(float(stats["no_target_actions"]) / action_count, 6)
     return stats
 
 
@@ -1554,6 +1596,10 @@ def _accepts_candidate(
 ) -> bool:
     if int(eval_result.get("games") or 0) <= 0:
         return True
+    if float(eval_result.get("invalid_action_rate", 0.0) or 0.0) > 0.0:
+        return False
+    if float(eval_result.get("no_target_action_rate", 0.0) or 0.0) > 0.0:
+        return False
     metric = acceptance_metric if acceptance_metric in ("wins", "points", "score") else "wins"
     if metric == "wins":
         required_delta = max(0, int(min_win_delta))
@@ -1637,7 +1683,7 @@ def _collect_rollout_batch(
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
     opponent_pool: Any = None,
-) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample]]]:
+) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]]:
     if not seeds:
         return []
     if _normalized_workers(workers) <= 1:
@@ -1806,7 +1852,7 @@ def _train_deck_pipeline(
         )
         dagger_examples: list[TrainingExample] = []
         choice_batch_examples: list[ChoiceTrainingExample] = []
-        for row_idx, (winner, score, examples, choices) in enumerate(rows):
+        for row_idx, (winner, score, examples, choices, _diagnostics) in enumerate(rows):
             labeled_examples = [ex for ex in examples if ex.source == "dagger"]
             dagger_examples.extend(labeled_examples)
             choice_batch_examples.extend(choices)
@@ -1907,7 +1953,7 @@ def _train_deck_pipeline(
         batch_examples: list[TrainingExample] = []
         batch_dagger_examples: list[TrainingExample] = []
         choice_batch_examples: list[ChoiceTrainingExample] = []
-        for row_idx, (winner, score, examples, choices) in enumerate(rows):
+        for row_idx, (winner, score, examples, choices, _diagnostics) in enumerate(rows):
             self_play_examples = [ex for ex in examples if ex.source == "self_play"]
             dagger_examples = [ex for ex in examples if ex.source == "dagger"]
             batch_examples.extend(self_play_examples)
@@ -2024,7 +2070,7 @@ def _train_deck_pipeline(
                 # Play 3 trajectories on the same seed with different temperatures
                 for traj_idx, temp in enumerate([0.0, 0.5, 0.9]):
                     mcts_sims = int(config.mcts_simulations)
-                    winner, score, game_examples, _ = _play_model_game(
+                    winner, score, game_examples, _, _diagnostics = _play_model_game(
                         model, deck_key, base_seed,
                         device=config.device, max_steps=max_steps, record=True,
                         teacher_search_preset=teacher_search_preset,
@@ -2098,7 +2144,7 @@ def _train_deck_pipeline(
 
             for row_idx, game_seed in enumerate(seeds):
                 mcts_sims = int(config.mcts_simulations) if use_mcts_training else 0
-                winner, score, game_examples, game_choices = _play_model_game(
+                winner, score, game_examples, game_choices, _diagnostics = _play_model_game(
                     model, deck_key, game_seed,
                     device=config.device, max_steps=max_steps, record=True,
                     teacher_search_preset=teacher_search_preset,

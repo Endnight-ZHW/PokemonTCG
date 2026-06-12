@@ -81,7 +81,7 @@ def drain_poll(nm: NetworkManager, timeout: float = 2.0) -> list[dict]:
 
 def resolve_pending_promotion(state: GameState, tm: TurnManager) -> bool:
     """Resolve the mandatory active promotion used by non-UI integration tests."""
-    player_idx = state.pending_promotion_player
+    player_idx = state.pop_pending_promotion()
     if player_idx < 0:
         return False
     player = state.get_player(player_idx)
@@ -96,8 +96,7 @@ def resolve_pending_promotion(state: GameState, tm: TurnManager) -> bool:
         print(f"    Promoted {pokemon.card.name} from bench")
     if state.phase == TurnPhase.DRAW:
         tm.continue_after_promotion()
-    else:
-        state.pending_promotion_player = -1
+    # else: pop_pending_promotion already removed this entry
     return True
 
 

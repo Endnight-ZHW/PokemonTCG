@@ -28,9 +28,9 @@ from engine.enums import PlayerAction, TurnPhase
 
 
 CARD_BUCKET_COUNT = 4096
-STATE_NUMERIC_SIZE = 928  # +32 for probability-aware features (v7)
+STATE_NUMERIC_SIZE = 960  # +32 for tactical situation features (v8)
 STATE_CARD_SLOTS = 96
-ACTION_NUMERIC_SIZE = 162
+ACTION_NUMERIC_SIZE = 178  # +16 for action feasibility/context features (v8)
 CARD_SEMANTIC_SIZE = 48
 
 ACTION_TYPES = [
@@ -193,6 +193,7 @@ class ActionStateEncoder:
         numeric.extend(self._deck_key_features(deck_key))
         numeric.extend(self._profile_context(state, player_idx, deck_key))
         numeric.extend(self._board_tactics(state, player_idx))
+        numeric.extend(self._situation_features(state, player_idx))
         numeric.extend(self._probability_features(state, player_idx, deck_key))
 
         for _, pokemon in player.get_all_pokemon():
@@ -498,6 +499,65 @@ class ActionStateEncoder:
             ])
         else:
             values.extend([0.0, 0.0, 0.0])
+        return values
+
+    def _situation_features(self, state, player_idx: int) -> list[float]:
+        player = state.get_player(player_idx)
+        opponent = state.get_player(1 - player_idx)
+        own_active = player.active
+        opp_active = opponent.active
+        own_best = self._best_attack_damage(own_active)
+        opp_best = self._best_attack_damage(opp_active)
+        own_ready = own_active is not None and self._best_missing_energy(own_active) <= 0
+        opp_ready = opp_active is not None and self._best_missing_energy(opp_active) <= 0
+        own_damaged = [p for _, p in player.get_all_pokemon() if p and p.current_hp < p.card.hp]
+        opp_damaged = [p for _, p in opponent.get_all_pokemon() if p and p.current_hp < p.card.hp]
+        own_energy_total = sum(
+            len(getattr(p, "energy_cards", []) or [])
+            for _, p in player.get_all_pokemon() if p
+        )
+        opp_energy_total = sum(
+            len(getattr(p, "energy_cards", []) or [])
+            for _, p in opponent.get_all_pokemon() if p
+        )
+        hand_discardable_after_trainer = max(0, len(player.hand) - 1)
+        active_damage_gap = 0.0
+        if own_active and opp_active:
+            active_damage_gap = own_active.current_hp - opp_active.current_hp
+        values = [
+            _bool(player.bench_count() > 0),
+            _bool(opponent.bench_count() > 0),
+            _bool(player.bench_count() == 0),
+            _bool(opponent.bench_count() == 0),
+            _norm(player.bench_count(), 5.0),
+            _norm(opponent.bench_count(), 5.0),
+            _bool(bool(own_damaged)),
+            _bool(bool(opp_damaged)),
+            _norm(len(own_damaged), 6.0),
+            _norm(len(opp_damaged), 6.0),
+            _bool(own_active and own_active.current_hp <= max(40, own_active.card.hp * 0.35)),
+            _bool(opp_active and opp_active.current_hp <= max(40, opp_active.card.hp * 0.35)),
+            _bool(own_ready),
+            _bool(opp_ready),
+            _bool(own_ready and opp_active and own_best >= opp_active.current_hp),
+            _bool(opp_ready and own_active and opp_best >= own_active.current_hp),
+            _bool(any(p and self._best_missing_energy(p) <= 0 for p in player.bench)),
+            _bool(any(p and self._best_missing_energy(p) <= 0 for p in opponent.bench)),
+            _bool(any(p and p.current_hp <= own_best for p in opponent.bench if p)),
+            _bool(any(p and opp_best >= p.current_hp for p in player.bench if p)),
+            _bool(bool(getattr(opp_active, "energy_cards", []) or [])),
+            _bool(opp_energy_total > 0),
+            _bool(own_energy_total > 0),
+            _norm(own_energy_total, 12.0),
+            _norm(opp_energy_total, 12.0),
+            _bool(hand_discardable_after_trainer >= 1),
+            _bool(hand_discardable_after_trainer >= 2),
+            _bool(len(player.deck) <= 4),
+            _bool(len(player.deck) <= 8),
+            _norm(len(player.deck), 60.0),
+            _norm(len(player.hand), 16.0),
+            _norm(active_damage_gap, 340.0),
+        ]
         return values
 
     def _probability_features(self, state, player_idx: int, deck_key: str | None) -> list[float]:
@@ -853,6 +913,17 @@ class ActionStateEncoder:
                 attack_damage = self._damage_value(getattr(attacks[attack_idx], "damage", 0))
         best_missing = self._best_missing_energy(target)
         active_missing = self._best_missing_energy(player.active)
+        effect_tokens = self._effect_tokens_for_action_card(card)
+        discard_cost = self._discard_cost_amount(card)
+        draws_or_searches = bool(effect_tokens & {"draw", "search"})
+        switches = "switch" in effect_tokens
+        heals = "heal" in effect_tokens
+        discards_energy = "discard" in effect_tokens and action.action == PlayerAction.PLAY_TRAINER
+        low_deck_pressure = len(player.deck) <= 4 or (len(player.deck) <= 8 and draws_or_searches)
+        own_has_heal_target = any(p and p.current_hp < p.card.hp for _, p in player.get_all_pokemon())
+        opp_has_bench = opponent.bench_count() > 0
+        own_has_bench = player.bench_count() > 0
+        opp_active_energy = bool(getattr(opponent.active, "energy_cards", []) or []) if opponent.active else False
         values = [
             _bool(target is not None),
             _norm(getattr(target, "current_hp", 0) if target else 0, 340.0),
@@ -868,6 +939,22 @@ class ActionStateEncoder:
             _bool(action.action == PlayerAction.RETREAT and target is not None and self._best_attack_damage(target) > self._best_attack_damage(player.active)),
             _bool(getattr(target, 'damage_prevented_next_turn', False) if target else False),
             _bool(getattr(target, 'all_prevented_next_turn', False) if target else False),
+            _bool(action.action == PlayerAction.PLAY_TRAINER and "switch" in effect_tokens and opp_has_bench),
+            _bool(action.action == PlayerAction.PLAY_TRAINER and switches and not opp_has_bench),
+            _bool(action.action in (PlayerAction.RETREAT, PlayerAction.PLAY_TRAINER) and own_has_bench),
+            _bool(action.action in (PlayerAction.RETREAT, PlayerAction.PLAY_TRAINER) and not own_has_bench),
+            _bool(draws_or_searches and not low_deck_pressure),
+            _bool(draws_or_searches and low_deck_pressure),
+            _bool(heals and own_has_heal_target),
+            _bool(heals and not own_has_heal_target),
+            _bool(discards_energy and opp_active_energy),
+            _bool(discards_energy and not opp_active_energy),
+            _bool(discard_cost > 0 and max(0, len(player.hand) - 1) >= discard_cost),
+            _bool(discard_cost > 0 and max(0, len(player.hand) - 1) < discard_cost),
+            _bool(action.action == PlayerAction.PLAY_BASIC and player.bench_count() < 5),
+            _bool(action.action == PlayerAction.PLAY_BASIC and player.bench_count() >= 5),
+            _bool(action.action == PlayerAction.DECLARE_ATTACK and opponent.active and attack_damage >= opponent.active.current_hp),
+            _bool(action.action == PlayerAction.DECLARE_ATTACK and any(p and attack_damage >= p.current_hp for p in opponent.bench)),
         ]
         values.extend(self._profile_card_flags(card, getattr(self, "_active_deck_key", None)))
         return values
@@ -954,23 +1041,70 @@ class ActionStateEncoder:
     def _card_effect_names(self, card) -> set[str]:
         names: list[str] = []
         for attack in getattr(card, "attacks", []) or []:
-            for effect in getattr(attack, "effects", []) or []:
+            for effect in self._iter_effects_recursive(getattr(attack, "effects", []) or []):
                 names.append(self._effect_name(effect))
             names.append(getattr(attack, "text", "") or "")
         for ability in getattr(card, "abilities", []) or []:
             names.append(getattr(ability, "text", "") or "")
-            for effect in getattr(ability, "effects", []) or []:
+            for effect in self._iter_effects_recursive(getattr(ability, "effects", []) or []):
                 names.append(self._effect_name(effect))
-        for effect in getattr(card, "trainer_effects", []) or []:
+        for effect in self._iter_effects_recursive(getattr(card, "trainer_effects", []) or []):
             names.append(self._effect_name(effect))
         names.extend(getattr(card, "rules", []) or [])
         names.append(getattr(card, "trainer_text", "") or "")
         return self._normalized_effect_tokens(names)
 
+    def _effect_tokens_for_action_card(self, card) -> set[str]:
+        if card is None:
+            return set()
+        names = [self._effect_name(effect) for effect in self._iter_effects_recursive(getattr(card, "trainer_effects", []) or [])]
+        for attack in getattr(card, "attacks", []) or []:
+            names.extend(self._effect_name(effect) for effect in self._iter_effects_recursive(getattr(attack, "effects", []) or []))
+        for ability in getattr(card, "abilities", []) or []:
+            names.extend(self._effect_name(effect) for effect in self._iter_effects_recursive(getattr(ability, "effects", []) or []))
+        return self._normalized_effect_tokens(names)
+
+    def _discard_cost_amount(self, card) -> int:
+        if card is None:
+            return 0
+        amount = 0
+        for effect in self._iter_effects_recursive(getattr(card, "trainer_effects", []) or []):
+            if self._effect_name(effect) != "discard":
+                continue
+            params = self._effect_params(effect)
+            from_zone = str(params.get("from", params.get("from_zone", "hand")) or "hand")
+            if from_zone == "hand":
+                amount += int(params.get("amount", 1) or 1)
+        return amount
+
     def _effect_name(self, effect) -> str:
         if isinstance(effect, dict):
             return str(effect.get("effect_type", ""))
         return str(getattr(effect, "effect_type", effect))
+
+    def _effect_params(self, effect) -> dict[str, Any]:
+        if isinstance(effect, dict):
+            params = effect.get("params", {})
+        else:
+            params = getattr(effect, "params", {})
+        return params if isinstance(params, dict) else {}
+
+    def _iter_effects_recursive(self, effects):
+        if isinstance(effects, dict) or hasattr(effects, "effect_type"):
+            effects = [effects]
+        for effect in effects or []:
+            yield effect
+            params = self._effect_params(effect)
+            for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
+                branch = params.get(key) or []
+                if isinstance(branch, dict) or hasattr(branch, "effect_type"):
+                    branch = [branch]
+                yield from self._iter_effects_recursive(branch)
+            cost = params.get("cost")
+            if cost:
+                if isinstance(cost, dict) or hasattr(cost, "effect_type"):
+                    cost = [cost]
+                yield from self._iter_effects_recursive(cost)
 
     def _normalized_effect_tokens(self, names) -> set[str]:
         joined = " ".join(str(name) for name in names).lower()

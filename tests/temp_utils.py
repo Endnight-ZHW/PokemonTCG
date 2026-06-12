@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 from contextlib import contextmanager
 from typing import Iterator
@@ -17,6 +18,11 @@ def _temp_root() -> str:
 
 @contextmanager
 def temp_dir() -> Iterator[str]:
+    if supports_file_delete():
+        with tempfile.TemporaryDirectory(dir=_temp_root()) as path:
+            yield path
+        return
+
     path = os.path.join(_temp_root(), f"tmp-{uuid.uuid4().hex}")
     os.makedirs(path, exist_ok=False)
     yield path
@@ -29,7 +35,7 @@ def temp_file_path(prefix: str = "tmp", suffix: str = "") -> str:
 def best_effort_unlink(path: str) -> None:
     try:
         os.unlink(path)
-    except (FileNotFoundError, PermissionError):
+    except OSError:
         pass
 
 

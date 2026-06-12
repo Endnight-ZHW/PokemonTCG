@@ -1334,6 +1334,66 @@ class ChallengeAITests(unittest.TestCase):
         actions = ai.legal_actions(state, 1)
         self.assertTrue(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
 
+    def test_catcher_requires_opponent_bench_target(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-emol"))
+        state.p2.hand = [CardRegistry.get("sv2-catch")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+
+        self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
+        trace = ai.explain_legal_actions(state, 1)
+        self.assertTrue(
+            any(row.get("reason") == "effect_has_no_available_value" for row in trace["rejected"])
+        )
+
+    def test_catcher_with_opponent_bench_switches_on_forced_heads(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-emol"))
+        state.p2.hand = [CardRegistry.get("sv2-catch")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        actions = ai.legal_actions(state, 1)
+        catcher = next(action for action in actions if action.action == PlayerAction.PLAY_TRAINER)
+        sim = ai._clone_state(state)
+
+        result = ai._apply_action_for_sim_with_coin_results(sim, 1, catcher, [True])
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(sim.p1.active.card.api_id, "sv2-delib")
+        self.assertEqual(sim.p1.bench[0].card.api_id, "svg-dram")
+
+    def test_pending_coin_branch_failure_propagates_to_simulation(self):
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        state.p1.active = PokemonInPlay(CardRegistry.get("svg-dram"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svl-emol"))
+        state.p2.hand = [CardRegistry.get("sv2-catch")]
+
+        ai = create_challenge_ai("lightning", AIConfig(policy_path=None))
+        action = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
+        sim = ai._clone_state(state)
+
+        result = ai._apply_action_for_sim_with_coin_results(sim, 1, action, [True])
+
+        self.assertFalse(result.success)
+        self.assertIn("对手备战区没有宝可梦", result.log_message)
+
     def test_single_bench_energy_choice_prefers_core_attack_plan(self):
         state = GameState()
         state.phase = TurnPhase.MAIN

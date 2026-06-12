@@ -7,12 +7,12 @@ def _get_base_path():
     """Return the application's root directory.
 
     When running from a PyInstaller bundle, sys._MEIPASS points to the
-    directory containing bundled data files. In development this falls
-    back to the current working directory.
+    directory containing bundled data files. In development this uses
+    the directory containing this config file (project root).
     """
     if getattr(sys, 'frozen', False):
         return getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
-    return os.path.abspath(".")
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 _BASE_PATH = _get_base_path()

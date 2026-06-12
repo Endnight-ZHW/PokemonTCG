@@ -100,6 +100,10 @@ class SearchScreen(Screen):
             self.selected_indices.append(idx)
 
     def _confirm_selection(self):
+        min_sel = getattr(self.request, 'min_select', 0)
+        if min_sel > 0 and len(self.selected_indices) < min_sel:
+            # Enforce minimum selection — silently ignore insufficient selections
+            return
         selected_cards = [
             self.request.card_list[i]
             for i in self.selected_indices

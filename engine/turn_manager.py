@@ -139,8 +139,11 @@ class TurnManager:
 
     def continue_after_promotion(self):
         """Called by UI after bench promotion is complete.
-        Turn has already switched — just draw and go to MAIN."""
-        self.state.pending_promotion_player = -1
+        Pops the completed promotion and continues if more are pending."""
+        self.state.pop_pending_promotion()  # Remove the just-completed promotion
+        # If another player still needs to promote, pause again
+        if self.state.pending_promotions:
+            return
         self._handle_draw_phase()
 
     def declare_attack(self, player_idx: int, attack_idx: int) -> ActionResult:

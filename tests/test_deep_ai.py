@@ -146,6 +146,21 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(len(water_action.numeric), ACTION_NUMERIC_SIZE)
         self.assertNotEqual(fire_action.numeric, water_action.numeric)
 
+    def test_encoder_exposes_nested_catcher_target_context(self):
+        state = self._simple_state()
+        state.p1.bench = [None] * len(state.p1.bench)
+        state.p2.hand = [CardRegistry.get("sv2-catch")]
+        action = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
+        encoder = ActionStateEncoder()
+
+        without_target = encoder.encode_action(state, 1, action)
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        with_target = encoder.encode_action(state, 1, action)
+
+        self.assertEqual(len(without_target.numeric), ACTION_NUMERIC_SIZE)
+        self.assertEqual(len(with_target.numeric), ACTION_NUMERIC_SIZE)
+        self.assertNotEqual(without_target.numeric, with_target.numeric)
+
     def test_encoder_does_not_read_exact_own_hidden_deck_composition(self):
         state = self._simple_state()
         encoder = ActionStateEncoder()
@@ -338,6 +353,38 @@ class DeepAITests(unittest.TestCase):
                 min_win_delta=1,
             )
         )
+
+    def test_candidate_with_invalid_or_no_target_actions_is_rejected(self):
+        from engine.ai.dl.training import _accepts_candidate
+
+        baseline = {"wins": 1, "losses": 1, "draws": 0, "avg_score": 0.0, "games": 2}
+        improved = {"wins": 2, "losses": 0, "draws": 0, "avg_score": 100.0, "games": 2}
+
+        self.assertFalse(
+            _accepts_candidate(dict(improved, invalid_action_rate=0.01), baseline, None, acceptance_metric="score")
+        )
+        self.assertFalse(
+            _accepts_candidate(dict(improved, no_target_action_rate=0.01), baseline, None, acceptance_metric="score")
+        )
+        self.assertTrue(
+            _accepts_candidate(
+                dict(improved, invalid_action_rate=0.0, no_target_action_rate=0.0),
+                baseline,
+                None,
+                acceptance_metric="score",
+            )
+        )
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_learning_probe_improves_heldout_tactical_preference(self):
+        from scripts.verify_ai_learning import run_learning_probe
+
+        result = run_learning_probe(device="cpu", epochs=6, repeats=6, learning_rate=5e-3)
+
+        self.assertTrue(result.passed)
+        self.assertGreaterEqual(result.after_target_probability, 0.85)
+        self.assertGreater(result.probability_gain, 0.25)
+        self.assertGreater(result.margin_gain, 1.0)
 
     def test_dagger_teacher_label_uses_teacher_target(self):
         from engine.ai.dl.training import _teacher_label_state
@@ -572,11 +619,11 @@ class DeepAITests(unittest.TestCase):
             self.assertFalse(run_started["cuda_available"])
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
-    def test_v6_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
+    def test_v8_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
         from engine.ai.dl.model import checkpoint_payload, create_model, load_checkpoint, save_checkpoint, torch
 
         with temp_dir() as tmpdir:
-            path = os.path.join(tmpdir, "model_v6.pt")
+            path = os.path.join(tmpdir, "model_v8.pt")
             model = create_model(choice_head_enabled=True)
             save_checkpoint(path, model, {"trainer": "test"})
             restored, payload = load_checkpoint(path, "cpu")
@@ -589,9 +636,11 @@ class DeepAITests(unittest.TestCase):
             torch.save(legacy_payload, legacy_path)
             legacy_restored, legacy_loaded = load_checkpoint(legacy_path, "cpu")
 
-        self.assertEqual(payload.get("version"), 6)
+        self.assertEqual(payload.get("version"), 8)
         self.assertTrue(payload.get("model_config", {}).get("choice_head_enabled"))
         self.assertEqual(payload.get("model_config", {}).get("state_norm"), "layer")
+        self.assertEqual(payload.get("model_config", {}).get("state_numeric_size"), STATE_NUMERIC_SIZE)
+        self.assertEqual(payload.get("model_config", {}).get("action_numeric_size"), ACTION_NUMERIC_SIZE)
         self.assertTrue(getattr(restored, "choice_head_enabled", False))
         self.assertTrue(hasattr(restored, "choice_net"))
         self.assertTrue(hasattr(restored, "score_choices"))

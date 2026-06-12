@@ -306,6 +306,10 @@ class SwitchPokemon:
                     player.switch_active_to_bench(bench_indices[0])
                     return None
                 # Multiple bench: return a bench selection request
+                def _on_multi_bench_selected(bench_idx):
+                    player.switch_active_to_bench(bench_idx)
+                    return None
+
                 return ActionRequest(
                     request_type=request_type,
                     player=chooser_idx,
@@ -313,6 +317,7 @@ class SwitchPokemon:
                     min_select=1, max_select=1,
                     target_player=target_player,
                     bench_indices=bench_indices,
+                    callback=_on_multi_bench_selected,
                 )
 
             return CommandResult.ok(
@@ -326,6 +331,12 @@ class SwitchPokemon:
             )
 
         # Non-optional: request bench choice directly
+        # The callback performs the switch in the engine layer so that
+        # local UI, remote host, and AI all share the same semantics.
+        def on_bench_selected(bench_idx):
+            player.switch_active_to_bench(bench_idx)
+            return None
+
         return CommandResult.ok(
             "选择替换的宝可梦。",
             pending_choice=ActionRequest(
@@ -335,6 +346,7 @@ class SwitchPokemon:
                 min_select=1, max_select=1,
                 target_player=target_player,
                 bench_indices=bench_indices,
+                callback=on_bench_selected,
             ),
         )
 

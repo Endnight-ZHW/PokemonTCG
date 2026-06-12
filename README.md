@@ -5,6 +5,12 @@
 ## 快速开始
 
 ```bash
+# Conda（推荐，含 PyTorch + CUDA）
+conda env create -f environment.yml
+conda activate DL
+python main.py
+
+# 或使用 pip
 pip install -r requirements.txt
 python main.py
 ```
