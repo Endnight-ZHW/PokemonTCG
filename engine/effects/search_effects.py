@@ -302,11 +302,11 @@ def _handle_conditional_search_extra(state, player_idx, params):
     max_count = params.get("max_count", 3)
     default_count = params.get("default_count", 1)
 
-    # Check if this is the player's first turn AND they went second
-    is_first_turn = (state.turn_number == 1)
-    is_going_second = (state.first_player_idx != player_idx) if hasattr(state, 'first_player_idx') else False
-
-    search_count = max_count if (is_first_turn and is_going_second) else default_count
+    search_count = (
+        max_count
+        if state.is_going_second_first_turn(player_idx)
+        else default_count
+    )
 
     # Filter for Grass Pokemon
     search_pool = [c for c in player.deck

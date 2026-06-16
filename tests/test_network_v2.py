@@ -14,6 +14,9 @@ from config import NETWORK_TIMEOUT
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS
 from engine.game_state import ActionRequest
+from engine.enums import PlayerAction, TurnPhase
+from engine.player_state import PokemonInPlay
+from engine.turn_manager import TurnManager
 from network.message_protocol import (
     MSG_STATE_UPDATE,
     PROTOCOL_VERSION,
@@ -21,7 +24,9 @@ from network.message_protocol import (
 )
 from network.network_manager import NetworkManager
 from network.state_serializer import (
+    deserialize_game_state,
     deserialize_action_request,
+    serialize_game_state,
     serialize_action_request,
 )
 
@@ -116,6 +121,31 @@ class ProtocolV2Tests(unittest.TestCase):
         nm._put_incoming({"type": MSG_STATE_UPDATE, "state": {"turn": 1}})
         nm._put_incoming({"type": MSG_STATE_UPDATE, "state": {"turn": 2}})
         self.assertEqual(nm.poll(), [{"type": MSG_STATE_UPDATE, "state": {"turn": 2}}])
+
+    def test_deserialized_client_state_is_view_only(self):
+        from engine.game_state import GameState
+
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.turn_number = 3
+        state.active_player_idx = 0
+        card = CardRegistry.get("sv2-delib")
+        state.p1.active = PokemonInPlay(card)
+        state.p2.active = PokemonInPlay(card)
+        state.p1.prizes = [card] * 6
+        state.p2.prizes = [card] * 6
+
+        restored = deserialize_game_state(
+            serialize_game_state(state, for_player_idx=1),
+            for_player_idx=1,
+        )
+
+        self.assertTrue(restored.is_network_view)
+        result = TurnManager(restored).perform_action(
+            PlayerAction.END_TURN,
+            player_idx=restored.active_player_idx,
+        )
+        self.assertFalse(result.success)
 
     def test_lan_transport_wraps_messages_in_protocol_v2(self):
         port = _free_port()

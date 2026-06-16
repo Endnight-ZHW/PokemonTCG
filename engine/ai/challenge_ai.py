@@ -15,6 +15,7 @@ from typing import Any
 
 from engine.enums import PlayerAction, StatusType, TurnPhase
 from engine.game_state import ActionRequest, ActionResult, GameState
+from engine.ai.challenge.fow import ChallengeAIFogMixin
 from engine.ai.challenge.layers import ActionEnumerator, ChoicePolicy, Evaluator, Simulator
 from engine.ai.challenge.types import AIAction, AIChoice, AIConfig
 from engine.ai.profiles import (
@@ -36,11 +37,10 @@ from engine.rules_validator import (
 from utils.logger import get_logger
 
 _logger = get_logger(__name__)
-from engine.snapshot import restore_state, snapshot_state
 from engine.turn_manager import TurnManager
 
 
-class ChallengeAI:
+class ChallengeAI(ChallengeAIFogMixin):
     """A tactical single-player opponent using legal actions and beam search."""
 
     # Fog-of-war type profiles for opponent hidden-zone card masking
@@ -3739,190 +3739,6 @@ class ChallengeAI:
             "selected": self._trace_action(selected),
             "legal_actions": dict(self._last_legal_action_trace),
         }
-
-    # ------------------------------------------------------------------
-    # Fog-of-war masking (opponent hidden-zone scrubbing)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _card_fow_profile(card) -> str:
-        """Return the fog-of-war type profile key for a card."""
-        if getattr(card, "is_pokemon", False):
-            if getattr(card, "is_basic_pokemon", False):
-                return ChallengeAI._FOW_POKEMON_BASIC
-            if getattr(card, "is_stage1", False):
-                return ChallengeAI._FOW_POKEMON_STAGE1
-            if getattr(card, "is_stage2", False):
-                return ChallengeAI._FOW_POKEMON_STAGE2
-            return ChallengeAI._FOW_POKEMON_BASIC
-        if getattr(card, "is_energy", False):
-            if getattr(card, "is_basic_energy", False):
-                return ChallengeAI._FOW_ENERGY_BASIC
-            return ChallengeAI._FOW_ENERGY_SPECIAL
-        if getattr(card, "is_trainer", False):
-            if getattr(card, "is_trainer_item", False):
-                return ChallengeAI._FOW_TRAINER_ITEM
-            if getattr(card, "is_trainer_supporter", False):
-                return ChallengeAI._FOW_TRAINER_SUPPORTER
-            if getattr(card, "is_trainer_stadium", False):
-                return ChallengeAI._FOW_TRAINER_STADIUM
-            if getattr(card, "is_trainer_tool", False):
-                return ChallengeAI._FOW_TRAINER_TOOL
-            return ChallengeAI._FOW_TRAINER_ITEM
-        return ChallengeAI._FOW_UNKNOWN
-
-    def _get_fow_card(self, original_card):
-        """Return a fog-of-war placeholder preserving type tags, hiding identity."""
-        from data.card_models import AttackDef, Card as CardModel
-        from data.card_registry import CardRegistry
-
-        profile = self._card_fow_profile(original_card)
-        idx = self._fow_counter[profile]
-        self._fow_counter[profile] = idx + 1
-        key = f"_fow_{profile}_{idx}"
-
-        if key in self._fow_cache:
-            self._register_fow_card(key, self._fow_cache[key])
-            return self._fow_cache[key]
-
-        subtypes = list(getattr(original_card, "subtypes", []))
-        supertype = getattr(original_card, "supertype", "")
-
-        if profile == self._FOW_POKEMON_BASIC:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype=supertype,
-                subtypes=subtypes, hp=100, energy_types=["Colorless"],
-                attacks=[AttackDef("???", [], 0, "")],
-            )
-        elif profile == self._FOW_POKEMON_STAGE1:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype=supertype,
-                subtypes=subtypes, hp=110, energy_types=["Colorless"],
-                evolves_from="???",
-                attacks=[AttackDef("???", [], 0, "")],
-            )
-        elif profile == self._FOW_POKEMON_STAGE2:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype=supertype,
-                subtypes=subtypes, hp=150, energy_types=["Colorless"],
-                evolves_from="???",
-                attacks=[AttackDef("???", [], 0, "")],
-            )
-        elif profile == self._FOW_ENERGY_BASIC:
-            placeholder = CardModel(
-                api_id=key, name="? Energy", supertype="Energy",
-                subtypes=["Basic"],
-            )
-        elif profile == self._FOW_ENERGY_SPECIAL:
-            placeholder = CardModel(
-                api_id=key, name="? Energy", supertype="Energy",
-                subtypes=["Special"],
-            )
-        elif profile == self._FOW_TRAINER_ITEM:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype="Trainer",
-                subtypes=["Item"],
-            )
-        elif profile == self._FOW_TRAINER_SUPPORTER:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype="Trainer",
-                subtypes=["Supporter"],
-            )
-        elif profile == self._FOW_TRAINER_STADIUM:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype="Trainer",
-                subtypes=["Stadium"],
-            )
-        elif profile == self._FOW_TRAINER_TOOL:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype="Trainer",
-                subtypes=["Tool"],
-            )
-        else:
-            placeholder = CardModel(
-                api_id=key, name="? ? ?", supertype=supertype,
-                subtypes=subtypes,
-            )
-
-        self._register_fow_card(key, placeholder)
-        self._fow_cache[key] = placeholder
-        return placeholder
-
-    @staticmethod
-    def _register_fow_card(key: str, card: Any) -> None:
-        """Keep a fog-of-war placeholder resolvable by snapshot restore."""
-        from data.card_registry import CardRegistry
-
-        CardRegistry._cards[key] = card
-        if card.name not in CardRegistry._by_name:
-            CardRegistry._by_name[card.name] = []
-        if key not in CardRegistry._by_name[card.name]:
-            CardRegistry._by_name[card.name].append(key)
-
-    @staticmethod
-    def _is_opponent_masked(state: GameState, opponent_idx: int) -> bool:
-        """Check if opponent hidden zones are already masked."""
-        opponent = state.get_player(opponent_idx)
-        if opponent.hand and getattr(opponent.hand[0], "api_id", "").startswith("_fow_"):
-            return True
-        if opponent.deck and getattr(opponent.deck[0], "api_id", "").startswith("_fow_"):
-            return True
-        return False
-
-    def _cleanup_fow_registry(self) -> None:
-        """Remove fog-of-war placeholders from the global CardRegistry."""
-        from data.card_registry import CardRegistry
-
-        for key in list(self._fow_cache):
-            CardRegistry._cards.pop(key, None)
-        for name, ids in list(CardRegistry._by_name.items()):
-            CardRegistry._by_name[name] = [i for i in ids if not i.startswith("_fow_")]
-            if not CardRegistry._by_name[name]:
-                del CardRegistry._by_name[name]
-
-    def _masked_clone_for_eval(self, state: GameState, player_idx: int) -> GameState:
-        """Clone and scrub hidden information for fair beam-search evaluation.
-
-        - Shuffles AI's own deck to remove draw-order foreknowledge
-        - Replaces opponent hand/deck/prize cards with fog-of-war placeholders
-        """
-        # Do not remove cached placeholders here. Beam-search frontier nodes may
-        # still snapshot/restore masked states containing these _fow_* ids.
-        self._fow_counter.clear()
-
-        clone = self._clone_state(state)
-        self.random.shuffle(clone.get_player(player_idx).deck)
-
-        opponent_idx = 1 - player_idx
-        opponent = clone.get_player(opponent_idx)
-        opponent.hand = [self._get_fow_card(c) for c in opponent.hand]
-        opponent.deck = [self._get_fow_card(c) for c in opponent.deck]
-        opponent.prizes = [self._get_fow_card(c) for c in opponent.prizes]
-
-        return clone
-
-    # ------------------------------------------------------------------
-    # State cloning
-    # ------------------------------------------------------------------
-
-    def _clone_state(self, state: GameState) -> GameState:
-        clone = GameState()
-        restore_state(clone, snapshot_state(state))
-        clone.action_log = list(state.action_log)
-        clone.pending_promotions = list(state.pending_promotions)
-        self._rebuild_event_bus(clone)
-        return clone
-
-    def _rebuild_event_bus(self, state: GameState):
-        from engine.commands.modifier_registration import register_pokemon_modifiers
-
-        state.event_bus.clear()
-        for player_idx in (0, 1):
-            player = state.get_player(player_idx)
-            for slot, pokemon in player.get_all_pokemon():
-                if pokemon:
-                    register_pokemon_modifiers(pokemon, player_idx, slot, event_bus=state.event_bus)
-
 
 def create_challenge_ai(deck_key: str, config: AIConfig | None = None) -> ChallengeAI:
     """Create a challenge AI configured for one of the built-in deck keys."""

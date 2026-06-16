@@ -1,7 +1,9 @@
 """Title screen — main menu."""
 import math
 import random
+import os
 import pygame
+import sys
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -37,6 +39,7 @@ class TitleScreen(Screen):
         training_btn_y = challenge_btn_y + btn_h + btn_gap
         self.training_button = pygame.Rect(btn_x, training_btn_y, btn_w, btn_h)
         self.training_hover = False
+        self.training_available = self._training_available()
 
         remote_btn_y = training_btn_y + btn_h + btn_gap
         self.remote_button = pygame.Rect(btn_x, remote_btn_y, btn_w, btn_h)
@@ -145,7 +148,10 @@ class TitleScreen(Screen):
         if event.type == pygame.MOUSEMOTION:
             self.start_hover = self.start_button.collidepoint(event.pos)
             self.challenge_hover = self.challenge_button.collidepoint(event.pos)
-            self.training_hover = self.training_button.collidepoint(event.pos)
+            self.training_hover = (
+                self.training_available
+                and self.training_button.collidepoint(event.pos)
+            )
             self.remote_hover = self.remote_button.collidepoint(event.pos)
             self.cardimg_hover = self.cardimg_button.collidepoint(event.pos)
             self.matchup_hover = self.matchup_toggle.collidepoint(event.pos)
@@ -220,8 +226,19 @@ class TitleScreen(Screen):
         )
 
     def _open_ai_training(self):
+        if not self.training_available:
+            return
         from ui.screens.ai_training_screen import AITrainingScreen
         self.manager.push_screen(AITrainingScreen(self.manager))
+
+    def _training_available(self) -> bool:
+        if getattr(sys, "frozen", False):
+            return False
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        return (
+            os.path.exists(os.path.join(root, "scripts", "train_challenge_ai.py"))
+            and os.path.exists(os.path.join(root, "scripts", "train_deep_ai.py"))
+        )
 
     def _show_help(self):
         """Show a help overlay with game rules."""
@@ -332,8 +349,9 @@ class TitleScreen(Screen):
                     hovered=self.challenge_hover)
 
         training_rect = self.training_button.move(0, entry_offset * 3 // 5)
-        draw_button(surface, training_rect, "AI训练", self.font_body,
-                    hovered=self.training_hover)
+        training_label = "AI训练" if self.training_available else "AI训练(源码)"
+        draw_button(surface, training_rect, training_label, self.font_body,
+                    hovered=self.training_hover and self.training_available)
 
         remote_rect = self.remote_button.move(0, entry_offset * 2 // 3)
         draw_button(surface, remote_rect, "远程对战", self.font_body,

@@ -160,6 +160,7 @@ def serialize_game_state(state: GameState, for_player_idx: int) -> dict:
 def deserialize_game_state(data: dict, for_player_idx: int) -> GameState:
     """Deserialize game state from host, mapping your/opponent to p1/p2."""
     state = GameState()
+    state.is_network_view = True
     state.phase = TurnPhase[data["phase"]]
     state.turn_number = data["turn_number"]
     state.active_player_idx = data["active_player_idx"]

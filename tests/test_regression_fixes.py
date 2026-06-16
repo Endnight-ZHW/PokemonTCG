@@ -13,7 +13,9 @@ Covers:
 
 import sys
 import os
+import json
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -28,6 +30,7 @@ from engine.rules_validator import (
     can_retreat,
 )
 from engine.rules_constants import MAX_BENCH_SIZE
+from engine.snapshot import restore_state, snapshot_state
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK, expand_deck
 
@@ -51,6 +54,13 @@ def _make_state_with_pokemon(active_card_id="sv2-delib", bench_card_ids=None):
             for bc in bench_card_ids:
                 slot = next(i for i in range(MAX_BENCH_SIZE) if player.bench[i] is None)
                 player.bench[slot] = PokemonInPlay(CardRegistry.get(bc))
+    return state
+
+
+def _give_prizes(state):
+    prize = CardRegistry.get("sv1-ener-3")
+    state.p1.prizes = [prize] * 6
+    state.p2.prizes = [prize] * 6
     return state
 
 
@@ -142,6 +152,16 @@ class TestSlotBenchBoundaries(unittest.TestCase):
         self.assertIsNone(player.get_pokemon("bench_xyz"))
         self.assertIsNone(player.get_pokemon(f"bench_{MAX_BENCH_SIZE}"))
 
+    def test_discard_pokemon_accepts_valid_bench_slot(self):
+        state = _make_state_with_pokemon(bench_card_ids=["sv1-113"])
+        player = state.get_active_player()
+        benched = player.bench[0]
+
+        state.discard_pokemon(0, "bench_0")
+
+        self.assertIsNone(player.bench[0])
+        self.assertIn(benched.card, player.discard)
+
 
 # ── 2. Crushing Hammer Energy Discard ──────────────────────────────────────
 
@@ -185,6 +205,82 @@ class TestCrushingHammerDiscard(unittest.TestCase):
         result = _handle_coin_flip_energy_discard(state, {}, 0, "active")
         self.assertTrue(result.success)
         self.assertIn("对手场上没有能量", result.log_message)
+
+
+# ── 2b. Turn-Relative Bonuses ─────────────────────────────────────────────
+
+class TestGoingSecondFirstTurnBonuses(unittest.TestCase):
+
+    def test_going_second_first_turn_helper(self):
+        state = GameState()
+        state.first_player_idx = 0
+
+        state.turn_number = 1
+        state.active_player_idx = 0
+        self.assertFalse(state.is_going_second_first_turn(0))
+        self.assertFalse(state.is_going_second_first_turn(1))
+
+        state.turn_number = 2
+        state.active_player_idx = 1
+        self.assertTrue(state.is_going_second_first_turn(1))
+        self.assertFalse(state.is_going_second_first_turn(0))
+
+        state.turn_number = 5
+        state.active_player_idx = 1
+        self.assertFalse(state.is_going_second_first_turn(1))
+
+    def test_cresselia_bonus_only_on_going_second_first_turn(self):
+        from engine.effects.energy_effects import _handle_energy_attach
+
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 5
+        player = state.p2
+        player.active = PokemonInPlay(CardRegistry.get("sv1-113"))
+        player.deck = [CardRegistry.get("sv1-ener-5")] * 3
+
+        result = _handle_energy_attach(
+            state,
+            player,
+            1,
+            {
+                "amount": 1,
+                "from_zone": "deck",
+                "filter": "psychic",
+                "to": "any",
+                "going_second_bonus": 3,
+            },
+            "active",
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(len(player.active.energy_cards), 1)
+
+    def test_grass_search_bonus_applies_on_turn_two_for_second_player(self):
+        from engine.effects.search_effects import _handle_conditional_search_extra
+
+        state = GameState()
+        state.phase = TurnPhase.MAIN
+        state.first_player_idx = 0
+        state.active_player_idx = 1
+        state.turn_number = 2
+        state.p2.deck = [
+            CardRegistry.get("svg2-shro"),
+            CardRegistry.get("svg2-turt"),
+            CardRegistry.get("svg2-tort"),
+        ]
+
+        result = _handle_conditional_search_extra(
+            state,
+            1,
+            {"max_count": 3, "default_count": 1, "filter": "grass_pokemon"},
+        )
+
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_action)
+        self.assertEqual(result.pending_action.max_select, 3)
 
 
 # ── 3. SwitchPokemon Callback Semantics ────────────────────────────────────
@@ -252,6 +348,63 @@ class TestSwitchPendingSemantics(unittest.TestCase):
         # After callback, bench[1] should be the old active, active should be the bench pokemon
         self.assertEqual(player.active, bench_poke)
         self.assertEqual(player.bench[1], original_active)
+
+
+# ── 3b. Effect Semantics / Aggregation ────────────────────────────────────
+
+class TestEffectSemantics(unittest.TestCase):
+
+    def test_potion_with_no_injured_target_returns_to_hand(self):
+        state = _give_prizes(_make_state_with_pokemon())
+        player = state.get_active_player()
+        potion = CardRegistry.get("svf-potion")
+        player.hand = [potion]
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.PLAY_TRAINER,
+            player_idx=0,
+            hand_idx=0,
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(player.hand, [potion])
+        self.assertEqual(player.discard, [])
+
+    def test_any_pokemon_damage_prompts_for_target_when_multiple_targets_exist(self):
+        state = _give_prizes(_make_state_with_pokemon(active_card_id="sv2-grex"))
+        player = state.get_active_player()
+        opponent = state.get_opponent()
+        player.active.energy_cards = [CardRegistry.get("sv1-ener-3")]
+        opponent.bench[0] = PokemonInPlay(CardRegistry.get("sv2-staryu"))
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.DECLARE_ATTACK,
+            player_idx=0,
+            attack_idx=0,
+        )
+
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_action)
+        self.assertEqual(result.pending_action.request_type, "search_deck")
+        self.assertEqual(result.damage_dealt, 0)
+        self.assertEqual(opponent.active.damage_counters, 0)
+        self.assertEqual(opponent.bench[0].damage_counters, 0)
+
+    def test_attack_effect_draw_is_reported_in_action_result(self):
+        state = _give_prizes(_make_state_with_pokemon(active_card_id="sv2-delib"))
+        player = state.get_active_player()
+        player.deck = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-3")]
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.DECLARE_ATTACK,
+            player_idx=0,
+            attack_idx=0,
+        )
+
+        self.assertTrue(result.success)
+        self.assertEqual(len(player.hand), 2)
+        self.assertEqual(len(result.cards_drawn), 2)
+        self.assertIn("抽取", result.log_message)
 
 
 # ── 4. SearchScreen min_select ─────────────────────────────────────────────
@@ -447,6 +600,45 @@ class TestSelectionValidation(unittest.TestCase):
         self.assertEqual(len(valid), 2)
         self.assertEqual(valid[0], [0, "active"])
         self.assertEqual(valid[1], [2, "bench_0"])
+
+
+# ── 7b. Snapshot / Resource Integrity ─────────────────────────────────────
+
+class TestSnapshotAndResources(unittest.TestCase):
+
+    def test_snapshot_restore_preserves_deck_and_discard_order(self):
+        state = GameState()
+        cards = [CardRegistry.get(cid) for cid in ALL_CARD_IDS[:4]]
+        state.p1.deck = cards[:3]
+        state.p1.discard = cards[1:4]
+
+        snap = snapshot_state(state)
+        restore_state(state, snap)
+
+        self.assertEqual([c.api_id for c in state.p1.deck],
+                         [c.api_id for c in cards[:3]])
+        self.assertEqual([c.api_id for c in state.p1.discard],
+                         [c.api_id for c in cards[1:4]])
+
+    def test_card_image_mapping_paths_exist_and_dram_name_alias_is_correct(self):
+        root = Path(__file__).resolve().parents[1]
+        mapping_path = root / "data" / "card_image_mapping.json"
+        mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            mapping.get("老翁龙"),
+            "data\\images\\宝可梦\\svg-dram.png",
+        )
+        missing = []
+        for key, raw_path in mapping.items():
+            if not raw_path:
+                continue
+            candidate = Path(raw_path)
+            if not candidate.is_absolute():
+                candidate = root / candidate
+            if not candidate.exists():
+                missing.append((key, raw_path))
+        self.assertEqual(missing, [])
 
 
 # ── 8. USE_STADIUM Remote Dispatch (P1) ──────────────────────────────────

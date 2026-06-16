@@ -788,6 +788,10 @@ class AITrainingScreen(Screen):
     def _start_training(self):
         if self.process is not None:
             return
+        if getattr(sys, "frozen", False):
+            self.status = "error"
+            self.status_message = "AI 训练仅支持源码环境，打包版不可用。"
+            return
         if not self._reset_training_files():
             return
         self.status = "running"

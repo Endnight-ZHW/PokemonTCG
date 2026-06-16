@@ -39,6 +39,26 @@ def _cr_to_ar(cr: CommandResult) -> ActionResult:
     )
 
 
+def merge_action_results(target: ActionResult, source: ActionResult) -> ActionResult:
+    """Merge source into target, preserving all user-visible result fields."""
+    if source.log_message:
+        target.log_message = (
+            f"{target.log_message} {source.log_message}".strip()
+            if target.log_message else source.log_message
+        )
+    target.success = target.success and source.success
+    target.damage_dealt += source.damage_dealt
+    target.cards_drawn.extend(source.cards_drawn)
+    target.cards_discarded += source.cards_discarded
+    target.pokemon_ko.extend(source.pokemon_ko)
+    target.status_applied.extend(source.status_applied)
+    target.prize_taken = target.prize_taken or source.prize_taken
+    target.attack_failed = target.attack_failed or source.attack_failed
+    if source.pending_action:
+        target.pending_action = source.pending_action
+    return target
+
+
 FULL_DAMAGE_EFFECT_TYPES = {
     "damage_per_self_damage",
     "damage_per_self_energy",
@@ -120,9 +140,7 @@ class ActionResolver:
         result = ActionResult(True, msg)
         for effect in stadium.trainer_effects:
             eff_result = self._execute_effect(effect, player_idx, "active")
-            result.log_message += eff_result.log_message + " "
-            if eff_result.pending_action:
-                result.pending_action = eff_result.pending_action
+            merge_action_results(result, eff_result)
 
         if result.success:
             player.stadium_used_this_turn = True
@@ -170,7 +188,7 @@ class ActionResolver:
                     ability.effects, player_idx, target
                 )
                 result.log_message += f" | 特性: {ability.name}"
-                result.pending_action = ab_results.pending_action
+                merge_action_results(result, ab_results)
 
         return result
 
@@ -205,7 +223,7 @@ class ActionResolver:
                     ability.effects, player_idx, slot
                 )
                 result.log_message += f" | 特性: {ability.name}"
-                result.pending_action = ab_results.pending_action
+                merge_action_results(result, ab_results)
 
         return result
 
@@ -404,12 +422,7 @@ class ActionResolver:
             eff_result = self._execute_effect(
                 effect, player_idx, "active"
             )
-            result.damage_dealt += eff_result.damage_dealt
-            result.status_applied.extend(eff_result.status_applied)
-            result.pokemon_ko.extend(eff_result.pokemon_ko)
-            result.attack_failed = result.attack_failed or eff_result.attack_failed
-            if eff_result.pending_action:
-                result.pending_action = eff_result.pending_action
+            merge_action_results(result, eff_result)
 
         apply_base_damage = attack.damage > 0 and not _attack_effects_replace_base_damage(attack)
 
@@ -519,6 +532,7 @@ class ActionResolver:
             log_message=" ".join(rr.log_messages),
             damage_dealt=rr.damage_dealt,
             cards_drawn=rr.cards_drawn,
+            cards_discarded=rr.cards_discarded,
             pokemon_ko=rr.pokemon_ko,
             status_applied=rr.status_applied,
             pending_action=rr.pending_choice,

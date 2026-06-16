@@ -8,9 +8,6 @@ if sys.platform == 'win32':
         sys.stderr.reconfigure(encoding='utf-8')
     except Exception:
         pass
-
-sys.path.insert(0, '.')
-
 from utils.logger import setup_logging
 setup_logging()
 

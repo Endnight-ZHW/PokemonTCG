@@ -37,7 +37,7 @@ def _handle_potion_heal(state, player, player_idx, params):
             injured.append((slot_name, poke))
 
     if not injured:
-        return ActionResult(True, "没有受伤的宝可梦，卡牌保留在手牌中。")
+        return ActionResult(False, "没有受伤的宝可梦，卡牌保留在手牌中。")
 
     if len(injured) == 1:
         # Auto-heal the only injured Pokemon

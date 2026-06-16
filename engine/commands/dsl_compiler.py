@@ -183,24 +183,11 @@ def _make_discard(params: dict, **_kw):
     )
 
 
-# Register all primitive mappings
-_EFFECT_TO_PRIMITIVE = {
-    "damage": _make_damage,
-    "damage_counter_self": _make_damage_counter_self,
-    "bench_damage": _make_bench_damage,
-    "any_pokemon_damage": _make_any_pokemon_damage,
-    "damage_per_hand_size": _make_damage_per_hand_size,
-    "status": _make_status,
-    "conditional_status": _make_conditional_status,
-    "draw": _make_draw,
-    "energy_discard": _make_discard_energy,
-    "heal": _make_heal,
-    "heal_all": _make_heal_all,
-    "potion_heal": _make_potion_heal,
-    "switch_self": _make_switch_self,
-    "switch_opponent": _make_switch_opponent,
-    "discard": _make_discard,
-}
+# Primitive mappings are intentionally opt-in. The legacy handlers contain
+# card-specific prompts, failure semantics, logging, and discard ownership that
+# the generic primitives do not fully reproduce yet. Register effect types here
+# only after parity tests prove equivalent behavior for the full card set.
+_EFFECT_TO_PRIMITIVE = {}
 
 
 for etype, factory in _EFFECT_TO_PRIMITIVE.items():

@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 from engine.enums import TurnPhase, EventType, PlayerAction
 from engine.player_state import PlayerState, PokemonInPlay
 from engine.events.game_events import GameEventStream
-from engine.rules_constants import COIN_FLIP_THRESHOLD, HAND_SIZE_INITIAL, PRIZE_CARDS
+from engine.rules_constants import COIN_FLIP_THRESHOLD, HAND_SIZE_INITIAL, PRIZE_CARDS, MAX_BENCH_SIZE
 
 
 @dataclass
@@ -72,6 +72,7 @@ class GameState:
         self._piercing_attack: bool = False  # Set during attack resolution for piercing effects
         self._ko_from_attack: bool = False  # Flag set when a KO is from attack damage
         self._mulligan_bonus_given: set[int] = set()
+        self.is_network_view: bool = False
         self.event_stream: GameEventStream = GameEventStream()
         from engine.effects.event_bus import EventBus
         self.event_bus = EventBus()
@@ -110,6 +111,14 @@ class GameState:
         if player_idx == self.first_player_idx:
             return self.turn_number == 1
         return self.turn_number == 2
+
+    def is_going_second_first_turn(self, player_idx: int) -> bool:
+        """Return True during the second player's own first turn."""
+        return (
+            player_idx != self.first_player_idx
+            and player_idx == self.active_player_idx
+            and self.is_player_first_turn(player_idx)
+        )
 
     # ---- Game Setup ----
 

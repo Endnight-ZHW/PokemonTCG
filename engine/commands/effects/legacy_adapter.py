@@ -39,6 +39,7 @@ class LegacyEffectCommand:
             log_message=action_result.log_message,
             damage_dealt=action_result.damage_dealt,
             cards_drawn=action_result.cards_drawn,
+            cards_discarded=action_result.cards_discarded,
             pokemon_ko=action_result.pokemon_ko,
             status_applied=action_result.status_applied,
             pending_choice=action_result.pending_action,

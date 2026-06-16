@@ -69,6 +69,7 @@ class GameSnapshot:
     winner: Optional[int] = None
     apply_type_matchups: bool = False
     mulligan_bonus_given: list[int] = field(default_factory=list)
+    pending_promotions: list[int] = field(default_factory=list)
 
 
 class SnapshotManager:
@@ -142,6 +143,7 @@ def snapshot_state(state: GameState) -> GameSnapshot:
         winner=state.winner,
         apply_type_matchups=getattr(state, "apply_type_matchups", False),
         mulligan_bonus_given=list(state._mulligan_bonus_given),
+        pending_promotions=list(state.pending_promotions),
     )
 
 
@@ -155,7 +157,7 @@ def restore_state(state: GameState, snap: GameSnapshot):
     state.first_player_idx = snap.first_player_idx
     state.winner = snap.winner
     state.apply_type_matchups = snap.apply_type_matchups
-    state.pending_promotion_player = -1
+    state.pending_promotions = list(snap.pending_promotions)
     state._piercing_attack = False
     state._ko_from_attack = False
     state._mulligan_bonus_given = set(snap.mulligan_bonus_given)
@@ -166,12 +168,52 @@ def restore_state(state: GameState, snap: GameSnapshot):
     state.stadium_card = _lookup_card(snap.stadium_card_id) if snap.stadium_card_id else None
 
 
+def clone_state(state: GameState, *, rebuild_event_bus: bool = True) -> GameState:
+    """Create a full GameState copy through the snapshot system."""
+    from engine.game_state import GameState
+
+    clone = GameState()
+    restore_state(clone, snapshot_state(state))
+    clone.action_log = list(state.action_log)
+    if rebuild_event_bus:
+        rebuild_state_event_bus(clone)
+    return clone
+
+
+def state_from_snapshot(snap: GameSnapshot, *, rebuild_event_bus: bool = True) -> GameState:
+    """Create a GameState from an existing snapshot."""
+    from engine.game_state import GameState
+
+    state = GameState()
+    restore_state(state, snap)
+    if rebuild_event_bus:
+        rebuild_state_event_bus(state)
+    return state
+
+
+def rebuild_state_event_bus(state: GameState):
+    """Re-register event-driven modifiers after snapshot restore."""
+    from engine.commands.modifier_registration import register_pokemon_modifiers
+
+    state.event_bus.clear()
+    for player_idx in (0, 1):
+        player = state.get_player(player_idx)
+        for slot, pokemon in player.get_all_pokemon():
+            if pokemon:
+                register_pokemon_modifiers(
+                    pokemon,
+                    player_idx,
+                    slot,
+                    event_bus=state.event_bus,
+                )
+
+
 def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
     return PlayerSnapshot(
         name=player.name,
         hand_ids=[c.api_id for c in player.hand],
         deck_ids=[c.api_id for c in player.deck],
-        discard_ids=[c.api_id for c in reversed(player.discard)],
+        discard_ids=[c.api_id for c in player.discard],
         prize_ids=[c.api_id for c in player.prizes],
         active=_snapshot_pokemon(player.active) if player.active else None,
         bench=[_snapshot_pokemon(p) if p else None for p in player.bench],
@@ -189,7 +231,7 @@ def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
 def _restore_player(player: PlayerState, snap: PlayerSnapshot):
     player.name = snap.name
     player.hand = [_require_card(cid) for cid in snap.hand_ids]
-    player.deck = [_require_card(cid) for cid in reversed(snap.deck_ids)]
+    player.deck = [_require_card(cid) for cid in snap.deck_ids]
     player.discard = [_require_card(cid) for cid in snap.discard_ids]
     player.prizes = [_require_card(cid) for cid in snap.prize_ids]
     player.active = _restore_pokemon(snap.active) if snap.active else None

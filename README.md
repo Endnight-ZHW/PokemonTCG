@@ -5,14 +5,17 @@
 ## 快速开始
 
 ```bash
-# Conda（推荐，含 PyTorch + CUDA）
+# Conda（推荐给需要 AI 训练的源码环境，含 PyTorch + CUDA）
 conda env create -f environment.yml
 conda activate DL
 python main.py
 
-# 或使用 pip
+# 或使用 pip 运行游戏客户端
 pip install -r requirements.txt
 python main.py
+
+# pip 环境如需从源码使用 AI 训练，再安装训练依赖
+pip install -r requirements-ai.txt
 ```
 
 启动后在标题界面选择模式。联机端口、Relay 地址和房间码都在「远程联机对战」界面填写。
@@ -78,7 +81,7 @@ python build_exe.py
 python build_exe.py --onefile
 ```
 
-`build_exe.py` 和 `relay_server.py` 是构建/部署工具，不属于客户端 UI-only 运行入口。
+`build_exe.py` 和 `relay_server.py` 是构建/部署工具，不属于客户端 UI-only 运行入口。打包版默认不包含 `scripts/`、PyTorch 或训练依赖，AI 训练入口仅在源码环境可用。
 
 ## 验证
 
@@ -97,6 +100,9 @@ python -B tests/test_multiplayer.py
 | `requests` | 卡图管理界面下载远程图片 |
 | `Pillow` | 图片加载回退 |
 | `websockets` | LAN / Relay 网络通信 |
+| `numpy` | 音效波形生成（不可用时自动静音） |
+| `matplotlib` | AI 训练可视化/分析（`requirements-ai.txt` / `environment.yml`） |
+| `torch` | 深度 AI 训练（`requirements-ai.txt` / `environment.yml`） |
 | `PyInstaller` | 构建独立 exe |
 
 ## 致谢

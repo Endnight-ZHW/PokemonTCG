@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
 from engine.enums import PlayerAction, TurnPhase
-from engine.snapshot import restore_state, snapshot_state
+from engine.snapshot import snapshot_state, state_from_snapshot
 
 if TYPE_CHECKING:
     from engine.ai.challenge_ai import AIAction, ChallengeAI
@@ -598,11 +598,7 @@ class MCTSGuidedSearch:
 
     def _clone_from_snapshot(self, snap: Any, template_state: GameState) -> GameState:
         """Create a fresh GameState copy from a snapshot."""
-        from engine.game_state import GameState
-
-        new_state = GameState()
-        restore_state(new_state, snap)
-        return new_state
+        return state_from_snapshot(snap, rebuild_event_bus=True)
 
     def _apply_action_clone(
         self,

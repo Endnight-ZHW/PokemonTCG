@@ -21,6 +21,7 @@ class ResolutionResult:
     log_messages: list[str] = field(default_factory=list)
     damage_dealt: int = 0
     cards_drawn: list = field(default_factory=list)
+    cards_discarded: int = 0
     pokemon_ko: list[str] = field(default_factory=list)
     status_applied: list[str] = field(default_factory=list)
     pending_choice: Optional[Any] = None
@@ -29,6 +30,7 @@ class ResolutionResult:
     def merge(self, cr: CommandResult):
         self.damage_dealt += cr.damage_dealt
         self.cards_drawn.extend(cr.cards_drawn)
+        self.cards_discarded += getattr(cr, 'cards_discarded', 0)
         self.pokemon_ko.extend(cr.pokemon_ko)
         self.status_applied.extend(cr.status_applied)
         if cr.log_message:
@@ -179,6 +181,7 @@ class ResolutionStack:
             log_message=" ".join(rr.log_messages),
             damage_dealt=rr.damage_dealt,
             cards_drawn=rr.cards_drawn,
+            cards_discarded=rr.cards_discarded,
             pokemon_ko=rr.pokemon_ko,
             status_applied=rr.status_applied,
             pending_action=rr.pending_choice,
@@ -195,6 +198,7 @@ class ResolutionStack:
         first.success = first.success and second.success
         first.damage_dealt += second.damage_dealt
         first.cards_drawn.extend(second.cards_drawn)
+        first.cards_discarded += second.cards_discarded
         first.pokemon_ko.extend(second.pokemon_ko)
         first.status_applied.extend(second.status_applied)
         first.attack_failed = first.attack_failed or second.attack_failed

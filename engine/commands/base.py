@@ -21,6 +21,7 @@ class CommandResult:
     log_message: str = ""
     damage_dealt: int = 0
     cards_drawn: list[Any] = field(default_factory=list)
+    cards_discarded: int = 0
     pokemon_ko: list[str] = field(default_factory=list)
     status_applied: list[str] = field(default_factory=list)
     pending_choice: Optional[ActionRequest] = None

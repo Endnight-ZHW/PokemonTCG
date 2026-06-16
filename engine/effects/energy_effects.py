@@ -31,7 +31,7 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
     optional = params.get("optional", False)
 
     if going_second_bonus > 0:
-        if state.is_first_turn and player == state.get_player(1):
+        if state.is_going_second_first_turn(player_idx):
             amount = going_second_bonus
             state._log(f"后攻最初回合！可附着最多{amount}张能量。")
 
