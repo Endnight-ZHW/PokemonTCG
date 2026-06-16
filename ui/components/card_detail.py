@@ -39,7 +39,7 @@ STATUS_CN = _build_status_cn()
 
 
 def _has_card_image(gs, card) -> bool:
-    return gs.image_mgr.has_image(card.api_id) or gs.image_mgr.has_image(card.name)
+    return gs.image_mgr.has_card_image(card)
 
 
 def get_hovered_card_with_image(gs):

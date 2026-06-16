@@ -43,6 +43,10 @@ from ui.screens.deck_select import DeckSelectScreen
 from ui.screens.end_screen import EndScreen
 from ui.screens.attached_cards_screen import AttachedCardsScreen
 from ui.screens.ai_training_screen import AITrainingScreen
+from ui.screens.card_image_screen import CardImageScreen
+from ui.screens.card_image_screen import (
+    CANDIDATE_ROW_H, LEFT_W, LEFT_X, RIGHT_W, RIGHT_X, ROW_H, WORK_H, WORK_TOP,
+)
 from ui.screens.energy_distribution_screen import EnergyDistributionScreen
 from ui.screens.game_screen import GameScreen
 from ui.screens.help_screen import HelpScreen
@@ -191,6 +195,56 @@ class UiSmokeTests(unittest.TestCase):
             with self.subTest(screen=screen.__class__.__name__):
                 screen.update(1 / 60)
                 screen.draw(self.surface)
+
+    def test_card_image_manager_workbench_filters_searches_and_draws(self):
+        screen = CardImageScreen(self._manager())
+        screen.filter_type = "missing"
+        screen._apply_filter_and_sort()
+        screen.draw(self.surface)
+
+        screen.search_query = "sv2-tatsu"
+        screen.filter_type = "all"
+        screen._apply_filter_and_sort()
+
+        self.assertEqual(len(screen.display_cards), 1)
+        self.assertEqual(screen.display_cards[0].card_id, "sv2-tatsu")
+
+        screen.filter_type = "duplicates"
+        screen.search_query = ""
+        screen._apply_filter_and_sort()
+        duplicate_ids = {entry.card_id for entry in screen.display_cards}
+
+        self.assertIn("svg-tatsu", duplicate_ids)
+        self.assertIn("sv2-tatsu", duplicate_ids)
+        screen.draw(self.surface)
+
+    def test_card_image_manager_mouse_hit_targets_match_visible_rows(self):
+        screen = CardImageScreen(self._manager())
+        screen.filter_type = "all"
+        screen.search_query = ""
+        screen._apply_filter_and_sort()
+
+        card_inner = pygame.Rect(LEFT_X, WORK_TOP, LEFT_W, WORK_H).inflate(-18, -56)
+        card_inner.y += 34
+        first_card_pos = (card_inner.x + 20, card_inner.y + ROW_H // 2)
+
+        screen._hover(first_card_pos)
+        self.assertEqual(screen.hovered_card_idx, 0)
+
+        from ui.image_manager import ImageCandidate
+        screen.image_candidates = [
+            ImageCandidate("候选A", "a.png", "a.png", "宝可梦"),
+            ImageCandidate("候选B", "b.png", "b.png", "宝可梦"),
+        ]
+        candidate_inner = pygame.Rect(RIGHT_X, WORK_TOP, RIGHT_W, WORK_H).inflate(-18, -56)
+        candidate_inner.y += 34
+        first_candidate_pos = (
+            candidate_inner.x + 20,
+            candidate_inner.y + CANDIDATE_ROW_H // 2,
+        )
+
+        screen._hover(first_candidate_pos)
+        self.assertEqual(screen.hovered_candidate_idx, 0)
 
     def test_ai_training_screen_progress_states_draw(self):
         with temp_dir() as tmpdir:

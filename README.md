@@ -72,7 +72,7 @@ PokemonTCG/
 
 ## 卡牌图片
 
-卡图位于 `data/images/`，映射文件为 `data/card_image_mapping.json`。游戏内「卡牌图片分配」画面可以维护卡牌名称、API ID 与本地图片路径的映射；未匹配到图片时会显示文字替代卡面。
+卡图位于 `data/images/`，映射文件为 `data/card_image_mapping.json`。游戏内「卡图管理工作台」以 `api_id` 作为权威映射键，新增或迁移后的文件命名为 `卡名__api_id.ext`，可以稳定区分同名卡；未匹配到图片时会显示文字替代卡面。
 
 ## 打包构建
 

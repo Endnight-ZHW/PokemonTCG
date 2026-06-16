@@ -620,19 +620,27 @@ class TestSnapshotAndResources(unittest.TestCase):
         self.assertEqual([c.api_id for c in state.p1.discard],
                          [c.api_id for c in cards[1:4]])
 
-    def test_card_image_mapping_paths_exist_and_dram_name_alias_is_correct(self):
+    def test_card_image_mapping_uses_id_keys_and_normalized_filenames(self):
         root = Path(__file__).resolve().parents[1]
         mapping_path = root / "data" / "card_image_mapping.json"
         mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
 
         self.assertEqual(
-            mapping.get("老翁龙"),
-            "data\\images\\宝可梦\\svg-dram.png",
+            mapping.get("svg-dram"),
+            "data\\images\\宝可梦\\老翁龙__svg-dram.png",
         )
+        self.assertEqual(
+            mapping.get("sv2-tatsu"),
+            "data\\images\\宝可梦\\米立龙__sv2-tatsu.png",
+        )
+        self.assertNotIn("老翁龙", mapping)
+        self.assertNotIn("米立龙", mapping)
+
         missing = []
         for key, raw_path in mapping.items():
             if not raw_path:
                 continue
+            self.assertIn(f"__{key}", Path(raw_path).stem)
             candidate = Path(raw_path)
             if not candidate.is_absolute():
                 candidate = root / candidate

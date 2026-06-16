@@ -1,56 +1,68 @@
-"""Card image management tool - browse cards and assign images."""
+"""Card image workbench - browse cards, normalize assets, and bind images."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import base64
 import os
+import queue
 import tempfile
+import threading
+from urllib.parse import urlparse
+
 import pygame
-from ui.screen_manager import Screen, ScreenManager
-from ui.colors import (
-    UI_BG_DARK, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY,
-    UI_HIGHLIGHT, UI_BORDER, TYPE_COLORS,
-)
-from ui.image_manager import get_image_manager
-from ui.font_manager import get_font
-from ui.ui_theme import draw_panel, draw_button
+
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, ENERGY_NAME_CN as ENERGY_CN, SUBTYPE_CN
+from ui.colors import (
+    TYPE_COLORS, UI_BG_DARK, UI_BORDER, UI_DANGER, UI_HIGHLIGHT,
+    UI_SUCCESS, UI_TEXT_PRIMARY, UI_TEXT_SECONDARY,
+)
+from ui.font_manager import get_font
+from ui.image_manager import ImageCandidate, get_image_manager
+from ui.screen_manager import Screen, ScreenManager
+from ui.ui_theme import draw_button, draw_panel, draw_text_fit
 
-# ── Layout constants ──
+
 HEADER_H = 44
-FILTER_H = 44
-PREVIEW_Y = HEADER_H + FILTER_H  # 88
-PREVIEW_H = 170
-DROP_ZONE_H = 32
-PANEL_TOP = PREVIEW_Y + PREVIEW_H + DROP_ZONE_H  # 290
-BOTTOM_BAR_H = 56
-PANEL_BOTTOM = SCREEN_HEIGHT - BOTTOM_BAR_H  # 944
-PANEL_H = PANEL_BOTTOM - PANEL_TOP  # 654
+FILTER_H = 48
+BOTTOM_BAR_H = 58
+WORK_TOP = HEADER_H + FILTER_H + 8
+WORK_BOTTOM = SCREEN_HEIGHT - BOTTOM_BAR_H - 8
+WORK_H = WORK_BOTTOM - WORK_TOP
 
-LEFT_PANEL_W = int(SCREEN_WIDTH * 0.52)  # 832
-RIGHT_PANEL_X = LEFT_PANEL_W + 12
-RIGHT_PANEL_W = SCREEN_WIDTH - RIGHT_PANEL_X - 12
+LEFT_X = 12
+LEFT_W = 420
+CENTER_X = LEFT_X + LEFT_W + 12
+CENTER_W = 610
+RIGHT_X = CENTER_X + CENTER_W + 12
+RIGHT_W = SCREEN_WIDTH - RIGHT_X - 12
 
-ROW_H = 28
-GROUP_HEADER_H = 26
-
-PREVIEW_BOX_W = 220
-SEARCH_BOX_W = 220
+ROW_H = 34
+CANDIDATE_ROW_H = 32
+TAB_H = 30
+SEARCH_BOX_W = 270
 SEARCH_BOX_H = 30
-TYPE_TAB_W = 70
-TYPE_TAB_H = 30
 
-# Card type -> image subdirectory mapping
-TYPE_TO_SUBDIR = {
-    "Pokemon": "宝可梦",
-    "Trainer": None,
-}
-TRAINER_TO_SUBDIR = {
-    "Item": "物品",
-    "Supporter": "支援者",
-    "Stadium": "竞技场",
-    "Tool": "宝可梦道具",
-}
+VALID_IMAGE_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff")
+
+
+@dataclass
+class CardEntry:
+    card_id: str
+    name: str
+    card: object
+    has_image: bool
+    is_duplicate_name: bool
+
+
+@dataclass
+class PendingImage:
+    path: str
+    label: str
+    source: str
+    is_temp: bool = False
 
 
 def _detect_image_ext(file_path: str) -> str | None:
-    """Detect image format from file header magic bytes."""
     signatures = {
         b"\x89PNG\r\n\x1a\n": ".png",
         b"\xff\xd8\xff": ".jpg",
@@ -61,40 +73,32 @@ def _detect_image_ext(file_path: str) -> str | None:
     try:
         with open(file_path, "rb") as f:
             header = f.read(12)
-        for magic, ext in signatures.items():
-            if header.startswith(magic):
-                if magic == b"RIFF" and header[8:12] != b"WEBP":
-                    continue
-                return ext
     except OSError:
         return None
+    for magic, ext in signatures.items():
+        if header.startswith(magic):
+            if magic == b"RIFF" and header[8:12] != b"WEBP":
+                continue
+            return ext
     return None
 
 
-def _get_subdir_for_card(card) -> str:
-    """Determine the image subdirectory for a card based on its type."""
-    if card.is_pokemon:
-        return "宝可梦"
-    if card.is_trainer:
-        return TRAINER_TO_SUBDIR.get(card.trainer_type, "物品")
-    if card.is_energy:
-        return "能量"
-    return "物品"
-
-
-class CardEntry:
-    """Lightweight struct for card list entries with cached type info."""
-    __slots__ = ('card_id', 'name', 'card', 'has_image')
-
-    def __init__(self, card_id: str, name: str, card, has_image: bool):
-        self.card_id = card_id
-        self.name = name
-        self.card = card
-        self.has_image = has_image
+def _load_preview(path: str) -> pygame.Surface | None:
+    try:
+        return pygame.image.load(path).convert_alpha()
+    except Exception:
+        pass
+    try:
+        from PIL import Image
+        img = Image.open(path).convert("RGBA")
+        raw = img.tobytes("raw", "RGBA")
+        return pygame.image.frombuffer(raw, img.size, "RGBA").convert_alpha()
+    except Exception:
+        return None
 
 
 class CardImageScreen(Screen):
-    """Modal screen for managing card face images."""
+    """Three-column card image management workbench."""
 
     def __init__(self, manager: ScreenManager):
         super().__init__(manager)
@@ -106,205 +110,225 @@ class CardImageScreen(Screen):
         self.font_tiny = get_font("tiny")
         self.font_search = get_font("normal")
 
-        # Build master card list with full Card references
         from data.card_registry import CardRegistry
+
+        name_counts: dict[str, int] = {}
+        for card in CardRegistry.all_cards().values():
+            name_counts[card.name] = name_counts.get(card.name, 0) + 1
+
         self._all_cards: list[CardEntry] = []
-        for card_id, card in CardRegistry._cards.items():
-            has_img = self.image_mgr.has_image(card_id) or self.image_mgr.has_image(card.name)
-            self._all_cards.append(CardEntry(card_id, card.name, card, has_img))
-        self._all_cards.sort(key=lambda e: e.name)
+        for card_id, card in CardRegistry.all_cards().items():
+            self._all_cards.append(CardEntry(
+                card_id=card_id,
+                name=card.name,
+                card=card,
+                has_image=self.image_mgr.has_card_image(card),
+                is_duplicate_name=name_counts.get(card.name, 0) > 1,
+            ))
+        self._all_cards.sort(key=lambda e: (e.name, e.card_id))
 
-        # Filter/sort state
-        self.filter_type = "all"
+        self.filter_type = "missing"
         self.search_query = ""
-        self.sort_mode = "name"
-
-        # Scroll state (float for smooth scrolling)
-        self.card_scroll: float = 0.0
-        self.image_scroll: float = 0.0
-
-        # Selection state
-        self.selected_card: CardEntry | None = None
-        self._selected_index: int = -1
-        self.hovered_card_idx: int | None = None
-        self.hovered_image_key: tuple | None = None
-        self.hovered_button: str | None = None
-        self.hovered_image_preview: str | None = None
-
+        self.sort_mode = "status"
         self.display_cards: list[CardEntry] = []
-        self._apply_filter_and_sort()
+        self.selected_card: CardEntry | None = None
+        self._selected_index = -1
 
-        # Keyboard focus state
-        self._focus_left: bool = True
-        self._search_active: bool = False
-        self._cursor_blink: float = 0.0
+        self.card_scroll = 0.0
+        self.candidate_scroll = 0.0
+        self.hovered_card_idx: int | None = None
+        self.hovered_candidate_idx: int | None = None
+        self.hovered_button: str | None = None
 
-        # Drag state
-        self._drag_active: bool = False
+        self.pending_image: PendingImage | None = None
+        self._preview_cache_key: str | None = None
+        self._preview_cache_surface: pygame.Surface | None = None
 
-        # Toast
+        self._search_active = False
+        self._url_active = False
+        self.url_query = ""
+        self._cursor_blink = 0.0
+        self._drag_active = False
+
         self._toast_text: str | None = None
-        self._toast_timer: float = 0.0
-
-        # Confirmation dialog
+        self._toast_timer = 0.0
         self._confirm_action: str | None = None
-        self._confirm_hover_yes: bool = False
-        self._confirm_hover_no: bool = False
+        self._confirm_message = ""
+        self._confirm_hover_yes = False
+        self._confirm_hover_no = False
 
-        # Available images grouped by subdirectory
-        self.image_groups: list[tuple[str, list[str], dict[str, bool]]] = []
-        self._build_image_groups()
+        self._download_queue: queue.Queue = queue.Queue()
+        self._download_thread: threading.Thread | None = None
+        self._download_active = False
 
-    # ── Data building ──
+        self.image_candidates: list[ImageCandidate] = []
+        self._apply_filter_and_sort()
+        self._build_image_candidates()
+
+    # ── Data ──
 
     def _refresh_card_image_status(self):
-        """Refresh has_image status on all cached CardEntry objects."""
         for entry in self._all_cards:
-            entry.has_image = (
-                self.image_mgr.has_image(entry.card_id)
-                or self.image_mgr.has_image(entry.name)
-            )
-
-    def _build_image_groups(self):
-        """Group available images by parent directory with assignment status."""
-        groups: dict[str, list[str]] = {}
-        assigned = set(self.image_mgr._custom_map.keys())
-
-        for name in self.image_mgr.get_available_images():
-            path = self.image_mgr.get_available_image_path(name)
-            if path is None:
-                continue
-            group_name = os.path.basename(os.path.dirname(path))
-            if group_name not in groups:
-                groups[group_name] = []
-            groups[group_name].append(name)
-        for g in groups:
-            groups[g].sort()
-
-        result = []
-        for group_name, names in sorted(groups.items(), key=lambda x: x[0]):
-            status_map = {n: n in assigned for n in names}
-            result.append((group_name, names, status_map))
-        self.image_groups = result
+            entry.has_image = self.image_mgr.has_card_image(entry.card)
 
     def _apply_filter_and_sort(self):
-        """Rebuild display_cards based on current filter, search, and sort settings."""
-        result = list(self._all_cards)
+        self._refresh_card_image_status()
+        cards = list(self._all_cards)
 
-        # Type filter
-        if self.filter_type == "pokemon":
-            result = [e for e in result if e.card.is_pokemon]
-        elif self.filter_type == "trainer":
-            result = [e for e in result if e.card.is_trainer]
-        elif self.filter_type == "energy":
-            result = [e for e in result if e.card.is_energy]
+        if self.filter_type == "missing":
+            cards = [e for e in cards if not e.has_image]
+        elif self.filter_type == "mapped":
+            cards = [e for e in cards if e.has_image]
+        elif self.filter_type == "duplicates":
+            cards = [e for e in cards if e.is_duplicate_name]
+        elif self.filter_type == "orphans":
+            cards = []
 
-        # Text search
         if self.search_query:
             q = self.search_query.lower()
-            result = [e for e in result if q in e.name.lower()]
+            cards = [
+                e for e in cards
+                if q in e.name.lower()
+                or q in e.card_id.lower()
+                or q in self._subtype_label(e.card).lower()
+            ]
 
-        # Sort
         if self.sort_mode == "name":
-            result.sort(key=lambda e: e.name)
+            cards.sort(key=lambda e: (e.name, e.card_id))
         elif self.sort_mode == "type":
-            def _type_order(e: CardEntry) -> tuple:
-                order = {"Pokémon": 0, "Trainer": 1, "Energy": 2}
-                return (order.get(e.card.supertype, 9), e.name)
-            result.sort(key=_type_order)
-        elif self.sort_mode == "status":
-            result.sort(key=lambda e: (0 if not e.has_image else 1, e.name))
+            order = {"Pokémon": 0, "Trainer": 1, "Energy": 2}
+            cards.sort(key=lambda e: (order.get(e.card.supertype, 9), e.name, e.card_id))
+        else:
+            cards.sort(key=lambda e: (0 if not e.has_image else 1, e.name, e.card_id))
 
-        # Update has_image (may have changed)
-        for e in result:
-            e.has_image = self.image_mgr.has_image(e.card_id) or self.image_mgr.has_image(e.name)
-
-        self.display_cards = result
-
-        # Clamp selection
-        if self._selected_index >= len(self.display_cards):
-            self._selected_index = len(self.display_cards) - 1
-        if self._selected_index >= 0 and self.display_cards:
-            self.selected_card = self.display_cards[self._selected_index]
-        elif not self.display_cards:
+        self.display_cards = cards
+        if not cards:
             self._selected_index = -1
             self.selected_card = None
+            return
 
-    def _get_target_subdir(self) -> str:
-        """Determine the target image subdirectory for the currently selected card."""
-        if self.selected_card is None:
-            return "宝可梦"
-        return _get_subdir_for_card(self.selected_card.card)
+        if self.selected_card in cards:
+            self._selected_index = cards.index(self.selected_card)
+        elif self._selected_index < 0 or self._selected_index >= len(cards):
+            self._selected_index = 0
+            self.selected_card = cards[0]
+        else:
+            self.selected_card = cards[self._selected_index]
 
-    def _get_subtype_label(self, card) -> str:
-        """Return a short type/subtype label for display."""
+    def _build_image_candidates(self):
+        candidates: list[ImageCandidate] = []
+        seen_paths: set[str] = set()
+
+        for cand in self.image_mgr.get_unreferenced_images():
+            key = os.path.normcase(cand.path)
+            if key not in seen_paths:
+                candidates.append(cand)
+                seen_paths.add(key)
+
+        if self.selected_card:
+            selected_name = self.selected_card.name
+            selected_id = self.selected_card.card_id
+            for stem in self.image_mgr.get_available_images():
+                path = self.image_mgr.get_available_image_path(stem)
+                if not path:
+                    continue
+                if selected_name not in stem and selected_id not in stem:
+                    continue
+                key = os.path.normcase(path)
+                if key in seen_paths:
+                    continue
+                candidates.insert(0, ImageCandidate(
+                    name=stem,
+                    path=path,
+                    rel_path=self.image_mgr._rel_path(path),
+                    group=os.path.basename(os.path.dirname(path)),
+                    assigned=True,
+                    size_bytes=os.path.getsize(path) if os.path.exists(path) else 0,
+                ))
+                seen_paths.add(key)
+
+        self.image_candidates = candidates
+
+    def _selected_record(self):
+        if not self.selected_card:
+            return None
+        return self.image_mgr.get_card_image_record(self.selected_card.card)
+
+    def _subtype_label(self, card) -> str:
         if card.is_pokemon:
             energy = card.energy_types[0] if card.energy_types else "Colorless"
             cn = ENERGY_CN.get(energy, energy)
             sub = card.subtypes[0] if card.subtypes else ""
             sub_cn = SUBTYPE_CN.get(sub, sub)
             return f"{cn} · {sub_cn}"
-        elif card.is_trainer:
+        if card.is_trainer:
             sub = card.subtypes[0] if card.subtypes else "Trainer"
             return SUBTYPE_CN.get(sub, sub)
-        else:
-            return "基本能量" if card.is_basic_energy else "特殊能量"
+        return "基本能量" if card.is_basic_energy else "特殊能量"
 
-    # ── Button rects ──
+    def _type_color(self, card) -> tuple[int, int, int]:
+        if card.is_pokemon and card.energy_types:
+            return TYPE_COLORS.get(card.energy_types[0], TYPE_COLORS["Colorless"])
+        if card.is_trainer:
+            return TYPE_COLORS["Trainer"]
+        if card.is_energy:
+            return TYPE_COLORS["Energy"]
+        return TYPE_COLORS["Colorless"]
 
-    def _get_button_rects(self) -> dict[str, pygame.Rect]:
-        btn_w, btn_h = 110, 36
-        gap = 8
-        btn_names = ["paste", "rescan", "clear", "return"]
-        total_w = len(btn_names) * btn_w + (len(btn_names) - 1) * gap
-        start_x = (SCREEN_WIDTH - total_w) // 2
+    def _set_toast(self, text: str, seconds: float = 3.0):
+        self._toast_text = text
+        self._toast_timer = seconds
+
+    # ── Controls ──
+
+    def _filter_tabs(self) -> list[tuple[str, str]]:
+        return [
+            ("missing", "缺图"),
+            ("mapped", "已有图"),
+            ("all", "全部"),
+            ("duplicates", "同名卡"),
+            ("orphans", "未引用图"),
+        ]
+
+    def _button_rects(self) -> dict[str, pygame.Rect]:
+        names = ["paste", "url", "bind", "delete", "normalize", "rescan", "return"]
+        btn_w, btn_h, gap = 108, 36, 8
+        total = len(names) * btn_w + (len(names) - 1) * gap
+        start_x = (SCREEN_WIDTH - total) // 2
         y = SCREEN_HEIGHT - btn_h - 12
         return {
             name: pygame.Rect(start_x + i * (btn_w + gap), y, btn_w, btn_h)
-            for i, name in enumerate(btn_names)
+            for i, name in enumerate(names)
         }
 
-    # ── Event handling ──
+    def _search_rect(self) -> pygame.Rect:
+        return pygame.Rect(24, HEADER_H + 9, SEARCH_BOX_W, SEARCH_BOX_H)
+
+    def _url_rect(self) -> pygame.Rect:
+        return pygame.Rect(CENTER_X + 12, WORK_BOTTOM - 42, CENTER_W - 24, 30)
+
+    @staticmethod
+    def _panel_list_inner_rect(x: int, w: int) -> pygame.Rect:
+        rect = pygame.Rect(x, WORK_TOP, w, WORK_H).inflate(-18, -56)
+        rect.y += 34
+        return rect
+
+    def _card_list_inner_rect(self) -> pygame.Rect:
+        return self._panel_list_inner_rect(LEFT_X, LEFT_W)
+
+    def _candidate_list_inner_rect(self) -> pygame.Rect:
+        return self._panel_list_inner_rect(RIGHT_X, RIGHT_W)
+
+    # ── Events ──
 
     def handle_event(self, event: pygame.event.Event):
-        # ── Confirm dialog mode ──
         if self._confirm_action:
-            return self._handle_confirm_event(event)
-
-        # ── Search input mode ──
-        if self._search_active:
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self._search_active = False
-                    return
-                if event.key == pygame.K_RETURN:
-                    self._search_active = False
-                    return
-                if event.key == pygame.K_BACKSPACE:
-                    self.search_query = self.search_query[:-1]
-                    self._apply_filter_and_sort()
-                    self.card_scroll = 0.0
-                    self._selected_index = 0 if self.display_cards else -1
-                    self.selected_card = self.display_cards[0] if self.display_cards else None
-                    return
-                if event.unicode and event.unicode.isprintable():
-                    self.search_query += event.unicode
-                    self._apply_filter_and_sort()
-                    self.card_scroll = 0.0
-                    self._selected_index = 0 if self.display_cards else -1
-                    self.selected_card = self.display_cards[0] if self.display_cards else None
-                    return
-            # Allow mouse events while search is active
-            if event.type == pygame.MOUSEMOTION:
-                self._hover(event.pos)
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self._click(event.pos)
-            elif event.type == pygame.MOUSEWHEEL:
-                self._handle_wheel(event)
+            self._handle_confirm_event(event)
             return
 
-        # ── Keyboard shortcuts ──
         if event.type == pygame.KEYDOWN:
+            if self._handle_text_input(event):
+                return
             if event.key == pygame.K_ESCAPE:
                 self.manager.pop_screen()
                 return
@@ -313,54 +337,23 @@ class CardImageScreen(Screen):
                 return
             if event.key == pygame.K_f and (pygame.key.get_mods() & pygame.KMOD_CTRL):
                 self._search_active = True
+                self._url_active = False
                 self.search_query = ""
                 self._apply_filter_and_sort()
                 return
+            if event.key == pygame.K_u and (pygame.key.get_mods() & pygame.KMOD_CTRL):
+                self._url_active = True
+                self._search_active = False
+                return
+            if event.key in (pygame.K_DELETE, pygame.K_BACKSPACE) and not self._search_active:
+                self._request_delete_selected()
+                return
+            if event.key == pygame.K_RETURN and self.pending_image:
+                self._bind_pending_image()
+                return
+            self._handle_navigation(event)
+            return
 
-            # Card panel navigation (left panel focus)
-            if self._focus_left and self.display_cards:
-                if event.key == pygame.K_UP:
-                    self._selected_index = max(0, self._selected_index - 1)
-                    self._update_selection_from_index()
-                    self._scroll_to_selected()
-                    return
-                if event.key == pygame.K_DOWN:
-                    self._selected_index = min(
-                        len(self.display_cards) - 1, self._selected_index + 1)
-                    self._update_selection_from_index()
-                    self._scroll_to_selected()
-                    return
-                if event.key == pygame.K_PAGEUP:
-                    page = max(1, int(PANEL_H // ROW_H) - 2)
-                    self._selected_index = max(0, self._selected_index - page)
-                    self._update_selection_from_index()
-                    self._scroll_to_selected()
-                    return
-                if event.key == pygame.K_PAGEDOWN:
-                    page = max(1, int(PANEL_H // ROW_H) - 2)
-                    self._selected_index = min(
-                        len(self.display_cards) - 1, self._selected_index + page)
-                    self._update_selection_from_index()
-                    self._scroll_to_selected()
-                    return
-                if event.key == pygame.K_HOME:
-                    self._selected_index = 0
-                    self._update_selection_from_index()
-                    self._scroll_to_selected()
-                    return
-                if event.key == pygame.K_END:
-                    self._selected_index = len(self.display_cards) - 1
-                    self._update_selection_from_index()
-                    self._scroll_to_selected()
-                    return
-                if event.key == pygame.K_RETURN and self.selected_card and self.hovered_image_key:
-                    self._bind_hovered_image()
-                    return
-                if event.key == pygame.K_TAB:
-                    self._focus_left = False
-                    return
-
-        # ── Drag-and-drop ──
         if event.type == getattr(pygame, "DROPBEGIN", 0):
             self._drag_active = True
             return
@@ -376,7 +369,6 @@ class CardImageScreen(Screen):
             self._handle_text_drop(event.text)
             return
 
-        # ── Mouse ──
         if event.type == pygame.MOUSEMOTION:
             self._hover(event.pos)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -384,155 +376,322 @@ class CardImageScreen(Screen):
         elif event.type == pygame.MOUSEWHEEL:
             self._handle_wheel(event)
 
-    def _handle_wheel(self, event):
-        mx = event.pos[0] if hasattr(event, 'pos') else 0
-        delta = event.y * (ROW_H * 0.7)
-        if mx < LEFT_PANEL_W:
-            self.card_scroll -= delta
+    def _handle_text_input(self, event) -> bool:
+        if self._search_active:
+            if event.key == pygame.K_ESCAPE:
+                self._search_active = False
+                return True
+            if event.key == pygame.K_RETURN:
+                self._search_active = False
+                return True
+            if event.key == pygame.K_BACKSPACE:
+                self.search_query = self.search_query[:-1]
+            elif event.unicode and event.unicode.isprintable():
+                self.search_query += event.unicode
+            else:
+                return False
+            self.card_scroll = 0.0
+            self._apply_filter_and_sort()
+            self._build_image_candidates()
+            return True
+
+        if self._url_active:
+            if event.key == pygame.K_ESCAPE:
+                self._url_active = False
+                return True
+            if event.key == pygame.K_RETURN:
+                self._url_active = False
+                if self.url_query.strip():
+                    self._start_download(self.url_query.strip())
+                return True
+            if event.key == pygame.K_BACKSPACE:
+                self.url_query = self.url_query[:-1]
+            elif event.unicode and event.unicode.isprintable():
+                self.url_query += event.unicode
+            else:
+                return False
+            return True
+        return False
+
+    def _handle_navigation(self, event):
+        if not self.display_cards:
+            return
+        page = max(1, int(self._card_list_inner_rect().h // ROW_H) - 2)
+        if event.key == pygame.K_UP:
+            self._selected_index = max(0, self._selected_index - 1)
+        elif event.key == pygame.K_DOWN:
+            self._selected_index = min(len(self.display_cards) - 1, self._selected_index + 1)
+        elif event.key == pygame.K_PAGEUP:
+            self._selected_index = max(0, self._selected_index - page)
+        elif event.key == pygame.K_PAGEDOWN:
+            self._selected_index = min(len(self.display_cards) - 1, self._selected_index + page)
+        elif event.key == pygame.K_HOME:
+            self._selected_index = 0
+        elif event.key == pygame.K_END:
+            self._selected_index = len(self.display_cards) - 1
         else:
-            self.image_scroll -= delta
+            return
+        self.selected_card = self.display_cards[self._selected_index]
+        self._scroll_to_selected()
+        self._build_image_candidates()
+
+    def _handle_wheel(self, event):
+        mx = event.pos[0] if hasattr(event, "pos") else 0
+        if mx < CENTER_X:
+            self.card_scroll -= event.y * ROW_H * 0.8
+        else:
+            self.candidate_scroll -= event.y * CANDIDATE_ROW_H * 0.8
 
     def _scroll_to_selected(self):
-        if self._selected_index < 0:
-            return
-        row_top = self._selected_index * ROW_H
+        visible_h = self._card_list_inner_rect().h
+        row_top = max(0, self._selected_index) * ROW_H
         row_bottom = row_top + ROW_H
         if row_top < self.card_scroll:
             self.card_scroll = row_top
-        elif row_bottom > self.card_scroll + PANEL_H:
-            self.card_scroll = row_bottom - PANEL_H
-
-    def _update_selection_from_index(self):
-        if 0 <= self._selected_index < len(self.display_cards):
-            self.selected_card = self.display_cards[self._selected_index]
-        else:
-            self.selected_card = None
-
-    def _bind_hovered_image(self):
-        """Bind the currently hovered image to the selected card."""
-        if self.hovered_image_key is None or self.selected_card is None:
-            return
-        _, image_name = self.hovered_image_key
-        source_path = self.image_mgr.get_available_image_path(image_name)
-        if source_path:
-            target_subdir = self._get_target_subdir()
-            ok = self.image_mgr.assign_card_image(
-                self.selected_card.name, source_path, target_subdir,
-                self.selected_card.card_id)
-            if ok:
-                self._refresh_card_image_status()
-                self._build_image_groups()
-                self._apply_filter_and_sort()
-                self._toast_text = f"已为「{self.selected_card.name}」绑定卡图"
-                self._toast_timer = 3.0
+        elif row_bottom > self.card_scroll + visible_h:
+            self.card_scroll = row_bottom - visible_h
 
     def _hover(self, pos):
         mx, my = pos
         self.hovered_card_idx = None
-        self.hovered_image_key = None
+        self.hovered_candidate_idx = None
         self.hovered_button = None
-        self.hovered_image_preview = None
 
-        # Card panel hover
-        if 12 <= mx <= LEFT_PANEL_W - 4:
-            visible_start = max(0, int(self.card_scroll // ROW_H))
-            for i in range(visible_start, min(len(self.display_cards),
-                                              visible_start + int(PANEL_H // ROW_H) + 2)):
-                ry = PANEL_TOP + i * ROW_H - self.card_scroll
-                if ry + ROW_H > PANEL_BOTTOM:
-                    break
-                row_rect = pygame.Rect(16, ry, LEFT_PANEL_W - 32, ROW_H)
-                if row_rect.collidepoint(pos):
-                    self.hovered_card_idx = i
-                    break
+        card_inner = self._card_list_inner_rect()
+        if card_inner.collidepoint(pos):
+            idx = int((my - card_inner.y + self.card_scroll) // ROW_H)
+            if 0 <= idx < len(self.display_cards):
+                self.hovered_card_idx = idx
 
-        # Image panel hover
-        if RIGHT_PANEL_X <= mx <= RIGHT_PANEL_X + RIGHT_PANEL_W:
-            img_y = PANEL_TOP - self.image_scroll
-            for group_name, names, _status in self.image_groups:
-                if img_y > PANEL_BOTTOM:
-                    break
-                img_y += GROUP_HEADER_H
-                for name in names:
-                    if img_y > PANEL_BOTTOM:
-                        break
-                    if img_y + ROW_H >= PANEL_TOP:
-                        row_rect = pygame.Rect(RIGHT_PANEL_X + 4, img_y, RIGHT_PANEL_W - 8, ROW_H)
-                        if row_rect.collidepoint(pos):
-                            self.hovered_image_key = (group_name, name)
-                            self.hovered_image_preview = name
-                            return
-                    img_y += ROW_H
+        candidate_inner = self._candidate_list_inner_rect()
+        if candidate_inner.collidepoint(pos):
+            idx = int((my - candidate_inner.y + self.candidate_scroll) // CANDIDATE_ROW_H)
+            if 0 <= idx < len(self.image_candidates):
+                self.hovered_candidate_idx = idx
 
-        # Bottom buttons
-        for btn_name, rect in self._get_button_rects().items():
+        for name, rect in self._button_rects().items():
             if rect.collidepoint(pos):
-                self.hovered_button = btn_name
+                self.hovered_button = name
                 break
 
     def _click(self, pos):
-        mx, my = pos
-
-        # Search box click
-        search_rect = pygame.Rect(24, HEADER_H + 7, SEARCH_BOX_W, SEARCH_BOX_H)
-        if search_rect.collidepoint(pos):
+        self._hover(pos)
+        if self._search_rect().collidepoint(pos):
             self._search_active = True
+            self._url_active = False
+            return
+        if self._url_rect().collidepoint(pos):
+            self._url_active = True
+            self._search_active = False
             return
 
-        # Click in search area to deactivate
-        if self._search_active and mx > search_rect.right + 10:
-            self._search_active = False
-
-        # Type tabs
-        tab_x = search_rect.right + 20
-        tab_keys = ["all", "pokemon", "trainer", "energy"]
-        for key in tab_keys:
-            tab_rect = pygame.Rect(tab_x, HEADER_H + 7, TYPE_TAB_W, TYPE_TAB_H)
+        tab_x = self._search_rect().right + 18
+        for key, _label in self._filter_tabs():
+            tab_rect = pygame.Rect(tab_x, HEADER_H + 9, 82, TAB_H)
             if tab_rect.collidepoint(pos):
                 self.filter_type = key
-                self._apply_filter_and_sort()
                 self.card_scroll = 0.0
-                self._selected_index = 0 if self.display_cards else -1
-                self.selected_card = self.display_cards[0] if self.display_cards else None
+                self._apply_filter_and_sort()
+                self._build_image_candidates()
                 return
-            tab_x += TYPE_TAB_W + 8
+            tab_x += 90
 
-        # Sort button
-        sort_rect = pygame.Rect(SCREEN_WIDTH - 120, HEADER_H + 7, 100, TYPE_TAB_H)
+        sort_rect = pygame.Rect(SCREEN_WIDTH - 124, HEADER_H + 9, 104, TAB_H)
         if sort_rect.collidepoint(pos):
-            modes = {"name": "type", "type": "status", "status": "name"}
-            self.sort_mode = modes[self.sort_mode]
+            self.sort_mode = {"status": "name", "name": "type", "type": "status"}[self.sort_mode]
             self._apply_filter_and_sort()
-            self.card_scroll = 0.0
-            self._selected_index = 0 if self.display_cards else -1
-            self.selected_card = self.display_cards[0] if self.display_cards else None
             return
 
-        # Card list click
         if self.hovered_card_idx is not None:
             self._selected_index = self.hovered_card_idx
-            self._update_selection_from_index()
-            self._focus_left = True
+            self.selected_card = self.display_cards[self._selected_index]
+            self._build_image_candidates()
             return
 
-        # Image list click
-        if self.hovered_image_key is not None and self.selected_card is not None:
-            self._bind_hovered_image()
+        if self.hovered_candidate_idx is not None:
+            cand = self.image_candidates[self.hovered_candidate_idx]
+            self.pending_image = PendingImage(cand.path, cand.name, cand.group, is_temp=False)
+            self._set_toast(f"已选择候选图: {cand.name}", 2.0)
             return
 
-        # Bottom buttons
+        self._handle_button_click()
+
+    def _handle_button_click(self):
         if self.hovered_button == "paste":
             self._paste_from_clipboard()
+        elif self.hovered_button == "url":
+            self._url_active = True
+            self._search_active = False
+        elif self.hovered_button == "bind":
+            self._bind_pending_image()
+        elif self.hovered_button == "delete":
+            self._request_delete_selected()
+        elif self.hovered_button == "normalize":
+            self._confirm_action = "normalize"
+            self._confirm_message = "将现有映射规范化为 api_id -> 卡名__api_id.ext？"
         elif self.hovered_button == "rescan":
             self.image_mgr.reload()
-            self._build_image_groups()
             self._apply_filter_and_sort()
-            self._toast_text = "已重新扫描图像目录"
-            self._toast_timer = 2.5
-        elif self.hovered_button == "clear":
-            self._confirm_action = "clear_all"
+            self._build_image_candidates()
+            self._set_toast("已重新扫描图片目录", 2.0)
         elif self.hovered_button == "return":
             self.manager.pop_screen()
+
+    # ── Image input ──
+
+    def _handle_file_drop(self, file_path: str):
+        if not self.selected_card:
+            self._set_toast("请先选择一张卡牌", 2.5)
+            return
+        if not os.path.isfile(file_path):
+            self._set_toast(f"找不到文件: {os.path.basename(file_path)}", 2.5)
+            return
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in VALID_IMAGE_EXTS and not _detect_image_ext(file_path):
+            self._set_toast("无法识别图片格式，请使用 png/jpg/webp 等图片", 3.0)
+            return
+        self.pending_image = PendingImage(file_path, os.path.basename(file_path), "拖入文件")
+        self._set_toast("已载入候选图，点击“绑定候选”确认", 2.5)
+
+    def _handle_text_drop(self, text: str):
+        text = text.strip()
+        if text.startswith(("http://", "https://")):
+            self._start_download(text)
+        elif text.startswith("data:image/"):
+            self._load_data_url(text)
+        elif os.path.isfile(text):
+            self._handle_file_drop(text)
+        else:
+            self._set_toast(f"无法识别拖入内容: {text[:36]}", 3.0)
+
+    def _start_download(self, url: str):
+        if not self.selected_card:
+            self._set_toast("请先选择一张卡牌", 2.5)
+            return
+        if self._download_active:
+            self._set_toast("已有下载任务进行中", 2.0)
+            return
+        self._download_active = True
+        self._set_toast("正在后台下载卡图...", 999.0)
+
+        def worker():
+            try:
+                import requests
+                resp = requests.get(url, timeout=15, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                })
+                resp.raise_for_status()
+                ext = self._extension_from_response(url, resp.headers.get("Content-Type", ""))
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+                    f.write(resp.content)
+                    temp_path = f.name
+                self._download_queue.put(("ok", temp_path, os.path.basename(urlparse(url).path) or url))
+            except Exception as e:
+                self._download_queue.put(("error", str(e), ""))
+
+        self._download_thread = threading.Thread(target=worker, daemon=True, name="card-image-download")
+        self._download_thread.start()
+
+    @staticmethod
+    def _extension_from_response(url: str, content_type: str) -> str:
+        lowered = content_type.lower()
+        if "png" in lowered:
+            return ".png"
+        if "jpeg" in lowered or "jpg" in lowered:
+            return ".jpg"
+        if "gif" in lowered:
+            return ".gif"
+        if "bmp" in lowered:
+            return ".bmp"
+        if "webp" in lowered:
+            return ".webp"
+        ext = os.path.splitext(urlparse(url).path)[1].lower()
+        return ext if ext in VALID_IMAGE_EXTS else ".webp"
+
+    def _load_data_url(self, data_url: str):
+        if not self.selected_card:
+            self._set_toast("请先选择一张卡牌", 2.5)
+            return
+        try:
+            header, encoded = data_url.split(",", 1)
+            mime_type = header.split("image/")[1].split(";")[0]
+            ext = ".jpg" if mime_type == "jpeg" else f".{mime_type}"
+            content = base64.b64decode(encoded)
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+                f.write(content)
+                temp_path = f.name
+            self.pending_image = PendingImage(temp_path, f"剪贴图像{ext}", "data URL", is_temp=True)
+            self._set_toast("已载入候选图，点击“绑定候选”确认", 2.5)
+        except Exception as e:
+            self._set_toast(f"解析图片数据失败: {e}", 3.0)
+
+    def _paste_from_clipboard(self):
+        if not self.selected_card:
+            self._set_toast("请先选择一张卡牌", 2.0)
+            return
+        try:
+            from PIL import ImageGrab
+            img = ImageGrab.grabclipboard()
+        except Exception:
+            img = None
+        if img is None:
+            self._set_toast("剪贴板中没有图片", 2.5)
+            return
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                img.save(f, format="PNG")
+                temp_path = f.name
+            self.pending_image = PendingImage(temp_path, "剪贴板图片.png", "剪贴板", is_temp=True)
+            self._set_toast("已载入候选图，点击“绑定候选”确认", 2.5)
+        except Exception as e:
+            self._set_toast(f"粘贴失败: {e}", 3.0)
+
+    def _bind_pending_image(self):
+        if not self.selected_card:
+            self._set_toast("请先选择一张卡牌", 2.0)
+            return
+        if not self.pending_image:
+            self._set_toast("还没有候选图", 2.0)
+            return
+        ok = self.image_mgr.assign_card_image_for_card(self.selected_card.card, self.pending_image.path)
+        if not ok:
+            self._set_toast("绑定失败，请检查文件权限或格式", 3.0)
+            return
+        if self.pending_image.is_temp:
+            try:
+                os.remove(self.pending_image.path)
+            except OSError:
+                pass
+        target_name = self.image_mgr.generate_card_filename(
+            self.selected_card.card,
+            os.path.splitext(self.pending_image.path)[1] or ".webp",
+        )
+        self.pending_image = None
+        self.image_mgr.reload()
+        self._apply_filter_and_sort()
+        self._build_image_candidates()
+        self._set_toast(f"已绑定: {target_name}", 3.0)
+        self._advance_to_next_missing()
+
+    def _advance_to_next_missing(self):
+        if self.filter_type != "missing":
+            return
+        self._apply_filter_and_sort()
+        if self.display_cards:
+            self._selected_index = min(self._selected_index, len(self.display_cards) - 1)
+            self.selected_card = self.display_cards[self._selected_index]
+            self._scroll_to_selected()
+
+    def _request_delete_selected(self):
+        if not self.selected_card:
+            self._set_toast("请先选择一张卡牌", 2.0)
+            return
+        record = self._selected_record()
+        if not record:
+            self._set_toast("当前卡牌没有可删除的卡图", 2.5)
+            return
+        self._confirm_action = "delete_card"
+        self._confirm_message = f"确认删除「{self.selected_card.name}」的卡图文件？"
 
     # ── Confirm dialog ──
 
@@ -541,227 +700,45 @@ class CardImageScreen(Screen):
             self._hover_confirm(event.pos)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self._confirm_hover_yes:
-                if self._confirm_action == "clear_all":
-                    count = self.image_mgr.clear_all_custom_mappings()
-                    self._build_image_groups()
-                    self._apply_filter_and_sort()
-                    self._toast_text = f"已清除 {count} 个自定义绑定"
-                    self._toast_timer = 3.0
-                self._confirm_action = None
+                self._run_confirmed_action()
             elif self._confirm_hover_no:
                 self._confirm_action = None
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self._confirm_action = None
             elif event.key == pygame.K_RETURN:
-                if self._confirm_action == "clear_all":
-                    count = self.image_mgr.clear_all_custom_mappings()
-                    self._build_image_groups()
-                    self._apply_filter_and_sort()
-                    self._toast_text = f"已清除 {count} 个自定义绑定"
-                    self._toast_timer = 3.0
-                self._confirm_action = None
+                self._run_confirmed_action()
+
+    def _run_confirmed_action(self):
+        action = self._confirm_action
+        self._confirm_action = None
+        if action == "normalize":
+            report = self.image_mgr.normalize_card_image_library([e.card for e in self._all_cards])
+            self.image_mgr.reload()
+            self._apply_filter_and_sort()
+            self._build_image_candidates()
+            self._set_toast(report.message, 4.0)
+        elif action == "delete_card" and self.selected_card:
+            result = self.image_mgr.delete_card_image_for_card(self.selected_card.card)
+            self.image_mgr.reload()
+            self._apply_filter_and_sort()
+            self._build_image_candidates()
+            self._set_toast(result.message, 3.5)
 
     def _hover_confirm(self, pos):
         self._confirm_hover_yes = False
         self._confirm_hover_no = False
-        dialog_rect = self._confirm_dialog_rect()
-        yes_rect = pygame.Rect(dialog_rect.x + 100, dialog_rect.y + 110, 80, 36)
-        no_rect = pygame.Rect(dialog_rect.x + 220, dialog_rect.y + 110, 80, 36)
-        if yes_rect.collidepoint(pos):
-            self._confirm_hover_yes = True
-        elif no_rect.collidepoint(pos):
-            self._confirm_hover_no = True
+        rect = self._confirm_rect()
+        yes = pygame.Rect(rect.x + 112, rect.y + 128, 86, 36)
+        no = pygame.Rect(rect.x + 242, rect.y + 128, 86, 36)
+        self._confirm_hover_yes = yes.collidepoint(pos)
+        self._confirm_hover_no = no.collidepoint(pos)
 
-    def _confirm_dialog_rect(self) -> pygame.Rect:
-        w, h = 400, 180
-        return pygame.Rect((SCREEN_WIDTH - w) // 2, (SCREEN_HEIGHT - h) // 2, w, h)
+    @staticmethod
+    def _confirm_rect() -> pygame.Rect:
+        return pygame.Rect((SCREEN_WIDTH - 460) // 2, (SCREEN_HEIGHT - 210) // 2, 460, 210)
 
-    # ── Drop / paste / download handlers ──
-
-    def _handle_file_drop(self, file_path: str):
-        if not os.path.isfile(file_path):
-            self._toast_text = f"找不到文件: {os.path.basename(file_path)}"
-            self._toast_timer = 2.5
-            return
-
-        ext = os.path.splitext(file_path)[1].lower()
-        valid_exts = (".webp", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff")
-
-        if ext not in valid_exts:
-            detected_ext = _detect_image_ext(file_path)
-            if detected_ext:
-                ext = detected_ext
-            else:
-                self._toast_text = f"无法识别图片格式: {ext or '无后缀'}，请使用 .png/.jpg/.webp 等格式"
-                self._toast_timer = 3.0
-                return
-
-        if self.selected_card is None:
-            self._toast_text = "请先在左侧选择一张卡牌，再拖入卡图文件"
-            self._toast_timer = 2.5
-            return
-
-        target_subdir = self._get_target_subdir()
-        ok = self.image_mgr.assign_card_image(
-            self.selected_card.name, file_path, target_subdir,
-            self.selected_card.card_id)
-        if ok:
-            self._refresh_card_image_status()
-            self._build_image_groups()
-            self._apply_filter_and_sort()
-            self._toast_text = (
-                f"已为「{self.selected_card.name}」绑定拖入的卡图 "
-                f"-> {target_subdir}/{self.selected_card.name}{os.path.splitext(file_path)[1]}"
-            )
-            self._toast_timer = 3.0
-        else:
-            self._toast_text = "卡图绑定失败，请检查文件是否可读取"
-            self._toast_timer = 2.5
-
-    def _handle_text_drop(self, text: str):
-        text = text.strip()
-
-        if text.startswith(("http://", "https://")):
-            if self.selected_card is None:
-                self._toast_text = "请先在左侧选择一张卡牌，再拖入卡图文件"
-                self._toast_timer = 2.5
-                return
-            self._toast_text = "正在下载卡图..."
-            self._toast_timer = 999.0
-            self._download_image(text)
-            return
-
-        if os.path.isfile(text):
-            self._handle_file_drop(text)
-            return
-
-        if text.startswith("data:image/"):
-            if self.selected_card is None:
-                self._toast_text = "请先在左侧选择一张卡牌，再拖入卡图文件"
-                self._toast_timer = 2.5
-                return
-            self._toast_text = "正在解析图像数据..."
-            self._toast_timer = 999.0
-            self._download_data_url(text)
-            return
-
-        self._toast_text = f"无法识别拖入的内容: {text[:40]}{'...' if len(text) > 40 else ''}"
-        self._toast_timer = 3.0
-
-    def _download_image(self, url: str):
-        try:
-            import requests
-            resp = requests.get(url, timeout=10, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-            })
-            resp.raise_for_status()
-            content = resp.content
-            ct = resp.headers.get("Content-Type", "")
-            ext = ".webp"
-            if "png" in ct:
-                ext = ".png"
-            elif "jpeg" in ct or "jpg" in ct:
-                ext = ".jpg"
-            elif "gif" in ct:
-                ext = ".gif"
-            elif "bmp" in ct:
-                ext = ".bmp"
-            self._save_dropped_bytes(content, ext)
-        except Exception as e:
-            self._toast_text = f"下载失败: {e}"
-            self._toast_timer = 3.0
-
-    def _download_data_url(self, data_url: str):
-        try:
-            import base64
-            header, encoded = data_url.split(",", 1)
-            ext = ".png"
-            if "image/" in header:
-                mime_type = header.split("image/")[1].split(";")[0]
-                ext = "." + mime_type if mime_type != "jpeg" else ".jpg"
-            content = base64.b64decode(encoded)
-            self._save_dropped_bytes(content, ext)
-        except Exception as e:
-            self._toast_text = f"解析图片数据失败: {e}"
-            self._toast_timer = 3.0
-
-    def _save_dropped_bytes(self, content: bytes, ext: str):
-        if self.selected_card is None:
-            return
-
-        target_subdir = self._get_target_subdir()
-
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
-            f.write(content)
-            temp_path = f.name
-
-        ok = self.image_mgr.assign_card_image(
-            self.selected_card.name, temp_path, target_subdir,
-            self.selected_card.card_id)
-        if ok:
-            self._refresh_card_image_status()
-            self._build_image_groups()
-            self._apply_filter_and_sort()
-            self._toast_text = (
-                f"已为「{self.selected_card.name}」绑定下载的卡图 "
-                f"-> {target_subdir}/{self.selected_card.name}{ext}"
-            )
-            self._toast_timer = 3.0
-        else:
-            self._toast_text = "卡图绑定失败，请检查文件权限"
-            self._toast_timer = 2.5
-
-    def _paste_from_clipboard(self):
-        if self.selected_card is None:
-            self._toast_text = "请先在左侧选择一张卡牌"
-            self._toast_timer = 2.0
-            return
-
-        try:
-            from PIL import ImageGrab
-        except ImportError:
-            self._toast_text = "需要 Pillow 库支持剪贴板粘贴"
-            self._toast_timer = 2.5
-            return
-
-        try:
-            img = ImageGrab.grabclipboard()
-        except Exception:
-            img = None
-
-        if img is None:
-            self._toast_text = "剪贴板中没有图片，请先在浏览器中右键复制图片"
-            self._toast_timer = 3.0
-            return
-
-        target_subdir = self._get_target_subdir()
-
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-                img.save(f, format="PNG")
-                temp_path = f.name
-
-            ok = self.image_mgr.assign_card_image(
-                self.selected_card.name, temp_path, target_subdir,
-                self.selected_card.card_id)
-            if ok:
-                self._refresh_card_image_status()
-                self._build_image_groups()
-                self._apply_filter_and_sort()
-                self._toast_text = (
-                    f"已为「{self.selected_card.name}」粘贴剪贴板卡图 "
-                    f"-> {target_subdir}/{self.selected_card.name}.png"
-                )
-                self._toast_timer = 3.0
-            else:
-                self._toast_text = "卡图绑定失败，请检查文件权限"
-                self._toast_timer = 2.5
-        except Exception as e:
-            self._toast_text = f"粘贴失败: {e}"
-            self._toast_timer = 3.0
-
-    # ── Update ──
+    # ── Update / Draw ──
 
     def update(self, dt: float):
         if self._toast_timer > 0:
@@ -769,560 +746,359 @@ class CardImageScreen(Screen):
             if self._toast_timer <= 0:
                 self._toast_text = None
 
-        # Cursor blink
-        if self._search_active:
-            self._cursor_blink += dt
-            if self._cursor_blink > 1.0:
-                self._cursor_blink -= 1.0
+        if self._search_active or self._url_active:
+            self._cursor_blink = (self._cursor_blink + dt) % 1.0
 
-        # Clamp scroll
-        card_content_h = len(self.display_cards) * ROW_H
-        self.card_scroll = max(0.0, min(self.card_scroll, max(0.0, card_content_h - PANEL_H)))
+        self._poll_download()
+        self._clamp_scroll()
 
-        img_content_h = sum(
-            GROUP_HEADER_H + len(names) * ROW_H
-            for _, names, _ in self.image_groups
-        )
-        self.image_scroll = max(0.0, min(self.image_scroll, max(0.0, img_content_h - PANEL_H)))
+    def _poll_download(self):
+        try:
+            status, value, label = self._download_queue.get_nowait()
+        except queue.Empty:
+            return
+        self._download_active = False
+        if status == "ok":
+            self.pending_image = PendingImage(value, label, "URL 下载", is_temp=True)
+            self._set_toast("下载完成，点击“绑定候选”确认", 3.0)
+        else:
+            self._set_toast(f"下载失败: {value}", 4.0)
 
-    # ── Drawing ──
+    def _clamp_scroll(self):
+        card_h = len(self.display_cards) * ROW_H
+        cand_h = len(self.image_candidates) * CANDIDATE_ROW_H
+        self.card_scroll = max(0.0, min(
+            self.card_scroll,
+            max(0.0, card_h - self._card_list_inner_rect().h),
+        ))
+        self.candidate_scroll = max(0.0, min(
+            self.candidate_scroll,
+            max(0.0, cand_h - self._candidate_list_inner_rect().h),
+        ))
 
     def draw(self, surface: pygame.Surface):
         surface.fill(UI_BG_DARK)
-
         self._draw_header(surface)
         self._draw_filter_bar(surface)
-        self._draw_preview_area(surface)
-        self._draw_card_panel(surface)
-        self._draw_image_panel(surface)
+        self._draw_card_queue(surface)
+        self._draw_current_card(surface)
+        self._draw_candidate_panel(surface)
         self._draw_bottom_bar(surface)
         self._draw_toast(surface)
         if self._confirm_action:
             self._draw_confirm_dialog(surface)
 
-    # ── Header ──
-
     def _draw_header(self, surface):
-        title = self.font_title.render("卡牌图像管理", True, UI_HIGHLIGHT)
-        surface.blit(title, (16, 6))
-
-        # Keyboard shortcuts hint (center)
-        hint = self.font_tiny.render(
-            "↑↓导航 | Enter确认 | PgUp/PgDn翻页 | Home/End首尾 | Ctrl+F搜索 | Ctrl+V粘贴 | ESC返回",
-            True, UI_TEXT_SECONDARY,
-        )
-        hint_x = (SCREEN_WIDTH - hint.get_width()) // 2
-        surface.blit(hint, (hint_x, 22))
-
-        # Statistics (right) — count from card list, not image pool
+        title = self.font_title.render("卡图管理工作台", True, UI_HIGHLIGHT)
+        surface.blit(title, (16, 7))
         total = len(self._all_cards)
         mapped = sum(1 for e in self._all_cards if e.has_image)
-        pct = int(mapped / total * 100) if total > 0 else 0
-        if pct >= 50:
-            stats_color = (80, 220, 80)
-        elif pct >= 25:
-            stats_color = (220, 180, 80)
-        else:
-            stats_color = (200, 100, 80)
+        missing = total - mapped
+        duplicates = sum(1 for e in self._all_cards if e.is_duplicate_name)
         stats = self.font_small.render(
-            f"{mapped}/{total} 张有图像 ({pct}%)", True, stats_color,
+            f"已绑定 {mapped}/{total} · 缺图 {missing} · 同名卡 {duplicates}",
+            True,
+            UI_SUCCESS if missing == 0 else UI_TEXT_SECONDARY,
         )
-        x = SCREEN_WIDTH - stats.get_width() - 16
-        surface.blit(stats, (x, 10))
+        surface.blit(stats, (SCREEN_WIDTH - stats.get_width() - 16, 12))
 
-    # ── Filter bar ──
+        hint = self.font_tiny.render(
+            "Ctrl+F 搜索 · Ctrl+U 输入URL · Ctrl+V 粘贴 · Enter 绑定候选 · Del 删除 · ESC 返回",
+            True,
+            UI_TEXT_SECONDARY,
+        )
+        surface.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, 29)))
 
     def _draw_filter_bar(self, surface):
-        bar_y = HEADER_H
-        bar_rect = pygame.Rect(12, bar_y, SCREEN_WIDTH - 24, FILTER_H - 4)
-        draw_panel(surface, bar_rect)
+        rect = pygame.Rect(12, HEADER_H, SCREEN_WIDTH - 24, FILTER_H - 4)
+        draw_panel(surface, rect)
 
-        # Search box
-        search_rect = pygame.Rect(24, bar_y + 7, SEARCH_BOX_W, SEARCH_BOX_H)
-        search_bg = (40, 50, 80) if self._search_active else (28, 33, 46)
-        pygame.draw.rect(surface, search_bg, search_rect, border_radius=4)
-        border_color = UI_HIGHLIGHT if self._search_active else UI_BORDER
-        pygame.draw.rect(surface, border_color, search_rect, 2 if self._search_active else 1, border_radius=4)
+        search = self._search_rect()
+        pygame.draw.rect(surface, (40, 50, 80) if self._search_active else (28, 33, 46),
+                         search, border_radius=4)
+        pygame.draw.rect(surface, UI_HIGHLIGHT if self._search_active else UI_BORDER,
+                         search, 2 if self._search_active else 1, border_radius=4)
+        query = self.search_query if self.search_query else "搜索卡名 / api_id / 类型..."
+        color = UI_TEXT_PRIMARY if self.search_query else (95, 100, 120)
+        txt = self.font_search.render(query, True, color)
+        surface.blit(txt, (search.x + 8, search.y + 4))
+        if self._search_active and self._cursor_blink < 0.5:
+            x = min(search.right - 8, search.x + 10 + txt.get_width())
+            pygame.draw.line(surface, UI_HIGHLIGHT, (x, search.y + 5), (x, search.bottom - 5), 2)
 
-        if self.search_query:
-            txt = self.font_search.render(self.search_query, True, UI_TEXT_PRIMARY)
-        else:
-            txt = self.font_search.render("搜索卡牌名称...", True, (80, 80, 100))
-        surface.blit(txt, (search_rect.x + 8, search_rect.y + 4))
+        tab_x = search.right + 18
+        for key, label in self._filter_tabs():
+            tab = pygame.Rect(tab_x, HEADER_H + 9, 82, TAB_H)
+            active = self.filter_type == key
+            bg = (60, 82, 128) if active else (35, 38, 50)
+            pygame.draw.rect(surface, bg, tab, border_radius=4)
+            pygame.draw.rect(surface, UI_HIGHLIGHT if active else UI_BORDER, tab, 1, border_radius=4)
+            text = self.font_small.render(label, True, UI_TEXT_PRIMARY if active else UI_TEXT_SECONDARY)
+            surface.blit(text, text.get_rect(center=tab.center))
+            tab_x += 90
 
-        # Blinking cursor when search active
-        if self._search_active and int(self._cursor_blink * 2) % 2 == 0:
-            cursor_x = search_rect.x + 8 + (txt.get_width() if self.search_query else 0) + 2
-            pygame.draw.line(surface, UI_HIGHLIGHT,
-                             (cursor_x, search_rect.y + 5),
-                             (cursor_x, search_rect.y + SEARCH_BOX_H - 5), 2)
+        sort_labels = {"status": "缺图优先", "name": "按名称", "type": "按类型"}
+        sort = pygame.Rect(SCREEN_WIDTH - 124, HEADER_H + 9, 104, TAB_H)
+        draw_button(surface, sort, sort_labels[self.sort_mode], self.font_small)
 
-        # Type filter tabs
-        tab_x = search_rect.right + 20
-        tab_defs = [
-            ("all", "全部", (100, 100, 120)),
-            ("pokemon", "宝可梦", TYPE_COLORS.get("Grass", (80, 160, 80))),
-            ("trainer", "训练家", TYPE_COLORS.get("Trainer", (140, 180, 200))),
-            ("energy", "能量", TYPE_COLORS.get("Colorless", (210, 210, 200))),
-        ]
-        for key, label, color in tab_defs:
-            tab_rect = pygame.Rect(tab_x, bar_y + 7, TYPE_TAB_W, TYPE_TAB_H)
-            is_active = (self.filter_type == key)
-            bg = color if is_active else (35, 38, 50)
-            pygame.draw.rect(surface, bg, tab_rect, border_radius=4)
-            if is_active:
-                pygame.draw.rect(surface, UI_HIGHLIGHT, tab_rect, 2, border_radius=4)
-            tab_txt = self.font_small.render(label, True,
-                (255, 255, 255) if is_active else UI_TEXT_SECONDARY)
-            surface.blit(tab_txt, tab_txt.get_rect(center=tab_rect.center))
-            tab_x += TYPE_TAB_W + 8
-
-        # Sort button
-        sort_labels = {"name": "按名称", "type": "按类型", "status": "缺图优先"}
-        sort_label = sort_labels.get(self.sort_mode, "排序")
-        sort_rect = pygame.Rect(SCREEN_WIDTH - 120, bar_y + 7, 100, TYPE_TAB_H)
-        draw_button(surface, sort_rect, sort_label, self.font_small)
-
-    # ── Preview area ──
-
-    def _draw_preview_area(self, surface):
-        py = PREVIEW_Y + 4
-        ph = PREVIEW_H - 12
-
-        # ── Left: Card Image Preview ──
-        left_rect = pygame.Rect(20, py, PREVIEW_BOX_W, ph)
-        draw_panel(surface, left_rect)
-        lbl = self.font_tiny.render("卡牌预览", True, UI_TEXT_SECONDARY)
-        surface.blit(lbl, (left_rect.x + 4, left_rect.y + 2))
-
-        if self.selected_card:
-            img = self.image_mgr.get_card_image(self.selected_card.name, self.selected_card.card_id)
-            if img is not None:
-                iw, ih = img.get_size()
-                scale = min((PREVIEW_BOX_W - 20) / iw, (ph - 20) / ih)
-                sw, sh = int(iw * scale), int(ih * scale)
-                try:
-                    scaled = pygame.transform.smoothscale(img, (sw, sh))
-                    surface.blit(scaled, (20 + (PREVIEW_BOX_W - sw) // 2, py + (ph - sh) // 2))
-                except Exception:
-                    pass
-            else:
-                self._draw_card_placeholder(surface, left_rect, self.selected_card.card)
-        else:
-            hint = self.font_body.render("请选择卡牌", True, (100, 100, 100))
-            surface.blit(hint, hint.get_rect(center=left_rect.center))
-
-        # ── Center: Card Detail Info ──
-        detail_x = left_rect.right + 16
-        detail_w = SCREEN_WIDTH - PREVIEW_BOX_W - 20 - detail_x - PREVIEW_BOX_W - 16
-        if self.selected_card:
-            self._draw_card_detail(surface, detail_x, py, detail_w, ph, self.selected_card)
-
-        # ── Right: Hovered Image Preview ──
-        rpx = SCREEN_WIDTH - PREVIEW_BOX_W - 20
-        right_rect = pygame.Rect(rpx, py, PREVIEW_BOX_W, ph)
-        draw_panel(surface, right_rect)
-        rlbl = self.font_tiny.render("悬停图像预览", True, UI_TEXT_SECONDARY)
-        surface.blit(rlbl, (rpx + 4, py + 2))
-
-        if self.hovered_image_preview:
-            img = self.image_mgr.get_card_image(self.hovered_image_preview)
-            if img is not None:
-                iw, ih = img.get_size()
-                scale = min((PREVIEW_BOX_W - 20) / iw, (ph - 20) / ih)
-                sw, sh = int(iw * scale), int(ih * scale)
-                try:
-                    scaled = pygame.transform.smoothscale(img, (sw, sh))
-                    surface.blit(scaled, (rpx + (PREVIEW_BOX_W - sw) // 2, py + (ph - sh) // 2))
-                except Exception:
-                    pass
-            pname_txt = self.font_small.render(self.hovered_image_preview, True, UI_TEXT_PRIMARY)
-            surface.blit(pname_txt, (rpx, py + ph + 2))
-
-        # ── Drop zone ──
-        drop_y = PREVIEW_Y + PREVIEW_H
-        drop_zone = pygame.Rect(20, drop_y, SCREEN_WIDTH - 40, DROP_ZONE_H - 4)
-        if self._drag_active:
-            drop_color = (60, 120, 200)
-            drop_text = "▼ 释放文件以绑定卡图 ▼"
-            drop_text_color = (200, 220, 255)
-        else:
-            drop_color = (30, 35, 50)
-            drop_text = "拖放图片文件到此处可快速绑定 | Ctrl+V 粘贴剪贴板 | 也可在右侧面板点击现有图像"
-            drop_text_color = (120, 130, 150)
-        pygame.draw.rect(surface, drop_color, drop_zone, border_radius=4)
-        if self._drag_active:
-            pygame.draw.rect(surface, (100, 160, 240), drop_zone, 1, border_radius=4)
-        drop_txt = self.font_tiny.render(drop_text, True, drop_text_color)
-        surface.blit(drop_txt, drop_txt.get_rect(center=drop_zone.center))
-
-    def _draw_card_detail(self, surface, x, y, w, h, entry: CardEntry):
-        """Draw card detail information in the center preview zone."""
-        card = entry.card
-        bottom = y + h
-        col2_x = x + int(w * 0.48)
-
-        # ── Row 1: Card name + HP ──
-        name_txt = self.font_title.render(card.name, True, (255, 220, 100))
-        surface.blit(name_txt, (x, y))
-        row1_y = y
-
-        hp_str = f"HP {card.hp}" if card.is_pokemon else ""
-        if hp_str:
-            hp_txt = self.font_body.render(hp_str, True, UI_TEXT_PRIMARY)
-            surface.blit(hp_txt, (x + name_txt.get_width() + 20, y + 4))
-
-        # ── Row 2: Type badge + stage + image status ──
-        row2_y = y + name_txt.get_height() + 4
-        badge_color = self._get_card_type_color(card)
-        badge_text = self.font_small.render(self._get_subtype_label(card), True, (255, 255, 255))
-        bw, bh = badge_text.get_width() + 12, badge_text.get_height() + 4
-        badge_rect = pygame.Rect(x, row2_y, bw, bh)
-        pygame.draw.rect(surface, badge_color, badge_rect, border_radius=4)
-        surface.blit(badge_text, badge_text.get_rect(center=badge_rect.center))
-
-        has = self.image_mgr.has_image(card.api_id) or self.image_mgr.has_image(card.name)
-        status = "✓已有卡图" if has else "✗暂无卡图"
-        status_color = (80, 220, 80) if has else (180, 120, 80)
-        st_txt = self.font_tiny.render(status, True, status_color)
-        surface.blit(st_txt, (badge_rect.right + 10, row2_y + 2))
-
-        info_y = row2_y + bh + 4
-
-        # ── Pokemon detail ──
-        if card.is_pokemon:
-            # Left column: stats
-            ly = info_y
-            # Evolves from
-            if card.evolves_from:
-                evo_txt = self.font_tiny.render(f"进化自: {card.evolves_from}", True, UI_TEXT_SECONDARY)
-                surface.blit(evo_txt, (x, ly))
-                ly += evo_txt.get_height() + 1
-
-            # Weakness / Resistance / Retreat
-            stats_parts = []
-            if card.weaknesses:
-                wk = card.weaknesses[0]
-                stats_parts.append(f"弱点:{ENERGY_CN.get(wk.energy_type, wk.energy_type)}{wk.value}")
-            if card.resistances:
-                rs = card.resistances[0]
-                stats_parts.append(f"抵抗:{ENERGY_CN.get(rs.energy_type, rs.energy_type)}{rs.value}")
-            stats_parts.append(f"撤退:{card.retreat_cost}")
-            stats_line = "  ".join(stats_parts)
-            stats_txt = self.font_tiny.render(stats_line, True, UI_TEXT_SECONDARY)
-            surface.blit(stats_txt, (x, ly))
-            ly += stats_txt.get_height() + 2
-
-            # Rules (ex/V rule boxes)
-            for rule in card.rules:
-                rule_txt = self.font_tiny.render(rule, True, (220, 200, 140))
-                surface.blit(rule_txt, (x, ly))
-                ly += rule_txt.get_height()
-
-            # Right column: abilities + attacks
-            ry = info_y
-
-            # Abilities
-            for ab in card.abilities:
-                if ry + 28 > bottom:
-                    break
-                ab_name = self.font_small.render(f"【{ab.name}】", True, (255, 140, 100))
-                surface.blit(ab_name, (col2_x, ry))
-                ry += ab_name.get_height()
-                # Wrap ability text
-                ry = self._draw_wrapped_text(surface, ab.text, col2_x + 8, ry,
-                                             w - (col2_x - x) - 8, bottom, self.font_tiny,
-                                             UI_TEXT_PRIMARY)
-                ry += 2
-
-            # Attacks
-            for atk in card.attacks[:3]:
-                if ry + 20 > bottom:
-                    break
-                cost_str = "".join(ENERGY_CN.get(c, c[:1]) for c in atk.cost[:4])
-                dmg = str(atk.damage) if atk.damage else "-"
-                atk_header = f"[{cost_str}] {atk.name}  {dmg}"
-                atk_hdr_txt = self.font_small.render(atk_header, True, UI_TEXT_PRIMARY)
-                surface.blit(atk_hdr_txt, (col2_x, ry))
-                ry += atk_hdr_txt.get_height()
-                # Attack effect text
-                if atk.text:
-                    ry = self._draw_wrapped_text(surface, atk.text, col2_x + 8, ry,
-                                                 w - (col2_x - x) - 8, bottom, self.font_tiny,
-                                                 UI_TEXT_SECONDARY)
-                ry += 1
-
-        # ── Trainer detail ──
-        elif card.is_trainer:
-            trainer_type = card.trainer_type if card.trainer_type else "训练家"
-            tt_txt = self.font_small.render(f"类型: {trainer_type}", True, UI_TEXT_PRIMARY)
-            surface.blit(tt_txt, (x, info_y))
-            info_y += tt_txt.get_height() + 2
-
-            # Trainer rules
-            for rule in card.rules:
-                if info_y > bottom - 10:
-                    break
-                rule_txt = self.font_tiny.render(rule, True, (220, 200, 140))
-                surface.blit(rule_txt, (x, info_y))
-                info_y += rule_txt.get_height()
-
-            # Full trainer text with wrapping
-            if card.trainer_text:
-                info_y = self._draw_wrapped_text(surface, card.trainer_text, x, info_y,
-                                                 w, bottom, self.font_tiny, UI_TEXT_PRIMARY)
-
-        # ── Energy detail ──
-        elif card.is_energy:
-            etype = "基本能量" if card.is_basic_energy else "特殊能量"
-            et_txt = self.font_small.render(etype, True, UI_TEXT_PRIMARY)
-            surface.blit(et_txt, (x, info_y))
-            info_y += et_txt.get_height() + 2
-
-            for rule in card.rules:
-                if info_y > bottom - 10:
-                    break
-                rule_txt = self.font_tiny.render(rule, True, (220, 200, 140))
-                surface.blit(rule_txt, (x, info_y))
-                info_y += rule_txt.get_height()
-
-            if card.trainer_text:
-                info_y = self._draw_wrapped_text(surface, card.trainer_text, x, info_y,
-                                                 w, bottom, self.font_tiny, UI_TEXT_PRIMARY)
-
-    def _draw_wrapped_text(self, surface, text, x, y, max_w, max_y, font, color) -> int:
-        """Draw text with word wrapping. Returns new y position."""
-        if not text:
-            return y
-        chars_per_line = max(10, int(max_w / (font.size("测")[0] or 7)))
-        while text and y < max_y - 8:
-            chunk = text[:chars_per_line]
-            text = text[chars_per_line:]
-            line_txt = font.render(chunk, True, color)
-            surface.blit(line_txt, (x, y))
-            y += line_txt.get_height() + 1
-        return y
-
-    def _draw_card_placeholder(self, surface, rect, card):
-        """Draw a type-colored placeholder when no card image exists."""
-        color = self._get_card_type_color(card)
-        inner = rect.inflate(-10, -10)
-        pygame.draw.rect(surface, color, inner, border_radius=6)
-        pygame.draw.rect(surface, UI_BORDER, inner, 1, border_radius=6)
-
-        name_txt = self.font_small.render(card.name, True, (255, 255, 255))
-        name_rect = name_txt.get_rect(center=inner.center)
-        surface.blit(name_txt, name_rect)
-
-        sub_txt = self.font_tiny.render(self._get_subtype_label(card), True, (240, 240, 240))
-        sub_rect = sub_txt.get_rect(center=(inner.centerx, inner.centery + 20))
-        surface.blit(sub_txt, sub_rect)
-
-    def _get_card_type_color(self, card) -> tuple:
-        """Get a representative color for the card type."""
-        if card.is_pokemon:
-            if card.energy_types:
-                return TYPE_COLORS.get(card.energy_types[0], TYPE_COLORS["Colorless"])
-            return TYPE_COLORS["Colorless"]
-        elif card.is_trainer:
-            return TYPE_COLORS["Trainer"]
-        else:
-            return TYPE_COLORS["Energy"]
-
-    # ── Card panel (left) ──
-
-    def _draw_card_panel(self, surface):
-        panel_rect = pygame.Rect(12, PANEL_TOP, LEFT_PANEL_W - 16, PANEL_H)
-        draw_panel(surface, panel_rect)
-
-        surface.set_clip(panel_rect)
+    def _draw_card_queue(self, surface):
+        panel = pygame.Rect(LEFT_X, WORK_TOP, LEFT_W, WORK_H)
+        draw_panel(surface, panel, "卡牌队列", self.font_body)
+        inner = self._card_list_inner_rect()
+        surface.set_clip(inner)
 
         if not self.display_cards:
-            msg = self.font_body.render(
-                f'未找到匹配 "{self.search_query}" 的卡牌' if self.search_query
-                else "没有卡牌数据",
-                True, UI_TEXT_SECONDARY,
-            )
-            surface.blit(msg, msg.get_rect(center=panel_rect.center))
+            message = "未引用图片请看右侧列表" if self.filter_type == "orphans" else "没有符合条件的卡牌"
+            txt = self.font_body.render(message, True, UI_TEXT_SECONDARY)
+            surface.blit(txt, txt.get_rect(center=inner.center))
             surface.set_clip(None)
             return
 
-        visible_start = max(0, int(self.card_scroll // ROW_H))
-        visible_end = min(len(self.display_cards), visible_start + int(PANEL_H // ROW_H) + 2)
+        start = max(0, int(self.card_scroll // ROW_H))
+        end = min(len(self.display_cards), start + int(inner.h // ROW_H) + 2)
+        for idx in range(start, end):
+            entry = self.display_cards[idx]
+            row_y = inner.y + idx * ROW_H - self.card_scroll
+            row = pygame.Rect(inner.x, row_y, inner.w, ROW_H - 2)
+            selected = idx == self._selected_index
+            hovered = idx == self.hovered_card_idx
+            bg = (50, 80, 130) if selected else ((40, 50, 70) if hovered else (25, 30, 44))
+            pygame.draw.rect(surface, bg, row, border_radius=4)
+            if selected:
+                pygame.draw.rect(surface, UI_HIGHLIGHT, row, 2, border_radius=4)
 
-        for i in range(visible_start, visible_end):
-            entry = self.display_cards[i]
-            row_y = PANEL_TOP + i * ROW_H - self.card_scroll
+            status_color = UI_SUCCESS if entry.has_image else (160, 130, 90)
+            status = self.font_small.render("✓" if entry.has_image else "!", True, status_color)
+            surface.blit(status, (row.x + 7, row.y + 7))
+            pygame.draw.rect(surface, self._type_color(entry.card),
+                             (row.x + 28, row.y + 10, 12, 12), border_radius=3)
+            name_rect = pygame.Rect(row.x + 48, row.y + 2, row.w - 170, 17)
+            draw_text_fit(surface, self.font_small, entry.name,
+                          UI_HIGHLIGHT if selected else UI_TEXT_PRIMARY, name_rect)
+            id_color = (230, 190, 90) if entry.is_duplicate_name else UI_TEXT_SECONDARY
+            id_rect = pygame.Rect(row.x + 48, row.y + 17, row.w - 170, 14)
+            draw_text_fit(surface, self.font_tiny, entry.card_id, id_color, id_rect)
+            sub = self.font_tiny.render(self._subtype_label(entry.card), True, UI_TEXT_SECONDARY)
+            surface.blit(sub, (row.right - sub.get_width() - 8, row.y + 9))
 
-            is_selected = (i == self._selected_index)
-            is_hovered = (i == self.hovered_card_idx)
-            if is_selected:
-                row_color = (50, 80, 130)
-            elif is_hovered:
-                row_color = (40, 50, 70)
-            else:
-                row_color = (28, 33, 46) if i % 2 == 0 else (23, 28, 41)
-
-            pygame.draw.rect(surface, row_color, (16, row_y, LEFT_PANEL_W - 36, ROW_H - 1), border_radius=3)
-
-            # Selection border
-            if is_selected:
-                pygame.draw.rect(surface, UI_HIGHLIGHT,
-                                 (16, row_y, LEFT_PANEL_W - 36, ROW_H - 1), 2, border_radius=3)
-
-            # Status icon
-            icon_color = (80, 220, 80) if entry.has_image else (120, 120, 120)
-            icon = self.font_small.render("✓" if entry.has_image else "✗", True, icon_color)
-            surface.blit(icon, (20, row_y + 4))
-
-            # Type badge
-            self._draw_type_badge(surface, 40, row_y + 6, entry.card)
-
-            # Card name
-            name_txt = self.font_small.render(entry.name, True,
-                UI_HIGHLIGHT if is_selected else UI_TEXT_PRIMARY)
-            surface.blit(name_txt, (62, row_y + 4))
-
-            # Subtype label (right-aligned)
-            sub_label = self._get_subtype_label(entry.card)
-            sub_txt = self.font_tiny.render(sub_label, True, UI_TEXT_SECONDARY)
-            sub_x = LEFT_PANEL_W - 28 - sub_txt.get_width()
-            surface.blit(sub_txt, (sub_x, row_y + 6))
-
-        # Scrollbar
-        content_h = len(self.display_cards) * ROW_H
-        if content_h > PANEL_H:
-            bar_h = max(30, int(PANEL_H * PANEL_H / content_h))
-            bar_y = PANEL_TOP + int(self.card_scroll * PANEL_H / content_h)
-            pygame.draw.rect(surface, (80, 80, 100),
-                             (LEFT_PANEL_W - 16, bar_y, 6, bar_h), border_radius=3)
-
+        self._draw_scrollbar(surface, inner, len(self.display_cards) * ROW_H, self.card_scroll)
         surface.set_clip(None)
 
-    def _draw_type_badge(self, surface, x, y, card):
-        """Draw a small colored square representing the card type."""
-        size = 14
-        color = self._get_card_type_color(card)
-        pygame.draw.rect(surface, color, (x, y, size, size), border_radius=3)
-        pygame.draw.rect(surface, (255, 255, 255, 80), (x, y, size, size), 1, border_radius=3)
+    def _draw_current_card(self, surface):
+        panel = pygame.Rect(CENTER_X, WORK_TOP, CENTER_W, WORK_H)
+        draw_panel(surface, panel, "当前卡牌", self.font_body)
+        inner = panel.inflate(-22, -56)
+        inner.y += 34
 
-    # ── Image panel (right) ──
+        if not self.selected_card:
+            txt = self.font_body.render("从左侧选择一张卡牌", True, UI_TEXT_SECONDARY)
+            surface.blit(txt, txt.get_rect(center=inner.center))
+            self._draw_url_box(surface)
+            return
 
-    def _draw_image_panel(self, surface):
-        panel_rect = pygame.Rect(RIGHT_PANEL_X, PANEL_TOP, RIGHT_PANEL_W, PANEL_H)
-        draw_panel(surface, panel_rect)
+        entry = self.selected_card
+        preview = pygame.Rect(inner.x, inner.y, 210, 294)
+        self._draw_card_preview(surface, preview, entry)
 
-        surface.set_clip(panel_rect)
-        img_y = PANEL_TOP - self.image_scroll
+        info_x = preview.right + 18
+        title_rect = pygame.Rect(info_x, inner.y, inner.right - info_x, 28)
+        draw_text_fit(surface, self.font_title, entry.name, UI_HIGHLIGHT, title_rect)
+        meta_lines = [
+            f"api_id: {entry.card_id}",
+            f"类型: {self._subtype_label(entry.card)}",
+        ]
+        if entry.is_duplicate_name:
+            meta_lines.append("同名卡: 请使用 api_id 区分")
+        if getattr(entry.card, "hp", 0):
+            meta_lines.append(f"HP: {entry.card.hp}")
+        if getattr(entry.card, "attacks", None):
+            attacks = " / ".join(atk.name for atk in entry.card.attacks[:2])
+            meta_lines.append(f"招式: {attacks}")
+        y = title_rect.bottom + 8
+        for line in meta_lines:
+            draw_text_fit(surface, self.font_small, line, UI_TEXT_SECONDARY,
+                          pygame.Rect(info_x, y, inner.right - info_x, 20))
+            y += 22
 
-        for group_name, names, status_map in self.image_groups:
-            if img_y > PANEL_BOTTOM:
-                break
-            # Group header
-            if img_y + GROUP_HEADER_H >= PANEL_TOP:
-                header_bg = pygame.Rect(RIGHT_PANEL_X + 4, img_y, RIGHT_PANEL_W - 8, GROUP_HEADER_H)
-                pygame.draw.rect(surface, (40, 50, 80), header_bg, border_radius=3)
-                count = len(names)
-                grp_txt = self.font_small.render(f"{group_name} ({count})", True, (180, 200, 240))
-                surface.blit(grp_txt, (RIGHT_PANEL_X + 12, img_y + 3))
-            img_y += GROUP_HEADER_H
+        record = self._selected_record()
+        box_y = preview.bottom + 18
+        current_box = pygame.Rect(inner.x, box_y, inner.w, 96)
+        pygame.draw.rect(surface, (24, 30, 44), current_box, border_radius=6)
+        pygame.draw.rect(surface, UI_BORDER, current_box, 1, border_radius=6)
+        header = "当前绑定" if record else "当前绑定"
+        surface.blit(self.font_small.render(header, True, UI_HIGHLIGHT), (current_box.x + 10, current_box.y + 8))
+        if record:
+            lines = [
+                f"文件: {record.filename}",
+                f"路径: {record.rel_path}",
+            ]
+        else:
+            lines = ["暂无卡图，可拖入图片、粘贴剪贴板、输入 URL 或从右侧候选选择。"]
+        ly = current_box.y + 32
+        for line in lines:
+            draw_text_fit(surface, self.font_tiny, line, UI_TEXT_SECONDARY,
+                          pygame.Rect(current_box.x + 10, ly, current_box.w - 20, 17))
+            ly += 18
 
-            for name in names:
-                if img_y > PANEL_BOTTOM:
-                    break
-                if img_y + ROW_H >= PANEL_TOP:
-                    is_hovered = (self.hovered_image_key == (group_name, name))
-                    is_assigned = status_map.get(name, False)
-                    row_color = (40, 60, 90) if is_hovered else (26, 30, 42)
-                    pygame.draw.rect(surface, row_color,
-                                     (RIGHT_PANEL_X + 8, img_y, RIGHT_PANEL_W - 16, ROW_H - 1), border_radius=3)
-                    name_txt = self.font_small.render(name, True, UI_TEXT_PRIMARY)
-                    surface.blit(name_txt, (RIGHT_PANEL_X + 16, img_y + 3))
+        candidate_box = pygame.Rect(inner.x, current_box.bottom + 12, inner.w, 118)
+        pygame.draw.rect(surface, (24, 30, 44), candidate_box, border_radius=6)
+        pygame.draw.rect(surface, UI_HIGHLIGHT if self.pending_image else UI_BORDER,
+                         candidate_box, 1, border_radius=6)
+        surface.blit(self.font_small.render("候选图", True, UI_HIGHLIGHT), (candidate_box.x + 10, candidate_box.y + 8))
+        if self.pending_image:
+            lines = [
+                f"来源: {self.pending_image.source}",
+                f"文件: {self.pending_image.label}",
+                f"目标: {self.image_mgr.generate_card_filename(entry.card, os.path.splitext(self.pending_image.path)[1])}",
+            ]
+        else:
+            lines = ["右侧点击图片、拖入文件、Ctrl+V 粘贴或 Ctrl+U 输入 URL 后在这里确认。"]
+        ly = candidate_box.y + 34
+        for line in lines:
+            draw_text_fit(surface, self.font_tiny, line, UI_TEXT_SECONDARY,
+                          pygame.Rect(candidate_box.x + 10, ly, candidate_box.w - 20, 17))
+            ly += 19
 
-                    # Assignment indicator
-                    if is_assigned:
-                        assigned_txt = self.font_tiny.render("已分配", True, (120, 200, 120))
-                        ax = RIGHT_PANEL_X + RIGHT_PANEL_W - assigned_txt.get_width() - 20
-                        surface.blit(assigned_txt, (ax, img_y + 6))
-                img_y += ROW_H
+        self._draw_drop_zone(surface, pygame.Rect(inner.x, candidate_box.bottom + 12, inner.w, 34))
+        self._draw_url_box(surface)
 
-        # Scrollbar
-        content_h = sum(GROUP_HEADER_H + len(names) * ROW_H for _, names, _ in self.image_groups)
-        if content_h > PANEL_H:
-            bar_h = max(30, int(PANEL_H * PANEL_H / content_h))
-            bar_y = PANEL_TOP + int(self.image_scroll * PANEL_H / content_h)
-            pygame.draw.rect(surface, (80, 80, 100),
-                             (RIGHT_PANEL_X + RIGHT_PANEL_W - 12, bar_y, 6, bar_h), border_radius=3)
+    def _draw_card_preview(self, surface, rect, entry: CardEntry):
+        pygame.draw.rect(surface, (20, 24, 36), rect, border_radius=8)
+        pygame.draw.rect(surface, UI_BORDER, rect, 1, border_radius=8)
+        img = self.image_mgr.get_card_image(entry.name, entry.card_id)
+        if img:
+            try:
+                scaled = pygame.transform.smoothscale(img, rect.size)
+                surface.blit(scaled, rect.topleft)
+                return
+            except Exception:
+                pass
+        pygame.draw.rect(surface, self._type_color(entry.card), rect.inflate(-18, -18), border_radius=7)
+        name = self.font_body.render(entry.name, True, UI_TEXT_PRIMARY)
+        surface.blit(name, name.get_rect(center=(rect.centerx, rect.centery - 8)))
+        sub = self.font_tiny.render(self._subtype_label(entry.card), True, UI_TEXT_PRIMARY)
+        surface.blit(sub, sub.get_rect(center=(rect.centerx, rect.centery + 20)))
 
+    def _draw_drop_zone(self, surface, rect):
+        color = (54, 88, 140) if self._drag_active else (26, 33, 48)
+        text = "释放文件以设为候选图" if self._drag_active else "拖入图片到窗口任意位置，或点击右侧候选图"
+        pygame.draw.rect(surface, color, rect, border_radius=5)
+        pygame.draw.rect(surface, (90, 140, 210) if self._drag_active else UI_BORDER, rect, 1, border_radius=5)
+        txt = self.font_tiny.render(text, True, UI_TEXT_SECONDARY)
+        surface.blit(txt, txt.get_rect(center=rect.center))
+
+    def _draw_url_box(self, surface):
+        rect = self._url_rect()
+        pygame.draw.rect(surface, (40, 50, 80) if self._url_active else (26, 33, 48),
+                         rect, border_radius=5)
+        pygame.draw.rect(surface, UI_HIGHLIGHT if self._url_active else UI_BORDER,
+                         rect, 2 if self._url_active else 1, border_radius=5)
+        text = self.url_query or "Ctrl+U 后粘贴图片 URL，Enter 后台下载"
+        color = UI_TEXT_PRIMARY if self.url_query else UI_TEXT_SECONDARY
+        draw_text_fit(surface, self.font_small, text, color, rect.inflate(-16, -4))
+
+    def _draw_candidate_panel(self, surface):
+        panel = pygame.Rect(RIGHT_X, WORK_TOP, RIGHT_W, WORK_H)
+        title = "未引用/候选图片"
+        draw_panel(surface, panel, title, self.font_body)
+        inner = self._candidate_list_inner_rect()
+        surface.set_clip(inner)
+        if not self.image_candidates:
+            msg = self.font_body.render("没有未引用候选图", True, UI_TEXT_SECONDARY)
+            surface.blit(msg, msg.get_rect(center=inner.center))
+            surface.set_clip(None)
+            return
+
+        start = max(0, int(self.candidate_scroll // CANDIDATE_ROW_H))
+        end = min(len(self.image_candidates), start + int(inner.h // CANDIDATE_ROW_H) + 2)
+        for idx in range(start, end):
+            cand = self.image_candidates[idx]
+            row_y = inner.y + idx * CANDIDATE_ROW_H - self.candidate_scroll
+            row = pygame.Rect(inner.x, row_y, inner.w, CANDIDATE_ROW_H - 2)
+            hovered = idx == self.hovered_candidate_idx
+            pygame.draw.rect(surface, (40, 56, 82) if hovered else (25, 30, 44), row, border_radius=4)
+            draw_text_fit(surface, self.font_small, cand.name, UI_TEXT_PRIMARY,
+                          pygame.Rect(row.x + 8, row.y + 2, row.w - 116, 17))
+            subtitle = f"{cand.group} · {cand.size_bytes // 1024} KB"
+            draw_text_fit(surface, self.font_tiny, subtitle, UI_TEXT_SECONDARY,
+                          pygame.Rect(row.x + 8, row.y + 17, row.w - 116, 13))
+            label = "已引用" if cand.assigned else "未引用"
+            color = UI_SUCCESS if cand.assigned else (210, 160, 90)
+            tag = self.font_tiny.render(label, True, color)
+            surface.blit(tag, (row.right - tag.get_width() - 8, row.y + 9))
+
+        self._draw_scrollbar(surface, inner, len(self.image_candidates) * CANDIDATE_ROW_H,
+                             self.candidate_scroll)
         surface.set_clip(None)
-
-    # ── Bottom bar ──
 
     def _draw_bottom_bar(self, surface):
-        buttons = self._get_button_rects()
         labels = {
-            "paste": "从剪贴板粘贴",
-            "rescan": "重新扫描",
-            "clear": "清除绑定",
+            "paste": "粘贴",
+            "url": "URL",
+            "bind": "绑定候选",
+            "delete": "删除卡图",
+            "normalize": "规范化",
+            "rescan": "重扫",
             "return": "返回",
         }
-        for btn_name, rect in buttons.items():
-            is_hovered = (self.hovered_button == btn_name)
+        for name, rect in self._button_rects().items():
+            enabled = True
+            if name == "bind":
+                enabled = self.pending_image is not None and self.selected_card is not None
+            if name == "delete":
+                enabled = self._selected_record() is not None
             draw_button(
-                surface, rect, labels[btn_name], self.font_small,
-                hovered=is_hovered,
-                danger=(btn_name == "clear"),
-                selected=(btn_name == "paste"),
+                surface,
+                rect,
+                labels[name],
+                self.font_small,
+                hovered=self.hovered_button == name,
+                selected=name in ("bind", "normalize") and enabled,
+                danger=name == "delete",
+                enabled=enabled,
             )
 
         if self.selected_card:
-            sel_txt = self.font_small.render(f"已选中: {self.selected_card.name}", True, (255, 220, 100))
-            surface.blit(sel_txt, (20, SCREEN_HEIGHT - 52))
+            selected = self.font_small.render(
+                f"已选中: {self.selected_card.name}  [{self.selected_card.card_id}]",
+                True,
+                UI_HIGHLIGHT,
+            )
+            surface.blit(selected, (20, SCREEN_HEIGHT - 48))
 
-    # ── Toast ──
+    def _draw_scrollbar(self, surface, rect, content_h: float, scroll: float):
+        if content_h <= rect.h:
+            return
+        bar_h = max(32, int(rect.h * rect.h / content_h))
+        bar_y = rect.y + int(scroll * rect.h / content_h)
+        pygame.draw.rect(surface, (80, 86, 110), (rect.right - 6, bar_y, 5, bar_h), border_radius=3)
 
     def _draw_toast(self, surface):
-        if self._toast_text is None:
+        if not self._toast_text:
             return
-        toast = self.font_small.render(self._toast_text, True, (50, 50, 50))
-        tw, th = toast.get_size()
-        bg_rect = pygame.Rect(
-            (SCREEN_WIDTH - tw) // 2 - 16, SCREEN_HEIGHT - 100, tw + 32, th + 16,
-        )
-        # Fade out in last 0.5 seconds
-        alpha = 255
-        if self._toast_timer < 0.5:
-            alpha = int(255 * (self._toast_timer / 0.5))
-        toast_surf = pygame.Surface((bg_rect.w, bg_rect.h), pygame.SRCALPHA)
-        toast_surf.fill((200, 220, 140, min(alpha, 220)))
-        pygame.draw.rect(toast_surf, (120, 160, 60, alpha), toast_surf.get_rect(), 1, border_radius=6)
-        surface.blit(toast_surf, (bg_rect.x, bg_rect.y))
-        surface.blit(toast, ((SCREEN_WIDTH - tw) // 2, SCREEN_HEIGHT - 92))
-
-    # ── Confirm dialog ──
+        toast = self.font_small.render(self._toast_text, True, (35, 38, 45))
+        bg = pygame.Rect((SCREEN_WIDTH - toast.get_width()) // 2 - 16,
+                         SCREEN_HEIGHT - 112, toast.get_width() + 32, toast.get_height() + 16)
+        alpha = 220 if self._toast_timer > 0.5 else max(0, int(220 * self._toast_timer / 0.5))
+        layer = pygame.Surface(bg.size, pygame.SRCALPHA)
+        layer.fill((220, 228, 155, alpha))
+        pygame.draw.rect(layer, (130, 160, 70, alpha), layer.get_rect(), 1, border_radius=6)
+        surface.blit(layer, bg.topleft)
+        surface.blit(toast, (bg.x + 16, bg.y + 8))
 
     def _draw_confirm_dialog(self, surface):
-        # Dim background
         dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 160))
+        dim.fill((0, 0, 0, 165))
         surface.blit(dim, (0, 0))
-
-        rect = self._confirm_dialog_rect()
-        draw_panel(surface, rect, "确认清除", self.font_body)
-
-        body = self.font_small.render(
-            "确定要清除所有自定义图像绑定吗？", True, UI_TEXT_PRIMARY)
-        surface.blit(body, (rect.x + 24, rect.y + 62))
-        body2 = self.font_small.render(
-            "此操作不会删除图像文件，仅移除绑定关系。", True, UI_TEXT_SECONDARY)
-        surface.blit(body2, (rect.x + 24, rect.y + 86))
-
-        # Yes button
-        yes_rect = pygame.Rect(rect.x + 100, rect.y + 120, 80, 36)
-        draw_button(surface, yes_rect, "确认", self.font_small,
-                    hovered=self._confirm_hover_yes, danger=True)
-
-        # No button
-        no_rect = pygame.Rect(rect.x + 220, rect.y + 120, 80, 36)
-        draw_button(surface, no_rect, "取消", self.font_small,
-                    hovered=self._confirm_hover_no)
+        rect = self._confirm_rect()
+        draw_panel(surface, rect, "确认操作", self.font_body)
+        lines = [self._confirm_message, "此操作会改动本地图片或映射文件。"]
+        y = rect.y + 70
+        for line in lines:
+            draw_text_fit(surface, self.font_small, line, UI_TEXT_PRIMARY,
+                          pygame.Rect(rect.x + 28, y, rect.w - 56, 22))
+            y += 28
+        yes = pygame.Rect(rect.x + 112, rect.y + 128, 86, 36)
+        no = pygame.Rect(rect.x + 242, rect.y + 128, 86, 36)
+        draw_button(surface, yes, "确认", self.font_small, hovered=self._confirm_hover_yes, danger=True)
+        draw_button(surface, no, "取消", self.font_small, hovered=self._confirm_hover_no)
