@@ -1634,6 +1634,27 @@ def _accepts_candidate(
     return True
 
 
+def _verification_metadata(eval_games: int, accepted: bool) -> dict[str, Any]:
+    """Describe whether a trained checkpoint has real evaluation evidence."""
+    if int(eval_games or 0) <= 0:
+        return {
+            "verified": False,
+            "verification_status": "unverified_no_eval",
+            "verification_note": "No evaluation games were run for this model.",
+        }
+    if accepted:
+        return {
+            "verified": True,
+            "verification_status": "verified_accepted",
+            "verification_note": "Evaluation gate accepted this model.",
+        }
+    return {
+        "verified": False,
+        "verification_status": "verified_rejected",
+        "verification_note": "Evaluation gate rejected this model.",
+    }
+
+
 def _sample_teacher_examples(bootstrap: list[TrainingExample], target_size: int, rng: random.Random) -> list[TrainingExample]:
     if not bootstrap or target_size <= 0:
         return []
@@ -2457,6 +2478,7 @@ def run_deep_training(
                 "acceptance_metric": effective_config.acceptance_metric,
                 "min_win_delta": int(effective_config.min_win_delta),
                 "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+                **_verification_metadata(eval_games, deck_accepted),
             }
             save_checkpoint(save_path, model, metadata)
             model_paths[deck_key] = save_path
@@ -2495,6 +2517,7 @@ def run_deep_training(
                 "acceptance_metric": effective_config.acceptance_metric,
                 "min_win_delta": int(effective_config.min_win_delta),
                 "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+                **_verification_metadata(eval_games, all(accepted.values()) if accepted else False),
             },
         }
         emit({

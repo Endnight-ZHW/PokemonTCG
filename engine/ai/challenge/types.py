@@ -10,12 +10,12 @@ from engine.enums import PlayerAction
 
 @dataclass(frozen=True)
 class AIConfig:
-    thinking_time_seconds: float = 6.0
-    beam_width: int = 16
-    max_sequence_depth: int = 8
-    max_turn_actions: int = 30
-    coin_sample_count: int = 8
-    opponent_response_actions: int = 8
+    thinking_time_seconds: float = 8.0
+    beam_width: int = 24
+    max_sequence_depth: int = 10
+    max_turn_actions: int = 40
+    coin_sample_count: int = 10
+    opponent_response_actions: int = 10
     opponent_response_weight: float = 0.55
     deterministic_search: bool = False
     random_seed: int = 17
@@ -24,10 +24,10 @@ class AIConfig:
     policy_weights: dict[str, float] | None = None
     profile: DeckAIProfile | None = None
     search_algorithm: str = "hybrid"
-    minimax_max_depth: int = 3
+    minimax_max_depth: int = 4
     minimax_determinizations: int = 3
-    search_node_budget: int = 0
-    chance_branch_limit: int = 4
+    search_node_budget: int = 2500
+    chance_branch_limit: int = 6
     response_branch_limit: int = 0
     skip_effect_dry_run: bool = False
 

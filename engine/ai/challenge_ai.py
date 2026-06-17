@@ -15,8 +15,11 @@ from typing import Any
 
 from engine.enums import PlayerAction, StatusType, TurnPhase
 from engine.game_state import ActionRequest, ActionResult, GameState
+from engine.ai.challenge.choices import ExpertChoiceMixin
 from engine.ai.challenge.fow import ChallengeAIFogMixin
 from engine.ai.challenge.layers import ActionEnumerator, ChoicePolicy, Evaluator, Simulator
+from engine.ai.challenge.sequencing import ExpertSequencingMixin
+from engine.ai.challenge.tactics import ExpertTacticsMixin
 from engine.ai.challenge.types import AIAction, AIChoice, AIConfig
 from engine.ai.profiles import (
     get_deck_ai_profile,
@@ -40,7 +43,7 @@ _logger = get_logger(__name__)
 from engine.turn_manager import TurnManager
 
 
-class ChallengeAI(ChallengeAIFogMixin):
+class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, ChallengeAIFogMixin):
     """A tactical single-player opponent using legal actions and beam search."""
 
     # Fog-of-war type profiles for opponent hidden-zone card masking
@@ -2339,6 +2342,8 @@ class ChallengeAI(ChallengeAIFogMixin):
         score -= self._initiative_score(state, opponent_idx) * 0.80
         score += sum(self._card_value(state, player_idx, c) * 0.12 for c in player.hand)
         score += self._policy_state_score(state, player_idx)
+        score += self._expert_state_value_bonus(state, player_idx)
+        score -= self._expert_state_value_bonus(state, opponent_idx) * 0.55
         return score
 
     def _tempo_score(self, state: GameState, player_idx: int) -> float:
@@ -3079,6 +3084,7 @@ class ChallengeAI(ChallengeAIFogMixin):
             value += 70
         if getattr(card, "api_id", "") in self.profile.engine_cards:
             value += 42
+        value += self._expert_choice_card_value(state, player_idx, card, mode="search")
         return value
 
     def _discard_priority(self, state: GameState, player_idx: int, card: Any) -> float:
@@ -3092,6 +3098,7 @@ class ChallengeAI(ChallengeAIFogMixin):
         if getattr(card, "is_stage1", False) or getattr(card, "is_stage2", False):
             if not any(p and card.evolves_from.lower() == p.card.name.lower() for _, p in player.get_all_pokemon()):
                 value -= 40
+        value += self._expert_choice_card_value(state, player_idx, card, mode="discard")
         return value
 
     def _quick_action_priority(self, state: GameState, player_idx: int, action: AIAction) -> float:
@@ -3105,6 +3112,7 @@ class ChallengeAI(ChallengeAIFogMixin):
             pokemon = player.get_pokemon(slot)
             if pokemon:
                 profile_bonus += self._profile_pokemon_bonus(pokemon, slot) * 0.35
+        expert_bonus = self._expert_action_order_bonus(state, player_idx, action)
         if action.action == PlayerAction.DECLARE_ATTACK:
             attack_idx = action.params["attack_idx"]
             attack = player.active.card.attacks[attack_idx] if player.active else None
@@ -3116,22 +3124,22 @@ class ChallengeAI(ChallengeAIFogMixin):
             opponent = state.get_player(1 - player_idx)
             if opponent.active and damage >= opponent.active.current_hp:
                 ko_bonus = 120 + opponent.active.card.prize_value * 80
-            return 500 + damage + effect_bonus * 0.7 + ko_bonus + profile_bonus
+            return 500 + damage + effect_bonus * 0.7 + ko_bonus + profile_bonus + expert_bonus
         if action.action == PlayerAction.PLAY_TRAINER:
-            return 360 + profile_bonus + self._trainer_action_priority(state, player_idx, action)
+            return 360 + profile_bonus + self._trainer_action_priority(state, player_idx, action) + expert_bonus
         if action.action == PlayerAction.EVOLVE:
-            return 330 + profile_bonus
+            return 330 + profile_bonus + expert_bonus
         if action.action == PlayerAction.ATTACH_ENERGY:
-            return 300 + profile_bonus + self._attach_action_priority(state, player_idx, action)
+            return 300 + profile_bonus + self._attach_action_priority(state, player_idx, action) + expert_bonus
         if action.action == PlayerAction.USE_ABILITY:
-            return 280 + profile_bonus + self._ability_action_priority(state, player_idx, action)
+            return 280 + profile_bonus + self._ability_action_priority(state, player_idx, action) + expert_bonus
         if action.action == PlayerAction.PLAY_BASIC:
-            return 210 + profile_bonus
+            return 210 + profile_bonus + expert_bonus
         if action.action == PlayerAction.RETREAT:
-            return 120 + profile_bonus
+            return 120 + profile_bonus + expert_bonus
         if action.action == PlayerAction.END_TURN:
-            return -50
-        return 0
+            return -50 + expert_bonus
+        return expert_bonus
 
     def _trainer_action_priority(self, state: GameState, player_idx: int, action: AIAction) -> float:
         player = state.get_player(player_idx)

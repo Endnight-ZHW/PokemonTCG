@@ -77,6 +77,7 @@ class MinimaxSearcher:
 
         self.node_budget = max(0, int(getattr(self.ai.config, "search_node_budget", 0) or 0))
         self.ply_depth_limit = max(4, int(getattr(self.ai.config, "max_sequence_depth", 8) or 8))
+        fallback_action = self._fallback_root_action(state, player_idx, root_actions)
         best_action: AIAction | None = None
         partial_action: AIAction | None = None
 
@@ -97,11 +98,26 @@ class MinimaxSearcher:
             if result.action is not None:
                 best_action = result.action
 
-        return best_action or partial_action or root_actions[-1]
+        return best_action or partial_action or fallback_action
 
     # ------------------------------------------------------------------
     # Depth-bounded search with determinization
     # ------------------------------------------------------------------
+
+    def _fallback_root_action(
+        self,
+        state: GameState,
+        player_idx: int,
+        root_actions: list[AIAction],
+    ) -> AIAction:
+        """Pick a sensible legal action when no minimax iteration can finish."""
+        try:
+            ordered = self._order_actions_max(state, player_idx, root_actions)
+            if ordered:
+                return ordered[0][1]
+        except Exception:
+            pass
+        return root_actions[-1]
 
     def _search_at_depth(
         self,
