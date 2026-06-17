@@ -2283,7 +2283,7 @@ class GameScreen(
         ]
         if self.challenge_mode:
             algo = getattr(self, "ai_search_algorithm", "beam")
-            algo_short = "自动混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
+            algo_short = "专家混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
             hints.append(("", f"搜索: {algo_short}"))
 
         panel_w = 170
@@ -3428,7 +3428,7 @@ class GameScreen(
                 self.waiting_indicator.hide()
         elif self._is_ai_turn_context():
             algo = getattr(self, "ai_search_algorithm", "beam")
-            algo_label = "自动混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
+            algo_label = "专家混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
             ai_label = self._ai_runtime_label()
             self.waiting_indicator.show(f"{ai_label} 思考中 ({algo_label})...")
         else:

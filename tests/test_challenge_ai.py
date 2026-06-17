@@ -131,6 +131,33 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(ai.legal_actions(state, 1), ai.enumerator.legal_actions(state, 1))
         self.assertEqual(ai.evaluate_state(state, 1), ai.evaluator.evaluate_state(state, 1))
 
+    def test_ai_config_defaults_to_expert_hybrid_budget(self):
+        config = AIConfig(policy_path=None)
+
+        self.assertEqual(config.search_algorithm, "hybrid")
+        self.assertGreaterEqual(config.thinking_time_seconds, 8.0)
+        self.assertGreaterEqual(config.beam_width, 24)
+        self.assertGreaterEqual(config.max_sequence_depth, 10)
+        self.assertGreaterEqual(config.max_turn_actions, 40)
+        self.assertGreaterEqual(config.minimax_max_depth, 4)
+        self.assertGreaterEqual(config.minimax_determinizations, 3)
+        self.assertGreaterEqual(config.chance_branch_limit, 6)
+        self.assertGreaterEqual(config.search_node_budget, 2500)
+
+    def test_challenge_ai_exposes_extracted_expert_helpers(self):
+        from engine.ai.challenge.choices import ExpertChoiceMixin
+        from engine.ai.challenge.sequencing import ExpertSequencingMixin
+        from engine.ai.challenge.tactics import ExpertTacticsMixin
+
+        ai = ChallengeAI(AIConfig(policy_path=None))
+
+        self.assertIsInstance(ai, ExpertTacticsMixin)
+        self.assertIsInstance(ai, ExpertSequencingMixin)
+        self.assertIsInstance(ai, ExpertChoiceMixin)
+        self.assertTrue(callable(getattr(ai, "_expert_terminal_action_value", None)))
+        self.assertTrue(callable(getattr(ai, "_expert_action_order_bonus", None)))
+        self.assertTrue(callable(getattr(ai, "_expert_choice_card_value", None)))
+
     def test_deck_profiles_change_card_priorities(self):
         state = self._simple_public_state()
         pikachu = CardRegistry.get("svl-pikaex")
@@ -702,6 +729,46 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(ai.config.chance_branch_limit, 4)
         self.assertFalse(ai.config.skip_effect_dry_run)
 
+    def test_benchmark_smoke_reports_strength_guard_metrics(self):
+        from scripts.benchmark_ai import run_benchmark
+
+        payload = run_benchmark(
+            deck_keys=["fire"],
+            games_per_matchup=1,
+            seed=23,
+            max_steps=30,
+            search_preset="hybrid",
+        )
+
+        self.assertEqual(payload["games"], 1)
+        self.assertIn("matchups", payload)
+        self.assertIn("summary", payload)
+        self.assertIn("invalid_action_rate", payload["summary"])
+        self.assertIn("timeout_rate", payload["summary"])
+        self.assertIn("average_score", payload["summary"])
+
+    def test_benchmark_cli_initializes_card_registry(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/benchmark_ai.py",
+                "--deck",
+                "fire",
+                "--games",
+                "1",
+                "--max-steps",
+                "30",
+            ],
+            cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["games"], 1)
+
     def test_beam_coin_branches_are_deterministic_and_weighted(self):
         ai = ChallengeAI(AIConfig(policy_path=None, chance_branch_limit=4))
         branches = ai._coin_outcome_branches(1, False)
@@ -802,6 +869,25 @@ class ChallengeAITests(unittest.TestCase):
             )
 
         self.assertIs(result, partial)
+
+    def test_minimax_budget_exhaustion_falls_back_to_best_ordered_action(self):
+        from engine.ai.minimax import MinimaxSearcher
+
+        state = self._simple_public_state()
+        attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
+        end_turn = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        ai = ChallengeAI(AIConfig(policy_path=None))
+
+        result = MinimaxSearcher(ai).search(
+            state,
+            1,
+            time.perf_counter() - 1.0,
+            max_depth=2,
+            determinizations=1,
+            root_actions=[attach, end_turn],
+        )
+
+        self.assertIs(result, attach)
 
     def test_minimax_min_node_orders_opponent_threats_first(self):
         from engine.ai.minimax import MinimaxSearcher

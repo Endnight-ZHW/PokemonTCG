@@ -58,10 +58,10 @@ class GameScreenAIMixin:
 
     def _ai_runtime_label(self) -> str:
         if self.ai_kind != "deep_learning":
-            return "规则 AI"
+            return "专家规则 AI"
         if self.ai_controller is not None and getattr(self.ai_controller, "model_available", False):
-            return "Deep AI 模型"
-        return "Deep AI 未训练，规则 AI fallback"
+            return "Deep AI 模型 + MCTS"
+        return "Deep AI 未训练，专家规则 AI fallback"
 
     def _is_ai_pending_request(self, action_req: ActionRequest | None) -> bool:
         if not self.challenge_mode or action_req is None:

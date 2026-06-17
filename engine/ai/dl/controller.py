@@ -35,7 +35,7 @@ class DeepLearningAIConfig:
     fallback_config: AIConfig | None = None
     choice_confidence_threshold: float = 0.30
     # MCTS settings
-    use_mcts: bool = False
+    use_mcts: bool = True
     mcts_simulations: int = 200
     mcts_c_puct: float = 1.4
     mcts_chance_nodes: bool = True
@@ -49,10 +49,14 @@ class DeepLearningAI:
         self.deck_key = deck_key
         self.config = config or DeepLearningAIConfig()
         fallback_config = self.config.fallback_config or AIConfig(
-            thinking_time_seconds=0.0,
-            deterministic_search=True,
-            max_sequence_depth=3,
-            max_turn_actions=128,
+            deck_key=deck_key or "",
+            thinking_time_seconds=4.0,
+            beam_width=18,
+            max_sequence_depth=8,
+            max_turn_actions=36,
+            minimax_max_depth=3,
+            minimax_determinizations=2,
+            search_node_budget=1600,
         )
         self.fallback: ChallengeAI = create_challenge_ai(deck_key or "", fallback_config)
         self.encoder = ActionStateEncoder()

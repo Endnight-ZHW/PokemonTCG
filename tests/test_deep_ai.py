@@ -101,8 +101,36 @@ class DeepAITests(unittest.TestCase):
     def test_dl_runtime_defaults_are_eval_stable(self):
         config = DeepLearningAIConfig()
         self.assertTrue(config.deterministic)
+        self.assertTrue(config.use_mcts)
         self.assertLessEqual(config.temperature, 0.35)
         self.assertLessEqual(config.choice_confidence_threshold, 0.30)
+
+    def test_dl_ai_uses_mcts_when_model_is_available(self):
+        state = self._simple_state()
+        ai = DeepLearningAI("fire", DeepLearningAIConfig())
+        selected = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        ai.model = object()
+
+        with mock.patch("engine.ai.dl.controller.TORCH_AVAILABLE", True), \
+             mock.patch.object(ai, "_choose_with_mcts", return_value=selected) as choose_mcts, \
+             mock.patch.object(ai, "_choose_with_model", return_value=selected) as choose_model:
+            action = ai.choose_action(state, 1)
+
+        self.assertEqual(action, selected)
+        choose_mcts.assert_called_once()
+        choose_model.assert_not_called()
+
+    def test_eval_zero_training_metadata_is_marked_unverified(self):
+        from engine.ai.dl.training import _verification_metadata
+
+        self.assertEqual(
+            _verification_metadata(0, True),
+            {
+                "verified": False,
+                "verification_status": "unverified_no_eval",
+                "verification_note": "No evaluation games were run for this model.",
+            },
+        )
 
     def test_encoder_outputs_stable_shapes_and_handles_new_card_id(self):
         state = self._simple_state()
@@ -696,6 +724,8 @@ class DeepAITests(unittest.TestCase):
         )
         self.assertEqual(screen.ai_kind, "challenge")
         self.assertEqual(screen.ai_search_algorithm, "hybrid")
+        status, _status_color = screen._ai_model_status()
+        self.assertIn("专家混合搜索", status)
         surface = pygame.Surface((1600, 1000))
         screen.draw(surface)
         self.assertEqual(
