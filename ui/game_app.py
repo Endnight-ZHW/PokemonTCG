@@ -133,6 +133,8 @@ class GameApp:
                 self.screen.fill((0, 0, 0))
                 self.screen.blit(scaled, (self._lb_ox, self._lb_oy))
                 pygame.display.flip()
+        except KeyboardInterrupt:
+            pass  # User pressed Ctrl+C — clean exit, no traceback
         finally:
             self.screen_manager.shutdown()
             pygame.quit()
