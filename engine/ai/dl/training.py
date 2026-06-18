@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import gc
 import json
 import os
 import random
@@ -22,6 +23,7 @@ from engine.ai.dl.replay import ReplayBuffer
 from engine.ai.training import DECK_SPECS, _determine_soft_winner, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
+from engine.snapshot import snapshot_state, state_from_snapshot
 from engine.turn_manager import TurnManager
 
 
@@ -100,6 +102,7 @@ class DeepTrainingConfig:
     games: int = 800
     seed: int = 17
     model: str | None = None
+    warm_start: bool = True
     output: str | None = None
     device: str = "cpu"
     bootstrap_games: int = 2000
@@ -110,19 +113,20 @@ class DeepTrainingConfig:
     workers: int = 1
     max_steps: int = 250
     learning_rate: float = 5e-4
-    batch_size: int = 64
+    batch_size: int = 256
+    use_amp: bool = True
     progress_jsonl: str | None = None
     rollout_batch_games: int = 16
     updates_per_rollout: int = 2
     teacher_search_preset: str = "hybrid"
     choice_head_enabled: bool = True
-    acceptance_metric: str = "score"
+    acceptance_metric: str = "points"
     min_win_delta: int = 0
     teacher_label_model_states: bool = True
     # --- New: Pure RL & MCTS settings ---
     pure_rl_games: int = 0
     mcts_simulations: int = 200
-    mcts_chance_nodes: bool = True
+    mcts_chance_nodes: bool = False
     use_mcts_training: bool = True
     teacher_warmup_ratio: float = 0.6
     # --- New: Curiosity exploration ---
@@ -154,6 +158,7 @@ class TrainingExample:
     teacher_score: float = 0.0
     model_score: float = 0.0
     phase_tag: str = ""
+    policy_target: list[float] | None = None
 
 
 @dataclass
@@ -436,6 +441,7 @@ def _model_payload_for_worker(model) -> tuple[dict[str, Any], dict[str, Any]]:
         "hidden_size": int(getattr(model, "hidden_size", 384)),
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
         "use_attention": bool(getattr(model, "use_attention", True)),
+        "use_slot_embeddings": bool(getattr(model, "use_slot_embeddings", False)),
         "state_norm": getattr(model, "state_norm", "layer"),
         "deck_embed_dim": int(getattr(model, "deck_embed_dim", 0)),
         "num_decks": (
@@ -639,10 +645,27 @@ class DeepTrainingTaskRunner:
         if executor is None:
             return [_execute_model_game_task(task) for task in tasks]
         try:
-            return list(executor.map(_execute_model_game_task, tasks))
+            # Send a contiguous batch to each worker. Shared model tensors are
+            # serialized once per batch and the worker loads the model once,
+            # instead of once per game.
+            chunk_size = max(1, (len(tasks) + self.worker_count - 1) // self.worker_count)
+            batches = [
+                tasks[start:start + chunk_size]
+                for start in range(0, len(tasks), chunk_size)
+            ]
+            batch_rows = list(executor.map(_execute_model_game_task_batch, batches))
+            return [row for rows in batch_rows for row in rows]
         except BrokenProcessPool:
             self._broken = True
             return [_execute_model_game_task(task) for task in tasks]
+        except (MemoryError, RuntimeError) as exc:
+            if "memory" not in str(exc).lower() and "alloc" not in str(exc).lower():
+                raise
+            self._broken = True
+            if self.executor is not None:
+                self.executor.shutdown(wait=True, cancel_futures=True)
+                self.executor = None
+            return _execute_model_game_task_batch(tasks)
 
 
 def _run_bootstrap_tasks(tasks: list[BootstrapTask], workers: int | None) -> list[list[TrainingExample]]:
@@ -846,6 +869,9 @@ def _train_examples(
     batch_size: int = 64,
     entropy_coef: float = 0.02,
     ppo_clip: float = 0.15,
+    optimizer=None,
+    grad_scaler=None,
+    use_amp: bool = False,
 ) -> dict[str, Any]:
     if not examples:
         return {
@@ -861,12 +887,21 @@ def _train_examples(
 
     _normalize_advantages(examples)
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    owns_optimizer = optimizer is None
+    if optimizer is None:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    else:
+        for group in optimizer.param_groups:
+            group["lr"] = learning_rate
     bs = max(1, int(batch_size))
     total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=total_steps, eta_min=learning_rate * 0.1,
+    scheduler = (
+        torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=total_steps, eta_min=learning_rate * 0.1,
+        )
+        if owns_optimizer else None
     )
+    amp_enabled = bool(use_amp and str(device).startswith("cuda"))
     total_loss = 0.0
     total_policy_loss = 0.0
     total_value_loss = 0.0
@@ -877,90 +912,114 @@ def _train_examples(
         random.shuffle(examples)
         for batch_start in range(0, len(examples), bs):
             batch = examples[batch_start:batch_start + bs]
-            logits, value, action_mask = _forward_batch(model, batch, device)
-            if logits is None:
-                continue
+            with torch.autocast(
+                device_type="cuda",
+                dtype=torch.float16,
+                enabled=amp_enabled,
+            ):
+                logits, value, action_mask = _forward_batch(model, batch, device)
+                if logits is None:
+                    continue
 
-            B = len(batch)
-            sp_indices = [i for i, ex in enumerate(batch) if ex.source == "self_play"]
+                batch_len = len(batch)
+                sp_indices = [i for i, ex in enumerate(batch) if ex.source == "self_play"]
+                log_probs = F.log_softmax(logits.float(), dim=-1)
+                probs = torch.softmax(logits.float(), dim=-1)
+                entropy_per_ex = -(probs * log_probs).sum(dim=-1)
 
-            # Vectorized: compute log_softmax/softmax once for all examples
-            # Masked (invalid) positions have logit=-1e9, so softmax≈0, log_softmax≈-1e9
-            log_probs = F.log_softmax(logits, dim=-1)  # [B, max_actions]
-            probs = torch.softmax(logits, dim=-1)
+                action_counts = action_mask.sum(dim=-1)
+                target_idx = torch.tensor(
+                    [max(0, ex.target_index) for ex in batch], dtype=torch.long, device=device,
+                )
+                valid = action_counts > 0
+                for i, ex in enumerate(batch):
+                    if not ex.actions or ex.target_index >= int(action_counts[i].item()):
+                        valid[i] = False
 
-            # Per-example entropy (padded positions contribute ~0)
-            entropy_per_ex = -(probs * log_probs).sum(dim=-1)
-
-            # Build validity mask
-            action_counts = action_mask.sum(dim=-1)
-            target_idx = torch.tensor(
-                [max(0, ex.target_index) for ex in batch], dtype=torch.long, device=device,
-            )
-            valid = action_counts > 0
-            for i, ex in enumerate(batch):
-                if not ex.actions or ex.target_index >= int(action_counts[i].item()):
-                    valid[i] = False
-
-            # Gather selected log probs
-            selected_lp = log_probs[torch.arange(B, device=device), target_idx]
-
-            # Mask tensors for loss type routing
-            is_rl = torch.tensor([ex.source == "self_play" for ex in batch], device=device)
-            has_adv = torch.tensor(
-                [_advantage_for(ex) is not None for ex in batch], device=device,
-            )
-            has_old_lp = torch.tensor(
-                [ex.behavior_log_prob is not None for ex in batch], device=device,
-            )
-            advs = torch.tensor(
-                [max(-3.0, min(3.0, float(_advantage_for(ex) or 0.0))) for ex in batch],
-                device=device,
-            )
-            old_lp = torch.tensor(
-                [float(ex.behavior_log_prob or 0.0) for ex in batch], device=device,
-            )
-
-            loss_per_ex = torch.zeros(B, device=device)
-
-            # PPO clipped loss: self_play + advantage + old log prob
-            ppo = valid & is_rl & has_adv & has_old_lp
-            if ppo.any():
-                ratio = torch.exp(selected_lp - old_lp)
-                clipped_ratio = torch.clamp(ratio, 1.0 - ppo_clip, 1.0 + ppo_clip)
-                ppo_loss = -torch.minimum(ratio * advs, clipped_ratio * advs)
-                loss_per_ex = loss_per_ex + ppo_loss * ppo.float()
-
-            # Simple policy gradient: self_play + advantage, no old log prob
-            pg = valid & is_rl & has_adv & ~has_old_lp
-            if pg.any():
-                loss_per_ex = loss_per_ex + (-selected_lp * advs) * pg.float()
-
-            # Supervised (cross-entropy): teacher/dagger examples
-            sl = valid & ~is_rl
-            if sl.any():
-                loss_per_ex = loss_per_ex + (-selected_lp) * sl.float()
-
-            divisor = max(1, int(valid.sum().item()))
-            policy_loss = loss_per_ex.sum() / divisor
-            entropy = (entropy_per_ex * valid.float()).sum() / divisor
-            if sp_indices:
-                sp_value = value[sp_indices]
-                sp_targets = torch.tensor(
-                    [float(_value_target_for(ex)) for i, ex in enumerate(batch) if i in sp_indices],
-                    dtype=torch.float32,
+                selected_lp = log_probs[torch.arange(batch_len, device=device), target_idx]
+                is_rl = torch.tensor([ex.source == "self_play" for ex in batch], device=device)
+                has_adv = torch.tensor(
+                    [_advantage_for(ex) is not None for ex in batch], device=device,
+                )
+                has_old_lp = torch.tensor(
+                    [ex.behavior_log_prob is not None for ex in batch], device=device,
+                )
+                advs = torch.tensor(
+                    [max(-3.0, min(3.0, float(_advantage_for(ex) or 0.0))) for ex in batch],
                     device=device,
                 )
-                value_loss = F.mse_loss(sp_value, sp_targets)
-            else:
-                value_loss = torch.tensor(0.0, device=device)
-            loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy
+                old_lp = torch.tensor(
+                    [float(ex.behavior_log_prob or 0.0) for ex in batch], device=device,
+                )
 
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
-            optimizer.step()
-            scheduler.step()
+                policy_targets = torch.zeros_like(log_probs)
+                has_policy_target_rows: list[bool] = []
+                for i, ex in enumerate(batch):
+                    raw_target = list(ex.policy_target or [])
+                    count = min(len(raw_target), int(action_counts[i].item()))
+                    total = sum(max(0.0, float(v)) for v in raw_target[:count])
+                    has_target = count > 0 and total > 0.0
+                    has_policy_target_rows.append(has_target)
+                    if has_target:
+                        policy_targets[i, :count] = torch.tensor(
+                            [max(0.0, float(v)) / total for v in raw_target[:count]],
+                            dtype=log_probs.dtype,
+                            device=device,
+                        )
+                has_policy_target = torch.tensor(has_policy_target_rows, device=device)
+
+                loss_per_ex = torch.zeros(batch_len, device=device)
+
+                # Preserve the full MCTS search signal rather than reducing it
+                # to the one action sampled from the visit distribution.
+                search_distill = valid & has_policy_target
+                if search_distill.any():
+                    distill_loss = -(policy_targets * log_probs).sum(dim=-1)
+                    loss_per_ex = loss_per_ex + distill_loss * search_distill.float()
+
+                ppo = valid & is_rl & has_adv & has_old_lp & ~has_policy_target
+                if ppo.any():
+                    ratio = torch.exp(selected_lp - old_lp)
+                    clipped_ratio = torch.clamp(ratio, 1.0 - ppo_clip, 1.0 + ppo_clip)
+                    ppo_loss = -torch.minimum(ratio * advs, clipped_ratio * advs)
+                    loss_per_ex = loss_per_ex + ppo_loss * ppo.float()
+
+                pg = valid & is_rl & has_adv & ~has_old_lp & ~has_policy_target
+                if pg.any():
+                    loss_per_ex = loss_per_ex + (-selected_lp * advs) * pg.float()
+
+                sl = valid & ~is_rl & ~has_policy_target
+                if sl.any():
+                    loss_per_ex = loss_per_ex + (-selected_lp) * sl.float()
+
+                divisor = max(1, int(valid.sum().item()))
+                policy_loss = loss_per_ex.sum() / divisor
+                entropy = (entropy_per_ex * valid.float()).sum() / divisor
+                if sp_indices:
+                    sp_value = value[sp_indices].float()
+                    sp_targets = torch.tensor(
+                        [float(_value_target_for(ex)) for i, ex in enumerate(batch) if i in sp_indices],
+                        dtype=torch.float32,
+                        device=device,
+                    )
+                    value_loss = F.mse_loss(sp_value, sp_targets)
+                else:
+                    value_loss = torch.tensor(0.0, device=device)
+                loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy
+
+            optimizer.zero_grad(set_to_none=True)
+            if grad_scaler is not None and amp_enabled:
+                grad_scaler.scale(loss).backward()
+                grad_scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
+                grad_scaler.step(optimizer)
+                grad_scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
+                optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
 
             total_loss += float(loss.detach().cpu().item())
             total_policy_loss += float(policy_loss.detach().cpu().item())
@@ -988,6 +1047,9 @@ def _train_choice_examples(
     learning_rate: float,
     epochs: int = 1,
     batch_size: int = 64,
+    optimizer=None,
+    grad_scaler=None,
+    use_amp: bool = False,
 ) -> dict[str, Any]:
     if not bool(getattr(model, "choice_head_enabled", True)):
         return {"choice_examples": 0, "choice_loss": 0.0}
@@ -997,41 +1059,63 @@ def _train_choice_examples(
     import torch.nn.functional as F
 
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    owns_optimizer = optimizer is None
+    if optimizer is None:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    else:
+        for group in optimizer.param_groups:
+            group["lr"] = learning_rate
     bs = max(1, int(batch_size))
     total_steps = max(1, int(epochs)) * max(1, (len(examples) + bs - 1) // bs)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=total_steps, eta_min=learning_rate * 0.1,
+    scheduler = (
+        torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=total_steps, eta_min=learning_rate * 0.1,
+        )
+        if owns_optimizer else None
     )
+    amp_enabled = bool(use_amp and str(device).startswith("cuda"))
     total_loss = 0.0
     steps = 0
     for _ in range(max(1, int(epochs))):
         random.shuffle(examples)
         for batch_start in range(0, len(examples), bs):
             batch = examples[batch_start:batch_start + bs]
-            logits, choice_mask = _forward_choice_batch(model, batch, device)
-            if logits is None or choice_mask is None:
-                continue
-            loss_total = torch.tensor(0.0, device=device)
-            valid_examples = 0
-            for i, ex in enumerate(batch):
-                choice_count = int(choice_mask[i].sum().item())
-                target_index = int(ex.teacher_target_index)
-                if not ex.candidate_choices or choice_count <= 0 or target_index >= choice_count:
+            with torch.autocast(
+                device_type="cuda",
+                dtype=torch.float16,
+                enabled=amp_enabled,
+            ):
+                logits, choice_mask = _forward_choice_batch(model, batch, device)
+                if logits is None or choice_mask is None:
                     continue
-                valid_examples += 1
-                loss_total = loss_total + F.cross_entropy(
-                    logits[i, :choice_count].unsqueeze(0),
-                    torch.tensor([target_index], device=device),
-                )
-            if valid_examples <= 0:
-                continue
-            loss = loss_total / valid_examples
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
-            optimizer.step()
-            scheduler.step()
+                loss_total = torch.tensor(0.0, device=device)
+                valid_examples = 0
+                for i, ex in enumerate(batch):
+                    choice_count = int(choice_mask[i].sum().item())
+                    target_index = int(ex.teacher_target_index)
+                    if not ex.candidate_choices or choice_count <= 0 or target_index >= choice_count:
+                        continue
+                    valid_examples += 1
+                    loss_total = loss_total + F.cross_entropy(
+                        logits[i, :choice_count].float().unsqueeze(0),
+                        torch.tensor([target_index], device=device),
+                    )
+                if valid_examples <= 0:
+                    continue
+                loss = loss_total / valid_examples
+            optimizer.zero_grad(set_to_none=True)
+            if grad_scaler is not None and amp_enabled:
+                grad_scaler.scale(loss).backward()
+                grad_scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
+                grad_scaler.step(optimizer)
+                grad_scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
+                optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
             total_loss += float(loss.detach().cpu().item())
             steps += 1
 
@@ -1062,12 +1146,28 @@ def _select_model_action(
         example = TrainingExample(encoded_state, encoded_actions, 0, source="self_play")
         logits, value = _forward_example(model, example, device)
         if temperature <= 0:
-            target_index = int(torch.argmax(logits[0]).item())
             probs = torch.softmax(logits[0], dim=0)
+            candidate_indices = torch.argsort(logits[0], descending=True).detach().cpu().tolist()
         else:
             scaled_logits = logits[0] / max(0.05, temperature)
             probs = torch.softmax(scaled_logits, dim=0)
-            target_index = int(torch.multinomial(probs, 1).item())
+            candidate_indices = torch.multinomial(
+                probs,
+                num_samples=len(actions),
+                replacement=False,
+            ).detach().cpu().tolist()
+        target_index = int(candidate_indices[0])
+        found_executable = False
+        for candidate_idx in candidate_indices:
+            if _action_executes_on_clone(legal_ai, state, player_idx, actions[candidate_idx]):
+                target_index = int(candidate_idx)
+                found_executable = True
+                break
+        if not found_executable:
+            target_index = next(
+                (idx for idx, action in enumerate(actions) if action.action == PlayerAction.END_TURN),
+                target_index,
+            )
         log_probs = torch.log(probs.clamp_min(1e-7)).clamp(min=-10.0)
         predicted_value = float(value[0].detach().cpu().item())
         behavior_log_prob = float(log_probs[target_index].detach().cpu().item())
@@ -1081,6 +1181,27 @@ def _select_model_action(
         model_score=predicted_value,
         phase_tag="rl",
     )
+
+
+def _action_executes_on_clone(ai: Any, state, player_idx: int, action: AIAction) -> bool:
+    """Validate the final selected action without mutating the live game."""
+    if action.action not in {
+        PlayerAction.PLAY_TRAINER,
+        PlayerAction.USE_ABILITY,
+        PlayerAction.USE_STADIUM,
+        PlayerAction.RETREAT,
+        PlayerAction.DECLARE_ATTACK,
+    }:
+        return True
+    rng_state = random.getstate()
+    try:
+        cloned = state_from_snapshot(snapshot_state(state), rebuild_event_bus=True)
+        result = ai._apply_action_for_sim(cloned, player_idx, action)
+        return result is not None and bool(result.success)
+    except Exception:
+        return False
+    finally:
+        random.setstate(rng_state)
 
 
 def _teacher_label_state(
@@ -1311,7 +1432,12 @@ def _play_model_game(
     # Replace opponent AI with model-based actor when self-play is requested
     opponent_idx = 1 - target_player_idx
     if opponent_model is not None:
-        ais[opponent_idx] = _ModelOpponentActor(opponent_model, ais[opponent_idx], device, deck_key)
+        ais[opponent_idx] = _ModelOpponentActor(
+            opponent_model,
+            ais[opponent_idx],
+            device,
+            opponent_key,
+        )
     examples: list[TrainingExample] = []
     choice_examples: list[ChoiceTrainingExample] = []
     diagnostics = {"actions": 0, "invalid_actions": 0, "no_target_actions": 0}
@@ -1395,16 +1521,47 @@ def _play_model_game(
 
                 # Action selection: MCTS or direct model
                 if mcts_searcher is not None:
-                    action = mcts_searcher.select_action(
-                        state, player_idx, deck_key,
-                        deterministic=(temperature <= 0.05),
-                    )
-                    # Create a self-play example from MCTS result
                     actions = target_ai.legal_actions(state, player_idx)
+                    search_result = mcts_searcher.search(
+                        state,
+                        player_idx,
+                        deck_key,
+                        actions=actions,
+                    )
+                    if temperature <= 0.05:
+                        candidate_indices = sorted(
+                            range(len(actions)),
+                            key=lambda idx: search_result.action_probs.get(idx, 0.0),
+                            reverse=True,
+                        )
+                    else:
+                        roll = random.random()
+                        cumulative = 0.0
+                        action_idx = search_result.best_action_idx
+                        for idx in range(len(actions)):
+                            cumulative += float(search_result.action_probs.get(idx, 0.0))
+                            if roll <= cumulative:
+                                action_idx = idx
+                                break
+                        candidate_indices = [action_idx] + sorted(
+                            (idx for idx in range(len(actions)) if idx != action_idx),
+                            key=lambda idx: search_result.action_probs.get(idx, 0.0),
+                            reverse=True,
+                        )
+                    action_idx = max(0, min(candidate_indices[0], len(actions) - 1))
+                    for candidate_idx in candidate_indices:
+                        if _action_executes_on_clone(
+                            target_ai,
+                            state,
+                            player_idx,
+                            actions[candidate_idx],
+                        ):
+                            action_idx = candidate_idx
+                            break
+                    action = actions[action_idx]
                     encoded_state = encoder.encode_state(state, player_idx, deck_key)
                     encoded_actions = [encoder.encode_action(state, player_idx, a) for a in actions]
-                    action_idx = _find_action_index(actions, action)
-                    if action_idx is not None:
+                    if actions:
                         with torch.no_grad():
                             logits, value = _forward_example(model, TrainingExample(encoded_state, encoded_actions, 0, source="self_play"), device)
                             predicted_value = float(value[0].detach().cpu().item())
@@ -1413,6 +1570,10 @@ def _play_model_game(
                             source="self_play",
                             value_target=predicted_value,
                             phase_tag=phase_tag,
+                            policy_target=[
+                                float(search_result.action_probs.get(idx, 0.0))
+                                for idx in range(len(actions))
+                            ],
                         )
                 else:
                     action, example = _select_model_action(
@@ -1493,6 +1654,57 @@ def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, li
         mcts_simulations=max(1, int(task.mcts_simulations or 1)),
         mcts_chance_nodes=bool(task.mcts_chance_nodes),
     )
+
+
+def _execute_model_game_task_batch(
+    tasks: list[ModelGameTask],
+) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]]:
+    """Execute several games while reusing the loaded policy model."""
+    if not tasks:
+        return []
+    _ensure_cards_loaded()
+    first = tasks[0]
+    try:
+        model = _model_from_worker_payload(first.model_state, first.model_config)
+    except Exception:
+        # Keeps compatibility with custom task executors/tests and provides a
+        # safe fallback for malformed external tasks.
+        return [_execute_model_game_task(task) for task in tasks]
+
+    opponent_cache: dict[int, Any] = {}
+    rows = []
+    for task in tasks:
+        if task.model_state is not first.model_state:
+            model = _model_from_worker_payload(task.model_state, task.model_config)
+            first = task
+        opponent_model = None
+        if task.opponent_model_state is not None:
+            cache_key = id(task.opponent_model_state)
+            opponent_model = opponent_cache.get(cache_key)
+            if opponent_model is None:
+                opponent_model = _model_from_worker_payload(
+                    task.opponent_model_state,
+                    task.opponent_model_config or {},
+                )
+                opponent_cache[cache_key] = opponent_model
+        rows.append(_play_model_game(
+            model,
+            task.deck_key,
+            task.seed,
+            device="cpu",
+            max_steps=task.max_steps,
+            record=task.record,
+            teacher_search_preset=task.teacher_search_preset,
+            temperature=task.temperature,
+            teacher_label_model_states=task.teacher_label_model_states,
+            phase_tag=task.phase_tag,
+            opponent_model=opponent_model,
+            pure_rl=bool(task.pure_rl),
+            use_mcts=bool(task.use_mcts),
+            mcts_simulations=max(1, int(task.mcts_simulations or 1)),
+            mcts_chance_nodes=bool(task.mcts_chance_nodes),
+        ))
+    return rows
 
 
 def _run_model_game_tasks(
@@ -1632,11 +1844,54 @@ def evaluate_model(
     return stats
 
 
-def _load_or_create_model(config: DeepTrainingConfig):
+def _checkpoint_training_rank(path: str, deck_key: str) -> tuple[int, int, float, float]:
+    """Rank existing checkpoints for warm-starting, including rejected candidates."""
+    sidecar = os.path.splitext(path)[0] + ".json"
+    try:
+        with open(sidecar, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        metadata = payload.get("metadata") or {}
+        row = (metadata.get("summary") or {}).get(deck_key) or {}
+        eval_row = row.get("eval") or {}
+        games = int(eval_row.get("games") or metadata.get("eval_games") or 0)
+        wins = int(eval_row.get("wins") or 0)
+        losses = int(eval_row.get("losses") or 0)
+        avg_score = float(eval_row.get("avg_score") or 0.0)
+        point_rate = (wins - losses) / max(1, games)
+        return (1 if games >= 600 else 0, min(games, 600), point_rate, avg_score)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return (0, 0, -1.0, -1e30)
+
+
+def _warm_start_path_for_deck(deck_key: str) -> str | None:
+    candidates = [
+        os.path.join(DEFAULT_MODEL_DIR, f"{deck_key}.pt"),
+        os.path.join(DEFAULT_MODEL_DIR, f"{deck_key}.rejected.pt"),
+        os.path.join(DEFAULT_MODEL_DIR, f"candidate_default_eval600_{deck_key}.pt"),
+        os.path.join(DEFAULT_MODEL_DIR, f"candidate_default_eval600_{deck_key}.rejected.pt"),
+    ]
+    existing = [path for path in candidates if os.path.exists(path)]
+    if not existing:
+        return None
+    return max(existing, key=lambda path: _checkpoint_training_rank(path, deck_key))
+
+
+def _load_or_create_model(config: DeepTrainingConfig, deck_key: str | None = None):
     assert torch is not None
-    if config.model and os.path.exists(config.model):
-        model, payload = load_checkpoint(config.model, config.device)
+    model_path = config.model
+    if not model_path and config.warm_start and deck_key:
+        model_path = _warm_start_path_for_deck(deck_key)
+    if model_path and os.path.exists(model_path):
+        model, payload = load_checkpoint(model_path, config.device)
         if int(payload.get("version") or 0) >= 3:
+            if not bool(getattr(model, "use_slot_embeddings", False)):
+                upgraded_config = dict(payload.get("model_config") or {})
+                upgraded_config["use_slot_embeddings"] = True
+                upgraded_config["choice_head_enabled"] = bool(config.choice_head_enabled)
+                upgraded = create_model(**upgraded_config)
+                upgraded.load_state_dict(model.state_dict(), strict=False)
+                upgraded.to(config.device)
+                return upgraded
             return model
     model = create_model(
         choice_head_enabled=bool(config.choice_head_enabled),
@@ -1896,6 +2151,20 @@ def _train_deck_pipeline(
     replay_ratio = max(0.0, float(config.replay_sample_ratio))
     task_runner = DeepTrainingTaskRunner(worker_count)
     task_runner.__enter__()
+    amp_enabled = bool(config.use_amp and str(config.device).startswith("cuda"))
+    parameters_fn = getattr(model, "parameters", None)
+    optimizer = (
+        torch.optim.AdamW(
+            parameters_fn(),
+            lr=config.learning_rate,
+            weight_decay=1e-4,
+        )
+        if callable(parameters_fn) else None
+    )
+    grad_scaler = (
+        torch.cuda.amp.GradScaler(enabled=amp_enabled)
+        if optimizer is not None else None
+    )
 
     emit({
         "type": "deck_started",
@@ -1945,6 +2214,9 @@ def _train_deck_pipeline(
         epochs=config.bootstrap_epochs,
         batch_size=config.batch_size,
         entropy_coef=0.0,
+        optimizer=optimizer,
+        grad_scaler=grad_scaler,
+        use_amp=amp_enabled,
     )
     emit({
         "type": "train_phase_finished",
@@ -2054,6 +2326,9 @@ def _train_deck_pipeline(
             epochs=updates_per_rollout,
             batch_size=config.batch_size,
             entropy_coef=0.005,
+            optimizer=optimizer,
+            grad_scaler=grad_scaler,
+            use_amp=amp_enabled,
         )
         choice_result = _train_choice_examples(
             model,
@@ -2062,6 +2337,9 @@ def _train_deck_pipeline(
             learning_rate=config.learning_rate * 0.6,
             epochs=updates_per_rollout,
             batch_size=config.batch_size,
+            optimizer=optimizer,
+            grad_scaler=grad_scaler,
+            use_amp=amp_enabled,
         )
         dagger_train_results.append(train_result)
         dagger_choice_results.append(choice_result)
@@ -2166,6 +2444,9 @@ def _train_deck_pipeline(
             learning_rate=config.learning_rate * 0.35,
             epochs=updates_per_rollout,
             batch_size=config.batch_size,
+            optimizer=optimizer,
+            grad_scaler=grad_scaler,
+            use_amp=amp_enabled,
         )
         choice_result = _train_choice_examples(
             model,
@@ -2174,6 +2455,9 @@ def _train_deck_pipeline(
             learning_rate=config.learning_rate * 0.35,
             epochs=updates_per_rollout,
             batch_size=config.batch_size,
+            optimizer=optimizer,
+            grad_scaler=grad_scaler,
+            use_amp=amp_enabled,
         )
         self_play_train_results.append(train_result)
         self_play_choice_results.append(choice_result)
@@ -2208,6 +2492,9 @@ def _train_deck_pipeline(
             learning_rate=config.learning_rate * 0.35,
             epochs=config.self_play_epochs,
             batch_size=config.batch_size,
+            optimizer=optimizer,
+            grad_scaler=grad_scaler,
+            use_amp=amp_enabled,
         )
         self_play_train_results.append(empty_result)
         emit({
@@ -2306,6 +2593,9 @@ def _train_deck_pipeline(
                 learning_rate=config.learning_rate * 0.25,
                 epochs=updates_per_rollout,
                 batch_size=config.batch_size,
+                optimizer=optimizer,
+                grad_scaler=grad_scaler,
+                use_amp=amp_enabled,
             )
             self_play_train_results.append(same_deal_train_result)
             total_self_play_examples += len(same_deal_examples)
@@ -2436,6 +2726,9 @@ def _train_deck_pipeline(
                     learning_rate=config.learning_rate * 0.25,
                     epochs=updates_per_rollout,
                     batch_size=config.batch_size,
+                    optimizer=optimizer,
+                    grad_scaler=grad_scaler,
+                    use_amp=amp_enabled,
                 )
                 self_play_train_results.append(train_result)
                 total_self_play_examples += len(batch_examples)
@@ -2473,6 +2766,58 @@ def _train_deck_pipeline(
     dagger_result = _aggregate_train_results(dagger_train_results, total_dagger_examples)
     choice_result = _aggregate_choice_results(dagger_choice_results + self_play_choice_results, total_choice_examples)
     self_play_result = _aggregate_train_results(self_play_train_results, total_self_play_examples)
+
+    # Encoded examples are intentionally rich Python objects and can occupy
+    # several GB after a long run. Release them before spawning the final
+    # evaluation wave so Windows does not exhaust commit memory.
+    replay_buffer.clear()
+    bootstrap.clear()
+    same_deal_examples.clear()
+    pure_rl_examples.clear()
+    pure_rl_choice_examples.clear()
+    opponent_pool.clear()
+    for name in (
+        "dagger_examples",
+        "choice_batch_examples",
+        "batch_examples",
+        "batch_dagger_examples",
+        "batch_choices",
+        "train_rows",
+        "teacher_mix",
+        "replay_mix",
+    ):
+        value = locals().get(name)
+        if isinstance(value, list):
+            value.clear()
+    gc.collect()
+    if str(config.device).startswith("cuda"):
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    resume_path = os.path.join(DEFAULT_MODEL_DIR, f"resume_{deck_key}.pt")
+    if callable(getattr(model, "state_dict", None)):
+        save_checkpoint(
+            resume_path,
+            model,
+            {
+                "trainer": "teacher_dagger_rl_v4",
+                "deck": deck_key,
+                "phase": "pre_eval",
+                "accepted": False,
+                "verified": False,
+                "total_games_played": total_done,
+            },
+        )
+        emit({
+            "type": "checkpoint_saved",
+            "deck": deck_key,
+            "phase": "pre_eval",
+            "model_path": resume_path,
+            "total_games_played": total_done,
+            "total_training_games": total_training_games,
+        })
 
     eval_result = evaluate_model(
         model,
@@ -2600,6 +2945,16 @@ def run_deep_training(
 
     device_info = _torch_device_info(config.device)
     effective_config = replace(config, device=str(device_info["device"]))
+    torch.manual_seed(int(effective_config.seed))
+    if bool(device_info["cuda_available"]):
+        torch.cuda.manual_seed_all(int(effective_config.seed))
+        try:
+            torch.set_float32_matmul_precision("high")
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True
+        except Exception:
+            pass
     writer = _open_progress_writer(effective_config.progress_jsonl)
 
     def emit(event: dict[str, Any]) -> None:
@@ -2683,7 +3038,7 @@ def run_deep_training(
                 teacher_search_preset=effective_config.teacher_search_preset,
             )
 
-            model = _load_or_create_model(effective_config)
+            model = _load_or_create_model(effective_config, deck_key)
             model.to(effective_config.device)
 
             deck_summary, total_done = _train_deck_pipeline(
@@ -2722,7 +3077,7 @@ def run_deep_training(
                 "torch_cuda": device_info["torch_cuda"],
                 "cuda_available": device_info["cuda_available"],
                 "gpu_name": device_info["gpu_name"],
-                "trainer": "teacher_dagger_rl_v3",
+                "trainer": "teacher_dagger_rl_v4",
                 "accepted": deck_accepted,
                 "preserved_existing": preserved_existing,
                 "requested_output_path": output_path,
@@ -2744,6 +3099,12 @@ def run_deep_training(
             with open(sidecar, "w", encoding="utf-8") as fh:
                 json.dump({"model_path": save_path, "metadata": metadata},
                           fh, ensure_ascii=False, indent=2, sort_keys=True)
+            resume_path = os.path.join(DEFAULT_MODEL_DIR, f"resume_{deck_key}.pt")
+            try:
+                if os.path.exists(resume_path):
+                    os.remove(resume_path)
+            except OSError:
+                pass
 
         payload = {
             "model_paths": model_paths,
@@ -2768,7 +3129,7 @@ def run_deep_training(
                 "torch_cuda": device_info["torch_cuda"],
                 "cuda_available": device_info["cuda_available"],
                 "gpu_name": device_info["gpu_name"],
-                "trainer": "teacher_dagger_rl_v3",
+                "trainer": "teacher_dagger_rl_v4",
                 "summary": train_summary,
                 "rollout_batch_games": effective_config.rollout_batch_games,
                 "updates_per_rollout": effective_config.updates_per_rollout,

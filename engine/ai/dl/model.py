@@ -24,7 +24,7 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 8  # +tactical situation/action feasibility features
+CHECKPOINT_VERSION = 9  # +slot-aware masked card attention
 
 
 if TORCH_AVAILABLE:
@@ -47,6 +47,7 @@ if TORCH_AVAILABLE:
             hidden_size: int = 384,
             choice_head_enabled: bool = True,
             use_attention: bool = True,
+            use_slot_embeddings: bool = True,
             state_norm: str = "layer",
             deck_embed_dim: int = 0,
             num_decks: int = 8,
@@ -60,11 +61,16 @@ if TORCH_AVAILABLE:
             self.hidden_size = hidden_size
             self.choice_head_enabled = bool(choice_head_enabled)
             self.use_attention = bool(use_attention) and (card_embed_dim >= 4)
+            self.use_slot_embeddings = bool(use_slot_embeddings)
             self.state_norm = "batch" if str(state_norm).lower() == "batch" else "layer"
             self.deck_embed_dim = max(0, int(deck_embed_dim))
 
             # Card identity embedding (hash-bucket based)
             self.card_embedding = nn.Embedding(card_bucket_count, card_embed_dim, padding_idx=0)
+            self.slot_embedding = (
+                nn.Embedding(state_card_slots, card_embed_dim)
+                if self.use_slot_embeddings else None
+            )
 
             # Deck embedding (optional, for per-deck strategy learning)
             if self.deck_embed_dim > 0:
@@ -123,14 +129,36 @@ if TORCH_AVAILABLE:
 
         def _state_hidden(self, state_numeric, state_card_ids, deck_idx=None):
             state_embeds = self.card_embedding(state_card_ids.long())  # [B, slots, embed_dim]
+            card_mask = state_card_ids != 0
+
+            if self.slot_embedding is not None:
+                positions = torch.arange(
+                    state_card_ids.shape[1],
+                    device=state_card_ids.device,
+                )
+                position_embeds = self.slot_embedding(positions).unsqueeze(0)
+                state_embeds = state_embeds + position_embeds * card_mask.unsqueeze(-1)
 
             # Self-attention: let card slots attend to each other
             if self.card_attn is not None:
-                attn_out, _ = self.card_attn(state_embeds, state_embeds, state_embeds)
+                padding_mask = ~card_mask
+                # MultiheadAttention returns NaNs when every token in a row is
+                # masked. Keep one zero token visible for empty synthetic states.
+                safe_padding_mask = padding_mask.clone()
+                empty_rows = safe_padding_mask.all(dim=1)
+                if empty_rows.any():
+                    safe_padding_mask[empty_rows, 0] = False
+                attn_out, _ = self.card_attn(
+                    state_embeds,
+                    state_embeds,
+                    state_embeds,
+                    key_padding_mask=safe_padding_mask,
+                    need_weights=False,
+                )
                 state_embeds = self.card_attn_norm(state_embeds + attn_out)
 
             # Mean-pool embeddings over card slots (masking pad slots)
-            mask = (state_card_ids != 0).float().unsqueeze(-1)
+            mask = card_mask.float().unsqueeze(-1)
             pooled = (state_embeds * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)
 
             parts = [state_numeric.float(), pooled]
@@ -154,7 +182,8 @@ if TORCH_AVAILABLE:
             candidate_input = torch.cat([expanded_state, candidate_numeric.float(), candidate_embeds], dim=-1)
             logits = scorer(candidate_input).squeeze(-1)
             if candidate_mask is not None:
-                logits = logits.masked_fill(~candidate_mask.bool(), -1_000_000_000.0)
+                mask_value = torch.finfo(logits.dtype).min
+                logits = logits.masked_fill(~candidate_mask.bool(), mask_value)
             return logits
 
         def forward(self, state_numeric, state_card_ids, action_numeric, action_card_ids, action_mask=None, deck_idx=None):
@@ -204,6 +233,7 @@ def checkpoint_payload(model, metadata: dict[str, Any] | None = None) -> dict[st
             "hidden_size": model.hidden_size,
             "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
             "use_attention": bool(getattr(model, "use_attention", True)),
+            "use_slot_embeddings": bool(getattr(model, "use_slot_embeddings", False)),
             "state_norm": getattr(model, "state_norm", "layer"),
             "deck_embed_dim": getattr(model, "deck_embed_dim", 0),
             "num_decks": getattr(getattr(model, "deck_embedding", None), "num_embeddings", 8) if getattr(model, "deck_embedding", None) is not None else 8,
@@ -237,6 +267,7 @@ def _infer_model_config_from_state_dict(state_dict: dict[str, Any]) -> dict[str,
         config["action_numeric_size"] = ACTION_NUMERIC_SIZE
     config["state_card_slots"] = 32
     config["state_norm"] = "batch"
+    config["use_slot_embeddings"] = False
     return config
 
 
@@ -260,6 +291,7 @@ def load_checkpoint(path: str, device: str = "cpu"):
         config = dict(payload.get("model_config") or {})
         config.setdefault("choice_head_enabled", version >= 3)
         config.setdefault("use_attention", version >= 5)
+        config.setdefault("use_slot_embeddings", version >= 9)
         config.setdefault("state_norm", "layer" if version >= 6 else "batch")
         config.setdefault("deck_embed_dim", 0)  # v6 and older: no deck embedding
         config.setdefault("num_decks", 8)

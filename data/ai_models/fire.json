@@ -1,97 +1,127 @@
 {
   "metadata": {
-    "acceptance_metric": "score",
+    "acceptance_metric": "points",
     "accepted": true,
-    "bootstrap_games": 2,
+    "bootstrap_games": 256,
     "choice_head_enabled": true,
-    "created_at": 1780455598,
+    "created_at": 1781770417,
     "cuda_available": true,
-    "dagger_games": 0,
+    "dagger_games": 64,
     "deck": "fire",
-    "device": "cpu",
-    "elapsed_seconds": 14.946,
-    "eval_games": 0,
-    "games": 0,
-    "gpu_name": null,
+    "device": "cuda",
+    "elapsed_seconds": 490.777,
+    "eval_games": 600,
+    "games": 128,
+    "gpu_name": "NVIDIA GeForce RTX 4070 Ti",
     "min_win_delta": 0,
-    "preserved_existing": false,
-    "requested_device": "cpu",
-    "requested_output_path": "data\\ai_models\\fire.pt",
-    "rollout_batch_games": 4,
+    "preserved_existing": true,
+    "pure_rl_games": 32,
+    "replay_buffer_size": 50000,
+    "replay_same_deal": 8,
+    "replay_sample_ratio": 0.5,
+    "requested_device": "cuda",
+    "requested_output_path": "data/ai_models/fire.pt",
+    "rollout_batch_games": 16,
     "summary": {
       "fire": {
-        "acceptance_metric": "score",
+        "acceptance_metric": "points",
         "accepted": true,
         "baseline_eval": {
-          "games": 0
+          "actions": 15801,
+          "avg_score": -349910.673,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 404,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 196
         },
         "bootstrap": {
-          "entropy": 1.728978,
-          "examples": 19,
-          "loss": 1.507475,
-          "policy_loss": 1.507475,
-          "total_loss": 1.507475,
+          "entropy": 0.90977,
+          "examples": 8815,
+          "loss": 0.882102,
+          "policy_loss": 0.882102,
+          "total_loss": 0.882102,
           "value_loss": 0.0
         },
         "choice": {
-          "choice_examples": 0,
-          "choice_loss": 0.0
+          "choice_examples": 35779,
+          "choice_loss": 0.851941
         },
         "choice_head_enabled": true,
         "dagger": {
-          "entropy": 0.0,
-          "examples": 0,
-          "loss": 0.0,
-          "policy_loss": 0.0,
-          "total_loss": 0.0,
+          "entropy": 0.741598,
+          "examples": 5590,
+          "loss": 0.732151,
+          "policy_loss": 0.735859,
+          "total_loss": 0.732151,
           "value_loss": 0.0
         },
         "dagger_stats": {
           "draws": 0,
-          "losses": 0,
-          "wins": 0
+          "losses": 48,
+          "wins": 16
         },
-        "delta_avg_score": null,
-        "delta_point_rate": null,
-        "delta_wins": null,
+        "delta_avg_score": 50727.57,
+        "delta_point_rate": 0.025,
+        "delta_wins": 15,
         "eval": {
-          "avg_score": 0.0,
+          "actions": 17574,
+          "avg_score": -299183.103,
           "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "wins": 0
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 389,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 211
         },
         "eval_seed": 900017,
         "min_win_delta": 0,
         "old_eval": {
-          "games": 0
+          "actions": 13582,
+          "avg_score": -856901.693,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 555,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 45
         },
-        "rollout_batch_games": 4,
+        "rollout_batch_games": 16,
         "self_play": {
-          "entropy": 0.0,
-          "examples": 0,
-          "loss": 0.0,
-          "policy_loss": 0.0,
-          "total_loss": 0.0,
-          "value_loss": 0.0
+          "entropy": 0.770129,
+          "examples": 5780,
+          "loss": 1.362714,
+          "policy_loss": 0.594846,
+          "total_loss": 1.362714,
+          "value_loss": 1.566541
         },
         "self_play_stats": {
           "draws": 0,
-          "losses": 0,
-          "wins": 0
+          "losses": 66,
+          "wins": 62
         },
         "teacher_label_model_states": true,
-        "teacher_search_preset": "quality",
+        "teacher_search_preset": "fast",
         "updates_per_rollout": 2
       }
     },
     "teacher_label_model_states": true,
-    "teacher_search_preset": "quality",
-    "torch_cuda": "11.8",
-    "torch_version": "2.3.1+cu118",
+    "teacher_search_preset": "fast",
+    "torch_cuda": "12.1",
+    "torch_version": "2.1.2+cu121",
     "trainer": "teacher_dagger_rl_v3",
     "updates_per_rollout": 2,
-    "workers": 1
+    "verification_note": "Evaluation gate accepted this model.",
+    "verification_status": "verified_accepted",
+    "verified": true,
+    "workers": 12
   },
-  "model_path": "data\\ai_models\\fire.pt"
+  "model_path": "data/ai_models/fire.pt"
 }

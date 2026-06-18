@@ -43,6 +43,8 @@ def main() -> int:
                         help="RL fine-tune self-play games per deck (default: 800).")
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output", default=None, help="Output .pt checkpoint path (single-deck; ignored for --deck all).")
+    parser.add_argument("--warm-start", action=argparse.BooleanOptionalAction, default=True,
+                        help="Initialize from the strongest evaluated checkpoint for the deck (default: enabled).")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--bootstrap-games", type=int, default=2000,
                         help="Teacher imitation games per deck (default: 2000).")
@@ -54,10 +56,14 @@ def main() -> int:
                         help="Epochs over self-play examples (default: 10).")
     parser.add_argument("--eval-games", type=int, default=200,
                         help="Evaluation games per deck (default: 200).")
-    parser.add_argument("--workers", type=int, default=1)
+    default_workers = max(1, min(12, (os.cpu_count() or 2) - 2))
+    parser.add_argument("--workers", type=int, default=default_workers,
+                        help=f"Parallel rollout workers (default: {default_workers}).")
     parser.add_argument("--max-steps", type=int, default=120)
-    parser.add_argument("--batch-size", type=int, default=64,
-                        help="Mini-batch size for training (default: 64).")
+    parser.add_argument("--batch-size", type=int, default=256,
+                        help="Mini-batch size for training (default: 256).")
+    parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=True,
+                        help="Use CUDA automatic mixed precision when available (default: enabled).")
     parser.add_argument("--rollout-batch-games", type=int, default=16,
                         help="Rollout games collected before each training update (default: 16).")
     parser.add_argument("--updates-per-rollout", type=int, default=2,
@@ -67,7 +73,7 @@ def main() -> int:
                         help="ChallengeAI search config used for teacher/fallback (hybrid prunes with beam and scores with minimax).")
     parser.add_argument("--choice-head-enabled", action=argparse.BooleanOptionalAction, default=True,
                         help="Train and use the pending-choice scorer (default: enabled).")
-    parser.add_argument("--acceptance-metric", default="score", choices=["wins", "points", "score"],
+    parser.add_argument("--acceptance-metric", default="points", choices=["wins", "points", "score"],
                         help="Metric used to decide whether the candidate replaces the previous model.")
     parser.add_argument("--min-win-delta", type=int, default=0,
                         help="Minimum candidate win improvement over each baseline when --acceptance-metric wins.")
@@ -79,6 +85,8 @@ def main() -> int:
                         help="Same-deal replay seeds per deck (default: 50 when training is nonzero; use 0 for smoke tests).")
     parser.add_argument("--mcts-simulations", type=int, default=256,
                         help="MCTS simulations for MCTS-guided training phases (default: 256).")
+    parser.add_argument("--mcts-chance-nodes", action=argparse.BooleanOptionalAction, default=False,
+                        help="Legacy draw chance nodes (default: disabled for turn-bounded MCTS).")
     parser.add_argument("--use-mcts-training", action=argparse.BooleanOptionalAction, default=True,
                         help="Use MCTS-guided training where configured (default: enabled).")
     parser.add_argument("--replay-buffer-size", type=int, default=50000,
@@ -111,6 +119,7 @@ def main() -> int:
         games=max(0, args.games),
         seed=args.seed,
         output=args.output,
+        warm_start=bool(args.warm_start),
         device=args.device,
         bootstrap_games=max(0, args.bootstrap_games),
         dagger_games=max(0, args.dagger_games),
@@ -120,6 +129,7 @@ def main() -> int:
         workers=max(1, args.workers),
         max_steps=max(20, args.max_steps),
         batch_size=max(1, args.batch_size),
+        use_amp=bool(args.amp),
         rollout_batch_games=max(1, args.rollout_batch_games),
         updates_per_rollout=max(1, args.updates_per_rollout),
         teacher_search_preset=args.teacher_search_preset,
@@ -130,6 +140,7 @@ def main() -> int:
         pure_rl_games=max(0, pure_rl_games),
         replay_same_deal=max(0, replay_same_deal),
         mcts_simulations=max(1, args.mcts_simulations),
+        mcts_chance_nodes=bool(args.mcts_chance_nodes),
         use_mcts_training=bool(args.use_mcts_training),
         replay_buffer_size=max(1, args.replay_buffer_size),
         replay_sample_ratio=max(0.0, args.replay_sample_ratio),

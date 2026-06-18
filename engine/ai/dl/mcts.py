@@ -1,12 +1,13 @@
 """Monte Carlo Tree Search guided by the neural network.
 
-AlphaZero-style MCTS with:
+AlphaZero-style, turn-bounded MCTS with:
 - PUCT action selection using model's policy/value heads
-- Chance nodes for modeling draw randomness (card draw during turn start)
 - State snapshotting for efficient tree search
 
 The MCTS reuses ChallengeAI's ActionEnumerator for legal-action generation
-and the encoder + model for leaf evaluation.
+and the encoder + model for leaf evaluation. Search stops when control passes
+to the opponent; this avoids evaluating opponent turns with the current
+deck's strategy profile and keeps the tree focused on action sequencing.
 """
 from __future__ import annotations
 
@@ -111,6 +112,7 @@ class MCTSGuidedSearch:
         dirichlet_alpha: float = 0.3,
         dirichlet_epsilon: float = 0.25,
         add_dirichlet_noise: bool = True,
+        max_depth: int = 48,
     ):
         self.model = model
         self.encoder = encoder
@@ -124,6 +126,7 @@ class MCTSGuidedSearch:
         self.dirichlet_alpha = float(dirichlet_alpha)
         self.dirichlet_epsilon = float(dirichlet_epsilon)
         self.add_dirichlet_noise = bool(add_dirichlet_noise)
+        self.max_depth = max(4, int(max_depth))
 
         # Encode cache to avoid re-encoding the same state
         self._encode_cache: dict[int, tuple] = {}
@@ -168,7 +171,7 @@ class MCTSGuidedSearch:
         with torch.no_grad():
             encoded_state = self.encoder.encode_state(state, player_idx, deck_key)
             encoded_actions = [self.encoder.encode_action(state, player_idx, a) for a in actions]
-            priors, root_value = self._evaluate_state_actions(
+            priors, network_root_value = self._evaluate_state_actions(
                 encoded_state, encoded_actions,
             )
 
@@ -204,9 +207,10 @@ class MCTSGuidedSearch:
         }
         best_idx = max(root.children.keys(), key=lambda k: root.children[k].visit_count)
 
+        searched_root_value = root.q_value if root.visit_count > 0 else network_root_value
         return _MCTSSearchResult(
             action_probs=action_probs,
-            root_value=root_value,
+            root_value=searched_root_value,
             best_action_idx=best_idx,
         )
 
@@ -272,12 +276,22 @@ class MCTSGuidedSearch:
 
         # Expansion + Evaluation
         if leaf_state.winner is not None or leaf_state.phase == TurnPhase.GAME_OVER:
-            value = self._terminal_value(leaf_state, player_idx)
+            value_player = leaf_player
+            value = self._terminal_value(leaf_state, value_player)
+        elif (
+            leaf_state.phase != TurnPhase.SETUP
+            and leaf_state.active_player_idx != player_idx
+        ):
+            # End-of-turn leaf. Evaluate from the root player's perspective
+            # instead of expanding the opponent with the wrong deck profile.
+            value_player = player_idx
+            value = self._evaluate_terminal_heuristic(leaf_state, player_idx)
         else:
+            value_player = leaf_player
             value = self._expand_and_evaluate(leaf_state, leaf_player, deck_key, leaf, path)
 
         # Backup
-        self._backup(path, value, player_idx)
+        self._backup(path, value, value_player)
         return value
 
     def _select(
@@ -295,6 +309,7 @@ class MCTSGuidedSearch:
         current_state = state
         current_player = player_idx
         path: list[tuple[_MCTSNode, int]] = [(root, player_idx)]
+        depth = 0
 
         while True:
             # Check terminal
@@ -303,6 +318,8 @@ class MCTSGuidedSearch:
 
             # If no children, this is a leaf
             if not node.children and not node.chance_branches:
+                return node, current_state, current_player, path
+            if depth >= self.max_depth:
                 return node, current_state, current_player, path
 
             # Handle chance nodes
@@ -317,6 +334,7 @@ class MCTSGuidedSearch:
                 path.append((child_node, current_player))
                 node = child_node
                 current_state = next_state
+                depth += 1
                 continue
 
             # Select child with highest PUCT score
@@ -346,6 +364,13 @@ class MCTSGuidedSearch:
             node = child
             current_state = next_state
             current_player = next_player
+            depth += 1
+
+            if (
+                current_state.phase != TurnPhase.SETUP
+                and current_state.active_player_idx != player_idx
+            ):
+                return node, current_state, current_player, path
 
     def _select_chance_branch(
         self,
@@ -397,10 +422,6 @@ class MCTSGuidedSearch:
         for i, action in enumerate(actions):
             child = _MCTSNode(action=action, prior_prob=priors[i])
             node.children[i] = child
-
-        # If chance nodes enabled, insert chance nodes after draw-triggering actions
-        if self.use_chance_nodes:
-            self._maybe_add_chance_children(state, player_idx, deck_key, node, encoded_state)
 
         return value
 
@@ -533,13 +554,17 @@ class MCTSGuidedSearch:
         self,
         path: list[tuple[_MCTSNode, int]],
         value: float,
-        root_player: int,
+        value_player: int,
     ) -> None:
-        """Backup the evaluated value through the search path."""
+        """Backup a value expressed from ``value_player``'s perspective.
+
+        Nodes store Q from the perspective of the player who selected the
+        action at that node. This matters because a turn can contain many
+        actions before the acting player changes.
+        """
         for node, node_player in reversed(path):
             node.visit_count += 1
-            # Value is always from root_player's perspective
-            if node_player == root_player:
+            if node_player == value_player:
                 node.total_value += value
             else:
                 node.total_value += (-value)

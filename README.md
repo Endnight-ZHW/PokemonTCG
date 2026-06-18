@@ -32,6 +32,22 @@ pip install -r requirements-ai.txt
 
 `main.py` 不再接受 `--host`、`--client`、`--relay` 或 `--room` 等客户端联机参数。
 
+## 深度 AI 训练
+
+推荐在 `DL` Conda 环境中使用 CUDA。训练脚本会自动使用多进程生成对局、在 GPU 上进行混合精度批量更新，并从该牌组已有评估结果最好的检查点继续训练。
+
+```bash
+conda run -n DL python scripts/train_deep_ai.py \
+  --deck fire --device cuda --workers 12 \
+  --bootstrap-games 512 --dagger-games 128 --games 256 \
+  --pure-rl-games 64 --replay-same-deal 16 \
+  --mcts-simulations 96 --eval-games 600 \
+  --acceptance-metric points \
+  --progress-jsonl data/ai_models/train_fire.jsonl
+```
+
+只有通过同种子评估门槛且无非法/无目标动作的模型才会被标记为可部署。使用 `--no-warm-start` 可强制从随机初始化模型重新训练。
+
 ## 预组卡组
 
 项目内置 8 套 60 张预组卡组：

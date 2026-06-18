@@ -887,6 +887,39 @@ class DeepAITests(unittest.TestCase):
         self.assertTrue(calls["mapped"])
         self.assertEqual(len(rows), 2)
 
+    def test_model_game_batch_loads_shared_policy_once(self):
+        from engine.ai.dl import training as dl_training
+
+        shared_state = {"weight": object()}
+        tasks = [
+            dl_training.ModelGameTask("fire", 1, 20, False, shared_state, {}, "fast"),
+            dl_training.ModelGameTask("fire", 2, 20, False, shared_state, {}, "fast"),
+        ]
+        loads = []
+
+        def fake_load(state, config):
+            loads.append((state, config))
+            return object()
+
+        empty_row = (None, 0.0, [], [], {"actions": 0, "invalid_actions": 0, "no_target_actions": 0})
+        with mock.patch.object(dl_training, "_model_from_worker_payload", side_effect=fake_load), \
+             mock.patch.object(dl_training, "_play_model_game", return_value=empty_row):
+            rows = dl_training._execute_model_game_task_batch(tasks)
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(loads), 1)
+
+    def test_mcts_backup_keeps_each_actor_value_perspective(self):
+        from engine.ai.dl.mcts import MCTSGuidedSearch, _MCTSNode
+
+        root = _MCTSNode()
+        opponent_child = _MCTSNode()
+        search = object.__new__(MCTSGuidedSearch)
+        search._backup([(root, 0), (opponent_child, 1)], 0.75, value_player=1)
+
+        self.assertAlmostEqual(root.q_value, -0.75)
+        self.assertAlmostEqual(opponent_child.q_value, 0.75)
+
     def test_training_screen_exit_terminates_process_tree(self):
         import pygame
         from ui.screens import ai_training_screen
@@ -988,24 +1021,29 @@ class DeepAITests(unittest.TestCase):
             self.assertFalse(run_started["cuda_available"])
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
-    def test_v8_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
+    def test_v9_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
         from engine.ai.dl.model import checkpoint_payload, create_model, load_checkpoint, save_checkpoint, torch
 
         with temp_dir() as tmpdir:
-            path = os.path.join(tmpdir, "model_v8.pt")
+            path = os.path.join(tmpdir, "model_v9.pt")
             model = create_model(choice_head_enabled=True)
             save_checkpoint(path, model, {"trainer": "test"})
             restored, payload = load_checkpoint(path, "cpu")
 
             legacy_path = os.path.join(tmpdir, "model_v5.pt")
-            legacy_model = create_model(choice_head_enabled=True, state_norm="batch")
+            legacy_model = create_model(
+                choice_head_enabled=True,
+                state_norm="batch",
+                use_slot_embeddings=False,
+            )
             legacy_payload = checkpoint_payload(legacy_model, {"trainer": "legacy"})
             legacy_payload["version"] = 5
             legacy_payload.get("model_config", {}).pop("state_norm", None)
+            legacy_payload.get("model_config", {}).pop("use_slot_embeddings", None)
             torch.save(legacy_payload, legacy_path)
             legacy_restored, legacy_loaded = load_checkpoint(legacy_path, "cpu")
 
-        self.assertEqual(payload.get("version"), 8)
+        self.assertEqual(payload.get("version"), 9)
         self.assertTrue(payload.get("model_config", {}).get("choice_head_enabled"))
         self.assertEqual(payload.get("model_config", {}).get("state_norm"), "layer")
         self.assertEqual(payload.get("model_config", {}).get("state_numeric_size"), STATE_NUMERIC_SIZE)
@@ -1015,9 +1053,11 @@ class DeepAITests(unittest.TestCase):
         self.assertTrue(hasattr(restored, "score_choices"))
         self.assertFalse(hasattr(restored, "choice_value_head"))
         self.assertTrue(getattr(restored, "use_attention", False))
+        self.assertTrue(getattr(restored, "use_slot_embeddings", False))
         self.assertEqual(getattr(restored, "state_norm", ""), "layer")
         self.assertEqual(legacy_loaded.get("version"), 5)
         self.assertTrue(getattr(legacy_restored, "choice_head_enabled", False))
+        self.assertFalse(getattr(legacy_restored, "use_slot_embeddings", True))
         self.assertEqual(getattr(legacy_restored, "state_norm", ""), "batch")
 
     def test_game_screen_deep_ai_uses_selected_fallback_search(self):

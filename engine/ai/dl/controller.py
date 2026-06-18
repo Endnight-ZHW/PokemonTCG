@@ -12,6 +12,7 @@ from engine.ai.challenge_ai import AIAction, AIChoice, AIConfig, ChallengeAI, cr
 from engine.ai.dl.encoder import ActionStateEncoder
 from engine.ai.dl.model import TORCH_AVAILABLE, load_checkpoint, torch
 from engine.enums import PlayerAction, TurnPhase
+from engine.snapshot import snapshot_state, state_from_snapshot
 from utils.logger import get_logger
 
 _logger = get_logger(__name__)
@@ -41,7 +42,7 @@ class DeepLearningAIConfig:
     use_mcts: bool = True
     mcts_simulations: int = 256
     mcts_c_puct: float = 1.4
-    mcts_chance_nodes: bool = True
+    mcts_chance_nodes: bool = False
     mcts_dirichlet_noise: bool = False  # False for inference, True for training
     max_thinking_time_seconds: float = 8.0
 
@@ -214,11 +215,18 @@ class DeepLearningAI:
             logits = logits[0]
             temperature = max(0.05, float(self.config.temperature))
             if self.config.deterministic:
-                idx = int(torch.argmax(logits).item())
+                ranked = torch.argsort(logits, descending=True).detach().cpu().tolist()
             else:
                 probs = torch.softmax(logits / temperature, dim=0)
-                idx = int(torch.multinomial(probs, 1).item())
-        return actions[max(0, min(idx, len(actions) - 1))]
+                ranked = torch.multinomial(
+                    probs,
+                    num_samples=len(actions),
+                    replacement=False,
+                ).detach().cpu().tolist()
+        for idx in ranked:
+            if self._action_executes_on_clone(state, player_idx, actions[idx]):
+                return actions[idx]
+        return self._fallback_action(state, player_idx)
 
     def _choose_with_mcts(self, state, player_idx: int, actions: list[AIAction]) -> AIAction:
         """Select an action using MCTS guided by the neural network."""
@@ -237,7 +245,7 @@ class DeepLearningAI:
         )
         max_time = max(0.0, float(self.config.max_thinking_time_seconds))
         deadline = time.perf_counter() + max_time if max_time > 0.0 else None
-        return searcher.select_action(
+        selected = searcher.select_action(
             state,
             player_idx,
             self.deck_key,
@@ -245,6 +253,28 @@ class DeepLearningAI:
             deterministic=self.config.deterministic,
             deadline=deadline,
         )
+        if self._action_executes_on_clone(state, player_idx, selected):
+            return selected
+        return self._choose_with_model(state, player_idx, actions)
+
+    def _action_executes_on_clone(self, state, player_idx: int, action: AIAction) -> bool:
+        if action.action not in {
+            PlayerAction.PLAY_TRAINER,
+            PlayerAction.USE_ABILITY,
+            PlayerAction.USE_STADIUM,
+            PlayerAction.RETREAT,
+            PlayerAction.DECLARE_ATTACK,
+        }:
+            return True
+        rng_state = random.getstate()
+        try:
+            cloned = state_from_snapshot(snapshot_state(state), rebuild_event_bus=True)
+            result = self.fallback._apply_action_for_sim(cloned, player_idx, action)
+            return result is not None and bool(result.success)
+        except Exception:
+            return False
+        finally:
+            random.setstate(rng_state)
 
     @property
     def mcts_search(self):
