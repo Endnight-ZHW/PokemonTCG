@@ -1,0 +1,118 @@
+{
+  "metadata": {
+    "acceptance_metric": "points",
+    "accepted": true,
+    "bootstrap_games": 128,
+    "choice_head_enabled": true,
+    "created_at": 1781713152,
+    "cuda_available": true,
+    "dagger_games": 32,
+    "deck": "water",
+    "device": "cuda",
+    "elapsed_seconds": 763.089,
+    "eval_games": 600,
+    "games": 64,
+    "gpu_name": "NVIDIA GeForce RTX 4070 Ti",
+    "min_win_delta": 0,
+    "preserved_existing": false,
+    "pure_rl_games": 16,
+    "replay_buffer_size": 50000,
+    "replay_same_deal": 8,
+    "replay_sample_ratio": 0.5,
+    "requested_device": "cuda",
+    "requested_output_path": "data/ai_models\\candidate_default_eval600_water.pt",
+    "rollout_batch_games": 16,
+    "summary": {
+      "water": {
+        "acceptance_metric": "points",
+        "accepted": true,
+        "baseline_eval": {
+          "actions": 21191,
+          "avg_score": -381120.193,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 413,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 187
+        },
+        "bootstrap": {
+          "entropy": 1.234762,
+          "examples": 4992,
+          "loss": 1.131275,
+          "policy_loss": 1.131275,
+          "total_loss": 1.131275,
+          "value_loss": 0.0
+        },
+        "choice": {
+          "choice_examples": 27659,
+          "choice_loss": 1.002223
+        },
+        "choice_head_enabled": true,
+        "dagger": {
+          "entropy": 0.951204,
+          "examples": 3603,
+          "loss": 0.833893,
+          "policy_loss": 0.838648,
+          "total_loss": 0.833893,
+          "value_loss": 0.0
+        },
+        "dagger_stats": {
+          "draws": 0,
+          "losses": 24,
+          "wins": 8
+        },
+        "delta_avg_score": 178398.653,
+        "delta_point_rate": 0.0883,
+        "delta_wins": 53,
+        "eval": {
+          "actions": 20483,
+          "avg_score": -202721.54,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 360,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 240
+        },
+        "eval_seed": 901026,
+        "min_win_delta": 0,
+        "old_eval": {
+          "games": 0
+        },
+        "rollout_batch_games": 16,
+        "self_play": {
+          "entropy": 0.972822,
+          "examples": 3923,
+          "loss": 1.382959,
+          "policy_loss": 0.529302,
+          "total_loss": 1.382959,
+          "value_loss": 1.746226
+        },
+        "self_play_stats": {
+          "draws": 0,
+          "losses": 31,
+          "wins": 33
+        },
+        "teacher_label_model_states": true,
+        "teacher_search_preset": "fast",
+        "updates_per_rollout": 2
+      }
+    },
+    "teacher_label_model_states": true,
+    "teacher_search_preset": "fast",
+    "torch_cuda": "12.1",
+    "torch_version": "2.1.2+cu121",
+    "trainer": "teacher_dagger_rl_v3",
+    "updates_per_rollout": 2,
+    "verification_note": "Evaluation gate accepted this model.",
+    "verification_status": "verified_accepted",
+    "verified": true,
+    "workers": 12
+  },
+  "model_path": "data/ai_models\\candidate_default_eval600_water.pt"
+}

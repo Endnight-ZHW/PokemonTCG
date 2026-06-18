@@ -1,0 +1,120 @@
+{
+  "metadata": {
+    "acceptance_metric": "points",
+    "accepted": true,
+    "bootstrap_games": 128,
+    "choice_head_enabled": true,
+    "created_at": 1781714006,
+    "cuda_available": true,
+    "dagger_games": 32,
+    "deck": "lightning",
+    "device": "cuda",
+    "elapsed_seconds": 1617.228,
+    "eval_games": 600,
+    "games": 64,
+    "gpu_name": "NVIDIA GeForce RTX 4070 Ti",
+    "min_win_delta": 0,
+    "preserved_existing": false,
+    "pure_rl_games": 16,
+    "replay_buffer_size": 50000,
+    "replay_same_deal": 8,
+    "replay_sample_ratio": 0.5,
+    "requested_device": "cuda",
+    "requested_output_path": "data/ai_models\\candidate_default_eval600_lightning.pt",
+    "rollout_batch_games": 16,
+    "summary": {
+      "lightning": {
+        "acceptance_metric": "points",
+        "accepted": true,
+        "baseline_eval": {
+          "actions": 27191,
+          "avg_score": -389890.15,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 416,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 184
+        },
+        "bootstrap": {
+          "entropy": 1.426338,
+          "examples": 4860,
+          "loss": 1.354222,
+          "policy_loss": 1.354222,
+          "total_loss": 1.354222,
+          "value_loss": 0.0
+        },
+        "choice": {
+          "choice_examples": 29992,
+          "choice_loss": 0.898581
+        },
+        "choice_head_enabled": true,
+        "dagger": {
+          "entropy": 1.176226,
+          "examples": 4189,
+          "loss": 1.07766,
+          "policy_loss": 1.083542,
+          "total_loss": 1.07766,
+          "value_loss": 0.0
+        },
+        "dagger_stats": {
+          "draws": 0,
+          "losses": 27,
+          "wins": 5
+        },
+        "delta_avg_score": 131129.227,
+        "delta_point_rate": 0.065,
+        "delta_wins": 39,
+        "eval": {
+          "actions": 26161,
+          "avg_score": -258760.923,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 377,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 223
+        },
+        "eval_seed": 903044,
+        "min_win_delta": 0,
+        "old_eval": {
+          "games": 0
+        },
+        "rollout_batch_games": 16,
+        "self_play": {
+          "entropy": 1.123795,
+          "examples": 4628,
+          "loss": 1.420474,
+          "policy_loss": 0.642655,
+          "total_loss": 1.420474,
+          "value_loss": 1.60059
+        },
+        "self_play_stats": {
+          "draws": 0,
+          "losses": 39,
+          "wins": 25
+        },
+        "teacher_label_model_states": true,
+        "teacher_search_preset": "fast",
+        "updates_per_rollout": 2
+      }
+    },
+    "teacher_label_model_states": true,
+    "teacher_search_preset": "fast",
+    "torch_cuda": "12.1",
+    "torch_version": "2.1.2+cu121",
+    "trainer": "teacher_dagger_rl_v3",
+    "updates_per_rollout": 2,
+    "verification_note": "Evaluation gate accepted this model.",
+    "verification_status": "verified_accepted",
+    "verified": true,
+    "workers": 12,
+    "deployed_from_model_path": "data/ai_models\\candidate_default_eval600_lightning.pt",
+    "deployed_at": 1781715764
+  },
+  "model_path": "data\\ai_models\\lightning.pt"
+}

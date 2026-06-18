@@ -73,14 +73,18 @@ def main() -> int:
                         help="Minimum candidate win improvement over each baseline when --acceptance-metric wins.")
     parser.add_argument("--teacher-label-model-states", action=argparse.BooleanOptionalAction, default=True,
                         help="Collect teacher labels for model-visited rollout states (default: enabled).")
-    parser.add_argument("--pure-rl-games", type=int, default=400,
-                        help="Pure RL exploration games per deck after self-play (default: 400).")
-    parser.add_argument("--replay-same-deal", type=int, default=50,
-                        help="Same-deal replay seeds per deck (default: 50; use 0 for smoke tests).")
-    parser.add_argument("--mcts-simulations", type=int, default=200,
-                        help="MCTS simulations for MCTS-guided training phases (default: 200).")
+    parser.add_argument("--pure-rl-games", type=int, default=None,
+                        help="Pure RL exploration games per deck after self-play (default: 400 when training is nonzero).")
+    parser.add_argument("--replay-same-deal", type=int, default=None,
+                        help="Same-deal replay seeds per deck (default: 50 when training is nonzero; use 0 for smoke tests).")
+    parser.add_argument("--mcts-simulations", type=int, default=256,
+                        help="MCTS simulations for MCTS-guided training phases (default: 256).")
     parser.add_argument("--use-mcts-training", action=argparse.BooleanOptionalAction, default=True,
                         help="Use MCTS-guided training where configured (default: enabled).")
+    parser.add_argument("--replay-buffer-size", type=int, default=50000,
+                        help="Per-deck replay buffer capacity for deep AI training (default: 50000).")
+    parser.add_argument("--replay-sample-ratio", type=float, default=0.5,
+                        help="Replay examples sampled per fresh example during updates (default: 0.5).")
     parser.add_argument("--progress-jsonl", default=None)
     args = parser.parse_args()
 
@@ -89,6 +93,18 @@ def main() -> int:
         _write_error_progress(args.progress_jsonl, message)
         print(message, file=sys.stderr)
         return 2
+
+    core_training_requested = any(
+        value > 0
+        for value in (
+            max(0, args.games),
+            max(0, args.bootstrap_games),
+            max(0, args.dagger_games),
+            max(0, args.eval_games),
+        )
+    )
+    pure_rl_games = args.pure_rl_games if args.pure_rl_games is not None else (400 if core_training_requested else 0)
+    replay_same_deal = args.replay_same_deal if args.replay_same_deal is not None else (50 if core_training_requested else 0)
 
     config = DeepTrainingConfig(
         deck=args.deck,
@@ -111,10 +127,12 @@ def main() -> int:
         acceptance_metric=args.acceptance_metric,
         min_win_delta=max(0, args.min_win_delta),
         teacher_label_model_states=bool(args.teacher_label_model_states),
-        pure_rl_games=max(0, args.pure_rl_games),
-        replay_same_deal=max(0, args.replay_same_deal),
+        pure_rl_games=max(0, pure_rl_games),
+        replay_same_deal=max(0, replay_same_deal),
         mcts_simulations=max(1, args.mcts_simulations),
         use_mcts_training=bool(args.use_mcts_training),
+        replay_buffer_size=max(1, args.replay_buffer_size),
+        replay_sample_ratio=max(0.0, args.replay_sample_ratio),
         progress_jsonl=args.progress_jsonl,
     )
     payload = run_deep_training(config)

@@ -17,6 +17,7 @@ from engine.ai.challenge_ai import AIAction, AIConfig, create_challenge_ai
 from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, CARD_SEMANTIC_SIZE, ActionStateEncoder, EncodedAction, EncodedState
 from engine.ai.dl.model import TORCH_AVAILABLE, create_model, load_checkpoint, save_checkpoint, torch
 from engine.ai.dl.opponent_pool import OpponentPool, save_opponent_pool, load_opponent_pool
+from engine.ai.dl.replay import ReplayBuffer
 
 from engine.ai.training import DECK_SPECS, _determine_soft_winner, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
@@ -119,7 +120,7 @@ class DeepTrainingConfig:
     min_win_delta: int = 0
     teacher_label_model_states: bool = True
     # --- New: Pure RL & MCTS settings ---
-    pure_rl_games: int = 400
+    pure_rl_games: int = 0
     mcts_simulations: int = 200
     mcts_chance_nodes: bool = True
     use_mcts_training: bool = True
@@ -128,11 +129,13 @@ class DeepTrainingConfig:
     curiosity_beta: float = 0.05
     use_curiosity: bool = False
     # --- New: Same-deal replay ---
-    replay_same_deal: int = 50
+    replay_same_deal: int = 0
     # --- New: Fair evaluation ---
     eval_same_seeds: bool = True
     # --- New: Deck embedding ---
     deck_embed_dim: int = 0  # 0 = disabled, 16 = enabled
+    replay_buffer_size: int = 50000
+    replay_sample_ratio: float = 0.5
 
 
 @dataclass
@@ -185,6 +188,10 @@ class ModelGameTask:
     temperature: float = 0.9
     teacher_label_model_states: bool = True
     phase_tag: str = "rl"
+    pure_rl: bool = False
+    use_mcts: bool = False
+    mcts_simulations: int = 0
+    mcts_chance_nodes: bool = True
     opponent_model_state: dict[str, Any] | None = None
     opponent_model_config: dict[str, Any] | None = None
 
@@ -430,6 +437,11 @@ def _model_payload_for_worker(model) -> tuple[dict[str, Any], dict[str, Any]]:
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
         "use_attention": bool(getattr(model, "use_attention", True)),
         "state_norm": getattr(model, "state_norm", "layer"),
+        "deck_embed_dim": int(getattr(model, "deck_embed_dim", 0)),
+        "num_decks": (
+            int(getattr(getattr(model, "deck_embedding", None), "num_embeddings", 8))
+            if getattr(model, "deck_embedding", None) is not None else 8
+        ),
     }
     return state, config
 
@@ -582,15 +594,61 @@ def _execute_bootstrap_task(task: BootstrapTask) -> list[TrainingExample]:
     )
 
 
+class DeepTrainingTaskRunner:
+    """Reusable process-pool runner for deep-training rollout tasks."""
+
+    def __init__(self, workers: int | None):
+        self.worker_count = _normalized_workers(workers)
+        self.executor: ProcessPoolExecutor | None = None
+        self._broken = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.executor is not None:
+            shutdown = getattr(self.executor, "shutdown", None)
+            if callable(shutdown):
+                shutdown(wait=True)
+            self.executor = None
+        return False
+
+    def _ensure_executor(self, task_count: int) -> ProcessPoolExecutor | None:
+        if self._broken or self.worker_count <= 1 or task_count <= 1:
+            return None
+        if self.executor is None:
+            max_workers = max(1, self.worker_count)
+            self.executor = ProcessPoolExecutor(max_workers=max_workers, initializer=_worker_init)
+        return self.executor
+
+    def run_bootstrap_tasks(self, tasks: list[BootstrapTask]) -> list[list[TrainingExample]]:
+        executor = self._ensure_executor(len(tasks))
+        if executor is None:
+            return [_execute_bootstrap_task(task) for task in tasks]
+        try:
+            return list(executor.map(_execute_bootstrap_task, tasks))
+        except BrokenProcessPool:
+            self._broken = True
+            return [_execute_bootstrap_task(task) for task in tasks]
+
+    def run_model_game_tasks(
+        self,
+        tasks: list[ModelGameTask],
+    ) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]]:
+        executor = self._ensure_executor(len(tasks))
+        if executor is None:
+            return [_execute_model_game_task(task) for task in tasks]
+        try:
+            return list(executor.map(_execute_model_game_task, tasks))
+        except BrokenProcessPool:
+            self._broken = True
+            return [_execute_model_game_task(task) for task in tasks]
+
+
 def _run_bootstrap_tasks(tasks: list[BootstrapTask], workers: int | None) -> list[list[TrainingExample]]:
     worker_count = _normalized_workers(workers)
-    if worker_count <= 1 or len(tasks) <= 1:
-        return [_execute_bootstrap_task(task) for task in tasks]
-    try:
-        with ProcessPoolExecutor(max_workers=worker_count, initializer=_worker_init) as executor:
-            return list(executor.map(_execute_bootstrap_task, tasks))
-    except BrokenProcessPool:
-        return [_execute_bootstrap_task(task) for task in tasks]
+    with DeepTrainingTaskRunner(worker_count) as runner:
+        return runner.run_bootstrap_tasks(tasks)
 
 
 def _collect_bootstrap_examples_parallel(
@@ -601,6 +659,7 @@ def _collect_bootstrap_examples_parallel(
     max_steps: int,
     workers: int,
     teacher_search_preset: str,
+    task_runner: DeepTrainingTaskRunner | None = None,
 ) -> list[TrainingExample]:
     target_games = max(0, int(games))
     if target_games <= 0:
@@ -612,7 +671,12 @@ def _collect_bootstrap_examples_parallel(
         for start in range(0, target_games, chunk_size)
     ]
     examples: list[TrainingExample] = []
-    for rows in _run_bootstrap_tasks(tasks, worker_count):
+    task_rows = (
+        task_runner.run_bootstrap_tasks(tasks)
+        if task_runner is not None
+        else _run_bootstrap_tasks(tasks, worker_count)
+    )
+    for rows in task_rows:
         examples.extend(rows)
     return examples
 
@@ -663,22 +727,29 @@ def _forward_batch(model, examples: list[TrainingExample], device: str):
         device=device,
     )
 
-    max_actions = max(len(ex.actions) for ex in examples)
-    action_numeric = torch.zeros(B, max_actions, action_numeric_size, dtype=torch.float32, device=device)
-    action_cards = torch.zeros(B, max_actions, dtype=torch.long, device=device)
-    action_mask = torch.zeros(B, max_actions, dtype=torch.bool, device=device)
-
-    for i, ex in enumerate(examples):
+    max_actions = max(1, max(len(ex.actions) for ex in examples))
+    action_numeric_rows: list[list[list[float]]] = []
+    action_card_rows: list[list[int]] = []
+    action_mask_rows: list[list[bool]] = []
+    for ex in examples:
         n = len(ex.actions)
-        if n == 0:
-            continue
-        action_numeric[i, :n] = torch.tensor(
-            [_fit_sequence(a.numeric, action_numeric_size, 0.0) for a in ex.actions],
-            dtype=torch.float32,
-            device=device,
-        )
-        action_cards[i, :n] = torch.tensor([a.card_id for a in ex.actions], dtype=torch.long, device=device)
-        action_mask[i, :n] = True
+        numeric_row = [
+            _fit_sequence(a.numeric, action_numeric_size, 0.0)
+            for a in ex.actions
+        ]
+        card_row = [a.card_id for a in ex.actions]
+        mask_row = [True] * n
+        if n < max_actions:
+            numeric_row.extend([[0.0] * action_numeric_size for _ in range(max_actions - n)])
+            card_row.extend([0] * (max_actions - n))
+            mask_row.extend([False] * (max_actions - n))
+        action_numeric_rows.append(numeric_row[:max_actions])
+        action_card_rows.append(card_row[:max_actions])
+        action_mask_rows.append(mask_row[:max_actions])
+
+    action_numeric = torch.tensor(action_numeric_rows, dtype=torch.float32, device=device)
+    action_cards = torch.tensor(action_card_rows, dtype=torch.long, device=device)
+    action_mask = torch.tensor(action_mask_rows, dtype=torch.bool, device=device)
 
     logits, value = model(state_numeric, state_cards, action_numeric, action_cards, action_mask)
     return logits, value, action_mask
@@ -705,22 +776,29 @@ def _forward_choice_batch(model, examples: list[ChoiceTrainingExample], device: 
         device=device,
     )
 
-    max_choices = max(len(ex.candidate_choices) for ex in examples)
-    choice_numeric = torch.zeros(B, max_choices, action_numeric_size, dtype=torch.float32, device=device)
-    choice_cards = torch.zeros(B, max_choices, dtype=torch.long, device=device)
-    choice_mask = torch.zeros(B, max_choices, dtype=torch.bool, device=device)
-
-    for i, ex in enumerate(examples):
+    max_choices = max(1, max(len(ex.candidate_choices) for ex in examples))
+    choice_numeric_rows: list[list[list[float]]] = []
+    choice_card_rows: list[list[int]] = []
+    choice_mask_rows: list[list[bool]] = []
+    for ex in examples:
         n = len(ex.candidate_choices)
-        if n == 0:
-            continue
-        choice_numeric[i, :n] = torch.tensor(
-            [_fit_sequence(a.numeric, action_numeric_size, 0.0) for a in ex.candidate_choices],
-            dtype=torch.float32,
-            device=device,
-        )
-        choice_cards[i, :n] = torch.tensor([a.card_id for a in ex.candidate_choices], dtype=torch.long, device=device)
-        choice_mask[i, :n] = True
+        numeric_row = [
+            _fit_sequence(a.numeric, action_numeric_size, 0.0)
+            for a in ex.candidate_choices
+        ]
+        card_row = [a.card_id for a in ex.candidate_choices]
+        mask_row = [True] * n
+        if n < max_choices:
+            numeric_row.extend([[0.0] * action_numeric_size for _ in range(max_choices - n)])
+            card_row.extend([0] * (max_choices - n))
+            mask_row.extend([False] * (max_choices - n))
+        choice_numeric_rows.append(numeric_row[:max_choices])
+        choice_card_rows.append(card_row[:max_choices])
+        choice_mask_rows.append(mask_row[:max_choices])
+
+    choice_numeric = torch.tensor(choice_numeric_rows, dtype=torch.float32, device=device)
+    choice_cards = torch.tensor(choice_card_rows, dtype=torch.long, device=device)
+    choice_mask = torch.tensor(choice_mask_rows, dtype=torch.bool, device=device)
 
     if hasattr(model, "score_choices"):
         logits = model.score_choices(state_numeric, state_cards, choice_numeric, choice_cards, choice_mask)
@@ -868,7 +946,11 @@ def _train_examples(
             entropy = (entropy_per_ex * valid.float()).sum() / divisor
             if sp_indices:
                 sp_value = value[sp_indices]
-                sp_targets = torch.tensor([float(ex.value_target) for i, ex in enumerate(batch) if i in sp_indices], dtype=torch.float32, device=device)
+                sp_targets = torch.tensor(
+                    [float(_value_target_for(ex)) for i, ex in enumerate(batch) if i in sp_indices],
+                    dtype=torch.float32,
+                    device=device,
+                )
                 value_loss = F.mse_loss(sp_value, sp_targets)
             else:
                 value_loss = torch.tensor(0.0, device=device)
@@ -1406,6 +1488,10 @@ def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, li
         teacher_label_model_states=task.teacher_label_model_states,
         phase_tag=task.phase_tag,
         opponent_model=opponent_model,
+        pure_rl=bool(task.pure_rl),
+        use_mcts=bool(task.use_mcts),
+        mcts_simulations=max(1, int(task.mcts_simulations or 1)),
+        mcts_chance_nodes=bool(task.mcts_chance_nodes),
     )
 
 
@@ -1414,13 +1500,8 @@ def _run_model_game_tasks(
     workers: int | None,
 ) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]]:
     worker_count = _normalized_workers(workers)
-    if worker_count <= 1 or len(tasks) <= 1:
-        return [_execute_model_game_task(task) for task in tasks]
-    try:
-        with ProcessPoolExecutor(max_workers=worker_count, initializer=_worker_init) as executor:
-            return list(executor.map(_execute_model_game_task, tasks))
-    except BrokenProcessPool:
-        return [_execute_model_game_task(task) for task in tasks]
+    with DeepTrainingTaskRunner(worker_count) as runner:
+        return runner.run_model_game_tasks(tasks)
 
 
 def _model_game_tasks(
@@ -1435,6 +1516,11 @@ def _model_game_tasks(
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
     opponent_pool: Any = None,
+    temperatures: list[float] | None = None,
+    pure_rl: bool = False,
+    use_mcts: bool = False,
+    mcts_simulations: int = 0,
+    mcts_chance_nodes: bool = True,
 ) -> list[ModelGameTask]:
     model_state, model_config = _model_payload_for_worker(model)
     tasks = []
@@ -1453,9 +1539,13 @@ def _model_game_tasks(
             model_state,
             model_config,
             teacher_search_preset,
-            temperature,
+            temperatures[i] if temperatures is not None and i < len(temperatures) else temperature,
             teacher_label_model_states,
             phase_tag,
+            pure_rl,
+            use_mcts,
+            mcts_simulations,
+            mcts_chance_nodes,
             opponent_model_state=opp_state,
             opponent_model_config=opp_config,
         ))
@@ -1472,6 +1562,7 @@ def evaluate_model(
     max_steps: int = 120,
     workers: int = 1,
     teacher_search_preset: str = "hybrid",
+    task_runner: DeepTrainingTaskRunner | None = None,
 ) -> dict[str, Any]:
     stats = {
         "wins": 0,
@@ -1505,8 +1596,7 @@ def evaluate_model(
             for game_seed in seeds
         ]
     else:
-        rows = _run_model_game_tasks(
-            _model_game_tasks(
+        tasks = _model_game_tasks(
                 model,
                 deck_key,
                 seeds,
@@ -1516,8 +1606,11 @@ def evaluate_model(
                 temperature=0.0,
                 teacher_label_model_states=False,
                 phase_tag="eval",
-            ),
-            workers,
+        )
+        rows = (
+            task_runner.run_model_game_tasks(tasks)
+            if task_runner is not None
+            else _run_model_game_tasks(tasks, workers)
         )
     for row in rows:
         winner, score = row[0], row[1]
@@ -1545,7 +1638,10 @@ def _load_or_create_model(config: DeepTrainingConfig):
         model, payload = load_checkpoint(config.model, config.device)
         if int(payload.get("version") or 0) >= 3:
             return model
-    model = create_model(choice_head_enabled=bool(config.choice_head_enabled))
+    model = create_model(
+        choice_head_enabled=bool(config.choice_head_enabled),
+        deck_embed_dim=max(0, int(config.deck_embed_dim)),
+    )
     model.to(config.device)
     return model
 
@@ -1663,6 +1759,30 @@ def _sample_teacher_examples(bootstrap: list[TrainingExample], target_size: int,
     return rng.sample(bootstrap, target_size)
 
 
+def _sample_replay_examples(
+    replay_buffer: ReplayBuffer,
+    fresh_count: int,
+    *,
+    ratio: float,
+    minimum: int = 0,
+) -> list[TrainingExample]:
+    if replay_buffer.size <= 0:
+        return []
+    try:
+        replay_ratio = max(0.0, float(ratio))
+    except (TypeError, ValueError):
+        replay_ratio = 0.0
+    if replay_ratio <= 0.0:
+        return []
+    target_size = int(max(0, fresh_count) * replay_ratio)
+    if fresh_count > 0 and target_size <= 0:
+        target_size = 1
+    target_size = max(target_size, max(0, int(minimum)))
+    if target_size <= 0:
+        return []
+    return replay_buffer.sample(min(replay_buffer.size, target_size))
+
+
 def _aggregate_train_results(results: list[dict[str, Any]], total_examples: int) -> dict[str, Any]:
     if not results:
         return {
@@ -1704,6 +1824,7 @@ def _collect_rollout_batch(
     teacher_label_model_states: bool = True,
     phase_tag: str = "rl",
     opponent_pool: Any = None,
+    task_runner: DeepTrainingTaskRunner | None = None,
 ) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]]:
     if not seeds:
         return []
@@ -1730,8 +1851,7 @@ def _collect_rollout_batch(
                 opponent_model=opp_model,
             ))
         return results
-    return _run_model_game_tasks(
-        _model_game_tasks(
+    tasks = _model_game_tasks(
             model,
             deck_key,
             seeds,
@@ -1741,8 +1861,11 @@ def _collect_rollout_batch(
             teacher_label_model_states=teacher_label_model_states,
             phase_tag=phase_tag,
             opponent_pool=opponent_pool,
-        ),
-        workers,
+    )
+    return (
+        task_runner.run_model_game_tasks(tasks)
+        if task_runner is not None
+        else _run_model_game_tasks(tasks, workers)
     )
 
 
@@ -1769,6 +1892,10 @@ def _train_deck_pipeline(
     acceptance_metric = config.acceptance_metric if config.acceptance_metric in ("wins", "points", "score") else "wins"
     min_win_delta = max(0, int(config.min_win_delta))
     eval_seed = deck_seed + 900_000
+    replay_buffer = ReplayBuffer(capacity=max(1, int(config.replay_buffer_size)), seed=deck_seed)
+    replay_ratio = max(0.0, float(config.replay_sample_ratio))
+    task_runner = DeepTrainingTaskRunner(worker_count)
+    task_runner.__enter__()
 
     emit({
         "type": "deck_started",
@@ -1798,7 +1925,9 @@ def _train_deck_pipeline(
         max_steps=max_steps,
         workers=worker_count,
         teacher_search_preset=teacher_search_preset,
+        task_runner=task_runner,
     )
+    replay_buffer.extend(bootstrap)
     total_done += bootstrap_games
     emit({
         "type": "bootstrap_finished",
@@ -1837,6 +1966,7 @@ def _train_deck_pipeline(
             max_steps=max_steps,
             workers=worker_count,
             teacher_search_preset=teacher_search_preset,
+            task_runner=task_runner,
         )
         emit({
             "type": "baseline_eval_finished",
@@ -1870,6 +2000,7 @@ def _train_deck_pipeline(
             teacher_search_preset=teacher_search_preset,
             teacher_label_model_states=True,
             phase_tag="dagger",
+            task_runner=task_runner,
         )
         dagger_examples: list[TrainingExample] = []
         choice_batch_examples: list[ChoiceTrainingExample] = []
@@ -1909,7 +2040,12 @@ def _train_deck_pipeline(
             min(len(bootstrap), max(config.batch_size, len(dagger_examples))),
             rng,
         )
-        train_rows = list(teacher_mix) + dagger_examples
+        replay_mix = _sample_replay_examples(
+            replay_buffer,
+            len(dagger_examples) + len(teacher_mix),
+            ratio=replay_ratio,
+        )
+        train_rows = list(teacher_mix) + replay_mix + dagger_examples
         train_result = _train_examples(
             model,
             train_rows,
@@ -1929,6 +2065,7 @@ def _train_deck_pipeline(
         )
         dagger_train_results.append(train_result)
         dagger_choice_results.append(choice_result)
+        replay_buffer.extend(dagger_examples)
         emit({
             "type": "train_phase_finished",
             "deck": deck_key,
@@ -1938,6 +2075,7 @@ def _train_deck_pipeline(
             **choice_result,
             "dagger_examples": len(dagger_examples),
             "teacher_examples": len(teacher_mix),
+            "replay_examples": len(replay_mix),
             "total_games_played": total_done,
             "total_training_games": total_training_games,
         })
@@ -1970,6 +2108,7 @@ def _train_deck_pipeline(
             teacher_label_model_states=bool(config.teacher_label_model_states),
             phase_tag="rl",
             opponent_pool=opponent_pool,
+            task_runner=task_runner,
         )
         batch_examples: list[TrainingExample] = []
         batch_dagger_examples: list[TrainingExample] = []
@@ -2014,7 +2153,12 @@ def _train_deck_pipeline(
             min(len(bootstrap), max(config.batch_size, len(batch_examples) - len(batch_dagger_examples), len(batch_examples) // 2)),
             rng,
         )
-        train_rows = list(teacher_mix) + batch_dagger_examples + batch_examples
+        replay_mix = _sample_replay_examples(
+            replay_buffer,
+            len(batch_dagger_examples) + len(batch_examples) + len(teacher_mix),
+            ratio=replay_ratio,
+        )
+        train_rows = list(teacher_mix) + replay_mix + batch_dagger_examples + batch_examples
         train_result = _train_examples(
             model,
             train_rows,
@@ -2033,6 +2177,8 @@ def _train_deck_pipeline(
         )
         self_play_train_results.append(train_result)
         self_play_choice_results.append(choice_result)
+        replay_buffer.extend(batch_dagger_examples)
+        replay_buffer.extend(batch_examples)
 
         # Update opponent pool with latest model snapshot for future self-play
         model_snapshot, model_snapshot_config = _model_payload_for_worker(model)
@@ -2048,6 +2194,7 @@ def _train_deck_pipeline(
             "self_play_examples": len(batch_examples),
             "dagger_examples": len(batch_dagger_examples),
             "teacher_examples": len(teacher_mix),
+            "replay_examples": len(replay_mix),
             "opponent_pool_size": len(opponent_pool),
             "total_games_played": total_done,
             "total_training_games": total_training_games,
@@ -2084,35 +2231,92 @@ def _train_deck_pipeline(
             "phase": "same_deal_replay",
             "target_games": same_deal_games,
         })
-        trajectories_per_game = 3
-        for game_idx in range(same_deal_games):
-            if config.use_mcts_training and model is not None:
+        same_deal_rows = []
+        same_deal_game_indices: list[int] = []
+        if config.use_mcts_training and model is not None:
+            seeds: list[int] = []
+            temps: list[float] = []
+            for game_idx in range(same_deal_games):
                 base_seed = deck_seed + 700_000 + game_idx * 113
-                # Play 3 trajectories on the same seed with different temperatures
-                for traj_idx, temp in enumerate([0.0, 0.5, 0.9]):
-                    mcts_sims = int(config.mcts_simulations)
-                    winner, score, game_examples, _, _diagnostics = _play_model_game(
-                        model, deck_key, base_seed,
-                        device=config.device, max_steps=max_steps, record=True,
+                for temp in (0.0, 0.5, 0.9):
+                    seeds.append(base_seed)
+                    temps.append(temp)
+                    same_deal_game_indices.append(game_idx)
+            if worker_count > 1 and seeds:
+                tasks = _model_game_tasks(
+                    model,
+                    deck_key,
+                    seeds,
+                    max_steps=max_steps,
+                    record=True,
+                    teacher_search_preset=teacher_search_preset,
+                    temperatures=temps,
+                    teacher_label_model_states=False,
+                    phase_tag="same_deal",
+                    pure_rl=True,
+                    use_mcts=True,
+                    mcts_simulations=int(config.mcts_simulations),
+                    mcts_chance_nodes=bool(config.mcts_chance_nodes),
+                )
+                same_deal_rows = task_runner.run_model_game_tasks(tasks)
+            else:
+                for game_seed, temp in zip(seeds, temps):
+                    same_deal_rows.append(_play_model_game(
+                        model,
+                        deck_key,
+                        game_seed,
+                        device=config.device,
+                        max_steps=max_steps,
+                        record=True,
                         teacher_search_preset=teacher_search_preset,
                         temperature=temp,
                         teacher_label_model_states=False,
                         phase_tag="same_deal",
-                        use_mcts=True, mcts_simulations=mcts_sims,
+                        use_mcts=True,
+                        mcts_simulations=int(config.mcts_simulations),
                         mcts_chance_nodes=bool(config.mcts_chance_nodes),
                         pure_rl=True,
-                    )
-                    # Mark self-play examples
-                    sp_examples = [ex for ex in game_examples if ex.source == "self_play"]
-                    for ex in sp_examples:
-                        ex.phase_tag = "same_deal"
-                    same_deal_examples.extend(sp_examples)
-                    total_done += 1
+                    ))
+
+        for row_idx, (_winner, _score, game_examples, _choices, _diagnostics) in enumerate(same_deal_rows):
+            sp_examples = [ex for ex in game_examples if ex.source == "self_play"]
+            for ex in sp_examples:
+                ex.phase_tag = "same_deal"
+            same_deal_examples.extend(sp_examples)
+            total_done += 1
+        for game_idx in range(same_deal_games):
             emit({
                 "type": "same_deal_game_finished",
                 "deck": deck_key,
                 "game": game_idx + 1,
                 "target_games": same_deal_games,
+                "total_games_played": total_done,
+                "total_training_games": total_training_games,
+            })
+        if same_deal_examples:
+            replay_mix = _sample_replay_examples(
+                replay_buffer,
+                len(same_deal_examples),
+                ratio=replay_ratio,
+            )
+            same_deal_train_result = _train_examples(
+                model,
+                replay_mix + same_deal_examples,
+                device=config.device,
+                learning_rate=config.learning_rate * 0.25,
+                epochs=updates_per_rollout,
+                batch_size=config.batch_size,
+            )
+            self_play_train_results.append(same_deal_train_result)
+            total_self_play_examples += len(same_deal_examples)
+            replay_buffer.extend(same_deal_examples)
+            emit({
+                "type": "train_phase_finished",
+                "deck": deck_key,
+                "phase": "same_deal_replay",
+                **same_deal_train_result,
+                "examples": len(same_deal_examples),
+                "replay_examples": len(replay_mix),
                 "total_games_played": total_done,
                 "total_training_games": total_training_games,
             })
@@ -2122,6 +2326,7 @@ def _train_deck_pipeline(
             "phase": "same_deal_replay",
             "examples": len(same_deal_examples),
             "total_games_played": total_done,
+            "total_training_games": total_training_games,
         })
 
     # ------------------------------------------------------------------
@@ -2163,11 +2368,14 @@ def _train_deck_pipeline(
             batch_examples: list[TrainingExample] = []
             batch_choices: list[ChoiceTrainingExample] = []
 
-            for row_idx, game_seed in enumerate(seeds):
+            if worker_count > 1 and curiosity_tracker is None:
                 mcts_sims = int(config.mcts_simulations) if use_mcts_training else 0
-                winner, score, game_examples, game_choices, _diagnostics = _play_model_game(
-                    model, deck_key, game_seed,
-                    device=config.device, max_steps=max_steps, record=True,
+                rows = task_runner.run_model_game_tasks(_model_game_tasks(
+                    model,
+                    deck_key,
+                    seeds,
+                    max_steps=max_steps,
+                    record=True,
                     teacher_search_preset=teacher_search_preset,
                     temperature=0.7,
                     teacher_label_model_states=False,
@@ -2176,8 +2384,30 @@ def _train_deck_pipeline(
                     use_mcts=use_mcts_training and mcts_sims > 0,
                     mcts_simulations=mcts_sims,
                     mcts_chance_nodes=bool(config.mcts_chance_nodes),
-                    curiosity_tracker=curiosity_tracker,
-                )
+                ))
+            else:
+                rows = []
+                for game_seed in seeds:
+                    mcts_sims = int(config.mcts_simulations) if use_mcts_training else 0
+                    rows.append(_play_model_game(
+                        model,
+                        deck_key,
+                        game_seed,
+                        device=config.device,
+                        max_steps=max_steps,
+                        record=True,
+                        teacher_search_preset=teacher_search_preset,
+                        temperature=0.7,
+                        teacher_label_model_states=False,
+                        phase_tag="pure_rl",
+                        pure_rl=True,
+                        use_mcts=use_mcts_training and mcts_sims > 0,
+                        mcts_simulations=mcts_sims,
+                        mcts_chance_nodes=bool(config.mcts_chance_nodes),
+                        curiosity_tracker=curiosity_tracker,
+                    ))
+
+            for row_idx, (winner, score, game_examples, game_choices, _diagnostics) in enumerate(rows):
                 sp_examples = [ex for ex in game_examples if ex.source == "self_play"]
                 batch_examples.extend(sp_examples)
                 batch_choices.extend(game_choices)
@@ -2195,14 +2425,21 @@ def _train_deck_pipeline(
 
             # Train on pure RL batch
             if batch_examples:
+                replay_mix = _sample_replay_examples(
+                    replay_buffer,
+                    len(batch_examples),
+                    ratio=replay_ratio,
+                )
                 train_result = _train_examples(
-                    model, batch_examples,
+                    model, replay_mix + batch_examples,
                     device=config.device,
                     learning_rate=config.learning_rate * 0.25,
                     epochs=updates_per_rollout,
                     batch_size=config.batch_size,
                 )
                 self_play_train_results.append(train_result)
+                total_self_play_examples += len(batch_examples)
+                replay_buffer.extend(batch_examples)
                 emit({
                     "type": "train_phase_finished",
                     "deck": deck_key,
@@ -2210,6 +2447,7 @@ def _train_deck_pipeline(
                     "batch": (batch_start // rollout_batch_games) + 1,
                     **train_result,
                     "examples": len(batch_examples),
+                    "replay_examples": len(replay_mix),
                     "total_games_played": total_done,
                     "total_training_games": total_training_games,
                 })
@@ -2229,6 +2467,7 @@ def _train_deck_pipeline(
             "avg_score": round(pure_rl_score_total / max(1, pure_rl_games), 3),
             "curiosity": curiosity_stats,
             "total_games_played": total_done,
+            "total_training_games": total_training_games,
         })
 
     dagger_result = _aggregate_train_results(dagger_train_results, total_dagger_examples)
@@ -2312,6 +2551,7 @@ def _train_deck_pipeline(
         "total_games_played": total_done,
         "total_training_games": total_training_games,
     })
+    task_runner.__exit__(None, None, None)
     return summary, total_done
 
 
@@ -2378,7 +2618,16 @@ def run_deep_training(
     dagger_games = max(0, int(effective_config.dagger_games))
     self_play_games = max(0, int(effective_config.games))
     eval_games = max(0, int(effective_config.eval_games))
-    total_training_games = (bootstrap_games + dagger_games + self_play_games + eval_games) * len(deck_keys)
+    pure_rl_games = max(0, int(effective_config.pure_rl_games))
+    same_deal_trajectories = max(0, int(effective_config.replay_same_deal)) * 3
+    total_training_games = (
+        bootstrap_games
+        + dagger_games
+        + self_play_games
+        + pure_rl_games
+        + same_deal_trajectories
+        + eval_games
+    ) * len(deck_keys)
     total_done = 0
     model_paths: dict[str, str] = {}
     requested_model_paths: dict[str, str] = {}
@@ -2394,6 +2643,9 @@ def run_deep_training(
             "bootstrap_games": bootstrap_games,
             "dagger_games": dagger_games,
             "eval_games": eval_games,
+            "pure_rl_games": pure_rl_games,
+            "replay_same_deal": int(effective_config.replay_same_deal),
+            "same_deal_trajectories": same_deal_trajectories,
             "workers": int(effective_config.workers),
             "requested_device": device_info["requested_device"],
             "device": effective_config.device,
@@ -2410,6 +2662,8 @@ def run_deep_training(
             "acceptance_metric": effective_config.acceptance_metric,
             "min_win_delta": int(effective_config.min_win_delta),
             "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+            "replay_buffer_size": int(effective_config.replay_buffer_size),
+            "replay_sample_ratio": float(effective_config.replay_sample_ratio),
             "total_training_games": total_training_games,
         })
 
@@ -2459,6 +2713,8 @@ def run_deep_training(
                 "bootstrap_games": bootstrap_games,
                 "dagger_games": dagger_games,
                 "eval_games": eval_games,
+                "pure_rl_games": pure_rl_games,
+                "replay_same_deal": int(effective_config.replay_same_deal),
                 "workers": int(effective_config.workers),
                 "requested_device": device_info["requested_device"],
                 "device": effective_config.device,
@@ -2478,6 +2734,8 @@ def run_deep_training(
                 "acceptance_metric": effective_config.acceptance_metric,
                 "min_win_delta": int(effective_config.min_win_delta),
                 "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+                "replay_buffer_size": int(effective_config.replay_buffer_size),
+                "replay_sample_ratio": float(effective_config.replay_sample_ratio),
                 **_verification_metadata(eval_games, deck_accepted),
             }
             save_checkpoint(save_path, model, metadata)
@@ -2501,6 +2759,8 @@ def run_deep_training(
                 "bootstrap_games": bootstrap_games,
                 "dagger_games": dagger_games,
                 "eval_games": eval_games,
+                "pure_rl_games": pure_rl_games,
+                "replay_same_deal": int(effective_config.replay_same_deal),
                 "workers": int(effective_config.workers),
                 "requested_device": device_info["requested_device"],
                 "device": effective_config.device,
@@ -2517,6 +2777,8 @@ def run_deep_training(
                 "acceptance_metric": effective_config.acceptance_metric,
                 "min_win_delta": int(effective_config.min_win_delta),
                 "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+                "replay_buffer_size": int(effective_config.replay_buffer_size),
+                "replay_sample_ratio": float(effective_config.replay_sample_ratio),
                 **_verification_metadata(eval_games, all(accepted.values()) if accepted else False),
             },
         }

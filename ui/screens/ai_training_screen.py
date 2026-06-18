@@ -89,6 +89,11 @@ class AITrainingScreen(Screen):
         self.batch_size = 64
         self.rollout_batch_games = 16
         self.updates_per_rollout = 2
+        self.pure_rl_games = 400
+        self.replay_same_deal = 50
+        self.mcts_simulations = 256
+        self.replay_buffer_size = 50000
+        self.replay_sample_ratio = 0.5
         self.teacher_search_preset = "hybrid"
         self.search_preset = "hybrid"
         self.choice_head_enabled = True
@@ -763,6 +768,8 @@ class AITrainingScreen(Screen):
                 max(0, self.games)
                 + max(0, self.bootstrap_games)
                 + max(0, self.dagger_games)
+                + max(0, self.pure_rl_games)
+                + max(0, self.replay_same_deal) * 3
                 + max(0, self.eval_games)
             ) * decks)
         return max(1, self.games) * decks
@@ -864,6 +871,16 @@ class AITrainingScreen(Screen):
                 "--min-win-delta",
                 str(max(1, self.min_win_delta)),
                 "--teacher-label-model-states" if self.teacher_label_model_states else "--no-teacher-label-model-states",
+                "--pure-rl-games",
+                str(max(0, self.pure_rl_games)),
+                "--replay-same-deal",
+                str(max(0, self.replay_same_deal)),
+                "--mcts-simulations",
+                str(max(1, self.mcts_simulations)),
+                "--replay-buffer-size",
+                str(max(1, self.replay_buffer_size)),
+                "--replay-sample-ratio",
+                str(max(0.0, self.replay_sample_ratio)),
                 "--output",
                 output_path,
                 "--device",

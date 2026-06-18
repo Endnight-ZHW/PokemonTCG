@@ -5,7 +5,7 @@ construct DeepLearningAI and fall back to ChallengeAI when no model/runtime is
 available, while training scripts can require torch explicitly.
 """
 
-from engine.ai.dl.controller import DeepLearningAI, DeepLearningAIConfig
+from engine.ai.dl.controller import DeepLearningAI, DeepLearningAIConfig, is_deep_model_accepted
 from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
     STATE_CARD_SLOTS,
@@ -26,4 +26,5 @@ __all__ = [
     "EncodedAction",
     "EncodedState",
     "TORCH_AVAILABLE",
+    "is_deep_model_accepted",
 ]

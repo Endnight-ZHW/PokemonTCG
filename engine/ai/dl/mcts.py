@@ -218,6 +218,7 @@ class MCTSGuidedSearch:
         *,
         actions: list[AIAction] | None = None,
         deterministic: bool = True,
+        deadline: float | None = None,
     ) -> AIAction:
         """Convenience: run MCTS and return the chosen action.
 
@@ -231,7 +232,7 @@ class MCTSGuidedSearch:
             from engine.ai.challenge_ai import AIAction
             return AIAction(PlayerAction.END_TURN, {}, terminal=True)
 
-        result = self.search(state, player_idx, deck_key, actions=actions)
+        result = self.search(state, player_idx, deck_key, actions=actions, deadline=deadline)
 
         if deterministic:
             idx = result.best_action_idx

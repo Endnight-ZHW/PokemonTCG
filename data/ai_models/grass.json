@@ -1,0 +1,120 @@
+{
+  "metadata": {
+    "acceptance_metric": "points",
+    "accepted": true,
+    "bootstrap_games": 128,
+    "choice_head_enabled": true,
+    "created_at": 1781715274,
+    "cuda_available": true,
+    "dagger_games": 32,
+    "deck": "grass",
+    "device": "cuda",
+    "elapsed_seconds": 2884.981,
+    "eval_games": 600,
+    "games": 64,
+    "gpu_name": "NVIDIA GeForce RTX 4070 Ti",
+    "min_win_delta": 0,
+    "preserved_existing": false,
+    "pure_rl_games": 16,
+    "replay_buffer_size": 50000,
+    "replay_same_deal": 8,
+    "replay_sample_ratio": 0.5,
+    "requested_device": "cuda",
+    "requested_output_path": "data/ai_models\\candidate_default_eval600_grass.pt",
+    "rollout_batch_games": 16,
+    "summary": {
+      "grass": {
+        "acceptance_metric": "points",
+        "accepted": true,
+        "baseline_eval": {
+          "actions": 18761,
+          "avg_score": -298563.177,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 389,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 211
+        },
+        "bootstrap": {
+          "entropy": 1.169424,
+          "examples": 4386,
+          "loss": 1.103218,
+          "policy_loss": 1.103218,
+          "total_loss": 1.103218,
+          "value_loss": 0.0
+        },
+        "choice": {
+          "choice_examples": 14536,
+          "choice_loss": 1.194827
+        },
+        "choice_head_enabled": true,
+        "dagger": {
+          "entropy": 0.949612,
+          "examples": 3076,
+          "loss": 0.857975,
+          "policy_loss": 0.862723,
+          "total_loss": 0.857975,
+          "value_loss": 0.0
+        },
+        "dagger_stats": {
+          "draws": 0,
+          "losses": 23,
+          "wins": 9
+        },
+        "delta_avg_score": 60880.954,
+        "delta_point_rate": 0.03,
+        "delta_wins": 18,
+        "eval": {
+          "actions": 18571,
+          "avg_score": -237682.223,
+          "draws": 0,
+          "games": 600,
+          "invalid_action_rate": 0.0,
+          "invalid_actions": 0,
+          "losses": 371,
+          "no_target_action_rate": 0.0,
+          "no_target_actions": 0,
+          "wins": 229
+        },
+        "eval_seed": 907080,
+        "min_win_delta": 0,
+        "old_eval": {
+          "games": 0
+        },
+        "rollout_batch_games": 16,
+        "self_play": {
+          "entropy": 0.928503,
+          "examples": 3419,
+          "loss": 1.487045,
+          "policy_loss": 0.501131,
+          "total_loss": 1.487045,
+          "value_loss": 2.008967
+        },
+        "self_play_stats": {
+          "draws": 0,
+          "losses": 37,
+          "wins": 27
+        },
+        "teacher_label_model_states": true,
+        "teacher_search_preset": "fast",
+        "updates_per_rollout": 2
+      }
+    },
+    "teacher_label_model_states": true,
+    "teacher_search_preset": "fast",
+    "torch_cuda": "12.1",
+    "torch_version": "2.1.2+cu121",
+    "trainer": "teacher_dagger_rl_v3",
+    "updates_per_rollout": 2,
+    "verification_note": "Evaluation gate accepted this model.",
+    "verification_status": "verified_accepted",
+    "verified": true,
+    "workers": 12,
+    "deployed_from_model_path": "data/ai_models\\candidate_default_eval600_grass.pt",
+    "deployed_at": 1781715764
+  },
+  "model_path": "data\\ai_models\\grass.pt"
+}

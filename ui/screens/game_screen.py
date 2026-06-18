@@ -2096,6 +2096,7 @@ class GameScreen(
         if valid_attacks:
             self._attack_menu_open = True
             self._attack_menu_attacks = valid_attacks
+            self._attack_menu_hover = None
         self._clear_selection()
 
     @staticmethod
@@ -2462,7 +2463,7 @@ class GameScreen(
         return None
 
     def _handle_attack_menu_click(self, pos):
-        if self._attack_menu_hover is not None:
+        if self._attack_menu_hover is not None and self._attack_menu_hover < len(self._attack_menu_attacks):
             player_idx = self.state.active_player_idx
             i, attack = self._attack_menu_attacks[self._attack_menu_hover]
             if self._is_remote_client:

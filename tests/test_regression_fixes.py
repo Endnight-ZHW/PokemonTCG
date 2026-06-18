@@ -370,6 +370,32 @@ class TestEffectSemantics(unittest.TestCase):
         self.assertEqual(player.hand, [potion])
         self.assertEqual(player.discard, [])
 
+    def test_potion_pending_choice_accepts_selected_card_list(self):
+        state = _give_prizes(_make_state_with_pokemon(bench_card_ids=["sv1-113"]))
+        player = state.get_active_player()
+        potion = CardRegistry.get("svf-potion")
+        player.hand = [potion]
+        assert player.active is not None
+        assert player.bench[0] is not None
+        player.active.damage_counters = 2
+        player.bench[0].damage_counters = 3
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.PLAY_TRAINER,
+            player_idx=0,
+            hand_idx=0,
+        )
+
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_action)
+        callback = result.pending_action.callback
+        self.assertIsNotNone(callback)
+        callback([player.bench[0].card])
+
+        self.assertEqual(player.active.damage_counters, 2)
+        self.assertEqual(player.bench[0].damage_counters, 0)
+        self.assertTrue(player.healed_this_turn)
+
     def test_any_pokemon_damage_prompts_for_target_when_multiple_targets_exist(self):
         state = _give_prizes(_make_state_with_pokemon(active_card_id="sv2-grex"))
         player = state.get_active_player()

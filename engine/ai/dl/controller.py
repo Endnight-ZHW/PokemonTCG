@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import random
+import json
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +18,7 @@ _logger = get_logger(__name__)
 
 
 DEFAULT_MODEL_DIR = os.path.join("data", "ai_models")
+DEFAULT_MIN_ACCEPTED_EVAL_GAMES = 600
 
 
 def _fit_sequence(values: list, size: int, pad):
@@ -36,10 +39,83 @@ class DeepLearningAIConfig:
     choice_confidence_threshold: float = 0.30
     # MCTS settings
     use_mcts: bool = True
-    mcts_simulations: int = 200
+    mcts_simulations: int = 256
     mcts_c_puct: float = 1.4
     mcts_chance_nodes: bool = True
     mcts_dirichlet_noise: bool = False  # False for inference, True for training
+    max_thinking_time_seconds: float = 8.0
+
+
+def _metadata_eval_summary(metadata: dict[str, Any], deck_key: str) -> dict[str, Any] | None:
+    summary = metadata.get("summary")
+    if isinstance(summary, dict):
+        deck_summary = summary.get(deck_key)
+        if not isinstance(deck_summary, dict) and len(summary) == 1:
+            only_summary = next(iter(summary.values()))
+            deck_summary = only_summary if isinstance(only_summary, dict) else None
+        if isinstance(deck_summary, dict):
+            eval_summary = deck_summary.get("eval")
+            if isinstance(eval_summary, dict):
+                return eval_summary
+    return None
+
+
+def _metadata_eval_games(metadata: dict[str, Any], deck_key: str) -> int:
+    eval_summary = _metadata_eval_summary(metadata, deck_key)
+    if eval_summary is not None:
+        games = eval_summary.get("games")
+        if isinstance(games, (int, float)):
+            return int(games)
+    raw_eval_games = metadata.get("eval_games")
+    if isinstance(raw_eval_games, (int, float)):
+        return int(raw_eval_games)
+    return 0
+
+
+def _metadata_eval_has_no_bad_actions(metadata: dict[str, Any], deck_key: str) -> bool:
+    eval_summary = _metadata_eval_summary(metadata, deck_key)
+    if eval_summary is None:
+        return False
+    invalid_rate = eval_summary.get("invalid_action_rate")
+    no_target_rate = eval_summary.get("no_target_action_rate")
+    if isinstance(invalid_rate, (int, float)) and isinstance(no_target_rate, (int, float)):
+        return float(invalid_rate) <= 0.0 and float(no_target_rate) <= 0.0
+    invalid_actions = eval_summary.get("invalid_actions")
+    no_target_actions = eval_summary.get("no_target_actions")
+    if isinstance(invalid_actions, (int, float)) and isinstance(no_target_actions, (int, float)):
+        return int(invalid_actions) <= 0 and int(no_target_actions) <= 0
+    return False
+
+
+def is_deep_model_accepted(
+    deck_key: str | None,
+    model_dir: str = DEFAULT_MODEL_DIR,
+    min_eval_games: int = DEFAULT_MIN_ACCEPTED_EVAL_GAMES,
+) -> bool:
+    """Return True only for deployed, verified, accepted Deep AI checkpoints."""
+    if not deck_key:
+        return False
+    model_path = os.path.join(model_dir, f"{deck_key}.pt")
+    sidecar_path = os.path.splitext(model_path)[0] + ".json"
+    if not os.path.exists(model_path):
+        return False
+    try:
+        if os.path.getsize(model_path) <= 0:
+            return False
+    except OSError:
+        return False
+    try:
+        with open(sidecar_path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    metadata = payload.get("metadata") if isinstance(payload, dict) else {}
+    if not isinstance(metadata, dict):
+        return False
+    accepted = bool(metadata.get("accepted"))
+    verified = bool(metadata.get("verified")) or metadata.get("verification_status") == "verified_accepted"
+    has_enough_eval = _metadata_eval_games(metadata, deck_key) >= max(0, int(min_eval_games))
+    return accepted and verified and has_enough_eval and _metadata_eval_has_no_bad_actions(metadata, deck_key)
 
 
 class DeepLearningAI:
@@ -159,12 +235,15 @@ class DeepLearningAI:
             device=self.config.device,
             add_dirichlet_noise=bool(self.config.mcts_dirichlet_noise),
         )
+        max_time = max(0.0, float(self.config.max_thinking_time_seconds))
+        deadline = time.perf_counter() + max_time if max_time > 0.0 else None
         return searcher.select_action(
             state,
             player_idx,
             self.deck_key,
             actions=actions,
             deterministic=self.config.deterministic,
+            deadline=deadline,
         )
 
     @property

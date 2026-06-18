@@ -223,6 +223,8 @@ class DeepAITests(unittest.TestCase):
         self.assertIn("--acceptance-metric", help_result.stdout)
         self.assertIn("--min-win-delta", help_result.stdout)
         self.assertIn("--teacher-label-model-states", help_result.stdout)
+        self.assertIn("--replay-buffer-size", help_result.stdout)
+        self.assertIn("--replay-sample-ratio", help_result.stdout)
 
         with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "model.pt")
@@ -267,6 +269,345 @@ class DeepAITests(unittest.TestCase):
                     event_types = [json.loads(line)["type"] for line in fh if line.strip()]
                 self.assertIn("run_started", event_types)
                 self.assertIn("run_finished", event_types)
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_train_examples_uses_episode_return_for_self_play_value_loss(self):
+        from engine.ai.dl.encoder import EncodedAction, EncodedState
+        from engine.ai.dl.model import torch
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.training import TrainingExample
+
+        assert torch is not None
+
+        class TinyModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.tensor(0.1))
+                self.state_numeric_size = STATE_NUMERIC_SIZE
+                self.state_card_slots = STATE_CARD_SLOTS
+                self.action_numeric_size = ACTION_NUMERIC_SIZE
+
+        model = TinyModel()
+        example = TrainingExample(
+            EncodedState([0.0] * STATE_NUMERIC_SIZE, [0] * STATE_CARD_SLOTS),
+            [
+                EncodedAction([0.0] * ACTION_NUMERIC_SIZE, 0),
+                EncodedAction([1.0] * ACTION_NUMERIC_SIZE, 1),
+            ],
+            0,
+            source="self_play",
+            return_target=0.75,
+            value_target=-0.5,
+            advantage=1.0,
+        )
+        captured_targets = []
+
+        def fake_forward_batch(model_arg, examples, device):
+            batch = len(examples)
+            logits = torch.stack([model_arg.weight, -model_arg.weight]).repeat(batch, 1)
+            value = model_arg.weight.repeat(batch)
+            mask = torch.ones(batch, 2, dtype=torch.bool)
+            return logits, value, mask
+
+        import torch.nn.functional as F
+
+        original_mse_loss = F.mse_loss
+
+        def capture_mse_loss(input_tensor, target_tensor, *args, **kwargs):
+            captured_targets.extend(target_tensor.detach().cpu().tolist())
+            return original_mse_loss(input_tensor, target_tensor, *args, **kwargs)
+
+        with mock.patch.object(dl_training, "_forward_batch", fake_forward_batch), \
+             mock.patch("torch.nn.functional.mse_loss", side_effect=capture_mse_loss):
+            dl_training._train_examples(
+                model,
+                [example],
+                device="cpu",
+                learning_rate=1e-3,
+                epochs=1,
+                batch_size=1,
+            )
+
+        self.assertEqual(captured_targets, [0.75])
+
+    def test_same_deal_replay_examples_are_trained_and_counted(self):
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.encoder import EncodedAction, EncodedState
+        from engine.ai.dl.training import DeepTrainingConfig, TrainingExample
+
+        example = TrainingExample(
+            EncodedState([0.0] * STATE_NUMERIC_SIZE, [0] * STATE_CARD_SLOTS),
+            [EncodedAction([0.0] * ACTION_NUMERIC_SIZE, 0)],
+            0,
+            source="self_play",
+            return_target=1.0,
+            advantage=1.0,
+        )
+
+        def fake_play_model_game(*args, **kwargs):
+            clone = TrainingExample(
+                example.state,
+                example.actions,
+                example.target_index,
+                source="self_play",
+                return_target=1.0,
+                advantage=1.0,
+            )
+            return 0, 100.0, [clone], [], {"actions": 1, "invalid_actions": 0, "no_target_actions": 0}
+
+        def fake_train_examples(_model, examples, **_kwargs):
+            return {
+                "examples": len(examples),
+                "loss": 0.0,
+                "total_loss": 0.0,
+                "policy_loss": 0.0,
+                "value_loss": 0.0,
+                "entropy": 0.0,
+            }
+
+        events = []
+        with mock.patch.object(dl_training, "_collect_bootstrap_examples_parallel", return_value=[]), \
+             mock.patch.object(dl_training, "_model_payload_for_worker", return_value=({}, {})), \
+             mock.patch.object(dl_training, "_play_model_game", side_effect=fake_play_model_game), \
+             mock.patch.object(dl_training, "_train_examples", side_effect=fake_train_examples), \
+             mock.patch.object(dl_training, "_train_choice_examples", return_value={"choice_examples": 0, "choice_loss": 0.0}), \
+             mock.patch.object(dl_training, "evaluate_model", return_value={"games": 0, "wins": 0, "losses": 0, "draws": 0, "avg_score": 0.0}):
+            summary, _total_done = dl_training._train_deck_pipeline(
+                object(),
+                "fire",
+                17,
+                DeepTrainingConfig(
+                    deck="fire",
+                    games=0,
+                    bootstrap_games=0,
+                    dagger_games=0,
+                    eval_games=0,
+                    pure_rl_games=0,
+                    replay_same_deal=1,
+                    use_mcts_training=True,
+                    mcts_simulations=1,
+                    max_steps=20,
+                ),
+                events.append,
+                0,
+                3,
+            )
+
+        self.assertEqual(summary["self_play"]["examples"], 3)
+        self.assertTrue(any(event.get("phase") == "same_deal_replay" for event in events))
+
+    def test_model_game_task_passes_mcts_and_pure_rl_flags_to_worker(self):
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.training import ModelGameTask
+
+        captured = {}
+
+        def fake_play_model_game(*args, **kwargs):
+            captured.update(kwargs)
+            return None, 0.0, [], [], {"actions": 0, "invalid_actions": 0, "no_target_actions": 0}
+
+        task = ModelGameTask(
+            "fire",
+            17,
+            20,
+            True,
+            {},
+            {},
+            "fast",
+            pure_rl=True,
+            use_mcts=True,
+            mcts_simulations=7,
+            mcts_chance_nodes=False,
+        )
+        with mock.patch.object(dl_training, "_model_from_worker_payload", return_value=object()), \
+             mock.patch.object(dl_training, "_play_model_game", side_effect=fake_play_model_game):
+            dl_training._execute_model_game_task(task)
+
+        self.assertTrue(captured["pure_rl"])
+        self.assertTrue(captured["use_mcts"])
+        self.assertEqual(captured["mcts_simulations"], 7)
+        self.assertFalse(captured["mcts_chance_nodes"])
+
+    def test_deep_training_task_runner_reuses_model_game_executor(self):
+        from engine.ai.dl import training as dl_training
+
+        calls = {"created": 0, "mapped": 0}
+
+        class FakeExecutor:
+            def __init__(self, max_workers=None, initializer=None):
+                calls["created"] += 1
+                self.max_workers = max_workers
+                self.initializer = initializer
+
+            def map(self, fn, tasks):
+                calls["mapped"] += 1
+                return [fn(task) for task in tasks]
+
+            def shutdown(self, wait=True):
+                calls["shutdown"] = wait
+
+        def fake_execute(task):
+            return None, 0.0, [], [], {}
+
+        tasks = [
+            dl_training.ModelGameTask("fire", 1, 20, False, {}, {}, "fast"),
+            dl_training.ModelGameTask("fire", 2, 20, False, {}, {}, "fast"),
+        ]
+        with mock.patch.object(dl_training, "ProcessPoolExecutor", FakeExecutor), \
+             mock.patch.object(dl_training, "_execute_model_game_task", fake_execute):
+            with dl_training.DeepTrainingTaskRunner(workers=4) as runner:
+                runner.run_model_game_tasks(tasks)
+                runner.run_model_game_tasks(tasks)
+
+        self.assertEqual(calls["created"], 1)
+        self.assertEqual(calls["mapped"], 2)
+        self.assertTrue(calls["shutdown"])
+
+    def test_deep_model_acceptance_helper_requires_verified_accepted_metadata(self):
+        from engine.ai.dl.controller import is_deep_model_accepted
+
+        with temp_dir() as tmpdir:
+            model_dir = os.path.join(tmpdir, "models")
+            os.makedirs(model_dir)
+            model_path = os.path.join(model_dir, "fire.pt")
+            sidecar_path = os.path.join(model_dir, "fire.json")
+            with open(model_path, "wb") as fh:
+                fh.write(b"model")
+
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({"metadata": {"accepted": True, "verified": False}}, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({"metadata": {"accepted": True, "verified": True}}, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({"metadata": {"accepted": True, "verified": True, "eval_games": 599}}, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "summary": {"fire": {"eval": {"games": 600, "invalid_action_rate": 0.1, "no_target_action_rate": 0.0}}},
+                    }
+                }, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "summary": {"fire": {"eval": {"games": 600, "invalid_action_rate": 0.0, "no_target_action_rate": 0.2}}},
+                    }
+                }, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "summary": {"fire": {"eval": {"games": 600, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0}}},
+                    }
+                }, fh)
+            self.assertTrue(is_deep_model_accepted("fire", model_dir=model_dir))
+
+    def test_challenge_deck_screen_defaults_to_deep_when_accepted_model_available(self):
+        import pygame
+        from ui.screens import deck_select
+        from ui.screens.deck_select import DeckSelectScreen
+
+        pygame.init()
+        pygame.font.init()
+
+        class Manager:
+            _app = None
+
+        with mock.patch.object(deck_select, "is_deep_model_accepted", side_effect=lambda deck_key: deck_key == "water", create=True):
+            screen = DeckSelectScreen(
+                Manager(),
+                {"fire": FIRE_DECK, "water": WATER_DECK},
+                mode="challenge",
+            )
+
+        self.assertEqual(screen.ai_kind, "deep_learning")
+
+    def test_mcts_search_receives_runtime_deadline(self):
+        from engine.ai.dl import controller as dl_controller
+
+        selected = AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        captured = {}
+
+        class FakeMCTS:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def select_action(self, state, player_idx, deck_key, *, actions=None, deterministic=True, deadline=None):
+                captured["deadline"] = deadline
+                return selected
+
+        state = self._simple_state()
+        ai = DeepLearningAI(
+            "fire",
+            DeepLearningAIConfig(
+                max_thinking_time_seconds=8.0,
+                fallback_config=AIConfig(
+                    thinking_time_seconds=0.01,
+                    deterministic_search=True,
+                    max_sequence_depth=0,
+                    max_turn_actions=8,
+                    search_algorithm="beam",
+                ),
+            ),
+        )
+        ai.model = object()
+
+        with mock.patch.object(dl_controller.time, "perf_counter", return_value=100.0), \
+             mock.patch("engine.ai.dl.mcts.MCTSGuidedSearch", FakeMCTS):
+            action = ai._choose_with_mcts(state, 1, [selected])
+
+        self.assertEqual(action, selected)
+        self.assertEqual(captured["deadline"], 108.0)
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_deep_training_total_games_includes_pure_rl_and_same_deal(self):
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.training import DeepTrainingConfig, run_deep_training
+
+        events = []
+        with temp_dir() as tmpdir:
+            output = os.path.join(tmpdir, "model.pt")
+
+            def fake_train_deck_pipeline(_model, _deck_key, _deck_seed, _config, _emit, total_done, _total_training_games, old_eval=None):
+                return {"accepted": True, "eval": {"games": 0}}, total_done
+
+            with mock.patch.object(dl_training, "_train_deck_pipeline", side_effect=fake_train_deck_pipeline):
+                run_deep_training(
+                    DeepTrainingConfig(
+                        deck="fire",
+                        games=1,
+                        bootstrap_games=2,
+                        dagger_games=3,
+                        eval_games=4,
+                        pure_rl_games=5,
+                        replay_same_deal=6,
+                        output=output,
+                        device="cpu",
+                        max_steps=20,
+                    ),
+                    progress_callback=events.append,
+                )
+
+        self.assertEqual(events[0]["total_training_games"], 33)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
     def test_deep_training_writes_progress_events_and_sidecar(self):
@@ -706,6 +1047,7 @@ class DeepAITests(unittest.TestCase):
 
     def test_challenge_deck_screen_exposes_ai_kind_selector(self):
         import pygame
+        from ui.screens import deck_select
         from ui.screens.deck_select import DeckSelectScreen
 
         pygame.init()
@@ -717,17 +1059,18 @@ class DeepAITests(unittest.TestCase):
             def replace_top(self, screen):
                 self.screen = screen
 
-        screen = DeckSelectScreen(
-            Manager(),
-            {"fire": FIRE_DECK, "water": WATER_DECK},
-            mode="challenge",
-        )
-        self.assertEqual(screen.ai_kind, "challenge")
-        self.assertEqual(screen.ai_search_algorithm, "hybrid")
-        status, _status_color = screen._ai_model_status()
-        self.assertIn("专家混合搜索", status)
-        surface = pygame.Surface((1600, 1000))
-        screen.draw(surface)
+        with mock.patch.object(deck_select, "is_deep_model_accepted", return_value=False):
+            screen = DeckSelectScreen(
+                Manager(),
+                {"fire": FIRE_DECK, "water": WATER_DECK},
+                mode="challenge",
+            )
+            self.assertEqual(screen.ai_kind, "challenge")
+            self.assertEqual(screen.ai_search_algorithm, "hybrid")
+            status, _status_color = screen._ai_model_status()
+            self.assertIn("专家混合搜索", status)
+            surface = pygame.Surface((1600, 1000))
+            screen.draw(surface)
         self.assertEqual(
             [button["kind"] for button in screen.ai_kind_buttons],
             ["challenge", "deep_learning"],

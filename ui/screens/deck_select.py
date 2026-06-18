@@ -10,6 +10,7 @@ from ui.colors import (
 from ui.font_manager import get_font, get_font_size
 from ui.ui_theme import draw_panel, draw_button, draw_text_fit
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
+from engine.ai.dl.controller import is_deep_model_accepted
 
 
 # Deck definitions with metadata
@@ -108,6 +109,7 @@ class DeckSelectScreen(Screen):
         self.mode = mode
         self.is_challenge = mode == "challenge"
         self.ai_kind = "challenge"
+        self._ai_kind_user_selected = False
         self.ai_search_algorithm = "hybrid"
         self.ai_kind_buttons: list[dict] = []
         self.ai_search_buttons: list[dict] = []
@@ -134,6 +136,8 @@ class DeckSelectScreen(Screen):
         # Deck selection buttons for each player
         self.p1_buttons = []
         self.p2_buttons = []
+        if self.is_challenge:
+            self._select_default_ai_kind()
 
     def handle_event(self, event: pygame.event.Event):
         if event.type == pygame.MOUSEMOTION:
@@ -147,6 +151,7 @@ class DeckSelectScreen(Screen):
                 for button in self.ai_kind_buttons:
                     if button["rect"].collidepoint(event.pos):
                         self.ai_kind = button["kind"]
+                        self._ai_kind_user_selected = True
                         return
 
             # Check player 1 deck selection
@@ -159,7 +164,16 @@ class DeckSelectScreen(Screen):
             for i, btn in enumerate(self.p2_buttons):
                 if btn.collidepoint(event.pos):
                     self.p2_idx = i
+                    if self.is_challenge and not self._ai_kind_user_selected:
+                        self._select_default_ai_kind()
                     return
+
+    def _select_default_ai_kind(self) -> None:
+        if not self.is_challenge or not self.deck_keys:
+            return
+        deck_idx = max(0, min(self.p2_idx, len(self.deck_keys) - 1))
+        deck_key = self.deck_keys[deck_idx]
+        self.ai_kind = "deep_learning" if is_deep_model_accepted(deck_key) else "challenge"
 
     def _start_battle(self):
         from engine.game_state import GameState
@@ -486,8 +500,7 @@ class DeckSelectScreen(Screen):
             return False
         deck_idx = max(0, min(self.p2_idx, len(self.deck_keys) - 1))
         deck_key = self.deck_keys[deck_idx]
-        path = os.path.abspath(os.path.join("data", "ai_models", f"{deck_key}.pt"))
-        return os.path.exists(path) and os.path.getsize(path) > 0
+        return is_deep_model_accepted(deck_key)
 
     def _draw_challenge_deck_detail(self, surface):
         """Draw challenge-mode deck comparison with player/AI labels."""

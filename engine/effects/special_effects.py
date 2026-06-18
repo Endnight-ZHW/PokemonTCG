@@ -49,7 +49,23 @@ def _handle_potion_heal(state, player, player_idx, params):
         return ActionResult(True, f"{poke.card.name}回复了{amount}点HP。")
 
     # Let player choose
-    def heal_callback(selected_idx):
+    def heal_callback(selection):
+        if isinstance(selection, int):
+            selected_idx = selection
+        else:
+            selected_cards = list(selection or [])
+            selected_card = selected_cards[0] if selected_cards else None
+            selected_idx = 0
+            if selected_card is not None:
+                selected_key = getattr(selected_card, "api_id", getattr(selected_card, "name", None))
+                for idx, (_slot_name, candidate) in enumerate(injured):
+                    candidate_card = getattr(candidate, "card", None)
+                    candidate_key = getattr(candidate_card, "api_id", getattr(candidate_card, "name", None))
+                    if candidate_card is selected_card or candidate_key == selected_key:
+                        selected_idx = idx
+                        break
+        if selected_idx < 0 or selected_idx >= len(injured):
+            return ActionResult(False, "无效的回复目标。")
         slot_name, poke = injured[selected_idx]
         counters = amount // DAMAGE_PER_COUNTER
         poke.damage_counters = max(0, poke.damage_counters - counters)
