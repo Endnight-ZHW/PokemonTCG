@@ -1,0 +1,1720 @@
+{
+  "sv1-104": {
+    "attacks": {
+      "啃咬": {
+        "effects": []
+      },
+      "幽魂射击": {
+        "effects": []
+      }
+    }
+  },
+  "sv1-106": {
+    "attacks": {
+      "扫墓": {
+        "effects": [
+          {
+            "effect_type": "damage_per_discard_psychic",
+            "params": {
+              "base": 80,
+              "per_card": 10
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv1-107": {
+    "attacks": {
+      "三连突刺": {
+        "effects": [
+          {
+            "effect_type": "coin_flip_triple",
+            "params": {
+              "damage_per_head": 10,
+              "flips": 3
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv1-108": {
+    "abilities": {
+      "以太感知": {
+        "effects": [
+          {
+            "effect_type": "energy_attach",
+            "params": {
+              "amount": 1,
+              "filter": "psychic",
+              "from_zone": "hand",
+              "to": "bench"
+            }
+          },
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ],
+        "trigger": ""
+      }
+    },
+    "attacks": {
+      "超念力": {
+        "effects": []
+      }
+    }
+  },
+  "sv1-109": {
+    "attacks": {
+      "循环抽取": {
+        "effects": [
+          {
+            "effect_type": "discard_then_draw",
+            "params": {
+              "discard_amount": 1,
+              "draw_amount": 3
+            }
+          }
+        ]
+      },
+      "月亮强念": {
+        "effects": [
+          {
+            "effect_type": "damage_per_self_energy",
+            "params": {
+              "base": 30,
+              "energy_filter": "psychic",
+              "per_energy": 30
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv1-110": {
+    "abilities": {
+      "薄雾飘浮": {
+        "effects": [
+          {
+            "effect_type": "conditional_zero_retreat",
+            "params": {
+              "energy_type": "psychic"
+            }
+          }
+        ],
+        "text": "如果这只宝可梦身上附着了超能量的话，则这只宝可梦撤退所需能量全部消除。",
+        "trigger": "passive"
+      }
+    },
+    "attacks": {
+      "念动弹": {
+        "effects": []
+      }
+    }
+  },
+  "sv1-111": {
+    "attacks": {
+      "洁净光芒": {
+        "effects": [
+          {
+            "effect_type": "energy_discard",
+            "params": {
+              "amount": 3,
+              "filter": "any",
+              "from": "self"
+            }
+          }
+        ]
+      },
+      "滑翔": {
+        "effects": []
+      }
+    }
+  },
+  "sv1-112": {
+    "attacks": {
+      "基因螺旋": {
+        "effects": [
+          {
+            "effect_type": "energy_relocate",
+            "params": {
+              "amount": 99,
+              "from_self": true
+            }
+          }
+        ]
+      },
+      "精神拳": {
+        "effects": []
+      }
+    }
+  },
+  "sv1-113": {
+    "attacks": {
+      "光子镭射": {
+        "effects": [
+          {
+            "effect_type": "conditional_damage_bonus",
+            "params": {
+              "bonus": 90,
+              "condition": "field_energy_ge_5"
+            }
+          }
+        ]
+      },
+      "新月生长": {
+        "effects": [
+          {
+            "effect_type": "energy_attach",
+            "params": {
+              "amount": 1,
+              "filter": "psychic",
+              "from_zone": "deck",
+              "going_second_bonus": 3,
+              "to": "any"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv1-114": {
+    "attacks": {
+      "小使者": {
+        "effects": [
+          {
+            "effect_type": "search",
+            "params": {
+              "count": 2,
+              "destination": "hand",
+              "filter": "basic_energy",
+              "from_zone": "deck",
+              "reveal": true
+            }
+          }
+        ]
+      },
+      "旋转折返": {
+        "effects": [
+          {
+            "effect_type": "switch_self",
+            "params": {}
+          }
+        ]
+      }
+    }
+  },
+  "sv1-150": {
+    "trainer_effect": {
+      "effect_type": "switch_self",
+      "params": {}
+    }
+  },
+  "sv1-151": {
+    "trainer_effect": {
+      "effect_type": "search",
+      "params": {
+        "count": 1,
+        "destination": "bench",
+        "filter": "basic_pokemon",
+        "from_zone": "deck",
+        "reveal": true
+      }
+    }
+  },
+  "sv1-152": {
+    "trainer_effect": {
+      "effect_type": "evolve_skip_stage",
+      "params": {
+        "skip_to": "stage2"
+      }
+    }
+  },
+  "sv1-153": {
+    "trainer_effect": {
+      "effect_type": "conditional",
+      "params": {
+        "cost": {
+          "effect_type": "discard",
+          "params": {
+            "amount": 2,
+            "from": "hand"
+          }
+        },
+        "on_pay": {
+          "effect_type": "search",
+          "params": {
+            "count": 1,
+            "destination": "hand",
+            "filter": "pokemon",
+            "from_zone": "deck",
+            "reveal": true
+          }
+        }
+      }
+    }
+  },
+  "sv1-170": {
+    "trainer_effect": {
+      "effect_type": "look_top_deck",
+      "params": {
+        "count": 5,
+        "destination": "bench_energy",
+        "filter": "lightning_energy",
+        "rest_bottom": true,
+        "take": 2
+      }
+    }
+  },
+  "sv1-171": {
+    "trainer_effect": {
+      "effect_type": "search",
+      "params": {
+        "count": 2,
+        "destination": "hand",
+        "filter": "basic_energy",
+        "from_zone": "discard",
+        "reveal": true
+      }
+    }
+  },
+  "sv1-176": {
+    "trainer_effect": {
+      "effect_type": "judge",
+      "params": {
+        "draw": 4
+      }
+    }
+  },
+  "sv1-180": {
+    "trainer_effect": {
+      "effect_type": "draw",
+      "params": {
+        "amount": 3,
+        "player": "self"
+      }
+    }
+  },
+  "sv1-189": {
+    "trainer_effect": {
+      "effect_type": "discard_draw",
+      "params": {
+        "discard_hand": true,
+        "draw": 7
+      }
+    }
+  },
+  "sv1-201": {
+    "trainer_effect": {
+      "effect_type": "tool",
+      "params": {
+        "effect": "damage_boost_when_behind"
+      }
+    }
+  },
+  "sv1-202": {
+    "trainer_effect": {
+      "effect_type": "tool",
+      "params": {
+        "effect": "hp_boost_basic"
+      }
+    }
+  },
+  "sv1-203": {
+    "trainer_effect": {
+      "effect_type": "clara",
+      "params": {
+        "energy_count": 2,
+        "pokemon_count": 2
+      }
+    }
+  },
+  "sv1-204": {
+    "trainer_effect": {
+      "effect_type": "arven",
+      "params": {}
+    }
+  },
+  "sv1-49": {
+    "attacks": {
+      "愤怒冷冻": {
+        "effects": [
+          {
+            "effect_type": "conditional_status",
+            "params": {
+              "condition": "ko_by_attack_last_turn",
+              "status": "paralyzed",
+              "target": "opponent_active"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv1-ener-1": {},
+  "sv1-ener-2": {},
+  "sv1-ener-3": {},
+  "sv1-ener-4": {},
+  "sv1-ener-5": {},
+  "sv1-ener-6": {},
+  "sv1-ener-8": {},
+  "sv2-38": {
+    "attacks": {
+      "跳一下": {
+        "effects": [
+          {
+            "effect_type": "coin_flip",
+            "params": {
+              "on_heads": [],
+              "on_tails": [
+                {
+                  "effect_type": "attack_fail",
+                  "params": {}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-39": {
+    "attacks": {
+      "折返瞬击": {
+        "effects": [
+          {
+            "effect_type": "switch_self",
+            "params": {
+              "optional": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-cand": {
+    "trainer_effect": {
+      "effect_type": "look_top_deck",
+      "params": {
+        "count": 7,
+        "filter": "water_pokemon_and_energy",
+        "rest_bottom": true,
+        "take": 99
+      }
+    }
+  },
+  "sv2-catch": {
+    "trainer_effect": {
+      "effect_type": "coin_flip",
+      "params": {
+        "on_heads": [
+          {
+            "effect_type": "switch_opponent",
+            "params": {
+              "you_choose": true
+            }
+          }
+        ],
+        "on_tails": []
+      }
+    }
+  },
+  "sv2-delib": {
+    "attacks": {
+      "冰之翼": {
+        "effects": []
+      },
+      "双重抽取": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-glast": {
+    "attacks": {
+      "冻结": {
+        "effects": [
+          {
+            "effect_type": "attack_lock_basic",
+            "params": {
+              "target": "opponent_active"
+            }
+          }
+        ]
+      },
+      "疯狂冲撞": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 30
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-grex": {
+    "attacks": {
+      "激流斩": {
+        "effects": [
+          {
+            "effect_type": "conditional_damage_bonus",
+            "params": {
+              "bonus": 120,
+              "condition": "opponent_active_damaged"
+            }
+          }
+        ]
+      },
+      "隐蔽手里剑": {
+        "effects": [
+          {
+            "effect_type": "any_pokemon_damage",
+            "params": {
+              "amount": 40,
+              "piercing_on_bench": true,
+              "player": "opponent"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-keldeo": {
+    "attacks": {
+      "踢飞": {
+        "effects": []
+      },
+      "队列之力": {
+        "effects": [
+          {
+            "effect_type": "damage_plus_bench",
+            "params": {
+              "base": 10,
+              "count_own_bench": true,
+              "per_bench": 20
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-starm": {
+    "abilities": {
+      "神秘彗星": {
+        "effects": [
+          {
+            "effect_type": "place_counters_and_self_ko",
+            "params": {
+              "counters": 2,
+              "target": "opponent_any"
+            }
+          }
+        ],
+        "trigger": ""
+      }
+    },
+    "attacks": {
+      "高速攻击": {
+        "effects": []
+      }
+    }
+  },
+  "sv2-staryu": {
+    "attacks": {
+      "高速星星": {
+        "effects": [
+          {
+            "effect_type": "piercing_marker",
+            "params": {
+              "ignore_effects": true,
+              "ignore_resistance": true,
+              "ignore_weakness": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-tatsu": {
+    "attacks": {
+      "上弓折返": {
+        "effects": [
+          {
+            "effect_type": "return_to_hand",
+            "params": {}
+          }
+        ]
+      },
+      "预先准备": {
+        "effects": [
+          {
+            "effect_type": "energy_attach",
+            "params": {
+              "amount": 2,
+              "filter": "water",
+              "from_zone": "deck",
+              "to": "self_basic"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "sv2-young": {
+    "trainer_effect": {
+      "effect_type": "shuffle_draw",
+      "params": {
+        "affect": "self_only",
+        "draw": 5,
+        "shuffle_hand": true
+      }
+    }
+  },
+  "sv3-134": {
+    "trainer_effect": {
+      "effect_type": "shuffle_from_discard",
+      "params": {
+        "count": 3,
+        "filter": "pokemon_and_energy"
+      }
+    }
+  },
+  "svf-ensw2": {
+    "trainer_effect": {
+      "effect_type": "energy_relocate",
+      "params": {
+        "amount": 1
+      }
+    }
+  },
+  "svf-farf": {
+    "attacks": {
+      "甩葱殴打": {
+        "effects": []
+      },
+      "背来": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svf-hawl": {
+    "attacks": {
+      "展示姿态": {
+        "effects": [
+          {
+            "effect_type": "attach_from_discard",
+            "params": {
+              "amount": 2,
+              "energy_type": "basic",
+              "target": "bench"
+            }
+          }
+        ]
+      },
+      "挥落": {
+        "effects": [
+          {
+            "effect_type": "conditional_damage_bonus",
+            "params": {
+              "bonus": 30,
+              "condition": "opponent_active_evolved"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svf-houb": {
+    "trainer_effect": {
+      "effect_type": "houb",
+      "params": {
+        "target_hand_size": 5
+      }
+    }
+  },
+  "svf-klea": {
+    "attacks": {
+      "大树切割": {
+        "effects": [
+          {
+            "effect_type": "coin_flip_double_ko",
+            "params": {}
+          }
+        ]
+      },
+      "暴走冲撞": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 30
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svf-luca": {
+    "abilities": {
+      "旺盛斗气": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 20
+            }
+          },
+          {
+            "effect_type": "energy_attach",
+            "params": {
+              "amount": 1,
+              "filter": "fighting",
+              "from_zone": "deck",
+              "to": "self"
+            }
+          }
+        ],
+        "trigger": ""
+      }
+    },
+    "attacks": {
+      "连续波导弹": {
+        "effects": [
+          {
+            "effect_type": "discard_fighting_energy_damage",
+            "params": {
+              "base": 10,
+              "per_energy": 60
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svf-pass": {
+    "attacks": {
+      "辅助传递": {
+        "effects": [
+          {
+            "effect_type": "energy_relocate",
+            "params": {
+              "amount": 1,
+              "from_self": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svf-potion": {
+    "trainer_effect": {
+      "effect_type": "potion_heal",
+      "params": {
+        "amount": 30
+      }
+    }
+  },
+  "svf-rio": {
+    "attacks": {
+      "突击": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 20
+            }
+          }
+        ]
+      },
+      "重拳": {
+        "effects": []
+      }
+    }
+  },
+  "svf-scyt": {
+    "attacks": {
+      "高速镰刀": {
+        "effects": []
+      }
+    }
+  },
+  "svf-terr": {
+    "attacks": {
+      "岩窟冲撞": {
+        "effects": [
+          {
+            "effect_type": "prevent_damage",
+            "params": {}
+          },
+          {
+            "effect_type": "self_attack_lock",
+            "params": {
+              "attack_name": "岩窟冲撞"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg-alt": {
+    "abilities": {
+      "哼唱治愈": {
+        "effects": [
+          {
+            "effect_type": "heal_all",
+            "params": {
+              "amount": 20
+            }
+          }
+        ],
+        "trigger": "on_turn"
+      }
+    },
+    "attacks": {
+      "光之波动": {
+        "effects": [
+          {
+            "effect_type": "prevent_effects",
+            "params": {}
+          }
+        ]
+      }
+    }
+  },
+  "svg-beri": {
+    "trainer_effect": {
+      "effect_type": "draw_until_more",
+      "params": {}
+    }
+  },
+  "svg-cast": {
+    "attacks": {
+      "双重抽取": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2
+            }
+          }
+        ]
+      },
+      "暴风": {
+        "effects": [
+          {
+            "effect_type": "energy_relocate",
+            "params": {
+              "amount": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg-ceti": {
+    "attacks": {
+      "头突": {
+        "effects": []
+      },
+      "扫除冲撞": {
+        "effects": [
+          {
+            "effect_type": "damage_self_penalty",
+            "params": {
+              "base": 200,
+              "per_counter": 20
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg-ceto": {
+    "attacks": {
+      "撞击": {
+        "effects": []
+      }
+    }
+  },
+  "svg-chef": {
+    "trainer_effect": {
+      "effect_type": "heal",
+      "params": {
+        "amount": 70,
+        "target": "self"
+      }
+    }
+  },
+  "svg-dram": {
+    "attacks": {
+      "逆鳞": {
+        "effects": [
+          {
+            "effect_type": "damage_per_self_damage",
+            "params": {
+              "base": 60,
+              "per_counter": 10
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg-milt": {
+    "attacks": {
+      "活泼冲撞": {
+        "effects": [
+          {
+            "effect_type": "conditional_damage_heal",
+            "params": {
+              "base": 60,
+              "bonus": 90
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg-swa": {
+    "attacks": {
+      "连续旋转": {
+        "effects": [
+          {
+            "effect_type": "coin_flip_until_tails",
+            "params": {
+              "per_head": 20
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg-tatsu": {
+    "attacks": {
+      "水枪": {
+        "effects": []
+      },
+      "生存战略": {
+        "effects": [
+          {
+            "effect_type": "search_any_and_switch",
+            "params": {
+              "count": 2,
+              "source_slot": "active",
+              "switch_optional": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg2-brel": {
+    "attacks": {
+      "音速直击": {
+        "effects": []
+      }
+    }
+  },
+  "svg2-empo": {
+    "abilities": {
+      "紧急上浮": {
+        "effects": [
+          {
+            "effect_type": "ability_discard_revive",
+            "params": {
+              "card_id": "svg2-empo"
+            }
+          }
+        ],
+        "trigger": "on_turn"
+      }
+    },
+    "attacks": {
+      "水之矢": {
+        "effects": [
+          {
+            "effect_type": "any_pokemon_damage",
+            "params": {
+              "amount": 60,
+              "piercing_on_bench": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg2-exps": {
+    "trainer_effect": {
+      "effect_type": "tool_exp_share",
+      "params": {}
+    }
+  },
+  "svg2-gard": {
+    "trainer_effect": {
+      "effect_type": "draw_and_attach_energy",
+      "params": {
+        "energy_count": 2,
+        "energy_type": "Grass"
+      }
+    }
+  },
+  "svg2-grot": {
+    "abilities": {
+      "日光甲壳": {
+        "effects": [
+          {
+            "effect_type": "search",
+            "params": {
+              "count": 1,
+              "destination": "hand",
+              "filter": "grass_pokemon",
+              "from_zone": "deck",
+              "reveal": true
+            }
+          }
+        ],
+        "trigger": "on_turn"
+      }
+    },
+    "attacks": {
+      "飞叶快刀": {
+        "effects": []
+      }
+    }
+  },
+  "svg2-hamm": {
+    "trainer_effect": {
+      "effect_type": "coin_flip_energy_discard",
+      "params": {}
+    }
+  },
+  "svg2-lume": {},
+  "svg2-shro": {
+    "attacks": {
+      "吸取": {
+        "effects": [
+          {
+            "effect_type": "damage_and_self_heal",
+            "params": {
+              "damage": 10,
+              "heal": 10
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg2-tort": {
+    "attacks": {
+      "头突": {
+        "effects": []
+      },
+      "进化压制": {
+        "effects": [
+          {
+            "effect_type": "damage_per_evolved",
+            "params": {
+              "per_evolved": 50
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svg2-turt": {
+    "attacks": {
+      "咬住": {
+        "effects": []
+      },
+      "鲁莽头击": {
+        "effects": []
+      }
+    }
+  },
+  "svg2-zaru": {
+    "attacks": {
+      "反复鞭挞": {
+        "effects": [
+          {
+            "effect_type": "damage_per_self_energy_type",
+            "params": {
+              "base": 60,
+              "energy_type": "Grass",
+              "per_energy": 20
+            }
+          }
+        ]
+      },
+      "唤群之歌": {
+        "effects": [
+          {
+            "effect_type": "conditional_search_extra",
+            "params": {
+              "default_count": 1,
+              "filter": "grass_pokemon",
+              "max_count": 3
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-aipo": {
+    "attacks": {
+      "掌击": {
+        "effects": []
+      },
+      "骗取": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 1,
+              "player": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-ambi": {
+    "attacks": {
+      "招来": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ]
+      },
+      "长手抛掷": {
+        "effects": [
+          {
+            "effect_type": "damage_per_hand_size",
+            "params": {
+              "per": 20
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-cait": {
+    "trainer_effect": {
+      "effect_type": "hand_to_bottom_draw",
+      "params": {}
+    }
+  },
+  "svi-chim": {
+    "attacks": {
+      "火花": {
+        "effects": [
+          {
+            "effect_type": "energy_discard",
+            "params": {
+              "amount": 1,
+              "filter": "any",
+              "from": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-chiy": {
+    "attacks": {
+      "嫉妒业火": {
+        "effects": [
+          {
+            "effect_type": "conditional_damage_bonus",
+            "params": {
+              "bonus": 90,
+              "condition": "ko_by_attack_last_turn"
+            }
+          }
+        ]
+      },
+      "闪焰生成": {
+        "effects": [
+          {
+            "effect_type": "attach_from_discard",
+            "params": {
+              "amount": 2,
+              "energy_type": "fire",
+              "target": "self_or_bench"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-dtur": {},
+  "svi-enst": {
+    "trainer_effect": {
+      "effect_type": "look_top_deck",
+      "params": {
+        "count": 7,
+        "destination": "hand",
+        "filter": "energy",
+        "shuffle_rest": true,
+        "take": 1
+      }
+    }
+  },
+  "svi-ente": {
+    "abilities": {
+      "压迫感": {
+        "effects": [
+          {
+            "effect_type": "aura_damage_reduction",
+            "params": {
+              "reduction": 20
+            }
+          }
+        ],
+        "text": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式伤害「-20」。",
+        "trigger": "passive"
+      }
+    },
+    "attacks": {
+      "火焰之球": {
+        "effects": [
+          {
+            "effect_type": "damage_per_self_energy",
+            "params": {
+              "base": 60,
+              "energy_filter": "fire",
+              "per_energy": 20
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-erec": {
+    "trainer_effect": {
+      "effect_type": "shuffle_from_discard",
+      "params": {
+        "count": 5,
+        "filter": "basic_energy"
+      }
+    }
+  },
+  "svi-flam": {
+    "attacks": {
+      "俯冲": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 20
+            }
+          }
+        ]
+      },
+      "振翅": {
+        "effects": []
+      }
+    }
+  },
+  "svi-gree": {
+    "attacks": {
+      "倾倒一空": {
+        "effects": [
+          {
+            "effect_type": "discard_hand_conditional_bonus",
+            "params": {
+              "base_damage": 60,
+              "bonus": 150,
+              "threshold": 5
+            }
+          }
+        ]
+      },
+      "招来": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-hrot": {
+    "attacks": {
+      "高温冲撞": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 40
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-inde": {
+    "attacks": {
+      "妙手强念": {
+        "effects": [
+          {
+            "effect_type": "damage_per_hand_size",
+            "params": {
+              "per": 10
+            }
+          }
+        ]
+      },
+      "招来": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-infr": {
+    "attacks": {
+      "燃烧踢": {
+        "effects": [
+          {
+            "effect_type": "energy_discard",
+            "params": {
+              "amount": 99,
+              "filter": "any",
+              "from": "self"
+            }
+          }
+        ]
+      },
+      "螺旋业火": {
+        "effects": [
+          {
+            "effect_type": "mill_and_damage_per_energy",
+            "params": {
+              "damage_per": 80,
+              "mill_count": 5
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-jete": {},
+  "svi-maus": {
+    "abilities": {
+      "团结一致": {
+        "effects": [
+          {
+            "effect_type": "reactive_thorns",
+            "params": {
+              "filter_names": [
+                "一对鼠",
+                "一家鼠ex",
+                "一家鼠"
+              ],
+              "per_pokemon": 3
+            }
+          }
+        ],
+        "trigger": "on_damaged"
+      }
+    },
+    "attacks": {
+      "贪婪门牙": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-mela": {
+    "trainer_effect": {
+      "effect_type": "conditional",
+      "params": {
+        "condition": "ko_by_attack_last_turn",
+        "cost": null,
+        "on_pay": [
+          {
+            "effect_type": "attach_from_discard",
+            "params": {
+              "amount": 1,
+              "energy_type": "fire",
+              "target": "self_or_bench"
+            }
+          },
+          {
+            "effect_type": "draw_until",
+            "params": {
+              "target_hand_size": 6
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-mirc": {},
+  "svi-monf": {
+    "attacks": {
+      "喷射火焰": {
+        "effects": [
+          {
+            "effect_type": "energy_discard",
+            "params": {
+              "amount": 1,
+              "filter": "any",
+              "from": "self"
+            }
+          }
+        ]
+      },
+      "火焰": {
+        "effects": []
+      }
+    }
+  },
+  "svi-nemb": {
+    "trainer_effect": {
+      "effect_type": "search",
+      "params": {
+        "count": 2,
+        "destination": "hand",
+        "filter": "any",
+        "filter_name": "妮莫",
+        "from_zone": "discard",
+        "reveal": true
+      }
+    }
+  },
+  "svi-popp": {
+    "trainer_effect": {
+      "effect_type": "energy_relocate",
+      "params": {
+        "amount": 2
+      }
+    }
+  },
+  "svi-skwv": {
+    "attacks": {
+      "啃咬": {
+        "effects": []
+      }
+    }
+  },
+  "svi-sqwk": {
+    "attacks": {
+      "呼朋引伴": {
+        "effects": [
+          {
+            "effect_type": "search",
+            "params": {
+              "count": 2,
+              "destination": "bench",
+              "filter": "basic_pokemon",
+              "from_zone": "deck",
+              "reveal": true
+            }
+          }
+        ]
+      },
+      "飞翔": {
+        "effects": [
+          {
+            "effect_type": "coin_flip",
+            "params": {
+              "on_heads": [
+                {
+                  "effect_type": "damage",
+                  "params": {
+                    "amount": 60,
+                    "target": "opponent_active"
+                  }
+                },
+                {
+                  "effect_type": "prevent_all",
+                  "params": {}
+                }
+              ],
+              "on_tails": [
+                {
+                  "effect_type": "attack_fail",
+                  "params": {}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-stan": {
+    "attacks": {
+      "后踢": {
+        "effects": []
+      },
+      "疯狂俯冲": {
+        "effects": [
+          {
+            "effect_type": "damage_per_energy",
+            "params": {
+              "base": 0,
+              "count_from": "opponent_active",
+              "per_energy": 30,
+              "target": "opponent_active"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svi-tand": {
+    "attacks": {
+      "紧贴": {
+        "effects": []
+      },
+      "踢飞": {
+        "effects": []
+      }
+    }
+  },
+  "svi-trea": {},
+  "svl-chat": {
+    "attacks": {
+      "循环抽取": {
+        "effects": [
+          {
+            "effect_type": "discard_then_draw",
+            "params": {
+              "discard_amount": 1,
+              "draw_amount": 2
+            }
+          }
+        ]
+      },
+      "振翅": {
+        "effects": []
+      }
+    }
+  },
+  "svl-chin": {
+    "attacks": {
+      "电球": {
+        "effects": []
+      }
+    }
+  },
+  "svl-emol": {
+    "attacks": {
+      "电击": {
+        "effects": [
+          {
+            "effect_type": "coin_flip",
+            "params": {
+              "on_heads": [
+                {
+                  "effect_type": "status",
+                  "params": {
+                    "status": "paralyzed",
+                    "target": "opponent_active"
+                  }
+                }
+              ],
+              "on_tails": []
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svl-ensw": {
+    "trainer_effect": {
+      "effect_type": "search",
+      "params": {
+        "count": 1,
+        "destination": "hand",
+        "filter": "basic_energy",
+        "from_zone": "deck",
+        "reveal": true
+      }
+    }
+  },
+  "svl-flaa2": {
+    "abilities": {
+      "电气发电机": {
+        "effects": [
+          {
+            "effect_type": "attach_from_discard",
+            "params": {
+              "amount": 1,
+              "energy_type": "lightning",
+              "target": "bench"
+            }
+          }
+        ],
+        "trigger": ""
+      }
+    },
+    "attacks": {
+      "电球": {
+        "effects": []
+      }
+    }
+  },
+  "svl-lant": {
+    "attacks": {
+      "炫目光束": {
+        "effects": [
+          {
+            "effect_type": "dazzling_beam",
+            "params": {
+              "target": "opponent_active"
+            }
+          }
+        ]
+      },
+      "电球": {
+        "effects": []
+      }
+    }
+  },
+  "svl-mare2": {
+    "attacks": {
+      "后踢": {
+        "effects": []
+      },
+      "电球": {
+        "effects": []
+      }
+    }
+  },
+  "svl-pikaex": {
+    "attacks": {
+      "强劲伏特": {
+        "effects": [
+          {
+            "effect_type": "coin_flip",
+            "params": {
+              "on_heads": [],
+              "on_tails": [
+                {
+                  "effect_type": "energy_discard",
+                  "params": {
+                    "amount": 99,
+                    "filter": "any",
+                    "from": "self"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "皮卡拳": {
+        "effects": []
+      }
+    }
+  },
+  "svl-thun": {
+    "attacks": {
+      "打雷": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 30
+            }
+          }
+        ]
+      },
+      "辅助电光": {
+        "effects": [
+          {
+            "effect_type": "energy_attach",
+            "params": {
+              "amount": 1,
+              "filter": "lightning",
+              "from_zone": "hand",
+              "optional": true,
+              "to": "bench"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svl-trks": {
+    "trainer_effect": {
+      "effect_type": "trekking_shoes",
+      "params": {}
+    }
+  },
+  "svl-vitb": {
+    "trainer_effect": {
+      "effect_type": "tool",
+      "params": {
+        "effect": "damage_boost_10"
+      }
+    }
+  },
+  "svl-zera": {
+    "attacks": {
+      "疯狂伏特": {
+        "effects": [
+          {
+            "effect_type": "damage_counter_self",
+            "params": {
+              "amount": 20
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svl-zinn": {
+    "trainer_effect": {
+      "effect_type": "zinnia_resolve",
+      "params": {}
+    }
+  }
+}

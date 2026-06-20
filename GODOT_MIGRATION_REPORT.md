@@ -1,1717 +1,589 @@
-# PokemonTCG 迁移 Godot 方案报告
+# PokemonTCG Godot 4.7 迁移实施报告
 
-## 1. 报告目的
+## 1. 最终目标
 
-本文档用于评估当前 `PokemonTCG` 项目迁移到 Godot 的可行性，并给出一套可执行的迁移方案。报告重点回答以下问题：
+将当前 Python + Pygame 客户端迁移为 Godot 4.7 原生客户端，并交付：
 
-- 当前项目是否适合迁移到 Godot。
-- 哪些模块适合保留，哪些模块需要重写。
-- 推荐采用什么架构迁移。
-- 分阶段迁移如何落地。
-- 风险、成本、验收标准和后续演进路径是什么。
+- Windows x86_64 便携 ZIP。
+- Android 9+、ARM64、固定横屏 APK，包名 `com.pokemontcg.game`。
+- 无网络时可运行本地双人、Challenge AI 和 Deep AI。
+- Windows 与 Android 可通过 LAN 或 WebSocket Relay 联机。
+- 发布包不包含 Python、PyTorch、AI 训练脚本和卡图下载管理工作台。
 
-结论先行：
+Python 项目继续作为规则对照、AI 训练和模型导出环境，不作为发布版运行时。
 
-当前项目适合迁移到 Godot，但不适合一次性全量重写。推荐路线是先采用“Godot 客户端 + Python 权威规则引擎”的混合架构，用 Godot 重做表现层、交互层、动画层和资源管理层，保留现有 Python 的规则、状态、AI、训练、联机协议和测试资产。待 Godot 客户端稳定后，再决定是否逐步把规则引擎迁成 Godot 原生实现。
+## 2. 审核结论与修订
 
-## 2. 当前项目概况
+原方案不能直接执行，原因如下：
 
-### 2.1 技术栈
+- 本地 Python 服务无法满足 Android 离线运行。
+- 仓库已经具备统一的 `GameEngine`、`GameAction`、`ChoiceRequest`、`ChoiceResponse`、`StepResult` 和协议 v2，不需要重复建设 `engine_service`。
+- Python `ActionRequest.callback` 是闭包，不能跨存档、跨网络或在 GDScript 中复现，Godot 规则内核必须使用显式、可序列化的结算栈。
+- Deep AI 的 `.pt` 文件依赖 PyTorch，发布版改为 FP32 ONNX，并由 C++ GDExtension 封装 ONNX Runtime。
+- 新客户端采用协议 v3，不与旧 Pygame 客户端互联。
 
-当前项目是一个 Python + Pygame 的宝可梦集换式卡牌对战客户端，主要依赖包括：
+迁移基线：
 
-- Python 3.11
-- Pygame：窗口、输入、渲染、音频、动画
-- websockets：LAN / Relay 联机通信
-- requests：卡图管理界面下载远程图片
-- Pillow：图片加载和 WebP 回退
-- PyTorch / numpy：深度学习 AI 和训练相关能力
-- unittest：当前测试套件
-
-项目入口位于 `main.py`，启动逻辑非常简单：
-
-```python
-from ui.game_app import GameApp
-
-def main():
-    GameApp().run()
-```
-
-这说明客户端入口是 UI-only，主流程由 `ui.game_app.GameApp` 接管。
-
-### 2.2 目录结构和职责划分
-
-当前项目大致可以分为以下模块：
-
-| 模块 | 主要职责 | 迁移判断 |
-|---|---|---|
-| `engine/` | 游戏状态、规则、动作解析、回合推进、AI | 可保留，后续可选择性迁移 |
-| `ui/` | Pygame 界面、屏幕、渲染、动画、输入 | 基本需要在 Godot 中重写 |
-| `network/` | WebSocket 管理、消息协议、状态序列化 | 可大量复用协议和序列化思路 |
-| `data/` | 卡牌模型、卡牌注册表、卡组定义、图片映射 | 可导出为 JSON / Godot Resource |
-| `card_data/` | 内置卡牌模板和效果数据 | 建议先导出 JSON，避免手工双写 |
-| `scripts/` | AI 训练脚本 | 保留 Python |
-| `tests/` | unittest 测试 | 保留并作为迁移对照测试 |
-
-### 2.3 项目规模
-
-当前项目包含大量 Python 文件，且最大模块集中在 UI 和 AI：
-
-| 文件 | 约行数 | 说明 |
-|---|---:|---|
-| `ui/screens/game_screen.py` | 3700+ | 主游戏屏幕，交互和状态粘合度高 |
-| `engine/ai/challenge_ai.py` | 3400+ | 挑战 AI |
-| `engine/ai/dl/training.py` | 2200+ | 深度学习训练 |
-| `ui/screens/ai_training_screen.py` | 1200+ | AI 训练 UI |
-| `ui/screens/card_image_screen.py` | 1100+ | 卡图管理 UI |
-| `ui/components/board_renderer.py` | 1000+ | 棋盘绘制 |
-
-这说明迁移的主要成本不在规则模型本身，而在：
-
-- 主游戏界面的重构。
-- Pygame 渲染转 Godot Scene / Control。
-- 复杂交互流程迁移。
-- 动画和状态更新表现迁移。
-- AI 训练 UI 和外部脚本集成。
-
-## 3. 迁移可行性评估
-
-### 3.1 总体结论
-
-迁移可行，而且从长期维护角度看是有价值的。原因是：
-
-- 当前规则层和 UI 层已经有一定分离。
-- `GameState` / `TurnManager` / `ActionResolver` 可以作为稳定的规则边界。
-- 网络状态已经使用 JSON 序列化，适合被 Godot 消费。
-- 卡牌效果已经结构化为 `EffectDef`，具备数据驱动迁移基础。
-- Godot 的 Scene / Node / Control 系统更适合复杂棋盘 UI、卡牌对象、拖拽、动画和弹窗。
-
-但不建议一次性把所有 Python 代码翻译为 GDScript 或 C#。当前规则、AI、训练和测试资产已经很重，贸然全量重写会带来高风险：
-
-- 卡牌规则回归风险高。
-- pending action / callback 流程复杂。
-- AI 和 PyTorch 迁移收益低、成本高。
-- 联机隐藏信息和状态一致性容易出问题。
-- 测试体系需要重建。
-
-### 3.2 Godot 对项目需求的匹配度
-
-| 需求 | Godot 匹配度 | 说明 |
-|---|---:|---|
-| 棋盘布局 | 高 | 可用 `Control`、`Container`、自定义场景组合 |
-| 卡牌组件 | 高 | 每张牌可作为独立 `CardView.tscn` |
-| 拖拽和点击 | 高 | Godot Control 支持输入事件和拖放接口 |
-| 动画 | 高 | `Tween`、`AnimationPlayer`、粒子、Shader 都适合卡牌表现 |
-| 音频 | 高 | Godot 原生音频系统足够替代 Pygame mixer |
-| 图片资源 | 高 | 可直接管理 PNG / WebP / Texture |
-| 本地对战 | 高 | Godot 负责 UI，Python 负责规则即可 |
-| 远程联机 | 中高 | 现有 WebSocket + JSON 协议可延续 |
-| 卡牌数据 | 中高 | 建议从 Python 模板导出 JSON |
-| 规则引擎 | 中 | 保留 Python 较好；完全迁移成本较高 |
-| AI 训练 | 低到中 | 应继续保留 Python / PyTorch |
-| Web 发布 | 中 | 如果使用 C# 和 Python 外部进程会受限制 |
-
-### 3.3 当前项目最适合迁移的部分
-
-最适合迁移到 Godot 的模块：
-
-- 标题界面
-- 卡组选择界面
-- 大厅界面
-- 游戏棋盘
-- 手牌、战斗区、备战区、弃牌区、奖品卡显示
-- 卡牌放大预览
-- 动作按钮
-- 攻击菜单
-- 特性菜单
-- 搜索/选择弹窗
-- 硬币动画
-- 抽牌、弃牌、进化、攻击、击倒动画
-- 音效和视觉反馈
-
-最不建议第一阶段迁移的模块：
-
-- `engine/action_resolver.py`
-- `engine/turn_manager.py`
-- `engine/effects/*`
-- `engine/commands/*`
-- `engine/ai/*`
-- `scripts/train_*.py`
-- PyTorch 模型和训练流程
-
-这些模块已经具备可运行的业务能力，应优先作为 Godot 客户端背后的权威服务保留。
-
-## 4. 当前架构分析
-
-### 4.1 入口和主循环
-
-当前入口：
-
-- `main.py`
-- `ui/game_app.py`
-
-`GameApp` 负责：
-
-- 初始化 Pygame。
-- 创建窗口。
-- 创建虚拟画布。
-- 处理 resize letterbox。
-- 转换鼠标坐标。
-- 调用 `ScreenManager`。
-- 启动本地游戏或联机游戏。
-
-在 Godot 中，这部分应整体替换为：
-
-- Godot Project 主场景。
-- `SceneRouter` 或 `ScreenManager` Autoload。
-- Godot Viewport / window stretch 设置。
-- Godot 输入系统。
-- Godot SceneTree。
-
-不建议逐行迁移 `GameApp`。Godot 已经提供了主循环和窗口管理能力。
-
-### 4.2 规则状态
-
-核心状态：
-
-- `engine/game_state.py`
-- `engine/player_state.py`
-- `data/card_models.py`
-
-关键对象：
-
-- `GameState`
-- `PlayerState`
-- `PokemonInPlay`
-- `Card`
-- `AttackDef`
-- `AbilityDef`
-- `EffectDef`
-- `ActionRequest`
-- `ActionResult`
-
-这些对象有较清晰的边界：
-
-- `GameState` 管理双方玩家、回合、阶段、胜负、日志、场馆、待晋升等。
-- `PlayerState` 管理手牌、牌库、弃牌区、奖品卡、战斗宝可梦、备战宝可梦和每回合标记。
-- `ActionResolver` 修改 `GameState` 并返回 `ActionResult`。
-- 遇到需要玩家选择的效果时，返回 `ActionRequest`。
-
-这套设计非常适合作为服务端权威引擎保留。Godot 端无需知道所有内部规则，只需要：
-
-- 显示当前状态。
-- 根据状态启用/禁用操作。
-- 将用户动作转换为 JSON。
-- 显示 `ActionResult` 和 `ActionRequest`。
-
-### 4.3 动作和回合
-
-核心动作入口：
-
-- `TurnManager.perform_action(action, player_idx, **params)`
-- `ActionResolver.resolve(action, **params)`
-
-当前支持的主要动作：
-
-- `PLAY_BASIC`
-- `EVOLVE`
-- `ATTACH_ENERGY`
-- `PLAY_TRAINER`
-- `USE_ABILITY`
-- `USE_STADIUM`
-- `RETREAT`
-- `DECLARE_ATTACK`
-- `END_TURN`
-
-Godot 端应把所有 UI 操作统一转换为这些动作，而不是直接修改状态。
-
-示例：
-
-```json
-{
-  "type": "action",
-  "action": "ATTACH_ENERGY",
-  "params": {
-    "player_idx": 0,
-    "hand_idx": 3,
-    "target_slot": "active"
-  }
-}
-```
-
-Python 引擎处理后返回：
-
-```json
-{
-  "type": "state_update",
-  "state": {},
-  "result": {
-    "success": true,
-    "log_message": "玩家1将火能量附着于战斗宝可梦。",
-    "damage_dealt": 0,
-    "pokemon_ko": [],
-    "status_applied": []
-  }
-}
-```
-
-### 4.4 Pending Action 流程
-
-当前项目有很多需要玩家继续选择的效果：
-
-- 从牌库检索。
-- 选择手牌弃置。
-- 选择备战宝可梦。
-- 选择对手备战宝可梦。
-- 硬币判定。
-- 选择能量分配。
-- 确认操作。
-
-这些由 `ActionRequest` 表示，其中包括：
-
-- `request_type`
-- `player`
-- `prompt`
-- `min_select`
-- `max_select`
-- `from_zone`
-- `card_list`
-- `target_player`
-- `bench_indices`
-- `allow_duplicates`
-- `flip_count`
-- `until_tails`
-- `distribute_mode`
-- `target_info`
-- `request_id`
-- `callback`
-
-迁移重点：
-
-`callback` 不能跨进程传给 Godot，也不能序列化。正确做法是：
-
-- Python 端保留 `request_id -> callback`。
-- Godot 端只收到可展示字段。
-- Godot 展示选择界面。
-- 用户完成选择后，Godot 发回 `choice_response`。
-- Python 根据 `request_id` 找回 callback 并继续结算。
-
-这和当前联机逻辑中的 `serialize_action_request` / `deserialize_action_request` 思路一致，可以复用并强化。
-
-## 5. 推荐目标架构
-
-### 5.1 架构选择
-
-推荐第一阶段采用混合架构：
-
-```text
-Godot Client
-  - UI
-  - 动画
-  - 输入
-  - 卡图展示
-  - 弹窗选择
-  - 本地/远程连接管理
-
-Python Engine Service
-  - GameState
-  - TurnManager
-  - ActionResolver
-  - CardRegistry
-  - Effect DSL
-  - AI
-  - Training
-  - 权威状态
-
-Relay Server
-  - 保留现有 relay_server.py
-  - 或逐步替换为独立服务
-```
-
-### 5.2 架构图
-
-```text
-+------------------------------------------------+
-|                 Godot Client                   |
-|------------------------------------------------|
-| TitleScene                                     |
-| LobbyScene                                     |
-| DeckSelectScene                                |
-| BoardScene                                     |
-|   - BoardView                                  |
-|   - HandView                                   |
-|   - CardView                                   |
-|   - ZoneView                                   |
-|   - ActionPanel                                |
-|   - LogPanel                                   |
-|   - ChoiceOverlay                              |
-|                                                |
-| Autoloads                                      |
-|   - GameSession                                |
-|   - CardDatabase                               |
-|   - NetClient                                  |
-|   - SceneRouter                                |
-|   - AssetResolver                              |
-+-------------------------+----------------------+
-                          |
-                          | JSON / WebSocket
-                          |
-+-------------------------v----------------------+
-|              Python Engine Service             |
-|------------------------------------------------|
-| GameState                                      |
-| PlayerState                                    |
-| TurnManager                                    |
-| ActionResolver                                 |
-| CardRegistry                                   |
-| Effect/Command system                          |
-| AI Controller                                  |
-| PendingRequestStore                            |
-+-------------------------+----------------------+
-                          |
-                          | Optional
-                          |
-+-------------------------v----------------------+
-|                 Relay Server                   |
-|------------------------------------------------|
-| Room create / join                             |
-| Message relay                                  |
-| Heartbeat                                      |
-+------------------------------------------------+
-```
-
-### 5.3 Godot 项目结构建议
-
-建议新建 Godot 项目目录，例如：
-
-```text
-godot_client/
-  project.godot
-  scenes/
-    title/
-      TitleScene.tscn
-      TitleScene.gd
-    lobby/
-      LobbyScene.tscn
-      LobbyScene.gd
-    deck_select/
-      DeckSelectScene.tscn
-      DeckSelectScene.gd
-    board/
-      BoardScene.tscn
-      BoardScene.gd
-      CardView.tscn
-      CardView.gd
-      ZoneView.tscn
-      ZoneView.gd
-      HandView.tscn
-      HandView.gd
-      ActionPanel.tscn
-      ActionPanel.gd
-      LogPanel.tscn
-      LogPanel.gd
-      ChoiceOverlay.tscn
-      ChoiceOverlay.gd
-  autoload/
-    GameSession.gd
-    CardDatabase.gd
-    NetClient.gd
-    SceneRouter.gd
-    AssetResolver.gd
-  data/
-    cards.json
-    effects.json
-    decks.json
-    card_image_mapping.json
-  assets/
-    cards/
-    ui/
-    audio/
-    fonts/
-```
-
-### 5.4 Python 服务结构建议
-
-在现有项目中新增服务入口，而不是修改 `main.py`：
-
-```text
-engine_service/
-  __init__.py
-  server.py
-  session.py
-  protocol.py
-  pending_requests.py
-  export_cards.py
-```
-
-职责：
-
-- `server.py`：本地 WebSocket 或 TCP/JSON 服务入口。
-- `session.py`：封装一局游戏，持有 `GameState`、`TurnManager`、玩家座位和模式。
-- `protocol.py`：定义 Godot 和 Python 之间的消息格式。
-- `pending_requests.py`：维护 `request_id -> ActionRequest.callback`。
-- `export_cards.py`：导出 Godot 可读的卡牌 JSON。
-
-## 6. 协议设计
-
-### 6.1 设计原则
-
-协议应满足：
-
-- Godot 不直接修改游戏状态。
-- Python 是权威状态源。
-- 所有动作都通过消息发送给 Python。
-- 所有状态变化都通过 `state_update` 返回给 Godot。
-- pending action 通过 `request_id` 继续结算。
-- 本地对战、AI 对战、远程对战尽量使用同一套协议。
-
-### 6.2 消息类型
-
-建议协议包含以下消息：
-
-| 消息 | 方向 | 说明 |
-|---|---|---|
-| `hello` | Godot -> Python | 客户端握手 |
-| `hello_ack` | Python -> Godot | 服务确认 |
-| `start_game` | Godot -> Python | 开始本地/AI/远程游戏 |
-| `state_update` | Python -> Godot | 推送权威状态 |
-| `action` | Godot -> Python | 玩家动作 |
-| `action_result` | Python -> Godot | 动作结果，可与 `state_update` 合并 |
-| `pending_action` | Python -> Godot | 要求玩家继续选择 |
-| `choice_response` | Godot -> Python | 玩家完成选择 |
-| `game_over` | Python -> Godot | 游戏结束 |
-| `error` | Python -> Godot | 协议或规则错误 |
-| `ping` / `pong` | 双向 | 心跳 |
-
-### 6.3 开始游戏
-
-Godot 发送：
-
-```json
-{
-  "type": "start_game",
-  "mode": "local",
-  "players": [
-    {"seat": 0, "kind": "human", "deck_key": "fire"},
-    {"seat": 1, "kind": "human", "deck_key": "water"}
-  ],
-  "options": {
-    "apply_type_matchups": false
-  }
-}
-```
-
-Python 返回：
-
-```json
-{
-  "type": "state_update",
-  "seq": 1,
-  "state": {
-    "phase": "SETUP",
-    "turn_number": 1,
-    "active_player_idx": 0,
-    "your": {},
-    "opponent": {}
-  }
-}
-```
-
-### 6.4 玩家动作
-
-Godot 发送：
-
-```json
-{
-  "type": "action",
-  "request_seq": 12,
-  "player_idx": 0,
-  "action": "PLAY_BASIC",
-  "params": {
-    "hand_idx": 2,
-    "target": "bench_0"
-  }
-}
-```
-
-Python 返回：
-
-```json
-{
-  "type": "state_update",
-  "seq": 13,
-  "state": {},
-  "result": {
-    "success": true,
-    "log_message": "玩家1将小火焰猴放置于备战区0。",
-    "damage_dealt": 0,
-    "pokemon_ko": [],
-    "status_applied": [],
-    "cards_drawn": 0,
-    "cards_discarded": 0
-  }
-}
-```
-
-### 6.5 Pending Action
-
-Python 返回：
-
-```json
-{
-  "type": "pending_action",
-  "request_id": "req-42",
-  "request": {
-    "request_type": "search_deck",
-    "player": 0,
-    "prompt": "从牌库选择1张基础宝可梦。",
-    "min_select": 1,
-    "max_select": 1,
-    "from_zone": "deck",
-    "card_list": ["svi-chim", "svi-ente", "svi-sqwk"]
-  }
-}
-```
-
-Godot 发送：
-
-```json
-{
-  "type": "choice_response",
-  "request_id": "req-42",
-  "selected_indices": [0]
-}
-```
-
-Python 继续执行 callback，然后返回新的 `state_update` 或下一个 `pending_action`。
-
-### 6.6 错误处理
-
-建议错误统一为：
-
-```json
-{
-  "type": "error",
-  "code": "INVALID_ACTION",
-  "message": "不是你的回合。",
-  "request_seq": 12
-}
-```
-
-Godot 端只负责显示 toast / 日志，不直接回滚本地状态。因为 Godot 不做权威状态修改，所以回滚问题会显著减少。
-
-## 7. 数据迁移方案
-
-### 7.1 卡牌数据现状
-
-当前卡牌数据分布在：
-
-- `card_data/templates/*.py`
-- `card_data/effects/*.py`
-- `data/card_models.py`
-- `data/card_registry.py`
-- `data/deck_definitions.py`
-- `data/card_image_mapping.json`
-- `data/images/`
-
-卡牌模板和效果目前是 Python dict，不是纯 JSON。Godot 不能直接加载 Python 模块，所以需要导出。
-
-### 7.2 导出目标
-
-建议导出以下文件：
-
-```text
-godot_client/data/cards.json
-godot_client/data/effects.json
-godot_client/data/decks.json
-godot_client/data/card_image_mapping.json
-```
-
-### 7.3 `cards.json` 格式
-
-```json
-{
-  "svi-chim": {
-    "api_id": "svi-chim",
-    "name": "小火焰猴",
-    "supertype": "Pokémon",
-    "subtypes": ["Basic"],
-    "hp": 50,
-    "energy_types": ["Fire"],
-    "evolves_from": "",
-    "attacks": [
-      {
-        "name": "火花",
-        "cost": ["Fire"],
-        "damage": 30,
-        "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。",
-        "effects": [
-          {
-            "effect_type": "energy_discard",
-            "params": {
-              "amount": 1,
-              "from": "self",
-              "filter": "any"
-            }
-          }
-        ]
-      }
-    ],
-    "weaknesses": [{"energy_type": "Water", "value": "×2"}],
-    "resistances": [],
-    "retreat_cost": 1,
-    "image_path": "assets/cards/宝可梦/小火焰猴.webp"
-  }
-}
-```
-
-### 7.4 `decks.json` 格式
-
-```json
-{
-  "fire": {
-    "name": "烈焰猴",
-    "type": "Fire",
-    "cards": [
-      {"card_id": "svi-chim", "count": 4},
-      {"card_id": "svi-monf", "count": 3}
-    ]
-  }
-}
-```
-
-### 7.5 是否使用 Godot Resource
-
-建议分两步：
-
-第一步使用 JSON。优点：
-
-- 与现有 Python 数据结构接近。
-- 便于导出和对照。
-- 便于 Python 与 Godot 同时读取。
-- 便于协议调试。
-
-第二步再考虑生成 `.tres` Resource。优点：
-
-- 编辑器内可视化。
-- 可绑定类型。
-- 可被 Godot 资源系统索引。
-
-不建议一开始手工维护 Resource，因为会导致 Python 和 Godot 两份卡牌数据不一致。
-
-## 8. Godot 客户端设计
-
-### 8.1 Autoload 设计
-
-#### GameSession.gd
-
-职责：
-
-- 保存当前完整状态。
-- 保存当前模式。
-- 保存当前玩家座位。
-- 统一派发状态更新信号。
-- 提供查询当前玩家、对手、阶段、可操作状态的方法。
-
-建议信号：
-
-```gdscript
-signal state_updated(state)
-signal result_received(result)
-signal pending_action_received(request)
-signal game_over(winner, reason)
-signal connection_status_changed(status)
-```
-
-#### NetClient.gd
-
-职责：
-
-- 连接 Python 引擎服务。
-- 连接远程 relay 或 host。
-- 发送 JSON。
-- 接收 JSON。
-- 维护心跳和重连状态。
-
-接口：
-
-```gdscript
-func connect_local_engine(port: int) -> void
-func send_action(action: String, params: Dictionary) -> void
-func send_choice_response(request_id: String, payload: Dictionary) -> void
-func send_start_game(config: Dictionary) -> void
-```
-
-#### CardDatabase.gd
-
-职责：
-
-- 加载 `cards.json`。
-- 加载 `decks.json`。
-- 通过 card_id 查询展示数据。
-- 提供卡牌图片路径。
-
-#### AssetResolver.gd
-
-职责：
-
-- 统一加载卡图、卡背、能量图标、字体、音效。
-- 处理缺图 fallback。
-- 做资源缓存。
-
-### 8.2 Scene 设计
-
-#### BoardScene
-
-主游戏场景，建议结构：
-
-```text
-BoardScene
-  BoardBackground
-  OpponentArea
-    OpponentInfo
-    OpponentBench
-    OpponentActive
-    OpponentDeck
-    OpponentDiscard
-  CenterBar
-    StadiumSlot
-    PhaseLabel
-    ConnectionIndicator
-    ConcedeButton
-    QuitButton
-  PlayerArea
-    PlayerActive
-    PlayerBench
-    PlayerInfo
-    PlayerDeck
-    PlayerDiscard
-  HandView
-  ActionPanel
-  LogPanel
-  CardDetailPanel
-  OverlayLayer
-    ChoiceOverlay
-    ConfirmDialog
-    CoinFlipOverlay
-```
-
-#### CardView
-
-每张卡牌一个独立场景，字段：
-
-- `card_id`
-- `face_up`
-- `selected`
-- `hovered`
-- `disabled`
-- `zone`
-- `owner_idx`
-- `slot`
-
-职责：
-
-- 显示卡图或卡背。
-- 显示伤害、状态、能量、工具、进化层数。
-- 响应 hover / click / drag。
-- 播放移动、翻转、闪光动画。
-
-#### ZoneView
-
-用于：
-
-- 战斗区
-- 备战区
-- 手牌
-- 牌库
-- 弃牌区
-- 奖品卡区
-- 场馆区
-
-职责：
-
-- 接收 zone state。
-- 创建和复用 `CardView`。
-- 管理布局。
-- 暴露 `card_clicked`、`zone_clicked` 信号。
-
-#### ActionPanel
-
-职责：
-
-- 根据当前状态显示可用动作。
-- 显示攻击、特性、撤退、结束回合等按钮。
-- 根据规则状态禁用按钮。
-- 不直接执行规则，只发出 `action_requested` 信号。
-
-#### ChoiceOverlay
-
-职责：
-
-- 处理所有 `ActionRequest`：
-  - `search_deck`
-  - `select_hand`
-  - `select_hand_to_discard`
-  - `select_bench`
-  - `select_opponent_bench`
-  - `select_bench_targets`
-  - `coin_flip`
-  - `confirm`
-  - `distribute_energy`
-
-建议每种 request type 可以拆成子组件，但对外统一接口：
-
-```gdscript
-func show_request(request: Dictionary) -> void
-signal choice_completed(request_id, payload)
-signal choice_cancelled(request_id)
-```
-
-### 8.3 UI 行为映射
-
-| 当前 Pygame 行为 | Godot 迁移方式 |
-|---|---|
-| 鼠标坐标碰撞 `pygame.Rect.collidepoint` | `Control` 输入事件 / 自定义 hit test |
-| 手动绘制按钮 | Godot Button / TextureButton / 自定义 Control |
-| 手动绘制卡牌 | `CardView` + `TextureRect` / 自绘 Control |
-| 手动布局常量 | Container + anchor + responsive layout |
-| ScreenManager 栈 | SceneTree + SceneRouter + overlay layer |
-| Pygame animation manager | Tween / AnimationPlayer |
-| Pygame particle manager | GPUParticles2D / CPUParticles2D |
-| Pygame mixer | AudioStreamPlayer |
-| Pygame image cache | Godot ResourceLoader + AssetResolver |
-
-## 9. Python 引擎服务设计
-
-### 9.1 为什么保留 Python 引擎
-
-保留 Python 引擎有几个明显收益：
-
-- 保留现有规则正确性。
-- 保留现有测试。
-- 保留 AI 和训练能力。
-- 保留 PyTorch 模型。
-- 保留卡牌效果 DSL。
-- 降低第一版迁移风险。
-
-### 9.2 Session 设计
-
-建议新增 `GameSession`：
-
-```python
-class GameSession:
-    def __init__(self, mode: str, players: list[dict], options: dict):
-        self.state = GameState()
-        self.tm = TurnManager(self.state)
-        self.pending = PendingRequestStore()
-        self.seq = 0
-
-    def start_game(self):
-        ...
-
-    def perform_action(self, player_idx: int, action: str, params: dict) -> dict:
-        ...
-
-    def resolve_choice(self, request_id: str, payload: dict) -> dict:
-        ...
-
-    def serialize_for_player(self, player_idx: int) -> dict:
-        ...
-```
-
-### 9.3 PendingRequestStore
-
-```python
-class PendingRequestStore:
-    def __init__(self):
-        self._callbacks = {}
-        self._counter = 0
-
-    def register(self, req: ActionRequest) -> dict:
-        self._counter += 1
-        req.request_id = f"req-{self._counter}"
-        self._callbacks[req.request_id] = req.callback
-        return serialize_action_request(req)
-
-    def resolve(self, request_id: str, payload: dict):
-        callback = self._callbacks.pop(request_id, None)
-        if callback is None:
-            raise ValueError("Unknown pending request")
-        return callback(payload)
-```
-
-注意：
-
-- `callback` 只存在 Python 进程内。
-- 发送给 Godot 的请求必须去掉 callback。
-- 每次 callback 返回 `ActionRequest` 时，要继续注册新的 request。
-
-### 9.4 本地服务通信方式
-
-推荐优先使用 WebSocket，而不是 stdin/stdout：
-
-- 当前项目已经使用 WebSocket。
-- Godot 有 WebSocket 支持。
-- 本地对战和远程对战可以使用相同消息格式。
-- 调试工具更容易接入。
-
-本地启动方式：
-
-- Godot 启动时检查 Python engine service 是否运行。
-- 如果未运行，Godot 通过 `OS.create_process` 启动本地 Python 服务。
-- Python 服务监听 `127.0.0.1` 的固定或随机端口。
-- Godot 连接后发送 `hello`。
-
-桌面版可行。Web 版不适合这个方案，因为浏览器环境不能启动本地 Python 进程。
-
-## 10. 联机迁移方案
-
-### 10.1 当前联机特点
-
-当前项目已有：
-
-- `network/network_manager.py`
-- `network/message_protocol.py`
-- `network/state_serializer.py`
-- `relay_server.py`
-
-现有设计关键点：
-
-- WebSocket 通信。
-- host/client 模式。
-- relay 房间模式。
-- 心跳。
-- 序列号。
-- 状态更新 coalescing。
-- 按玩家隐藏手牌和隐藏牌库/奖品信息。
-
-这些都应尽量保留。
-
-### 10.2 第一阶段联机架构
-
-推荐：
-
-- Python host 仍是权威状态源。
-- Godot 客户端连接 Python host 或 relay。
-- relay 服务暂时保持 Python 实现。
-- 消息协议尽量沿用现有 `MSG_STATE_UPDATE`、`MSG_ACTION`、`MSG_CHOICE_RESPONSE`。
-
-```text
-Godot Client A
-   |
-   | action / choice_response
-   v
-Python Host Engine
-   |
-   | state_update for player B
-   v
-Relay Server
-   |
-   v
-Godot Client B
-```
-
-### 10.3 是否使用 Godot high-level multiplayer
-
-第一阶段不建议使用 Godot high-level multiplayer。
-
-原因：
-
-- 当前协议已经是 WebSocket + JSON。
-- 当前状态同步需要隐藏信息过滤。
-- 当前游戏是回合制，不需要低延迟状态复制。
-- Godot high-level multiplayer 更适合 RPC 和同步节点，不适合作为第一阶段替代现有规则协议。
-
-后续如果要完全 Godot 原生化，可以再评估。
-
-## 11. AI 和训练迁移方案
-
-### 11.1 结论
-
-AI 和训练不建议迁移到 Godot。
-
-原因：
-
-- 当前 AI 代码规模大。
-- 深度学习依赖 PyTorch。
-- Godot 不适合作为训练运行环境。
-- 训练通常是离线任务，不需要嵌入游戏主进程。
-
-### 11.2 Godot 中如何保留 AI 功能
-
-Godot 只做 UI：
-
-- 选择训练类型。
-- 选择卡组。
-- 选择对局数量。
-- 选择 CPU / CUDA。
-- 启动 Python 训练脚本。
-- 显示训练进度。
-- 显示训练结果。
-
-Python 训练脚本负责：
-
-- 执行训练。
-- 写入 progress JSON / log。
-- 保存模型。
-- 输出 benchmark。
-
-建议训练进度文件：
-
-```json
-{
-  "status": "running",
-  "deck": "fire",
-  "generation": 12,
-  "total_generations": 50,
-  "win_rate": 0.62,
-  "best_score": 0.74,
-  "message": "Benchmarking candidate policy"
-}
-```
-
-Godot 定时读取或通过 WebSocket 接收进度事件。
-
-## 12. 分阶段实施计划
-
-### 阶段 0：准备和冻结协议
-
-目标：
-
-- 明确迁移边界。
-- 冻结 Python 规则接口。
-- 定义 Godot 通信协议。
-
-任务：
-
-- 编写 `engine_service/protocol.py`。
-- 统一 `ACTION_TO_STRING` 和 `STRING_TO_ACTION`。
-- 明确 `state_update` schema。
-- 明确 `pending_action` schema。
-- 补充协议测试。
-- 编写卡牌数据导出脚本。
-
-产出：
-
-- 协议文档。
-- Python engine service 初版。
-- `cards.json` / `decks.json` 导出文件。
-
-建议耗时：
-
-- 1 到 2 周。
-
-验收：
-
-- 不启动 Pygame，也能通过 Python 服务创建一局游戏。
-- 可以发送 `start_game`、`action`，收到 `state_update`。
-- pending action 能注册并 resolve。
-
-### 阶段 1：Godot 静态棋盘原型
-
-目标：
-
-- Godot 能展示一份 `state_update`。
-- 不要求完整交互。
-
-任务：
-
-- 创建 Godot 项目。
-- 创建 `CardDatabase.gd`。
-- 创建 `BoardScene`。
-- 创建 `CardView`。
-- 创建基础区域：
-  - 战斗区
-  - 备战区
-  - 手牌
-  - 牌库
-  - 弃牌区
-  - 奖品卡
-  - 日志
-- 加载卡图。
-- 缺图 fallback。
-
-产出：
-
-- Godot 可视化棋盘。
-
-建议耗时：
-
-- 1 到 2 周。
-
-验收：
-
-- 能从 JSON 状态渲染双方场面。
-- 手牌、场上、弃牌、牌库数量正确。
-- 卡图和卡背显示正确。
-- 窗口缩放后布局不崩。
-
-### 阶段 2：接入本地 Python 引擎
-
-目标：
-
-- Godot 可以启动一局本地游戏。
-- Godot 点击动作后，Python 返回权威状态。
-
-任务：
-
-- 实现 `NetClient.gd`。
-- 连接 Python engine service。
-- 实现 `start_game`。
-- 实现基础动作：
-  - 设置战斗宝可梦
-  - 放置备战宝可梦
-  - 附能
-  - 结束回合
-- 实现日志更新。
-- 实现错误 toast。
-
-产出：
-
-- Godot + Python 本地对战最小可玩版。
-
-建议耗时：
-
-- 2 周。
-
-验收：
-
-- 可以完成 setup。
-- 可以进入 main phase。
-- 可以附能和结束回合。
-- Python 状态和 Godot 显示一致。
-
-### 阶段 3：完整动作和 Pending Action
-
-目标：
-
-- 支持完整卡牌操作流程。
-
-任务：
-
-- 进化。
-- 使用训练家。
-- 使用特性。
-- 使用竞技场。
-- 撤退。
-- 宣告攻击。
-- 搜索牌库。
-- 选择手牌弃置。
-- 选择备战目标。
-- 选择对手备战目标。
-- 能量分配。
-- 硬币动画和结果回传。
-- 连锁 pending action。
-
-产出：
-
-- 本地完整规则可玩。
-
-建议耗时：
-
-- 3 到 5 周。
-
-验收：
-
-- 现有 8 套预组卡组的主要效果都能跑通。
-- pending action 不丢 callback。
-- 取消操作能正确回滚。
-- 连续 pending action 能正确结算。
-
-### 阶段 4：动画、音效、视觉表现
-
-目标：
-
-- 替代 Pygame 的动画和反馈。
-
-任务：
-
-- 抽牌动画。
-- 弃牌动画。
-- 进化动画。
-- 附能动画。
-- 攻击震动。
-- 伤害数字。
-- 击倒淡出。
-- 状态标记。
-- 硬币动画。
-- 等待对手动画。
-- 音效系统。
-
-产出：
-
-- Godot 表现层达到或超过当前 Pygame 版本。
-
-建议耗时：
-
-- 2 到 4 周。
-
-验收：
-
-- 常见动作有清晰反馈。
-- 动画不阻塞规则状态。
-- 远程状态更新不重复播放关键动画。
-
-### 阶段 5：联机迁移
-
-目标：
-
-- Godot 支持 LAN / Relay 联机。
-
-任务：
-
-- 连接现有 relay。
-- 支持房间创建和加入。
-- 支持 host/client 座位。
-- 支持隐藏信息状态。
-- 支持 pending action 跨客户端选择。
-- 支持断线、心跳、过期消息。
-
-产出：
-
-- Godot 远程联机版。
-
-建议耗时：
-
-- 2 到 4 周。
-
-验收：
-
-- 两台客户端可以完整对局。
-- 对手手牌隐藏。
-- 行动权限正确。
-- 断线后 UI 正确提示。
-
-### 阶段 6：AI 和训练 UI
-
-目标：
-
-- Godot 替代当前 Pygame AI 训练界面。
-
-任务：
-
-- AI 对战入口。
-- 训练配置界面。
-- 启动 Python 脚本。
-- 显示训练进度。
-- 显示 benchmark。
-- 支持取消训练。
-
-产出：
-
-- Godot AI / 训练功能入口。
-
-建议耗时：
-
-- 2 到 3 周。
-
-验收：
-
-- Challenge AI 可对战。
-- Deep AI 可加载模型。
-- 训练进度可显示。
-- 取消训练能正确终止进程。
-
-## 13. 工作量预估
-
-### 13.1 混合架构版本
-
-| 阶段 | 估算 |
+| 项目 | 基线 |
 |---|---:|
-| 协议和服务准备 | 1 到 2 周 |
-| 静态棋盘原型 | 1 到 2 周 |
-| 本地基础交互 | 2 周 |
-| 完整规则交互 | 3 到 5 周 |
-| 动画和音效 | 2 到 4 周 |
-| 联机 | 2 到 4 周 |
-| AI / 训练 UI | 2 到 3 周 |
+| 注册卡牌 | 115 |
+| 预组卡组 | 8 套，每套 60 张 |
+| 数据中出现的效果类型 | 72 |
+| Python 测试 | 233 通过，8 跳过 |
+| 卡图 | 116 个，约 16.35 MB |
+| 已部署 Deep AI 模型 | 8 个 |
 
-合计：
+## 3. 目标架构
 
-- 最小可玩版本：4 到 6 周。
-- 功能较完整版本：8 到 12 周。
-- 完整替代当前 Pygame 客户端：12 到 18 周。
+```text
+Godot 4.7 Client
+├─ GDScript UI / input / animation / audio
+├─ GDScript authoritative rules engine
+├─ Serializable ResolutionStack / EffectFrame
+├─ GDScript Challenge AI and planner
+├─ C++ GDExtension
+│  └─ ONNX Runtime Deep AI inference
+├─ ENet LAN transport
+└─ WebSocket Relay transport
 
-### 13.2 全量 Godot 原生重写版本
-
-如果把规则、效果、AI、联机都迁入 Godot：
-
-- 规则引擎：6 到 10 周。
-- 效果 DSL：4 到 8 周。
-- 卡牌数据 Resource 化：2 到 4 周。
-- 联机状态一致性：4 到 6 周。
-- AI 重写或桥接：4 到 12 周。
-- 测试体系重建：4 到 8 周。
-
-合计：
-
-- 约 3 到 6 个月，且回归风险明显更高。
-
-## 14. 风险分析
-
-### 14.1 规则一致性风险
-
-风险：
-
-- Godot 端如果尝试预测规则，可能与 Python 状态不一致。
-
-应对：
-
-- Godot 不做权威状态修改。
-- 所有动作交给 Python。
-- Godot 只显示 Python 返回的状态。
-
-### 14.2 Pending Action 回调风险
-
-风险：
-
-- Python callback 无法序列化。
-- 多段选择可能中断。
-- 取消操作可能导致卡牌没有回到正确区域。
-
-应对：
-
-- 使用 `request_id -> callback` 存储。
-- 协议中明确每类 request 的 response 格式。
-- 为每类 pending action 写集成测试。
-
-### 14.3 隐藏信息风险
-
-风险：
-
-- 联机时手牌、牌库、奖品卡泄漏。
-
-应对：
-
-- 继续使用 `serialize_game_state(state, for_player_idx)` 的隐藏信息策略。
-- Godot 只接收当前玩家视角的状态。
-- 不向客户端发送对手手牌真实 card_id。
-
-### 14.4 双状态风险
-
-风险：
-
-- Godot 本地维护一份状态，Python 也维护一份状态，产生分歧。
-
-应对：
-
-- Godot 状态只作为展示缓存。
-- 每次 `state_update` 覆盖 Godot 状态。
-- 动画使用 diff，不用于修改业务状态。
-
-### 14.5 数据双写风险
-
-风险：
-
-- Python 卡牌模板和 Godot Resource 数据不一致。
-
-应对：
-
-- 第一阶段只允许 Python 数据为源。
-- Godot 数据由脚本导出。
-- 不手写 Godot 卡牌数据。
-
-### 14.6 AI 训练进程风险
-
-风险：
-
-- Godot 启动 Python 训练后，进程未正确终止。
-- CUDA 环境不可用。
-- 训练日志格式不稳定。
-
-应对：
-
-- 训练脚本输出结构化 progress JSON。
-- Godot 提供取消按钮。
-- Python 训练进程支持优雅终止。
-- UI 显示 CPU/CUDA 可用状态。
-
-### 14.7 发布平台风险
-
-风险：
-
-- 桌面版可以启动 Python 服务。
-- Web 版不能启动本地 Python。
-- 移动端也不适合依赖外部 Python。
-
-应对：
-
-- 第一阶段目标锁定桌面版。
-- 如果后续要 Web/移动版，需要服务器托管 Python 引擎，客户端只连远程服务。
-
-## 15. 测试和验收方案
-
-### 15.1 Python 规则测试保留
-
-继续运行：
-
-```bash
-python -B -m unittest discover -q
+Python Tooling (not shipped)
+├─ Current rules engine and regression tests
+├─ Golden fixture generator
+├─ Card/deck/effect exporter
+├─ Challenge/Deep AI training
+└─ PyTorch -> ONNX exporter and parity verifier
 ```
 
-重点保留：
+核心接口在 Godot 中保持与 Python 相同的语义：
 
-- 规则测试。
-- 联机测试。
-- AI 测试。
-- 状态序列化测试。
+```text
+GameEngine.legal_actions(state, actor)
+GameEngine.apply_action(state, action, rng)
+GameEngine.apply_choice(state, request, response, rng)
+```
+
+## 4. 阶段状态
+
+| 阶段 | 状态 | 完成标准 |
+|---|---|---|
+| 0. 构建基线 | 完成 | Godot 工程可启动，Win/Android 导出配置可验证 |
+| 1. 数据与差异框架 | 完成 | 115 张卡和 8 套牌组导入，黄金数据测试通过 |
+| 2. 原生规则引擎 | 完成 | 全部发布效果和对局流程与 Python 对齐 |
+| 3. 离线客户端 | 完成 | UI 自动完整对局、Win 启动和 Android ARM64 导出通过；真机发布复核列入阶段 6 |
+| 4. 两种离线 AI | 未开始 | Challenge/Deep AI 均可离线完整对局 |
+| 5. LAN/Relay 联机 | 未开始 | 三种设备组合均可完整联机对局 |
+| 6. 发布收尾 | 未开始 | 生成 Win ZIP 和签名 ARM64 APK |
+
+## 5. 阶段记录
+
+### 阶段 0：构建基线
+
+开始日期：2026-06-20
+
+计划内容：
+
+- 创建 `godot_client/` Godot 4.7 Compatibility 工程。
+- 创建 Windows x86_64 和 Android ARM64 导出预设。
+- 固定 Android 9+、横屏、包名 `com.pokemontcg.game`。
+- 创建无第三方依赖的 headless 测试入口。
+- 创建便携式 Godot/JDK/Android SDK 工具链安装和构建脚本。
+- 验证现有 Python 测试，确保迁移起点无回归。
+
+已完成内容：
+
+- 迁移方案已从“Godot + 本地 Python 服务”修订为 Godot 原生规则运行时。
+- 已确认当前 Python 测试基线：233 通过，8 跳过。
+- 已确认开发机缺少 Godot、Android SDK/ADB、JDK 17 和 .NET SDK；本项目使用标准版 Godot/GDScript，不依赖 .NET。
+- 已创建 Godot 4.7 Compatibility 工程、主场景、应用状态 Autoload 和应用图标。
+- 已创建 Windows x86_64 与 Android Gradle ARM64 导出预设。
+- 已实现便携工具链脚本，安装 Godot 4.7、导出模板、Temurin JDK 17、Android SDK 35、Build Tools 35、Platform Tools 和 NDK 28.1。
+- 已实现 Godot headless 测试脚本和统一 Windows/Android 构建脚本。
+- 已成功生成 Windows 调试可执行文件与 Android ARM64 调试 APK。
 
-### 15.2 新增协议测试
+接口变化：
 
-建议新增：
+- 新增 `AppState` Autoload，定义客户端版本以及规则、动作和协议 schema v3。
+- Android 包名固定为 `com.pokemontcg.game`。
+- Android Gradle 配置固定 `minSdk=28`、`targetSdk=35`、仅 `arm64-v8a`。
 
-- `test_engine_service_start_game`
-- `test_engine_service_action_roundtrip`
-- `test_pending_action_register_resolve`
-- `test_choice_response_search_deck`
-- `test_choice_response_coin_flip`
-- `test_hidden_info_for_each_player`
-- `test_invalid_action_returns_error`
+测试结果：
 
-### 15.3 Godot 客户端测试
+- `python -B -m unittest discover -q`：通过。
+- `tools/test_godot.ps1`：`GODOT_TESTS_OK phase=0`。
+- APK 清单检查：`minSdkVersion=28`、`targetSdkVersion=35`、`native-code=arm64-v8a`。
 
-Godot 侧建议做以下测试：
+生成产物：
 
-- 卡牌数据加载测试。
-- 状态 JSON 渲染测试。
-- BoardScene 截图测试。
-- 点击动作映射测试。
-- pending action UI 测试。
-- 网络连接测试。
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `godot_client/dist/windows/PokemonTCG.exe` | 102,915,072 B | `B1B700323D4E3812D644A2F0F2972A542D15AB930D925E5D0C53E749017C66E6` |
+| `godot_client/dist/android/PokemonTCG.apk` | 83,986,908 B | `1B17A9B4ACE57A3F59E8A3EBE87423A7896C89B9DB47BD9B4E151CB907E077CA` |
 
-### 15.4 回归验收用例
+风险与遗留：
 
-最低验收：
-
-- 本地对战可以完整开始。
-- 双方完成 setup。
-- 放置基础宝可梦。
-- 附着能量。
-- 进化。
-- 使用物品。
-- 使用支援者。
-- 搜索牌库。
-- 宣告攻击。
-- 击倒后拿奖品卡。
-- 主动晋升备战宝可梦。
-- 结束游戏。
-
-完整验收：
-
-- 8 套预组卡组主要效果全部可用。
-- AI 对战可用。
-- LAN 联机可用。
-- Relay 联机可用。
-- 卡图管理可用或有替代流程。
-- 训练 UI 可用。
-
-## 16. 是否迁移规则到 Godot 原生
-
-### 16.1 第一阶段不建议
-
-原因：
-
-- 当前规则已经可运行。
-- 效果系统复杂。
-- AI 和训练依赖 Python。
-- Godot 原生规则重写不会立刻改善用户体验。
-
-### 16.2 后续可选路线
-
-如果后续要完全 Godot 原生化，可以按以下顺序迁移：
-
-1. `data/card_models.py` -> Godot Resource / GDScript class。
-2. `PlayerState` / `PokemonInPlay` -> GDScript。
-3. `GameState` -> GDScript。
-4. `rules_validator.py` -> GDScript。
-5. `TurnManager` -> GDScript。
-6. `ActionResolver` -> GDScript。
-7. `effects/*` 和 `commands/*` -> GDScript DSL interpreter。
-8. AI 保持远程服务或单独迁移。
-
-### 16.3 GDScript vs C#
-
-GDScript 优点：
-
-- 和 Godot 集成最好。
-- UI 和 Scene 操作最自然。
-- 适合快速迭代。
-- 更适合未来 Web 导出。
-
-C# 优点：
-
-- 类型系统更强。
-- 更适合复杂规则引擎。
-- 更接近 Python dataclass 重写后的强类型模型。
-
-建议：
-
-- UI 用 GDScript。
-- 如果未来重写规则，可评估 C#。
-- 但第一阶段不要把语言选择变成迁移阻塞点。
-
-## 17. 推荐里程碑
-
-### M1：协议和导出完成
-
-交付：
-
-- Python engine service。
-- 卡牌 JSON 导出。
-- 协议测试。
-
-完成标准：
-
-- 不启动 Pygame 也能创建游戏并执行动作。
-
-### M2：Godot 静态棋盘
-
-交付：
-
-- Godot 项目。
-- BoardScene。
-- CardView。
-- 状态渲染。
-
-完成标准：
-
-- 可以展示一局游戏状态。
-
-### M3：Godot 本地最小可玩
-
-交付：
-
-- setup。
-- 放置基础宝可梦。
-- 附能。
-- 结束回合。
-- 状态刷新。
-
-完成标准：
-
-- 可以跑多个回合。
-
-### M4：Godot 本地完整可玩
-
-交付：
-
-- 完整动作。
-- pending action。
-- 攻击。
-- 胜负。
-
-完成标准：
-
-- 8 套预组卡组能进行主要对战流程。
-
-### M5：Godot 联机可玩
-
-交付：
-
-- LAN。
-- Relay。
-- 隐藏信息。
-- 远程 pending action。
-
-完成标准：
-
-- 两个 Godot 客户端可完整对局。
-
-### M6：替代 Pygame 客户端
-
-交付：
-
-- 动画。
-- 音效。
-- AI。
-- 训练 UI。
-- 卡图管理或替代流程。
-
-完成标准：
-
-- 新 Godot 客户端可以作为主客户端使用。
-
-## 18. 不推荐方案
-
-### 18.1 不推荐直接逐行翻译 Pygame UI
-
-原因：
-
-- `GameScreen` 太厚。
-- Pygame 的坐标和绘制模型与 Godot Scene 模型不同。
-- 逐行翻译会保留旧架构缺点。
-- Godot 的优势无法发挥。
-
-应该按组件重构：
-
-- `CardView`
-- `ZoneView`
-- `ActionPanel`
-- `ChoiceOverlay`
-- `BoardScene`
-
-### 18.2 不推荐第一阶段重写 AI
-
-原因：
-
-- AI 代码量大。
-- PyTorch 训练不适合迁入 Godot。
-- 对迁移核心目标帮助有限。
-
-### 18.3 不推荐一开始改联机模型
-
-原因：
-
-- 现有 WebSocket/JSON 已经可用。
-- 回合制游戏不需要复杂同步系统。
-- 高层 multiplayer 会引入新概念和新风险。
-
-## 19. 参考资料
-
-Godot 官方文档和资料：
-
-- Godot Nodes and Scenes：<https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html>
-- Godot Resources：<https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html>
-- Godot WebSocketPeer：<https://docs.godotengine.org/en/stable/classes/class_websocketpeer.html>
-- Godot JSON：<https://docs.godotengine.org/en/stable/classes/class_json.html>
-- Godot scripting languages：<https://docs.godotengine.org/en/stable/tutorials/scripting/other_languages.html>
-- Godot 4.6.3 maintenance release：<https://godotengine.org/article/maintenance-release-godot-4-6-3/>
-
-当前项目关键文件：
-
-- `main.py`
-- `ui/game_app.py`
-- `ui/screens/game_screen.py`
-- `ui/screens/game_screen_network.py`
-- `ui/components/board_renderer.py`
-- `engine/game_state.py`
-- `engine/player_state.py`
-- `engine/turn_manager.py`
-- `engine/action_resolver.py`
-- `engine/effects/`
-- `engine/commands/`
-- `network/network_manager.py`
-- `network/state_serializer.py`
-- `network/message_protocol.py`
-- `data/card_models.py`
-- `data/card_registry.py`
-- `data/deck_definitions.py`
-- `card_data/templates/`
-- `card_data/effects/`
-
-## 20. 最终建议
-
-本项目迁移到 Godot 是合理的，但应把迁移目标定义为：
-
-先迁移客户端体验，不急于迁移规则内核。
-
-推荐落地路线：
-
-1. 保留 Python 规则引擎、AI、训练和测试。
-2. 新增 Python engine service，提供 WebSocket/JSON 接口。
-3. 新建 Godot 客户端，先完成状态渲染。
-4. 再逐步接入动作、pending action、动画和联机。
-5. 通过现有 unittest 和新增协议测试保护规则一致性。
-6. 等 Godot 客户端稳定后，再评估是否迁移规则到 Godot 原生。
-
-这样可以最大化利用现有代码资产，同时让 Godot 负责它最擅长的部分：界面、动画、资源、输入和跨平台客户端体验。
+- 当前 APK 已完成构建和清单检查，但尚未在真实 Android 设备启动验证。
+- 正式签名密钥不提交仓库；阶段 6 由环境变量或本地密钥路径注入。
+- 当前构建只有迁移启动页，功能代码从阶段 1 开始接入。
+
+完成日期：2026-06-20
+
+阶段结论：完成。
+
+### 阶段 1：数据与差异测试框架
+
+开始日期：2026-06-20
+
+计划内容：
+
+- 从 Python 权威数据自动导出卡牌、效果、牌组、图片映射和 AI 模型清单。
+- 导出与 Python `blake2b` 算法一致的稳定卡牌 bucket。
+- 在 Godot 中实现数据加载器、动作/选择契约、基础状态、随机源和快照结构。
+- 生成固定种子的 Python 黄金 fixture，并在 Godot headless 测试中验证。
+
+已完成内容：
+
+- 新增 `scripts/export_godot_data.py`，从 Python 权威数据生成：
+  - `cards.json`
+  - `effects.json`
+  - `decks.json`
+  - `card_images.json`
+  - `card_buckets.json`
+  - `ai_models.json`
+  - `data_contract.json` 黄金 fixture
+- 导出器只遍历 115 张发布卡牌，不受测试中临时注册卡牌污染。
+- 导出器支持 `--check`，可在 CI 中检测提交的生成数据是否过期。
+- 已复制 115 张卡图和卡背到 Godot 资源目录。
+- 已导出 8 个已部署 Deep AI 检查点的大小、SHA-256、schema 和目标 ONNX 路径。
+- 已实现与 Python 编码器一致的稳定 card bucket 映射。
+- 已实现 Godot 数据库 Autoload。
+- 已实现 Godot 基础契约和状态类型：
+  - `EntityRef`
+  - `GameAction`
+  - `ChoiceRequest`
+  - `ChoiceResponse`
+  - `StepResult`
+  - `PokemonState`
+  - `PlayerState`
+  - `GameState`
+  - `GameEventStream`
+- 已实现可跨平台复现的 `xorshift32` 随机源和黄金序列。
+- 已实现动作、选择和状态快照的序列化往返测试。
+
+接口与数据格式变化：
+
+- Godot 数据文件由 Python 单向生成，Godot 端禁止手工维护卡牌规则数据。
+- 发布数据 schema 使用 Godot rules/action v3；Python 对照引擎当前仍为 v2。
+- card bucket 通过生成映射读取，避免不同语言哈希实现不一致。
+
+测试结果：
+
+- `python -B scripts/export_godot_data.py --check`：通过。
+- Python 新增 2 个导出测试；完整测试现为 235 通过，8 跳过。
+- Godot headless：`GODOT_TESTS_OK phase=1`。
+- 验证内容包括 115 张卡、8 套 60 张牌组、72 类效果、全部卡图存在、8 个模型清单、稳定随机序列及序列化往返。
+- Windows 与 Android 导出在加入完整卡图和 JSON 后再次成功。
+
+生成产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot_client/dist/android/PokemonTCG.apk` | 101,832,600 B | `B71E587D55D5AEC6D9BA540D7CEF676EC135EBE8FD810E381701236EE08D7453` |
+
+风险与遗留：
+
+- 当前黄金 fixture 覆盖数据、哈希、随机源和基础序列化；规则动作差异 fixture 在阶段 2 扩展。
+- Godot 导入卡图后 APK 已约 97 MB，阶段 6 需要重新评估纹理压缩和发布包体。
+
+完成日期：2026-06-20
+
+阶段结论：完成。
+
+### 阶段 2：Godot 原生规则引擎
+
+开始日期：2026-06-20
+
+计划内容：
+
+- 迁移 setup、回合、合法动作、伤害、状态、进化、撤退和胜负。
+- 建立 `ResolutionStack/EffectFrame`，禁止使用不可序列化回调。
+- 迁移 72 类效果并为每类建立覆盖。
+- 实现按玩家视角的隐藏信息序列化。
+- 扩展 Python 黄金动作 fixture 和 Godot 差异测试。
+
+已完成内容：
+
+- 新增原生 `GameEngine`，统一提供：
+  - `legal_actions(state, actor, validate_effects)`
+  - `apply_action(state, action, rng)`
+  - `apply_choice(state, request, response, rng)`
+  - `setup_game(state, deck_one, deck_two, rng)`
+- 已迁移准备阶段、再战、先后攻、奖品设置、抽牌、主要阶段、攻击后自动结束回合、宝可梦检查、晋升和胜负判定。
+- 已迁移基础宝可梦上场、进化、通常附能、训练家卡、特性、竞技场、撤退、攻击、特殊状态、击倒和奖品处理。
+- 已实现动作前快照和失败回滚；重复 `action_id`、过期实体引用、重复选择、越权玩家和过期选择均会被拒绝。
+- 已实现 `ResolutionStack`：
+  - 效果帧、续执行帧、上下文和待处理选择均可序列化。
+  - 支持嵌套选择、硬币结果、能量分配、能量转移、可取消训练家动作及攻击完成续执行。
+  - 攻击基础伤害只会在全部效果与选择链完成后执行一次。
+- 已实现 72 类发布效果的原生分派和真实数据样例覆盖。
+- 已实现双重涡轮能量、喷射能量、夜光能量、奇迹能量、学习装置、伤害增减道具、压迫感和团结一致等被动规则。
+- 已实现按玩家视角的隐藏信息序列化：
+  - 仅自己的手牌身份可见。
+  - 双方牌库和奖品仅暴露数量。
+  - 对手手牌仅暴露数量。
+- 已增加 Python 生成的 `rules_golden.json`，Godot 会重放基础上场/附能/攻击、双重涡轮撤退和进化脚本，并比较规范化最终状态。
+- 已增加 8 套发布牌组的轮转自动对局；每套牌组均能通过原生规则完成一局并产生胜者。
+- 已确认 115 张发布卡牌全部至少出现在一套发布牌组中。
+
+接口与状态格式变化：
+
+- `GameState` 新增 `setup_ready` 和最近 256 个 `processed_action_ids`。
+- `resolution_stack` 新增可序列化 `context`，用于保存攻击收尾、穿透标记和可取消动作快照。
+- `StateSerializer.for_player` 不再向任何客户端发送牌库顺序或奖品身份。
+- 类型相克仅在 `apply_type_matchups=true` 时启用，与 Python 当前默认行为一致。
+- 选择生成统一使用稳定 option ID；能量分配和能量转移允许按能量逐张选择目标。
+
+测试结果：
+
+- `python -B scripts/export_godot_data.py --check --skip-images`：通过。
+- Python 完整测试：235 通过，8 跳过。
+- Godot headless：`GODOT_TESTS_OK phase=2`。
+- Godot 阶段 2 覆盖：
+  - 72/72 类效果使用发布数据中的真实样例执行。
+  - 所有生成的嵌套选择链均可完成，且不存在未知效果或未知续执行操作。
+  - 3 个 Python→Godot 黄金动作脚本最终状态一致。
+  - 8 套牌组分别参与完整自动对局并在 1200 个动作上限内结束。
+  - 隐藏信息、动作去重、动作回滚、取消恢复、自我击倒奖品和晋升队列通过。
+- Windows 调试导出：通过。
+- Android ARM64 调试导出：通过；清单仍为包名 `com.pokemontcg.game`、`minSdk=28`、`targetSdk=35`、仅 `arm64-v8a`。
+
+生成产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot_client/dist/windows/PokemonTCG.pck` | 18,203,268 B | `4A89B2B44F46D069F3A085A9533412D8AE7C72514040F62433E0C05DD9320A10` |
+| `godot_client/dist/android/PokemonTCG.apk` | 101,947,137 B | `EC6FBE7ACAF5635D0FD9F9C3BF6E2EE7486B3BAFFDDEB8D7B718FD4E8A8DD9B3` |
+
+风险与遗留：
+
+- Python 规则仍是对照实现；后续修改卡牌语义时必须同步更新黄金 fixture 并运行 Godot 阶段 2 测试。
+- 阶段 2 的自动选择策略用于规则回归，不代表 Challenge AI 的决策质量。
+- Android APK 已构建和检查清单，但真机触控与生命周期测试属于阶段 3 和阶段 6。
+
+完成日期：2026-06-20
+
+阶段结论：完成。
+
+### 阶段 3：离线客户端与触控 UI
+
+开始日期：2026-06-20
+
+计划内容：
+
+- 实现标题、模式选择、牌组选择、本地双人、棋盘、结束界面。
+- 实现卡牌区域、动作面板、卡牌详情和统一选择 Overlay。
+- Android 固定横屏，适配 16:9、20:9、安全区、触控和返回键。
+- 接入阶段 2 原生 `GameEngine`，完成一局无需 Python 的本地双人对战。
+
+已完成内容：
+
+- 已实现标题页、模式入口、双玩家牌组选择、本地双人对局和结束界面。
+- 牌组选择会从生成数据中读取全部 8 套发布牌组；Challenge AI 和 Deep AI 入口已保留并明确标记为阶段 4 功能，当前不会伪装为可用。
+- 已实现本地热座隐私交接 Overlay：
+  - 切换玩家、准备阶段和晋升时使用全屏不透明遮挡。
+  - 用户确认前不展示下一位玩家手牌。
+- 已实现横屏棋盘界面：
+  - 双方战斗区和备战区。
+  - 当前玩家手牌、牌库数、奖品数和对手隐藏信息摘要。
+  - 可执行动作列表、动作过滤、对局日志和卡牌详情区。
+  - 卡图、卡名、伤害、状态、附着能量和道具信息展示。
+- 所有规则操作均通过 `GameAction`、`GameEngine.apply_action` 和 `GameEngine.apply_choice` 执行；UI 不直接修改规则状态。
+- 已实现统一选择 Overlay，覆盖单选、多选、可重复选择、能量分配、硬币结果、取消和嵌套选择链。
+- 完整 UI 对局测试发现并修复两处关键问题：
+  - 某些多段效果只把待选择请求写入 `ResolutionStack` 时，UI 现在会从可序列化结算栈恢复请求。
+  - 确认选择前会复制 option ID，避免关闭 Overlay 时清空选择并向引擎提交空响应。
+- 已实现卡牌点击选择和详情查看；全部核心操作可仅通过点击完成，桌面端不依赖拖拽。
+- 已实现 Android 返回键：对局中打开菜单，其余页面返回上一级或退出。
+- 已实现显示安全区边距、横屏布局和 16:9、20:9 自适应。
+- 核心按钮最小高度为 48 px，满足触控目标要求。
+- 已实现基础页面过渡、弹窗 Tween、点击音和成功提示音；音频在运行时生成，不增加外部音频依赖。
+- 已增加 UI 截图回归工具，可生成标题、牌组、隐私交接、16:9 棋盘和 20:9 棋盘截图。
+- Windows 和 Android 导出包已排除 `tests/`、`tools/` 和候选模型。
+
+接口与配置变化：
+
+- `main.gd` 作为离线客户端 UI 状态机，提供标题、牌组、游戏和结束四类界面状态。
+- 新增 `start_local_match_for_test(first_key, second_key)`，用于确定性 UI 集成测试。
+- `_execute_action` 返回 `StepResult`，便于调用端和测试验证动作结果。
+- 新增从 `StepResult` 或 `ResolutionStack` 读取待处理选择的兼容路径。
+- 新增 `GameUITheme` 和 `UISound`，统一主题、触控尺寸和基础反馈。
+- `project.godot` 启用保持屏幕常亮以及鼠标/触控输入模拟。
+- Android 继续固定横屏、Android 9+ 和 `arm64-v8a`。
+
+测试结果：
+
+- `python -B scripts/export_godot_data.py --check --skip-images`：通过。
+- Python 完整测试：235 通过，8 跳过。
+- Godot headless：`GODOT_TESTS_OK phase=3`。
+- 阶段 3 Godot 测试覆盖：
+  - 标题和本地双人入口。
+  - 两名玩家各 8 套牌组。
+  - 48 px 最小触控目标。
+  - 热座隐私遮挡、棋盘、手牌、动作区和统一选择 Overlay。
+  - 通过 UI 控制器执行准备、普通动作、多段选择、回合交接、晋升和结束界面，自动完成一局本地双人对局。
+- UI 截图回归：`UI_PREVIEWS_OK`；16:9、20:9 和隐私交接截图人工复核通过。
+- Windows 导出启动冒烟测试：`WINDOWS_STARTUP_OK`。
+- Android APK 元数据检查：`ANDROID_APK_METADATA_OK`。
+- APK 信息：
+  - 包名：`com.pokemontcg.game`
+  - `minSdkVersion=28`
+  - `targetSdkVersion=35`
+  - ABI：仅 `arm64-v8a`
+  - `screenOrientation=0`：Android 横屏
+- 当前无 ADB 设备，故本次结果为 `ANDROID_DEVICE_SKIPPED no connected ADB device`。
+- 尝试安装 Android Emulator 和 ARM64 system image 时，SDK 源清单下载失败；未以不可用的模拟器结果替代真机结论。
+
+生成产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot_client/dist/windows/PokemonTCG.pck` | 18,177,844 B | `6B4B8FCE8F132498738240DB0DB51F984036ED839A1EF060D90889964BD6178B` |
+| `godot_client/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
+| `godot_client/dist/android/PokemonTCG.apk` | 101,958,114 B | `E3E6C2936479851BAE500E0750F5F5DD8C32193E80A8F67DB09160B1D5636001` |
+
+提交记录：
+
+- 工作基线提交：`9cf099f425c97aed2150673ba83e43897ecd346d`。
+- 阶段 0–3 的代码、测试和文档作为同一组迁移交付提交。
+- 具体提交 ID 以包含本记录的 Git 历史为准，避免在提交内容中写入无法自引用的提交哈希。
+
+风险与遗留：
+
+- Android APK 已成功构建且包名、SDK 和 ABI 正确，但没有可用的 Android ARM64 真机或模拟器，尚未执行安装、启动、真实触控、安全区和系统返回键验证。
+- 阶段 3 标记完成的依据是跨平台代码、完整 UI 自动对局、响应式渲染、Windows 启动和 Android 构建验证；Android 真机验收不得从最终发布标准中删除，必须在阶段 6 完成。
+- 当前动画和音效属于基础反馈，完整表现、资源缓存和性能优化属于阶段 6。
+- 当前只开放本地双人；两种离线 AI 和联网入口必须等待对应阶段完成。
+
+完成日期：2026-06-21
+
+阶段结论：完成。按用户要求在此阶段停止，不进入阶段 4。
+
+## 6. 剩余任务
+
+以下任务均未在本阶段启动。后续恢复迁移时应按阶段 4、5、6 顺序执行，并继续遵守“代码、测试、文档同阶段交付”。
+
+### 6.1 阶段 4：两种离线 AI
+
+#### 6.1.1 Challenge AI 原生迁移
+
+- 盘点 Python Challenge AI 的 Observation、动作排序、启发式、搜索节点、牌组配置和选择响应逻辑。
+- 在 Godot 中实现与发布规则状态一致的 Observation Builder。
+- 精确实现 960 维状态编码、96 个卡槽和 178 维动作/选择编码；禁止通过 GDScript 默认哈希推导 card bucket。
+- 迁移 8 套牌组对应的启发式参数和策略配置。
+- 实现动作和 `ChoiceRequest` 的统一候选生成，确保 AI 能完成嵌套选择、能量分配、晋升和取消逻辑。
+- 将搜索运行在 WorkerThreadPool 或专用线程；主线程只接收不可变快照和最终决策。
+- 添加搜索超时、取消令牌、对局结束清理和 Android 切后台中止处理。
+- 在现有模式选择页开放 Challenge AI，并提供难度、双方牌组和先后手配置。
+- 建立至少以下回归：
+  - 8 套牌组分别作为 AI 使用。
+  - AI 不提交非法动作或过期选择。
+  - 每套牌组均能完成对局。
+  - 固定种子下决策可复现。
+  - 后台搜索期间 UI 帧循环持续响应。
+
+#### 6.1.2 PyTorch 到 FP32 ONNX 导出
+
+- 新增独立 Python 导出脚本，只用于开发/训练环境，不进入发布包。
+- 确认当前 8 个部署检查点的网络结构、输入张量、动作头、价值头和选择头。
+- 对每个模型导出固定 opset 的 FP32 ONNX 文件。
+- 生成模型版本清单，至少包含：
+  - 模型 ID 和对应牌组。
+  - rules/action schema。
+  - 编码尺寸。
+  - ONNX opset。
+  - 文件大小和 SHA-256。
+  - 训练检查点来源校验值。
+- 为同一批固定输入运行 PyTorch/ONNX 差异测试；各输出最大绝对误差不得超过 `1e-4`。
+- 检查模型是否使用 Android ONNX Runtime 不支持或会回退到低效实现的算子。
+- 明确 ONNX Runtime 和模型的许可证、NOTICE 和发布归档要求。
+
+#### 6.1.3 ONNX Runtime GDExtension
+
+- 固定与 Godot 4.7 匹配的 `godot-cpp` 版本和提交。
+- 创建 C++ GDExtension 工程、SCons/CMake 构建入口和可重复的依赖获取脚本。
+- 构建并打包：
+  - Windows x86_64 动态库。
+  - Android `arm64-v8a` 动态库。
+- 封装最小稳定接口：
+  - 加载/卸载模型。
+  - 校验模型 schema、版本和 SHA-256。
+  - 提交批量输入。
+  - 返回动作头、价值头和选择头。
+  - 查询错误、运行耗时和执行提供程序。
+- 禁止把 Godot 对象跨线程直接传入推理线程；使用扁平数组或不可变缓冲区。
+- 实现模型加载失败、版本不匹配、推理异常和超时后的明确错误提示，并自动回退 Challenge AI。
+- Deep AI 固定执行 256 次模拟；达到安全看门狗时使用已完成搜索的最佳结果并记录降级事件。
+- 验证 8 个模型在完全断网的 Windows 和 Android 环境中均能加载。
+
+#### 6.1.4 阶段 4 验收
+
+- Challenge AI 和 Deep AI 均能从现有 UI 开始、完成完整选择链并结束对局。
+- 8 个 ONNX 模型全部通过 PyTorch 对齐测试。
+- 两种 AI 均不得产生非法动作、重复 action ID 或过期 request ID。
+- Windows 与 Android 搜索均在后台执行，操作、动画和系统返回键持续响应。
+- 模型损坏或版本不匹配时，UI 明确提示并回退 Challenge AI。
+- 完成后更新本报告，记录模型清单、推理库版本、构建命令、性能数据和产物校验值。
+
+### 6.2 阶段 5：LAN 与 WebSocket Relay 联机
+
+#### 6.2.1 协议 v3 与传输抽象
+
+- 定义统一 `NetTransport` 接口：连接、监听、发送、轮询、关闭、错误和连接状态。
+- 实现 ENet LAN 房主/加入流程和局域网房间参数。
+- 实现 WebSocket Relay 客户端，支持 TLS、房间创建、加入、离开、心跳和超时。
+- 固化协议 v3 消息 envelope，至少包含：
+  - `protocol_version`
+  - `message_type`
+  - `room_id`
+  - `sender`
+  - `sequence`
+  - `state_revision`
+  - `action_id`
+  - `request_id`
+  - `payload`
+- 为每种消息定义大小限制、必填字段、类型约束和错误码。
+- 明确不兼容旧 Pygame v2 客户端，握手时直接拒绝错误版本。
+
+#### 6.2.2 房主权威规则
+
+- 房主持有完整 `GameState`、随机源和 `ResolutionStack`。
+- 客户端只能提交动作或选择响应，不能提交状态、随机结果、伤害或抽牌结果。
+- 房主验证玩家身份、当前行动者、sequence、revision、action ID、request ID 和合法动作。
+- 对重复、过期、越权、篡改和超大消息返回稳定错误码，不得改变状态。
+- 房主按玩家视角调用隐藏信息序列化：
+  - 不发送对手手牌身份。
+  - 不发送任何牌库顺序。
+  - 不发送未公开奖品身份。
+- 每次已接受动作后广播递增 revision 的视角状态和公开事件。
+- 支持投降、正常离开、网络中断和房主断线；首版不做房主迁移，房主断线时终止对局并明确提示。
+
+#### 6.2.3 恢复与 Relay
+
+- 使用可序列化状态快照和 `ResolutionStack` 支持客户端重新同步；是否允许短时重连需在实现前锁定产品规则。
+- Relay 增加房间生命周期、人数上限、心跳、空闲超时、消息大小和发送频率限制。
+- Relay 仅转发协议消息，不运行规则，不获得额外隐藏信息。
+- 准备可部署配置：监听地址、TLS 终止方式、反向代理、日志保留和健康检查。
+- 不把生产 Relay 凭据、域名私钥或令牌提交仓库。
+
+#### 6.2.4 阶段 5 测试矩阵
+
+- LAN：Win↔Win、Win↔Android、Android↔Android。
+- Relay：Win↔Win、Win↔Android、Android↔Android。
+- 每种组合至少完成一局，并覆盖嵌套选择、晋升、投降和房主断线。
+- 协议攻击测试覆盖：
+  - 重复 action ID。
+  - 回退或跳跃 sequence。
+  - 过期 revision。
+  - 错误 request ID。
+  - 非当前玩家动作。
+  - 客户端伪造随机结果或状态。
+  - 超大 payload 和未知消息类型。
+- 对两名玩家分别抓取收到的状态，自动断言隐藏信息未泄漏。
+- 完成后在报告中记录 Relay 版本、测试拓扑、延迟范围、断线行为和已知限制。
+
+### 6.3 阶段 6：发布与收尾
+
+#### 6.3.1 表现与性能
+
+- 完成抽牌、出牌、附能、进化、攻击、伤害、击倒、拿奖品和回合切换动画。
+- 补齐音效、音量设置和静音选项；确认 Android 音频焦点行为。
+- 增加资源加载页、模型加载进度、错误恢复和卡图缓存策略。
+- 评估卡图导入格式、VRAM、APK 大小和启动时间，按平台配置纹理压缩。
+- 使用 Windows profiler 和 Android profiler 检查长局内存增长、节点泄漏、线程退出和卡顿。
+- 避免每次界面刷新重建不必要的昂贵资源；对卡图和详情数据做受控缓存。
+
+#### 6.3.2 Android 真机与生命周期
+
+- 准备至少一台 Android 9+ ARM64 真机并通过 ADB 连接。
+- 安装当前调试 APK，验证启动、横屏、安全区、触控目标、返回键、音频和完整本地双人对局。
+- 验证 Challenge AI、Deep AI、LAN 和 Relay 的完整对局。
+- 覆盖锁屏、切后台、恢复、旋转锁定、断网、网络切换、来电/音频焦点和低内存回收。
+- 进行长局和多局连续运行，记录峰值内存、温度、耗电和 AI 搜索耗时。
+- 测试 APK 覆盖安装、升级、卸载重装和存档/设置兼容性。
+
+#### 6.3.3 发布签名与裁剪
+
+- 创建或指定正式 Android keystore；密钥、别名和密码仅通过本地安全存储或 CI secret 注入。
+- 增加 release 导出预设，不使用 debug keystore。
+- 确认发布包排除：
+  - Python 运行时。
+  - PyTorch。
+  - 训练脚本和训练数据。
+  - 候选/拒绝模型。
+  - Godot 测试、截图工具和开发工具链。
+  - 卡图下载管理工作台。
+- 包含 8 个已批准 FP32 ONNX 模型、ONNX Runtime 原生库和许可证文件。
+- 生成 Windows x86_64 便携 ZIP 和 Android 签名 APK。
+- 对 ZIP、APK、PCK、原生库和 ONNX 文件生成 SHA-256 清单。
+
+#### 6.3.4 最终验收与文档
+
+- Windows 和 Android 在完全断网状态下完成 Challenge AI 与 Deep AI 对局。
+- 完成 LAN/Relay 六种设备组合测试。
+- 完成至少一轮长局、连续多局、断网、切后台、低内存和安装升级测试。
+- 复跑 Python 235 项测试、Godot 全部阶段测试、Python/Godot 黄金差异测试、协议攻击测试和 AI 回归。
+- 更新本报告的最终差异、已知限制、构建命令、签名流程、依赖版本和发布校验值。
+- 提供最小发布说明，包括系统要求、联网方式、断线行为和模型回退行为。
+
+### 6.4 恢复工作前必须准备的外部条件
+
+- Android 9+、ARM64、可通过 ADB 连接的真实设备。
+- ONNX Runtime 的 Windows x86_64 和 Android arm64 构建来源或可重复构建方案。
+- 8 个模型对应的完整 PyTorch 网络定义和可加载检查点。
+- Relay 测试地址；进入公网测试前需提供 TLS 域名或明确由反向代理终止 TLS。
+- Android 正式签名密钥或由用户指定的 CI secret 管理方式。
+- 若需要跨公网真机矩阵测试，至少两台 Android 设备和一台 Windows 设备。
+
+### 6.5 后续恢复时的执行顺序
+
+1. 先复跑 `python -B -m unittest discover -q`、`tools/test_godot.ps1` 和当前 Win/Android 导出，确认阶段 0–3 基线未回归。
+2. 完成 Challenge AI 后单独验收，再开始 ONNX 导出和 GDExtension，避免同时调试决策逻辑与原生推理。
+3. 阶段 4 完成并更新报告后，才开放 AI 菜单并进入阶段 5。
+4. 先完成 LAN 权威对局，再接 WebSocket Relay；两者共用同一协议 v3 和状态校验层。
+5. 阶段 5 完成并更新报告后，才开始 release 签名、资源裁剪和最终设备矩阵。
+6. 阶段 6 所有发布验收通过后，生成最终 ZIP/APK 和校验清单。
+
+## 7. 阶段完成记录格式
+
+后续每个阶段完成时必须在本文件追加：
+
+- 完成日期和对应提交。
+- 实际完成的功能和未完成项。
+- 公共接口、协议或数据格式变化。
+- 执行过的测试、测试数量和结果。
+- 生成的可运行产物。
+- 新风险、已知限制和下一阶段前置条件。
+
+只有代码、测试、文档三者同时完成，阶段才可标记为“完成”。
+
+## 8. 验收原则
+
+- Godot 客户端不得依赖本机 Python。
+- Android 断网状态下必须能使用两种 AI。
+- 不以“主要效果可用”为完成标准；115 张发布卡牌涉及的全部效果都必须覆盖。
+- 房主是联机权威端，客户端不得提交随机结果或直接状态。
+- 对手手牌、牌库和奖品身份不得出现在其视角状态中。
+- Deep AI 编码尺寸固定为状态 960、卡槽 96、动作/选择 178，模型输出与 PyTorch 最大绝对误差不得超过 `1e-4`。
+- Deep AI 默认搜索预算为 256 次；搜索运行于后台线程。
+
+## 9. 已锁定的产品决策
+
+- Godot 4.7 标准版，GDScript，Compatibility 渲染器。
+- Android 9+，仅 `arm64-v8a`，固定横屏。
+- Windows ZIP + Android APK。
+- 房主权威，支持 ENet LAN 与 WebSocket Relay。
+- 8 套 FP32 ONNX 模型全部内置。
+- 不兼容旧 Pygame 联机客户端。
+- 首发只包含对战核心，不迁移训练 UI 和卡图管理工作台。

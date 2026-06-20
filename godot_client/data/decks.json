@@ -1,0 +1,798 @@
+{
+  "colorless": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svi-aipo",
+        "count": 2
+      },
+      {
+        "card_id": "svi-ambi",
+        "count": 2
+      },
+      {
+        "card_id": "svi-stan",
+        "count": 1
+      },
+      {
+        "card_id": "svi-skwv",
+        "count": 2
+      },
+      {
+        "card_id": "svi-gree",
+        "count": 1
+      },
+      {
+        "card_id": "svi-inde",
+        "count": 1
+      },
+      {
+        "card_id": "svi-tand",
+        "count": 3
+      },
+      {
+        "card_id": "svi-maus",
+        "count": 2
+      },
+      {
+        "card_id": "svi-flam",
+        "count": 1
+      },
+      {
+        "card_id": "svi-enst",
+        "count": 2
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "svi-nemb",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "svi-cait",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "svi-popp",
+        "count": 1
+      },
+      {
+        "card_id": "svi-jete",
+        "count": 3
+      },
+      {
+        "card_id": "svi-dtur",
+        "count": 4
+      },
+      {
+        "card_id": "svi-trea",
+        "count": 4
+      },
+      {
+        "card_id": "svi-mirc",
+        "count": 4
+      }
+    ],
+    "energy_type": "Colorless",
+    "key": "colorless",
+    "name": "一家鼠ex"
+  },
+  "dragon": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svg-alt",
+        "count": 2
+      },
+      {
+        "card_id": "svg-dram",
+        "count": 2
+      },
+      {
+        "card_id": "svg-tatsu",
+        "count": 1
+      },
+      {
+        "card_id": "svg-milt",
+        "count": 1
+      },
+      {
+        "card_id": "svg-swa",
+        "count": 3
+      },
+      {
+        "card_id": "svg-cast",
+        "count": 1
+      },
+      {
+        "card_id": "svf-hawl",
+        "count": 1
+      },
+      {
+        "card_id": "svg-ceto",
+        "count": 2
+      },
+      {
+        "card_id": "svg-ceti",
+        "count": 2
+      },
+      {
+        "card_id": "svl-ensw",
+        "count": 2
+      },
+      {
+        "card_id": "svf-potion",
+        "count": 2
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "svg-chef",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "svg-beri",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-3",
+        "count": 8
+      },
+      {
+        "card_id": "sv1-ener-8",
+        "count": 7
+      }
+    ],
+    "energy_type": "Dragon",
+    "key": "dragon",
+    "name": "七夕青鸟ex"
+  },
+  "fighting": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svf-rio",
+        "count": 4
+      },
+      {
+        "card_id": "svf-luca",
+        "count": 3
+      },
+      {
+        "card_id": "svf-scyt",
+        "count": 2
+      },
+      {
+        "card_id": "svf-klea",
+        "count": 2
+      },
+      {
+        "card_id": "svf-pass",
+        "count": 1
+      },
+      {
+        "card_id": "svf-farf",
+        "count": 1
+      },
+      {
+        "card_id": "svf-terr",
+        "count": 1
+      },
+      {
+        "card_id": "svf-hawl",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "svf-potion",
+        "count": 2
+      },
+      {
+        "card_id": "svf-ensw2",
+        "count": 2
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "svi-erec",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "svf-houb",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-6",
+        "count": 15
+      }
+    ],
+    "energy_type": "Fighting",
+    "key": "fighting",
+    "name": "路卡利欧"
+  },
+  "fire": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svi-ente",
+        "count": 1
+      },
+      {
+        "card_id": "svi-chim",
+        "count": 4
+      },
+      {
+        "card_id": "svi-monf",
+        "count": 3
+      },
+      {
+        "card_id": "svi-infr",
+        "count": 4
+      },
+      {
+        "card_id": "svi-hrot",
+        "count": 1
+      },
+      {
+        "card_id": "svi-chiy",
+        "count": 1
+      },
+      {
+        "card_id": "svi-sqwk",
+        "count": 1
+      },
+      {
+        "card_id": "svi-erec",
+        "count": 2
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-152",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "svi-mela",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-2",
+        "count": 15
+      }
+    ],
+    "energy_type": "Fire",
+    "key": "fire",
+    "name": "烈焰猴"
+  },
+  "grass": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svg2-tort",
+        "count": 3
+      },
+      {
+        "card_id": "svg2-turt",
+        "count": 4
+      },
+      {
+        "card_id": "svg2-grot",
+        "count": 3
+      },
+      {
+        "card_id": "svg2-shro",
+        "count": 2
+      },
+      {
+        "card_id": "svg2-brel",
+        "count": 2
+      },
+      {
+        "card_id": "svg2-zaru",
+        "count": 1
+      },
+      {
+        "card_id": "svg2-empo",
+        "count": 1
+      },
+      {
+        "card_id": "svg2-hamm",
+        "count": 2
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-152",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "svg2-exps",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 4
+      },
+      {
+        "card_id": "svg2-gard",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "svg2-lume",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-1",
+        "count": 12
+      }
+    ],
+    "energy_type": "Grass",
+    "key": "grass",
+    "name": "土台龟"
+  },
+  "lightning": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svl-pikaex",
+        "count": 2
+      },
+      {
+        "card_id": "svl-chin",
+        "count": 2
+      },
+      {
+        "card_id": "svl-lant",
+        "count": 2
+      },
+      {
+        "card_id": "svl-mare2",
+        "count": 3
+      },
+      {
+        "card_id": "svl-flaa2",
+        "count": 2
+      },
+      {
+        "card_id": "svl-emol",
+        "count": 1
+      },
+      {
+        "card_id": "svl-thun",
+        "count": 1
+      },
+      {
+        "card_id": "svl-zera",
+        "count": 1
+      },
+      {
+        "card_id": "svl-chat",
+        "count": 1
+      },
+      {
+        "card_id": "svl-ensw",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-170",
+        "count": 2
+      },
+      {
+        "card_id": "svl-trks",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "svl-vitb",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 3
+      },
+      {
+        "card_id": "svl-zinn",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-4",
+        "count": 15
+      }
+    ],
+    "energy_type": "Lightning",
+    "key": "lightning",
+    "name": "皮卡丘ex"
+  },
+  "psychic": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "sv1-107",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-108",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-109",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-110",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-111",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-112",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-113",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-114",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-104",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-106",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-171",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 4
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-201",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-202",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-203",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-204",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-5",
+        "count": 15
+      }
+    ],
+    "energy_type": "Psychic",
+    "key": "psychic",
+    "name": "天然鸟"
+  },
+  "water": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "sv2-38",
+        "count": 3
+      },
+      {
+        "card_id": "sv2-39",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-grex",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-49",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-keldeo",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-glast",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-tatsu",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-delib",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-staryu",
+        "count": 3
+      },
+      {
+        "card_id": "sv2-starm",
+        "count": 3
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv2-cand",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-152",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 2
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-3",
+        "count": 15
+      }
+    ],
+    "energy_type": "Water",
+    "key": "water",
+    "name": "甲贺忍蛙ex"
+  }
+}

@@ -1,0 +1,624 @@
+{
+  "card_bucket_samples": {
+    "sv1-153": 3857,
+    "sv1-ener-2": 3574,
+    "sv2-grex": 3915,
+    "svg2-tort": 623,
+    "svi-chim": 3624
+  },
+  "counts": {
+    "cards": 115,
+    "decks": 8,
+    "effects": 72
+  },
+  "deck_sizes": {
+    "colorless": 60,
+    "dragon": 60,
+    "fighting": 60,
+    "fire": 60,
+    "grass": 60,
+    "lightning": 60,
+    "psychic": 60,
+    "water": 60
+  },
+  "effect_examples": {
+    "ability_discard_revive": {
+      "effect_type": "ability_discard_revive",
+      "params": {
+        "card_id": "svg2-empo"
+      }
+    },
+    "any_pokemon_damage": {
+      "effect_type": "any_pokemon_damage",
+      "params": {
+        "amount": 40,
+        "piercing_on_bench": true,
+        "player": "opponent"
+      }
+    },
+    "arven": {
+      "effect_type": "arven",
+      "params": {}
+    },
+    "attach_from_discard": {
+      "effect_type": "attach_from_discard",
+      "params": {
+        "amount": 2,
+        "energy_type": "basic",
+        "target": "bench"
+      }
+    },
+    "attack_fail": {
+      "effect_type": "attack_fail",
+      "params": {}
+    },
+    "attack_lock_basic": {
+      "effect_type": "attack_lock_basic",
+      "params": {
+        "target": "opponent_active"
+      }
+    },
+    "aura_damage_reduction": {
+      "effect_type": "aura_damage_reduction",
+      "params": {
+        "reduction": 20
+      }
+    },
+    "clara": {
+      "effect_type": "clara",
+      "params": {
+        "energy_count": 2,
+        "pokemon_count": 2
+      }
+    },
+    "coin_flip": {
+      "effect_type": "coin_flip",
+      "params": {
+        "on_heads": [
+          {
+            "effect_type": "damage",
+            "params": {
+              "amount": 60,
+              "target": "opponent_active"
+            }
+          },
+          {
+            "effect_type": "prevent_all",
+            "params": {}
+          }
+        ],
+        "on_tails": [
+          {
+            "effect_type": "attack_fail",
+            "params": {}
+          }
+        ]
+      }
+    },
+    "coin_flip_double_ko": {
+      "effect_type": "coin_flip_double_ko",
+      "params": {}
+    },
+    "coin_flip_energy_discard": {
+      "effect_type": "coin_flip_energy_discard",
+      "params": {}
+    },
+    "coin_flip_triple": {
+      "effect_type": "coin_flip_triple",
+      "params": {
+        "damage_per_head": 10,
+        "flips": 3
+      }
+    },
+    "coin_flip_until_tails": {
+      "effect_type": "coin_flip_until_tails",
+      "params": {
+        "per_head": 20
+      }
+    },
+    "conditional": {
+      "effect_type": "conditional",
+      "params": {
+        "cost": {
+          "effect_type": "discard",
+          "params": {
+            "amount": 2,
+            "from": "hand"
+          }
+        },
+        "on_pay": {
+          "effect_type": "search",
+          "params": {
+            "count": 1,
+            "destination": "hand",
+            "filter": "pokemon",
+            "from_zone": "deck",
+            "reveal": true
+          }
+        }
+      }
+    },
+    "conditional_damage_bonus": {
+      "effect_type": "conditional_damage_bonus",
+      "params": {
+        "bonus": 30,
+        "condition": "opponent_active_evolved"
+      }
+    },
+    "conditional_damage_heal": {
+      "effect_type": "conditional_damage_heal",
+      "params": {
+        "base": 60,
+        "bonus": 90
+      }
+    },
+    "conditional_search_extra": {
+      "effect_type": "conditional_search_extra",
+      "params": {
+        "default_count": 1,
+        "filter": "grass_pokemon",
+        "max_count": 3
+      }
+    },
+    "conditional_status": {
+      "effect_type": "conditional_status",
+      "params": {
+        "condition": "ko_by_attack_last_turn",
+        "status": "paralyzed",
+        "target": "opponent_active"
+      }
+    },
+    "conditional_zero_retreat": {
+      "effect_type": "conditional_zero_retreat",
+      "params": {
+        "energy_type": "psychic"
+      }
+    },
+    "damage": {
+      "effect_type": "damage",
+      "params": {
+        "amount": 60,
+        "target": "opponent_active"
+      }
+    },
+    "damage_and_self_heal": {
+      "effect_type": "damage_and_self_heal",
+      "params": {
+        "damage": 10,
+        "heal": 10
+      }
+    },
+    "damage_counter_self": {
+      "effect_type": "damage_counter_self",
+      "params": {
+        "amount": 20
+      }
+    },
+    "damage_per_discard_psychic": {
+      "effect_type": "damage_per_discard_psychic",
+      "params": {
+        "base": 80,
+        "per_card": 10
+      }
+    },
+    "damage_per_energy": {
+      "effect_type": "damage_per_energy",
+      "params": {
+        "base": 0,
+        "count_from": "opponent_active",
+        "per_energy": 30,
+        "target": "opponent_active"
+      }
+    },
+    "damage_per_evolved": {
+      "effect_type": "damage_per_evolved",
+      "params": {
+        "per_evolved": 50
+      }
+    },
+    "damage_per_hand_size": {
+      "effect_type": "damage_per_hand_size",
+      "params": {
+        "per": 20
+      }
+    },
+    "damage_per_self_damage": {
+      "effect_type": "damage_per_self_damage",
+      "params": {
+        "base": 60,
+        "per_counter": 10
+      }
+    },
+    "damage_per_self_energy": {
+      "effect_type": "damage_per_self_energy",
+      "params": {
+        "base": 60,
+        "energy_filter": "fire",
+        "per_energy": 20
+      }
+    },
+    "damage_per_self_energy_type": {
+      "effect_type": "damage_per_self_energy_type",
+      "params": {
+        "base": 60,
+        "energy_type": "Grass",
+        "per_energy": 20
+      }
+    },
+    "damage_plus_bench": {
+      "effect_type": "damage_plus_bench",
+      "params": {
+        "base": 10,
+        "count_own_bench": true,
+        "per_bench": 20
+      }
+    },
+    "damage_self_penalty": {
+      "effect_type": "damage_self_penalty",
+      "params": {
+        "base": 200,
+        "per_counter": 20
+      }
+    },
+    "dazzling_beam": {
+      "effect_type": "dazzling_beam",
+      "params": {
+        "target": "opponent_active"
+      }
+    },
+    "discard": {
+      "effect_type": "discard",
+      "params": {
+        "amount": 2,
+        "from": "hand"
+      }
+    },
+    "discard_draw": {
+      "effect_type": "discard_draw",
+      "params": {
+        "discard_hand": true,
+        "draw": 7
+      }
+    },
+    "discard_fighting_energy_damage": {
+      "effect_type": "discard_fighting_energy_damage",
+      "params": {
+        "base": 10,
+        "per_energy": 60
+      }
+    },
+    "discard_hand_conditional_bonus": {
+      "effect_type": "discard_hand_conditional_bonus",
+      "params": {
+        "base_damage": 60,
+        "bonus": 150,
+        "threshold": 5
+      }
+    },
+    "discard_then_draw": {
+      "effect_type": "discard_then_draw",
+      "params": {
+        "discard_amount": 1,
+        "draw_amount": 2
+      }
+    },
+    "draw": {
+      "effect_type": "draw",
+      "params": {
+        "amount": 1,
+        "player": "self"
+      }
+    },
+    "draw_and_attach_energy": {
+      "effect_type": "draw_and_attach_energy",
+      "params": {
+        "energy_count": 2,
+        "energy_type": "Grass"
+      }
+    },
+    "draw_until": {
+      "effect_type": "draw_until",
+      "params": {
+        "target_hand_size": 6
+      }
+    },
+    "draw_until_more": {
+      "effect_type": "draw_until_more",
+      "params": {}
+    },
+    "energy_attach": {
+      "effect_type": "energy_attach",
+      "params": {
+        "amount": 1,
+        "filter": "fighting",
+        "from_zone": "deck",
+        "to": "self"
+      }
+    },
+    "energy_discard": {
+      "effect_type": "energy_discard",
+      "params": {
+        "amount": 1,
+        "filter": "any",
+        "from": "self"
+      }
+    },
+    "energy_relocate": {
+      "effect_type": "energy_relocate",
+      "params": {
+        "amount": 1
+      }
+    },
+    "evolve_skip_stage": {
+      "effect_type": "evolve_skip_stage",
+      "params": {
+        "skip_to": "stage2"
+      }
+    },
+    "hand_to_bottom_draw": {
+      "effect_type": "hand_to_bottom_draw",
+      "params": {}
+    },
+    "heal": {
+      "effect_type": "heal",
+      "params": {
+        "amount": 70,
+        "target": "self"
+      }
+    },
+    "heal_all": {
+      "effect_type": "heal_all",
+      "params": {
+        "amount": 20
+      }
+    },
+    "houb": {
+      "effect_type": "houb",
+      "params": {
+        "target_hand_size": 5
+      }
+    },
+    "judge": {
+      "effect_type": "judge",
+      "params": {
+        "draw": 4
+      }
+    },
+    "look_top_deck": {
+      "effect_type": "look_top_deck",
+      "params": {
+        "count": 7,
+        "filter": "water_pokemon_and_energy",
+        "rest_bottom": true,
+        "take": 99
+      }
+    },
+    "mill_and_damage_per_energy": {
+      "effect_type": "mill_and_damage_per_energy",
+      "params": {
+        "damage_per": 80,
+        "mill_count": 5
+      }
+    },
+    "piercing_marker": {
+      "effect_type": "piercing_marker",
+      "params": {
+        "ignore_effects": true,
+        "ignore_resistance": true,
+        "ignore_weakness": true
+      }
+    },
+    "place_counters_and_self_ko": {
+      "effect_type": "place_counters_and_self_ko",
+      "params": {
+        "counters": 2,
+        "target": "opponent_any"
+      }
+    },
+    "potion_heal": {
+      "effect_type": "potion_heal",
+      "params": {
+        "amount": 30
+      }
+    },
+    "prevent_all": {
+      "effect_type": "prevent_all",
+      "params": {}
+    },
+    "prevent_damage": {
+      "effect_type": "prevent_damage",
+      "params": {}
+    },
+    "prevent_effects": {
+      "effect_type": "prevent_effects",
+      "params": {}
+    },
+    "reactive_thorns": {
+      "effect_type": "reactive_thorns",
+      "params": {
+        "filter_names": [
+          "一对鼠",
+          "一家鼠ex",
+          "一家鼠"
+        ],
+        "per_pokemon": 3
+      }
+    },
+    "return_to_hand": {
+      "effect_type": "return_to_hand",
+      "params": {}
+    },
+    "search": {
+      "effect_type": "search",
+      "params": {
+        "count": 2,
+        "destination": "bench",
+        "filter": "basic_pokemon",
+        "from_zone": "deck",
+        "reveal": true
+      }
+    },
+    "search_any_and_switch": {
+      "effect_type": "search_any_and_switch",
+      "params": {
+        "count": 2,
+        "source_slot": "active",
+        "switch_optional": true
+      }
+    },
+    "self_attack_lock": {
+      "effect_type": "self_attack_lock",
+      "params": {
+        "attack_name": "岩窟冲撞"
+      }
+    },
+    "shuffle_draw": {
+      "effect_type": "shuffle_draw",
+      "params": {
+        "affect": "self_only",
+        "draw": 5,
+        "shuffle_hand": true
+      }
+    },
+    "shuffle_from_discard": {
+      "effect_type": "shuffle_from_discard",
+      "params": {
+        "count": 3,
+        "filter": "pokemon_and_energy"
+      }
+    },
+    "status": {
+      "effect_type": "status",
+      "params": {
+        "status": "paralyzed",
+        "target": "opponent_active"
+      }
+    },
+    "switch_opponent": {
+      "effect_type": "switch_opponent",
+      "params": {
+        "you_choose": true
+      }
+    },
+    "switch_self": {
+      "effect_type": "switch_self",
+      "params": {}
+    },
+    "tool": {
+      "effect_type": "tool",
+      "params": {
+        "effect": "damage_boost_when_behind"
+      }
+    },
+    "tool_exp_share": {
+      "effect_type": "tool_exp_share",
+      "params": {}
+    },
+    "trekking_shoes": {
+      "effect_type": "trekking_shoes",
+      "params": {}
+    },
+    "zinnia_resolve": {
+      "effect_type": "zinnia_resolve",
+      "params": {}
+    }
+  },
+  "effect_types": [
+    "ability_discard_revive",
+    "any_pokemon_damage",
+    "arven",
+    "attach_from_discard",
+    "attack_fail",
+    "attack_lock_basic",
+    "aura_damage_reduction",
+    "clara",
+    "coin_flip",
+    "coin_flip_double_ko",
+    "coin_flip_energy_discard",
+    "coin_flip_triple",
+    "coin_flip_until_tails",
+    "conditional",
+    "conditional_damage_bonus",
+    "conditional_damage_heal",
+    "conditional_search_extra",
+    "conditional_status",
+    "conditional_zero_retreat",
+    "damage",
+    "damage_and_self_heal",
+    "damage_counter_self",
+    "damage_per_discard_psychic",
+    "damage_per_energy",
+    "damage_per_evolved",
+    "damage_per_hand_size",
+    "damage_per_self_damage",
+    "damage_per_self_energy",
+    "damage_per_self_energy_type",
+    "damage_plus_bench",
+    "damage_self_penalty",
+    "dazzling_beam",
+    "discard",
+    "discard_draw",
+    "discard_fighting_energy_damage",
+    "discard_hand_conditional_bonus",
+    "discard_then_draw",
+    "draw",
+    "draw_and_attach_energy",
+    "draw_until",
+    "draw_until_more",
+    "energy_attach",
+    "energy_discard",
+    "energy_relocate",
+    "evolve_skip_stage",
+    "hand_to_bottom_draw",
+    "heal",
+    "heal_all",
+    "houb",
+    "judge",
+    "look_top_deck",
+    "mill_and_damage_per_energy",
+    "piercing_marker",
+    "place_counters_and_self_ko",
+    "potion_heal",
+    "prevent_all",
+    "prevent_damage",
+    "prevent_effects",
+    "reactive_thorns",
+    "return_to_hand",
+    "search",
+    "search_any_and_switch",
+    "self_attack_lock",
+    "shuffle_draw",
+    "shuffle_from_discard",
+    "status",
+    "switch_opponent",
+    "switch_self",
+    "tool",
+    "tool_exp_share",
+    "trekking_shoes",
+    "zinnia_resolve"
+  ],
+  "fixture_version": 2,
+  "portable_rng": {
+    "algorithm": "xorshift32",
+    "seed": 20260620,
+    "uint32": [
+      524962086,
+      2612715569,
+      807984655,
+      1456231579,
+      1471417396,
+      275645069,
+      3620116690,
+      2672266556
+    ]
+  },
+  "schema": {
+    "encoder_version": 2,
+    "godot_action_version": 3,
+    "godot_rules_version": 3,
+    "planner_version": 1,
+    "protocol_version": 3,
+    "python_action_version": 2,
+    "python_rules_version": 2
+  }
+}

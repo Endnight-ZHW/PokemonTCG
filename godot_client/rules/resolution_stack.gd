@@ -1,0 +1,65 @@
+class_name ResolutionStack
+extends RefCounted
+
+var frames: Array[Dictionary] = []
+var pending_request: ChoiceRequest
+var sequence := 0
+var context: Dictionary = {}
+
+
+func push_effect(effect: Dictionary, player_idx: int, source_slot: String) -> void:
+	frames.append({
+		"kind": "effect",
+		"effect": effect.duplicate(true),
+		"player_idx": player_idx,
+		"source_slot": source_slot,
+	})
+
+
+func push_effects(effects: Array, player_idx: int, source_slot: String) -> void:
+	for index in range(effects.size() - 1, -1, -1):
+		push_effect(Dictionary(effects[index]), player_idx, source_slot)
+
+
+func push_continuation(operation: String, data: Dictionary) -> void:
+	frames.append({
+		"kind": "continuation",
+		"operation": operation,
+		"data": data.duplicate(true),
+	})
+
+
+func pop_frame() -> Dictionary:
+	if frames.is_empty():
+		return {}
+	return frames.pop_back()
+
+
+func next_request_id(state: GameState, player_idx: int, request_type: String) -> String:
+	var request_id := "choice:%d:%d:%s:%d" % [
+		state.revision,
+		player_idx,
+		request_type,
+		sequence,
+	]
+	sequence += 1
+	return request_id
+
+
+func to_dict() -> Dictionary:
+	return {
+		"frames": frames.duplicate(true),
+		"pending_request": pending_request.to_dict() if pending_request else null,
+		"sequence": sequence,
+		"context": context.duplicate(true),
+	}
+
+
+static func from_dict(data: Dictionary) -> ResolutionStack:
+	var result := ResolutionStack.new()
+	result.frames.assign(data.get("frames", []))
+	if data.get("pending_request") is Dictionary:
+		result.pending_request = ChoiceRequest.from_dict(data["pending_request"])
+	result.sequence = int(data.get("sequence", 0))
+	result.context = Dictionary(data.get("context", {})).duplicate(true)
+	return result

@@ -45,3 +45,16 @@ data/*.log
 data/ai_models/*.rejected.*
 data/*_progress.jsonl
 data/smoke_progress.jsonl
+
+# Godot generated files and local toolchains
+godot_client/.godot/
+godot_client/android/
+godot_client/build/
+godot_client/dist/
+.tools/
+.cache/
+
+# Local signing material
+*.keystore
+*.jks
+godot_client/export_credentials.cfg
