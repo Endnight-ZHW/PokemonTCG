@@ -15,9 +15,19 @@ from typing import Any, Callable
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, expand_deck
 from engine.ai.challenge_ai import AIAction, AIConfig, create_challenge_ai
-from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, CARD_SEMANTIC_SIZE, ActionStateEncoder, EncodedAction, EncodedState
+from engine.ai.dl.encoder import (
+    ACTION_NUMERIC_SIZE,
+    CARD_SEMANTIC_SIZE,
+    ENCODER_SCHEMA_VERSION,
+    ActionStateEncoder,
+    EncodedAction,
+    EncodedState,
+)
 from engine.ai.dl.model import TORCH_AVAILABLE, create_model, load_checkpoint, save_checkpoint, torch
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
+from engine.random_source import RandomSource
 from engine.ai.dl.opponent_pool import OpponentPool, save_opponent_pool, load_opponent_pool
+from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.ai.dl.replay import ReplayBuffer
 
 from engine.ai.training import DECK_SPECS, _determine_soft_winner, finish_setup, force_end_turn, terminal_training_score
@@ -39,6 +49,8 @@ FAST_TRAINING_AI_SEARCH = {
     "opponent_response_weight": 0.25,
     "deterministic_search": True,
     "search_algorithm": "beam",
+    "search_node_budget": 8,
+    "planner_max_depth": 6,
 }
 
 QUALITY_TRAINING_AI_SEARCH = {
@@ -51,6 +63,8 @@ QUALITY_TRAINING_AI_SEARCH = {
     "opponent_response_weight": 0.45,
     "deterministic_search": True,
     "search_algorithm": "beam",
+    "search_node_budget": 24,
+    "planner_max_depth": 10,
 }
 
 TRAINING_AI_SEARCH = FAST_TRAINING_AI_SEARCH
@@ -66,6 +80,8 @@ MINIMAX_FAST_SEARCH = {
     "search_algorithm": "minimax",
     "minimax_max_depth": 1,
     "minimax_determinizations": 1,
+    "search_node_budget": 12,
+    "planner_max_depth": 6,
 }
 
 MINIMAX_QUALITY_SEARCH = {
@@ -80,6 +96,8 @@ MINIMAX_QUALITY_SEARCH = {
     "search_algorithm": "minimax",
     "minimax_max_depth": 2,
     "minimax_determinizations": 2,
+    "search_node_budget": 32,
+    "planner_max_depth": 10,
 }
 
 HYBRID_QUALITY_SEARCH = dict(
@@ -109,7 +127,7 @@ class DeepTrainingConfig:
     dagger_games: int = 500
     bootstrap_epochs: int = 10
     self_play_epochs: int = 10
-    eval_games: int = 200
+    eval_games: int = 600
     workers: int = 1
     max_steps: int = 250
     learning_rate: float = 5e-4
@@ -123,7 +141,7 @@ class DeepTrainingConfig:
     acceptance_metric: str = "points"
     min_win_delta: int = 0
     teacher_label_model_states: bool = True
-    # --- New: Pure RL & MCTS settings ---
+    # Pure RL and shared-planner settings (legacy mcts_* field names retained).
     pure_rl_games: int = 0
     mcts_simulations: int = 200
     mcts_chance_nodes: bool = False
@@ -264,11 +282,7 @@ def _search_config(preset: str | None) -> dict[str, Any]:
 
 
 def _action_signature(action: AIAction) -> tuple:
-    return (
-        action.action.name if isinstance(action.action, PlayerAction) else str(action.action),
-        tuple(sorted((action.params or {}).items())),
-        bool(action.terminal),
-    )
+    return action.signature + (bool(action.terminal),)
 
 
 def _find_action_index(actions: list[AIAction], selected: AIAction) -> int | None:
@@ -389,7 +403,13 @@ def _setup_match(deck_key: str, opponent_key: str, seed: int, seat: int, teacher
         state = GameState()
         deck1_key = deck_key if deck_a_player_idx == 0 else opponent_key
         deck2_key = opponent_key if deck_a_player_idx == 0 else deck_key
-        state.setup_game(expand_deck(DECK_SPECS[deck1_key]), expand_deck(DECK_SPECS[deck2_key]))
+        setup_rng = RandomSource(seed)
+        state.setup_game(
+            expand_deck(DECK_SPECS[deck1_key]),
+            expand_deck(DECK_SPECS[deck2_key]),
+            rng=setup_rng,
+        )
+        state.public_deck_keys = (deck1_key, deck2_key)
         tm = TurnManager(state)
         if deck_a_player_idx == 0:
             ai0 = _make_teacher(deck_key, seed + 11, teacher_search_preset)
@@ -397,7 +417,8 @@ def _setup_match(deck_key: str, opponent_key: str, seed: int, seat: int, teacher
         else:
             ai0 = _make_teacher(opponent_key, seed + 29, teacher_search_preset)
             ai1 = _make_teacher(deck_key, seed + 11, teacher_search_preset)
-        finish_setup(state, tm, [ai0, ai1])
+        with setup_rng.bind_state(state):
+            finish_setup(state, tm, [ai0, ai1])
         return state, tm, [ai0, ai1], deck_a_player_idx, rng_state
     except Exception:
         random.setstate(rng_state)
@@ -970,7 +991,7 @@ def _train_examples(
 
                 loss_per_ex = torch.zeros(batch_len, device=device)
 
-                # Preserve the full MCTS search signal rather than reducing it
+                # Preserve the full planner search signal rather than reducing it
                 # to the one action sampled from the visit distribution.
                 search_distill = valid & has_policy_target
                 if search_distill.any():
@@ -1422,7 +1443,7 @@ def _play_model_game(
     mcts_simulations: int = 200,
     mcts_chance_nodes: bool = True,
     curiosity_tracker: Any = None,
-) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]:
+) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, Any]]:
     encoder = ActionStateEncoder()
     opponent_key = _opponent_for(deck_key, seed)
     seat = seed % 2
@@ -1440,11 +1461,20 @@ def _play_model_game(
         )
     examples: list[TrainingExample] = []
     choice_examples: list[ChoiceTrainingExample] = []
-    diagnostics = {"actions": 0, "invalid_actions": 0, "no_target_actions": 0}
+    diagnostics: dict[str, Any] = {
+        "actions": 0,
+        "invalid_actions": 0,
+        "no_target_actions": 0,
+        "rule_exceptions": 0,
+        "decision_timeouts": 0,
+        "decision_seconds": 0.0,
+        "max_step_exhaustions": 0,
+        "seat": seat,
+    }
     target_ai = ais[target_player_idx]
     original_choice_resolver = None
 
-    # Set up MCTS searcher if enabled
+    # Set up the shared-planner compatibility adapter if enabled.
     mcts_searcher = None
     if use_mcts and model is not None:
         from engine.ai.dl.mcts import MCTSGuidedSearch
@@ -1502,6 +1532,7 @@ def _play_model_game(
             prev_player_idx = player_idx
             example: TrainingExample | None = None
             before_metrics: dict[str, float] | None = None
+            decision_started = time.perf_counter()
             if player_idx == target_player_idx:
                 before_metrics = _snapshot_metrics(state, target_player_idx, target_ai) if record else None
 
@@ -1519,7 +1550,7 @@ def _play_model_game(
                     if teacher_example is not None:
                         examples.append(teacher_example)
 
-                # Action selection: MCTS or direct model
+                # Action selection: shared planner or direct model.
                 if mcts_searcher is not None:
                     actions = target_ai.legal_actions(state, player_idx)
                     search_result = mcts_searcher.search(
@@ -1588,9 +1619,18 @@ def _play_model_game(
 
             if player_idx == target_player_idx:
                 diagnostics["actions"] += 1
+                decision_elapsed = time.perf_counter() - decision_started
+                diagnostics["decision_seconds"] += decision_elapsed
+                if decision_elapsed > 8.0:
+                    diagnostics["decision_timeouts"] += 1
                 if _action_has_no_available_target(ai, state, player_idx, action):
                     diagnostics["no_target_actions"] += 1
-            result = ai._apply_action_for_sim(state, player_idx, action)
+            try:
+                result = ai._apply_action_for_sim(state, player_idx, action)
+            except Exception:
+                result = None
+                if player_idx == target_player_idx:
+                    diagnostics["rule_exceptions"] += 1
             signature = _action_signature(action)
             invalid = result is None or not result.success
             if player_idx == target_player_idx and invalid:
@@ -1619,6 +1659,7 @@ def _play_model_game(
             logical_winner = 0 if state.winner == target_player_idx else 1
             score = terminal_training_score(state, target_player_idx)
         else:
+            diagnostics["max_step_exhaustions"] = 1
             soft_winner = _determine_soft_winner(state)
             state.winner = soft_winner
             logical_winner = 0 if soft_winner == target_player_idx else 1
@@ -1785,12 +1826,24 @@ def evaluate_model(
         "actions": 0,
         "invalid_actions": 0,
         "no_target_actions": 0,
+        "rule_exceptions": 0,
+        "decision_timeouts": 0,
+        "decision_seconds": 0.0,
+        "max_step_exhaustions": 0,
         "invalid_action_rate": 0.0,
         "no_target_action_rate": 0.0,
+        "rule_exception_rate": 0.0,
+        "decision_timeout_rate": 0.0,
+        "average_decision_seconds": 0.0,
+        "max_step_exhaustion_rate": 0.0,
+        "seat_win_rates": {"0": 0.0, "1": 0.0},
+        "seat_win_rate_gap": 0.0,
     }
     if games <= 0:
         return stats
     score_total = 0.0
+    seat_wins = {0: 0, 1: 0}
+    seat_games = {0: 0, 1: 0}
     seeds = [seed + idx * 97 for idx in range(games)]
     if _normalized_workers(workers) <= 1:
         rows = [
@@ -1827,9 +1880,12 @@ def evaluate_model(
     for row in rows:
         winner, score = row[0], row[1]
         diagnostics = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
+        seat = int(diagnostics.get("seat", 0))
+        seat_games[seat] = seat_games.get(seat, 0) + 1
         score_total += score
         if winner == 0:
             stats["wins"] += 1
+            seat_wins[seat] = seat_wins.get(seat, 0) + 1
         elif winner == 1:
             stats["losses"] += 1
         else:
@@ -1837,10 +1893,29 @@ def evaluate_model(
         stats["actions"] += int(diagnostics.get("actions", 0))
         stats["invalid_actions"] += int(diagnostics.get("invalid_actions", 0))
         stats["no_target_actions"] += int(diagnostics.get("no_target_actions", 0))
+        stats["rule_exceptions"] += int(diagnostics.get("rule_exceptions", 0))
+        stats["decision_timeouts"] += int(diagnostics.get("decision_timeouts", 0))
+        stats["decision_seconds"] += float(diagnostics.get("decision_seconds", 0.0))
+        stats["max_step_exhaustions"] += int(diagnostics.get("max_step_exhaustions", 0))
     stats["avg_score"] = round(score_total / max(1, games), 3)
     action_count = max(1, int(stats["actions"]))
     stats["invalid_action_rate"] = round(float(stats["invalid_actions"]) / action_count, 6)
     stats["no_target_action_rate"] = round(float(stats["no_target_actions"]) / action_count, 6)
+    stats["rule_exception_rate"] = round(float(stats["rule_exceptions"]) / action_count, 6)
+    stats["decision_timeout_rate"] = round(float(stats["decision_timeouts"]) / action_count, 6)
+    stats["average_decision_seconds"] = round(float(stats["decision_seconds"]) / action_count, 6)
+    stats["max_step_exhaustion_rate"] = round(
+        float(stats["max_step_exhaustions"]) / max(1, games),
+        6,
+    )
+    stats["seat_win_rates"] = {
+        str(seat): round(seat_wins.get(seat, 0) / max(1, seat_games.get(seat, 0)), 6)
+        for seat in (0, 1)
+    }
+    stats["seat_win_rate_gap"] = round(
+        abs(stats["seat_win_rates"]["0"] - stats["seat_win_rates"]["1"]),
+        6,
+    )
     return stats
 
 
@@ -1951,14 +2026,22 @@ def _accepts_candidate(
         return False
     if float(eval_result.get("no_target_action_rate", 0.0) or 0.0) > 0.0:
         return False
+    if float(eval_result.get("rule_exception_rate", 0.0) or 0.0) > 0.0:
+        return False
+    if float(eval_result.get("decision_timeout_rate", 0.0) or 0.0) > 0.0:
+        return False
     metric = acceptance_metric if acceptance_metric in ("wins", "points", "score") else "wins"
     if metric == "wins":
         required_delta = max(0, int(min_win_delta))
-        candidate_wins = int(eval_result.get("wins", 0))
+        candidate_games = max(1, int(eval_result.get("games") or 0))
+        candidate_rate = float(eval_result.get("wins", 0)) / candidate_games
         for baseline in (baseline_eval, old_eval):
             if not baseline or int(baseline.get("games") or 0) <= 0:
                 continue
-            if candidate_wins < int(baseline.get("wins", 0)) + required_delta:
+            baseline_games = max(1, int(baseline.get("games") or 0))
+            baseline_rate = float(baseline.get("wins", 0)) / baseline_games
+            required_rate = baseline_rate + required_delta / candidate_games
+            if candidate_rate + 1e-12 < required_rate:
                 return False
         return True
     if metric == "score":
@@ -1970,14 +2053,16 @@ def _accepts_candidate(
                 return False
         return True
 
-    candidate_points, candidate_rate = _score_points(eval_result)
+    _, candidate_rate = _score_points(eval_result)
+    candidate_rate /= max(1, int(eval_result.get("games") or 0))
     for baseline in (baseline_eval, old_eval):
         if not baseline or int(baseline.get("games") or 0) <= 0:
             continue
-        baseline_points, baseline_rate = _score_points(baseline)
-        if candidate_points < baseline_points:
+        _, baseline_rate = _score_points(baseline)
+        baseline_rate /= max(1, int(baseline.get("games") or 0))
+        if candidate_rate + 1e-12 < baseline_rate:
             return False
-        if candidate_points == baseline_points:
+        if abs(candidate_rate - baseline_rate) <= 1e-12:
             if candidate_rate < baseline_rate:
                 return False
             if float(eval_result.get("avg_score", 0.0)) < float(baseline.get("avg_score", 0.0)) - 25.0:
@@ -1987,19 +2072,27 @@ def _accepts_candidate(
 
 def _verification_metadata(eval_games: int, accepted: bool) -> dict[str, Any]:
     """Describe whether a trained checkpoint has real evaluation evidence."""
+    schema = {
+        "rules_version": RULES_SCHEMA_VERSION,
+        "action_version": ACTION_SCHEMA_VERSION,
+        "encoder_version": ENCODER_SCHEMA_VERSION,
+    }
     if int(eval_games or 0) <= 0:
         return {
+            **schema,
             "verified": False,
             "verification_status": "unverified_no_eval",
             "verification_note": "No evaluation games were run for this model.",
         }
     if accepted:
         return {
+            **schema,
             "verified": True,
             "verification_status": "verified_accepted",
             "verification_note": "Evaluation gate accepted this model.",
         }
     return {
+        **schema,
         "verified": False,
         "verification_status": "verified_rejected",
         "verification_note": "Evaluation gate rejected this model.",
@@ -2226,14 +2319,20 @@ def _train_deck_pipeline(
         "total_games_played": total_done,
         "total_training_games": total_training_games,
     })
+    bootstrap_model_state = (
+        copy.deepcopy(model.state_dict())
+        if callable(getattr(model, "state_dict", None))
+        else None
+    )
 
     baseline_eval = None
+    comparison_eval_games = min(eval_games, 100)
     if eval_games > 0 and (dagger_games > 0 or self_play_games > 0):
         baseline_eval = evaluate_model(
             model,
             deck_key,
             eval_seed,
-            eval_games,
+            comparison_eval_games,
             device=config.device,
             max_steps=max_steps,
             workers=worker_count,
@@ -2244,7 +2343,10 @@ def _train_deck_pipeline(
             "type": "baseline_eval_finished",
             "deck": deck_key,
             "eval": baseline_eval,
-            "win_rate": round(float(baseline_eval.get("wins", 0)) / max(1, eval_games), 4),
+            "win_rate": round(
+                float(baseline_eval.get("wins", 0)) / max(1, comparison_eval_games),
+                4,
+            ),
             "total_games_played": total_done,
             "total_training_games": total_training_games,
         })
@@ -2620,7 +2722,7 @@ def _train_deck_pipeline(
         })
 
     # ------------------------------------------------------------------
-    # Phase 6 [NEW]: Pure RL exploration — no teacher, MCTS + curiosity
+    # Phase 6: Pure RL exploration — no teacher, planner + curiosity.
     # ------------------------------------------------------------------
     pure_rl_games = max(0, int(config.pure_rl_games))
     pure_rl_examples: list[TrainingExample] = []
@@ -2842,6 +2944,51 @@ def _train_deck_pipeline(
         acceptance_metric=acceptance_metric,
         min_win_delta=min_win_delta,
     )
+    selected_stage = "final"
+    if (
+        not accepted
+        and bootstrap_model_state is not None
+        and baseline_eval is not None
+        and int(baseline_eval.get("games") or 0) > 0
+    ):
+        model.load_state_dict(bootstrap_model_state)
+        bootstrap_final_eval = evaluate_model(
+            model,
+            deck_key,
+            eval_seed,
+            eval_games,
+            device=config.device,
+            max_steps=max_steps,
+            workers=worker_count,
+            teacher_search_preset=teacher_search_preset,
+        )
+        total_done += eval_games
+        bootstrap_accepted = _accepts_candidate(
+            bootstrap_final_eval,
+            None,
+            old_eval,
+            acceptance_metric=acceptance_metric,
+            min_win_delta=min_win_delta,
+        )
+        emit({
+            "type": "fallback_eval_finished",
+            "deck": deck_key,
+            "stage": "bootstrap",
+            "eval": bootstrap_final_eval,
+            "accepted": bootstrap_accepted,
+            "total_games_played": total_done,
+            "total_training_games": total_training_games,
+        })
+        if bootstrap_accepted:
+            eval_result = bootstrap_final_eval
+            accepted = True
+            selected_stage = "bootstrap"
+            eval_win_rate = round(
+                float(eval_result.get("wins", 0)) / max(1, eval_games),
+                4,
+            )
+            baseline_delta = _evaluation_delta(eval_result, baseline_eval)
+            old_delta = _evaluation_delta(eval_result, old_eval)
     emit({
         "type": "eval_finished",
         "deck": deck_key,
@@ -2849,6 +2996,7 @@ def _train_deck_pipeline(
         "baseline_eval": baseline_eval,
         "old_eval": old_eval,
         "accepted": accepted,
+        "selected_stage": selected_stage,
         "acceptance_metric": acceptance_metric,
         "min_win_delta": min_win_delta,
         **baseline_delta,
@@ -2873,6 +3021,7 @@ def _train_deck_pipeline(
         "eval_seed": eval_seed,
         "old_eval": old_eval or {"games": 0},
         "accepted": accepted,
+        "selected_stage": selected_stage,
         "acceptance_metric": acceptance_metric,
         "min_win_delta": min_win_delta,
         **baseline_delta,
@@ -2919,8 +3068,15 @@ def _load_old_eval(
     if eval_games <= 0 or not output_path or not os.path.exists(output_path):
         return None
     try:
-        old_model, _ = load_checkpoint(output_path, device)
+        old_model, payload = load_checkpoint(output_path, device)
     except Exception:
+        return None
+    schema = dict(payload.get("schema") or payload.get("metadata") or {})
+    if (
+        int(schema.get("rules_version") or 0) != RULES_SCHEMA_VERSION
+        or int(schema.get("action_version") or 0) != ACTION_SCHEMA_VERSION
+        or int(schema.get("encoder_version") or 0) != ENCODER_SCHEMA_VERSION
+    ):
         return None
     return evaluate_model(
         old_model,
@@ -3031,7 +3187,7 @@ def run_deep_training(
                 old_model_path,
                 deck_key,
                 deck_seed + 900_000,
-                eval_games,
+                min(eval_games, 100),
                 device=effective_config.device,
                 max_steps=max(20, int(effective_config.max_steps)),
                 workers=_normalized_workers(effective_config.workers),
@@ -3064,6 +3220,8 @@ def run_deep_training(
                 "created_at": int(time.time()),
                 "elapsed_seconds": round(time.time() - started, 3),
                 "deck": deck_key,
+                "seed": deck_seed,
+                "planner_version": PLANNER_SCHEMA_VERSION,
                 "games": self_play_games,
                 "bootstrap_games": bootstrap_games,
                 "dagger_games": dagger_games,
@@ -3115,6 +3273,8 @@ def run_deep_training(
                 "created_at": int(time.time()),
                 "elapsed_seconds": round(time.time() - started, 3),
                 "deck": effective_config.deck,
+                "seed": int(effective_config.seed),
+                "planner_version": PLANNER_SCHEMA_VERSION,
                 "deck_keys": deck_keys,
                 "games": self_play_games,
                 "bootstrap_games": bootstrap_games,

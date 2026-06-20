@@ -5,41 +5,41 @@
     "action_version": 2,
     "bootstrap_games": 128,
     "choice_head_enabled": true,
-    "created_at": 1781878008,
+    "created_at": 1781877239,
     "cuda_available": true,
     "dagger_games": 0,
-    "deck": "grass",
+    "deck": "fighting",
     "device": "cuda",
-    "elapsed_seconds": 269.057,
+    "elapsed_seconds": 213.571,
     "encoder_version": 2,
     "eval_games": 600,
     "games": 0,
     "gpu_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
     "min_win_delta": 0,
     "planner_version": 1,
-    "preserved_existing": true,
+    "preserved_existing": false,
     "pure_rl_games": 0,
     "replay_buffer_size": 50000,
     "replay_same_deal": 0,
     "replay_sample_ratio": 0.5,
     "requested_device": "cuda",
-    "requested_output_path": "data\\ai_models\\grass.pt",
+    "requested_output_path": "data\\ai_models\\fighting.pt",
     "rollout_batch_games": 16,
     "rules_version": 2,
-    "seed": 7080,
+    "seed": 4053,
     "summary": {
-      "grass": {
+      "fighting": {
         "acceptance_metric": "points",
         "accepted": true,
         "baseline_eval": {
           "games": 0
         },
         "bootstrap": {
-          "entropy": 1.266756,
-          "examples": 3327,
-          "loss": 1.203818,
-          "policy_loss": 1.203818,
-          "total_loss": 1.203818,
+          "entropy": 1.372194,
+          "examples": 3101,
+          "loss": 1.3072,
+          "policy_loss": 1.3072,
+          "total_loss": 1.3072,
           "value_loss": 0.0
         },
         "choice": {
@@ -64,31 +64,31 @@
         "delta_point_rate": null,
         "delta_wins": null,
         "eval": {
-          "actions": 15032,
-          "average_decision_seconds": 0.006907,
-          "avg_score": -411940.843,
-          "decision_seconds": 103.82424950053974,
+          "actions": 16324,
+          "average_decision_seconds": 0.006267,
+          "avg_score": -312206.16,
+          "decision_seconds": 102.30784329961898,
           "decision_timeout_rate": 0.0,
           "decision_timeouts": 0,
           "draws": 0,
           "games": 600,
           "invalid_action_rate": 0.0,
           "invalid_actions": 0,
-          "losses": 423,
-          "max_step_exhaustion_rate": 0.04,
-          "max_step_exhaustions": 24,
+          "losses": 393,
+          "max_step_exhaustion_rate": 0.066667,
+          "max_step_exhaustions": 40,
           "no_target_action_rate": 0.0,
           "no_target_actions": 0,
           "rule_exception_rate": 0.0,
           "rule_exceptions": 0,
-          "seat_win_rate_gap": 0.07,
+          "seat_win_rate_gap": 0.016666,
           "seat_win_rates": {
-            "0": 0.33,
-            "1": 0.26
+            "0": 0.336667,
+            "1": 0.353333
           },
-          "wins": 177
+          "wins": 207
         },
-        "eval_seed": 907080,
+        "eval_seed": 904053,
         "min_win_delta": 0,
         "old_eval": {
           "games": 0
@@ -124,5 +124,5 @@
     "verified": true,
     "workers": 12
   },
-  "model_path": "data\\ai_models\\grass.pt"
+  "model_path": "data\\ai_models\\fighting.pt"
 }

@@ -5,6 +5,7 @@ list of Card objects (basic and special energy together).
 """
 from engine.rules_constants import DAMAGE_PER_COUNTER
 from engine.game_state import GameState, ActionResult, ActionRequest
+from engine.actions import PokemonRef, resolve_pokemon_ref
 
 
 def _energy_source(player, from_zone):
@@ -55,6 +56,13 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
         else:
             def _do_any_attach(selected_cards):
                 for card in selected_cards:
+                    if isinstance(card, PokemonRef):
+                        poke = resolve_pokemon_ref(state, card)
+                        if poke is not None:
+                            _attach_energy_to_target(
+                                state, player, from_zone, filter_type, amount, poke, optional
+                            )
+                            return
                     for slot_name, poke in all_slots:
                         if poke.card.api_id == card.api_id:
                             _attach_energy_to_target(state, player, from_zone, filter_type, amount, poke, optional)
@@ -68,6 +76,7 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
                                     min_select=1,
                                     max_select=1,
                                     from_zone="board",
+                                    target_player="self",
                                     card_list=any_cards,
                                     callback=_do_any_attach,
                                 ))
@@ -147,6 +156,13 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
         else:
             def _do_basic_attach(selected_cards):
                 for card in selected_cards:
+                    if isinstance(card, PokemonRef):
+                        poke = resolve_pokemon_ref(state, card)
+                        if poke is not None and poke.card.is_basic_pokemon:
+                            _attach_energy_to_target(
+                                state, player, from_zone, filter_type, amount, poke, optional
+                            )
+                            return
                     for slot_name, poke in basic_pokemon:
                         if poke.card.api_id == card.api_id:
                             _attach_energy_to_target(state, player, from_zone, filter_type, amount, poke, optional)
@@ -160,6 +176,7 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
                                     min_select=1,
                                     max_select=1,
                                     from_zone="board",
+                                    target_player="self",
                                     card_list=basic_cards,
                                     callback=_do_basic_attach,
                                 ))
@@ -478,6 +495,13 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
         else:
             def _do_any_attach(selected_cards):
                 for card in selected_cards:
+                    if isinstance(card, PokemonRef):
+                        poke = resolve_pokemon_ref(state, card)
+                        if poke is not None:
+                            _attach_cards_to_pokemon(
+                                state, player, matching, count, poke, energy_type
+                            )
+                            return
                     for slot_name, poke in all_pokemon:
                         if poke.card.api_id == card.api_id:
                             _attach_cards_to_pokemon(state, player, matching, count, poke, energy_type)
@@ -491,6 +515,7 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
                                     min_select=1,
                                     max_select=1,
                                     from_zone="board",
+                                    target_player="self",
                                     card_list=any_cards,
                                     callback=_do_any_attach,
                                 ))

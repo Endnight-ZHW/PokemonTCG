@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from config import CARD_HEIGHT, SCREEN_WIDTH
+from engine.actions import GameAction
 from engine.enums import PlayerAction, TurnPhase
-from engine.game_state import ActionRequest
+from engine.game_state import ActionRequest, ActionResult
 from network.message_protocol import (
     MSG_ACTION,
     MSG_CHOICE_RESPONSE,
@@ -322,7 +323,18 @@ class GameScreenNetworkMixin:
                 )
             elif action == PlayerAction.DECLARE_ATTACK:
                 attack_idx = params.get("attack_idx", 0)
-                result = self.tm.declare_attack(remote_idx, attack_idx)
+                step = self.game_engine.apply_action(
+                    self.state,
+                    GameAction(
+                        PlayerAction.DECLARE_ATTACK,
+                        {"attack_idx": attack_idx},
+                        terminal=True,
+                        actor=remote_idx,
+                    ),
+                    auto_resolve=False,
+                    auto_finish_attack=True,
+                )
+                result = step.action_result or ActionResult(step.success, step.message)
             elif action == PlayerAction.RETREAT:
                 result = self.tm.perform_action(
                     PlayerAction.RETREAT,
@@ -463,10 +475,14 @@ class GameScreenNetworkMixin:
             self._broadcast_state()
             return
 
-        callback = pending.callback
-        if callback is None:
-            self._broadcast_state()
-            return
+        def resolve(payload):
+            structured = self.game_engine.choice_request(self.state, pending)
+            response = self.game_engine.choice_response_from_legacy(
+                structured,
+                payload,
+            )
+            step = self.game_engine.apply_choice(self.state, structured, response)
+            return step.action_result
 
         if pending.request_type in ("search_deck", "select_hand_to_discard"):
             selected = msg.get("selected_indices", [])
@@ -486,7 +502,7 @@ class GameScreenNetworkMixin:
             cards = [pending.card_list[i] for i in valid_selected]
             from data.card_registry import CardRegistry
             card_objects = [CardRegistry.get(c) if isinstance(c, str) else c for c in cards]
-            result = callback(card_objects)
+            result = resolve(card_objects)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type in ("select_bench", "select_opponent_bench", "select_own_bench_energy"):
             selected = msg.get("selected_bench_slot", 0)
@@ -500,13 +516,13 @@ class GameScreenNetworkMixin:
                 self.state._log("警告：远程选择了不允许的备战区位置。")
                 self._broadcast_state()
                 return
-            result = callback(selected)
+            result = resolve(selected)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "coin_flip":
             # Use host-generated results (server authority), ignore client input
             host_results = getattr(pending, '_host_coin_results', None)
             if host_results:
-                result = callback(list(host_results))
+                result = resolve(list(host_results))
             else:
                 # Fallback: validate client results
                 results = msg.get("coin_results", [])
@@ -514,7 +530,7 @@ class GameScreenNetworkMixin:
                     self.state._log("警告：远程硬币结果格式无效。")
                     self._broadcast_state()
                     return
-                result = callback(results)
+                result = resolve(results)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "select_bench_targets":
             selected = msg.get("selected_bench_targets", [])
@@ -532,10 +548,10 @@ class GameScreenNetworkMixin:
                 seen = set()
                 valid_targets = [t for t in valid_targets if t not in seen and not seen.add(t)]
             valid_targets = valid_targets[:max_sel]
-            result = callback(valid_targets)
+            result = resolve(valid_targets)
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "confirm":
-            result = callback(bool(msg.get("confirmed", False)))
+            result = resolve(bool(msg.get("confirmed", False)))
             self._handle_remote_resolve_result(result, pending)
         elif pending.request_type == "distribute_energy":
             assignments = msg.get("assignments", [])
@@ -559,7 +575,7 @@ class GameScreenNetworkMixin:
                 valid_assignments.append([ei, tgt])
             if len(valid_assignments) > energy_count:
                 valid_assignments = valid_assignments[:energy_count]
-            result = callback(valid_assignments)
+            result = resolve(valid_assignments)
             self._handle_remote_resolve_result(result, pending)
 
     def _handle_remote_resolve_result(self, result, pending):

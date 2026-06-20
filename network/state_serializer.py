@@ -1,6 +1,16 @@
 """GameState ↔ JSON serialization with per-player hidden-info filtering."""
 from typing import Optional
 from engine.enums import TurnPhase, StatusType
+from engine.actions import (
+    AttachmentRef,
+    CardRef,
+    ChoiceOption,
+    ChoiceRequest,
+    ChoiceResponse,
+    GameAction,
+    PokemonRef,
+)
+from engine.enums import PlayerAction
 from engine.game_state import GameState, ActionRequest
 from engine.player_state import PlayerState, PokemonInPlay
 from data.card_registry import CardRegistry
@@ -145,6 +155,9 @@ def serialize_game_state(state: GameState, for_player_idx: int) -> dict:
         "turn_number": state.turn_number,
         "active_player_idx": state.active_player_idx,
         "first_player_idx": state.first_player_idx,
+        "revision": getattr(state, "revision", 0),
+        "choice_sequence": getattr(state, "choice_sequence", 0),
+        "public_deck_keys": list(getattr(state, "public_deck_keys", (None, None))),
         "stadium_card": _card_id(state.stadium_card) if state.stadium_card else None,
         "winner": state.winner,
         "apply_type_matchups": getattr(state, "apply_type_matchups", False),
@@ -165,6 +178,9 @@ def deserialize_game_state(data: dict, for_player_idx: int) -> GameState:
     state.turn_number = data["turn_number"]
     state.active_player_idx = data["active_player_idx"]
     state.first_player_idx = data.get("first_player_idx", 0)
+    state.revision = int(data.get("revision", 0))
+    state.choice_sequence = int(data.get("choice_sequence", 0))
+    state.public_deck_keys = tuple(data.get("public_deck_keys", [None, None]))
     state.winner = data.get("winner")
     state.apply_type_matchups = data.get("apply_type_matchups", False)
     state.action_log = data.get("action_log", [])
@@ -209,6 +225,7 @@ def serialize_action_request(req: ActionRequest) -> dict:
         "max_per_target": req.max_per_target,
         "source_name": req.source_name,
         "request_id": req.request_id,
+        "can_cancel": getattr(req, "can_cancel", False),
         "pending_card_id": _card_id(req.pending_card) if req.pending_card else None,
     }
 
@@ -244,6 +261,7 @@ def deserialize_action_request(data: dict) -> ActionRequest:
         max_per_target=data.get("max_per_target", 99),
         source_name=data.get("source_name", ""),
         request_id=data.get("request_id", ""),
+        can_cancel=data.get("can_cancel", False),
     )
     # Propagate host-generated coin results for server-authoritative flips
     predetermined = data.get("predetermined_flips")
@@ -255,3 +273,150 @@ def deserialize_action_request(data: dict) -> ActionRequest:
         ar.pending_card = _get_card(pending_card_id)
 
     return ar
+
+
+def _serialize_ref(ref) -> dict | None:
+    if isinstance(ref, CardRef):
+        return {
+            "kind": "card",
+            "player": ref.player,
+            "zone": ref.zone,
+            "index": ref.index,
+            "card_id": ref.card_id,
+        }
+    if isinstance(ref, PokemonRef):
+        return {
+            "kind": "pokemon",
+            "player": ref.player,
+            "slot": ref.slot,
+            "card_id": ref.card_id,
+        }
+    if isinstance(ref, AttachmentRef):
+        return {
+            "kind": "attachment",
+            "player": ref.player,
+            "slot": ref.slot,
+            "attachment_type": ref.attachment_type,
+            "index": ref.index,
+            "card_id": ref.card_id,
+        }
+    return None
+
+
+def _deserialize_ref(data: dict | None):
+    if not data:
+        return None
+    kind = data.get("kind")
+    if kind == "card":
+        return CardRef(
+            int(data["player"]),
+            str(data["zone"]),
+            int(data["index"]),
+            str(data.get("card_id", "")),
+        )
+    if kind == "pokemon":
+        return PokemonRef(
+            int(data["player"]),
+            str(data["slot"]),
+            str(data.get("card_id", "")),
+        )
+    if kind == "attachment":
+        return AttachmentRef(
+            int(data["player"]),
+            str(data["slot"]),
+            str(data["attachment_type"]),
+            int(data["index"]),
+            str(data.get("card_id", "")),
+        )
+    return None
+
+
+def serialize_game_action(action: GameAction) -> dict:
+    action_name = (
+        action.action.name
+        if isinstance(action.action, PlayerAction)
+        else str(action.action)
+    )
+    return {
+        "action": action_name,
+        "params": dict(action.params),
+        "terminal": action.terminal,
+        "actor": action.actor,
+        "source": _serialize_ref(action.source),
+        "target": _serialize_ref(action.target),
+        "action_id": action.action_id,
+    }
+
+
+def deserialize_game_action(data: dict) -> GameAction:
+    action_name = str(data["action"])
+    action = PlayerAction.__members__.get(action_name, action_name)
+    return GameAction(
+        action=action,
+        params=dict(data.get("params") or {}),
+        terminal=bool(data.get("terminal", False)),
+        actor=data.get("actor"),
+        source=_deserialize_ref(data.get("source")),
+        target=_deserialize_ref(data.get("target")),
+        action_id=str(data.get("action_id", "")),
+    )
+
+
+def serialize_choice_request(request: ChoiceRequest) -> dict:
+    return {
+        "request_id": request.request_id,
+        "request_type": request.request_type,
+        "player": request.player,
+        "prompt": request.prompt,
+        "options": [
+            {
+                "option_id": option.option_id,
+                "label": option.label,
+                "ref": _serialize_ref(option.ref),
+            }
+            for option in request.options
+        ],
+        "min_select": request.min_select,
+        "max_select": request.max_select,
+        "allow_duplicates": request.allow_duplicates,
+        "can_cancel": request.can_cancel,
+        "metadata": dict(request.metadata),
+    }
+
+
+def deserialize_choice_request(data: dict) -> ChoiceRequest:
+    return ChoiceRequest(
+        request_id=str(data["request_id"]),
+        request_type=str(data["request_type"]),
+        player=int(data.get("player", 0)),
+        prompt=str(data.get("prompt", "")),
+        options=tuple(
+            ChoiceOption(
+                str(option["option_id"]),
+                str(option.get("label", "")),
+                _deserialize_ref(option.get("ref")),
+            )
+            for option in data.get("options", [])
+        ),
+        min_select=int(data.get("min_select", 1)),
+        max_select=int(data.get("max_select", 1)),
+        allow_duplicates=bool(data.get("allow_duplicates", False)),
+        can_cancel=bool(data.get("can_cancel", False)),
+        metadata=dict(data.get("metadata") or {}),
+    )
+
+
+def serialize_choice_response(response: ChoiceResponse) -> dict:
+    return {
+        "request_id": response.request_id,
+        "option_ids": list(response.option_ids),
+        "cancelled": response.cancelled,
+    }
+
+
+def deserialize_choice_response(data: dict) -> ChoiceResponse:
+    return ChoiceResponse(
+        request_id=str(data["request_id"]),
+        option_ids=tuple(str(option_id) for option_id in data.get("option_ids", [])),
+        cancelled=bool(data.get("cancelled", False)),
+    )

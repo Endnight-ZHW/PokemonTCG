@@ -10,7 +10,11 @@ from typing import Any
 
 from engine.ai.challenge_ai import AIAction, AIChoice, AIConfig, ChallengeAI, create_challenge_ai
 from engine.ai.dl.encoder import ActionStateEncoder
+from engine.ai.dl.encoder import ENCODER_SCHEMA_VERSION
+from engine.ai.observation import Observation
+from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.ai.dl.model import TORCH_AVAILABLE, load_checkpoint, torch
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 from engine.enums import PlayerAction, TurnPhase
 from engine.snapshot import snapshot_state, state_from_snapshot
 from utils.logger import get_logger
@@ -38,7 +42,7 @@ class DeepLearningAIConfig:
     random_seed: int = 17
     fallback_config: AIConfig | None = None
     choice_confidence_threshold: float = 0.30
-    # MCTS settings
+    # Shared planner settings; field names are retained for checkpoint/CLI compatibility.
     use_mcts: bool = True
     mcts_simulations: int = 256
     mcts_c_puct: float = 1.4
@@ -79,13 +83,30 @@ def _metadata_eval_has_no_bad_actions(metadata: dict[str, Any], deck_key: str) -
         return False
     invalid_rate = eval_summary.get("invalid_action_rate")
     no_target_rate = eval_summary.get("no_target_action_rate")
+    rule_exception_rate = eval_summary.get("rule_exception_rate")
+    timeout_rate = eval_summary.get("decision_timeout_rate")
     if isinstance(invalid_rate, (int, float)) and isinstance(no_target_rate, (int, float)):
-        return float(invalid_rate) <= 0.0 and float(no_target_rate) <= 0.0
+        return (
+            float(invalid_rate) <= 0.0
+            and float(no_target_rate) <= 0.0
+            and float(rule_exception_rate or 0.0) <= 0.0
+            and float(timeout_rate or 0.0) <= 0.0
+        )
     invalid_actions = eval_summary.get("invalid_actions")
     no_target_actions = eval_summary.get("no_target_actions")
     if isinstance(invalid_actions, (int, float)) and isinstance(no_target_actions, (int, float)):
         return int(invalid_actions) <= 0 and int(no_target_actions) <= 0
     return False
+
+
+def _schema_is_current(metadata: dict[str, Any]) -> bool:
+    return (
+        int(metadata.get("rules_version") or 0) == RULES_SCHEMA_VERSION
+        and int(metadata.get("action_version") or 0) == ACTION_SCHEMA_VERSION
+        and int(metadata.get("encoder_version") or 0) == ENCODER_SCHEMA_VERSION
+        and int(metadata.get("planner_version") or 0) == PLANNER_SCHEMA_VERSION
+        and isinstance(metadata.get("seed"), int)
+    )
 
 
 def is_deep_model_accepted(
@@ -116,7 +137,13 @@ def is_deep_model_accepted(
     accepted = bool(metadata.get("accepted"))
     verified = bool(metadata.get("verified")) or metadata.get("verification_status") == "verified_accepted"
     has_enough_eval = _metadata_eval_games(metadata, deck_key) >= max(0, int(min_eval_games))
-    return accepted and verified and has_enough_eval and _metadata_eval_has_no_bad_actions(metadata, deck_key)
+    return (
+        accepted
+        and verified
+        and has_enough_eval
+        and _metadata_eval_has_no_bad_actions(metadata, deck_key)
+        and _schema_is_current(metadata)
+    )
 
 
 class DeepLearningAI:
@@ -134,12 +161,14 @@ class DeepLearningAI:
             minimax_max_depth=3,
             minimax_determinizations=2,
             search_node_budget=1600,
+            use_unified_planner=True,
         )
         self.fallback: ChallengeAI = create_challenge_ai(deck_key or "", fallback_config)
         self.encoder = ActionStateEncoder()
         self.random = random.Random(self.config.random_seed)
         self.model = None
         self.model_metadata: dict[str, Any] = {}
+        self._active_searcher = None
         self._load_model()
 
     @property
@@ -180,6 +209,14 @@ class DeepLearningAI:
     def legal_actions(self, state, player_idx: int) -> list[AIAction]:
         return self.fallback.legal_actions(state, player_idx)
 
+    def cancel_search(self) -> None:
+        self.fallback.cancel_search()
+        searcher = self._active_searcher
+        if searcher is not None:
+            cancel = getattr(searcher, "cancel", None)
+            if callable(cancel):
+                cancel()
+
     def _fallback_action(self, state, player_idx: int) -> AIAction:
         if self.config.fallback_enabled:
             return self.fallback.choose_action(state, player_idx)
@@ -187,8 +224,12 @@ class DeepLearningAI:
 
     def _choose_with_model(self, state, player_idx: int, actions: list[AIAction]) -> AIAction:
         assert torch is not None
-        encoded_state = self.encoder.encode_state(state, player_idx, self.deck_key)
-        encoded_actions = [self.encoder.encode_action(state, player_idx, action) for action in actions]
+        observation = Observation.from_state(state, player_idx)
+        encoded_state = self.encoder.encode_observation(observation, self.deck_key)
+        encoded_actions = [
+            self.encoder.encode_game_action(observation, action)
+            for action in actions
+        ]
 
         device = self.config.device
         state_numeric_size = int(getattr(self.model, "state_numeric_size", len(encoded_state.numeric)))
@@ -229,7 +270,7 @@ class DeepLearningAI:
         return self._fallback_action(state, player_idx)
 
     def _choose_with_mcts(self, state, player_idx: int, actions: list[AIAction]) -> AIAction:
-        """Select an action using MCTS guided by the neural network."""
+        """Select an action with the shared planner and neural priors/value."""
         from engine.ai.dl.mcts import MCTSGuidedSearch
 
         searcher = MCTSGuidedSearch(
@@ -245,14 +286,18 @@ class DeepLearningAI:
         )
         max_time = max(0.0, float(self.config.max_thinking_time_seconds))
         deadline = time.perf_counter() + max_time if max_time > 0.0 else None
-        selected = searcher.select_action(
-            state,
-            player_idx,
-            self.deck_key,
-            actions=actions,
-            deterministic=self.config.deterministic,
-            deadline=deadline,
-        )
+        self._active_searcher = searcher
+        try:
+            selected = searcher.select_action(
+                state,
+                player_idx,
+                self.deck_key,
+                actions=actions,
+                deterministic=self.config.deterministic,
+                deadline=deadline,
+            )
+        finally:
+            self._active_searcher = None
         if self._action_executes_on_clone(state, player_idx, selected):
             return selected
         return self._choose_with_model(state, player_idx, actions)
@@ -278,7 +323,7 @@ class DeepLearningAI:
 
     @property
     def mcts_search(self):
-        """Create a fresh MCTS searcher for external use (e.g., training)."""
+        """Create a fresh shared-planner adapter for external training code."""
         from engine.ai.dl.mcts import MCTSGuidedSearch
 
         return MCTSGuidedSearch(
@@ -382,8 +427,21 @@ class DeepLearningAI:
         if not path or not os.path.exists(path):
             return
         try:
-            self.model, payload = load_checkpoint(path, self.config.device)
-            self.model_metadata = dict(payload.get("metadata") or {})
+            model, payload = load_checkpoint(path, self.config.device)
+            metadata = dict(payload.get("metadata") or {})
+            schema = dict(payload.get("schema") or {})
+            if not schema:
+                schema = metadata
+            if not _schema_is_current(schema):
+                _logger.warning(
+                    "deep-learning model schema mismatch for %s; using Rules AI fallback",
+                    path,
+                )
+                self.model = None
+                self.model_metadata = metadata
+                return
+            self.model = model
+            self.model_metadata = metadata
         except Exception as exc:
             _logger.warning("failed to load deep-learning AI model %s: %s", path, exc)
             self.model = None

@@ -898,15 +898,12 @@ class UiSmokeTests(unittest.TestCase):
         )
         screen._sync_tracking_counts()
 
-        self._pump_until(screen, lambda: state.phase == TurnPhase.ATTACK)
-        self.assertEqual(state.phase, TurnPhase.ATTACK)
-        self.assertIn(SLOT_PLAYER_ACTIVE, screen.damage_flash._flashes)
-        self.assertIn(SLOT_OPP_ACTIVE, screen.attack_shake._shakes)
-
         self._pump_until(
             screen,
             lambda: state.active_player_idx == 0 and state.phase == TurnPhase.MAIN,
         )
+        self.assertIn(SLOT_PLAYER_ACTIVE, screen.damage_flash._flashes)
+        self.assertIn(SLOT_OPP_ACTIVE, screen.attack_shake._shakes)
         self.assertEqual(state.active_player_idx, 0)
         self.assertEqual(state.phase, TurnPhase.MAIN)
 
@@ -1230,7 +1227,7 @@ class UiSmokeTests(unittest.TestCase):
         second = tm.perform_action(PlayerAction.PLAY_TRAINER, player_idx=0, hand_idx=0)
         self.assertFalse(second.success)
 
-    def test_attack_waits_for_manual_end_turn(self):
+    def test_attack_ends_turn_atomically(self):
         base = CardRegistry.get("sv2-delib")
         attacker = Card(
             api_id="test-attacker",
@@ -1267,16 +1264,12 @@ class UiSmokeTests(unittest.TestCase):
         screen._attack_menu_hover = 0
         screen._handle_attack_menu_click((0, 0))
 
-        self.assertEqual(state.active_player_idx, 0)
-        self.assertEqual(state.phase, TurnPhase.ATTACK)
-        self.assertFalse(screen._attack_menu_open)
-        self.assertTrue(self._phase_button(screen, PlayerAction.END_TURN)["enabled"])
-
-        screen._do_end_turn()
         self.assertEqual(state.active_player_idx, 1)
         self.assertEqual(state.phase, TurnPhase.MAIN)
+        self.assertFalse(screen._attack_menu_open)
+        self.assertGreater(screen._pending_turn_end, 0)
 
-    def test_remote_attack_waits_for_remote_end_turn(self):
+    def test_remote_attack_ends_turn_atomically(self):
         base = CardRegistry.get("sv2-delib")
         attacker = Card(
             api_id="test-remote-attacker",
@@ -1318,9 +1311,9 @@ class UiSmokeTests(unittest.TestCase):
             "params": {"attack_idx": 0, "player_idx": 1},
         })
 
-        self.assertEqual(state.active_player_idx, 1)
-        self.assertEqual(state.phase, TurnPhase.ATTACK)
-        self.assertTrue(screen._waiting_remote)
+        self.assertEqual(state.active_player_idx, 0)
+        self.assertEqual(state.phase, TurnPhase.MAIN)
+        self.assertFalse(screen._waiting_remote)
         self.assertTrue(self._phase_button(screen, PlayerAction.END_TURN)["enabled"])
         self.assertTrue(network.sent)
         self.assertFalse(any(msg.get("action") == "END_TURN" for msg in network.sent))

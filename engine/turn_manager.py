@@ -126,6 +126,8 @@ class TurnManager:
             return ActionResult(False, "Only place Basics during Setup.")
 
         result = self.resolver.resolve(action, player_idx=player_idx, **params)
+        if result.success:
+            self.state.revision = getattr(self.state, "revision", 0) + 1
 
         # After attack, stay in ATTACK phase until player clicks End Turn.
         # A final KO may already have moved the game to GAME_OVER.

@@ -196,6 +196,8 @@ class DeckSelectScreen(Screen):
             False if self.is_challenge else bool(getattr(app, "apply_type_matchups", False))
         )
         game_state.setup_game(p1_deck, p2_deck)
+        if self.is_challenge:
+            game_state.public_deck_keys = (deck_key1, deck_key2)
         turn_manager = TurnManager(game_state)
         game_screen = GameScreen(
             self.manager,
@@ -481,7 +483,7 @@ class DeckSelectScreen(Screen):
                           pygame.Rect(rect.x + 8, rect.y, rect.w - 16, rect.h))
             x += 156
 
-        draw_text_fit(surface, self.font_small, "搜索：专家混合（Beam 裁剪 + Minimax 评估）", UI_TEXT_SECONDARY,
+        draw_text_fit(surface, self.font_small, "搜索：统一信息集 PUCT", UI_TEXT_SECONDARY,
                       pygame.Rect(panel.x + 14, panel.y + 68, panel.w - 28, 18))
 
         status, status_color = self._ai_model_status()
@@ -492,7 +494,7 @@ class DeckSelectScreen(Screen):
         if self.ai_kind != "deep_learning":
             return "规则 AI 使用专家混合搜索", UI_TEXT_SECONDARY
         if self._deep_ai_model_available():
-            return "Deep 模型可用，默认启用 MCTS", UI_SUCCESS
+            return "Deep 模型可用，默认启用信息集 PUCT", UI_SUCCESS
         return "Deep 未训练，将使用专家规则 AI fallback", UI_DANGER
 
     def _deep_ai_model_available(self) -> bool:

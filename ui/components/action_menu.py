@@ -9,6 +9,7 @@ from ui.energy_icons import draw_energy_icon
 from ui.ui_theme import draw_panel, draw_button, draw_text_fit
 from engine.enums import TurnPhase, PlayerAction
 from engine.rules_validator import can_declare_attack
+from engine.game_engine import DEFAULT_GAME_ENGINE
 
 
 def _display_player(gs):
@@ -212,6 +213,15 @@ def _action_state(gs, action) -> tuple[bool, str, str]:
         if player_idx < 0 or not player.active:
             return False, "没有可攻击的战斗宝可梦", "attack"
         reasons: list[str] = []
+        if any(
+            candidate.action == PlayerAction.DECLARE_ATTACK
+            for candidate in DEFAULT_GAME_ENGINE.legal_actions(
+                state,
+                player_idx,
+                validate_effects=False,
+            )
+        ):
+            return True, "", "attack"
         for attack_idx, _ in enumerate(player.active.card.attacks):
             ok, reason = can_declare_attack(state, player_idx, attack_idx)
             if ok:

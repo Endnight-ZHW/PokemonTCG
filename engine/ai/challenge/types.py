@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from engine.actions import GameAction as AIAction
 from engine.ai.profiles import DEFAULT_POLICY_PATH, DeckAIProfile
-from engine.enums import PlayerAction
 
 
 @dataclass(frozen=True)
@@ -30,13 +30,10 @@ class AIConfig:
     chance_branch_limit: int = 6
     response_branch_limit: int = 0
     skip_effect_dry_run: bool = False
-
-
-@dataclass(frozen=True)
-class AIAction:
-    action: PlayerAction | str
-    params: dict[str, Any] = field(default_factory=dict)
-    terminal: bool = False
+    # Legacy search fields above remain loadable for old settings files, but
+    # runtime decisions always use the shared information-set planner.
+    use_unified_planner: bool = True
+    planner_max_depth: int = 16
 
 
 @dataclass
@@ -47,4 +44,5 @@ class AIChoice:
     coin_results: list[bool] = field(default_factory=list)
     confirmed: bool = True
     assignments: list[tuple[int, str]] = field(default_factory=list)
+    option_ids: list[str] = field(default_factory=list)
     cancelled: bool = False

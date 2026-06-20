@@ -20,7 +20,12 @@ def main() -> None:
     parser.add_argument("--progress-jsonl", default=None)
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--benchmark-games", type=int, default=0)
-    parser.add_argument("--search-preset", default="hybrid", choices=["hybrid", "beam", "minimax"])
+    parser.add_argument(
+        "--search-preset",
+        default="hybrid",
+        choices=["hybrid", "beam", "minimax"],
+        help="Planner budget preset; legacy names are retained as aliases.",
+    )
     args = parser.parse_args()
 
     config = TrainingConfig(

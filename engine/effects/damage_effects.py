@@ -3,6 +3,7 @@ import random
 from engine.rules_constants import DAMAGE_PER_COUNTER
 from engine.enums import TurnPhase
 from engine.game_state import GameState, ActionResult, ActionRequest
+from engine.actions import PokemonRef, resolve_pokemon_ref
 
 
 def _discard_pokemon_for_effect(state: GameState, player_idx: int, slot: str):
@@ -286,6 +287,15 @@ def _handle_any_pokemon_damage(state, player, opponent, params):
     # Let player choose target
     def any_damage_callback(selected_cards):
         for card in selected_cards:
+            if isinstance(card, PokemonRef):
+                selected_pokemon = resolve_pokemon_ref(state, card)
+                for slot_name, target_poke in targets:
+                    if target_poke is selected_pokemon:
+                        if not _check_effect_damage_prevented(target_poke, state):
+                            counters = amount // DAMAGE_PER_COUNTER
+                            target_poke.damage_counters += counters
+                            state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
+                        return
             for slot_name, target_poke in targets:
                 if target_poke.card.api_id == card.api_id:
                     if _check_effect_damage_prevented(target_poke, state):
@@ -307,6 +317,7 @@ def _handle_any_pokemon_damage(state, player, opponent, params):
                             min_select=1,
                             max_select=1,
                             from_zone="board",
+                            target_player="opponent",
                             card_list=target_cards,
                             callback=any_damage_callback,
                         ))
@@ -434,6 +445,16 @@ def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, sour
         # Let player choose
         def comet_callback(selected_cards):
             for card in selected_cards:
+                if isinstance(card, PokemonRef):
+                    selected_pokemon = resolve_pokemon_ref(state, card)
+                    for slot_name, target_poke in targets:
+                        if target_poke is selected_pokemon:
+                            _do_mystic_comet(slot_name, target_poke)
+                            return ActionResult(
+                                True,
+                                "神秘彗星结算完毕。",
+                                pokemon_ko=list(ko_slots),
+                            )
                 for slot_name, target_poke in targets:
                     if target_poke.card.api_id == card.api_id:
                         _do_mystic_comet(slot_name, target_poke)
@@ -451,6 +472,7 @@ def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, sour
                                 min_select=1,
                                 max_select=1,
                                 from_zone="board",
+                                target_player="opponent",
                                 card_list=target_cards,
                                 callback=comet_callback,
                             ))

@@ -2,6 +2,7 @@
 import random
 from engine.rules_constants import DAMAGE_PER_COUNTER
 from engine.enums import TurnPhase
+from engine.actions import PokemonRef, resolve_pokemon_ref
 from engine.game_state import GameState, ActionResult, ActionRequest
 from data.card_registry import CardRegistry
 
@@ -56,7 +57,13 @@ def _handle_potion_heal(state, player, player_idx, params):
             selected_cards = list(selection or [])
             selected_card = selected_cards[0] if selected_cards else None
             selected_idx = 0
-            if selected_card is not None:
+            if isinstance(selected_card, PokemonRef):
+                selected_pokemon = resolve_pokemon_ref(state, selected_card)
+                for idx, (_slot_name, candidate) in enumerate(injured):
+                    if candidate is selected_pokemon:
+                        selected_idx = idx
+                        break
+            elif selected_card is not None:
                 selected_key = getattr(selected_card, "api_id", getattr(selected_card, "name", None))
                 for idx, (_slot_name, candidate) in enumerate(injured):
                     candidate_card = getattr(candidate, "card", None)
@@ -80,6 +87,7 @@ def _handle_potion_heal(state, player, player_idx, params):
                             min_select=1,
                             max_select=1,
                             from_zone="bench",
+                            target_player="self",
                             card_list=[p.card for _, p in injured],
                             callback=heal_callback,
                         ))

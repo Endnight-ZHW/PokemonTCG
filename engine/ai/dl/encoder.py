@@ -23,6 +23,14 @@ from data.deck_definitions import (
     WATER_DECK,
 )
 from data.card_registry import CardRegistry
+from engine.actions import (
+    AttachmentRef,
+    CardRef,
+    ChoiceOption,
+    GameAction,
+    PokemonRef,
+)
+from engine.ai.observation import Observation
 from engine.ai.profiles import get_deck_ai_profile
 from engine.enums import PlayerAction, TurnPhase
 
@@ -32,10 +40,12 @@ STATE_NUMERIC_SIZE = 960  # +32 for tactical situation features (v8)
 STATE_CARD_SLOTS = 96
 ACTION_NUMERIC_SIZE = 178  # +16 for action feasibility/context features (v8)
 CARD_SEMANTIC_SIZE = 48
+ENCODER_SCHEMA_VERSION = 2
 
 ACTION_TYPES = [
     "NOOP",
     "SETUP_DONE",
+    "PROMOTE",
     PlayerAction.PLAY_BASIC.name,
     PlayerAction.EVOLVE.name,
     PlayerAction.ATTACH_ENERGY.name,
@@ -157,7 +167,7 @@ def _card_id(card: Any) -> str:
 
 
 class ActionStateEncoder:
-    """Encode GameState and AIAction candidates into fixed-size features."""
+    """Encode public observations and structured candidates into fixed features."""
 
     state_numeric_size = STATE_NUMERIC_SIZE
     state_card_slots = STATE_CARD_SLOTS
@@ -168,6 +178,191 @@ class ActionStateEncoder:
     )
 
     def encode_state(self, state, player_idx: int, deck_key: str | None = None) -> EncodedState:
+        """Compatibility adapter. New code should pass Observation directly."""
+        return self.encode_observation(
+            Observation.from_state(state, player_idx),
+            deck_key,
+        )
+
+    def encode_action(self, state, player_idx: int, action) -> EncodedAction:
+        """Compatibility adapter for callers not yet holding an Observation."""
+        return self.encode_game_action(
+            Observation.from_state(state, player_idx),
+            action,
+        )
+
+    def encode_choice(
+        self,
+        state,
+        player_idx: int,
+        request_type: str,
+        candidate: Any,
+        index: int = 0,
+    ) -> EncodedAction:
+        """Compatibility adapter for legacy training examples."""
+        option = ChoiceOption(
+            option_id=f"legacy:{request_type}:{index}",
+            label=str(getattr(candidate, "name", candidate)),
+            value=candidate,
+        )
+        return self.encode_choice_option(
+            Observation.from_state(state, player_idx),
+            request_type,
+            option,
+            index,
+        )
+
+    def encode_observation(
+        self,
+        observation: Observation,
+        deck_key: str | None = None,
+    ) -> EncodedState:
+        self._active_deck_key = deck_key
+        numeric: list[float] = []
+        phases = [phase.name for phase in TurnPhase]
+        numeric.extend(
+            _one_hot(phases.index(observation.phase), len(phases))
+            if observation.phase in phases else [0.0] * len(phases)
+        )
+        numeric.extend([
+            _bool(observation.active_player == observation.perspective),
+            _norm(observation.turn_number, 20.0),
+            _bool(observation.apply_type_matchups),
+            1.0 if observation.winner == observation.perspective else 0.0,
+            1.0 if observation.winner == 1 - observation.perspective else 0.0,
+            _norm(len(observation.own_hand), 20.0),
+            _norm(len(observation.own_discard), 60.0),
+            _norm(observation.own_deck_count, 60.0),
+            _norm(observation.own_prize_count, 6.0),
+            _norm(observation.opponent_hand_count, 20.0),
+            _norm(len(observation.opponent_discard), 60.0),
+            _norm(observation.opponent_deck_count, 60.0),
+            _norm(observation.opponent_prize_count, 6.0),
+        ])
+        numeric.extend(self._deck_key_features(deck_key))
+
+        card_ids: list[int] = []
+        for player_idx, slot, card_id, damage, energy_ids, statuses, tool_id in observation.board:
+            card = CardRegistry.get(card_id) if card_id else None
+            numeric.extend([
+                _bool(bool(card_id)),
+                _bool(player_idx == observation.perspective),
+                _bool(slot == "active"),
+                _norm(damage, 30.0),
+                _norm(len(energy_ids), 6.0),
+                _norm(len(statuses), 5.0),
+                _bool(bool(tool_id)),
+            ])
+            numeric.extend(self._card_semantic_features(card))
+            card_ids.append(card_bucket(card_id))
+            card_ids.extend(card_bucket(energy_id) for energy_id in energy_ids[:4])
+            card_ids.append(card_bucket(tool_id))
+
+        card_ids.extend(card_bucket(card_id) for card_id in observation.own_hand[:16])
+        card_ids.extend(card_bucket(card_id) for card_id in observation.own_discard[-12:])
+        card_ids.extend(card_bucket(card_id) for card_id in observation.opponent_discard[-12:])
+        card_ids.append(card_bucket(observation.stadium_id))
+        return EncodedState(
+            numeric=_pad(numeric, STATE_NUMERIC_SIZE),
+            card_ids=_pad_ids(card_ids, STATE_CARD_SLOTS),
+        )
+
+    def encode_game_action(
+        self,
+        observation: Observation,
+        action: GameAction,
+    ) -> EncodedAction:
+        action_name = (
+            action.action.name
+            if isinstance(action.action, PlayerAction)
+            else str(action.action)
+        )
+        numeric: list[float] = []
+        numeric.extend(
+            _one_hot(ACTION_TYPES.index(action_name), len(ACTION_TYPES))
+            if action_name in ACTION_TYPES else [0.0] * len(ACTION_TYPES)
+        )
+        numeric.extend([
+            _bool(action.terminal),
+            _bool(action.actor in (None, observation.perspective)),
+        ])
+
+        params = dict(action.params or {})
+        slot_name = (
+            getattr(action.target, "slot", None)
+            or params.get("target_slot")
+            or params.get("target")
+            or params.get("slot")
+        )
+        target_slots = ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]
+        numeric.extend(
+            _one_hot(target_slots.index(slot_name), len(target_slots))
+            if slot_name in target_slots else [0.0] * len(target_slots)
+        )
+        numeric.extend([
+            _norm(params.get("hand_idx", -1) + 1 if isinstance(params.get("hand_idx"), int) else 0, 12.0),
+            _norm(params.get("attack_idx", -1) + 1 if isinstance(params.get("attack_idx"), int) else 0, 4.0),
+            _norm(params.get("bench_idx", -1) + 1 if isinstance(params.get("bench_idx"), int) else 0, 5.0),
+            _norm(len(params.get("energy_indices", []) or []), 6.0),
+            _norm(sum(1 for row in observation.board if row[2]), 12.0),
+            _norm(sum(1 for row in observation.board if row[0] != observation.perspective and row[2]), 6.0),
+        ])
+
+        card_id = getattr(action.source, "card_id", "")
+        if not card_id:
+            hand_idx = params.get("hand_idx")
+            if isinstance(hand_idx, int) and 0 <= hand_idx < len(observation.own_hand):
+                card_id = observation.own_hand[hand_idx]
+        card = CardRegistry.get(card_id) if card_id else None
+        numeric.extend(self._card_semantic_features(card))
+        numeric.extend(self._deck_key_features(
+            getattr(self, "_active_deck_key", None)
+            or observation.public_deck_keys[observation.perspective]
+            if observation.perspective < len(observation.public_deck_keys)
+            else None
+        ))
+        return EncodedAction(
+            numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
+            card_id=card_bucket(card_id),
+        )
+
+    def encode_choice_option(
+        self,
+        observation: Observation,
+        request_type: str,
+        option: ChoiceOption,
+        index: int = 0,
+    ) -> EncodedAction:
+        numeric: list[float] = []
+        numeric.extend(
+            _one_hot(CHOICE_TYPES.index(request_type), len(CHOICE_TYPES))
+            if request_type in CHOICE_TYPES else [0.0] * len(CHOICE_TYPES)
+        )
+        ref = option.ref
+        numeric.extend([
+            _norm(index + 1, 64.0),
+            _bool(isinstance(ref, CardRef)),
+            _bool(isinstance(ref, PokemonRef)),
+            _bool(isinstance(ref, AttachmentRef)),
+            _bool(getattr(ref, "player", observation.perspective) == observation.perspective),
+        ])
+        slot = getattr(ref, "slot", "")
+        target_slots = ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]
+        numeric.extend(
+            _one_hot(target_slots.index(slot), len(target_slots))
+            if slot in target_slots else [0.0] * len(target_slots)
+        )
+        card_id = getattr(ref, "card_id", "")
+        if not card_id:
+            card_id = getattr(option.value, "api_id", "")
+        card = CardRegistry.get(card_id) if card_id else None
+        numeric.extend(self._card_semantic_features(card))
+        return EncodedAction(
+            numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
+            card_id=card_bucket(card_id),
+        )
+
+    def _encode_state_legacy(self, state, player_idx: int, deck_key: str | None = None) -> EncodedState:
         self._active_deck_key = deck_key
         opponent_idx = 1 - player_idx
         player = state.get_player(player_idx)
@@ -216,7 +411,7 @@ class ActionStateEncoder:
             card_ids=_pad_ids(card_ids, STATE_CARD_SLOTS),
         )
 
-    def encode_action(self, state, player_idx: int, action) -> EncodedAction:
+    def _encode_action_legacy(self, state, player_idx: int, action) -> EncodedAction:
         player = state.get_player(player_idx)
         action_name = action.action.name if isinstance(action.action, PlayerAction) else str(action.action)
         numeric: list[float] = []
@@ -250,7 +445,7 @@ class ActionStateEncoder:
             card_id=card_bucket(card),
         )
 
-    def encode_choice(self, state, player_idx: int, request_type: str, candidate: Any, index: int = 0) -> EncodedAction:
+    def _encode_choice_legacy(self, state, player_idx: int, request_type: str, candidate: Any, index: int = 0) -> EncodedAction:
         """Encode one pending ActionRequest candidate for the optional choice head."""
         numeric: list[float] = []
         numeric.extend(

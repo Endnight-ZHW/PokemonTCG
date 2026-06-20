@@ -124,6 +124,7 @@ class PlayerState:
 
         # Shuffle animation callback
         self.on_shuffle: callable = None
+        self.random_source = None
 
     @property
     def hand_count(self) -> int:
@@ -151,7 +152,10 @@ class PlayerState:
         return len(self.deck) == 0
 
     def shuffle_deck(self):
-        random.shuffle(self.deck)
+        if self.random_source is not None:
+            self.random_source.shuffle(self.deck)
+        else:
+            random.shuffle(self.deck)
         if self.on_shuffle:
             self.on_shuffle()
 
@@ -294,14 +298,33 @@ class PlayerState:
         target.energy_cards.append(card)
         self.energy_attached_this_turn = True
 
-    def pay_retreat_cost(self, retreat_cost: int):
+    def pay_retreat_cost(
+        self,
+        retreat_cost: int,
+        energy_indices: list[int] | tuple[int, ...] | None = None,
+    ):
         """Remove energy from active to pay retreat cost."""
         active = self.active
-        if active is None or not active.energy_cards:
+        if active is None or retreat_cost <= 0:
             return
-        to_remove = min(retreat_cost, len(active.energy_cards))
-        for _ in range(to_remove):
-            card = active.energy_cards.pop()
+
+        from engine.rules_validator import energy_card_units
+
+        if energy_indices is None:
+            chosen: list[int] = []
+            paid = 0
+            for index in range(len(active.energy_cards) - 1, -1, -1):
+                chosen.append(index)
+                paid += energy_card_units(active.energy_cards[index], active)
+                if paid >= retreat_cost:
+                    break
+        else:
+            chosen = sorted(set(energy_indices), reverse=True)
+
+        for index in sorted(chosen, reverse=True):
+            if not (0 <= index < len(active.energy_cards)):
+                continue
+            card = active.energy_cards.pop(index)
             self.discard.append(card)
 
     # ---- Evolution ----

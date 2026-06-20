@@ -6,8 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pygame
 
 from config import CARD_WIDTH, CARD_HEIGHT
+from engine.actions import GameAction
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import ActionRequest, ActionResult
+from engine.snapshot import clone_state
 from ui.components.game_layout import PLAY_AREA_W
 
 
@@ -24,6 +26,10 @@ class GameScreenAIMixin:
 
     def _shutdown_ai_executor(self) -> None:
         self._ai_shutdown = True
+        if self.ai_controller is not None:
+            cancel = getattr(self.ai_controller, "cancel_search", None)
+            if callable(cancel):
+                cancel()
         if self._ai_action_future is not None:
             self._ai_action_future.cancel()
             self._ai_action_future = None
@@ -60,7 +66,7 @@ class GameScreenAIMixin:
         if self.ai_kind != "deep_learning":
             return "专家规则 AI"
         if self.ai_controller is not None and getattr(self.ai_controller, "model_available", False):
-            return "Deep AI 模型 + MCTS"
+            return "Deep AI 模型 + 信息集 PUCT"
         return "Deep AI 未训练，专家规则 AI fallback"
 
     def _is_ai_pending_request(self, action_req: ActionRequest | None) -> bool:
@@ -80,6 +86,7 @@ class GameScreenAIMixin:
             self.state.active_player_idx,
             self.setup_player_idx,
             self.state.pending_promotion_player,
+            getattr(self.state, "revision", 0),
         )
 
     def _ai_animation_busy(self) -> bool:
@@ -97,9 +104,10 @@ class GameScreenAIMixin:
         if self._ai_executor is None or self.ai_controller is None:
             return
         self._ai_action_job_key = self._ai_state_job_key()
+        search_state = clone_state(self.state, rebuild_event_bus=True)
         self._ai_action_future = self._ai_executor.submit(
             self.ai_controller.choose_action,
-            self.state,
+            search_state,
             self.ai_player_idx,
         )
 
@@ -125,7 +133,19 @@ class GameScreenAIMixin:
 
     def _update_challenge_ai(self, dt: float) -> None:
         if self._ai_action_future is not None:
+            if self._ai_action_job_key != self._ai_state_job_key():
+                cancel = getattr(self.ai_controller, "cancel_search", None)
+                if callable(cancel):
+                    cancel()
+                self._ai_action_future.cancel()
+                self._ai_action_future = None
+                self._ai_action_job_key = None
+                self._ai_thinking_timer = 0.0
+                return
             if self.state.winner is not None or self.state.phase == TurnPhase.GAME_OVER:
+                cancel = getattr(self.ai_controller, "cancel_search", None)
+                if callable(cancel):
+                    cancel()
                 self._ai_action_future.cancel()
                 self._ai_action_future = None
                 self._ai_action_job_key = None
@@ -199,10 +219,18 @@ class GameScreenAIMixin:
             return
 
         if action == PlayerAction.DECLARE_ATTACK:
-            result = self.tm.declare_attack(
-                self.ai_player_idx,
-                params.get("attack_idx", 0),
+            step = self.game_engine.apply_action(
+                self.state,
+                GameAction(
+                    PlayerAction.DECLARE_ATTACK,
+                    {"attack_idx": params.get("attack_idx", 0)},
+                    terminal=True,
+                    actor=self.ai_player_idx,
+                ),
+                auto_resolve=False,
+                auto_finish_attack=True,
             )
+            result = step.action_result or ActionResult(step.success, step.message)
             self._show_result(
                 result,
                 attacker_player_idx=self.ai_player_idx,
@@ -213,7 +241,10 @@ class GameScreenAIMixin:
             if result.success:
                 self._has_attacked = True
                 self._ai_failed_actions.clear()
-                self._ai_thinking_timer = max(self._ai_thinking_timer, 0.65)
+                if step.pending_choice is None:
+                    self._pending_turn_end = max(self._pending_turn_end, 0.65)
+                else:
+                    self._ai_thinking_timer = max(self._ai_thinking_timer, 0.65)
             else:
                 self._ai_failed_actions.add(self._ai_action_signature(ai_action))
             self._refresh_interaction_controls()
@@ -246,7 +277,27 @@ class GameScreenAIMixin:
         prev_snap = self._snapshot_field_state()
         self._sync_tracking_counts()
         choice = self.ai_controller.resolve_pending_action(self.state, pending)
-        result = self.ai_controller.apply_choice(self.state, pending, choice)
+        from engine.ai.planner import _map_legacy_choice
+
+        structured = self.game_engine.choice_request(self.state, pending)
+        response = _map_legacy_choice(structured, choice)
+        if response is None:
+            from engine.random_source import RandomSource
+
+            response = self.game_engine._default_choice_response(
+                structured,
+                RandomSource(getattr(
+                    getattr(self.ai_controller, "config", None),
+                    "random_seed",
+                    17,
+                )),
+            )
+        step = self.game_engine.apply_choice(
+            self.state,
+            structured,
+            response,
+        )
+        result = step.action_result or ActionResult(step.success, step.message)
 
         if isinstance(result, ActionRequest):
             self._queue_ai_pending_action(result)
@@ -265,6 +316,8 @@ class GameScreenAIMixin:
         self._refresh_interaction_controls()
         if self._ai_pending_action is None:
             self._check_promotion_needed()
+            if self._has_attacked and self.state.phase != TurnPhase.ATTACK:
+                self._pending_turn_end = max(self._pending_turn_end, 0.3)
 
     def _handle_ai_pending_action(self, action_req: ActionRequest) -> None:
         self._queue_ai_pending_action(action_req)
@@ -314,7 +367,4 @@ class GameScreenAIMixin:
         )
 
     def _ai_action_signature(self, ai_action) -> tuple:
-        return (
-            ai_action.action,
-            tuple(sorted(ai_action.params.items())),
-        )
+        return ai_action.signature

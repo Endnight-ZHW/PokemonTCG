@@ -5,112 +5,112 @@
     "action_version": 2,
     "bootstrap_games": 128,
     "choice_head_enabled": true,
-    "created_at": 1781874953,
+    "created_at": 1781876066,
     "cuda_available": true,
     "dagger_games": 32,
-    "deck": "fire",
+    "deck": "psychic",
     "device": "cuda",
-    "elapsed_seconds": 449.17,
+    "elapsed_seconds": 1562.425,
     "encoder_version": 2,
     "eval_games": 600,
     "games": 64,
     "gpu_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
     "min_win_delta": 0,
     "planner_version": 1,
-    "preserved_existing": true,
+    "preserved_existing": false,
     "pure_rl_games": 0,
     "replay_buffer_size": 50000,
     "replay_same_deal": 0,
     "replay_sample_ratio": 0.5,
     "requested_device": "cuda",
-    "requested_output_path": "data\\ai_models\\fire.pt",
+    "requested_output_path": "data\\ai_models\\psychic.pt",
     "rollout_batch_games": 16,
     "rules_version": 2,
-    "seed": 17,
+    "seed": 2035,
     "summary": {
-      "fire": {
+      "psychic": {
         "acceptance_metric": "points",
         "accepted": true,
         "baseline_eval": {
-          "actions": 2041,
-          "average_decision_seconds": 0.005959,
-          "avg_score": -322014.84,
-          "decision_seconds": 12.16153240010317,
+          "actions": 3035,
+          "average_decision_seconds": 0.008644,
+          "avg_score": -342523.16,
+          "decision_seconds": 26.23423229981563,
           "decision_timeout_rate": 0.0,
           "decision_timeouts": 0,
           "draws": 0,
           "games": 100,
           "invalid_action_rate": 0.0,
           "invalid_actions": 0,
-          "losses": 66,
-          "max_step_exhaustion_rate": 0.01,
-          "max_step_exhaustions": 1,
+          "losses": 67,
+          "max_step_exhaustion_rate": 0.04,
+          "max_step_exhaustions": 4,
           "no_target_action_rate": 0.0,
           "no_target_actions": 0,
           "rule_exception_rate": 0.0,
           "rule_exceptions": 0,
-          "seat_win_rate_gap": 0.08,
+          "seat_win_rate_gap": 0.02,
           "seat_win_rates": {
-            "0": 0.38,
-            "1": 0.3
+            "0": 0.32,
+            "1": 0.34
           },
-          "wins": 34
+          "wins": 33
         },
         "bootstrap": {
-          "entropy": 1.288301,
-          "examples": 2879,
-          "loss": 1.237605,
-          "policy_loss": 1.237605,
-          "total_loss": 1.237605,
+          "entropy": 1.60915,
+          "examples": 3611,
+          "loss": 1.55588,
+          "policy_loss": 1.55588,
+          "total_loss": 1.55588,
           "value_loss": 0.0
         },
         "choice": {
-          "choice_examples": 5718,
-          "choice_loss": 1.297352
+          "choice_examples": 12337,
+          "choice_loss": 1.244989
         },
         "choice_head_enabled": true,
         "dagger": {
-          "entropy": 1.00873,
-          "examples": 2444,
-          "loss": 0.946036,
-          "policy_loss": 0.951079,
-          "total_loss": 0.946036,
+          "entropy": 1.26198,
+          "examples": 3586,
+          "loss": 1.183432,
+          "policy_loss": 1.189742,
+          "total_loss": 1.183432,
           "value_loss": 0.0
         },
         "dagger_stats": {
           "draws": 0,
-          "losses": 24,
-          "wins": 8
+          "losses": 22,
+          "wins": 10
         },
-        "delta_avg_score": -29432.177,
-        "delta_point_rate": -0.015,
-        "delta_wins": 161,
+        "delta_avg_score": 59948.73,
+        "delta_point_rate": 0.03,
+        "delta_wins": 183,
         "eval": {
-          "actions": 12270,
-          "average_decision_seconds": 0.006357,
-          "avg_score": -351447.017,
-          "decision_seconds": 78.00224499962496,
+          "actions": 18922,
+          "average_decision_seconds": 0.010171,
+          "avg_score": -282574.43,
+          "decision_seconds": 192.4576164002865,
           "decision_timeout_rate": 0.0,
           "decision_timeouts": 0,
           "draws": 0,
           "games": 600,
           "invalid_action_rate": 0.0,
           "invalid_actions": 0,
-          "losses": 405,
-          "max_step_exhaustion_rate": 0.021667,
-          "max_step_exhaustions": 13,
+          "losses": 384,
+          "max_step_exhaustion_rate": 0.033333,
+          "max_step_exhaustions": 20,
           "no_target_action_rate": 0.0,
           "no_target_actions": 0,
           "rule_exception_rate": 0.0,
           "rule_exceptions": 0,
-          "seat_win_rate_gap": 0.03,
+          "seat_win_rate_gap": 0.1,
           "seat_win_rates": {
-            "0": 0.34,
+            "0": 0.41,
             "1": 0.31
           },
-          "wins": 195
+          "wins": 216
         },
-        "eval_seed": 900017,
+        "eval_seed": 902035,
         "min_win_delta": 0,
         "old_eval": {
           "games": 0
@@ -118,17 +118,17 @@
         "rollout_batch_games": 16,
         "selected_stage": "bootstrap",
         "self_play": {
-          "entropy": 0.959456,
-          "examples": 1709,
-          "loss": 1.343639,
-          "policy_loss": 0.651738,
-          "total_loss": 1.343639,
-          "value_loss": 1.42218
+          "entropy": 1.224557,
+          "examples": 2485,
+          "loss": 1.52834,
+          "policy_loss": 0.853371,
+          "total_loss": 1.52834,
+          "value_loss": 1.39892
         },
         "self_play_stats": {
           "draws": 0,
-          "losses": 43,
-          "wins": 21
+          "losses": 34,
+          "wins": 30
         },
         "teacher_label_model_states": true,
         "teacher_search_preset": "fast",
@@ -146,5 +146,5 @@
     "verified": true,
     "workers": 12
   },
-  "model_path": "data\\ai_models\\fire.pt"
+  "model_path": "data\\ai_models\\psychic.pt"
 }

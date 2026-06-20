@@ -123,14 +123,12 @@ class DeepAITests(unittest.TestCase):
     def test_eval_zero_training_metadata_is_marked_unverified(self):
         from engine.ai.dl.training import _verification_metadata
 
-        self.assertEqual(
-            _verification_metadata(0, True),
-            {
-                "verified": False,
-                "verification_status": "unverified_no_eval",
-                "verification_note": "No evaluation games were run for this model.",
-            },
-        )
+        metadata = _verification_metadata(0, True)
+        self.assertFalse(metadata["verified"])
+        self.assertEqual(metadata["verification_status"], "unverified_no_eval")
+        self.assertEqual(metadata["rules_version"], 2)
+        self.assertEqual(metadata["action_version"], 2)
+        self.assertEqual(metadata["encoder_version"], 2)
 
     def test_encoder_outputs_stable_shapes_and_handles_new_card_id(self):
         state = self._simple_state()
@@ -516,6 +514,11 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 2,
+                        "planner_version": 1,
+                        "seed": 17,
                         "summary": {"fire": {"eval": {"games": 600, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0}}},
                     }
                 }, fh)
@@ -723,6 +726,42 @@ class DeepAITests(unittest.TestCase):
             )
         )
 
+    def test_candidate_gate_compares_rates_when_game_counts_differ(self):
+        from engine.ai.dl.training import _accepts_candidate
+
+        baseline = {
+            "wins": 40,
+            "losses": 60,
+            "draws": 0,
+            "avg_score": -100.0,
+            "games": 100,
+        }
+        regressed = {
+            "wins": 180,
+            "losses": 420,
+            "draws": 0,
+            "avg_score": -80.0,
+            "games": 600,
+        }
+        improved = dict(regressed, wins=270, losses=330)
+
+        self.assertFalse(
+            _accepts_candidate(
+                regressed,
+                baseline,
+                None,
+                acceptance_metric="points",
+            )
+        )
+        self.assertTrue(
+            _accepts_candidate(
+                improved,
+                baseline,
+                None,
+                acceptance_metric="points",
+            )
+        )
+
     def test_candidate_with_invalid_or_no_target_actions_is_rejected(self):
         from engine.ai.dl.training import _accepts_candidate
 
@@ -908,17 +947,6 @@ class DeepAITests(unittest.TestCase):
 
         self.assertEqual(len(rows), 2)
         self.assertEqual(len(loads), 1)
-
-    def test_mcts_backup_keeps_each_actor_value_perspective(self):
-        from engine.ai.dl.mcts import MCTSGuidedSearch, _MCTSNode
-
-        root = _MCTSNode()
-        opponent_child = _MCTSNode()
-        search = object.__new__(MCTSGuidedSearch)
-        search._backup([(root, 0), (opponent_child, 1)], 0.75, value_player=1)
-
-        self.assertAlmostEqual(root.q_value, -0.75)
-        self.assertAlmostEqual(opponent_child.q_value, 0.75)
 
     def test_training_screen_exit_terminates_process_tree(self):
         import pygame

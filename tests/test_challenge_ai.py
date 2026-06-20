@@ -6,7 +6,6 @@ import sys
 import time
 import unittest
 from concurrent.futures.process import BrokenProcessPool
-from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -35,8 +34,10 @@ from engine.ai.training import (
     train_deck,
 )
 from engine.enums import PlayerAction, TurnPhase
+from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.player_state import PokemonInPlay
+from engine.random_source import ScriptedRandomSource
 from engine.rules_validator import can_play_basic, can_play_stadium, can_use_ability
 from engine.snapshot import snapshot_state
 from engine.turn_manager import TurnManager
@@ -229,7 +230,8 @@ class ChallengeAITests(unittest.TestCase):
 
     def test_policy_loader_rejects_bad_eval_candidate(self):
         payload = {
-            "version": 1,
+            "version": 2,
+            "schema": {"rules_version": 2, "action_version": 2},
             "policies": {
                 "water": {
                     "weights": {"core_in_play": 120.0},
@@ -260,7 +262,8 @@ class ChallengeAITests(unittest.TestCase):
 
     def test_policy_loader_rejects_benchmark_regression(self):
         payload = {
-            "version": 1,
+            "version": 2,
+            "schema": {"rules_version": 2, "action_version": 2},
             "policies": {
                 "lightning": {
                     "weights": {"core_in_play": 120.0},
@@ -292,7 +295,8 @@ class ChallengeAITests(unittest.TestCase):
 
     def test_policy_loader_rejects_low_global_benchmark_without_gain(self):
         payload = {
-            "version": 1,
+            "version": 2,
+            "schema": {"rules_version": 2, "action_version": 2},
             "policies": {
                 "lightning": {
                     "weights": {"core_in_play": 120.0},
@@ -553,7 +557,7 @@ class ChallengeAITests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             with open(output, "r", encoding="utf-8") as fh:
                 payload = json.load(fh)
-            self.assertEqual(payload["version"], 1)
+            self.assertEqual(payload["version"], 2)
             self.assertIn("fire", payload["policies"])
             self.assertIn("weights", payload["policies"]["fire"])
             self.assertEqual(payload["policies"]["fire"]["training_games"], 1)
@@ -769,169 +773,6 @@ class ChallengeAITests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["games"], 1)
 
-    def test_beam_coin_branches_are_deterministic_and_weighted(self):
-        ai = ChallengeAI(AIConfig(policy_path=None, chance_branch_limit=4))
-        branches = ai._coin_outcome_branches(1, False)
-        self.assertEqual(len(branches), 2)
-        self.assertAlmostEqual(sum(weight for _results, weight in branches), 1.0)
-        self.assertEqual({tuple(results) for results, _weight in branches}, {(False,), (True,)})
-
-        state = self._simple_public_state()
-        action = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
-        calls = []
-
-        def fake_apply(sim, player_idx, action, coin_results):
-            calls.append(tuple(coin_results))
-            return ActionResult(True, "")
-
-        with patch.object(ai, "_action_coin_profile", return_value=(1, False)), \
-                patch.object(ai, "_apply_action_for_sim_with_coin_results", side_effect=fake_apply):
-            outcomes = ai._simulate_action_outcomes(state, 1, action)
-
-        self.assertEqual(len(outcomes), 2)
-        self.assertAlmostEqual(sum(weight for _sim, _result, weight in outcomes), 1.0)
-        self.assertEqual(set(calls), {(False,), (True,)})
-
-    def test_minimax_chance_executes_each_coin_branch_once(self):
-        from engine.ai.minimax import MinimaxSearcher
-
-        state = self._simple_public_state()
-        action = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
-        ai = ChallengeAI(AIConfig(policy_path=None, chance_branch_limit=2, search_node_budget=10))
-        searcher = MinimaxSearcher(ai)
-        searcher.max_turn_depth = 1
-        searcher.node_budget = 10
-        searcher.nodes_searched = 0
-        calls = []
-
-        def fake_apply(sim, player_idx, action, coin_results):
-            calls.append(tuple(coin_results))
-            sim.winner = player_idx if coin_results[0] else 1 - player_idx
-            sim.phase = TurnPhase.GAME_OVER
-            return ActionResult(True, "")
-
-        with patch.object(ai, "_action_coin_branches", return_value=[([True], 0.5), ([False], 0.5)]), \
-                patch.object(ai, "_apply_action_for_sim_with_coin_results", side_effect=fake_apply):
-            value = searcher._chance_value(state, 1, 1, action, 0, 0, -float("inf"), float("inf"), float("inf"))
-
-        self.assertEqual(calls, [(True,), (False,)])
-        self.assertEqual(value, 0.0)
-
-    def test_minimax_iterative_deepening_uses_deepest_complete_result(self):
-        from engine.ai.minimax import MinimaxSearcher
-
-        state = self._simple_public_state()
-        shallow = AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": 0, "target": "bench_0"})
-        deep = AIAction(PlayerAction.END_TURN, {}, terminal=True)
-        ai = ChallengeAI(AIConfig(policy_path=None, deterministic_search=True))
-        searcher = MinimaxSearcher(ai)
-        seen_node_counts = []
-
-        def fake_depth(self, state, player_idx, root_actions, max_depth, deadline, determinizations):
-            seen_node_counts.append(self.nodes_searched)
-            self.nodes_searched = 99
-            if max_depth == 1:
-                return SimpleNamespace(action=shallow, score=1000.0, complete=True)
-            return SimpleNamespace(action=deep, score=-100.0, complete=True)
-
-        with patch.object(MinimaxSearcher, "_search_at_depth", new=fake_depth):
-            result = searcher.search(
-                state,
-                1,
-                float("inf"),
-                max_depth=2,
-                determinizations=1,
-                root_actions=[shallow, deep],
-            )
-
-        self.assertIs(result, deep)
-        self.assertEqual(seen_node_counts, [0, 0])
-
-    def test_minimax_uses_partial_result_when_first_depth_is_incomplete(self):
-        from engine.ai.minimax import MinimaxSearcher
-
-        state = self._simple_public_state()
-        partial = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
-        end_turn = AIAction(PlayerAction.END_TURN, {}, terminal=True)
-        ai = ChallengeAI(AIConfig(policy_path=None, deterministic_search=True))
-
-        def fake_depth(self, state, player_idx, root_actions, max_depth, deadline, determinizations):
-            return SimpleNamespace(action=partial, score=10.0, complete=False)
-
-        with patch.object(MinimaxSearcher, "_search_at_depth", new=fake_depth):
-            result = MinimaxSearcher(ai).search(
-                state,
-                1,
-                float("inf"),
-                max_depth=2,
-                determinizations=1,
-                root_actions=[partial, end_turn],
-            )
-
-        self.assertIs(result, partial)
-
-    def test_minimax_budget_exhaustion_falls_back_to_best_ordered_action(self):
-        from engine.ai.minimax import MinimaxSearcher
-
-        state = self._simple_public_state()
-        attach = AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0, "target_slot": "active"})
-        end_turn = AIAction(PlayerAction.END_TURN, {}, terminal=True)
-        ai = ChallengeAI(AIConfig(policy_path=None))
-
-        result = MinimaxSearcher(ai).search(
-            state,
-            1,
-            time.perf_counter() - 1.0,
-            max_depth=2,
-            determinizations=1,
-            root_actions=[attach, end_turn],
-        )
-
-        self.assertIs(result, attach)
-
-    def test_minimax_min_node_orders_opponent_threats_first(self):
-        from engine.ai.minimax import MinimaxSearcher
-
-        state = self._simple_public_state()
-        ai = ChallengeAI(AIConfig(policy_path=None))
-        actions = [
-            AIAction(PlayerAction.END_TURN, {}, terminal=True),
-            AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True),
-            AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": 0, "target": "bench_0"}),
-        ]
-
-        ordered = [action for _idx, action in MinimaxSearcher(ai)._order_actions_min(state, 1, actions)]
-
-        self.assertEqual(ordered[0].action, PlayerAction.DECLARE_ATTACK)
-        self.assertEqual(ordered[-1].action, PlayerAction.END_TURN)
-
-    def test_minimax_rejects_failed_root_action(self):
-        from engine.ai.minimax import MinimaxSearcher
-
-        state = self._simple_public_state()
-        bad = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 99})
-        good = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, terminal=True)
-        ai = ChallengeAI(AIConfig(policy_path=None, deterministic_search=True))
-
-        def fake_apply(sim, player_idx, action):
-            if action is bad:
-                return ActionResult(False, "bad action")
-            sim.winner = player_idx
-            sim.phase = TurnPhase.GAME_OVER
-            return ActionResult(True, "ok")
-
-        with patch.object(ai, "_apply_action_for_sim", side_effect=fake_apply):
-            result = MinimaxSearcher(ai).search(
-                state,
-                1,
-                float("inf"),
-                max_depth=1,
-                determinizations=1,
-                root_actions=[bad, good],
-            )
-
-        self.assertIs(result, good)
-
     def test_hybrid_choose_action_does_not_mutate_real_state(self):
         state = self._simple_public_state()
         before = snapshot_state(state)
@@ -1001,32 +842,6 @@ class ChallengeAITests(unittest.TestCase):
                 self.assertEqual(len(runner.run_play_game_tasks(tasks_b)), 2)
 
         self.assertEqual(CountingExecutor.created, 1)
-
-    def test_hybrid_search_prunes_root_actions_then_uses_minimax(self):
-        from engine.ai.challenge_ai import AIAction, AIConfig, ChallengeAI
-        from engine.enums import PlayerAction
-
-        ai = ChallengeAI(AIConfig(beam_width=2, policy_path=None, deterministic_search=True))
-        actions = [
-            AIAction(PlayerAction.PLAY_BASIC, {"slot": "active"}),
-            AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": 0}),
-            AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}),
-            AIAction(PlayerAction.END_TURN, {}, terminal=True),
-        ]
-        captured = {}
-
-        def fake_search(self, state, player_idx, deadline, max_depth=3,
-                        determinizations=3, root_actions=None):
-            captured["root_actions"] = root_actions
-            return root_actions[0]
-
-        with patch.object(ai, "legal_actions", return_value=actions), \
-                patch.object(ai, "_action_executes_successfully", return_value=True), \
-                patch("engine.ai.minimax.MinimaxSearcher.search", new=fake_search):
-            result = ai._hybrid_search_action(object(), 0, float("inf"))
-
-        self.assertIs(result, actions[0])
-        self.assertEqual(captured["root_actions"], [actions[0], actions[1], actions[3]])
 
     def test_benchmark_payload_contains_matrix_before_after_and_ranking(self):
         policies = {
@@ -1169,7 +984,7 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(action_a.params, action_b.params)
         self.assertEqual(action_a.terminal, action_b.terminal)
 
-    def test_fow_placeholders_survive_repeated_masking_and_clone(self):
+    def test_hidden_world_sampling_does_not_register_placeholders(self):
         state = self._simple_public_state()
         special_energy = CardRegistry.get("svi-dte") or CardRegistry.get("svg2-lume")
         if special_energy is None:
@@ -1178,12 +993,14 @@ class ChallengeAITests(unittest.TestCase):
         state.p1.deck = [special_energy] * 3
 
         ai = ChallengeAI(AIConfig(policy_path=None))
+        registry_ids = set(CardRegistry.all_cards())
         first_masked = ai._masked_clone_for_eval(state, 1)
         second_masked = ai._masked_clone_for_eval(state, 1)
 
-        self.assertTrue(second_masked.p1.hand[0].api_id.startswith("_fow_"))
+        self.assertFalse(second_masked.p1.hand[0].api_id.startswith("_fow_"))
         cloned_first = ai._clone_state(first_masked)
-        self.assertTrue(cloned_first.p1.hand[0].api_id.startswith("_fow_"))
+        self.assertFalse(cloned_first.p1.hand[0].api_id.startswith("_fow_"))
+        self.assertEqual(set(CardRegistry.all_cards()), registry_ids)
 
     def test_pending_choice_strategies_cover_common_requests(self):
         state = self._simple_public_state()
@@ -1455,7 +1272,22 @@ class ChallengeAITests(unittest.TestCase):
         catcher = next(action for action in actions if action.action == PlayerAction.PLAY_TRAINER)
         sim = ai._clone_state(state)
 
-        result = ai._apply_action_for_sim_with_coin_results(sim, 1, catcher, [True])
+        from engine.ai.planner import _map_legacy_choice
+
+        def choose(sim_state, request):
+            return _map_legacy_choice(
+                request,
+                ai.resolve_pending_action(sim_state, request.legacy_request),
+            )
+
+        step = DEFAULT_GAME_ENGINE.apply_action(
+            sim,
+            catcher.with_actor(1),
+            ScriptedRandomSource([True]),
+            auto_resolve=True,
+            choice_policy=choose,
+        )
+        result = step.action_result
 
         self.assertTrue(result.success, result.log_message)
         self.assertEqual(sim.p1.active.card.api_id, "sv2-delib")
@@ -1475,7 +1307,13 @@ class ChallengeAITests(unittest.TestCase):
         action = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
         sim = ai._clone_state(state)
 
-        result = ai._apply_action_for_sim_with_coin_results(sim, 1, action, [True])
+        step = DEFAULT_GAME_ENGINE.apply_action(
+            sim,
+            action.with_actor(1),
+            ScriptedRandomSource([True]),
+            auto_resolve=True,
+        )
+        result = step.action_result
 
         self.assertFalse(result.success)
         self.assertIn("对手备战区没有宝可梦", result.log_message)

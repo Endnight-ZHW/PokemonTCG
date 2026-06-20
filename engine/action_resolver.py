@@ -357,8 +357,13 @@ class ActionResolver:
 
         return ActionResult(False, f"未找到特性'{ability_name}'。")
 
-    def _retreat(self, player_idx: int, bench_idx: int) -> ActionResult:
-        ok, reason = can_retreat(self.state, player_idx, bench_idx)
+    def _retreat(
+        self,
+        player_idx: int,
+        bench_idx: int,
+        energy_indices: list[int] | tuple[int, ...] | None = None,
+    ) -> ActionResult:
+        ok, reason = can_retreat(self.state, player_idx, bench_idx, energy_indices)
         if not ok:
             return ActionResult(False, reason)
 
@@ -367,7 +372,7 @@ class ActionResolver:
         retreat_cost = _get_effective_retreat_cost(self.state, player)
         pokemon_name = player.active.card.name
 
-        player.pay_retreat_cost(retreat_cost)
+        player.pay_retreat_cost(retreat_cost, energy_indices)
         player.switch_active_to_bench(bench_idx)
         player.retreated_this_turn = True
 
@@ -387,7 +392,8 @@ class ActionResolver:
 
         # Check confusion
         if StatusType.CONFUSED in attacker.status_conditions:
-            coin = random.choice(["heads", "tails"])
+            source = getattr(self.state, "random_source", None)
+            coin = ("heads" if source.coin() else "tails") if source else random.choice(["heads", "tails"])
             if coin == "tails":
                 attacker.damage_counters += 3
                 msg = (f"{player.name}的{attacker.card.name}处于混乱状态！"
@@ -402,7 +408,8 @@ class ActionResolver:
         # Check dazzling_beam marker (炫目光束 effect)
         if attacker.dazzled:
             attacker.dazzled = False
-            coin = random.choice(["heads", "tails"])
+            source = getattr(self.state, "random_source", None)
+            coin = ("heads" if source.coin() else "tails") if source else random.choice(["heads", "tails"])
             self.state._log(f"{attacker.card.name}受炫目光束影响，掷硬币: {coin}!")
             if coin == "tails":
                 msg = f"{attacker.card.name}的招式失败！（炫目光束效果）"
@@ -626,14 +633,18 @@ class ActionResolver:
 
                 if StatusType.BURNED in active.status_conditions:
                     active.damage_counters += 2
-                    if random.random() < COIN_FLIP_THRESHOLD:
+                    source = getattr(self.state, "random_source", None)
+                    roll = source.random() if source else random.random()
+                    if roll < COIN_FLIP_THRESHOLD:
                         active.status_conditions.remove(StatusType.BURNED)
                         results.append(f"{name}因灼伤受到2个伤害指示物并治愈了！")
                     else:
                         results.append(f"{name}因灼伤受到2个伤害指示物（仍未治愈）。")
 
                 if StatusType.ASLEEP in active.status_conditions:
-                    if random.random() < COIN_FLIP_THRESHOLD:
+                    source = getattr(self.state, "random_source", None)
+                    roll = source.random() if source else random.random()
+                    if roll < COIN_FLIP_THRESHOLD:
                         active.status_conditions.remove(StatusType.ASLEEP)
                         results.append(f"{name}醒来了！")
                     else:

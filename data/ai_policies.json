@@ -1,191 +1,6 @@
 {
   "benchmark": {
-    "before_after": {
-      "colorless": {
-        "after": {
-          "avg_score": -231.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "before": {
-          "avg_score": -502262.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "delta_point_rate": 0.25,
-        "delta_win_rate": 0.25,
-        "games": 4
-      },
-      "dragon": {
-        "after": {
-          "avg_score": 1009750.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "before": {
-          "avg_score": 502538.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "delta_point_rate": 0.25,
-        "delta_win_rate": 0.25,
-        "games": 4
-      },
-      "fighting": {
-        "after": {
-          "avg_score": -1004062.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "before": {
-          "avg_score": -1002079.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "delta_point_rate": 0.0,
-        "delta_win_rate": 0.0,
-        "games": 4
-      },
-      "fire": {
-        "after": {
-          "avg_score": -503749.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "before": {
-          "avg_score": -503745.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "delta_point_rate": 0.0,
-        "delta_win_rate": 0.0,
-        "games": 4
-      },
-      "grass": {
-        "after": {
-          "avg_score": 732.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "before": {
-          "avg_score": 500479.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "delta_point_rate": -0.25,
-        "delta_win_rate": -0.25,
-        "games": 4
-      },
-      "lightning": {
-        "after": {
-          "avg_score": 496196.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "before": {
-          "avg_score": -3525.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "delta_point_rate": 0.25,
-        "delta_win_rate": 0.25,
-        "games": 4
-      },
-      "psychic": {
-        "after": {
-          "avg_score": -3212.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "before": {
-          "avg_score": 492610.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "delta_point_rate": -0.25,
-        "delta_win_rate": -0.25,
-        "games": 4
-      },
-      "water": {
-        "after": {
-          "avg_score": 1001718.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "before": {
-          "avg_score": 498309.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "delta_point_rate": 0.25,
-        "delta_win_rate": 0.25,
-        "games": 4
-      }
-    },
+    "before_after": {},
     "deck_keys": [
       "fire",
       "water",
@@ -196,1394 +11,744 @@
       "dragon",
       "grass"
     ],
-    "games_per_matchup": 4,
-    "matrix": {
-      "colorless": {
-        "colorless": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        },
-        "dragon": {
-          "avg_score": 497901.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "fighting": {
-          "avg_score": 6726.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "fire": {
-          "avg_score": -497841.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "grass": {
-          "avg_score": 1002779.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "lightning": {
-          "avg_score": -1001660.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "psychic": {
-          "avg_score": -493758.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "water": {
-          "avg_score": -15.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        }
-      },
-      "dragon": {
-        "colorless": {
-          "avg_score": -497901.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "dragon": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        },
-        "fighting": {
-          "avg_score": 1009891.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "fire": {
-          "avg_score": 508446.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "grass": {
-          "avg_score": 1003978.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "lightning": {
-          "avg_score": -1831.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "psychic": {
-          "avg_score": 1012076.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "water": {
-          "avg_score": 8927.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        }
-      },
-      "fighting": {
-        "colorless": {
-          "avg_score": -6726.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "dragon": {
-          "avg_score": -1009891.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "fighting": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        },
-        "fire": {
-          "avg_score": -1002985.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "grass": {
-          "avg_score": -505721.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "lightning": {
-          "avg_score": -502575.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "psychic": {
-          "avg_score": -498608.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "water": {
-          "avg_score": -498646.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        }
-      },
-      "fire": {
-        "colorless": {
-          "avg_score": 497841.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "dragon": {
-          "avg_score": -508446.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "fighting": {
-          "avg_score": 1002985.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "fire": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        },
-        "grass": {
-          "avg_score": 495836.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "lightning": {
-          "avg_score": 493867.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "psychic": {
-          "avg_score": 3988.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "water": {
-          "avg_score": -500822.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        }
-      },
-      "grass": {
-        "colorless": {
-          "avg_score": -1002779.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "dragon": {
-          "avg_score": -1003978.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "fighting": {
-          "avg_score": 505721.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "fire": {
-          "avg_score": -495836.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "grass": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        },
-        "lightning": {
-          "avg_score": 496247.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "psychic": {
-          "avg_score": 508678.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "water": {
-          "avg_score": -3326.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        }
-      },
-      "lightning": {
-        "colorless": {
-          "avg_score": 1001660.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 0,
-          "point_rate": 1.0,
-          "win_rate": 1.0,
-          "wins": 4
-        },
-        "dragon": {
-          "avg_score": 1831.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "fighting": {
-          "avg_score": 502575.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "fire": {
-          "avg_score": -493867.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "grass": {
-          "avg_score": -496247.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "lightning": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        },
-        "psychic": {
-          "avg_score": 521.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "water": {
-          "avg_score": -496652.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        }
-      },
-      "psychic": {
-        "colorless": {
-          "avg_score": 493758.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "dragon": {
-          "avg_score": -1012076.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 4,
-          "point_rate": 0.0,
-          "win_rate": 0.0,
-          "wins": 0
-        },
-        "fighting": {
-          "avg_score": 498608.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "fire": {
-          "avg_score": -3988.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "grass": {
-          "avg_score": -508678.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        },
-        "lightning": {
-          "avg_score": -521.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "psychic": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        },
-        "water": {
-          "avg_score": -499472.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 3,
-          "point_rate": 0.25,
-          "win_rate": 0.25,
-          "wins": 1
-        }
-      },
-      "water": {
-        "colorless": {
-          "avg_score": 15.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "dragon": {
-          "avg_score": -8927.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "fighting": {
-          "avg_score": 498646.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "fire": {
-          "avg_score": 500822.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "grass": {
-          "avg_score": 3326.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 2,
-          "point_rate": 0.5,
-          "win_rate": 0.5,
-          "wins": 2
-        },
-        "lightning": {
-          "avg_score": 496652.0,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "psychic": {
-          "avg_score": 499472.5,
-          "draws": 0,
-          "games": 4,
-          "losses": 1,
-          "point_rate": 0.75,
-          "win_rate": 0.75,
-          "wins": 3
-        },
-        "water": {
-          "avg_score": 0.0,
-          "draws": 0,
-          "games": 0,
-          "losses": 0,
-          "point_rate": null,
-          "win_rate": null,
-          "wins": 0
-        }
-      }
-    },
-    "rankings": [
-      {
-        "avg_score": 434798.071,
-        "deck": "dragon",
-        "draws": 0,
-        "games": 28,
-        "losses": 8,
-        "point_rate": 0.7143,
-        "rank": 1,
-        "win_rate": 0.7143,
-        "wins": 20
-      },
-      {
-        "avg_score": 284286.786,
-        "deck": "water",
-        "draws": 0,
-        "games": 28,
-        "losses": 10,
-        "point_rate": 0.6429,
-        "rank": 2,
-        "win_rate": 0.6429,
-        "wins": 18
-      },
-      {
-        "avg_score": 212178.643,
-        "deck": "fire",
-        "draws": 0,
-        "games": 28,
-        "losses": 11,
-        "point_rate": 0.6071,
-        "rank": 3,
-        "win_rate": 0.6071,
-        "wins": 17
-      },
-      {
-        "avg_score": 2831.714,
-        "deck": "lightning",
-        "draws": 0,
-        "games": 28,
-        "losses": 14,
-        "point_rate": 0.5,
-        "rank": 4,
-        "win_rate": 0.5,
-        "wins": 14
-      },
-      {
-        "avg_score": -69409.857,
-        "deck": "colorless",
-        "draws": 0,
-        "games": 28,
-        "losses": 15,
-        "point_rate": 0.4643,
-        "rank": 5,
-        "win_rate": 0.4643,
-        "wins": 13
-      },
-      {
-        "avg_score": -142181.786,
-        "deck": "grass",
-        "draws": 0,
-        "games": 28,
-        "losses": 16,
-        "point_rate": 0.4286,
-        "rank": 6,
-        "win_rate": 0.4286,
-        "wins": 12
-      },
-      {
-        "avg_score": -147481.429,
-        "deck": "psychic",
-        "draws": 0,
-        "games": 28,
-        "losses": 16,
-        "point_rate": 0.4286,
-        "rank": 7,
-        "win_rate": 0.4286,
-        "wins": 12
-      },
-      {
-        "avg_score": -575022.143,
-        "deck": "fighting",
-        "draws": 0,
-        "games": 28,
-        "losses": 22,
-        "point_rate": 0.2143,
-        "rank": 8,
-        "win_rate": 0.2143,
-        "wins": 6
-      }
-    ]
+    "games_per_matchup": 0,
+    "matrix": {},
+    "rankings": []
   },
   "metadata": {
-    "benchmark_games": 4,
-    "created_at": 1780630089,
-    "elapsed_seconds": 2389.481,
-    "eval_games": 20,
+    "benchmark_games": 0,
+    "created_at": 1781880228,
+    "elapsed_seconds": 794.156,
+    "eval_games": 100,
     "fast_search": {
-      "beam_width": 6,
-      "chance_branch_limit": 2,
-      "coin_sample_count": 3,
+      "beam_width": 10,
+      "chance_branch_limit": 4,
+      "coin_sample_count": 4,
       "deterministic_search": true,
-      "max_sequence_depth": 4,
-      "max_turn_actions": 16,
-      "minimax_determinizations": 1,
-      "minimax_max_depth": 2,
-      "opponent_response_actions": 4,
+      "max_sequence_depth": 5,
+      "max_turn_actions": 24,
+      "opponent_response_actions": 8,
       "opponent_response_weight": 0.45,
-      "response_branch_limit": 2,
-      "search_algorithm": "hybrid",
-      "search_node_budget": 180,
+      "planner_max_depth": 6,
+      "response_branch_limit": 3,
+      "search_algorithm": "beam",
+      "search_node_budget": 8,
       "skip_effect_dry_run": true,
       "thinking_time_seconds": 0.0
     },
-    "games_per_deck": 80,
-    "refinement_games": 192,
+    "games_per_deck": 24,
+    "refinement_games": 0,
     "search": {
-      "beam_width": 6,
-      "chance_branch_limit": 2,
-      "coin_sample_count": 3,
+      "beam_width": 10,
+      "chance_branch_limit": 4,
+      "coin_sample_count": 4,
       "deterministic_search": true,
-      "max_sequence_depth": 4,
-      "max_turn_actions": 18,
-      "minimax_determinizations": 1,
-      "minimax_max_depth": 2,
-      "opponent_response_actions": 4,
-      "opponent_response_weight": 0.45,
-      "response_branch_limit": 2,
-      "search_algorithm": "hybrid",
-      "search_node_budget": 350,
+      "max_sequence_depth": 5,
+      "max_turn_actions": 24,
+      "opponent_response_actions": 8,
+      "opponent_response_weight": 0.55,
+      "planner_max_depth": 6,
+      "response_branch_limit": 4,
+      "search_algorithm": "beam",
+      "search_node_budget": 8,
       "skip_effect_dry_run": false,
       "thinking_time_seconds": 0.0
     },
     "trainer": "cross_entropy_balanced_v2",
-    "workers": 8
+    "workers": 12
   },
   "policies": {
     "colorless": {
       "eval": {
         "baseline": {
-          "avg_score": 507.5,
+          "avg_score": 181461.44,
           "draws": 0,
-          "losses": 10,
-          "wins": 10
+          "losses": 41,
+          "wins": 59
         },
-        "games": 20,
+        "games": 100,
         "trained": {
-          "avg_score": 102811.9,
+          "avg_score": 221474.38,
           "draws": 0,
-          "losses": 9,
-          "wins": 11
+          "losses": 39,
+          "wins": 61
         }
       },
       "metadata": {
         "accepted": true,
-        "best_score": 1022695.2,
+        "best_score": 1024210.0,
+        "candidate_accepted": true,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 5062,
-        "workers": 8
+        "selected_stage": "trained",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 51,
-        "wins": 29
+        "losses": 13,
+        "wins": 11
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 9.2119,
-        "core_in_hand": 36.4149,
-        "core_in_play": 65.2572,
-        "damaged_self": -0.1096,
-        "engine_in_hand": 15.2705,
-        "engine_in_play": 42.8372,
-        "evolved_count": 39.4227,
-        "hand_size": 8.9642,
-        "ko_pressure": 0.9078,
-        "low_hp_targets": 26.7498,
-        "matching_energy_attached": 10.8468,
-        "matching_energy_hand": 6.6025,
-        "preferred_bench": 26.8985,
-        "trainer_in_hand": 8.3666
+        "bench_count": 7.9796,
+        "core_in_hand": 29.1734,
+        "core_in_play": 72.7664,
+        "damaged_self": -0.2876,
+        "engine_in_hand": 18.0437,
+        "engine_in_play": 40.9941,
+        "evolved_count": 38.5753,
+        "hand_size": 9.0346,
+        "ko_pressure": 0.9063,
+        "low_hp_targets": 24.4849,
+        "matching_energy_attached": 18.7938,
+        "matching_energy_hand": 8.1837,
+        "preferred_bench": 23.8756,
+        "trainer_in_hand": 8.2429
       }
     },
     "dragon": {
       "eval": {
         "baseline": {
-          "avg_score": 502799.8,
+          "avg_score": 282203.6,
           "draws": 0,
-          "losses": 5,
-          "wins": 15
+          "losses": 36,
+          "wins": 64
         },
-        "games": 20,
+        "games": 100,
         "trained": {
-          "avg_score": 404357.1,
+          "avg_score": 322248.1,
           "draws": 0,
-          "losses": 6,
-          "wins": 14
+          "losses": 34,
+          "wins": 66
         }
       },
       "metadata": {
-        "accepted": false,
-        "best_score": 1023423.2,
+        "accepted": true,
+        "best_score": 1023702.0,
+        "candidate_accepted": true,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 6071,
-        "workers": 8
+        "selected_stage": "trained",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 24,
-        "wins": 56
+        "losses": 6,
+        "wins": 18
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 15.4996,
-        "core_in_hand": 26.7294,
-        "core_in_play": 90.6863,
-        "damaged_self": -0.313,
-        "engine_in_hand": 17.6968,
-        "engine_in_play": 40.4451,
-        "evolved_count": 47.9532,
-        "hand_size": 3.7089,
-        "ko_pressure": 0.8986,
-        "low_hp_targets": 30.2145,
-        "matching_energy_attached": 15.0846,
-        "matching_energy_hand": 3.9564,
-        "preferred_bench": 17.0428,
-        "trainer_in_hand": 13.4976
+        "bench_count": 13.4068,
+        "core_in_hand": 28.3113,
+        "core_in_play": 82.5852,
+        "damaged_self": -0.3214,
+        "engine_in_hand": 16.7739,
+        "engine_in_play": 35.8967,
+        "evolved_count": 44.056,
+        "hand_size": 2.8736,
+        "ko_pressure": 0.7614,
+        "low_hp_targets": 25.2862,
+        "matching_energy_attached": 20.7827,
+        "matching_energy_hand": 5.8713,
+        "preferred_bench": 20.1072,
+        "trainer_in_hand": 8.2392
       }
     },
     "fighting": {
       "eval": {
         "baseline": {
-          "avg_score": -302582.6,
+          "avg_score": -1367.22,
           "draws": 0,
-          "losses": 13,
-          "wins": 7
+          "losses": 50,
+          "wins": 50
         },
-        "games": 20,
-        "trained": {
-          "avg_score": -202787.6,
+        "candidate": {
+          "avg_score": -41532.08,
           "draws": 0,
-          "losses": 12,
-          "wins": 8
+          "losses": 52,
+          "wins": 48
+        },
+        "games": 100,
+        "trained": {
+          "avg_score": -1367.22,
+          "draws": 0,
+          "losses": 50,
+          "wins": 50
         }
       },
       "metadata": {
         "accepted": true,
-        "best_score": 1015701.2,
+        "best_score": 1022312.0,
+        "candidate_accepted": false,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 4053,
-        "workers": 8
+        "selected_stage": "baseline",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 49,
-        "wins": 31
+        "losses": 13,
+        "wins": 11
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 9.8073,
-        "core_in_hand": 24.4766,
-        "core_in_play": 67.3257,
-        "damaged_self": -0.2151,
-        "engine_in_hand": 18.1996,
-        "engine_in_play": 41.2409,
-        "evolved_count": 48.7763,
-        "hand_size": 2.1192,
-        "ko_pressure": 1.5409,
-        "low_hp_targets": 20.034,
-        "matching_energy_attached": 29.5016,
-        "matching_energy_hand": 4.1142,
-        "preferred_bench": 24.0803,
-        "trainer_in_hand": 12.9079
+        "bench_count": 10.0,
+        "core_in_hand": 24.0,
+        "core_in_play": 70.0,
+        "damaged_self": -0.05,
+        "engine_in_hand": 18.0,
+        "engine_in_play": 42.0,
+        "evolved_count": 48.0,
+        "hand_size": 3.0,
+        "ko_pressure": 1.3,
+        "low_hp_targets": 24.0,
+        "matching_energy_attached": 28.0,
+        "matching_energy_hand": 8.0,
+        "preferred_bench": 18.0,
+        "trainer_in_hand": 10.0
       }
     },
     "fire": {
       "eval": {
         "baseline": {
-          "avg_score": 99907.3,
+          "avg_score": -40884.64,
           "draws": 0,
-          "losses": 9,
-          "wins": 11
+          "losses": 52,
+          "wins": 48
         },
-        "games": 20,
-        "trained": {
-          "avg_score": -1986.5,
+        "candidate": {
+          "avg_score": -101150.84,
           "draws": 0,
-          "losses": 10,
-          "wins": 10
+          "losses": 55,
+          "wins": 45
+        },
+        "games": 100,
+        "trained": {
+          "avg_score": -40884.64,
+          "draws": 0,
+          "losses": 52,
+          "wins": 48
         }
       },
       "metadata": {
-        "accepted": false,
-        "best_score": 1021707.8,
+        "accepted": true,
+        "best_score": 1023968.0,
+        "candidate_accepted": false,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 17,
-        "workers": 8
+        "selected_stage": "baseline",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 30,
-        "wins": 50
+        "losses": 9,
+        "wins": 15
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 9.58,
-        "core_in_hand": 25.1754,
-        "core_in_play": 87.4629,
-        "damaged_self": -0.3296,
-        "engine_in_hand": 19.6172,
-        "engine_in_play": 41.9784,
-        "evolved_count": 49.8745,
-        "hand_size": 3.502,
-        "ko_pressure": 1.0624,
-        "low_hp_targets": 24.4196,
-        "matching_energy_attached": 23.9183,
-        "matching_energy_hand": 5.7955,
-        "preferred_bench": 19.5028,
-        "trainer_in_hand": 11.8829
+        "bench_count": 10.0,
+        "core_in_hand": 24.0,
+        "core_in_play": 90.0,
+        "damaged_self": -0.18,
+        "engine_in_hand": 18.0,
+        "engine_in_play": 42.0,
+        "evolved_count": 48.0,
+        "hand_size": 3.0,
+        "ko_pressure": 1.1,
+        "low_hp_targets": 24.0,
+        "matching_energy_attached": 22.0,
+        "matching_energy_hand": 8.0,
+        "preferred_bench": 18.0,
+        "trainer_in_hand": 10.0
       }
     },
     "grass": {
       "eval": {
         "baseline": {
-          "avg_score": 300163.7,
+          "avg_score": -101081.58,
           "draws": 0,
-          "losses": 7,
-          "wins": 13
+          "losses": 55,
+          "wins": 45
         },
-        "games": 20,
-        "trained": {
-          "avg_score": 201830.9,
+        "candidate": {
+          "avg_score": -121239.38,
           "draws": 0,
-          "losses": 8,
-          "wins": 12
+          "losses": 56,
+          "wins": 44
+        },
+        "games": 100,
+        "trained": {
+          "avg_score": -101081.58,
+          "draws": 0,
+          "losses": 55,
+          "wins": 45
         }
       },
       "metadata": {
-        "accepted": false,
-        "best_score": 1022817.4,
+        "accepted": true,
+        "best_score": 1023692.0,
+        "candidate_accepted": false,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 7080,
-        "workers": 8
+        "selected_stage": "baseline",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 40,
-        "wins": 40
+        "losses": 17,
+        "wins": 7
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 20.0457,
-        "core_in_hand": 30.5567,
-        "core_in_play": 73.4392,
-        "damaged_self": -0.1225,
-        "engine_in_hand": 19.3227,
-        "engine_in_play": 44.3512,
-        "evolved_count": 69.5963,
-        "hand_size": 1.9641,
-        "ko_pressure": 1.0191,
-        "low_hp_targets": 24.3784,
-        "matching_energy_attached": 18.3203,
-        "matching_energy_hand": 9.9524,
-        "preferred_bench": 30.5717,
-        "trainer_in_hand": 10.9944
+        "bench_count": 22.0,
+        "core_in_hand": 24.0,
+        "core_in_play": 80.0,
+        "damaged_self": -0.18,
+        "engine_in_hand": 18.0,
+        "engine_in_play": 42.0,
+        "evolved_count": 70.0,
+        "hand_size": 3.0,
+        "ko_pressure": 0.9,
+        "low_hp_targets": 24.0,
+        "matching_energy_attached": 18.0,
+        "matching_energy_hand": 8.0,
+        "preferred_bench": 34.0,
+        "trainer_in_hand": 10.0
       }
     },
     "lightning": {
       "eval": {
         "baseline": {
-          "avg_score": -300105.1,
+          "avg_score": -41966.1,
           "draws": 0,
-          "losses": 13,
-          "wins": 7
+          "losses": 52,
+          "wins": 48
         },
-        "games": 20,
+        "games": 100,
         "trained": {
-          "avg_score": -299939.4,
+          "avg_score": 58276.38,
           "draws": 0,
-          "losses": 13,
-          "wins": 7
+          "losses": 47,
+          "wins": 53
         }
       },
       "metadata": {
         "accepted": true,
-        "best_score": 1017856.6,
+        "best_score": 1015500.0,
+        "candidate_accepted": true,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 3044,
-        "workers": 8
+        "selected_stage": "trained",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 49,
-        "wins": 31
+        "losses": 15,
+        "wins": 9
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 7.2706,
-        "core_in_hand": 26.6082,
-        "core_in_play": 87.1163,
-        "damaged_self": -0.1237,
-        "engine_in_hand": 18.2743,
-        "engine_in_play": 45.283,
-        "evolved_count": 34.536,
-        "hand_size": 3.8005,
-        "ko_pressure": 1.4758,
-        "low_hp_targets": 43.189,
-        "matching_energy_attached": 25.2415,
-        "matching_energy_hand": 11.0701,
-        "preferred_bench": 17.0466,
-        "trainer_in_hand": 11.1497
+        "bench_count": 10.3808,
+        "core_in_hand": 25.6753,
+        "core_in_play": 79.1209,
+        "damaged_self": -0.1685,
+        "engine_in_hand": 20.7525,
+        "engine_in_play": 42.7303,
+        "evolved_count": 35.8479,
+        "hand_size": 3.442,
+        "ko_pressure": 1.4453,
+        "low_hp_targets": 40.4528,
+        "matching_energy_attached": 25.3975,
+        "matching_energy_hand": 9.9134,
+        "preferred_bench": 19.4305,
+        "trainer_in_hand": 2.3126
       }
     },
     "psychic": {
       "eval": {
         "baseline": {
-          "avg_score": -206705.5,
+          "avg_score": -201281.62,
           "draws": 0,
-          "losses": 12,
-          "wins": 8
+          "losses": 60,
+          "wins": 40
         },
-        "games": 20,
-        "trained": {
-          "avg_score": -107249.6,
+        "candidate": {
+          "avg_score": -221140.26,
           "draws": 0,
-          "losses": 11,
-          "wins": 9
+          "losses": 61,
+          "wins": 39
+        },
+        "games": 100,
+        "trained": {
+          "avg_score": -201281.62,
+          "draws": 0,
+          "losses": 60,
+          "wins": 40
         }
       },
       "metadata": {
         "accepted": true,
-        "best_score": 1018392.2,
+        "best_score": 1021384.0,
+        "candidate_accepted": false,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 2035,
-        "workers": 8
+        "selected_stage": "baseline",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 42,
-        "wins": 38
+        "losses": 14,
+        "wins": 10
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 13.1379,
-        "core_in_hand": 24.9683,
-        "core_in_play": 65.2577,
-        "damaged_self": -0.0678,
-        "engine_in_hand": 16.5657,
-        "engine_in_play": 59.3568,
-        "evolved_count": 35.2372,
-        "hand_size": 7.6372,
-        "ko_pressure": 1.052,
-        "low_hp_targets": 24.9687,
-        "matching_energy_attached": 16.6836,
-        "matching_energy_hand": 17.9061,
-        "preferred_bench": 22.4221,
-        "trainer_in_hand": 9.7804
+        "bench_count": 14.0,
+        "core_in_hand": 24.0,
+        "core_in_play": 70.0,
+        "damaged_self": -0.18,
+        "engine_in_hand": 18.0,
+        "engine_in_play": 60.0,
+        "evolved_count": 34.0,
+        "hand_size": 5.0,
+        "ko_pressure": 0.9,
+        "low_hp_targets": 24.0,
+        "matching_energy_attached": 18.0,
+        "matching_energy_hand": 18.0,
+        "preferred_bench": 18.0,
+        "trainer_in_hand": 10.0
       }
     },
     "water": {
       "eval": {
         "baseline": {
-          "avg_score": 199011.3,
+          "avg_score": 40452.34,
           "draws": 0,
-          "losses": 8,
-          "wins": 12
+          "losses": 48,
+          "wins": 52
         },
-        "games": 20,
-        "trained": {
-          "avg_score": 100231.1,
+        "candidate": {
+          "avg_score": 39864.56,
           "draws": 0,
-          "losses": 9,
-          "wins": 11
+          "losses": 48,
+          "wins": 52
+        },
+        "games": 100,
+        "trained": {
+          "avg_score": 40452.34,
+          "draws": 0,
+          "losses": 48,
+          "wins": 52
         }
       },
       "metadata": {
-        "accepted": false,
-        "best_score": 1021812.2,
+        "accepted": true,
+        "best_score": 1023856.0,
+        "candidate_accepted": false,
         "fast_search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 16,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
           "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 180,
+          "planner_max_depth": 6,
+          "response_branch_limit": 3,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": true,
           "thinking_time_seconds": 0.0
         },
-        "generations": 8,
+        "generations": 3,
         "population": 10,
-        "refinement_games": 24,
+        "refinement_games": 0,
         "search": {
-          "beam_width": 6,
-          "chance_branch_limit": 2,
-          "coin_sample_count": 3,
+          "beam_width": 10,
+          "chance_branch_limit": 4,
+          "coin_sample_count": 4,
           "deterministic_search": true,
-          "max_sequence_depth": 4,
-          "max_turn_actions": 18,
-          "minimax_determinizations": 1,
-          "minimax_max_depth": 2,
-          "opponent_response_actions": 4,
-          "opponent_response_weight": 0.45,
-          "response_branch_limit": 2,
-          "search_algorithm": "hybrid",
-          "search_node_budget": 350,
+          "max_sequence_depth": 5,
+          "max_turn_actions": 24,
+          "opponent_response_actions": 8,
+          "opponent_response_weight": 0.55,
+          "planner_max_depth": 6,
+          "response_branch_limit": 4,
+          "search_algorithm": "beam",
+          "search_node_budget": 8,
           "skip_effect_dry_run": false,
           "thinking_time_seconds": 0.0
         },
         "seed": 1026,
-        "workers": 8
+        "selected_stage": "baseline",
+        "workers": 12
       },
       "stats": {
         "draws": 0,
-        "losses": 31,
-        "wins": 49
+        "losses": 12,
+        "wins": 12
       },
-      "training_games": 80,
+      "training_games": 24,
       "weights": {
-        "bench_count": 9.2432,
-        "core_in_hand": 23.0961,
-        "core_in_play": 84.1073,
-        "damaged_self": -0.1272,
-        "engine_in_hand": 12.7724,
-        "engine_in_play": 41.5216,
-        "evolved_count": 38.5638,
-        "hand_size": 2.2804,
-        "ko_pressure": 1.2529,
-        "low_hp_targets": 54.4866,
-        "matching_energy_attached": 23.2141,
-        "matching_energy_hand": 4.592,
-        "preferred_bench": 22.5364,
-        "trainer_in_hand": 8.5334
+        "bench_count": 10.0,
+        "core_in_hand": 24.0,
+        "core_in_play": 82.0,
+        "damaged_self": -0.18,
+        "engine_in_hand": 18.0,
+        "engine_in_play": 42.0,
+        "evolved_count": 34.0,
+        "hand_size": 3.0,
+        "ko_pressure": 1.25,
+        "low_hp_targets": 58.0,
+        "matching_energy_attached": 18.0,
+        "matching_energy_hand": 8.0,
+        "preferred_bench": 25.0,
+        "trainer_in_hand": 10.0
       }
     }
   },
+  "schema": {
+    "action_version": 2,
+    "rules_version": 2
+  },
   "seed": 17,
-  "version": 1
+  "version": 2
 }

@@ -34,6 +34,9 @@ from engine.ai.profiles import (
 )
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
+from engine.game_engine import DEFAULT_GAME_ENGINE
+from engine.random_source import RandomSource
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 from engine.turn_manager import TurnManager
 
 
@@ -90,6 +93,8 @@ TRAINING_AI_SEARCH = {
     "opponent_response_weight": 0.55,
     "deterministic_search": True,
     "search_algorithm": "beam",
+    "search_node_budget": 8,
+    "planner_max_depth": 6,
     "skip_effect_dry_run": False,
 }
 
@@ -107,7 +112,8 @@ TRAINING_AI_SEARCH_MINIMAX = {
     "search_algorithm": "minimax",
     "minimax_max_depth": 2,
     "minimax_determinizations": 1,
-    "search_node_budget": 350,
+    "search_node_budget": 12,
+    "planner_max_depth": 8,
     "skip_effect_dry_run": False,
 }
 
@@ -230,6 +236,21 @@ class PlayMatchTask:
     max_steps: int = 300
     search_preset: str = "hybrid"
     search_quality: str = "standard"
+
+
+@dataclass(frozen=True)
+class MatchDiagnostics:
+    winner: int | None
+    score: float
+    terminal_reason: str
+    steps: int
+    invalid_actions: int = 0
+    no_target_actions: int = 0
+    rule_exceptions: int = 0
+    decision_timeouts: int = 0
+    decision_count: int = 0
+    decision_seconds: float = 0.0
+    seat: int = 0
 
 
 def clamp_weight(key: str, value: float) -> float:
@@ -358,6 +379,7 @@ def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int,
         random_seed=seed,
         policy_path=None,
         policy_weights=weights,
+        use_unified_planner=True,
     )
     return create_challenge_ai(deck_key, config)
 
@@ -414,7 +436,8 @@ def play_game(
     candidate_player_idx: int = 0,
     search_preset: str = "hybrid",
     search_quality: str = "standard",
-) -> tuple[int | None, float]:
+    return_diagnostics: bool = False,
+) -> tuple[int | None, float] | MatchDiagnostics:
     return play_match(
         deck_key,
         candidate_weights,
@@ -425,6 +448,7 @@ def play_game(
         max_steps=max_steps,
         search_preset=search_preset,
         search_quality=search_quality,
+        return_diagnostics=return_diagnostics,
     )
 
 
@@ -439,7 +463,8 @@ def play_match(
     max_steps: int = 160,
     search_preset: str = "hybrid",
     search_quality: str = "standard",
-) -> tuple[int | None, float]:
+    return_diagnostics: bool = False,
+) -> tuple[int | None, float] | MatchDiagnostics:
     """Play two deck policies and score the result from deck_a's perspective."""
     rng_state = random.getstate()
     random.seed(seed)
@@ -454,6 +479,7 @@ def play_match(
             max_steps=max_steps,
             search_preset=search_preset,
             search_quality=search_quality,
+            return_diagnostics=return_diagnostics,
         )
     finally:
         random.setstate(rng_state)
@@ -470,12 +496,19 @@ def _play_match_impl(
     max_steps: int = 160,
     search_preset: str = "hybrid",
     search_quality: str = "standard",
-) -> tuple[int | None, float]:
+    return_diagnostics: bool = False,
+) -> tuple[int | None, float] | MatchDiagnostics:
     deck_a_player_idx = 1 if seat == 1 else 0
     state = GameState()
     deck1_key = deck_a if deck_a_player_idx == 0 else deck_b
     deck2_key = deck_b if deck_a_player_idx == 0 else deck_a
-    state.setup_game(expand_deck(DECK_SPECS[deck1_key]), expand_deck(DECK_SPECS[deck2_key]))
+    setup_rng = RandomSource(seed)
+    state.setup_game(
+        expand_deck(DECK_SPECS[deck1_key]),
+        expand_deck(DECK_SPECS[deck2_key]),
+        rng=setup_rng,
+    )
+    state.public_deck_keys = (deck1_key, deck2_key)
     tm = TurnManager(state)
     if deck_a_player_idx == 0:
         ai0 = _make_ai(deck_a, weights_a, seed + 11, search_preset, search_quality)
@@ -484,11 +517,20 @@ def _play_match_impl(
         ai0 = _make_ai(deck_b, weights_b, seed + 29, search_preset, search_quality)
         ai1 = _make_ai(deck_a, weights_a, seed + 11, search_preset, search_quality)
     ais = [ai0, ai1]
-    finish_setup(state, tm, ais)
+    with setup_rng.bind_state(state):
+        finish_setup(state, tm, ais)
 
     failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
     prev_player_idx: int | None = None
+    invalid_actions = 0
+    no_target_actions = 0
+    rule_exceptions = 0
+    decision_timeouts = 0
+    decision_count = 0
+    decision_seconds = 0.0
+    steps = 0
     for _ in range(max_steps):
+        steps += 1
         if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
             break
         if state.pending_promotion_player >= 0:
@@ -506,10 +548,35 @@ def _play_match_impl(
         if prev_player_idx is not None and player_idx != prev_player_idx:
             failed_signatures[player_idx].clear()
         prev_player_idx = player_idx
-        action = ais[player_idx].choose_action(state, player_idx)
-        result = ais[player_idx]._apply_action_for_sim(state, player_idx, action)
-        signature = (action.action, tuple(sorted(action.params.items())))
+        decision_started = time.perf_counter()
+        try:
+            action = ais[player_idx].choose_action(state, player_idx)
+        except Exception:
+            rule_exceptions += 1
+            force_end_turn(state, player_idx)
+            continue
+        elapsed = time.perf_counter() - decision_started
+        decision_count += 1
+        decision_seconds += elapsed
+        if elapsed > 8.0:
+            decision_timeouts += 1
+
+        authoritative = DEFAULT_GAME_ENGINE.legal_actions(
+            state,
+            player_idx,
+            validate_effects=False,
+        )
+        if not any(candidate.signature == action.signature for candidate in authoritative):
+            invalid_actions += 1
+        try:
+            result = ais[player_idx]._apply_action_for_sim(state, player_idx, action)
+        except Exception:
+            result = None
+            rule_exceptions += 1
+        signature = action.signature
         if result is None or not result.success:
+            if result is not None and _looks_like_no_target_failure(result.log_message):
+                no_target_actions += 1
             failed_signatures[player_idx].add(signature)
             if len(failed_signatures[player_idx]) >= 2:
                 force_end_turn(state, player_idx)
@@ -517,14 +584,57 @@ def _play_match_impl(
         else:
             failed_signatures[player_idx].clear()
 
-    deck_a_ai = ais[deck_a_player_idx]
     if state.winner is not None:
         logical_winner = 0 if state.winner == deck_a_player_idx else 1
-        return logical_winner, terminal_training_score(state, deck_a_player_idx)
+        score = terminal_training_score(state, deck_a_player_idx)
+        if return_diagnostics:
+            return MatchDiagnostics(
+                logical_winner,
+                score,
+                "game_over",
+                steps,
+                invalid_actions,
+                no_target_actions,
+                rule_exceptions,
+                decision_timeouts,
+                decision_count,
+                decision_seconds,
+                seat,
+            )
+        return logical_winner, score
     soft_winner = _determine_soft_winner(state)
     state.winner = soft_winner
     logical_winner = 0 if soft_winner == deck_a_player_idx else 1
-    return logical_winner, terminal_training_score(state, deck_a_player_idx)
+    score = terminal_training_score(state, deck_a_player_idx)
+    if return_diagnostics:
+        return MatchDiagnostics(
+            logical_winner,
+            score,
+            "max_steps",
+            steps,
+            invalid_actions,
+            no_target_actions,
+            rule_exceptions,
+            decision_timeouts,
+            decision_count,
+            decision_seconds,
+            seat,
+        )
+    return logical_winner, score
+
+
+def _looks_like_no_target_failure(message: str) -> bool:
+    normalized = str(message or "").lower()
+    return any(
+        token in normalized
+        for token in (
+            "没有可选",
+            "没有宝可梦",
+            "无有效目标",
+            "invalid target",
+            "no target",
+        )
+    )
 
 
 def _determine_soft_winner(state: GameState) -> int:
@@ -763,7 +873,15 @@ def train_deck(
             search_preset=search_preset,
             task_runner=task_runner,
         )
-    accepted = _eval_accepts_trained(base_eval)
+    candidate_accepted = _eval_accepts_trained(base_eval)
+    selected_stage = "trained"
+    if not candidate_accepted:
+        trained_weights = clamp_weights(base_weights)
+        selected_stage = "baseline"
+        if base_eval:
+            base_eval["candidate"] = dict(base_eval.get("trained") or {})
+            base_eval["trained"] = dict(base_eval.get("baseline") or {})
+    accepted = True
 
     return {
         "weights": trained_weights,
@@ -776,6 +894,8 @@ def train_deck(
             "population": population,
             "generations": generation,
             "accepted": accepted,
+            "candidate_accepted": candidate_accepted,
+            "selected_stage": selected_stage,
             "refinement_games": refinement_games,
             "search": dict(SEARCH_PRESETS.get(search_preset, TRAINING_AI_SEARCH_HYBRID)),
             "fast_search": dict(FAST_SEARCH_PRESETS.get(search_preset, TRAINING_AI_SEARCH_HYBRID)),
@@ -1232,6 +1352,10 @@ def run_training(config: TrainingConfig, progress_callback: ProgressCallback | N
 
         payload = {
             "version": POLICY_VERSION,
+            "schema": {
+                "rules_version": RULES_SCHEMA_VERSION,
+                "action_version": ACTION_SCHEMA_VERSION,
+            },
             "seed": config.seed,
             "metadata": {
                 "trainer": "cross_entropy_balanced_v2",

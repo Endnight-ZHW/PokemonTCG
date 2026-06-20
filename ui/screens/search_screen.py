@@ -17,12 +17,13 @@ class SearchScreen(Screen):
 
     def __init__(self, manager: ScreenManager, request: ActionRequest,
                  on_complete: callable, chain_handler: callable = None,
-                 on_cancel: callable = None):
+                 on_cancel: callable = None, choice_resolver: callable = None):
         super().__init__(manager)
         self.request = request
         self.on_complete = on_complete
         self.chain_handler = chain_handler  # For forwarding non-search actions to game_screen
         self.on_cancel = on_cancel
+        self.choice_resolver = choice_resolver
         self.font_title = get_font("heading")
         self.font_body = get_font("info")
         self.font_small = get_font("card_name")
@@ -130,7 +131,10 @@ class SearchScreen(Screen):
         self.selected_indices.clear()
         self.hovered_idx = None
         self.scroll_offset = 0
-        self.on_complete = request.callback or (lambda cards: None)
+        if self.choice_resolver is not None:
+            self.on_complete = lambda cards: self.choice_resolver(request, cards)
+        else:
+            self.on_complete = request.callback or (lambda cards: None)
 
     def update(self, dt: float):
         pass

@@ -28,18 +28,16 @@ from config import (
     GAME_SPEED, GAME_SPEED_OPTIONS,
 )
 from engine.enums import TurnPhase, PlayerAction, StatusType
+from engine.actions import GameAction
 from engine.ai import ChallengeAI, DeepLearningAIConfig, create_ai_controller
 from engine.game_state import GameState, ActionRequest, ActionResult
+from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.turn_manager import TurnManager
 from engine.rules_validator import (
-    can_attach_energy,
     can_declare_attack,
-    can_evolve,
     can_play_item,
     can_play_stadium,
     can_play_supporter,
-    can_play_tool,
-    can_retreat,
     can_use_ability,
 )
 # Component imports
@@ -115,6 +113,7 @@ class GameScreen(
         self.network_manager = network_manager
         self.my_player_idx = my_player_idx
         self.challenge_mode = challenge_mode
+        self.game_engine = DEFAULT_GAME_ENGINE
         self.human_player_idx = human_player_idx
         self.ai_player_idx = ai_player_idx
         self.ai_kind = ai_kind
@@ -126,6 +125,7 @@ class GameScreen(
             fallback_config = AIConfig(
                 deck_key=ai_deck_key or "",
                 search_algorithm=ai_search_algorithm,
+                use_unified_planner=True,
             )
             config = (
                 DeepLearningAIConfig(fallback_config=fallback_config)
@@ -721,52 +721,57 @@ class GameScreen(
         return bool(pokemon and self._has_manual_ability(pokemon))
 
     def _valid_evolution_slots(self, player_idx: int, card) -> list[str]:
-        slots = []
-        for slot, pokemon in self.state.get_player(player_idx).get_all_pokemon():
-            if pokemon:
-                ok, _ = can_evolve(self.state, player_idx, slot, card)
-                if ok:
-                    slots.append(slot)
-        return slots
+        return [
+            action.params["slot"]
+            for action in self.game_engine.legal_actions(self.state, player_idx, validate_effects=False)
+            if action.action == PlayerAction.EVOLVE
+            and action.source is not None
+            and getattr(action.source, "card_id", "") == card.api_id
+        ]
 
     def _valid_energy_slots(self, player_idx: int, card) -> list[str]:
-        slots = []
-        for slot, pokemon in self.state.get_player(player_idx).get_all_pokemon():
-            if pokemon:
-                ok, _ = can_attach_energy(self.state, player_idx, card, slot)
-                if ok:
-                    slots.append(slot)
-        return slots
+        return [
+            action.params["target_slot"]
+            for action in self.game_engine.legal_actions(self.state, player_idx, validate_effects=False)
+            if action.action == PlayerAction.ATTACH_ENERGY
+            and action.source is not None
+            and getattr(action.source, "card_id", "") == card.api_id
+        ]
 
     def _valid_tool_slots(self, player_idx: int, card) -> list[str]:
-        slots = []
-        for slot, pokemon in self.state.get_player(player_idx).get_all_pokemon():
-            if pokemon:
-                ok, _ = can_play_tool(self.state, player_idx, slot)
-                if ok:
-                    slots.append(slot)
-        return slots
+        return [
+            action.params["target_slot"]
+            for action in self.game_engine.legal_actions(self.state, player_idx, validate_effects=False)
+            if action.action == PlayerAction.PLAY_TRAINER
+            and action.source is not None
+            and getattr(action.source, "card_id", "") == card.api_id
+            and "target_slot" in action.params
+        ]
 
     def _valid_retreat_targets(self, player_idx: int) -> list[int]:
-        targets = []
-        player = self.state.get_player(player_idx)
-        for idx, pokemon in enumerate(player.bench):
-            if pokemon:
-                ok, _ = can_retreat(self.state, player_idx, idx)
-                if ok:
-                    targets.append(idx)
-        return targets
+        return sorted({
+            int(action.params["bench_idx"])
+            for action in self.game_engine.legal_actions(self.state, player_idx, validate_effects=False)
+            if action.action == PlayerAction.RETREAT
+        })
 
     def _has_attack_option(self, player_idx: int) -> tuple[bool, str]:
         player = self.state.get_player(player_idx)
         if not player.active:
             return False, "没有战斗宝可梦"
+        if any(
+            action.action == PlayerAction.DECLARE_ATTACK
+            for action in self.game_engine.legal_actions(
+                self.state,
+                player_idx,
+                validate_effects=False,
+            )
+        ):
+            return True, ""
         reasons = []
         for idx, _ in enumerate(player.active.card.attacks):
             ok, reason = can_declare_attack(self.state, player_idx, idx)
-            if ok:
-                return True, ""
-            if reason:
+            if not ok and reason:
                 reasons.append(reason)
         return False, reasons[0] if reasons else "没有可用招式"
 
@@ -1199,17 +1204,20 @@ class GameScreen(
                 if req.allow_duplicates or hovered not in self._selected_bench_targets:
                     self._selected_bench_targets.append(hovered)
                 if len(self._selected_bench_targets) >= req.max_select:
+                    selected_targets = list(self._selected_bench_targets)
+                    self._selecting_bench_targets = None
+                    self._selected_bench_targets = []
                     if self._bench_target_handler_is_client:
                         self._resolving_remote_pending = False
                         self._send_choice_response({
                             "request_id": getattr(req, "request_id", ""),
-                            "selected_bench_targets": list(self._selected_bench_targets),
+                            "selected_bench_targets": selected_targets,
                         })
                         self._bench_target_handler_is_client = False
-                    elif req.callback:
-                        req.callback(self._selected_bench_targets)
-                    self._selecting_bench_targets = None
-                    self._selected_bench_targets = []
+                    else:
+                        self._dispatch_choice_result(
+                            self._resolve_structured_pending(req, selected_targets)
+                        )
             return
 
         if self._pending_tool_card is not None:
@@ -2283,8 +2291,7 @@ class GameScreen(
             ("F1", "隐藏"),
         ]
         if self.challenge_mode:
-            algo = getattr(self, "ai_search_algorithm", "beam")
-            algo_short = "专家混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
+            algo_short = "信息集 PUCT"
             hints.append(("", f"搜索: {algo_short}"))
 
         panel_w = 170
@@ -2389,15 +2396,9 @@ class GameScreen(
                 self._confirm_dialog["on_confirm"]()
 
     def _after_pending_trainer_resolve(self, action_req):
-        """Discard the pending trainer card and clear animation lock."""
+        """Clear the UI lock after the engine consumes the pending trainer."""
         if not self._pending_trainer_card:
             return
-        card = self._pending_trainer_card
-        player = self.state.get_player(action_req.player)
-        if card.is_trainer_supporter:
-            player.discard.append(card)
-        elif card.is_trainer_item:
-            player.discard.append(card)
         self._pending_trainer_card = None
         self._animating_action = False
         self._animating_hand_idx = None
@@ -2405,16 +2406,16 @@ class GameScreen(
     def _do_confirm_yes(self, action_req):
         """Handle a confirm dialog 'yes' response."""
         self._confirm_dialog = None
-        if action_req.callback:
-            chain_result = action_req.callback(True)
-            if chain_result is not None:
-                self._handle_pending_action(chain_result)
+        self._dispatch_choice_result(
+            self._resolve_structured_pending(action_req, True)
+        )
 
     def _do_confirm_no(self, action_req):
         """Handle a confirm dialog 'no' response."""
         self._confirm_dialog = None
-        if action_req.callback:
-            action_req.callback(False)
+        self._dispatch_choice_result(
+            self._resolve_structured_pending(action_req, False)
+        )
 
     def _do_end_turn(self) -> None:
         if self._turn_ending:
@@ -2474,11 +2475,24 @@ class GameScreen(
                 self._attack_menu_open = False
                 self._clear_selection()
                 return
-            result = self.tm.declare_attack(player_idx, i)
+            step = self.game_engine.apply_action(
+                self.state,
+                GameAction(
+                    PlayerAction.DECLARE_ATTACK,
+                    {"attack_idx": i},
+                    terminal=True,
+                    actor=player_idx,
+                ),
+                auto_resolve=False,
+                auto_finish_attack=True,
+            )
+            result = step.action_result or ActionResult(step.success, step.message)
             self._show_result(result)
             self._attack_menu_open = False
             if result.success:
                 self._has_attacked = True
+                if step.pending_choice is None:
+                    self._pending_turn_end = max(self._pending_turn_end, 0.3)
                 self._build_action_buttons()
                 self._clear_selection()
             if self._is_remote_host:
@@ -2886,11 +2900,8 @@ class GameScreen(
             })
             return
         if action_req.request_type == "select_own_bench_energy":
-            # Energy attach to bench: call the callback with selected index
-            if action_req.callback:
-                call_result = action_req.callback(bench_idx)
-                if self._is_remote_host and call_result:
-                    self._show_result(call_result)
+            call_result = self._resolve_structured_pending(action_req, bench_idx)
+            self._dispatch_choice_result(call_result)
             return
         # Use explicit player index from ActionRequest if valid, otherwise fall back
         # to the active player (for self-switch) or opponent (for opponent-switch)
@@ -2905,13 +2916,10 @@ class GameScreen(
         if player.bench[bench_idx] is None:
             self.state._log("该位置没有宝可梦。")
             return
-        if action_req.callback:
-            # Delegate to callback: it performs the switch in the engine layer
-            action_req.callback(bench_idx)
-        else:
-            # Fallback for legacy requests without callback
-            player.switch_active_to_bench(bench_idx)
-        self.state._log(f"{player.name}的战斗宝可梦被替换了。")
+        call_result = self._resolve_structured_pending(action_req, bench_idx)
+        self._dispatch_choice_result(call_result)
+        if call_result is not None and getattr(call_result, "success", True):
+            self.state._log(f"{player.name}的战斗宝可梦被替换了。")
         if self._is_remote_host:
             self._broadcast_state()
 
@@ -2938,8 +2946,9 @@ class GameScreen(
 
         def on_distribution_complete(assignments):
             # assignments: list of (energy_idx, target_slot)
-            if action_req.callback:
-                action_req.callback(assignments)
+            self._dispatch_choice_result(
+                self._resolve_structured_pending(action_req, assignments)
+            )
 
         screen = EnergyDistributionScreen(
             self.manager, {
@@ -2978,6 +2987,32 @@ class GameScreen(
         )
         self.manager.push_screen(search_screen)
 
+    def _resolve_structured_pending(self, action_req: ActionRequest, payload):
+        """Resolve one UI choice through the authoritative choice contract."""
+        structured = self.game_engine.choice_request(self.state, action_req)
+        response = self.game_engine.choice_response_from_legacy(
+            structured,
+            payload,
+        )
+        step = self.game_engine.apply_choice(
+            self.state,
+            structured,
+            response,
+        )
+        result = step.action_result or ActionResult(step.success, step.message)
+        if result.pending_action:
+            return result.pending_action
+        return result
+
+    def _dispatch_choice_result(self, result) -> None:
+        """Route a structured choice result without calling legacy callbacks."""
+        if isinstance(result, ActionRequest):
+            self._handle_pending_action(result)
+        elif result is not None:
+            self._show_result(result)
+            if self._has_attacked and self.state.phase != TurnPhase.ATTACK:
+                self._pending_turn_end = max(self._pending_turn_end, 0.3)
+
     def _handle_pending_action(self, action_req):
         if self.challenge_mode and self._is_ai_pending_request(action_req):
             self._handle_ai_pending_action(action_req)
@@ -2990,19 +3025,17 @@ class GameScreen(
 
         if action_req.request_type in ("search_deck", "select_hand_to_discard"):
             from ui.screens.search_screen import SearchScreen
-            original_callback = action_req.callback or (lambda cards: None)
             def wrapped_callback(selected_cards):
                 player = self.state.get_player(action_req.player)
                 before_hand = list(player.hand) if player else []
                 before_layout = list(self._get_hand_layout()) if player else []
                 before_discard_count = len(player.discard) if player else 0
                 before_deck_count = len(player.deck) if player else 0
-                call_result = original_callback(selected_cards)
-                # Discard the consumed trainer card after successful resolution
+                call_result = self._resolve_structured_pending(action_req, selected_cards)
+                # The engine consumes pending_card; the UI only owns animation state.
                 if self._pending_trainer_card:
                     card = self._pending_trainer_card
                     player = self.state.get_player(action_req.player)
-                    player.discard.append(card)
                     saved_hand_idx = self._animating_hand_idx
                     self._pending_trainer_card = None
                     self._animating_action = False
@@ -3104,6 +3137,7 @@ class GameScreen(
                 on_complete=wrapped_callback,
                 chain_handler=self._handle_pending_action,
                 on_cancel=on_cancel,
+                choice_resolver=self._resolve_structured_pending,
             )
             self.manager.push_screen(search_screen)
         elif action_req.request_type in ("select_bench", "select_opponent_bench", "select_own_bench_energy"):
@@ -3136,19 +3170,14 @@ class GameScreen(
             self._handle_bench_select_prompt(action_req)
         elif action_req.request_type == "coin_flip":
             def on_flip_done(results):
-                chain_result = action_req.callback(results) if action_req.callback else None
-                # Discard pending card on coin flip resolution
-                if self._pending_trainer_card and chain_result and chain_result.success:
-                    player = self.state.get_player(action_req.player)
-                    player.discard.append(self._pending_trainer_card)
+                chain_result = self._resolve_structured_pending(action_req, results)
+                # The engine consumes pending_card; clear only the UI lock here.
+                if self._pending_trainer_card and chain_result is not None:
                     self._pending_trainer_card = None
                     self._animating_action = False
                     self._animating_hand_idx = None
                     # Don't sync — let _detect_state_changes handle discard animation
-                if chain_result and chain_result.pending_action:
-                    self._handle_pending_action(chain_result.pending_action)
-                elif chain_result:
-                    self._show_result(chain_result)
+                self._dispatch_choice_result(chain_result)
             self._start_coin_flip(
                 flip_count=getattr(action_req, 'flip_count', 1),
                 on_result=on_flip_done,
@@ -3158,11 +3187,9 @@ class GameScreen(
             # Wrap callbacks to handle pending trainer card discard
             def _confirm_yes():
                 self._confirm_dialog = None
-                if action_req.callback:
-                    chain_result = action_req.callback(True)
-                    self._after_pending_trainer_resolve(action_req)
-                    if chain_result is not None:
-                        self._handle_pending_action(chain_result)
+                chain_result = self._resolve_structured_pending(action_req, True)
+                self._after_pending_trainer_resolve(action_req)
+                self._dispatch_choice_result(chain_result)
 
             def _confirm_no():
                 self._confirm_dialog = None
@@ -3176,9 +3203,9 @@ class GameScreen(
                     self._pending_trainer_card = None
                     self._animating_action = False
                     self._animating_hand_idx = None
-                    self.state._log("操作已取消，卡牌返回手牌。")
-                elif action_req.callback:
-                    action_req.callback(False)
+                else:
+                    self._resolve_structured_pending(action_req, False)
+                self.state._log("操作已取消，卡牌返回手牌。")
 
             self._confirm_dialog = {
                 "title": "确认",
@@ -3361,8 +3388,6 @@ class GameScreen(
         ]
         if not bench_with_pokemon:
             self.state._log("备战区没有宝可梦可选。")
-            if action_req.callback:
-                action_req.callback(None)
             return
         if action_req.request_type == "select_own_bench_energy":
             # Energy attach to bench: always let player choose (don't auto)
@@ -3372,10 +3397,10 @@ class GameScreen(
             self.state._log("请点击备战区宝可梦选择附着目标。")
         elif len(bench_with_pokemon) == 1:
             bench_idx = bench_with_pokemon[0]
-            player.switch_active_to_bench(bench_idx)
-            self.state._log(f"{player.name}的战斗宝可梦被替换了。")
-            if action_req.callback:
-                action_req.callback(bench_idx)
+            call_result = self._resolve_structured_pending(action_req, bench_idx)
+            self._dispatch_choice_result(call_result)
+            if call_result is not None and getattr(call_result, "success", True):
+                self.state._log(f"{player.name}的战斗宝可梦被替换了。")
         else:
             self._animating_action = False
             self._animating_hand_idx = None
@@ -3428,8 +3453,7 @@ class GameScreen(
             else:
                 self.waiting_indicator.hide()
         elif self._is_ai_turn_context():
-            algo = getattr(self, "ai_search_algorithm", "beam")
-            algo_label = "专家混合" if algo == "hybrid" else ("Minimax" if algo == "minimax" else "Beam")
+            algo_label = "信息集 PUCT"
             ai_label = self._ai_runtime_label()
             self.waiting_indicator.show(f"{ai_label} 思考中 ({algo_label})...")
         else:

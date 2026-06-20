@@ -215,8 +215,21 @@ def can_play_tool(state: GameState, player_idx: int, target_slot: str) -> tuple[
     return True, ""
 
 
+def energy_card_units(card: Card, pokemon=None) -> int:
+    """Return how many retreat-payment energy units one attached card provides."""
+    provided = list(getattr(card, "provides_energy", []) or [])
+    return max(1, len(provided)) if getattr(card, "is_energy", False) else 0
+
+
+def attached_energy_units(pokemon) -> int:
+    if pokemon is None:
+        return 0
+    return sum(energy_card_units(card, pokemon) for card in pokemon.energy_cards)
+
+
 def can_retreat(state: GameState, player_idx: int,
-                bench_idx: int) -> tuple[bool, str]:
+                bench_idx: int, energy_indices: list[int] | tuple[int, ...] | None = None
+                ) -> tuple[bool, str]:
     """Check if Active Pokemon can retreat."""
     if state.phase != TurnPhase.MAIN:
         return False, "只能在主要阶段进行撤退。"
@@ -244,11 +257,25 @@ def can_retreat(state: GameState, player_idx: int,
     if target is None:
         return False, f"备战区位置{bench_idx}没有宝可梦。"
 
-    retreat_cost = _get_effective_retreat_cost(state, player)
-
-    if len(player.active.energy_cards) < retreat_cost:
+    retreat_cost = effective_retreat_cost(state, player)
+    available_units = attached_energy_units(player.active)
+    if available_units < retreat_cost:
         return False, (f"需要{retreat_cost}个能量才能撤退，"
-                       f"当前只有{len(player.active.energy_cards)}个。")
+                       f"当前只能提供{available_units}个。")
+
+    if energy_indices is not None:
+        indices = list(energy_indices)
+        if len(indices) != len(set(indices)):
+            return False, "撤退费用不能重复选择同一张能量卡。"
+        if any(not isinstance(index, int) or not (0 <= index < len(player.active.energy_cards))
+               for index in indices):
+            return False, "撤退费用包含无效的能量卡。"
+        paid_units = sum(
+            energy_card_units(player.active.energy_cards[index], player.active)
+            for index in indices
+        )
+        if paid_units < retreat_cost:
+            return False, f"所选能量只能提供{paid_units}个，无法支付{retreat_cost}点撤退费用。"
 
     return True, ""
 
@@ -377,7 +404,7 @@ def validate_deck(deck: list[Card], deck_name: str = "") -> tuple[bool, str]:
     return True, ""
 
 
-def _get_effective_retreat_cost(state, player) -> int:
+def effective_retreat_cost(state, player) -> int:
     """Calculate the effective retreat cost of the active Pokemon,
     accounting for abilities (薄雾飘浮) and stadiums (Beach Court)."""
     from engine.player_state import PlayerState
@@ -405,3 +432,7 @@ def _get_effective_retreat_cost(state, player) -> int:
                 break
 
     return retreat_cost
+
+
+# Backward-compatible private name used by older UI/action code.
+_get_effective_retreat_cost = effective_retreat_cost

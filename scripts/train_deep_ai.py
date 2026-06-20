@@ -54,7 +54,7 @@ def main() -> int:
                         help="Epochs over bootstrap examples (default: 10).")
     parser.add_argument("--self-play-epochs", type=int, default=10,
                         help="Epochs over self-play examples (default: 10).")
-    parser.add_argument("--eval-games", type=int, default=200,
+    parser.add_argument("--eval-games", type=int, default=600,
                         help="Evaluation games per deck (default: 200).")
     default_workers = max(1, min(12, (os.cpu_count() or 2) - 2))
     parser.add_argument("--workers", type=int, default=default_workers,
@@ -70,7 +70,7 @@ def main() -> int:
                         help="Training epochs after each rollout batch (default: 2).")
     parser.add_argument("--teacher-search-preset", default="hybrid",
                         choices=["hybrid", "fast", "quality", "minimax_fast", "minimax"],
-                        help="ChallengeAI search config used for teacher/fallback (hybrid prunes with beam and scores with minimax).")
+                        help="Rules-policy planner budget preset. Legacy names remain accepted as aliases.")
     parser.add_argument("--choice-head-enabled", action=argparse.BooleanOptionalAction, default=True,
                         help="Train and use the pending-choice scorer (default: enabled).")
     parser.add_argument("--acceptance-metric", default="points", choices=["wins", "points", "score"],
@@ -84,11 +84,11 @@ def main() -> int:
     parser.add_argument("--replay-same-deal", type=int, default=None,
                         help="Same-deal replay seeds per deck (default: 50 when training is nonzero; use 0 for smoke tests).")
     parser.add_argument("--mcts-simulations", type=int, default=256,
-                        help="MCTS simulations for MCTS-guided training phases (default: 256).")
+                        help="Shared-planner simulations for guided training phases (default: 256).")
     parser.add_argument("--mcts-chance-nodes", action=argparse.BooleanOptionalAction, default=False,
-                        help="Legacy draw chance nodes (default: disabled for turn-bounded MCTS).")
+                        help="Deprecated compatibility flag; chance is sampled by the shared rules engine.")
     parser.add_argument("--use-mcts-training", action=argparse.BooleanOptionalAction, default=True,
-                        help="Use MCTS-guided training where configured (default: enabled).")
+                        help="Use shared-planner-guided training where configured (default: enabled).")
     parser.add_argument("--replay-buffer-size", type=int, default=50000,
                         help="Per-deck replay buffer capacity for deep AI training (default: 50000).")
     parser.add_argument("--replay-sample-ratio", type=float, default=0.5,

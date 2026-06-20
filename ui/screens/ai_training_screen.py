@@ -614,7 +614,7 @@ class AITrainingScreen(Screen):
         draw_text_fit(surface, self.font_small, "搜索策略", UI_TEXT_SECONDARY,
                       pygame.Rect(inner.x, y, inner.w, 22))
         y += 28
-        draw_text_fit(surface, self.font_small, "自动混合（Beam 裁剪 + Minimax 评估）", UI_TEXT_PRIMARY,
+        draw_text_fit(surface, self.font_small, "统一信息集 PUCT 搜索", UI_TEXT_PRIMARY,
                       pygame.Rect(inner.x, y, inner.w, 26))
         y += 44
 

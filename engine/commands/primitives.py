@@ -248,7 +248,8 @@ class FlipCoin:
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult, ICommand
 
-        coin = random.choice(["heads", "tails"])
+        source = getattr(ctx.state, "random_source", None)
+        coin = ("heads" if source.coin() else "tails") if source else random.choice(["heads", "tails"])
         effects = self.on_heads if coin == "heads" else self.on_tails
 
         for eff_data in effects:

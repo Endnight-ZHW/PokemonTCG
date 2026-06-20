@@ -70,6 +70,9 @@ class GameSnapshot:
     apply_type_matchups: bool = False
     mulligan_bonus_given: list[int] = field(default_factory=list)
     pending_promotions: list[int] = field(default_factory=list)
+    revision: int = 0
+    choice_sequence: int = 0
+    public_deck_keys: tuple[str | None, str | None] = (None, None)
 
 
 class SnapshotManager:
@@ -144,6 +147,9 @@ def snapshot_state(state: GameState) -> GameSnapshot:
         apply_type_matchups=getattr(state, "apply_type_matchups", False),
         mulligan_bonus_given=list(state._mulligan_bonus_given),
         pending_promotions=list(state.pending_promotions),
+        revision=getattr(state, "revision", 0),
+        choice_sequence=getattr(state, "choice_sequence", 0),
+        public_deck_keys=tuple(getattr(state, "public_deck_keys", (None, None))),
     )
 
 
@@ -158,6 +164,11 @@ def restore_state(state: GameState, snap: GameSnapshot):
     state.winner = snap.winner
     state.apply_type_matchups = snap.apply_type_matchups
     state.pending_promotions = list(snap.pending_promotions)
+    state.revision = getattr(snap, "revision", 0)
+    state.choice_sequence = getattr(snap, "choice_sequence", 0)
+    state.public_deck_keys = tuple(
+        getattr(snap, "public_deck_keys", (None, None))
+    )
     state._piercing_attack = False
     state._ko_from_attack = False
     state._mulligan_bonus_given = set(snap.mulligan_bonus_given)
@@ -173,8 +184,14 @@ def clone_state(state: GameState, *, rebuild_event_bus: bool = True) -> GameStat
     from engine.game_state import GameState
 
     clone = GameState()
-    restore_state(clone, snapshot_state(state))
-    clone.action_log = list(state.action_log)
+    try:
+        restore_state(clone, snapshot_state(state))
+        clone.action_log = list(state.action_log)
+    except KeyError:
+        # Tests, editors, and generated scenarios may contain cards that are
+        # intentionally not registered globally. A deep copy keeps those
+        # snapshots local instead of mutating CardRegistry with placeholders.
+        clone = copy.deepcopy(state)
     if rebuild_event_bus:
         rebuild_state_event_bus(clone)
     return clone

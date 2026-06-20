@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from engine.ai.challenge.types import AIAction, AIChoice
+from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.game_state import ActionRequest, ActionResult, GameState
 
 
@@ -14,7 +15,15 @@ class ActionEnumerator:
         self.ai = ai
 
     def legal_actions(self, state: GameState, player_idx: int) -> list[AIAction]:
-        return self.ai._legal_actions_impl(state, player_idx)
+        return self.ai._legal_actions_impl(
+            state,
+            player_idx,
+            list(DEFAULT_GAME_ENGINE.legal_actions(
+                state,
+                player_idx,
+                validate_effects=False,
+            )),
+        )
 
 
 class Simulator:

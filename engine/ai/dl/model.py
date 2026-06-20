@@ -13,7 +13,9 @@ from engine.ai.dl.encoder import (
     STATE_CARD_SLOTS,
     STATE_NUMERIC_SIZE,
     CARD_SEMANTIC_SIZE,
+    ENCODER_SCHEMA_VERSION,
 )
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 
 try:  # pragma: no cover - exercised only when torch is installed.
     import torch
@@ -214,10 +216,19 @@ def create_model(**kwargs):
 def checkpoint_payload(model, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     if not TORCH_AVAILABLE:
         raise RuntimeError("PyTorch is not installed.")
+    normalized_metadata = dict(metadata or {})
+    normalized_metadata.setdefault("rules_version", RULES_SCHEMA_VERSION)
+    normalized_metadata.setdefault("action_version", ACTION_SCHEMA_VERSION)
+    normalized_metadata.setdefault("encoder_version", ENCODER_SCHEMA_VERSION)
     return {
         "version": CHECKPOINT_VERSION,
         "model_state": model.state_dict(),
-        "metadata": metadata or {},
+        "metadata": normalized_metadata,
+        "schema": {
+            "rules_version": RULES_SCHEMA_VERSION,
+            "action_version": ACTION_SCHEMA_VERSION,
+            "encoder_version": ENCODER_SCHEMA_VERSION,
+        },
         "encoder_config": {
             "state_numeric_size": model.state_numeric_size,
             "state_card_slots": model.state_card_slots,

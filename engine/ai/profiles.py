@@ -6,7 +6,10 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-POLICY_VERSION = 1
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
+
+
+POLICY_VERSION = 2
 DEFAULT_POLICY_PATH = os.path.join("data", "ai_policies.json")
 MIN_GLOBAL_POINT_RATE = 0.35
 
@@ -175,6 +178,12 @@ def load_policy_weights(deck_key: str | None, policy_path: str | None = DEFAULT_
         return {}
     if payload.get("version") != POLICY_VERSION:
         return {}
+    schema = payload.get("schema") or {}
+    if (
+        int(schema.get("rules_version") or 0) != RULES_SCHEMA_VERSION
+        or int(schema.get("action_version") or 0) != ACTION_SCHEMA_VERSION
+    ):
+        return {}
     policy = ((payload.get("policies") or {}).get(deck_key) or {})
     if not _policy_eval_passes(policy, payload, deck_key):
         return {}
@@ -252,6 +261,11 @@ def _policy_eval_passes(
 
     baseline_points = baseline_wins - baseline_losses
     trained_points = trained_wins - trained_losses
+    if metadata.get("selected_stage") == "baseline":
+        return (
+            trained_points == baseline_points
+            and abs(trained_score - baseline_score) <= 1e-9
+        )
     if trained_points > baseline_points:
         return True
     if trained_points == baseline_points and trained_score > baseline_score + 25.0:

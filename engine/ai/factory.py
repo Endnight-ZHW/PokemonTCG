@@ -15,7 +15,11 @@ def create_ai_controller(kind: str | None, deck_key: str | None, config: Any = N
     """Create an AI controller without changing existing ChallengeAI semantics."""
     normalized = (kind or AI_KIND_CHALLENGE).lower()
     if normalized in ("challenge", "rules", "rule", "search"):
-        challenge_config = config if isinstance(config, AIConfig) else None
+        challenge_config = (
+            config
+            if isinstance(config, AIConfig)
+            else AIConfig(use_unified_planner=True)
+        )
         return create_challenge_ai(deck_key or "", challenge_config)
     if normalized in ("deep_learning", "deep", "dl"):
         if isinstance(config, DeepLearningAIConfig):

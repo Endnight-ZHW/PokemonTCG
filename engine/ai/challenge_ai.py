@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import random
 import time
-from collections import defaultdict
 from dataclasses import replace
-from math import comb
 from typing import Any
 
 from engine.enums import PlayerAction, StatusType, TurnPhase
@@ -44,19 +42,7 @@ from engine.turn_manager import TurnManager
 
 
 class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, ChallengeAIFogMixin):
-    """A tactical single-player opponent using legal actions and beam search."""
-
-    # Fog-of-war type profiles for opponent hidden-zone card masking
-    _FOW_POKEMON_BASIC = "pokemon_basic"
-    _FOW_POKEMON_STAGE1 = "pokemon_stage1"
-    _FOW_POKEMON_STAGE2 = "pokemon_stage2"
-    _FOW_ENERGY_BASIC = "energy_basic"
-    _FOW_ENERGY_SPECIAL = "energy_special"
-    _FOW_TRAINER_ITEM = "trainer_item"
-    _FOW_TRAINER_SUPPORTER = "trainer_supporter"
-    _FOW_TRAINER_STADIUM = "trainer_stadium"
-    _FOW_TRAINER_TOOL = "trainer_tool"
-    _FOW_UNKNOWN = "unknown"
+    """Rules-policy backend using the shared information-set planner."""
 
     def __init__(self, config: AIConfig | None = None):
         self.config = config or AIConfig()
@@ -68,15 +54,13 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         )
         self.policy_weights = merged_profile_weights(self.profile, loaded_weights)
         self.random = random.Random(self.config.random_seed)
-        self._forced_coin_results: list[list[bool]] = []
-        self._fow_cache: dict[str, Any] = {}
-        self._fow_counter: dict[str, int] = defaultdict(int)
         self.last_decision_trace: dict[str, Any] = {}
         self._last_legal_action_trace: dict[str, Any] = {}
         self.enumerator = ActionEnumerator(self)
         self.simulator = Simulator(self)
         self.evaluator = Evaluator(self)
         self.choice_policy = ChoicePolicy(self)
+        self.planner = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -101,70 +85,62 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if self.config.deterministic_search
             else time.perf_counter() + max(0.01, self.config.thinking_time_seconds)
         )
-        if self.config.search_algorithm == "minimax":
-            selected = self._minimax_search_action(state, player_idx, deadline)
-            self._record_decision_trace(state, player_idx, selected)
-            return selected
-        if self.config.search_algorithm == "hybrid":
-            selected = self._hybrid_search_action(state, player_idx, deadline)
-            self._record_decision_trace(state, player_idx, selected)
-            return selected
-        selected = self._beam_search_action(state, player_idx, deadline)
+        selected = self._unified_search_action(state, player_idx, deadline)
         self._record_decision_trace(state, player_idx, selected)
         return selected
+
+    def _unified_search_action(
+        self,
+        state: GameState,
+        player_idx: int,
+        deadline: float,
+    ) -> AIAction:
+        from engine.ai.planner import AnytimePlanner, HeuristicBackend, PlannerConfig
+
+        root_actions = self.legal_actions(state, player_idx)
+        if not root_actions:
+            return AIAction(PlayerAction.END_TURN, {}, terminal=True, actor=player_idx)
+        backend = HeuristicBackend(
+            priority=self._quick_action_priority,
+            evaluator=self.evaluate_state,
+            choice_resolver=self.resolve_pending_action,
+        )
+        thinking_time = max(0.01, float(self.config.thinking_time_seconds))
+        planner_deadline = deadline
+        self.planner = AnytimePlanner(
+            backend,
+            PlannerConfig(
+                thinking_time_seconds=thinking_time,
+                simulation_budget=max(1, int(self.config.search_node_budget)),
+                max_depth=max(2, int(self.config.planner_max_depth)),
+                opponent_branch_limit=max(
+                    1,
+                    int(self.config.response_branch_limit or self.config.opponent_response_actions),
+                ),
+                random_seed=int(self.config.random_seed),
+            ),
+        )
+        selected = self.planner.search(
+            state,
+            player_idx,
+            actions=root_actions,
+            deadline=planner_deadline,
+        )
+        return self._validated_or_fallback_action(
+            state,
+            player_idx,
+            selected,
+            root_actions,
+        )
 
     def explain_legal_actions(self, state: GameState, player_idx: int) -> dict[str, Any]:
         """Return the last legal-action trace after recomputing candidates."""
         self.legal_actions(state, player_idx)
         return dict(self._last_legal_action_trace)
 
-    def _minimax_search_action(
-        self, state: GameState, player_idx: int, deadline: float
-    ) -> AIAction:
-        root_actions = self.legal_actions(state, player_idx)
-        if not root_actions:
-            return AIAction(PlayerAction.END_TURN, {}, terminal=True)
-
-        from engine.ai.minimax import MinimaxSearcher
-
-        searcher = MinimaxSearcher(self)
-        selected = searcher.search(
-            state,
-            player_idx,
-            deadline,
-            max_depth=self.config.minimax_max_depth,
-            determinizations=self.config.minimax_determinizations,
-            root_actions=root_actions,
-        )
-        return self._validated_or_fallback_action(state, player_idx, selected, root_actions)
-
-    def _hybrid_search_action(
-        self, state: GameState, player_idx: int, deadline: float
-    ) -> AIAction:
-        """Prune root moves with ChallengeAI ordering, then score them with minimax."""
-        root_actions = self.legal_actions(state, player_idx)
-        if not root_actions:
-            return AIAction(PlayerAction.END_TURN, {}, terminal=True)
-
-        candidate_limit = max(1, min(len(root_actions), int(self.config.beam_width)))
-        candidates = list(root_actions[:candidate_limit])
-
-        end_turn = next((action for action in root_actions if action.action == PlayerAction.END_TURN), None)
-        if end_turn is not None and not any(action.action == PlayerAction.END_TURN for action in candidates):
-            candidates.append(end_turn)
-
-        from engine.ai.minimax import MinimaxSearcher
-
-        searcher = MinimaxSearcher(self)
-        selected = searcher.search(
-            state,
-            player_idx,
-            deadline,
-            max_depth=self.config.minimax_max_depth,
-            determinizations=self.config.minimax_determinizations,
-            root_actions=candidates,
-        )
-        return self._validated_or_fallback_action(state, player_idx, selected, root_actions)
+    def cancel_search(self) -> None:
+        if self.planner is not None:
+            self.planner.cancel()
 
     def _validated_or_fallback_action(
         self,
@@ -866,7 +842,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         self, state: GameState, player_idx: int, action: AIAction
     ) -> float | None:
         rng_state = self.random.getstate()
-        forced_coin_results = [list(row) for row in self._forced_coin_results]
         try:
             sim = self._clone_state(state)
             result = self._apply_action_for_sim(sim, player_idx, action)
@@ -878,7 +853,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return None
         finally:
             self.random.setstate(rng_state)
-            self._forced_coin_results = forced_coin_results
 
     def _attack_has_productive_effect(self, effects: list[Any]) -> bool:
         if isinstance(effects, dict):
@@ -927,7 +901,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if action.action in ("NOOP", "SETUP_DONE"):
             return True
         rng_state = self.random.getstate()
-        forced_coin_results = [list(row) for row in self._forced_coin_results]
         try:
             sim = self._clone_state(state)
             result = self._apply_action_for_sim(sim, player_idx, action)
@@ -937,7 +910,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return False
         finally:
             self.random.setstate(rng_state)
-            self._forced_coin_results = forced_coin_results
 
     def resolve_pending_action(self, state: GameState, action_request: ActionRequest) -> AIChoice:
         return self.choice_policy.resolve_pending_action(state, action_request)
@@ -945,6 +917,48 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _resolve_pending_action_impl(self, state: GameState, action_request: ActionRequest) -> AIChoice:
         req = action_request
         player_idx = req.player if req.player in (0, 1) else state.active_player_idx
+
+        if (
+            req.request_type in ("search_deck", "select_hand_to_discard")
+            and (getattr(req, "from_zone", "") or "").lower() in {"board", "bench"}
+        ):
+            from engine.actions import PokemonRef, resolve_pokemon_ref
+            from engine.game_engine import DEFAULT_GAME_ENGINE
+
+            structured = DEFAULT_GAME_ENGINE.choice_request(state, req)
+            candidates = [
+                option for option in structured.options
+                if isinstance(option.ref, PokemonRef)
+                and resolve_pokemon_ref(state, option.ref) is not None
+            ]
+            if candidates:
+                prompt = (req.prompt or "").lower()
+
+                def board_value(option):
+                    pokemon = resolve_pokemon_ref(state, option.ref)
+                    if pokemon is None:
+                        return -10**9
+                    if "回复" in req.prompt or "heal" in prompt:
+                        return max(0, pokemon.card.hp - pokemon.current_hp)
+                    if "附着能量" in req.prompt or "energy" in prompt:
+                        return self._energy_target_value(
+                            state,
+                            option.ref.player,
+                            option.ref.slot,
+                        )
+                    if option.ref.player != player_idx:
+                        return self._target_priority(pokemon)
+                    return self._promotion_value_for_state(
+                        state,
+                        option.ref.player,
+                        pokemon,
+                    )
+
+                selected = max(candidates, key=board_value)
+                return AIChoice(
+                    selected_cards=[selected.ref],
+                    option_ids=[selected.option_id],
+                )
 
         if req.request_type in ("search_deck", "select_hand_to_discard"):
             cards = list(req.card_list)
@@ -1071,85 +1085,40 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def legal_actions(self, state: GameState, player_idx: int) -> list[AIAction]:
         return self.enumerator.legal_actions(state, player_idx)
 
-    def _legal_actions_impl(self, state: GameState, player_idx: int) -> list[AIAction]:
-        if state.phase == TurnPhase.SETUP:
-            return self._setup_actions(state, player_idx)
-        if state.phase == TurnPhase.ATTACK:
-            return [AIAction(PlayerAction.END_TURN, {}, terminal=True)]
-        if state.phase != TurnPhase.MAIN or state.active_player_idx != player_idx:
-            return []
+    def _legal_actions_impl(
+        self,
+        state: GameState,
+        player_idx: int,
+        actions: list[AIAction] | None = None,
+    ) -> list[AIAction]:
+        from engine.game_engine import DEFAULT_GAME_ENGINE
 
-        player = state.get_player(player_idx)
-        actions: list[AIAction] = []
-        seen: set[tuple] = set()
+        actions = list(actions) if actions is not None else list(
+            DEFAULT_GAME_ENGINE.legal_actions(state, player_idx)
+        )
         trace: dict[str, Any] = {
             "player_idx": player_idx,
             "phase": getattr(state.phase, "name", str(state.phase)),
-            "generated": [],
+            "generated": [self._trace_action(action) for action in actions],
             "rejected": [],
             "accepted": [],
         }
+        if state.phase == TurnPhase.SETUP:
+            result = actions[: self.config.max_turn_actions]
+            trace["accepted"] = [self._trace_action(action) for action in result]
+            self._last_legal_action_trace = trace
+            return result
+        if state.phase != TurnPhase.MAIN:
+            trace["accepted"] = [self._trace_action(action) for action in actions]
+            self._last_legal_action_trace = trace
+            return actions
 
-        def add(action: AIAction, card_key: str = ""):
-            key = self._action_key(state, player_idx, action, card_key)
-            if key not in seen:
-                seen.add(key)
-                actions.append(action)
-                trace["generated"].append(self._trace_action(action))
-
-        empty_slots = [f"bench_{i}" for i, p in enumerate(player.bench) if p is None]
-        for hand_idx, card in enumerate(player.hand):
-            card_key = getattr(card, "api_id", str(hand_idx))
-            if card.is_basic_pokemon:
-                for target in empty_slots:
-                    add(AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": hand_idx, "target": target}), card_key)
-            elif card.is_stage1 or card.is_stage2:
-                for slot, pokemon in player.get_all_pokemon():
-                    if pokemon and can_evolve(state, player_idx, slot, card)[0]:
-                        add(AIAction(PlayerAction.EVOLVE, {"hand_idx": hand_idx, "slot": slot}), card_key)
-            elif card.is_energy:
-                for slot, pokemon in player.get_all_pokemon():
-                    if pokemon and can_attach_energy(state, player_idx, card, slot)[0]:
-                        add(AIAction(PlayerAction.ATTACH_ENERGY, {"hand_idx": hand_idx, "target_slot": slot}), card_key)
-            elif card.is_trainer:
-                if card.is_trainer_tool:
-                    for slot, pokemon in player.get_all_pokemon():
-                        if pokemon and can_play_tool(state, player_idx, slot)[0]:
-                            add(AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx, "target_slot": slot}), card_key)
-                elif card.is_trainer_supporter:
-                    if can_play_supporter(state, player_idx)[0]:
-                        add(AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}), card_key)
-                elif card.is_trainer_stadium:
-                    if can_play_stadium(state, player_idx, card)[0]:
-                        add(AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}), card_key)
-                elif can_play_item(state, player_idx)[0]:
-                    add(AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}), card_key)
-
-        for slot, pokemon in player.get_all_pokemon():
-            if not pokemon:
-                continue
-            for ability in pokemon.card.abilities:
-                if getattr(ability, "trigger", "") not in ("", "on_turn"):
-                    continue
-                if (
-                    can_use_ability(state, player_idx, slot, ability.name)[0]
-                    and self._ability_has_available_value(state, player_idx, slot, ability)
-                ):
-                    add(AIAction(PlayerAction.USE_ABILITY, {"slot": slot, "ability_name": ability.name}), ability.name)
-
-        if state.stadium_card and not player.stadium_used_this_turn:
-            add(AIAction(PlayerAction.USE_STADIUM, {}), getattr(state.stadium_card, "api_id", "stadium"))
-
-        for bench_idx, pokemon in enumerate(player.bench):
-            if pokemon and can_retreat(state, player_idx, bench_idx)[0]:
-                add(AIAction(PlayerAction.RETREAT, {"bench_idx": bench_idx}))
-
-        if player.active:
-            for attack_idx, _ in enumerate(player.active.card.attacks):
-                if can_declare_attack(state, player_idx, attack_idx)[0]:
-                    add(AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": attack_idx}, terminal=True))
-
-        add(AIAction(PlayerAction.END_TURN, {}, terminal=True))
+        player = state.get_player(player_idx)
+        actions = [
+            action for action in actions
+            if action.action != PlayerAction.USE_ABILITY
+            or self._generated_ability_has_value(state, player_idx, action)
+        ]
         actions = self._filter_strategically_relevant_actions(state, player_idx, actions, trace)
         if not self.config.skip_effect_dry_run:
             actions = self._filter_currently_executable_actions(state, player_idx, actions, trace)
@@ -1163,6 +1132,20 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         trace["accepted"] = [self._trace_action(action) for action in result]
         self._last_legal_action_trace = trace
         return result
+
+    def _generated_ability_has_value(
+        self,
+        state: GameState,
+        player_idx: int,
+        action: AIAction,
+    ) -> bool:
+        ability = self._ability_for_action(state, player_idx, action)
+        slot = action.params.get("slot")
+        return bool(
+            ability is not None
+            and isinstance(slot, str)
+            and self._ability_has_available_value(state, player_idx, slot, ability)
+        )
 
     def _filter_strategically_relevant_actions(
         self,
@@ -1688,338 +1671,43 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return bool(getattr(card, "is_energy", False) and self._energy_filter_matches(card, normalized))
         return True
 
-    def _beam_search_action(self, state: GameState, player_idx: int, deadline: float) -> AIAction:
-        self._cleanup_fow_registry()
-        self._fow_cache.clear()
-        root_actions = self.legal_actions(state, player_idx)
-        if not root_actions:
-            return AIAction(PlayerAction.END_TURN, {}, terminal=True)
-
-        frontier: list[tuple[float, int, GameState, AIAction]] = [
-            (self.evaluate_state(state, player_idx), 0, self._masked_clone_for_eval(state, player_idx), AIAction("NOOP"))
-        ]
-        best_score = -10**18
-        best_action = root_actions[-1]
-
-        for depth in range(self.config.max_sequence_depth):
-            if time.perf_counter() >= deadline:
-                break
-            candidates: list[tuple[float, int, GameState, AIAction]] = []
-            for _, actions_used, node_state, first_action in frontier:
-                if time.perf_counter() >= deadline:
-                    break
-                actions = self.legal_actions(node_state, player_idx)
-                for action in actions:
-                    outcomes = self._simulate_action_outcomes(node_state, player_idx, action, deadline)
-                    if not outcomes:
-                        continue
-                    scored = [
-                        (
-                            self._score_simulated_outcome(sim, player_idx, action, result, deadline),
-                            sim,
-                            result,
-                            weight,
-                        )
-                        for sim, result, weight in outcomes
-                    ]
-                    total_weight = sum(row[3] for row in scored) or 1.0
-                    score = sum(row[0] * row[3] for row in scored) / total_weight
-                    _, sim, result, _weight = max(scored, key=lambda row: row[0])
-                    root = action if first_action.action == "NOOP" else first_action
-                    if action.terminal or sim.phase != TurnPhase.MAIN or sim.winner is not None:
-                        if score > best_score:
-                            best_score = score
-                            best_action = root
-                    else:
-                        candidates.append((score, actions_used + 1, sim, root))
-
-            if not candidates:
-                break
-            candidates.sort(key=lambda row: row[0], reverse=True)
-            frontier = candidates[: self.config.beam_width]
-            if frontier and frontier[0][0] > best_score:
-                best_score = frontier[0][0]
-                best_action = frontier[0][3]
-        return best_action
-
-    def _simulate_action_outcomes(
-        self, state: GameState, player_idx: int, action: AIAction, deadline: float | None = None
-    ) -> list[tuple[GameState, ActionResult | None, float]]:
-        branches = self._action_coin_branches(state, player_idx, action)
-        outcomes: list[tuple[GameState, ActionResult | None, float]] = []
-        for coin_results, weight in branches:
-            if deadline is not None and time.perf_counter() >= deadline:
-                break
-            sim = self._clone_state(state)
-            if coin_results is None:
-                result = self._apply_action_for_sim(sim, player_idx, action)
-            else:
-                result = self._apply_action_for_sim_with_coin_results(
-                    sim, player_idx, action, coin_results
-                )
-            outcomes.append((sim, result, weight))
-        return outcomes
-
-    def _score_simulated_outcome(
-        self,
-        sim: GameState,
-        player_idx: int,
-        action: AIAction,
-        result: ActionResult | None,
-        deadline: float | None = None,
-    ) -> float:
-        score = self.evaluate_state(sim, player_idx)
-        if result and not result.success:
-            score -= 100
-        if (
-            sim.winner is None
-            and self.config.opponent_response_weight > 0
-            and (action.terminal or sim.phase != TurnPhase.MAIN or sim.active_player_idx != player_idx)
-        ):
-            score += self.config.opponent_response_weight * self._opponent_response_adjustment(
-                sim, player_idx, deadline
-            )
-        return score
-
-    def _opponent_response_adjustment(
-        self, state: GameState, player_idx: int, deadline: float | None = None
-    ) -> float:
-        opponent_idx = 1 - player_idx
-        if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
-            return 0.0
-
-        response_root = self._clone_state(state)
-        if response_root.pending_promotion_player >= 0:
-            self._auto_promote_for_sim(response_root)
-        if response_root.phase == TurnPhase.DRAW:
-            TurnManager(response_root).advance_phase()
-        if response_root.active_player_idx != opponent_idx or response_root.phase not in (TurnPhase.MAIN, TurnPhase.ATTACK):
-            return 0.0
-
-        base_score = self.evaluate_state(response_root, player_idx)
-        response_limit = int(self.config.response_branch_limit or self.config.opponent_response_actions)
-        actions = [
-            action for action in self.legal_actions(response_root, opponent_idx)
-            if action.action in (
-                PlayerAction.DECLARE_ATTACK,
-                PlayerAction.USE_ABILITY,
-                PlayerAction.RETREAT,
-                PlayerAction.END_TURN,
-            )
-        ][: max(1, response_limit)]
-        if not actions:
-            return 0.0
-
-        worst_score = base_score
-        for action in actions:
-            if deadline is not None and time.perf_counter() >= deadline:
-                break
-            sim = self._clone_state(response_root)
-            result = self._apply_action_for_sim(sim, opponent_idx, action)
-            score = self.evaluate_state(sim, player_idx)
-            if result and not result.success:
-                score += 75
-            worst_score = min(worst_score, score)
-        return max(-650.0, min(120.0, worst_score - base_score))
-
-    def _action_coin_branches(
-        self, state: GameState, player_idx: int, action: AIAction
-    ) -> list[tuple[list[bool] | None, float]]:
-        profile = self._action_coin_profile(state, player_idx, action)
-        if profile is None:
-            return [(None, 1.0)]
-        flip_count, until_tails = profile
-        return [
-            (results, weight)
-            for results, weight in self._coin_outcome_branches(flip_count, until_tails)
-        ]
-
-    def _coin_outcome_branches(self, flip_count: int = 1, until_tails: bool = False) -> list[tuple[list[bool], float]]:
-        """Return deterministic weighted representative coin outcomes."""
-        branch_limit = max(1, int(self.config.chance_branch_limit or self.config.coin_sample_count or 1))
-        if until_tails:
-            max_heads = max(0, branch_limit - 1)
-            branches: list[tuple[list[bool], float]] = []
-            for heads in range(max_heads):
-                branches.append(([True] * heads + [False], 0.5 ** (heads + 1)))
-            branches.append(([True] * max_heads + [False], 0.5 ** max_heads))
-            return branches
-
-        flips = max(1, int(flip_count or 1))
-        all_head_counts = list(range(flips + 1))
-        head_counts = list(all_head_counts)
-        if len(head_counts) > branch_limit:
-            if branch_limit <= 1:
-                selected = {round(flips / 2)}
-            elif branch_limit == 2:
-                selected = {flips // 2, flips}
-            else:
-                selected = {0, round(flips / 2), flips}
-            for count in all_head_counts:
-                if len(selected) >= branch_limit:
-                    break
-                selected.add(count)
-            head_counts = sorted(selected)
-        weights_by_heads = {heads: 0.0 for heads in head_counts}
-        for heads in all_head_counts:
-            weight = comb(flips, heads) * (0.5 ** flips)
-            target = heads if heads in weights_by_heads else min(
-                head_counts,
-                key=lambda selected_heads: (abs(selected_heads - heads), selected_heads),
-            )
-            weights_by_heads[target] += weight
-        branches = []
-        for heads in head_counts:
-            results = [True] * heads + [False] * (flips - heads)
-            branches.append((results, weights_by_heads[heads]))
-        return branches or [([False] * flips, 1.0)]
-
-    def _action_coin_profile(
-        self, state: GameState, player_idx: int, action: AIAction
-    ) -> tuple[int, bool] | None:
-        effects: list[Any] = []
-        if action.action == PlayerAction.DECLARE_ATTACK:
-            player = state.get_player(player_idx)
-            attack_idx = action.params.get("attack_idx")
-            if player.active and isinstance(attack_idx, int) and 0 <= attack_idx < len(player.active.card.attacks):
-                effects = player.active.card.attacks[attack_idx].effects
-        elif action.action == PlayerAction.PLAY_TRAINER:
-            player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
-            if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
-                effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
-        elif action.action == PlayerAction.USE_ABILITY:
-            player = state.get_player(player_idx)
-            pokemon = player.get_pokemon(action.params.get("slot") or "active")
-            if pokemon:
-                for ability in pokemon.card.abilities:
-                    if ability.name == action.params.get("ability_name"):
-                        effects = getattr(ability, "effects", []) or []
-                        break
-        return self._effects_coin_profile(effects)
-
-    def _effects_coin_profile(self, effects: list[Any]) -> tuple[int, bool] | None:
-        for effect in effects or []:
-            etype = self._effect_type(effect)
-            params = self._effect_params(effect)
-            if etype in ("coin_flip", "coin_flip_energy_discard"):
-                return (1, False)
-            if etype == "coin_flip_until_tails":
-                return (1, True)
-            if etype == "coin_flip_triple":
-                return (int(params.get("flips", 3) or 3), False)
-            if etype == "coin_flip_double_ko":
-                return (2, False)
-            for key in ("on_heads", "on_tails", "on_success", "on_fail"):
-                branch = params.get(key) or []
-                if isinstance(branch, dict):
-                    branch = [branch]
-                nested = self._effects_coin_profile(branch)
-                if nested is not None:
-                    return nested
-        return None
-
-    def _action_uses_coin(self, state: GameState, player_idx: int, action: AIAction) -> bool:
-        if action.action == PlayerAction.DECLARE_ATTACK:
-            player = state.get_player(player_idx)
-            attack_idx = action.params.get("attack_idx")
-            if player.active and isinstance(attack_idx, int) and 0 <= attack_idx < len(player.active.card.attacks):
-                return self._effects_use_coin(player.active.card.attacks[attack_idx].effects)
-        if action.action == PlayerAction.PLAY_TRAINER:
-            player = state.get_player(player_idx)
-            hand_idx = action.params.get("hand_idx")
-            if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
-                return self._effects_use_coin(getattr(player.hand[hand_idx], "trainer_effects", []) or [])
-        if action.action == PlayerAction.USE_ABILITY:
-            player = state.get_player(player_idx)
-            pokemon = player.get_pokemon(action.params.get("slot") or "active")
-            if pokemon:
-                for ability in pokemon.card.abilities:
-                    if ability.name == action.params.get("ability_name"):
-                        return self._effects_use_coin(getattr(ability, "effects", []) or [])
-        return False
-
-    def _effects_use_coin(self, effects: list[Any]) -> bool:
-        for effect in effects or []:
-            etype = self._effect_type(effect)
-            params = self._effect_params(effect)
-            if "coin" in etype:
-                return True
-            for key in ("on_heads", "on_tails", "on_success", "on_fail"):
-                branch = params.get(key) or []
-                if isinstance(branch, dict):
-                    branch = [branch]
-                if self._effects_use_coin(branch):
-                    return True
-        return False
-
     def _apply_action_for_sim(
         self, state: GameState, player_idx: int, action: AIAction
     ) -> ActionResult | None:
         return self.simulator.apply_action(state, player_idx, action)
 
-    def _apply_action_for_sim_with_coin_results(
-        self,
-        state: GameState,
-        player_idx: int,
-        action: AIAction,
-        coin_results: list[bool],
-    ) -> ActionResult | None:
-        previous = self._forced_coin_results
-        self._forced_coin_results = [list(coin_results)]
-        try:
-            return self._apply_action_for_sim(state, player_idx, action)
-        finally:
-            self._forced_coin_results = previous
-
     def _apply_action_for_sim_impl(
         self, state: GameState, player_idx: int, action: AIAction
     ) -> ActionResult | None:
-        tm = TurnManager(state)
-        if action.action == "SETUP_DONE":
-            return ActionResult(True, "setup done")
-        if action.action == "NOOP":
-            return ActionResult(True, "")
-        try:
-            result = tm.perform_action(action.action, player_idx=player_idx, **action.params)
-        except Exception as exc:
-            _logger.debug("action simulation failed: %s %s -> %s", action.action, action.params, exc)
-            return ActionResult(False, str(exc))
-        resolved_result = self._resolve_result_pending_for_sim(state, result)
-        if resolved_result is not None:
-            result = resolved_result
-        self._auto_promote_for_sim(state)
-        if (
-            action.action == PlayerAction.DECLARE_ATTACK
-            and result.success
-            and state.phase == TurnPhase.ATTACK
-            and state.winner is None
-        ):
-            try:
-                end_result = tm.perform_action(PlayerAction.END_TURN, player_idx=player_idx)
-            except Exception:
-                return result
-            resolved_end = self._resolve_result_pending_for_sim(state, end_result)
-            if resolved_end is not None:
-                end_result = resolved_end
-            self._auto_promote_for_sim(state)
-        return result
+        from engine.ai.planner import _map_legacy_choice
+        from engine.game_engine import DEFAULT_GAME_ENGINE
+        from engine.random_source import SamplingRandomSource
 
-    def _resolve_result_pending_for_sim(self, state: GameState, result: ActionResult) -> ActionResult | None:
-        guard = 0
-        while result and result.pending_action and guard < 8:
-            guard += 1
-            req = result.pending_action
-            choice = self._resolve_pending_for_sim(state, req)
-            callback_result = self.apply_choice(state, req, choice)
-            if isinstance(callback_result, ActionRequest):
-                result = ActionResult(True, "", pending_action=callback_result)
-            elif isinstance(callback_result, ActionResult):
-                result = callback_result
-            else:
-                result.pending_action = None
-            self._auto_promote_for_sim(state)
-        return result
+        def choose(sim_state, structured_request):
+            legacy_choice = self._resolve_pending_for_sim(
+                sim_state,
+                structured_request.legacy_request,
+            )
+            mapped = _map_legacy_choice(structured_request, legacy_choice)
+            if mapped is not None:
+                return mapped
+            return DEFAULT_GAME_ENGINE._default_choice_response(
+                structured_request,
+                rng,
+            )
+
+        rng = SamplingRandomSource(self.random.randrange(0, 2**31))
+        step = DEFAULT_GAME_ENGINE.apply_action(
+            state,
+            action.with_actor(player_idx) if action.actor is None else action,
+            rng,
+            auto_resolve=True,
+            choice_policy=choose,
+            auto_finish_attack=True,
+        )
+        if step.action_result is not None:
+            return step.action_result
+        return ActionResult(step.success, step.message)
 
     def _auto_promote_for_sim(self, state: GameState) -> None:
         guard = 0
@@ -2093,17 +1781,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _resolve_pending_for_sim(self, state: GameState, req: ActionRequest) -> AIChoice:
         if req.request_type == "coin_flip":
-            if self._forced_coin_results:
-                forced = list(self._forced_coin_results.pop(0))
-                if getattr(req, "until_tails", False):
-                    if not forced or all(forced):
-                        forced.append(False)
-                    first_tail = next((i for i, result in enumerate(forced) if not result), len(forced) - 1)
-                    return AIChoice(coin_results=forced[: first_tail + 1])
-                flips = max(1, req.flip_count)
-                if len(forced) < flips:
-                    forced.extend([False] * (flips - len(forced)))
-                return AIChoice(coin_results=forced[:flips])
             if getattr(req, "until_tails", False):
                 results = []
                 max_flips = max(2, min(16, int(self.config.coin_sample_count) * 2))

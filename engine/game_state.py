@@ -35,6 +35,7 @@ class ActionRequest:
     max_per_target: int = 99  # For paired mode: max energy per target
     source_name: str = ""  # For distribute_energy: source Pokemon name
     request_id: str = ""  # Network choice request correlation id
+    can_cancel: bool = False
 
 
 @dataclass
@@ -64,6 +65,12 @@ class GameState:
         self.first_player_idx: int = 0
         self.stadium_card: Optional["Card"] = None
         self.winner: Optional[int] = None
+        self.revision: int = 0
+        self.choice_sequence: int = 0
+        # Deck identities are public only when the surrounding game mode
+        # explicitly exposes them (challenge/training). Search may use these
+        # keys as priors, but must never inspect hidden-zone card identities.
+        self.public_deck_keys: tuple[str | None, str | None] = (None, None)
         self.apply_type_matchups: bool = False
         self.action_log: list[str] = []
         self.mulligan_count: tuple[int, int] = (0, 0)  # (p1_mulligans, p2_mulligans)
@@ -73,6 +80,7 @@ class GameState:
         self._ko_from_attack: bool = False  # Flag set when a KO is from attack damage
         self._mulligan_bonus_given: set[int] = set()
         self.is_network_view: bool = False
+        self.random_source = None
         self.event_stream: GameEventStream = GameEventStream()
         from engine.effects.event_bus import EventBus
         self.event_bus = EventBus()
@@ -122,7 +130,7 @@ class GameState:
 
     # ---- Game Setup ----
 
-    def setup_game(self, deck1: list[str], deck2: list[str]):
+    def setup_game(self, deck1: list[str], deck2: list[str], rng=None):
         """Initialize both players with their deck lists (card IDs)."""
         from data.card_registry import CardRegistry
 
@@ -149,11 +157,16 @@ class GameState:
                 raise ValueError(msg)
 
         # Shuffle both decks
-        self.p1.shuffle_deck()
-        self.p2.shuffle_deck()
+        if rng is not None:
+            rng.shuffle(self.p1.deck)
+            rng.shuffle(self.p2.deck)
+        else:
+            self.p1.shuffle_deck()
+            self.p2.shuffle_deck()
 
         # Determine first player (coin flip)
-        self.first_player_idx = 0 if random.random() < COIN_FLIP_THRESHOLD else 1
+        first_flip = rng.random() if rng is not None else random.random()
+        self.first_player_idx = 0 if first_flip < COIN_FLIP_THRESHOLD else 1
         self.active_player_idx = self.first_player_idx
         self.turn_number = 1
 
