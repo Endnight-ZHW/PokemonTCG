@@ -8,9 +8,12 @@ func _initialize() -> void:
 	_run_phase_one_tests()
 	_run_phase_two_tests()
 	_run_phase_three_tests()
+	_run_phase_four_foundation_tests()
+	_run_phase_five_foundation_tests()
+	_run_phase_six_foundation_tests()
 
 	if failures.is_empty():
-		print("GODOT_TESTS_OK phase=3")
+		print("GODOT_TESTS_OK phase=6")
 		quit(0)
 	else:
 		for failure in failures:
@@ -363,6 +366,597 @@ func _run_phase_three_tests() -> void:
 	_check(choice_ui.active_request != null, "Choice overlay has no request")
 	_check(choice_ui.option_buttons.size() > 0, "Choice overlay has no option buttons")
 	choice_ui.queue_free()
+
+
+func _run_phase_four_foundation_tests() -> void:
+	var fixture := _read_json("res://tests/fixtures/ai_encoder_golden.json")
+	var catalog := CardCatalog.new()
+	var encoder := AIActionEncoder.new(catalog)
+	var observation: Dictionary = fixture["observation"]
+	var encoded_state := encoder.encode_observation(
+		observation, str(fixture["deck_key"]))
+	_check(
+		_deep_equal(encoded_state["numeric"], fixture["expected"]["state_numeric"]),
+		"AI state numeric encoder differs from Python",
+	)
+	_check(
+		_deep_equal(encoded_state["card_ids"], fixture["expected"]["state_cards"]),
+		"AI state card encoder differs from Python",
+	)
+	for index in range(fixture["actions"].size()):
+		var action := GameAction.from_dict(fixture["actions"][index])
+		var encoded := encoder.encode_action(
+			observation, action, str(fixture["deck_key"]))
+		_check(
+			_deep_equal(encoded, fixture["expected"]["actions"][index]),
+			"AI action encoder differs at index %d" % index,
+		)
+	var request := ChoiceRequest.from_dict(fixture["choice"])
+	for index in range(request.options.size()):
+		var encoded := encoder.encode_choice(
+			observation, request, request.options[index], index)
+		_check(
+			_deep_equal(encoded, fixture["expected"]["choices"][index]),
+			"AI choice encoder differs at index %d" % index,
+		)
+
+	var action_numeric: Array[float] = []
+	var action_cards: Array[int] = []
+	for row in fixture["expected"]["actions"]:
+		action_numeric.append_array(row["numeric"])
+		action_cards.append(int(row["card_id"]))
+	var choice_numeric: Array[float] = []
+	var choice_cards: Array[int] = []
+	for row in fixture["expected"]["choices"]:
+		choice_numeric.append_array(row["numeric"])
+		choice_cards.append(int(row["card_id"]))
+	var runtime := DeepAIRuntime.new()
+	_check(runtime.is_available(), "ONNX Runtime GDExtension is unavailable")
+	if runtime.is_available():
+		for deck_key in [
+			"fire", "water", "psychic", "lightning",
+			"fighting", "colorless", "dragon", "grass",
+		]:
+			_check(runtime.load_for_deck(deck_key), (
+				"Unable to load %s ONNX model: %s" % [deck_key, runtime.last_error]))
+			var backend: Variant = runtime.get_backend()
+			if backend == null:
+				continue
+			var inference: Dictionary = backend.call(
+				"infer",
+				PackedFloat32Array(fixture["expected"]["state_numeric"]),
+				PackedInt64Array(fixture["expected"]["state_cards"]),
+				PackedFloat32Array(action_numeric),
+				PackedInt64Array(action_cards),
+				PackedFloat32Array(choice_numeric),
+				PackedInt64Array(choice_cards),
+			)
+			_check(inference.get("success", false), (
+				"Native ONNX inference failed for %s: %s" % [
+					deck_key, inference.get("error", "")]))
+			_check(
+				inference.get("action_logits", []).size() == fixture["actions"].size(),
+				"Native ONNX action output size mismatch",
+			)
+			_check(
+				inference.get("choice_logits", []).size() == request.options.size(),
+				"Native ONNX choice output size mismatch",
+			)
+			_check(
+				str(backend.call("get_execution_provider")) == "CPUExecutionProvider",
+				"Native ONNX provider mismatch",
+			)
+		runtime.unload()
+		var invalid_backend: Variant = ClassDB.instantiate("OnnxInference")
+		_check(
+			not invalid_backend.call("load_model", "res://data/ai_models/water.onnx", {
+				"opset": 17,
+				"state_numeric_size": 960,
+				"state_card_slots": 96,
+				"action_numeric_size": 178,
+				"onnx_sha256": "invalid",
+			}),
+			"Native ONNX loader accepted an invalid SHA-256",
+		)
+
+	var state := _battle_state()
+	state.active_player_idx = 0
+	state.turn_number = 3
+	state.phase = "MAIN"
+	state.public_deck_keys = ["psychic", "water"]
+	var engine := GameEngine.new(catalog)
+	var actions := engine.legal_actions(state, 0, false)
+	var action_rows: Array = []
+	for action in actions:
+		action_rows.append(action.to_dict())
+	var ai_request := {
+		"kind": "action",
+		"state": state.snapshot(),
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": "deterministic",
+		"mode": "challenge",
+		"difficulty": "fast",
+		"deck_key": "psychic",
+		"seed": 77,
+		"simulation_budget": 4,
+		"max_depth": 3,
+		"deterministic": true,
+		"actions": action_rows,
+	}
+	var worker := NativeChallengeAI.new()
+	var first := worker.decide(ai_request, func() -> bool: return false)
+	var second := worker.decide(ai_request, func() -> bool: return false)
+	_check(first.get("success", false), "Challenge AI did not return an action")
+	_check(
+		first.get("action", {}) == second.get("action", {}),
+		"Challenge AI fixed-seed decision is not reproducible",
+	)
+	if runtime.is_available() and runtime.load_for_deck("psychic"):
+		var deep_request: Dictionary = ai_request.duplicate(true)
+		deep_request["mode"] = "deep"
+		deep_request["max_depth"] = 1
+		var deep_result := worker.decide(
+			deep_request,
+			func() -> bool: return false,
+			runtime.get_backend(),
+		)
+		_check(deep_result.get("success", false), "Deep AI did not return an action")
+		_check(
+			int(deep_result.get("simulations", 0)) == 256,
+			"Deep AI did not use the fixed 256 simulation budget",
+		)
+		_check(
+			not deep_result.get("deep_fallback", true),
+			"Deep AI unexpectedly fell back to Challenge AI",
+		)
+		runtime.unload()
+		var fallback_result := worker.decide(
+			deep_request,
+			func() -> bool: return false,
+			null,
+		)
+		_check(fallback_result.get("success", false),
+			"Deep AI runtime fallback did not return an action")
+		_check(
+			fallback_result.get("deep_fallback", false)
+			and fallback_result.get("fallback_reason", "") == "runtime_unavailable",
+			"Deep AI runtime failure did not switch to standard Challenge AI",
+		)
+	var cancelled_result := worker.decide(
+		ai_request,
+		func() -> bool: return true,
+	)
+	_check(
+		cancelled_result.get("cancelled", false),
+		"Challenge AI search did not honor cancellation",
+	)
+	var choice_ai_request := {
+		"kind": "choice",
+		"state": state.snapshot(),
+		"choice": request.to_dict(),
+		"actor": request.player,
+		"revision": state.revision,
+		"request_id": "choice-fallback",
+		"mode": "deep",
+		"deck_key": "psychic",
+	}
+	var choice_fallback := worker.decide(
+		choice_ai_request,
+		func() -> bool: return false,
+		null,
+	)
+	_check(
+		choice_fallback.get("success", false)
+		and choice_fallback.get("deep_fallback", false),
+		"Deep AI choice failure did not use Challenge AI fallback",
+	)
+	var coordinator := AICoordinator.new()
+	_check(
+		coordinator.start_request(ai_request),
+		"Challenge AI background coordinator did not start",
+	)
+	var background_result: Dictionary = {}
+	var poll_count := 0
+	while background_result.is_empty() and poll_count < 5000:
+		poll_count += 1
+		background_result = coordinator.poll_result()
+		if background_result.is_empty():
+			OS.delay_msec(1)
+	_check(background_result.get("success", false), "Background AI did not finish")
+	_check(poll_count > 0, "Background AI did not yield to the caller")
+	coordinator.cancel_and_wait()
+
+	var packed := load("res://scenes/main/main.tscn") as PackedScene
+	var ai_ui := packed.instantiate()
+	root.add_child(ai_ui)
+	ai_ui.initialize_ui()
+	var challenge_button := ai_ui.find_child("ChallengeAIButton", true, false) as Button
+	var deep_button := ai_ui.find_child("DeepAIButton", true, false) as Button
+	_check(challenge_button != null and not challenge_button.disabled,
+		"Challenge AI menu entry is unavailable")
+	_check(deep_button != null and not deep_button.disabled,
+		"Deep AI menu entry is unavailable")
+	ai_ui._show_deck_select("challenge")
+	_check(ai_ui.difficulty_option.item_count == 3, "AI difficulty presets are missing")
+	_check(
+		ai_ui.start_ai_match_for_test(
+			"challenge", "fire", "water", "fast", 0, 20260621),
+		"Unable to start Challenge AI match",
+	)
+	_check(ai_ui.current_view_player == 0, "AI match exposed the AI player view")
+	_check(ai_ui.state.players[1].name == "Challenge AI", "AI player name mismatch")
+	ai_ui._stop_ai()
+	ai_ui.queue_free()
+
+
+func _run_phase_five_foundation_tests() -> void:
+	var valid := ProtocolV3.envelope(
+		ProtocolV3.ACTION_SUBMIT,
+		"room-1",
+		1,
+		1,
+		7,
+		"action-1",
+		"",
+		{"action": {}},
+	)
+	_check(
+		ProtocolV3.validate(valid, "room-1", 1, 0).get("ok", false),
+		"Protocol v3 rejected a valid message",
+	)
+	var wrong_version: Dictionary = valid.duplicate(true)
+	wrong_version["protocol_version"] = 2
+	_check(
+		ProtocolV3.validate(wrong_version).get("code", "") == "protocol_mismatch",
+		"Protocol v3 accepted an incompatible client",
+	)
+	_check(
+		ProtocolV3.validate(valid, "room-1", 1, 1).get("code", "") == "stale_sequence",
+		"Protocol v3 accepted a duplicate sequence",
+	)
+	var gap: Dictionary = valid.duplicate(true)
+	gap["sequence"] = 3
+	_check(
+		ProtocolV3.validate(gap, "room-1", 1, 1).get("code", "") == "sequence_gap",
+		"Protocol v3 accepted a sequence gap",
+	)
+	_check(
+		ProtocolV3.validate(valid, "room-1", 0, 0).get("code", "") == "wrong_sender",
+		"Protocol v3 accepted a forged sender",
+	)
+	var unknown: Dictionary = valid.duplicate(true)
+	unknown["message_type"] = "write_state_directly"
+	_check(
+		ProtocolV3.validate(unknown).get("code", "") == "unknown_message_type",
+		"Protocol v3 accepted an unknown message type",
+	)
+	var oversized := ProtocolV3.envelope(
+		ProtocolV3.PING,
+		"room-1",
+		1,
+		1,
+		-1,
+		"",
+		"",
+		{"padding": "x".repeat(ProtocolV3.MAX_MESSAGE_BYTES)},
+	)
+	_check(
+		ProtocolV3.validate(oversized).get("code", "") == "message_too_large",
+		"Protocol v3 accepted an oversized payload",
+	)
+
+	var session := AuthoritativeSession.new("room-1")
+	var started := session.start_match("fire", "water", 20260621, 0)
+	_check(started.success, "Authoritative network session did not start")
+	var host_view := session.view_for(0)
+	var client_view := session.view_for(1)
+	_check(
+		not host_view["state"]["your"].has("deck")
+		and not host_view["state"]["your"].has("prizes"),
+		"Network state exposed the host deck or prize identities",
+	)
+	_check(
+		not host_view["state"]["opponent"].has("hand")
+		and not client_view["state"]["opponent"].has("hand"),
+		"Network state exposed opponent hand identities",
+	)
+	var restored := StateSerializer.from_player_view(host_view["state"], 0)
+	_check(
+		restored.players[0].hand == session.state.players[0].hand,
+		"Network player view lost the local hand",
+	)
+	_check(
+		restored.players[1].hand.size() == session.state.players[1].hand.size()
+		and restored.players[1].hand.all(func(card_id: String) -> bool:
+			return card_id.is_empty()),
+		"Network player view reconstructed hidden hand identities",
+	)
+	var legal: Array = host_view["legal_actions"]
+	_check(not legal.is_empty(), "Authoritative session produced no setup action")
+	if not legal.is_empty():
+		var action: Dictionary = legal[0].duplicate(true)
+		action["action_id"] = "network-action-1"
+		var step := session.submit_action(0, action)
+		_check(step.success, "Authoritative session rejected a legal action")
+		var duplicate := session.submit_action(0, action)
+		_check(
+			not duplicate.success and duplicate.error_code == "duplicate_action",
+			"Authoritative session accepted a duplicate action ID",
+		)
+		var forged: Dictionary = legal[0].duplicate(true)
+		forged["actor"] = 1
+		forged["action_id"] = "forged-action"
+		_check(
+			session.submit_action(0, forged).error_code == "wrong_actor",
+			"Authoritative session accepted an action for another player",
+		)
+
+	var attack_controller := NetworkMatchController.new()
+	var fake_transport := FakeNetworkTransport.new()
+	attack_controller.host = true
+	attack_controller.player_idx = 0
+	attack_controller.room_id = "room-attack"
+	attack_controller.transport = fake_transport
+	attack_controller.session = AuthoritativeSession.new("room-attack")
+	attack_controller.session.start_match("fire", "water", 99, 0)
+	var stale_message := ProtocolV3.envelope(
+		ProtocolV3.ACTION_SUBMIT,
+		"room-attack",
+		1,
+		1,
+		-1,
+		"stale-action",
+		"",
+		{"action": {
+			"action": "END_TURN",
+			"params": {},
+			"terminal": true,
+			"actor": 1,
+			"source": null,
+			"target": null,
+			"action_id": "stale-action",
+		}},
+	)
+	attack_controller._handle_message(stale_message)
+	_check(
+		not fake_transport.sent_messages.is_empty()
+		and fake_transport.sent_messages[0]["payload"].get("code", "")
+		== "stale_revision",
+		"Host accepted a stale state revision",
+	)
+	var choice_controller := NetworkMatchController.new()
+	var choice_transport := FakeNetworkTransport.new()
+	choice_controller.host = true
+	choice_controller.player_idx = 0
+	choice_controller.room_id = "room-choice"
+	choice_controller.transport = choice_transport
+	choice_controller.session = AuthoritativeSession.new("room-choice")
+	choice_controller.session.start_match("fire", "water", 100, 0)
+	var stack := ResolutionStack.new()
+	stack.pending_request = ChoiceRequest.new(
+		"choice:expected",
+		"confirm",
+		1,
+		"确认",
+		[{"option_id": "confirm:yes", "label": "是"}],
+		1,
+		1,
+	)
+	choice_controller.session.state.resolution_stack = stack.to_dict()
+	var wrong_choice := ProtocolV3.envelope(
+		ProtocolV3.CHOICE_SUBMIT,
+		"room-choice",
+		1,
+		1,
+		choice_controller.session.state.revision,
+		"",
+		"choice:forged",
+		{"response": {
+			"request_id": "choice:expected",
+			"option_ids": ["confirm:yes"],
+			"cancelled": false,
+		}},
+	)
+	choice_controller._handle_message(wrong_choice)
+	_check(
+		not choice_transport.sent_messages.is_empty()
+		and choice_transport.sent_messages[0]["payload"].get("code", "")
+		== "request_id_mismatch",
+		"Host accepted a forged request ID",
+	)
+
+	var host_transport := EnetTransport.new()
+	var client_transport := EnetTransport.new()
+	var port := 19000 + int(Time.get_ticks_msec() % 1000)
+	_check(host_transport.start_host(port) == OK, "ENet host failed to start")
+	_check(
+		client_transport.start_client("127.0.0.1", port) == OK,
+		"ENet client failed to start",
+	)
+	var transport_connected := false
+	for _poll in range(5000):
+		for event in host_transport.poll():
+			if event.get("type", "") == "connected":
+				transport_connected = true
+		client_transport.poll()
+		if transport_connected and client_transport.connected_state():
+			break
+		OS.delay_msec(1)
+	_check(
+		transport_connected and client_transport.connected_state(),
+		"ENet host/client did not connect",
+	)
+	if transport_connected and client_transport.connected_state():
+		var probe := ProtocolV3.envelope(
+			ProtocolV3.PING, "room-1", 1, 1)
+		_check(client_transport.send(probe), "ENet client failed to send")
+		var received := false
+		for _poll in range(1000):
+			client_transport.poll()
+			for event in host_transport.poll():
+				if (
+					event.get("type", "") == "message"
+					and event.get("message", {}).get("message_type", "") == ProtocolV3.PING
+				):
+					received = true
+			if received:
+				break
+			OS.delay_msec(1)
+		_check(received, "ENet host did not receive the protocol packet")
+	client_transport.close()
+	host_transport.close()
+
+	var host_match := NetworkMatchController.new()
+	var client_match := NetworkMatchController.new()
+	var match_port := port + 1
+	_check(
+		host_match.host_lan(match_port, "fire", 20260621) == OK,
+		"LAN match host failed to start",
+	)
+	_check(
+		client_match.join_lan("127.0.0.1", match_port, "water") == OK,
+		"LAN match client failed to start",
+	)
+	var host_state_event: Dictionary = {}
+	var client_state_event: Dictionary = {}
+	for _poll in range(8000):
+		for event in host_match.poll():
+			if event.get("type", "") in ["error", "connection_failed", "transport_error"]:
+				print("HOST_NETWORK_EVENT ", event)
+			if event.get("type", "") == "state":
+				host_state_event = event
+		for event in client_match.poll():
+			if event.get("type", "") in ["error", "connection_failed", "transport_error"]:
+				print("CLIENT_NETWORK_EVENT ", event)
+			if event.get("type", "") == "state":
+				client_state_event = event
+		if not host_state_event.is_empty() and not client_state_event.is_empty():
+			break
+		OS.delay_msec(1)
+	_check(
+		not host_state_event.is_empty() and not client_state_event.is_empty(),
+		"LAN controllers did not complete the v3 lobby handshake",
+	)
+	if not host_state_event.is_empty() and not client_state_event.is_empty():
+		var host_match_view: Dictionary = host_state_event["view"]
+		var client_match_view: Dictionary = client_state_event["view"]
+		_check(
+			int(host_match_view["state"]["revision"])
+			== int(client_match_view["state"]["revision"]),
+			"LAN controllers disagreed on the initial revision",
+		)
+		var match_actions: Array = host_match_view.get("legal_actions", [])
+		_check(not match_actions.is_empty(), "LAN host received no legal setup action")
+		if not match_actions.is_empty():
+			var match_action := GameAction.from_dict(match_actions[0])
+			_check(host_match.submit_action(match_action), "LAN host action was not accepted")
+			var updated_client_revision := -1
+			for _poll in range(4000):
+				host_match.poll()
+				for event in client_match.poll():
+					if event.get("type", "") == "state":
+						updated_client_revision = int(event["view"]["state"]["revision"])
+				if updated_client_revision > int(client_match_view["state"]["revision"]):
+					break
+				OS.delay_msec(1)
+			_check(
+				updated_client_revision > int(client_match_view["state"]["revision"]),
+				"LAN client did not receive the authoritative action result",
+			)
+	client_match.close()
+	host_match.close()
+
+	var packed := load("res://scenes/main/main.tscn") as PackedScene
+	var network_ui := packed.instantiate()
+	root.add_child(network_ui)
+	network_ui.initialize_ui()
+	var lan_button := network_ui.find_child("LANButton", true, false) as Button
+	var relay_button := network_ui.find_child("RelayButton", true, false) as Button
+	_check(lan_button != null and not lan_button.disabled,
+		"LAN menu entry is unavailable")
+	_check(relay_button != null and not relay_button.disabled,
+		"Relay menu entry is unavailable")
+	network_ui._show_network_setup("lan")
+	_check(
+		network_ui.find_child("NetworkConnectButton", true, false) != null,
+		"LAN lobby controls were not created",
+	)
+	network_ui._show_network_setup("relay")
+	_check(
+		network_ui.find_child("NetworkRoomInput", true, false) != null,
+		"Relay room code input was not created",
+	)
+	network_ui.queue_free()
+
+
+func _run_phase_six_foundation_tests() -> void:
+	_check(AppState.APP_VERSION == "0.2.0", "Stage 6 app version mismatch")
+	var settings: Node = root.get_node("AppSettings")
+	var texture_cache: Node = root.get_node("CardTextureCache")
+	var settings_path := "user://phase6_settings_test.cfg"
+	settings.call("reset_defaults")
+	settings.call("update", 0.35, true, true, 12)
+	settings.set("relay_url", "wss://relay.example.test")
+	_check(settings.call("save_settings", settings_path), "Unable to save runtime settings")
+	settings.call("reset_defaults")
+	_check(settings.call("load_settings", settings_path), "Unable to reload runtime settings")
+	_check(is_equal_approx(float(settings.get("master_volume")), 0.35),
+		"Master volume setting did not roundtrip")
+	_check(bool(settings.get("muted")), "Mute setting did not roundtrip")
+	_check(bool(settings.get("reduced_motion")), "Reduced motion setting did not roundtrip")
+	_check(int(settings.get("card_cache_size")) == 12,
+		"Card cache setting did not roundtrip")
+	_check(str(settings.get("relay_url")) == "wss://relay.example.test",
+		"Relay URL setting did not roundtrip")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(settings_path))
+
+	var cards := _read_json("res://data/cards.json")
+	var image_paths: Array[String] = []
+	for card_id in cards:
+		var image_path := str(cards[card_id].get("image_path", ""))
+		if not image_path.is_empty() and image_path not in image_paths:
+			image_paths.append(image_path)
+		if image_paths.size() >= 13:
+			break
+	settings.set("card_cache_size", 12)
+	texture_cache.call("clear")
+	texture_cache.call("reset_stats")
+	for image_path in image_paths:
+		_check(texture_cache.call("get_texture", image_path) != null,
+			"Unable to load cached card texture: %s" % image_path)
+	var cache_stats: Dictionary = texture_cache.call("stats")
+	_check(int(cache_stats.get("entries", 0)) <= 12,
+		"Card texture cache exceeded its configured limit")
+	if not image_paths.is_empty():
+		texture_cache.call("get_texture", image_paths[-1])
+	var final_cache_stats: Dictionary = texture_cache.call("stats")
+	_check(int(final_cache_stats.get("hits", 0)) >= 1,
+		"Card texture cache did not record a cache hit")
+	texture_cache.call("clear")
+
+	var packed := load("res://scenes/main/main.tscn") as PackedScene
+	var release_ui := packed.instantiate()
+	root.add_child(release_ui)
+	release_ui.initialize_ui()
+	var settings_button := release_ui.find_child("SettingsButton", true, false) as Button
+	_check(settings_button != null, "Settings entry is missing from the title screen")
+	release_ui._show_settings()
+	_check(release_ui.find_child("MasterVolumeSlider", true, false) != null,
+		"Master volume setting control is missing")
+	_check(release_ui.find_child("MutedToggle", true, false) != null,
+		"Mute setting control is missing")
+	_check(release_ui.find_child("ReducedMotionToggle", true, false) != null,
+		"Reduced motion setting control is missing")
+	_check(release_ui.find_child("CardCacheOption", true, false) != null,
+		"Card texture cache setting control is missing")
+	_check(release_ui.find_child("LoadingLayer", true, false) != null,
+		"Release loading overlay is missing")
+	release_ui._close_modal()
+	release_ui.queue_free()
+
+	settings.call("reset_defaults")
+	texture_cache.call("clear")
 
 
 func _run_local_ui_playout(ui: Node) -> void:

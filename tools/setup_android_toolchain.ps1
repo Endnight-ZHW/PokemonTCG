@@ -10,36 +10,19 @@ $downloads = Join-Path $toolsRoot 'downloads'
 $jdkRoot = Join-Path $toolsRoot 'jdk-17'
 $sdkRoot = Join-Path $toolsRoot 'android-sdk'
 
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$lock = Get-ToolchainLock -RepoRoot $repoRoot
+Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 New-Item -ItemType Directory -Force -Path $downloads, $toolsRoot | Out-Null
 
-function Assert-UnderToolsRoot {
-    param([Parameter(Mandatory)] [string]$Path)
-    $resolvedTools = [System.IO.Path]::GetFullPath($toolsRoot)
-    $resolvedTarget = [System.IO.Path]::GetFullPath($Path)
-    if (-not $resolvedTarget.StartsWith($resolvedTools, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing filesystem operation outside tools root: $resolvedTarget"
-    }
-}
-
-function Get-PortableArchive {
-    param(
-        [Parameter(Mandatory)] [string]$Uri,
-        [Parameter(Mandatory)] [string]$Destination
-    )
-    if ($Force -or -not (Test-Path -LiteralPath $Destination)) {
-        Write-Host "Downloading $Uri"
-        Invoke-WebRequest -Uri $Uri -OutFile $Destination
-    }
-}
-
 $jdkZip = Join-Path $downloads 'temurin17.zip'
-$jdkApi = 'https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse'
-Get-PortableArchive -Uri $jdkApi -Destination $jdkZip
+Get-VerifiedDownload -Uri $lock.java.url -Destination $jdkZip `
+    -Sha256 $lock.java.sha256 -Force:$Force
 
 if ($Force -or -not (Test-Path -LiteralPath (Join-Path $jdkRoot 'bin\java.exe'))) {
     $jdkTemp = Join-Path $toolsRoot 'jdk-extract'
-    Assert-UnderToolsRoot $jdkTemp
-    Assert-UnderToolsRoot $jdkRoot
+    Assert-PathUnderRoot -Root $toolsRoot -Path $jdkTemp
+    Assert-PathUnderRoot -Root $toolsRoot -Path $jdkRoot
     if (Test-Path -LiteralPath $jdkTemp) {
         Remove-Item -LiteralPath $jdkTemp -Recurse -Force
     }
@@ -52,23 +35,17 @@ if ($Force -or -not (Test-Path -LiteralPath (Join-Path $jdkRoot 'bin\java.exe'))
     Move-Item -LiteralPath $jdkSource.FullName -Destination $jdkRoot
 }
 
-$studioPage = Invoke-WebRequest -Uri 'https://developer.android.com/studio'
-$match = [regex]::Match(
-    $studioPage.Content,
-    'https://dl\.google\.com/android/repository/commandlinetools-win-[0-9]+_latest\.zip'
-)
-if (-not $match.Success) {
-    throw 'Unable to find the current Android command-line tools download URL.'
-}
-
 $commandLineZip = Join-Path $downloads 'android-commandlinetools.zip'
-Get-PortableArchive -Uri $match.Value -Destination $commandLineZip
+Get-VerifiedDownload -Uri $lock.android.command_line_tools_url `
+    -Destination $commandLineZip `
+    -Sha1 $lock.android.command_line_tools_sha1 `
+    -Force:$Force
 
 $sdkManager = Join-Path $sdkRoot 'cmdline-tools\latest\bin\sdkmanager.bat'
 if ($Force -or -not (Test-Path -LiteralPath $sdkManager)) {
     $sdkTemp = Join-Path $toolsRoot 'android-cli-extract'
-    Assert-UnderToolsRoot $sdkTemp
-    Assert-UnderToolsRoot $sdkRoot
+    Assert-PathUnderRoot -Root $toolsRoot -Path $sdkTemp
+    Assert-PathUnderRoot -Root $toolsRoot -Path $sdkRoot
     if (Test-Path -LiteralPath $sdkTemp) {
         Remove-Item -LiteralPath $sdkTemp -Recurse -Force
     }
@@ -87,10 +64,10 @@ $env:Path = "$(Join-Path $jdkRoot 'bin');$(Join-Path $sdkRoot 'platform-tools');
 $licenseInput = (1..30 | ForEach-Object { 'y' }) -join [Environment]::NewLine
 $licenseInput | & $sdkManager --sdk_root=$sdkRoot --licenses | Out-Host
 & $sdkManager --sdk_root=$sdkRoot `
-    'platform-tools' `
-    'platforms;android-35' `
-    'build-tools;35.0.0' `
-    'ndk;28.1.13356709'
+    $lock.android.platform_tools `
+    $lock.android.platform `
+    $lock.android.build_tools `
+    $lock.android.ndk
 
 Write-Host "JAVA_HOME=$jdkRoot"
 Write-Host "ANDROID_HOME=$sdkRoot"

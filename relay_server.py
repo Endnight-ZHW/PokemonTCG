@@ -27,6 +27,22 @@ logger = logging.getLogger("relay")
 ROOM_WAIT_TIMEOUT = 120
 ROOM_TTL = 60 * 60
 RELAY_RECV_TIMEOUT = 30
+MAX_MESSAGE_BYTES = 262_144
+MAX_MESSAGES_PER_SECOND = 60
+PROTOCOL_V3 = 3
+V3_MESSAGE_TYPES = {
+    "welcome",
+    "deck_select",
+    "lobby_update",
+    "state_update",
+    "action_submit",
+    "choice_submit",
+    "resync_request",
+    "surrender",
+    "ping",
+    "pong",
+    "error",
+}
 
 # 房间表: room_id -> {"p1": ws | None, "p2": ws | None, "created_at": float, "p2_joined": threading.Event}
 rooms: dict[str, dict] = {}
@@ -39,6 +55,33 @@ def _send_error(websocket, message: str):
         "message": message,
         "expected_version": PROTOCOL_VERSION,
     }, ensure_ascii=False))
+
+
+def _wire_protocol_version(message: dict) -> int | None:
+    if "protocol_version" in message:
+        return message.get("protocol_version")
+    if is_protocol_message(message):
+        return message.get("version")
+    return None
+
+
+def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bool, str]:
+    version = _wire_protocol_version(message)
+    if version == PROTOCOL_VERSION:
+        if is_protocol_compatible(message):
+            return True, ""
+        return False, "协议版本不兼容。"
+    if version != PROTOCOL_V3:
+        return False, "协议版本不兼容，请双方更新到协议 v3。"
+    if message.get("room_id") != room_id:
+        return False, "消息房间号不匹配。"
+    if message.get("sender") != sender:
+        return False, "消息发送方与连接身份不匹配。"
+    if message.get("message_type") not in V3_MESSAGE_TYPES:
+        return False, "未知协议 v3 消息类型。"
+    if not isinstance(message.get("payload"), dict):
+        return False, "协议 v3 payload 必须是对象。"
+    return True, ""
 
 
 def cleanup_expired_rooms():
@@ -157,10 +200,29 @@ def handle_client(websocket):
 
         # 阶段3: 转发 — 双向透明转发游戏消息
         opponent_role = "p2" if my_role == "p1" else "p1"
+        expected_sender = 0 if my_role == "p1" else 1
+        rate_window_started = time.monotonic()
+        rate_count = 0
         while True:
             try:
                 raw = websocket.recv(timeout=RELAY_RECV_TIMEOUT)
             except TimeoutError:
+                continue
+
+            if not isinstance(raw, str):
+                _send_error(websocket, "只接受 UTF-8 JSON 文本消息。")
+                continue
+            if len(raw.encode("utf-8")) > MAX_MESSAGE_BYTES:
+                _send_error(websocket, "消息超过大小限制。")
+                continue
+
+            now = time.monotonic()
+            if now - rate_window_started >= 1.0:
+                rate_window_started = now
+                rate_count = 0
+            rate_count += 1
+            if rate_count > MAX_MESSAGES_PER_SECOND:
+                _send_error(websocket, "发送频率过高。")
                 continue
 
             try:
@@ -169,9 +231,11 @@ def handle_client(websocket):
                 _send_error(websocket, "收到无效JSON。")
                 continue
 
-            if (not is_protocol_message(forwarded)
-                    or not is_protocol_compatible(forwarded)):
-                _send_error(websocket, "协议版本不兼容，请双方更新到联机协议 v2。")
+            valid, validation_error = _valid_forward_message(
+                forwarded, my_room, expected_sender
+            )
+            if not valid:
+                _send_error(websocket, validation_error)
                 continue
 
             with rooms_lock:

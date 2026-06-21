@@ -70,9 +70,9 @@ GameEngine.apply_choice(state, request, response, rng)
 | 1. 数据与差异框架 | 完成 | 115 张卡和 8 套牌组导入，黄金数据测试通过 |
 | 2. 原生规则引擎 | 完成 | 全部发布效果和对局流程与 Python 对齐 |
 | 3. 离线客户端 | 完成 | UI 自动完整对局、Win 启动和 Android ARM64 导出通过；真机发布复核列入阶段 6 |
-| 4. 两种离线 AI | 未开始 | Challenge/Deep AI 均可离线完整对局 |
-| 5. LAN/Relay 联机 | 未开始 | 三种设备组合均可完整联机对局 |
-| 6. 发布收尾 | 未开始 | 生成 Win ZIP 和签名 ARM64 APK |
+| 4. 两种离线 AI | 完成 | Challenge/Deep AI 均可在 Windows 与 Android 离线完整对局 |
+| 5. LAN/Relay 联机 | 实现完成，待跨设备验收 | ENet/Relay 完整对局通过；Win↔Android 与 Android↔Android 待真机矩阵 |
+| 6. 发布收尾 | 实现完成，待 Android 验收 | 0.2.0 Win ZIP、测试签名 ARM64 APK、校验清单与发布测试通过 |
 
 ## 5. 阶段记录
 
@@ -370,11 +370,281 @@ GameEngine.apply_choice(state, request, response, rng)
 
 阶段结论：完成。按用户要求在此阶段停止，不进入阶段 4。
 
+### 阶段 4：Challenge AI 与 Deep AI
+
+开始日期：2026-06-21
+
+已完成内容：
+
+- 将工具链统一锁定在 `tools/toolchain.lock.json`，并安装到项目内 `.tools/`，不修改系统 `PATH`：
+  - Godot 4.7 stable 与导出模板。
+  - Temurin 17.0.19+10。
+  - Android SDK 35、Build Tools 35.0.1、NDK 28.1.13356709。
+  - Gradle 8.11.1、Python 3.11、SCons 4.10.1。
+  - PyTorch 2.4.1 CPU、ONNX 1.22.0、ONNX Runtime 1.26.0。
+- 所有直接下载的归档均由锁文件提供 SHA-256 或上游 SHA-1；Godot、Android、AI 与原生依赖脚本不再使用动态 `latest` 版本。
+- 固定 `godot-cpp` 提交 `5ffd70e34d0ab87009a9f0ffa3361bc8f4b09731`，使用现有 Visual C++ Build Tools 构建 Windows x86_64 与 Android ARM64 GDExtension。
+- 新增原生 Challenge AI：
+  - 公开信息 Observation 与隐藏信息确定化。
+  - 8 套牌组配置、动作评分、选择评分和可取消搜索。
+  - 快速 64 次/0.5 秒、标准 256 次/1.5 秒、困难 768 次/4 秒，默认标准。
+- 新增专用 AI 协调线程。请求携带状态快照、actor、revision、request ID、模式、难度、牌组和 seed；主线程只接受序列化结果，并在应用前校验 revision/request ID。
+- Challenge AI 与 Deep AI 菜单已开放，支持双方牌组、难度和先后手选择；人类固定为玩家 1，AI 固定为玩家 2，AI 手牌不会显示给人类。
+- 从 8 个已批准检查点导出 opset 17 FP32 ONNX。每个模型同时输出 `action_logits`、`state_value` 与 `choice_logits`，支持动态动作/选择候选数量。
+- 新增 `OnnxInference` GDExtension，提供模型加载/卸载、SHA-256 与尺寸校验、批量候选推理、错误信息、运行耗时、Runtime 版本和 Provider 查询。
+- ONNX Runtime 仅启用 `CPUExecutionProvider`。模型通过 Godot `FileAccess` 从 PCK/APK 读取到内存；一次只加载当前 AI 牌组模型。
+- 新增 Python rules/action v2 → Godot v3 的显式兼容桥。模型不会仅因 Godot schema 版本为 v3 而被错误拒绝。
+- Deep AI 固定 256 次模拟与 8 秒看门狗。模型缺失、SHA/版本错误、推理失败、运行时不可用或零次有效模拟时，会回退标准 Challenge AI 并返回明确原因。
+- 暂停、应用切后台、退出对局、返回标题和节点销毁均会取消并等待搜索线程；退出对局和返回标题同时卸载模型。
+- 发布预设显式包含 8 个 ONNX 模型、ONNX Runtime 许可证与 NOTICE，并排除测试、工具和候选模型。
+
+接口与数据契约：
+
+- 新增 `ai_models_runtime.json`，记录 checkpoint/ONNX SHA-256、opset、尺寸、输入输出名、ONNX Runtime 版本、Provider 和兼容桥版本。
+- 编码契约固定为状态数值 960、卡槽 96、动作/选择 178、card bucket 4096。
+- Python 现有编码器对已知卡牌实际生成 53 个语义特征，而旧的缺失卡牌分支仍生成 48 个；模型训练已包含此历史行为，因此 Godot 兼容编码器明确保留该差异并用黄金 fixture 锁定。
+- `start_local_match_for_test` 与 AI 测试入口支持固定 seed，消除 UI 完整对局测试的随机波动。
+
+测试结果：
+
+- 项目内 Python 3.11 环境完整测试：235 通过，1 跳过；原先 8 个跳过项中的可选 AI 依赖测试已因工具链安装而启用。
+- `scripts/export_godot_data.py --check --skip-images`：通过。
+- `tools/export_onnx_models.ps1 -Check`：8 个模型均为最新且 PyTorch/ONNX 对齐通过；三类输出全局最大绝对误差 `2.86102294921875e-06`，低于 `1e-4`。
+- Godot headless 阶段 0–4 测试通过，覆盖 Python/Godot Observation、card bucket、960/96/178 编码逐项一致，以及 8 个模型的加载和原生推理。
+- 固定 seed 的 Challenge AI 决策可复现；后台协调线程会让出调用线程并支持取消。
+- 错误 SHA-256 会被原生加载器拒绝；Deep AI 动作和选择均验证运行时不可用回退。
+- 16 场完整 AI 回归通过：8 套牌组分别以 Challenge AI 和 Deep AI 完成对局，共执行 1,662 个动作、126 个选择和 606 次 AI 决策，无非法动作、重复 ID 或过期选择；桌面总耗时约 117.3 秒。
+- Windows 与 Android debug 导出通过。Windows 发布包从 PCK 成功加载模型并报告 `CPUExecutionProvider / ONNX Runtime 1.26.0`。
+- APK 元数据通过：包名 `com.pokemontcg.game`、`minSdk=28`、`targetSdk=35`、仅 `arm64-v8a`；APK 内确认包含 8 个 ONNX 模型、`libpokemon_ai` 与 `libonnxruntime.so`。
+- 自动化构建时没有连接 ADB 真机，结果为 `ANDROID_DEVICE_SKIPPED no connected ADB device`。
+- 2026-06-21 用户已在 Android ARM64 真机手动安装并测试当前 APK，确认启动、横屏、触控与两种 AI 的基本表现和电脑端一致，未发现阻断问题。
+
+生成产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot_client/dist/windows/PokemonTCG.pck` | 62,708,936 B | `C7A200720146DC21DF9A205736BA878697DED8CC087DBB9EA70C1AA67DE479DE` |
+| `godot_client/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
+| `godot_client/dist/android/PokemonTCG.apk` | 170,506,276 B | `8C03F1928B83F3F2DA155522E4599F7976484A9D50B1BEFF69119AB02B14438F` |
+
+原生产物校验：
+
+| 产物 | SHA-256 |
+|---|---|
+| Windows debug `libpokemon_ai` | `054CCEFBF5D6072B57BDD15D9FB30B780459B49734B0159B2DF7930E22C6F158` |
+| Windows `onnxruntime.dll` | `B2BA7CA16E0E4FE71AD5148744AB885A2F5809E52A0C3DE4D9BA3853A03977F9` |
+| Android debug `libpokemon_ai` | `7E6975B81D90788C1A5BD21E6192EB7858B042F02FF1E8C4F9C89DB8DDF85A26` |
+| Android `libonnxruntime.so` | `9F8E49B209CBAC4483C96E5FC82F0405747F39C0708FB673561CBB019DB0C0BC` |
+
+提交与边界：
+
+- 工作基线提交：`d64fb58eb7a11dfe1272968c8c2e44d216d3c0c2`。
+- 本轮没有重新训练模型，也没有进入 LAN/Relay 联网阶段。
+- 现有模型的对局步数耗尽率继续作为质量风险记录；本阶段只验证部署、兼容性和合法决策，不宣称模型强度提升。
+- 8 个 FP32 模型和两套原生运行库使 debug APK 增长到约 162.6 MiB；纹理、模型与符号裁剪属于阶段 6。
+- Android 真机结果来自用户手工验收；逐模型自动化性能采样和生命周期压力测试仍保留到阶段 6，不再阻塞阶段 4。
+
+完成日期：2026-06-21。
+
+阶段结论：完成。
+
+### 阶段 5：LAN 与 WebSocket Relay 联机
+
+开始日期：2026-06-21
+
+已完成内容：
+
+- 新增 Godot 协议 v3 envelope，固定包含：
+  - `protocol_version`
+  - `message_type`
+  - `room_id`
+  - `sender`
+  - `sequence`
+  - `state_revision`
+  - `action_id`
+  - `request_id`
+  - `payload`
+- 新增统一 `NetTransport` 接口及两种实现：
+  - `EnetTransport`：LAN 房主/加入，可靠有序点对点传输。
+  - `WebSocketRelayTransport`：支持 `ws://` 与 `wss://` Relay、创建房间和房间码加入。
+- 新增 `AuthoritativeSession`：
+  - 房主持有完整 `GameState`、随机源、规则引擎和结算栈。
+  - 挑战者只提交动作或选择响应，不能提交状态或随机结果。
+  - 房主验证玩家身份、sequence、revision、action ID、request ID 和规则合法性。
+  - 支持投降、重新同步、连接超时和对手断线终止。
+- 新增 `NetworkMatchController`，统一 LAN/Relay 的大厅握手、牌组交换、房间号、状态广播、心跳和错误处理。
+- Godot 标题页已开放“局域网联机”和“Relay 联机”：
+  - 支持创建或加入房间。
+  - 双方分别选择 8 套发布牌组。
+  - LAN 支持地址与端口；Relay 支持 URL 与房间码。
+  - 联机客户端只使用房主发送的合法动作与选择，不在过滤后的状态上自行运行权威规则。
+- 按玩家视角同步状态：
+  - 自己手牌身份可见。
+  - 对手手牌只发送数量。
+  - 双方牌库和奖品只发送数量。
+  - 只有当前选择玩家收到选择候选。
+  - 只有当前行动玩家收到合法动作候选。
+- Relay 服务端继续保持透明转发，不运行规则；在保留旧 Python v2 测试兼容的同时支持 Godot v3，并增加：
+  - 房间与 sender 身份校验。
+  - 256 KiB 消息上限。
+  - 每连接每秒 60 条消息限制。
+  - 未知 v3 消息和伪造身份拒绝。
+
+协议攻击与恢复：
+
+- 重复或回退 sequence：拒绝。
+- 跳跃 sequence：拒绝。
+- 过期 revision：拒绝并发送当前权威状态。
+- 错误 action ID/request ID：拒绝。
+- 非当前连接身份动作：拒绝。
+- 未知消息类型或客户端直接写状态：拒绝。
+- 超大 payload：在传输层或协议层拒绝。
+- 客户端提交动作后在收到新 revision 前会锁定重复提交，避免延迟链路下的旧状态重放。
+- 15 秒空闲发送心跳，45 秒无接收视为连接超时。
+
+测试结果：
+
+- Godot headless：`GODOT_TESTS_OK phase=5`。
+- 协议 v3 单元测试覆盖版本、字段类型、房间、sender、sequence、revision、action ID、request ID、未知消息和大小限制。
+- ENet 实际套接字握手、协议包发送和房主状态广播通过。
+- LAN 完整自动对局：35 回合、151 个动作、30 个选择、181 个 revision，正常产生胜者。
+- 本地 WebSocket Relay 完整自动对局：35 回合、151 个动作、30 个选择、181 个 revision，正常产生胜者。
+- 两种完整对局的每次状态同步都检查隐藏信息，未发现对手手牌、任何牌库顺序或奖品身份泄漏。
+- Python Relay v2/v3 测试：8 项通过；v3 透明转发和伪造 sender 拒绝通过。
+- 项目内 Python 3.11 完整测试：236 通过，1 跳过。
+- Windows/Android debug 导出通过；为包含 8 个 ONNX 模型的大资产 APK 固定 Gradle 为 8 GB 堆、单 worker，避免资产压缩阶段内存溢出。
+- 导出冒烟通过：
+  - `WINDOWS_STARTUP_OK`
+  - `WINDOWS_DEEP_AI_OK provider=CPUExecutionProvider runtime=1.26.0`
+  - `WINDOWS_NETWORK_OK protocol=3 transports=enet,websocket`
+  - `ANDROID_APK_METADATA_OK`
+  - `ANDROID_AI_ASSETS_OK models=8 abi=arm64-v8a`
+- 本轮自动化环境没有连接 ADB 设备，因此新版联网 APK 仍为 `ANDROID_DEVICE_SKIPPED no connected ADB device`。
+
+生成产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot_client/dist/windows/PokemonTCG.pck` | 62,736,788 B | `03BF7F057558C4F3408F882FD62E8C66E06EDB8D1FDF53A5A4C1411224008F73` |
+| `godot_client/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
+| `godot_client/dist/android/PokemonTCG.apk` | 170,534,650 B | `2E52A3D915CA3C0B3A23A808B1501AC006787F033260989DBB4DE4F03B7185E4` |
+
+接口与文件：
+
+- `godot_client/network/protocol_v3.gd`
+- `godot_client/network/net_transport.gd`
+- `godot_client/network/enet_transport.gd`
+- `godot_client/network/websocket_relay_transport.gd`
+- `godot_client/network/authoritative_session.gd`
+- `godot_client/network/network_match_controller.gd`
+- `tools/test_godot_network.ps1`
+
+风险与遗留：
+
+- 当前自动化在同一台 Windows 主机上使用两个真实网络端点完成 Win↔Win LAN/Relay 对局。
+- 仍需用户在真实设备上完成 Win↔Android、Android↔Android 的 LAN 与 Relay 六种组合验收。
+- 当前 Relay 验收使用本机 `ws://127.0.0.1`；正式公网 `wss://` 需要用户提供 TLS Relay 地址或反向代理环境。
+- 首版不做房主迁移；房主断线时对局终止并明确返回标题。
+- 短时重连只提供显式 `resync_request` 基础，不承诺断开连接后的会话保留；完整重连产品规则仍待锁定。
+
+完成日期：待跨设备和公网 Relay 验收。
+
+阶段结论：实现完成，待跨设备验收。
+
+### 阶段 6：发布与收尾
+
+开始日期：2026-06-21
+
+已完成内容：
+
+- 客户端版本升级为 `0.2.0`，Windows 文件版本与 Android `versionCode=2`、`versionName=0.2.0` 同步。
+- 新增持久化运行时设置：
+  - 主音量与静音。
+  - 减少界面动画。
+  - 12/24/48 张卡图缓存上限。
+  - 最近使用的 Relay URL。
+  - 设置写入应用私有目录 `user://settings.cfg`。
+- 新增受控卡图 LRU 缓存；查看卡牌详情不再无限保留卡图引用，Android 收到系统内存警告时会主动清空缓存。
+- 新增 Deep AI 模型加载遮罩；模型损坏或加载失败时继续保留既有 Challenge AI 回退提示。
+- 完善 Android 生命周期：
+  - AI 思考期间进入后台会取消搜索，恢复后按当前 revision 重新调度。
+  - 联机期间进入后台会安全关闭传输；恢复后返回标题并明确提示，避免后台超时后继续使用过期状态。
+  - 退出场景继续回收 AI、模型和网络对象。
+- 新增 `tools/package_release.ps1`：
+  - 构建 Windows x86_64 与 Android ARM64 release 原生库。
+  - 生成 Godot release 导出。
+  - 生成 Windows 便携 ZIP。
+  - 附带 ONNX Runtime 许可证、第三方 NOTICE、发布说明和构建信息。
+  - 对 ZIP、APK、PCK、原生库和 8 个 ONNX 模型生成 SHA-256 清单。
+- Android 签名支持两种模式：
+  - `test`：在 `.tools/signing/` 生成稳定的本地测试密钥，仅用于真机验收。
+  - `production`：通过 `GODOT_ANDROID_KEYSTORE_RELEASE_PATH`、`GODOT_ANDROID_KEYSTORE_RELEASE_USER`、`GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 注入正式签名，不把密钥或密码写入仓库。
+- 新增 `tools/test_release.ps1`，自动验证：
+  - Windows release 运行时冒烟。
+  - ZIP 必需文件和开发内容排除。
+  - Android 包名、版本、SDK、ABI。
+  - APK v2 签名。
+  - 8 个 ONNX 模型和 Android release 原生库。
+  - 14 项发布校验值。
+- release 导出显式排除 `dist/` 和生成的 Android Gradle 目录，避免旧校验清单或旧产物回灌进新的 PCK/APK。
+- 新增 `RELEASE_NOTES.md` 和 `ANDROID_TEST_CHECKLIST.md`，后者覆盖安装升级、设置持久化、离线模式、生命周期、长局和跨设备联机矩阵。
+- Android release APK 为包含全部模型和原生库的大资产包；Gradle 固定 8 GB 堆、单 worker，release APK 相比 debug APK 减少约 6.2 MB。
+
+测试与性能：
+
+- 项目内 Python 3.11：236 通过，1 跳过。
+- Godot 数据导出检查：无漂移。
+- 8 个 ONNX 模型：当前且 PyTorch/ONNX 对齐通过。
+- Godot headless：`GODOT_TESTS_OK phase=6`。
+- LAN/Relay 真实本机端点完整对局继续通过：
+  - 两种传输均为 35 回合、151 个动作、30 个选择、181 个 revision。
+- 16 场 AI 完整回归通过：
+  - Challenge AI 8 场、Deep AI 8 场。
+  - 无非法动作、过期选择或非预期 Deep AI 回退。
+  - 总耗时 116,690 ms。
+  - Godot 静态内存由 27,456,062 B 增至 29,165,530 B，峰值 47,818,121 B。
+- Windows release 冒烟：
+  - `PHASE6_EXPORT_RELEASE_OK version=0.2.0 settings=1 cache=1 licenses=1`
+- Windows ZIP 内容裁剪通过，不包含 Python、PyTorch、测试、开发工具或 console wrapper。
+- Android release 验证：
+  - 包名 `com.pokemontcg.game`。
+  - `versionCode=2`、`versionName=0.2.0`。
+  - `minSdk=28`、`targetSdk=35`、仅 `arm64-v8a`。
+  - APK Signature Scheme v2 验证通过。
+  - 测试签名证书 SHA-256：`BC7864354DB28FC45C65AAEF8F1478BB5B7DE2CD2B2DB34C07BD769EB4EFF79C`。
+  - 8 个模型、`libpokemon_ai.android.template_release.arm64.so` 与 `libonnxruntime.so` 均存在。
+
+生成产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `PokemonTCG-Windows-x86_64-0.2.0.zip` | 103,432,202 B | `7E55AD36520E3BC6B6B25F95CAA7E44B5048A4B20AF78BA785654BAC7A8FFF7F` |
+| Windows release `PokemonTCG.exe` | 109,071,360 B | `92DA874B0E3CBC7ED39D141734B0F91386F097FA98638C9AA6332BE2DD8A076C` |
+| Windows release `PokemonTCG.pck` | 62,745,732 B | `870C0FFA826B7B2200C36C6F6B3F16CC7023BE8C9EE024E4F9F85243D1A2A3E1` |
+| Windows release `libpokemon_ai` | 367,104 B | `DA07EA3BE1D8F3023CDE0754338BF5C568AE2BCB1292DD74860AC47151806C46` |
+| Windows `onnxruntime.dll` | 14,897,976 B | `B2BA7CA16E0E4FE71AD5148744AB885A2F5809E52A0C3DE4D9BA3853A03977F9` |
+| `PokemonTCG-Android-arm64-0.2.0-test.apk` | 164,367,293 B | `6350D63ED9E872124E71075337E1A004C067D228836EDEE9734B316E925219D0` |
+
+风险与遗留：
+
+- 当前 APK 使用本机测试签名，只用于用户 Android 验收；正式发布仍需注入用户持有的 production keystore 后重新生成 APK。
+- Android 真机的安装升级、锁屏/切后台、音频焦点、低内存、温度、耗电和连续多局测试由用户执行，结果未自动推定为通过。
+- 阶段 5 的 Win↔Android、Android↔Android LAN/Relay 与公网 `wss://` 矩阵仍依赖真实设备和 Relay 环境。
+- 当前卡图已经使用平台纹理导入且 release 包裁剪了调试原生库；8 个 FP32 模型本身约 42.0 MiB，是进一步缩小 APK 的主要边界，本轮不通过量化改变已验收模型。
+
+完成日期：待 Android 真机验收和正式签名。
+
+阶段结论：实现完成，待用户 Android 验收。
+
 ## 6. 剩余任务
 
-以下任务均未在本阶段启动。后续恢复迁移时应按阶段 4、5、6 顺序执行，并继续遵守“代码、测试、文档同阶段交付”。
+阶段 4 已完成；阶段 5 与阶段 6 均已完成本机实现和自动化验收。剩余工作仅为 Android 真机生命周期、跨设备联网、公网 WSS 和正式签名。
 
-### 6.1 阶段 4：两种离线 AI
+### 6.1 阶段 4：两种离线 AI（历史实施清单）
+
+> 以下清单保留用于审计本阶段原始范围。Android 基本真机验收已完成，长局、生命周期与逐模型性能测试统一列入阶段 6.2。
 
 #### 6.1.1 Challenge AI 原生迁移
 
@@ -436,7 +706,9 @@ GameEngine.apply_choice(state, request, response, rng)
 - 模型损坏或版本不匹配时，UI 明确提示并回退 Challenge AI。
 - 完成后更新本报告，记录模型清单、推理库版本、构建命令、性能数据和产物校验值。
 
-### 6.2 阶段 5：LAN 与 WebSocket Relay 联机
+### 6.2 阶段 5：LAN 与 WebSocket Relay 联机（历史实施清单）
+
+> 协议、两种传输、房主权威、隐藏信息、攻击测试和 Win↔Win 完整对局均已实现；以下清单保留用于审计，尚未完成的部分仅为真实跨设备矩阵与公网 WSS 验收。
 
 #### 6.2.1 协议 v3 与传输抽象
 
@@ -493,7 +765,9 @@ GameEngine.apply_choice(state, request, response, rng)
 - 对两名玩家分别抓取收到的状态，自动断言隐藏信息未泄漏。
 - 完成后在报告中记录 Relay 版本、测试拓扑、延迟范围、断线行为和已知限制。
 
-### 6.3 阶段 6：发布与收尾
+### 6.3 阶段 6：发布与收尾（历史实施清单）
+
+> 本节保留用于审计原始范围。代码、release 构建和自动化验证已经完成；尚未完成项为需要用户设备或正式密钥的外部验收。
 
 #### 6.3.1 表现与性能
 
@@ -533,27 +807,23 @@ GameEngine.apply_choice(state, request, response, rng)
 - Windows 和 Android 在完全断网状态下完成 Challenge AI 与 Deep AI 对局。
 - 完成 LAN/Relay 六种设备组合测试。
 - 完成至少一轮长局、连续多局、断网、切后台、低内存和安装升级测试。
-- 复跑 Python 235 项测试、Godot 全部阶段测试、Python/Godot 黄金差异测试、协议攻击测试和 AI 回归。
+- 复跑 Python 236 项测试、Godot 全部阶段测试、Python/Godot 黄金差异测试、协议攻击测试和 AI 回归。
 - 更新本报告的最终差异、已知限制、构建命令、签名流程、依赖版本和发布校验值。
 - 提供最小发布说明，包括系统要求、联网方式、断线行为和模型回退行为。
 
-### 6.4 恢复工作前必须准备的外部条件
+### 6.4 后续验收需要的外部条件
 
-- Android 9+、ARM64、可通过 ADB 连接的真实设备。
-- ONNX Runtime 的 Windows x86_64 和 Android arm64 构建来源或可重复构建方案。
-- 8 个模型对应的完整 PyTorch 网络定义和可加载检查点。
+- Android 9+、ARM64、可通过 ADB 连接的真实设备；完成 Android↔Android 时需要两台。
 - Relay 测试地址；进入公网测试前需提供 TLS 域名或明确由反向代理终止 TLS。
 - Android 正式签名密钥或由用户指定的 CI secret 管理方式。
-- 若需要跨公网真机矩阵测试，至少两台 Android 设备和一台 Windows 设备。
 
 ### 6.5 后续恢复时的执行顺序
 
-1. 先复跑 `python -B -m unittest discover -q`、`tools/test_godot.ps1` 和当前 Win/Android 导出，确认阶段 0–3 基线未回归。
-2. 完成 Challenge AI 后单独验收，再开始 ONNX 导出和 GDExtension，避免同时调试决策逻辑与原生推理。
-3. 阶段 4 完成并更新报告后，才开放 AI 菜单并进入阶段 5。
-4. 先完成 LAN 权威对局，再接 WebSocket Relay；两者共用同一协议 v3 和状态校验层。
-5. 阶段 5 完成并更新报告后，才开始 release 签名、资源裁剪和最终设备矩阵。
-6. 阶段 6 所有发布验收通过后，生成最终 ZIP/APK 和校验清单。
+1. 在 Win↔Android、Android↔Android 上分别完成 LAN 与 Relay 对局。
+2. 使用正式 `wss://` Relay 验证 TLS、延迟、断线和重新同步行为。
+3. 完成阶段 5 外部验收后进入阶段 6 的性能、生命周期与资源裁剪。
+4. 注入正式签名密钥，生成 Windows ZIP 与签名 Android APK。
+5. 阶段 6 所有发布验收通过后，生成最终产物和 SHA-256 清单。
 
 ## 7. 阶段完成记录格式
 

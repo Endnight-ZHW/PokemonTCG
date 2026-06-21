@@ -6,10 +6,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $windowsExe = Join-Path $repoRoot 'godot_client\dist\windows\PokemonTCG.exe'
+$windowsConsole = Join-Path $repoRoot 'godot_client\dist\windows\PokemonTCG.console.exe'
 $androidApk = Join-Path $repoRoot 'godot_client\dist\android\PokemonTCG.apk'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'
+$jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $adb = Join-Path $sdkRoot 'platform-tools\adb.exe'
-$aapt = Join-Path $sdkRoot 'build-tools\35.0.0\aapt.exe'
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$lock = Get-ToolchainLock -RepoRoot $repoRoot
+$buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
+$aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
+Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
 
 if (-not (Test-Path -LiteralPath $windowsExe)) {
     throw 'Windows export is missing.'
@@ -52,6 +58,60 @@ foreach ($expected in @(
     }
 }
 Write-Host 'ANDROID_APK_METADATA_OK'
+
+if (-not (Test-Path -LiteralPath $windowsConsole)) {
+    throw 'Windows console export is missing.'
+}
+$aiSmoke = & $windowsConsole -- --phase4-ai-smoke 2>&1
+$aiSmokeText = $aiSmoke -join "`n"
+if (
+    $LASTEXITCODE -ne 0 -or
+    -not $aiSmokeText.Contains('PHASE4_EXPORT_AI_OK') -or
+    -not $aiSmokeText.Contains('provider=CPUExecutionProvider') -or
+    -not $aiSmokeText.Contains('runtime=1.26.0')
+) {
+    throw "Exported Windows Deep AI smoke test failed.`n$aiSmokeText"
+}
+Write-Host 'WINDOWS_DEEP_AI_OK provider=CPUExecutionProvider runtime=1.26.0'
+
+$networkSmoke = & $windowsConsole -- --phase5-network-smoke 2>&1
+$networkSmokeText = $networkSmoke -join "`n"
+if (
+    $LASTEXITCODE -ne 0 -or
+    -not $networkSmokeText.Contains('PHASE5_EXPORT_NETWORK_OK')
+) {
+    throw "Exported Windows network smoke test failed.`n$networkSmokeText"
+}
+Write-Host 'WINDOWS_NETWORK_OK protocol=3 transports=enet,websocket'
+
+$jar = Join-Path $jdkRoot 'bin\jar.exe'
+$apkEntries = & $jar tf $androidApk
+if ($LASTEXITCODE -ne 0) {
+    throw 'Unable to list Android APK contents.'
+}
+foreach ($deckKey in @(
+    'fire',
+    'water',
+    'psychic',
+    'lightning',
+    'fighting',
+    'colorless',
+    'dragon',
+    'grass'
+)) {
+    if ("assets/data/ai_models/$deckKey.onnx" -notin $apkEntries) {
+        throw "Android APK is missing the $deckKey ONNX model."
+    }
+}
+foreach ($nativeEntry in @(
+    'lib/arm64-v8a/libonnxruntime.so',
+    'lib/arm64-v8a/libpokemon_ai.android.template_debug.arm64.so'
+)) {
+    if ($nativeEntry -notin $apkEntries) {
+        throw "Android APK is missing native library: $nativeEntry"
+    }
+}
+Write-Host 'ANDROID_AI_ASSETS_OK models=8 abi=arm64-v8a'
 
 $deviceRows = & $adb devices
 $connected = @(

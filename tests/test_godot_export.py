@@ -32,6 +32,20 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(first_cards, second_cards)
             self.assertEqual(len(first_cards), 115)
             self.assertEqual(first_cards["svi-chim"]["card_bucket"], 3624)
+            self.assertEqual(len(first_cards["svi-chim"]["ai_semantic_features"]), 53)
+            encoder_fixture = json.loads(
+                (first / "tests" / "fixtures" / "ai_encoder_golden.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(len(encoder_fixture["expected"]["state_numeric"]), 960)
+            self.assertEqual(len(encoder_fixture["expected"]["state_cards"]), 96)
+            self.assertTrue(
+                all(
+                    len(row["numeric"]) == 178
+                    for row in encoder_fixture["expected"]["actions"]
+                )
+            )
             self.assertEqual(
                 first_cards["svi-chim"]["image_path"],
                 "res://assets/cards/svi-chim.webp",

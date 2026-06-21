@@ -2,7 +2,7 @@ extends Node
 
 signal status_changed(message: String)
 
-const APP_VERSION := "0.1.0"
+const APP_VERSION := "0.2.0"
 const RULES_SCHEMA_VERSION := 3
 const ACTION_SCHEMA_VERSION := 3
 const PROTOCOL_VERSION := 3

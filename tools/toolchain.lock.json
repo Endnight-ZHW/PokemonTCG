@@ -1,0 +1,46 @@
+{
+  "godot": {
+    "version": "4.7-stable",
+    "full_config": "4.7.stable",
+    "editor_url": "https://godot-releases.nbg1.your-objectstorage.com/4.7-stable/Godot_v4.7-stable_win64.exe.zip",
+    "editor_sha256": "02a5312236f4e0209c78bcb2f52135b1963e6b8888c873c9cee81459e60bcd71",
+    "templates_url": "https://godot-releases.nbg1.your-objectstorage.com/4.7-stable/Godot_v4.7-stable_export_templates.tpz",
+    "templates_sha256": "9714459dc071907c0f3d5f17d608faf69e7cda21331fc5d39c4503ffa4e99eec"
+  },
+  "java": {
+    "version": "17.0.19+10",
+    "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.19%2B10/OpenJDK17U-jdk_x64_windows_hotspot_17.0.19_10.zip",
+    "sha256": "b5b235c48adf6a081874b812c630b9f4b5f637b7a5ed18b9174d08a41ec4c235"
+  },
+  "android": {
+    "command_line_tools_version": "20.0",
+    "command_line_tools_url": "https://dl.google.com/android/repository/commandlinetools-win-14742923_latest.zip",
+    "command_line_tools_sha1": "16b3f45ddb3d85ea6bbe6a1c0b47146daf0db450",
+    "platform": "platforms;android-35",
+    "build_tools": "build-tools;35.0.1",
+    "platform_tools": "platform-tools",
+    "ndk": "ndk;28.1.13356709"
+  },
+  "gradle": {
+    "version": "8.11.1",
+    "url": "https://services.gradle.org/distributions/gradle-8.11.1-bin.zip",
+    "sha256": "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
+  },
+  "python": {
+    "version": "3.11",
+    "torch": "2.4.1",
+    "numpy": "1.26.4",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.26.0",
+    "scons": "4.10.1",
+    "websockets": "16.0"
+  },
+  "native": {
+    "godot_cpp_commit": "5ffd70e34d0ab87009a9f0ffa3361bc8f4b09731",
+    "onnxruntime_version": "1.26.0",
+    "onnxruntime_windows_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-win-x64-1.26.0.zip",
+    "onnxruntime_windows_sha256": "6ebe99b5564bf4d029b6e93eac9ff423682b6212eade769e9ca3f685eaf500b4",
+    "onnxruntime_android_url": "https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.26.0/onnxruntime-android-1.26.0.aar",
+    "onnxruntime_android_sha1": "8064b1e65f35a3cad2214324c2dbeceadcc6ecc7"
+  }
+}

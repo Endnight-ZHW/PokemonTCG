@@ -20,6 +20,38 @@ pip install -r requirements-ai.txt
 
 启动后在标题界面选择模式。联机端口、Relay 地址和房间码都在「远程联机对战」界面填写。
 
+## Godot 4.7 客户端
+
+Godot 迁移版已实现本地双人、Challenge AI、Deep AI、ENet 局域网联机和 WebSocket Relay 联机。工具链全部安装在项目 `.tools/` 下，不修改系统 `PATH`。
+
+```powershell
+.\tools\setup_godot_toolchain.ps1
+.\tools\setup_android_toolchain.ps1
+.\tools\setup_ai_toolchain.ps1
+.\tools\setup_native_ai_deps.ps1
+
+.\tools\build_native_ai.ps1 -Target all -Configuration all
+.\tools\test_godot.ps1
+.\tools\test_godot_ai.ps1
+.\tools\test_godot_network.ps1
+.\tools\build_godot.ps1 -Target all -Configuration debug
+.\tools\smoke_godot_build.ps1
+.\tools\package_release.ps1 -AndroidSigning test
+.\tools\test_release.ps1
+```
+
+依赖版本和下载摘要锁定在 `tools/toolchain.lock.json`。0.2.0 release 候选已生成，Windows/Android 发布包内置 8 个 FP32 ONNX 模型和 ONNX Runtime CPU Provider，不包含 Python、PyTorch 或训练工具。Android 离线 AI 基本真机验收已通过；新版设置、生命周期和跨设备联网矩阵仍待真机验收，详细状态见 `GODOT_MIGRATION_REPORT.md`。
+
+Godot 客户端的局域网模式使用 ENet，默认端口为 `8765`。Relay 模式可连接 `ws://` 或 `wss://` 地址；本地 Relay 可这样启动：
+
+```powershell
+.\.tools\python311\python.exe .\relay_server.py --host 0.0.0.0 --port 8766
+```
+
+房主创建四位房间码，挑战者填写相同 Relay URL 和房间码加入。Godot 客户端仅兼容协议 v3，不与旧 Pygame 联机客户端互联。
+
+`package_release.ps1 -AndroidSigning test` 会生成供真机验收的稳定本地测试签名 APK。正式发布时使用 `-AndroidSigning production`，并通过 `GODOT_ANDROID_KEYSTORE_RELEASE_PATH`、`GODOT_ANDROID_KEYSTORE_RELEASE_USER` 和 `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 注入签名信息。签名文件和密码不会写入仓库。
+
 ## 游戏模式
 
 | 模式 | 说明 |

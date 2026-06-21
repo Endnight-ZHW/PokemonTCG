@@ -3,7 +3,11 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$toolsRoot = Join-Path $repoRoot '.tools'
 $godot = Join-Path $repoRoot '.tools\godot-4.7\Godot_v4.7-stable_win64_console.exe'
+
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 
 if (-not (Test-Path -LiteralPath $godot)) {
     throw 'Godot 4.7 is not installed. Run tools/setup_godot_toolchain.ps1 first.'

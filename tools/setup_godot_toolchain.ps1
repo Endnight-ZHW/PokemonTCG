@@ -12,46 +12,27 @@ $godotRoot = Join-Path $toolsRoot 'godot-4.7'
 $godotExe = Join-Path $godotRoot 'Godot_v4.7-stable_win64.exe'
 $godotConsole = Join-Path $godotRoot 'Godot_v4.7-stable_win64_console.exe'
 
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$lock = Get-ToolchainLock -RepoRoot $repoRoot
+Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 New-Item -ItemType Directory -Force -Path $downloads, $godotRoot | Out-Null
 
-function Assert-UnderToolsRoot {
-    param([Parameter(Mandatory)] [string]$Path)
-    $resolvedTools = [System.IO.Path]::GetFullPath($toolsRoot)
-    $resolvedTarget = [System.IO.Path]::GetFullPath($Path)
-    if (-not $resolvedTarget.StartsWith($resolvedTools, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing filesystem operation outside tools root: $resolvedTarget"
-    }
-}
-
-function Get-PortableArchive {
-    param(
-        [Parameter(Mandatory)] [string]$Uri,
-        [Parameter(Mandatory)] [string]$Destination
-    )
-    if ($Force -or -not (Test-Path -LiteralPath $Destination)) {
-        Write-Host "Downloading $Uri"
-        Invoke-WebRequest -Uri $Uri -OutFile $Destination
-    }
-}
-
 $godotZip = Join-Path $downloads 'Godot_v4.7-stable_win64.exe.zip'
-Get-PortableArchive `
-    -Uri 'https://godot-releases.nbg1.your-objectstorage.com/4.7-stable/Godot_v4.7-stable_win64.exe.zip' `
-    -Destination $godotZip
+Get-VerifiedDownload -Uri $lock.godot.editor_url -Destination $godotZip `
+    -Sha256 $lock.godot.editor_sha256 -Force:$Force
 
 if ($Force -or -not (Test-Path -LiteralPath $godotExe)) {
     Expand-Archive -LiteralPath $godotZip -DestinationPath $godotRoot -Force
 }
 
 $templateArchive = Join-Path $downloads 'Godot_v4.7-stable_export_templates.tpz'
-Get-PortableArchive `
-    -Uri 'https://godot-releases.nbg1.your-objectstorage.com/4.7-stable/Godot_v4.7-stable_export_templates.tpz' `
-    -Destination $templateArchive
+Get-VerifiedDownload -Uri $lock.godot.templates_url -Destination $templateArchive `
+    -Sha256 $lock.godot.templates_sha256 -Force:$Force
 
 $templateRoot = Join-Path $env:APPDATA 'Godot\export_templates\4.7.stable'
 if ($Force -or -not (Test-Path -LiteralPath (Join-Path $templateRoot 'version.txt'))) {
     $templateTemp = Join-Path $toolsRoot 'template-extract'
-    Assert-UnderToolsRoot $templateTemp
+    Assert-PathUnderRoot -Root $toolsRoot -Path $templateTemp
     if (Test-Path -LiteralPath $templateTemp) {
         Remove-Item -LiteralPath $templateTemp -Recurse -Force
     }

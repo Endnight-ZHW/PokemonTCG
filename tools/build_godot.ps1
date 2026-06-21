@@ -14,6 +14,10 @@ $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'
 $downloadsRoot = Join-Path $repoRoot '.tools\downloads'
 
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$lock = Get-ToolchainLock -RepoRoot $repoRoot
+Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
+
 if (-not (Test-Path -LiteralPath $godot)) {
     throw 'Godot 4.7 is not installed. Run tools/setup_godot_toolchain.ps1 first.'
 }
@@ -40,7 +44,12 @@ function Invoke-GodotExport {
 }
 
 if ($Target -in @('windows', 'all')) {
-    Invoke-GodotExport -Preset 'Windows Desktop' -Output 'dist/windows/PokemonTCG.exe'
+    $windowsOutput = if ($Configuration -eq 'release') {
+        'dist/release/windows/PokemonTCG.exe'
+    } else {
+        'dist/windows/PokemonTCG.exe'
+    }
+    Invoke-GodotExport -Preset 'Windows Desktop' -Output $windowsOutput
 }
 
 if ($Target -in @('android', 'all')) {
@@ -67,24 +76,34 @@ if ($Target -in @('android', 'all')) {
     if ($settingsExitCode -ne 0) {
         throw "Unable to configure Godot Android editor settings (exit $settingsExitCode)"
     }
-    $needsTemplate = -not (Test-Path -LiteralPath (Join-Path $projectRoot 'android\build\build.gradle'))
+    $androidRoot = Join-Path $projectRoot 'android'
+    $androidBuildRoot = Join-Path $androidRoot 'build'
+    $buildVersionPath = Join-Path $androidRoot '.build_version'
+    $installedBuildVersion = if (Test-Path -LiteralPath $buildVersionPath) {
+        (Get-Content -Raw -LiteralPath $buildVersionPath).Trim()
+    } else {
+        ''
+    }
+    $needsTemplate = (
+        -not (Test-Path -LiteralPath (Join-Path $androidBuildRoot 'build.gradle')) -or
+        $installedBuildVersion -ne $lock.godot.full_config
+    )
     if ($needsTemplate) {
         $templateArchive = Join-Path $env:APPDATA 'Godot\export_templates\4.7.stable\android_source.zip'
         if (-not (Test-Path -LiteralPath $templateArchive)) {
             throw 'Godot Android source template is missing. Re-run tools/setup_godot_toolchain.ps1.'
         }
-        $androidBuildRoot = Join-Path $projectRoot 'android\build'
+        New-Item -ItemType Directory -Force -Path $androidRoot | Out-Null
         New-Item -ItemType Directory -Force -Path $androidBuildRoot | Out-Null
         Expand-Archive -LiteralPath $templateArchive -DestinationPath $androidBuildRoot -Force
+        Set-Content -LiteralPath $buildVersionPath -Value $lock.godot.full_config -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $androidBuildRoot '.gdignore') -Value '' -Encoding UTF8
     }
 
-    $gradleZip = Join-Path $downloadsRoot 'gradle-8.11.1-bin.zip'
-    if (-not (Test-Path -LiteralPath $gradleZip)) {
-        New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
-        Invoke-WebRequest `
-            -Uri 'https://services.gradle.org/distributions/gradle-8.11.1-bin.zip' `
-            -OutFile $gradleZip
-    }
+    $gradleZip = Join-Path $downloadsRoot "gradle-$($lock.gradle.version)-bin.zip"
+    New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
+    Get-VerifiedDownload -Uri $lock.gradle.url -Destination $gradleZip `
+        -Sha256 $lock.gradle.sha256
     $wrapperProperties = Join-Path $projectRoot 'android\build\gradle\wrapper\gradle-wrapper.properties'
     if (Test-Path -LiteralPath $wrapperProperties) {
         $gradleUri = ([System.Uri]::new($gradleZip)).AbsoluteUri.Replace('\', '/')
@@ -98,12 +117,28 @@ if ($Target -in @('android', 'all')) {
     $gradleProperties = Join-Path $projectRoot 'android\build\gradle.properties'
     if (Test-Path -LiteralPath $gradleProperties) {
         $gradleContent = Get-Content -Raw -LiteralPath $gradleProperties
-        if ($gradleContent -notmatch '(?m)^org\.gradle\.daemon=') {
-            $gradleContent += "`r`norg.gradle.daemon=false`r`n"
-            Set-Content -LiteralPath $gradleProperties -Value $gradleContent -Encoding UTF8
+        $requiredGradleProperties = [ordered]@{
+            'org.gradle.jvmargs' = '-Xmx8192m -Dfile.encoding=UTF-8'
+            'org.gradle.workers.max' = '1'
+            'org.gradle.daemon' = 'false'
         }
+        foreach ($propertyName in $requiredGradleProperties.Keys) {
+            $propertyValue = $requiredGradleProperties[$propertyName]
+            $propertyPattern = "(?m)^$([regex]::Escape($propertyName))=.*$"
+            if ($gradleContent -match $propertyPattern) {
+                $gradleContent = $gradleContent -replace $propertyPattern, "$propertyName=$propertyValue"
+            } else {
+                $gradleContent += "`r`n$propertyName=$propertyValue`r`n"
+            }
+        }
+        Set-Content -LiteralPath $gradleProperties -Value $gradleContent -Encoding UTF8
+    }
+    $androidOutput = if ($Configuration -eq 'release') {
+        'dist/release/android/PokemonTCG.apk'
+    } else {
+        'dist/android/PokemonTCG.apk'
     }
     Invoke-GodotExport `
         -Preset 'Android ARM64' `
-        -Output 'dist/android/PokemonTCG.apk'
+        -Output $androidOutput
 }

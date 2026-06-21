@@ -28,13 +28,23 @@ from data.deck_definitions import (
     PSYCHIC_DECK_NATU,
     WATER_DECK,
 )
-from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION, GameAction
+from engine.actions import (
+    ACTION_SCHEMA_VERSION,
+    RULES_SCHEMA_VERSION,
+    CardRef,
+    ChoiceOption,
+    ChoiceRequest,
+    GameAction,
+    PokemonRef,
+)
+from engine.ai.observation import Observation
 from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
     CARD_BUCKET_COUNT,
     ENCODER_SCHEMA_VERSION,
     STATE_CARD_SLOTS,
     STATE_NUMERIC_SIZE,
+    ActionStateEncoder,
     card_bucket,
 )
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
@@ -159,6 +169,7 @@ def _export_images(output: Path, mapping: dict[str, str]) -> dict[str, str]:
 def _card_payload(image_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
     release_ids = sorted(set(ALL_CARD_IDS))
     CardRegistry.initialize(release_ids)
+    encoder = ActionStateEncoder()
     cards: dict[str, dict[str, Any]] = {}
     for card_id in release_ids:
         card = CardRegistry.get(card_id)
@@ -168,6 +179,7 @@ def _card_payload(image_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
         payload.update(
             {
                 "card_bucket": card_bucket(card_id),
+                "ai_semantic_features": encoder._card_semantic_features(card),
                 "image_path": image_paths.get(card_id, ""),
                 "prize_value": card.prize_value,
                 "provides_energy": card.provides_energy,
@@ -314,6 +326,160 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
             "algorithm": "xorshift32",
             "seed": 20260620,
             "uint32": _portable_rng_sequence(20260620, 8),
+        },
+    }
+
+
+def _ref_payload(ref: Any) -> dict[str, Any] | None:
+    if isinstance(ref, CardRef):
+        return {
+            "kind": "card",
+            "player": ref.player,
+            "zone": ref.zone,
+            "slot": "",
+            "index": ref.index,
+            "attachment_type": "",
+            "card_id": ref.card_id,
+        }
+    if isinstance(ref, PokemonRef):
+        return {
+            "kind": "pokemon",
+            "player": ref.player,
+            "zone": "",
+            "slot": ref.slot,
+            "index": -1,
+            "attachment_type": "",
+            "card_id": ref.card_id,
+        }
+    return None
+
+
+def _action_payload(action: GameAction) -> dict[str, Any]:
+    return {
+        "action": action.action.name if isinstance(action.action, PlayerAction) else str(action.action),
+        "params": _json_value(action.params),
+        "terminal": action.terminal,
+        "actor": action.actor if action.actor is not None else -1,
+        "source": _ref_payload(action.source),
+        "target": _ref_payload(action.target),
+        "action_id": action.action_id,
+    }
+
+
+def _ai_encoder_fixture() -> dict[str, Any]:
+    observation = Observation(
+        perspective=1,
+        turn_number=7,
+        phase="MAIN",
+        active_player=1,
+        winner=None,
+        own_hand=("sv1-ener-3", "sv2-cand", "sv2-39"),
+        own_discard=("sv1-152", "sv1-ener-3"),
+        own_deck_count=34,
+        own_prize_count=4,
+        opponent_hand_count=5,
+        opponent_discard=("sv1-ener-2", "svi-chim"),
+        opponent_deck_count=31,
+        opponent_prize_count=3,
+        board=(
+            (0, "active", "svi-ente", 4, ("sv1-ener-2",), ("BURNED",), ""),
+            (0, "bench_0", "svi-chim", 0, (), (), ""),
+            (0, "bench_1", "", 0, (), (), ""),
+            (0, "bench_2", "", 0, (), (), ""),
+            (0, "bench_3", "", 0, (), (), ""),
+            (0, "bench_4", "", 0, (), (), ""),
+            (1, "active", "sv2-grex", 6, ("sv1-ener-3", "sv1-ener-3"), (), ""),
+            (1, "bench_0", "sv2-staryu", 0, ("sv1-ener-3",), (), ""),
+            (1, "bench_1", "", 0, (), (), ""),
+            (1, "bench_2", "", 0, (), (), ""),
+            (1, "bench_3", "", 0, (), (), ""),
+            (1, "bench_4", "", 0, (), (), ""),
+        ),
+        stadium_id="sv1-176",
+        public_deck_keys=("fire", "water"),
+        apply_type_matchups=False,
+    )
+    actions = (
+        GameAction(
+            PlayerAction.ATTACH_ENERGY,
+            {"hand_idx": 0, "target_slot": "active"},
+            False,
+            1,
+            CardRef(1, "hand", 0, "sv1-ener-3"),
+            PokemonRef(1, "active", "sv2-grex"),
+        ),
+        GameAction(
+            PlayerAction.DECLARE_ATTACK,
+            {"attack_idx": 1},
+            True,
+            1,
+            PokemonRef(1, "active", "sv2-grex"),
+        ),
+        GameAction(PlayerAction.END_TURN, {}, True, 1),
+    )
+    choice = ChoiceRequest(
+        "choice:fixture",
+        "select_bench",
+        1,
+        "fixture",
+        (
+            ChoiceOption(
+                "pokemon:1:bench_0:sv2-staryu",
+                "海星星",
+                PokemonRef(1, "bench_0", "sv2-staryu"),
+            ),
+            ChoiceOption(
+                "card:hand:1:sv2-cand",
+                "小菘",
+                CardRef(1, "hand", 1, "sv2-cand"),
+            ),
+        ),
+    )
+    encoder = ActionStateEncoder()
+    encoded_state = encoder.encode_observation(observation, "water")
+    encoded_actions = [
+        encoder.encode_game_action(observation, action) for action in actions
+    ]
+    encoded_choices = [
+        encoder.encode_choice_option(observation, choice.request_type, option, index)
+        for index, option in enumerate(choice.options)
+    ]
+    return {
+        "fixture_version": 1,
+        "deck_key": "water",
+        "observation": _json_value(observation),
+        "actions": [_action_payload(action) for action in actions],
+        "choice": {
+            "request_id": choice.request_id,
+            "request_type": choice.request_type,
+            "player": choice.player,
+            "prompt": choice.prompt,
+            "options": [
+                {
+                    "option_id": option.option_id,
+                    "label": option.label,
+                    "ref": _ref_payload(option.ref),
+                    "value": {},
+                }
+                for option in choice.options
+            ],
+            "min_select": choice.min_select,
+            "max_select": choice.max_select,
+            "allow_duplicates": choice.allow_duplicates,
+            "can_cancel": choice.can_cancel,
+            "metadata": {},
+        },
+        "expected": {
+            "state_numeric": encoded_state.numeric,
+            "state_cards": encoded_state.card_ids,
+            "actions": [
+                {"numeric": item.numeric, "card_id": item.card_id}
+                for item in encoded_actions
+            ],
+            "choices": [
+                {"numeric": item.numeric, "card_id": item.card_id}
+                for item in encoded_choices
+            ],
         },
     }
 
@@ -517,6 +683,10 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     _write_json(data_root / "ai_models.json", _model_manifest())
     golden = _golden_contract(cards, decks)
     _write_json(output / "tests" / "fixtures" / "data_contract.json", golden)
+    _write_json(
+        output / "tests" / "fixtures" / "ai_encoder_golden.json",
+        _ai_encoder_fixture(),
+    )
     _write_json(
         output / "tests" / "fixtures" / "rules_golden.json",
         _golden_action_cases(),

@@ -51,6 +51,12 @@ godot_client/.godot/
 godot_client/android/
 godot_client/build/
 godot_client/dist/
+godot_client/native/**/*.obj
+godot_client/native/**/*.os
+godot_client/native/**/*.obj.import
+godot_client/native/**/.sconsign.dblite
+godot_client/bin/**/*.exp
+godot_client/bin/**/*.lib
 .tools/
 .cache/
 

@@ -15,7 +15,9 @@ boot_splash/show_image=false
 [autoload]
 
 AppState="*res://autoload/app_state.gd"
+AppSettings="*res://autoload/app_settings.gd"
 CardDatabase="*res://autoload/card_database.gd"
+CardTextureCache="*res://autoload/card_texture_cache.gd"
 
 [display]
 

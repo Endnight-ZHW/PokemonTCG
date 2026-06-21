@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import websockets.sync.server
+import websockets.sync.client
 
 from config import NETWORK_TIMEOUT
 from data.card_registry import CardRegistry
@@ -192,6 +193,70 @@ class ProtocolV2Tests(unittest.TestCase):
         finally:
             client.stop()
             host.stop()
+            server.shutdown()
+            thread.join(timeout=2.0)
+            with rooms_lock:
+                rooms.clear()
+
+    def test_relay_transport_forwards_protocol_v3_and_rejects_forged_sender(self):
+        from relay_server import handle_client, rooms, rooms_lock
+
+        port = _free_port()
+        with rooms_lock:
+            rooms.clear()
+        server = websockets.sync.server.serve(handle_client, "127.0.0.1", port)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host = websockets.sync.client.connect(f"ws://127.0.0.1:{port}")
+        client = websockets.sync.client.connect(f"ws://127.0.0.1:{port}")
+        try:
+            host.send('{"type":"create_room"}')
+            room = __import__("json").loads(host.recv(timeout=2))["room_id"]
+            client.send(__import__("json").dumps({
+                "type": "join_room", "room_id": room,
+            }))
+            self.assertEqual(
+                __import__("json").loads(client.recv(timeout=2))["type"],
+                "room_joined",
+            )
+            self.assertEqual(
+                __import__("json").loads(host.recv(timeout=2))["type"],
+                "opponent_joined",
+            )
+            self.assertEqual(
+                __import__("json").loads(client.recv(timeout=2))["type"],
+                "opponent_joined",
+            )
+            message = {
+                "protocol_version": 3,
+                "message_type": "deck_select",
+                "room_id": room,
+                "sender": 1,
+                "sequence": 1,
+                "state_revision": -1,
+                "action_id": "",
+                "request_id": "",
+                "payload": {"deck_key": "water"},
+            }
+            client.send(__import__("json").dumps(message))
+            forwarded = __import__("json").loads(host.recv(timeout=2))
+            self.assertEqual(forwarded["protocol_version"], 3)
+            self.assertEqual(forwarded["payload"]["deck_key"], "water")
+
+            client.send(b"\x00\x01")
+            binary_rejected = __import__("json").loads(client.recv(timeout=2))
+            self.assertEqual(binary_rejected["type"], "error")
+            self.assertIn("文本", binary_rejected["message"])
+
+            message["sequence"] = 2
+            message["sender"] = 0
+            client.send(__import__("json").dumps(message))
+            rejected = __import__("json").loads(client.recv(timeout=2))
+            self.assertEqual(rejected["type"], "error")
+            self.assertIn("发送方", rejected["message"])
+        finally:
+            host.close()
+            client.close()
             server.shutdown()
             thread.join(timeout=2.0)
             with rooms_lock:

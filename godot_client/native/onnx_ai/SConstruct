@@ -1,0 +1,39 @@
+#!/usr/bin/env python
+
+import os
+from SCons.Script import ARGUMENTS, Default, Glob, SConscript
+
+godot_cpp_dir = os.path.abspath(ARGUMENTS.get("godot_cpp_dir", "godot-cpp"))
+ort_root = os.path.abspath(ARGUMENTS.get("ort_root", "onnxruntime"))
+project_root = os.path.abspath(ARGUMENTS.get("project_root", "../.."))
+
+env = SConscript(os.path.join(godot_cpp_dir, "SConstruct"))
+env.Append(CPPPATH=[
+    "src",
+    os.path.join(ort_root, "windows-x64", "include"),
+])
+
+if env["platform"] == "windows":
+    env.Append(
+        LIBPATH=[os.path.join(ort_root, "windows-x64", "lib")],
+        LIBS=["onnxruntime"],
+        CXXFLAGS=["/EHsc"],
+    )
+elif env["platform"] == "android":
+    env.Append(
+        LIBPATH=[os.path.join(ort_root, "android", "jni", "arm64-v8a")],
+        LIBS=["onnxruntime"],
+        CXXFLAGS=["-fexceptions"],
+        LINKFLAGS=["-Wl,-rpath,$ORIGIN"],
+    )
+
+sources = Glob("src/*.cpp")
+output = os.path.join(
+    project_root,
+    "bin",
+    env["platform"],
+    "libpokemon_ai{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+)
+library = env.SharedLibrary(output, source=sources)
+env.NoCache(library)
+Default(library)

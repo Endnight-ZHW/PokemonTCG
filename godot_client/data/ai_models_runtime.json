@@ -1,0 +1,185 @@
+{
+  "action_numeric_size": 178,
+  "card_bucket_count": 4096,
+  "compatibility_bridge": {
+    "godot_action_version": 3,
+    "godot_rules_version": 3,
+    "python_action_version": 2,
+    "python_encoder_version": 2,
+    "python_rules_version": 2,
+    "version": 1
+  },
+  "elapsed_seconds": 1.806,
+  "execution_provider": "CPUExecutionProvider",
+  "format_version": 2,
+  "inference_format": "onnx-fp32",
+  "input_names": [
+    "state_numeric",
+    "state_cards",
+    "action_numeric",
+    "action_cards",
+    "choice_numeric",
+    "choice_cards"
+  ],
+  "models": {
+    "colorless": {
+      "action_version": 2,
+      "checkpoint_sha256": "047427930d6cbd275c79982c32b293386142706de695495123b415426fc93a36",
+      "checkpoint_version": 9,
+      "deck_key": "colorless",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/colorless.onnx",
+      "onnx_sha256": "adb5c5b1d3724fd80017f847309864d93017ca30dfd640d917d7350788986514",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 1.430511474609375e-06,
+        "choice_logits": 8.940696716308594e-08,
+        "state_value": 2.0489096641540527e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "dragon": {
+      "action_version": 2,
+      "checkpoint_sha256": "66fa370891440b4cd4099474f305ecacb35fc5e332677049b618deb169189dba",
+      "checkpoint_version": 9,
+      "deck_key": "dragon",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/dragon.onnx",
+      "onnx_sha256": "d58be27f8cc41edad0f1dff649e2e469bdb0b7d8e3288fdd355bde3d653db26a",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 2.2649765014648438e-06,
+        "choice_logits": 7.450580596923828e-08,
+        "state_value": 5.21540641784668e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "fighting": {
+      "action_version": 2,
+      "checkpoint_sha256": "04d4302630fedadd165eb0d73856ff7a5a386805639d44831d1d55d7fcf66f93",
+      "checkpoint_version": 9,
+      "deck_key": "fighting",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/fighting.onnx",
+      "onnx_sha256": "d492b0b928083212081ad92406f225c8b948f53b9e6dedfbe41ee9b639d531fb",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 1.6689300537109375e-06,
+        "choice_logits": 5.960464477539063e-08,
+        "state_value": 5.960464477539063e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "fire": {
+      "action_version": 2,
+      "checkpoint_sha256": "352fd02535aa7b84c00d8a88c31fc030ae5fd1a92daf2915e961a2acda540942",
+      "checkpoint_version": 9,
+      "deck_key": "fire",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/fire.onnx",
+      "onnx_sha256": "92b4b2c01dd8acc15135198f786eff7da95c820d178742de89d1d6357ca2b978",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 1.9073486328125e-06,
+        "choice_logits": 6.332993507385254e-08,
+        "state_value": 3.725290298461914e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "grass": {
+      "action_version": 2,
+      "checkpoint_sha256": "b7798db7c457490551b1baeb9063deabf43aabba51a799ad5b6a8c38309a6a9d",
+      "checkpoint_version": 9,
+      "deck_key": "grass",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/grass.onnx",
+      "onnx_sha256": "d53767209ce96712913b6b32c5fb20e1cfd1c3697f18fc8b203c53a280a2c241",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 1.9073486328125e-06,
+        "choice_logits": 4.470348358154297e-08,
+        "state_value": 8.940696716308594e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "lightning": {
+      "action_version": 2,
+      "checkpoint_sha256": "5e9099a45b794d61c48042465f9e33bd83976f90ccec3cd13a8515889c5b7f88",
+      "checkpoint_version": 9,
+      "deck_key": "lightning",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/lightning.onnx",
+      "onnx_sha256": "6cf40966573df233c4fa97205d7b71493ee5f3daa05df5ddafb57fb9923f195c",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 2.86102294921875e-06,
+        "choice_logits": 8.940696716308594e-08,
+        "state_value": 2.9802322387695312e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "psychic": {
+      "action_version": 2,
+      "checkpoint_sha256": "fec0c20bd2b7ac5bc470b5e29dbefe617e47f6ab519683b79724bc57ed3ac892",
+      "checkpoint_version": 9,
+      "deck_key": "psychic",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/psychic.onnx",
+      "onnx_sha256": "33156e6cd4e4552ed4f649beed028e9b3e914ed1a6608bb0e5936cfa46f81be7",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 1.9073486328125e-06,
+        "choice_logits": 8.940696716308594e-08,
+        "state_value": 2.2351741790771484e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "water": {
+      "action_version": 2,
+      "checkpoint_sha256": "91a47dece6666a3fd0582cf9c896648a4ffb4c237c969077b59436c327fc1c1d",
+      "checkpoint_version": 9,
+      "deck_key": "water",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/water.onnx",
+      "onnx_sha256": "cb56eb27ea12d98b4de690796cf12159adda694681b5a9bf9e9ab492a4dce50a",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 1.6689300537109375e-06,
+        "choice_logits": 6.705522537231445e-08,
+        "state_value": 4.470348358154297e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    }
+  },
+  "onnx_runtime_version": "1.26.0",
+  "opset": 17,
+  "output_names": [
+    "action_logits",
+    "state_value",
+    "choice_logits"
+  ],
+  "search_simulations": 256,
+  "semantic_feature_sizes": {
+    "known_card": 53,
+    "missing_card_legacy": 48
+  },
+  "state_card_slots": 96,
+  "state_numeric_size": 960,
+  "watchdog_seconds": 8.0
+}
