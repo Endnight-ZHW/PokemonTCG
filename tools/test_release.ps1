@@ -6,8 +6,8 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Join-Path $repoRoot 'godot_client'
 $distRoot = Join-Path $projectRoot 'dist\release'
 $windowsRoot = Join-Path $distRoot 'windows'
-$zipPath = Join-Path $distRoot 'PokemonTCG-Windows-x86_64-0.2.0.zip'
-$apkPath = Join-Path $distRoot 'PokemonTCG-Android-arm64-0.2.0-test.apk'
+$zipPath = Join-Path $distRoot 'PokemonTCG-Windows-x86_64-0.3.1.zip'
+$apkPath = Join-Path $distRoot 'PokemonTCG-Android-arm64-0.3.1-test.apk'
 $manifestPath = Join-Path $distRoot 'SHA256SUMS.json'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
@@ -73,7 +73,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 $badgingText = $badging -join "`n"
 foreach ($expected in @(
-    "package: name='com.pokemontcg.game' versionCode='2' versionName='0.2.0'",
+    "package: name='com.pokemontcg.game' versionCode='4' versionName='0.3.1'",
     "sdkVersion:'28'",
     "targetSdkVersion:'35'",
     "native-code: 'arm64-v8a'"

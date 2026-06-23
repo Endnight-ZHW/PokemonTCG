@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_run_phase_four_foundation_tests()
 	_run_phase_five_foundation_tests()
 	_run_phase_six_foundation_tests()
+	_run_visual_upgrade_tests()
 
 	if failures.is_empty():
 		print("GODOT_TESTS_OK phase=6")
@@ -891,12 +892,12 @@ func _run_phase_five_foundation_tests() -> void:
 
 
 func _run_phase_six_foundation_tests() -> void:
-	_check(AppState.APP_VERSION == "0.2.0", "Stage 6 app version mismatch")
+	_check(AppState.APP_VERSION == "0.3.1", "Stage 6 app version mismatch")
 	var settings: Node = root.get_node("AppSettings")
 	var texture_cache: Node = root.get_node("CardTextureCache")
 	var settings_path := "user://phase6_settings_test.cfg"
 	settings.call("reset_defaults")
-	settings.call("update", 0.35, true, true, 12)
+	settings.call("update", 0.35, true, true, 12, "reduced", "low", 0.4, 0.7)
 	settings.set("relay_url", "wss://relay.example.test")
 	_check(settings.call("save_settings", settings_path), "Unable to save runtime settings")
 	settings.call("reset_defaults")
@@ -905,6 +906,14 @@ func _run_phase_six_foundation_tests() -> void:
 		"Master volume setting did not roundtrip")
 	_check(bool(settings.get("muted")), "Mute setting did not roundtrip")
 	_check(bool(settings.get("reduced_motion")), "Reduced motion setting did not roundtrip")
+	_check(is_equal_approx(float(settings.get("music_volume")), 0.4),
+		"Music volume setting did not roundtrip")
+	_check(is_equal_approx(float(settings.get("sfx_volume")), 0.7),
+		"SFX volume setting did not roundtrip")
+	_check(str(settings.get("animation_mode")) == "reduced",
+		"Animation mode setting did not roundtrip")
+	_check(str(settings.get("quality_profile")) == "low",
+		"Quality profile setting did not roundtrip")
 	_check(int(settings.get("card_cache_size")) == 12,
 		"Card cache setting did not roundtrip")
 	_check(str(settings.get("relay_url")) == "wss://relay.example.test",
@@ -921,6 +930,8 @@ func _run_phase_six_foundation_tests() -> void:
 			break
 	settings.set("card_cache_size", 12)
 	texture_cache.call("clear")
+
+
 	texture_cache.call("reset_stats")
 	for image_path in image_paths:
 		_check(texture_cache.call("get_texture", image_path) != null,
@@ -948,6 +959,14 @@ func _run_phase_six_foundation_tests() -> void:
 		"Mute setting control is missing")
 	_check(release_ui.find_child("ReducedMotionToggle", true, false) != null,
 		"Reduced motion setting control is missing")
+	_check(release_ui.find_child("MusicVolumeSlider", true, false) != null,
+		"Music volume setting control is missing")
+	_check(release_ui.find_child("SFXVolumeSlider", true, false) != null,
+		"SFX volume setting control is missing")
+	_check(release_ui.find_child("AnimationModeOption", true, false) != null,
+		"Animation mode setting control is missing")
+	_check(release_ui.find_child("QualityProfileOption", true, false) != null,
+		"Quality profile setting control is missing")
 	_check(release_ui.find_child("CardCacheOption", true, false) != null,
 		"Card texture cache setting control is missing")
 	_check(release_ui.find_child("LoadingLayer", true, false) != null,
@@ -957,6 +976,130 @@ func _run_phase_six_foundation_tests() -> void:
 
 	settings.call("reset_defaults")
 	texture_cache.call("clear")
+
+
+func _run_visual_upgrade_tests() -> void:
+	for path in [
+		"res://ui/design_tokens.gd",
+		"res://ui/card_view.tscn",
+		"res://ui/zone_view.tscn",
+		"res://presentation/presentation_event.gd",
+		"res://presentation/presentation_director.gd",
+		"res://scenes/battle/battle_screen.tscn",
+		"res://scenes/end/victory_screen.tscn",
+	]:
+		_check(FileAccess.file_exists(path), "Visual upgrade asset is missing: %s" % path)
+
+	var normalized := PresentationEvent.normalize({
+		"event_type": "cards_drawn",
+		"actor": 0,
+		"visibility": "owner",
+		"card_id": "sv1-104",
+		"data": {
+			"player": 0,
+			"count": 1,
+			"card_ids": ["sv1-104"],
+		},
+	}, 7, 0, 0)
+	_check(str(normalized.get("event_id", "")).begins_with("presentation:7:0"),
+		"Presentation event IDs are not deterministic")
+	var owner_event := PresentationEvent.for_player(normalized, 0)
+	var opponent_event := PresentationEvent.for_player(normalized, 1)
+	_check(owner_event.get("card_id", "") == "sv1-104",
+		"Presentation event hid the owner's drawn card")
+	_check(opponent_event.get("card_id", "") == "",
+		"Presentation event leaked an opponent drawn card")
+	_check(opponent_event.get("data", {}).get("card_ids", []).is_empty(),
+		"Presentation event leaked hidden card IDs")
+	var legacy_draw := PresentationEvent.normalize({
+		"event_type": "cards_drawn",
+		"data": {"player": 0, "cards": ["sv1-104"]},
+	}, 8, 0, 0)
+	_check(legacy_draw.get("visibility", "") == PresentationEvent.OWNER,
+		"Legacy draw events are not owner-only")
+	_check(
+		PresentationEvent.for_player(legacy_draw, 1).get("data", {}).get(
+			"cards", []).is_empty(),
+		"Legacy draw event leaked the opponent's card identity",
+	)
+
+	var packed := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	_check(packed != null, "Battle screen scene failed to load")
+	if packed:
+		var battle := packed.instantiate()
+		root.add_child(battle)
+		battle.initialize_ui()
+		var state := _battle_state()
+		state.players[0].hand = [
+			"sv1-104", "sv1-ener-5", "sv1-151", "sv1-189",
+		]
+		var engine := GameEngine.new(CardCatalog.new())
+		var rows: Array[Dictionary] = []
+		for action in engine.legal_actions(state, 0, true):
+			rows.append({"action": action, "label": action.action})
+		battle.update_view(state, 0, rows, "", false, "local")
+		_check(
+			battle.own_active != null
+			and battle.own_active.card_id == state.players[0].active.card_id,
+			"Battle screen did not bind the public active card",
+		)
+		_check(battle.hand_views.size() == 4,
+			"Battle screen did not create stable hand card views")
+		_check(battle.zones.size() == 7,
+			"Battle screen does not expose every required tabletop zone")
+		_check(battle.phase_advance_button != null,
+			"Battle screen is missing the dedicated phase advance button")
+		_check(not battle.quick_actions.is_visible_in_tree(),
+			"Legacy right-side card action list is still visible")
+		var first_hand: Variant = battle.hand_views[0]
+		_check(first_hand.catalog == battle.catalog,
+			"Battle cards do not reuse the shared card catalog")
+		battle.update_view(state, 0, rows, "hand:3", false, "local")
+		var trainer_view: Variant = battle.hand_views[3]
+		_check(not trainer_view._pending_action_rows.is_empty(),
+			"Direct trainer action was not placed on the selected card")
+		battle.update_view(state, 0, rows, "", false, "local")
+		first_hand.configure_target(0, "active")
+		_check(first_hand._can_drop_data(Vector2.ZERO, {
+			"kind": "hand_card",
+			"hand_index": 0,
+			"card_id": "sv1-104",
+		}), "Card drag data is not accepted by a configured target")
+		var node_count_before := battle.find_children("*", "", true, false).size()
+		for _index in range(80):
+			battle.update_view(state, 0, rows, "", false, "local")
+		var node_count_after := battle.find_children("*", "", true, false).size()
+		_check(node_count_after == node_count_before,
+			"Repeated battle refreshes created persistent UI nodes")
+		for _index in range(30):
+			battle.effects.burst(Vector2(100, 100), Color.WHITE, "stress")
+		_check(battle.effects.particles.size() <= 220,
+			"Battle particles exceeded the Android safety cap")
+		for _index in range(18):
+			battle._on_card_motion_requested({
+				"event_type": "cards_drawn",
+				"actor": 0,
+				"card_id": "sv1-104",
+				"source": {"player": 0, "zone": "deck"},
+				"target": {"player": 0, "zone": "hand"},
+				"amount": 1,
+			}, 0.5)
+		_check(battle._active_flyers.size() <= 12,
+			"Flying card animations exceeded the Android safety cap")
+		battle._clear_transient_visuals()
+		battle.free()
+
+	var runtime_settings: Node = root.get_node("AppSettings")
+	_check(str(runtime_settings.get("animation_mode")) in [
+		"cinematic", "standard", "fast", "reduced",
+	],
+		"Animation mode setting is invalid")
+	_check(str(runtime_settings.call("resolved_quality_profile")) in [
+		"high", "medium", "low",
+	],
+		"Quality profile did not resolve to a runtime tier")
+	_check(int(runtime_settings.call("target_fps")) in [30, 60],
+		"Performance profile returned an unsupported FPS target")
 
 
 func _run_local_ui_playout(ui: Node) -> void:

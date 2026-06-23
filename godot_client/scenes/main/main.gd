@@ -1,5 +1,9 @@
 extends Control
 
+const BATTLE_SCENE := preload("res://scenes/battle/battle_screen.tscn")
+const CARD_SCENE := preload("res://ui/card_view.tscn")
+const VICTORY_SCENE := preload("res://scenes/end/victory_screen.tscn")
+
 const SCREEN_TITLE := "title"
 const SCREEN_DECKS := "decks"
 const SCREEN_NETWORK := "network"
@@ -40,6 +44,7 @@ var safe_margin: MarginContainer
 var screen_host: Control
 var toast_label: Label
 var sound_player: AudioStreamPlayer
+var audio_director: AudioDirector
 var click_stream: AudioStreamWAV
 var success_stream: AudioStreamWAV
 var loading_layer: Control
@@ -61,6 +66,10 @@ var settings_volume_slider: HSlider
 var settings_muted_toggle: CheckButton
 var settings_motion_toggle: CheckButton
 var settings_cache_option: OptionButton
+var settings_animation_option: OptionButton
+var settings_quality_option: OptionButton
+var settings_music_slider: HSlider
+var settings_sfx_slider: HSlider
 
 var game_title: Label
 var turn_label: Label
@@ -77,8 +86,10 @@ var detail_image: TextureRect
 var detail_title: Label
 var detail_text: RichTextLabel
 var clear_filter_button: Button
+var battle_screen: BattleScreen
 
 var modal_layer: Control
+var modal_shade: ColorRect
 var modal_panel: PanelContainer
 var modal_title: Label
 var modal_body: VBoxContainer
@@ -170,6 +181,7 @@ func initialize_ui() -> void:
 	_apply_runtime_settings()
 	_show_title()
 	_apply_safe_area()
+	Engine.max_fps = AppSettings.target_fps()
 
 
 func _build_shell() -> void:
@@ -214,6 +226,9 @@ func _build_shell() -> void:
 	sound_player = AudioStreamPlayer.new()
 	sound_player.name = "UISound"
 	add_child(sound_player)
+	audio_director = AudioDirector.new()
+	audio_director.name = "AudioDirector"
+	add_child(audio_director)
 
 	_build_modal()
 	_build_loading_overlay()
@@ -226,36 +241,90 @@ func _show_title() -> void:
 		_close_modal()
 	_hide_loading()
 	current_screen = SCREEN_TITLE
+	battle_screen = null
+	if audio_director:
+		audio_director.play_music("title")
 	_clear_screen()
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	screen_host.add_child(center)
+	var backdrop := TitleBackdrop.new()
+	backdrop.name = "TitleBackdrop"
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	screen_host.add_child(backdrop)
+
+	var layout := HBoxContainer.new()
+	layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layout.add_theme_constant_override("separation", 36)
+	screen_host.add_child(layout)
+	var hero_margin := _margin(46, 44)
+	hero_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(hero_margin)
+	var hero := VBoxContainer.new()
+	hero.alignment = BoxContainer.ALIGNMENT_END
+	hero.add_theme_constant_override("separation", 10)
+	hero_margin.add_child(hero)
+	var hero_eyebrow := _label(
+		"MODERN TABLETOP EDITION",
+		17,
+		DesignTokens.CYAN,
+	)
+	hero.add_child(hero_eyebrow)
+	var hero_title := _label("宝可梦卡牌对战", 58, DesignTokens.GOLD)
+	hero_title.name = "TitleLabel"
+	hero.add_child(hero_title)
+	var hero_subtitle := _label(
+		"真实卡图 · 原生规则 · 离线 AI · 跨平台联机",
+		22,
+		DesignTokens.TEXT,
+	)
+	hero.add_child(hero_subtitle)
+	var hero_description := _label(
+		"在现代实体牌桌上完成每一次抽牌、进化与攻击。",
+		17,
+		DesignTokens.TEXT_MUTED,
+	)
+	hero.add_child(hero_description)
+	var hero_space := Control.new()
+	hero_space.custom_minimum_size.y = 92
+	hero.add_child(hero_space)
+
+	var right_center := CenterContainer.new()
+	right_center.custom_minimum_size.x = 620
+	right_center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(right_center)
 
 	var panel := PanelContainer.new()
 	panel.name = "TitlePanel"
-	panel.custom_minimum_size = Vector2(760, 650)
-	center.add_child(panel)
-	var margin := _margin(54, 48)
+	panel.custom_minimum_size = Vector2(560, 650)
+	panel.add_theme_stylebox_override(
+		"panel",
+		DesignTokens.panel_style(
+			Color(0.035, 0.065, 0.11, 0.94),
+			22,
+			Color(0.25, 0.58, 0.85, 0.55),
+			1,
+			0,
+		),
+	)
+	right_center.add_child(panel)
+	var margin := _margin(42, 38)
 	panel.add_child(margin)
 	var content := VBoxContainer.new()
 	content.alignment = BoxContainer.ALIGNMENT_CENTER
-	content.add_theme_constant_override("separation", 20)
+	content.add_theme_constant_override("separation", 15)
 	margin.add_child(content)
 
-	var eyebrow := _label("GODOT 4.7 · WINDOWS / ANDROID", 16, GameUITheme.COLOR_ACCENT_BLUE)
+	var eyebrow := _label("GODOT 4.7 · WINDOWS / ANDROID", 15, DesignTokens.CYAN)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(eyebrow)
-	var title := _label("Pokémon TCG", 54, GameUITheme.COLOR_TEXT)
-	title.name = "TitleLabel"
+	var title := _label("选择对战方式", 32, DesignTokens.TEXT)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(title)
-	var subtitle := _label("原生跨平台对战客户端", 23, GameUITheme.COLOR_MUTED)
+	var subtitle := _label("所有模式共享同一套原生规则引擎", 16, DesignTokens.TEXT_MUTED)
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(subtitle)
 	var divider := HSeparator.new()
 	content.add_child(divider)
 
-	var local_button := _button("本地双人对战", 64)
+	var local_button := _button("本地双人对战", 62)
 	local_button.name = "LocalTwoPlayerButton"
 	local_button.pressed.connect(_show_deck_select.bind(MODE_LOCAL))
 	content.add_child(local_button)
@@ -281,7 +350,7 @@ func _show_title() -> void:
 	relay_button.pressed.connect(_show_network_setup.bind("relay"))
 	network_row.add_child(relay_button)
 
-	var settings_button := _button("设置", 52)
+	var settings_button := _button("设置与画质", 52)
 	settings_button.name = "SettingsButton"
 	settings_button.pressed.connect(_show_settings)
 	content.add_child(settings_button)
@@ -515,6 +584,14 @@ func _apply_network_view(view: Dictionary, player: int) -> void:
 		_build_game_screen()
 	else:
 		_refresh_game()
+	if battle_screen:
+		var presentation_events: Array = view.get("presentation_events", [])
+		if not presentation_events.is_empty():
+			battle_screen.play_presentation(
+				presentation_events,
+				state.revision,
+				state.active_player_idx,
+			)
 	if (
 		network_choice_request != null
 		and (
@@ -645,10 +722,44 @@ func _deck_column(title_text: String, accent: Color) -> Dictionary:
 		option.add_item("%s · %s" % [deck.get("name", key), deck.get("energy_type", "")])
 		option.set_item_metadata(option.item_count - 1, key)
 	content.add_child(option)
+	var preview := HBoxContainer.new()
+	preview.name = "DeckPreview"
+	preview.alignment = BoxContainer.ALIGNMENT_CENTER
+	preview.add_theme_constant_override("separation", 8)
+	content.add_child(preview)
+	option.item_selected.connect(func(_index: int) -> void:
+		_refresh_deck_preview(option, preview)
+	)
+	_refresh_deck_preview(option, preview)
 	var info := _label("60 张 · 发布牌组 · 离线可用", 16, GameUITheme.COLOR_MUTED)
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(info)
 	return {"panel": panel, "option": option}
+
+
+func _refresh_deck_preview(option: OptionButton, preview: HBoxContainer) -> void:
+	if option == null or preview == null or option.item_count == 0:
+		return
+	_free_children(preview)
+	var deck_key := str(option.get_item_metadata(option.selected))
+	var deck := catalog.get_deck(deck_key)
+	var shown := 0
+	for row_value in deck.get("cards", []):
+		if shown >= 4:
+			break
+		var row: Dictionary = row_value
+		var card_id := str(row.get("card_id", ""))
+		var card := catalog.get_card(card_id)
+		if str(card.get("supertype", "")) != "Pokémon":
+			continue
+		var image := TextureRect.new()
+		image.custom_minimum_size = Vector2(72, 101)
+		image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
+		image.tooltip_text = str(card.get("name", card_id))
+		preview.add_child(image)
+		shown += 1
 
 
 func _start_local_match() -> void:
@@ -775,185 +886,169 @@ func _start_match(
 func _build_game_screen() -> void:
 	current_screen = SCREEN_GAME
 	_clear_screen()
-	var root := VBoxContainer.new()
-	root.name = "GameScreen"
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.add_theme_constant_override("separation", 10)
-	screen_host.add_child(root)
-
-	var header := HBoxContainer.new()
-	header.custom_minimum_size.y = 54
-	root.add_child(header)
-	var menu := _button("菜单", 48)
-	menu.custom_minimum_size.x = 110
-	menu.pressed.connect(_show_pause_overlay)
-	header.add_child(menu)
-	game_title = _label(
-		(
-			"本地双人对战"
-			if game_mode == MODE_LOCAL
-			else "联机对战"
-			if game_mode == MODE_NETWORK
-			else "离线 AI 对战"
-		),
-		25,
-		GameUITheme.COLOR_TEXT,
-	)
-	game_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	game_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	header.add_child(game_title)
-	turn_label = _label("", 17, GameUITheme.COLOR_ACCENT)
-	turn_label.custom_minimum_size.x = 300
-	turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	header.add_child(turn_label)
-
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 12)
-	root.add_child(body)
-
-	var board_panel := PanelContainer.new()
-	board_panel.name = "BoardPanel"
-	board_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_child(board_panel)
-	var board_margin := _margin(18, 14)
-	board_panel.add_child(board_margin)
-	var board := VBoxContainer.new()
-	board.add_theme_constant_override("separation", 8)
-	board_margin.add_child(board)
-
-	opponent_summary = _label("", 17, GameUITheme.COLOR_MUTED)
-	board.add_child(opponent_summary)
-	var opponent_field := HBoxContainer.new()
-	board.add_child(opponent_field)
-	opponent_active = _slot_button("对手战斗区")
-	opponent_active.custom_minimum_size = Vector2(220, 112)
-	opponent_field.add_child(opponent_active)
-	opponent_bench = HBoxContainer.new()
-	opponent_bench.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	opponent_field.add_child(opponent_bench)
-
-	var log_panel := PanelContainer.new()
-	log_panel.custom_minimum_size.y = 120
-	log_panel.add_theme_stylebox_override(
-		"panel",
-		GameUITheme.panel_style(Color("#0b1526"), 10, Color("#233651")),
-	)
-	board.add_child(log_panel)
-	log_label = RichTextLabel.new()
-	log_label.bbcode_enabled = true
-	log_label.fit_content = false
-	log_label.scroll_active = true
-	log_label.custom_minimum_size.y = 110
-	log_panel.add_child(log_label)
-
-	var own_field := HBoxContainer.new()
-	board.add_child(own_field)
-	own_active = _slot_button("我方战斗区")
-	own_active.custom_minimum_size = Vector2(220, 112)
-	own_field.add_child(own_active)
-	own_bench = HBoxContainer.new()
-	own_bench.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	own_field.add_child(own_bench)
-	own_summary = _label("", 17, GameUITheme.COLOR_MUTED)
-	board.add_child(own_summary)
-
-	var hand_scroll := ScrollContainer.new()
-	hand_scroll.name = "HandScroll"
-	hand_scroll.custom_minimum_size.y = 156
-	hand_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	hand_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	board.add_child(hand_scroll)
-	hand_row = HBoxContainer.new()
-	hand_row.name = "HandRow"
-	hand_row.add_theme_constant_override("separation", 8)
-	hand_scroll.add_child(hand_row)
-
-	var side := VBoxContainer.new()
-	side.name = "SidePanel"
-	side.custom_minimum_size.x = 390
-	body.add_child(side)
-	var action_panel := PanelContainer.new()
-	action_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	side.add_child(action_panel)
-	var action_margin := _margin(14, 12)
-	action_panel.add_child(action_margin)
-	var action_column := VBoxContainer.new()
-	action_margin.add_child(action_column)
-	var action_header := HBoxContainer.new()
-	action_column.add_child(action_header)
-	action_header.add_child(_label("可执行动作", 22, GameUITheme.COLOR_ACCENT))
-	clear_filter_button = _button("显示全部", 42)
-	clear_filter_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	clear_filter_button.pressed.connect(_clear_action_filter)
-	action_header.add_child(clear_filter_button)
-	var action_scroll := ScrollContainer.new()
-	action_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	action_column.add_child(action_scroll)
+	battle_screen = BATTLE_SCENE.instantiate() as BattleScreen
+	battle_screen.name = "GameScreen"
+	battle_screen.menu_requested.connect(_show_pause_overlay)
+	battle_screen.hand_card_selected.connect(_select_hand_card)
+	battle_screen.pokemon_selected.connect(_on_battle_pokemon_selected)
+	battle_screen.action_requested.connect(_execute_action)
+	battle_screen.card_drop_requested.connect(_on_battle_card_dropped)
+	battle_screen.detail_requested.connect(_show_card_detail)
+	screen_host.add_child(battle_screen)
+	battle_screen.initialize_ui()
 	action_list = VBoxContainer.new()
-	action_list.name = "ActionList"
-	action_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	action_scroll.add_child(action_list)
-
-	var detail_panel := PanelContainer.new()
-	detail_panel.custom_minimum_size.y = 275
-	side.add_child(detail_panel)
-	var detail_margin := _margin(14, 12)
-	detail_panel.add_child(detail_margin)
-	var detail_row := HBoxContainer.new()
-	detail_margin.add_child(detail_row)
-	detail_image = TextureRect.new()
-	detail_image.custom_minimum_size = Vector2(132, 190)
-	detail_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	detail_image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	detail_row.add_child(detail_image)
-	var detail_column := VBoxContainer.new()
-	detail_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_row.add_child(detail_column)
-	detail_title = _label("点击卡牌查看详情", 20, GameUITheme.COLOR_ACCENT_BLUE)
-	detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail_column.add_child(detail_title)
-	detail_text = RichTextLabel.new()
-	detail_text.bbcode_enabled = true
-	detail_text.fit_content = false
-	detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail_column.add_child(detail_text)
+	action_list.name = "ActionCompatibility"
+	action_list.visible = false
+	battle_screen.add_child(action_list)
+	log_label = battle_screen.log_label
+	detail_image = battle_screen.detail_image
+	detail_title = battle_screen.detail_title
+	detail_text = battle_screen.detail_text
+	if battle_screen.director and audio_director:
+		battle_screen.director.audio_requested.connect(audio_director.play_cue)
+	if audio_director:
+		audio_director.play_music("battle")
 	_refresh_game()
-	_animate_screen(root)
+	_animate_screen(battle_screen)
 
 
 func _refresh_game() -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
-	var own := state.get_player(current_view_player)
-	var opponent := state.get_player(1 - current_view_player)
-	game_title.text = "%s  vs  %s" % [state.players[0].name, state.players[1].name]
-	var display_actor := (
-		current_view_player if state.phase == "SETUP" else state.active_player_idx)
-	turn_label.text = "第 %d 回合 · %s · 玩家 %d" % [
-		state.turn_number,
-		_phase_name(state.phase),
-		display_actor + 1,
-	]
-	if ai_thinking:
-		turn_label.text += " · AI 思考中"
-	if ai_thinking:
-		turn_label.text += " · AI 思考中"
-	opponent_summary.text = "对手 · 手牌 %d · 牌库 %d · 奖品 %d" % [
-		opponent.hand.size(), opponent.deck.size(), opponent.prizes.size()]
-	own_summary.text = "玩家 %d · 手牌 %d · 牌库 %d · 奖品 %d" % [
-		current_view_player + 1, own.hand.size(), own.deck.size(), own.prizes.size()]
-	_configure_pokemon_button(
-		opponent_active, opponent.active, 1 - current_view_player, "active", true)
-	_configure_pokemon_button(
-		own_active, own.active, current_view_player, "active", false)
-	_fill_bench(opponent_bench, opponent, 1 - current_view_player, true)
-	_fill_bench(own_bench, own, current_view_player, false)
-	_fill_hand(own)
-	_fill_actions()
-	_refresh_log()
+	if battle_screen:
+		_free_children(action_list)
+		var compatibility_rows := _current_action_rows()
+		if not compatibility_rows.is_empty():
+			action_list.add_child(Label.new())
+		battle_screen.update_view(
+			state,
+			current_view_player,
+			_current_action_rows(),
+			selected_entity_key,
+			ai_thinking,
+			game_mode,
+		)
 	if state.winner >= 0:
 		_show_end_screen()
+
+
+func _current_action_rows() -> Array[Dictionary]:
+	var rows: Array[Dictionary] = []
+	if state == null:
+		return rows
+	var actions: Array[GameAction] = []
+	var actor := _current_actor()
+	if game_mode == MODE_NETWORK:
+		if actor == network_player_idx:
+			actions = network_legal_actions
+	elif game_mode == MODE_LOCAL or actor == 0:
+		actions = engine.legal_actions(state, actor, true)
+	for action in actions:
+		rows.append({
+			"action": action,
+			"label": _action_label(action),
+		})
+	return rows
+
+
+func _on_battle_pokemon_selected(
+	player_idx: int,
+	slot: String,
+	card_id: String,
+) -> void:
+	if selected_entity_key.begins_with("hand:"):
+		var hand_index := selected_entity_key.trim_prefix("hand:").to_int()
+		var candidates := _matching_drop_actions(hand_index, player_idx, slot)
+		if candidates.size() == 1:
+			_execute_action(candidates[0])
+			return
+	elif selected_entity_key.begins_with("pokemon:"):
+		var candidates := _matching_selected_pokemon_target_actions(
+			player_idx,
+			slot,
+		)
+		if candidates.size() == 1:
+			_execute_action(candidates[0])
+			return
+	_select_pokemon(player_idx, slot, card_id)
+
+
+func _on_battle_card_dropped(
+	hand_index: int,
+	_card_id: String,
+	target_player: int,
+	target_slot: String,
+) -> void:
+	var candidates := _matching_drop_actions(hand_index, target_player, target_slot)
+	if candidates.size() == 1:
+		_execute_action(candidates[0])
+		return
+	if candidates.size() > 1:
+		selected_entity_key = "hand:%d" % hand_index
+		_refresh_game()
+		_show_toast("该目标有多个可用动作，请在卡牌上的操作按钮中选择。")
+		return
+	_show_toast("这张卡不能放到该位置。", true)
+	_refresh_game()
+
+
+func _matching_drop_actions(
+	hand_index: int,
+	target_player: int,
+	target_slot: String,
+) -> Array[GameAction]:
+	var result: Array[GameAction] = []
+	for row in _current_action_rows():
+		var action: GameAction = row.get("action")
+		if action == null or int(action.params.get("hand_idx", -1)) != hand_index:
+			continue
+		var action_slot := str(action.params.get(
+			"target_slot",
+			action.params.get("target", action.params.get("slot", "")),
+		))
+		var action_player := action.actor
+		if action.target:
+			action_player = action.target.player
+			if action_slot.is_empty():
+				action_slot = action.target.slot
+		if action_player == target_player and action_slot == target_slot:
+			result.append(action)
+	return result
+
+
+func _matching_selected_pokemon_target_actions(
+	target_player: int,
+	target_slot: String,
+) -> Array[GameAction]:
+	var result: Array[GameAction] = []
+	var parts := selected_entity_key.split(":")
+	if parts.size() < 3:
+		return result
+	var selected_player := int(parts[1])
+	var selected_slot := str(parts[2])
+	for row in _current_action_rows():
+		var action: GameAction = row.get("action")
+		if action == null or action.target == null:
+			continue
+		if (
+			action.target.player != target_player
+			or action.target.slot != target_slot
+		):
+			continue
+		var belongs_to_selected := (
+			action.source
+			and action.source.player == selected_player
+			and action.source.slot == selected_slot
+		)
+		if (
+			action.action == "RETREAT"
+			and selected_player == action.actor
+			and selected_slot == "active"
+		):
+			belongs_to_selected = true
+		if belongs_to_selected:
+			result.append(action)
+	return result
 
 
 func _fill_bench(
@@ -1076,6 +1171,8 @@ func _execute_action(action: GameAction) -> StepResult:
 		return result
 	selected_entity_key = ""
 	_show_toast(result.message if not result.message.is_empty() else "动作完成。")
+	if battle_screen and not result.events.is_empty():
+		battle_screen.play_presentation(result.events, state.revision, action.actor)
 	var pending_choice := _step_pending_choice(result)
 	if pending_choice:
 		if game_mode != MODE_LOCAL and pending_choice.player == 1:
@@ -1139,6 +1236,34 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 		modal_body.add_child(metadata_label)
 	if request.options.is_empty():
 		modal_body.add_child(_label("点击确认继续结算。", 18, GameUITheme.COLOR_MUTED))
+	var card_grid := GridContainer.new()
+	card_grid.columns = 5
+	card_grid.add_theme_constant_override("h_separation", 8)
+	card_grid.add_theme_constant_override("v_separation", 8)
+	var visual_count := 0
+	for option in request.options:
+		var option_id := str(option.get("option_id", ""))
+		var option_card_id := _choice_option_card_id(option)
+		if option_card_id.is_empty() or visual_count >= 10:
+			continue
+		var card_view := CARD_SCENE.instantiate() as CardView
+		card_view.custom_minimum_size = Vector2(86, 121)
+		card_view.configure(option_card_id, null, false, -1, request.player, "", true)
+		card_view.tooltip_text = str(option.get("label", option_card_id))
+		card_view.activated.connect(func(
+			_card_id: String,
+			_hand_index: int,
+			_player: int,
+			_slot: String,
+		) -> void:
+			_toggle_choice(option_id)
+		)
+		card_grid.add_child(card_view)
+		visual_count += 1
+	if visual_count > 0:
+		modal_body.add_child(card_grid)
+	else:
+		card_grid.free()
 	for option in request.options:
 		var option_id := str(option.get("option_id", ""))
 		var option_button := _button(str(option.get("label", option_id)), 52)
@@ -1151,6 +1276,16 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	if request.can_cancel:
 		modal_cancel.pressed.connect(_cancel_choice, CONNECT_ONE_SHOT)
 	_refresh_choice_buttons()
+
+
+func _choice_option_card_id(option: Dictionary) -> String:
+	if option.get("value") is Dictionary:
+		var value: Dictionary = option["value"]
+		if not str(value.get("card_id", "")).is_empty():
+			return str(value["card_id"])
+	if option.get("ref") is Dictionary:
+		return str(option["ref"].get("card_id", ""))
+	return ""
 
 
 func _toggle_choice(option_id: String) -> void:
@@ -1220,6 +1355,8 @@ func _confirm_choice() -> void:
 		_show_toast(result.message, true)
 		_refresh_game()
 		return
+	if battle_screen and not result.events.is_empty():
+		battle_screen.play_presentation(result.events, state.revision, request.player)
 	var pending_choice := _step_pending_choice(result)
 	if pending_choice:
 		if game_mode != MODE_LOCAL and pending_choice.player == 1:
@@ -1265,6 +1402,7 @@ func _step_pending_choice(result: StepResult) -> ChoiceRequest:
 
 func _show_pass_overlay(player_idx: int, heading: String, body: String) -> void:
 	_open_modal(heading, "显示玩家 %d 手牌" % (player_idx + 1), "")
+	modal_shade.color.a = 1.0
 	modal_body.add_child(_label(body, 21, GameUITheme.COLOR_TEXT))
 	var privacy := _label(
 		"隐私遮挡已启用。确认前不会显示该玩家手牌。",
@@ -1327,6 +1465,26 @@ func _show_settings() -> void:
 	settings_volume_slider.custom_minimum_size.y = 48
 	modal_body.add_child(volume_row)
 
+	var music_row := _field_row("音乐", HSlider.new())
+	settings_music_slider = music_row.get_child(1) as HSlider
+	settings_music_slider.name = "MusicVolumeSlider"
+	settings_music_slider.min_value = 0.0
+	settings_music_slider.max_value = 1.0
+	settings_music_slider.step = 0.05
+	settings_music_slider.value = AppSettings.music_volume
+	settings_music_slider.custom_minimum_size.y = 48
+	modal_body.add_child(music_row)
+
+	var sfx_row := _field_row("音效", HSlider.new())
+	settings_sfx_slider = sfx_row.get_child(1) as HSlider
+	settings_sfx_slider.name = "SFXVolumeSlider"
+	settings_sfx_slider.min_value = 0.0
+	settings_sfx_slider.max_value = 1.0
+	settings_sfx_slider.step = 0.05
+	settings_sfx_slider.value = AppSettings.sfx_volume
+	settings_sfx_slider.custom_minimum_size.y = 48
+	modal_body.add_child(sfx_row)
+
 	settings_muted_toggle = CheckButton.new()
 	settings_muted_toggle.name = "MutedToggle"
 	settings_muted_toggle.text = "静音"
@@ -1340,6 +1498,42 @@ func _show_settings() -> void:
 	settings_motion_toggle.button_pressed = AppSettings.reduced_motion
 	settings_motion_toggle.custom_minimum_size.y = 48
 	modal_body.add_child(settings_motion_toggle)
+
+	settings_animation_option = OptionButton.new()
+	settings_animation_option.name = "AnimationModeOption"
+	settings_animation_option.custom_minimum_size.y = 48
+	for row in [
+		["电影化", "cinematic"],
+		["标准", "standard"],
+		["快速", "fast"],
+		["减少动画", "reduced"],
+	]:
+		settings_animation_option.add_item(row[0])
+		settings_animation_option.set_item_metadata(
+			settings_animation_option.item_count - 1,
+			row[1],
+		)
+		if row[1] == AppSettings.animation_mode:
+			settings_animation_option.select(settings_animation_option.item_count - 1)
+	modal_body.add_child(_field_row("演出节奏", settings_animation_option))
+
+	settings_quality_option = OptionButton.new()
+	settings_quality_option.name = "QualityProfileOption"
+	settings_quality_option.custom_minimum_size.y = 48
+	for row in [
+		["自动", "auto"],
+		["高", "high"],
+		["中", "medium"],
+		["低", "low"],
+	]:
+		settings_quality_option.add_item(row[0])
+		settings_quality_option.set_item_metadata(
+			settings_quality_option.item_count - 1,
+			row[1],
+		)
+		if row[1] == AppSettings.quality_profile:
+			settings_quality_option.select(settings_quality_option.item_count - 1)
+	modal_body.add_child(_field_row("画质档位", settings_quality_option))
 
 	settings_cache_option = OptionButton.new()
 	settings_cache_option.name = "CardCacheOption"
@@ -1371,52 +1565,68 @@ func _save_settings_from_modal() -> void:
 		or settings_muted_toggle == null
 		or settings_motion_toggle == null
 		or settings_cache_option == null
+		or settings_animation_option == null
+		or settings_quality_option == null
+		or settings_music_slider == null
+		or settings_sfx_slider == null
 	):
 		return
+	var animation_mode := str(settings_animation_option.get_item_metadata(
+		settings_animation_option.selected))
+	if settings_motion_toggle.button_pressed:
+		animation_mode = "reduced"
 	AppSettings.update(
 		float(settings_volume_slider.value),
 		settings_muted_toggle.button_pressed,
 		settings_motion_toggle.button_pressed,
 		int(settings_cache_option.get_item_metadata(settings_cache_option.selected)),
+		animation_mode,
+		str(settings_quality_option.get_item_metadata(settings_quality_option.selected)),
+		float(settings_music_slider.value),
+		float(settings_sfx_slider.value),
 	)
 	if not AppSettings.save_settings():
 		_show_toast("设置保存失败。", true)
 		return
 	_close_modal()
+	Engine.max_fps = AppSettings.target_fps()
 	_show_toast("设置已保存。")
 
 
 func _show_end_screen() -> void:
 	if state == null or state.winner < 0:
 		return
+	if current_screen == SCREEN_END:
+		return
 	current_screen = SCREEN_END
-	_open_modal("对局结束", "再次选择牌组", "返回标题")
-	var winner := _label(
-		"玩家 %d 获胜" % (state.winner + 1),
-		34,
-		GameUITheme.COLOR_ACCENT,
-	)
-	winner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	modal_body.add_child(winner)
-	modal_body.add_child(_label(
-		"总回合数：%d" % state.turn_number,
-		19,
-		GameUITheme.COLOR_MUTED,
-	))
-	_play_success()
-	modal_confirm.pressed.connect(func() -> void:
+	if modal_layer.visible:
 		_close_modal()
+	_clear_screen()
+	battle_screen = null
+	var victory := VICTORY_SCENE.instantiate() as VictoryScreen
+	var winner_player := state.get_player(state.winner)
+	var winner_card_id := winner_player.active.card_id if winner_player.active else ""
+	victory.configure(
+		state.winner,
+		state.turn_number,
+		winner_player.name,
+		winner_card_id,
+	)
+	victory.rematch_requested.connect(func() -> void:
 		state = null
 		if game_mode == MODE_NETWORK:
 			_show_title()
 		else:
 			_show_deck_select(game_mode)
-	, CONNECT_ONE_SHOT)
-	modal_cancel.pressed.connect(func() -> void:
-		_close_modal()
+	)
+	victory.title_requested.connect(func() -> void:
 		state = null
 		_show_title()
-	, CONNECT_ONE_SHOT)
+	)
+	screen_host.add_child(victory)
+	if audio_director:
+		audio_director.play_music("victory")
+	_play_success()
 
 
 func _build_modal() -> void:
@@ -1426,10 +1636,10 @@ func _build_modal() -> void:
 	modal_layer.mouse_filter = Control.MOUSE_FILTER_STOP
 	modal_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(modal_layer)
-	var shade := ColorRect.new()
-	shade.color = Color(0.01, 0.02, 0.04, 1.0)
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	modal_layer.add_child(shade)
+	modal_shade = ColorRect.new()
+	modal_shade.color = Color(0.01, 0.02, 0.04, 0.86)
+	modal_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	modal_layer.add_child(modal_shade)
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	modal_layer.add_child(center)
@@ -1503,12 +1713,13 @@ func _hide_loading() -> void:
 func _open_modal(title_text: String, confirm_text: String, cancel_text: String) -> void:
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
-	_free_children(modal_body)
+	_free_children_immediate(modal_body)
 	modal_title.text = title_text
 	modal_confirm.text = confirm_text
 	modal_confirm.disabled = false
 	modal_cancel.text = cancel_text
 	modal_cancel.visible = not cancel_text.is_empty()
+	modal_shade.color.a = 0.86
 	modal_layer.visible = true
 	if AppSettings.reduced_motion:
 		modal_panel.modulate.a = 1.0
@@ -1524,6 +1735,8 @@ func _open_modal(title_text: String, confirm_text: String, cancel_text: String) 
 
 func _close_modal() -> void:
 	modal_layer.visible = false
+	if modal_body:
+		_free_children_immediate(modal_body)
 	active_request = null
 	selected_choice_ids.clear()
 	option_buttons.clear()
@@ -1531,15 +1744,16 @@ func _close_modal() -> void:
 
 func _select_hand_card(index: int, card_id: String) -> void:
 	_play_click()
-	selected_entity_key = "hand:%d" % index
+	var key := "hand:%d" % index
+	selected_entity_key = "" if selected_entity_key == key else key
 	_show_card_detail(card_id)
-	_fill_hand(state.get_player(current_view_player))
-	_fill_actions()
+	_refresh_game()
 
 
 func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 	_play_click()
-	selected_entity_key = "pokemon:%d:%s" % [player_idx, slot]
+	var key := "pokemon:%d:%s" % [player_idx, slot]
+	selected_entity_key = "" if selected_entity_key == key else key
 	_show_card_detail(card_id)
 	_refresh_game()
 
@@ -1547,11 +1761,18 @@ func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 func _clear_action_filter() -> void:
 	_play_click()
 	selected_entity_key = ""
-	_fill_hand(state.get_player(current_view_player))
-	_fill_actions()
+	_refresh_game()
 
 
 func _show_card_detail(card_id: String) -> void:
+	if battle_screen:
+		var pokemon: PokemonState
+		if selected_entity_key.begins_with("pokemon:"):
+			var parts := selected_entity_key.split(":")
+			if parts.size() >= 3:
+				pokemon = state.get_player(int(parts[1])).get_pokemon(str(parts[2]))
+		battle_screen.show_card_detail(card_id, pokemon)
+		return
 	if card_id.is_empty():
 		detail_title.text = "空位"
 		detail_text.text = "此位置没有宝可梦。"
@@ -1834,6 +2055,8 @@ func _apply_ai_result(result: Dictionary) -> void:
 		_show_toast("AI 动作被规则拒绝：%s" % step.message, true)
 		_maybe_start_ai()
 		return
+	if battle_screen and not step.events.is_empty():
+		battle_screen.play_presentation(step.events, state.revision, 1)
 	_show_toast(step.message if not step.message.is_empty() else "AI 完成动作。")
 	_continue_after_ai_step(step, previous_active, previous_phase)
 
@@ -1941,6 +2164,9 @@ func _animate_screen(control: Control) -> void:
 
 
 func _play_click() -> void:
+	if audio_director:
+		audio_director.play_ui("click")
+		return
 	if sound_player == null or not sound_player.is_inside_tree():
 		return
 	sound_player.stream = click_stream
@@ -1948,6 +2174,9 @@ func _play_click() -> void:
 
 
 func _play_success() -> void:
+	if audio_director:
+		audio_director.play_ui("success")
+		return
 	if sound_player == null or not sound_player.is_inside_tree():
 		return
 	sound_player.stream = success_stream
@@ -1957,6 +2186,9 @@ func _play_success() -> void:
 func _apply_runtime_settings() -> void:
 	if sound_player:
 		sound_player.volume_db = AppSettings.volume_db()
+	if audio_director:
+		audio_director.apply_settings()
+	Engine.max_fps = AppSettings.target_fps()
 
 
 func _apply_safe_area() -> void:
@@ -1988,6 +2220,9 @@ func _apply_safe_area() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
+		if battle_screen:
+			battle_screen.clear_presentation_for_resync()
+		CardTextureCache.clear()
 		if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
 			ai_coordinator.cancel_and_wait()
 			ai_thinking = false
@@ -2040,6 +2275,12 @@ func _free_children(parent: Node) -> void:
 	for child in parent.get_children():
 		parent.remove_child(child)
 		child.queue_free()
+
+
+func _free_children_immediate(parent: Node) -> void:
+	for child in parent.get_children():
+		parent.remove_child(child)
+		child.free()
 
 
 func _button(text_value: String, height: float) -> Button:

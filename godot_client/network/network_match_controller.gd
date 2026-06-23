@@ -132,7 +132,7 @@ func submit_action(action: GameAction) -> bool:
 		if not step.success:
 			events.append({"type": "error", "code": step.error_code, "message": step.message})
 			return false
-		_broadcast_state()
+		_broadcast_state(step.events)
 		return true
 	var sent := _send(
 		ProtocolV3.ACTION_SUBMIT,
@@ -154,7 +154,7 @@ func submit_choice(response: ChoiceResponse) -> bool:
 		if not step.success:
 			events.append({"type": "error", "code": step.error_code, "message": step.message})
 			return false
-		_broadcast_state()
+		_broadcast_state(step.events)
 		return true
 	var sent := _send(
 		ProtocolV3.CHOICE_SUBMIT,
@@ -170,8 +170,8 @@ func submit_choice(response: ChoiceResponse) -> bool:
 func surrender() -> void:
 	if host:
 		if session != null:
-			session.surrender(0)
-			_broadcast_state()
+			var step := session.surrender(0)
+			_broadcast_state(step.events)
 	else:
 		_send(ProtocolV3.SURRENDER, {}, get_revision())
 
@@ -261,7 +261,7 @@ func _handle_host_message(
 				_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
 					result.error_code, result.message))
 				return
-			_broadcast_state()
+			_broadcast_state(result.events)
 		ProtocolV3.ACTION_SUBMIT:
 			if not _revision_matches(row):
 				return
@@ -273,7 +273,7 @@ func _handle_host_message(
 			if not step.success:
 				_reject(step.error_code, step.message)
 				return
-			_broadcast_state()
+			_broadcast_state(step.events)
 		ProtocolV3.CHOICE_SUBMIT:
 			if not _revision_matches(row):
 				return
@@ -285,12 +285,12 @@ func _handle_host_message(
 			if not step.success:
 				_reject(step.error_code, step.message)
 				return
-			_broadcast_state()
+			_broadcast_state(step.events)
 		ProtocolV3.RESYNC_REQUEST:
 			_send_state_to_client()
 		ProtocolV3.SURRENDER:
-			session.surrender(1)
-			_broadcast_state()
+			var step := session.surrender(1)
+			_broadcast_state(step.events)
 		ProtocolV3.PING:
 			_send(ProtocolV3.PONG)
 		_:
@@ -351,19 +351,23 @@ func _revision_matches(row: Dictionary) -> bool:
 	return true
 
 
-func _broadcast_state() -> void:
+func _broadcast_state(presentation_events: Array = []) -> void:
 	if session == null or session.state == null:
 		return
-	events.append({"type": "state", "view": session.view_for(0), "player_idx": 0})
-	_send_state_to_client()
+	events.append({
+		"type": "state",
+		"view": session.view_for(0, presentation_events),
+		"player_idx": 0,
+	})
+	_send_state_to_client(presentation_events)
 
 
-func _send_state_to_client() -> void:
+func _send_state_to_client(presentation_events: Array = []) -> void:
 	if session == null or session.state == null:
 		return
 	_send(
 		ProtocolV3.STATE_UPDATE,
-		session.view_for(1),
+		session.view_for(1, presentation_events),
 		session.state.revision,
 	)
 

@@ -40,7 +40,7 @@ Godot 迁移版已实现本地双人、Challenge AI、Deep AI、ENet 局域网�
 .\tools\test_release.ps1
 ```
 
-依赖版本和下载摘要锁定在 `tools/toolchain.lock.json`。0.2.0 release 候选已生成，Windows/Android 发布包内置 8 个 FP32 ONNX 模型和 ONNX Runtime CPU Provider，不包含 Python、PyTorch 或训练工具。Android 离线 AI 基本真机验收已通过；新版设置、生命周期和跨设备联网矩阵仍待真机验收，详细状态见 `GODOT_MIGRATION_REPORT.md`。
+依赖版本和下载摘要锁定在 `tools/toolchain.lock.json`。当前客户端版本为 0.3.1，已完成现代实体牌桌 UI、卡牌内操作按钮、重排牌区、弧线卡牌动画及 Android 音频崩溃修复。Windows/Android 发布包继续内置 8 个 FP32 ONNX 模型和 ONNX Runtime CPU Provider，不包含 Python、PyTorch 或训练工具。跨设备联网与更多 Android 真机性能仍需按 `ANDROID_TEST_CHECKLIST.md` 完成复核，详细状态见 `GODOT_MIGRATION_REPORT.md`。
 
 Godot 客户端的局域网模式使用 ENet，默认端口为 `8765`。Relay 模式可连接 `ws://` 或 `wss://` 地址；本地 Relay 可这样启动：
 

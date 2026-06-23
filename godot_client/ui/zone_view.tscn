@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/zone_view.gd" id="1_zone"]
+
+[node name="ZoneView" type="Control"]
+custom_minimum_size = Vector2(82, 116)
+layout_mode = 3
+mouse_filter = 0
+script = ExtResource("1_zone")
+

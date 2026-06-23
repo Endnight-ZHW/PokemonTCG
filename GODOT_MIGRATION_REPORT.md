@@ -73,6 +73,8 @@ GameEngine.apply_choice(state, request, response, rng)
 | 4. 两种离线 AI | 完成 | Challenge/Deep AI 均可在 Windows 与 Android 离线完整对局 |
 | 5. LAN/Relay 联机 | 实现完成，待跨设备验收 | ENet/Relay 完整对局通过；Win↔Android 与 Android↔Android 待真机矩阵 |
 | 6. 发布收尾 | 实现完成，待 Android 验收 | 0.2.0 Win ZIP、测试签名 ARM64 APK、校验清单与发布测试通过 |
+| 7. 视觉现代化 | 实现完成，待 Android 性能验收 | 0.3.0 实体牌桌、真实卡图、表现事件、动画、分层音频和视觉回归通过 |
+| 8. 视觉与 Android 稳定性修复 | 实现完成，待更多真机复核 | 0.3.1 修复 AudioTrack 崩溃、卡牌内操作、牌区重排和卡牌移动动画 |
 
 ## 5. 阶段记录
 
@@ -638,9 +640,142 @@ GameEngine.apply_choice(state, request, response, rng)
 
 阶段结论：实现完成，待用户 Android 验收。
 
+### 阶段 7：Godot 视觉现代化
+
+开始日期：2026-06-22
+
+已完成内容：
+
+- 客户端版本升级为 `0.3.0`，Windows 文件版本与 Android `versionCode=3`、`versionName=0.3.0` 同步。
+- 将战斗界面重构为可复用场景组件：
+  - `CardView` 负责真实卡图、卡背、HP、伤害、能量、状态和可操作提示。
+  - `ZoneView` 负责战斗区、五个备战位、牌库、弃牌区、奖品区、竞技场和手牌区域。
+  - `BattleScreen` 负责现代实体牌桌、响应式手牌、阶段 HUD、上下文命令、详情和折叠日志。
+  - `EffectLayer` 与 `PresentationDirector` 独立负责动画和粒子，不再把表现逻辑混入规则引擎。
+- 标题、牌组选择、隐私交接、复杂选择和胜利页面完成视觉重制；牌组和选择界面直接显示卡图。
+- 建立统一设计令牌，规范字体层级、间距、圆角、阴影、属性色、状态色和触控尺寸。
+- 建立规范化 `PresentationEvent`，覆盖抽牌、上场、进化、训练家、附能、道具、竞技场、攻击、伤害、治疗、状态、换位、击倒、奖品和洗牌。
+- `PresentationDirector` 按事件序列播放弧线移动、落桌、冲击、浮动数字、闪光、震动和粒子，并在队列积压时压缩非关键演出。
+- 本地、Challenge AI、Deep AI、LAN 和 Relay 共用同一表现入口；联机状态更新继续使用协议 v3，可选携带 `presentation_events`。
+- 房主按观察者视角过滤表现事件；对手抽牌、奖品和隐藏选择只保留数量与卡背语义，不发送卡牌身份。
+- 重连/全量同步会清空旧演出队列并直接提交最新视图，避免重放过期事件。
+- 新增点击选择、合法目标高亮、约 350 ms 长按详情和约 14 px 拖拽阈值；点击与拖拽共用同一套合法动作解析。
+- 新增电影化、标准、快速和减少动画四种演出模式；减少动画模式以短淡入和文字反馈替代大幅移动、震动和强闪光。
+- 新增 Master、Music、SFX、UI 四条运行时 Audio Bus，以及原创程序化标题、战斗、胜利循环和主要动作音效。
+- 新增自动、高、中、低画质档与 30/60 FPS 目标；桌面默认高档 60 FPS，Android 自动档根据设备能力选择。
+- 固定截图预览覆盖标题、牌组、隐私交接、16:9 战斗、20:9 战斗、复杂选择、攻击、命中、击倒和结算。
+- 视觉对照矩阵、资源规范和后续验收基线见 `VISUAL_UPGRADE_BASELINE.md`。
+
+测试结果：
+
+- 项目内 Python 3.11：236 通过，1 跳过。
+- Godot 数据导出检查：无漂移。
+- Godot headless：`GODOT_TESTS_OK phase=6`，新增覆盖视觉场景、表现事件过滤、动画档位、拖拽阈值和五个备战位。
+- LAN 与 Relay 完整对局通过：每种传输均为 35 回合、151 个动作、30 个选择、181 个 revision。
+- 16 场 AI 完整回归通过：Challenge AI 8 场、Deep AI 8 场；无非法动作、过期选择或非预期回退。
+- 固定截图生成通过：`UI_PREVIEWS_OK`，共 11 张视觉基线图。
+- Windows debug 导出通过，启动、Deep AI 与协议 v3 冒烟通过。
+- Android ARM64 debug 导出通过，元数据为包名 `com.pokemontcg.game`、`minSdk=28`、`targetSdk=35`、`versionCode=3`、`versionName=0.3.0`。
+- Windows/Android release 打包与独立发布校验通过：
+  - `WINDOWS_RELEASE_RUNTIME_OK`
+  - `WINDOWS_RELEASE_ZIP_OK`
+  - `ANDROID_RELEASE_APK_OK signing=test models=8 abi=arm64-v8a`
+  - `RELEASE_CHECKSUMS_OK entries=14`
+- 动画后节点数量可恢复到测试基线；AI 回归的静态内存由 27,532,322 B 增至 29,241,790 B，未发现持续节点泄漏。
+
+本轮调试产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| Windows debug `PokemonTCG.pck` | 62,839,048 B | `634FB6BE2DDCCCD6473B5483ABD8E314639190A600D2F25268CC6BB0EB9DD96B` |
+| Android ARM64 debug `PokemonTCG.apk` | 170,636,646 B | `B39D5CC60A21540F68E708DE7134489720676730B210C36B74CDC6CCF40B20E6` |
+
+本轮发布产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `PokemonTCG-Windows-x86_64-0.3.0.zip` | 103,519,005 B | `C94DAEC18F64A0794435E23494C42B8BCA6B3FBC570B5F1A7F1FA8760FBE1860` |
+| `PokemonTCG-Android-arm64-0.3.0-test.apk` | 164,459,807 B | `78C3C04A70A64B1294F15AA673948982F7AE4A8AFE7535EBFED443044A789F1F` |
+| Windows release `PokemonTCG.pck` | 62,839,048 B | `634FB6BE2DDCCCD6473B5483ABD8E314639190A600D2F25268CC6BB0EB9DD96B` |
+
+风险与遗留：
+
+- Windows 1600×900 High 档已按 60 FPS 目标实现，但正式性能结论仍应由 profiler 长局采样确认。
+- Android 的自动分档、1080p 60 FPS、中低端 Low 档 30 FPS、温度和耗电必须在至少一台主流设备和一台中低端设备上实测，不能由桌面或 headless 结果推定。
+- Godot 在 Android release 导出进程退出时报告 RID/ObjectDB 清理警告；独立包体、签名和运行时校验均通过，但后续升级 Godot 或调整导出流程时应继续观察。
+- 程序化音频确保原创和许可证清晰；若后续替换为录制音乐或音效，必须在资源清单中记录来源与许可证。
+- 当前视觉版本只使用既有卡图与原创抽象 UI，不新增仿制宝可梦角色插画。
+- 阶段 5/6 遗留的跨设备 LAN/Relay、公网 WSS、正式签名和 Android 生命周期验收仍然有效。
+
+完成日期：2026-06-22（实现与自动化）；Android 性能与跨设备验收待真机完成。
+
+阶段结论：实现完成，待 Android 性能和跨设备验收。
+
+### 阶段 8：视觉与 Android 稳定性修复
+
+开始日期：2026-06-22
+
+问题与根因：
+
+- Android 版本运行数秒后退出。设备 `logcat` 复现为 `AudioTrack` 线程 `SIGSEGV`，发生时间与程序化背景音乐第一次 WAV 原生循环结束一致。
+- 每次战斗视图刷新时，每张宝可梦卡都会新建 `CardCatalog` 并重新解析卡牌和牌组 JSON，造成不必要的 Android 内存与 GC 压力。
+- 粒子和同时飞行卡牌没有硬上限，快速事件队列可能放大移动设备瞬时负载。
+- 右侧操作列表仍承担大部分卡牌动作，牌桌被 HUD 压缩；牌库、弃牌和奖品区域过小。
+- 抽牌和弃牌使用单张直线平移，缺少多卡节奏、弧线、阴影、旋转和落点反馈。
+
+已完成修复：
+
+- 客户端版本升级为 `0.3.1`，Android `versionCode=4`。
+- 移除 `AudioStreamWAV` 原生循环点；音乐改为单次播放完成后由 `AudioStreamPlayer` 安全重播。
+- Android Auto 画质默认使用 Low/30 FPS；移动端卡图缓存上限按档位限制为 12/18。
+- 战斗场景共享单个 `CardCatalog`；卡牌内容使用签名跳过无变化刷新，避免重复解析 JSON 和重建状态节点。
+- 粒子上限固定为 220、浮动文字上限 18、同时飞行卡牌上限 12；暂停、重连和场景切换会终止 Tween 并清理临时视觉对象。
+- 表现导演加入 generation 取消令牌，旧队列在重连清空后不能与新队列并发恢复。
+- 右侧默认只保留“进入下一阶段/完成准备”按钮、卡牌详情和日志；旧动作列表保持隐藏兼容。
+- 训练家、攻击、特性、撤退、晋升和竞技场按钮显示在被选择的对应卡牌上；附能、进化和上场继续通过卡牌上的目标提示与高亮牌位完成。
+- 牌桌 HUD 变窄，双方战斗区和五个备战位围绕中线对称重排；牌库、弃牌、奖品和竞技场放大。
+- 抽牌、弃牌、奖品和击倒改为最多五张卡的错峰贝塞尔弧线，加入阴影、旋转、空中缩放、落点粒子和独立弃牌音效。
+- 补齐选择弃牌和整手弃牌的 `cards_discarded` 事件，包含公开后的卡牌列表；旧式抽牌事件统一转为 owner-only 并过滤隐藏身份。
+
+验证结果：
+
+- Godot headless：`GODOT_TESTS_OK phase=6`。
+- Python：236 通过，1 跳过。
+- LAN/Relay：各 35 回合、151 动作、30 选择、181 revision，通过。
+- 16 场 Challenge/Deep AI 回归通过；静态内存 27,541,360 B → 29,250,828 B，峰值 48,433,057 B。
+- 视觉回归新增 `card-actions.png`、`draw.png` 和 `discard.png`，`UI_PREVIEWS_OK`。
+- 自动测试覆盖共享目录、重复刷新节点稳定、220 粒子上限、12 飞行卡上限和旧抽牌事件隐藏过滤。
+- Android x86_64 模拟设备通过 ARM64 翻译层复现旧版崩溃：
+  - 旧版约 6 秒时在 `AudioTrack` 线程触发 `SIGSEGV`。
+  - 修复后标题与战斗音乐连续循环 132 秒，进程保持存活且无 FATAL/SIGSEGV。
+  - 等待前后 `TOTAL PSS` 为约 268,880 KB → 269,133 KB，没有持续增长。
+- Android ARM64 debug 导出通过。
+- `0.3.1` 发布校验通过：
+  - `WINDOWS_RELEASE_RUNTIME_OK`
+  - `WINDOWS_RELEASE_ZIP_OK`
+  - `ANDROID_RELEASE_APK_OK signing=test models=8 abi=arm64-v8a`
+  - `RELEASE_CHECKSUMS_OK entries=14`
+- 测试签名 `0.3.1` APK 已安装到设备，确认 `versionCode=4`、`versionName=0.3.1`，启动 20 秒后仍存活且无 SIGSEGV。
+
+发布产物：
+
+| 产物 | 大小 | SHA-256 |
+|---|---:|---|
+| `PokemonTCG-Windows-x86_64-0.3.1.zip` | 103,534,472 B | `81E0422B6A6DB5958946E3683C3EC6EE9D42F733DC7A5D52E525FA8DA19F5609` |
+| `PokemonTCG-Android-arm64-0.3.1-test.apk` | 164,474,395 B | `252BC508D57DA675F86E413779A7BC604BF3F1A30546B7D031478458C72E8F68` |
+| Windows release `PokemonTCG.pck` | 62,853,688 B | `5866135F5506ED9E60DAF611B7D390179A96CD4826B6EA24C698995092222344` |
+
+风险与遗留：
+
+- 本轮设备端稳定性验证来自 x86_64 Android 模拟设备的 ARM64 翻译环境；它足以复现并验证音频循环崩溃，但仍需要用户在原生 ARM64 真机上完成长局复核。
+- 模拟设备无法加载仅 ARM64 的 Deep AI GDExtension；真机 Deep AI 验收仍按既有清单执行。
+- Godot Android 导出进程退出时的 RID/ObjectDB 清理警告仍存在，但不会出现在导出后的游戏运行进程中。
+
+阶段结论：实现完成，待原生 ARM64 Android 真机长局复核。
+
 ## 6. 剩余任务
 
-阶段 4 已完成；阶段 5 与阶段 6 均已完成本机实现和自动化验收。剩余工作仅为 Android 真机生命周期、跨设备联网、公网 WSS 和正式签名。
+阶段 4 已完成；阶段 5–8 均已完成本机实现和自动化验收。剩余工作为原生 ARM64 Android 真机长局与视觉性能、跨设备联网、公网 WSS 和正式签名。
 
 ### 6.1 阶段 4：两种离线 AI（历史实施清单）
 

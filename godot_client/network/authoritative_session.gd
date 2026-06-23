@@ -68,10 +68,20 @@ func surrender(player_idx: int) -> StepResult:
 	state.winner = 1 - player_idx
 	state.phase = "GAME_OVER"
 	state.log_action("%s 投降。" % state.players[player_idx].name)
-	return StepResult.new(true, "玩家投降。", null, [], state.winner, true)
+	return StepResult.new(true, "玩家投降。", null, [{
+		"event_type": "game_over",
+		"actor": state.winner,
+		"data": {
+			"winner": state.winner,
+			"reason": "surrender",
+		},
+	}], state.winner, true)
 
 
-func view_for(player_idx: int) -> Dictionary:
+func view_for(
+	player_idx: int,
+	presentation_events: Array = [],
+) -> Dictionary:
 	if state == null:
 		return {}
 	var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
@@ -79,9 +89,20 @@ func view_for(player_idx: int) -> Dictionary:
 	if pending == null and _current_actor() == player_idx:
 		for action in engine.legal_actions(state, player_idx, true):
 			legal.append(action.to_dict())
+	var visible_events: Array[Dictionary] = []
+	var normalized := PresentationEvent.normalize_all(
+		presentation_events,
+		state.revision,
+		state.active_player_idx,
+	)
+	for event in normalized:
+		var visible := PresentationEvent.for_player(event, player_idx)
+		if not visible.is_empty():
+			visible_events.append(visible)
 	return {
 		"state": StateSerializer.for_player(state, player_idx),
 		"legal_actions": legal,
+		"presentation_events": visible_events,
 		"choice_request": (
 			pending.to_dict()
 			if pending != null and pending.player == player_idx

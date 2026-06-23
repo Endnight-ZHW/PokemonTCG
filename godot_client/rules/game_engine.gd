@@ -441,14 +441,35 @@ func _play_basic(
 		return _error("无法放置宝可梦。", "placement_failed", state)
 	pokemon.placed_this_turn = true
 	state.log_action("%s将%s放置到%s。" % [player.name, catalog.card_name(card_id), target])
+	var placement_event := {
+		"event_type": "pokemon_played",
+		"actor": actor,
+		"card_id": card_id,
+		"source": {
+			"player": actor,
+			"zone": "hand",
+			"index": hand_idx,
+		},
+		"target": {
+			"player": actor,
+			"slot": target,
+		},
+		"data": {
+			"player": actor,
+			"slot": target,
+			"card_id": card_id,
+		},
+	}
 	var effects: Array = []
 	for ability_value in catalog.get_card(card_id).get("abilities", []):
 		var ability: Dictionary = ability_value
 		if str(ability.get("trigger", "")) == "on_enter_play":
 			effects.append_array(ability.get("effects", []))
 	if effects.is_empty():
-		return StepResult.new(true, "宝可梦已放置。")
-	return _run_effects(state, effects, actor, target, rng)
+		return StepResult.new(true, "宝可梦已放置。", null, [placement_event])
+	var step := _run_effects(state, effects, actor, target, rng)
+	step.events.push_front(placement_event)
+	return step
 
 
 func _evolve(
@@ -472,14 +493,35 @@ func _evolve(
 	pokemon.status_conditions.clear()
 	pokemon.can_evolve_this_turn = false
 	state.log_action("%s进化为%s。" % [player.name, catalog.card_name(card_id)])
+	var evolution_event := {
+		"event_type": "pokemon_evolved",
+		"actor": actor,
+		"card_id": card_id,
+		"source": {
+			"player": actor,
+			"zone": "hand",
+			"index": hand_idx,
+		},
+		"target": {
+			"player": actor,
+			"slot": slot,
+		},
+		"data": {
+			"player": actor,
+			"slot": slot,
+			"card_id": card_id,
+		},
+	}
 	var effects: Array = []
 	for ability_value in catalog.get_card(card_id).get("abilities", []):
 		var ability: Dictionary = ability_value
 		if str(ability.get("trigger", "")) == "on_enter_play":
 			effects.append_array(ability.get("effects", []))
 	if effects.is_empty():
-		return StepResult.new(true, "进化完成。")
-	return _run_effects(state, effects, actor, slot, rng)
+		return StepResult.new(true, "进化完成。", null, [evolution_event])
+	var step := _run_effects(state, effects, actor, slot, rng)
+	step.events.push_front(evolution_event)
+	return step
 
 
 func _attach_energy(
@@ -501,6 +543,10 @@ func _attach_energy(
 	player.energy_attached_this_turn = true
 	var events: Array[Dictionary] = [{
 		"event_type": "energy_attached",
+		"actor": actor,
+		"card_id": card_id,
+		"source": {"player": actor, "zone": "hand", "index": hand_idx},
+		"target": {"player": actor, "slot": target_slot},
 		"data": {"player": actor, "slot": target_slot, "card_id": card_id},
 	}]
 	if card_id == "svi-jete" and target_slot != "active" and player.active:
@@ -530,12 +576,33 @@ func _play_trainer(
 	if catalog.is_tool(card_id):
 		var tool_target := player.get_pokemon(target_slot)
 		tool_target.attached_tool_id = card_id
-		return StepResult.new(true, "宝可梦道具已附着。")
+		return StepResult.new(true, "宝可梦道具已附着。", null, [{
+			"event_type": "tool_attached",
+			"actor": actor,
+			"card_id": card_id,
+			"source": {"player": actor, "zone": "hand", "index": hand_idx},
+			"target": {"player": actor, "slot": target_slot},
+			"data": {
+				"player": actor,
+				"slot": target_slot,
+				"card_id": card_id,
+			},
+		}])
+	var play_event := {
+		"event_type": "trainer_played",
+		"actor": actor,
+		"card_id": card_id,
+		"source": {"player": actor, "zone": "hand", "index": hand_idx},
+		"target": {"player": actor, "zone": "discard"},
+		"data": {"player": actor, "card_id": card_id},
+	}
 	if catalog.is_stadium(card_id):
 		if not state.stadium_card_id.is_empty():
 			player.discard.append(state.stadium_card_id)
 		state.stadium_card_id = card_id
 		player.stadium_played_this_turn = true
+		play_event["event_type"] = "stadium_changed"
+		play_event["target"] = {"player": actor, "zone": "stadium"}
 	else:
 		player.discard.append(card_id)
 		if catalog.is_supporter(card_id):
@@ -543,8 +610,10 @@ func _play_trainer(
 	state.log_action("%s使用了%s。" % [player.name, catalog.card_name(card_id)])
 	var effects: Array = catalog.get_card(card_id).get("trainer_effects", [])
 	if effects.is_empty():
-		return StepResult.new(true, "训练家卡已使用。")
-	return _run_effects(state, effects, actor, "active", rng)
+		return StepResult.new(true, "训练家卡已使用。", null, [play_event])
+	var step := _run_effects(state, effects, actor, "active", rng)
+	step.events.push_front(play_event)
+	return step
 
 
 func _use_ability(
@@ -622,10 +691,23 @@ func _declare_attack(
 	var attack: Dictionary = catalog.get_card(attacker.card_id).get("attacks", [])[attack_idx]
 	state.phase = "ATTACK"
 	state.log_action("%s使用了%s。" % [catalog.card_name(attacker.card_id), attack.get("name", "")])
+	var attack_event := {
+		"event_type": "attack_declared",
+		"actor": actor,
+		"card_id": attacker.card_id,
+		"source": {"player": actor, "slot": "active"},
+		"target": {"player": 1 - actor, "slot": "active"},
+		"data": {
+			"player": actor,
+			"attack_idx": attack_idx,
+			"attack_name": str(attack.get("name", "")),
+			"card_id": attacker.card_id,
+		},
+	}
 
 	if "CONFUSED" in attacker.status_conditions and not rng.coin():
 		attacker.damage_counters += 3
-		var confused_events: Array[Dictionary] = [{
+		var confused_events: Array[Dictionary] = [attack_event, {
 			"event_type": "confusion_failed",
 			"data": {"player": actor, "self_damage": 30},
 		}]
@@ -661,8 +743,10 @@ func _declare_attack(
 	var step := _run_effects(
 		state, attack.get("effects", []), actor, "active", rng, context)
 	if not step.success or step.pending_choice:
+		step.events.push_front(attack_event)
 		return step
 	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	step.events.push_front(attack_event)
 	return _merge_steps(step, _complete_attack_context(state, stack, rng))
 
 
@@ -851,6 +935,7 @@ func _begin_turn(
 	_rng: PortableRandomSource,
 ) -> StepResult:
 	var player := state.get_player(state.active_player_idx)
+	var events: Array[Dictionary] = []
 	if state.turn_number != 1:
 		var drawn := player.draw_cards(1)
 		if drawn.is_empty():
@@ -858,12 +943,27 @@ func _begin_turn(
 			state.phase = "GAME_OVER"
 			return StepResult.new(
 				true, "牌库耗尽。", null, [], state.winner, true)
+		events.append({
+			"event_type": "cards_drawn",
+			"actor": state.active_player_idx,
+			"visibility": "owner",
+			"card_id": drawn[0] if not drawn.is_empty() else "",
+			"source": {"player": state.active_player_idx, "zone": "deck"},
+			"target": {"player": state.active_player_idx, "zone": "hand"},
+			"data": {
+				"player": state.active_player_idx,
+				"count": drawn.size(),
+				"card_ids": drawn.duplicate(),
+			},
+		})
 	state.phase = "MAIN"
 	state.log_action("—— %s的第%d回合 ——" % [player.name, state.turn_number])
-	return StepResult.new(true, "回合开始。", null, [{
+	events.append({
 		"event_type": "turn_start",
+		"actor": state.active_player_idx,
 		"data": {"player": state.active_player_idx, "turn": state.turn_number},
-	}])
+	})
+	return StepResult.new(true, "回合开始。", null, events)
 
 
 func _promote(
@@ -942,7 +1042,20 @@ func _resolve_knockouts(
 		state.discard_pokemon(defeated_idx, str(knockout["slot"]))
 		var winner_idx := 1 - defeated_idx
 		for _index in range(int(knockout["prizes"])):
-			state.get_player(winner_idx).take_prize()
+			var prize_card_id := state.get_player(winner_idx).take_prize()
+			events.append({
+				"event_type": "prize_taken",
+				"actor": winner_idx,
+				"visibility": "owner",
+				"card_id": prize_card_id,
+				"source": {"player": winner_idx, "zone": "prizes"},
+				"target": {"player": winner_idx, "zone": "hand"},
+				"data": {
+					"player": winner_idx,
+					"count": 1,
+					"card_id": prize_card_id,
+				},
+			})
 		if from_attack and defeated_idx != attack_actor:
 			defeated_player.was_ko_by_attack = true
 		events.append({"event_type": "pokemon_ko", "data": knockout.duplicate(true)})

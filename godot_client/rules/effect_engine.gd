@@ -335,8 +335,10 @@ func _execute_effect(
 			var total_damage := int(params.get("base_damage", 0))
 			if player.hand.size() >= int(params.get("threshold", 5)):
 				total_damage += int(params.get("bonus", 0))
+				var discarded_cards := player.hand.duplicate()
 				var count := player.discard_entire_hand()
-				events.append({"event_type": "cards_discarded", "data": {"player": player_idx, "count": count}})
+				events.append(_discard_event(
+					player_idx, "hand", discarded_cards, count))
 			return _deal_damage(state, 1 - player_idx, "active", total_damage, events)
 		"discard_fighting_energy_damage":
 			var fighting_source := player.get_pokemon(source_slot)
@@ -367,6 +369,7 @@ func _execute_effect(
 				else:
 					player.deck.append(card_id)
 			rng.shuffle(player.deck)
+			events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
 			return _deal_damage(
 				state, 1 - player_idx, "active",
 				energies * int(params.get("damage_per", 0)), events)
@@ -453,13 +456,16 @@ func _execute_effect(
 				max(0, opponent.hand.size() + 1 - player.hand.size()), events)
 		"discard_draw":
 			if bool(params.get("discard_hand", false)):
+				var discarded_cards := player.hand.duplicate()
 				var discarded_count := player.discard_entire_hand()
-				events.append({"event_type": "cards_discarded", "data": {"player": player_idx, "count": discarded_count}})
+				events.append(_discard_event(
+					player_idx, "hand", discarded_cards, discarded_count))
 			return _draw_available(state, player_idx, int(params.get("draw", 7)), events)
 		"shuffle_draw":
 			player.deck.append_array(player.hand)
 			player.hand.clear()
 			rng.shuffle(player.deck)
+			events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
 			return _draw_available(state, player_idx, int(params.get("draw", 5)), events)
 		"judge":
 			for index in [0, 1]:
@@ -467,6 +473,7 @@ func _execute_effect(
 				target_player.deck.append_array(target_player.hand)
 				target_player.hand.clear()
 				rng.shuffle(target_player.deck)
+				events.append({"event_type": "deck_shuffled", "data": {"player": index}})
 				_draw_available(state, index, int(params.get("draw", 4)), events)
 			return _ok()
 		"discard_then_draw":
@@ -687,16 +694,24 @@ func _execute_continuation(
 		"search_move":
 			return _move_selected_cards(state, rng, data, selected, events)
 		"discard_then_draw":
-			_remove_selected_from_zone(state.get_player(int(data["player_idx"])), "hand", selected, true)
+			var discard_player_idx := int(data["player_idx"])
+			var discarded := _remove_selected_from_zone(
+				state.get_player(discard_player_idx), "hand", selected, true)
+			events.append(_discard_event(
+				discard_player_idx, "hand", discarded, discarded.size()))
 			return _draw_available(
-				state, int(data["player_idx"]), int(data["draw_amount"]), events)
+				state, discard_player_idx, int(data["draw_amount"]), events)
 		"discard_cards":
-			_remove_selected_from_zone(
-				state.get_player(int(data["player_idx"])),
-				str(data["zone"]),
+			var discard_player_idx := int(data["player_idx"])
+			var discard_zone := str(data["zone"])
+			var discarded := _remove_selected_from_zone(
+				state.get_player(discard_player_idx),
+				discard_zone,
 				selected,
 				true,
 			)
+			events.append(_discard_event(
+				discard_player_idx, discard_zone, discarded, discarded.size()))
 			return _ok()
 		"hand_bottom_draw":
 			var player := state.get_player(int(data["player_idx"]))
@@ -714,7 +729,10 @@ func _execute_continuation(
 				max(0, int(data["target"]) - houb_player.hand.size()), events)
 		"zinnia":
 			var zinnia_player := state.get_player(int(data["player_idx"]))
-			_remove_selected_from_zone(zinnia_player, "hand", selected, true)
+			var discarded := _remove_selected_from_zone(
+				zinnia_player, "hand", selected, true)
+			events.append(_discard_event(
+				int(data["player_idx"]), "hand", discarded, discarded.size()))
 			return _draw_available(
 				state, int(data["player_idx"]), int(data["draw_amount"]), events)
 		"shuffle_from_discard":
@@ -722,6 +740,9 @@ func _execute_continuation(
 			var shuffled := _remove_selected_from_zone(shuffle_player, "discard", selected, false)
 			shuffle_player.deck.append_array(shuffled)
 			rng.shuffle(shuffle_player.deck)
+			events.append({"event_type": "deck_shuffled", "data": {
+				"player": int(data["player_idx"]),
+			}})
 			return _ok()
 		"clara":
 			var clara_player := state.get_player(int(data["player_idx"]))
@@ -755,6 +776,9 @@ func _execute_continuation(
 			var arven_cards := _remove_selected_from_zone(arven_player, "deck", accepted_arven, false)
 			arven_player.hand.append_array(arven_cards)
 			rng.shuffle(arven_player.deck)
+			events.append({"event_type": "deck_shuffled", "data": {
+				"player": int(data["player_idx"]),
+			}})
 			return _ok()
 		"switch":
 			var target_player := state.get_player(int(data["target_player"]))
@@ -830,6 +854,9 @@ func _execute_continuation(
 					}})
 			if attach_zone == "deck":
 				rng.shuffle(attach_player.deck)
+				events.append({"event_type": "deck_shuffled", "data": {
+					"player": int(data["player_idx"]),
+				}})
 			return _ok()
 		"energy_relocate_source":
 			if selected.is_empty():
@@ -1300,6 +1327,7 @@ func _attach_cards(
 			}})
 	if source_zone == "deck":
 		rng.shuffle(player.deck)
+		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
 	return _ok()
 
 
@@ -1480,6 +1508,9 @@ func _resolve_look_top(
 	if bool(data["shuffle_rest"]):
 		player.deck.append_array(remaining)
 		rng.shuffle(player.deck)
+		events.append({"event_type": "deck_shuffled", "data": {
+			"player": int(data["player_idx"]),
+		}})
 	elif bool(data["rest_bottom"]):
 		for card_id in remaining:
 			player.deck.push_front(card_id)
@@ -1748,6 +1779,7 @@ func _move_selected_cards(
 			player.hand.append_array(moved)
 	if bool(data.get("shuffle", false)):
 		rng.shuffle(player.deck)
+		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
 	events.append({"event_type": "cards_selected", "data": {
 		"player": player_idx, "cards": moved.duplicate(),
 	}})
@@ -1775,6 +1807,26 @@ func _remove_selected_from_zone(
 				player.discard.append(card_id)
 	removed_reversed.reverse()
 	return removed_reversed
+
+
+func _discard_event(
+	player_idx: int,
+	source_zone: String,
+	card_ids: Array,
+	count: int,
+) -> Dictionary:
+	return {
+		"event_type": "cards_discarded",
+		"actor": player_idx,
+		"source": {"player": player_idx, "zone": source_zone},
+		"target": {"player": player_idx, "zone": "discard"},
+		"amount": count,
+		"data": {
+			"player": player_idx,
+			"count": count,
+			"card_ids": card_ids.duplicate(),
+		},
+	}
 
 
 func _selected_target_damage(

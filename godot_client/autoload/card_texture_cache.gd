@@ -58,6 +58,9 @@ func _touch(path: String) -> void:
 
 func _trim() -> void:
 	var limit := maxi(8, AppSettings.card_cache_size)
+	if OS.get_name() in ["Android", "iOS"]:
+		var quality := AppSettings.resolved_quality_profile()
+		limit = mini(limit, 12 if quality == "low" else 18)
 	while _usage_order.size() > limit:
 		var oldest: String = _usage_order.pop_front()
 		_textures.erase(oldest)
