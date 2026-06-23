@@ -15,7 +15,7 @@
       "onnx_path": "res://data/ai_models/colorless.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/colorless.pt",
+      "source_checkpoint": "python/data/ai_models/colorless.pt",
       "verified": true
     },
     "dragon": {
@@ -29,7 +29,7 @@
       "onnx_path": "res://data/ai_models/dragon.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/dragon.pt",
+      "source_checkpoint": "python/data/ai_models/dragon.pt",
       "verified": true
     },
     "fighting": {
@@ -43,7 +43,7 @@
       "onnx_path": "res://data/ai_models/fighting.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/fighting.pt",
+      "source_checkpoint": "python/data/ai_models/fighting.pt",
       "verified": true
     },
     "fire": {
@@ -57,7 +57,7 @@
       "onnx_path": "res://data/ai_models/fire.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/fire.pt",
+      "source_checkpoint": "python/data/ai_models/fire.pt",
       "verified": true
     },
     "grass": {
@@ -71,7 +71,7 @@
       "onnx_path": "res://data/ai_models/grass.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/grass.pt",
+      "source_checkpoint": "python/data/ai_models/grass.pt",
       "verified": true
     },
     "lightning": {
@@ -85,7 +85,7 @@
       "onnx_path": "res://data/ai_models/lightning.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/lightning.pt",
+      "source_checkpoint": "python/data/ai_models/lightning.pt",
       "verified": true
     },
     "psychic": {
@@ -99,7 +99,7 @@
       "onnx_path": "res://data/ai_models/psychic.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/psychic.pt",
+      "source_checkpoint": "python/data/ai_models/psychic.pt",
       "verified": true
     },
     "water": {
@@ -113,7 +113,7 @@
       "onnx_path": "res://data/ai_models/water.onnx",
       "planner_version": 1,
       "rules_version": 2,
-      "source_checkpoint": "data/ai_models/water.pt",
+      "source_checkpoint": "python/data/ai_models/water.pt",
       "verified": true
     }
   },

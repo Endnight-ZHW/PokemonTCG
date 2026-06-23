@@ -13,7 +13,7 @@ if (-not (Test-Path -LiteralPath $godot)) {
 }
 $output = & $godot `
     --headless `
-    --path (Join-Path $repoRoot 'godot_client') `
+    --path (Join-Path $repoRoot 'godot') `
     --script 'res://tests/ai_regression.gd' 2>&1
 $output | ForEach-Object { Write-Host $_ }
 if ($LASTEXITCODE -ne 0) {

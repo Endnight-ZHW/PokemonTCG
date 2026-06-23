@@ -7,7 +7,8 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 from engine.ai.profiles import POLICY_VERSION
@@ -95,4 +96,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    os.chdir(PROJECT_ROOT)
     raise SystemExit(main())

@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$projectRoot = Join-Path $repoRoot 'godot_client'
+$projectRoot = Join-Path $repoRoot 'godot'
 $distRoot = Join-Path $projectRoot 'dist\release'
 $windowsRoot = Join-Path $distRoot 'windows'
 $androidRoot = Join-Path $distRoot 'android'
@@ -128,7 +128,7 @@ foreach ($name in @(
 )) {
     Copy-Item -LiteralPath (Join-Path $windowsRoot $name) -Destination $packageRoot
 }
-Copy-Item -LiteralPath (Join-Path $repoRoot 'RELEASE_NOTES.md') -Destination $packageRoot
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\RELEASE_NOTES.md') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE') `
     -Destination (Join-Path $packageRoot 'ONNXRUNTIME_LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt') `

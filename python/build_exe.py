@@ -24,7 +24,7 @@ DATA_BUNDLES = [
     ("data/images", "data/images"),
     ("data/card_image_mapping.json", "data"),
     ("card_data", "card_data"),
-    ("RULES.md", "."),
+    ("../docs/RULES.md", "."),
 ]
 
 HIDDEN_IMPORTS = [

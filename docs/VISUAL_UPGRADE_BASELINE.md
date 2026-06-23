@@ -34,7 +34,7 @@ Godot 版本以 Pygame 已有表现为最低覆盖线，并在信息层级、响
 
 ## 固定截图
 
-`godot_client/tests/ui_preview.gd` 生成以下基线：
+`godot/tests/ui_preview.gd` 生成以下基线：
 
 - `title.png`
 - `decks.png`

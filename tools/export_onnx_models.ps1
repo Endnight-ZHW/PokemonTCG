@@ -10,7 +10,7 @@ $env:PYTHONNOUSERSITE = '1'
 if (-not (Test-Path -LiteralPath $python)) {
     throw 'AI Python toolchain is missing. Run tools/setup_ai_toolchain.ps1 first.'
 }
-$arguments = @('-B', (Join-Path $repoRoot 'scripts\export_onnx_models.py'))
+$arguments = @('-B', (Join-Path $repoRoot 'python\scripts\export_onnx_models.py'))
 if ($Check) {
     $arguments += '--check'
 }

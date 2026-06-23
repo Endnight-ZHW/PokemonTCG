@@ -5,7 +5,8 @@ import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
 from engine.ai.training import DEFAULT_CANDIDATE_OUTPUT, DEFAULT_WORKERS, DECK_SPECS, TrainingConfig, run_training
 
@@ -44,4 +45,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    os.chdir(PROJECT_ROOT)
     main()

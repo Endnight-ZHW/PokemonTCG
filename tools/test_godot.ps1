@@ -16,7 +16,7 @@ if (-not (Test-Path -LiteralPath $godot)) {
 $importOutput = & $godot `
     --headless `
     --editor `
-    --path (Join-Path $repoRoot 'godot_client') `
+    --path (Join-Path $repoRoot 'godot') `
     --import 2>&1
 $importOutput | ForEach-Object { Write-Host $_ }
 
@@ -31,7 +31,7 @@ if ($joinedImportOutput -match '(?m)^(SCRIPT ERROR|ERROR):') {
 
 $testOutput = & $godot `
     --headless `
-    --path (Join-Path $repoRoot 'godot_client') `
+    --path (Join-Path $repoRoot 'godot') `
     --script 'res://tests/test_runner.gd' 2>&1
 $testOutput | ForEach-Object { Write-Host $_ }
 

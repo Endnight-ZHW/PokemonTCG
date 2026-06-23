@@ -11,9 +11,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+PYTHON_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PYTHON_ROOT.parent
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
 
 import numpy as np
 import onnx
@@ -270,12 +271,12 @@ def main() -> int:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=REPO_ROOT / "godot_client" / "data" / "ai_models",
+        default=REPO_ROOT / "godot" / "data" / "ai_models",
     )
     parser.add_argument(
         "--checkpoint-root",
         type=Path,
-        default=REPO_ROOT / "data" / "ai_models",
+        default=PYTHON_ROOT / "data" / "ai_models",
     )
     parser.add_argument("--tolerance", type=float, default=1e-4)
     parser.add_argument("--check", action="store_true")

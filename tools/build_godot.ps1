@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$projectRoot = Join-Path $repoRoot 'godot_client'
+$projectRoot = Join-Path $repoRoot 'godot'
 $godot = Join-Path $repoRoot '.tools\godot-4.7\Godot_v4.7-stable_win64_console.exe'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'

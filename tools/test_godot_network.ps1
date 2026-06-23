@@ -5,7 +5,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$projectRoot = Join-Path $repoRoot 'godot_client'
+$projectRoot = Join-Path $repoRoot 'godot'
+$pythonRoot = Join-Path $repoRoot 'python'
 $godot = Join-Path $repoRoot '.tools\godot-4.7\Godot_v4.7-stable_win64_console.exe'
 $python = Join-Path $repoRoot '.tools\python311\python.exe'
 $tempRoot = Join-Path $repoRoot '.test_tmp\godot-network'
@@ -19,11 +20,11 @@ $relayErr = Join-Path $tempRoot 'relay.stderr.log'
 $relay = Start-Process `
     -FilePath $python `
     -ArgumentList @(
-        (Join-Path $repoRoot 'relay_server.py'),
+        (Join-Path $pythonRoot 'relay_server.py'),
         '--host', '127.0.0.1',
         '--port', $RelayPort
     ) `
-    -WorkingDirectory $repoRoot `
+    -WorkingDirectory $pythonRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $relayOut `
     -RedirectStandardError $relayErr `

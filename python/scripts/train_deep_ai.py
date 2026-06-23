@@ -7,7 +7,8 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
 from engine.ai.dl.training import DeepTrainingConfig, is_torch_available, run_deep_training
 from engine.ai.training import DECK_SPECS
@@ -156,4 +157,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    os.chdir(PROJECT_ROOT)
     raise SystemExit(main())

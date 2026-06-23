@@ -3,7 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$projectRoot = Join-Path $repoRoot 'godot_client'
+$projectRoot = Join-Path $repoRoot 'godot'
 $distRoot = Join-Path $projectRoot 'dist\release'
 $windowsRoot = Join-Path $distRoot 'windows'
 $zipPath = Join-Path $distRoot 'PokemonTCG-Windows-x86_64-0.3.1.zip'

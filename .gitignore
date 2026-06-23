@@ -35,32 +35,34 @@ torch_cache/
 
 # Test output
 .test_tmp/
-tests/.tmp/
+python/tests/.tmp/
 test_log_output.txt
-data/ai_policies_candidate.json
-data/ai_training_progress*.jsonl
-data/*.log
+python/data/ai_policies_candidate.json
+python/data/ai_training_progress*.jsonl
+python/data/*.log
 
 # Training artifacts (exclude large generated files)
-data/ai_models/*.rejected.*
-data/*_progress.jsonl
-data/smoke_progress.jsonl
+python/data/ai_models/*.rejected.*
+python/data/ai_models/candidate_*
+python/data/*_progress.jsonl
+python/data/smoke_progress.jsonl
+python/data/ai_training_checkpoints/
 
 # Godot generated files and local toolchains
-godot_client/.godot/
-godot_client/android/
-godot_client/build/
-godot_client/dist/
-godot_client/native/**/*.obj
-godot_client/native/**/*.os
-godot_client/native/**/*.obj.import
-godot_client/native/**/.sconsign.dblite
-godot_client/bin/**/*.exp
-godot_client/bin/**/*.lib
+godot/.godot/
+godot/android/
+godot/build/
+godot/dist/
+godot/native/**/*.obj
+godot/native/**/*.os
+godot/native/**/*.obj.import
+godot/native/**/.sconsign.dblite
+godot/bin/**/*.exp
+godot/bin/**/*.lib
 .tools/
 .cache/
 
 # Local signing material
 *.keystore
 *.jks
-godot_client/export_credentials.cfg
+godot/export_credentials.cfg

@@ -11,9 +11,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+PYTHON_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = PYTHON_ROOT.parent
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
 
 from card_data.effects import CARD_EFFECTS
 from data.card_registry import CardRegistry
@@ -54,7 +55,7 @@ from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
 from engine.random_source import ScriptedRandomSource
 
-DEFAULT_OUTPUT = REPO_ROOT / "godot_client"
+DEFAULT_OUTPUT = REPO_ROOT / "godot"
 
 DECKS = {
     "fire": {
@@ -132,7 +133,7 @@ def _sha256(path: Path) -> str:
 
 
 def _load_image_mapping() -> dict[str, str]:
-    mapping_path = REPO_ROOT / "data" / "card_image_mapping.json"
+    mapping_path = PYTHON_ROOT / "data" / "card_image_mapping.json"
     return json.loads(mapping_path.read_text(encoding="utf-8"))
 
 
@@ -142,7 +143,7 @@ def _image_paths(mapping: dict[str, str]) -> dict[str, str]:
         source_value = mapping.get(card_id)
         if not source_value:
             continue
-        source = REPO_ROOT / Path(source_value.replace("\\", "/"))
+        source = PYTHON_ROOT / Path(source_value.replace("\\", "/"))
         if not source.is_file():
             continue
         target = Path(f"{card_id}{source.suffix.lower()}")
@@ -156,11 +157,11 @@ def _export_images(output: Path, mapping: dict[str, str]) -> dict[str, str]:
     exported = _image_paths(mapping)
     for card_id, target_path in exported.items():
         source_value = mapping[card_id]
-        source = REPO_ROOT / Path(source_value.replace("\\", "/"))
+        source = PYTHON_ROOT / Path(source_value.replace("\\", "/"))
         target = target_root / Path(target_path).name
         shutil.copy2(source, target)
 
-    card_back = REPO_ROOT / "data" / "images" / "卡背.webp"
+    card_back = PYTHON_ROOT / "data" / "images" / "卡背.webp"
     if card_back.is_file():
         shutil.copy2(card_back, target_root / "card_back.webp")
     return exported
@@ -207,7 +208,7 @@ def _deck_payload() -> dict[str, dict[str, Any]]:
 
 
 def _model_manifest() -> dict[str, Any]:
-    model_root = REPO_ROOT / "data" / "ai_models"
+    model_root = PYTHON_ROOT / "data" / "ai_models"
     models: dict[str, Any] = {}
     for deck_key in DECKS:
         checkpoint = model_root / f"{deck_key}.pt"
@@ -218,7 +219,7 @@ def _model_manifest() -> dict[str, Any]:
             metadata = dict(raw.get("metadata") or {})
         models[deck_key] = {
             "deck_key": deck_key,
-            "source_checkpoint": f"data/ai_models/{deck_key}.pt",
+            "source_checkpoint": f"python/data/ai_models/{deck_key}.pt",
             "onnx_path": f"res://data/ai_models/{deck_key}.onnx",
             "checkpoint_exists": checkpoint.is_file(),
             "checkpoint_size": checkpoint.stat().st_size if checkpoint.is_file() else 0,
@@ -725,7 +726,7 @@ def main() -> None:
                 raise SystemExit(
                     "Godot generated data is stale: "
                     + ", ".join(stale)
-                    + ". Run scripts/export_godot_data.py."
+                    + ". Run python/scripts/export_godot_data.py."
                 )
         print("Godot generated data is current.")
         return

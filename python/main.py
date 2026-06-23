@@ -1,5 +1,8 @@
 """Pokemon TCG Battle - UI entrypoint."""
+import os
 import sys
+
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Force UTF-8 encoding for Windows console (safe method)
 if sys.platform == 'win32':

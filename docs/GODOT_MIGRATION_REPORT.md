@@ -1,5 +1,10 @@
 # PokemonTCG Godot 4.7 迁移实施报告
 
+> 仓库于 2026-06-23 完成双版本目录整理：当前 Godot 客户端位于
+> `godot/`，Python/Pygame 对照实现、AI 训练和数据导出环境位于
+> `python/`，共享构建脚本位于 `tools/`。本报告中的历史产物记录保留原有
+> 阶段语义，但路径已统一更新为当前仓库结构。
+
 ## 1. 最终目标
 
 将当前 Python + Pygame 客户端迁移为 Godot 4.7 原生客户端，并交付：
@@ -84,7 +89,7 @@ GameEngine.apply_choice(state, request, response, rng)
 
 计划内容：
 
-- 创建 `godot_client/` Godot 4.7 Compatibility 工程。
+- 创建 `godot/` Godot 4.7 Compatibility 工程。
 - 创建 Windows x86_64 和 Android ARM64 导出预设。
 - 固定 Android 9+、横屏、包名 `com.pokemontcg.game`。
 - 创建无第三方依赖的 headless 测试入口。
@@ -118,8 +123,8 @@ GameEngine.apply_choice(state, request, response, rng)
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `godot_client/dist/windows/PokemonTCG.exe` | 102,915,072 B | `B1B700323D4E3812D644A2F0F2972A542D15AB930D925E5D0C53E749017C66E6` |
-| `godot_client/dist/android/PokemonTCG.apk` | 83,986,908 B | `1B17A9B4ACE57A3F59E8A3EBE87423A7896C89B9DB47BD9B4E151CB907E077CA` |
+| `godot/dist/windows/PokemonTCG.exe` | 102,915,072 B | `B1B700323D4E3812D644A2F0F2972A542D15AB930D925E5D0C53E749017C66E6` |
+| `godot/dist/android/PokemonTCG.apk` | 83,986,908 B | `1B17A9B4ACE57A3F59E8A3EBE87423A7896C89B9DB47BD9B4E151CB907E077CA` |
 
 风险与遗留：
 
@@ -144,7 +149,7 @@ GameEngine.apply_choice(state, request, response, rng)
 
 已完成内容：
 
-- 新增 `scripts/export_godot_data.py`，从 Python 权威数据生成：
+- 新增 `python/scripts/export_godot_data.py`，从 Python 权威数据生成：
   - `cards.json`
   - `effects.json`
   - `decks.json`
@@ -179,7 +184,7 @@ GameEngine.apply_choice(state, request, response, rng)
 
 测试结果：
 
-- `python -B scripts/export_godot_data.py --check`：通过。
+- `python -B python/scripts/export_godot_data.py --check`：通过。
 - Python 新增 2 个导出测试；完整测试现为 235 通过，8 跳过。
 - Godot headless：`GODOT_TESTS_OK phase=1`。
 - 验证内容包括 115 张卡、8 套 60 张牌组、72 类效果、全部卡图存在、8 个模型清单、稳定随机序列及序列化往返。
@@ -189,8 +194,8 @@ GameEngine.apply_choice(state, request, response, rng)
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
-| `godot_client/dist/android/PokemonTCG.apk` | 101,832,600 B | `B71E587D55D5AEC6D9BA540D7CEF676EC135EBE8FD810E381701236EE08D7453` |
+| `godot/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot/dist/android/PokemonTCG.apk` | 101,832,600 B | `B71E587D55D5AEC6D9BA540D7CEF676EC135EBE8FD810E381701236EE08D7453` |
 
 风险与遗留：
 
@@ -247,7 +252,7 @@ GameEngine.apply_choice(state, request, response, rng)
 
 测试结果：
 
-- `python -B scripts/export_godot_data.py --check --skip-images`：通过。
+- `python -B python/scripts/export_godot_data.py --check --skip-images`：通过。
 - Python 完整测试：235 通过，8 跳过。
 - Godot headless：`GODOT_TESTS_OK phase=2`。
 - Godot 阶段 2 覆盖：
@@ -263,9 +268,9 @@ GameEngine.apply_choice(state, request, response, rng)
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
-| `godot_client/dist/windows/PokemonTCG.pck` | 18,203,268 B | `4A89B2B44F46D069F3A085A9533412D8AE7C72514040F62433E0C05DD9320A10` |
-| `godot_client/dist/android/PokemonTCG.apk` | 101,947,137 B | `EC6FBE7ACAF5635D0FD9F9C3BF6E2EE7486B3BAFFDDEB8D7B718FD4E8A8DD9B3` |
+| `godot/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot/dist/windows/PokemonTCG.pck` | 18,203,268 B | `4A89B2B44F46D069F3A085A9533412D8AE7C72514040F62433E0C05DD9320A10` |
+| `godot/dist/android/PokemonTCG.apk` | 101,947,137 B | `EC6FBE7ACAF5635D0FD9F9C3BF6E2EE7486B3BAFFDDEB8D7B718FD4E8A8DD9B3` |
 
 风险与遗留：
 
@@ -325,7 +330,7 @@ GameEngine.apply_choice(state, request, response, rng)
 
 测试结果：
 
-- `python -B scripts/export_godot_data.py --check --skip-images`：通过。
+- `python -B python/scripts/export_godot_data.py --check --skip-images`：通过。
 - Python 完整测试：235 通过，8 跳过。
 - Godot headless：`GODOT_TESTS_OK phase=3`。
 - 阶段 3 Godot 测试覆盖：
@@ -350,10 +355,10 @@ GameEngine.apply_choice(state, request, response, rng)
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
-| `godot_client/dist/windows/PokemonTCG.pck` | 18,177,844 B | `6B4B8FCE8F132498738240DB0DB51F984036ED839A1EF060D90889964BD6178B` |
-| `godot_client/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
-| `godot_client/dist/android/PokemonTCG.apk` | 101,958,114 B | `E3E6C2936479851BAE500E0750F5F5DD8C32193E80A8F67DB09160B1D5636001` |
+| `godot/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot/dist/windows/PokemonTCG.pck` | 18,177,844 B | `6B4B8FCE8F132498738240DB0DB51F984036ED839A1EF060D90889964BD6178B` |
+| `godot/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
+| `godot/dist/android/PokemonTCG.apk` | 101,958,114 B | `E3E6C2936479851BAE500E0750F5F5DD8C32193E80A8F67DB09160B1D5636001` |
 
 提交记录：
 
@@ -410,7 +415,7 @@ GameEngine.apply_choice(state, request, response, rng)
 测试结果：
 
 - 项目内 Python 3.11 环境完整测试：235 通过，1 跳过；原先 8 个跳过项中的可选 AI 依赖测试已因工具链安装而启用。
-- `scripts/export_godot_data.py --check --skip-images`：通过。
+- `python/scripts/export_godot_data.py --check --skip-images`：通过。
 - `tools/export_onnx_models.ps1 -Check`：8 个模型均为最新且 PyTorch/ONNX 对齐通过；三类输出全局最大绝对误差 `2.86102294921875e-06`，低于 `1e-4`。
 - Godot headless 阶段 0–4 测试通过，覆盖 Python/Godot Observation、card bucket、960/96/178 编码逐项一致，以及 8 个模型的加载和原生推理。
 - 固定 seed 的 Challenge AI 决策可复现；后台协调线程会让出调用线程并支持取消。
@@ -425,10 +430,10 @@ GameEngine.apply_choice(state, request, response, rng)
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
-| `godot_client/dist/windows/PokemonTCG.pck` | 62,708,936 B | `C7A200720146DC21DF9A205736BA878697DED8CC087DBB9EA70C1AA67DE479DE` |
-| `godot_client/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
-| `godot_client/dist/android/PokemonTCG.apk` | 170,506,276 B | `8C03F1928B83F3F2DA155522E4599F7976484A9D50B1BEFF69119AB02B14438F` |
+| `godot/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot/dist/windows/PokemonTCG.pck` | 62,708,936 B | `C7A200720146DC21DF9A205736BA878697DED8CC087DBB9EA70C1AA67DE479DE` |
+| `godot/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
+| `godot/dist/android/PokemonTCG.apk` | 170,506,276 B | `8C03F1928B83F3F2DA155522E4599F7976484A9D50B1BEFF69119AB02B14438F` |
 
 原生产物校验：
 
@@ -528,19 +533,19 @@ GameEngine.apply_choice(state, request, response, rng)
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `godot_client/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
-| `godot_client/dist/windows/PokemonTCG.pck` | 62,736,788 B | `03BF7F057558C4F3408F882FD62E8C66E06EDB8D1FDF53A5A4C1411224008F73` |
-| `godot_client/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
-| `godot_client/dist/android/PokemonTCG.apk` | 170,534,650 B | `2E52A3D915CA3C0B3A23A808B1501AC006787F033260989DBB4DE4F03B7185E4` |
+| `godot/dist/windows/PokemonTCG.exe` | 102,966,784 B | `1FE9B182F09DDFB4A77B9EAE6D7DD93313511F0C3F5B2279187FB1A6C9088756` |
+| `godot/dist/windows/PokemonTCG.pck` | 62,736,788 B | `03BF7F057558C4F3408F882FD62E8C66E06EDB8D1FDF53A5A4C1411224008F73` |
+| `godot/dist/windows/PokemonTCG.console.exe` | 101,888 B | `932F700EC1C9CE40408F8A7D3B3B98514AE4406DC3B0469F5124C2C1B0691DCF` |
+| `godot/dist/android/PokemonTCG.apk` | 170,534,650 B | `2E52A3D915CA3C0B3A23A808B1501AC006787F033260989DBB4DE4F03B7185E4` |
 
 接口与文件：
 
-- `godot_client/network/protocol_v3.gd`
-- `godot_client/network/net_transport.gd`
-- `godot_client/network/enet_transport.gd`
-- `godot_client/network/websocket_relay_transport.gd`
-- `godot_client/network/authoritative_session.gd`
-- `godot_client/network/network_match_controller.gd`
+- `godot/network/protocol_v3.gd`
+- `godot/network/net_transport.gd`
+- `godot/network/enet_transport.gd`
+- `godot/network/websocket_relay_transport.gd`
+- `godot/network/authoritative_session.gd`
+- `godot/network/network_match_controller.gd`
 - `tools/test_godot_network.ps1`
 
 风险与遗留：

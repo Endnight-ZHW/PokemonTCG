@@ -5,9 +5,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$windowsExe = Join-Path $repoRoot 'godot_client\dist\windows\PokemonTCG.exe'
-$windowsConsole = Join-Path $repoRoot 'godot_client\dist\windows\PokemonTCG.console.exe'
-$androidApk = Join-Path $repoRoot 'godot_client\dist\android\PokemonTCG.apk'
+$windowsExe = Join-Path $repoRoot 'godot\dist\windows\PokemonTCG.exe'
+$windowsConsole = Join-Path $repoRoot 'godot\dist\windows\PokemonTCG.console.exe'
+$androidApk = Join-Path $repoRoot 'godot\dist\android\PokemonTCG.apk'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $adb = Join-Path $sdkRoot 'platform-tools\adb.exe'
