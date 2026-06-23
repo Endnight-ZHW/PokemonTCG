@@ -1,12 +1,299 @@
 [gd_scene format=3 uid="uid://c3lmffwqdau6j"]
 
 [ext_resource type="Script" uid="uid://dqedifiv8eyso" path="res://scenes/main/main.gd" id="1_main"]
+[ext_resource type="Theme" uid="uid://dukxt6xci8qas" path="res://ui/game_theme.tres" id="2_theme"]
+[ext_resource type="Script" uid="uid://cscu1kyecnig5" path="res://ui/audio_director.gd" id="3_audio"]
 
-[node name="Main" type="Control" unique_id=1480590069]
+[sub_resource type="StyleBoxFlat" id="Style_toast"]
+bg_color = Color(0.106, 0.18, 0.286, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.271, 0.651, 1, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="Animation" id="Animation_modal_reset"]
+resource_name = "RESET"
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("ModalLayer/Center/ModalPanel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(1, 1, 1, 1)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("ModalLayer/Center/ModalPanel:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(1, 1)]
+}
+
+[sub_resource type="Animation" id="Animation_modal_close"]
+resource_name = "modal_close"
+length = 0.12
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("ModalLayer/Center/ModalPanel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.12),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Color(1, 1, 1, 1), Color(1, 1, 1, 0)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("ModalLayer/Center/ModalPanel:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.12),
+"transitions": PackedFloat32Array(1, 0.7),
+"update": 0,
+"values": [Vector2(1, 1), Vector2(0.97, 0.97)]
+}
+
+[sub_resource type="Animation" id="Animation_modal_open"]
+resource_name = "modal_open"
+length = 0.16
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("ModalLayer/Center/ModalPanel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.16),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("ModalLayer/Center/ModalPanel:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.16),
+"transitions": PackedFloat32Array(0.7, 1),
+"update": 0,
+"values": [Vector2(0.96, 0.96), Vector2(1, 1)]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_shell"]
+_data = {
+&"RESET": SubResource("Animation_modal_reset"),
+&"modal_close": SubResource("Animation_modal_close"),
+&"modal_open": SubResource("Animation_modal_open")
+}
+
+[node name="Main" type="Control" unique_id=799016967]
+editor_description = "应用外壳。背景、安全区、页面容器、提示、弹窗、加载层和音频节点均在此处可视化编辑。"
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_theme")
 script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="." unique_id=972013656]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.035, 0.067, 0.122, 1)
+
+[node name="SafeArea" type="MarginContainer" parent="." unique_id=611622708]
+unique_name_in_owner = true
+editor_description = "Android 安全区边距会在运行时写入此节点。"
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ScreenHost" type="Control" parent="SafeArea" unique_id=802793416]
+unique_name_in_owner = true
+editor_description = "当前页面的唯一挂载点。标题、选牌、网络、战斗和结算页面会实例化到这里。"
+layout_mode = 2
+
+[node name="Toast" type="Label" parent="." unique_id=109388610]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 520.0
+offset_top = 26.0
+offset_right = -520.0
+offset_bottom = 84.0
+grow_horizontal = 2
+theme_override_styles/normal = SubResource("Style_toast")
+text = "操作提示"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="UISound" type="AudioStreamPlayer" parent="." unique_id=445180272]
+unique_name_in_owner = true
+
+[node name="AudioDirector" type="Node" parent="." unique_id=1115438506]
+unique_name_in_owner = true
+script = ExtResource("3_audio")
+
+[node name="ModalLayer" type="Control" parent="." unique_id=1934504853]
+unique_name_in_owner = true
+editor_description = "通用弹窗层。静态结构在这里编辑，ModalBody 仅承载动态的设置、选择或提示内容。"
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ModalShade" type="ColorRect" parent="ModalLayer" unique_id=538977692]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.01, 0.02, 0.04, 0.86)
+
+[node name="Center" type="CenterContainer" parent="ModalLayer" unique_id=1025238211]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ModalPanel" type="PanelContainer" parent="ModalLayer/Center" unique_id=423159000]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(720, 620)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="ModalLayer/Center/ModalPanel" unique_id=1422562102]
+layout_mode = 2
+theme_override_constants/margin_left = 30
+theme_override_constants/margin_top = 26
+theme_override_constants/margin_right = 30
+theme_override_constants/margin_bottom = 26
+
+[node name="Content" type="VBoxContainer" parent="ModalLayer/Center/ModalPanel/Margin" unique_id=2066006533]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="ModalTitle" type="Label" parent="ModalLayer/Center/ModalPanel/Margin/Content" unique_id=419415306]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 28
+text = "弹窗标题"
+horizontal_alignment = 1
+
+[node name="Scroll" type="ScrollContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content" unique_id=359460659]
+custom_minimum_size = Vector2(640, 440)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ModalBody" type="VBoxContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content/Scroll" unique_id=911316083]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Buttons" type="HBoxContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content" unique_id=258006045]
+layout_mode = 2
+
+[node name="ModalCancel" type="Button" parent="ModalLayer/Center/ModalPanel/Margin/Content/Buttons" unique_id=449841188]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "取消"
+
+[node name="ModalConfirm" type="Button" parent="ModalLayer/Center/ModalPanel/Margin/Content/Buttons" unique_id=1700667779]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "确认"
+
+[node name="LoadingLayer" type="Control" parent="." unique_id=1430946139]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Shade" type="ColorRect" parent="LoadingLayer" unique_id=1429988067]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.01, 0.02, 0.04, 0.94)
+
+[node name="Center" type="CenterContainer" parent="LoadingLayer" unique_id=1948164336]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="LoadingLayer/Center" unique_id=744554214]
+custom_minimum_size = Vector2(560, 180)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="LoadingLayer/Center/Panel" unique_id=1790086198]
+layout_mode = 2
+theme_override_constants/margin_left = 30
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 30
+theme_override_constants/margin_bottom = 24
+
+[node name="LoadingLabel" type="Label" parent="LoadingLayer/Center/Panel/Margin" unique_id=2048623833]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 23
+text = "正在加载…"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="ShellAnimations" type="AnimationPlayer" parent="." unique_id=1381382845]
+unique_name_in_owner = true
+libraries/ = SubResource("AnimationLibrary_shell")

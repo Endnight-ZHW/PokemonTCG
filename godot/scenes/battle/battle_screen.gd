@@ -14,7 +14,30 @@ signal card_drop_requested(
 signal detail_requested(card_id: String)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
-const ZONE_SCENE := preload("res://ui/zone_view.tscn")
+
+@export_category("Table Layout")
+@export_group("HUD")
+@export var hud_width := 292.0
+@export_group("Board Cards")
+@export var active_card_size := Vector2(118, 164)
+@export var bench_card_size := Vector2(82, 114)
+@export var zone_size := Vector2(90, 128)
+@export var bench_spacing := 14.0
+@export_group("Hand")
+@export var hand_card_size := Vector2(104, 146)
+@export var hand_minimum_spacing := 44.0
+@export var hand_rotation_degrees := 7.0
+@export_category("Presentation")
+@export_group("Refresh")
+@export var resync_fade_duration := 0.16
+@export_group("Dynamic Card Motion")
+@export var motion_arc_height_min := 74.0
+@export var motion_arc_distance_ratio := 0.22
+@export var motion_arc_stagger_height := 8.0
+@export var motion_stagger_delay := 0.045
+@export_group("Touch Targets")
+@export var primary_action_button_height := 48.0
+@export var secondary_action_button_height := 43.0
 
 var state_ref: GameState
 var catalog := CardCatalog.new()
@@ -24,31 +47,32 @@ var action_rows: Array[Dictionary] = []
 var game_mode := "local"
 var ai_thinking := false
 
-var board_panel: PanelContainer
-var board_canvas: Control
-var playmat: BattlePlaymat
-var hud: VBoxContainer
-var turn_label: Label
-var opponent_info: Label
-var own_info: Label
+@onready var board_panel: PanelContainer = %BoardPanel
+@onready var board_canvas: Control = %BoardCanvas
+@onready var playmat: BattlePlaymat = %Playmat
+@onready var hud: VBoxContainer = %BattleHUD
+@onready var turn_label: Label = %TurnLabel
+@onready var opponent_info: Label = %OpponentInfo
+@onready var own_info: Label = %OwnInfo
 var phase_labels: Dictionary = {}
-var phase_advance_button: Button
-var quick_actions: VBoxContainer
-var action_list: VBoxContainer
-var all_actions_scroll: ScrollContainer
-var all_actions_toggle: Button
-var detail_image: TextureRect
-var detail_title: Label
-var detail_text: RichTextLabel
-var log_label: RichTextLabel
-var hand_scroll: ScrollContainer
-var hand_surface: Control
-var input_blocker: Control
-var effects: BattleEffectLayer
-var director: PresentationDirector
+@onready var phase_advance_button: Button = %PhaseAdvanceButton
+@onready var quick_actions: VBoxContainer = %QuickActions
+@onready var action_list: VBoxContainer = %ActionList
+@onready var all_actions_scroll: ScrollContainer = %AllActionsScroll
+@onready var all_actions_toggle: Button = %AllActionsToggle
+@onready var detail_image: TextureRect = %DetailImage
+@onready var detail_title: Label = %DetailTitle
+@onready var detail_text: RichTextLabel = %DetailText
+@onready var log_label: RichTextLabel = %LogLabel
+@onready var hand_scroll: ScrollContainer = %HandScroll
+@onready var hand_surface: Control = %HandSurface
+@onready var input_blocker: Control = %PresentationInputBlocker
+@onready var effects: BattleEffectLayer = %Effects
+@onready var director: PresentationDirector = %PresentationDirector
+@onready var animation_player: AnimationPlayer = %AnimationPlayer
 
-var opponent_active: CardView
-var own_active: CardView
+@onready var opponent_active: CardView = %OpponentActive
+@onready var own_active: CardView = %OwnActive
 var opponent_bench: Array[CardView] = []
 var own_bench: Array[CardView] = []
 var hand_views: Array[CardView] = []
@@ -68,12 +92,69 @@ func _ready() -> void:
 func initialize_ui() -> void:
 	if _initialized:
 		return
+	_resolve_scene_nodes()
 	_initialized = true
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_build_interface()
-	_build_director()
+	_bind_scene_nodes()
 	resized.connect(_layout_board)
 	call_deferred("_layout_board")
+	if not AppSettings.reduced_motion:
+		animation_player.play("enter")
+
+
+func _resolve_scene_nodes() -> void:
+	board_panel = get_node("BattleRoot/Body/BoardPanel") as PanelContainer
+	board_canvas = get_node("BattleRoot/Body/BoardPanel/BoardCanvas") as Control
+	playmat = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/Playmat") as BattlePlaymat
+	hud = get_node("BattleRoot/Body/BattleHUD") as VBoxContainer
+	turn_label = get_node("BattleRoot/Header/TurnLabel") as Label
+	opponent_info = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentInfo"
+	) as Label
+	own_info = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/OwnInfo") as Label
+	phase_advance_button = get_node(
+		"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseAdvanceButton"
+	) as Button
+	quick_actions = get_node(
+		"ActionPanel/Margin/Content/QuickActions"
+	) as VBoxContainer
+	action_list = get_node(
+		"ActionPanel/Margin/Content/AllActionsScroll/ActionList"
+	) as VBoxContainer
+	all_actions_scroll = get_node(
+		"ActionPanel/Margin/Content/AllActionsScroll"
+	) as ScrollContainer
+	all_actions_toggle = get_node(
+		"ActionPanel/Margin/Content/Heading/AllActionsToggle"
+	) as Button
+	detail_image = get_node(
+		"BattleRoot/Body/BattleHUD/DetailPanel/Row/DetailImage"
+	) as TextureRect
+	detail_title = get_node(
+		"BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn/DetailTitle"
+	) as Label
+	detail_text = get_node(
+		"BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn/DetailText"
+	) as RichTextLabel
+	log_label = get_node(
+		"BattleRoot/Body/BattleHUD/LogPanel/Content/LogLabel"
+	) as RichTextLabel
+	hand_scroll = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/HandScroll"
+	) as ScrollContainer
+	hand_surface = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/HandScroll/HandSurface"
+	) as Control
+	input_blocker = get_node("PresentationInputBlocker") as Control
+	effects = get_node("Effects") as BattleEffectLayer
+	director = get_node("PresentationDirector") as PresentationDirector
+	animation_player = get_node("AnimationPlayer") as AnimationPlayer
+	opponent_active = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentActive"
+	) as CardView
+	own_active = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/OwnActive"
+	) as CardView
 
 
 func update_view(
@@ -118,7 +199,7 @@ func clear_presentation_for_resync() -> void:
 	_clear_transient_visuals()
 	modulate.a = 0.35
 	var tween := create_tween()
-	tween.tween_property(self, "modulate:a", 1.0, 0.16)
+	tween.tween_property(self, "modulate:a", 1.0, resync_fade_duration)
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
@@ -199,315 +280,60 @@ func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 	return effects.size * Vector2(0.5, 0.5)
 
 
-func _build_interface() -> void:
-	var root := VBoxContainer.new()
-	root.name = "BattleRoot"
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.add_theme_constant_override("separation", 8)
-	add_child(root)
-
-	var header := HBoxContainer.new()
-	header.custom_minimum_size.y = 52
-	header.add_theme_constant_override("separation", 12)
-	root.add_child(header)
-	var menu := Button.new()
-	menu.text = "菜单"
-	menu.custom_minimum_size = Vector2(104, DesignTokens.TOUCH_MIN)
-	menu.pressed.connect(menu_requested.emit)
-	header.add_child(menu)
-	var title := Label.new()
-	title.name = "BattleTitle"
-	title.text = "Pokémon TCG"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", 24)
-	title.add_theme_color_override("font_color", DesignTokens.TEXT)
-	header.add_child(title)
-	turn_label = Label.new()
-	turn_label.custom_minimum_size.x = 330
-	turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	turn_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	turn_label.add_theme_font_size_override("font_size", 16)
-	turn_label.add_theme_color_override("font_color", DesignTokens.GOLD)
-	header.add_child(turn_label)
-
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 10)
-	root.add_child(body)
-
-	board_panel = PanelContainer.new()
-	board_panel.name = "BoardPanel"
-	board_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	board_panel.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color("#08130e"),
-			DesignTokens.RADIUS_MEDIUM,
-			Color("#294c35"),
-			1,
-			0,
-		),
-	)
-	body.add_child(board_panel)
-	board_canvas = Control.new()
-	board_canvas.name = "BoardCanvas"
-	board_canvas.clip_contents = true
-	board_panel.add_child(board_canvas)
-	playmat = BattlePlaymat.new()
+func _bind_scene_nodes() -> void:
+	hud.custom_minimum_size.x = hud_width
 	playmat.quality_profile = AppSettings.resolved_quality_profile()
-	playmat.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	board_canvas.add_child(playmat)
-
-	opponent_info = _info_label()
-	board_canvas.add_child(opponent_info)
-	own_info = _info_label()
-	board_canvas.add_child(own_info)
-	_build_field_cards()
-	_build_zones()
-	_build_hand()
-
-	hud = VBoxContainer.new()
-	hud.name = "BattleHUD"
-	hud.custom_minimum_size.x = 292
-	hud.add_theme_constant_override("separation", 8)
-	body.add_child(hud)
-	_build_phase_panel()
-	_build_action_panel()
-	_build_detail_panel()
-	_build_log_panel()
-
-	effects = BattleEffectLayer.new()
 	effects.quality_profile = AppSettings.resolved_quality_profile()
-	effects.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(effects)
-	input_blocker = Control.new()
-	input_blocker.name = "PresentationInputBlocker"
-	input_blocker.visible = false
-	input_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
-	input_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(input_blocker)
-
-
-func _build_field_cards() -> void:
-	opponent_active = _new_card_view()
-	board_canvas.add_child(opponent_active)
-	own_active = _new_card_view()
-	board_canvas.add_child(own_active)
-	for index in range(5):
-		var top := _new_card_view()
-		board_canvas.add_child(top)
-		opponent_bench.append(top)
-		var bottom := _new_card_view()
-		board_canvas.add_child(bottom)
-		own_bench.append(bottom)
-
-
-func _build_zones() -> void:
-	for key in [
-		"opponent_deck",
-		"opponent_discard",
-		"opponent_prizes",
-		"own_deck",
-		"own_discard",
-		"own_prizes",
-		"stadium",
-	]:
-		var zone := ZONE_SCENE.instantiate() as ZoneView
-		zone.name = key.to_pascal_case()
+	phase_labels = {
+		"DRAW": get_node(
+			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/DrawPhase"
+		),
+		"MAIN": get_node(
+			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/MainPhase"
+		),
+		"ATTACK": get_node(
+			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/AttackPhase"
+		),
+		"POKEMON_CHECKUP": get_node(
+			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/CheckupPhase"
+		),
+	}
+	var board_path := "BattleRoot/Body/BoardPanel/BoardCanvas/"
+	opponent_bench.assign([
+		get_node(board_path + "OpponentBench0"),
+		get_node(board_path + "OpponentBench1"),
+		get_node(board_path + "OpponentBench2"),
+		get_node(board_path + "OpponentBench3"),
+		get_node(board_path + "OpponentBench4"),
+	])
+	own_bench.assign([
+		get_node(board_path + "OwnBench0"),
+		get_node(board_path + "OwnBench1"),
+		get_node(board_path + "OwnBench2"),
+		get_node(board_path + "OwnBench3"),
+		get_node(board_path + "OwnBench4"),
+	])
+	zones = {
+		"opponent_deck": get_node(board_path + "OpponentDeck"),
+		"opponent_discard": get_node(board_path + "OpponentDiscard"),
+		"opponent_prizes": get_node(board_path + "OpponentPrizes"),
+		"own_deck": get_node(board_path + "OwnDeck"),
+		"own_discard": get_node(board_path + "OwnDiscard"),
+		"own_prizes": get_node(board_path + "OwnPrizes"),
+		"stadium": get_node(board_path + "Stadium"),
+	}
+	for view in [opponent_active, own_active] + opponent_bench + own_bench:
+		_bind_card_view(view)
+	for zone_value in zones.values():
+		var zone := zone_value as ZoneView
 		zone.activated.connect(_on_detail_requested)
 		zone.action_requested.connect(action_requested.emit)
-		board_canvas.add_child(zone)
-		zones[key] = zone
-
-
-func _build_hand() -> void:
-	hand_scroll = ScrollContainer.new()
-	hand_scroll.name = "HandScroll"
-	hand_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	hand_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	hand_scroll.clip_contents = false
-	board_canvas.add_child(hand_scroll)
-	hand_surface = Control.new()
-	hand_surface.name = "HandSurface"
-	hand_surface.custom_minimum_size.y = 156
-	hand_scroll.add_child(hand_surface)
-
-
-func _build_phase_panel() -> void:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.y = 170
-	panel.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(DesignTokens.PANEL_GLASS, 14, DesignTokens.BORDER),
+	(get_node("BattleRoot/Header/MenuButton") as Button).pressed.connect(
+		menu_requested.emit
 	)
-	hud.add_child(panel)
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 7)
-	panel.add_child(content)
-	var heading := Label.new()
-	heading.text = "回合阶段"
-	heading.add_theme_font_size_override("font_size", 18)
-	heading.add_theme_color_override("font_color", DesignTokens.GOLD)
-	content.add_child(heading)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 5)
-	content.add_child(row)
-	for phase in ["DRAW", "MAIN", "ATTACK", "POKEMON_CHECKUP"]:
-		var label := Label.new()
-		label.text = {
-			"DRAW": "抽牌",
-			"MAIN": "主要",
-			"ATTACK": "攻击",
-			"POKEMON_CHECKUP": "检查",
-		}[phase]
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.custom_minimum_size.y = 28
-		label.add_theme_font_size_override("font_size", 12)
-		row.add_child(label)
-		phase_labels[phase] = label
-	var hint := Label.new()
-	hint.name = "TurnHint"
-	hint.text = "选择卡牌查看可执行操作"
-	hint.add_theme_font_size_override("font_size", 13)
-	hint.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
-	content.add_child(hint)
-	phase_advance_button = Button.new()
-	phase_advance_button.text = "进入下一阶段"
-	phase_advance_button.custom_minimum_size.y = 52
-	phase_advance_button.add_theme_font_size_override("font_size", 16)
-	phase_advance_button.add_theme_stylebox_override(
-		"normal",
-		DesignTokens.panel_style(
-			Color("#78521b"),
-			11,
-			DesignTokens.GOLD,
-			2,
-			0,
-		),
-	)
-	phase_advance_button.pressed.connect(func() -> void:
-		var action: GameAction = phase_advance_button.get_meta("action") as GameAction
-		if action:
-			action_requested.emit(action)
-	)
-	content.add_child(phase_advance_button)
-
-
-func _build_action_panel() -> void:
-	var panel := PanelContainer.new()
-	panel.visible = false
-	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(DesignTokens.PANEL_GLASS, 14, DesignTokens.BORDER),
-	)
-	add_child(panel)
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_bottom", 10)
-	panel.add_child(margin)
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 7)
-	margin.add_child(content)
-	var heading := HBoxContainer.new()
-	content.add_child(heading)
-	var label := Label.new()
-	label.text = "当前操作"
-	label.add_theme_font_size_override("font_size", 18)
-	label.add_theme_color_override("font_color", DesignTokens.GOLD)
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	heading.add_child(label)
-	all_actions_toggle = Button.new()
-	all_actions_toggle.text = "全部动作"
-	all_actions_toggle.custom_minimum_size.y = 38
+	phase_advance_button.pressed.connect(_on_phase_advance_pressed)
 	all_actions_toggle.pressed.connect(_toggle_all_actions)
-	heading.add_child(all_actions_toggle)
-	quick_actions = VBoxContainer.new()
-	quick_actions.name = "QuickActions"
-	quick_actions.add_theme_constant_override("separation", 6)
-	content.add_child(quick_actions)
-	all_actions_scroll = ScrollContainer.new()
-	all_actions_scroll.visible = false
-	all_actions_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_child(all_actions_scroll)
-	action_list = VBoxContainer.new()
-	action_list.name = "ActionList"
-	action_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	action_list.add_theme_constant_override("separation", 6)
-	all_actions_scroll.add_child(action_list)
-
-
-func _build_detail_panel() -> void:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.y = 224
-	panel.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(DesignTokens.PANEL_GLASS, 14, DesignTokens.BORDER),
-	)
-	hud.add_child(panel)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	panel.add_child(row)
-	detail_image = TextureRect.new()
-	detail_image.custom_minimum_size = Vector2(116, 168)
-	detail_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	detail_image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	row.add_child(detail_image)
-	var text_column := VBoxContainer.new()
-	text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(text_column)
-	detail_title = Label.new()
-	detail_title.text = "卡牌详情"
-	detail_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail_title.add_theme_font_size_override("font_size", 18)
-	detail_title.add_theme_color_override("font_color", DesignTokens.CYAN)
-	text_column.add_child(detail_title)
-	detail_text = RichTextLabel.new()
-	detail_text.bbcode_enabled = true
-	detail_text.fit_content = false
-	detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail_text.add_theme_font_size_override("normal_font_size", 13)
-	text_column.add_child(detail_text)
 	show_card_detail("")
-
-
-func _build_log_panel() -> void:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.y = 126
-	panel.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color(0.035, 0.06, 0.10, 0.92),
-			14,
-			DesignTokens.BORDER_SOFT,
-		),
-	)
-	hud.add_child(panel)
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 4)
-	panel.add_child(content)
-	var heading := Label.new()
-	heading.text = "行动日志"
-	heading.add_theme_font_size_override("font_size", 15)
-	heading.add_theme_color_override("font_color", DesignTokens.GOLD)
-	content.add_child(heading)
-	log_label = RichTextLabel.new()
-	log_label.bbcode_enabled = true
-	log_label.fit_content = false
-	log_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	log_label.add_theme_font_size_override("normal_font_size", 12)
-	content.add_child(log_label)
-
-
-func _build_director() -> void:
-	director = PresentationDirector.new()
-	add_child(director)
 	director.sequence_started.connect(func(_count: int) -> void:
 		input_blocker.visible = not AppSettings.reduced_motion
 	)
@@ -518,6 +344,20 @@ func _build_director() -> void:
 	director.burst_requested.connect(_on_burst_requested)
 	director.card_motion_requested.connect(_on_card_motion_requested)
 	director.camera_impulse_requested.connect(_on_camera_impulse_requested)
+
+
+func _bind_card_view(view: CardView) -> void:
+	view.set_catalog(catalog)
+	view.activated.connect(_on_card_activated)
+	view.detail_requested.connect(_on_detail_requested)
+	view.card_dropped.connect(_on_card_dropped)
+	view.action_requested.connect(action_requested.emit)
+
+
+func _on_phase_advance_pressed() -> void:
+	var action: GameAction = phase_advance_button.get_meta("action") as GameAction
+	if action:
+		action_requested.emit(action)
 
 
 func _refresh_header() -> void:
@@ -758,10 +598,6 @@ func _layout_board() -> void:
 	var height := board_canvas.size.y
 	if width <= 0.0 or height <= 0.0:
 		return
-	var active_size := Vector2(118, 164)
-	var bench_size := Vector2(82, 114)
-	var zone_size := Vector2(90, 128)
-	var hand_size := Vector2(104, 146)
 	var center_x := width * 0.5
 	var hand_height := 164.0
 	var field_bottom := height - hand_height
@@ -771,31 +607,34 @@ func _layout_board() -> void:
 	opponent_info.size = Vector2(width - 36, 24)
 	own_info.position = Vector2(18, field_bottom - 26)
 	own_info.size = Vector2(width - 36, 24)
-	var bench_total := bench_size.x * 5.0 + 14.0 * 4.0
+	var bench_total := bench_card_size.x * 5.0 + bench_spacing * 4.0
 	var bench_x := center_x - bench_total * 0.5
 	for index in range(5):
 		_place_card(
 			opponent_bench[index],
-			Vector2(bench_x + index * (bench_size.x + 14.0), 30),
-			bench_size,
+			Vector2(bench_x + index * (bench_card_size.x + bench_spacing), 30),
+			bench_card_size,
 		)
 		_place_card(
 			own_bench[index],
 			Vector2(
-				bench_x + index * (bench_size.x + 14.0),
-				field_bottom - bench_size.y - 30,
+				bench_x + index * (bench_card_size.x + bench_spacing),
+				field_bottom - bench_card_size.y - 30,
 			),
-			bench_size,
+			bench_card_size,
 		)
 	_place_card(
 		opponent_active,
-		Vector2(center_x - active_size.x * 0.5, middle_y - active_size.y - 8),
-		active_size,
+		Vector2(
+			center_x - active_card_size.x * 0.5,
+			middle_y - active_card_size.y - 8,
+		),
+		active_card_size,
 	)
 	_place_card(
 		own_active,
-		Vector2(center_x - active_size.x * 0.5, middle_y + 8),
-		active_size,
+		Vector2(center_x - active_card_size.x * 0.5, middle_y + 8),
+		active_card_size,
 	)
 
 	_place_zone("opponent_prizes", Vector2(20, 42), zone_size)
@@ -825,7 +664,7 @@ func _layout_board() -> void:
 	hand_scroll.position = Vector2(126, field_bottom + 4)
 	hand_scroll.size = Vector2(maxf(220, width - 252), hand_height - 8)
 	hand_surface.custom_minimum_size.y = hand_height - 12
-	_layout_hand(hand_size)
+	_layout_hand(hand_card_size)
 	effects.queue_redraw()
 
 
@@ -841,7 +680,7 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 	if visible_count > 1:
 		spacing = clampf(
 			(available - card_size.x) / float(visible_count - 1),
-			44.0,
+			hand_minimum_spacing,
 			card_size.x + 6.0,
 		)
 	var content_width := (
@@ -862,7 +701,10 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 			if visible_count <= 1
 			else float(visible_index) / float(visible_count - 1) - 0.5
 		)
-		view.rotation_degrees = normalized * minf(7.0, float(visible_count) * 0.55)
+		view.rotation_degrees = normalized * minf(
+			hand_rotation_degrees,
+			float(visible_count) * 0.55,
+		)
 		view.z_index = visible_index
 		view.remember_base_position()
 		view.set_selected(selected_entity_key == "hand:%d" % view.hand_index)
@@ -871,11 +713,7 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 
 func _new_card_view() -> CardView:
 	var view := CARD_SCENE.instantiate() as CardView
-	view.set_catalog(catalog)
-	view.activated.connect(_on_card_activated)
-	view.detail_requested.connect(_on_detail_requested)
-	view.card_dropped.connect(_on_card_dropped)
-	view.action_requested.connect(action_requested.emit)
+	_bind_card_view(view)
 	return view
 
 
@@ -884,7 +722,11 @@ func _action_button(row: Dictionary, prominent: bool) -> Button:
 	var button := Button.new()
 	button.text = str(row.get("label", action.action if action else "动作"))
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	button.custom_minimum_size.y = 48 if prominent else 43
+	button.custom_minimum_size.y = (
+		primary_action_button_height
+		if prominent
+		else secondary_action_button_height
+	)
 	button.add_theme_font_size_override("font_size", 15 if prominent else 13)
 	if action and action.action == "END_TURN":
 		button.add_theme_stylebox_override(
@@ -1092,8 +934,8 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			texture,
 			start,
 			finish,
-			maxf(0.18, duration - float(index) * 0.045),
-			float(index) * 0.045,
+			maxf(0.18, duration - float(index) * motion_stagger_delay),
+			float(index) * motion_stagger_delay,
 			event_type,
 			index,
 		)
@@ -1139,10 +981,13 @@ func _spawn_flying_card(
 	flying.add_child(image)
 	effects.add_child(flying)
 	_active_flyers.append(flying)
-	var arc_height := maxf(74.0, start.distance_to(finish) * 0.22)
+	var arc_height := maxf(
+		motion_arc_height_min,
+		start.distance_to(finish) * motion_arc_distance_ratio,
+	)
 	var control := Vector2(
 		(start.x + finish.x) * 0.5,
-		minf(start.y, finish.y) - arc_height - float(index) * 8.0,
+		minf(start.y, finish.y) - arc_height - float(index) * motion_arc_stagger_height,
 	)
 	var spin := (
 		16.0 + float(index) * 2.0
@@ -1218,7 +1063,9 @@ func _mask_and_reveal_drawn_cards(count: int, duration: float) -> void:
 		var view := visible[index]
 		view.modulate.a = 0.0
 		var tween := create_tween()
-		tween.tween_interval(duration * 0.58 + float(index - first) * 0.045)
+		tween.tween_interval(
+			duration * 0.58 + float(index - first) * motion_stagger_delay,
+		)
 		tween.tween_property(view, "modulate:a", 1.0, 0.14)
 
 

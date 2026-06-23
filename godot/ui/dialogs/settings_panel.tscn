@@ -1,0 +1,132 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/dialogs/settings_panel.gd" id="1_panel"]
+
+[node name="SettingsPanel" type="VBoxContainer"]
+theme_override_constants/separation = 12
+editor_description = "设置弹窗内容。所有字段都可以在编辑器中重排；读写仍由 AppSettings 和 Main 控制。"
+script = ExtResource("1_panel")
+
+[node name="MasterVolumeRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="MasterVolumeRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "总音量"
+vertical_alignment = 1
+
+[node name="MasterVolumeSlider" type="HSlider" parent="MasterVolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.05
+value = 0.8
+
+[node name="MusicVolumeRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="MusicVolumeRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "音乐"
+vertical_alignment = 1
+
+[node name="MusicVolumeSlider" type="HSlider" parent="MusicVolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.05
+value = 0.55
+
+[node name="SFXVolumeRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="SFXVolumeRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "音效"
+vertical_alignment = 1
+
+[node name="SFXVolumeSlider" type="HSlider" parent="SFXVolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.05
+value = 0.8
+
+[node name="MutedToggle" type="CheckButton" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "静音"
+
+[node name="ReducedMotionToggle" type="CheckButton" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "减少界面动画"
+
+[node name="AnimationModeRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="AnimationModeRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "演出节奏"
+vertical_alignment = 1
+
+[node name="AnimationModeOption" type="OptionButton" parent="AnimationModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="QualityProfileRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="QualityProfileRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "画质档位"
+vertical_alignment = 1
+
+[node name="QualityProfileOption" type="OptionButton" parent="QualityProfileRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CardCacheRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="CardCacheRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "卡图缓存"
+vertical_alignment = 1
+
+[node name="CardCacheOption" type="OptionButton" parent="CardCacheRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+theme_override_font_sizes/font_size = 16
+text = "设置保存在应用私有目录；内存不足时会自动清空卡图缓存。"
+autowrap_mode = 2

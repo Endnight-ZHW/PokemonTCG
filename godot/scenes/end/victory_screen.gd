@@ -11,15 +11,23 @@ var winner_card_id := ""
 var particles: Array[Dictionary] = []
 var elapsed := 0.0
 
-var winner_label: Label
-var summary_label: Label
-var card_image: TextureRect
+@onready var winner_label: Label = %WinnerLabel
+@onready var summary_label: Label = %SummaryLabel
+@onready var card_image: TextureRect = %CardImage
+@onready var victory_panel: PanelContainer = %VictoryPanel
+@onready var animation_player: AnimationPlayer = %AnimationPlayer
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(true)
-	_build()
+	_resolve_nodes()
+	_ensure_connections()
+	victory_panel.resized.connect(_center_panel_pivot)
+	_center_panel_pivot()
+	_refresh()
+	if not AppSettings.reduced_motion:
+		animation_player.play("enter")
 	_spawn_confetti()
 
 
@@ -29,12 +37,41 @@ func configure(
 	p_winner_name: String,
 	p_winner_card_id: String = "",
 ) -> void:
+	_resolve_nodes()
+	_ensure_connections()
 	winner = p_winner
 	turn_count = p_turn_count
 	winner_name = p_winner_name
 	winner_card_id = p_winner_card_id
 	if is_node_ready():
 		_refresh()
+
+
+func _resolve_nodes() -> void:
+	winner_label = get_node(
+		"Center/VictoryPanel/Margin/Content/WinnerLabel"
+	) as Label
+	summary_label = get_node(
+		"Center/VictoryPanel/Margin/Content/SummaryLabel"
+	) as Label
+	card_image = get_node(
+		"Center/VictoryPanel/Margin/Content/Showcase/CardImage"
+	) as TextureRect
+	victory_panel = get_node("Center/VictoryPanel") as PanelContainer
+	animation_player = get_node("AnimationPlayer") as AnimationPlayer
+
+
+func _ensure_connections() -> void:
+	var rematch_button := get_node(
+		"Center/VictoryPanel/Margin/Content/Buttons/RematchButton"
+	) as Button
+	var title_button := get_node(
+		"Center/VictoryPanel/Margin/Content/Buttons/TitleButton"
+	) as Button
+	if not rematch_button.pressed.is_connected(rematch_requested.emit):
+		rematch_button.pressed.connect(rematch_requested.emit)
+	if not title_button.pressed.is_connected(title_requested.emit):
+		title_button.pressed.connect(title_requested.emit)
 
 
 func _process(delta: float) -> void:
@@ -74,74 +111,6 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-func _build() -> void:
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(820, 560)
-	panel.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color(0.04, 0.065, 0.10, 0.93),
-			24,
-			DesignTokens.GOLD,
-			2,
-			0,
-		),
-	)
-	center.add_child(panel)
-	var margin := MarginContainer.new()
-	for side in ["left", "right"]:
-		margin.add_theme_constant_override("margin_%s" % side, 46)
-	margin.add_theme_constant_override("margin_top", 38)
-	margin.add_theme_constant_override("margin_bottom", 38)
-	panel.add_child(margin)
-	var content := VBoxContainer.new()
-	content.alignment = BoxContainer.ALIGNMENT_CENTER
-	content.add_theme_constant_override("separation", 16)
-	margin.add_child(content)
-	var eyebrow := Label.new()
-	eyebrow.text = "MATCH COMPLETE"
-	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	eyebrow.add_theme_font_size_override("font_size", 16)
-	eyebrow.add_theme_color_override("font_color", DesignTokens.CYAN)
-	content.add_child(eyebrow)
-	winner_label = Label.new()
-	winner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	winner_label.add_theme_font_size_override("font_size", 48)
-	winner_label.add_theme_color_override("font_color", DesignTokens.GOLD)
-	content.add_child(winner_label)
-	var showcase := HBoxContainer.new()
-	showcase.alignment = BoxContainer.ALIGNMENT_CENTER
-	content.add_child(showcase)
-	card_image = TextureRect.new()
-	card_image.custom_minimum_size = Vector2(145, 204)
-	card_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	card_image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	showcase.add_child(card_image)
-	summary_label = Label.new()
-	summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	summary_label.add_theme_font_size_override("font_size", 20)
-	summary_label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
-	content.add_child(summary_label)
-	var buttons := HBoxContainer.new()
-	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	buttons.add_theme_constant_override("separation", 18)
-	content.add_child(buttons)
-	var rematch := Button.new()
-	rematch.text = "再次选择牌组"
-	rematch.custom_minimum_size = Vector2(245, 58)
-	rematch.pressed.connect(rematch_requested.emit)
-	buttons.add_child(rematch)
-	var title := Button.new()
-	title.text = "返回标题"
-	title.custom_minimum_size = Vector2(245, 58)
-	title.pressed.connect(title_requested.emit)
-	buttons.add_child(title)
-	_refresh()
-
-
 func _refresh() -> void:
 	winner_label.text = "%s 获胜！" % (
 		winner_name if not winner_name.is_empty() else "玩家 %d" % (winner + 1)
@@ -151,6 +120,10 @@ func _refresh() -> void:
 		CardDatabase.get_card(winner_card_id).get("image_path", "")
 	)) if not winner_card_id.is_empty() else null
 	card_image.visible = card_image.texture != null
+
+
+func _center_panel_pivot() -> void:
+	victory_panel.pivot_offset = victory_panel.size * 0.5
 
 
 func _spawn_confetti() -> void:
@@ -171,4 +144,3 @@ func _spawn_confetti() -> void:
 			"rotation": randf_range(0, TAU),
 			"spin": randf_range(-3.0, 3.0),
 		})
-

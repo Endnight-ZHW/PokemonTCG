@@ -1,6 +1,79 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/battle_screen.gd" id="1_battle"]
+[ext_resource type="PackedScene" path="res://ui/card_view.tscn" id="2_card"]
+[ext_resource type="PackedScene" path="res://ui/zone_view.tscn" id="3_zone"]
+[ext_resource type="Script" path="res://scenes/battle/playmat.gd" id="4_playmat"]
+[ext_resource type="Script" path="res://scenes/battle/effect_layer.gd" id="5_effect"]
+[ext_resource type="Script" path="res://presentation/presentation_director.gd" id="6_director"]
+
+[sub_resource type="StyleBoxFlat" id="Style_board"]
+bg_color = Color(0.031, 0.075, 0.055, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.161, 0.298, 0.208, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="Style_hud"]
+bg_color = Color(0.055, 0.1, 0.17, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.188, 0.278, 0.392, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 12.0
+content_margin_top = 12.0
+content_margin_right = 12.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="Style_phase_button"]
+bg_color = Color(0.471, 0.322, 0.106, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.957, 0.784, 0.29, 1)
+corner_radius_top_left = 11
+corner_radius_top_right = 11
+corner_radius_bottom_right = 11
+corner_radius_bottom_left = 11
+
+[sub_resource type="Animation" id="Animation_reset"]
+resource_name = "RESET"
+length = 0.0
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
+
+[sub_resource type="Animation" id="Animation_enter"]
+resource_name = "enter"
+length = 0.22
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {"times": PackedFloat32Array(0, 0.22), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_battle"]
+_data = {
+&"RESET": SubResource("Animation_reset"),
+&"enter": SubResource("Animation_enter")
+}
 
 [node name="BattleScreen" type="Control"]
 layout_mode = 3
@@ -9,5 +82,468 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+editor_description = "完整战斗界面。固定牌位、牌区、HUD 和详情面板在场景中编辑；手牌和动作按钮按实时状态生成。"
 script = ExtResource("1_battle")
 
+[node name="BattleRoot" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="BattleRoot"]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MenuButton" type="Button" parent="BattleRoot/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 48)
+layout_mode = 2
+text = "菜单"
+
+[node name="BattleTitle" type="Label" parent="BattleRoot/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
+theme_override_font_sizes/font_size = 24
+text = "Pokémon TCG"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TurnLabel" type="Label" parent="BattleRoot/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(330, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 16
+text = "第 1 回合 · 准备阶段 · 玩家 1"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="Body" type="HBoxContainer" parent="BattleRoot"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="BoardPanel" type="PanelContainer" parent="BattleRoot/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Style_board")
+
+[node name="BoardCanvas" type="Control" parent="BattleRoot/Body/BoardPanel"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(920, 700)
+layout_mode = 2
+clip_contents = true
+editor_description = "牌桌坐标空间。运行时根据可用尺寸重排，但可以在这里查看所有固定牌位和牌区。"
+
+[node name="Playmat" type="Control" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4_playmat")
+
+[node name="OpponentInfo" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+unique_name_in_owner = true
+offset_left = 18.0
+offset_top = 8.0
+offset_right = 902.0
+offset_bottom = 32.0
+theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
+theme_override_font_sizes/font_size = 13
+text = "玩家 2 · 手牌 7 · 牌库 46 · 奖品 6"
+
+[node name="OwnInfo" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+unique_name_in_owner = true
+offset_left = 18.0
+offset_top = 510.0
+offset_right = 902.0
+offset_bottom = 534.0
+theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
+theme_override_font_sizes/font_size = 13
+text = "玩家 1 · 手牌 7 · 牌库 46 · 奖品 6"
+
+[node name="OpponentActive" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 401.0
+offset_top = 190.0
+offset_right = 519.0
+offset_bottom = 354.0
+editor_description = "对手战斗区。不要删除；运行时通过 configure() 绑定状态。"
+
+[node name="OwnActive" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 401.0
+offset_top = 370.0
+offset_right = 519.0
+offset_bottom = 534.0
+editor_description = "己方战斗区。不要删除；运行时通过 configure() 绑定状态。"
+
+[node name="OpponentBench0" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 222.0
+offset_top = 34.0
+offset_right = 304.0
+offset_bottom = 148.0
+
+[node name="OpponentBench1" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 318.0
+offset_top = 34.0
+offset_right = 400.0
+offset_bottom = 148.0
+
+[node name="OpponentBench2" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 414.0
+offset_top = 34.0
+offset_right = 496.0
+offset_bottom = 148.0
+
+[node name="OpponentBench3" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 510.0
+offset_top = 34.0
+offset_right = 592.0
+offset_bottom = 148.0
+
+[node name="OpponentBench4" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 606.0
+offset_top = 34.0
+offset_right = 688.0
+offset_bottom = 148.0
+
+[node name="OwnBench0" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 222.0
+offset_top = 560.0
+offset_right = 304.0
+offset_bottom = 674.0
+
+[node name="OwnBench1" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 318.0
+offset_top = 560.0
+offset_right = 400.0
+offset_bottom = 674.0
+
+[node name="OwnBench2" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 414.0
+offset_top = 560.0
+offset_right = 496.0
+offset_bottom = 674.0
+
+[node name="OwnBench3" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 510.0
+offset_top = 560.0
+offset_right = 592.0
+offset_bottom = 674.0
+
+[node name="OwnBench4" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+offset_left = 606.0
+offset_top = 560.0
+offset_right = 688.0
+offset_bottom = 674.0
+
+[node name="OpponentDeck" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("3_zone")]
+unique_name_in_owner = true
+offset_left = 810.0
+offset_top = 42.0
+offset_right = 900.0
+offset_bottom = 170.0
+
+[node name="OpponentDiscard" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("3_zone")]
+unique_name_in_owner = true
+offset_left = 810.0
+offset_top = 200.0
+offset_right = 900.0
+offset_bottom = 328.0
+
+[node name="OpponentPrizes" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("3_zone")]
+unique_name_in_owner = true
+offset_left = 20.0
+offset_top = 42.0
+offset_right = 110.0
+offset_bottom = 170.0
+
+[node name="OwnDeck" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("3_zone")]
+unique_name_in_owner = true
+offset_left = 810.0
+offset_top = 400.0
+offset_right = 900.0
+offset_bottom = 528.0
+
+[node name="OwnDiscard" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("3_zone")]
+unique_name_in_owner = true
+offset_left = 810.0
+offset_top = 340.0
+offset_right = 900.0
+offset_bottom = 468.0
+
+[node name="OwnPrizes" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("3_zone")]
+unique_name_in_owner = true
+offset_left = 20.0
+offset_top = 400.0
+offset_right = 110.0
+offset_bottom = 528.0
+
+[node name="Stadium" parent="BattleRoot/Body/BoardPanel/BoardCanvas" instance=ExtResource("3_zone")]
+unique_name_in_owner = true
+offset_left = 24.0
+offset_top = 286.0
+offset_right = 114.0
+offset_bottom = 414.0
+
+[node name="HandScroll" type="ScrollContainer" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+unique_name_in_owner = true
+offset_left = 126.0
+offset_top = 536.0
+offset_right = 794.0
+offset_bottom = 696.0
+clip_contents = false
+horizontal_scroll_mode = 1
+vertical_scroll_mode = 0
+editor_description = "动态手牌的滚动区域。手牌卡牌由脚本实例化到 HandSurface。"
+
+[node name="HandSurface" type="Control" parent="BattleRoot/Body/BoardPanel/BoardCanvas/HandScroll"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(668, 156)
+layout_mode = 2
+
+[node name="BattleHUD" type="VBoxContainer" parent="BattleRoot/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(292, 0)
+layout_mode = 2
+theme_override_constants/separation = 8
+editor_description = "右侧 HUD。可以调整各面板高度和文字层级；宽度也可通过 BattleScreen 的 Inspector 参数统一修改。"
+
+[node name="PhasePanel" type="PanelContainer" parent="BattleRoot/Body/BattleHUD"]
+custom_minimum_size = Vector2(0, 170)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Style_hud")
+
+[node name="Content" type="VBoxContainer" parent="BattleRoot/Body/BattleHUD/PhasePanel"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Heading" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 18
+text = "回合阶段"
+
+[node name="PhaseRow" type="HBoxContainer" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="DrawPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+text = "抽牌"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MainPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+text = "主要"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AttackPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+text = "攻击"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CheckupPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+text = "检查"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TurnHint" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
+theme_override_font_sizes/font_size = 13
+text = "选择卡牌查看可执行操作"
+
+[node name="PhaseAdvanceButton" type="Button" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("Style_phase_button")
+text = "进入下一阶段"
+
+[node name="DetailPanel" type="PanelContainer" parent="BattleRoot/Body/BattleHUD"]
+custom_minimum_size = Vector2(0, 224)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Style_hud")
+
+[node name="Row" type="HBoxContainer" parent="BattleRoot/Body/BattleHUD/DetailPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DetailImage" type="TextureRect" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(116, 168)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TextColumn" type="VBoxContainer" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DetailTitle" type="Label" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "卡牌详情"
+autowrap_mode = 2
+
+[node name="DetailText" type="RichTextLabel" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/normal_font_size = 13
+bbcode_enabled = true
+text = "点击或长按卡牌查看详情。"
+
+[node name="LogPanel" type="PanelContainer" parent="BattleRoot/Body/BattleHUD"]
+custom_minimum_size = Vector2(0, 126)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("Style_hud")
+
+[node name="Content" type="VBoxContainer" parent="BattleRoot/Body/BattleHUD/LogPanel"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="BattleRoot/Body/BattleHUD/LogPanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 15
+text = "行动日志"
+
+[node name="LogLabel" type="RichTextLabel" parent="BattleRoot/Body/BattleHUD/LogPanel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+text = "对局日志会显示在这里。"
+
+[node name="ActionPanel" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 0
+offset_right = 292.0
+offset_bottom = 480.0
+theme_override_styles/panel = SubResource("Style_hud")
+
+[node name="Margin" type="MarginContainer" parent="ActionPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="Content" type="VBoxContainer" parent="ActionPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Heading" type="HBoxContainer" parent="ActionPanel/Margin/Content"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ActionPanel/Margin/Content/Heading"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 18
+text = "当前操作"
+
+[node name="AllActionsToggle" type="Button" parent="ActionPanel/Margin/Content/Heading"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+text = "全部动作"
+
+[node name="QuickActions" type="VBoxContainer" parent="ActionPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="AllActionsScroll" type="ScrollContainer" parent="ActionPanel/Margin/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ActionList" type="VBoxContainer" parent="ActionPanel/Margin/Content/AllActionsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Effects" type="Control" parent="."]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("5_effect")
+
+[node name="PresentationInputBlocker" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 0
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PresentationDirector" type="Node" parent="."]
+unique_name_in_owner = true
+editor_description = "规则表现事件调度器。可在 Inspector 调整各动画速度档位；它只能调度动画、音效和效果，不得修改 GameState。"
+script = ExtResource("6_director")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+unique_name_in_owner = true
+libraries = {
+&"": SubResource("AnimationLibrary_battle")
+}

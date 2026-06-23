@@ -1,0 +1,149 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://tools/ui_workbench.gd" id="1_workbench"]
+[ext_resource type="Theme" path="res://ui/game_theme.tres" id="2_theme"]
+
+[node name="UIWorkbench" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+editor_description = "安全 UI 预览工作台。用 F6 运行本场景，不会启动网络、保存设置或修改正式对局。"
+script = ExtResource("1_workbench")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.027, 0.063, 0.114, 1)
+
+[node name="Layout" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="Sidebar" type="PanelContainer" parent="Layout"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+
+[node name="Scroll" type="ScrollContainer" parent="Layout/Sidebar"]
+layout_mode = 2
+
+[node name="Buttons" type="VBoxContainer" parent="Layout/Sidebar/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Heading" type="Label" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 24
+text = "UI Workbench"
+
+[node name="Hint" type="Label" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+text = "选择页面，或在战斗预览中触发表现事件。"
+autowrap_mode = 2
+
+[node name="TitlePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "标题页"
+metadata/preview = "title"
+
+[node name="DeckPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "牌组选择"
+metadata/preview = "decks"
+
+[node name="NetworkPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "网络大厅"
+metadata/preview = "network"
+
+[node name="SettingsPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "设置"
+metadata/preview = "settings"
+
+[node name="ChoicePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "复杂选择"
+metadata/preview = "choice"
+
+[node name="BattlePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "战斗场景"
+metadata/preview = "battle"
+
+[node name="VictoryPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "胜利页"
+metadata/preview = "victory"
+
+[node name="Separator" type="HSeparator" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+
+[node name="EventHeading" type="Label" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+text = "表现事件"
+
+[node name="DrawEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "抽牌"
+metadata/event = "draw"
+
+[node name="EvolveEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "进化"
+metadata/event = "evolve"
+
+[node name="AttackEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "攻击蓄力"
+metadata/event = "attack"
+
+[node name="DamageEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "伤害"
+metadata/event = "damage"
+
+[node name="KOEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "击倒"
+metadata/event = "ko"
+
+[node name="VictoryEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "胜利"
+metadata/event = "victory"
+
+[node name="PreviewColumn" type="VBoxContainer" parent="Layout"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PreviewCaption" type="Label" parent="Layout/PreviewColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 18
+text = "预览"
+vertical_alignment = 1
+
+[node name="PreviewHost" type="Control" parent="Layout/PreviewColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+editor_description = "预览页面挂载点。运行时只存在一个预览页面。"

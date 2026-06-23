@@ -1,0 +1,21 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/dialogs/privacy_panel.gd" id="1_panel"]
+
+[node name="PrivacyPanel" type="VBoxContainer"]
+theme_override_constants/separation = 12
+editor_description = "本地热座隐私交接提示。遮挡背景由 Main 的 ModalLayer 提供。"
+script = ExtResource("1_panel")
+
+[node name="Body" type="Label" parent="."]
+layout_mode = 2
+theme_override_font_sizes/font_size = 21
+text = "请将设备交给下一位玩家。"
+autowrap_mode = 2
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+theme_override_font_sizes/font_size = 17
+text = "隐私遮挡已启用。确认前不会显示该玩家手牌。"
+autowrap_mode = 2

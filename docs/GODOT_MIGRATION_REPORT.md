@@ -80,6 +80,7 @@ GameEngine.apply_choice(state, request, response, rng)
 | 6. 发布收尾 | 实现完成，待 Android 验收 | 0.2.0 Win ZIP、测试签名 ARM64 APK、校验清单与发布测试通过 |
 | 7. 视觉现代化 | 实现完成，待 Android 性能验收 | 0.3.0 实体牌桌、真实卡图、表现事件、动画、分层音频和视觉回归通过 |
 | 8. 视觉与 Android 稳定性修复 | 实现完成，待更多真机复核 | 0.3.1 修复 AudioTrack 崩溃、卡牌内操作、牌区重排和卡牌移动动画 |
+| 9. Godot 可视化创作环境 | 完成 | 主要页面、组件、牌桌、弹窗、主题和固定动画可在编辑器中直接维护，并提供 Workbench 与中文开发手册 |
 
 ## 5. 阶段记录
 
@@ -777,6 +778,32 @@ GameEngine.apply_choice(state, request, response, rng)
 - Godot Android 导出进程退出时的 RID/ObjectDB 清理警告仍存在，但不会出现在导出后的游戏运行进程中。
 
 阶段结论：实现完成，待原生 ARM64 Android 真机长局复核。
+
+### 阶段 9：Godot 可视化创作环境
+
+完成日期：2026-06-23
+
+已完成内容：
+
+- 将应用外壳、标题、牌组选择、网络大厅、战斗、胜利、设置、复杂选择、隐私交接和暂停内容拆为可编辑场景。
+- 将 `CardView`、`ZoneView` 和战斗固定牌位从运行时节点创建迁移到 `.tscn` 场景树。
+- 新增可编辑 `game_theme.tres`，并通过 Inspector 暴露牌桌尺寸、手牌间距、动画参数和卡牌交互参数。
+- 为标题、牌桌、弹窗打开/关闭、卡牌选择、合法目标和胜利页加入可编辑 `AnimationPlayer` 时间轴；动态轨迹继续使用 Tween。
+- 新增安全 UI Workbench 和显式固定种子的样例状态，可预览全部主要页面并触发抽牌、进化、攻击、伤害、击倒和胜利演出。
+- 新增中文 Godot 开发手册，覆盖场景、UI、信号、动画、规则结算栈、AI、联机、卡牌数据导出、调试和发布，并配有场景树、Inspector、Animation、Workbench 和 Debugger 稳定截图。
+- 页面统一采用 `configure(...)` 输入数据、类型化信号输出用户意图；`Main` 保留旧私有入口作为运行时兼容，并新增公开导航入口供测试与工具使用。
+- 飞牌弧线、错峰时间、触控按钮高度和四档表现速度均可在 Inspector 中调整；合法目标高亮使用可编辑的 `target_pulse` 时间轴。
+
+验证结果：
+
+- Godot headless：`GODOT_TESTS_OK phase=6`。
+- UI 截图回归：`UI_PREVIEWS_OK`，新增网络、设置和 Workbench 截图。
+- 16 场 Challenge/Deep AI 回归通过。
+- LAN 与 Relay 各 35 回合完整回归通过。
+- Godot 生成数据 `--check --skip-images` 通过。
+- Windows 与 Android 调试导出通过；Windows 启动、导出包 Deep AI、协议 v3 网络、Android APK 元数据/AI 资源和已连接 Android 设备启动冒烟全部通过。
+
+阶段结论：完成。
 
 ## 6. 剩余任务
 

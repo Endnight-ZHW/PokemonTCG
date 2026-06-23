@@ -22,6 +22,16 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 工具链安装在仓库的 `.tools/`，不会修改系统 `PATH`。
 
+### 可视化编辑与学习入口
+
+- 打开 `res://tools/ui_workbench.tscn` 后按 `F6`，可安全预览标题、选牌、
+  网络、设置、复杂选择、战斗和胜利界面，并触发主要战斗演出。
+- 主要页面和组件现在都包含完整可编辑场景树；动态手牌和动作按钮仍由实时数据生成。
+- 全局 Theme 位于 `res://ui/game_theme.tres`，牌桌尺寸和动画参数可在各场景根节点
+  的 Inspector 分组中调整。
+- 详细学习路线见
+  [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。
+
 ## 测试与构建
 
 ```powershell

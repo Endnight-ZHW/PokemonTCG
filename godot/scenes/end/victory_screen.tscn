@@ -1,6 +1,60 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scenes/end/victory_screen.gd" id="1_victory"]
+
+[sub_resource type="StyleBoxFlat" id="Style_panel"]
+bg_color = Color(0.04, 0.065, 0.1, 0.93)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.957, 0.784, 0.29, 1)
+corner_radius_top_left = 24
+corner_radius_top_right = 24
+corner_radius_bottom_right = 24
+corner_radius_bottom_left = 24
+
+[sub_resource type="Animation" id="Animation_reset"]
+resource_name = "RESET"
+length = 0.0
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Center/VictoryPanel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Center/VictoryPanel:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Vector2(1, 1)]}
+
+[sub_resource type="Animation" id="Animation_enter"]
+resource_name = "enter"
+length = 0.45
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Center/VictoryPanel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {"times": PackedFloat32Array(0, 0.45), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Center/VictoryPanel:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {"times": PackedFloat32Array(0, 0.45), "transitions": PackedFloat32Array(0.5, 1), "update": 0, "values": [Vector2(0.92, 0.92), Vector2(1, 1)]}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_victory"]
+_data = {
+&"RESET": SubResource("Animation_reset"),
+&"enter": SubResource("Animation_enter")
+}
 
 [node name="VictoryScreen" type="Control"]
 layout_mode = 3
@@ -9,5 +63,89 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 0
+editor_description = "结算页面。中央面板、文字、卡图和按钮都能在编辑器中调整；背景与彩带由脚本绘制。"
 script = ExtResource("1_victory")
 
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VictoryPanel" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(820, 560)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Style_panel")
+
+[node name="Margin" type="MarginContainer" parent="Center/VictoryPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 46
+theme_override_constants/margin_top = 38
+theme_override_constants/margin_right = 46
+theme_override_constants/margin_bottom = 38
+
+[node name="Content" type="VBoxContainer" parent="Center/VictoryPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="Eyebrow" type="Label" parent="Center/VictoryPanel/Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "MATCH COMPLETE"
+horizontal_alignment = 1
+
+[node name="WinnerLabel" type="Label" parent="Center/VictoryPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 48
+text = "玩家 1 获胜！"
+horizontal_alignment = 1
+
+[node name="Showcase" type="HBoxContainer" parent="Center/VictoryPanel/Margin/Content"]
+layout_mode = 2
+alignment = 1
+
+[node name="CardImage" type="TextureRect" parent="Center/VictoryPanel/Margin/Content/Showcase"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(145, 204)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="SummaryLabel" type="Label" parent="Center/VictoryPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
+theme_override_font_sizes/font_size = 20
+text = "历经 0 回合，胜利已经写入牌桌。"
+horizontal_alignment = 1
+
+[node name="Buttons" type="HBoxContainer" parent="Center/VictoryPanel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="RematchButton" type="Button" parent="Center/VictoryPanel/Margin/Content/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(245, 58)
+layout_mode = 2
+text = "再次选择牌组"
+
+[node name="TitleButton" type="Button" parent="Center/VictoryPanel/Margin/Content/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(245, 58)
+layout_mode = 2
+text = "返回标题"
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+unique_name_in_owner = true
+libraries = {
+&"": SubResource("AnimationLibrary_victory")
+}

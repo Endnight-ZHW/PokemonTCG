@@ -24,7 +24,23 @@ func _render_previews() -> void:
 		quit(1)
 		return
 
-	ui._show_deck_select()
+	ui.show_network_setup("relay")
+	await process_frame
+	await create_timer(0.2).timeout
+	if not _capture("network.png"):
+		quit(1)
+		return
+
+	ui.show_title()
+	ui.show_settings()
+	await process_frame
+	await create_timer(0.2).timeout
+	if not _capture("settings.png"):
+		quit(1)
+		return
+	ui._close_modal()
+
+	ui.show_deck_select()
 	await process_frame
 	await create_timer(0.25).timeout
 	if not _capture("decks.png"):
@@ -164,7 +180,7 @@ func _render_previews() -> void:
 		1,
 		1,
 	)
-	ui._show_choice_overlay(choice)
+	ui.show_choice(choice)
 	await process_frame
 	await create_timer(0.25).timeout
 	if not _capture("choice.png"):
@@ -215,8 +231,19 @@ func _render_previews() -> void:
 	demo.phase = "GAME_OVER"
 	ui._show_end_screen()
 	await process_frame
-	await create_timer(0.2).timeout
+	await create_timer(0.5).timeout
 	if not _capture("end.png"):
+		quit(1)
+		return
+	ui.queue_free()
+	await process_frame
+
+	var workbench_scene := load("res://tools/ui_workbench.tscn") as PackedScene
+	var workbench := workbench_scene.instantiate()
+	root.add_child(workbench)
+	await process_frame
+	await create_timer(0.2).timeout
+	if not _capture("workbench.png"):
 		quit(1)
 		return
 	print("UI_PREVIEWS_OK")

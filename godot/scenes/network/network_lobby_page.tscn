@@ -1,0 +1,188 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/network/network_lobby_page.gd" id="1_page"]
+
+[sub_resource type="Animation" id="Animation_enter"]
+resource_name = "enter"
+length = 0.2
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Root/Center/Panel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {"times": PackedFloat32Array(0, 0.2), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_network"]
+_data = {
+&"enter": SubResource("Animation_enter")
+}
+
+[node name="NetworkLobbyScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+editor_description = "LAN 与 Relay 共用的网络大厅。字段显示规则由 configure() 根据网络类型切换。"
+script = ExtResource("1_page")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 18
+
+[node name="TopBar" type="HBoxContainer" parent="Root"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(130, 48)
+layout_mode = 2
+text = "返回"
+
+[node name="Heading" type="Label" parent="Root/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 28
+text = "局域网联机"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Spacer" type="Control" parent="Root/TopBar"]
+custom_minimum_size = Vector2(130, 0)
+layout_mode = 2
+
+[node name="Center" type="CenterContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Panel" type="PanelContainer" parent="Root/Center"]
+custom_minimum_size = Vector2(860, 580)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Root/Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 42
+theme_override_constants/margin_top = 34
+theme_override_constants/margin_right = 42
+theme_override_constants/margin_bottom = 34
+
+[node name="Content" type="VBoxContainer" parent="Root/Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="RoleRow" type="HBoxContainer" parent="Root/Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="Root/Center/Panel/Margin/Content/RoleRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "身份"
+vertical_alignment = 1
+
+[node name="NetworkRoleOption" type="OptionButton" parent="Root/Center/Panel/Margin/Content/RoleRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AddressRow" type="HBoxContainer" parent="Root/Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="AddressLabel" type="Label" parent="Root/Center/Panel/Margin/Content/AddressRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "主机地址"
+vertical_alignment = 1
+
+[node name="NetworkAddressInput" type="LineEdit" parent="Root/Center/Panel/Margin/Content/AddressRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "127.0.0.1"
+
+[node name="PortRow" type="HBoxContainer" parent="Root/Center/Panel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="Root/Center/Panel/Margin/Content/PortRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "端口"
+vertical_alignment = 1
+
+[node name="NetworkPortInput" type="LineEdit" parent="Root/Center/Panel/Margin/Content/PortRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "8765"
+
+[node name="RoomCodeRow" type="HBoxContainer" parent="Root/Center/Panel/Margin/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="Root/Center/Panel/Margin/Content/RoomCodeRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "房间码"
+vertical_alignment = 1
+
+[node name="NetworkRoomInput" type="LineEdit" parent="Root/Center/Panel/Margin/Content/RoomCodeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Relay 房间码"
+
+[node name="DeckRow" type="HBoxContainer" parent="Root/Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Label" type="Label" parent="Root/Center/Panel/Margin/Content/DeckRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "牌组"
+vertical_alignment = 1
+
+[node name="NetworkDeckOption" type="OptionButton" parent="Root/Center/Panel/Margin/Content/DeckRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="NetworkConnectButton" type="Button" parent="Root/Center/Panel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+text = "创建房间"
+
+[node name="NetworkStatusLabel" type="Label" parent="Root/Center/Panel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+text = "房主运行权威规则；挑战者只提交动作和选择。"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+unique_name_in_owner = true
+libraries = {
+&"": SubResource("AnimationLibrary_network")
+}

@@ -1,0 +1,35 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/dialogs/choice_panel.gd" id="1_panel"]
+
+[node name="ChoicePanel" type="VBoxContainer"]
+theme_override_constants/separation = 10
+editor_description = "复杂规则选择的可视化容器。卡图和选项按钮会动态加入固定的 CardGrid 与 OptionList。"
+script = ExtResource("1_panel")
+
+[node name="MetadataLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 17
+text = "请选择 1 项"
+autowrap_mode = 2
+
+[node name="EmptyLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+text = "点击确认继续结算。"
+
+[node name="CardGrid" type="GridContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 5
+
+[node name="OptionList" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8

@@ -14,6 +14,15 @@ signal action_requested(action: GameAction)
 const LONG_PRESS_MSEC := 350
 const DRAG_THRESHOLD := 14.0
 
+@export_category("Card Layout")
+@export var selected_lift := 12.0
+@export var hover_lift := 6.0
+@export var selected_scale := 1.06
+@export var hover_scale := 1.035
+@export var interaction_duration := 0.12
+@export_category("Action Overlay")
+@export_range(1, 5, 1) var maximum_action_buttons := 3
+
 var card_id := ""
 var hand_index := -1
 var owner_player := -1
@@ -28,20 +37,21 @@ var compact := false
 var pokemon: PokemonState
 var catalog: CardCatalog
 
-var shadow: Panel
-var frame: Panel
-var image: TextureRect
-var empty_label: Label
-var info_panel: PanelContainer
-var name_label: Label
-var hp_bar: ProgressBar
-var meta_label: Label
-var status_row: HBoxContainer
-var selection_ring: Panel
-var target_glow: Panel
-var action_overlay: PanelContainer
-var action_buttons: VBoxContainer
-var action_hint: Label
+@onready var shadow: Panel = %Shadow
+@onready var frame: Panel = %Frame
+@onready var image: TextureRect = %Image
+@onready var empty_label: Label = %EmptyLabel
+@onready var info_panel: PanelContainer = %InfoPanel
+@onready var name_label: Label = %NameLabel
+@onready var hp_bar: ProgressBar = %HPBar
+@onready var meta_label: Label = %MetaLabel
+@onready var status_row: HBoxContainer = %StatusRow
+@onready var selection_ring: Panel = %SelectionRing
+@onready var target_glow: Panel = %TargetGlow
+@onready var action_overlay: PanelContainer = %ActionOverlay
+@onready var action_buttons: VBoxContainer = %ActionButtons
+@onready var action_hint: Label = %ActionHint
+@onready var animation_player: AnimationPlayer = %AnimationPlayer
 
 var _press_msec := 0
 var _press_position := Vector2.ZERO
@@ -59,12 +69,14 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	focus_mode = Control.FOCUS_ALL
-	_build()
 	resized.connect(_on_resized)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
 	_on_resized()
 	_refresh()
+	selection_ring.visible = selected
+	target_glow.visible = targetable
+	_refresh_state_animation()
 	var pending_rows := _pending_action_rows.duplicate()
 	var pending_hint := _pending_action_hint
 	_actions_signature = ""
@@ -133,7 +145,7 @@ func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
 	action_hint.visible = not target_hint.is_empty()
 	var shown := 0
 	for row in rows:
-		if shown >= 3:
+		if shown >= maximum_action_buttons:
 			break
 		var action: GameAction = row.get("action")
 		if action == null:
@@ -174,6 +186,7 @@ func set_selected(value: bool) -> void:
 	selected = value
 	if selection_ring:
 		selection_ring.visible = value
+	_refresh_state_animation()
 	_update_lift()
 
 
@@ -181,6 +194,7 @@ func set_targetable(value: bool) -> void:
 	targetable = value
 	if target_glow:
 		target_glow.visible = value
+	_refresh_state_animation()
 
 
 func set_empty_label(text: String) -> void:
@@ -224,161 +238,10 @@ func shake(strength: float = 7.0, duration: float = 0.26) -> void:
 		)
 
 
-func _build() -> void:
-	shadow = Panel.new()
-	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shadow.add_theme_stylebox_override("panel", DesignTokens.shadow_style(10))
-	shadow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shadow.position += Vector2(0, 4)
-	add_child(shadow)
-
-	frame = Panel.new()
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(frame)
-
-	image = TextureRect.new()
-	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	image.offset_left = 3
-	image.offset_top = 3
-	image.offset_right = -3
-	image.offset_bottom = -3
-	frame.add_child(image)
-
-	empty_label = Label.new()
-	empty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	empty_label.text = "空位"
-	empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	empty_label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
-	empty_label.add_theme_font_size_override("font_size", 15)
-	empty_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	frame.add_child(empty_label)
-
-	info_panel = PanelContainer.new()
-	info_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	info_panel.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color(0.025, 0.045, 0.075, 0.9),
-			8,
-			Color.TRANSPARENT,
-			0,
-			5,
-		),
-	)
-	info_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	info_panel.offset_top = -54
-	frame.add_child(info_panel)
-	var info := VBoxContainer.new()
-	info.add_theme_constant_override("separation", 1)
-	info_panel.add_child(info)
-	name_label = Label.new()
-	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	name_label.add_theme_font_size_override("font_size", 13)
-	name_label.add_theme_color_override("font_color", DesignTokens.TEXT)
-	info.add_child(name_label)
-	hp_bar = ProgressBar.new()
-	hp_bar.custom_minimum_size.y = 5
-	hp_bar.show_percentage = false
-	hp_bar.add_theme_stylebox_override(
-		"background",
-		DesignTokens.panel_style(Color("#253247"), 3, Color.TRANSPARENT, 0, 0),
-	)
-	hp_bar.add_theme_stylebox_override(
-		"fill",
-		DesignTokens.panel_style(DesignTokens.GREEN, 3, Color.TRANSPARENT, 0, 0),
-	)
-	info.add_child(hp_bar)
-	meta_label = Label.new()
-	meta_label.add_theme_font_size_override("font_size", 11)
-	meta_label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
-	meta_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	info.add_child(meta_label)
-
-	status_row = HBoxContainer.new()
-	status_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	status_row.add_theme_constant_override("separation", 3)
-	status_row.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	status_row.position = Vector2(-6, 6)
-	frame.add_child(status_row)
-
-	target_glow = Panel.new()
-	target_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	target_glow.visible = false
-	target_glow.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color(0.25, 0.72, 1.0, 0.11),
-			11,
-			DesignTokens.CYAN,
-			3,
-			0,
-		),
-	)
-	target_glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(target_glow)
-
-	selection_ring = Panel.new()
-	selection_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	selection_ring.visible = false
-	selection_ring.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color(1.0, 0.82, 0.25, 0.08),
-			11,
-			DesignTokens.GOLD,
-			3,
-			0,
-		),
-	)
-	selection_ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(selection_ring)
-
-	action_overlay = PanelContainer.new()
-	action_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	action_overlay.visible = false
-	action_overlay.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color(0.018, 0.035, 0.065, 0.92),
-			9,
-			DesignTokens.GOLD,
-			1,
-			2,
-		),
-	)
-	action_overlay.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	action_overlay.offset_left = 5
-	action_overlay.offset_right = -5
-	action_overlay.offset_bottom = -5
-	var action_margin := MarginContainer.new()
-	action_margin.add_theme_constant_override("margin_left", 4)
-	action_margin.add_theme_constant_override("margin_right", 4)
-	action_margin.add_theme_constant_override("margin_top", 4)
-	action_margin.add_theme_constant_override("margin_bottom", 4)
-	action_overlay.add_child(action_margin)
-	var action_content := VBoxContainer.new()
-	action_content.add_theme_constant_override("separation", 3)
-	action_margin.add_child(action_content)
-	action_hint = Label.new()
-	action_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	action_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	action_hint.add_theme_font_size_override("font_size", 10)
-	action_hint.add_theme_color_override("font_color", DesignTokens.GOLD)
-	action_content.add_child(action_hint)
-	action_buttons = VBoxContainer.new()
-	action_buttons.add_theme_constant_override("separation", 3)
-	action_content.add_child(action_buttons)
-	add_child(action_overlay)
-
-
 func _refresh() -> void:
 	if not is_node_ready():
 		return
+	_refresh_statuses()
 	var frame_color := Color("#15253a")
 	var border_color := DesignTokens.BORDER
 	if is_hidden_card:
@@ -428,7 +291,6 @@ func _refresh() -> void:
 				pokemon.energy_card_ids.size(),
 				"  ·  道具" if not pokemon.attached_tool_id.is_empty() else "",
 			]
-			_refresh_statuses()
 	frame.add_theme_stylebox_override(
 		"panel",
 		DesignTokens.panel_style(frame_color, 11, border_color, 2, 0),
@@ -437,6 +299,7 @@ func _refresh() -> void:
 
 func _refresh_statuses() -> void:
 	for child in status_row.get_children():
+		status_row.remove_child(child)
 		child.queue_free()
 	if pokemon == null:
 		return
@@ -563,11 +426,11 @@ func _update_lift() -> void:
 	var desired_scale := Vector2.ONE
 	var desired_y := _base_position.y
 	if selected:
-		desired_scale = Vector2(1.06, 1.06)
-		desired_y -= 12.0
+		desired_scale = Vector2.ONE * selected_scale
+		desired_y -= selected_lift
 	elif _hovered:
-		desired_scale = Vector2(1.035, 1.035)
-		desired_y -= 6.0
+		desired_scale = Vector2.ONE * hover_scale
+		desired_y -= hover_lift
 	if action_overlay:
 		action_overlay.visible = selected and (
 			action_buttons.get_child_count() > 0 or action_hint.visible
@@ -578,14 +441,31 @@ func _update_lift() -> void:
 		return
 	var tween := create_tween().set_parallel(true)
 	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(self, "scale", desired_scale, 0.12)
-	tween.tween_property(self, "position:y", desired_y, 0.12)
+	tween.tween_property(self, "scale", desired_scale, interaction_duration)
+	tween.tween_property(self, "position:y", desired_y, interaction_duration)
 
 
 func remember_base_position() -> void:
 	_base_position = position
 	_has_base_position = true
 	_update_lift()
+
+
+func _refresh_state_animation() -> void:
+	if animation_player == null and has_node("AnimationPlayer"):
+		animation_player = get_node("AnimationPlayer") as AnimationPlayer
+	if animation_player == null:
+		return
+	animation_player.stop()
+	if AppSettings.reduced_motion:
+		animation_player.play("RESET")
+		return
+	if selected:
+		animation_player.play("selected_pulse")
+	elif targetable:
+		animation_player.play("target_pulse")
+	else:
+		animation_player.play("RESET")
 
 
 func _build_content_signature(

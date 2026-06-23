@@ -79,6 +79,7 @@ Set-Location ..
 - [发布说明](docs/RELEASE_NOTES.md)
 - [Android 真机验收](docs/ANDROID_TEST_CHECKLIST.md)
 - [视觉升级基线](docs/VISUAL_UPGRADE_BASELINE.md)
+- [Godot 4.7 新手开发手册](docs/GODOT_DEVELOPMENT_GUIDE.md)
 - [游戏规则](docs/RULES.md)
 
 卡牌名称、规则和图片仅供学习交流。游戏规则基于宝可梦集换式卡牌游戏官方规则。

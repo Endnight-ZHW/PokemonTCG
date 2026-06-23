@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/dialogs/pause_panel.gd" id="1_panel"]
+
+[node name="PausePanel" type="VBoxContainer"]
+editor_description = "对局暂停菜单内容。继续与退出按钮位于通用 ModalLayer。"
+script = ExtResource("1_panel")
+
+[node name="Message" type="Label" parent="."]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+text = "返回标题会结束当前对局。"
+autowrap_mode = 2

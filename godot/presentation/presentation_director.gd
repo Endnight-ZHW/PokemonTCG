@@ -11,6 +11,13 @@ signal card_motion_requested(event: Dictionary, duration: float)
 signal audio_requested(cue: String)
 signal camera_impulse_requested(strength: float, duration: float)
 
+@export_category("Playback Timing")
+@export_group("Speed Modes")
+@export_range(0.05, 2.0, 0.01) var cinematic_speed_scale := 1.0
+@export_range(0.05, 2.0, 0.01) var standard_speed_scale := 0.72
+@export_range(0.05, 2.0, 0.01) var fast_speed_scale := 0.38
+@export_range(0.01, 1.0, 0.01) var reduced_motion_speed_scale := 0.08
+
 var _queue: Array[Dictionary] = []
 var _seen_event_ids: Dictionary = {}
 var _playing := false
@@ -52,10 +59,10 @@ func clear_for_resync() -> void:
 
 func set_speed_mode(mode: String) -> void:
 	_speed_scale = {
-		"cinematic": 1.0,
-		"standard": 0.72,
-		"fast": 0.38,
-		"reduced": 0.08,
+		"cinematic": cinematic_speed_scale,
+		"standard": standard_speed_scale,
+		"fast": fast_speed_scale,
+		"reduced": reduced_motion_speed_scale,
 	}.get(mode, 1.0)
 
 

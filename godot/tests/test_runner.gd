@@ -311,7 +311,7 @@ func _run_phase_three_tests() -> void:
 	_check(local_button != null, "Local two-player entry is missing")
 	if local_button:
 		_check(local_button.custom_minimum_size.y >= 48, "Touch target is below 48 px")
-	ui._show_deck_select()
+	ui.show_deck_select()
 	_check(ui.current_screen == "decks", "Deck selection screen did not open")
 	_check(ui.deck_one_option.item_count == 8, "Player one deck list must contain 8 decks")
 	_check(ui.deck_two_option.item_count == 8, "Player two deck list must contain 8 decks")
@@ -342,6 +342,14 @@ func _run_phase_three_tests() -> void:
 		_check(ui.action_list.get_child_count() > 0, "UI actions did not refresh")
 	_run_local_ui_playout(ui)
 	_check(ui.current_screen == "end", "Completed local UI match did not show end screen")
+	var title_button := ui.find_child("TitleButton", true, false) as Button
+	_check(title_button != null, "Victory screen title return button is missing")
+	if title_button:
+		title_button.pressed.emit()
+		_check(
+			ui.current_screen == "title",
+			"Victory screen did not return to the title page",
+		)
 	ui.queue_free()
 
 	var choice_ui := packed.instantiate()
@@ -578,7 +586,7 @@ func _run_phase_four_foundation_tests() -> void:
 		"Challenge AI menu entry is unavailable")
 	_check(deep_button != null and not deep_button.disabled,
 		"Deep AI menu entry is unavailable")
-	ai_ui._show_deck_select("challenge")
+	ai_ui.show_deck_select("challenge")
 	_check(ai_ui.difficulty_option.item_count == 3, "AI difficulty presets are missing")
 	_check(
 		ai_ui.start_ai_match_for_test(
@@ -878,12 +886,12 @@ func _run_phase_five_foundation_tests() -> void:
 		"LAN menu entry is unavailable")
 	_check(relay_button != null and not relay_button.disabled,
 		"Relay menu entry is unavailable")
-	network_ui._show_network_setup("lan")
+	network_ui.show_network_setup("lan")
 	_check(
 		network_ui.find_child("NetworkConnectButton", true, false) != null,
 		"LAN lobby controls were not created",
 	)
-	network_ui._show_network_setup("relay")
+	network_ui.show_network_setup("relay")
 	_check(
 		network_ui.find_child("NetworkRoomInput", true, false) != null,
 		"Relay room code input was not created",
@@ -952,7 +960,7 @@ func _run_phase_six_foundation_tests() -> void:
 	release_ui.initialize_ui()
 	var settings_button := release_ui.find_child("SettingsButton", true, false) as Button
 	_check(settings_button != null, "Settings entry is missing from the title screen")
-	release_ui._show_settings()
+	release_ui.show_settings()
 	_check(release_ui.find_child("MasterVolumeSlider", true, false) != null,
 		"Master volume setting control is missing")
 	_check(release_ui.find_child("MutedToggle", true, false) != null,
@@ -979,16 +987,213 @@ func _run_phase_six_foundation_tests() -> void:
 
 
 func _run_visual_upgrade_tests() -> void:
+	var seeded_state_a := UIPreviewStateFactory.battle_state(77)
+	var seeded_state_b := UIPreviewStateFactory.battle_state(77)
+	_check(
+		seeded_state_a.turn_number == seeded_state_b.turn_number
+		and seeded_state_a.players[1].active.damage_counters
+		== seeded_state_b.players[1].active.damage_counters
+		and seeded_state_a.players[1].deck.size()
+		== seeded_state_b.players[1].deck.size(),
+		"UI preview state factory is not reproducible for a fixed seed",
+	)
 	for path in [
 		"res://ui/design_tokens.gd",
+		"res://ui/game_theme.tres",
 		"res://ui/card_view.tscn",
 		"res://ui/zone_view.tscn",
+		"res://ui/dialogs/settings_panel.tscn",
+		"res://ui/dialogs/choice_panel.tscn",
+		"res://ui/dialogs/privacy_panel.tscn",
+		"res://ui/dialogs/pause_panel.tscn",
 		"res://presentation/presentation_event.gd",
 		"res://presentation/presentation_director.gd",
+		"res://scenes/title/title_page.tscn",
+		"res://scenes/decks/deck_select_page.tscn",
+		"res://scenes/network/network_lobby_page.tscn",
 		"res://scenes/battle/battle_screen.tscn",
 		"res://scenes/end/victory_screen.tscn",
+		"res://tools/ui_workbench.tscn",
 	]:
 		_check(FileAccess.file_exists(path), "Visual upgrade asset is missing: %s" % path)
+
+	var main_scene := load("res://scenes/main/main.tscn") as PackedScene
+	var main_preview := main_scene.instantiate()
+	root.add_child(main_preview)
+	var shell_animations := main_preview.find_child(
+		"ShellAnimations", true, false
+	) as AnimationPlayer
+	_check(
+		shell_animations != null
+		and shell_animations.has_animation("modal_open")
+		and shell_animations.has_animation("modal_close"),
+		"Main shell does not expose editable modal open and close animations",
+	)
+	main_preview.free()
+
+	var page_contracts := {
+		"res://scenes/title/title_page.tscn": [
+			"LocalTwoPlayerButton", "ChallengeAIButton", "SettingsButton",
+		],
+		"res://scenes/decks/deck_select_page.tscn": [
+			"DeckOneOption", "DeckTwoOption", "StartButton",
+		],
+		"res://scenes/network/network_lobby_page.tscn": [
+			"NetworkRoleOption", "NetworkAddressInput", "NetworkConnectButton",
+		],
+		"res://ui/dialogs/settings_panel.tscn": [
+			"MasterVolumeSlider", "AnimationModeOption", "CardCacheOption",
+		],
+	}
+	for scene_path in page_contracts:
+		var page_scene := load(scene_path) as PackedScene
+		_check(page_scene != null, "Editable page scene failed to load: %s" % scene_path)
+		if page_scene == null:
+			continue
+		var page := page_scene.instantiate()
+		root.add_child(page)
+		for node_name in page_contracts[scene_path]:
+			_check(
+				page.find_child(node_name, true, false) != null,
+				"Editable page contract is missing %s in %s" % [node_name, scene_path],
+			)
+		page.queue_free()
+
+	var page_catalog := CardCatalog.new()
+	var title_scene := load("res://scenes/title/title_page.tscn") as PackedScene
+	var title_page := title_scene.instantiate()
+	root.add_child(title_page)
+	title_page.configure("Signal Test")
+	var title_signals := {}
+	title_page.mode_selected.connect(
+		func(mode: String) -> void: title_signals["mode"] = mode
+	)
+	title_page.network_selected.connect(
+		func(kind: String) -> void: title_signals["network"] = kind
+	)
+	title_page.settings_requested.connect(
+		func() -> void: title_signals["settings"] = true
+	)
+	(title_page.find_child("LocalTwoPlayerButton", true, false) as Button).pressed.emit()
+	(title_page.find_child("LANButton", true, false) as Button).pressed.emit()
+	(title_page.find_child("SettingsButton", true, false) as Button).pressed.emit()
+	_check(title_signals.get("mode", "") == "local",
+		"Title page mode signal did not carry the selected mode")
+	_check(title_signals.get("network", "") == "lan",
+		"Title page network signal did not carry the transport kind")
+	_check(bool(title_signals.get("settings", false)),
+		"Title page settings signal was not emitted")
+	title_page.queue_free()
+
+	var deck_scene := load(
+		"res://scenes/decks/deck_select_page.tscn"
+	) as PackedScene
+	var deck_page := deck_scene.instantiate()
+	root.add_child(deck_page)
+	deck_page.configure(page_catalog, "challenge")
+	var deck_signal := {}
+	deck_page.start_requested.connect(func(
+		mode: String,
+		first_key: String,
+		second_key: String,
+		difficulty: String,
+		forced_first: int,
+	) -> void:
+		deck_signal.merge({
+			"mode": mode,
+			"first": first_key,
+			"second": second_key,
+			"difficulty": difficulty,
+			"forced_first": forced_first,
+		}, true)
+	)
+	(deck_page.find_child("StartButton", true, false) as Button).pressed.emit()
+	_check(deck_signal.get("mode", "") == "challenge",
+		"Deck page start signal did not carry the game mode")
+	_check(not str(deck_signal.get("first", "")).is_empty(),
+		"Deck page start signal omitted the first deck")
+	_check(not str(deck_signal.get("second", "")).is_empty(),
+		"Deck page start signal omitted the second deck")
+	_check(deck_signal.get("difficulty", "") == "standard",
+		"Deck page start signal omitted the selected difficulty")
+	deck_page.queue_free()
+
+	var network_scene := load(
+		"res://scenes/network/network_lobby_page.tscn"
+	) as PackedScene
+	var network_page := network_scene.instantiate()
+	root.add_child(network_page)
+	network_page.configure(page_catalog, "relay", "wss://relay.example.test")
+	network_page.role_option.select(1)
+	network_page.refresh_fields(1)
+	network_page.room_input.text = "ROOM42"
+	var network_signal := {}
+	network_page.connect_requested.connect(func(
+		kind: String,
+		role: String,
+		address: String,
+		port: int,
+		room_code: String,
+		deck_key: String,
+	) -> void:
+		network_signal.merge({
+			"kind": kind,
+			"role": role,
+			"address": address,
+			"port": port,
+			"room": room_code,
+			"deck": deck_key,
+		}, true)
+	)
+	(network_page.find_child(
+		"NetworkConnectButton", true, false
+	) as Button).pressed.emit()
+	_check(network_signal.get("kind", "") == "relay",
+		"Network page signal did not carry the transport kind")
+	_check(network_signal.get("role", "") == "client",
+		"Network page signal did not carry the selected role")
+	_check(network_signal.get("room", "") == "ROOM42",
+		"Network page signal did not carry the room code")
+	_check(not str(network_signal.get("deck", "")).is_empty(),
+		"Network page signal omitted the selected deck")
+	network_page.queue_free()
+
+	var settings_scene := load(
+		"res://ui/dialogs/settings_panel.tscn"
+	) as PackedScene
+	var settings_panel := settings_scene.instantiate()
+	root.add_child(settings_panel)
+	settings_panel.configure()
+	settings_panel.master_volume_slider.value = 0.45
+	settings_panel.muted_toggle.button_pressed = true
+	var settings_signal := {}
+	settings_panel.save_requested.connect(
+		func(values: Dictionary) -> void: settings_signal.merge(values, true)
+	)
+	settings_panel.request_save()
+	_check(
+		is_equal_approx(float(settings_signal.get("master_volume", -1.0)), 0.45),
+		"Settings panel save signal omitted the master volume",
+	)
+	_check(bool(settings_signal.get("muted", false)),
+		"Settings panel save signal omitted the mute state")
+	settings_panel.queue_free()
+
+	var workbench_scene := load("res://tools/ui_workbench.tscn") as PackedScene
+	_check(workbench_scene != null, "UI Workbench scene failed to load")
+	if workbench_scene:
+		var workbench := workbench_scene.instantiate()
+		root.add_child(workbench)
+		_check(
+			workbench.find_child("PreviewHost", true, false) != null,
+			"UI Workbench preview host is missing",
+		)
+		workbench.call("trigger_presentation", "victory")
+		_check(
+			workbench.find_child("VictoryScreen", true, false) != null,
+			"UI Workbench victory trigger did not open the victory preview",
+		)
+		workbench.queue_free()
 
 	var normalized := PresentationEvent.normalize({
 		"event_type": "cards_drawn",
@@ -1065,6 +1270,15 @@ func _run_visual_upgrade_tests() -> void:
 			"hand_index": 0,
 			"card_id": "sv1-104",
 		}), "Card drag data is not accepted by a configured target")
+		first_hand.set_targetable(true)
+		var card_animation := first_hand.get_node(
+			"AnimationPlayer"
+		) as AnimationPlayer
+		_check(
+			card_animation.current_animation == "target_pulse",
+			"Legal target highlight is not driven by AnimationPlayer",
+		)
+		first_hand.set_targetable(false)
 		var node_count_before := battle.find_children("*", "", true, false).size()
 		for _index in range(80):
 			battle.update_view(state, 0, rows, "", false, "local")
@@ -1088,6 +1302,28 @@ func _run_visual_upgrade_tests() -> void:
 			"Flying card animations exceeded the Android safety cap")
 		battle._clear_transient_visuals()
 		battle.free()
+
+	var status_card_scene := load("res://ui/card_view.tscn") as PackedScene
+	var status_card: Variant = status_card_scene.instantiate()
+	var status_row := status_card.find_child(
+		"StatusRow", true, false
+	) as HBoxContainer
+	status_card.status_row = status_row
+	var status_pokemon := PokemonState.new("sv1-104")
+	status_pokemon.status_conditions = ["POISONED"]
+	status_card.pokemon = status_pokemon
+	status_card._refresh_statuses()
+	_check(
+		status_row != null and status_row.get_child_count() == 1,
+		"Card status badge was not created",
+	)
+	status_card.pokemon = null
+	status_card._refresh_statuses()
+	_check(
+		status_row != null and status_row.get_child_count() == 0,
+		"Reused card view retained stale status badges after becoming empty",
+	)
+	status_card.free()
 
 	var runtime_settings: Node = root.get_node("AppSettings")
 	_check(str(runtime_settings.get("animation_mode")) in [

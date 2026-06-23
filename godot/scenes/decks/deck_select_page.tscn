@@ -1,0 +1,249 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scenes/decks/deck_select_page.gd" id="1_page"]
+
+[sub_resource type="StyleBoxFlat" id="Style_blue"]
+bg_color = Color(0.09, 0.149, 0.239, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.271, 0.651, 1, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 16.0
+content_margin_top = 12.0
+content_margin_right = 16.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="Style_gold"]
+bg_color = Color(0.09, 0.149, 0.239, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.957, 0.784, 0.29, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 16.0
+content_margin_top = 12.0
+content_margin_right = 16.0
+content_margin_bottom = 12.0
+
+[sub_resource type="Animation" id="Animation_reset"]
+resource_name = "RESET"
+length = 0.0
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Root/Center/MainPanel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
+
+[sub_resource type="Animation" id="Animation_enter"]
+resource_name = "enter"
+length = 0.2
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Root/Center/MainPanel:modulate")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {"times": PackedFloat32Array(0, 0.2), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_decks"]
+_data = {
+&"RESET": SubResource("Animation_reset"),
+&"enter": SubResource("Animation_enter")
+}
+
+[node name="DeckSelectScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+editor_description = "牌组选择页面。两个牌组栏、AI 设置和开始按钮均可在编辑器中调整。卡图预览由运行时数据填充。"
+script = ExtResource("1_page")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 18
+
+[node name="TopBar" type="HBoxContainer" parent="Root"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="Root/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(130, 48)
+layout_mode = 2
+text = "返回"
+
+[node name="Heading" type="Label" parent="Root/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 28
+text = "选择本地双人牌组"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Spacer" type="Control" parent="Root/TopBar"]
+custom_minimum_size = Vector2(130, 0)
+layout_mode = 2
+
+[node name="Center" type="CenterContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MainPanel" type="PanelContainer" parent="Root/Center"]
+custom_minimum_size = Vector2(1080, 560)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Root/Center/MainPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 38
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 38
+theme_override_constants/margin_bottom = 32
+
+[node name="Content" type="VBoxContainer" parent="Root/Center/MainPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 22
+
+[node name="ModeDescription" type="Label" parent="Root/Center/MainPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+text = "热座模式说明"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Columns" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 28
+
+[node name="DeckOnePanel" type="PanelContainer" parent="Root/Center/MainPanel/Margin/Content/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Style_blue")
+
+[node name="Margin" type="MarginContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="Content" type="VBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.271, 0.651, 1, 1)
+theme_override_font_sizes/font_size = 28
+text = "玩家 1"
+horizontal_alignment = 1
+
+[node name="DeckOneOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(360, 58)
+layout_mode = 2
+
+[node name="DeckOnePreview" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 108)
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="Info" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+theme_override_font_sizes/font_size = 16
+text = "60 张 · 发布牌组 · 离线可用"
+horizontal_alignment = 1
+
+[node name="DeckTwoPanel" type="PanelContainer" parent="Root/Center/MainPanel/Margin/Content/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Style_gold")
+
+[node name="Margin" type="MarginContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="Content" type="VBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin"]
+layout_mode = 2
+
+[node name="DeckTwoTitle" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 28
+text = "玩家 2"
+horizontal_alignment = 1
+
+[node name="DeckTwoOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(360, 58)
+layout_mode = 2
+
+[node name="DeckTwoPreview" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 108)
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="Info" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+theme_override_font_sizes/font_size = 16
+text = "60 张 · 发布牌组 · 离线可用"
+horizontal_alignment = 1
+
+[node name="AISettings" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="AIDifficultyOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/AISettings"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 54)
+layout_mode = 2
+
+[node name="FirstPlayerOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/AISettings"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 54)
+layout_mode = 2
+
+[node name="StartButton" type="Button" parent="Root/Center/MainPanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 68)
+layout_mode = 2
+text = "开始对战"
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+unique_name_in_owner = true
+libraries = {
+&"": SubResource("AnimationLibrary_decks")
+}
