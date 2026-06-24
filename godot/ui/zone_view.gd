@@ -2,6 +2,7 @@ class_name ZoneView
 extends Control
 
 signal activated(card_id: String)
+signal inspected(context: Dictionary)
 signal action_requested(action: GameAction)
 
 var title := ""
@@ -10,6 +11,8 @@ var count := 0
 var is_hidden_zone := false
 var target_player := -1
 var target_slot := ""
+var inspect_context: Dictionary = {}
+var catalog := CardCatalog.new()
 
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
@@ -34,11 +37,17 @@ func configure(
 	p_card_id: String,
 	p_count: int,
 	p_hidden: bool = false,
+	p_context: Dictionary = {},
 ) -> void:
 	title = p_title
 	card_id = p_card_id
 	count = p_count
 	is_hidden_zone = p_hidden
+	inspect_context = p_context.duplicate(true)
+	inspect_context["title"] = title
+	inspect_context["count"] = count
+	inspect_context["card_id"] = card_id
+	inspect_context["hidden"] = is_hidden_zone
 	_refresh()
 
 
@@ -65,8 +74,12 @@ func _refresh() -> void:
 	if is_hidden_zone and count > 0:
 		texture_path = "res://assets/cards/card_back.webp"
 	elif not card_id.is_empty():
-		texture_path = str(CardDatabase.get_card(card_id).get("image_path", ""))
-	image.texture = CardTextureCache.get_texture(texture_path)
+		texture_path = str(catalog.get_card(card_id).get("image_path", ""))
+	image.texture = (
+		load(texture_path) as Texture2D
+		if not texture_path.is_empty() and ResourceLoader.exists(texture_path)
+		else null
+	)
 	empty_label.visible = image.texture == null
 	empty_label.text = "空%s" % title
 
@@ -76,9 +89,11 @@ func _on_gui_input(event: InputEvent) -> void:
 		event is InputEventMouseButton
 		and event.button_index == MOUSE_BUTTON_LEFT
 		and not event.pressed
-		and not card_id.is_empty()
 	):
-		activated.emit(card_id)
+		if not inspect_context.is_empty():
+			inspected.emit(inspect_context.duplicate(true))
+		elif not card_id.is_empty():
+			activated.emit(card_id)
 
 
 func _on_action_pressed() -> void:

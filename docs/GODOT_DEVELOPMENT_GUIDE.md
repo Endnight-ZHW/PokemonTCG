@@ -35,9 +35,9 @@
 
 ![UI Workbench 固定种子预览](images/godot-guide/ui-workbench.png)
 
-Workbench 顶部可以切换标题、选牌、网络、设置、选择、战斗和胜利页面；右侧按钮
-可以单独触发抽牌、进化、攻击、伤害、击倒和胜利演出。它使用固定种子的预览状态，
-不读取正式存档，也不会连接网络。
+Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量分配、帮助、卡牌检查器、
+区域查看、牌组详情、战斗和胜利页面；右侧按钮可以单独触发抽牌、进化、攻击、伤害、
+击倒和胜利演出。它使用固定种子的预览状态，不读取正式存档，也不会连接网络。
 
 ## 2. 工程地图
 
@@ -72,6 +72,12 @@ flowchart TD
 | 全局可编辑主题 | `ui/game_theme.tres` |
 | 语义颜色和运行时样式 | `ui/design_tokens.gd` |
 | 安全预览 | `tools/ui_workbench.tscn` |
+
+本轮新增的帮助、卡牌检查器、弃牌/隐藏区域查看和牌组详情使用 `Main` 的通用
+`ModalLayer` 动态构建。入口在可编辑场景中，例如标题页的 `HelpButton`、暂停面板的
+`HelpButton`、牌组选择页的 `DeckOneDetailsButton` / `DeckTwoDetailsButton`，
+但具体内容由 `main.gd` 读取 `CardCatalog` 和当前 `GameState` 生成。这样做的原因是：
+这些面板展示的是实时对局数据，不应该在 `.tscn` 中写死。
 
 节点上的 `editor_description` 会在 Inspector 中解释用途。标有“不要删除”的节点
 是运行时和自动测试的稳定契约，可以移动或调样式，但不要随意改名。
@@ -473,3 +479,157 @@ Windows 与 Android 调试构建：
 
 每完成一步都运行 `test_godot.ps1`。这种节奏略显谨慎，但它能让你大胆试验，而不必
 担心一处 UI 修改悄悄破坏 AI、联机或隐藏信息。
+
+## 15. 操作配方：修改 UI 排布
+
+Godot UI 修改先判断节点属于哪一种布局：
+
+| 场景 | 主要修改方式 | 注意事项 |
+|---|---|---|
+| 标题、选牌、网络、设置 | Container 自动排布 | 改 `custom_minimum_size`、`separation`、margin，不要硬拖坐标 |
+| 战斗牌桌固定卡位 | `BattleScreen._layout_board()` | 场景坐标只供预览；运行时由脚本按窗口重排 |
+| 手牌 | `BattleScreen` 的 Hand 导出参数 | 改 `hand_card_size`、`hand_minimum_spacing`、`hand_rotation_degrees` |
+| 卡牌组件 | `card_view.tscn` + `CardView` 导出参数 | 改复用组件会影响手牌、场上和选择面板 |
+| 弹窗内容 | `ModalLayer` + 动态节点 | 改外壳在 `main.tscn`，改内容在 `main.gd` 或对应 panel 脚本 |
+
+常用流程：
+
+1. 在 Workbench 中打开对应预览，确认要改的是哪个页面。
+2. 在 Scene 树中选择容器节点，先看 Inspector 的 `custom_minimum_size`、margin 和 separation。
+3. 如果拖动位置没有效果，说明它在 Container 下，应修改父容器参数。
+4. 如果运行时位置和编辑器不同，搜索对应脚本中的布局函数，例如 `_layout_board()`。
+5. 改完运行 `tools/test_godot.ps1`；涉及战斗画面再运行 UI 截图脚本。
+
+### 示例：调整战斗区尺寸和手牌弧度
+
+1. 打开 `res://scenes/battle/battle_screen.tscn`。
+2. 选择根节点 `BattleScreen`。
+3. 在 Inspector 的 `Table Layout / Board Cards` 中调整：
+   - `active_card_size`：战斗宝可梦卡牌尺寸。
+   - `bench_card_size`：备战区卡牌尺寸。
+   - `bench_spacing`：备战区间距。
+4. 在 `Table Layout / Hand` 中调整：
+   - `hand_card_size`：手牌卡牌尺寸。
+   - `hand_minimum_spacing`：手牌重叠的最小间距。
+   - `hand_rotation_degrees`：扇形旋转幅度。
+5. 按 `F6` 运行战斗场景或打开 Workbench 的“战斗场景”预览。
+
+如果想改牌库、弃牌、奖品的位置，不要只拖场景节点；应修改
+`BattleScreen._layout_board()` 中的 `_place_zone(...)` 调用。修改后检查 16:9 和 20:9
+截图，避免宽屏或移动端遮挡。
+
+## 16. 操作配方：修改动画效果
+
+本项目把动画分成两类：
+
+| 动画类型 | 修改位置 | 适合内容 |
+|---|---|---|
+| 固定时间轴 | `AnimationPlayer` | 页面入场、弹窗打开、卡牌选中呼吸、合法目标脉冲 |
+| 实时轨迹 | Tween / `PresentationDirector` | 抽牌飞行、弃牌、击倒、伤害浮字、镜头冲击 |
+
+固定动画的修改步骤：
+
+1. 打开对应场景，例如 `card_view.tscn`。
+2. 选择 `AnimationPlayer`。
+3. 在 Animation 面板中选择 `selected_pulse` 或 `target_pulse`。
+4. 调整关键帧、时长、颜色或缩放。
+5. 保留 `RESET` 动画，它负责运行时恢复默认状态。
+
+实时表现的修改步骤：
+
+1. 打开 `presentation/presentation_director.gd` 查看事件类型到音效、粒子和时长的映射。
+2. 打开 `scenes/battle/battle_screen.gd`，搜索 `_on_card_motion_requested()`。
+3. 调整弧线高度、错峰、旋转或落点粒子时，优先改根节点导出的 Presentation 参数。
+4. 不要在表现动画中修改 `GameState`。规则结果只能来自 `GameEngine.apply_action()` 或 `apply_choice()`。
+
+减少动画模式必须被尊重。新增动画前先检查 `AppSettings.reduced_motion`，或让
+`PresentationDirector` 统一缩短时长。
+
+## 17. 操作配方：新增卡牌、卡组和卡图
+
+Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `godot/data/cards.json`；
+这样下一次导出会被覆盖，也不会同步 Python 对照测试。正确路径如下。
+
+### 新增或修改卡牌
+
+1. 在 `python/card_data/templates/` 中找到对应属性或训练家模板文件，加入卡牌基础数据。
+2. 在 `python/card_data/effects/` 中加入或修改效果定义。
+3. 如果出现新的 `effect_type`，在 Godot 的 `rules/effect_engine.gd` 添加同语义分支。
+4. 在 Python 测试中覆盖新规则，至少验证合法动作、非法目标和选择链。
+5. 运行导出：
+
+```powershell
+.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py
+```
+
+6. 检查生成物是否一致：
+
+```powershell
+.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
+```
+
+7. 运行 Godot 测试：
+
+```powershell
+.\tools\test_godot.ps1
+```
+
+### 新增一套基于既有卡牌的预组卡组
+
+1. 打开 `python/data/deck_definitions.py`。
+2. 新增一个 `MY_DECK = [("card_id", count), ...]`，总数必须是 60。
+3. 把新卡组加入 `ALL_CARD_IDS` 的 deck 列表。
+4. 打开 `python/scripts/export_godot_data.py`，在 `DECKS` 中加入新 key、显示名、能量类型和卡组常量。
+5. 如果该卡组要给 Deep AI 使用，还需要训练或导出对应模型；没有模型时不要把它标记为 Deep AI 已部署。
+6. 运行导出和 `--check`。
+
+最小示例结构：
+
+```python
+MY_FIRE_DECK = [
+    ("svi-chim", 4),
+    ("svi-monf", 3),
+    ("svi-infr", 3),
+    ("sv1-151", 4),
+    ("sv1-153", 4),
+    ("sv1-180", 4),
+    ("sv1-ener-2", 18),
+    # 继续补足到 60 张
+]
+```
+
+新增卡图时，先把图片放在 Python 数据目录，并更新 `python/data/card_image_mapping.json`。
+导出脚本会复制图片到 `godot/assets/cards/`。如果卡图缺失，Godot 会显示文字占位，
+但发布前应让 `test_godot.ps1` 的卡图存在性检查通过。
+
+## 18. 新增查看面板的维护规则
+
+本轮新增的查看能力有四类：
+
+- 帮助面板：标题页和暂停菜单进入，内容在 `Main._show_help()`。
+- 卡牌检查器：长按卡牌进入，内容在 `Main._show_card_inspector()`。
+- 区域查看：点击弃牌、牌库、奖品或竞技场进入，入口由 `ZoneView.inspect_context` 提供。
+- 牌组详情：牌组选择页按钮进入，内容在 `Main._show_deck_details()`。
+
+隐藏信息规则很重要：
+
+- 弃牌区和竞技场可以传 `card_ids`。
+- 牌库和奖品只能传 `count` 与 `hidden=true`。
+- 联网视角中对手手牌、双方牌库和奖品不得出现真实卡牌 ID。
+- 新增任何检查器字段前，先确认它来自公开状态还是当前玩家私有状态。
+
+如果你要新增“查看手牌”“查看奖品”等功能，先问清楚它是不是规则允许公开的内容。
+本地调试方便不等于发布版安全。
+
+## 19. 常见排错扩展
+
+| 症状 | 可能原因 | 修复方式 |
+|---|---|---|
+| `%HelpButton` 为 null | 场景节点改名或不再 unique | 恢复节点名，或同步脚本中的 `%NodeName` |
+| 弃牌区点击没有反应 | `ZoneView.inspect_context` 为空 | 检查 `BattleScreen._refresh_field()` 是否传入 context |
+| 牌库/奖品显示了真实卡 | context 中传入了 `card_ids` | 对隐藏区传空数组，只传 count |
+| 选择面板确认按钮灰掉 | 选择数量不在 min/max 范围 | 检查 `ChoiceRequest.min_select/max_select` 和 `selected_choice_ids` |
+| 分配能量提交错误 | option ID 被 UI 重写 | UI 只能重复已有 option ID，不要生成新 ID |
+| 动画在减少动画模式仍播放 | 没检查 `AppSettings.reduced_motion` | 跳过 Tween 或使用 reduced speed |
+| 导出后卡组没出现 | 没加入 `export_godot_data.py` 的 `DECKS` | 同步 `deck_definitions.py` 和导出脚本 |
+| `--check` 报 stale | 生成数据没提交或改了 Python 权威数据 | 重新运行导出并检查 diff |

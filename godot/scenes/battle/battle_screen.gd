@@ -12,6 +12,8 @@ signal card_drop_requested(
 	target_slot: String,
 )
 signal detail_requested(card_id: String)
+signal inspect_card_requested(context: Dictionary)
+signal inspect_zone_requested(context: Dictionary)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 
@@ -251,6 +253,67 @@ func get_slot_view(player: int, slot: String) -> CardView:
 	return slot_views.get("%d:%s" % [player, slot]) as CardView
 
 
+func _zone_context(
+	player: int,
+	zone_name: String,
+	card_ids: Array,
+	zone_count: int,
+	hidden: bool,
+) -> Dictionary:
+	var visible_ids: Array[String] = []
+	if not hidden:
+		for value in card_ids:
+			var card_id := str(value)
+			if not card_id.is_empty():
+				visible_ids.append(card_id)
+	return {
+		"player": player,
+		"zone": zone_name,
+		"title": _zone_title(zone_name),
+		"card_ids": visible_ids,
+		"count": zone_count,
+		"hidden": hidden,
+	}
+
+
+func _card_inspection_context(card_id: String) -> Dictionary:
+	var context := {
+		"card_id": card_id,
+		"title": CardDatabase.get_card(card_id).get("name", card_id),
+		"location": "卡牌",
+		"pokemon": null,
+		"player": view_player,
+		"slot": "",
+	}
+	if state_ref == null:
+		return context
+	if selected_entity_key.begins_with("pokemon:"):
+		var parts := selected_entity_key.split(":")
+		if parts.size() >= 3:
+			var selected_player := int(parts[1])
+			var selected_slot := str(parts[2])
+			var selected_pokemon := state_ref.get_player(selected_player).get_pokemon(selected_slot)
+			if selected_pokemon and selected_pokemon.card_id == card_id:
+				context["pokemon"] = selected_pokemon
+				context["player"] = selected_player
+				context["slot"] = selected_slot
+				context["location"] = _player_label(selected_player) + " " + _slot_name(selected_slot)
+				return context
+	for player_idx in [view_player, 1 - view_player]:
+		var player_state := state_ref.get_player(player_idx)
+		for row in player_state.get_all_pokemon():
+			var pokemon: PokemonState = row["pokemon"]
+			if pokemon and pokemon.card_id == card_id:
+				context["pokemon"] = pokemon
+				context["player"] = player_idx
+				context["slot"] = str(row["slot"])
+				context["location"] = _player_label(player_idx) + " " + _slot_name(str(row["slot"]))
+				return context
+	if card_id in state_ref.get_player(view_player).hand:
+		context["location"] = "手牌"
+	return context
+
+
 func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 	var player := int(endpoint.get("player", view_player))
 	var slot := str(endpoint.get("slot", ""))
@@ -327,6 +390,7 @@ func _bind_scene_nodes() -> void:
 	for zone_value in zones.values():
 		var zone := zone_value as ZoneView
 		zone.activated.connect(_on_detail_requested)
+		zone.inspected.connect(_on_zone_inspected)
 		zone.action_requested.connect(action_requested.emit)
 	(get_node("BattleRoot/Header/MenuButton") as Button).pressed.connect(
 		menu_requested.emit
@@ -422,29 +486,49 @@ func _refresh_field() -> void:
 		"",
 		opponent.deck.size(),
 		true,
+		_zone_context(1 - view_player, "deck", [], opponent.deck.size(), true),
 	)
 	(zones["opponent_discard"] as ZoneView).configure(
 		"弃牌",
 		opponent.discard[-1] if not opponent.discard.is_empty() else "",
 		opponent.discard.size(),
+		false,
+		_zone_context(1 - view_player, "discard", opponent.discard, opponent.discard.size(), false),
 	)
 	(zones["opponent_prizes"] as ZoneView).configure(
 		"奖品",
 		"",
 		opponent.prizes.size(),
 		true,
+		_zone_context(1 - view_player, "prizes", [], opponent.prizes.size(), true),
 	)
-	(zones["own_deck"] as ZoneView).configure("牌库", "", own.deck.size(), true)
+	(zones["own_deck"] as ZoneView).configure(
+		"牌库",
+		"",
+		own.deck.size(),
+		true,
+		_zone_context(view_player, "deck", [], own.deck.size(), true),
+	)
 	(zones["own_discard"] as ZoneView).configure(
 		"弃牌",
 		own.discard[-1] if not own.discard.is_empty() else "",
 		own.discard.size(),
+		false,
+		_zone_context(view_player, "discard", own.discard, own.discard.size(), false),
 	)
-	(zones["own_prizes"] as ZoneView).configure("奖品", "", own.prizes.size(), true)
+	(zones["own_prizes"] as ZoneView).configure(
+		"奖品",
+		"",
+		own.prizes.size(),
+		true,
+		_zone_context(view_player, "prizes", [], own.prizes.size(), true),
+	)
 	(zones["stadium"] as ZoneView).configure(
 		"竞技场",
 		state_ref.stadium_card_id,
 		0 if state_ref.stadium_card_id.is_empty() else 1,
+		false,
+		_zone_context(-1, "stadium", [state_ref.stadium_card_id] if not state_ref.stadium_card_id.is_empty() else [], 0 if state_ref.stadium_card_id.is_empty() else 1, false),
 	)
 
 
@@ -826,6 +910,12 @@ func _on_card_activated(
 func _on_detail_requested(card_id: String) -> void:
 	show_card_detail(card_id)
 	detail_requested.emit(card_id)
+	if not card_id.is_empty():
+		inspect_card_requested.emit(_card_inspection_context(card_id))
+
+
+func _on_zone_inspected(context: Dictionary) -> void:
+	inspect_zone_requested.emit(context)
 
 
 func _on_card_dropped(
@@ -1168,3 +1258,26 @@ func _phase_name(phase: String) -> String:
 		"POKEMON_CHECKUP": "宝可梦检查",
 		"GAME_OVER": "对局结束",
 	}.get(phase, phase)
+
+
+func _slot_name(slot_name: String) -> String:
+	if slot_name == "active":
+		return "战斗区"
+	if slot_name.begins_with("bench_"):
+		return "备战区 %d" % (slot_name.trim_prefix("bench_").to_int() + 1)
+	return slot_name
+
+
+func _zone_title(zone_name: String) -> String:
+	return {
+		"deck": "牌库",
+		"discard": "弃牌",
+		"prizes": "奖品",
+		"stadium": "竞技场",
+	}.get(zone_name, zone_name)
+
+
+func _player_label(player_idx: int) -> String:
+	if state_ref == null or player_idx < 0:
+		return ""
+	return state_ref.get_player(player_idx).name

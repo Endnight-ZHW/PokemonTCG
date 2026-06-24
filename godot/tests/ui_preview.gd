@@ -23,6 +23,13 @@ func _render_previews() -> void:
 	if not _capture("title.png"):
 		quit(1)
 		return
+	ui._show_help()
+	await process_frame
+	await create_timer(0.2).timeout
+	if not _capture("help.png"):
+		quit(1)
+		return
+	ui._close_modal()
 
 	ui.show_network_setup("relay")
 	await process_frame
@@ -46,6 +53,13 @@ func _render_previews() -> void:
 	if not _capture("decks.png"):
 		quit(1)
 		return
+	ui._show_deck_details("fire")
+	await process_frame
+	await create_timer(0.2).timeout
+	if not _capture("deck-detail.png"):
+		quit(1)
+		return
+	ui._close_modal()
 
 	if not ui.start_local_match_for_test("fire", "water"):
 		push_error("Unable to start preview match")
@@ -109,6 +123,31 @@ func _render_previews() -> void:
 	if not _capture("battle-populated.png"):
 		quit(1)
 		return
+	ui._show_card_inspector({
+		"card_id": "svi-hrot",
+		"pokemon": demo.players[0].active,
+		"location": "玩家 1 战斗区",
+	})
+	await process_frame
+	await create_timer(0.2).timeout
+	if not _capture("card-inspector.png"):
+		quit(1)
+		return
+	ui._close_modal()
+	ui._show_zone_inspector({
+		"title": "弃牌",
+		"player": 0,
+		"zone": "discard",
+		"card_ids": ["sv1-180", "sv1-189", "svf-potion"],
+		"count": 3,
+		"hidden": false,
+	})
+	await process_frame
+	await create_timer(0.2).timeout
+	if not _capture("zone-inspector.png"):
+		quit(1)
+		return
+	ui._close_modal()
 	ui.selected_entity_key = "hand:1"
 	ui._refresh_game()
 	await process_frame
@@ -184,6 +223,43 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.25).timeout
 	if not _capture("choice.png"):
+		quit(1)
+		return
+	ui._close_modal()
+
+	var energy_choice := ChoiceRequest.new(
+		"preview-energy-choice",
+		"distribute_energy",
+		0,
+		"为每张能量选择附着目标。",
+		[
+			{
+				"option_id": "pokemon:0:active:svi-hrot",
+				"label": "加热洛托姆",
+				"value": {"slot": "active", "card_id": "svi-hrot"},
+			},
+			{
+				"option_id": "pokemon:0:bench_0:svi-chim",
+				"label": "小火焰猴",
+				"value": {"slot": "bench_0", "card_id": "svi-chim"},
+			},
+		],
+		2,
+		2,
+		true,
+	)
+	var energy_stack := ResolutionStack.new()
+	energy_stack.push_continuation("energy_attach_distribution", {
+		"player_idx": 0,
+		"source_zone": "hand",
+		"card_ids": ["sv1-ener-2", "sv1-ener-2"],
+	})
+	energy_stack.pending_request = energy_choice
+	demo.resolution_stack = energy_stack.to_dict()
+	ui.show_choice(energy_choice)
+	await process_frame
+	await create_timer(0.25).timeout
+	if not _capture("choice-energy.png"):
 		quit(1)
 		return
 	ui._close_modal()

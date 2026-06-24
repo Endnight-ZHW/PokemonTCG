@@ -4,6 +4,7 @@ extends Control
 signal mode_selected(mode: String)
 signal network_selected(kind: String)
 signal settings_requested
+signal help_requested
 
 @export_category("Editable Copy")
 @export var game_title := "宝可梦卡牌对战"
@@ -41,6 +42,7 @@ func _ensure_connections() -> void:
 		[%LANButton, network_selected.emit.bind("lan")],
 		[%RelayButton, network_selected.emit.bind("relay")],
 		[%SettingsButton, settings_requested.emit],
+		[%HelpButton, help_requested.emit],
 	]
 	for row in bindings:
 		var button := row[0] as Button

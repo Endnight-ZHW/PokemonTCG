@@ -231,6 +231,7 @@ func _show_title() -> void:
 	page.mode_selected.connect(_show_deck_select)
 	page.network_selected.connect(_show_network_setup)
 	page.settings_requested.connect(_show_settings)
+	page.help_requested.connect(_show_help)
 
 
 func show_title() -> void:
@@ -394,6 +395,7 @@ func _show_deck_select(mode: String = MODE_LOCAL) -> void:
 	screen_host.add_child(page)
 	page.configure(catalog, game_mode)
 	page.back_requested.connect(_show_title)
+	page.deck_details_requested.connect(_show_deck_details)
 	page.start_requested.connect(_on_match_start_requested)
 	deck_one_option = page.deck_one_option
 	deck_two_option = page.deck_two_option
@@ -530,6 +532,8 @@ func _build_game_screen() -> void:
 	battle_screen.action_requested.connect(_execute_action)
 	battle_screen.card_drop_requested.connect(_on_battle_card_dropped)
 	battle_screen.detail_requested.connect(_show_card_detail)
+	battle_screen.inspect_card_requested.connect(_show_card_inspector)
+	battle_screen.inspect_zone_requested.connect(_show_zone_inspector)
 	screen_host.add_child(battle_screen)
 	battle_screen.initialize_ui()
 	action_list = VBoxContainer.new()
@@ -769,6 +773,9 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	var panel := CHOICE_PANEL_SCENE.instantiate() as ChoicePanel
 	modal_body.add_child(panel)
 	panel.configure(metadata_text, not request.options.is_empty())
+	var energy_cards := _choice_energy_cards(request)
+	if not energy_cards.is_empty():
+		_add_choice_energy_preview(panel, energy_cards)
 	var card_grid := panel.card_grid
 	var visual_count := 0
 	for option in request.options:
@@ -816,6 +823,58 @@ func _choice_option_card_id(option: Dictionary) -> String:
 	if option.get("ref") is Dictionary:
 		return str(option["ref"].get("card_id", ""))
 	return ""
+
+
+func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
+	var result: Array[String] = []
+	if request == null or request.request_type not in ["distribute_energy", "select_energy_target"]:
+		return result
+	if state == null or state.resolution_stack.is_empty():
+		return result
+	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	if stack.frames.is_empty():
+		return result
+	var frame: Dictionary = stack.frames[-1]
+	var data: Dictionary = frame.get("data", {})
+	for value in data.get("card_ids", []):
+		var card_id := str(value)
+		if not card_id.is_empty():
+			result.append(card_id)
+	if not result.is_empty():
+		return result
+	var source_slot := str(data.get("source_slot", ""))
+	var player_idx := int(data.get("player_idx", request.player))
+	var amount := int(data.get("amount", 0))
+	if source_slot.is_empty() or amount <= 0:
+		return result
+	var pokemon := state.get_player(player_idx).get_pokemon(source_slot)
+	if pokemon == null:
+		return result
+	for index in range(mini(amount, pokemon.energy_card_ids.size())):
+		result.append(pokemon.energy_card_ids[index])
+	return result
+
+
+func _add_choice_energy_preview(panel: ChoicePanel, card_ids: Array[String]) -> void:
+	var note := _modal_label(
+		"待分配能量。若需要把多张能量放到同一目标，可以重复点击同一个目标按钮。",
+		14,
+		DesignTokens.TEXT_MUTED,
+	)
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	for card_id in card_ids:
+		var card := CARD_SCENE.instantiate() as CardView
+		card.custom_minimum_size = Vector2(70, 99)
+		card.configure(card_id, null, false, -1, -1, "", true)
+		card.tooltip_text = catalog.card_name(card_id)
+		grid.add_child(card)
+	panel.add_child(note)
+	panel.add_child(grid)
+	panel.move_child(note, 1)
+	panel.move_child(grid, 2)
 
 
 func _toggle_choice(option_id: String) -> void:
@@ -958,6 +1017,11 @@ func _show_pause_overlay() -> void:
 			else "返回标题会结束当前本地对局。"
 		)
 	)
+	pause_panel.help_requested.connect(func() -> void:
+		_play_click()
+		_close_modal()
+		_show_help(game_mode in [MODE_CHALLENGE, MODE_DEEP])
+	)
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
 		_close_modal()
@@ -972,6 +1036,184 @@ func _show_pause_overlay() -> void:
 		state = null
 		_show_title()
 	, CONNECT_ONE_SHOT)
+
+
+func _show_help(resume_ai_on_close: bool = false) -> void:
+	_play_click()
+	_open_modal("规则与操作帮助", "关闭", "")
+	modal_panel.custom_minimum_size = Vector2(760, 680)
+	var intro := _modal_label(
+		"对战目标是在规则允许的动作中击倒对手宝可梦、拿完奖品，或让对手场上没有宝可梦。",
+		16,
+		DesignTokens.TEXT_MUTED,
+	)
+	modal_body.add_child(intro)
+	var sections := [
+		{
+			"title": "对局流程",
+			"rows": [
+				"准备阶段：双方放置战斗宝可梦，可继续放置备战宝可梦。",
+				"主要阶段：打出宝可梦、进化、附能、使用训练家、撤退或发动特性。",
+				"攻击后会自动结束回合；宝可梦检查会处理特殊状态和击倒。",
+			],
+		},
+		{
+			"title": "查看局面",
+			"rows": [
+				"点击卡牌会选中并显示可用操作；长按卡牌会打开完整检查器。",
+				"弃牌区和竞技场可查看公开卡牌；牌库和奖品只显示数量。",
+				"能量、道具、进化链和特殊状态会在检查器中集中显示。",
+			],
+		},
+		{
+			"title": "触控与联机",
+			"rows": [
+				"手牌可以点击选择，也可以拖到高亮牌位。",
+				"本地双人交接时会遮挡手牌；联网时只显示自己视角可见的信息。",
+				"返回键会打开对局菜单，进入后台会安全中止联机或 AI 搜索。",
+			],
+		},
+	]
+	for section in sections:
+		modal_body.add_child(_modal_label(str(section["title"]), 20, DesignTokens.GOLD))
+		for row in section["rows"]:
+			modal_body.add_child(_modal_label("· " + str(row), 15, DesignTokens.TEXT))
+	modal_confirm.pressed.connect(func() -> void:
+		_close_modal()
+		if resume_ai_on_close:
+			_maybe_start_ai()
+	, CONNECT_ONE_SHOT)
+
+
+func _show_card_inspector(context: Dictionary) -> void:
+	var card_id := str(context.get("card_id", ""))
+	if card_id.is_empty():
+		return
+	_play_click()
+	var card := catalog.get_card(card_id)
+	var title := str(card.get("name", card_id))
+	_open_modal(title, "关闭", "")
+	modal_panel.custom_minimum_size = Vector2(860, 700)
+	var location := str(context.get("location", ""))
+	if not location.is_empty():
+		modal_body.add_child(_modal_label(location, 15, DesignTokens.TEXT_MUTED))
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 18)
+	modal_body.add_child(top_row)
+	var image := TextureRect.new()
+	image.custom_minimum_size = Vector2(210, 294)
+	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
+	top_row.add_child(image)
+	var detail := RichTextLabel.new()
+	detail.custom_minimum_size = Vector2(540, 294)
+	detail.fit_content = true
+	detail.bbcode_enabled = true
+	detail.text = _card_detail_bbcode(card_id, context.get("pokemon") as PokemonState)
+	top_row.add_child(detail)
+	var pokemon := context.get("pokemon") as PokemonState
+	if pokemon:
+		_add_card_grid_section(
+			modal_body,
+			"进化链",
+			_pokemon_evolution_cards(pokemon),
+			false,
+		)
+		_add_card_grid_section(modal_body, "附着能量", pokemon.energy_card_ids, false)
+		if not pokemon.attached_tool_id.is_empty():
+			_add_card_grid_section(modal_body, "宝可梦道具", [pokemon.attached_tool_id], false)
+	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
+
+
+func _show_zone_inspector(context: Dictionary) -> void:
+	_play_click()
+	var title := "%s · %s" % [
+		_player_name_for_context(int(context.get("player", -1))),
+		str(context.get("title", context.get("zone", "区域"))),
+	]
+	_open_modal(title.strip_edges(), "关闭", "")
+	modal_panel.custom_minimum_size = Vector2(820, 680)
+	var hidden := bool(context.get("hidden", false))
+	var count := int(context.get("count", 0))
+	if hidden:
+		modal_body.add_child(_modal_label(
+			"这是隐藏区域。这里只显示数量，不显示具体卡牌身份。",
+			16,
+			DesignTokens.TEXT_MUTED,
+		))
+		_add_card_grid_section(modal_body, "隐藏卡牌（%d）" % count, _hidden_card_rows(count), true)
+	else:
+		var card_ids: Array[String] = []
+		for value in context.get("card_ids", []):
+			var card_id := str(value)
+			if not card_id.is_empty():
+				card_ids.append(card_id)
+		if card_ids.is_empty():
+			modal_body.add_child(_modal_label("这里没有公开卡牌。", 16, DesignTokens.TEXT_MUTED))
+		else:
+			_add_card_grid_section(modal_body, "公开卡牌（%d）" % card_ids.size(), card_ids, false)
+	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
+
+
+func _show_deck_details(deck_key: String) -> void:
+	_play_click()
+	var deck := catalog.get_deck(deck_key)
+	if deck.is_empty():
+		_show_toast("找不到牌组：%s" % deck_key, true)
+		return
+	_open_modal(str(deck.get("name", deck_key)), "关闭", "")
+	modal_panel.custom_minimum_size = Vector2(880, 700)
+	var rows: Array = deck.get("cards", [])
+	var counts := {"Pokémon": 0, "Trainer": 0, "Energy": 0}
+	var core_cards: Array[String] = []
+	for row_value in rows:
+		var row: Dictionary = row_value
+		var card_id := str(row.get("card_id", ""))
+		var count := int(row.get("count", 0))
+		var card := catalog.get_card(card_id)
+		var supertype := str(card.get("supertype", ""))
+		counts[supertype] = int(counts.get(supertype, 0)) + count
+		if supertype == "Pokémon" and core_cards.size() < 6:
+			core_cards.append(card_id)
+	modal_body.add_child(_modal_label(
+		"牌组 key：%s · 属性：%s · 共 %d 张" % [
+			deck_key,
+			str(deck.get("energy_type", "")),
+			int(deck.get("card_count", 0)),
+		],
+		16,
+		DesignTokens.TEXT_MUTED,
+	))
+	modal_body.add_child(_modal_label(
+		"Pokémon %d · Trainer %d · Energy %d" % [
+			int(counts.get("Pokémon", 0)),
+			int(counts.get("Trainer", 0)),
+			int(counts.get("Energy", 0)),
+		],
+		17,
+		DesignTokens.GOLD,
+	))
+	_add_card_grid_section(modal_body, "核心宝可梦预览", core_cards, false)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 4)
+	modal_body.add_child(_modal_label("完整构成", 20, DesignTokens.GOLD))
+	modal_body.add_child(list)
+	for row_value in rows:
+		var row: Dictionary = row_value
+		var card_id := str(row.get("card_id", ""))
+		var card := catalog.get_card(card_id)
+		var label := _modal_label(
+			"%2d × %s  [%s]" % [
+				int(row.get("count", 0)),
+				str(card.get("name", card_id)),
+				card_id,
+			],
+			14,
+			DesignTokens.TEXT,
+		)
+		list.add_child(label)
+	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
 func _show_settings() -> void:
@@ -1064,6 +1306,7 @@ func _open_modal(title_text: String, confirm_text: String, cancel_text: String) 
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
 	_free_children_immediate(modal_body)
+	modal_panel.custom_minimum_size = Vector2(720, 620)
 	modal_title.text = title_text
 	modal_confirm.text = confirm_text
 	modal_confirm.disabled = false
@@ -1170,6 +1413,145 @@ func _show_card_detail(card_id: String) -> void:
 	detail_text.text = "\n\n".join(rows)
 	var image_path := str(card.get("image_path", ""))
 	detail_image.texture = CardTextureCache.get_texture(image_path)
+
+
+func _modal_label(text_value: String, font_size: int = 15, color: Color = Color.WHITE) -> Label:
+	var label := Label.new()
+	label.text = text_value
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	return label
+
+
+func _add_card_grid_section(
+	parent: VBoxContainer,
+	title_text: String,
+	card_ids: Array,
+	hidden: bool,
+) -> void:
+	parent.add_child(_modal_label(title_text, 20, DesignTokens.GOLD))
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	parent.add_child(grid)
+	if card_ids.is_empty():
+		grid.add_child(_modal_label("无", 14, DesignTokens.TEXT_MUTED))
+		return
+	for value in card_ids:
+		var card_id := str(value)
+		var card_view := CARD_SCENE.instantiate() as CardView
+		card_view.custom_minimum_size = Vector2(82, 116)
+		card_view.configure(card_id, null, hidden, -1, -1, "", true)
+		card_view.tooltip_text = (
+			"隐藏卡牌"
+			if hidden
+			else str(catalog.get_card(card_id).get("name", card_id))
+		)
+		if not hidden and not card_id.is_empty():
+			card_view.activated.connect(func(
+				_selected_id: String,
+				_hand_index: int,
+				_player: int,
+				_slot: String,
+			) -> void:
+				_show_card_inspector({"card_id": card_id, "location": title_text})
+			)
+		grid.add_child(card_view)
+
+
+func _hidden_card_rows(count: int) -> Array[String]:
+	var result: Array[String] = []
+	for _index in range(mini(maxi(0, count), 24)):
+		result.append("")
+	return result
+
+
+func _player_name_for_context(player_idx: int) -> String:
+	if player_idx < 0 or state == null:
+		return ""
+	return state.get_player(player_idx).name
+
+
+func _pokemon_evolution_cards(pokemon: PokemonState) -> Array[String]:
+	var result: Array[String] = []
+	for value in pokemon.evolution_stack_ids:
+		var card_id := str(value)
+		if not card_id.is_empty():
+			result.append(card_id)
+	if not pokemon.card_id.is_empty():
+		result.append(pokemon.card_id)
+	return result
+
+
+func _card_detail_bbcode(card_id: String, pokemon: PokemonState = null) -> String:
+	var card := catalog.get_card(card_id)
+	var rows: Array[String] = []
+	var supertype := str(card.get("supertype", ""))
+	var subtypes: Array = card.get("subtypes", [])
+	rows.append("[color=#9eb0ca]%s%s[/color]" % [
+		supertype,
+		" · %s" % " / ".join(subtypes) if not subtypes.is_empty() else "",
+	])
+	if int(card.get("hp", 0)) > 0:
+		var maximum := int(card.get("hp", 0))
+		var hp_text := "HP %d" % maximum
+		if pokemon:
+			hp_text = "HP %d/%d · 伤害 %d" % [
+				pokemon.current_hp(catalog),
+				maximum,
+				pokemon.damage_counters * 10,
+			]
+		rows.append(hp_text)
+	if not str(card.get("evolves_from", "")).is_empty():
+		rows.append("进化自：%s" % str(card.get("evolves_from", "")))
+	if pokemon:
+		if not pokemon.status_conditions.is_empty():
+			var statuses: Array[String] = []
+			for status in pokemon.status_conditions:
+				statuses.append(_status_name(str(status)))
+			rows.append("特殊状态：" + "、".join(statuses))
+		if not pokemon.energy_card_ids.is_empty():
+			var energy_names: Array[String] = []
+			for energy_id in pokemon.energy_card_ids:
+				energy_names.append(catalog.card_name(energy_id))
+			rows.append("附着能量：%s" % "、".join(energy_names))
+		if not pokemon.attached_tool_id.is_empty():
+			rows.append("宝可梦道具：%s" % catalog.card_name(pokemon.attached_tool_id))
+	for ability_value in card.get("abilities", []):
+		var ability: Dictionary = ability_value
+		rows.append("[color=#62d7ff]特性 · %s[/color]\n%s" % [
+			str(ability.get("name", "")),
+			str(ability.get("text", "")),
+		])
+	for attack_value in card.get("attacks", []):
+		var attack: Dictionary = attack_value
+		rows.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
+			str(attack.get("name", "")),
+			str(attack.get("damage", "")),
+			str(attack.get("text", "")),
+		])
+	if not str(card.get("trainer_text", "")).is_empty():
+		rows.append(str(card.get("trainer_text", "")))
+	for rule_value in card.get("rules", []):
+		var rule := str(rule_value)
+		if not rule.is_empty():
+			rows.append(rule)
+	var retreat := int(card.get("retreat_cost", 0))
+	if retreat > 0:
+		rows.append("撤退费用：%d" % retreat)
+	return "\n\n".join(rows)
+
+
+func _status_name(status: String) -> String:
+	return {
+		"POISONED": "中毒",
+		"BURNED": "灼伤",
+		"ASLEEP": "睡眠",
+		"PARALYZED": "麻痹",
+		"CONFUSED": "混乱",
+	}.get(status, status)
 
 
 func _action_label(action: GameAction) -> String:

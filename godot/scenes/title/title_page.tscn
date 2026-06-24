@@ -210,11 +210,23 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Relay 联机"
 
-[node name="SettingsButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
+[node name="UtilityRow" type="HBoxContainer" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="SettingsButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content/UtilityRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
+size_flags_horizontal = 3
 text = "设置与画质"
+
+[node name="HelpButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content/UtilityRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "帮助"
 
 [node name="VersionLabel" type="Label" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
 unique_name_in_owner = true

@@ -81,6 +81,11 @@ layout_mode = 2
 text = "复杂选择"
 metadata/preview = "choice"
 
+[node name="EnergyChoicePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "能量分配选择"
+metadata/preview = "energy_choice"
+
 [node name="BattlePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
 layout_mode = 2
 text = "战斗场景"
@@ -90,6 +95,26 @@ metadata/preview = "battle"
 layout_mode = 2
 text = "胜利页"
 metadata/preview = "victory"
+
+[node name="HelpPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "帮助面板"
+metadata/preview = "help"
+
+[node name="InspectorPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "卡牌检查器"
+metadata/preview = "inspector"
+
+[node name="ZonePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "区域查看"
+metadata/preview = "zone"
+
+[node name="DeckDetailsPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "牌组详情"
+metadata/preview = "deck_detail"
 
 [node name="Separator" type="HSeparator" parent="Layout/Sidebar/Scroll/Buttons"]
 layout_mode = 2

@@ -2,6 +2,7 @@ class_name DeckSelectPage
 extends Control
 
 signal back_requested
+signal deck_details_requested(deck_key: String)
 signal start_requested(
 	mode: String,
 	first_deck_key: String,
@@ -94,6 +95,16 @@ func _ensure_connections() -> void:
 		deck_one_option.item_selected.connect(_on_deck_one_selected)
 	if not deck_two_option.item_selected.is_connected(_on_deck_two_selected):
 		deck_two_option.item_selected.connect(_on_deck_two_selected)
+	var deck_one_details := get_node(
+		"Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content/DeckOneDetailsButton"
+	) as Button
+	var deck_two_details := get_node(
+		"Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content/DeckTwoDetailsButton"
+	) as Button
+	if not deck_one_details.pressed.is_connected(_emit_deck_one_details):
+		deck_one_details.pressed.connect(_emit_deck_one_details)
+	if not deck_two_details.pressed.is_connected(_emit_deck_two_details):
+		deck_two_details.pressed.connect(_emit_deck_two_details)
 
 
 func _on_deck_one_selected(_index: int) -> void:
@@ -112,6 +123,18 @@ func _on_deck_two_selected(_index: int) -> void:
 			"Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content/DeckTwoPreview"
 		) as HBoxContainer,
 	)
+
+
+func _emit_deck_one_details() -> void:
+	if deck_one_option.item_count == 0:
+		return
+	deck_details_requested.emit(str(deck_one_option.get_item_metadata(deck_one_option.selected)))
+
+
+func _emit_deck_two_details() -> void:
+	if deck_two_option.item_count == 0:
+		return
+	deck_details_requested.emit(str(deck_two_option.get_item_metadata(deck_two_option.selected)))
 
 
 func _populate_decks(option: OptionButton) -> void:

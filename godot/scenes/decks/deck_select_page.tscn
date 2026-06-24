@@ -177,6 +177,12 @@ theme_override_font_sizes/font_size = 16
 text = "60 张 · 发布牌组 · 离线可用"
 horizontal_alignment = 1
 
+[node name="DeckOneDetailsButton" type="Button" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+text = "查看牌组详情"
+
 [node name="DeckTwoPanel" type="PanelContainer" parent="Root/Center/MainPanel/Margin/Content/Columns"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -218,6 +224,12 @@ theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
 theme_override_font_sizes/font_size = 16
 text = "60 张 · 发布牌组 · 离线可用"
 horizontal_alignment = 1
+
+[node name="DeckTwoDetailsButton" type="Button" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+text = "查看牌组详情"
 
 [node name="AISettings" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content"]
 unique_name_in_owner = true

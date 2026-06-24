@@ -11,3 +11,9 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
 text = "返回标题会结束当前对局。"
 autowrap_mode = 2
+
+[node name="HelpButton" type="Button" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "查看规则与操作帮助"

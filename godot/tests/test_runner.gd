@@ -1034,9 +1034,11 @@ func _run_visual_upgrade_tests() -> void:
 	var page_contracts := {
 		"res://scenes/title/title_page.tscn": [
 			"LocalTwoPlayerButton", "ChallengeAIButton", "SettingsButton",
+			"HelpButton",
 		],
 		"res://scenes/decks/deck_select_page.tscn": [
-			"DeckOneOption", "DeckTwoOption", "StartButton",
+			"DeckOneOption", "DeckTwoOption", "DeckOneDetailsButton",
+			"DeckTwoDetailsButton", "StartButton",
 		],
 		"res://scenes/network/network_lobby_page.tscn": [
 			"NetworkRoleOption", "NetworkAddressInput", "NetworkConnectButton",
@@ -1074,15 +1076,21 @@ func _run_visual_upgrade_tests() -> void:
 	title_page.settings_requested.connect(
 		func() -> void: title_signals["settings"] = true
 	)
+	title_page.help_requested.connect(
+		func() -> void: title_signals["help"] = true
+	)
 	(title_page.find_child("LocalTwoPlayerButton", true, false) as Button).pressed.emit()
 	(title_page.find_child("LANButton", true, false) as Button).pressed.emit()
 	(title_page.find_child("SettingsButton", true, false) as Button).pressed.emit()
+	(title_page.find_child("HelpButton", true, false) as Button).pressed.emit()
 	_check(title_signals.get("mode", "") == "local",
 		"Title page mode signal did not carry the selected mode")
 	_check(title_signals.get("network", "") == "lan",
 		"Title page network signal did not carry the transport kind")
 	_check(bool(title_signals.get("settings", false)),
 		"Title page settings signal was not emitted")
+	_check(bool(title_signals.get("help", false)),
+		"Title page help signal was not emitted")
 	title_page.queue_free()
 
 	var deck_scene := load(
@@ -1107,7 +1115,11 @@ func _run_visual_upgrade_tests() -> void:
 			"forced_first": forced_first,
 		}, true)
 	)
+	deck_page.deck_details_requested.connect(
+		func(deck_key: String) -> void: deck_signal["details"] = deck_key
+	)
 	(deck_page.find_child("StartButton", true, false) as Button).pressed.emit()
+	(deck_page.find_child("DeckOneDetailsButton", true, false) as Button).pressed.emit()
 	_check(deck_signal.get("mode", "") == "challenge",
 		"Deck page start signal did not carry the game mode")
 	_check(not str(deck_signal.get("first", "")).is_empty(),
@@ -1116,6 +1128,8 @@ func _run_visual_upgrade_tests() -> void:
 		"Deck page start signal omitted the second deck")
 	_check(deck_signal.get("difficulty", "") == "standard",
 		"Deck page start signal omitted the selected difficulty")
+	_check(not str(deck_signal.get("details", "")).is_empty(),
+		"Deck page details signal omitted the selected deck")
 	deck_page.queue_free()
 
 	var network_scene := load(
@@ -1179,6 +1193,38 @@ func _run_visual_upgrade_tests() -> void:
 		"Settings panel save signal omitted the mute state")
 	settings_panel.queue_free()
 
+	var modal_ui := main_scene.instantiate()
+	root.add_child(modal_ui)
+	modal_ui.initialize_ui()
+	modal_ui._show_help()
+	_check(modal_ui.modal_layer.visible,
+		"Help modal did not open from the main shell")
+	modal_ui._close_modal()
+	var distribute_request := ChoiceRequest.new(
+		"choice:test:energy",
+		"distribute_energy",
+		0,
+		"为每张能量选择附着目标。",
+		[
+			{
+				"option_id": "pokemon:0:active:sv1-104",
+				"label": "墓仔狗",
+				"value": {"slot": "active", "card_id": "sv1-104"},
+			},
+		],
+		2,
+		2,
+		true,
+	)
+	modal_ui.show_choice(distribute_request)
+	modal_ui._toggle_choice("pokemon:0:active:sv1-104")
+	modal_ui._toggle_choice("pokemon:0:active:sv1-104")
+	_check(modal_ui.selected_choice_ids == [
+		"pokemon:0:active:sv1-104",
+		"pokemon:0:active:sv1-104",
+	], "Energy distribution choice did not preserve repeated option IDs")
+	modal_ui.queue_free()
+
 	var workbench_scene := load("res://tools/ui_workbench.tscn") as PackedScene
 	_check(workbench_scene != null, "UI Workbench scene failed to load")
 	if workbench_scene:
@@ -1192,6 +1238,16 @@ func _run_visual_upgrade_tests() -> void:
 		_check(
 			workbench.find_child("VictoryScreen", true, false) != null,
 			"UI Workbench victory trigger did not open the victory preview",
+		)
+		workbench.call("show_preview", "help")
+		_check(
+			str(workbench.preview_caption.text).contains("帮助面板"),
+			"UI Workbench help preview did not open",
+		)
+		workbench.call("show_preview", "deck_detail")
+		_check(
+			str(workbench.preview_caption.text).contains("牌组详情"),
+			"UI Workbench deck detail preview did not open",
 		)
 		workbench.queue_free()
 
@@ -1238,6 +1294,10 @@ func _run_visual_upgrade_tests() -> void:
 		state.players[0].hand = [
 			"sv1-104", "sv1-ener-5", "sv1-151", "sv1-189",
 		]
+		state.players[0].active.energy_card_ids = ["sv1-ener-5"]
+		state.players[0].active.attached_tool_id = "sv1-202"
+		state.players[0].discard = ["sv1-180", "sv1-189"]
+		state.players[0].prizes = ["sv1-151", "sv1-153"]
 		var engine := GameEngine.new(CardCatalog.new())
 		var rows: Array[Dictionary] = []
 		for action in engine.legal_actions(state, 0, true):
@@ -1256,6 +1316,26 @@ func _run_visual_upgrade_tests() -> void:
 			"Battle screen is missing the dedicated phase advance button")
 		_check(not battle.quick_actions.is_visible_in_tree(),
 			"Legacy right-side card action list is still visible")
+		var discard_context: Dictionary = (
+			battle.zones["own_discard"] as ZoneView
+		).inspect_context
+		_check(discard_context.get("card_ids", []) == ["sv1-180", "sv1-189"],
+			"Discard zone inspector did not expose public discard cards")
+		var prize_context: Dictionary = (
+			battle.zones["own_prizes"] as ZoneView
+		).inspect_context
+		_check(bool(prize_context.get("hidden", false)),
+			"Prize zone inspector is not marked hidden")
+		_check(Array(prize_context.get("card_ids", [])).is_empty(),
+			"Prize zone inspector leaked hidden prize card IDs")
+		var inspected_card := {}
+		battle.inspect_card_requested.connect(
+			func(context: Dictionary) -> void: inspected_card.merge(context, true)
+		)
+		battle._on_detail_requested("sv1-104")
+		var inspected_pokemon := inspected_card.get("pokemon") as PokemonState
+		_check(inspected_pokemon != null and inspected_pokemon.attached_tool_id == "sv1-202",
+			"Card inspector context did not include attached cards")
 		var first_hand: Variant = battle.hand_views[0]
 		_check(first_hand.catalog == battle.catalog,
 			"Battle cards do not reuse the shared card catalog")
