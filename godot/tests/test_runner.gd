@@ -594,7 +594,18 @@ func _run_phase_four_foundation_tests() -> void:
 		"Unable to start Challenge AI match",
 	)
 	_check(ai_ui.current_view_player == 0, "AI match exposed the AI player view")
+	_check(not ai_ui.modal_layer.visible,
+		"Challenge AI match opened the local privacy overlay")
 	_check(ai_ui.state.players[1].name == "Challenge AI", "AI player name mismatch")
+	ai_ui._stop_ai()
+	_check(
+		ai_ui.start_ai_match_for_test(
+			"deep", "fire", "water", "fast", 0, 20260621),
+		"Unable to start Deep AI match",
+	)
+	_check(ai_ui.current_view_player == 0, "Deep AI match exposed the AI player view")
+	_check(not ai_ui.modal_layer.visible,
+		"Deep AI match opened the local privacy overlay")
 	ai_ui._stop_ai()
 	ai_ui.queue_free()
 
@@ -681,6 +692,18 @@ func _run_phase_five_foundation_tests() -> void:
 			return card_id.is_empty()),
 		"Network player view reconstructed hidden hand identities",
 	)
+	var main_scene := load("res://scenes/main/main.tscn") as PackedScene
+	for view_row in [
+		{"view": host_view, "player": 0, "label": "host"},
+		{"view": client_view, "player": 1, "label": "client"},
+	]:
+		var network_view_ui := main_scene.instantiate()
+		root.add_child(network_view_ui)
+		network_view_ui.initialize_ui()
+		network_view_ui._apply_network_view(view_row["view"], int(view_row["player"]))
+		_check(not network_view_ui.modal_layer.visible,
+			"Network %s view opened the local privacy overlay" % view_row["label"])
+		network_view_ui.queue_free()
 	var legal: Array = host_view["legal_actions"]
 	_check(not legal.is_empty(), "Authoritative session produced no setup action")
 	if not legal.is_empty():
@@ -1199,6 +1222,8 @@ func _run_visual_upgrade_tests() -> void:
 	modal_ui._show_help()
 	_check(modal_ui.modal_layer.visible,
 		"Help modal did not open from the main shell")
+	_check(is_equal_approx(float(modal_ui.modal_shade.color.a), 0.86),
+		"Title help modal did not use the default translucent shade")
 	modal_ui._close_modal()
 	var distribute_request := ChoiceRequest.new(
 		"choice:test:energy",
@@ -1224,6 +1249,27 @@ func _run_visual_upgrade_tests() -> void:
 		"pokemon:0:active:sv1-104",
 	], "Energy distribution choice did not preserve repeated option IDs")
 	modal_ui.queue_free()
+
+	var privacy_ui := main_scene.instantiate()
+	root.add_child(privacy_ui)
+	privacy_ui.initialize_ui()
+	_check(
+		privacy_ui.start_local_match_for_test("fire", "water", 20260621),
+		"Unable to start local match for privacy modal test",
+	)
+	_check(privacy_ui.modal_layer.visible,
+		"Local match did not open the privacy pass overlay")
+	_check(float(privacy_ui.modal_shade.color.a) >= 0.99,
+		"Local privacy pass overlay did not use an opaque shade")
+	privacy_ui._show_pause_overlay()
+	_check(float(privacy_ui.modal_shade.color.a) >= 0.99,
+		"Pause menu did not use an opaque privacy shade")
+	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
+	privacy_ui.show_title()
+	privacy_ui._show_help()
+	_check(is_equal_approx(float(privacy_ui.modal_shade.color.a), 0.86),
+		"Title help modal retained an opaque in-game shade")
+	privacy_ui.queue_free()
 
 	var workbench_scene := load("res://tools/ui_workbench.tscn") as PackedScene
 	_check(workbench_scene != null, "UI Workbench scene failed to load")
@@ -1344,6 +1390,239 @@ func _run_visual_upgrade_tests() -> void:
 		_check(not trainer_view._pending_action_rows.is_empty(),
 			"Direct trainer action was not placed on the selected card")
 		battle.update_view(state, 0, rows, "", false, "local")
+		var fallback_start := Vector2(321, 654)
+		var non_first_expected: Vector2 = (
+			battle._effects_local(battle.hand_views[1].global_center())
+		)
+		var non_first_starts: Array[Vector2] = battle._discard_hand_start_points(
+			["sv1-ener-5"], 1, fallback_start)
+		_check(
+			non_first_starts.size() == 1
+			and non_first_starts[0].distance_to(non_first_expected) < 0.01,
+			"Discard animation did not start from the matching non-first hand card",
+		)
+		state.players[0].hand = [
+			"sv1-104", "sv1-ener-5", "sv1-104", "sv1-189",
+		]
+		battle.update_view(state, 0, rows, "", false, "local")
+		var duplicate_expected_a: Vector2 = (
+			battle._effects_local(battle.hand_views[0].global_center())
+		)
+		var duplicate_expected_b: Vector2 = (
+			battle._effects_local(battle.hand_views[2].global_center())
+		)
+		var duplicate_starts: Array[Vector2] = battle._discard_hand_start_points(
+			["sv1-104", "sv1-104"], 2, fallback_start)
+		_check(
+			duplicate_starts.size() == 2
+			and duplicate_starts[0].distance_to(duplicate_expected_a) < 0.01
+			and duplicate_starts[1].distance_to(duplicate_expected_b) < 0.01,
+			"Discard animation did not consume duplicate hand-card starts in order",
+		)
+		var missing_starts: Array[Vector2] = battle._discard_hand_start_points(
+			["missing-card"], 1, fallback_start)
+		_check(
+			missing_starts.size() == 1 and missing_starts[0] == fallback_start,
+			"Discard animation did not fall back when a card identity is absent",
+		)
+		var anonymous_starts: Array[Vector2] = battle._discard_hand_start_points(
+			[], 2, fallback_start)
+		_check(
+			anonymous_starts.size() == 2
+			and anonymous_starts[0] == fallback_start
+			and anonymous_starts[1] == fallback_start,
+			"Discard animation did not fall back for anonymous discard events",
+		)
+		state.players[0].hand = ["sv1-104", "sv1-ener-5"]
+		state.players[0].deck = ["sv1-151"]
+		battle.update_view(state, 0, rows, "", false, "local")
+		var draw_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		state.players[0].deck.clear()
+		state.players[0].hand.append("sv1-151")
+		battle.update_view(state, 0, rows, "", false, "local")
+		var draw_event := {
+			"event_type": "cards_drawn",
+			"actor": 0,
+			"visibility": "owner",
+			"card_id": "sv1-151",
+			"source": {"player": 0, "zone": "deck"},
+			"target": {"player": 0, "zone": "hand"},
+			"data": {
+				"player": 0,
+				"count": 1,
+				"card_ids": ["sv1-151"],
+			},
+		}
+		battle.play_presentation([draw_event], 41, 0, draw_snapshot)
+		var drawn_view: Variant = battle.hand_views[2]
+		_check(
+			drawn_view.is_presentation_hidden(),
+			"Draw animation exposed the new hand card before landing",
+		)
+		var normalized_draw := PresentationEvent.normalize(draw_event, 41, 0, 0)
+		var draw_target_points: Array[Vector2] = battle._target_points_for_event(
+			{"player": 0, "zone": "hand"},
+			["sv1-151"],
+			1,
+			Vector2.ZERO,
+			normalized_draw,
+		)
+		_check(
+			draw_target_points.size() == 1
+			and draw_target_points[0].distance_to(
+				battle._effects_local(drawn_view.global_center())) < 0.01,
+			"Draw animation did not land on the actual final hand-card position",
+		)
+		battle._on_presentation_event_finished(normalized_draw)
+		_check(
+			not drawn_view.is_presentation_hidden(),
+			"Draw animation did not reveal the hand card after landing",
+		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+
+		state.players[0].hand = ["sv1-104", "sv1-ener-5", "sv1-104"]
+		state.players[0].discard.clear()
+		battle.update_view(state, 0, rows, "", false, "local")
+		var discard_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		var discard_expected: Vector2 = (
+			battle._effects_local(battle.hand_views[1].global_center())
+		)
+		state.players[0].hand = ["sv1-104", "sv1-104"]
+		state.players[0].discard = ["sv1-ener-5"]
+		battle.update_view(state, 0, rows, "", false, "local")
+		battle._presentation_snapshot = discard_snapshot
+		var snapshot_discard_starts: Array[Vector2] = (
+			battle._source_points_for_event(
+				{"player": 0, "zone": "hand"},
+				["sv1-ener-5"],
+				1,
+				fallback_start,
+			)
+		)
+		_check(
+			snapshot_discard_starts.size() == 1
+			and snapshot_discard_starts[0].distance_to(discard_expected) < 0.01,
+			"Discard animation did not use the pre-refresh hand snapshot",
+		)
+
+		state.players[0].hand = ["svi-chim", "sv1-ener-5"]
+		state.players[0].bench[0] = null
+		battle.update_view(state, 0, rows, "", false, "local")
+		var play_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		var play_start_expected: Vector2 = (
+			battle._effects_local(battle.hand_views[0].global_center())
+		)
+		state.players[0].hand = ["sv1-ener-5"]
+		state.players[0].bench[0] = PokemonState.new("svi-chim")
+		battle.update_view(state, 0, rows, "", false, "local")
+		var play_event := {
+			"event_type": "pokemon_played",
+			"actor": 0,
+			"card_id": "svi-chim",
+			"source": {"player": 0, "zone": "hand", "index": 0},
+			"target": {"player": 0, "slot": "bench_0"},
+			"data": {
+				"player": 0,
+				"slot": "bench_0",
+				"card_id": "svi-chim",
+			},
+		}
+		battle.play_presentation([play_event], 42, 0, play_snapshot)
+		var played_slot: Variant = battle.get_slot_view(0, "bench_0")
+		_check(
+			played_slot.is_presentation_hidden(),
+			"Played Pokemon target slot was visible before the card landed",
+		)
+		var play_starts: Array[Vector2] = battle._source_points_for_event(
+			{"player": 0, "zone": "hand", "index": 0},
+			["svi-chim"],
+			1,
+			fallback_start,
+		)
+		_check(
+			play_starts.size() == 1
+			and play_starts[0].distance_to(play_start_expected) < 0.01,
+			"Played Pokemon did not fly from its old hand-card position",
+		)
+		var normalized_play := PresentationEvent.normalize(play_event, 42, 0, 0)
+		battle._on_presentation_event_finished(normalized_play)
+		_check(
+			not played_slot.is_presentation_hidden(),
+			"Played Pokemon target slot did not reveal after landing",
+		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+
+		state.players[0].hand = ["sv1-189"]
+		state.stadium_card_id = ""
+		battle.update_view(state, 0, rows, "", false, "local")
+		var stadium_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		state.players[0].hand.clear()
+		state.stadium_card_id = "sv1-189"
+		battle.update_view(state, 0, rows, "", false, "local")
+		var stadium_event := {
+			"event_type": "stadium_changed",
+			"actor": 0,
+			"card_id": "sv1-189",
+			"source": {"player": 0, "zone": "hand", "index": 0},
+			"target": {"player": 0, "zone": "stadium"},
+			"data": {"player": 0, "card_id": "sv1-189"},
+		}
+		battle.play_presentation([stadium_event], 43, 0, stadium_snapshot)
+		var stadium_zone: Variant = battle.zones["stadium"]
+		_check(
+			stadium_zone.is_presentation_hidden(),
+			"Stadium zone exposed the new card before landing",
+		)
+		battle._on_presentation_event_finished(
+			PresentationEvent.normalize(stadium_event, 43, 0, 0))
+		_check(
+			not stadium_zone.is_presentation_hidden(),
+			"Stadium zone did not reveal after the card landed",
+		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+
+		var settings_node: Node = root.get_node("AppSettings")
+		var previous_animation_mode := str(settings_node.get("animation_mode"))
+		settings_node.call(
+			"update",
+			float(settings_node.get("master_volume")),
+			bool(settings_node.get("muted")),
+			true,
+			int(settings_node.get("card_cache_size")),
+			"reduced",
+		)
+		state.players[0].hand = ["sv1-104"]
+		state.players[0].deck = ["sv1-151"]
+		battle.update_view(state, 0, rows, "", false, "local")
+		var reduced_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		state.players[0].deck.clear()
+		state.players[0].hand.append("sv1-151")
+		battle.update_view(state, 0, rows, "", false, "local")
+		battle.play_presentation([draw_event], 44, 0, reduced_snapshot)
+		var reduced_drawn: Variant = battle.hand_views[1]
+		_check(
+			reduced_drawn.is_presentation_hidden(),
+			"Reduced motion draw exposed the new hand card before reveal",
+		)
+		battle._on_presentation_event_finished(
+			PresentationEvent.normalize(draw_event, 44, 0, 0))
+		_check(
+			not reduced_drawn.is_presentation_hidden(),
+			"Reduced motion draw did not reveal the hand card",
+		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+		settings_node.call(
+			"update",
+			float(settings_node.get("master_volume")),
+			bool(settings_node.get("muted")),
+			previous_animation_mode == "reduced",
+			int(settings_node.get("card_cache_size")),
+			previous_animation_mode,
+		)
 		first_hand.configure_target(0, "active")
 		_check(first_hand._can_drop_data(Vector2.ZERO, {
 			"kind": "hand_card",

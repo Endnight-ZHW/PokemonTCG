@@ -63,6 +63,8 @@ var _content_signature := ""
 var _actions_signature := ""
 var _pending_action_rows: Array[Dictionary] = []
 var _pending_action_hint := ""
+var _presentation_hidden := false
+var _presentation_tween: Tween
 
 
 func _ready() -> void:
@@ -200,6 +202,34 @@ func set_targetable(value: bool) -> void:
 func set_empty_label(text: String) -> void:
 	if empty_label:
 		empty_label.text = text
+
+
+func set_presentation_hidden(value: bool) -> void:
+	_presentation_hidden = value
+	_kill_presentation_tween()
+	modulate.a = 0.0 if value else 1.0
+
+
+func reveal_presentation(duration: float = 0.14, delay: float = 0.0) -> void:
+	_presentation_hidden = false
+	_kill_presentation_tween()
+	if duration <= 0.0:
+		modulate.a = 1.0
+		return
+	_presentation_tween = create_tween()
+	if delay > 0.0:
+		_presentation_tween.tween_interval(delay)
+	_presentation_tween.tween_property(self, "modulate:a", 1.0, duration)
+
+
+func clear_presentation_state() -> void:
+	_presentation_hidden = false
+	_kill_presentation_tween()
+	modulate.a = 1.0
+
+
+func is_presentation_hidden() -> bool:
+	return _presentation_hidden
 
 
 func global_center() -> Vector2:
@@ -495,3 +525,9 @@ func _build_content_signature(
 		p_slot,
 		str(p_compact),
 	]
+
+
+func _kill_presentation_tween() -> void:
+	if _presentation_tween and _presentation_tween.is_valid():
+		_presentation_tween.kill()
+	_presentation_tween = null

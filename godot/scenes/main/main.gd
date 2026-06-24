@@ -20,6 +20,8 @@ const MODE_LOCAL := "local"
 const MODE_CHALLENGE := "challenge"
 const MODE_DEEP := "deep"
 const MODE_NETWORK := "network"
+const MODAL_SHADE_ALPHA := 0.86
+const MODAL_SHADE_OPAQUE_ALPHA := 1.0
 
 var catalog := CardCatalog.new()
 var engine := GameEngine.new(catalog)
@@ -344,6 +346,12 @@ func _poll_network() -> void:
 func _apply_network_view(view: Dictionary, player: int) -> void:
 	if view.is_empty() or not view.get("state") is Dictionary:
 		return
+	var had_game_screen := current_screen == SCREEN_GAME and battle_screen != null
+	var presentation_snapshot := (
+		battle_screen.capture_presentation_snapshot()
+		if had_game_screen
+		else {}
+	)
 	game_mode = MODE_NETWORK
 	network_player_idx = player
 	current_view_player = player
@@ -363,11 +371,12 @@ func _apply_network_view(view: Dictionary, player: int) -> void:
 		_refresh_game()
 	if battle_screen:
 		var presentation_events: Array = view.get("presentation_events", [])
-		if not presentation_events.is_empty():
+		if had_game_screen and not presentation_events.is_empty():
 			battle_screen.play_presentation(
 				presentation_events,
 				state.revision,
 				state.active_player_idx,
+				presentation_snapshot,
 			)
 	if (
 		network_choice_request != null
@@ -517,7 +526,11 @@ func _start_match(
 			"Deep AI 模型不可用，将自动回退 Challenge AI：%s" % deep_runtime.last_error,
 			true,
 		)
-	_show_pass_overlay(0, "准备阶段", "玩家 1 放置战斗宝可梦，可继续放置备战宝可梦。")
+	if game_mode == MODE_LOCAL:
+		_show_pass_overlay(0, "准备阶段", "玩家 1 放置战斗宝可梦，可继续放置备战宝可梦。")
+	else:
+		_refresh_game()
+		_maybe_start_ai()
 	return true
 
 
@@ -704,6 +717,11 @@ func _execute_action(action: GameAction) -> StepResult:
 	action.action_id = "local:%d:%d" % [state.revision, action_sequence]
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
+	var presentation_snapshot := (
+		battle_screen.capture_presentation_snapshot()
+		if battle_screen
+		else {}
+	)
 	var result := engine.apply_action(state, action, rng)
 	if not result.success:
 		_show_toast(result.message, true)
@@ -711,8 +729,14 @@ func _execute_action(action: GameAction) -> StepResult:
 		return result
 	selected_entity_key = ""
 	_show_toast(result.message if not result.message.is_empty() else "动作完成。")
+	_refresh_game()
 	if battle_screen and not result.events.is_empty():
-		battle_screen.play_presentation(result.events, state.revision, action.actor)
+		battle_screen.play_presentation(
+			result.events,
+			state.revision,
+			action.actor,
+			presentation_snapshot,
+		)
 	var pending_choice := _step_pending_choice(result)
 	if pending_choice:
 		if game_mode != MODE_LOCAL and pending_choice.player == 1:
@@ -933,6 +957,11 @@ func _confirm_choice() -> void:
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
+	var presentation_snapshot := (
+		battle_screen.capture_presentation_snapshot()
+		if battle_screen
+		else {}
+	)
 	var result := engine.apply_choice(
 		state,
 		request,
@@ -944,8 +973,14 @@ func _confirm_choice() -> void:
 		_show_toast(result.message, true)
 		_refresh_game()
 		return
+	_refresh_game()
 	if battle_screen and not result.events.is_empty():
-		battle_screen.play_presentation(result.events, state.revision, request.player)
+		battle_screen.play_presentation(
+			result.events,
+			state.revision,
+			request.player,
+			presentation_snapshot,
+		)
 	var pending_choice := _step_pending_choice(result)
 	if pending_choice:
 		if game_mode != MODE_LOCAL and pending_choice.player == 1:
@@ -990,8 +1025,7 @@ func _step_pending_choice(result: StepResult) -> ChoiceRequest:
 
 
 func _show_pass_overlay(player_idx: int, heading: String, body: String) -> void:
-	_open_modal(heading, "显示玩家 %d 手牌" % (player_idx + 1), "")
-	modal_shade.color.a = 1.0
+	_open_modal(heading, "显示玩家 %d 手牌" % (player_idx + 1), "", true)
 	var privacy := PRIVACY_PANEL_SCENE.instantiate() as PrivacyPanel
 	modal_body.add_child(privacy)
 	privacy.configure(body)
@@ -1007,7 +1041,7 @@ func _show_pause_overlay() -> void:
 		ai_coordinator.cancel_and_wait()
 		ai_thinking = false
 		_refresh_game()
-	_open_modal("对局菜单", "继续对局", "返回标题")
+	_open_modal("对局菜单", "继续对局", "返回标题", true)
 	var pause_panel := PAUSE_PANEL_SCENE.instantiate() as PausePanel
 	modal_body.add_child(pause_panel)
 	pause_panel.configure(
@@ -1040,7 +1074,7 @@ func _show_pause_overlay() -> void:
 
 func _show_help(resume_ai_on_close: bool = false) -> void:
 	_play_click()
-	_open_modal("规则与操作帮助", "关闭", "")
+	_open_modal("规则与操作帮助", "关闭", "", current_screen == SCREEN_GAME)
 	modal_panel.custom_minimum_size = Vector2(760, 680)
 	var intro := _modal_label(
 		"对战目标是在规则允许的动作中击倒对手宝可梦、拿完奖品，或让对手场上没有宝可梦。",
@@ -1092,7 +1126,7 @@ func _show_card_inspector(context: Dictionary) -> void:
 	_play_click()
 	var card := catalog.get_card(card_id)
 	var title := str(card.get("name", card_id))
-	_open_modal(title, "关闭", "")
+	_open_modal(title, "关闭", "", current_screen == SCREEN_GAME)
 	modal_panel.custom_minimum_size = Vector2(860, 700)
 	var location := str(context.get("location", ""))
 	if not location.is_empty():
@@ -1132,7 +1166,7 @@ func _show_zone_inspector(context: Dictionary) -> void:
 		_player_name_for_context(int(context.get("player", -1))),
 		str(context.get("title", context.get("zone", "区域"))),
 	]
-	_open_modal(title.strip_edges(), "关闭", "")
+	_open_modal(title.strip_edges(), "关闭", "", current_screen == SCREEN_GAME)
 	modal_panel.custom_minimum_size = Vector2(820, 680)
 	var hidden := bool(context.get("hidden", false))
 	var count := int(context.get("count", 0))
@@ -1218,7 +1252,7 @@ func _show_deck_details(deck_key: String) -> void:
 
 func _show_settings() -> void:
 	_play_click()
-	_open_modal("设置", "保存", "取消")
+	_open_modal("设置", "保存", "取消", current_screen == SCREEN_GAME)
 	var panel := SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	modal_body.add_child(panel)
 	panel.configure()
@@ -1301,7 +1335,12 @@ func _hide_loading() -> void:
 		loading_layer.visible = false
 
 
-func _open_modal(title_text: String, confirm_text: String, cancel_text: String) -> void:
+func _open_modal(
+	title_text: String,
+	confirm_text: String,
+	cancel_text: String,
+	opaque_shade: bool = false,
+) -> void:
 	_modal_generation += 1
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
@@ -1312,7 +1351,9 @@ func _open_modal(title_text: String, confirm_text: String, cancel_text: String) 
 	modal_confirm.disabled = false
 	modal_cancel.text = cancel_text
 	modal_cancel.visible = not cancel_text.is_empty()
-	modal_shade.color.a = 0.86
+	modal_shade.color.a = (
+		MODAL_SHADE_OPAQUE_ALPHA if opaque_shade else MODAL_SHADE_ALPHA
+	)
 	modal_layer.visible = true
 	if AppSettings.reduced_motion:
 		modal_panel.modulate.a = 1.0
@@ -1356,6 +1397,7 @@ func _finish_modal_close(generation: int) -> void:
 	modal_layer.visible = false
 	if modal_body:
 		_free_children_immediate(modal_body)
+	modal_shade.color.a = MODAL_SHADE_ALPHA
 	modal_panel.modulate = Color.WHITE
 	modal_panel.scale = Vector2.ONE
 
@@ -1737,6 +1779,11 @@ func _apply_ai_result(result: Dictionary) -> void:
 		)
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
+	var presentation_snapshot := (
+		battle_screen.capture_presentation_snapshot()
+		if battle_screen
+		else {}
+	)
 	var step: StepResult
 	if str(result.get("kind", "")) == "choice":
 		var stack_request := ResolutionStack.from_dict(state.resolution_stack).pending_request
@@ -1757,8 +1804,14 @@ func _apply_ai_result(result: Dictionary) -> void:
 		_show_toast("AI 动作被规则拒绝：%s" % step.message, true)
 		_maybe_start_ai()
 		return
+	_refresh_game()
 	if battle_screen and not step.events.is_empty():
-		battle_screen.play_presentation(step.events, state.revision, 1)
+		battle_screen.play_presentation(
+			step.events,
+			state.revision,
+			1,
+			presentation_snapshot,
+		)
 	_show_toast(step.message if not step.message.is_empty() else "AI 完成动作。")
 	_continue_after_ai_step(step, previous_active, previous_phase)
 
