@@ -32,21 +32,23 @@ static func battle_state(seed: int = DEFAULT_SEED) -> GameState:
 		"sv1-151",
 		"svi-jete",
 	]
-	state.players[0].deck = [
-		"sv1-ener-2",
-		"svi-chim",
-		"sv1-189",
-		"svf-potion",
-	]
+	state.players[0].deck = []
+	for index in range(43):
+		state.players[0].deck.append([
+			"sv1-ener-2",
+			"svi-chim",
+			"sv1-189",
+			"svf-potion",
+		][index % 4])
 	state.players[0].discard = ["sv1-104"]
 	state.players[0].prizes = [
-		"svi-flam", "svi-ente", "sv1-ener-2", "sv1-151", "sv1-189", "svf-potion",
+		"svi-flam", "svi-ente", "sv1-ener-2", "sv1-151",
 	]
-	state.players[1].hand = ["", "", "", "", ""]
-	for _index in range(rng.randi_range(34, 38)):
+	state.players[1].hand = ["", "", "", "", "", ""]
+	for _index in range(43):
 		state.players[1].deck.append("")
 	state.players[1].discard = ["sv2-38"]
-	for _index in range(4):
+	for _index in range(6):
 		state.players[1].prizes.append("")
 	state.action_log = [
 		"预览玩家抽了一张卡。",

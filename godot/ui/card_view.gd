@@ -275,7 +275,7 @@ func _refresh() -> void:
 	var frame_color := Color("#15253a")
 	var border_color := DesignTokens.BORDER
 	if is_hidden_card:
-		image.texture = CardTextureCache.get_texture("res://assets/cards/card_back.webp")
+		image.texture = _card_texture("res://assets/cards/card_back.webp")
 		empty_label.visible = false
 		info_panel.visible = false
 		frame_color = Color("#15284e")
@@ -287,8 +287,8 @@ func _refresh() -> void:
 		frame_color = Color(0.04, 0.10, 0.08, 0.42)
 		border_color = Color(0.30, 0.58, 0.42, 0.52)
 	else:
-		var card := CardDatabase.get_card(card_id)
-		image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
+		var card := _card_data(card_id)
+		image.texture = _card_texture(str(card.get("image_path", "")))
 		empty_label.visible = image.texture == null
 		empty_label.text = str(card.get("name", card_id))
 		info_panel.visible = pokemon != null and not compact
@@ -465,7 +465,7 @@ func _update_lift() -> void:
 		action_overlay.visible = selected and (
 			action_buttons.get_child_count() > 0 or action_hint.visible
 		)
-	if AppSettings.reduced_motion:
+	if _reduced_motion_enabled():
 		scale = desired_scale
 		position.y = desired_y
 		return
@@ -487,7 +487,7 @@ func _refresh_state_animation() -> void:
 	if animation_player == null:
 		return
 	animation_player.stop()
-	if AppSettings.reduced_motion:
+	if _reduced_motion_enabled():
 		animation_player.play("RESET")
 		return
 	if selected:
@@ -531,3 +531,37 @@ func _kill_presentation_tween() -> void:
 	if _presentation_tween and _presentation_tween.is_valid():
 		_presentation_tween.kill()
 	_presentation_tween = null
+
+
+func _card_data(value: String) -> Dictionary:
+	var database := _root_child("CardDatabase")
+	if database and database.has_method("get_card"):
+		return database.call("get_card", value)
+	if catalog:
+		return catalog.get_card(value)
+	return {}
+
+
+func _card_texture(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	var texture_cache := _root_child("CardTextureCache")
+	if texture_cache and texture_cache.has_method("get_texture"):
+		return texture_cache.call("get_texture", path) as Texture2D
+	return (
+		load(path) as Texture2D
+		if ResourceLoader.exists(path)
+		else null
+	)
+
+
+func _reduced_motion_enabled() -> bool:
+	var settings := _root_child("AppSettings")
+	return bool(settings.get("reduced_motion")) if settings else false
+
+
+func _root_child(node_name: String) -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(node_name)

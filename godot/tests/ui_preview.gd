@@ -107,12 +107,17 @@ func _render_previews() -> void:
 	demo.players[0].hand = [
 		"sv1-ener-2", "sv1-189", "svf-potion", "sv1-151", "svi-jete",
 	]
-	demo.players[0].deck = ["sv1-ener-2", "svi-chim", "sv1-189"]
-	demo.players[1].deck = ["sv1-ener-3", "sv2-keldeo", "sv2-starm"]
+	for index in range(43):
+		demo.players[0].deck.append([
+			"sv1-ener-2", "svi-chim", "sv1-189", "svf-potion",
+		][index % 4])
+	for _index in range(43):
+		demo.players[1].deck.append("")
 	demo.players[0].discard = ["sv1-180"]
 	demo.players[1].discard = ["sv1-176"]
-	demo.players[0].prizes = ["sv1-ener-2", "sv1-151", "sv1-189"]
-	demo.players[1].prizes = ["sv1-ener-3", "sv2-catch"]
+	demo.players[0].prizes = ["sv1-ener-2", "sv1-151", "sv1-189", "svf-potion"]
+	demo.players[1].prizes = ["", "", "", "", "", ""]
+	demo.players[1].hand = ["", "", "", "", "", ""]
 	demo.log_action("玩家1附着了火能量。")
 	demo.log_action("玩家2的宝可梦受到40点伤害。")
 	ui.state = demo

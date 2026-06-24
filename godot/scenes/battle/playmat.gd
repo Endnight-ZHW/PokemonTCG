@@ -24,41 +24,88 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	var rect := Rect2(Vector2.ZERO, size)
-	draw_rect(rect, Color("#09150f"))
-	var bands := 24 if quality_profile == "low" else 40
+	draw_rect(rect, Color("#070b13"))
+	var middle := size.y * 0.49
+	var bands := 18 if quality_profile == "low" else 34
 	for index in range(bands):
 		var t := float(index) / float(bands)
-		var color := Color("#172b1d").lerp(Color("#0b1511"), t)
+		var y := size.y * t
+		var top_side := y < middle
+		var local_t := y / middle if top_side else (y - middle) / maxf(1.0, size.y - middle)
+		var color := (
+			Color("#3b0610").lerp(Color("#120913"), local_t)
+			if top_side
+			else Color("#031b54").lerp(Color("#06101f"), local_t)
+		)
 		draw_rect(
-			Rect2(0, size.y * t, size.x, size.y / float(bands) + 1.0),
+			Rect2(0, y, size.x, size.y / float(bands) + 1.0),
 			color,
 		)
-	var grid_alpha := 0.055 if quality_profile == "high" else 0.035
-	var grid_color := Color(0.48, 0.75, 0.58, grid_alpha)
-	for x in range(0, int(size.x), 64):
-		draw_line(Vector2(x, 0), Vector2(x, size.y), grid_color, 1.0)
-	for y in range(0, int(size.y), 64):
-		draw_line(Vector2(0, y), Vector2(size.x, y), grid_color, 1.0)
-	var middle := size.y * 0.48
+
+	var rail_height := maxf(38.0, size.y * 0.065)
+	draw_rect(Rect2(0, 0, size.x, rail_height), Color(0.64, 0.03, 0.08, 0.5))
 	draw_rect(
-		Rect2(0, 0, size.x, middle),
-		Color(0.16, 0.28, 0.42, 0.08),
+		Rect2(0, size.y - rail_height, size.x, rail_height),
+		Color(0.04, 0.20, 0.72, 0.52),
 	)
-	draw_rect(
-		Rect2(0, middle, size.x, size.y - middle),
-		Color(0.45, 0.30, 0.12, 0.07),
-	)
-	var pulse := 0.08
-	if quality_profile != "low":
-		pulse += sin(_time * 0.7) * 0.018
-	draw_circle(
-		Vector2(size.x * 0.5, size.y * 0.48),
-		minf(size.x, size.y) * 0.34,
-		Color(0.22, 0.62, 0.38, pulse),
+	var accent := Color("#f4e94a")
+	accent.a = 0.72
+	draw_line(
+		Vector2(48, rail_height + 8),
+		Vector2(size.x - 48, rail_height + 8),
+		accent,
+		3.0,
 	)
 	draw_line(
-		Vector2(20, middle),
-		Vector2(size.x - 20, middle),
-		Color(0.62, 0.85, 0.68, 0.2),
+		Vector2(48, size.y - rail_height - 8),
+		Vector2(size.x - 48, size.y - rail_height - 8),
+		accent,
+		3.0,
+	)
+
+	var inset_x := maxf(42.0, size.x * 0.055)
+	var inset_y := maxf(74.0, size.y * 0.11)
+	var corner_cut := maxf(46.0, minf(size.x, size.y) * 0.075)
+	var table_points := PackedVector2Array([
+		Vector2(inset_x + corner_cut, inset_y),
+		Vector2(size.x - inset_x - corner_cut, inset_y),
+		Vector2(size.x - inset_x, inset_y + corner_cut),
+		Vector2(size.x - inset_x, size.y - inset_y - corner_cut),
+		Vector2(size.x - inset_x - corner_cut, size.y - inset_y),
+		Vector2(inset_x + corner_cut, size.y - inset_y),
+		Vector2(inset_x, size.y - inset_y - corner_cut),
+		Vector2(inset_x, inset_y + corner_cut),
+	])
+	draw_colored_polygon(table_points, Color(0.10, 0.14, 0.20, 0.82))
+	var table_outline := table_points.duplicate()
+	table_outline.append(table_points[0])
+	draw_polyline(table_outline, Color(0.52, 0.58, 0.66, 0.58), 4.0)
+	draw_polyline(table_outline, Color(0.02, 0.03, 0.05, 0.74), 1.0)
+
+	var grid_alpha := 0.05 if quality_profile == "high" else 0.028
+	var grid_color := Color(0.72, 0.82, 0.92, grid_alpha)
+	var grid_step := 58 if quality_profile == "high" else 82
+	for x in range(int(inset_x), int(size.x - inset_x), grid_step):
+		draw_line(Vector2(x, inset_y), Vector2(x, size.y - inset_y), grid_color, 1.0)
+	for y in range(int(inset_y), int(size.y - inset_y), grid_step):
+		draw_line(Vector2(inset_x, y), Vector2(size.x - inset_x, y), grid_color, 1.0)
+
+	var pulse := 0.06
+	if quality_profile != "low":
+		pulse += sin(_time * 0.7) * 0.014
+	draw_circle(
+		Vector2(size.x * 0.5, middle),
+		minf(size.x, size.y) * 0.31,
+		Color(0.82, 0.88, 1.0, pulse),
+	)
+	draw_circle(
+		Vector2(size.x * 0.5, middle),
+		minf(size.x, size.y) * 0.18,
+		Color(0.58, 0.72, 1.0, pulse * 0.7),
+	)
+	draw_line(
+		Vector2(inset_x + 14, middle),
+		Vector2(size.x - inset_x - 14, middle),
+		Color(0.86, 0.91, 1.0, 0.32),
 		2.0,
 	)

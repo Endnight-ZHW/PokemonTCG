@@ -1344,6 +1344,12 @@ func _run_visual_upgrade_tests() -> void:
 		state.players[0].active.attached_tool_id = "sv1-202"
 		state.players[0].discard = ["sv1-180", "sv1-189"]
 		state.players[0].prizes = ["sv1-151", "sv1-153"]
+		state.players[1].hand = [
+			"sv1-104", "sv1-151", "sv1-153", "sv1-189", "svf-potion", "sv1-ener-5",
+		]
+		state.players[1].deck = []
+		for _index in range(43):
+			state.players[1].deck.append("")
 		var engine := GameEngine.new(CardCatalog.new())
 		var rows: Array[Dictionary] = []
 		for action in engine.legal_actions(state, 0, true):
@@ -1356,8 +1362,28 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		_check(battle.hand_views.size() == 4,
 			"Battle screen did not create stable hand card views")
+		_check(
+			battle.find_child("OpponentHandSurface", true, false) != null,
+			"Battle screen is missing the opponent hand surface",
+		)
+		_check(battle.opponent_hand_views.size() == 6,
+			"Battle screen did not create opponent hand card-back views")
+		for opponent_hand_view in battle.opponent_hand_views:
+			var hidden_view := opponent_hand_view as CardView
+			_check(
+				hidden_view.is_hidden_card
+				and hidden_view.card_id.is_empty()
+				and hidden_view.hand_index == -1,
+				"Opponent hand view leaked card identity or became interactive",
+			)
 		_check(battle.zones.size() == 7,
 			"Battle screen does not expose every required tabletop zone")
+		_check(
+			(battle.zones["opponent_deck"] as ZoneView).stack_visual_mode == "deck"
+			and (battle.zones["own_deck"] as ZoneView).stack_visual_mode == "deck"
+			and (battle.zones["own_prizes"] as ZoneView).stack_visual_mode == "prizes",
+			"Battle zones did not enable deck/prize stack visuals",
+		)
 		_check(battle.phase_advance_button != null,
 			"Battle screen is missing the dedicated phase advance button")
 		_check(not battle.quick_actions.is_visible_in_tree(),
@@ -1374,6 +1400,56 @@ func _run_visual_upgrade_tests() -> void:
 			"Prize zone inspector is not marked hidden")
 		_check(Array(prize_context.get("card_ids", [])).is_empty(),
 			"Prize zone inspector leaked hidden prize card IDs")
+		var opponent_draw_event := {
+			"event_type": "cards_drawn",
+			"actor": 1,
+			"visibility": "owner",
+			"card_id": "sv1-151",
+			"source": {"player": 1, "zone": "deck"},
+			"target": {"player": 1, "zone": "hand"},
+			"data": {
+				"player": 1,
+				"count": 1,
+				"card_ids": ["sv1-151"],
+			},
+		}
+		var normalized_opponent_draw := PresentationEvent.normalize(
+			opponent_draw_event, 40, 1, 0)
+		var opponent_target_points: Array[Vector2] = battle._target_points_for_event(
+			{"player": 1, "zone": "hand"},
+			[],
+			1,
+			battle.resolve_endpoint_center({"player": 1, "zone": "hand"}),
+			normalized_opponent_draw,
+		)
+		var opponent_target_view: Variant = battle.opponent_hand_views[-1]
+		var opponent_target_expected: Vector2 = battle._effects_local(
+			opponent_target_view.global_center())
+		_check(
+			opponent_target_points.size() == 1
+			and opponent_target_points[0].distance_to(opponent_target_expected) < 0.01,
+			"Opponent draw animation did not land on the visible opponent hand backs",
+		)
+		_check(
+			opponent_target_points[0].distance_to(battle._own_hand_center()) > 120.0,
+			"Opponent draw animation still targeted the local hand area",
+		)
+		_check(
+			battle._motion_card_hidden_from_view(
+				"sv1-151",
+				{"player": 1, "zone": "deck"},
+				{"player": 1, "zone": "hand"},
+			),
+			"Opponent hidden-zone card motion would reveal card identity",
+		)
+		_check(
+			not battle._motion_card_hidden_from_view(
+				"sv1-151",
+				{"player": 0, "zone": "deck"},
+				{"player": 0, "zone": "hand"},
+			),
+			"Local owner draw animation was incorrectly forced to card back",
+		)
 		var inspected_card := {}
 		battle.inspect_card_requested.connect(
 			func(context: Dictionary) -> void: inspected_card.merge(context, true)

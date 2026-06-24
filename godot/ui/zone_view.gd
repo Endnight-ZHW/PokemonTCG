@@ -13,6 +13,9 @@ var target_player := -1
 var target_slot := ""
 var inspect_context: Dictionary = {}
 var catalog := CardCatalog.new()
+var stack_visual_mode := ""
+var stack_visual_max_count := 0
+var stack_visual_direction := "up"
 
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
@@ -51,6 +54,18 @@ func configure(
 	inspect_context["card_id"] = card_id
 	inspect_context["hidden"] = is_hidden_zone
 	_refresh()
+	queue_redraw()
+
+
+func set_stack_visual(
+	mode: String,
+	max_count: int,
+	direction: String = "up",
+) -> void:
+	stack_visual_mode = mode
+	stack_visual_max_count = maxi(0, max_count)
+	stack_visual_direction = direction
+	queue_redraw()
 
 
 func set_action(row: Dictionary = {}) -> void:
@@ -94,6 +109,23 @@ func is_presentation_hidden() -> bool:
 	return _presentation_hidden
 
 
+func _draw() -> void:
+	if stack_visual_mode.is_empty() or count <= 0 or stack_visual_max_count <= 0:
+		return
+	var layers := _stack_layer_count()
+	var step := _stack_step()
+	for layer in range(layers, 0, -1):
+		var offset := step * float(layer)
+		var layer_rect := Rect2(offset, size)
+		var t := float(layer) / float(maxi(1, layers))
+		var fill := _stack_color().darkened(0.08 + t * 0.12)
+		fill.a = 0.64
+		var border := DesignTokens.BORDER.lightened(0.18)
+		border.a = 0.62
+		draw_rect(layer_rect, fill, true)
+		draw_rect(layer_rect, border, false, 1.0)
+
+
 func _refresh() -> void:
 	if not is_node_ready():
 		return
@@ -112,6 +144,7 @@ func _refresh() -> void:
 	)
 	empty_label.visible = image.texture == null
 	empty_label.text = "空%s" % title
+	queue_redraw()
 
 
 func _on_gui_input(event: InputEvent) -> void:
@@ -142,3 +175,33 @@ func _kill_presentation_tween() -> void:
 	if _presentation_tween and _presentation_tween.is_valid():
 		_presentation_tween.kill()
 	_presentation_tween = null
+
+
+func _stack_layer_count() -> int:
+	var ratio := clampf(
+		float(count) / float(maxi(1, stack_visual_max_count)),
+		0.0,
+		1.0,
+	)
+	var max_layers := 7 if stack_visual_mode == "deck" else 6
+	return clampi(int(ceil(ratio * float(max_layers))), 1, max_layers)
+
+
+func _stack_step() -> Vector2:
+	match stack_visual_direction:
+		"down":
+			return Vector2(3.0, 3.0)
+		"left":
+			return Vector2(-3.0, 2.0)
+		"right":
+			return Vector2(3.0, 2.0)
+	return Vector2(3.0, -3.0)
+
+
+func _stack_color() -> Color:
+	match stack_visual_mode:
+		"deck":
+			return Color("#2b3342")
+		"prizes":
+			return Color("#48313c")
+	return Color("#253240")

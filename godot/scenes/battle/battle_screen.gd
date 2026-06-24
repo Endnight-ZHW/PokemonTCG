@@ -19,16 +19,21 @@ const CARD_SCENE := preload("res://ui/card_view.tscn")
 
 @export_category("Table Layout")
 @export_group("HUD")
-@export var hud_width := 292.0
+@export var hud_width := 260.0
 @export_group("Board Cards")
-@export var active_card_size := Vector2(118, 164)
-@export var bench_card_size := Vector2(82, 114)
-@export var zone_size := Vector2(90, 128)
+@export var active_card_size := Vector2(112, 156)
+@export var bench_card_size := Vector2(76, 106)
+@export var zone_size := Vector2(86, 122)
 @export var bench_spacing := 14.0
 @export_group("Hand")
-@export var hand_card_size := Vector2(104, 146)
+@export var hand_card_size := Vector2(100, 140)
 @export var hand_minimum_spacing := 44.0
 @export var hand_rotation_degrees := 7.0
+@export_group("Opponent Hand")
+@export var opponent_hand_card_size := Vector2(70, 98)
+@export var opponent_hand_minimum_spacing := 24.0
+@export var opponent_hand_rotation_degrees := 6.0
+@export var opponent_hand_max_visible := 8
 @export_category("Presentation")
 @export_group("Refresh")
 @export var resync_fade_duration := 0.16
@@ -66,6 +71,8 @@ var phase_labels: Dictionary = {}
 @onready var detail_title: Label = %DetailTitle
 @onready var detail_text: RichTextLabel = %DetailText
 @onready var log_label: RichTextLabel = %LogLabel
+@onready var opponent_hand_surface: Control = %OpponentHandSurface
+@onready var opponent_hand_count_badge: Label = %OpponentHandCountBadge
 @onready var hand_scroll: ScrollContainer = %HandScroll
 @onready var hand_surface: Control = %HandSurface
 @onready var input_blocker: Control = %PresentationInputBlocker
@@ -78,6 +85,7 @@ var phase_labels: Dictionary = {}
 var opponent_bench: Array[CardView] = []
 var own_bench: Array[CardView] = []
 var hand_views: Array[CardView] = []
+var opponent_hand_views: Array[CardView] = []
 var zones: Dictionary = {}
 var slot_views: Dictionary = {}
 var _all_actions_expanded := false
@@ -146,6 +154,12 @@ func _resolve_scene_nodes() -> void:
 	log_label = get_node(
 		"BattleRoot/Body/BattleHUD/LogPanel/Content/LogLabel"
 	) as RichTextLabel
+	opponent_hand_surface = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentHandSurface"
+	) as Control
+	opponent_hand_count_badge = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentHandCountBadge"
+	) as Label
 	hand_scroll = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/HandScroll"
 	) as ScrollContainer
@@ -182,6 +196,7 @@ func update_view(
 		return
 	_refresh_header()
 	_refresh_field()
+	_refresh_opponent_hand()
 	_refresh_hand()
 	_refresh_actions()
 	_refresh_log()
@@ -272,6 +287,8 @@ func capture_presentation_snapshot() -> Dictionary:
 	var snapshot := {
 		"view_player": view_player,
 		"hand": [],
+		"opponent_hand": [],
+		"opponent_hand_center": _opponent_hand_center(),
 		"slots": {},
 		"zones": {},
 	}
@@ -283,6 +300,13 @@ func capture_presentation_snapshot() -> Dictionary:
 			"hand_index": view.hand_index,
 			"center": _effects_local(view.global_center()),
 			"hidden": view.is_hidden_card,
+		})
+	for view in opponent_hand_views:
+		if view == null or not view.visible:
+			continue
+		(snapshot["opponent_hand"] as Array).append({
+			"center": _effects_local(view.global_center()),
+			"hidden": true,
 		})
 	for key_value in slot_views.keys():
 		var key := str(key_value)
@@ -393,8 +417,10 @@ func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 		"stadium":
 			return _zone_center("stadium")
 		"hand":
-			return _effects_local(
-				hand_scroll.global_position + hand_scroll.size * Vector2(0.5, 0.5)
+			return (
+				_own_hand_center()
+				if player == view_player
+				else _opponent_hand_center()
 			)
 	return effects.size * Vector2(0.5, 0.5)
 
@@ -403,6 +429,23 @@ func _bind_scene_nodes() -> void:
 	hud.custom_minimum_size.x = hud_width
 	playmat.quality_profile = AppSettings.resolved_quality_profile()
 	effects.quality_profile = AppSettings.resolved_quality_profile()
+	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	opponent_hand_surface.z_index = 6
+	opponent_hand_count_badge.z_index = 12
+	opponent_hand_count_badge.add_theme_stylebox_override(
+		"normal",
+		DesignTokens.panel_style(
+			DesignTokens.GOLD,
+			15,
+			DesignTokens.TEXT,
+			1,
+			0,
+		),
+	)
+	opponent_hand_count_badge.add_theme_color_override(
+		"font_color",
+		DesignTokens.BG_DEEP,
+	)
 	phase_labels = {
 		"DRAW": get_node(
 			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/DrawPhase"
@@ -441,6 +484,10 @@ func _bind_scene_nodes() -> void:
 		"own_prizes": get_node(board_path + "OwnPrizes"),
 		"stadium": get_node(board_path + "Stadium"),
 	}
+	(zones["opponent_deck"] as ZoneView).set_stack_visual("deck", 60, "up")
+	(zones["own_deck"] as ZoneView).set_stack_visual("deck", 60, "down")
+	(zones["opponent_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
+	(zones["own_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
 	for view in [opponent_active, own_active] + opponent_bench + own_bench:
 		_bind_card_view(view)
 	for zone_value in zones.values():
@@ -607,6 +654,39 @@ func _refresh_hand() -> void:
 	_layout_hand()
 
 
+func _refresh_opponent_hand() -> void:
+	if opponent_hand_surface == null or state_ref == null:
+		return
+	var opponent_player := 1 - view_player
+	var hand_count := state_ref.get_player(opponent_player).hand.size()
+	var visible_count := mini(
+		maxi(0, hand_count),
+		maxi(0, opponent_hand_max_visible),
+	)
+	while opponent_hand_views.size() < visible_count:
+		var card := _new_card_view()
+		opponent_hand_surface.add_child(card)
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.focus_mode = Control.FOCUS_NONE
+		card.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		opponent_hand_views.append(card)
+	for index in range(opponent_hand_views.size()):
+		var view := opponent_hand_views[index]
+		if index >= visible_count:
+			view.visible = false
+			continue
+		view.visible = true
+		view.configure("", null, true, -1, opponent_player, "", true)
+		view.set_selected(false)
+		view.set_targetable(false)
+		view.set_actions([])
+		view.tooltip_text = "对手手牌（隐藏）"
+	opponent_hand_surface.visible = hand_count > 0
+	opponent_hand_count_badge.visible = hand_count > 0
+	opponent_hand_count_badge.text = str(hand_count)
+	_layout_opponent_hand()
+
+
 func _refresh_actions() -> void:
 	var phase_row: Dictionary = {}
 	var hand_rows: Dictionary = {}
@@ -740,73 +820,146 @@ func _layout_board() -> void:
 	var height := board_canvas.size.y
 	if width <= 0.0 or height <= 0.0:
 		return
-	var center_x := width * 0.5
-	var hand_height := 164.0
-	var field_bottom := height - hand_height
-	var middle_y := field_bottom * 0.5
+	var layout_scale := clampf(height / 840.0, 0.82, 1.0)
+	var active_size := active_card_size * layout_scale
+	var bench_size := bench_card_size * layout_scale
+	var zone_visual_size := zone_size * layout_scale
+	var own_hand_size := hand_card_size * layout_scale
+	var hidden_hand_size := opponent_hand_card_size * layout_scale
+	var margin := 18.0
+	var side_zone_x := width - zone_visual_size.x - 38.0
+	var left_zone_x := margin + 4.0
+	var left_safe := left_zone_x + zone_visual_size.x + 54.0
+	var right_safe := side_zone_x - 42.0
+	if right_safe <= left_safe + 320.0:
+		left_safe = margin + 8.0
+		right_safe = width - margin - 8.0
+	var table_width := maxf(260.0, right_safe - left_safe)
+	var center_x := (left_safe + right_safe) * 0.5
 
-	opponent_info.position = Vector2(18, 8)
-	opponent_info.size = Vector2(width - 36, 24)
-	own_info.position = Vector2(18, field_bottom - 26)
-	own_info.size = Vector2(width - 36, 24)
-	var bench_total := bench_card_size.x * 5.0 + bench_spacing * 4.0
+	var top_hand_height := hidden_hand_size.y + 28.0
+	var opponent_hand_width := minf(table_width, maxf(280.0, table_width * 0.58))
+	opponent_hand_surface.position = Vector2(
+		center_x - opponent_hand_width * 0.5,
+		10.0,
+	)
+	opponent_hand_surface.size = Vector2(opponent_hand_width, top_hand_height)
+	opponent_hand_count_badge.position = Vector2(
+		opponent_hand_surface.position.x + opponent_hand_surface.size.x - 18.0,
+		opponent_hand_surface.position.y + top_hand_height - 36.0,
+	)
+	opponent_hand_count_badge.size = Vector2(34.0, 34.0)
+	opponent_info.position = Vector2(left_safe, top_hand_height + 12.0)
+	opponent_info.size = Vector2(table_width, 24.0)
+
+	var own_hand_height := own_hand_size.y + 24.0
+	var own_hand_y := height - own_hand_height - 8.0
+	hand_scroll.position = Vector2(left_safe, own_hand_y)
+	hand_scroll.size = Vector2(table_width, own_hand_height)
+	hand_surface.custom_minimum_size.y = own_hand_height - 8.0
+	own_info.position = Vector2(left_safe, own_hand_y - 28.0)
+	own_info.size = Vector2(table_width, 24.0)
+
+	var arena_top := opponent_info.position.y + 28.0
+	var arena_bottom := own_info.position.y - 10.0
+	var arena_height := maxf(1.0, arena_bottom - arena_top)
+	var active_gap := 18.0 * layout_scale
+	var active_clearance := 10.0 * layout_scale
+	var bench_edge_gap := 6.0 * layout_scale
+	var required_field_height := (
+		active_size.y * 2.0
+		+ bench_size.y * 2.0
+		+ active_gap
+		+ active_clearance * 2.0
+		+ bench_edge_gap * 2.0
+	)
+	var battle_scale := minf(
+		1.0,
+		arena_height / maxf(1.0, required_field_height),
+	)
+	if battle_scale < 1.0:
+		active_size *= battle_scale
+		bench_size *= battle_scale
+		active_gap *= battle_scale
+		active_clearance *= battle_scale
+		bench_edge_gap *= battle_scale
+	var arena_middle := (arena_top + arena_bottom) * 0.5
+	var bench_gap := bench_spacing * layout_scale * battle_scale
+	var bench_total := bench_size.x * 5.0 + bench_gap * 4.0
 	var bench_x := center_x - bench_total * 0.5
+	var top_bench_y := arena_top + bench_edge_gap
+	var bottom_bench_y := arena_bottom - bench_size.y - bench_edge_gap
 	for index in range(5):
 		_place_card(
 			opponent_bench[index],
-			Vector2(bench_x + index * (bench_card_size.x + bench_spacing), 30),
-			bench_card_size,
+			Vector2(bench_x + index * (bench_size.x + bench_gap), top_bench_y),
+			bench_size,
 		)
 		_place_card(
 			own_bench[index],
 			Vector2(
-				bench_x + index * (bench_card_size.x + bench_spacing),
-				field_bottom - bench_card_size.y - 30,
+				bench_x + index * (bench_size.x + bench_gap),
+				bottom_bench_y,
 			),
-			bench_card_size,
+			bench_size,
 		)
+	var active_band_top := top_bench_y + bench_size.y + active_clearance
+	var active_band_bottom := bottom_bench_y - active_clearance
+	var active_pair_height := active_size.y * 2.0 + active_gap
+	var active_extra := maxf(
+		0.0,
+		active_band_bottom - active_band_top - active_pair_height,
+	)
+	var opponent_active_y := active_band_top + active_extra * 0.5
+	var own_active_y := opponent_active_y + active_size.y + active_gap
 	_place_card(
 		opponent_active,
 		Vector2(
-			center_x - active_card_size.x * 0.5,
-			middle_y - active_card_size.y - 8,
+			center_x - active_size.x * 0.5,
+			opponent_active_y,
 		),
-		active_card_size,
+		active_size,
 	)
 	_place_card(
 		own_active,
-		Vector2(center_x - active_card_size.x * 0.5, middle_y + 8),
-		active_card_size,
+		Vector2(center_x - active_size.x * 0.5, own_active_y),
+		active_size,
 	)
 
-	_place_zone("opponent_prizes", Vector2(20, 42), zone_size)
-	_place_zone("opponent_deck", Vector2(width - zone_size.x - 20, 42), zone_size)
+	var top_zone_y := 36.0
+	var own_zone_y := own_hand_y - zone_visual_size.y - 14.0
+	var opponent_discard_y := top_zone_y + zone_visual_size.y + 18.0
+	var own_discard_y := own_zone_y - zone_visual_size.y - 18.0
+	_place_zone("opponent_prizes", Vector2(left_zone_x, top_zone_y), zone_visual_size)
+	_place_zone("opponent_deck", Vector2(side_zone_x, top_zone_y), zone_visual_size)
 	_place_zone(
 		"opponent_discard",
-		Vector2(width - zone_size.x - 20, middle_y - zone_size.y - 18),
-		zone_size,
+		Vector2(side_zone_x, opponent_discard_y),
+		zone_visual_size,
 	)
-	_place_zone("stadium", Vector2(24, middle_y - zone_size.y * 0.5), zone_size)
+	_place_zone(
+		"stadium",
+		Vector2(left_zone_x, arena_middle - zone_visual_size.y * 0.5),
+		zone_visual_size,
+	)
 	_place_zone(
 		"own_discard",
-		Vector2(width - zone_size.x - 20, middle_y + 18),
-		zone_size,
+		Vector2(side_zone_x, own_discard_y),
+		zone_visual_size,
 	)
 	_place_zone(
 		"own_deck",
-		Vector2(width - zone_size.x - 20, field_bottom - zone_size.y - 34),
-		zone_size,
+		Vector2(side_zone_x, own_zone_y),
+		zone_visual_size,
 	)
 	_place_zone(
 		"own_prizes",
-		Vector2(20, field_bottom - zone_size.y - 34),
-		zone_size,
+		Vector2(left_zone_x, own_zone_y),
+		zone_visual_size,
 	)
 
-	hand_scroll.position = Vector2(126, field_bottom + 4)
-	hand_scroll.size = Vector2(maxf(220, width - 252), hand_height - 8)
-	hand_surface.custom_minimum_size.y = hand_height - 12
-	_layout_hand(hand_card_size)
+	_layout_opponent_hand(hidden_hand_size)
+	_layout_hand(own_hand_size)
 	effects.queue_redraw()
 
 
@@ -836,6 +989,7 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 	for view in hand_views:
 		if not view.visible:
 			continue
+		view.custom_minimum_size = card_size
 		view.size = card_size
 		view.position = Vector2(start_x + visible_index * spacing, 14)
 		var normalized := (
@@ -850,6 +1004,51 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 		view.z_index = visible_index
 		view.remember_base_position()
 		view.set_selected(selected_entity_key == "hand:%d" % view.hand_index)
+		visible_index += 1
+
+
+func _layout_opponent_hand(card_size: Vector2 = Vector2(70, 98)) -> void:
+	if opponent_hand_surface == null:
+		return
+	var visible_count := 0
+	for view in opponent_hand_views:
+		if view.visible:
+			visible_count += 1
+	var available := maxf(180.0, opponent_hand_surface.size.x)
+	var spacing := card_size.x * 0.42
+	if visible_count > 1:
+		spacing = clampf(
+			(available - card_size.x) / float(visible_count - 1),
+			opponent_hand_minimum_spacing,
+			card_size.x * 0.58,
+		)
+	var content_width := (
+		card_size.x
+		if visible_count <= 1
+		else card_size.x + spacing * float(visible_count - 1)
+	)
+	var start_x := maxf(0.0, (available - content_width) * 0.5)
+	var visible_index := 0
+	for view in opponent_hand_views:
+		if not view.visible:
+			continue
+		view.custom_minimum_size = card_size
+		view.size = card_size
+		var normalized := (
+			0.0
+			if visible_count <= 1
+			else float(visible_index) / float(visible_count - 1) - 0.5
+		)
+		view.position = Vector2(
+			start_x + visible_index * spacing,
+			8.0 + absf(normalized) * 8.0,
+		)
+		view.rotation_degrees = -normalized * minf(
+			opponent_hand_rotation_degrees,
+			float(visible_count) * 0.55,
+		)
+		view.z_index = visible_index
+		view.remember_base_position()
 		visible_index += 1
 
 
@@ -1087,10 +1286,14 @@ func _target_controls_for_endpoint(
 ) -> Array[Control]:
 	var result: Array[Control] = []
 	var zone := str(endpoint.get("zone", ""))
+	var player := int(endpoint.get("player", view_player))
 	if not str(endpoint.get("slot", "")).is_empty():
 		_append_unique_control(result, _slot_view_for_endpoint(endpoint))
 	elif zone == "hand":
-		result.append_array(_hand_target_views_for_incoming(event))
+		if player == view_player:
+			result.append_array(_hand_target_views_for_incoming(event))
+		else:
+			result.append_array(_opponent_hand_target_views_for_incoming(event))
 	else:
 		_append_unique_control(result, _zone_view_for_endpoint(endpoint))
 	return result
@@ -1164,6 +1367,25 @@ func _precompute_hand_targets_for_event(event: Dictionary) -> void:
 		end_index = visible.size()
 	_presentation_event_hand_targets[event_id] = targets
 	_presentation_hand_target_cursor[actor] = end_index
+
+
+func _opponent_hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
+	var result: Array[Control] = []
+	var actor := int(event.get("actor", view_player))
+	if actor == view_player:
+		return result
+	var card_ids := _event_card_ids(event)
+	var amount := _event_amount(event, card_ids)
+	if amount <= 0:
+		return result
+	var visible: Array[CardView] = []
+	for view in opponent_hand_views:
+		if view and view.visible:
+			visible.append(view)
+	var first := maxi(0, visible.size() - mini(amount, visible.size()))
+	for index in range(first, visible.size()):
+		result.append(visible[index])
+	return result
 
 
 func _switch_slot_views_for_event(event: Dictionary) -> Array[Control]:
@@ -1306,7 +1528,9 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	)
 	for index in range(visible_count):
 		var card_id := str(card_ids[index]) if index < card_ids.size() else event_card_id
-		var texture := _texture_for_card_id(card_id)
+		var texture := _texture_for_card_id(
+			"" if _motion_card_hidden_from_view(card_id, source, target) else card_id
+		)
 		if texture == null:
 			continue
 		var start := starts[index] if index < starts.size() else base_start
@@ -1412,6 +1636,8 @@ func _source_points_for_event(
 			fallback_start,
 			source_index,
 		)
+	if zone_name == "hand" and player != view_player:
+		return _opponent_hand_points(visible_count, fallback_start)
 	var start := _snapshot_endpoint_center(source, fallback_start)
 	var result: Array[Vector2] = []
 	for index in range(visible_count):
@@ -1431,6 +1657,13 @@ func _target_points_for_event(
 	var result: Array[Vector2] = []
 	if zone_name == "hand" and player == view_player:
 		for view_value in _hand_target_views_for_incoming(event):
+			var view := view_value as CardView
+			if view:
+				result.append(_effects_local(view.global_center()))
+		if result.size() >= visible_count:
+			return result
+	elif zone_name == "hand" and player != view_player:
+		for view_value in _opponent_hand_target_views_for_incoming(event):
 			var view := view_value as CardView
 			if view:
 				result.append(_effects_local(view.global_center()))
@@ -1503,6 +1736,15 @@ func _snapshot_endpoint_center(endpoint: Dictionary, fallback: Vector2) -> Vecto
 			return _vector_or_default(slot_row.get("center"), fallback)
 	var zone_name := str(endpoint.get("zone", ""))
 	if not zone_name.is_empty():
+		if zone_name == "hand":
+			return (
+				_snapshot_own_hand_center(fallback)
+				if player == view_player
+				else _vector_or_default(
+					_presentation_snapshot.get("opponent_hand_center"),
+					fallback,
+				)
+			)
 		var zone_row := _snapshot_zone_row(player, zone_name)
 		if not zone_row.is_empty():
 			return _vector_or_default(zone_row.get("center"), fallback)
@@ -1529,6 +1771,41 @@ func _vector_or_default(value: Variant, fallback: Vector2) -> Vector2:
 	return fallback
 
 
+func _snapshot_own_hand_center(fallback: Vector2) -> Vector2:
+	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
+	if snapshot_hand.is_empty():
+		return fallback
+	var total := Vector2.ZERO
+	var count_value := 0
+	for row_value in snapshot_hand:
+		var row: Dictionary = row_value
+		total += _vector_or_default(row.get("center"), fallback)
+		count_value += 1
+	return total / float(maxi(1, count_value))
+
+
+func _opponent_hand_points(
+	visible_count: int,
+	fallback_start: Vector2,
+) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	var visible: Array[CardView] = []
+	for view in opponent_hand_views:
+		if view and view.visible:
+			visible.append(view)
+	if not visible.is_empty():
+		var first := maxi(0, visible.size() - mini(visible_count, visible.size()))
+		for index in range(first, visible.size()):
+			result.append(_effects_local(visible[index].global_center()))
+	while result.size() < visible_count:
+		result.append(fallback_start + _stack_offset(
+			result.size(),
+			visible_count,
+			true,
+		))
+	return result
+
+
 func _stack_offset(index: int, visible_count: int, hand_target: bool) -> Vector2:
 	if hand_target:
 		return Vector2(
@@ -1546,6 +1823,23 @@ func _texture_for_card_id(card_id: String) -> Texture2D:
 	if not card_id.is_empty():
 		texture_path = str(CardDatabase.get_card(card_id).get("image_path", ""))
 	return CardTextureCache.get_texture(texture_path)
+
+
+func _motion_card_hidden_from_view(
+	card_id: String,
+	source: Dictionary,
+	target: Dictionary,
+) -> bool:
+	if card_id.is_empty():
+		return true
+	return _endpoint_hidden_from_view(source) or _endpoint_hidden_from_view(target)
+
+
+func _endpoint_hidden_from_view(endpoint: Dictionary) -> bool:
+	var zone_name := str(endpoint.get("zone", ""))
+	if not (zone_name in ["hand", "deck", "prizes"]):
+		return false
+	return int(endpoint.get("player", view_player)) != view_player
 
 
 func _spawn_slot_transition(event: Dictionary, duration: float) -> bool:
@@ -1809,6 +2103,9 @@ func _clear_transient_visuals() -> void:
 	for view in hand_views:
 		if is_instance_valid(view):
 			view.clear_presentation_state()
+	for view in opponent_hand_views:
+		if is_instance_valid(view):
+			view.clear_presentation_state()
 	for zone_value in zones.values():
 		var zone := zone_value as ZoneView
 		if zone and is_instance_valid(zone):
@@ -1845,6 +2142,7 @@ func _on_camera_impulse_requested(strength: float, duration: float) -> void:
 
 
 func _place_card(view: CardView, position_value: Vector2, size_value: Vector2) -> void:
+	view.custom_minimum_size = size_value
 	view.position = position_value
 	view.size = size_value
 	view.remember_base_position()
@@ -1852,6 +2150,7 @@ func _place_card(view: CardView, position_value: Vector2, size_value: Vector2) -
 
 func _place_zone(key: String, position_value: Vector2, size_value: Vector2) -> void:
 	var zone := zones[key] as ZoneView
+	zone.custom_minimum_size = size_value
 	zone.position = position_value
 	zone.size = size_value
 
@@ -1861,6 +2160,23 @@ func _zone_center(key: String) -> Vector2:
 	if zone == null:
 		return effects.size * Vector2(0.5, 0.5)
 	return _effects_local(zone.global_position + zone.size * 0.5)
+
+
+func _own_hand_center() -> Vector2:
+	if hand_scroll == null:
+		return effects.size * Vector2(0.5, 0.5)
+	return _effects_local(
+		hand_scroll.global_position + hand_scroll.size * Vector2(0.5, 0.5)
+	)
+
+
+func _opponent_hand_center() -> Vector2:
+	if opponent_hand_surface == null:
+		return effects.size * Vector2(0.5, 0.5)
+	return _effects_local(
+		opponent_hand_surface.global_position
+		+ opponent_hand_surface.size * Vector2(0.5, 0.5)
+	)
 
 
 func _effects_local(global_point: Vector2) -> Vector2:
