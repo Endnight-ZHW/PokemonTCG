@@ -17,18 +17,28 @@
 .\.tools\godot-4.7\Godot_v4.7-stable_win64.exe --editor --path .\godot
 ```
 
-工具链安装在 `.tools/`，不会修改系统 `PATH`。编辑器打开后，先认识四个区域：
+工具链安装在 `.tools/`，不会修改系统 `PATH`。编辑器打开后，先认识这些区域：
 
-- 左上角 Scene：当前场景的节点树。
-- 左下角 FileSystem：工程文件，对应仓库中的 `godot/`。
-- 中央 Viewport：可视化布局与动画预览。
-- 右侧 Inspector：当前节点或脚本导出参数。
+| 区域 | 你会用它做什么 | 新手提示 |
+|---|---|---|
+| Scene | 查看和选择当前场景的节点树 | 节点越靠上越像“容器”，节点越靠下越像具体文字、按钮、图片 |
+| FileSystem | 打开 `res://` 下的场景、脚本和资源 | `res://` 就是仓库里的 `godot/` 目录 |
+| Viewport | 拖动、缩放和预览可视化界面 | 只要节点在 Container 下，拖动位置通常会被父容器重新排版 |
+| Inspector | 修改选中节点的属性、导出参数和主题覆盖 | 本项目很多可调参数都放在根节点的 Inspector 分组中 |
+| Node | 查看信号、分组和节点连接 | 想知道按钮点击连到哪里，先看这里的 Signals |
+| Animation | 预览和编辑 `AnimationPlayer` 时间轴 | 先选中 `AnimationPlayer` 节点，底部才会出现动画列表 |
+| Debugger | 看报错、断点、变量和调用栈 | 红色错误通常要先处理；黄色警告可以按影响逐个排查 |
+| Remote Scene Tree | 运行游戏时查看真实节点 | 运行后在 Scene 面板顶部从 Local 切到 Remote |
 
 运行方式：
 
 - `F6`：运行当前场景，适合单独调试页面或组件。
 - `F5`：从 `main.tscn` 运行完整游戏。
 - 点击停止按钮或按 `F8`：停止运行。
+
+`F6` 和 `F5` 的差别很重要。`F6` 只跑你当前打开的 `.tscn`，适合看标题页、
+卡牌组件或 Workbench；如果这个场景依赖 `Main` 注入数据，它可能只能显示占位内容。
+`F5` 会从项目主场景启动完整游戏，适合验证按钮跳转、设置保存、AI、联机和真实对局。
 
 第一次建议在 FileSystem 中双击 `res://tools/ui_workbench.tscn`，再按 `F6`。
 这是安全预览工作台，不会保存设置、创建网络房间或修改正式对局。
@@ -38,6 +48,21 @@
 Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量分配、帮助、卡牌检查器、
 区域查看、牌组详情、战斗和胜利页面；右侧按钮可以单独触发抽牌、进化、攻击、伤害、
 击倒和胜利演出。它使用固定种子的预览状态，不读取正式存档，也不会连接网络。
+
+### 常见文件和路径
+
+| 写法 | 含义 | 什么时候会碰到 |
+|---|---|---|
+| `res://scenes/title/title_page.tscn` | Godot 工程内路径 | FileSystem、脚本 preload、Inspector 资源引用 |
+| `godot/scenes/title/title_page.tscn` | Windows 仓库路径 | VS Code、PowerShell、Git diff |
+| `.tscn` | 场景文件，保存节点树和可视化属性 | 修改页面、组件、弹窗、动画节点 |
+| `.gd` | GDScript 脚本 | 修改信号、导出参数、布局计算和游戏逻辑 |
+| `.tres` | Godot 资源文件 | 修改全局主题、StyleBox、字体样式等资源 |
+| `.import` | Godot 自动生成的导入记录 | 不手工编辑，资源重新导入时会变化 |
+
+脚本中常见的 `%NodeName` 表示“唯一节点名”引用。它依赖场景树中某个节点启用了
+`Unique Name in Owner`，所以这类节点可以移动和调样式，但不要随意改名或取消唯一标记。
+普通节点路径如 `"Layout/RightCenter/TitlePanel"` 则依赖父子层级；移动节点前要搜索脚本中是否引用了这条路径。
 
 ## 2. 工程地图
 
@@ -98,6 +123,14 @@ flowchart TD
 
 修改复用组件时要记住：修改 `card_view.tscn` 会影响场上宝可梦、手牌和选择弹窗。
 
+判断一个文件该怎么打开：
+
+- 想改“看起来是什么样”：优先打开 `.tscn`，在 Scene、Viewport 和 Inspector 中编辑。
+- 想改“这个页面收到什么数据”：看同名 `.gd` 的 `configure(...)`。
+- 想改“用户点击后通知谁”：看同名 `.gd` 的 `signal` 和 `_ensure_connections()`。
+- 想改“所有按钮、面板的默认风格”：打开 `res://ui/game_theme.tres`。
+- 想改“实时规则结果”：不要从场景开始，先看 `GameEngine`、`EffectEngine` 和 Python 权威数据。
+
 ### Container 与锚点
 
 `VBoxContainer`、`HBoxContainer` 和 `MarginContainer` 会自动排列子节点。放在
@@ -108,18 +141,43 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 - Container 的 `separation`
 - MarginContainer 的四边 margin
 
+布局修改先按这个顺序判断：
+
+| 你看到的现象 | 先检查 | 推荐修改 |
+|---|---|---|
+| 拖动控件后又弹回原位 | 父节点是不是 `VBoxContainer`、`HBoxContainer`、`GridContainer` 或 `MarginContainer` | 改 `custom_minimum_size`、size flags、父容器 separation 或 margin |
+| 想让按钮更高、更宽 | 按钮本身和父容器 | 按钮 `custom_minimum_size`，必要时改父容器 separation |
+| 想让一组控件整体离边缘远一点 | 最近的 `MarginContainer` | `theme_override_constants/margin_*` |
+| 控件不在 Container 下 | Inspector 的 Layout、Anchors、Offsets、Position、Size | 先设置锚点，再调 offsets 或 size |
+| 运行时位置和编辑器不一致 | 对应脚本是否有布局函数 | 搜索 `_layout`、`_place`、`custom_minimum_size` |
+
+最安全的操作习惯：
+
+1. 在 Scene 树中选中目标节点。
+2. 看它的父节点类型。
+3. 如果父节点名字带 `Container`，优先改尺寸、间距和 margin。
+4. 如果父节点是普通 `Control` 或 `Panel`，再考虑 anchors、position 和 size。
+5. 改完按 `F6` 看当前场景；如果是主流程跳转，再按 `F5` 看完整游戏。
+
 牌桌中的固定牌位位于普通 `Control` 下，运行时由 `BattleScreen._layout_board()`
 根据窗口尺寸定位。场景中的坐标用于编辑器预览，真正运行时尺寸由 Inspector 中的
-`Table Layout` 参数控制。
+`Table Layout` 参数控制。想改战斗宝可梦、备战宝可梦、手牌和 HUD 的尺寸时，先选
+`BattleScreen` 根节点改导出参数；只有想移动牌库、弃牌、奖品和竞技场的算法位置时，
+才进入 `_layout_board()` 和 `_place_zone(...)`。
 
 ## 4. 第一个练习：修改标题页
+
+先做一个最小闭环：打开场景、选节点、改 Inspector、运行当前场景、再从 Workbench 验证。
 
 1. 打开 `res://scenes/title/title_page.tscn`。
 2. 在 Scene 树中选择 `TitleLabel`。
 3. 在 Inspector 修改 Text、字体大小或颜色。
-4. 选择 `TitlePanel`，修改最小尺寸或 StyleBox。
-5. 按 `F6` 查看结果。
-6. 再运行 `ui_workbench.tscn`，检查标题页在预览框中的效果。
+4. 选择 `Layout/RightCenter/TitlePanel`，修改 `custom_minimum_size` 或 StyleBox。
+5. 选择 `Layout/RightCenter/TitlePanel/Margin/Content`，修改 separation，让按钮之间更松或更紧。
+6. 选择 `LocalTwoPlayerButton`，修改 `custom_minimum_size.y`，观察按钮高度变化。
+7. 按 `Ctrl+S` 保存场景。
+8. 按 `F6` 查看当前标题页。
+9. 再运行 `ui_workbench.tscn`，检查标题页在预览框中的效果。
 
 如果希望让文字成为脚本可配置参数，选择根节点 `TitlePage`，查看
 `Editable Copy` 分组。它来自：
@@ -132,6 +190,20 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 
 `@export` 会把普通脚本变量暴露到 Inspector。适合导出的内容包括尺寸、间距、
 动画速度和默认文字；不要导出规则状态或网络密钥。
+
+标题页常改项：
+
+| 想改什么 | 选中节点 | 推荐改法 |
+|---|---|---|
+| 大标题 | `TitleLabel` | Inspector 的 Text、Label Settings 或 Theme Overrides |
+| 右侧面板宽度 | `TitlePanel` | `custom_minimum_size.x` |
+| 面板内边距 | `TitlePanel/Margin` | margin 常量 |
+| 主模式按钮高度 | `LocalTwoPlayerButton`、`ChallengeAIButton`、`DeepAIButton` | `custom_minimum_size.y` |
+| LAN / Relay 并排按钮间距 | `NetworkRow` | separation |
+| 设置 / 帮助按钮 | `UtilityRow`、`SettingsButton`、`HelpButton` | separation、文字、最小尺寸 |
+
+如果 Inspector 里找不到某个属性，可以用顶部搜索框输入 `custom`、`separation`、
+`margin` 或 `font`。Godot 的属性很多，搜索比一层层展开更稳。
 
 ## 5. 修改卡牌与牌桌
 
@@ -155,6 +227,19 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 ```
 
 静态结构在场景中编辑，动态数据在脚本中绑定。这是本项目最重要的 UI 模式。
+
+常见修改入口：
+
+| 想改什么 | 选中节点或位置 | 注意事项 |
+|---|---|---|
+| 卡牌阴影 | `Shadow` | 改 StyleBox、透明度和偏移，不影响规则 |
+| 卡图区域 | `Frame/Image` | 运行时会注入真实 Texture，场景中只调拉伸方式和边距 |
+| 名称、HP、能量摘要 | `InfoPanel`、`NameLabel`、`HPBar`、`MetaLabel` | 文字内容运行时生成，字体大小和面板高度可在场景调 |
+| 选中边框 | `SelectionRing` | 和 `selected_pulse` 动画一起看 |
+| 合法目标高亮 | `TargetGlow` | 和 `target_pulse` 动画一起看 |
+| 卡上动作按钮 | `ActionOverlay`、`ActionButtons` | 按钮由 `set_actions(...)` 生成；布局在场景中调 |
+| 选中抬升和悬停缩放 | 根节点 `CardView` | Inspector 的 `Card Layout` 导出参数 |
+| 同时显示几个卡上动作 | 根节点 `CardView` | Inspector 的 `Action Overlay / maximum_action_buttons` |
 
 ### BattleScreen
 
@@ -180,6 +265,24 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 
 修改后运行 Workbench 的“战斗场景”，同时观察 16:9 与超宽屏截图，避免只在
 自己的窗口尺寸上看起来正确。
+
+战斗界面最容易误解的一点：`OpponentActive`、`OwnActive`、`OpponentBench0` 等固定卡位
+虽然在场景树里能拖动，但运行时会被 `_layout_board()` 重新计算位置。想调整体比例时，
+先选根节点 `BattleScreen`，修改 Inspector：
+
+| 导出参数 | 影响 |
+|---|---|
+| `hud_width` | 右侧阶段、详情和日志 HUD 的宽度 |
+| `active_card_size` | 双方战斗宝可梦大小 |
+| `bench_card_size` | 双方备战宝可梦大小 |
+| `zone_size` | 牌库、弃牌、奖品和竞技场大小 |
+| `bench_spacing` | 备战区卡牌间距 |
+| `hand_card_size` | 手牌卡牌大小 |
+| `hand_minimum_spacing` | 手牌最小重叠间距 |
+| `hand_rotation_degrees` | 手牌扇形角度 |
+
+只有当这些参数不能表达你的目标时，再改 `battle_screen.gd`。例如“把双方弃牌区放到另一侧”
+属于布局算法变化，需要看 `_layout_board()` 中的 `_place_zone(...)` 调用。
 
 ![固定种子的战斗预览](images/godot-guide/battle-preview.png)
 
@@ -214,6 +317,25 @@ Main.update_view()    -> 页面重新显示状态
 不要在 Button 脚本里直接修改 `GameState`。这样才能保证本地、AI 和联网模式使用
 同一套规则。
 
+什么时候只改场景，什么时候必须改脚本：
+
+| 目标 | 改哪里 | 稳定边界 |
+|---|---|---|
+| 调整文字大小、颜色、间距、面板外观 | `.tscn`、Inspector、`game_theme.tres` | 不改变信号和规则 |
+| 调整可配置尺寸或动画速度 | 场景根节点的 `@export` 参数 | 参数可被 Inspector 保存 |
+| 调整运行时布局算法 | 对应 `.gd` 的 `_layout_*`、`_place_*` 函数 | 改完要看多种窗口比例 |
+| 新增用户交互 | 页面 `.tscn` 新增控件，页面 `.gd` 新增或连接 `signal`，`Main` 处理 | 页面只报告意图，不改规则状态 |
+| 新增规则动作或卡牌效果 | Python 权威数据、Godot `GameEngine` / `EffectEngine`、测试 | UI 不能伪造伤害、抽牌或随机数 |
+| 新增联网行为 | `NetworkMatchController` 和协议层 | 客户端只提交动作/选择，不提交完整状态 |
+
+本项目稳定接口的使用边界：
+
+- 页面输入使用 `configure(...)`。
+- 页面输出使用 `signal`。
+- 用户动作使用 `GameAction` 表达。
+- 对局状态只通过 `GameEngine.apply_action()` 或 `GameEngine.apply_choice()` 修改。
+- 可视化动画只消费 `PresentationEvent` 和表现事件，不得直接修改 `GameState`。
+
 ## 7. AnimationPlayer 与 Tween
 
 使用 AnimationPlayer 的场景：
@@ -228,6 +350,21 @@ Main.update_view()    -> 页面重新显示状态
 `selected_pulse` 或 `target_pulse`，即可移动关键帧、修改时长和缓动。`RESET`
 动画保存编辑器和运行时的默认值，不要轻易删除。
 
+固定动画的新手工作流：
+
+1. 打开目标场景，例如 `res://ui/card_view.tscn` 或 `res://scenes/title/title_page.tscn`。
+2. 在 Scene 树中选中 `AnimationPlayer`。
+3. 在底部 Animation 面板左侧选择动画名，例如 `enter`、`selected_pulse` 或 `target_pulse`。
+4. 点击播放按钮预览当前效果。
+5. 想改时长，在时间轴右侧或动画设置里修改 Length。
+6. 想改关键帧，先把时间指针拖到目标时间，再选中被动画控制的节点。
+7. 在 Inspector 修改属性后，点击属性旁边的小钥匙图标写入关键帧。
+8. 想改缓动，选中关键帧后调整 Transition / Easing。
+9. 保存场景，再按 `F6` 或在 Workbench 中预览。
+
+`RESET` 动画代表“默认状态”。Godot 会用它记录运行前应该恢复到什么值。删除或乱改
+`RESET` 后，常见症状是卡牌高亮残留、页面打开前位置不对、动画播放一次后回不去。
+
 ![CardView 的 target_pulse 时间轴](images/godot-guide/animation-panel.png)
 
 `target_pulse` 只负责合法目标的固定呼吸效果；目标是否合法仍由规则结果决定。
@@ -241,6 +378,18 @@ Main.update_view()    -> 页面重新显示状态
 
 判断方法：动画目标在编辑时已知，用 AnimationPlayer；必须读取实时对局坐标，
 用 Tween。
+
+项目中的典型对应关系：
+
+| 想改的效果 | 推荐位置 | 原因 |
+|---|---|---|
+| 标题页淡入 | `title_page.tscn` 的 `AnimationPlayer / enter` | 固定页面入场 |
+| 牌组页淡入 | `deck_select_page.tscn` 的 `AnimationPlayer / enter` | 固定页面入场 |
+| 弹窗打开和关闭 | `main.tscn` 的 `ShellAnimations` | 通用弹窗外壳 |
+| 卡牌选中呼吸 | `card_view.tscn` 的 `selected_pulse` | 复用组件固定状态 |
+| 合法目标闪烁 | `card_view.tscn` 的 `target_pulse` | 复用组件固定状态 |
+| 抽牌飞向手牌 | `battle_screen.gd` 的 `_on_card_motion_requested()` 和导出参数 | 起点终点来自实时对局 |
+| 攻击、击倒、奖品飞牌 | `PresentationDirector` + `BattleScreen` | 事件和目标位置运行时才知道 |
 
 减少动画模式下不要强制播放时间轴。代码应检查：
 
@@ -462,7 +611,264 @@ Windows 与 Android 调试构建：
 .\tools\test_release.ps1
 ```
 
-## 14. 建议的学习路线
+## 14. Windows 和 Android 打包发布教程
+
+发布打包分两层：
+
+- 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
+- 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
+
+本项目发布版包含 Godot 客户端、ONNX Runtime 原生库和 8 个离线 Deep AI 模型；不会打包
+Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
+
+### 第一次发布前准备
+
+从仓库根目录执行：
+
+```powershell
+.\tools\setup_godot_toolchain.ps1
+.\tools\setup_android_toolchain.ps1
+.\tools\setup_ai_toolchain.ps1
+.\tools\setup_native_ai_deps.ps1
+```
+
+这些脚本把 Godot、JDK、Android SDK/NDK、Python AI 工具链、`godot-cpp` 和
+ONNX Runtime 下载到 `.tools/`。它们不要求你手工配置系统 `PATH`。
+
+Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本会通过
+`vswhere.exe` 寻找 `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`；如果报
+`Visual C++ Build Tools are missing`，先安装 Visual Studio Build Tools 的
+“Desktop development with C++”工作负载。
+
+发布前先确认基础检查通过：
+
+```powershell
+.\tools\test_godot.ps1
+.\tools\test_godot_ai.ps1
+.\tools\test_godot_network.ps1
+```
+
+如果刚改过卡牌、卡组或模型，也先确认生成数据和 ONNX 模型同步：
+
+```powershell
+.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
+.\tools\export_onnx_models.ps1
+```
+
+### 生成开发调试包
+
+调试包适合自己快速验收，不适合作为最终分发包：
+
+```powershell
+.\tools\build_native_ai.ps1 -Target all -Configuration debug
+.\tools\build_godot.ps1 -Target all -Configuration debug
+.\tools\smoke_godot_build.ps1
+```
+
+输出位置：
+
+| 平台 | 输出 |
+|---|---|
+| Windows | `godot/dist/windows/PokemonTCG.exe`、`godot/dist/windows/PokemonTCG.pck` |
+| Android | `godot/dist/android/PokemonTCG.apk` |
+
+只想导出 Windows：
+
+```powershell
+.\tools\build_native_ai.ps1 -Target windows -Configuration debug
+.\tools\build_godot.ps1 -Target windows -Configuration debug
+```
+
+只想导出 Android：
+
+```powershell
+.\tools\build_native_ai.ps1 -Target android -Configuration debug
+.\tools\build_godot.ps1 -Target android -Configuration debug
+```
+
+Android 调试 APK 可以用 ADB 安装：
+
+```powershell
+.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\android\PokemonTCG.apk
+```
+
+如果设备上已有不同签名的同包名版本，覆盖安装会失败。测试机上可以先卸载：
+
+```powershell
+.\.tools\android-sdk\platform-tools\adb.exe uninstall com.pokemontcg.game
+```
+
+卸载会清掉该包名下的设置和存档；发布验收时要记录这一点。
+
+### 生成 Windows 发布 ZIP
+
+如果只想打 Windows 发布包，不生成 Android APK：
+
+```powershell
+.\tools\package_release.ps1 -AndroidSigning none
+```
+
+脚本会执行：
+
+1. `build_native_ai.ps1 -Target all -Configuration release`。
+2. `build_godot.ps1 -Target windows -Configuration release`。
+3. Windows release 冒烟启动。
+4. 复制 `PokemonTCG.exe`、`PokemonTCG.pck`、Windows Deep AI 原生库、ONNX Runtime DLL、发布说明和许可证。
+5. 压缩为发布 ZIP。
+6. 写出 `SHA256SUMS.json`。
+
+输出位置：
+
+| 文件 | 用途 |
+|---|---|
+| `godot/dist/release/PokemonTCG-Windows-x86_64-0.3.1.zip` | 可分发 Windows ZIP |
+| `godot/dist/release/windows/PokemonTCG.exe` | 未压缩 Windows release 可执行文件 |
+| `godot/dist/release/windows/PokemonTCG.pck` | Godot 资源包 |
+| `godot/dist/release/SHA256SUMS.json` | ZIP、EXE、PCK、DLL 和模型校验清单 |
+
+给玩家分发 Windows 版时，优先发 ZIP，不要只发 `.exe`。ZIP 中还包含 `.pck`、AI 原生库、
+ONNX Runtime、许可证和 `BUILD_INFO.json`。
+
+### 生成 Android 测试签名 APK
+
+用于内部测试、真机验收和发给测试者：
+
+```powershell
+.\tools\package_release.ps1 -AndroidSigning test
+.\tools\test_release.ps1
+```
+
+测试签名模式会在 `.tools/signing/` 下生成本地测试 keystore 和随机密码。它只适合本项目本机测试，
+不要当作正式应用商店签名。脚本会输出：
+
+| 文件 | 用途 |
+|---|---|
+| `godot/dist/release/PokemonTCG-Android-arm64-0.3.1-test.apk` | Android 9+ ARM64 测试签名 APK |
+| `godot/dist/release/android/PokemonTCG.apk` | Godot 导出的原始 release APK |
+| `godot/dist/release/SHA256SUMS.json` | 发布校验清单 |
+
+安装测试签名 APK：
+
+```powershell
+.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.3.1-test.apk
+```
+
+查看设备是否连接：
+
+```powershell
+.\.tools\android-sdk\platform-tools\adb.exe devices
+```
+
+查看应用日志：
+
+```powershell
+.\.tools\android-sdk\platform-tools\adb.exe logcat -s godot PokemonTCG AndroidRuntime
+```
+
+测试签名和正式签名不能互相覆盖安装。同一台设备从测试包切到正式包时，通常需要先卸载：
+
+```powershell
+.\.tools\android-sdk\platform-tools\adb.exe uninstall com.pokemontcg.game
+```
+
+### 生成 Android 正式签名 APK
+
+正式发布前需要你自己准备 Android release keystore。密钥文件和密码不要提交到仓库，
+只通过当前 PowerShell 会话或 CI Secret 注入：
+
+```powershell
+$env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH = "D:\secure\pokemontcg-release.jks"
+$env:GODOT_ANDROID_KEYSTORE_RELEASE_USER = "your-key-alias"
+$env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = "your-keystore-password"
+.\tools\package_release.ps1 -AndroidSigning production
+```
+
+正式签名输出文件名：
+
+```text
+godot/dist/release/PokemonTCG-Android-arm64-0.3.1-production.apk
+```
+
+正式签名注意事项：
+
+- keystore 丢失后，应用商店同包名升级会非常麻烦，必须离线备份。
+- `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 当前同时作为 store password 和 key password 使用。
+- 不要把 keystore 放到 `godot/`、`docs/`、`tools/` 或任何会被提交的目录。
+- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=4`、`versionName=0.3.1`、仅 `arm64-v8a`。
+
+### 发布后校验
+
+每次生成测试签名完整发布包后运行：
+
+```powershell
+.\tools\test_release.ps1
+```
+
+它会检查：
+
+- Windows release 可执行文件能启动 release 冒烟测试。
+- Windows ZIP 中包含 `.exe`、`.pck`、Deep AI DLL、ONNX Runtime、发布说明和许可证。
+- Windows ZIP 不包含 Python、PyTorch、测试、工具目录或 console exe。
+- Android APK 包名、版本号、SDK、ABI 正确。
+- Android APK 签名可验证。
+- Android APK 包含 8 个 ONNX 模型、`libpokemon_ai` 和 `libonnxruntime.so`。
+- `SHA256SUMS.json` 中每个文件的 SHA-256 与实际文件一致。
+
+`test_release.ps1` 当前固定检查 `PokemonTCG-Android-arm64-0.3.1-test.apk`。如果你只打
+Windows 包，或刚生成的是 `production` 正式签名 APK，不要直接用它代表最终结论；正式包需要
+对实际产物再做一次手工签名和元数据检查。
+
+手工抽查校验值：
+
+```powershell
+Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.3.1.zip -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.3.1-test.apk -Algorithm SHA256
+Get-Content .\godot\dist\release\SHA256SUMS.json
+```
+
+正式签名 APK 的手工验签示例：
+
+```powershell
+.\.tools\android-sdk\build-tools\35.0.0\apksigner.bat verify `
+  --verbose `
+  --print-certs `
+  .\godot\dist\release\PokemonTCG-Android-arm64-0.3.1-production.apk
+```
+
+如果本地 Build Tools 版本不是 `35.0.0`，以 `.tools/android-sdk/build-tools/` 下实际目录为准。
+
+### Android 真机发布验收
+
+APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CHECKLIST.md` 做一轮真机验收，
+其中最重要的是：
+
+- 冷启动、横屏、安全区、返回键和设置保存。
+- 本地双人、Challenge AI、Deep AI 离线对局。
+- 8 套 Deep AI 模型至少完成加载冒烟，最好完成一局。
+- 标题和战斗音乐各保持前台至少 3 分钟，确认没有音频崩溃。
+- 抽牌、攻击、击倒、奖品、胜利演出在目标设备帧率可接受。
+- 切后台、锁屏、恢复、断网、网络切换和覆盖安装。
+- Win↔Android、Android↔Android 的 LAN/Relay 对局，如果这次发布包含联网验收。
+
+记录设备型号、Android 版本、APK SHA-256、平均/最低 FPS、峰值内存、温度和复现步骤。
+截图或日志中不得出现对手手牌、牌库顺序或奖品身份。
+
+### 常见打包问题
+
+| 症状 | 原因 | 处理 |
+|---|---|---|
+| `Godot 4.7 is not installed` | 没跑工具链安装 | 运行 `.\tools\setup_godot_toolchain.ps1` |
+| `JDK 17 is missing` | Android 工具链未安装 | 运行 `.\tools\setup_android_toolchain.ps1` |
+| `Android NDK 28.1 is missing` | SDK/NDK 不完整 | 重跑 `setup_android_toolchain.ps1`，必要时加 `-Force` |
+| `AI Python toolchain is missing` | AI Python 未安装 | 运行 `.\tools\setup_ai_toolchain.ps1` |
+| `godot-cpp is missing` | 原生 AI 依赖未安装 | 运行 `.\tools\setup_native_ai_deps.ps1` |
+| `Visual C++ Build Tools are missing` | Windows 原生库缺 C++ 编译器 | 安装 Visual Studio Build Tools 的 C++ 工作负载 |
+| `Production Android signing requires ...` | 正式签名环境变量缺失 | 设置 keystore 路径、alias 和密码 |
+| ADB 覆盖安装失败 | 设备上已有不同签名包 | 卸载 `com.pokemontcg.game` 后再安装 |
+| `test_release.ps1` 找不到 APK | 只打了 Windows 包或签名模式不匹配 | 用 `-AndroidSigning test` 重新完整打包，或按实际产物调整验收流程 |
+| APK 过大 | 内置卡图、ONNX 模型和原生库 | 发布前不要手工删除资源；先确认是否真的需要裁剪 |
+
+## 15. 建议的学习路线
 
 按顺序完成以下练习：
 
@@ -480,7 +886,7 @@ Windows 与 Android 调试构建：
 每完成一步都运行 `test_godot.ps1`。这种节奏略显谨慎，但它能让你大胆试验，而不必
 担心一处 UI 修改悄悄破坏 AI、联机或隐藏信息。
 
-## 15. 操作配方：修改 UI 排布
+## 16. 操作配方：修改 UI 排布
 
 Godot UI 修改先判断节点属于哪一种布局：
 
@@ -500,6 +906,47 @@ Godot UI 修改先判断节点属于哪一种布局：
 4. 如果运行时位置和编辑器不同，搜索对应脚本中的布局函数，例如 `_layout_board()`。
 5. 改完运行 `tools/test_godot.ps1`；涉及战斗画面再运行 UI 截图脚本。
 
+### 配方：修改标题页按钮和面板
+
+1. 打开 `res://scenes/title/title_page.tscn`。
+2. 选择 `TitlePanel`，修改 `custom_minimum_size.x`，控制右侧面板宽度。
+3. 选择 `TitlePanel/Margin`，修改 margin，让内容离面板边缘更远或更近。
+4. 选择 `Content`，修改 separation，让标题、分割线和按钮之间的间距变化。
+5. 选择 `LocalTwoPlayerButton`、`ChallengeAIButton` 或 `DeepAIButton`，修改 `custom_minimum_size.y`。
+6. 选择 `NetworkRow` 或 `UtilityRow`，修改 separation，控制并排按钮间距。
+7. 按 `F6` 预览标题页；再用 Workbench 看标题页在安全预览框中的效果。
+
+如果你只是改按钮文字，可以直接改 Button 的 Text。但如果按钮文字由脚本覆盖，运行时会以脚本为准；
+这时要搜索对应脚本，例如 `title_page.gd`。
+
+### 配方：修改牌组选择页两栏布局
+
+1. 打开 `res://scenes/decks/deck_select_page.tscn`。
+2. 选择 `MainPanel`，修改整体面板最小尺寸。
+3. 选择 `MainPanel/Margin`，修改内边距。
+4. 选择 `Content`，修改纵向 separation。
+5. 选择 `Columns`，修改两栏之间的 separation。
+6. 选择 `DeckOnePanel` 或 `DeckTwoPanel`，修改每栏的最小宽度或 StyleBox。
+7. 选择 `DeckOneDetailsButton` 或 `DeckTwoDetailsButton`，修改按钮文字、高度或样式。
+8. 按 `F6` 预览；再从标题页用 `F5` 进入一次，确认页面跳转和数据填充正常。
+
+`DeckOneOption`、`DeckTwoOption` 和卡组预览内容会由 `DeckSelectPage.configure(...)`
+读取 `CardCatalog` 后填充。可以调整它们的外观和尺寸，但不要在 `.tscn` 中写死卡组列表。
+
+### 配方：修改战斗界面 HUD、卡位和手牌
+
+1. 打开 `res://scenes/battle/battle_screen.tscn`。
+2. 选择根节点 `BattleScreen`。
+3. 在 Inspector 的 `Table Layout / HUD` 中调整 `hud_width`。
+4. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
+5. 在 `Table Layout / Hand` 中调整 `hand_card_size`、`hand_minimum_spacing` 和 `hand_rotation_degrees`。
+6. 在 `Presentation / Touch Targets` 中调整 `primary_action_button_height` 和 `secondary_action_button_height`。
+7. 按 `F6` 或在 Workbench 选择“战斗场景”。
+8. 运行 UI 截图脚本检查 16:9 和 20:9。
+
+不要只拖 `OpponentActive`、`OwnActive`、`OwnDeck` 或 `Stadium` 来定最终位置。
+这些节点运行时会由 `_layout_board()` 重排。拖动只适合改善编辑器里的预览摆放。
+
 ### 示例：调整战斗区尺寸和手牌弧度
 
 1. 打开 `res://scenes/battle/battle_screen.tscn`。
@@ -518,7 +965,55 @@ Godot UI 修改先判断节点属于哪一种布局：
 `BattleScreen._layout_board()` 中的 `_place_zone(...)` 调用。修改后检查 16:9 和 20:9
 截图，避免宽屏或移动端遮挡。
 
-## 16. 操作配方：修改动画效果
+### 配方：修改 CardView 卡牌组件
+
+1. 打开 `res://ui/card_view.tscn`。
+2. 选择根节点 `CardView`，在 Inspector 调整 `selected_lift`、`hover_lift`、`selected_scale` 和 `hover_scale`。
+3. 选择 `Shadow`，修改阴影 StyleBox 或颜色透明度。
+4. 选择 `Frame`，修改卡牌边框、圆角或背景。
+5. 选择 `InfoPanel`、`NameLabel`、`HPBar` 和 `MetaLabel`，调整文字和血条视觉。
+6. 选择 `TargetGlow` 和 `SelectionRing`，调整合法目标和选中效果的静态样式。
+7. 选择 `ActionOverlay`，调整卡上动作按钮面板的位置、内边距和按钮排列。
+8. 按 `F6` 看组件占位内容；再打开 Workbench 的战斗页，确认真实数据下也正常。
+
+`CardView` 是复用组件。一次修改会影响场上宝可梦、手牌、选择弹窗和检查器中的卡牌预览。
+改前先确认你想要的是全局统一变化，而不是只改某一个页面。
+
+### 配方：修改设置、暂停、选择和隐私弹窗
+
+1. 打开 `res://ui/dialogs/settings_panel.tscn` 修改设置内容。
+2. 打开 `res://ui/dialogs/pause_panel.tscn` 修改暂停内容。
+3. 打开 `res://ui/dialogs/choice_panel.tscn` 修改复杂选择内容。
+4. 打开 `res://ui/dialogs/privacy_panel.tscn` 修改本地热座隐私交接提示。
+5. 这些面板大多是 `VBoxContainer` 根节点，优先改 `custom_minimum_size`、separation 和子节点最小高度。
+6. 通用弹窗外壳在 `res://scenes/main/main.tscn` 的 `ModalLayer`，这里控制遮罩、弹窗框和按钮区。
+7. 内容改完后在 Workbench 切换“设置”“选择”“能量分配”等预览页。
+
+弹窗按钮的“确认”“取消”“关闭”通常由 `Main` 的通用 ModalLayer 管理。面板内容负责显示字段，
+不要在面板场景里直接写保存设置、提交选择或关闭对局的规则。
+
+### 配方：修改全局主题
+
+1. 打开 `res://ui/game_theme.tres`。
+2. 在 Inspector 中选择 Button、Label、PanelContainer、OptionButton 等类型。
+3. 修改字体大小、颜色、StyleBox、圆角、边框或默认间距。
+4. 保存后运行 Workbench，切换多个页面确认影响范围。
+5. 如果只想改单个控件，不要改全局 Theme；选中该控件，在 Theme Overrides 中改局部覆盖。
+
+全局主题会影响全项目。同一个 Button 样式可能同时出现在标题页、牌组页、设置弹窗、战斗 HUD 和胜利页。
+做大范围主题修改时，至少检查标题、牌组、设置、战斗和胜利五个预览。
+
+### 配方：判断主题覆盖写在哪里
+
+| 目标 | 推荐位置 |
+|---|---|
+| 所有按钮统一圆角、字体和颜色 | `res://ui/game_theme.tres` |
+| 只有标题页主按钮变大 | `title_page.tscn` 中对应 Button 的 Theme Overrides 或最小尺寸 |
+| 只有战斗 HUD 日志变小 | `battle_screen.tscn` 中 `LogLabel` 或父容器 |
+| 只有卡牌组件高亮更明显 | `card_view.tscn` 的 `TargetGlow`、`SelectionRing` 和动画 |
+| 运行时按画质或设置切换 | 脚本和 `AppSettings`，不要只靠 Theme |
+
+## 17. 操作配方：修改动画效果
 
 本项目把动画分成两类：
 
@@ -545,7 +1040,88 @@ Godot UI 修改先判断节点属于哪一种布局：
 减少动画模式必须被尊重。新增动画前先检查 `AppSettings.reduced_motion`，或让
 `PresentationDirector` 统一缩短时长。
 
-## 17. 操作配方：新增卡牌、卡组和卡图
+## 18. 操作配方：新增一个简单 UI 功能
+
+这个练习演示“新增一个标题页按钮，点击后打开提示弹窗”。它故意不碰规则、AI 和网络，
+只走页面信号到 `Main` 的标准 UI 路径。示例按钮叫 `BeginnerTipButton`。
+
+### 第一步：在标题页复制一个按钮
+
+1. 打开 `res://scenes/title/title_page.tscn`。
+2. 在 Scene 树中找到 `UtilityRow`，里面已有 `SettingsButton` 和 `HelpButton`。
+3. 右键 `HelpButton`，选择 Duplicate，得到一个新按钮。
+4. 把新按钮重命名为 `BeginnerTipButton`。
+5. 在 Inspector 中把 Text 改成 `新手提示`。
+6. 右键该节点，启用 `Access as Unique Name` / `Unique Name in Owner`，这样脚本可以用 `%BeginnerTipButton` 找到它。
+7. 保存场景。
+
+如果新按钮挤不下，先选 `UtilityRow` 调 separation 或最小宽度，不要急着写脚本。
+
+### 第二步：让标题页发出信号
+
+打开 `res://scenes/title/title_page.gd`，新增一个信号：
+
+```gdscript
+signal beginner_tip_requested
+```
+
+在 `_ensure_connections()` 的 `bindings` 数组里加入一行：
+
+```gdscript
+[%BeginnerTipButton, beginner_tip_requested.emit],
+```
+
+完整模式应该仍然是：按钮被点击，页面只发信号，不打开弹窗、不改规则、不切换页面。
+
+### 第三步：让 Main 接收信号
+
+打开 `res://scenes/main/main.gd`，在 `_show_title()` 中连接新信号：
+
+```gdscript
+page.beginner_tip_requested.connect(_show_beginner_tip)
+```
+
+然后在 `main.gd` 中新增一个处理函数：
+
+```gdscript
+func _show_beginner_tip() -> void:
+    _play_click()
+    _open_modal("新手提示", "关闭", "")
+    modal_panel.custom_minimum_size = Vector2(620, 420)
+    modal_body.add_child(_modal_label(
+        "先从 Workbench 预览页面，再回到具体场景修改布局。改 UI 后运行 Godot 测试。",
+        16,
+        DesignTokens.TEXT,
+    ))
+    modal_confirm.pressed.connect(func() -> void:
+        _close_modal()
+    , CONNECT_ONE_SHOT)
+```
+
+如果只是想复用现有帮助面板，也可以把连接写成：
+
+```gdscript
+page.beginner_tip_requested.connect(_show_help)
+```
+
+但新手练习建议先写一个小弹窗，这样能看懂 `ModalLayer` 的工作方式。
+
+### 第四步：验证
+
+1. 打开 `title_page.tscn` 按 `F6`，确认按钮显示出来。
+2. 打开 `ui_workbench.tscn` 按 `F6`，切到标题页，确认按钮布局没有挤压。
+3. 按 `F5` 运行完整游戏，点击新按钮，确认弹窗能打开和关闭。
+4. 运行：
+
+```powershell
+.\tools\test_godot.ps1
+```
+
+如果运行时报 `%BeginnerTipButton` 为 null，优先检查节点名是否完全一致，以及是否启用了
+`Unique Name in Owner`。如果按钮显示但点击没反应，检查 `_ensure_connections()` 是否连接了新信号，
+以及 `_show_title()` 是否把信号连接到 `Main` 的处理函数。
+
+## 19. 操作配方：新增卡牌、卡组和卡图
 
 Godot 的 `data/*.json` 是生成物。新手最容易犯的错是直接改 `godot/data/cards.json`；
 这样下一次导出会被覆盖，也不会同步 Python 对照测试。正确路径如下。
@@ -602,7 +1178,7 @@ MY_FIRE_DECK = [
 导出脚本会复制图片到 `godot/assets/cards/`。如果卡图缺失，Godot 会显示文字占位，
 但发布前应让 `test_godot.ps1` 的卡图存在性检查通过。
 
-## 18. 新增查看面板的维护规则
+## 20. 新增查看面板的维护规则
 
 本轮新增的查看能力有四类：
 
@@ -621,7 +1197,7 @@ MY_FIRE_DECK = [
 如果你要新增“查看手牌”“查看奖品”等功能，先问清楚它是不是规则允许公开的内容。
 本地调试方便不等于发布版安全。
 
-## 19. 常见排错扩展
+## 21. 常见排错扩展
 
 | 症状 | 可能原因 | 修复方式 |
 |---|---|---|
@@ -633,3 +1209,49 @@ MY_FIRE_DECK = [
 | 动画在减少动画模式仍播放 | 没检查 `AppSettings.reduced_motion` | 跳过 Tween 或使用 reduced speed |
 | 导出后卡组没出现 | 没加入 `export_godot_data.py` 的 `DECKS` | 同步 `deck_definitions.py` 和导出脚本 |
 | `--check` 报 stale | 生成数据没提交或改了 Python 权威数据 | 重新运行导出并检查 diff |
+
+## 22. 新手安全检查清单
+
+改之前：
+
+- 先在 `res://tools/ui_workbench.tscn` 找到对应页面，确认要改的是哪个场景或组件。
+- 看节点的 `editor_description`。标注“不要删除”的节点可以调样式和尺寸，但不要删、改名或取消唯一节点。
+- 搜索脚本引用。改节点名之前用 `rg "%NodeName|NodeName" godot` 确认有没有 `%Name` 或路径依赖。
+- 判断修改类型：纯视觉改 `.tscn` / Theme；交互改 signal；规则改引擎和测试；联网改协议控制器。
+
+改的时候：
+
+- Container 下的控件优先改 `custom_minimum_size`、size flags、separation 和 margin。
+- 普通 `Control` 下的控件再改 anchors、offsets、position 和 size。
+- 战斗牌桌先改 `BattleScreen` 的 Inspector 导出参数，再考虑 `_layout_board()`。
+- 卡牌、牌组和效果数据不要直接改 `godot/data/*.json`；它们由 Python 权威数据导出。
+- 动画里不要调用规则结算、扣血、抽牌或切换玩家；动画只表现已经发生的结果。
+- UI 不要直接改 `GameState`，只发 `signal` 或提交 `GameAction` / `ChoiceResponse`。
+
+改完之后：
+
+- 保存场景，先按 `F6` 看当前页面或组件。
+- 再运行 Workbench，检查对应页面在固定预览状态下是否正常。
+- 改了主流程、按钮跳转或弹窗时，按 `F5` 从完整游戏走一遍。
+- 日常 UI 修改运行：
+
+```powershell
+.\tools\test_godot.ps1
+```
+
+- 涉及战斗布局或动画时再运行 UI 截图脚本：
+
+```powershell
+.\.tools\godot-4.7\Godot_v4.7-stable_win64.exe `
+  --path .\godot `
+  --script res://tests/ui_preview.gd
+```
+
+- 涉及 AI 或网络时补跑：
+
+```powershell
+.\tools\test_godot_ai.ps1
+.\tools\test_godot_network.ps1
+```
+
+- 提交前看一次 diff，确认没有误改 `.import`、生成数据、导出产物或无关文件。
