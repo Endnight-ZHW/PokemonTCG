@@ -76,6 +76,7 @@ var phase_labels: Dictionary = {}
 @onready var detail_image: TextureRect = %DetailImage
 @onready var detail_title: Label = %DetailTitle
 @onready var detail_text: RichTextLabel = %DetailText
+var detail_close_button: Button
 @onready var log_panel: PanelContainer = %LogPanel
 @onready var log_label: RichTextLabel = %LogLabel
 @onready var opponent_hand_surface: Control = %OpponentHandSurface
@@ -243,14 +244,12 @@ func clear_presentation_for_resync() -> void:
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 	if card_id.is_empty():
-		if detail_panel:
-			detail_panel.visible = false
-		detail_image.texture = null
-		detail_title.text = "选择一张卡牌"
-		detail_text.text = "点击或长按卡牌查看详情。"
+		hide_card_detail()
 		return
 	if detail_panel:
 		detail_panel.visible = true
+	if detail_close_button:
+		detail_close_button.visible = true
 	var card := CardDatabase.get_card(card_id)
 	detail_image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
 	detail_title.text = str(card.get("name", card_id))
@@ -288,6 +287,19 @@ func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 		if not str(rule).is_empty() and str(rule) not in lines:
 			lines.append(str(rule))
 	detail_text.text = "\n\n".join(lines)
+
+
+func hide_card_detail() -> void:
+	if detail_panel:
+		detail_panel.visible = false
+	if detail_close_button:
+		detail_close_button.visible = false
+	if detail_image:
+		detail_image.texture = null
+	if detail_title:
+		detail_title.text = "选择一张卡牌"
+	if detail_text:
+		detail_text.text = "点击或长按卡牌查看详情。"
 
 
 func get_slot_view(player: int, slot: String) -> CardView:
@@ -443,6 +455,7 @@ func _bind_scene_nodes() -> void:
 	if detail_panel:
 		detail_panel.visible = false
 		detail_panel.z_index = 34
+		_ensure_detail_close_button()
 	if log_panel:
 		log_panel.z_index = 33
 	playmat.quality_profile = AppSettings.resolved_quality_profile()
@@ -513,9 +526,7 @@ func _bind_scene_nodes() -> void:
 		zone.activated.connect(_on_detail_requested)
 		zone.inspected.connect(_on_zone_inspected)
 		zone.action_requested.connect(action_requested.emit)
-	(get_node("BattleRoot/Header/MenuButton") as Button).pressed.connect(
-		menu_requested.emit
-	)
+	(get_node("BattleRoot/Header/MenuButton") as Button).pressed.connect(_on_menu_pressed)
 	phase_advance_button.pressed.connect(_on_phase_advance_pressed)
 	all_actions_toggle.pressed.connect(_toggle_all_actions)
 	show_card_detail("")
@@ -840,12 +851,27 @@ func _layout_board() -> void:
 	var height := board_canvas.size.y
 	if width <= 0.0 or height <= 0.0:
 		return
+	var metrics := _board_layout_metrics(width, height)
+	_layout_player_hands(metrics)
+	_layout_field_slots(metrics)
+	_layout_table_zones(metrics)
+	_layout_opponent_hand(metrics["hidden_hand_size"])
+	_layout_hand(metrics["own_hand_size"])
+	_layout_overlay_drawers()
+	if playmat:
+		playmat.queue_redraw()
+	if effects:
+		effects.queue_redraw()
+
+
+func _board_layout_metrics(width: float, height: float) -> Dictionary:
 	var layout_scale := clampf(minf(width / 1500.0, height / 840.0), 0.76, 1.08)
-	var active_size := active_card_size * layout_scale
-	var bench_size := bench_card_size * layout_scale
+	var battle_card_boost := 1.32
+	var active_size := active_card_size * layout_scale * battle_card_boost
+	var bench_size := bench_card_size * layout_scale * battle_card_boost
 	var zone_visual_size := zone_size * layout_scale
 	var own_hand_size := hand_card_size * layout_scale
-	var hidden_hand_size := opponent_hand_card_size * layout_scale
+	var hidden_hand_size := opponent_hand_card_size * layout_scale * 0.76
 	var side_margin := maxf(14.0, table_side_margin * layout_scale)
 	var top_margin := maxf(10.0, table_top_margin * layout_scale)
 	var bottom_margin := maxf(8.0, table_bottom_margin * layout_scale)
@@ -859,44 +885,105 @@ func _layout_board() -> void:
 		field_right = width - side_margin
 	var table_width := maxf(300.0, field_right - field_left)
 	var center_x := (field_left + field_right) * 0.5
-
 	var top_hand_height := hidden_hand_size.y + 20.0 * layout_scale
 	var opponent_hand_width := clampf(
-		table_width * 0.46,
-		340.0 * layout_scale,
-		minf(table_width, 620.0 * layout_scale),
+		table_width * 0.38,
+		270.0 * layout_scale,
+		minf(table_width, 500.0 * layout_scale),
 	)
-	opponent_hand_surface.position = Vector2(
-		center_x - opponent_hand_width * 0.5,
-		top_margin,
-	)
-	opponent_hand_surface.size = Vector2(opponent_hand_width, top_hand_height)
-	opponent_hand_count_badge.position = Vector2(
-		opponent_hand_surface.position.x + opponent_hand_surface.size.x - 18.0,
-		opponent_hand_surface.position.y + top_hand_height - 36.0,
-	)
-	opponent_hand_count_badge.size = Vector2(34.0, 34.0)
-	opponent_info.position = Vector2(field_left, top_margin + top_hand_height + 10.0)
-	opponent_info.size = Vector2(table_width, 24.0)
-
 	var own_hand_height := own_hand_size.y + 22.0 * layout_scale
-	var own_hand_y := height - own_hand_height - bottom_margin - hand_bottom_padding * layout_scale
+	var own_hand_peek := clampf(own_hand_height * 0.72, 118.0 * layout_scale, own_hand_height)
+	var own_hand_y := height - own_hand_peek - bottom_margin - hand_bottom_padding * layout_scale
 	var hand_width := clampf(
 		table_width * 0.64,
 		520.0 * layout_scale,
 		minf(table_width, 850.0 * layout_scale),
 	)
-	hand_scroll.position = Vector2(center_x - hand_width * 0.5, own_hand_y)
-	hand_scroll.size = Vector2(hand_width, own_hand_height)
-	hand_surface.custom_minimum_size.y = own_hand_height - 8.0
-	own_info.position = Vector2(field_left, own_hand_y - 28.0)
-	own_info.size = Vector2(table_width, 24.0)
+	var hidden_hand_visible_height := maxf(24.0, hidden_hand_size.y * 0.32)
+	top_hand_height = hidden_hand_visible_height + 10.0 * layout_scale
+	var opponent_hand_y := top_margin - hidden_hand_size.y * 0.72
+	var opponent_info_y := top_margin + hidden_hand_visible_height + 3.0
+	var own_info_y := own_hand_y - 28.0
+	return {
+		"width": width,
+		"height": height,
+		"layout_scale": layout_scale,
+		"active_size": active_size,
+		"bench_size": bench_size,
+		"zone_size": zone_visual_size,
+		"own_hand_size": own_hand_size,
+		"hidden_hand_size": hidden_hand_size,
+		"side_margin": side_margin,
+		"top_margin": top_margin,
+		"bottom_margin": bottom_margin,
+		"zone_gap": zone_gap,
+		"left_zone_x": left_zone_x,
+		"side_zone_x": side_zone_x,
+		"field_left": field_left,
+		"field_right": field_right,
+		"table_width": table_width,
+		"center_x": center_x,
+		"top_hand_height": top_hand_height,
+		"opponent_hand_y": opponent_hand_y,
+		"opponent_hand_visible_height": hidden_hand_visible_height,
+		"opponent_hand_width": opponent_hand_width,
+		"own_hand_height": own_hand_height,
+		"own_hand_y": own_hand_y,
+		"hand_width": hand_width,
+		"opponent_info_y": opponent_info_y,
+		"own_info_y": own_info_y,
+		"arena_top": opponent_info_y + 8.0,
+		"arena_bottom": own_hand_y - 6.0,
+	}
 
-	var arena_top := opponent_info.position.y + 28.0
-	var arena_bottom := own_info.position.y - 10.0
+
+func _layout_player_hands(metrics: Dictionary) -> void:
+	var center_x := float(metrics["center_x"])
+	var top_margin := float(metrics["top_margin"])
+	var hidden_hand_size: Vector2 = metrics["hidden_hand_size"]
+	var opponent_hand_width := float(metrics["opponent_hand_width"])
+	var top_hand_height := float(metrics["top_hand_height"])
+	var opponent_hand_y := float(metrics["opponent_hand_y"])
+	var opponent_visible_height := float(metrics["opponent_hand_visible_height"])
+	opponent_hand_surface.position = Vector2(
+		center_x - opponent_hand_width * 0.5,
+		opponent_hand_y,
+	)
+	opponent_hand_surface.size = Vector2(
+		opponent_hand_width,
+		top_hand_height + hidden_hand_size.y,
+	)
+	opponent_hand_count_badge.position = Vector2(
+		opponent_hand_surface.position.x + opponent_hand_surface.size.x - 18.0,
+		top_margin + opponent_visible_height - 25.0,
+	)
+	opponent_hand_count_badge.size = Vector2(34.0, 34.0)
+	opponent_info.position = Vector2(
+		float(metrics["field_left"]),
+		float(metrics["opponent_info_y"]),
+	)
+	opponent_info.size = Vector2(float(metrics["table_width"]), 24.0)
+
+	var own_hand_y := float(metrics["own_hand_y"])
+	var hand_width := float(metrics["hand_width"])
+	hand_scroll.position = Vector2(center_x - hand_width * 0.5, own_hand_y)
+	hand_scroll.size = Vector2(hand_width, float(metrics["own_hand_height"]))
+	hand_surface.custom_minimum_size.y = float(metrics["own_hand_height"]) - 8.0
+	own_info.position = Vector2(float(metrics["field_left"]), float(metrics["own_info_y"]))
+	own_info.size = Vector2(float(metrics["table_width"]), 24.0)
+
+
+func _layout_field_slots(metrics: Dictionary) -> void:
+	var active_size: Vector2 = metrics["active_size"]
+	var bench_size: Vector2 = metrics["bench_size"]
+	var layout_scale := float(metrics["layout_scale"])
+	var table_width := float(metrics["table_width"])
+	var center_x := float(metrics["center_x"])
+	var arena_top := float(metrics["arena_top"])
+	var arena_bottom := float(metrics["arena_bottom"])
 	var arena_height := maxf(1.0, arena_bottom - arena_top)
-	var active_gap := 14.0 * layout_scale
-	var active_clearance := 14.0 * layout_scale
+	var active_gap := 30.0 * layout_scale
+	var active_clearance := 20.0 * layout_scale
 	var bench_edge_gap := 10.0 * layout_scale
 	var required_field_height := (
 		active_size.y * 2.0
@@ -935,71 +1022,263 @@ func _layout_board() -> void:
 		var shift_up := bottom_bench_y + bench_size.y - (arena_bottom - bench_edge_gap)
 		bottom_bench_y -= shift_up
 		own_active_y -= shift_up * 0.42
+	var opponent_bench_rects: Array[Rect2] = []
+	var own_bench_rects: Array[Rect2] = []
 	for index in range(5):
-		_place_card(
+		var opponent_center := Vector2(
+			bench_x + index * (bench_size.x + bench_gap) + bench_size.x * 0.5,
+			top_bench_y + bench_size.y * 0.5,
+		)
+		var own_center := Vector2(
+			bench_x + index * (bench_size.x + bench_gap) + bench_size.x * 0.5,
+			bottom_bench_y + bench_size.y * 0.5,
+		)
+		opponent_bench_rects.append(_perspective_card_rect(
+			opponent_center,
+			bench_size,
+			metrics,
+		).get("rect", Rect2()))
+		own_bench_rects.append(_perspective_card_rect(
+			own_center,
+			bench_size,
+			metrics,
+		).get("rect", Rect2()))
+		_place_perspective_card(
 			opponent_bench[index],
-			Vector2(bench_x + index * (bench_size.x + bench_gap), top_bench_y),
+			opponent_center,
 			bench_size,
+			metrics,
+			-2.4 + float(index - 2) * 0.22,
+			index,
 		)
-		_place_card(
+		_place_perspective_card(
 			own_bench[index],
-			Vector2(
-				bench_x + index * (bench_size.x + bench_gap),
-				bottom_bench_y,
-			),
+			own_center,
 			bench_size,
+			metrics,
+			2.4 + float(index - 2) * 0.22,
+			20 + index,
 		)
-	_place_card(
-		opponent_active,
-		Vector2(
-			center_x - active_size.x * 0.5,
-			opponent_active_y,
-		),
-		active_size,
+	var opponent_active_center := Vector2(
+		center_x,
+		opponent_active_y + active_size.y * 0.5,
 	)
-	_place_card(
-		own_active,
-		Vector2(center_x - active_size.x * 0.5, own_active_y),
+	var own_active_center := Vector2(center_x, own_active_y + active_size.y * 0.5)
+	var opponent_active_rect: Rect2 = _perspective_card_rect(
+		opponent_active_center,
 		active_size,
+		metrics,
+	).get("rect", Rect2())
+	var own_active_rect: Rect2 = _perspective_card_rect(
+		own_active_center,
+		active_size,
+		metrics,
+	).get("rect", Rect2())
+	_place_perspective_card(
+		opponent_active,
+		opponent_active_center,
+		active_size,
+		metrics,
+		-1.2,
+		12,
+	)
+	_place_perspective_card(
+		own_active,
+		own_active_center,
+		active_size,
+		metrics,
+		1.2,
+		34,
+	)
+	_update_playmat_field_guides(
+		opponent_bench_rects,
+		own_bench_rects,
+		opponent_active_rect,
+		own_active_rect,
+		metrics,
 	)
 
+
+func _layout_table_zones(metrics: Dictionary) -> void:
+	var layout_scale := float(metrics["layout_scale"])
+	var top_margin := float(metrics["top_margin"])
+	var left_zone_x := float(metrics["left_zone_x"])
+	var side_zone_x := float(metrics["side_zone_x"])
+	var zone_visual_size: Vector2 = metrics["zone_size"]
+	var zone_gap := float(metrics["zone_gap"])
+	var own_hand_y := float(metrics["own_hand_y"])
+	var arena_middle := (float(metrics["arena_top"]) + float(metrics["arena_bottom"])) * 0.5
 	var top_zone_y := top_margin + 18.0 * layout_scale
 	var own_zone_y := own_hand_y - zone_visual_size.y - 12.0 * layout_scale
 	var opponent_discard_y := top_zone_y + zone_visual_size.y + zone_gap
 	var own_discard_y := own_zone_y - zone_visual_size.y - zone_gap
-	_place_zone("opponent_prizes", Vector2(left_zone_x, top_zone_y), zone_visual_size)
-	_place_zone("opponent_deck", Vector2(side_zone_x, top_zone_y), zone_visual_size)
-	_place_zone(
+	_place_perspective_zone(
+		"opponent_prizes",
+		Vector2(left_zone_x, top_zone_y),
+		zone_visual_size,
+		metrics,
+	)
+	_place_perspective_zone(
+		"opponent_deck",
+		Vector2(side_zone_x, top_zone_y),
+		zone_visual_size,
+		metrics,
+	)
+	_place_perspective_zone(
 		"opponent_discard",
 		Vector2(side_zone_x, opponent_discard_y),
 		zone_visual_size,
+		metrics,
 	)
 	var stadium_y := arena_middle - zone_visual_size.y * 0.5
 	var stadium_min_y := opponent_discard_y + zone_visual_size.y + zone_gap
 	var stadium_max_y := own_discard_y - zone_visual_size.y - zone_gap
 	if stadium_max_y > stadium_min_y:
 		stadium_y = clampf(stadium_y, stadium_min_y, stadium_max_y)
-	_place_zone("stadium", Vector2(left_zone_x, stadium_y), zone_visual_size)
-	_place_zone(
+	_place_perspective_zone("stadium", Vector2(left_zone_x, stadium_y), zone_visual_size, metrics)
+	_place_perspective_zone(
 		"own_discard",
 		Vector2(side_zone_x, own_discard_y),
 		zone_visual_size,
+		metrics,
 	)
-	_place_zone(
+	_place_perspective_zone(
 		"own_deck",
 		Vector2(side_zone_x, own_zone_y),
 		zone_visual_size,
+		metrics,
 	)
-	_place_zone(
+	_place_perspective_zone(
 		"own_prizes",
 		Vector2(left_zone_x, own_zone_y),
 		zone_visual_size,
+		metrics,
 	)
 
-	_layout_opponent_hand(hidden_hand_size)
-	_layout_hand(own_hand_size)
-	_layout_overlay_drawers()
-	effects.queue_redraw()
+
+func _place_perspective_card(
+	view: CardView,
+	center: Vector2,
+	base_size: Vector2,
+	metrics: Dictionary,
+	rotation_value: float,
+	z_bias: int,
+) -> void:
+	var row := _perspective_card_rect(center, base_size, metrics)
+	var depth := float(row.get("depth", 0.5))
+	var rect: Rect2 = row.get("rect", Rect2(center - base_size * 0.5, base_size))
+	_place_card(
+		view,
+		rect.position,
+		rect.size,
+		depth,
+		rotation_value,
+		int(10 + depth * 42.0) + z_bias,
+	)
+
+
+func _perspective_card_rect(
+	center: Vector2,
+	base_size: Vector2,
+	metrics: Dictionary,
+) -> Dictionary:
+	var depth := _perspective_depth(center.y, metrics)
+	var scale := lerpf(0.86, 1.08, depth)
+	var size_value := base_size * scale
+	var center_x := float(metrics["center_x"])
+	var spread := lerpf(0.96, 1.035, depth)
+	var projected_center := Vector2(
+		center_x + (center.x - center_x) * spread,
+		center.y,
+	)
+	return {
+		"depth": depth,
+		"rect": Rect2(projected_center - size_value * 0.5, size_value),
+	}
+
+
+func _update_playmat_field_guides(
+	opponent_bench_rects: Array[Rect2],
+	own_bench_rects: Array[Rect2],
+	opponent_active_rect: Rect2,
+	own_active_rect: Rect2,
+	metrics: Dictionary,
+) -> void:
+	if playmat == null:
+		return
+	var guides: Array[Dictionary] = []
+	guides.append({
+		"kind": "bench",
+		"side": "opponent",
+		"rect": _union_rects(opponent_bench_rects).grow(
+			12.0 * float(metrics["layout_scale"])
+		),
+		"slots": opponent_bench_rects,
+		"depth": _perspective_depth(_union_rects(opponent_bench_rects).get_center().y, metrics),
+	})
+	guides.append({
+		"kind": "bench",
+		"side": "own",
+		"rect": _union_rects(own_bench_rects).grow(
+			12.0 * float(metrics["layout_scale"])
+		),
+		"slots": own_bench_rects,
+		"depth": _perspective_depth(_union_rects(own_bench_rects).get_center().y, metrics),
+	})
+	guides.append({
+		"kind": "active",
+		"side": "opponent",
+		"rect": opponent_active_rect,
+		"depth": _perspective_depth(opponent_active_rect.get_center().y, metrics),
+	})
+	guides.append({
+		"kind": "active",
+		"side": "own",
+		"rect": own_active_rect,
+		"depth": _perspective_depth(own_active_rect.get_center().y, metrics),
+	})
+	playmat.set_field_guides(guides)
+
+
+func _union_rects(rects: Array[Rect2]) -> Rect2:
+	if rects.is_empty():
+		return Rect2()
+	var result := rects[0]
+	for index in range(1, rects.size()):
+		result = result.merge(rects[index])
+	return result
+
+
+func _place_perspective_zone(
+	key: String,
+	position_value: Vector2,
+	base_size: Vector2,
+	metrics: Dictionary,
+) -> void:
+	var center_y := position_value.y + base_size.y * 0.5
+	var depth := _perspective_depth(center_y, metrics)
+	var size_value := base_size * lerpf(0.88, 1.05, depth)
+	var near_side := depth >= 0.52
+	var adjusted := position_value
+	if near_side:
+		adjusted.y -= (size_value.y - base_size.y) * 0.5
+	_place_zone(
+		key,
+		adjusted,
+		size_value,
+		depth,
+		-1.6 if depth < 0.45 else 1.2,
+		int(8 + depth * 34.0),
+	)
+
+
+func _perspective_depth(y: float, metrics: Dictionary) -> float:
+	return clampf(
+		(y - float(metrics["arena_top"]))
+		/ maxf(1.0, float(metrics["arena_bottom"]) - float(metrics["arena_top"])),
+		0.0,
+		1.0,
+	)
 
 
 func _layout_overlay_drawers() -> void:
@@ -1018,6 +1297,12 @@ func _layout_overlay_drawers() -> void:
 		detail_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
 		detail_panel.size = Vector2(drawer_width, detail_height)
 		detail_panel.custom_minimum_size = Vector2(drawer_width, detail_height)
+	if detail_close_button:
+		detail_close_button.position = Vector2(
+			drawer_x + drawer_width - 34.0,
+			board_origin.y + 20.0,
+		)
+		detail_close_button.size = Vector2(28.0, 28.0)
 	if log_panel:
 		log_panel.position = Vector2(
 			drawer_x,
@@ -1065,7 +1350,8 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 			hand_rotation_degrees,
 			float(visible_count) * 0.55,
 		)
-		view.z_index = visible_index
+		view.z_index = 70 + visible_index
+		view.set_table_depth(0.96, true)
 		view.remember_base_position()
 		view.set_selected(selected_entity_key == "hand:%d" % view.hand_index)
 		visible_index += 1
@@ -1105,13 +1391,14 @@ func _layout_opponent_hand(card_size: Vector2 = Vector2(70, 98)) -> void:
 		)
 		view.position = Vector2(
 			start_x + visible_index * spacing,
-			8.0 + absf(normalized) * 8.0,
+			-4.0 + absf(normalized) * 5.0,
 		)
 		view.rotation_degrees = -normalized * minf(
 			opponent_hand_rotation_degrees,
 			float(visible_count) * 0.55,
 		)
-		view.z_index = visible_index
+		view.z_index = 5 + visible_index
+		view.set_table_depth(0.18, false)
 		view.remember_base_position()
 		visible_index += 1
 
@@ -1233,6 +1520,61 @@ func _on_detail_requested(card_id: String) -> void:
 	detail_requested.emit(card_id)
 	if not card_id.is_empty():
 		inspect_card_requested.emit(_card_inspection_context(card_id))
+
+
+func _on_menu_pressed() -> void:
+	hide_card_detail()
+	menu_requested.emit()
+
+
+func _ensure_detail_close_button() -> void:
+	if detail_close_button or detail_panel == null:
+		return
+	var overlay := detail_panel.get_parent() as Control
+	if overlay == null:
+		return
+	detail_close_button = Button.new()
+	detail_close_button.name = "DetailCloseButton"
+	detail_close_button.text = "X"
+	detail_close_button.tooltip_text = "关闭卡牌详情"
+	detail_close_button.focus_mode = Control.FOCUS_NONE
+	detail_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	detail_close_button.visible = false
+	detail_close_button.z_index = 36
+	detail_close_button.add_theme_font_size_override("font_size", 14)
+	detail_close_button.add_theme_color_override("font_color", DesignTokens.TEXT)
+	detail_close_button.add_theme_stylebox_override(
+		"normal",
+		DesignTokens.panel_style(
+			Color(0.08, 0.14, 0.23, 0.98),
+			8,
+			DesignTokens.BORDER,
+			1,
+			0,
+		),
+	)
+	detail_close_button.add_theme_stylebox_override(
+		"hover",
+		DesignTokens.panel_style(
+			DesignTokens.PANEL_RAISED,
+			8,
+			DesignTokens.CYAN,
+			1,
+			0,
+		),
+	)
+	detail_close_button.add_theme_stylebox_override(
+		"pressed",
+		DesignTokens.panel_style(
+			DesignTokens.BORDER,
+			8,
+			DesignTokens.CYAN,
+			1,
+			0,
+		),
+	)
+	overlay.add_child(detail_close_button)
+	detail_close_button.pressed.connect(hide_card_detail)
 
 
 func _on_zone_inspected(context: Dictionary) -> void:
@@ -1378,17 +1720,7 @@ func _hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
 	var amount := _event_amount(event, card_ids)
 	if actor != view_player or amount <= 0:
 		return result
-	var visible: Array[CardView] = []
-	for view in hand_views:
-		if view and view.visible:
-			visible.append(view)
-	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
-	var expected_new := amount
-	if int(_presentation_snapshot.get("view_player", view_player)) == view_player:
-		expected_new = maxi(amount, visible.size() - snapshot_hand.size())
-	var first := maxi(0, visible.size() - mini(expected_new, visible.size()))
-	for index in range(first, visible.size()):
-		result.append(visible[index])
+	result.append_array(_incoming_hand_targets_for_event(event, false))
 	return result
 
 
@@ -1406,31 +1738,102 @@ func _precompute_hand_targets_for_event(event: Dictionary) -> void:
 	var amount := _event_amount(event, card_ids)
 	if event_id.is_empty() or actor != view_player or amount <= 0:
 		return
+	var targets := _incoming_hand_targets_for_event(event, true)
+	if targets.is_empty():
+		return
+	_presentation_event_hand_targets[event_id] = targets
+
+
+func _incoming_hand_targets_for_event(
+	event: Dictionary,
+	consume_cursor: bool,
+) -> Array[Control]:
+	var result: Array[Control] = []
+	var actor := int(event.get("actor", view_player))
+	if actor != view_player:
+		return result
+	var card_ids := _event_card_ids(event)
+	var amount := _event_amount(event, card_ids)
+	if amount <= 0:
+		return result
+	var candidates := _incoming_hand_candidates_from_snapshot()
+	if candidates.is_empty():
+		return result
+	var cursor := clampi(
+		int(_presentation_hand_target_cursor.get(actor, 0)),
+		0,
+		candidates.size(),
+	)
+	var available: Array[CardView] = []
+	for index in range(cursor, candidates.size()):
+		available.append(candidates[index])
+	var selected := _select_matching_hand_targets(available, card_ids, amount)
+	for view in selected:
+		result.append(view)
+	if consume_cursor:
+		_presentation_hand_target_cursor[actor] = cursor + selected.size()
+	return result
+
+
+func _incoming_hand_candidates_from_snapshot() -> Array[CardView]:
 	var visible: Array[CardView] = []
 	for view in hand_views:
 		if view and view.visible:
 			visible.append(view)
 	if visible.is_empty():
-		return
+		return []
 	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
-	var start_index := int(_presentation_hand_target_cursor.get(
-		actor,
-		snapshot_hand.size(),
-	))
-	if int(_presentation_snapshot.get("view_player", view_player)) != view_player:
-		start_index = maxi(0, visible.size() - amount)
-	start_index = clampi(start_index, 0, visible.size())
-	var end_index := mini(visible.size(), start_index + amount)
-	var targets: Array[Control] = []
-	for index in range(start_index, end_index):
-		targets.append(visible[index])
-	if targets.is_empty():
-		var first := maxi(0, visible.size() - mini(amount, visible.size()))
-		for index in range(first, visible.size()):
-			targets.append(visible[index])
-		end_index = visible.size()
-	_presentation_event_hand_targets[event_id] = targets
-	_presentation_hand_target_cursor[actor] = end_index
+	if snapshot_hand.is_empty():
+		return visible
+	var snapshot_counts: Dictionary = {}
+	for row_value in snapshot_hand:
+		var row: Dictionary = row_value
+		var card_id := str(row.get("card_id", ""))
+		if card_id.is_empty():
+			continue
+		snapshot_counts[card_id] = int(snapshot_counts.get(card_id, 0)) + 1
+	var candidates: Array[CardView] = []
+	for view in visible:
+		var card_id := str(view.card_id)
+		var remaining := int(snapshot_counts.get(card_id, 0))
+		if not card_id.is_empty() and remaining > 0:
+			snapshot_counts[card_id] = remaining - 1
+		else:
+			candidates.append(view)
+	return candidates
+
+
+func _select_matching_hand_targets(
+	candidates: Array[CardView],
+	card_ids: Array,
+	amount: int,
+) -> Array[CardView]:
+	var selected: Array[CardView] = []
+	if candidates.is_empty() or amount <= 0:
+		return selected
+	var used: Array[bool] = []
+	for _candidate in candidates:
+		used.append(false)
+	for value in card_ids:
+		if selected.size() >= amount:
+			break
+		var card_id := str(value)
+		if card_id.is_empty():
+			continue
+		for index in range(candidates.size()):
+			if used[index] or candidates[index].card_id != card_id:
+				continue
+			used[index] = true
+			selected.append(candidates[index])
+			break
+	for index in range(candidates.size()):
+		if selected.size() >= amount:
+			break
+		if used[index]:
+			continue
+		used[index] = true
+		selected.append(candidates[index])
+	return selected
 
 
 func _opponent_hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
@@ -2205,18 +2608,40 @@ func _on_camera_impulse_requested(strength: float, duration: float) -> void:
 		)
 
 
-func _place_card(view: CardView, position_value: Vector2, size_value: Vector2) -> void:
+func _place_card(
+	view: CardView,
+	position_value: Vector2,
+	size_value: Vector2,
+	depth: float = 0.5,
+	rotation_value: float = 0.0,
+	z_value: int = 0,
+) -> void:
 	view.custom_minimum_size = size_value
 	view.position = position_value
 	view.size = size_value
+	view.rotation_degrees = rotation_value
+	if z_value > 0:
+		view.z_index = z_value
+	view.set_table_depth(depth, depth >= 0.5)
 	view.remember_base_position()
 
 
-func _place_zone(key: String, position_value: Vector2, size_value: Vector2) -> void:
+func _place_zone(
+	key: String,
+	position_value: Vector2,
+	size_value: Vector2,
+	depth: float = 0.5,
+	rotation_value: float = 0.0,
+	z_value: int = 0,
+) -> void:
 	var zone := zones[key] as ZoneView
 	zone.custom_minimum_size = size_value
 	zone.position = position_value
 	zone.size = size_value
+	zone.rotation_degrees = rotation_value
+	if z_value > 0:
+		zone.z_index = z_value
+	zone.set_table_depth(depth)
 
 
 func _zone_center(key: String) -> Vector2:

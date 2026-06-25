@@ -97,12 +97,20 @@ func _render_previews() -> void:
 	demo.players[1].name = "玩家 2"
 	demo.players[0].active = PokemonState.new("svi-hrot")
 	demo.players[0].active.placed_this_turn = false
-	demo.players[0].active.energy_card_ids = ["sv1-ener-2", "sv1-ener-2"]
+	demo.players[0].active.energy_card_ids.assign([
+		"sv1-ener-2", "sv1-ener-2", "svi-mirc",
+	])
+	demo.players[0].active.damage_counters = 2
+	demo.players[0].active.attached_tool_id = "sv1-202"
+	demo.players[0].active.status_conditions.assign(["BURNED"])
 	demo.players[0].bench[0] = PokemonState.new("svi-chim")
+	demo.players[0].bench[0].energy_card_ids.assign(["sv1-ener-2"])
 	demo.players[0].bench[1] = PokemonState.new("svi-ente")
 	demo.players[1].active = PokemonState.new("sv2-keldeo")
 	demo.players[1].active.placed_this_turn = false
 	demo.players[1].active.damage_counters = 4
+	demo.players[1].active.energy_card_ids.assign(["sv1-ener-3"])
+	demo.players[1].active.status_conditions.assign(["POISONED"])
 	demo.players[1].bench[0] = PokemonState.new("sv2-starm")
 	demo.players[0].hand = [
 		"sv1-ener-2", "sv1-189", "svf-potion", "sv1-151", "svi-jete",

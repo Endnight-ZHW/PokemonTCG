@@ -16,6 +16,7 @@ var catalog := CardCatalog.new()
 var stack_visual_mode := ""
 var stack_visual_max_count := 0
 var stack_visual_direction := "up"
+var table_depth := 0.55
 
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
@@ -68,6 +69,12 @@ func set_stack_visual(
 	queue_redraw()
 
 
+func set_table_depth(value: float) -> void:
+	table_depth = clampf(value, 0.0, 1.0)
+	queue_redraw()
+	_apply_frame_style()
+
+
 func set_action(row: Dictionary = {}) -> void:
 	_pending_action_row = row.duplicate()
 	if not is_node_ready() or action_button == null:
@@ -110,6 +117,9 @@ func is_presentation_hidden() -> bool:
 
 
 func _draw() -> void:
+	var shadow_offset := Vector2(4.0 + table_depth * 4.0, 6.0 + table_depth * 5.0)
+	var shadow_color := Color(0.0, 0.0, 0.0, 0.22 + table_depth * 0.18)
+	draw_rect(Rect2(shadow_offset, size), shadow_color, true)
 	if stack_visual_mode.is_empty() or count <= 0 or stack_visual_max_count <= 0:
 		return
 	var layers := _stack_layer_count()
@@ -124,6 +134,13 @@ func _draw() -> void:
 		border.a = 0.72
 		draw_rect(layer_rect, fill, true)
 		draw_rect(layer_rect, border, false, 1.25)
+		var side := Color(0.0, 0.0, 0.0, 0.18 + t * 0.12)
+		draw_line(
+			layer_rect.position + Vector2(layer_rect.size.x, 4.0),
+			layer_rect.position + layer_rect.size + Vector2(0.0, -4.0),
+			side,
+			2.0,
+		)
 
 
 func _refresh() -> void:
@@ -144,6 +161,7 @@ func _refresh() -> void:
 	)
 	empty_label.visible = image.texture == null
 	empty_label.text = "空%s" % title
+	_apply_frame_style()
 	queue_redraw()
 
 
@@ -188,14 +206,15 @@ func _stack_layer_count() -> int:
 
 
 func _stack_step() -> Vector2:
+	var depth_scale := 0.75 + table_depth * 0.55
 	match stack_visual_direction:
 		"down":
-			return Vector2(3.6, 3.2)
+			return Vector2(3.6, 3.2) * depth_scale
 		"left":
-			return Vector2(-3.6, 2.4)
+			return Vector2(-3.6, 2.4) * depth_scale
 		"right":
-			return Vector2(3.6, 2.4)
-	return Vector2(3.6, -3.2)
+			return Vector2(3.6, 2.4) * depth_scale
+	return Vector2(3.6, -3.2) * depth_scale
 
 
 func _stack_color() -> Color:
@@ -205,3 +224,31 @@ func _stack_color() -> Color:
 		"prizes":
 			return Color("#48313c")
 	return Color("#253240")
+
+
+func _apply_frame_style() -> void:
+	if frame == null:
+		return
+	var fill := Color(0.045, 0.07, 0.11, 0.90)
+	var border := DesignTokens.BORDER.lightened(table_depth * 0.16)
+	if is_hidden_zone and count > 0:
+		fill = Color("#172038")
+		border = DesignTokens.GOLD.darkened(0.16)
+	elif not card_id.is_empty():
+		fill = Color(0.055, 0.08, 0.12, 0.92)
+		border = DesignTokens.CYAN.darkened(0.18)
+	frame.add_theme_stylebox_override(
+		"panel",
+		DesignTokens.panel_style(fill, 8, border, 2, 0),
+	)
+	if count_label:
+		count_label.add_theme_stylebox_override(
+			"normal",
+			DesignTokens.panel_style(
+				DesignTokens.GOLD,
+				12,
+				Color(1, 1, 1, 0.70),
+				1,
+				0,
+			),
+		)

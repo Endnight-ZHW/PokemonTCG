@@ -31,6 +31,16 @@ static func normalize(
 	var event_type := str(raw_event.get("event_type", "unknown"))
 	if event_type == "cards_drawn" and data.has("cards") and not data.has("card_ids"):
 		data["card_ids"] = Array(data.get("cards", [])).duplicate()
+	var card_count := 0
+	for field in CARD_LIST_FIELDS:
+		if data.get(field, []) is Array:
+			card_count = max(card_count, Array(data.get(field, [])).size())
+	var amount := int(raw_event.get(
+		"amount",
+		data.get("amount", data.get("count", 0)),
+	))
+	if amount <= 0 and card_count > 0:
+		amount = card_count
 	var result := {
 		"event_id": str(raw_event.get(
 			"event_id",
@@ -42,10 +52,7 @@ static func normalize(
 		"source": _endpoint(raw_event.get("source", {}), data, actor, true),
 		"target": _endpoint(raw_event.get("target", {}), data, actor, false),
 		"card_id": str(raw_event.get("card_id", data.get("card_id", ""))),
-		"amount": int(raw_event.get(
-			"amount",
-			data.get("amount", data.get("count", 0)),
-		)),
+		"amount": amount,
 		"visibility": str(raw_event.get(
 			"visibility",
 			data.get(

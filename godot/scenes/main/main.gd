@@ -210,6 +210,8 @@ func _build_shell() -> void:
 		"LoadingLayer/Center/Panel/Margin/LoadingLabel"
 	) as Label
 	shell_animations = get_node("ShellAnimations") as AnimationPlayer
+	modal_layer.z_index = 200
+	loading_layer.z_index = 210
 
 
 func _show_title() -> void:
@@ -1341,6 +1343,8 @@ func _open_modal(
 	cancel_text: String,
 	opaque_shade: bool = false,
 ) -> void:
+	if battle_screen:
+		battle_screen.hide_card_detail()
 	_modal_generation += 1
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
@@ -1355,6 +1359,7 @@ func _open_modal(
 		MODAL_SHADE_OPAQUE_ALPHA if opaque_shade else MODAL_SHADE_ALPHA
 	)
 	modal_layer.visible = true
+	modal_layer.move_to_front()
 	if AppSettings.reduced_motion:
 		modal_panel.modulate.a = 1.0
 		modal_panel.scale = Vector2.ONE

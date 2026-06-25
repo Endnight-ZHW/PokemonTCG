@@ -1261,7 +1261,23 @@ func _run_visual_upgrade_tests() -> void:
 		"Local match did not open the privacy pass overlay")
 	_check(float(privacy_ui.modal_shade.color.a) >= 0.99,
 		"Local privacy pass overlay did not use an opaque shade")
+	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
+	privacy_ui._refresh_game()
+	privacy_ui.battle_screen.show_card_detail("sv1-104")
+	_check(privacy_ui.battle_screen.detail_panel.visible,
+		"Battle card detail did not open for the close control test")
+	_check(privacy_ui.battle_screen.detail_close_button != null
+		and privacy_ui.battle_screen.detail_close_button.visible,
+		"Battle card detail close button was not shown")
+	privacy_ui.battle_screen.detail_close_button.pressed.emit()
+	_check(not privacy_ui.battle_screen.detail_panel.visible,
+		"Battle card detail close button did not hide the detail panel")
+	privacy_ui.battle_screen.show_card_detail("sv1-104")
 	privacy_ui._show_pause_overlay()
+	_check(privacy_ui.modal_layer.z_index > privacy_ui.battle_screen.z_index + 20,
+		"Pause menu modal layer can be drawn under battle overlay panels")
+	_check(not privacy_ui.battle_screen.detail_panel.visible,
+		"Pause menu left the battle card detail overlay visible")
 	_check(float(privacy_ui.modal_shade.color.a) >= 0.99,
 		"Pause menu did not use an opaque privacy shade")
 	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
@@ -1322,8 +1338,14 @@ func _run_visual_upgrade_tests() -> void:
 		"event_type": "cards_drawn",
 		"data": {"player": 0, "cards": ["sv1-104"]},
 	}, 8, 0, 0)
+	var legacy_multi_draw := PresentationEvent.normalize({
+		"event_type": "cards_drawn",
+		"data": {"player": 0, "cards": ["sv1-104", "sv1-151", "sv1-153"]},
+	}, 8, 0, 1)
 	_check(legacy_draw.get("visibility", "") == PresentationEvent.OWNER,
 		"Legacy draw events are not owner-only")
+	_check(int(legacy_multi_draw.get("amount", 0)) == 3,
+		"Legacy multi-card draw event did not derive the card amount")
 	_check(
 		PresentationEvent.for_player(legacy_draw, 1).get("data", {}).get(
 			"cards", []).is_empty(),
@@ -1340,8 +1362,12 @@ func _run_visual_upgrade_tests() -> void:
 		state.players[0].hand = [
 			"sv1-104", "sv1-ener-5", "sv1-151", "sv1-189",
 		]
-		state.players[0].active.energy_card_ids = ["sv1-ener-5"]
+		state.players[0].active.energy_card_ids.assign([
+			"sv1-ener-5", "sv1-ener-5", "svi-mirc",
+		])
 		state.players[0].active.attached_tool_id = "sv1-202"
+		state.players[0].active.damage_counters = 2
+		state.players[0].active.status_conditions.assign(["POISONED"])
 		state.players[0].discard = ["sv1-180", "sv1-189"]
 		state.players[0].prizes = ["sv1-151", "sv1-153"]
 		state.players[1].hand = [
@@ -1360,6 +1386,39 @@ func _run_visual_upgrade_tests() -> void:
 			and battle.own_active.card_id == state.players[0].active.card_id,
 			"Battle screen did not bind the public active card",
 		)
+		var active_hp := battle.own_active.find_child(
+			"HPPill", true, false
+		) as Label
+		var active_damage := battle.own_active.find_child(
+			"DamageBadge", true, false
+		) as Label
+		var active_energy := battle.own_active.find_child(
+			"EnergyRow", true, false
+		) as HBoxContainer
+		var active_tool := battle.own_active.find_child(
+			"ToolBadge", true, false
+		) as Label
+		_check(
+			active_hp != null and active_hp.visible and active_hp.text == "HP100",
+			"Active Pokemon HP pill did not show current boosted HP",
+		)
+		_check(
+			active_damage != null and active_damage.visible and active_damage.text == "20",
+			"Active Pokemon damage badge did not show damage counters",
+		)
+		_check(
+			active_energy != null and active_energy.visible
+			and active_energy.get_child_count() >= 2,
+			"Active Pokemon energy row did not render grouped energy badges",
+		)
+		_check(
+			active_tool != null and active_tool.visible,
+			"Active Pokemon tool badge was not rendered",
+		)
+		_check(
+			battle.own_active.status_row.get_child_count() == 1,
+			"Active Pokemon status badge was not rendered",
+		)
 		_check(battle.hand_views.size() == 4,
 			"Battle screen did not create stable hand card views")
 		_check(
@@ -1375,6 +1434,15 @@ func _run_visual_upgrade_tests() -> void:
 				and hidden_view.card_id.is_empty()
 				and hidden_view.hand_index == -1,
 				"Opponent hand view leaked card identity or became interactive",
+			)
+			var hidden_hp := hidden_view.find_child("HPPill", true, false) as Label
+			var hidden_energy := hidden_view.find_child(
+				"EnergyRow", true, false
+			) as HBoxContainer
+			_check(
+				(hidden_hp == null or not hidden_hp.visible)
+				and (hidden_energy == null or not hidden_energy.visible),
+				"Hidden opponent hand card exposed battle info overlays",
 			)
 		_check(battle.zones.size() == 7,
 			"Battle screen does not expose every required tabletop zone")
@@ -1554,6 +1622,61 @@ func _run_visual_upgrade_tests() -> void:
 			not drawn_view.is_presentation_hidden(),
 			"Draw animation did not reveal the hand card after landing",
 		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+
+		state.players[0].hand = ["sv1-180", "sv1-104"]
+		state.players[0].deck = ["sv1-151", "sv1-153", "sv1-ener-5", "sv1-ener-6"]
+		state.players[0].discard.clear()
+		state.players[0].supporter_played_this_turn = false
+		battle.update_view(state, 0, rows, "", false, "local")
+		var nemona_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		var nemona_step := engine.apply_action(
+			state,
+			GameAction.new(
+				"PLAY_TRAINER",
+				{"hand_idx": 0},
+				false,
+				0,
+				EntityRef.new("card", 0, "hand", "", 0, "", "sv1-180"),
+			),
+			PortableRandomSource.new(20260625),
+		)
+		_check(nemona_step.success,
+			"Nemona trainer action failed in the UI presentation regression")
+		battle.update_view(state, 0, rows, "", false, "local")
+		var nemona_events: Array[Dictionary] = PresentationEvent.normalize_all(
+			nemona_step.events,
+			state.revision,
+			0,
+		)
+		battle._stage_presentation_targets(nemona_events, nemona_snapshot)
+		var nemona_draw_event := {}
+		for event in nemona_events:
+			if str(event.get("event_type", "")) == "cards_drawn":
+				nemona_draw_event = event
+				break
+		var nemona_targets: Array = battle._presentation_event_hand_targets.get(
+			str(nemona_draw_event.get("event_id", "")),
+			[],
+		)
+		_check(int(nemona_draw_event.get("amount", 0)) == 3,
+			"Nemona draw event did not keep the three-card amount")
+		_check(nemona_targets.size() == 3,
+			"Nemona draw did not target all three newly drawn hand cards")
+		for target_value in nemona_targets:
+			var target_card := target_value as CardView
+			_check(
+				target_card != null and target_card.is_presentation_hidden(),
+				"Nemona drawn card target was not masked before the animation landed",
+			)
+		battle._on_presentation_event_finished(nemona_draw_event)
+		for target_value in nemona_targets:
+			var target_card := target_value as CardView
+			_check(
+				target_card != null and not target_card.is_presentation_hidden(),
+				"Nemona drawn card target was not revealed after the animation landed",
+			)
 		battle.director.clear_for_resync()
 		battle._clear_transient_visuals()
 
@@ -1745,7 +1868,7 @@ func _run_visual_upgrade_tests() -> void:
 	) as HBoxContainer
 	status_card.status_row = status_row
 	var status_pokemon := PokemonState.new("sv1-104")
-	status_pokemon.status_conditions = ["POISONED"]
+	status_pokemon.status_conditions.assign(["POISONED"])
 	status_card.pokemon = status_pokemon
 	status_card._refresh_statuses()
 	_check(
