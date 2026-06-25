@@ -19,19 +19,24 @@ const CARD_SCENE := preload("res://ui/card_view.tscn")
 
 @export_category("Table Layout")
 @export_group("HUD")
-@export var hud_width := 260.0
+@export var hud_width := 128.0
+@export_group("Table Margins")
+@export var table_side_margin := 22.0
+@export var table_top_margin := 16.0
+@export var table_bottom_margin := 10.0
+@export var hand_bottom_padding := 8.0
 @export_group("Board Cards")
-@export var active_card_size := Vector2(112, 156)
-@export var bench_card_size := Vector2(76, 106)
-@export var zone_size := Vector2(86, 122)
-@export var bench_spacing := 14.0
+@export var active_card_size := Vector2(130, 182)
+@export var bench_card_size := Vector2(86, 120)
+@export var zone_size := Vector2(96, 136)
+@export var bench_spacing := 16.0
 @export_group("Hand")
-@export var hand_card_size := Vector2(100, 140)
-@export var hand_minimum_spacing := 44.0
-@export var hand_rotation_degrees := 7.0
+@export var hand_card_size := Vector2(112, 157)
+@export var hand_minimum_spacing := 52.0
+@export var hand_rotation_degrees := 6.0
 @export_group("Opponent Hand")
-@export var opponent_hand_card_size := Vector2(70, 98)
-@export var opponent_hand_minimum_spacing := 24.0
+@export var opponent_hand_card_size := Vector2(76, 106)
+@export var opponent_hand_minimum_spacing := 26.0
 @export var opponent_hand_rotation_degrees := 6.0
 @export var opponent_hand_max_visible := 8
 @export_category("Presentation")
@@ -67,9 +72,11 @@ var phase_labels: Dictionary = {}
 @onready var action_list: VBoxContainer = %ActionList
 @onready var all_actions_scroll: ScrollContainer = %AllActionsScroll
 @onready var all_actions_toggle: Button = %AllActionsToggle
+@onready var detail_panel: PanelContainer = %DetailPanel
 @onready var detail_image: TextureRect = %DetailImage
 @onready var detail_title: Label = %DetailTitle
 @onready var detail_text: RichTextLabel = %DetailText
+@onready var log_panel: PanelContainer = %LogPanel
 @onready var log_label: RichTextLabel = %LogLabel
 @onready var opponent_hand_surface: Control = %OpponentHandSurface
 @onready var opponent_hand_count_badge: Label = %OpponentHandCountBadge
@@ -142,17 +149,19 @@ func _resolve_scene_nodes() -> void:
 	all_actions_toggle = get_node(
 		"ActionPanel/Margin/Content/Heading/AllActionsToggle"
 	) as Button
+	detail_panel = get_node("OverlayPanels/DetailPanel") as PanelContainer
 	detail_image = get_node(
-		"BattleRoot/Body/BattleHUD/DetailPanel/Row/DetailImage"
+		"OverlayPanels/DetailPanel/Row/DetailImage"
 	) as TextureRect
 	detail_title = get_node(
-		"BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn/DetailTitle"
+		"OverlayPanels/DetailPanel/Row/TextColumn/DetailTitle"
 	) as Label
 	detail_text = get_node(
-		"BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn/DetailText"
+		"OverlayPanels/DetailPanel/Row/TextColumn/DetailText"
 	) as RichTextLabel
+	log_panel = get_node("OverlayPanels/LogPanel") as PanelContainer
 	log_label = get_node(
-		"BattleRoot/Body/BattleHUD/LogPanel/Content/LogLabel"
+		"OverlayPanels/LogPanel/Content/LogLabel"
 	) as RichTextLabel
 	opponent_hand_surface = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentHandSurface"
@@ -234,10 +243,14 @@ func clear_presentation_for_resync() -> void:
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 	if card_id.is_empty():
+		if detail_panel:
+			detail_panel.visible = false
 		detail_image.texture = null
 		detail_title.text = "选择一张卡牌"
 		detail_text.text = "点击或长按卡牌查看详情。"
 		return
+	if detail_panel:
+		detail_panel.visible = true
 	var card := CardDatabase.get_card(card_id)
 	detail_image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
 	detail_title.text = str(card.get("name", card_id))
@@ -427,6 +440,11 @@ func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 
 func _bind_scene_nodes() -> void:
 	hud.custom_minimum_size.x = hud_width
+	if detail_panel:
+		detail_panel.visible = false
+		detail_panel.z_index = 34
+	if log_panel:
+		log_panel.z_index = 33
 	playmat.quality_profile = AppSettings.resolved_quality_profile()
 	effects.quality_profile = AppSettings.resolved_quality_profile()
 	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -762,6 +780,8 @@ func _refresh_log() -> void:
 	var lines: Array[String] = []
 	for index in range(start, state_ref.action_log.size()):
 		lines.append("[color=#62d7ff]◆[/color] " + state_ref.action_log[index])
+	if log_panel:
+		log_panel.visible = not lines.is_empty()
 	log_label.text = "\n".join(lines)
 	log_label.scroll_to_line(maxi(0, lines.size() - 1))
 
@@ -820,28 +840,35 @@ func _layout_board() -> void:
 	var height := board_canvas.size.y
 	if width <= 0.0 or height <= 0.0:
 		return
-	var layout_scale := clampf(height / 840.0, 0.82, 1.0)
+	var layout_scale := clampf(minf(width / 1500.0, height / 840.0), 0.76, 1.08)
 	var active_size := active_card_size * layout_scale
 	var bench_size := bench_card_size * layout_scale
 	var zone_visual_size := zone_size * layout_scale
 	var own_hand_size := hand_card_size * layout_scale
 	var hidden_hand_size := opponent_hand_card_size * layout_scale
-	var margin := 18.0
-	var side_zone_x := width - zone_visual_size.x - 38.0
-	var left_zone_x := margin + 4.0
-	var left_safe := left_zone_x + zone_visual_size.x + 54.0
-	var right_safe := side_zone_x - 42.0
-	if right_safe <= left_safe + 320.0:
-		left_safe = margin + 8.0
-		right_safe = width - margin - 8.0
-	var table_width := maxf(260.0, right_safe - left_safe)
-	var center_x := (left_safe + right_safe) * 0.5
+	var side_margin := maxf(14.0, table_side_margin * layout_scale)
+	var top_margin := maxf(10.0, table_top_margin * layout_scale)
+	var bottom_margin := maxf(8.0, table_bottom_margin * layout_scale)
+	var zone_gap := 12.0 * layout_scale
+	var left_zone_x := side_margin
+	var side_zone_x := width - zone_visual_size.x - side_margin
+	var field_left := left_zone_x + zone_visual_size.x + 36.0 * layout_scale
+	var field_right := side_zone_x - 36.0 * layout_scale
+	if field_right <= field_left + 360.0 * layout_scale:
+		field_left = side_margin
+		field_right = width - side_margin
+	var table_width := maxf(300.0, field_right - field_left)
+	var center_x := (field_left + field_right) * 0.5
 
-	var top_hand_height := hidden_hand_size.y + 28.0
-	var opponent_hand_width := minf(table_width, maxf(280.0, table_width * 0.58))
+	var top_hand_height := hidden_hand_size.y + 20.0 * layout_scale
+	var opponent_hand_width := clampf(
+		table_width * 0.46,
+		340.0 * layout_scale,
+		minf(table_width, 620.0 * layout_scale),
+	)
 	opponent_hand_surface.position = Vector2(
 		center_x - opponent_hand_width * 0.5,
-		10.0,
+		top_margin,
 	)
 	opponent_hand_surface.size = Vector2(opponent_hand_width, top_hand_height)
 	opponent_hand_count_badge.position = Vector2(
@@ -849,23 +876,28 @@ func _layout_board() -> void:
 		opponent_hand_surface.position.y + top_hand_height - 36.0,
 	)
 	opponent_hand_count_badge.size = Vector2(34.0, 34.0)
-	opponent_info.position = Vector2(left_safe, top_hand_height + 12.0)
+	opponent_info.position = Vector2(field_left, top_margin + top_hand_height + 10.0)
 	opponent_info.size = Vector2(table_width, 24.0)
 
-	var own_hand_height := own_hand_size.y + 24.0
-	var own_hand_y := height - own_hand_height - 8.0
-	hand_scroll.position = Vector2(left_safe, own_hand_y)
-	hand_scroll.size = Vector2(table_width, own_hand_height)
+	var own_hand_height := own_hand_size.y + 22.0 * layout_scale
+	var own_hand_y := height - own_hand_height - bottom_margin - hand_bottom_padding * layout_scale
+	var hand_width := clampf(
+		table_width * 0.64,
+		520.0 * layout_scale,
+		minf(table_width, 850.0 * layout_scale),
+	)
+	hand_scroll.position = Vector2(center_x - hand_width * 0.5, own_hand_y)
+	hand_scroll.size = Vector2(hand_width, own_hand_height)
 	hand_surface.custom_minimum_size.y = own_hand_height - 8.0
-	own_info.position = Vector2(left_safe, own_hand_y - 28.0)
+	own_info.position = Vector2(field_left, own_hand_y - 28.0)
 	own_info.size = Vector2(table_width, 24.0)
 
 	var arena_top := opponent_info.position.y + 28.0
 	var arena_bottom := own_info.position.y - 10.0
 	var arena_height := maxf(1.0, arena_bottom - arena_top)
-	var active_gap := 18.0 * layout_scale
-	var active_clearance := 10.0 * layout_scale
-	var bench_edge_gap := 6.0 * layout_scale
+	var active_gap := 14.0 * layout_scale
+	var active_clearance := 14.0 * layout_scale
+	var bench_edge_gap := 10.0 * layout_scale
 	var required_field_height := (
 		active_size.y * 2.0
 		+ bench_size.y * 2.0
@@ -884,11 +916,25 @@ func _layout_board() -> void:
 		active_clearance *= battle_scale
 		bench_edge_gap *= battle_scale
 	var arena_middle := (arena_top + arena_bottom) * 0.5
-	var bench_gap := bench_spacing * layout_scale * battle_scale
+	var bench_gap := clampf(
+		bench_spacing * layout_scale * battle_scale + table_width * 0.018,
+		bench_spacing * layout_scale * battle_scale,
+		30.0 * layout_scale,
+	)
 	var bench_total := bench_size.x * 5.0 + bench_gap * 4.0
 	var bench_x := center_x - bench_total * 0.5
-	var top_bench_y := arena_top + bench_edge_gap
-	var bottom_bench_y := arena_bottom - bench_size.y - bench_edge_gap
+	var opponent_active_y := arena_middle - active_gap * 0.5 - active_size.y
+	var own_active_y := arena_middle + active_gap * 0.5
+	var top_bench_y := opponent_active_y - bench_size.y - active_clearance
+	var bottom_bench_y := own_active_y + active_size.y + active_clearance
+	if top_bench_y < arena_top + bench_edge_gap:
+		var shift_down := arena_top + bench_edge_gap - top_bench_y
+		top_bench_y += shift_down
+		opponent_active_y += shift_down * 0.42
+	if bottom_bench_y + bench_size.y > arena_bottom - bench_edge_gap:
+		var shift_up := bottom_bench_y + bench_size.y - (arena_bottom - bench_edge_gap)
+		bottom_bench_y -= shift_up
+		own_active_y -= shift_up * 0.42
 	for index in range(5):
 		_place_card(
 			opponent_bench[index],
@@ -903,15 +949,6 @@ func _layout_board() -> void:
 			),
 			bench_size,
 		)
-	var active_band_top := top_bench_y + bench_size.y + active_clearance
-	var active_band_bottom := bottom_bench_y - active_clearance
-	var active_pair_height := active_size.y * 2.0 + active_gap
-	var active_extra := maxf(
-		0.0,
-		active_band_bottom - active_band_top - active_pair_height,
-	)
-	var opponent_active_y := active_band_top + active_extra * 0.5
-	var own_active_y := opponent_active_y + active_size.y + active_gap
 	_place_card(
 		opponent_active,
 		Vector2(
@@ -926,10 +963,10 @@ func _layout_board() -> void:
 		active_size,
 	)
 
-	var top_zone_y := 36.0
-	var own_zone_y := own_hand_y - zone_visual_size.y - 14.0
-	var opponent_discard_y := top_zone_y + zone_visual_size.y + 18.0
-	var own_discard_y := own_zone_y - zone_visual_size.y - 18.0
+	var top_zone_y := top_margin + 18.0 * layout_scale
+	var own_zone_y := own_hand_y - zone_visual_size.y - 12.0 * layout_scale
+	var opponent_discard_y := top_zone_y + zone_visual_size.y + zone_gap
+	var own_discard_y := own_zone_y - zone_visual_size.y - zone_gap
 	_place_zone("opponent_prizes", Vector2(left_zone_x, top_zone_y), zone_visual_size)
 	_place_zone("opponent_deck", Vector2(side_zone_x, top_zone_y), zone_visual_size)
 	_place_zone(
@@ -937,11 +974,12 @@ func _layout_board() -> void:
 		Vector2(side_zone_x, opponent_discard_y),
 		zone_visual_size,
 	)
-	_place_zone(
-		"stadium",
-		Vector2(left_zone_x, arena_middle - zone_visual_size.y * 0.5),
-		zone_visual_size,
-	)
+	var stadium_y := arena_middle - zone_visual_size.y * 0.5
+	var stadium_min_y := opponent_discard_y + zone_visual_size.y + zone_gap
+	var stadium_max_y := own_discard_y - zone_visual_size.y - zone_gap
+	if stadium_max_y > stadium_min_y:
+		stadium_y = clampf(stadium_y, stadium_min_y, stadium_max_y)
+	_place_zone("stadium", Vector2(left_zone_x, stadium_y), zone_visual_size)
 	_place_zone(
 		"own_discard",
 		Vector2(side_zone_x, own_discard_y),
@@ -960,7 +998,33 @@ func _layout_board() -> void:
 
 	_layout_opponent_hand(hidden_hand_size)
 	_layout_hand(own_hand_size)
+	_layout_overlay_drawers()
 	effects.queue_redraw()
+
+
+func _layout_overlay_drawers() -> void:
+	if board_panel == null:
+		return
+	var board_origin := board_panel.global_position - global_position
+	var drawer_width := clampf(
+		board_panel.size.x * 0.23,
+		260.0,
+		340.0,
+	)
+	var drawer_x := board_origin.x + board_panel.size.x - drawer_width - 14.0
+	var detail_height := clampf(board_panel.size.y * 0.28, 190.0, 240.0)
+	var log_height := clampf(board_panel.size.y * 0.18, 118.0, 160.0)
+	if detail_panel:
+		detail_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
+		detail_panel.size = Vector2(drawer_width, detail_height)
+		detail_panel.custom_minimum_size = Vector2(drawer_width, detail_height)
+	if log_panel:
+		log_panel.position = Vector2(
+			drawer_x,
+			board_origin.y + board_panel.size.y - log_height - 14.0,
+		)
+		log_panel.size = Vector2(drawer_width, log_height)
+		log_panel.custom_minimum_size = Vector2(drawer_width, log_height)
 
 
 func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:

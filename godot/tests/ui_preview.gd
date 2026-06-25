@@ -153,6 +153,8 @@ func _render_previews() -> void:
 		quit(1)
 		return
 	ui._close_modal()
+	await process_frame
+	await create_timer(0.22).timeout
 	ui.selected_entity_key = "hand:1"
 	ui._refresh_game()
 	await process_frame

@@ -248,12 +248,13 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 - 双方战斗区和五个备战位。
 - 双方牌库、弃牌、奖品和竞技场。
 - 手牌滚动区域。
-- 回合阶段、详情和行动日志。
+- 右侧贴边回合阶段 HUD，以及不占用牌桌宽度的详情/日志浮层。
 - 表现效果层与输入遮挡层。
 
 选择根节点后，Inspector 的 `Table Layout` 可以修改：
 
-- HUD 宽度。
+- HUD 贴边窄轨宽度。
+- 牌桌边距和手牌底部预留。
 - 战斗宝可梦尺寸。
 - 备战宝可梦尺寸和间距。
 - 牌区尺寸。
@@ -266,13 +267,20 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 修改后运行 Workbench 的“战斗场景”，同时观察 16:9 与超宽屏截图，避免只在
 自己的窗口尺寸上看起来正确。
 
+战斗界面从 0.3.x 起采用“牌桌优先”的结构：`BattleHUD` 只保留右侧贴边阶段轨，
+`DetailPanel` 和 `LogPanel` 位于根节点下的 `OverlayPanels`，由脚本定位成浮层。
+如果要调详情或日志外观，应打开 `OverlayPanels/DetailPanel` 或
+`OverlayPanels/LogPanel`，不要再到 `BattleHUD` 下面寻找它们。
+
 战斗界面最容易误解的一点：`OpponentActive`、`OwnActive`、`OpponentBench0` 等固定卡位
 虽然在场景树里能拖动，但运行时会被 `_layout_board()` 重新计算位置。想调整体比例时，
 先选根节点 `BattleScreen`，修改 Inspector：
 
 | 导出参数 | 影响 |
 |---|---|
-| `hud_width` | 右侧阶段、详情和日志 HUD 的宽度 |
+| `hud_width` | 右侧贴边阶段 HUD 的宽度 |
+| `table_side_margin` / `table_top_margin` / `table_bottom_margin` | 牌桌边缘安全距离 |
+| `hand_bottom_padding` | 手牌与底部边缘的额外距离 |
 | `active_card_size` | 双方战斗宝可梦大小 |
 | `bench_card_size` | 双方备战宝可梦大小 |
 | `zone_size` | 牌库、弃牌、奖品和竞技场大小 |
@@ -937,12 +945,14 @@ Godot UI 修改先判断节点属于哪一种布局：
 
 1. 打开 `res://scenes/battle/battle_screen.tscn`。
 2. 选择根节点 `BattleScreen`。
-3. 在 Inspector 的 `Table Layout / HUD` 中调整 `hud_width`。
-4. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
-5. 在 `Table Layout / Hand` 中调整 `hand_card_size`、`hand_minimum_spacing` 和 `hand_rotation_degrees`。
-6. 在 `Presentation / Touch Targets` 中调整 `primary_action_button_height` 和 `secondary_action_button_height`。
-7. 按 `F6` 或在 Workbench 选择“战斗场景”。
-8. 运行 UI 截图脚本检查 16:9 和 20:9。
+3. 在 Inspector 的 `Table Layout / HUD` 中调整右侧贴边阶段轨的 `hud_width`。
+4. 在 `Table Layout / Table Margins` 中调整牌桌安全边距和手牌底部预留。
+5. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
+6. 在 `Table Layout / Hand` 中调整 `hand_card_size`、`hand_minimum_spacing` 和 `hand_rotation_degrees`。
+7. 如果要改详情或日志浮层，选择 `OverlayPanels/DetailPanel` 或 `OverlayPanels/LogPanel`。
+8. 在 `Presentation / Touch Targets` 中调整 `primary_action_button_height` 和 `secondary_action_button_height`。
+9. 按 `F6` 或在 Workbench 选择“战斗场景”。
+10. 运行 UI 截图脚本检查 16:9 和 20:9。
 
 不要只拖 `OpponentActive`、`OwnActive`、`OwnDeck` 或 `Stadium` 来定最终位置。
 这些节点运行时会由 `_layout_board()` 重排。拖动只适合改善编辑器里的预览摆放。
@@ -964,6 +974,9 @@ Godot UI 修改先判断节点属于哪一种布局：
 如果想改牌库、弃牌、奖品的位置，不要只拖场景节点；应修改
 `BattleScreen._layout_board()` 中的 `_place_zone(...)` 调用。修改后检查 16:9 和 20:9
 截图，避免宽屏或移动端遮挡。
+
+详情与日志浮层由 `_layout_overlay_drawers()` 定位。它们不参与 `Body` 的
+`HBoxContainer` 排版，所以调整浮层尺寸时要同时检查右侧牌库、弃牌和手牌是否仍可读。
 
 ### 配方：修改 CardView 卡牌组件
 

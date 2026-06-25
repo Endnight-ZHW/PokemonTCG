@@ -284,8 +284,8 @@ func _refresh() -> void:
 		image.texture = null
 		empty_label.visible = true
 		info_panel.visible = false
-		frame_color = Color(0.04, 0.10, 0.08, 0.42)
-		border_color = Color(0.30, 0.58, 0.42, 0.52)
+		frame_color = Color(0.025, 0.07, 0.055, 0.30)
+		border_color = Color(0.30, 0.66, 0.45, 0.34)
 	else:
 		var card := _card_data(card_id)
 		image.texture = _card_texture(str(card.get("image_path", "")))
@@ -433,7 +433,7 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 func _on_resized() -> void:
 	pivot_offset = size * 0.5
 	if info_panel:
-		info_panel.offset_top = -54
+		info_panel.offset_top = -58
 		info_panel.offset_bottom = -3
 		info_panel.offset_left = 3
 		info_panel.offset_right = -3

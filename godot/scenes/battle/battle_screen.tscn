@@ -348,66 +348,69 @@ layout_mode = 2
 
 [node name="BattleHUD" type="VBoxContainer" parent="BattleRoot/Body"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(260, 0)
+custom_minimum_size = Vector2(128, 0)
 layout_mode = 2
 theme_override_constants/separation = 8
-editor_description = "右侧 HUD。可以调整各面板高度和文字层级；宽度也可通过 BattleScreen 的 Inspector 参数统一修改。"
+editor_description = "右侧贴边 HUD。常驻阶段与推进按钮；详情和日志由 OverlayPanels 浮层承载。宽度可通过 BattleScreen 的 Inspector 参数统一修改。"
 
 [node name="PhasePanel" type="PanelContainer" parent="BattleRoot/Body/BattleHUD"]
-custom_minimum_size = Vector2(0, 170)
+custom_minimum_size = Vector2(0, 188)
 layout_mode = 2
 theme_override_styles/panel = SubResource("Style_hud")
 
 [node name="Content" type="VBoxContainer" parent="BattleRoot/Body/BattleHUD/PhasePanel"]
 layout_mode = 2
-theme_override_constants/separation = 7
+theme_override_constants/separation = 8
 
 [node name="Heading" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 15
 text = "回合阶段"
+horizontal_alignment = 1
 
-[node name="PhaseRow" type="HBoxContainer" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
+[node name="PhaseRow" type="GridContainer" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
 layout_mode = 2
-theme_override_constants/separation = 5
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 2
 
 [node name="DrawPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 28)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 11
 text = "抽牌"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="MainPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 28)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 11
 text = "主要"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="AttackPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 28)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 11
 text = "攻击"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="CheckupPhase" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 28)
+custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 11
 text = "检查"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -415,74 +418,94 @@ vertical_alignment = 1
 [node name="TurnHint" type="Label" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
-theme_override_font_sizes/font_size = 13
-text = "选择卡牌查看可执行操作"
+theme_override_font_sizes/font_size = 11
+text = "选牌查看动作"
+horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="PhaseAdvanceButton" type="Button" parent="BattleRoot/Body/BattleHUD/PhasePanel/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("Style_phase_button")
 text = "进入下一阶段"
+autowrap_mode = 2
 
-[node name="DetailPanel" type="PanelContainer" parent="BattleRoot/Body/BattleHUD"]
-custom_minimum_size = Vector2(0, 224)
-layout_mode = 2
+[node name="OverlayPanels" type="Control" parent="."]
+z_index = 20
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+editor_description = "战斗详情与日志浮层。它们不参与 Body 布局，因此不会压缩牌桌宽度。"
+
+[node name="DetailPanel" type="PanelContainer" parent="OverlayPanels"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(320, 220)
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 220.0
 theme_override_styles/panel = SubResource("Style_hud")
 
-[node name="Row" type="HBoxContainer" parent="BattleRoot/Body/BattleHUD/DetailPanel"]
+[node name="Row" type="HBoxContainer" parent="OverlayPanels/DetailPanel"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="DetailImage" type="TextureRect" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row"]
+[node name="DetailImage" type="TextureRect" parent="OverlayPanels/DetailPanel/Row"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(116, 168)
+custom_minimum_size = Vector2(96, 136)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
 
-[node name="TextColumn" type="VBoxContainer" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row"]
+[node name="TextColumn" type="VBoxContainer" parent="OverlayPanels/DetailPanel/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="DetailTitle" type="Label" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn"]
+[node name="DetailTitle" type="Label" parent="OverlayPanels/DetailPanel/Row/TextColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 16
 text = "卡牌详情"
 autowrap_mode = 2
 
-[node name="DetailText" type="RichTextLabel" parent="BattleRoot/Body/BattleHUD/DetailPanel/Row/TextColumn"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_font_sizes/normal_font_size = 13
-bbcode_enabled = true
-text = "点击或长按卡牌查看详情。"
-
-[node name="LogPanel" type="PanelContainer" parent="BattleRoot/Body/BattleHUD"]
-custom_minimum_size = Vector2(0, 126)
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_styles/panel = SubResource("Style_hud")
-
-[node name="Content" type="VBoxContainer" parent="BattleRoot/Body/BattleHUD/LogPanel"]
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="Heading" type="Label" parent="BattleRoot/Body/BattleHUD/LogPanel/Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 15
-text = "行动日志"
-
-[node name="LogLabel" type="RichTextLabel" parent="BattleRoot/Body/BattleHUD/LogPanel/Content"]
+[node name="DetailText" type="RichTextLabel" parent="OverlayPanels/DetailPanel/Row/TextColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+text = "点击或长按卡牌查看详情。"
+
+[node name="LogPanel" type="PanelContainer" parent="OverlayPanels"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 148)
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 148.0
+theme_override_styles/panel = SubResource("Style_hud")
+
+[node name="Content" type="VBoxContainer" parent="OverlayPanels/LogPanel"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="OverlayPanels/LogPanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 14
+text = "行动日志"
+
+[node name="LogLabel" type="RichTextLabel" parent="OverlayPanels/LogPanel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/normal_font_size = 11
 bbcode_enabled = true
 text = "对局日志会显示在这里。"
 

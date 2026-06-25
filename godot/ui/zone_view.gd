@@ -118,12 +118,12 @@ func _draw() -> void:
 		var offset := step * float(layer)
 		var layer_rect := Rect2(offset, size)
 		var t := float(layer) / float(maxi(1, layers))
-		var fill := _stack_color().darkened(0.08 + t * 0.12)
-		fill.a = 0.64
+		var fill := _stack_color().darkened(0.05 + t * 0.10)
+		fill.a = 0.72
 		var border := DesignTokens.BORDER.lightened(0.18)
-		border.a = 0.62
+		border.a = 0.72
 		draw_rect(layer_rect, fill, true)
-		draw_rect(layer_rect, border, false, 1.0)
+		draw_rect(layer_rect, border, false, 1.25)
 
 
 func _refresh() -> void:
@@ -183,19 +183,19 @@ func _stack_layer_count() -> int:
 		0.0,
 		1.0,
 	)
-	var max_layers := 7 if stack_visual_mode == "deck" else 6
+	var max_layers := 9 if stack_visual_mode == "deck" else 7
 	return clampi(int(ceil(ratio * float(max_layers))), 1, max_layers)
 
 
 func _stack_step() -> Vector2:
 	match stack_visual_direction:
 		"down":
-			return Vector2(3.0, 3.0)
+			return Vector2(3.6, 3.2)
 		"left":
-			return Vector2(-3.0, 2.0)
+			return Vector2(-3.6, 2.4)
 		"right":
-			return Vector2(3.0, 2.0)
-	return Vector2(3.0, -3.0)
+			return Vector2(3.6, 2.4)
+	return Vector2(3.6, -3.2)
 
 
 func _stack_color() -> Color:

@@ -3,12 +3,12 @@
 [ext_resource type="Script" path="res://ui/zone_view.gd" id="1_zone"]
 
 [sub_resource type="StyleBoxFlat" id="Style_frame"]
-bg_color = Color(0.045, 0.075, 0.12, 0.88)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.26, 0.39, 0.56, 0.45)
+bg_color = Color(0.033, 0.057, 0.091, 0.86)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.32, 0.48, 0.68, 0.56)
 corner_radius_top_left = 10
 corner_radius_top_right = 10
 corner_radius_bottom_right = 10
@@ -64,7 +64,7 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
-offset_top = 20.0
+offset_top = 4.0
 offset_right = -4.0
 offset_bottom = -4.0
 grow_horizontal = 2
@@ -77,15 +77,16 @@ unique_name_in_owner = true
 mouse_filter = 2
 offset_left = 6.0
 offset_top = 2.0
-offset_right = 76.0
+offset_right = 86.0
 offset_bottom = 19.0
-theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
+theme_override_colors/font_color = Color(0.957, 0.969, 1, 0.88)
 theme_override_font_sizes/font_size = 11
 text = "牌区"
+text_overrun_behavior = 3
 
 [node name="CountLabel" type="Label" parent="Frame"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 30)
+custom_minimum_size = Vector2(34, 34)
 mouse_filter = 2
 layout_mode = 1
 anchors_preset = 3
@@ -93,12 +94,14 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -35.0
-offset_top = -35.0
+offset_left = -34.0
+offset_top = -34.0
+offset_right = 3.0
+offset_bottom = 3.0
 grow_horizontal = 0
 grow_vertical = 0
 theme_override_colors/font_color = Color(0.027, 0.063, 0.114, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("Style_count")
 text = "0"
 horizontal_alignment = 1
