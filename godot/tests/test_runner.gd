@@ -603,6 +603,24 @@ func _run_phase_four_foundation_tests() -> void:
 	ai_ui._stop_ai()
 	_check(
 		ai_ui.start_ai_match_for_test(
+			"challenge", "fire", "water", "fast", 0),
+		"Unable to start Challenge AI match with automatic seed",
+	)
+	var automatic_seed_a := int(ai_ui.last_match_seed)
+	ai_ui._stop_ai()
+	_check(
+		ai_ui.start_ai_match_for_test(
+			"challenge", "fire", "water", "fast", 0),
+		"Unable to restart Challenge AI match with automatic seed",
+	)
+	var automatic_seed_b := int(ai_ui.last_match_seed)
+	_check(
+		automatic_seed_a != automatic_seed_b,
+		"Challenge AI matches reused a fixed automatic match seed",
+	)
+	ai_ui._stop_ai()
+	_check(
+		ai_ui.start_ai_match_for_test(
 			"deep", "fire", "water", "fast", 0, 20260621),
 		"Unable to start Deep AI match",
 	)
@@ -614,6 +632,18 @@ func _run_phase_four_foundation_tests() -> void:
 
 
 func _run_phase_five_foundation_tests() -> void:
+	var seed_controller := NetworkMatchController.new()
+	var network_seed_a := int(seed_controller._resolved_match_seed(-1))
+	var network_seed_b := int(seed_controller._resolved_match_seed(-1))
+	_check(
+		network_seed_a != network_seed_b,
+		"Network hosted matches reused a fixed automatic match seed",
+	)
+	_check(
+		seed_controller._resolved_match_seed(20260621) == 20260621,
+		"Explicit network match seed was not preserved",
+	)
+
 	var valid := ProtocolV3.envelope(
 		ProtocolV3.ACTION_SUBMIT,
 		"room-1",

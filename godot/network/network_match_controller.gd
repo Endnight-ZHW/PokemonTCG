@@ -17,16 +17,16 @@ var last_receive_msec := 0
 var last_send_msec := 0
 const HEARTBEAT_INTERVAL_MSEC := 15000
 const CONNECTION_TIMEOUT_MSEC := 45000
-var seed := 20260621
+var seed := -1
 var events: Array[Dictionary] = []
 
 
-func host_lan(port: int, deck_key: String, match_seed: int = 20260621) -> Error:
+func host_lan(port: int, deck_key: String, match_seed: int = -1) -> Error:
 	close()
 	host = true
 	player_idx = 0
 	local_deck_key = deck_key
-	seed = match_seed
+	seed = _resolved_match_seed(match_seed)
 	room_id = "lan-%08x" % (Time.get_unix_time_from_system() as int)
 	var enet := EnetTransport.new()
 	var error := enet.start_host(port)
@@ -48,12 +48,12 @@ func join_lan(address: String, port: int, deck_key: String) -> Error:
 	return error
 
 
-func host_relay(relay_url: String, deck_key: String, match_seed: int = 20260621) -> Error:
+func host_relay(relay_url: String, deck_key: String, match_seed: int = -1) -> Error:
 	close()
 	host = true
 	player_idx = 0
 	local_deck_key = deck_key
-	seed = match_seed
+	seed = _resolved_match_seed(match_seed)
 	var relay := WebSocketRelayTransport.new()
 	var error := relay.start_host(relay_url)
 	if error == OK:
@@ -405,3 +405,9 @@ func _drain_events() -> Array[Dictionary]:
 	var result := events.duplicate(true)
 	events.clear()
 	return result
+
+
+func _resolved_match_seed(match_seed: int) -> int:
+	if match_seed >= 0:
+		return match_seed
+	return PortableRandomSource.fresh_seed()

@@ -41,7 +41,7 @@ Write-Host 'WINDOWS_RELEASE_RUNTIME_OK'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
-    $entries = @($zip.Entries | ForEach-Object FullName)
+    $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
     foreach ($suffix in @(
         '/PokemonTCG.exe',
         '/PokemonTCG.pck',

@@ -31,6 +31,7 @@ var catalog := CardCatalog.new()
 var engine := GameEngine.new(catalog)
 var state: GameState
 var rng := PortableRandomSource.new(1)
+var last_match_seed := 0
 
 var current_screen := SCREEN_TITLE
 var current_view_player := 0
@@ -500,7 +501,7 @@ func start_ai_match_for_test(
 	opponent_key: String,
 	difficulty: String = "standard",
 	forced_first: int = -1,
-	match_seed: int = 20260621,
+	match_seed: int = -1,
 ) -> bool:
 	game_mode = mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
 	ai_difficulty = difficulty if difficulty in NativeChallengeAI.DIFFICULTIES else "standard"
@@ -520,7 +521,8 @@ func _start_match(
 	state.public_deck_keys = [first_key, second_key]
 	var actual_seed := match_seed
 	if actual_seed < 0:
-		actual_seed = int(Time.get_ticks_msec()) ^ 0x4A7C2026
+		actual_seed = PortableRandomSource.fresh_seed()
+	last_match_seed = actual_seed
 	rng = PortableRandomSource.new(actual_seed)
 	var result := engine.setup_game(
 		state,
