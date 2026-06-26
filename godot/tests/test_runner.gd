@@ -34,6 +34,9 @@ func _run_phase_zero_tests() -> void:
 		"Android orientation must be landscape")
 	_check(ProjectSettings.get_setting("display/window/stretch/aspect") == "expand",
 		"Window stretch aspect must support wide mobile displays")
+	_check(not bool(ProjectSettings.get_setting(
+		"gui/theme/default_font_multichannel_signed_distance_field", false)),
+		"Default font MSDF must stay disabled for Android Compatibility text")
 	_check(FileAccess.file_exists("res://scenes/main/main.tscn"), "Main scene is missing")
 	_check(FileAccess.file_exists("res://export_presets.cfg"), "Export presets are missing")
 
@@ -1224,6 +1227,26 @@ func _run_visual_upgrade_tests() -> void:
 		"Help modal did not open from the main shell")
 	_check(is_equal_approx(float(modal_ui.modal_shade.color.a), 0.86),
 		"Title help modal did not use the default translucent shade")
+	var help_labels: Array[Node] = modal_ui.modal_body.find_children(
+		"*", "Label", true, false)
+	var help_body_has_outline := false
+	var help_body_has_fullwidth_semicolon := false
+	for node in help_labels:
+		var help_label := node as Label
+		if help_label == null:
+			continue
+		help_body_has_outline = (
+			help_body_has_outline
+			or help_label.get_theme_constant("outline_size") != 0
+		)
+		help_body_has_fullwidth_semicolon = (
+			help_body_has_fullwidth_semicolon
+			or str(help_label.text).contains("；")
+		)
+	_check(not help_body_has_outline,
+		"Help modal body labels inherited the global outline")
+	_check(not help_body_has_fullwidth_semicolon,
+		"Help modal body still contains Android-unsafe fullwidth semicolons")
 	modal_ui._close_modal()
 	var distribute_request := ChoiceRequest.new(
 		"choice:test:energy",

@@ -187,8 +187,8 @@ func _show_help() -> void:
 	panel.add_child(content)
 	content.add_child(_label("规则与操作帮助", 26, DesignTokens.GOLD))
 	for row in [
-		"准备阶段放置基础宝可梦；主要阶段打出卡牌、附能、进化和撤退。",
-		"长按卡牌打开完整检查器；弃牌和竞技场可以查看公开卡。",
+		"准备阶段放置基础宝可梦。主要阶段打出卡牌、附能、进化和撤退。",
+		"长按卡牌打开完整检查器。弃牌和竞技场可以查看公开卡。",
 		"牌库与奖品只显示数量，联网视角不会暴露隐藏身份。",
 	]:
 		content.add_child(_label("· " + row, 16, DesignTokens.TEXT))
@@ -346,6 +346,8 @@ func _label(text_value: String, font_size: int, color: Color) -> Label:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
+	label.add_theme_constant_override("outline_size", 0)
+	label.add_theme_color_override("font_outline_color", Color.TRANSPARENT)
 	return label
 
 
