@@ -578,6 +578,7 @@ func _run_phase_four_foundation_tests() -> void:
 	_check(background_result.get("success", false), "Background AI did not finish")
 	_check(poll_count > 0, "Background AI did not yield to the caller")
 	coordinator.cancel_and_wait()
+	_run_ai_strength_regression_tests(catalog, engine, worker)
 
 	var packed := load("res://scenes/main/main.tscn") as PackedScene
 	var ai_ui := packed.instantiate()
@@ -629,6 +630,194 @@ func _run_phase_four_foundation_tests() -> void:
 		"Deep AI match opened the local privacy overlay")
 	ai_ui._stop_ai()
 	ai_ui.queue_free()
+
+
+func _run_ai_strength_regression_tests(
+	catalog: CardCatalog,
+	_engine: GameEngine,
+	worker: NativeChallengeAI,
+) -> void:
+	var ko_state := GameState.new()
+	ko_state.phase = "MAIN"
+	ko_state.turn_number = 5
+	ko_state.first_player_idx = 1
+	ko_state.active_player_idx = 0
+	ko_state.public_deck_keys = ["lightning", "water"]
+	ko_state.players[0].active = PokemonState.new("svl-zera")
+	ko_state.players[0].active.placed_this_turn = false
+	ko_state.players[0].active.energy_card_ids = ["sv1-ener-4", "sv1-ener-4"]
+	ko_state.players[0].prizes = [
+		"sv1-ener-4", "sv1-ener-4", "sv1-ener-4",
+		"sv1-ener-4", "sv1-ener-4", "sv1-ener-4",
+	]
+	ko_state.players[1].active = PokemonState.new("sv2-delib")
+	ko_state.players[1].active.placed_this_turn = false
+	ko_state.players[1].prizes = [
+		"sv1-ener-3", "sv1-ener-3", "sv1-ener-3",
+		"sv1-ener-3", "sv1-ener-3", "sv1-ener-3",
+	]
+	var ko_action := _ai_decision_for_actions(worker, ko_state, 0, "lightning", [
+		GameAction.new("END_TURN", {}, true, 0),
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+	], "ko-before-pass")
+	_check(
+		ko_action != null and ko_action.action == "DECLARE_ATTACK",
+		"AI fallback did not take an immediate KO before ending turn",
+	)
+
+	var energy_state := GameState.new()
+	energy_state.phase = "MAIN"
+	energy_state.turn_number = 5
+	energy_state.first_player_idx = 0
+	energy_state.active_player_idx = 1
+	energy_state.public_deck_keys = ["dragon", "lightning"]
+	energy_state.players[0].active = PokemonState.new("svg-dram")
+	energy_state.players[0].active.placed_this_turn = false
+	energy_state.players[1].active = PokemonState.new("svl-pikaex")
+	energy_state.players[1].active.placed_this_turn = false
+	energy_state.players[1].active.energy_card_ids = ["sv1-ener-4"]
+	energy_state.players[1].hand = ["sv1-ener-4"]
+	var energy_action := _ai_decision_for_actions(worker, energy_state, 1, "lightning", [
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
+		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1),
+		GameAction.new("END_TURN", {}, true, 1),
+	], "weak-attack-before-energy")
+	_check(
+		energy_action != null
+		and energy_action.action == "ATTACH_ENERGY"
+		and str(energy_action.params.get("target_slot", "")) == "active",
+		"AI fallback did not delay a weak attack for obvious core energy",
+	)
+
+	var draw_state := GameState.new()
+	draw_state.phase = "MAIN"
+	draw_state.turn_number = 5
+	draw_state.first_player_idx = 0
+	draw_state.active_player_idx = 1
+	draw_state.public_deck_keys = ["dragon", "psychic"]
+	draw_state.players[0].active = PokemonState.new("svg-dram")
+	draw_state.players[0].active.placed_this_turn = false
+	draw_state.players[1].active = PokemonState.new("sv1-104")
+	draw_state.players[1].active.placed_this_turn = false
+	draw_state.players[1].active.energy_card_ids = ["sv1-ener-5"]
+	draw_state.players[1].hand = ["sv1-180"]
+	draw_state.players[1].deck = [
+		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
+		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
+	]
+	var draw_action := _ai_decision_for_actions(worker, draw_state, 1, "psychic", [
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 1),
+		GameAction.new("END_TURN", {}, true, 1),
+	], "weak-attack-before-draw")
+	_check(
+		draw_action != null and draw_action.action == "PLAY_TRAINER",
+		"AI fallback did not use a productive draw trainer before weak attack",
+	)
+
+	var major_draw_state := GameState.new()
+	major_draw_state.phase = "MAIN"
+	major_draw_state.turn_number = 5
+	major_draw_state.first_player_idx = 0
+	major_draw_state.active_player_idx = 1
+	major_draw_state.public_deck_keys = ["dragon", "psychic"]
+	major_draw_state.players[0].active = PokemonState.new("svg-dram")
+	major_draw_state.players[0].active.placed_this_turn = false
+	major_draw_state.players[1].active = PokemonState.new("sv1-104")
+	major_draw_state.players[1].active.placed_this_turn = false
+	major_draw_state.players[1].hand = ["sv1-ener-5", "sv1-189"]
+	major_draw_state.players[1].deck = [
+		"sv1-180", "sv1-180", "sv1-180", "sv1-180", "sv1-180",
+		"sv1-180", "sv1-180", "sv1-180", "sv1-180", "sv1-180",
+	]
+	var major_draw_action := _ai_decision_for_actions(worker, major_draw_state, 1, "psychic", [
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 1}, false, 1),
+		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1),
+		GameAction.new("END_TURN", {}, true, 1),
+	], "major-draw-before-energy")
+	_check(
+		major_draw_action != null and major_draw_action.action == "ATTACH_ENERGY",
+		"AI fallback did not spend obvious energy before a major hand refresh",
+	)
+
+	var ability_state := GameState.new()
+	ability_state.phase = "MAIN"
+	ability_state.turn_number = 5
+	ability_state.first_player_idx = 0
+	ability_state.active_player_idx = 1
+	ability_state.public_deck_keys = ["dragon", "psychic"]
+	ability_state.players[0].active = PokemonState.new("svg-dram")
+	ability_state.players[0].active.placed_this_turn = false
+	ability_state.players[1].active = PokemonState.new("sv1-106")
+	ability_state.players[1].active.placed_this_turn = false
+	ability_state.players[1].bench[0] = PokemonState.new("sv1-108")
+	ability_state.players[1].bench[0].placed_this_turn = false
+	ability_state.players[1].bench[1] = PokemonState.new("sv1-111")
+	ability_state.players[1].bench[1].placed_this_turn = false
+	ability_state.players[1].hand = ["sv1-ener-5"]
+	ability_state.players[1].deck = [
+		"sv1-180", "sv1-180", "sv1-180",
+		"sv1-180", "sv1-180", "sv1-180",
+	]
+	var ability_name := str(catalog.get_card("sv1-108").get("abilities", [])[0].get("name", ""))
+	var ability_action := _ai_decision_for_actions(worker, ability_state, 1, "psychic", [
+		GameAction.new("END_TURN", {}, true, 1),
+		GameAction.new("USE_ABILITY", {"slot": "bench_0", "ability_name": ability_name}, false, 1),
+	], "ability-before-pass")
+	_check(
+		ability_action != null and ability_action.action == "USE_ABILITY",
+		"AI fallback did not use a productive ability before ending turn",
+	)
+
+	var context_state := GameState.new()
+	context_state.public_deck_keys = ["lightning", "psychic"]
+	context_state.phase = "MAIN"
+	context_state.turn_number = 5
+	context_state.active_player_idx = 1
+	context_state.players[1].active = PokemonState.new("sv1-104")
+	context_state.players[1].hand = ["sv1-ener-5"]
+	var context_action := GameAction.new(
+		"ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1)
+	var public_deck_key := worker._deck_key_for_actor(context_state, 1, "lightning")
+	_check(public_deck_key == "psychic", "AI rollout deck context ignored public deck keys")
+	_check(
+		worker._action_score(context_state, 1, context_action, public_deck_key, catalog)
+		> worker._action_score(context_state, 1, context_action, "lightning", catalog),
+		"AI action scoring did not benefit from the current actor deck profile",
+	)
+
+
+func _ai_decision_for_actions(
+	worker: NativeChallengeAI,
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	actions: Array,
+	request_id: String,
+) -> GameAction:
+	var rows: Array = []
+	for action in actions:
+		rows.append(action.to_dict())
+	var result := worker.decide({
+		"kind": "action",
+		"state": state.snapshot(),
+		"actor": actor,
+		"revision": state.revision,
+		"request_id": request_id,
+		"mode": "challenge",
+		"difficulty": "fast",
+		"deck_key": deck_key,
+		"seed": 20260626,
+		"simulation_budget": 0,
+		"seconds": 0.0,
+		"max_depth": 1,
+		"deterministic": true,
+		"actions": rows,
+	}, func() -> bool: return false)
+	_check(result.get("success", false), "AI strength decision failed: %s" % result.get("error", "unknown"))
+	if not result.get("success", false):
+		return null
+	return GameAction.from_dict(result["action"])
 
 
 func _run_phase_five_foundation_tests() -> void:
