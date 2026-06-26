@@ -64,7 +64,7 @@ func _play_game(
 	mode: String,
 	deck_key: String,
 	opponent_key: String,
-	seed: int,
+	game_seed: int,
 	catalog: CardCatalog,
 	engine: GameEngine,
 	worker: NativeChallengeAI,
@@ -72,7 +72,7 @@ func _play_game(
 ) -> Dictionary:
 	var state := GameState.new()
 	state.public_deck_keys = [deck_key, opponent_key]
-	var rng := PortableRandomSource.new(seed)
+	var rng := PortableRandomSource.new(game_seed)
 	var setup := engine.setup_game(
 		state,
 		catalog.expand_deck(deck_key),
@@ -99,7 +99,7 @@ func _play_game(
 					"mode": mode,
 					"difficulty": "fast",
 					"deck_key": deck_key,
-					"seed": seed + actions_taken * 31,
+					"seed": game_seed + actions_taken * 31,
 				}, func() -> bool: return false, backend)
 				if not choice_result.get("success", false):
 					return {"success": false, "error": choice_result.get("error", "choice")}
@@ -133,7 +133,7 @@ func _play_game(
 				"mode": mode,
 				"difficulty": "fast",
 				"deck_key": deck_key,
-				"seed": seed + actions_taken * 7919,
+				"seed": game_seed + actions_taken * 7919,
 				"simulation_budget": 64,
 				"max_depth": 1,
 				"deterministic": true,

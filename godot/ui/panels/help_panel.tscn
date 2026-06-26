@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/panels/help_panel.gd" id="1_help"]
+
+[node name="HelpPanel" type="VBoxContainer"]
+custom_minimum_size = Vector2(700, 560)
+layout_mode = 2
+theme_override_constants/separation = 12
+editor_description = "规则与操作帮助内容。标题和按钮由 Main 的通用弹窗外壳提供；正文在此场景和脚本中维护。"
+script = ExtResource("1_help")

@@ -1,0 +1,72 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/battle/components/battle_action_panel.gd" id="1_action"]
+
+[sub_resource type="StyleBoxFlat" id="Style_hud"]
+bg_color = Color(0.055, 0.1, 0.17, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.188, 0.278, 0.392, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 12.0
+content_margin_top = 12.0
+content_margin_right = 12.0
+content_margin_bottom = 12.0
+
+[node name="ActionPanel" type="PanelContainer"]
+visible = false
+layout_mode = 0
+offset_right = 260.0
+offset_bottom = 480.0
+theme_override_styles/panel = SubResource("Style_hud")
+editor_description = "当前可用动作面板。默认由 BattleScreen 兼容层隐藏；需要扩展完整动作列表时优先改这里。"
+script = ExtResource("1_action")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="Content" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Heading" type="HBoxContainer" parent="Margin/Content"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Margin/Content/Heading"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 18
+text = "当前操作"
+
+[node name="AllActionsToggle" type="Button" parent="Margin/Content/Heading"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+text = "全部动作"
+
+[node name="QuickActions" type="VBoxContainer" parent="Margin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="AllActionsScroll" type="ScrollContainer" parent="Margin/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ActionList" type="VBoxContainer" parent="Margin/Content/AllActionsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6

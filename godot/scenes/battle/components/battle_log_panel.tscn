@@ -1,0 +1,47 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/battle/components/battle_log_panel.gd" id="1_log"]
+
+[sub_resource type="StyleBoxFlat" id="Style_hud"]
+bg_color = Color(0.055, 0.1, 0.17, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.188, 0.278, 0.392, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 12.0
+content_margin_top = 12.0
+content_margin_right = 12.0
+content_margin_bottom = 12.0
+
+[node name="LogPanel" type="PanelContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 148)
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 148.0
+theme_override_styles/panel = SubResource("Style_hud")
+editor_description = "战斗行动日志浮层。只负责显示最近日志，位置由 BattleTable 根据牌桌尺寸摆放。"
+script = ExtResource("1_log")
+
+[node name="Content" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Heading" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 14
+text = "行动日志"
+
+[node name="LogLabel" type="RichTextLabel" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/normal_font_size = 11
+bbcode_enabled = true
+text = "对局日志会显示在这里。"

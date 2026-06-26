@@ -1,0 +1,35 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/battle/components/battle_header.gd" id="1_header"]
+
+[node name="Header" type="HBoxContainer"]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+theme_override_constants/separation = 12
+editor_description = "战斗顶部栏。可编辑菜单按钮、标题和回合状态文字；点击菜单只发出 menu_requested 信号。"
+script = ExtResource("1_header")
+
+[node name="MenuButton" type="Button" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 48)
+layout_mode = 2
+text = "菜单"
+
+[node name="BattleTitle" type="Label" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
+theme_override_font_sizes/font_size = 24
+text = "Pokémon TCG"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TurnLabel" type="Label" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(330, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 16
+text = "第 1 回合 · 准备阶段 · 玩家 1"
+horizontal_alignment = 2
+vertical_alignment = 1

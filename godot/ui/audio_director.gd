@@ -223,5 +223,5 @@ func _wav(
 	stream.data = bytes
 	if looped:
 		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		stream.loop_end = int(bytes.size() / 2)
+		stream.loop_end = int(float(bytes.size()) / 2.0)
 	return stream

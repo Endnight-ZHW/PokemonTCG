@@ -177,7 +177,7 @@ func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
 	_actions_signature = signature
 	for child in action_buttons.get_children():
 		action_buttons.remove_child(child)
-		child.free()
+		child.queue_free()
 	action_hint.text = target_hint
 	action_hint.visible = not target_hint.is_empty()
 	var shown := 0

@@ -8,6 +8,10 @@ const BATTLE_SCENE := preload("res://scenes/battle/battle_screen.tscn")
 const VICTORY_SCENE := preload("res://scenes/end/victory_screen.tscn")
 const SETTINGS_SCENE := preload("res://ui/dialogs/settings_panel.tscn")
 const CHOICE_SCENE := preload("res://ui/dialogs/choice_panel.tscn")
+const HELP_PANEL_SCENE := preload("res://ui/panels/help_panel.tscn")
+const CARD_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/card_inspector_panel.tscn")
+const ZONE_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/zone_inspector_panel.tscn")
+const DECK_DETAIL_PANEL_SCENE := preload("res://ui/panels/deck_detail_panel.tscn")
 
 var catalog := CardCatalog.new()
 var current_battle: BattleScreen
@@ -182,83 +186,43 @@ func _show_energy_choice() -> void:
 func _show_help() -> void:
 	preview_caption.text = "帮助面板 · 标题和暂停菜单共用的只读内容"
 	var panel := _centered_panel(Vector2(760, 620))
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 12)
+	var content := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	panel.add_child(content)
-	content.add_child(_label("规则与操作帮助", 26, DesignTokens.GOLD))
-	for row in [
-		"准备阶段放置基础宝可梦。主要阶段打出卡牌、附能、进化和撤退。",
-		"长按卡牌打开完整检查器。弃牌和竞技场可以查看公开卡。",
-		"牌库与奖品只显示数量，联网视角不会暴露隐藏身份。",
-	]:
-		content.add_child(_label("· " + row, 16, DesignTokens.TEXT))
+	content.configure()
 
 
 func _show_inspector() -> void:
 	preview_caption.text = "卡牌检查器 · 大图、完整卡文和附属卡"
 	var panel := _centered_panel(Vector2(860, 650))
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 12)
+	var content := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
 	panel.add_child(content)
-	content.add_child(_label("加热洛托姆 · 我方战斗区", 24, DesignTokens.GOLD))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 18)
-	content.add_child(row)
-	row.add_child(_card_image("svi-hrot", Vector2(210, 294)))
-	var details := RichTextLabel.new()
-	details.custom_minimum_size = Vector2(520, 294)
-	details.fit_content = true
-	details.bbcode_enabled = true
-	details.text = "[color=#9eb0ca]Pokémon · Basic[/color]\n\nHP 90/90 · 附着能量 2\n\n[color=#f4c84a]高温冲撞 · 100[/color]\n造成伤害后自身受到40点伤害。"
-	row.add_child(details)
-	content.add_child(_label("附着能量", 18, DesignTokens.GOLD))
-	var grid := GridContainer.new()
-	grid.columns = 6
-	content.add_child(grid)
-	for card_id in ["sv1-ener-2", "sv1-ener-2"]:
-		grid.add_child(_card_thumb(card_id, false))
+	var pokemon := PokemonState.new("svi-hrot")
+	pokemon.energy_card_ids.assign(["sv1-ener-2", "sv1-ener-2"])
+	content.configure(catalog, {
+		"card_id": "svi-hrot",
+		"location": "加热洛托姆 · 我方战斗区",
+		"pokemon": pokemon,
+	})
 
 
 func _show_zone() -> void:
 	preview_caption.text = "区域查看 · 公开弃牌与隐藏牌库/奖品"
 	var panel := _centered_panel(Vector2(820, 620))
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 12)
+	var content := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
 	panel.add_child(content)
-	content.add_child(_label("弃牌区 · 公开卡牌", 24, DesignTokens.GOLD))
-	var discard_grid := GridContainer.new()
-	discard_grid.columns = 6
-	content.add_child(discard_grid)
-	for card_id in ["sv1-180", "sv1-189", "svf-potion", "sv1-ener-2"]:
-		discard_grid.add_child(_card_thumb(card_id, false))
-	content.add_child(_label("牌库 · 隐藏区域，只显示数量", 20, DesignTokens.GOLD))
-	var hidden_grid := GridContainer.new()
-	hidden_grid.columns = 8
-	content.add_child(hidden_grid)
-	for _index in range(8):
-		hidden_grid.add_child(_card_thumb("", true))
+	content.configure(catalog, {
+		"hidden": false,
+		"card_ids": ["sv1-180", "sv1-189", "svf-potion", "sv1-ener-2"],
+		"count": 4,
+	})
 
 
 func _show_deck_detail() -> void:
 	preview_caption.text = "牌组详情 · 60 张构成与核心宝可梦"
-	var deck := catalog.get_deck("fire")
 	var panel := _centered_panel(Vector2(860, 650))
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 10)
+	var content := DECK_DETAIL_PANEL_SCENE.instantiate() as DeckDetailPanel
 	panel.add_child(content)
-	content.add_child(_label("%s · fire" % deck.get("name", "烈焰猴"), 24, DesignTokens.GOLD))
-	content.add_child(_label("Fire · 60 张 · Pokémon/Trainer/Energy 构成", 16, DesignTokens.TEXT_MUTED))
-	var grid := GridContainer.new()
-	grid.columns = 6
-	content.add_child(grid)
-	for card_id in ["svi-infr", "svi-chim", "svi-monf", "svi-ente", "svi-hrot", "svi-chiy"]:
-		grid.add_child(_card_thumb(card_id, false))
-	for row_value in deck.get("cards", []).slice(0, 12):
-		var row: Dictionary = row_value
-		content.add_child(_label("%d × %s" % [
-			int(row.get("count", 0)),
-			catalog.card_name(str(row.get("card_id", ""))),
-		], 14, DesignTokens.TEXT))
+	content.configure(catalog, "fire")
 
 
 func _show_battle() -> void:

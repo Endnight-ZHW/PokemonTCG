@@ -846,7 +846,7 @@ func _apply_attack_damage(
 				damage -= abs(int(str(resistance.get("value", "0")).replace("-", "")))
 				break
 	damage = max(0, damage)
-	defender.damage_counters += int(damage / 10)
+	defender.damage_counters += int(float(damage) / 10.0)
 	events.append({"event_type": "damage_dealt", "data": {
 		"player": 1 - actor, "slot": "active", "amount": damage,
 	}})

@@ -74,6 +74,14 @@ flowchart TD
     Main --> Battle[battle_screen.tscn]
     Main --> Victory[victory_screen.tscn]
     Main --> Dialogs[dialogs 弹窗内容]
+    Main --> Panels[ui/panels 查看面板]
+    Main --> Controllers[Controllers 控制器节点]
+    Battle --> Table[battle_table.tscn]
+    Table --> Header[battle_header.tscn]
+    Table --> HUD[battle_phase_hud.tscn]
+    Table --> Detail[battle_detail_panel.tscn]
+    Table --> Log[battle_log_panel.tscn]
+    Table --> Actions[battle_action_panel.tscn]
     Battle --> Card[card_view.tscn]
     Battle --> Zone[zone_view.tscn]
     Battle --> Presentation[PresentationDirector]
@@ -90,19 +98,26 @@ flowchart TD
 | 标题与模式按钮 | `scenes/title/title_page.tscn` |
 | 牌组选择 | `scenes/decks/deck_select_page.tscn` |
 | 网络大厅 | `scenes/network/network_lobby_page.tscn` |
-| 牌桌、固定牌位和 HUD | `scenes/battle/battle_screen.tscn` |
+| 战斗界面兼容门面 | `scenes/battle/battle_screen.tscn` |
+| 牌桌、固定牌位、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
+| 战斗顶部栏、阶段 HUD、动作、详情和日志 | `scenes/battle/components/` |
 | 单张卡牌的显示结构 | `ui/card_view.tscn` |
 | 牌库、弃牌和奖品区 | `ui/zone_view.tscn` |
 | 设置、选择、隐私与暂停弹窗 | `ui/dialogs/` |
+| 帮助、卡牌检查器、区域查看和牌组详情 | `ui/panels/` |
 | 全局可编辑主题 | `ui/game_theme.tres` |
 | 语义颜色和运行时样式 | `ui/design_tokens.gd` |
 | 安全预览 | `tools/ui_workbench.tscn` |
 
-本轮新增的帮助、卡牌检查器、弃牌/隐藏区域查看和牌组详情使用 `Main` 的通用
-`ModalLayer` 动态构建。入口在可编辑场景中，例如标题页的 `HelpButton`、暂停面板的
-`HelpButton`、牌组选择页的 `DeckOneDetailsButton` / `DeckTwoDetailsButton`，
-但具体内容由 `main.gd` 读取 `CardCatalog` 和当前 `GameState` 生成。这样做的原因是：
-这些面板展示的是实时对局数据，不应该在 `.tscn` 中写死。
+帮助、卡牌检查器、弃牌/隐藏区域查看和牌组详情现在位于 `ui/panels/`。入口仍在
+可编辑页面中，例如标题页的 `HelpButton`、暂停面板的 `HelpButton`、牌组选择页的
+`DeckOneDetailsButton` / `DeckTwoDetailsButton`；`Main` 只负责打开通用 `ModalLayer`
+并把 `CardCatalog`、`GameState` 或 context 传给面板。这样既能在 Godot 中单独编辑面板，
+又不会在 `.tscn` 中写死实时对局数据。
+
+`main.tscn` 根节点下还有 `Controllers`，里面放着 `ScreenRouter`、`MatchSession`、
+`AIMatchDriver`、`NetworkSessionDriver` 和 `ModalHost`。它们是主流程职责的可见入口；
+当前仍由 `Main` 保留兼容门面，后续扩展时优先把对应职责放到这些控制器。
 
 节点上的 `editor_description` 会在 Inspector 中解释用途。标有“不要删除”的节点
 是运行时和自动测试的稳定契约，可以移动或调样式，但不要随意改名。
@@ -117,7 +132,8 @@ flowchart TD
 节点是一个功能单元，例如 `Label`、`Button`、`TextureRect`。场景是一棵可保存、
 可复用的节点树。一个场景可以实例化另一个场景：
 
-- `battle_screen.tscn` 实例化了固定的 `CardView` 和 `ZoneView`。
+- `battle_screen.tscn` 是兼容门面，内部实例化 `components/battle_table.tscn`。
+- `battle_table.tscn` 实例化固定的 `CardView`、`ZoneView` 和多个战斗 UI 子组件。
 - 动态手牌也实例化 `card_view.tscn`，但数量取决于实时手牌。
 - `main.gd` 根据页面状态实例化标题、选牌、战斗或胜利场景。
 
@@ -159,11 +175,11 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 4. 如果父节点是普通 `Control` 或 `Panel`，再考虑 anchors、position 和 size。
 5. 改完按 `F6` 看当前场景；如果是主流程跳转，再按 `F5` 看完整游戏。
 
-牌桌中的固定牌位位于普通 `Control` 下，运行时由 `BattleScreen._layout_board()`
-根据窗口尺寸定位。场景中的坐标用于编辑器预览，真正运行时尺寸由 Inspector 中的
-`Table Layout` 参数控制。想改战斗宝可梦、备战宝可梦、手牌和 HUD 的尺寸时，先选
-`BattleScreen` 根节点改导出参数；只有想移动牌库、弃牌、奖品和竞技场的算法位置时，
-才进入 `_layout_board()` 和 `_place_zone(...)`。
+牌桌中的固定牌位位于 `components/battle_table.tscn` 的 `BoardCanvas` 下，运行时由
+`BattleTable._layout_board()` 根据窗口尺寸定位。场景中的坐标用于编辑器预览，真正运行时
+尺寸由 `BattleTable` 根节点 Inspector 中的 `Table Layout` 参数控制。想改战斗宝可梦、
+备战宝可梦、手牌和 HUD 的尺寸时，先选 `BattleTable` 根节点改导出参数；只有想移动牌库、
+弃牌、奖品和竞技场的算法位置时，才进入 `_layout_board()` 和 `_place_zone(...)`。
 
 ## 4. 第一个练习：修改标题页
 
@@ -243,7 +259,12 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 
 ### BattleScreen
 
-打开 `scenes/battle/battle_screen.tscn`，可以直接看到：
+`scenes/battle/battle_screen.tscn` 现在是兼容门面：它只实例化
+`scenes/battle/components/battle_table.tscn`，并保留旧的 `BattleScreen.update_view()`、
+`play_presentation()`、`capture_presentation_snapshot()` 等 API。日常可视化编辑应打开
+`components/battle_table.tscn` 或其中的子组件。
+
+打开 `scenes/battle/components/battle_table.tscn`，可以直接看到：
 
 - 双方战斗区和五个备战位。
 - 双方牌库、弃牌、奖品和竞技场。
@@ -251,7 +272,7 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 - 右侧贴边回合阶段 HUD，以及不占用牌桌宽度的详情/日志浮层。
 - 表现效果层与输入遮挡层。
 
-选择根节点后，Inspector 的 `Table Layout` 可以修改：
+选择 `BattleTable` 根节点后，Inspector 的 `Table Layout` 可以修改：
 
 - HUD 贴边窄轨宽度。
 - 牌桌边距和手牌底部预留。
@@ -267,14 +288,24 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 修改后运行 Workbench 的“战斗场景”，同时观察 16:9 与超宽屏截图，避免只在
 自己的窗口尺寸上看起来正确。
 
-战斗界面从 0.3.x 起采用“牌桌优先”的结构：`BattleHUD` 只保留右侧贴边阶段轨，
-`DetailPanel` 和 `LogPanel` 位于根节点下的 `OverlayPanels`，由脚本定位成浮层。
-如果要调详情或日志外观，应打开 `OverlayPanels/DetailPanel` 或
-`OverlayPanels/LogPanel`，不要再到 `BattleHUD` 下面寻找它们。
+战斗界面从 0.4.x 起采用“组件组合”的结构：
+
+| 想改什么 | 打开哪里 |
+|---|---|
+| 顶部菜单、标题和回合文字 | `scenes/battle/components/battle_header.tscn` |
+| 牌桌、牌位、牌区、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
+| 右侧阶段 HUD | `scenes/battle/components/battle_phase_hud.tscn` |
+| 预留动作面板 | `scenes/battle/components/battle_action_panel.tscn` |
+| 战斗内卡牌详情浮层 | `scenes/battle/components/battle_detail_panel.tscn` |
+| 战斗日志浮层 | `scenes/battle/components/battle_log_panel.tscn` |
+
+`BattleHUD` 只保留右侧贴边阶段轨，`DetailPanel` 和 `LogPanel` 位于
+`battle_table.tscn` 根节点下的 `OverlayPanels`，由脚本定位成浮层。如果要调详情或日志
+外观，优先打开对应组件场景；如果要调浮层在牌桌上的位置，再看 `BattleTable._layout_overlay_drawers()`。
 
 战斗界面最容易误解的一点：`OpponentActive`、`OwnActive`、`OpponentBench0` 等固定卡位
 虽然在场景树里能拖动，但运行时会被 `_layout_board()` 重新计算位置。想调整体比例时，
-先选根节点 `BattleScreen`，修改 Inspector：
+先选根节点 `BattleTable`，修改 Inspector：
 
 | 导出参数 | 影响 |
 |---|---|
@@ -397,7 +428,7 @@ Main.update_view()    -> 页面重新显示状态
 | 卡牌选中呼吸 | `card_view.tscn` 的 `selected_pulse` | 复用组件固定状态 |
 | 合法目标闪烁 | `card_view.tscn` 的 `target_pulse` | 复用组件固定状态 |
 | 抽牌飞向手牌 | `battle_screen.gd` 的 `_on_card_motion_requested()` 和导出参数 | 起点终点来自实时对局 |
-| 攻击、击倒、奖品飞牌 | `PresentationDirector` + `BattleScreen` | 事件和目标位置运行时才知道 |
+| 攻击、击倒、奖品飞牌 | `PresentationDirector` + `BattleTable` | 事件和目标位置运行时才知道 |
 
 减少动画模式下不要强制播放时间轴。代码应检查：
 
@@ -901,8 +932,8 @@ Godot UI 修改先判断节点属于哪一种布局：
 | 场景 | 主要修改方式 | 注意事项 |
 |---|---|---|
 | 标题、选牌、网络、设置 | Container 自动排布 | 改 `custom_minimum_size`、`separation`、margin，不要硬拖坐标 |
-| 战斗牌桌固定卡位 | `BattleScreen._layout_board()` | 场景坐标只供预览；运行时由脚本按窗口重排 |
-| 手牌 | `BattleScreen` 的 Hand 导出参数 | 改 `hand_card_size`、`hand_minimum_spacing`、`hand_rotation_degrees` |
+| 战斗牌桌固定卡位 | `BattleTable._layout_board()` | 场景坐标只供预览；运行时由脚本按窗口重排 |
+| 手牌 | `BattleTable` 的 Hand 导出参数 | 改 `hand_card_size`、`hand_minimum_spacing`、`hand_rotation_degrees` |
 | 卡牌组件 | `card_view.tscn` + `CardView` 导出参数 | 改复用组件会影响手牌、场上和选择面板 |
 | 弹窗内容 | `ModalLayer` + 动态节点 | 改外壳在 `main.tscn`，改内容在 `main.gd` 或对应 panel 脚本 |
 
@@ -943,13 +974,13 @@ Godot UI 修改先判断节点属于哪一种布局：
 
 ### 配方：修改战斗界面 HUD、卡位和手牌
 
-1. 打开 `res://scenes/battle/battle_screen.tscn`。
-2. 选择根节点 `BattleScreen`。
+1. 打开 `res://scenes/battle/components/battle_table.tscn`。
+2. 选择根节点 `BattleTable`。
 3. 在 Inspector 的 `Table Layout / HUD` 中调整右侧贴边阶段轨的 `hud_width`。
 4. 在 `Table Layout / Table Margins` 中调整牌桌安全边距和手牌底部预留。
 5. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
 6. 在 `Table Layout / Hand` 中调整 `hand_card_size`、`hand_minimum_spacing` 和 `hand_rotation_degrees`。
-7. 如果要改详情或日志浮层，选择 `OverlayPanels/DetailPanel` 或 `OverlayPanels/LogPanel`。
+7. 如果要改详情或日志浮层，打开 `battle_detail_panel.tscn` 或 `battle_log_panel.tscn`。
 8. 在 `Presentation / Touch Targets` 中调整 `primary_action_button_height` 和 `secondary_action_button_height`。
 9. 按 `F6` 或在 Workbench 选择“战斗场景”。
 10. 运行 UI 截图脚本检查 16:9 和 20:9。
@@ -959,8 +990,8 @@ Godot UI 修改先判断节点属于哪一种布局：
 
 ### 示例：调整战斗区尺寸和手牌弧度
 
-1. 打开 `res://scenes/battle/battle_screen.tscn`。
-2. 选择根节点 `BattleScreen`。
+1. 打开 `res://scenes/battle/components/battle_table.tscn`。
+2. 选择根节点 `BattleTable`。
 3. 在 Inspector 的 `Table Layout / Board Cards` 中调整：
    - `active_card_size`：战斗宝可梦卡牌尺寸。
    - `bench_card_size`：备战区卡牌尺寸。
@@ -972,7 +1003,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 5. 按 `F6` 运行战斗场景或打开 Workbench 的“战斗场景”预览。
 
 如果想改牌库、弃牌、奖品的位置，不要只拖场景节点；应修改
-`BattleScreen._layout_board()` 中的 `_place_zone(...)` 调用。修改后检查 16:9 和 20:9
+`BattleTable._layout_board()` 中的 `_place_zone(...)` 调用。修改后检查 16:9 和 20:9
 截图，避免宽屏或移动端遮挡。
 
 详情与日志浮层由 `_layout_overlay_drawers()` 定位。它们不参与 `Body` 的
@@ -1005,6 +1036,18 @@ Godot UI 修改先判断节点属于哪一种布局：
 弹窗按钮的“确认”“取消”“关闭”通常由 `Main` 的通用 ModalLayer 管理。面板内容负责显示字段，
 不要在面板场景里直接写保存设置、提交选择或关闭对局的规则。
 
+### 配方：修改帮助、检查器和查看面板
+
+1. 打开 `res://ui/panels/help_panel.tscn` 修改帮助正文结构。
+2. 打开 `res://ui/panels/card_inspector_panel.tscn` 修改卡牌检查器的大图、卡文和附属卡布局。
+3. 打开 `res://ui/panels/zone_inspector_panel.tscn` 修改弃牌/牌库/奖品/竞技场查看布局。
+4. 打开 `res://ui/panels/deck_detail_panel.tscn` 修改牌组详情统计、核心卡和完整列表布局。
+5. `Main` 负责打开通用 `ModalLayer`、设置标题和关闭按钮；面板只接收 context 并显示内容。
+6. 修改后在 Workbench 切换“帮助”“卡牌检查器”“区域查看”“牌组详情”四个预览页。
+
+隐藏区域的规则不要在面板里绕过。`zone_inspector_panel.tscn` 对 `hidden=true` 的区域只展示数量和卡背；
+如果要显示真实卡牌，必须确认它来自公开区域或当前玩家允许查看的私有区域。
+
 ### 配方：修改全局主题
 
 1. 打开 `res://ui/game_theme.tres`。
@@ -1022,9 +1065,67 @@ Godot UI 修改先判断节点属于哪一种布局：
 |---|---|
 | 所有按钮统一圆角、字体和颜色 | `res://ui/game_theme.tres` |
 | 只有标题页主按钮变大 | `title_page.tscn` 中对应 Button 的 Theme Overrides 或最小尺寸 |
-| 只有战斗 HUD 日志变小 | `battle_screen.tscn` 中 `LogLabel` 或父容器 |
+| 只有战斗 HUD 日志变小 | `battle_log_panel.tscn` 中 `LogLabel` 或父容器 |
 | 只有卡牌组件高亮更明显 | `card_view.tscn` 的 `TargetGlow`、`SelectionRing` 和动画 |
 | 运行时按画质或设置切换 | 脚本和 `AppSettings`，不要只靠 Theme |
+
+### 配方：修改游戏图标
+
+本项目当前主图标是：
+
+```text
+res://assets/app_icon.svg
+```
+
+Godot 主配置在 `res://project.godot` 中引用它：
+
+```ini
+config/icon="res://assets/app_icon.svg"
+```
+
+最简单的修改方式是保持文件名不变，直接替换 `godot/assets/app_icon.svg`。推荐使用
+512×512 的正方形 SVG 或高分辨率 PNG，图形主体要留出边距，避免在 Android 圆角图标、
+Windows 任务栏或启动器中被裁切。不要手工编辑 `.import` 文件；替换资源后让 Godot 重新导入。
+
+如果要在 Godot 编辑器中修改引用路径：
+
+1. 把新图标放到 `godot/assets/`，例如 `app_icon_new.svg`。
+2. 打开 Godot，进入 `Project > Project Settings`。
+3. 搜索 `Application > Config > Icon`。
+4. 把 Icon 改成 `res://assets/app_icon_new.svg`。
+5. 保存项目，确认 `project.godot` 中的 `config/icon` 已更新。
+
+发布包如果需要平台专用图标，再打开 `Project > Export`：
+
+| 平台 | 导出预设字段 | 推荐资源 |
+|---|---|---|
+| Windows | `Application / Icon` | `.ico` 文件，例如 `res://assets/app_icon.ico` |
+| Windows 控制台包装器 | `Application / Console Wrapper Icon` | 通常和 Windows `.ico` 相同 |
+| Android 传统启动图标 | `Launcher Icons / Main 192x192` | 192×192 PNG |
+| Android 自适应前景 | `Launcher Icons / Adaptive Foreground 432x432` | 透明背景 PNG，主体居中 |
+| Android 自适应背景 | `Launcher Icons / Adaptive Background 432x432` | 纯色或简单背景 PNG |
+
+当前 `export_presets.cfg` 的这些平台专用字段为空，所以默认会优先使用项目主图标。若你填了
+平台专用图标，导出时会以导出预设里的字段为准。建议优先在 Godot 的 Export 面板中填写，
+不要手工编辑 `export_presets.cfg`，除非你很确定字段名和路径。
+
+修改图标后的验证流程：
+
+1. 运行一次导入和测试：
+
+```powershell
+.\tools\test_godot.ps1
+```
+
+2. 如果只想快速确认编辑器能看到新图标，打开 Godot 后在 FileSystem 里选择图标资源，
+   看 Inspector 预览是否正确。
+3. 如果要确认 Windows 图标，重新导出 Windows 包，然后查看 `dist/windows/PokemonTCG.exe`
+   的文件图标。Windows 资源管理器可能缓存旧图标，必要时改文件名或重启资源管理器。
+4. 如果要确认 Android 启动图标，重新导出并安装 APK。设备可能缓存旧启动器图标；
+   测试时可以先卸载旧包 `com.pokemontcg.game` 再安装。
+
+发布前还要确认图标素材授权。个人调试可以临时使用占位图，但公开发布时不要直接使用没有授权的官方商标、
+卡图或第三方 Logo。
 
 ## 17. 操作配方：修改动画效果
 
@@ -1195,10 +1296,10 @@ MY_FIRE_DECK = [
 
 本轮新增的查看能力有四类：
 
-- 帮助面板：标题页和暂停菜单进入，内容在 `Main._show_help()`。
-- 卡牌检查器：长按卡牌进入，内容在 `Main._show_card_inspector()`。
-- 区域查看：点击弃牌、牌库、奖品或竞技场进入，入口由 `ZoneView.inspect_context` 提供。
-- 牌组详情：牌组选择页按钮进入，内容在 `Main._show_deck_details()`。
+- 帮助面板：标题页和暂停菜单进入，内容在 `ui/panels/help_panel.tscn`。
+- 卡牌检查器：长按卡牌进入，内容在 `ui/panels/card_inspector_panel.tscn`。
+- 区域查看：点击弃牌、牌库、奖品或竞技场进入，内容在 `ui/panels/zone_inspector_panel.tscn`，入口由 `ZoneView.inspect_context` 提供。
+- 牌组详情：牌组选择页按钮进入，内容在 `ui/panels/deck_detail_panel.tscn`。
 
 隐藏信息规则很重要：
 
@@ -1215,7 +1316,7 @@ MY_FIRE_DECK = [
 | 症状 | 可能原因 | 修复方式 |
 |---|---|---|
 | `%HelpButton` 为 null | 场景节点改名或不再 unique | 恢复节点名，或同步脚本中的 `%NodeName` |
-| 弃牌区点击没有反应 | `ZoneView.inspect_context` 为空 | 检查 `BattleScreen._refresh_field()` 是否传入 context |
+| 弃牌区点击没有反应 | `ZoneView.inspect_context` 为空 | 检查 `BattleTable._refresh_field()` 是否传入 context |
 | 牌库/奖品显示了真实卡 | context 中传入了 `card_ids` | 对隐藏区传空数组，只传 count |
 | 选择面板确认按钮灰掉 | 选择数量不在 min/max 范围 | 检查 `ChoiceRequest.min_select/max_select` 和 `selected_choice_ids` |
 | 分配能量提交错误 | option ID 被 UI 重写 | UI 只能重复已有 option ID，不要生成新 ID |
@@ -1236,7 +1337,7 @@ MY_FIRE_DECK = [
 
 - Container 下的控件优先改 `custom_minimum_size`、size flags、separation 和 margin。
 - 普通 `Control` 下的控件再改 anchors、offsets、position 和 size。
-- 战斗牌桌先改 `BattleScreen` 的 Inspector 导出参数，再考虑 `_layout_board()`。
+- 战斗牌桌先改 `BattleTable` 的 Inspector 导出参数，再考虑 `_layout_board()`。
 - 卡牌、牌组和效果数据不要直接改 `godot/data/*.json`；它们由 Python 权威数据导出。
 - 动画里不要调用规则结算、扣血、抽牌或切换玩家；动画只表现已经发生的结果。
 - UI 不要直接改 `GameState`，只发 `signal` 或提交 `GameAction` / `ChoiceResponse`。

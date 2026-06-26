@@ -72,7 +72,7 @@ func _search_action(
 	var max_depth := int(request.get("max_depth", preset["depth"]))
 	var deterministic := bool(request.get("deterministic", false))
 	var deadline := Time.get_ticks_usec() + int(seconds * 1000000.0)
-	var seed := int(request.get("seed", 17))
+	var request_seed := int(request.get("seed", 17))
 	var priors: Array[float] = []
 	var deep_error := ""
 	if mode == "deep" and inference != null:
@@ -108,10 +108,12 @@ func _search_action(
 		var simulation := AIObservationBuilder.determinize(
 			request["state"],
 			actor,
-			seed + completed * 7919,
+			request_seed + completed * 7919,
 			catalog,
 		)
-		var simulation_rng := PortableRandomSource.new(seed + completed * 104729)
+		var simulation_rng := PortableRandomSource.new(
+			request_seed + completed * 104729
+		)
 		var value := _simulate(
 			simulation,
 			actor,

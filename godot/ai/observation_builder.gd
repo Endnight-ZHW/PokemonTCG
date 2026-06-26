@@ -46,11 +46,11 @@ static func build(state: GameState, perspective: int) -> Dictionary:
 static func determinize(
 	snapshot: Dictionary,
 	perspective: int,
-	seed: int,
+	determinize_seed: int,
 	catalog: CardCatalog,
 ) -> GameState:
 	var state := GameState.from_dict(snapshot)
-	var rng := PortableRandomSource.new(seed)
+	var rng := PortableRandomSource.new(determinize_seed)
 	var own := state.get_player(perspective)
 	var own_unknown: Array = own.deck.duplicate()
 	own_unknown.append_array(own.prizes)
@@ -71,17 +71,17 @@ static func determinize(
 	)
 	var pool: Array[String] = catalog.expand_deck(deck_key)
 	if not pool.is_empty():
-		var visible := opponent.discard.duplicate()
+		var visible_cards := opponent.discard.duplicate()
 		for row in opponent.get_all_pokemon():
 			var pokemon: PokemonState = row["pokemon"]
 			if pokemon == null:
 				continue
-			visible.append(pokemon.card_id)
-			visible.append_array(pokemon.evolution_stack_ids)
-			visible.append_array(pokemon.energy_card_ids)
+			visible_cards.append(pokemon.card_id)
+			visible_cards.append_array(pokemon.evolution_stack_ids)
+			visible_cards.append_array(pokemon.energy_card_ids)
 			if not pokemon.attached_tool_id.is_empty():
-				visible.append(pokemon.attached_tool_id)
-		for card_id in visible:
+				visible_cards.append(pokemon.attached_tool_id)
+		for card_id in visible_cards:
 			var index := pool.find(card_id)
 			if index >= 0:
 				pool.remove_at(index)

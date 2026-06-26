@@ -1,0 +1,61 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/battle/components/battle_detail_panel.gd" id="1_detail"]
+
+[sub_resource type="StyleBoxFlat" id="Style_hud"]
+bg_color = Color(0.055, 0.1, 0.17, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.188, 0.278, 0.392, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 12.0
+content_margin_top = 12.0
+content_margin_right = 12.0
+content_margin_bottom = 12.0
+
+[node name="DetailPanel" type="PanelContainer"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(320, 220)
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 220.0
+theme_override_styles/panel = SubResource("Style_hud")
+editor_description = "战斗卡牌详情浮层。大图、标题和卡文结构在这里编辑；位置由 BattleTable 根据牌桌尺寸摆放。"
+script = ExtResource("1_detail")
+
+[node name="Row" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DetailImage" type="TextureRect" parent="Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 136)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TextColumn" type="VBoxContainer" parent="Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DetailTitle" type="Label" parent="Row/TextColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "卡牌详情"
+autowrap_mode = 2
+
+[node name="DetailText" type="RichTextLabel" parent="Row/TextColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+text = "点击或长按卡牌查看详情。"

@@ -3,6 +3,11 @@
 [ext_resource type="Script" uid="uid://dqedifiv8eyso" path="res://scenes/main/main.gd" id="1_main"]
 [ext_resource type="Theme" uid="uid://dukxt6xci8qas" path="res://ui/game_theme.tres" id="2_theme"]
 [ext_resource type="Script" uid="uid://cscu1kyecnig5" path="res://ui/audio_director.gd" id="3_audio"]
+[ext_resource type="Script" uid="uid://b0jydjvp4f3oc" path="res://scenes/main/screen_router.gd" id="4_router"]
+[ext_resource type="Script" uid="uid://bgs2u1ila5am3" path="res://scenes/main/match_session.gd" id="5_match"]
+[ext_resource type="Script" uid="uid://cqtqnakbwpjaa" path="res://scenes/main/ai_match_driver.gd" id="6_ai"]
+[ext_resource type="Script" uid="uid://bcewyax6ru3vs" path="res://scenes/main/network_session_driver.gd" id="7_network"]
+[ext_resource type="Script" uid="uid://brdau26vlkdm3" path="res://scenes/main/modal_host.gd" id="8_modal_host"]
 
 [sub_resource type="StyleBoxFlat" id="Style_toast"]
 bg_color = Color(0.106, 0.18, 0.286, 1)
@@ -166,6 +171,35 @@ unique_name_in_owner = true
 [node name="AudioDirector" type="Node" parent="." unique_id=1115438506]
 unique_name_in_owner = true
 script = ExtResource("3_audio")
+
+[node name="Controllers" type="Node" parent="." unique_id=1894997001]
+unique_name_in_owner = true
+editor_description = "非可视控制器集合。逐步承接页面路由、对局会话、AI 驱动和网络会话，帮助新手在场景树中看清主流程职责。"
+
+[node name="ScreenRouter" type="Node" parent="Controllers" unique_id=1894997002]
+unique_name_in_owner = true
+editor_description = "页面挂载控制器。负责清空 ScreenHost 并实例化标题、选牌、网络、战斗和胜利页面。"
+script = ExtResource("4_router")
+
+[node name="MatchSession" type="Node" parent="Controllers" unique_id=1894997003]
+unique_name_in_owner = true
+editor_description = "本地对局会话控制器。逐步承接 GameState、GameEngine、随机数和合法动作查询。"
+script = ExtResource("5_match")
+
+[node name="AIMatchDriver" type="Node" parent="Controllers" unique_id=1894997004]
+unique_name_in_owner = true
+editor_description = "AI 对局驱动。逐步承接 Challenge/Deep AI 请求、轮询、取消和 Deep AI 回退。"
+script = ExtResource("6_ai")
+
+[node name="NetworkSessionDriver" type="Node" parent="Controllers" unique_id=1894997005]
+unique_name_in_owner = true
+editor_description = "联网会话驱动。逐步承接 LAN/Relay 连接、网络视角、动作提交和断线处理。"
+script = ExtResource("7_network")
+
+[node name="ModalHost" type="Node" parent="Controllers" unique_id=1894997006]
+unique_name_in_owner = true
+editor_description = "通用弹窗控制器。ModalLayer 仍是可视结构，此节点提供清空内容和后续封装入口。"
+script = ExtResource("8_modal_host")
 
 [node name="ModalLayer" type="Control" parent="." unique_id=1934504853]
 unique_name_in_owner = true

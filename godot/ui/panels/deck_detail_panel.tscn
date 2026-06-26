@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/panels/deck_detail_panel.gd" id="1_deck"]
+
+[node name="DeckDetailPanel" type="VBoxContainer"]
+custom_minimum_size = Vector2(820, 620)
+layout_mode = 2
+theme_override_constants/separation = 10
+editor_description = "牌组详情内容。接收 deck_key 后展示构成统计、核心宝可梦和完整列表。"
+script = ExtResource("1_deck")

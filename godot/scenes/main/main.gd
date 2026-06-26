@@ -10,6 +10,10 @@ const SETTINGS_PANEL_SCENE := preload("res://ui/dialogs/settings_panel.tscn")
 const CHOICE_PANEL_SCENE := preload("res://ui/dialogs/choice_panel.tscn")
 const PRIVACY_PANEL_SCENE := preload("res://ui/dialogs/privacy_panel.tscn")
 const PAUSE_PANEL_SCENE := preload("res://ui/dialogs/pause_panel.tscn")
+const HELP_PANEL_SCENE := preload("res://ui/panels/help_panel.tscn")
+const CARD_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/card_inspector_panel.tscn")
+const ZONE_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/zone_inspector_panel.tscn")
+const DECK_DETAIL_PANEL_SCENE := preload("res://ui/panels/deck_detail_panel.tscn")
 
 const SCREEN_TITLE := "title"
 const SCREEN_DECKS := "decks"
@@ -60,6 +64,11 @@ var loading_layer: Control
 var loading_label: Label
 var shell_animations: AnimationPlayer
 var lifecycle_network_interrupted := false
+var screen_router: ScreenRouter
+var match_session: MatchSession
+var ai_match_driver: AIMatchDriver
+var network_session_driver: NetworkSessionDriver
+var modal_host_controller: ModalHost
 
 var deck_one_option: OptionButton
 var deck_two_option: OptionButton
@@ -210,6 +219,22 @@ func _build_shell() -> void:
 		"LoadingLayer/Center/Panel/Margin/LoadingLabel"
 	) as Label
 	shell_animations = get_node("ShellAnimations") as AnimationPlayer
+	screen_router = get_node_or_null("Controllers/ScreenRouter") as ScreenRouter
+	match_session = get_node_or_null("Controllers/MatchSession") as MatchSession
+	ai_match_driver = get_node_or_null("Controllers/AIMatchDriver") as AIMatchDriver
+	network_session_driver = get_node_or_null(
+		"Controllers/NetworkSessionDriver"
+	) as NetworkSessionDriver
+	modal_host_controller = get_node_or_null("Controllers/ModalHost") as ModalHost
+	if screen_router:
+		screen_router.configure(screen_host)
+	if modal_host_controller:
+		modal_host_controller.configure(
+			modal_layer,
+			modal_body,
+			modal_confirm,
+			modal_cancel,
+		)
 	modal_layer.z_index = 200
 	loading_layer.z_index = 210
 
@@ -463,10 +488,10 @@ func _start_deep_match_with_loading(
 func start_local_match_for_test(
 	first_key: String,
 	second_key: String,
-	seed: int = -1,
+	match_seed: int = -1,
 ) -> bool:
 	game_mode = MODE_LOCAL
-	return _start_match(first_key, second_key, seed, -1)
+	return _start_match(first_key, second_key, match_seed, -1)
 
 
 func start_ai_match_for_test(
@@ -475,25 +500,25 @@ func start_ai_match_for_test(
 	opponent_key: String,
 	difficulty: String = "standard",
 	forced_first: int = -1,
-	seed: int = 20260621,
+	match_seed: int = 20260621,
 ) -> bool:
 	game_mode = mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
 	ai_difficulty = difficulty if difficulty in NativeChallengeAI.DIFFICULTIES else "standard"
 	ai_deck_key = opponent_key
-	return _start_match(human_key, opponent_key, seed, forced_first)
+	return _start_match(human_key, opponent_key, match_seed, forced_first)
 
 
 func _start_match(
 	first_key: String,
 	second_key: String,
-	seed: int,
+	match_seed: int,
 	forced_first: int,
 ) -> bool:
 	_play_click()
 	_stop_ai()
 	state = GameState.new()
 	state.public_deck_keys = [first_key, second_key]
-	var actual_seed := seed
+	var actual_seed := match_seed
 	if actual_seed < 0:
 		actual_seed = int(Time.get_ticks_msec()) ^ 0x4A7C2026
 	rng = PortableRandomSource.new(actual_seed)
@@ -1078,42 +1103,9 @@ func _show_help(resume_ai_on_close: bool = false) -> void:
 	_play_click()
 	_open_modal("规则与操作帮助", "关闭", "", current_screen == SCREEN_GAME)
 	modal_panel.custom_minimum_size = Vector2(760, 680)
-	var intro := _modal_label(
-		"对战目标是在规则允许的动作中击倒对手宝可梦、拿完奖品，或让对手场上没有宝可梦。",
-		16,
-		DesignTokens.TEXT_MUTED,
-	)
-	modal_body.add_child(intro)
-	var sections := [
-		{
-			"title": "对局流程",
-			"rows": [
-				"准备阶段：双方放置战斗宝可梦，可继续放置备战宝可梦。",
-				"主要阶段：打出宝可梦、进化、附能、使用训练家、撤退或发动特性。",
-				"攻击后会自动结束回合。宝可梦检查会处理特殊状态和击倒。",
-			],
-		},
-		{
-			"title": "查看局面",
-			"rows": [
-				"点击卡牌会选中并显示可用操作。长按卡牌会打开完整检查器。",
-				"弃牌区和竞技场可查看公开卡牌。牌库和奖品只显示数量。",
-				"能量、道具、进化链和特殊状态会在检查器中集中显示。",
-			],
-		},
-		{
-			"title": "触控与联机",
-			"rows": [
-				"手牌可以点击选择，也可以拖到高亮牌位。",
-				"本地双人交接时会遮挡手牌。联网时只显示自己视角可见的信息。",
-				"返回键会打开对局菜单，进入后台会安全中止联机或 AI 搜索。",
-			],
-		},
-	]
-	for section in sections:
-		modal_body.add_child(_modal_label(str(section["title"]), 20, DesignTokens.GOLD))
-		for row in section["rows"]:
-			modal_body.add_child(_modal_label("· " + str(row), 15, DesignTokens.TEXT))
+	var panel := HELP_PANEL_SCENE.instantiate() as HelpPanel
+	modal_body.add_child(panel)
+	panel.configure()
 	modal_confirm.pressed.connect(func() -> void:
 		_close_modal()
 		if resume_ai_on_close:
@@ -1130,35 +1122,10 @@ func _show_card_inspector(context: Dictionary) -> void:
 	var title := str(card.get("name", card_id))
 	_open_modal(title, "关闭", "", current_screen == SCREEN_GAME)
 	modal_panel.custom_minimum_size = Vector2(860, 700)
-	var location := str(context.get("location", ""))
-	if not location.is_empty():
-		modal_body.add_child(_modal_label(location, 15, DesignTokens.TEXT_MUTED))
-	var top_row := HBoxContainer.new()
-	top_row.add_theme_constant_override("separation", 18)
-	modal_body.add_child(top_row)
-	var image := TextureRect.new()
-	image.custom_minimum_size = Vector2(210, 294)
-	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
-	top_row.add_child(image)
-	var detail := RichTextLabel.new()
-	detail.custom_minimum_size = Vector2(540, 294)
-	detail.fit_content = true
-	detail.bbcode_enabled = true
-	detail.text = _card_detail_bbcode(card_id, context.get("pokemon") as PokemonState)
-	top_row.add_child(detail)
-	var pokemon := context.get("pokemon") as PokemonState
-	if pokemon:
-		_add_card_grid_section(
-			modal_body,
-			"进化链",
-			_pokemon_evolution_cards(pokemon),
-			false,
-		)
-		_add_card_grid_section(modal_body, "附着能量", pokemon.energy_card_ids, false)
-		if not pokemon.attached_tool_id.is_empty():
-			_add_card_grid_section(modal_body, "宝可梦道具", [pokemon.attached_tool_id], false)
+	var panel := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
+	modal_body.add_child(panel)
+	panel.configure(catalog, context)
+	panel.card_requested.connect(_show_card_inspector)
 	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
@@ -1170,25 +1137,10 @@ func _show_zone_inspector(context: Dictionary) -> void:
 	]
 	_open_modal(title.strip_edges(), "关闭", "", current_screen == SCREEN_GAME)
 	modal_panel.custom_minimum_size = Vector2(820, 680)
-	var hidden := bool(context.get("hidden", false))
-	var count := int(context.get("count", 0))
-	if hidden:
-		modal_body.add_child(_modal_label(
-			"这是隐藏区域。这里只显示数量，不显示具体卡牌身份。",
-			16,
-			DesignTokens.TEXT_MUTED,
-		))
-		_add_card_grid_section(modal_body, "隐藏卡牌（%d）" % count, _hidden_card_rows(count), true)
-	else:
-		var card_ids: Array[String] = []
-		for value in context.get("card_ids", []):
-			var card_id := str(value)
-			if not card_id.is_empty():
-				card_ids.append(card_id)
-		if card_ids.is_empty():
-			modal_body.add_child(_modal_label("这里没有公开卡牌。", 16, DesignTokens.TEXT_MUTED))
-		else:
-			_add_card_grid_section(modal_body, "公开卡牌（%d）" % card_ids.size(), card_ids, false)
+	var panel := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
+	modal_body.add_child(panel)
+	panel.configure(catalog, context)
+	panel.card_requested.connect(_show_card_inspector)
 	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
@@ -1200,55 +1152,10 @@ func _show_deck_details(deck_key: String) -> void:
 		return
 	_open_modal(str(deck.get("name", deck_key)), "关闭", "")
 	modal_panel.custom_minimum_size = Vector2(880, 700)
-	var rows: Array = deck.get("cards", [])
-	var counts := {"Pokémon": 0, "Trainer": 0, "Energy": 0}
-	var core_cards: Array[String] = []
-	for row_value in rows:
-		var row: Dictionary = row_value
-		var card_id := str(row.get("card_id", ""))
-		var count := int(row.get("count", 0))
-		var card := catalog.get_card(card_id)
-		var supertype := str(card.get("supertype", ""))
-		counts[supertype] = int(counts.get(supertype, 0)) + count
-		if supertype == "Pokémon" and core_cards.size() < 6:
-			core_cards.append(card_id)
-	modal_body.add_child(_modal_label(
-		"牌组 key：%s · 属性：%s · 共 %d 张" % [
-			deck_key,
-			str(deck.get("energy_type", "")),
-			int(deck.get("card_count", 0)),
-		],
-		16,
-		DesignTokens.TEXT_MUTED,
-	))
-	modal_body.add_child(_modal_label(
-		"Pokémon %d · Trainer %d · Energy %d" % [
-			int(counts.get("Pokémon", 0)),
-			int(counts.get("Trainer", 0)),
-			int(counts.get("Energy", 0)),
-		],
-		17,
-		DesignTokens.GOLD,
-	))
-	_add_card_grid_section(modal_body, "核心宝可梦预览", core_cards, false)
-	var list := VBoxContainer.new()
-	list.add_theme_constant_override("separation", 4)
-	modal_body.add_child(_modal_label("完整构成", 20, DesignTokens.GOLD))
-	modal_body.add_child(list)
-	for row_value in rows:
-		var row: Dictionary = row_value
-		var card_id := str(row.get("card_id", ""))
-		var card := catalog.get_card(card_id)
-		var label := _modal_label(
-			"%2d × %s  [%s]" % [
-				int(row.get("count", 0)),
-				str(card.get("name", card_id)),
-				card_id,
-			],
-			14,
-			DesignTokens.TEXT,
-		)
-		list.add_child(label)
+	var panel := DECK_DETAIL_PANEL_SCENE.instantiate() as DeckDetailPanel
+	modal_body.add_child(panel)
+	panel.configure(catalog, deck_key)
+	panel.card_requested.connect(_show_card_inspector)
 	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
@@ -1348,7 +1255,10 @@ func _open_modal(
 	_modal_generation += 1
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
-	_free_children_immediate(modal_body)
+	if modal_host_controller:
+		modal_host_controller.clear_body()
+	else:
+		_free_children_immediate(modal_body)
 	modal_panel.custom_minimum_size = Vector2(720, 620)
 	modal_title.text = title_text
 	modal_confirm.text = confirm_text
@@ -1477,7 +1387,7 @@ func _add_card_grid_section(
 	parent: VBoxContainer,
 	title_text: String,
 	card_ids: Array,
-	hidden: bool,
+	is_hidden: bool,
 ) -> void:
 	parent.add_child(_modal_label(title_text, 20, DesignTokens.GOLD))
 	var grid := GridContainer.new()
@@ -1492,13 +1402,13 @@ func _add_card_grid_section(
 		var card_id := str(value)
 		var card_view := CARD_SCENE.instantiate() as CardView
 		card_view.custom_minimum_size = Vector2(82, 116)
-		card_view.configure(card_id, null, hidden, -1, -1, "", true)
+		card_view.configure(card_id, null, is_hidden, -1, -1, "", true)
 		card_view.tooltip_text = (
 			"隐藏卡牌"
-			if hidden
+			if is_hidden
 			else str(catalog.get_card(card_id).get("name", card_id))
 		)
-		if not hidden and not card_id.is_empty():
+		if not is_hidden and not card_id.is_empty():
 			card_view.activated.connect(func(
 				_selected_id: String,
 				_hand_index: int,
@@ -1890,6 +1800,9 @@ func _show_title_from_game() -> void:
 	_show_title()
 
 func _clear_screen() -> void:
+	if screen_router:
+		screen_router.clear_screen()
+		return
 	for child in screen_host.get_children():
 		screen_host.remove_child(child)
 		child.queue_free()

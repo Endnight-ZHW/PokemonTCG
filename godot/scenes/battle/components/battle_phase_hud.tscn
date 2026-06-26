@@ -1,0 +1,118 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/battle/components/battle_phase_hud.gd" id="1_hud"]
+
+[sub_resource type="StyleBoxFlat" id="Style_hud"]
+bg_color = Color(0.055, 0.1, 0.17, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.188, 0.278, 0.392, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+content_margin_left = 12.0
+content_margin_top = 12.0
+content_margin_right = 12.0
+content_margin_bottom = 12.0
+
+[sub_resource type="StyleBoxFlat" id="Style_phase_button"]
+bg_color = Color(0.471, 0.322, 0.106, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.957, 0.784, 0.29, 1)
+corner_radius_top_left = 11
+corner_radius_top_right = 11
+corner_radius_bottom_right = 11
+corner_radius_bottom_left = 11
+
+[node name="BattleHUD" type="VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(128, 0)
+layout_mode = 2
+theme_override_constants/separation = 8
+editor_description = "右侧阶段 HUD。阶段标签和推进按钮在此编辑；动作执行通过 phase_action_requested 信号交给上层。"
+script = ExtResource("1_hud")
+
+[node name="PhasePanel" type="PanelContainer" parent="."]
+custom_minimum_size = Vector2(0, 188)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Style_hud")
+
+[node name="Content" type="VBoxContainer" parent="PhasePanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Heading" type="Label" parent="PhasePanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 15
+text = "回合阶段"
+horizontal_alignment = 1
+
+[node name="PhaseRow" type="GridContainer" parent="PhasePanel/Content"]
+layout_mode = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 2
+
+[node name="DrawPhase" type="Label" parent="PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "抽牌"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MainPhase" type="Label" parent="PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "主要"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AttackPhase" type="Label" parent="PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "攻击"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CheckupPhase" type="Label" parent="PhasePanel/Content/PhaseRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "检查"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TurnHint" type="Label" parent="PhasePanel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
+theme_override_font_sizes/font_size = 11
+text = "选牌查看动作"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="PhaseAdvanceButton" type="Button" parent="PhasePanel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("Style_phase_button")
+text = "进入下一阶段"
+autowrap_mode = 2

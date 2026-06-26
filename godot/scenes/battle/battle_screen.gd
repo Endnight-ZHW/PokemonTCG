@@ -15,43 +15,16 @@ signal detail_requested(card_id: String)
 signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
 
-const CARD_SCENE := preload("res://ui/card_view.tscn")
+@onready var table: BattleTable = %BattleTable
 
-@export_category("Table Layout")
-@export_group("HUD")
-@export var hud_width := 128.0
-@export_group("Table Margins")
-@export var table_side_margin := 22.0
-@export var table_top_margin := 16.0
-@export var table_bottom_margin := 10.0
-@export var hand_bottom_padding := 8.0
-@export_group("Board Cards")
-@export var active_card_size := Vector2(130, 182)
-@export var bench_card_size := Vector2(86, 120)
-@export var zone_size := Vector2(96, 136)
-@export var bench_spacing := 16.0
-@export_group("Hand")
-@export var hand_card_size := Vector2(112, 157)
-@export var hand_minimum_spacing := 52.0
-@export var hand_rotation_degrees := 6.0
-@export_group("Opponent Hand")
-@export var opponent_hand_card_size := Vector2(76, 106)
-@export var opponent_hand_minimum_spacing := 26.0
-@export var opponent_hand_rotation_degrees := 6.0
-@export var opponent_hand_max_visible := 8
-@export_category("Presentation")
-@export_group("Refresh")
-@export var resync_fade_duration := 0.16
-@export_group("Dynamic Card Motion")
-@export var motion_arc_height_min := 74.0
-@export var motion_arc_distance_ratio := 0.22
-@export var motion_arc_stagger_height := 8.0
-@export var motion_stagger_delay := 0.045
-@export_group("Touch Targets")
-@export var primary_action_button_height := 48.0
-@export var secondary_action_button_height := 43.0
-
-var state_ref: GameState
+var state_ref: GameState:
+	get:
+		if table:
+			return table.state_ref
+		return null
+	set(value):
+		if table:
+			table.state_ref = value
 var catalog := CardCatalog.new()
 var view_player := 0
 var selected_entity_key := ""
@@ -59,46 +32,42 @@ var action_rows: Array[Dictionary] = []
 var game_mode := "local"
 var ai_thinking := false
 
-@onready var board_panel: PanelContainer = %BoardPanel
-@onready var board_canvas: Control = %BoardCanvas
-@onready var playmat: BattlePlaymat = %Playmat
-@onready var hud: VBoxContainer = %BattleHUD
-@onready var turn_label: Label = %TurnLabel
-@onready var opponent_info: Label = %OpponentInfo
-@onready var own_info: Label = %OwnInfo
+var board_panel: PanelContainer
+var board_canvas: Control
+var playmat: BattlePlaymat
+var hud: VBoxContainer
+var turn_label: Label
+var opponent_info: Label
+var own_info: Label
 var phase_labels: Dictionary = {}
-@onready var phase_advance_button: Button = %PhaseAdvanceButton
-@onready var quick_actions: VBoxContainer = %QuickActions
-@onready var action_list: VBoxContainer = %ActionList
-@onready var all_actions_scroll: ScrollContainer = %AllActionsScroll
-@onready var all_actions_toggle: Button = %AllActionsToggle
-@onready var detail_panel: PanelContainer = %DetailPanel
-@onready var detail_image: TextureRect = %DetailImage
-@onready var detail_title: Label = %DetailTitle
-@onready var detail_text: RichTextLabel = %DetailText
+var phase_advance_button: Button
+var quick_actions: VBoxContainer
+var action_list: VBoxContainer
+var all_actions_scroll: ScrollContainer
+var all_actions_toggle: Button
+var detail_panel: PanelContainer
+var detail_image: TextureRect
+var detail_title: Label
+var detail_text: RichTextLabel
 var detail_close_button: Button
-@onready var log_panel: PanelContainer = %LogPanel
-@onready var log_label: RichTextLabel = %LogLabel
-@onready var opponent_hand_surface: Control = %OpponentHandSurface
-@onready var opponent_hand_count_badge: Label = %OpponentHandCountBadge
-@onready var hand_scroll: ScrollContainer = %HandScroll
-@onready var hand_surface: Control = %HandSurface
-@onready var input_blocker: Control = %PresentationInputBlocker
-@onready var effects: BattleEffectLayer = %Effects
-@onready var director: PresentationDirector = %PresentationDirector
-@onready var animation_player: AnimationPlayer = %AnimationPlayer
-
-@onready var opponent_active: CardView = %OpponentActive
-@onready var own_active: CardView = %OwnActive
+var log_panel: PanelContainer
+var log_label: RichTextLabel
+var opponent_hand_surface: Control
+var opponent_hand_count_badge: Label
+var hand_scroll: ScrollContainer
+var hand_surface: Control
+var input_blocker: Control
+var effects: BattleEffectLayer
+var director: PresentationDirector
+var animation_player: AnimationPlayer
+var opponent_active: CardView
+var own_active: CardView
 var opponent_bench: Array[CardView] = []
 var own_bench: Array[CardView] = []
 var hand_views: Array[CardView] = []
 var opponent_hand_views: Array[CardView] = []
 var zones: Dictionary = {}
 var slot_views: Dictionary = {}
-var _all_actions_expanded := false
-var _board_origin := Vector2.ZERO
-var _initialized := false
 var _active_flyers: Array[Control] = []
 var _flyer_tweens: Dictionary = {}
 var _presentation_snapshot: Dictionary = {}
@@ -106,6 +75,8 @@ var _presentation_reveals: Dictionary = {}
 var _presentation_mask_counts: Dictionary = {}
 var _presentation_event_hand_targets: Dictionary = {}
 var _presentation_hand_target_cursor: Dictionary = {}
+var _initialized := false
+var _signals_bound := false
 
 
 func _ready() -> void:
@@ -113,79 +84,13 @@ func _ready() -> void:
 
 
 func initialize_ui() -> void:
-	if _initialized:
+	_resolve_table()
+	if table == null:
 		return
-	_resolve_scene_nodes()
+	table.initialize_ui()
+	_bind_table_signals()
+	_sync_from_table()
 	_initialized = true
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_bind_scene_nodes()
-	resized.connect(_layout_board)
-	call_deferred("_layout_board")
-	if not AppSettings.reduced_motion:
-		animation_player.play("enter")
-
-
-func _resolve_scene_nodes() -> void:
-	board_panel = get_node("BattleRoot/Body/BoardPanel") as PanelContainer
-	board_canvas = get_node("BattleRoot/Body/BoardPanel/BoardCanvas") as Control
-	playmat = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/Playmat") as BattlePlaymat
-	hud = get_node("BattleRoot/Body/BattleHUD") as VBoxContainer
-	turn_label = get_node("BattleRoot/Header/TurnLabel") as Label
-	opponent_info = get_node(
-		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentInfo"
-	) as Label
-	own_info = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/OwnInfo") as Label
-	phase_advance_button = get_node(
-		"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseAdvanceButton"
-	) as Button
-	quick_actions = get_node(
-		"ActionPanel/Margin/Content/QuickActions"
-	) as VBoxContainer
-	action_list = get_node(
-		"ActionPanel/Margin/Content/AllActionsScroll/ActionList"
-	) as VBoxContainer
-	all_actions_scroll = get_node(
-		"ActionPanel/Margin/Content/AllActionsScroll"
-	) as ScrollContainer
-	all_actions_toggle = get_node(
-		"ActionPanel/Margin/Content/Heading/AllActionsToggle"
-	) as Button
-	detail_panel = get_node("OverlayPanels/DetailPanel") as PanelContainer
-	detail_image = get_node(
-		"OverlayPanels/DetailPanel/Row/DetailImage"
-	) as TextureRect
-	detail_title = get_node(
-		"OverlayPanels/DetailPanel/Row/TextColumn/DetailTitle"
-	) as Label
-	detail_text = get_node(
-		"OverlayPanels/DetailPanel/Row/TextColumn/DetailText"
-	) as RichTextLabel
-	log_panel = get_node("OverlayPanels/LogPanel") as PanelContainer
-	log_label = get_node(
-		"OverlayPanels/LogPanel/Content/LogLabel"
-	) as RichTextLabel
-	opponent_hand_surface = get_node(
-		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentHandSurface"
-	) as Control
-	opponent_hand_count_badge = get_node(
-		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentHandCountBadge"
-	) as Label
-	hand_scroll = get_node(
-		"BattleRoot/Body/BoardPanel/BoardCanvas/HandScroll"
-	) as ScrollContainer
-	hand_surface = get_node(
-		"BattleRoot/Body/BoardPanel/BoardCanvas/HandScroll/HandSurface"
-	) as Control
-	input_blocker = get_node("PresentationInputBlocker") as Control
-	effects = get_node("Effects") as BattleEffectLayer
-	director = get_node("PresentationDirector") as PresentationDirector
-	animation_player = get_node("AnimationPlayer") as AnimationPlayer
-	opponent_active = get_node(
-		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentActive"
-	) as CardView
-	own_active = get_node(
-		"BattleRoot/Body/BoardPanel/BoardCanvas/OwnActive"
-	) as CardView
 
 
 func update_view(
@@ -196,21 +101,18 @@ func update_view(
 	p_ai_thinking: bool,
 	p_game_mode: String,
 ) -> void:
-	state_ref = state
-	view_player = p_view_player
-	action_rows = p_action_rows.duplicate()
-	selected_entity_key = p_selected_entity_key
-	ai_thinking = p_ai_thinking
-	game_mode = p_game_mode
-	if not _initialized or state_ref == null:
+	_resolve_table()
+	if table == null:
 		return
-	_refresh_header()
-	_refresh_field()
-	_refresh_opponent_hand()
-	_refresh_hand()
-	_refresh_actions()
-	_refresh_log()
-	_refresh_target_hints()
+	table.update_view(
+		state,
+		p_view_player,
+		p_action_rows,
+		p_selected_entity_key,
+		p_ai_thinking,
+		p_game_mode,
+	)
+	_sync_from_table()
 
 
 func play_presentation(
@@ -219,1868 +121,60 @@ func play_presentation(
 	fallback_actor: int = -1,
 	previous_snapshot: Dictionary = {},
 ) -> void:
-	if director == null:
-		return
-	var normalized := PresentationEvent.normalize_all(
-		raw_events,
-		revision,
-		fallback_actor,
-	)
-	if normalized.is_empty():
-		return
-	_stage_presentation_targets(normalized, previous_snapshot)
-	director.set_speed_mode(AppSettings.animation_mode)
-	director.play(normalized)
+	_sync_to_table()
+	table.play_presentation(raw_events, revision, fallback_actor, previous_snapshot)
+	_sync_from_table()
 
 
 func clear_presentation_for_resync() -> void:
-	if director:
-		director.clear_for_resync()
-	_clear_transient_visuals()
-	modulate.a = 0.35
-	var tween := create_tween()
-	tween.tween_property(self, "modulate:a", 1.0, resync_fade_duration)
+	_sync_to_table()
+	table.clear_presentation_for_resync()
+	_sync_from_table()
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
-	if card_id.is_empty():
-		hide_card_detail()
-		return
-	if detail_panel:
-		detail_panel.visible = true
-	if detail_close_button:
-		detail_close_button.visible = true
-	var card := CardDatabase.get_card(card_id)
-	detail_image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
-	detail_title.text = str(card.get("name", card_id))
-	var lines: Array[String] = []
-	var supertype := str(card.get("supertype", ""))
-	var subtypes: Array = card.get("subtypes", [])
-	lines.append("[color=#9eb0ca]%s%s[/color]" % [
-		supertype,
-		" · %s" % "/".join(subtypes) if not subtypes.is_empty() else "",
-	])
-	if int(card.get("hp", 0)) > 0:
-		var hp_text := "HP %d" % int(card.get("hp", 0))
-		if pokemon:
-			hp_text = "HP %d/%d" % [
-				pokemon.current_hp(catalog),
-				int(card.get("hp", 0)),
-			]
-		lines.append(hp_text)
-	for ability_value in card.get("abilities", []):
-		var ability: Dictionary = ability_value
-		lines.append("[color=#62d7ff]特性 · %s[/color]\n%s" % [
-			ability.get("name", ""),
-			ability.get("text", ""),
-		])
-	for attack_value in card.get("attacks", []):
-		var attack: Dictionary = attack_value
-		lines.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
-			attack.get("name", ""),
-			str(attack.get("damage", 0)),
-			attack.get("text", ""),
-		])
-	if not str(card.get("trainer_text", "")).is_empty():
-		lines.append(str(card.get("trainer_text", "")))
-	for rule in card.get("rules", []):
-		if not str(rule).is_empty() and str(rule) not in lines:
-			lines.append(str(rule))
-	detail_text.text = "\n\n".join(lines)
+	table.show_card_detail(card_id, pokemon)
+	_sync_from_table()
 
 
 func hide_card_detail() -> void:
-	if detail_panel:
-		detail_panel.visible = false
-	if detail_close_button:
-		detail_close_button.visible = false
-	if detail_image:
-		detail_image.texture = null
-	if detail_title:
-		detail_title.text = "选择一张卡牌"
-	if detail_text:
-		detail_text.text = "点击或长按卡牌查看详情。"
+	table.hide_card_detail()
+	_sync_from_table()
 
 
 func get_slot_view(player: int, slot: String) -> CardView:
-	return slot_views.get("%d:%s" % [player, slot]) as CardView
+	return table.get_slot_view(player, slot)
 
 
 func capture_presentation_snapshot() -> Dictionary:
-	if not _initialized or state_ref == null or effects == null:
-		return {}
-	var snapshot := {
-		"view_player": view_player,
-		"hand": [],
-		"opponent_hand": [],
-		"opponent_hand_center": _opponent_hand_center(),
-		"slots": {},
-		"zones": {},
-	}
-	for view in hand_views:
-		if view == null or not view.visible:
-			continue
-		(snapshot["hand"] as Array).append({
-			"card_id": view.card_id,
-			"hand_index": view.hand_index,
-			"center": _effects_local(view.global_center()),
-			"hidden": view.is_hidden_card,
-		})
-	for view in opponent_hand_views:
-		if view == null or not view.visible:
-			continue
-		(snapshot["opponent_hand"] as Array).append({
-			"center": _effects_local(view.global_center()),
-			"hidden": true,
-		})
-	for key_value in slot_views.keys():
-		var key := str(key_value)
-		var view := slot_views[key] as CardView
-		if view == null:
-			continue
-		(snapshot["slots"] as Dictionary)[key] = {
-			"card_id": view.card_id,
-			"center": _effects_local(view.global_center()),
-			"empty": view.empty,
-			"hidden": view.is_hidden_card,
-		}
-	for zone_key in zones.keys():
-		var zone := zones[zone_key] as ZoneView
-		if zone == null:
-			continue
-		var logical_key := _logical_zone_key(str(zone_key))
-		(snapshot["zones"] as Dictionary)[logical_key] = {
-			"card_id": zone.card_id,
-			"center": _zone_center(str(zone_key)),
-			"count": zone.count,
-			"hidden": zone.is_hidden_zone,
-		}
-	return snapshot
-
-
-func _zone_context(
-	player: int,
-	zone_name: String,
-	card_ids: Array,
-	zone_count: int,
-	hidden: bool,
-) -> Dictionary:
-	var visible_ids: Array[String] = []
-	if not hidden:
-		for value in card_ids:
-			var card_id := str(value)
-			if not card_id.is_empty():
-				visible_ids.append(card_id)
-	return {
-		"player": player,
-		"zone": zone_name,
-		"title": _zone_title(zone_name),
-		"card_ids": visible_ids,
-		"count": zone_count,
-		"hidden": hidden,
-	}
-
-
-func _card_inspection_context(card_id: String) -> Dictionary:
-	var context := {
-		"card_id": card_id,
-		"title": CardDatabase.get_card(card_id).get("name", card_id),
-		"location": "卡牌",
-		"pokemon": null,
-		"player": view_player,
-		"slot": "",
-	}
-	if state_ref == null:
-		return context
-	if selected_entity_key.begins_with("pokemon:"):
-		var parts := selected_entity_key.split(":")
-		if parts.size() >= 3:
-			var selected_player := int(parts[1])
-			var selected_slot := str(parts[2])
-			var selected_pokemon := state_ref.get_player(selected_player).get_pokemon(selected_slot)
-			if selected_pokemon and selected_pokemon.card_id == card_id:
-				context["pokemon"] = selected_pokemon
-				context["player"] = selected_player
-				context["slot"] = selected_slot
-				context["location"] = _player_label(selected_player) + " " + _slot_name(selected_slot)
-				return context
-	for player_idx in [view_player, 1 - view_player]:
-		var player_state := state_ref.get_player(player_idx)
-		for row in player_state.get_all_pokemon():
-			var pokemon: PokemonState = row["pokemon"]
-			if pokemon and pokemon.card_id == card_id:
-				context["pokemon"] = pokemon
-				context["player"] = player_idx
-				context["slot"] = str(row["slot"])
-				context["location"] = _player_label(player_idx) + " " + _slot_name(str(row["slot"]))
-				return context
-	if card_id in state_ref.get_player(view_player).hand:
-		context["location"] = "手牌"
-	return context
+	_sync_to_table()
+	var result := table.capture_presentation_snapshot()
+	_sync_from_table()
+	return result
 
 
 func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
-	var player := int(endpoint.get("player", view_player))
-	var slot := str(endpoint.get("slot", ""))
-	var zone := str(endpoint.get("zone", ""))
-	if not slot.is_empty():
-		var card_view := get_slot_view(player, slot)
-		if card_view and card_view.visible:
-			return _effects_local(card_view.global_center())
-	if zone.is_empty():
-		if slot == "active":
-			zone = "active"
-		elif slot.begins_with("bench"):
-			zone = "bench"
-	match zone:
-		"deck":
-			return _zone_center("own_deck" if player == view_player else "opponent_deck")
-		"discard":
-			return _zone_center("own_discard" if player == view_player else "opponent_discard")
-		"prizes":
-			return _zone_center("own_prizes" if player == view_player else "opponent_prizes")
-		"stadium":
-			return _zone_center("stadium")
-		"hand":
-			return (
-				_own_hand_center()
-				if player == view_player
-				else _opponent_hand_center()
-			)
-	return effects.size * Vector2(0.5, 0.5)
+	_sync_to_table()
+	return table.resolve_endpoint_center(endpoint)
 
 
-func _bind_scene_nodes() -> void:
-	hud.custom_minimum_size.x = hud_width
-	if detail_panel:
-		detail_panel.visible = false
-		detail_panel.z_index = 34
-		_ensure_detail_close_button()
-	if log_panel:
-		log_panel.z_index = 33
-	playmat.quality_profile = AppSettings.resolved_quality_profile()
-	effects.quality_profile = AppSettings.resolved_quality_profile()
-	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	opponent_hand_surface.z_index = 6
-	opponent_hand_count_badge.z_index = 12
-	opponent_hand_count_badge.add_theme_stylebox_override(
-		"normal",
-		DesignTokens.panel_style(
-			DesignTokens.GOLD,
-			15,
-			DesignTokens.TEXT,
-			1,
-			0,
-		),
-	)
-	opponent_hand_count_badge.add_theme_color_override(
-		"font_color",
-		DesignTokens.BG_DEEP,
-	)
-	phase_labels = {
-		"DRAW": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/DrawPhase"
-		),
-		"MAIN": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/MainPhase"
-		),
-		"ATTACK": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/AttackPhase"
-		),
-		"POKEMON_CHECKUP": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/CheckupPhase"
-		),
-	}
-	var board_path := "BattleRoot/Body/BoardPanel/BoardCanvas/"
-	opponent_bench.assign([
-		get_node(board_path + "OpponentBench0"),
-		get_node(board_path + "OpponentBench1"),
-		get_node(board_path + "OpponentBench2"),
-		get_node(board_path + "OpponentBench3"),
-		get_node(board_path + "OpponentBench4"),
-	])
-	own_bench.assign([
-		get_node(board_path + "OwnBench0"),
-		get_node(board_path + "OwnBench1"),
-		get_node(board_path + "OwnBench2"),
-		get_node(board_path + "OwnBench3"),
-		get_node(board_path + "OwnBench4"),
-	])
-	zones = {
-		"opponent_deck": get_node(board_path + "OpponentDeck"),
-		"opponent_discard": get_node(board_path + "OpponentDiscard"),
-		"opponent_prizes": get_node(board_path + "OpponentPrizes"),
-		"own_deck": get_node(board_path + "OwnDeck"),
-		"own_discard": get_node(board_path + "OwnDiscard"),
-		"own_prizes": get_node(board_path + "OwnPrizes"),
-		"stadium": get_node(board_path + "Stadium"),
-	}
-	(zones["opponent_deck"] as ZoneView).set_stack_visual("deck", 60, "up")
-	(zones["own_deck"] as ZoneView).set_stack_visual("deck", 60, "down")
-	(zones["opponent_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
-	(zones["own_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
-	for view in [opponent_active, own_active] + opponent_bench + own_bench:
-		_bind_card_view(view)
-	for zone_value in zones.values():
-		var zone := zone_value as ZoneView
-		zone.activated.connect(_on_detail_requested)
-		zone.inspected.connect(_on_zone_inspected)
-		zone.action_requested.connect(action_requested.emit)
-	(get_node("BattleRoot/Header/MenuButton") as Button).pressed.connect(_on_menu_pressed)
-	phase_advance_button.pressed.connect(_on_phase_advance_pressed)
-	all_actions_toggle.pressed.connect(_toggle_all_actions)
-	show_card_detail("")
-	director.sequence_started.connect(func(_count: int) -> void:
-		input_blocker.visible = not AppSettings.reduced_motion
-	)
-	director.sequence_finished.connect(func() -> void:
-		input_blocker.visible = false
-		_clear_presentation_masks(true)
-	)
-	director.event_finished.connect(_on_presentation_event_finished)
-	director.floating_text_requested.connect(_on_floating_text_requested)
-	director.burst_requested.connect(_on_burst_requested)
-	director.card_motion_requested.connect(_on_card_motion_requested)
-	director.camera_impulse_requested.connect(_on_camera_impulse_requested)
-
-
-func _bind_card_view(view: CardView) -> void:
-	view.set_catalog(catalog)
-	view.activated.connect(_on_card_activated)
-	view.detail_requested.connect(_on_detail_requested)
-	view.card_dropped.connect(_on_card_dropped)
-	view.action_requested.connect(action_requested.emit)
-
-
-func _on_phase_advance_pressed() -> void:
-	var action: GameAction = phase_advance_button.get_meta("action") as GameAction
-	if action:
-		action_requested.emit(action)
-
-
-func _refresh_header() -> void:
-	var display_actor := view_player if state_ref.phase == "SETUP" else state_ref.active_player_idx
-	turn_label.text = "第 %d 回合 · %s · 玩家 %d%s" % [
-		state_ref.turn_number,
-		_phase_name(state_ref.phase),
-		display_actor + 1,
-		" · AI 思考中" if ai_thinking else "",
-	]
-	for phase in phase_labels:
-		var active := str(phase) == state_ref.phase
-		var label: Label = phase_labels[phase]
-		label.add_theme_color_override(
-			"font_color",
-			DesignTokens.BG_DEEP if active else DesignTokens.TEXT_MUTED,
-		)
-		label.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				DesignTokens.GOLD if active else Color("#1b293c"),
-				8,
-				DesignTokens.GOLD if active else DesignTokens.BORDER_SOFT,
-				1,
-				0,
-			),
-		)
-
-
-func _refresh_field() -> void:
-	var own := state_ref.get_player(view_player)
-	var opponent := state_ref.get_player(1 - view_player)
-	opponent_info.text = "%s  ·  手牌 %d  ·  牌库 %d  ·  奖品 %d" % [
-		opponent.name,
-		opponent.hand.size(),
-		opponent.deck.size(),
-		opponent.prizes.size(),
-	]
-	own_info.text = "%s  ·  手牌 %d  ·  牌库 %d  ·  奖品 %d" % [
-		own.name,
-		own.hand.size(),
-		own.deck.size(),
-		own.prizes.size(),
-	]
-	_configure_slot(opponent_active, opponent.active, 1 - view_player, "active")
-	_configure_slot(own_active, own.active, view_player, "active")
-	for index in range(5):
-		_configure_slot(
-			opponent_bench[index],
-			opponent.bench[index],
-			1 - view_player,
-			"bench_%d" % index,
-		)
-		_configure_slot(
-			own_bench[index],
-			own.bench[index],
-			view_player,
-			"bench_%d" % index,
-		)
-	(zones["opponent_deck"] as ZoneView).configure(
-		"牌库",
-		"",
-		opponent.deck.size(),
-		true,
-		_zone_context(1 - view_player, "deck", [], opponent.deck.size(), true),
-	)
-	(zones["opponent_discard"] as ZoneView).configure(
-		"弃牌",
-		opponent.discard[-1] if not opponent.discard.is_empty() else "",
-		opponent.discard.size(),
-		false,
-		_zone_context(1 - view_player, "discard", opponent.discard, opponent.discard.size(), false),
-	)
-	(zones["opponent_prizes"] as ZoneView).configure(
-		"奖品",
-		"",
-		opponent.prizes.size(),
-		true,
-		_zone_context(1 - view_player, "prizes", [], opponent.prizes.size(), true),
-	)
-	(zones["own_deck"] as ZoneView).configure(
-		"牌库",
-		"",
-		own.deck.size(),
-		true,
-		_zone_context(view_player, "deck", [], own.deck.size(), true),
-	)
-	(zones["own_discard"] as ZoneView).configure(
-		"弃牌",
-		own.discard[-1] if not own.discard.is_empty() else "",
-		own.discard.size(),
-		false,
-		_zone_context(view_player, "discard", own.discard, own.discard.size(), false),
-	)
-	(zones["own_prizes"] as ZoneView).configure(
-		"奖品",
-		"",
-		own.prizes.size(),
-		true,
-		_zone_context(view_player, "prizes", [], own.prizes.size(), true),
-	)
-	(zones["stadium"] as ZoneView).configure(
-		"竞技场",
-		state_ref.stadium_card_id,
-		0 if state_ref.stadium_card_id.is_empty() else 1,
-		false,
-		_zone_context(-1, "stadium", [state_ref.stadium_card_id] if not state_ref.stadium_card_id.is_empty() else [], 0 if state_ref.stadium_card_id.is_empty() else 1, false),
-	)
-
-
-func _refresh_hand() -> void:
-	var hand := state_ref.get_player(view_player).hand
-	while hand_views.size() < hand.size():
-		var card := _new_card_view()
-		hand_surface.add_child(card)
-		hand_views.append(card)
-	for index in range(hand_views.size()):
-		var view := hand_views[index]
-		if index >= hand.size():
-			view.visible = false
-			continue
-		view.visible = true
-		view.configure(hand[index], null, false, index, view_player, "", true)
-		view.set_selected(selected_entity_key == "hand:%d" % index)
-	_layout_hand()
-
-
-func _refresh_opponent_hand() -> void:
-	if opponent_hand_surface == null or state_ref == null:
-		return
-	var opponent_player := 1 - view_player
-	var hand_count := state_ref.get_player(opponent_player).hand.size()
-	var visible_count := mini(
-		maxi(0, hand_count),
-		maxi(0, opponent_hand_max_visible),
-	)
-	while opponent_hand_views.size() < visible_count:
-		var card := _new_card_view()
-		opponent_hand_surface.add_child(card)
-		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card.focus_mode = Control.FOCUS_NONE
-		card.mouse_default_cursor_shape = Control.CURSOR_ARROW
-		opponent_hand_views.append(card)
-	for index in range(opponent_hand_views.size()):
-		var view := opponent_hand_views[index]
-		if index >= visible_count:
-			view.visible = false
-			continue
-		view.visible = true
-		view.configure("", null, true, -1, opponent_player, "", true)
-		view.set_selected(false)
-		view.set_targetable(false)
-		view.set_actions([])
-		view.tooltip_text = "对手手牌（隐藏）"
-	opponent_hand_surface.visible = hand_count > 0
-	opponent_hand_count_badge.visible = hand_count > 0
-	opponent_hand_count_badge.text = str(hand_count)
-	_layout_opponent_hand()
-
-
-func _refresh_actions() -> void:
-	var phase_row: Dictionary = {}
-	var hand_rows: Dictionary = {}
-	var slot_rows: Dictionary = {}
-	var stadium_row: Dictionary = {}
-	for row in action_rows:
-		var action: GameAction = row.get("action")
-		if action == null:
-			continue
-		if action.action in ["END_TURN", "SETUP_DONE"]:
-			phase_row = row
-			continue
-		if action.action == "USE_STADIUM":
-			stadium_row = row
-			continue
-		var hand_index := int(action.params.get("hand_idx", -1))
-		if hand_index >= 0:
-			if not hand_rows.has(hand_index):
-				hand_rows[hand_index] = []
-			(hand_rows[hand_index] as Array).append(row)
-			continue
-		var endpoint := action.source if action.source else action.target
-		if endpoint and not endpoint.slot.is_empty():
-			var key := "%d:%s" % [endpoint.player, endpoint.slot]
-			if not slot_rows.has(key):
-				slot_rows[key] = []
-			(slot_rows[key] as Array).append(row)
-
-	var phase_action: GameAction = phase_row.get("action") as GameAction
-	phase_advance_button.set_meta("action", phase_action)
-	phase_advance_button.disabled = phase_action == null or ai_thinking
-	phase_advance_button.text = (
-		"完成准备"
-		if phase_action and phase_action.action == "SETUP_DONE"
-		else "进入下一阶段"
-	)
-	phase_advance_button.tooltip_text = (
-		""
-		if phase_action
-		else "等待对手行动"
-		if game_mode == "network"
-		else "请先完成当前卡牌操作"
-	)
-
-	for view in hand_views:
-		var rows: Array[Dictionary] = []
-		rows.assign(hand_rows.get(view.hand_index, []))
-		var direct: Array[Dictionary] = []
-		var targeted := false
-		for row in rows:
-			var action: GameAction = row.get("action")
-			if action and action.target and not action.target.slot.is_empty():
-				targeted = true
-			else:
-				direct.append(_compact_card_action_row(row))
-		view.set_actions(
-			direct,
-			"点击高亮牌位" if targeted and view.selected else "",
-		)
-	for key in slot_views:
-		var view := slot_views[key] as CardView
-		var rows: Array[Dictionary] = []
-		for row in slot_rows.get(key, []):
-			rows.append(_compact_card_action_row(row))
-		view.set_actions(rows)
-	(zones["stadium"] as ZoneView).set_action(
-		_compact_card_action_row(stadium_row) if not stadium_row.is_empty() else {}
-	)
-
-
-func _refresh_log() -> void:
-	var start := maxi(0, state_ref.action_log.size() - 7)
-	var lines: Array[String] = []
-	for index in range(start, state_ref.action_log.size()):
-		lines.append("[color=#62d7ff]◆[/color] " + state_ref.action_log[index])
-	if log_panel:
-		log_panel.visible = not lines.is_empty()
-	log_label.text = "\n".join(lines)
-	log_label.scroll_to_line(maxi(0, lines.size() - 1))
-
-
-func _refresh_target_hints() -> void:
-	for view_value in slot_views.values():
-		(view_value as CardView).set_targetable(false)
-	if selected_entity_key.is_empty():
-		return
-	for row in action_rows:
-		var action: GameAction = row.get("action")
-		if action == null or not _action_matches_selected(action):
-			continue
-		var target_slot := str(action.params.get(
-			"target_slot",
-			action.params.get("target", action.params.get("slot", "")),
-		))
-		if target_slot.is_empty() and action.target:
-			target_slot = action.target.slot
-		if not target_slot.is_empty():
-			var target_player := action.actor
-			if action.target:
-				target_player = action.target.player
-			var view := get_slot_view(target_player, target_slot)
-			if view:
-				view.set_targetable(true)
-
-
-func _configure_slot(
-	view: CardView,
-	pokemon: PokemonState,
-	player: int,
-	slot_name: String,
-) -> void:
-	slot_views["%d:%s" % [player, slot_name]] = view
-	view.configure(
-		pokemon.card_id if pokemon else "",
-		pokemon,
-		false,
-		-1,
-		player,
-		slot_name,
-		false,
-	)
-	view.configure_target(player, slot_name)
-	view.set_empty_label("战斗区" if slot_name == "active" else "备战 %d" % (
-		slot_name.trim_prefix("bench_").to_int() + 1
-	))
-	view.set_selected(selected_entity_key == "pokemon:%d:%s" % [player, slot_name])
-
-
-func _layout_board() -> void:
-	if board_canvas == null:
-		return
-	var width := board_canvas.size.x
-	var height := board_canvas.size.y
-	if width <= 0.0 or height <= 0.0:
-		return
-	var metrics := _board_layout_metrics(width, height)
-	_layout_player_hands(metrics)
-	_layout_field_slots(metrics)
-	_layout_table_zones(metrics)
-	_layout_opponent_hand(metrics["hidden_hand_size"])
-	_layout_hand(metrics["own_hand_size"])
-	_layout_overlay_drawers()
-	if playmat:
-		playmat.queue_redraw()
-	if effects:
-		effects.queue_redraw()
-
-
-func _board_layout_metrics(width: float, height: float) -> Dictionary:
-	var layout_scale := clampf(minf(width / 1500.0, height / 840.0), 0.76, 1.08)
-	var battle_card_boost := 1.32
-	var active_size := active_card_size * layout_scale * battle_card_boost
-	var bench_size := bench_card_size * layout_scale * battle_card_boost
-	var zone_visual_size := zone_size * layout_scale
-	var own_hand_size := hand_card_size * layout_scale
-	var hidden_hand_size := opponent_hand_card_size * layout_scale * 0.76
-	var side_margin := maxf(14.0, table_side_margin * layout_scale)
-	var top_margin := maxf(10.0, table_top_margin * layout_scale)
-	var bottom_margin := maxf(8.0, table_bottom_margin * layout_scale)
-	var zone_gap := 12.0 * layout_scale
-	var left_zone_x := side_margin
-	var side_zone_x := width - zone_visual_size.x - side_margin
-	var field_left := left_zone_x + zone_visual_size.x + 36.0 * layout_scale
-	var field_right := side_zone_x - 36.0 * layout_scale
-	if field_right <= field_left + 360.0 * layout_scale:
-		field_left = side_margin
-		field_right = width - side_margin
-	var table_width := maxf(300.0, field_right - field_left)
-	var center_x := (field_left + field_right) * 0.5
-	var top_hand_height := hidden_hand_size.y + 20.0 * layout_scale
-	var opponent_hand_width := clampf(
-		table_width * 0.38,
-		270.0 * layout_scale,
-		minf(table_width, 500.0 * layout_scale),
-	)
-	var own_hand_height := own_hand_size.y + 22.0 * layout_scale
-	var own_hand_peek := clampf(own_hand_height * 0.72, 118.0 * layout_scale, own_hand_height)
-	var own_hand_y := height - own_hand_peek - bottom_margin - hand_bottom_padding * layout_scale
-	var hand_width := clampf(
-		table_width * 0.64,
-		520.0 * layout_scale,
-		minf(table_width, 850.0 * layout_scale),
-	)
-	var hidden_hand_visible_height := maxf(24.0, hidden_hand_size.y * 0.32)
-	top_hand_height = hidden_hand_visible_height + 10.0 * layout_scale
-	var opponent_hand_y := top_margin - hidden_hand_size.y * 0.72
-	var opponent_info_y := top_margin + hidden_hand_visible_height + 3.0
-	var own_info_y := own_hand_y - 28.0
-	return {
-		"width": width,
-		"height": height,
-		"layout_scale": layout_scale,
-		"active_size": active_size,
-		"bench_size": bench_size,
-		"zone_size": zone_visual_size,
-		"own_hand_size": own_hand_size,
-		"hidden_hand_size": hidden_hand_size,
-		"side_margin": side_margin,
-		"top_margin": top_margin,
-		"bottom_margin": bottom_margin,
-		"zone_gap": zone_gap,
-		"left_zone_x": left_zone_x,
-		"side_zone_x": side_zone_x,
-		"field_left": field_left,
-		"field_right": field_right,
-		"table_width": table_width,
-		"center_x": center_x,
-		"top_hand_height": top_hand_height,
-		"opponent_hand_y": opponent_hand_y,
-		"opponent_hand_visible_height": hidden_hand_visible_height,
-		"opponent_hand_width": opponent_hand_width,
-		"own_hand_height": own_hand_height,
-		"own_hand_y": own_hand_y,
-		"hand_width": hand_width,
-		"opponent_info_y": opponent_info_y,
-		"own_info_y": own_info_y,
-		"arena_top": opponent_info_y + 8.0,
-		"arena_bottom": own_hand_y - 6.0,
-	}
-
-
-func _layout_player_hands(metrics: Dictionary) -> void:
-	var center_x := float(metrics["center_x"])
-	var top_margin := float(metrics["top_margin"])
-	var hidden_hand_size: Vector2 = metrics["hidden_hand_size"]
-	var opponent_hand_width := float(metrics["opponent_hand_width"])
-	var top_hand_height := float(metrics["top_hand_height"])
-	var opponent_hand_y := float(metrics["opponent_hand_y"])
-	var opponent_visible_height := float(metrics["opponent_hand_visible_height"])
-	opponent_hand_surface.position = Vector2(
-		center_x - opponent_hand_width * 0.5,
-		opponent_hand_y,
-	)
-	opponent_hand_surface.size = Vector2(
-		opponent_hand_width,
-		top_hand_height + hidden_hand_size.y,
-	)
-	opponent_hand_count_badge.position = Vector2(
-		opponent_hand_surface.position.x + opponent_hand_surface.size.x - 18.0,
-		top_margin + opponent_visible_height - 25.0,
-	)
-	opponent_hand_count_badge.size = Vector2(34.0, 34.0)
-	opponent_info.position = Vector2(
-		float(metrics["field_left"]),
-		float(metrics["opponent_info_y"]),
-	)
-	opponent_info.size = Vector2(float(metrics["table_width"]), 24.0)
-
-	var own_hand_y := float(metrics["own_hand_y"])
-	var hand_width := float(metrics["hand_width"])
-	hand_scroll.position = Vector2(center_x - hand_width * 0.5, own_hand_y)
-	hand_scroll.size = Vector2(hand_width, float(metrics["own_hand_height"]))
-	hand_surface.custom_minimum_size.y = float(metrics["own_hand_height"]) - 8.0
-	own_info.position = Vector2(float(metrics["field_left"]), float(metrics["own_info_y"]))
-	own_info.size = Vector2(float(metrics["table_width"]), 24.0)
-
-
-func _layout_field_slots(metrics: Dictionary) -> void:
-	var active_size: Vector2 = metrics["active_size"]
-	var bench_size: Vector2 = metrics["bench_size"]
-	var layout_scale := float(metrics["layout_scale"])
-	var table_width := float(metrics["table_width"])
-	var center_x := float(metrics["center_x"])
-	var arena_top := float(metrics["arena_top"])
-	var arena_bottom := float(metrics["arena_bottom"])
-	var arena_height := maxf(1.0, arena_bottom - arena_top)
-	var active_gap := 30.0 * layout_scale
-	var active_clearance := 20.0 * layout_scale
-	var bench_edge_gap := 10.0 * layout_scale
-	var required_field_height := (
-		active_size.y * 2.0
-		+ bench_size.y * 2.0
-		+ active_gap
-		+ active_clearance * 2.0
-		+ bench_edge_gap * 2.0
-	)
-	var battle_scale := minf(
-		1.0,
-		arena_height / maxf(1.0, required_field_height),
-	)
-	if battle_scale < 1.0:
-		active_size *= battle_scale
-		bench_size *= battle_scale
-		active_gap *= battle_scale
-		active_clearance *= battle_scale
-		bench_edge_gap *= battle_scale
-	var arena_middle := (arena_top + arena_bottom) * 0.5
-	var bench_gap := clampf(
-		bench_spacing * layout_scale * battle_scale + table_width * 0.018,
-		bench_spacing * layout_scale * battle_scale,
-		30.0 * layout_scale,
-	)
-	var bench_total := bench_size.x * 5.0 + bench_gap * 4.0
-	var bench_x := center_x - bench_total * 0.5
-	var opponent_active_y := arena_middle - active_gap * 0.5 - active_size.y
-	var own_active_y := arena_middle + active_gap * 0.5
-	var top_bench_y := opponent_active_y - bench_size.y - active_clearance
-	var bottom_bench_y := own_active_y + active_size.y + active_clearance
-	if top_bench_y < arena_top + bench_edge_gap:
-		var shift_down := arena_top + bench_edge_gap - top_bench_y
-		top_bench_y += shift_down
-		opponent_active_y += shift_down * 0.42
-	if bottom_bench_y + bench_size.y > arena_bottom - bench_edge_gap:
-		var shift_up := bottom_bench_y + bench_size.y - (arena_bottom - bench_edge_gap)
-		bottom_bench_y -= shift_up
-		own_active_y -= shift_up * 0.42
-	var opponent_bench_rects: Array[Rect2] = []
-	var own_bench_rects: Array[Rect2] = []
-	for index in range(5):
-		var opponent_center := Vector2(
-			bench_x + index * (bench_size.x + bench_gap) + bench_size.x * 0.5,
-			top_bench_y + bench_size.y * 0.5,
-		)
-		var own_center := Vector2(
-			bench_x + index * (bench_size.x + bench_gap) + bench_size.x * 0.5,
-			bottom_bench_y + bench_size.y * 0.5,
-		)
-		opponent_bench_rects.append(_perspective_card_rect(
-			opponent_center,
-			bench_size,
-			metrics,
-		).get("rect", Rect2()))
-		own_bench_rects.append(_perspective_card_rect(
-			own_center,
-			bench_size,
-			metrics,
-		).get("rect", Rect2()))
-		_place_perspective_card(
-			opponent_bench[index],
-			opponent_center,
-			bench_size,
-			metrics,
-			-2.4 + float(index - 2) * 0.22,
-			index,
-		)
-		_place_perspective_card(
-			own_bench[index],
-			own_center,
-			bench_size,
-			metrics,
-			2.4 + float(index - 2) * 0.22,
-			20 + index,
-		)
-	var opponent_active_center := Vector2(
-		center_x,
-		opponent_active_y + active_size.y * 0.5,
-	)
-	var own_active_center := Vector2(center_x, own_active_y + active_size.y * 0.5)
-	var opponent_active_rect: Rect2 = _perspective_card_rect(
-		opponent_active_center,
-		active_size,
-		metrics,
-	).get("rect", Rect2())
-	var own_active_rect: Rect2 = _perspective_card_rect(
-		own_active_center,
-		active_size,
-		metrics,
-	).get("rect", Rect2())
-	_place_perspective_card(
-		opponent_active,
-		opponent_active_center,
-		active_size,
-		metrics,
-		-1.2,
-		12,
-	)
-	_place_perspective_card(
-		own_active,
-		own_active_center,
-		active_size,
-		metrics,
-		1.2,
-		34,
-	)
-	_update_playmat_field_guides(
-		opponent_bench_rects,
-		own_bench_rects,
-		opponent_active_rect,
-		own_active_rect,
-		metrics,
-	)
-
-
-func _layout_table_zones(metrics: Dictionary) -> void:
-	var layout_scale := float(metrics["layout_scale"])
-	var top_margin := float(metrics["top_margin"])
-	var left_zone_x := float(metrics["left_zone_x"])
-	var side_zone_x := float(metrics["side_zone_x"])
-	var zone_visual_size: Vector2 = metrics["zone_size"]
-	var zone_gap := float(metrics["zone_gap"])
-	var own_hand_y := float(metrics["own_hand_y"])
-	var arena_middle := (float(metrics["arena_top"]) + float(metrics["arena_bottom"])) * 0.5
-	var top_zone_y := top_margin + 18.0 * layout_scale
-	var own_zone_y := own_hand_y - zone_visual_size.y - 12.0 * layout_scale
-	var opponent_discard_y := top_zone_y + zone_visual_size.y + zone_gap
-	var own_discard_y := own_zone_y - zone_visual_size.y - zone_gap
-	_place_perspective_zone(
-		"opponent_prizes",
-		Vector2(left_zone_x, top_zone_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
-		"opponent_deck",
-		Vector2(side_zone_x, top_zone_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
-		"opponent_discard",
-		Vector2(side_zone_x, opponent_discard_y),
-		zone_visual_size,
-		metrics,
-	)
-	var stadium_y := arena_middle - zone_visual_size.y * 0.5
-	var stadium_min_y := opponent_discard_y + zone_visual_size.y + zone_gap
-	var stadium_max_y := own_discard_y - zone_visual_size.y - zone_gap
-	if stadium_max_y > stadium_min_y:
-		stadium_y = clampf(stadium_y, stadium_min_y, stadium_max_y)
-	_place_perspective_zone("stadium", Vector2(left_zone_x, stadium_y), zone_visual_size, metrics)
-	_place_perspective_zone(
-		"own_discard",
-		Vector2(side_zone_x, own_discard_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
-		"own_deck",
-		Vector2(side_zone_x, own_zone_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
-		"own_prizes",
-		Vector2(left_zone_x, own_zone_y),
-		zone_visual_size,
-		metrics,
-	)
-
-
-func _place_perspective_card(
-	view: CardView,
-	center: Vector2,
-	base_size: Vector2,
-	metrics: Dictionary,
-	rotation_value: float,
-	z_bias: int,
-) -> void:
-	var row := _perspective_card_rect(center, base_size, metrics)
-	var depth := float(row.get("depth", 0.5))
-	var rect: Rect2 = row.get("rect", Rect2(center - base_size * 0.5, base_size))
-	_place_card(
-		view,
-		rect.position,
-		rect.size,
-		depth,
-		rotation_value,
-		int(10 + depth * 42.0) + z_bias,
-	)
-
-
-func _perspective_card_rect(
-	center: Vector2,
-	base_size: Vector2,
-	metrics: Dictionary,
-) -> Dictionary:
-	var depth := _perspective_depth(center.y, metrics)
-	var scale := lerpf(0.86, 1.08, depth)
-	var size_value := base_size * scale
-	var center_x := float(metrics["center_x"])
-	var spread := lerpf(0.96, 1.035, depth)
-	var projected_center := Vector2(
-		center_x + (center.x - center_x) * spread,
-		center.y,
-	)
-	return {
-		"depth": depth,
-		"rect": Rect2(projected_center - size_value * 0.5, size_value),
-	}
-
-
-func _update_playmat_field_guides(
-	opponent_bench_rects: Array[Rect2],
-	own_bench_rects: Array[Rect2],
-	opponent_active_rect: Rect2,
-	own_active_rect: Rect2,
-	metrics: Dictionary,
-) -> void:
-	if playmat == null:
-		return
-	var guides: Array[Dictionary] = []
-	guides.append({
-		"kind": "bench",
-		"side": "opponent",
-		"rect": _union_rects(opponent_bench_rects).grow(
-			12.0 * float(metrics["layout_scale"])
-		),
-		"slots": opponent_bench_rects,
-		"depth": _perspective_depth(_union_rects(opponent_bench_rects).get_center().y, metrics),
-	})
-	guides.append({
-		"kind": "bench",
-		"side": "own",
-		"rect": _union_rects(own_bench_rects).grow(
-			12.0 * float(metrics["layout_scale"])
-		),
-		"slots": own_bench_rects,
-		"depth": _perspective_depth(_union_rects(own_bench_rects).get_center().y, metrics),
-	})
-	guides.append({
-		"kind": "active",
-		"side": "opponent",
-		"rect": opponent_active_rect,
-		"depth": _perspective_depth(opponent_active_rect.get_center().y, metrics),
-	})
-	guides.append({
-		"kind": "active",
-		"side": "own",
-		"rect": own_active_rect,
-		"depth": _perspective_depth(own_active_rect.get_center().y, metrics),
-	})
-	playmat.set_field_guides(guides)
-
-
-func _union_rects(rects: Array[Rect2]) -> Rect2:
-	if rects.is_empty():
-		return Rect2()
-	var result := rects[0]
-	for index in range(1, rects.size()):
-		result = result.merge(rects[index])
-	return result
-
-
-func _place_perspective_zone(
-	key: String,
-	position_value: Vector2,
-	base_size: Vector2,
-	metrics: Dictionary,
-) -> void:
-	var center_y := position_value.y + base_size.y * 0.5
-	var depth := _perspective_depth(center_y, metrics)
-	var size_value := base_size * lerpf(0.88, 1.05, depth)
-	var near_side := depth >= 0.52
-	var adjusted := position_value
-	if near_side:
-		adjusted.y -= (size_value.y - base_size.y) * 0.5
-	_place_zone(
-		key,
-		adjusted,
-		size_value,
-		depth,
-		-1.6 if depth < 0.45 else 1.2,
-		int(8 + depth * 34.0),
-	)
-
-
-func _perspective_depth(y: float, metrics: Dictionary) -> float:
-	return clampf(
-		(y - float(metrics["arena_top"]))
-		/ maxf(1.0, float(metrics["arena_bottom"]) - float(metrics["arena_top"])),
-		0.0,
-		1.0,
-	)
-
-
-func _layout_overlay_drawers() -> void:
-	if board_panel == null:
-		return
-	var board_origin := board_panel.global_position - global_position
-	var drawer_width := clampf(
-		board_panel.size.x * 0.23,
-		260.0,
-		340.0,
-	)
-	var drawer_x := board_origin.x + board_panel.size.x - drawer_width - 14.0
-	var detail_height := clampf(board_panel.size.y * 0.28, 190.0, 240.0)
-	var log_height := clampf(board_panel.size.y * 0.18, 118.0, 160.0)
-	if detail_panel:
-		detail_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
-		detail_panel.size = Vector2(drawer_width, detail_height)
-		detail_panel.custom_minimum_size = Vector2(drawer_width, detail_height)
-	if detail_close_button:
-		detail_close_button.position = Vector2(
-			drawer_x + drawer_width - 34.0,
-			board_origin.y + 20.0,
-		)
-		detail_close_button.size = Vector2(28.0, 28.0)
-	if log_panel:
-		log_panel.position = Vector2(
-			drawer_x,
-			board_origin.y + board_panel.size.y - log_height - 14.0,
-		)
-		log_panel.size = Vector2(drawer_width, log_height)
-		log_panel.custom_minimum_size = Vector2(drawer_width, log_height)
-
-
-func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
-	if hand_surface == null:
-		return
-	var visible_count := 0
-	for view in hand_views:
-		if view.visible:
-			visible_count += 1
-	var available := maxf(220.0, hand_scroll.size.x)
-	var spacing := card_size.x
-	if visible_count > 1:
-		spacing = clampf(
-			(available - card_size.x) / float(visible_count - 1),
-			hand_minimum_spacing,
-			card_size.x + 6.0,
-		)
-	var content_width := (
-		card_size.x
-		if visible_count <= 1
-		else card_size.x + spacing * float(visible_count - 1)
-	)
-	hand_surface.custom_minimum_size.x = maxf(available, content_width)
-	var start_x := maxf(0.0, (hand_surface.custom_minimum_size.x - content_width) * 0.5)
-	var visible_index := 0
-	for view in hand_views:
-		if not view.visible:
-			continue
-		view.custom_minimum_size = card_size
-		view.size = card_size
-		view.position = Vector2(start_x + visible_index * spacing, 14)
-		var normalized := (
-			0.0
-			if visible_count <= 1
-			else float(visible_index) / float(visible_count - 1) - 0.5
-		)
-		view.rotation_degrees = normalized * minf(
-			hand_rotation_degrees,
-			float(visible_count) * 0.55,
-		)
-		view.z_index = 70 + visible_index
-		view.set_table_depth(0.96, true)
-		view.remember_base_position()
-		view.set_selected(selected_entity_key == "hand:%d" % view.hand_index)
-		visible_index += 1
-
-
-func _layout_opponent_hand(card_size: Vector2 = Vector2(70, 98)) -> void:
-	if opponent_hand_surface == null:
-		return
-	var visible_count := 0
-	for view in opponent_hand_views:
-		if view.visible:
-			visible_count += 1
-	var available := maxf(180.0, opponent_hand_surface.size.x)
-	var spacing := card_size.x * 0.42
-	if visible_count > 1:
-		spacing = clampf(
-			(available - card_size.x) / float(visible_count - 1),
-			opponent_hand_minimum_spacing,
-			card_size.x * 0.58,
-		)
-	var content_width := (
-		card_size.x
-		if visible_count <= 1
-		else card_size.x + spacing * float(visible_count - 1)
-	)
-	var start_x := maxf(0.0, (available - content_width) * 0.5)
-	var visible_index := 0
-	for view in opponent_hand_views:
-		if not view.visible:
-			continue
-		view.custom_minimum_size = card_size
-		view.size = card_size
-		var normalized := (
-			0.0
-			if visible_count <= 1
-			else float(visible_index) / float(visible_count - 1) - 0.5
-		)
-		view.position = Vector2(
-			start_x + visible_index * spacing,
-			-4.0 + absf(normalized) * 5.0,
-		)
-		view.rotation_degrees = -normalized * minf(
-			opponent_hand_rotation_degrees,
-			float(visible_count) * 0.55,
-		)
-		view.z_index = 5 + visible_index
-		view.set_table_depth(0.18, false)
-		view.remember_base_position()
-		visible_index += 1
-
-
-func _new_card_view() -> CardView:
-	var view := CARD_SCENE.instantiate() as CardView
-	_bind_card_view(view)
-	return view
-
-
-func _action_button(row: Dictionary, prominent: bool) -> Button:
-	var action: GameAction = row.get("action")
-	var button := Button.new()
-	button.text = str(row.get("label", action.action if action else "动作"))
-	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	button.custom_minimum_size.y = (
-		primary_action_button_height
-		if prominent
-		else secondary_action_button_height
-	)
-	button.add_theme_font_size_override("font_size", 15 if prominent else 13)
-	if action and action.action == "END_TURN":
-		button.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				Color("#7b2e38"),
-				10,
-				DesignTokens.RED,
-				1,
-			),
-		)
-	elif action and action.action == "DECLARE_ATTACK":
-		button.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				Color("#8a3c2d"),
-				10,
-				Color("#ff9a61"),
-				1,
-			),
-		)
-	button.pressed.connect(func() -> void:
-		if action:
-			action_requested.emit(action)
-	)
-	return button
-
-
-func _compact_card_action_row(row: Dictionary) -> Dictionary:
-	var result := row.duplicate()
-	var action: GameAction = row.get("action")
-	if action == null:
-		return result
-	match action.action:
-		"PLAY_TRAINER":
-			result["label"] = "使用"
-		"DECLARE_ATTACK":
-			result["label"] = str(row.get("label", "攻击")).trim_prefix("攻击 · ")
-		"USE_ABILITY":
-			result["label"] = str(action.params.get("ability_name", "发动特性"))
-		"RETREAT":
-			result["label"] = "撤退到这里"
-		"PROMOTE":
-			result["label"] = "晋升"
-		"USE_STADIUM":
-			result["label"] = "发动"
-	return result
-
-
-func _action_matches_selected(action: GameAction) -> bool:
-	if selected_entity_key.is_empty():
-		return false
-	if selected_entity_key.begins_with("hand:"):
-		return int(action.params.get("hand_idx", -1)) == (
-			selected_entity_key.trim_prefix("hand:").to_int()
-		)
-	if selected_entity_key.begins_with("pokemon:"):
-		var parts := selected_entity_key.split(":")
-		if parts.size() < 3:
-			return false
-		var player := int(parts[1])
-		var slot_name := str(parts[2])
-		if (
-			action.action == "RETREAT"
-			and player == action.actor
-			and slot_name == "active"
-		):
-			return true
-		return (
-			(action.source and action.source.player == player and action.source.slot == slot_name)
-			or (action.target and action.target.player == player and action.target.slot == slot_name)
-			or str(action.params.get("slot", "")) == slot_name
-			or str(action.params.get("target_slot", "")) == slot_name
-		)
-	return false
-
-
-func _toggle_all_actions() -> void:
-	_all_actions_expanded = not _all_actions_expanded
-	all_actions_scroll.visible = _all_actions_expanded
-	quick_actions.visible = not _all_actions_expanded
-	_refresh_actions()
-
-
-func _on_card_activated(
-	card_id: String,
-	hand_index: int,
-	player: int,
-	slot_name: String,
-) -> void:
-	if hand_index >= 0:
-		hand_card_selected.emit(hand_index, card_id)
-	else:
-		pokemon_selected.emit(player, slot_name, card_id)
-
-
-func _on_detail_requested(card_id: String) -> void:
-	show_card_detail(card_id)
-	detail_requested.emit(card_id)
-	if not card_id.is_empty():
-		inspect_card_requested.emit(_card_inspection_context(card_id))
-
-
-func _on_menu_pressed() -> void:
-	hide_card_detail()
-	menu_requested.emit()
-
-
-func _ensure_detail_close_button() -> void:
-	if detail_close_button or detail_panel == null:
-		return
-	var overlay := detail_panel.get_parent() as Control
-	if overlay == null:
-		return
-	detail_close_button = Button.new()
-	detail_close_button.name = "DetailCloseButton"
-	detail_close_button.text = "X"
-	detail_close_button.tooltip_text = "关闭卡牌详情"
-	detail_close_button.focus_mode = Control.FOCUS_NONE
-	detail_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
-	detail_close_button.visible = false
-	detail_close_button.z_index = 36
-	detail_close_button.add_theme_font_size_override("font_size", 14)
-	detail_close_button.add_theme_color_override("font_color", DesignTokens.TEXT)
-	detail_close_button.add_theme_stylebox_override(
-		"normal",
-		DesignTokens.panel_style(
-			Color(0.08, 0.14, 0.23, 0.98),
-			8,
-			DesignTokens.BORDER,
-			1,
-			0,
-		),
-	)
-	detail_close_button.add_theme_stylebox_override(
-		"hover",
-		DesignTokens.panel_style(
-			DesignTokens.PANEL_RAISED,
-			8,
-			DesignTokens.CYAN,
-			1,
-			0,
-		),
-	)
-	detail_close_button.add_theme_stylebox_override(
-		"pressed",
-		DesignTokens.panel_style(
-			DesignTokens.BORDER,
-			8,
-			DesignTokens.CYAN,
-			1,
-			0,
-		),
-	)
-	overlay.add_child(detail_close_button)
-	detail_close_button.pressed.connect(hide_card_detail)
-
-
-func _on_zone_inspected(context: Dictionary) -> void:
-	inspect_zone_requested.emit(context)
-
-
-func _on_card_dropped(
-	hand_index: int,
-	card_id: String,
-	target_player: int,
-	target_slot: String,
-) -> void:
-	card_drop_requested.emit(
-		hand_index,
-		card_id,
-		target_player,
-		target_slot,
-	)
-
-
-func _on_floating_text_requested(
-	text: String,
+func _target_points_for_event(
 	target: Dictionary,
-	color: Color,
-) -> void:
-	effects.floating_text(text, resolve_endpoint_center(target), color)
-
-
-func _on_burst_requested(
-	kind: String,
-	target: Dictionary,
-	color: Color,
-) -> void:
-	effects.burst(resolve_endpoint_center(target), color, kind)
-	var player := int(target.get("player", -1))
-	var slot_name := str(target.get("slot", ""))
-	var view := get_slot_view(player, slot_name)
-	if view:
-		view.flash(color, 0.36)
-		if kind in ["impact", "ko"]:
-			view.shake(8.0 if kind == "impact" else 11.0, 0.3)
-
-
-func _stage_presentation_targets(
-	events: Array[Dictionary],
-	previous_snapshot: Dictionary,
-) -> void:
-	if director == null or not director.is_playing():
-		_clear_presentation_masks(true)
-	_presentation_snapshot = previous_snapshot.duplicate(true)
-	_presentation_event_hand_targets.clear()
-	_presentation_hand_target_cursor.clear()
-	for event in events:
-		var event_id := str(event.get("event_id", ""))
-		if event_id.is_empty():
-			continue
-		_precompute_hand_targets_for_event(event)
-		var targets := _presentation_targets_for_event(event)
-		if targets.is_empty():
-			continue
-		_presentation_reveals[event_id] = targets
-		for target in targets:
-			_mask_presentation_node(target)
-
-
-func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
-	var result: Array[Control] = []
-	var event_type := str(event.get("event_type", ""))
-	var actor := int(event.get("actor", view_player))
-	var source: Dictionary = event.get("source", {})
-	var target: Dictionary = event.get("target", {})
-	var data: Dictionary = event.get("data", {})
-	match event_type:
-		"cards_drawn":
-			source = {"player": actor, "zone": "deck"}
-			target = {"player": actor, "zone": "hand"}
-			result.append_array(_hand_target_views_for_incoming(event))
-			_append_unique_control(result, _zone_view_for_endpoint(source))
-		"prize_taken":
-			source = {"player": actor, "zone": "prizes"}
-			target = {"player": actor, "zone": "hand"}
-			result.append_array(_hand_target_views_for_incoming(event))
-			_append_unique_control(result, _zone_view_for_endpoint(source))
-		"cards_discarded":
-			if str(source.get("zone", "")).is_empty():
-				source = {"player": actor, "zone": "hand"}
-			target = {"player": actor, "zone": "discard"}
-			_append_unique_control(result, _zone_view_for_endpoint(target))
-			if str(source.get("zone", "")) != "hand":
-				_append_unique_control(result, _zone_view_for_endpoint(source))
-		"pokemon_played", "pokemon_evolved", "energy_attached", "tool_attached":
-			_append_unique_control(result, _slot_view_for_endpoint(target))
-		"trainer_played", "stadium_changed":
-			_append_unique_control(result, _zone_view_for_endpoint(target))
-		"card_moved":
-			result.append_array(_target_controls_for_endpoint(target, event))
-			_append_unique_control(result, _zone_view_for_endpoint(source))
-		"pokemon_ko":
-			var player := int(data.get("player", actor))
-			var slot_name := str(data.get("slot", "active"))
-			_append_unique_control(result, get_slot_view(player, slot_name))
-			_append_unique_control(
-				result,
-				_zone_view_for_endpoint({"player": player, "zone": "discard"}),
-			)
-		"retreat", "switched", "promoted":
-			for view in _switch_slot_views_for_event(event):
-				_append_unique_control(result, view)
-	return result
-
-
-func _target_controls_for_endpoint(
-	endpoint: Dictionary,
-	event: Dictionary,
-) -> Array[Control]:
-	var result: Array[Control] = []
-	var zone := str(endpoint.get("zone", ""))
-	var player := int(endpoint.get("player", view_player))
-	if not str(endpoint.get("slot", "")).is_empty():
-		_append_unique_control(result, _slot_view_for_endpoint(endpoint))
-	elif zone == "hand":
-		if player == view_player:
-			result.append_array(_hand_target_views_for_incoming(event))
-		else:
-			result.append_array(_opponent_hand_target_views_for_incoming(event))
-	else:
-		_append_unique_control(result, _zone_view_for_endpoint(endpoint))
-	return result
-
-
-func _hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
-	var event_id := str(event.get("event_id", ""))
-	if _presentation_event_hand_targets.has(event_id):
-		var cached: Array[Control] = []
-		for value in _presentation_event_hand_targets[event_id]:
-			var view := value as Control
-			if view:
-				cached.append(view)
-		return cached
-	var result: Array[Control] = []
-	var actor := int(event.get("actor", view_player))
-	var card_ids := _event_card_ids(event)
-	var amount := _event_amount(event, card_ids)
-	if actor != view_player or amount <= 0:
-		return result
-	result.append_array(_incoming_hand_targets_for_event(event, false))
-	return result
-
-
-func _precompute_hand_targets_for_event(event: Dictionary) -> void:
-	var event_type := str(event.get("event_type", ""))
-	var target: Dictionary = event.get("target", {})
-	var targets_hand := event_type in ["cards_drawn", "prize_taken"]
-	if str(target.get("zone", "")) == "hand":
-		targets_hand = true
-	if not targets_hand:
-		return
-	var event_id := str(event.get("event_id", ""))
-	var actor := int(event.get("actor", view_player))
-	var card_ids := _event_card_ids(event)
-	var amount := _event_amount(event, card_ids)
-	if event_id.is_empty() or actor != view_player or amount <= 0:
-		return
-	var targets := _incoming_hand_targets_for_event(event, true)
-	if targets.is_empty():
-		return
-	_presentation_event_hand_targets[event_id] = targets
-
-
-func _incoming_hand_targets_for_event(
-	event: Dictionary,
-	consume_cursor: bool,
-) -> Array[Control]:
-	var result: Array[Control] = []
-	var actor := int(event.get("actor", view_player))
-	if actor != view_player:
-		return result
-	var card_ids := _event_card_ids(event)
-	var amount := _event_amount(event, card_ids)
-	if amount <= 0:
-		return result
-	var candidates := _incoming_hand_candidates_from_snapshot()
-	if candidates.is_empty():
-		return result
-	var cursor := clampi(
-		int(_presentation_hand_target_cursor.get(actor, 0)),
-		0,
-		candidates.size(),
-	)
-	var available: Array[CardView] = []
-	for index in range(cursor, candidates.size()):
-		available.append(candidates[index])
-	var selected := _select_matching_hand_targets(available, card_ids, amount)
-	for view in selected:
-		result.append(view)
-	if consume_cursor:
-		_presentation_hand_target_cursor[actor] = cursor + selected.size()
-	return result
-
-
-func _incoming_hand_candidates_from_snapshot() -> Array[CardView]:
-	var visible: Array[CardView] = []
-	for view in hand_views:
-		if view and view.visible:
-			visible.append(view)
-	if visible.is_empty():
-		return []
-	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
-	if snapshot_hand.is_empty():
-		return visible
-	var snapshot_counts: Dictionary = {}
-	for row_value in snapshot_hand:
-		var row: Dictionary = row_value
-		var card_id := str(row.get("card_id", ""))
-		if card_id.is_empty():
-			continue
-		snapshot_counts[card_id] = int(snapshot_counts.get(card_id, 0)) + 1
-	var candidates: Array[CardView] = []
-	for view in visible:
-		var card_id := str(view.card_id)
-		var remaining := int(snapshot_counts.get(card_id, 0))
-		if not card_id.is_empty() and remaining > 0:
-			snapshot_counts[card_id] = remaining - 1
-		else:
-			candidates.append(view)
-	return candidates
-
-
-func _select_matching_hand_targets(
-	candidates: Array[CardView],
 	card_ids: Array,
-	amount: int,
-) -> Array[CardView]:
-	var selected: Array[CardView] = []
-	if candidates.is_empty() or amount <= 0:
-		return selected
-	var used: Array[bool] = []
-	for _candidate in candidates:
-		used.append(false)
-	for value in card_ids:
-		if selected.size() >= amount:
-			break
-		var card_id := str(value)
-		if card_id.is_empty():
-			continue
-		for index in range(candidates.size()):
-			if used[index] or candidates[index].card_id != card_id:
-				continue
-			used[index] = true
-			selected.append(candidates[index])
-			break
-	for index in range(candidates.size()):
-		if selected.size() >= amount:
-			break
-		if used[index]:
-			continue
-		used[index] = true
-		selected.append(candidates[index])
-	return selected
-
-
-func _opponent_hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
-	var result: Array[Control] = []
-	var actor := int(event.get("actor", view_player))
-	if actor == view_player:
-		return result
-	var card_ids := _event_card_ids(event)
-	var amount := _event_amount(event, card_ids)
-	if amount <= 0:
-		return result
-	var visible: Array[CardView] = []
-	for view in opponent_hand_views:
-		if view and view.visible:
-			visible.append(view)
-	var first := maxi(0, visible.size() - mini(amount, visible.size()))
-	for index in range(first, visible.size()):
-		result.append(visible[index])
-	return result
-
-
-func _switch_slot_views_for_event(event: Dictionary) -> Array[Control]:
-	var result: Array[Control] = []
-	var data: Dictionary = event.get("data", {})
-	var actor := int(event.get("actor", data.get("player", view_player)))
-	var player := int(data.get("player", actor))
-	var event_type := str(event.get("event_type", ""))
-	var bench_slot := _bench_slot_from_event(event)
-	if event_type == "promoted":
-		_append_unique_control(result, get_slot_view(player, "active"))
-		if not bench_slot.is_empty():
-			_append_unique_control(result, get_slot_view(player, bench_slot))
-	else:
-		_append_unique_control(result, get_slot_view(player, "active"))
-		if not bench_slot.is_empty():
-			_append_unique_control(result, get_slot_view(player, bench_slot))
-	return result
-
-
-func _mask_presentation_node(node: Control) -> void:
-	if node == null or not is_instance_valid(node):
-		return
-	var instance_id := node.get_instance_id()
-	_presentation_mask_counts[instance_id] = (
-		int(_presentation_mask_counts.get(instance_id, 0)) + 1
-	)
-	if node is CardView:
-		(node as CardView).set_presentation_hidden(true)
-	elif node is ZoneView:
-		(node as ZoneView).set_presentation_hidden(true)
-	else:
-		node.modulate.a = 0.0
-
-
-func _reveal_presentation_node(node: Control, force: bool = false) -> void:
-	if node == null or not is_instance_valid(node):
-		return
-	var instance_id := node.get_instance_id()
-	if not force:
-		var count := int(_presentation_mask_counts.get(instance_id, 0)) - 1
-		if count > 0:
-			_presentation_mask_counts[instance_id] = count
-			return
-	_presentation_mask_counts.erase(instance_id)
-	if node is CardView:
-		(node as CardView).reveal_presentation(0.14)
-		(node as CardView).flash(DesignTokens.GOLD, 0.22)
-	elif node is ZoneView:
-		(node as ZoneView).reveal_presentation(0.14)
-	else:
-		node.modulate.a = 1.0
-
-
-func _on_presentation_event_finished(event: Dictionary) -> void:
-	var event_id := str(event.get("event_id", ""))
-	var nodes: Array = _presentation_reveals.get(event_id, [])
-	for node_value in nodes:
-		_reveal_presentation_node(node_value as Control)
-	_presentation_reveals.erase(event_id)
-
-
-func _clear_presentation_masks(reveal: bool) -> void:
-	var seen: Dictionary = {}
-	for nodes in _presentation_reveals.values():
-		for node_value in nodes:
-			var node := node_value as Control
-			if node == null or not is_instance_valid(node):
-				continue
-			var instance_id := node.get_instance_id()
-			if seen.has(instance_id):
-				continue
-			seen[instance_id] = true
-			if reveal:
-				if node is CardView:
-					(node as CardView).clear_presentation_state()
-				elif node is ZoneView:
-					(node as ZoneView).clear_presentation_state()
-				else:
-					node.modulate.a = 1.0
-	_presentation_reveals.clear()
-	_presentation_mask_counts.clear()
-	_presentation_event_hand_targets.clear()
-	_presentation_hand_target_cursor.clear()
-
-
-func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
-	var data: Dictionary = event.get("data", {})
-	var source: Dictionary = event.get("source", {})
-	var target: Dictionary = event.get("target", {})
-	var event_type := str(event.get("event_type", ""))
-	var actor := int(event.get("actor", view_player))
-	var card_ids: Array = data.get("card_ids", data.get("cards", []))
-	var event_card_id := str(event.get("card_id", data.get("card_id", "")))
-	if card_ids.is_empty() and not event_card_id.is_empty():
-		card_ids = [event_card_id]
-	var amount := maxi(1, int(event.get(
-		"amount",
-		data.get("count", card_ids.size()),
-	)))
-	var visible_count := mini(5, maxi(amount, card_ids.size()))
-	if event_type == "cards_drawn":
-		source = {"player": actor, "zone": "deck"}
-		target = {"player": actor, "zone": "hand"}
-	elif event_type == "cards_discarded":
-		if str(source.get("zone", "")).is_empty():
-			source = {"player": actor, "zone": "hand"}
-		target = {"player": actor, "zone": "discard"}
-	elif event_type == "prize_taken":
-		source = {"player": actor, "zone": "prizes"}
-		target = {"player": actor, "zone": "hand"}
-	elif event_type == "pokemon_ko":
-		source = {
-			"player": int(data.get("player", actor)),
-			"slot": str(data.get("slot", "active")),
-		}
-		target = {
-			"player": int(data.get("player", actor)),
-			"zone": "discard",
-		}
-	if AppSettings.reduced_motion:
-		effects.burst(resolve_endpoint_center(target), DesignTokens.CYAN, "card_move")
-		return
-	if _spawn_slot_transition(event, duration):
-		return
-	var base_start := resolve_endpoint_center(source)
-	var base_finish := resolve_endpoint_center(target)
-	var starts := _source_points_for_event(
-		source,
-		card_ids,
-		visible_count,
-		base_start,
-	)
-	var finishes := _target_points_for_event(
+	visible_count: int,
+	fallback_finish: Vector2,
+	event: Dictionary,
+) -> Array[Vector2]:
+	_sync_to_table()
+	var result: Array[Vector2] = table._target_points_for_event(
 		target,
 		card_ids,
 		visible_count,
-		base_finish,
+		fallback_finish,
 		event,
 	)
-	for index in range(visible_count):
-		var card_id := str(card_ids[index]) if index < card_ids.size() else event_card_id
-		var texture := _texture_for_card_id(
-			"" if _motion_card_hidden_from_view(card_id, source, target) else card_id
-		)
-		if texture == null:
-			continue
-		var start := starts[index] if index < starts.size() else base_start
-		var finish := finishes[index] if index < finishes.size() else base_finish
-		_spawn_flying_card(
-			texture,
-			start,
-			finish,
-			maxf(0.18, duration - float(index) * motion_stagger_delay),
-			float(index) * motion_stagger_delay,
-			event_type,
-			index,
-		)
-
-
-func _event_card_ids(event: Dictionary) -> Array:
-	var data: Dictionary = event.get("data", {})
-	var raw_cards: Array = []
-	var raw_value: Variant = data.get("card_ids", data.get("cards", []))
-	if raw_value is Array:
-		raw_cards = raw_value
-	var result: Array = []
-	for value in raw_cards:
-		var card_id := str(value)
-		if not card_id.is_empty():
-			result.append(card_id)
-	var event_card_id := str(event.get("card_id", data.get("card_id", "")))
-	if result.is_empty() and not event_card_id.is_empty():
-		result.append(event_card_id)
+	_sync_from_table()
 	return result
-
-
-func _event_amount(event: Dictionary, card_ids: Array) -> int:
-	var data: Dictionary = event.get("data", {})
-	return maxi(1, int(event.get(
-		"amount",
-		data.get("count", card_ids.size()),
-	)))
-
-
-func _append_unique_control(result: Array[Control], node: Control) -> void:
-	if node == null or not is_instance_valid(node):
-		return
-	if result.has(node):
-		return
-	result.append(node)
-
-
-func _slot_view_for_endpoint(endpoint: Dictionary) -> CardView:
-	var slot_name := str(endpoint.get("slot", ""))
-	if slot_name.is_empty():
-		return null
-	return get_slot_view(int(endpoint.get("player", view_player)), slot_name)
-
-
-func _zone_view_for_endpoint(endpoint: Dictionary) -> ZoneView:
-	var zone_name := str(endpoint.get("zone", ""))
-	if zone_name.is_empty():
-		return null
-	if zone_name == "stadium":
-		return zones.get("stadium") as ZoneView
-	var player := int(endpoint.get("player", view_player))
-	var prefix := "own" if player == view_player else "opponent"
-	return zones.get("%s_%s" % [prefix, zone_name]) as ZoneView
-
-
-func _logical_zone_key(scene_zone_key: String) -> String:
-	match scene_zone_key:
-		"own_deck":
-			return "%d:deck" % view_player
-		"own_discard":
-			return "%d:discard" % view_player
-		"own_prizes":
-			return "%d:prizes" % view_player
-		"opponent_deck":
-			return "%d:deck" % (1 - view_player)
-		"opponent_discard":
-			return "%d:discard" % (1 - view_player)
-		"opponent_prizes":
-			return "%d:prizes" % (1 - view_player)
-		"stadium":
-			return "-1:stadium"
-	return scene_zone_key
 
 
 func _source_points_for_event(
@@ -2089,297 +183,15 @@ func _source_points_for_event(
 	visible_count: int,
 	fallback_start: Vector2,
 ) -> Array[Vector2]:
-	var player := int(source.get("player", view_player))
-	var zone_name := str(source.get("zone", ""))
-	var source_index := int(source.get("index", -1))
-	if (
-		zone_name == "hand"
-		and player == view_player
-		and int(_presentation_snapshot.get("view_player", view_player)) == view_player
-	):
-		return _hand_start_points_from_snapshot(
-			card_ids,
-			visible_count,
-			fallback_start,
-			source_index,
-		)
-	if zone_name == "hand" and player != view_player:
-		return _opponent_hand_points(visible_count, fallback_start)
-	var start := _snapshot_endpoint_center(source, fallback_start)
-	var result: Array[Vector2] = []
-	for index in range(visible_count):
-		result.append(start + _stack_offset(index, visible_count, false))
-	return result
-
-
-func _target_points_for_event(
-	target: Dictionary,
-	_card_ids: Array,
-	visible_count: int,
-	fallback_finish: Vector2,
-	event: Dictionary,
-) -> Array[Vector2]:
-	var zone_name := str(target.get("zone", ""))
-	var player := int(target.get("player", view_player))
-	var result: Array[Vector2] = []
-	if zone_name == "hand" and player == view_player:
-		for view_value in _hand_target_views_for_incoming(event):
-			var view := view_value as CardView
-			if view:
-				result.append(_effects_local(view.global_center()))
-		if result.size() >= visible_count:
-			return result
-	elif zone_name == "hand" and player != view_player:
-		for view_value in _opponent_hand_target_views_for_incoming(event):
-			var view := view_value as CardView
-			if view:
-				result.append(_effects_local(view.global_center()))
-		if result.size() >= visible_count:
-			return result
-	for index in range(visible_count):
-		result.append(fallback_finish + _stack_offset(
-			index,
-			visible_count,
-			zone_name == "hand",
-		))
-	return result
-
-
-func _hand_start_points_from_snapshot(
-	card_ids: Array,
-	visible_count: int,
-	fallback_start: Vector2,
-	source_index: int = -1,
-) -> Array[Vector2]:
-	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
-	var result: Array[Vector2] = []
-	if snapshot_hand.is_empty():
-		for _index in range(visible_count):
-			result.append(fallback_start)
-		return result
-	var used: Array[bool] = []
-	for _row in snapshot_hand:
-		used.append(false)
-	var requested_ids: Array[String] = []
-	var has_identity := false
-	for value in card_ids:
-		var card_id := str(value)
-		requested_ids.append(card_id)
-		if not card_id.is_empty():
-			has_identity = true
-	for index in range(visible_count):
-		var target_id := requested_ids[index] if index < requested_ids.size() else ""
-		var start := fallback_start
-		var preferred_index := source_index + index if source_index >= 0 else -1
-		if preferred_index >= 0 and preferred_index < snapshot_hand.size():
-			var preferred: Dictionary = snapshot_hand[preferred_index]
-			if (
-				not used[preferred_index]
-				and (
-					target_id.is_empty()
-					or str(preferred.get("card_id", "")) == target_id
-				)
-			):
-				used[preferred_index] = true
-				start = _vector_or_default(preferred.get("center"), fallback_start)
-		if start == fallback_start and has_identity and not target_id.is_empty():
-			for hand_index in range(snapshot_hand.size()):
-				var row: Dictionary = snapshot_hand[hand_index]
-				if used[hand_index] or str(row.get("card_id", "")) != target_id:
-					continue
-				used[hand_index] = true
-				start = _vector_or_default(row.get("center"), fallback_start)
-				break
-		result.append(start)
-	return result
-
-
-func _snapshot_endpoint_center(endpoint: Dictionary, fallback: Vector2) -> Vector2:
-	var player := int(endpoint.get("player", view_player))
-	var slot_name := str(endpoint.get("slot", ""))
-	if not slot_name.is_empty():
-		var slot_row := _snapshot_slot_row(player, slot_name)
-		if not slot_row.is_empty():
-			return _vector_or_default(slot_row.get("center"), fallback)
-	var zone_name := str(endpoint.get("zone", ""))
-	if not zone_name.is_empty():
-		if zone_name == "hand":
-			return (
-				_snapshot_own_hand_center(fallback)
-				if player == view_player
-				else _vector_or_default(
-					_presentation_snapshot.get("opponent_hand_center"),
-					fallback,
-				)
-			)
-		var zone_row := _snapshot_zone_row(player, zone_name)
-		if not zone_row.is_empty():
-			return _vector_or_default(zone_row.get("center"), fallback)
-	return fallback
-
-
-func _snapshot_slot_row(player: int, slot_name: String) -> Dictionary:
-	var slots: Dictionary = _presentation_snapshot.get("slots", {})
-	return Dictionary(slots.get("%d:%s" % [player, slot_name], {}))
-
-
-func _snapshot_zone_row(player: int, zone_name: String) -> Dictionary:
-	var zones_snapshot: Dictionary = _presentation_snapshot.get("zones", {})
-	var key := "-1:stadium" if zone_name == "stadium" else "%d:%s" % [
-		player,
-		zone_name,
-	]
-	return Dictionary(zones_snapshot.get(key, {}))
-
-
-func _vector_or_default(value: Variant, fallback: Vector2) -> Vector2:
-	if value is Vector2:
-		return value
-	return fallback
-
-
-func _snapshot_own_hand_center(fallback: Vector2) -> Vector2:
-	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
-	if snapshot_hand.is_empty():
-		return fallback
-	var total := Vector2.ZERO
-	var count_value := 0
-	for row_value in snapshot_hand:
-		var row: Dictionary = row_value
-		total += _vector_or_default(row.get("center"), fallback)
-		count_value += 1
-	return total / float(maxi(1, count_value))
-
-
-func _opponent_hand_points(
-	visible_count: int,
-	fallback_start: Vector2,
-) -> Array[Vector2]:
-	var result: Array[Vector2] = []
-	var visible: Array[CardView] = []
-	for view in opponent_hand_views:
-		if view and view.visible:
-			visible.append(view)
-	if not visible.is_empty():
-		var first := maxi(0, visible.size() - mini(visible_count, visible.size()))
-		for index in range(first, visible.size()):
-			result.append(_effects_local(visible[index].global_center()))
-	while result.size() < visible_count:
-		result.append(fallback_start + _stack_offset(
-			result.size(),
-			visible_count,
-			true,
-		))
-	return result
-
-
-func _stack_offset(index: int, visible_count: int, hand_target: bool) -> Vector2:
-	if hand_target:
-		return Vector2(
-			(float(index) - float(visible_count - 1) * 0.5) * 34.0,
-			18.0,
-		)
-	return Vector2(
-		(float(index) - float(visible_count - 1) * 0.5) * 7.0,
-		-float(index) * 3.0,
+	_sync_to_table()
+	var result: Array[Vector2] = table._source_points_for_event(
+		source,
+		card_ids,
+		visible_count,
+		fallback_start,
 	)
-
-
-func _texture_for_card_id(card_id: String) -> Texture2D:
-	var texture_path := "res://assets/cards/card_back.webp"
-	if not card_id.is_empty():
-		texture_path = str(CardDatabase.get_card(card_id).get("image_path", ""))
-	return CardTextureCache.get_texture(texture_path)
-
-
-func _motion_card_hidden_from_view(
-	card_id: String,
-	source: Dictionary,
-	target: Dictionary,
-) -> bool:
-	if card_id.is_empty():
-		return true
-	return _endpoint_hidden_from_view(source) or _endpoint_hidden_from_view(target)
-
-
-func _endpoint_hidden_from_view(endpoint: Dictionary) -> bool:
-	var zone_name := str(endpoint.get("zone", ""))
-	if not (zone_name in ["hand", "deck", "prizes"]):
-		return false
-	return int(endpoint.get("player", view_player)) != view_player
-
-
-func _spawn_slot_transition(event: Dictionary, duration: float) -> bool:
-	var event_type := str(event.get("event_type", ""))
-	if event_type not in ["retreat", "switched", "promoted"]:
-		return false
-	var data: Dictionary = event.get("data", {})
-	var actor := int(event.get("actor", data.get("player", view_player)))
-	var player := int(data.get("player", actor))
-	var bench_slot := _bench_slot_from_event(event)
-	if bench_slot.is_empty():
-		return false
-	var movements: Array[Dictionary] = []
-	if event_type == "promoted":
-		movements.append({
-			"from": bench_slot,
-			"to": "active",
-		})
-	else:
-		movements.append({
-			"from": "active",
-			"to": bench_slot,
-		})
-		movements.append({
-			"from": bench_slot,
-			"to": "active",
-		})
-	var spawned := false
-	var index := 0
-	for movement in movements:
-		var from_slot := str(movement["from"])
-		var to_slot := str(movement["to"])
-		var snapshot_row := _snapshot_slot_row(player, from_slot)
-		var card_id := str(snapshot_row.get("card_id", ""))
-		if card_id.is_empty():
-			continue
-		var finish_view := get_slot_view(player, to_slot)
-		if finish_view == null:
-			continue
-		var texture := _texture_for_card_id(card_id)
-		if texture == null:
-			continue
-		_spawn_flying_card(
-			texture,
-			_vector_or_default(
-				snapshot_row.get("center"),
-				resolve_endpoint_center({"player": player, "slot": from_slot}),
-			),
-			_effects_local(finish_view.global_center()),
-			maxf(0.18, duration - float(index) * motion_stagger_delay),
-			float(index) * motion_stagger_delay,
-			event_type,
-			index,
-		)
-		spawned = true
-		index += 1
-	return spawned
-
-
-func _bench_slot_from_event(event: Dictionary) -> String:
-	var data: Dictionary = event.get("data", {})
-	if data.has("bench_idx"):
-		return "bench_%d" % int(data.get("bench_idx", 0))
-	for value in [
-		data.get("slot", ""),
-		data.get("target_slot", ""),
-		event.get("target", {}).get("slot", ""),
-		event.get("source", {}).get("slot", ""),
-	]:
-		var slot_name := str(value)
-		if slot_name.begins_with("bench"):
-			return slot_name
-	return ""
+	_sync_from_table()
+	return result
 
 
 func _discard_hand_start_points(
@@ -2387,333 +199,163 @@ func _discard_hand_start_points(
 	visible_count: int,
 	fallback_start: Vector2,
 ) -> Array[Vector2]:
-	var result: Array[Vector2] = []
-	var requested_ids: Array[String] = []
-	var has_identity := false
-	for value in card_ids:
-		var card_id := str(value)
-		requested_ids.append(card_id)
-		if not card_id.is_empty():
-			has_identity = true
-	if not has_identity:
-		for _index in range(visible_count):
-			result.append(fallback_start)
-		return result
-	var used: Array[bool] = []
-	for _view in hand_views:
-		used.append(false)
-	for index in range(visible_count):
-		var target_id := (
-			requested_ids[index] if index < requested_ids.size() else ""
-		)
-		var start := fallback_start
-		if not target_id.is_empty():
-			for hand_index in range(hand_views.size()):
-				var view := hand_views[hand_index] as CardView
-				if (
-					used[hand_index]
-					or view == null
-					or not view.visible
-					or view.card_id != target_id
-				):
-					continue
-				used[hand_index] = true
-				start = _effects_local(view.global_center())
-				break
-		result.append(start)
+	_sync_to_table()
+	var result: Array[Vector2] = table._discard_hand_start_points(
+		card_ids,
+		visible_count,
+		fallback_start,
+	)
+	_sync_from_table()
 	return result
 
 
-func _spawn_flying_card(
-	texture: Texture2D,
-	start: Vector2,
-	finish: Vector2,
-	duration: float,
-	delay: float,
-	event_type: String,
-	index: int,
-) -> void:
-	_prune_flyers()
-	while _active_flyers.size() >= 12:
-		var oldest: Control = _active_flyers.pop_front()
-		_dispose_flyer(oldest)
-	var flying := Control.new()
-	flying.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	flying.size = Vector2(94, 132)
-	flying.position = start - flying.size * 0.5
-	flying.pivot_offset = flying.size * 0.5
-	flying.z_index = 100 + index
-	var shadow := Panel.new()
-	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shadow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shadow.position = Vector2(0, 7)
-	shadow.add_theme_stylebox_override("panel", DesignTokens.shadow_style(12))
-	flying.add_child(shadow)
-	var image := TextureRect.new()
-	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	image.texture = texture
-	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flying.add_child(image)
-	effects.add_child(flying)
-	_active_flyers.append(flying)
-	var arc_height := maxf(
-		motion_arc_height_min,
-		start.distance_to(finish) * motion_arc_distance_ratio,
-	)
-	var control := Vector2(
-		(start.x + finish.x) * 0.5,
-		minf(start.y, finish.y) - arc_height - float(index) * motion_arc_stagger_height,
-	)
-	var spin := (
-		16.0 + float(index) * 2.0
-		if event_type in ["cards_discarded", "pokemon_ko"]
-		else -7.0 + float(index) * 3.0
-	)
-	var tween := create_tween()
-	if delay > 0.0:
-		tween.tween_interval(delay)
-	_flyer_tweens[flying.get_instance_id()] = tween
-	tween.tween_method(
-		_update_flyer.bind(flying, start, control, finish, spin),
-		0.0,
-		1.0,
-		duration,
-	).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	tween.tween_callback(_finish_flyer.bind(flying, finish, event_type))
-
-
-func _update_flyer(
-	progress: float,
-	flying_value: Variant,
-	start: Vector2,
-	control: Vector2,
-	finish: Vector2,
-	spin: float,
-) -> void:
-	if not is_instance_valid(flying_value):
-		return
-	var flying := flying_value as Control
-	if flying == null:
-		return
-	var inverse := 1.0 - progress
-	var point := (
-		start * inverse * inverse
-		+ control * 2.0 * inverse * progress
-		+ finish * progress * progress
-	)
-	flying.position = point - flying.size * 0.5
-	flying.rotation_degrees = lerpf(-spin * 0.35, spin, progress)
-	var lift := 1.0 + sin(progress * PI) * 0.16
-	flying.scale = Vector2.ONE * lift
-	flying.modulate.a = clampf(minf(progress * 5.0, (1.0 - progress) * 8.0), 0.0, 1.0)
-
-
-func _finish_flyer(
-	flying_value: Variant,
-	finish: Vector2,
-	event_type: String,
-) -> void:
-	if not is_instance_valid(flying_value):
-		return
-	var flying := flying_value as Control
-	if flying == null:
-		return
-	_flyer_tweens.erase(flying.get_instance_id())
-	_active_flyers.erase(flying)
-	flying.queue_free()
-	effects.burst(
-		finish,
-		DesignTokens.GOLD if event_type in ["cards_drawn", "prize_taken"] else DesignTokens.CYAN,
-		"card_land",
-	)
-
-
-func _mask_and_reveal_drawn_cards(count: int, duration: float) -> void:
-	var visible: Array[CardView] = []
-	for view in hand_views:
-		if view.visible:
-			visible.append(view)
-	var first := maxi(0, visible.size() - count)
-	for index in range(first, visible.size()):
-		var view := visible[index]
-		view.modulate.a = 0.0
-		var tween := create_tween()
-		tween.tween_interval(
-			duration * 0.58 + float(index - first) * motion_stagger_delay,
-		)
-		tween.tween_property(view, "modulate:a", 1.0, 0.14)
-
-
-func _prune_flyers() -> void:
-	var live: Array[Control] = []
-	for flyer in _active_flyers:
-		if is_instance_valid(flyer) and not flyer.is_queued_for_deletion():
-			live.append(flyer)
-	_active_flyers = live
-
-
-func _clear_transient_visuals() -> void:
-	_clear_presentation_masks(true)
-	for tween_value in _flyer_tweens.values():
-		var tween := tween_value as Tween
-		if tween and tween.is_valid():
-			tween.kill()
-	_flyer_tweens.clear()
-	for flyer in _active_flyers:
-		if is_instance_valid(flyer):
-			flyer.free()
-	_active_flyers.clear()
-	if effects:
-		effects.clear_transients()
-	for view in hand_views:
-		if is_instance_valid(view):
-			view.clear_presentation_state()
-	for view in opponent_hand_views:
-		if is_instance_valid(view):
-			view.clear_presentation_state()
-	for zone_value in zones.values():
-		var zone := zone_value as ZoneView
-		if zone and is_instance_valid(zone):
-			zone.clear_presentation_state()
-
-
-func _dispose_flyer(flying: Control) -> void:
-	if not is_instance_valid(flying):
-		return
-	var tween := _flyer_tweens.get(flying.get_instance_id()) as Tween
-	if tween and tween.is_valid():
-		tween.kill()
-	_flyer_tweens.erase(flying.get_instance_id())
-	flying.free()
-
-
-func _on_camera_impulse_requested(strength: float, duration: float) -> void:
-	if AppSettings.reduced_motion:
-		return
-	var origin := board_panel.position
-	var tween := create_tween()
-	for offset in [
-		Vector2(strength * 7.0, 0),
-		Vector2(-strength * 7.0, strength * 2.0),
-		Vector2(strength * 4.0, -strength * 2.0),
-		Vector2.ZERO,
-	]:
-		tween.tween_property(
-			board_panel,
-			"position",
-			origin + offset,
-			duration / 4.0,
-		)
-
-
-func _place_card(
-	view: CardView,
-	position_value: Vector2,
-	size_value: Vector2,
-	depth: float = 0.5,
-	rotation_value: float = 0.0,
-	z_value: int = 0,
-) -> void:
-	view.custom_minimum_size = size_value
-	view.position = position_value
-	view.size = size_value
-	view.rotation_degrees = rotation_value
-	if z_value > 0:
-		view.z_index = z_value
-	view.set_table_depth(depth, depth >= 0.5)
-	view.remember_base_position()
-
-
-func _place_zone(
-	key: String,
-	position_value: Vector2,
-	size_value: Vector2,
-	depth: float = 0.5,
-	rotation_value: float = 0.0,
-	z_value: int = 0,
-) -> void:
-	var zone := zones[key] as ZoneView
-	zone.custom_minimum_size = size_value
-	zone.position = position_value
-	zone.size = size_value
-	zone.rotation_degrees = rotation_value
-	if z_value > 0:
-		zone.z_index = z_value
-	zone.set_table_depth(depth)
-
-
-func _zone_center(key: String) -> Vector2:
-	var zone := zones.get(key) as ZoneView
-	if zone == null:
-		return effects.size * Vector2(0.5, 0.5)
-	return _effects_local(zone.global_position + zone.size * 0.5)
+func _effects_local(global_point: Vector2) -> Vector2:
+	return table._effects_local(global_point)
 
 
 func _own_hand_center() -> Vector2:
-	if hand_scroll == null:
-		return effects.size * Vector2(0.5, 0.5)
-	return _effects_local(
-		hand_scroll.global_position + hand_scroll.size * Vector2(0.5, 0.5)
-	)
+	return table._own_hand_center()
 
 
 func _opponent_hand_center() -> Vector2:
-	if opponent_hand_surface == null:
-		return effects.size * Vector2(0.5, 0.5)
-	return _effects_local(
-		opponent_hand_surface.global_position
-		+ opponent_hand_surface.size * Vector2(0.5, 0.5)
-	)
+	return table._opponent_hand_center()
 
 
-func _effects_local(global_point: Vector2) -> Vector2:
-	return effects.get_global_transform_with_canvas().affine_inverse() * global_point
+func _motion_card_hidden_from_view(
+	card_id: String,
+	source: Dictionary,
+	target: Dictionary,
+) -> bool:
+	return table._motion_card_hidden_from_view(card_id, source, target)
 
 
-func _info_label() -> Label:
-	var label := Label.new()
-	label.add_theme_font_size_override("font_size", 13)
-	label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
-	return label
+func _stage_presentation_targets(
+	normalized_events: Array,
+	previous_snapshot: Dictionary,
+) -> void:
+	_sync_to_table()
+	table._stage_presentation_targets(normalized_events, previous_snapshot)
+	_sync_from_table()
 
 
-func _free_children(parent: Node) -> void:
-	for child in parent.get_children():
-		parent.remove_child(child)
-		child.queue_free()
+func _on_presentation_event_finished(event: Dictionary) -> void:
+	_sync_to_table()
+	table._on_presentation_event_finished(event)
+	_sync_from_table()
 
 
-func _phase_name(phase: String) -> String:
-	return {
-		"SETUP": "准备",
-		"DRAW": "抽牌",
-		"MAIN": "主要",
-		"ATTACK": "攻击",
-		"POKEMON_CHECKUP": "宝可梦检查",
-		"GAME_OVER": "对局结束",
-	}.get(phase, phase)
+func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
+	_sync_to_table()
+	table._on_card_motion_requested(event, duration)
+	_sync_from_table()
 
 
-func _slot_name(slot_name: String) -> String:
-	if slot_name == "active":
-		return "战斗区"
-	if slot_name.begins_with("bench_"):
-		return "备战区 %d" % (slot_name.trim_prefix("bench_").to_int() + 1)
-	return slot_name
+func _clear_transient_visuals() -> void:
+	_sync_to_table()
+	table._clear_transient_visuals()
+	_sync_from_table()
 
 
-func _zone_title(zone_name: String) -> String:
-	return {
-		"deck": "牌库",
-		"discard": "弃牌",
-		"prizes": "奖品",
-		"stadium": "竞技场",
-	}.get(zone_name, zone_name)
+func _on_detail_requested(card_id: String) -> void:
+	table._on_detail_requested(card_id)
+	_sync_from_table()
 
 
-func _player_label(player_idx: int) -> String:
-	if state_ref == null or player_idx < 0:
-		return ""
-	return state_ref.get_player(player_idx).name
+func _refresh_log() -> void:
+	table._refresh_log()
+	_sync_from_table()
+
+
+func _refresh_actions() -> void:
+	table._refresh_actions()
+	_sync_from_table()
+
+
+func _layout_board() -> void:
+	table._layout_board()
+	_sync_from_table()
+
+
+func _resolve_table() -> void:
+	if table == null:
+		table = get_node_or_null("BattleTable") as BattleTable
+
+
+func _bind_table_signals() -> void:
+	if _signals_bound or table == null:
+		return
+	_signals_bound = true
+	table.menu_requested.connect(menu_requested.emit)
+	table.hand_card_selected.connect(hand_card_selected.emit)
+	table.pokemon_selected.connect(pokemon_selected.emit)
+	table.action_requested.connect(action_requested.emit)
+	table.card_drop_requested.connect(card_drop_requested.emit)
+	table.detail_requested.connect(detail_requested.emit)
+	table.inspect_card_requested.connect(inspect_card_requested.emit)
+	table.inspect_zone_requested.connect(inspect_zone_requested.emit)
+
+
+func _sync_from_table() -> void:
+	if table == null:
+		return
+	catalog = table.catalog
+	view_player = table.view_player
+	selected_entity_key = table.selected_entity_key
+	action_rows = table.action_rows
+	game_mode = table.game_mode
+	ai_thinking = table.ai_thinking
+	board_panel = table.board_panel
+	board_canvas = table.board_canvas
+	playmat = table.playmat
+	hud = table.hud
+	turn_label = table.turn_label
+	opponent_info = table.opponent_info
+	own_info = table.own_info
+	phase_labels = table.phase_labels
+	phase_advance_button = table.phase_advance_button
+	quick_actions = table.quick_actions
+	action_list = table.action_list
+	all_actions_scroll = table.all_actions_scroll
+	all_actions_toggle = table.all_actions_toggle
+	detail_panel = table.detail_panel
+	detail_image = table.detail_image
+	detail_title = table.detail_title
+	detail_text = table.detail_text
+	detail_close_button = table.detail_close_button
+	log_panel = table.log_panel
+	log_label = table.log_label
+	opponent_hand_surface = table.opponent_hand_surface
+	opponent_hand_count_badge = table.opponent_hand_count_badge
+	hand_scroll = table.hand_scroll
+	hand_surface = table.hand_surface
+	input_blocker = table.input_blocker
+	effects = table.effects
+	director = table.director
+	animation_player = table.animation_player
+	opponent_active = table.opponent_active
+	own_active = table.own_active
+	opponent_bench = table.opponent_bench
+	own_bench = table.own_bench
+	hand_views = table.hand_views
+	opponent_hand_views = table.opponent_hand_views
+	zones = table.zones
+	slot_views = table.slot_views
+	_active_flyers = table._active_flyers
+	_flyer_tweens = table._flyer_tweens
+	_presentation_snapshot = table._presentation_snapshot
+	_presentation_reveals = table._presentation_reveals
+	_presentation_mask_counts = table._presentation_mask_counts
+	_presentation_event_hand_targets = table._presentation_event_hand_targets
+	_presentation_hand_target_cursor = table._presentation_hand_target_cursor
+
+
+func _sync_to_table() -> void:
+	if table == null:
+		return
+	table._presentation_snapshot = _presentation_snapshot
+	table._presentation_reveals = _presentation_reveals
+	table._presentation_mask_counts = _presentation_mask_counts
+	table._presentation_event_hand_targets = _presentation_event_hand_targets
+	table._presentation_hand_target_cursor = _presentation_hand_target_cursor
+	table._active_flyers = _active_flyers
+	table._flyer_tweens = _flyer_tweens
