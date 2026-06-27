@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_table.gd" id="1_battle"]
 [ext_resource type="PackedScene" path="res://ui/card_view.tscn" id="2_card"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_detail_panel.tscn" id="9_detail"]
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_log_panel.tscn" id="10_log"]
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_action_panel.tscn" id="11_action"]
+[ext_resource type="Script" path="res://scenes/battle/components/ai_thinking_overlay.gd" id="12_ai_overlay"]
 
 [sub_resource type="StyleBoxFlat" id="Style_board"]
 bg_color = Color(0.031, 0.075, 0.055, 1)
@@ -129,6 +130,19 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("4_playmat")
+
+[node name="AIThinkingOverlay" type="Control" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+unique_name_in_owner = true
+visible = false
+z_index = 7
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("12_ai_overlay")
 
 [node name="OpponentInfo" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
 unique_name_in_owner = true

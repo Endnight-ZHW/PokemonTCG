@@ -44,6 +44,8 @@ func show_preview(kind: String) -> void:
 			_show_choice()
 		"energy_choice":
 			_show_energy_choice()
+		"ai_thinking":
+			_show_ai_thinking()
 		"help":
 			_show_help()
 		"inspector":
@@ -79,6 +81,7 @@ func _bind_toolbar() -> void:
 		"ChoicePreview",
 		"EnergyChoicePreview",
 		"BattlePreview",
+		"AIThinkingPreview",
 		"VictoryPreview",
 		"HelpPreview",
 		"InspectorPreview",
@@ -92,6 +95,7 @@ func _bind_toolbar() -> void:
 		button.pressed.connect(show_preview.bind(key))
 	for button_name in [
 		"DrawEvent",
+		"EnergyAttachEvent",
 		"EvolveEvent",
 		"AttackEvent",
 		"DamageEvent",
@@ -241,6 +245,24 @@ func _show_battle() -> void:
 	)
 
 
+func _show_ai_thinking() -> void:
+	preview_caption.text = "AI 思考 · 轻量状态层与对手侧牌位反馈"
+	sample_state = UIPreviewStateFactory.battle_state()
+	sample_state.active_player_idx = 1
+	sample_state.players[1].name = "Challenge AI"
+	current_battle = BATTLE_SCENE.instantiate() as BattleScreen
+	preview_host.add_child(current_battle)
+	current_battle.initialize_ui()
+	current_battle.update_view(
+		sample_state,
+		0,
+		[],
+		"",
+		true,
+		"challenge",
+	)
+
+
 func _show_victory() -> void:
 	preview_caption.text = "胜利页 · 彩带与 AnimationPlayer 入场"
 	var victory := VICTORY_SCENE.instantiate() as VictoryScreen
@@ -263,6 +285,20 @@ func _presentation_event(kind: String) -> Dictionary:
 				"target": {"player": 0, "zone": "hand"},
 				"amount": 1,
 				"data": {"player": 0, "count": 1, "card_ids": ["sv1-151"]},
+			})
+		"attach_energy":
+			base.merge({
+				"event_type": "energy_attached",
+				"card_id": "sv1-ener-2",
+				"source": {"player": 0, "zone": "hand", "index": 0},
+				"target": {"player": 0, "slot": "active"},
+				"data": {
+					"player": 0,
+					"slot": "active",
+					"card_id": "sv1-ener-2",
+					"source_zone": "hand",
+					"source_index": 0,
+				},
 			})
 		"evolve":
 			base.merge({

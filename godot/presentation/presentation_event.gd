@@ -62,6 +62,7 @@ static func normalize(
 		)),
 		"data": data,
 	}
+	_apply_endpoint_defaults(result, raw_event, data)
 	return result
 
 
@@ -115,6 +116,65 @@ static func _strip_hidden_card_identity(event: Dictionary) -> void:
 		if data.has(field):
 			data[field] = []
 	event["data"] = data
+
+
+static func _apply_endpoint_defaults(
+	event: Dictionary,
+	raw_event: Dictionary,
+	data: Dictionary,
+) -> void:
+	var event_type := str(event.get("event_type", ""))
+	if event_type not in ["energy_attached", "pokemon_evolved", "tool_attached"]:
+		return
+	var actor := int(event.get("actor", data.get("player", -1)))
+	if not _has_explicit_endpoint(raw_event, "target"):
+		var target_slot := str(data.get("target_slot", data.get("slot", "")))
+		if not target_slot.is_empty():
+			event["target"] = {
+				"player": int(data.get(
+					"target_player",
+					data.get("player", actor),
+				)),
+				"zone": "",
+				"slot": target_slot,
+				"index": -1,
+			}
+	if not _has_explicit_endpoint(raw_event, "source"):
+		var source_zone := str(data.get("source_zone", ""))
+		var source_slot := str(data.get("source_slot", ""))
+		if not source_zone.is_empty():
+			event["source"] = {
+				"player": int(data.get(
+					"source_player",
+					data.get("player", actor),
+				)),
+				"zone": source_zone,
+				"slot": "",
+				"index": int(data.get("source_index", -1)),
+			}
+		elif not source_slot.is_empty():
+			event["source"] = {
+				"player": int(data.get(
+					"source_player",
+					data.get("player", actor),
+				)),
+				"zone": "",
+				"slot": source_slot,
+				"index": -1,
+			}
+		else:
+			event["source"] = {
+				"player": int(data.get("player", actor)),
+				"zone": "",
+				"slot": "",
+				"index": -1,
+			}
+
+
+static func _has_explicit_endpoint(raw_event: Dictionary, key: String) -> bool:
+	return raw_event.get(key, {}) is Dictionary and not Dictionary(
+		raw_event.get(key, {})
+	).is_empty()
 
 
 static func _endpoint(

@@ -1,6 +1,22 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_header.gd" id="1_header"]
+
+[sub_resource type="StyleBoxFlat" id="Style_ai_chip"]
+bg_color = Color(0.086, 0.148, 0.235, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.384, 0.843, 1, 0.72)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 12.0
+content_margin_top = 7.0
+content_margin_right = 12.0
+content_margin_bottom = 7.0
 
 [node name="Header" type="HBoxContainer"]
 custom_minimum_size = Vector2(0, 52)
@@ -21,6 +37,18 @@ size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
 theme_override_font_sizes/font_size = 24
 text = "Pokémon TCG"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AIThinkingChip" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(220, 34)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("Style_ai_chip")
+text = "Challenge AI 思考中 · 0.0s"
 horizontal_alignment = 1
 vertical_alignment = 1
 

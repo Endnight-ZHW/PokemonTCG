@@ -58,6 +58,8 @@ var ai_thinking := false
 var board_panel: PanelContainer
 var board_canvas: Control
 var playmat: BattlePlaymat
+var header: BattleHeader
+var ai_thinking_overlay: AIThinkingOverlay
 var hud: VBoxContainer
 var turn_label: Label
 var opponent_info: Label
@@ -101,8 +103,13 @@ var _flyer_tweens: Dictionary = {}
 var _presentation_snapshot: Dictionary = {}
 var _presentation_reveals: Dictionary = {}
 var _presentation_mask_counts: Dictionary = {}
+var _presentation_feedbacks: Dictionary = {}
+var _presentation_covers: Dictionary = {}
+var _presentation_cover_tweens: Dictionary = {}
 var _presentation_event_hand_targets: Dictionary = {}
 var _presentation_hand_target_cursor: Dictionary = {}
+var _presentation_hand_removed_counts: Dictionary = {}
+var _ai_thinking_started_msec := 0
 
 
 func _ready() -> void:
@@ -126,6 +133,10 @@ func _resolve_scene_nodes() -> void:
 	board_panel = get_node("BattleRoot/Body/BoardPanel") as PanelContainer
 	board_canvas = get_node("BattleRoot/Body/BoardPanel/BoardCanvas") as Control
 	playmat = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/Playmat") as BattlePlaymat
+	header = get_node("BattleRoot/Header") as BattleHeader
+	ai_thinking_overlay = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/AIThinkingOverlay"
+	) as AIThinkingOverlay
 	hud = get_node("BattleRoot/Body/BattleHUD") as VBoxContainer
 	turn_label = get_node("BattleRoot/Header/TurnLabel") as Label
 	opponent_info = get_node(
@@ -198,6 +209,7 @@ func update_view(
 	view_player = p_view_player
 	action_rows = p_action_rows.duplicate()
 	selected_entity_key = p_selected_entity_key
+	_update_ai_thinking_clock(p_ai_thinking)
 	ai_thinking = p_ai_thinking
 	game_mode = p_game_mode
 	if not _initialized or state_ref == null:
@@ -209,6 +221,69 @@ func update_view(
 	_refresh_actions()
 	_refresh_log()
 	_refresh_target_hints()
+	_refresh_ai_thinking_indicator()
+
+
+func _update_ai_thinking_clock(next_ai_thinking: bool) -> void:
+	if next_ai_thinking:
+		if not ai_thinking or _ai_thinking_started_msec <= 0:
+			_ai_thinking_started_msec = Time.get_ticks_msec()
+	else:
+		_ai_thinking_started_msec = 0
+
+
+func _refresh_ai_thinking_indicator() -> void:
+	if not _initialized:
+		return
+	var active := ai_thinking and state_ref != null
+	var ai_player := _ai_player_index()
+	var ai_name := _ai_display_name(ai_player)
+	if header:
+		header.set_ai_thinking(
+			false,
+			ai_name,
+			0,
+			false,
+		)
+	if ai_thinking_overlay:
+		ai_thinking_overlay.configure(
+			active,
+			ai_player,
+			_ai_slot_rects(ai_player),
+			AppSettings.reduced_motion,
+			ai_name,
+			_ai_thinking_started_msec,
+		)
+
+
+func _ai_player_index() -> int:
+	if game_mode in ["challenge", "deep"]:
+		return 1
+	return 1 - view_player
+
+
+func _ai_display_name(player_idx: int) -> String:
+	if state_ref != null and player_idx >= 0 and player_idx < state_ref.players.size():
+		var name := str(state_ref.get_player(player_idx).name).strip_edges()
+		if not name.is_empty():
+			return name
+	if game_mode == "deep":
+		return "Deep AI"
+	if game_mode == "challenge":
+		return "Challenge AI"
+	return "AI"
+
+
+func _ai_slot_rects(player_idx: int) -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	if board_canvas == null:
+		return rects
+	for slot_name in ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]:
+		var view := get_slot_view(player_idx, slot_name)
+		if view == null or not view.visible:
+			continue
+		rects.append(Rect2(view.position, view.size))
+	return rects
 
 
 func play_presentation(
@@ -563,13 +638,15 @@ func _on_phase_advance_pressed() -> void:
 
 
 func _refresh_header() -> void:
-	var display_actor := view_player if state_ref.phase == "SETUP" else state_ref.active_player_idx
-	turn_label.text = "第 %d 回合 · %s · 玩家 %d%s" % [
-		state_ref.turn_number,
-		_phase_name(state_ref.phase),
-		display_actor + 1,
-		" · AI 思考中" if ai_thinking else "",
-	]
+	if header:
+		header.update_header(state_ref, view_player, ai_thinking)
+	else:
+		var display_actor := view_player if state_ref.phase == "SETUP" else state_ref.active_player_idx
+		turn_label.text = "第 %d 回合 · %s · 玩家 %d" % [
+			state_ref.turn_number,
+			_phase_name(state_ref.phase),
+			display_actor + 1,
+		]
 	for phase in phase_labels:
 		var active := str(phase) == state_ref.phase
 		var label: Label = phase_labels[phase]
@@ -887,6 +964,7 @@ func _layout_board() -> void:
 	_layout_opponent_hand(metrics["hidden_hand_size"])
 	_layout_hand(metrics["own_hand_size"])
 	_layout_overlay_drawers()
+	_refresh_ai_thinking_indicator()
 	if playmat:
 		playmat.queue_redraw()
 	if effects:
@@ -1630,25 +1708,30 @@ func _stage_presentation_targets(
 	_presentation_snapshot = previous_snapshot.duplicate(true)
 	_presentation_event_hand_targets.clear()
 	_presentation_hand_target_cursor.clear()
+	_presentation_hand_removed_counts.clear()
 	for event in events:
 		var event_id := str(event.get("event_id", ""))
 		if event_id.is_empty():
 			continue
+		_record_hand_removals_for_event(event)
 		_precompute_hand_targets_for_event(event)
 		var targets := _presentation_targets_for_event(event)
-		if targets.is_empty():
-			continue
-		_presentation_reveals[event_id] = targets
-		for target in targets:
-			_mask_presentation_node(target)
+		if not targets.is_empty():
+			_presentation_reveals[event_id] = targets
+			for target in targets:
+				_mask_presentation_node(target)
+		var feedback_targets := _presentation_feedback_targets_for_event(event)
+		if not feedback_targets.is_empty():
+			_presentation_feedbacks[event_id] = feedback_targets
+		_stage_presentation_cover(event)
 
 
 func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 	var result: Array[Control] = []
 	var event_type := str(event.get("event_type", ""))
 	var actor := int(event.get("actor", view_player))
-	var source: Dictionary = event.get("source", {})
-	var target: Dictionary = event.get("target", {})
+	var source := _event_source_endpoint(event)
+	var target := _event_target_endpoint(event)
 	var data: Dictionary = event.get("data", {})
 	match event_type:
 		"cards_drawn":
@@ -1668,8 +1751,9 @@ func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 			_append_unique_control(result, _zone_view_for_endpoint(target))
 			if str(source.get("zone", "")) != "hand":
 				_append_unique_control(result, _zone_view_for_endpoint(source))
-		"pokemon_played", "pokemon_evolved", "energy_attached", "tool_attached":
-			_append_unique_control(result, _slot_view_for_endpoint(target))
+		"pokemon_played":
+			if _should_mask_slot_result(event):
+				_append_unique_control(result, _slot_view_for_endpoint(target))
 		"trainer_played", "stadium_changed":
 			_append_unique_control(result, _zone_view_for_endpoint(target))
 		"card_moved":
@@ -1687,6 +1771,63 @@ func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 			for view in _switch_slot_views_for_event(event):
 				_append_unique_control(result, view)
 	return result
+
+
+func _presentation_feedback_targets_for_event(event: Dictionary) -> Array[Control]:
+	var result: Array[Control] = []
+	var event_type := str(event.get("event_type", ""))
+	if event_type in ["pokemon_evolved", "energy_attached", "tool_attached"]:
+		_append_unique_control(
+			result,
+			_slot_view_for_endpoint(_event_target_endpoint(event)),
+		)
+	return result
+
+
+func _should_mask_slot_result(event: Dictionary) -> bool:
+	var target := _event_target_endpoint(event)
+	var slot_name := str(target.get("slot", ""))
+	if slot_name.is_empty():
+		return false
+	var player := int(target.get("player", view_player))
+	var snapshot_row := _snapshot_slot_row(player, slot_name)
+	return snapshot_row.is_empty() or bool(snapshot_row.get("empty", true))
+
+
+func _event_target_endpoint(event: Dictionary) -> Dictionary:
+	var data: Dictionary = event.get("data", {})
+	var actor := int(event.get("actor", data.get("player", view_player)))
+	var target := Dictionary(event.get("target", {})).duplicate(true)
+	if str(target.get("slot", "")).is_empty():
+		var slot_name := str(data.get("target_slot", data.get("slot", "")))
+		if not slot_name.is_empty():
+			target["slot"] = slot_name
+	if str(target.get("zone", "")).is_empty():
+		var zone_name := str(data.get("target_zone", ""))
+		if not zone_name.is_empty():
+			target["zone"] = zone_name
+	if not target.has("player"):
+		target["player"] = int(data.get("target_player", data.get("player", actor)))
+	return target
+
+
+func _event_source_endpoint(event: Dictionary) -> Dictionary:
+	var data: Dictionary = event.get("data", {})
+	var actor := int(event.get("actor", data.get("player", view_player)))
+	var source := Dictionary(event.get("source", {})).duplicate(true)
+	if str(source.get("slot", "")).is_empty():
+		var slot_name := str(data.get("source_slot", ""))
+		if not slot_name.is_empty():
+			source["slot"] = slot_name
+	if str(source.get("zone", "")).is_empty():
+		var zone_name := str(data.get("source_zone", ""))
+		if not zone_name.is_empty():
+			source["zone"] = zone_name
+	if not source.has("player"):
+		source["player"] = int(data.get("source_player", data.get("player", actor)))
+	if not source.has("index") and data.has("source_index"):
+		source["index"] = int(data.get("source_index", -1))
+	return source
 
 
 func _target_controls_for_endpoint(
@@ -1747,6 +1888,31 @@ func _precompute_hand_targets_for_event(event: Dictionary) -> void:
 	_presentation_event_hand_targets[event_id] = targets
 
 
+func _record_hand_removals_for_event(event: Dictionary) -> void:
+	var source := _event_source_endpoint(event)
+	if str(source.get("zone", "")) != "hand":
+		return
+	var player := int(source.get("player", view_player))
+	if player != view_player:
+		return
+	var target := _event_target_endpoint(event)
+	if str(target.get("zone", "")) == "hand":
+		return
+	var card_ids := _event_card_ids(event)
+	if card_ids.is_empty():
+		return
+	var player_key := str(player)
+	var counts: Dictionary = Dictionary(
+		_presentation_hand_removed_counts.get(player_key, {})
+	)
+	for value in card_ids:
+		var card_id := str(value)
+		if card_id.is_empty():
+			continue
+		counts[card_id] = int(counts.get(card_id, 0)) + 1
+	_presentation_hand_removed_counts[player_key] = counts
+
+
 func _incoming_hand_targets_for_event(
 	event: Dictionary,
 	consume_cursor: bool,
@@ -1795,6 +1961,19 @@ func _incoming_hand_candidates_from_snapshot() -> Array[CardView]:
 		if card_id.is_empty():
 			continue
 		snapshot_counts[card_id] = int(snapshot_counts.get(card_id, 0)) + 1
+	var removed_counts: Dictionary = Dictionary(
+		_presentation_hand_removed_counts.get(str(view_player), {})
+	)
+	for removed_card_id_value in removed_counts.keys():
+		var removed_card_id := str(removed_card_id_value)
+		var remaining := (
+			int(snapshot_counts.get(removed_card_id, 0))
+			- int(removed_counts.get(removed_card_id, 0))
+		)
+		if remaining > 0:
+			snapshot_counts[removed_card_id] = remaining
+		else:
+			snapshot_counts.erase(removed_card_id)
 	var candidates: Array[CardView] = []
 	for view in visible_views:
 		var card_id := str(view.card_id)
@@ -1910,12 +2089,140 @@ func _reveal_presentation_node(node: Control, force: bool = false) -> void:
 		node.modulate.a = 1.0
 
 
+func _stage_presentation_cover(event: Dictionary) -> void:
+	var event_type := str(event.get("event_type", ""))
+	if event_type not in ["pokemon_evolved", "energy_attached", "tool_attached"]:
+		return
+	var event_id := str(event.get("event_id", ""))
+	if event_id.is_empty() or effects == null:
+		return
+	var target := _event_target_endpoint(event)
+	var slot_name := str(target.get("slot", ""))
+	if slot_name.is_empty():
+		return
+	var player := int(target.get("player", view_player))
+	var view := get_slot_view(player, slot_name)
+	if view == null or not is_instance_valid(view) or not view.visible:
+		return
+	var snapshot_row := _snapshot_slot_row(player, slot_name)
+	if snapshot_row.is_empty() or bool(snapshot_row.get("empty", false)):
+		return
+	var old_card_id := str(snapshot_row.get("card_id", ""))
+	if old_card_id.is_empty() or bool(snapshot_row.get("hidden", false)):
+		return
+	var cover := _spawn_presentation_cover(old_card_id, view)
+	if cover == null:
+		return
+	var covers: Array[Control] = []
+	if _presentation_covers.has(event_id):
+		for value in _presentation_covers[event_id]:
+			var existing := value as Control
+			if existing:
+				covers.append(existing)
+	covers.append(cover)
+	_presentation_covers[event_id] = covers
+
+
+func _spawn_presentation_cover(card_id_value: String, target_view: CardView) -> Control:
+	var texture := _texture_for_card_id(card_id_value)
+	if texture == null:
+		texture = _texture_for_card_id("")
+	if texture == null or effects == null:
+		return null
+	var cover := Control.new()
+	cover.name = "PresentationCover"
+	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cover.size = target_view.size
+	cover.position = _effects_local(target_view.global_center()) - cover.size * 0.5
+	cover.pivot_offset = cover.size * 0.5
+	cover.z_index = 96
+	var shadow_panel := Panel.new()
+	shadow_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shadow_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shadow_panel.position = Vector2(0, 5)
+	shadow_panel.add_theme_stylebox_override("panel", DesignTokens.shadow_style(10))
+	cover.add_child(shadow_panel)
+	var image_rect := TextureRect.new()
+	image_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	image_rect.texture = texture
+	image_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	image_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	image_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	cover.add_child(image_rect)
+	effects.add_child(cover)
+	return cover
+
+
+func _finish_presentation_covers(event_id: String) -> bool:
+	var covers: Array = _presentation_covers.get(event_id, [])
+	_presentation_covers.erase(event_id)
+	if covers.is_empty():
+		return false
+	var flash_immediately := AppSettings.reduced_motion
+	for cover_value in covers:
+		var cover := cover_value as Control
+		if cover == null or not is_instance_valid(cover):
+			continue
+		if AppSettings.reduced_motion:
+			_dispose_presentation_cover(cover)
+			continue
+		var tween := create_tween().set_parallel(true)
+		_presentation_cover_tweens[cover.get_instance_id()] = tween
+		tween.tween_property(cover, "modulate:a", 0.0, 0.14)
+		tween.tween_property(cover, "scale", Vector2.ONE * 1.025, 0.14)
+		tween.chain().tween_callback(
+			_finish_cover_and_feedback.bind(cover, event_id)
+		)
+	if flash_immediately:
+		_flash_presentation_feedbacks(event_id)
+	return true
+
+
+func _finish_cover_and_feedback(cover: Control, event_id: String) -> void:
+	_dispose_presentation_cover(cover)
+	_flash_presentation_feedbacks(event_id)
+
+
+func _dispose_presentation_cover(cover: Control) -> void:
+	if cover == null or not is_instance_valid(cover):
+		return
+	_presentation_cover_tweens.erase(cover.get_instance_id())
+	cover.queue_free()
+
+
+func _clear_presentation_covers() -> void:
+	for tween_value in _presentation_cover_tweens.values():
+		var tween := tween_value as Tween
+		if tween and tween.is_valid():
+			tween.kill()
+	_presentation_cover_tweens.clear()
+	for covers in _presentation_covers.values():
+		for cover_value in covers:
+			var cover := cover_value as Control
+			if cover and is_instance_valid(cover):
+				cover.queue_free()
+	_presentation_covers.clear()
+
+
+func _flash_presentation_feedbacks(event_id: String) -> void:
+	var nodes: Array = _presentation_feedbacks.get(event_id, [])
+	_presentation_feedbacks.erase(event_id)
+	for node_value in nodes:
+		var view := node_value as CardView
+		if view == null or not is_instance_valid(view):
+			continue
+		view.flash(DesignTokens.GOLD, 0.22)
+
+
 func _on_presentation_event_finished(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
 	var nodes: Array = _presentation_reveals.get(event_id, [])
 	for node_value in nodes:
 		_reveal_presentation_node(node_value as Control)
 	_presentation_reveals.erase(event_id)
+	var had_covers := _finish_presentation_covers(event_id)
+	if not had_covers:
+		_flash_presentation_feedbacks(event_id)
 
 
 func _clear_presentation_masks(reveal: bool) -> void:
@@ -1938,14 +2245,17 @@ func _clear_presentation_masks(reveal: bool) -> void:
 					node.modulate.a = 1.0
 	_presentation_reveals.clear()
 	_presentation_mask_counts.clear()
+	_clear_presentation_covers()
+	_presentation_feedbacks.clear()
 	_presentation_event_hand_targets.clear()
 	_presentation_hand_target_cursor.clear()
+	_presentation_hand_removed_counts.clear()
 
 
 func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	var data: Dictionary = event.get("data", {})
-	var source: Dictionary = event.get("source", {})
-	var target: Dictionary = event.get("target", {})
+	var source := _event_source_endpoint(event)
+	var target := _event_target_endpoint(event)
 	var event_type := str(event.get("event_type", ""))
 	var actor := int(event.get("actor", view_player))
 	var card_ids: Array = data.get("card_ids", data.get("cards", []))

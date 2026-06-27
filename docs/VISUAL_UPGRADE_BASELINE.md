@@ -42,11 +42,21 @@ Godot 版本以 Pygame 已有表现为最低覆盖线，并在信息层级、响
 - `game.png`
 - `game-20x9.png`
 - `battle-populated.png`
+- `ai-thinking.png`
+- `card-inspector.png`
+- `zone-inspector.png`
+- `card-actions.png`
+- `draw.png`
+- `discard.png`
+- `energy-attach.png`
+- `evolve.png`
 - `choice.png`
+- `choice-energy.png`
 - `attack.png`
 - `impact.png`
 - `ko.png`
 - `end.png`
+- `workbench.png`
 
 桌面验收尺寸至少覆盖 1600×900 与 2000×900。截图用于检查布局、遮挡、卡图身份、文本溢出和动画关键帧，不替代真机帧率测试。
 

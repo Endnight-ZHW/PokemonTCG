@@ -76,6 +76,9 @@ var _pending_action_rows: Array[Dictionary] = []
 var _pending_action_hint := ""
 var _presentation_hidden := false
 var _presentation_tween: Tween
+var _lift_tween: Tween
+var _shake_tween: Tween
+var _flash_overlays: Array[ColorRect] = []
 var _table_depth := 0.5
 var _near_side := true
 var depth_edge: Panel
@@ -260,6 +263,10 @@ func reveal_presentation(duration: float = 0.14, delay: float = 0.0) -> void:
 func clear_presentation_state() -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
+	if _shake_tween and _shake_tween.is_valid():
+		_shake_tween.kill()
+	_shake_tween = null
+	_clear_flash_overlays()
 	modulate.a = 1.0
 
 
@@ -275,19 +282,34 @@ func flash(color: Color, duration: float = 0.3) -> void:
 	if frame == null:
 		return
 	var overlay := ColorRect.new()
+	_flash_overlays.append(overlay)
 	overlay.color = Color(color.r, color.g, color.b, 0.0)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.z_index = 24
 	add_child(overlay)
+	if duration <= 0.0 or _reduced_motion_enabled():
+		overlay.color.a = 0.34
+		var instant_tween := create_tween()
+		instant_tween.tween_property(overlay, "color:a", 0.0, 0.08)
+		instant_tween.tween_callback(_dispose_flash_overlay.bind(overlay))
+		return
 	var tween := create_tween()
 	tween.tween_property(overlay, "color:a", 0.58, duration * 0.28)
 	tween.tween_property(overlay, "color:a", 0.0, duration * 0.72)
-	tween.tween_callback(overlay.queue_free)
+	tween.tween_callback(_dispose_flash_overlay.bind(overlay))
 
 
 func shake(strength: float = 7.0, duration: float = 0.26) -> void:
+	if _reduced_motion_enabled():
+		return
+	if _shake_tween and _shake_tween.is_valid():
+		_shake_tween.kill()
 	var origin := position
-	var tween := create_tween()
+	if _has_base_position:
+		origin.x = _base_position.x
+	position.x = origin.x
+	_shake_tween = create_tween()
 	for offset in [
 		Vector2(strength, 0),
 		Vector2(-strength, 0),
@@ -295,12 +317,13 @@ func shake(strength: float = 7.0, duration: float = 0.26) -> void:
 		Vector2(-strength * 0.65, 0),
 		Vector2.ZERO,
 	]:
-		tween.tween_property(
+		_shake_tween.tween_property(
 			self,
 			"position",
 			origin + offset,
 			duration / 5.0,
 		)
+	_shake_tween.tween_callback(func() -> void: _shake_tween = null)
 
 
 func _refresh() -> void:
@@ -490,13 +513,18 @@ func _update_lift() -> void:
 			action_buttons.get_child_count() > 0 or action_hint.visible
 		)
 	if _reduced_motion_enabled():
+		if _lift_tween and _lift_tween.is_valid():
+			_lift_tween.kill()
+		_lift_tween = null
 		scale = desired_scale
 		position.y = desired_y
 		return
-	var tween := create_tween().set_parallel(true)
-	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(self, "scale", desired_scale, interaction_duration)
-	tween.tween_property(self, "position:y", desired_y, interaction_duration)
+	if _lift_tween and _lift_tween.is_valid():
+		_lift_tween.kill()
+	_lift_tween = create_tween().set_parallel(true)
+	_lift_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_lift_tween.tween_property(self, "scale", desired_scale, interaction_duration)
+	_lift_tween.tween_property(self, "position:y", desired_y, interaction_duration)
 
 
 func remember_base_position() -> void:
@@ -881,6 +909,19 @@ func _kill_presentation_tween() -> void:
 	if _presentation_tween and _presentation_tween.is_valid():
 		_presentation_tween.kill()
 	_presentation_tween = null
+
+
+func _dispose_flash_overlay(overlay: ColorRect) -> void:
+	_flash_overlays.erase(overlay)
+	if overlay and is_instance_valid(overlay):
+		overlay.queue_free()
+
+
+func _clear_flash_overlays() -> void:
+	for overlay in _flash_overlays:
+		if overlay and is_instance_valid(overlay):
+			overlay.queue_free()
+	_flash_overlays.clear()
 
 
 func _card_data(value: String) -> Dictionary:

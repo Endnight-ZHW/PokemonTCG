@@ -1041,7 +1041,13 @@ func _resolve_knockouts(
 		if knocked_out == null:
 			continue
 		if from_attack and defeated_idx != attack_actor:
-			_apply_exp_share(state, defeated_idx, knocked_out, events)
+			_apply_exp_share(
+				state,
+				defeated_idx,
+				str(knockout["slot"]),
+				knocked_out,
+				events,
+			)
 		state.discard_pokemon(defeated_idx, str(knockout["slot"]))
 		var winner_idx := 1 - defeated_idx
 		for _index in range(int(knockout["prizes"])):
@@ -1076,6 +1082,7 @@ func _resolve_knockouts(
 func _apply_exp_share(
 	state: GameState,
 	defeated_idx: int,
+	source_slot: String,
 	knocked_out: PokemonState,
 	events: Array[Dictionary],
 ) -> void:
@@ -1087,7 +1094,8 @@ func _apply_exp_share(
 			break
 	if basic_energy_index < 0:
 		return
-	for bench_pokemon in player.bench:
+	for bench_index in range(player.bench.size()):
+		var bench_pokemon: PokemonState = player.bench[bench_index]
 		if (
 			bench_pokemon is PokemonState
 			and not bench_pokemon.attached_tool_id.is_empty()
@@ -1095,9 +1103,21 @@ func _apply_exp_share(
 		):
 			var energy_id: String = knocked_out.energy_card_ids.pop_at(basic_energy_index)
 			bench_pokemon.energy_card_ids.append(energy_id)
-			events.append({"event_type": "energy_attached", "data": {
-				"player": defeated_idx, "card_id": energy_id, "source": "exp_share",
-			}})
+			var target_slot := "bench_%d" % bench_index
+			events.append({
+				"event_type": "energy_attached",
+				"actor": defeated_idx,
+				"card_id": energy_id,
+				"source": {"player": defeated_idx, "slot": source_slot},
+				"target": {"player": defeated_idx, "slot": target_slot},
+				"data": {
+					"player": defeated_idx,
+					"slot": target_slot,
+					"card_id": energy_id,
+					"source": "exp_share",
+					"source_slot": source_slot,
+				},
+			})
 			return
 
 

@@ -35,6 +35,8 @@ var ai_thinking := false
 var board_panel: PanelContainer
 var board_canvas: Control
 var playmat: BattlePlaymat
+var header: BattleHeader
+var ai_thinking_overlay: AIThinkingOverlay
 var hud: VBoxContainer
 var turn_label: Label
 var opponent_info: Label
@@ -74,8 +76,12 @@ var _flyer_tweens: Dictionary = {}
 var _presentation_snapshot: Dictionary = {}
 var _presentation_reveals: Dictionary = {}
 var _presentation_mask_counts: Dictionary = {}
+var _presentation_feedbacks: Dictionary = {}
+var _presentation_covers: Dictionary = {}
+var _presentation_cover_tweens: Dictionary = {}
 var _presentation_event_hand_targets: Dictionary = {}
 var _presentation_hand_target_cursor: Dictionary = {}
+var _presentation_hand_removed_counts: Dictionary = {}
 var _initialized := false
 var _signals_bound := false
 
@@ -308,6 +314,8 @@ func _sync_from_table() -> void:
 	board_panel = table.board_panel
 	board_canvas = table.board_canvas
 	playmat = table.playmat
+	header = table.header
+	ai_thinking_overlay = table.ai_thinking_overlay
 	hud = table.hud
 	turn_label = table.turn_label
 	opponent_info = table.opponent_info
@@ -347,8 +355,12 @@ func _sync_from_table() -> void:
 	_presentation_snapshot = table._presentation_snapshot
 	_presentation_reveals = table._presentation_reveals
 	_presentation_mask_counts = table._presentation_mask_counts
+	_presentation_feedbacks = table._presentation_feedbacks
+	_presentation_covers = table._presentation_covers
+	_presentation_cover_tweens = table._presentation_cover_tweens
 	_presentation_event_hand_targets = table._presentation_event_hand_targets
 	_presentation_hand_target_cursor = table._presentation_hand_target_cursor
+	_presentation_hand_removed_counts = table._presentation_hand_removed_counts
 
 
 func _sync_to_table() -> void:
@@ -357,7 +369,11 @@ func _sync_to_table() -> void:
 	table._presentation_snapshot = _presentation_snapshot
 	table._presentation_reveals = _presentation_reveals
 	table._presentation_mask_counts = _presentation_mask_counts
+	table._presentation_feedbacks = _presentation_feedbacks
+	table._presentation_covers = _presentation_covers
+	table._presentation_cover_tweens = _presentation_cover_tweens
 	table._presentation_event_hand_targets = _presentation_event_hand_targets
 	table._presentation_hand_target_cursor = _presentation_hand_target_cursor
+	table._presentation_hand_removed_counts = _presentation_hand_removed_counts
 	table._active_flyers = _active_flyers
 	table._flyer_tweens = _flyer_tweens

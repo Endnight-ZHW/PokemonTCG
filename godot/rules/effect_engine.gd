@@ -847,11 +847,27 @@ func _execute_continuation(
 				if source_index >= 0 and attach_target:
 					attach_source.remove_at(source_index)
 					attach_target.energy_card_ids.append(energy_id)
-					events.append({"event_type": "energy_attached", "data": {
-						"player": int(data["player_idx"]),
-						"slot": target_slot,
+					events.append({
+						"event_type": "energy_attached",
+						"actor": int(data["player_idx"]),
 						"card_id": energy_id,
-					}})
+						"source": {
+							"player": int(data["player_idx"]),
+							"zone": attach_zone,
+							"index": source_index,
+						},
+						"target": {
+							"player": int(data["player_idx"]),
+							"slot": target_slot,
+						},
+						"data": {
+							"player": int(data["player_idx"]),
+							"slot": target_slot,
+							"card_id": energy_id,
+							"source_zone": attach_zone,
+							"source_index": source_index,
+						},
+					})
 			if attach_zone == "deck":
 				rng.shuffle(attach_player.deck)
 				events.append({"event_type": "deck_shuffled", "data": {
@@ -1322,9 +1338,24 @@ func _attach_cards(
 		if index >= 0:
 			source.remove_at(index)
 			target.energy_card_ids.append(card_id)
-			events.append({"event_type": "energy_attached", "data": {
-				"player": player_idx, "slot": target_slot, "card_id": card_id,
-			}})
+			events.append({
+				"event_type": "energy_attached",
+				"actor": player_idx,
+				"card_id": card_id,
+				"source": {
+					"player": player_idx,
+					"zone": source_zone,
+					"index": index,
+				},
+				"target": {"player": player_idx, "slot": target_slot},
+				"data": {
+					"player": player_idx,
+					"slot": target_slot,
+					"card_id": card_id,
+					"source_zone": source_zone,
+					"source_index": index,
+				},
+			})
 	if source_zone == "deck":
 		rng.shuffle(player.deck)
 		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
@@ -1554,9 +1585,21 @@ func _rare_candy(state: GameState, player_idx: int, events: Array[Dictionary]) -
 			pokemon.card_id = stage2_id
 			pokemon.status_conditions.clear()
 			pokemon.can_evolve_this_turn = false
-			events.append({"event_type": "pokemon_evolved", "data": {
-				"player": player_idx, "slot": row["slot"], "card_id": stage2_id,
-			}})
+			var target_slot := str(row["slot"])
+			events.append({
+				"event_type": "pokemon_evolved",
+				"actor": player_idx,
+				"card_id": stage2_id,
+				"source": {"player": player_idx, "zone": "hand", "index": hand_index},
+				"target": {"player": player_idx, "slot": target_slot},
+				"data": {
+					"player": player_idx,
+					"slot": target_slot,
+					"card_id": stage2_id,
+					"source_zone": "hand",
+					"source_index": hand_index,
+				},
+			})
 			return _ok()
 	return _fail("没有可用神奇糖果进化的目标。")
 

@@ -91,6 +91,11 @@ layout_mode = 2
 text = "战斗场景"
 metadata/preview = "battle"
 
+[node name="AIThinkingPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "AI 思考"
+metadata/preview = "ai_thinking"
+
 [node name="VictoryPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
 layout_mode = 2
 text = "胜利页"
@@ -128,6 +133,11 @@ text = "表现事件"
 layout_mode = 2
 text = "抽牌"
 metadata/event = "draw"
+
+[node name="EnergyAttachEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+text = "附能"
+metadata/event = "attach_energy"
 
 [node name="EvolveEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
 layout_mode = 2

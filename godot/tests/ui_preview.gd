@@ -136,6 +136,21 @@ func _render_previews() -> void:
 	if not _capture("battle-populated.png"):
 		quit(1)
 		return
+	demo.active_player_idx = 1
+	demo.players[1].name = "Challenge AI"
+	ui.game_mode = "challenge"
+	ui.ai_thinking = true
+	ui._refresh_game()
+	await process_frame
+	await create_timer(0.25).timeout
+	if not _capture("ai-thinking.png"):
+		quit(1)
+		return
+	ui.ai_thinking = false
+	ui.game_mode = "local"
+	demo.active_player_idx = 0
+	ui._refresh_game()
+	await process_frame
 	ui._show_card_inspector({
 		"card_id": "svi-hrot",
 		"pokemon": demo.players[0].active,
@@ -208,6 +223,68 @@ func _render_previews() -> void:
 		quit(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
+
+	var energy_snapshot: Dictionary = ui.battle_screen.capture_presentation_snapshot()
+	if not demo.players[0].hand.is_empty():
+		demo.players[0].hand.remove_at(0)
+	demo.players[0].active.energy_card_ids.append("sv1-ener-2")
+	ui._refresh_game()
+	await process_frame
+	ui.battle_screen.play_presentation([{
+		"event_type": "energy_attached",
+		"actor": 0,
+		"card_id": "sv1-ener-2",
+		"source": {"player": 0, "zone": "hand", "index": 0},
+		"target": {"player": 0, "slot": "active"},
+		"data": {
+			"player": 0,
+			"slot": "active",
+			"card_id": "sv1-ener-2",
+			"source_zone": "hand",
+			"source_index": 0,
+		},
+	}], demo.revision + 12, 0, energy_snapshot)
+	await create_timer(0.24).timeout
+	if not _capture("energy-attach.png"):
+		quit(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+
+	var evolution_card_id := "svi-infr"
+	demo.players[0].hand.append(evolution_card_id)
+	ui._refresh_game()
+	await process_frame
+	var evolve_snapshot: Dictionary = ui.battle_screen.capture_presentation_snapshot()
+	var evolve_hand_index := demo.players[0].hand.size() - 1
+	var old_active_card_id: String = demo.players[0].active.card_id
+	demo.players[0].hand.remove_at(evolve_hand_index)
+	demo.players[0].active.evolution_stack_ids.append(old_active_card_id)
+	demo.players[0].active.card_id = evolution_card_id
+	ui._refresh_game()
+	await process_frame
+	ui.battle_screen.play_presentation([{
+		"event_type": "pokemon_evolved",
+		"actor": 0,
+		"card_id": evolution_card_id,
+		"source": {"player": 0, "zone": "hand", "index": evolve_hand_index},
+		"target": {"player": 0, "slot": "active"},
+		"data": {
+			"player": 0,
+			"slot": "active",
+			"card_id": evolution_card_id,
+			"source_zone": "hand",
+			"source_index": evolve_hand_index,
+		},
+	}], demo.revision + 13, 0, evolve_snapshot)
+	await create_timer(0.34).timeout
+	if not _capture("evolve.png"):
+		quit(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	demo.players[0].active.card_id = old_active_card_id
+	demo.players[0].active.evolution_stack_ids.erase(old_active_card_id)
+	ui._refresh_game()
+	await process_frame
 
 	var choice := ChoiceRequest.new(
 		"preview-choice",

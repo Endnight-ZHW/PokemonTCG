@@ -1751,6 +1751,95 @@ func _run_visual_upgrade_tests() -> void:
 			battle.action_panel != null and not battle.action_panel.visible,
 			"All-actions fallback drawer did not close from its collapse button",
 		)
+		battle.update_view(state, 0, rows, "", true, "challenge")
+		var ai_chip := battle.find_child("AIThinkingChip", true, false) as Label
+		var ai_status := battle.find_child("AIThinkingStatus", true, false) as Label
+		_check(
+			ai_status != null
+			and ai_status.visible
+			and ai_status.text.contains("思考中"),
+			"AI thinking tabletop status was not visible during AI turn",
+		)
+		_check(
+			ai_chip == null or not ai_chip.visible,
+			"AI thinking status remained in the header instead of the tabletop",
+		)
+		_check(
+			battle.ai_thinking_overlay != null
+			and battle.ai_thinking_overlay.visible,
+			"AI thinking board overlay was not visible during AI turn",
+		)
+		_check(
+			battle.phase_advance_button != null and battle.phase_advance_button.disabled,
+			"AI thinking state did not disable the phase action button",
+		)
+		if battle.all_actions_button:
+			battle.all_actions_button.pressed.emit()
+		var disabled_action_buttons: bool = (
+			battle.action_list != null and battle.action_list.get_child_count() > 0
+		)
+		if battle.action_list:
+			for child in battle.action_list.get_children():
+				var action_button := child as Button
+				if action_button:
+					disabled_action_buttons = disabled_action_buttons and action_button.disabled
+		_check(
+			disabled_action_buttons,
+			"AI thinking state did not disable rendered action buttons",
+		)
+		_check(
+			not battle.input_blocker.visible,
+			"AI thinking state reused the presentation input blocker",
+		)
+		_check(
+			not battle.own_active.is_presentation_hidden()
+			and not battle.opponent_active.is_presentation_hidden(),
+			"AI thinking state hid battlefield Pokemon",
+		)
+		var ai_node_count_before := battle.find_children("*", "", true, false).size()
+		for _index in range(12):
+			battle.update_view(state, 0, rows, "", true, "challenge")
+		var ai_node_count_after := battle.find_children("*", "", true, false).size()
+		_check(
+			ai_node_count_after == ai_node_count_before,
+			"Repeated AI thinking refreshes created persistent UI nodes",
+		)
+		var ai_settings_node: Node = root.get_node("AppSettings")
+		var ai_previous_animation_mode := str(ai_settings_node.get("animation_mode"))
+		ai_settings_node.call(
+			"update",
+			float(ai_settings_node.get("master_volume")),
+			bool(ai_settings_node.get("muted")),
+			true,
+			int(ai_settings_node.get("card_cache_size")),
+			"reduced",
+		)
+		battle.update_view(state, 0, rows, "", true, "challenge")
+		_check(
+			battle.ai_thinking_overlay != null
+			and battle.ai_thinking_overlay.visible
+			and not battle.ai_thinking_overlay.is_animating(),
+			"Reduced motion AI thinking overlay kept running animation",
+		)
+		ai_settings_node.call(
+			"update",
+			float(ai_settings_node.get("master_volume")),
+			bool(ai_settings_node.get("muted")),
+			ai_previous_animation_mode == "reduced",
+			int(ai_settings_node.get("card_cache_size")),
+			ai_previous_animation_mode,
+		)
+		if battle.all_actions_toggle:
+			battle.all_actions_toggle.pressed.emit()
+		battle.update_view(state, 0, rows, "", false, "challenge")
+		_check(
+			ai_status != null
+			and not ai_status.visible
+			and battle.ai_thinking_overlay != null
+			and not battle.ai_thinking_overlay.visible
+			and not battle.ai_thinking_overlay.is_animating(),
+			"AI thinking indicator did not hide cleanly after the turn ended",
+		)
 		var discard_context: Dictionary = (
 			battle.zones["own_discard"] as ZoneView
 		).inspect_context
@@ -1975,6 +2064,82 @@ func _run_visual_upgrade_tests() -> void:
 		battle.director.clear_for_resync()
 		battle._clear_transient_visuals()
 
+		state.players[0].hand = ["sv1-104", "sv1-ener-5"]
+		state.players[0].deck = ["sv1-104"]
+		state.players[0].discard.clear()
+		battle.update_view(state, 0, rows, "", false, "local")
+		var same_id_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		state.players[0].hand = ["sv1-ener-5", "sv1-104"]
+		state.players[0].deck.clear()
+		state.players[0].discard = ["sv1-104"]
+		battle.update_view(state, 0, rows, "", false, "local")
+		var same_id_discard_event := {
+			"event_type": "cards_discarded",
+			"actor": 0,
+			"source": {"player": 0, "zone": "hand", "index": 0},
+			"target": {"player": 0, "zone": "discard"},
+			"amount": 1,
+			"data": {
+				"player": 0,
+				"count": 1,
+				"card_ids": ["sv1-104"],
+			},
+		}
+		var same_id_draw_event := {
+			"event_type": "cards_drawn",
+			"actor": 0,
+			"visibility": "owner",
+			"card_id": "sv1-104",
+			"source": {"player": 0, "zone": "deck"},
+			"target": {"player": 0, "zone": "hand"},
+			"amount": 1,
+			"data": {
+				"player": 0,
+				"count": 1,
+				"card_ids": ["sv1-104"],
+			},
+		}
+		var same_id_events: Array[Dictionary] = PresentationEvent.normalize_all(
+			[same_id_discard_event, same_id_draw_event],
+			48,
+			0,
+		)
+		battle._stage_presentation_targets(same_id_events, same_id_snapshot)
+		var same_id_draw := same_id_events[1]
+		var same_id_targets: Array = battle._presentation_event_hand_targets.get(
+			str(same_id_draw.get("event_id", "")),
+			[],
+		)
+		_check(
+			same_id_targets.size() == 1
+			and same_id_targets[0] == battle.hand_views[1],
+			"Discard-then-draw with the same card ID did not target the newly drawn hand card",
+		)
+		_check(
+			(battle.hand_views[1] as CardView).is_presentation_hidden(),
+			"Discard-then-draw same-ID target was not masked before the draw landed",
+		)
+		var same_id_finish_points: Array[Vector2] = battle._target_points_for_event(
+			{"player": 0, "zone": "hand"},
+			["sv1-104"],
+			1,
+			Vector2.ZERO,
+			same_id_draw,
+		)
+		_check(
+			same_id_finish_points.size() == 1
+			and same_id_finish_points[0].distance_to(
+				battle._effects_local(battle.hand_views[1].global_center())) < 0.01,
+			"Discard-then-draw same-ID animation did not land on the new hand card",
+		)
+		battle._on_presentation_event_finished(same_id_draw)
+		_check(
+			not (battle.hand_views[1] as CardView).is_presentation_hidden(),
+			"Discard-then-draw same-ID target did not reveal after landing",
+		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+
 		state.players[0].hand = ["sv1-104", "sv1-ener-5", "sv1-104"]
 		state.players[0].discard.clear()
 		battle.update_view(state, 0, rows, "", false, "local")
@@ -2047,6 +2212,156 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		battle.director.clear_for_resync()
 		battle._clear_transient_visuals()
+
+		state.players[0].active = PokemonState.new("sv1-104")
+		state.players[0].active.placed_this_turn = false
+		state.players[0].active.energy_card_ids.clear()
+		state.players[0].hand = ["sv1-ener-5"]
+		battle.update_view(state, 0, rows, "", false, "local")
+		var energy_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		var energy_snapshot_row: Dictionary = energy_snapshot.get("slots", {}).get(
+			"0:active",
+			{},
+		)
+		_check(
+			str(energy_snapshot_row.get("card_id", "")) == "sv1-104"
+			and not bool(energy_snapshot_row.get("empty", true)),
+			"Energy presentation snapshot did not capture the old active slot: %s" % JSON.stringify(energy_snapshot_row),
+		)
+		var energy_start_expected: Vector2 = (
+			battle._effects_local(battle.hand_views[0].global_center())
+		)
+		state.players[0].hand.clear()
+		state.players[0].active.energy_card_ids.append("sv1-ener-5")
+		battle.update_view(state, 0, rows, "", false, "local")
+		var energy_event := {
+			"event_type": "energy_attached",
+			"actor": 0,
+			"card_id": "sv1-ener-5",
+			"source": {"player": 0, "zone": "hand", "index": 0},
+			"target": {"player": 0, "slot": "active"},
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_id": "sv1-ener-5",
+				"source_zone": "hand",
+				"source_index": 0,
+			},
+		}
+		battle.play_presentation([energy_event], 45, 0, energy_snapshot)
+		var energy_slot: Variant = battle.get_slot_view(0, "active")
+		_check(
+			not energy_slot.is_presentation_hidden(),
+			"Energy attachment hid the target Pokemon during presentation",
+		)
+		var normalized_energy := PresentationEvent.normalize(energy_event, 45, 0, 0)
+		var energy_event_id := str(normalized_energy.get("event_id", ""))
+		var energy_covers: Array = battle._presentation_covers.get(
+			energy_event_id,
+			[],
+		)
+		_check(
+			energy_covers.size() == 1,
+			"Energy attachment did not stage an old-slot presentation cover",
+		)
+		var energy_starts: Array[Vector2] = battle._source_points_for_event(
+			{"player": 0, "zone": "hand", "index": 0},
+			["sv1-ener-5"],
+			1,
+			fallback_start,
+		)
+		_check(
+			energy_starts.size() == 1
+			and energy_starts[0].distance_to(energy_start_expected) < 0.01,
+			"Energy attachment did not fly from its previous hand position",
+		)
+		battle._on_presentation_event_finished(normalized_energy)
+		_check(
+			not battle._presentation_covers.has(energy_event_id),
+			"Energy attachment cover was not released after presentation",
+		)
+		_check(
+			not energy_slot.is_presentation_hidden(),
+			"Energy attachment left the target Pokemon hidden after landing",
+		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+
+		state.players[0].active = PokemonState.new("svi-chim")
+		state.players[0].active.placed_this_turn = false
+		state.players[0].hand = ["svi-monf"]
+		battle.update_view(state, 0, rows, "", false, "local")
+		var evolve_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		var evolve_snapshot_row: Dictionary = evolve_snapshot.get("slots", {}).get(
+			"0:active",
+			{},
+		)
+		_check(
+			str(evolve_snapshot_row.get("card_id", "")) == "svi-chim"
+			and not bool(evolve_snapshot_row.get("empty", true)),
+			"Evolution presentation snapshot did not capture the old active slot: %s" % JSON.stringify(evolve_snapshot_row),
+		)
+		state.players[0].hand.clear()
+		state.players[0].active.evolution_stack_ids.append("svi-chim")
+		state.players[0].active.card_id = "svi-monf"
+		battle.update_view(state, 0, rows, "", false, "local")
+		var evolve_event := {
+			"event_type": "pokemon_evolved",
+			"actor": 0,
+			"card_id": "svi-monf",
+			"source": {"player": 0, "zone": "hand", "index": 0},
+			"target": {"player": 0, "slot": "active"},
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_id": "svi-monf",
+				"source_zone": "hand",
+				"source_index": 0,
+			},
+		}
+		battle.play_presentation([evolve_event], 46, 0, evolve_snapshot)
+		var evolved_slot: Variant = battle.get_slot_view(0, "active")
+		_check(
+			not evolved_slot.is_presentation_hidden(),
+			"Evolution hid the target Pokemon during presentation",
+		)
+		_check(
+			evolved_slot.card_id == "svi-monf",
+			"Evolution target did not keep the post-refresh evolved Pokemon visible",
+		)
+		var normalized_evolve := PresentationEvent.normalize(evolve_event, 46, 0, 0)
+		var evolve_event_id := str(normalized_evolve.get("event_id", ""))
+		var evolve_covers: Array = battle._presentation_covers.get(
+			evolve_event_id,
+			[],
+		)
+		_check(
+			evolve_covers.size() == 1,
+			"Evolution did not stage an old-Pokemon presentation cover",
+		)
+		battle._on_presentation_event_finished(normalized_evolve)
+		_check(
+			not battle._presentation_covers.has(evolve_event_id),
+			"Evolution cover was not released after presentation",
+		)
+		battle.director.clear_for_resync()
+		battle._clear_transient_visuals()
+
+		var legacy_energy_event := PresentationEvent.normalize({
+			"event_type": "energy_attached",
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_id": "sv1-ener-5",
+			},
+		}, 47, 0, 0)
+		var legacy_source: Dictionary = legacy_energy_event.get("source", {})
+		var legacy_target: Dictionary = legacy_energy_event.get("target", {})
+		_check(
+			str(legacy_target.get("slot", "")) == "active"
+			and str(legacy_source.get("slot", "")).is_empty(),
+			"Legacy data-only energy event did not normalize to a target-only slot",
+		)
 
 		state.players[0].hand = ["sv1-189"]
 		state.stadium_card_id = ""
