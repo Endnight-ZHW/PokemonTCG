@@ -56,10 +56,6 @@ var catalog: CardCatalog
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
 @onready var empty_label: Label = %EmptyLabel
-@onready var info_panel: PanelContainer = %InfoPanel
-@onready var name_label: Label = %NameLabel
-@onready var hp_bar: ProgressBar = %HPBar
-@onready var meta_label: Label = %MetaLabel
 @onready var status_row: HBoxContainer = %StatusRow
 @onready var selection_ring: Panel = %SelectionRing
 @onready var target_glow: Panel = %TargetGlow
@@ -324,14 +320,12 @@ func _refresh() -> void:
 	if is_hidden_card:
 		image.texture = _card_texture("res://assets/cards/card_back.webp")
 		empty_label.visible = false
-		info_panel.visible = false
 		frame_color = Color("#15284e")
 		border_color = DesignTokens.GOLD.darkened(0.3)
 		_refresh_battle_overlay({}, border_color)
 	elif empty:
 		image.texture = null
 		empty_label.visible = not _is_field_empty_slot()
-		info_panel.visible = false
 		if _is_field_empty_slot():
 			frame_color = Color(0.02, 0.05, 0.04, 0.03)
 			border_color = Color(0.30, 0.80, 0.55, 0.10)
@@ -345,36 +339,9 @@ func _refresh() -> void:
 		image.texture = _card_texture(str(card.get("image_path", "")))
 		empty_label.visible = image.texture == null
 		empty_label.text = str(card.get("name", card_id))
-		info_panel.visible = false
-		name_label.text = str(card.get("name", card_id))
 		var energy_types: Array = card.get("energy_types", [])
 		if not energy_types.is_empty():
 			border_color = DesignTokens.type_color(str(energy_types[0]))
-		if pokemon:
-			var maximum := _pokemon_max_hp(card, pokemon)
-			var current := pokemon.current_hp(catalog) if catalog else maximum - (
-				pokemon.damage_counters * 10
-			)
-			hp_bar.max_value = maximum
-			hp_bar.value = current
-			var hp_ratio := float(current) / float(maximum)
-			var hp_color := (
-				DesignTokens.GREEN
-				if hp_ratio > 0.55
-				else DesignTokens.GOLD
-				if hp_ratio > 0.25
-				else DesignTokens.RED
-			)
-			hp_bar.add_theme_stylebox_override(
-				"fill",
-				DesignTokens.panel_style(hp_color, 3, Color.TRANSPARENT, 0, 0),
-			)
-			meta_label.text = "HP %d/%d  ·  ◈%d%s" % [
-				current,
-				maximum,
-				pokemon.energy_card_ids.size(),
-				"  ·  道具" if not pokemon.attached_tool_id.is_empty() else "",
-			]
 		_refresh_battle_overlay(current_card, border_color)
 	frame.add_theme_stylebox_override(
 		"panel",
@@ -492,11 +459,6 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 
 func _on_resized() -> void:
 	pivot_offset = size * 0.5
-	if info_panel:
-		info_panel.offset_top = -58
-		info_panel.offset_bottom = -3
-		info_panel.offset_left = 3
-		info_panel.offset_right = -3
 	_layout_battle_overlay()
 	_apply_depth_visuals()
 
@@ -598,14 +560,6 @@ func _resolve_scene_nodes() -> void:
 		image = get_node_or_null("Frame/Image") as TextureRect
 	if empty_label == null:
 		empty_label = get_node_or_null("Frame/EmptyLabel") as Label
-	if info_panel == null:
-		info_panel = get_node_or_null("Frame/InfoPanel") as PanelContainer
-	if name_label == null:
-		name_label = get_node_or_null("Frame/InfoPanel/Info/NameLabel") as Label
-	if hp_bar == null:
-		hp_bar = get_node_or_null("Frame/InfoPanel/Info/HPBar") as ProgressBar
-	if meta_label == null:
-		meta_label = get_node_or_null("Frame/InfoPanel/Info/MetaLabel") as Label
 	if status_row == null:
 		status_row = get_node_or_null("Frame/StatusRow") as HBoxContainer
 	if selection_ring == null:

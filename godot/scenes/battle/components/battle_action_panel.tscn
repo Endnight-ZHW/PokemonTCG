@@ -24,7 +24,7 @@ layout_mode = 0
 offset_right = 260.0
 offset_bottom = 480.0
 theme_override_styles/panel = SubResource("Style_hud")
-editor_description = "当前可用动作面板。默认由 BattleScreen 兼容层隐藏；需要扩展完整动作列表时优先改这里。"
+editor_description = "完整动作兜底浮层。默认隐藏，由右侧 HUD 的“全部动作”按钮展开；用于触控和键鼠都能访问所有合法动作。"
 script = ExtResource("1_action")
 
 [node name="Margin" type="MarginContainer" parent="."]
@@ -46,22 +46,16 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
 theme_override_font_sizes/font_size = 18
-text = "当前操作"
+text = "全部动作"
 
 [node name="AllActionsToggle" type="Button" parent="Margin/Content/Heading"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
-text = "全部动作"
-
-[node name="QuickActions" type="VBoxContainer" parent="Margin/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 6
+text = "收起"
 
 [node name="AllActionsScroll" type="ScrollContainer" parent="Margin/Content"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
 

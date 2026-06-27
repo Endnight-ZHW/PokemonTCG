@@ -47,10 +47,6 @@ const CARD_SCENE := preload("res://ui/card_view.tscn")
 @export var motion_arc_distance_ratio := 0.22
 @export var motion_arc_stagger_height := 8.0
 @export var motion_stagger_delay := 0.045
-@export_group("Touch Targets")
-@export var primary_action_button_height := 48.0
-@export var secondary_action_button_height := 43.0
-
 var state_ref: GameState
 var catalog := CardCatalog.new()
 var view_player := 0
@@ -68,7 +64,8 @@ var opponent_info: Label
 var own_info: Label
 var phase_labels: Dictionary = {}
 var phase_advance_button: Button
-var quick_actions: VBoxContainer
+var all_actions_button: Button
+var action_panel: BattleActionPanel
 var action_list: VBoxContainer
 var all_actions_scroll: ScrollContainer
 var all_actions_toggle: Button
@@ -138,9 +135,10 @@ func _resolve_scene_nodes() -> void:
 	phase_advance_button = get_node(
 		"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseAdvanceButton"
 	) as Button
-	quick_actions = get_node(
-		"ActionPanel/Margin/Content/QuickActions"
-	) as VBoxContainer
+	all_actions_button = get_node(
+		"BattleRoot/Body/BattleHUD/PhasePanel/Content/AllActionsButton"
+	) as Button
+	action_panel = get_node("ActionPanel") as BattleActionPanel
 	action_list = get_node(
 		"ActionPanel/Margin/Content/AllActionsScroll/ActionList"
 	) as VBoxContainer
@@ -246,6 +244,8 @@ func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 	if card_id.is_empty():
 		hide_card_detail()
 		return
+	if _all_actions_expanded:
+		_collapse_all_actions()
 	if detail_panel:
 		detail_panel.visible = true
 	if detail_close_button:
@@ -528,7 +528,11 @@ func _bind_scene_nodes() -> void:
 		zone.action_requested.connect(action_requested.emit)
 	(get_node("BattleRoot/Header/MenuButton") as Button).pressed.connect(_on_menu_pressed)
 	phase_advance_button.pressed.connect(_on_phase_advance_pressed)
-	all_actions_toggle.pressed.connect(_toggle_all_actions)
+	all_actions_button.pressed.connect(_toggle_all_actions)
+	all_actions_toggle.pressed.connect(_collapse_all_actions)
+	if action_panel:
+		action_panel.z_index = 35
+		action_panel.action_requested.connect(action_requested.emit)
 	show_card_detail("")
 	director.sequence_started.connect(func(_count: int) -> void:
 		input_blocker.visible = not AppSettings.reduced_motion
@@ -784,6 +788,31 @@ func _refresh_actions() -> void:
 	(zones["stadium"] as ZoneView).set_action(
 		_compact_card_action_row(stadium_row) if not stadium_row.is_empty() else {}
 	)
+	_refresh_all_actions_panel()
+
+
+func _refresh_all_actions_panel() -> void:
+	var has_actions := not action_rows.is_empty()
+	if not has_actions:
+		_all_actions_expanded = false
+	if all_actions_button:
+		all_actions_button.disabled = not has_actions
+		all_actions_button.text = "隐藏动作" if _all_actions_expanded else "全部动作"
+		all_actions_button.tooltip_text = (
+			"收起完整动作列表"
+			if _all_actions_expanded
+			else "查看全部合法动作"
+			if has_actions
+			else "当前没有可执行动作"
+		)
+	if action_panel:
+		action_panel.update_actions(
+			action_rows,
+			selected_entity_key,
+			ai_thinking,
+			game_mode,
+			_all_actions_expanded,
+		)
 
 
 func _refresh_log() -> void:
@@ -1292,11 +1321,16 @@ func _layout_overlay_drawers() -> void:
 	)
 	var drawer_x := board_origin.x + board_panel.size.x - drawer_width - 14.0
 	var detail_height := clampf(board_panel.size.y * 0.28, 190.0, 240.0)
+	var action_height := clampf(board_panel.size.y * 0.42, 240.0, 360.0)
 	var log_height := clampf(board_panel.size.y * 0.18, 118.0, 160.0)
 	if detail_panel:
 		detail_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
 		detail_panel.size = Vector2(drawer_width, detail_height)
 		detail_panel.custom_minimum_size = Vector2(drawer_width, detail_height)
+	if action_panel:
+		action_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
+		action_panel.size = Vector2(drawer_width, action_height)
+		action_panel.custom_minimum_size = Vector2(drawer_width, action_height)
 	if detail_close_button:
 		detail_close_button.position = Vector2(
 			drawer_x + drawer_width - 34.0,
@@ -1409,44 +1443,6 @@ func _new_card_view() -> CardView:
 	return view
 
 
-func _action_button(row: Dictionary, prominent: bool) -> Button:
-	var action: GameAction = row.get("action")
-	var button := Button.new()
-	button.text = str(row.get("label", action.action if action else "动作"))
-	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	button.custom_minimum_size.y = (
-		primary_action_button_height
-		if prominent
-		else secondary_action_button_height
-	)
-	button.add_theme_font_size_override("font_size", 15 if prominent else 13)
-	if action and action.action == "END_TURN":
-		button.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				Color("#7b2e38"),
-				10,
-				DesignTokens.RED,
-				1,
-			),
-		)
-	elif action and action.action == "DECLARE_ATTACK":
-		button.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				Color("#8a3c2d"),
-				10,
-				Color("#ff9a61"),
-				1,
-			),
-		)
-	button.pressed.connect(func() -> void:
-		if action:
-			action_requested.emit(action)
-	)
-	return button
-
-
 func _compact_card_action_row(row: Dictionary) -> Dictionary:
 	var result := row.duplicate()
 	var action: GameAction = row.get("action")
@@ -1497,10 +1493,17 @@ func _action_matches_selected(action: GameAction) -> bool:
 
 
 func _toggle_all_actions() -> void:
+	if action_rows.is_empty():
+		return
 	_all_actions_expanded = not _all_actions_expanded
-	all_actions_scroll.visible = _all_actions_expanded
-	quick_actions.visible = not _all_actions_expanded
-	_refresh_actions()
+	if _all_actions_expanded:
+		hide_card_detail()
+	_refresh_all_actions_panel()
+
+
+func _collapse_all_actions() -> void:
+	_all_actions_expanded = false
+	_refresh_all_actions_panel()
 
 
 func _on_card_activated(

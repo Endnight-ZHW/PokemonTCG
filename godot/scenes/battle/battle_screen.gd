@@ -41,7 +41,8 @@ var opponent_info: Label
 var own_info: Label
 var phase_labels: Dictionary = {}
 var phase_advance_button: Button
-var quick_actions: VBoxContainer
+var all_actions_button: Button
+var action_panel: BattleActionPanel
 var action_list: VBoxContainer
 var all_actions_scroll: ScrollContainer
 var all_actions_toggle: Button
@@ -313,7 +314,8 @@ func _sync_from_table() -> void:
 	own_info = table.own_info
 	phase_labels = table.phase_labels
 	phase_advance_button = table.phase_advance_button
-	quick_actions = table.quick_actions
+	all_actions_button = table.all_actions_button
+	action_panel = table.action_panel
 	action_list = table.action_list
 	all_actions_scroll = table.all_actions_scroll
 	all_actions_toggle = table.all_actions_toggle

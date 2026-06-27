@@ -1696,8 +1696,34 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		_check(battle.phase_advance_button != null,
 			"Battle screen is missing the dedicated phase advance button")
-		_check(not battle.quick_actions.is_visible_in_tree(),
-			"Legacy right-side card action list is still visible")
+		_check(
+			battle.find_child("QuickActions", true, false) == null,
+			"Legacy quick action node still exists in the battle scene",
+		)
+		_check(
+			battle.action_panel != null and not battle.action_panel.visible,
+			"All-actions fallback drawer should start hidden",
+		)
+		_check(
+			battle.all_actions_button != null and not battle.all_actions_button.disabled,
+			"Battle screen is missing the all-actions HUD button",
+		)
+		if battle.all_actions_button:
+			battle.all_actions_button.pressed.emit()
+		_check(
+			battle.action_panel != null and battle.action_panel.visible,
+			"All-actions fallback drawer did not open from the HUD button",
+		)
+		_check(
+			battle.action_list != null and battle.action_list.get_child_count() > 0,
+			"All-actions fallback drawer did not render legal actions",
+		)
+		if battle.all_actions_toggle:
+			battle.all_actions_toggle.pressed.emit()
+		_check(
+			battle.action_panel != null and not battle.action_panel.visible,
+			"All-actions fallback drawer did not close from its collapse button",
+		)
 		var discard_context: Dictionary = (
 			battle.zones["own_discard"] as ZoneView
 		).inspect_context

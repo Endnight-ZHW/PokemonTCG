@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://ui/card_view.gd" id="1_card"]
 
@@ -23,31 +23,6 @@ corner_radius_top_left = 11
 corner_radius_top_right = 11
 corner_radius_bottom_right = 11
 corner_radius_bottom_left = 11
-
-[sub_resource type="StyleBoxFlat" id="Style_info"]
-bg_color = Color(0.018, 0.033, 0.056, 0.96)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
-corner_radius_bottom_right = 8
-corner_radius_bottom_left = 8
-content_margin_left = 6.0
-content_margin_top = 6.0
-content_margin_right = 6.0
-content_margin_bottom = 6.0
-
-[sub_resource type="StyleBoxFlat" id="Style_hp_bg"]
-bg_color = Color(0.145, 0.196, 0.278, 1)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-
-[sub_resource type="StyleBoxFlat" id="Style_hp_fill"]
-bg_color = Color(0.408, 0.827, 0.569, 1)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxFlat" id="Style_target"]
 bg_color = Color(0.25, 0.72, 1, 0.11)
@@ -201,49 +176,6 @@ theme_override_font_sizes/font_size = 15
 text = "空位"
 horizontal_alignment = 1
 vertical_alignment = 1
-
-[node name="InfoPanel" type="PanelContainer" parent="Frame"]
-unique_name_in_owner = true
-mouse_filter = 2
-layout_mode = 1
-anchors_preset = 12
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = -58.0
-offset_left = 3.0
-offset_right = -3.0
-offset_bottom = -3.0
-grow_horizontal = 2
-grow_vertical = 0
-theme_override_styles/panel = SubResource("Style_info")
-
-[node name="Info" type="VBoxContainer" parent="Frame/InfoPanel"]
-layout_mode = 2
-theme_override_constants/separation = 2
-
-[node name="NameLabel" type="Label" parent="Frame/InfoPanel/Info"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
-theme_override_font_sizes/font_size = 14
-text = "卡牌名称"
-text_overrun_behavior = 3
-
-[node name="HPBar" type="ProgressBar" parent="Frame/InfoPanel/Info"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 6)
-layout_mode = 2
-theme_override_styles/background = SubResource("Style_hp_bg")
-theme_override_styles/fill = SubResource("Style_hp_fill")
-show_percentage = false
-
-[node name="MetaLabel" type="Label" parent="Frame/InfoPanel/Info"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
-theme_override_font_sizes/font_size = 12
-text = "HP · 能量 · 道具"
-text_overrun_behavior = 3
 
 [node name="StatusRow" type="HBoxContainer" parent="Frame"]
 unique_name_in_owner = true

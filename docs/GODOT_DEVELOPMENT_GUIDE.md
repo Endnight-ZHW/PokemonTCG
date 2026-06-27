@@ -229,7 +229,7 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 
 - `Shadow`：卡牌阴影。
 - `Frame/Image`：边框与卡图。
-- `InfoPanel`：场上宝可梦的名称、HP 和能量摘要。
+- 运行时覆盖层：`HPPill`、`DamageBadge`、`EnergyRow` 和 `ToolBadge` 显示场上 HP、伤害、能量和道具。
 - `StatusRow`：运行时生成中毒、灼伤等状态徽章。
 - `TargetGlow`：合法目标高亮。
 - `SelectionRing`：选中状态。
@@ -250,7 +250,7 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 |---|---|---|
 | 卡牌阴影 | `Shadow` | 改 StyleBox、透明度和偏移，不影响规则 |
 | 卡图区域 | `Frame/Image` | 运行时会注入真实 Texture，场景中只调拉伸方式和边距 |
-| 名称、HP、能量摘要 | `InfoPanel`、`NameLabel`、`HPBar`、`MetaLabel` | 文字内容运行时生成，字体大小和面板高度可在场景调 |
+| 场上 HP、伤害、能量、道具 | `CardView.gd` 的 `_ensure_overlay_nodes()`、`_layout_battle_overlay()` | 这些徽章运行时创建；样式和位置在脚本中统一调整 |
 | 选中边框 | `SelectionRing` | 和 `selected_pulse` 动画一起看 |
 | 合法目标高亮 | `TargetGlow` | 和 `target_pulse` 动画一起看 |
 | 卡上动作按钮 | `ActionOverlay`、`ActionButtons` | 按钮由 `set_actions(...)` 生成；布局在场景中调 |
@@ -981,7 +981,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 5. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
 6. 在 `Table Layout / Hand` 中调整 `hand_card_size`、`hand_minimum_spacing` 和 `hand_rotation_degrees`。
 7. 如果要改详情或日志浮层，打开 `battle_detail_panel.tscn` 或 `battle_log_panel.tscn`。
-8. 在 `Presentation / Touch Targets` 中调整 `primary_action_button_height` 和 `secondary_action_button_height`。
+8. 如果要改“全部动作”抽屉按钮高度，打开 `battle_action_panel.tscn`，在根节点调整 `action_button_height`。
 9. 按 `F6` 或在 Workbench 选择“战斗场景”。
 10. 运行 UI 截图脚本检查 16:9 和 20:9。
 
@@ -1015,7 +1015,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 2. 选择根节点 `CardView`，在 Inspector 调整 `selected_lift`、`hover_lift`、`selected_scale` 和 `hover_scale`。
 3. 选择 `Shadow`，修改阴影 StyleBox 或颜色透明度。
 4. 选择 `Frame`，修改卡牌边框、圆角或背景。
-5. 选择 `InfoPanel`、`NameLabel`、`HPBar` 和 `MetaLabel`，调整文字和血条视觉。
+5. 如需调整场上 HP、伤害、能量或道具徽章，编辑 `CardView.gd` 的 `_ensure_overlay_nodes()` 和 `_layout_battle_overlay()`。
 6. 选择 `TargetGlow` 和 `SelectionRing`，调整合法目标和选中效果的静态样式。
 7. 选择 `ActionOverlay`，调整卡上动作按钮面板的位置、内边距和按钮排列。
 8. 按 `F6` 看组件占位内容；再打开 Workbench 的战斗页，确认真实数据下也正常。
