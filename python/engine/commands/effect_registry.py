@@ -29,7 +29,8 @@ EFFECT_TYPES = [
     "attack_damage_formula", "bench_damage",
 
     "status", "conditional_status", "attack_fail", "dazzling_beam",
-    "attack_lock_basic", "self_attack_lock", "prevent_all",
+    "attack_lock_basic", "apply_outgoing_damage_reduction",
+    "self_attack_lock", "prevent_all",
 
     "draw", "draw_until", "discard_draw", "shuffle_draw", "discard_then_draw",
     "hand_to_bottom_draw", "judge", "houb", "shuffle_from_discard", "draw_until_more",

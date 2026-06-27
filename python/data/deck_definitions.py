@@ -10,6 +10,7 @@ Deck themes:
     FIGHTING DECK: Koraidon ex — Fighting energy acceleration
     COLORLESS DECK: 一家鼠ex核心 — 手牌增伤，特殊能量灵活战术
     STEEL DECK: 苍响·藏玛然特 — 钢属性多核心，能量转移与耐久推进
+    DARKNESS DECK: 獒教父ex — 受伤备战增伤，恶能量弃牌加速
 """
 import random
 
@@ -371,6 +372,42 @@ STEEL_DECK = [
     ("sv1-ener-8", 15),      # 基本钢能量
 ]
 
+# ============================================================
+# 🌑 DARKNESS DECK — 獒教父ex (60 cards)
+# Strategy: 獒教父ex「恫吓」压低返击伤害，配合嘟嘟利自伤过牌
+# 触发「自尊獠牙」。暗黑补丁从弃牌区加速恶能量。
+# ============================================================
+
+DARKNESS_DECK = [
+    # Pokemon (15)
+    ("svd-mabosstiff-ex", 2),  # 獒教父ex - 恫吓 / 自尊獠牙
+    ("svd-maschiff", 3),       # 偶叫獒
+    ("svd-dodrio", 2),         # 嘟嘟利 - 暴走抽取 / 愤怒之喙
+    ("svd-doduo", 3),          # 嘟嘟
+    ("svd-seviper", 1),        # 饭匙蛇
+    ("svd-absol", 1),          # 阿勃梭鲁
+    ("svd-darkrai", 1),        # 达克莱伊
+    ("svd-morpeko", 1),        # 莫鲁贝可
+    ("svl-chat", 1),           # 聒噪鸟
+
+    # Trainer (30)
+    ("sv3-134", 1),            # 厉害钓竿
+    ("svd-dark-patch", 2),     # 暗黑补丁
+    ("sv1-151", 4),            # 巢穴球
+    ("sv1-153", 4),            # 高级球
+    ("sv1-150", 3),            # 宝可梦交替
+    ("sv2-catch", 2),          # 宝可梦捕捉器
+    ("svd-hard-belt", 2),      # 坚硬束带
+    ("sv1-176", 1),            # 裁判
+    ("sv2-young", 3),          # 短裤小子
+    ("sv1-180", 4),            # 妮莫
+    ("sv1-189", 2),            # 博士的研究
+    ("sv1-204", 2),            # 派帕
+
+    # Energy (15)
+    ("sv1-ener-7", 15),        # 基本恶能量
+]
+
 # Collect all unique card IDs needed for all decks
 ALL_CARD_IDS = list(set(
     card_id
@@ -384,6 +421,7 @@ ALL_CARD_IDS = list(set(
         DRAGON_DECK,
         GRASS_DECK,
         STEEL_DECK,
+        DARKNESS_DECK,
     ]
     for card_id, _ in deck
 ))

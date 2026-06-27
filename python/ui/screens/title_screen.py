@@ -188,7 +188,8 @@ class TitleScreen(Screen):
     def _load_available_decks(self):
         from data.deck_definitions import (FIRE_DECK, WATER_DECK, PSYCHIC_DECK_NATU,
                                             LIGHTNING_DECK, FIGHTING_DECK, COLORLESS_DECK,
-                                            DRAGON_DECK, GRASS_DECK, ALL_CARD_IDS)
+                                            DRAGON_DECK, GRASS_DECK, DARKNESS_DECK,
+                                            ALL_CARD_IDS)
         from data.card_registry import CardRegistry
 
         if not CardRegistry.is_initialized():
@@ -207,6 +208,7 @@ class TitleScreen(Screen):
             "colorless": COLORLESS_DECK,
             "dragon": DRAGON_DECK,
             "grass": GRASS_DECK,
+            "darkness": DARKNESS_DECK,
         }
 
         return available_decks

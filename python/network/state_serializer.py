@@ -53,6 +53,7 @@ def serialize_pokemon(p: PokemonInPlay) -> dict:
         "paralyzed_since_turn": p.paralyzed_since_turn,
         "damage_prevented_next_turn": p.damage_prevented_next_turn,
         "all_prevented_next_turn": p.all_prevented_next_turn,
+        "outgoing_damage_reduction_next_turn": p.outgoing_damage_reduction_next_turn,
     }
 
 
@@ -83,6 +84,7 @@ def deserialize_pokemon(data: dict) -> Optional[PokemonInPlay]:
     p.paralyzed_since_turn = data.get("paralyzed_since_turn", 0)
     p.damage_prevented_next_turn = data.get("damage_prevented_next_turn", False)
     p.all_prevented_next_turn = data.get("all_prevented_next_turn", False)
+    p.outgoing_damage_reduction_next_turn = data.get("outgoing_damage_reduction_next_turn", 0)
     return p
 
 

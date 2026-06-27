@@ -50,6 +50,7 @@ class PokemonSnapshot:
     used_abilities: list[str] = field(default_factory=list)
     damage_prevented: bool = False
     all_prevented: bool = False
+    outgoing_damage_reduction: int = 0
     attack_locked: bool = False
     attack_locked_names: dict = field(default_factory=dict)
     dazzled: bool = False
@@ -276,6 +277,7 @@ def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
         used_abilities=sorted(p.used_abilities),
         damage_prevented=p.damage_prevented_next_turn,
         all_prevented=p.all_prevented_next_turn,
+        outgoing_damage_reduction=p.outgoing_damage_reduction_next_turn,
         attack_locked=p.attack_locked,
         attack_locked_names=dict(p.attack_locked_names),
         dazzled=p.dazzled,
@@ -298,6 +300,7 @@ def _restore_pokemon(snap: PokemonSnapshot) -> PokemonInPlay:
     pokemon.used_abilities = set(snap.used_abilities)
     pokemon.damage_prevented_next_turn = snap.damage_prevented
     pokemon.all_prevented_next_turn = snap.all_prevented
+    pokemon.outgoing_damage_reduction_next_turn = snap.outgoing_damage_reduction
     pokemon.attack_locked = snap.attack_locked
     pokemon.attack_locked_names = dict(snap.attack_locked_names)
     pokemon.dazzled = snap.dazzled

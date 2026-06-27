@@ -85,6 +85,7 @@ class TurnManager:
         outgoing = self.state.get_active_player()
         for _, poke in outgoing.get_all_pokemon():
             if poke:
+                poke.outgoing_damage_reduction_next_turn = 0
                 poke.attack_locked = False
                 expired = [n for n, t in poke.attack_locked_names.items()
                            if self.state.turn_number >= t + 2]

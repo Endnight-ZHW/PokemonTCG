@@ -48,9 +48,9 @@ func _run_phase_one_tests() -> void:
 	var fixture := _read_json("res://tests/fixtures/data_contract.json")
 	var models := _read_json("res://data/ai_models.json")
 
-	_check(cards.size() == 126, "Expected 126 exported cards")
-	_check(decks.size() == 9, "Expected 9 exported decks")
-	_check(fixture.get("counts", {}).get("effects", 0) == 77, "Expected 77 effect types")
+	_check(cards.size() == 137, "Expected 137 exported cards")
+	_check(decks.size() == 10, "Expected 10 exported decks")
+	_check(fixture.get("counts", {}).get("effects", 0) == 78, "Expected 78 effect types")
 	for deck_key in decks:
 		_check(decks[deck_key].get("card_count", 0) == 60, "Deck %s must contain 60 cards" % deck_key)
 	_check(models.get("models", {}).size() == 8, "Expected 8 Deep AI model manifest rows")
@@ -121,7 +121,7 @@ func _run_phase_two_tests() -> void:
 	var catalog := CardCatalog.new()
 	var engine := GameEngine.new(catalog)
 	var effect_types: Array = fixture.get("effect_types", [])
-	_check(effect_types.size() == 77, "Expected 77 exported effect type names")
+	_check(effect_types.size() == 78, "Expected 78 exported effect type names")
 	for effect_type in effect_types:
 		_check(
 			engine.effect_engine.supports_effect_type(str(effect_type)),
@@ -131,6 +131,7 @@ func _run_phase_two_tests() -> void:
 	_run_python_golden_actions(engine)
 	_run_release_deck_playouts(catalog, engine)
 	_run_steel_rules_tests(catalog, engine)
+	_run_darkness_rules_tests(catalog, engine)
 	_run_turn_state_regression_tests(catalog, engine)
 
 	var stack := ResolutionStack.new()
@@ -318,8 +319,8 @@ func _run_phase_three_tests() -> void:
 		_check(local_button.custom_minimum_size.y >= 48, "Touch target is below 48 px")
 	ui.show_deck_select()
 	_check(ui.current_screen == "decks", "Deck selection screen did not open")
-	_check(ui.deck_one_option.item_count == 9, "Player one deck list must contain 9 decks")
-	_check(ui.deck_two_option.item_count == 9, "Player two deck list must contain 9 decks")
+	_check(ui.deck_one_option.item_count == 10, "Player one deck list must contain 10 decks")
+	_check(ui.deck_two_option.item_count == 10, "Player two deck list must contain 10 decks")
 	var started: bool = ui.start_local_match_for_test("fire", "water")
 	_check(started, "UI could not start a local match")
 	_check(ui.current_screen == "game", "Game screen did not open")
@@ -2599,7 +2600,7 @@ func _run_effect_examples(
 	engine: GameEngine,
 ) -> void:
 	var examples: Dictionary = fixture.get("effect_examples", {})
-	_check(examples.size() == 77, "Expected one real example for every effect type")
+	_check(examples.size() == 78, "Expected one real example for every effect type")
 	for effect_type in examples:
 		var state := _effect_state()
 		var stack := ResolutionStack.new()
@@ -3016,6 +3017,144 @@ func _steel_battle_state() -> GameState:
 	state.players[1].active.placed_this_turn = false
 	state.players[1].deck = ["sv1-ener-5", "sv1-ener-5", "sv1-ener-5"]
 	state.players[1].prizes = ["sv1-ener-5", "sv1-ener-5"]
+	return state
+
+
+func _run_darkness_rules_tests(
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	_check(
+		FileAccess.file_exists("res://assets/cards/svd-mabosstiff-ex.webp"),
+		"Darkness placeholder image was not exported",
+	)
+	var darkness_setup := GameState.new()
+	var setup_step := engine.setup_game(
+		darkness_setup,
+		catalog.expand_deck("darkness"),
+		catalog.expand_deck("fire"),
+		PortableRandomSource.new(4301),
+	)
+	_check(setup_step.success, "Darkness deck setup failed: %s" % setup_step.message)
+
+	var pride_state := _darkness_battle_state()
+	pride_state.players[0].active = PokemonState.new("svd-mabosstiff-ex")
+	pride_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(pride_state.players[0].active, ["sv1-ener-7", "sv1-ener-7", "sv1-ener-7"])
+	pride_state.players[0].bench[0] = PokemonState.new("svd-doduo")
+	pride_state.players[0].bench[0].damage_counters = 1
+	pride_state.players[1].active = PokemonState.new("svd-mabosstiff-ex")
+	pride_state.players[1].active.placed_this_turn = false
+	var step := engine.apply_action(
+		pride_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(4302),
+	)
+	_check(step.success, "Mabosstiff Pride Fang failed: %s" % step.message)
+	_check(
+		pride_state.players[1].active.damage_counters == 22,
+		"Mabosstiff Pride Fang did not apply damaged-bench bonus",
+	)
+
+	var intimidate_state := _darkness_battle_state()
+	intimidate_state.players[0].active = PokemonState.new("svd-mabosstiff-ex")
+	intimidate_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(intimidate_state.players[0].active, ["sv1-ener-7", "sv1-ener-7", "sv1-ener-7"])
+	intimidate_state.players[1].active = PokemonState.new("svd-maschiff")
+	intimidate_state.players[1].active.placed_this_turn = false
+	_set_energy_cards(intimidate_state.players[1].active, ["sv1-ener-7", "sv1-ener-7"])
+	step = engine.apply_action(
+		intimidate_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(4303),
+	)
+	_check(step.success, "Mabosstiff Intimidate failed: %s" % step.message)
+	_check(
+		intimidate_state.players[1].active.outgoing_damage_reduction_next_turn == 50,
+		"Intimidate did not mark opponent active",
+	)
+	step = engine.apply_action(
+		intimidate_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
+		PortableRandomSource.new(4304),
+	)
+	_check(step.success, "Reduced Maschiff attack failed: %s" % step.message)
+	_check(
+		intimidate_state.players[0].active.damage_counters == 0
+		and intimidate_state.players[1].active.outgoing_damage_reduction_next_turn == 0,
+		"Intimidate did not reduce and consume the next attack damage",
+	)
+
+	var patch_state := _darkness_battle_state()
+	patch_state.players[0].hand = ["svd-dark-patch"]
+	patch_state.players[0].discard = ["sv1-ener-7"]
+	patch_state.players[0].bench[0] = PokemonState.new("svd-maschiff")
+	patch_state.players[0].bench[1] = PokemonState.new("svd-doduo")
+	step = engine.apply_action(
+		patch_state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(4305),
+	)
+	step = _apply_slot_choice(engine, patch_state, step, "bench_0", PortableRandomSource.new(4306))
+	_check(step.success, "Dark Patch attach failed: %s" % step.message)
+	_check(
+		patch_state.players[0].bench[0].energy_card_ids == ["sv1-ener-7"]
+		and patch_state.players[0].bench[1].energy_card_ids.is_empty(),
+		"Dark Patch attached to a non-Darkness target or missed Darkness target",
+	)
+
+	var belt_state := _darkness_battle_state()
+	belt_state.players[0].active = PokemonState.new("svd-darkrai")
+	belt_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(belt_state.players[0].active, ["sv1-ener-7", "sv1-ener-7", "sv1-ener-7"])
+	belt_state.players[1].active = PokemonState.new("svd-mabosstiff-ex")
+	belt_state.players[1].active.placed_this_turn = false
+	belt_state.players[1].active.attached_tool_id = "svd-hard-belt"
+	step = engine.apply_action(
+		belt_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(4307),
+	)
+	_check(step.success, "Hard Belt damage reduction attack failed: %s" % step.message)
+	_check(
+		belt_state.players[1].active.damage_counters == 10,
+		"Hard Belt did not reduce Stage 1 incoming attack damage by 30",
+	)
+
+	var absol_state := _darkness_battle_state()
+	absol_state.players[0].active = PokemonState.new("svd-absol")
+	absol_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(absol_state.players[0].active, ["sv1-ener-7"])
+	absol_state.players[1].bench[0] = PokemonState.new("svd-maschiff")
+	absol_state.players[1].bench[1] = PokemonState.new("svd-doduo")
+	step = engine.apply_action(
+		absol_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(4308),
+	)
+	_check(step.success, "Absol Swirling Disaster failed: %s" % step.message)
+	_check(
+		absol_state.players[1].active.damage_counters == 1
+		and absol_state.players[1].bench[0].damage_counters == 1
+		and absol_state.players[1].bench[1].damage_counters == 1,
+		"Absol Swirling Disaster did not damage active and all bench",
+	)
+
+
+func _darkness_battle_state() -> GameState:
+	var state := GameState.new()
+	state.phase = "MAIN"
+	state.turn_number = 3
+	state.first_player_idx = 1
+	state.active_player_idx = 0
+	state.players[0].active = PokemonState.new("svd-absol")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].deck = ["sv1-ener-7", "sv1-ener-7", "sv1-ener-7"]
+	state.players[0].prizes = ["sv1-ener-7", "sv1-ener-7"]
+	state.players[1].active = PokemonState.new("svd-maschiff")
+	state.players[1].active.placed_this_turn = false
+	state.players[1].deck = ["sv1-ener-7", "sv1-ener-7", "sv1-ener-7"]
+	state.players[1].prizes = ["sv1-ener-7", "sv1-ener-7"]
 	return state
 
 

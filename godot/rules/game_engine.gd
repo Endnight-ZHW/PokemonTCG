@@ -850,6 +850,9 @@ func _apply_attack_damage(
 	for energy_id in attacker.energy_card_ids:
 		if energy_id == "svi-dtur":
 			damage -= 20
+	if attacker.outgoing_damage_reduction_next_turn > 0:
+		damage -= attacker.outgoing_damage_reduction_next_turn
+		attacker.outgoing_damage_reduction_next_turn = 0
 	if not attacker.attached_tool_id.is_empty():
 		for effect_value in catalog.get_card(attacker.attached_tool_id).get("trainer_effects", []):
 			var effect: Dictionary = effect_value
@@ -863,6 +866,14 @@ func _apply_attack_damage(
 				and state.get_player(actor).prizes.size() > state.get_player(1 - actor).prizes.size()
 			):
 				damage += 30
+	if not ignore_defender_effects and not defender.attached_tool_id.is_empty():
+		for effect_value in catalog.get_card(defender.attached_tool_id).get("trainer_effects", []):
+			var effect: Dictionary = effect_value
+			if str(effect.get("effect_type", "")) != "tool":
+				continue
+			var modifier := str(effect.get("params", {}).get("effect", ""))
+			if modifier == "damage_reduction_stage1" and catalog.is_stage1(defender.card_id):
+				damage -= int(effect.get("params", {}).get("amount", 30))
 	damage = max(0, damage)
 	if state.apply_type_matchups and not piercing:
 		var defending_card := catalog.get_card(defender.card_id)
@@ -942,6 +953,7 @@ func _end_turn(
 	for row in outgoing.get_all_pokemon():
 		var pokemon: PokemonState = row["pokemon"]
 		if pokemon:
+			pokemon.outgoing_damage_reduction_next_turn = 0
 			pokemon.dazzled = false
 			pokemon.attack_locked = false
 			var expired: Array[String] = []

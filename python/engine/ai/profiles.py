@@ -171,6 +171,19 @@ DECK_AI_PROFILES: dict[str, DeckAIProfile] = {
         attack_keywords=("bench", "energy", "metal", "revenge"),
         weights=_weights(core_in_play=86, engine_in_play=56, preferred_bench=32, matching_energy_attached=26, bench_count=16),
     ),
+    "darkness": DeckAIProfile(
+        key="darkness",
+        name="Mabosstiff ex damage pressure",
+        core_cards={"svd-mabosstiff-ex", "svd-dodrio"},
+        engine_cards={"svd-maschiff", "svd-doduo", "svd-dark-patch", "svl-chat"},
+        setup_active={"svd-maschiff", "svd-doduo", "svd-absol", "svd-morpeko", "svl-chat"},
+        preferred_bench={"svd-maschiff", "svd-doduo", "svd-mabosstiff-ex"},
+        evolution_cards={"svd-mabosstiff-ex", "svd-dodrio"},
+        energy_types={"Darkness"},
+        trainer_cards={"sv1-151", "sv1-153", "svd-dark-patch", "svd-hard-belt", "sv1-204"},
+        attack_keywords=("damage", "draw", "darkness", "prevent"),
+        weights=_weights(core_in_play=88, engine_in_play=58, preferred_bench=34, evolved_count=46, matching_energy_attached=26),
+    ),
 }
 
 

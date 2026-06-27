@@ -7,12 +7,13 @@
     "svi-chim": 3624
   },
   "counts": {
-    "cards": 126,
-    "decks": 9,
-    "effects": 77
+    "cards": 137,
+    "decks": 10,
+    "effects": 78
   },
   "deck_sizes": {
     "colorless": 60,
+    "darkness": 60,
     "dragon": 60,
     "fighting": 60,
     "fire": 60,
@@ -37,6 +38,13 @@
         "player": "opponent"
       }
     },
+    "apply_outgoing_damage_reduction": {
+      "effect_type": "apply_outgoing_damage_reduction",
+      "params": {
+        "amount": 50,
+        "target": "opponent_active"
+      }
+    },
     "arven": {
       "effect_type": "arven",
       "params": {}
@@ -55,7 +63,8 @@
         "base": 100,
         "condition_bonus": {
           "bonus": 120,
-          "condition": "ko_by_attack_last_turn"
+          "condition": "own_bench_damaged",
+          "consume": false
         }
       }
     },
@@ -86,9 +95,9 @@
     "bench_damage": {
       "effect_type": "bench_damage",
       "params": {
-        "amount": 30,
-        "choose_targets": true,
-        "count": 1,
+        "amount": 10,
+        "choose_targets": false,
+        "count": 5,
         "player": "opponent"
       }
     },
@@ -515,7 +524,7 @@
     "self_attack_lock": {
       "effect_type": "self_attack_lock",
       "params": {
-        "attack_name": "岩窟冲撞"
+        "attack_name": "漆黑之刃"
       }
     },
     "shuffle_draw": {
@@ -536,7 +545,7 @@
     "status": {
       "effect_type": "status",
       "params": {
-        "status": "paralyzed",
+        "status": "asleep",
         "target": "opponent_active"
       }
     },
@@ -553,7 +562,8 @@
     "tool": {
       "effect_type": "tool",
       "params": {
-        "effect": "damage_boost_when_behind"
+        "amount": 30,
+        "effect": "damage_reduction_stage1"
       }
     },
     "tool_exp_share": {
@@ -572,6 +582,7 @@
   "effect_types": [
     "ability_discard_revive",
     "any_pokemon_damage",
+    "apply_outgoing_damage_reduction",
     "arven",
     "attach_from_discard",
     "attack_damage_formula",

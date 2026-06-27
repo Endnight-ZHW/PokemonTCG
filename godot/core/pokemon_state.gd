@@ -12,6 +12,7 @@ var placed_this_turn := true
 var used_abilities: Array[String] = []
 var damage_prevented_next_turn := false
 var all_prevented_next_turn := false
+var outgoing_damage_reduction_next_turn := 0
 var attack_locked := false
 var attack_locked_names: Dictionary = {}
 var dazzled := false
@@ -100,6 +101,7 @@ func to_dict() -> Dictionary:
 		"used_abilities": used_abilities.duplicate(),
 		"damage_prevented_next_turn": damage_prevented_next_turn,
 		"all_prevented_next_turn": all_prevented_next_turn,
+		"outgoing_damage_reduction_next_turn": outgoing_damage_reduction_next_turn,
 		"attack_locked": attack_locked,
 		"attack_locked_names": attack_locked_names.duplicate(true),
 		"dazzled": dazzled,
@@ -119,6 +121,7 @@ static func from_dict(data: Dictionary) -> PokemonState:
 	result.used_abilities.assign(data.get("used_abilities", []))
 	result.damage_prevented_next_turn = bool(data.get("damage_prevented_next_turn", false))
 	result.all_prevented_next_turn = bool(data.get("all_prevented_next_turn", false))
+	result.outgoing_damage_reduction_next_turn = int(data.get("outgoing_damage_reduction_next_turn", 0))
 	result.attack_locked = bool(data.get("attack_locked", false))
 	result.attack_locked_names = Dictionary(data.get("attack_locked_names", {})).duplicate(true)
 	result.dazzled = bool(data.get("dazzled", false))

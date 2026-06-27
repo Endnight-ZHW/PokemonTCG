@@ -6,6 +6,7 @@ const SUPPORTED_EFFECT_TYPES: Array[String] = [
 	"ability_discard_revive",
 	"any_pokemon_damage",
 	"arven",
+	"apply_outgoing_damage_reduction",
 	"attach_from_discard",
 	"attack_fail",
 	"attack_damage_formula",
@@ -386,6 +387,23 @@ func _execute_effect(
 				{"amount": int(params.get("amount", 0)), "target_player": 1 - player_idx},
 				"选择1只对手宝可梦作为伤害目标。")
 		"bench_damage":
+			if not bool(params.get("choose_targets", true)):
+				var target_idx := 1 - player_idx
+				var applied := 0
+				for index in range(state.get_player(target_idx).bench.size()):
+					if applied >= int(params.get("count", 1)):
+						break
+					var bench_pokemon: PokemonState = state.get_player(target_idx).bench[index]
+					if bench_pokemon:
+						_deal_damage(
+							state,
+							target_idx,
+							"bench_%d" % index,
+							int(params.get("amount", 0)),
+							events,
+						)
+						applied += 1
+				return _ok("备战伤害已结算。")
 			return _request_bench_target(
 				state, stack, player_idx, 1 - player_idx, "bench_damage_target",
 				{"amount": int(params.get("amount", 0)), "target_player": 1 - player_idx},
@@ -428,6 +446,21 @@ func _execute_effect(
 					return _ok("攻击封锁被免疫。")
 				if catalog.is_basic_pokemon(opponent.active.card_id):
 					opponent.active.attack_locked = true
+			return _ok()
+		"apply_outgoing_damage_reduction":
+			var reduction_target := (
+				opponent.active
+				if str(params.get("target", "opponent_active")) == "opponent_active"
+				else player.get_pokemon(source_slot)
+			)
+			if reduction_target:
+				if reduction_target.all_prevented_next_turn:
+					reduction_target.all_prevented_next_turn = false
+					return _ok("恫吓效果被免疫。")
+				reduction_target.outgoing_damage_reduction_next_turn = maxi(
+					reduction_target.outgoing_damage_reduction_next_turn,
+					int(params.get("amount", 0)),
+				)
 			return _ok()
 		"self_attack_lock":
 			var lock_target := player.get_pokemon(source_slot)
@@ -1312,6 +1345,7 @@ func _attach_from_discard(
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var energy_type := str(params.get("energy_type", "any")).to_lower()
+	var target_pokemon_type := str(params.get("target_pokemon_type", ""))
 	var matching: Array[String] = []
 	for card_id in player.discard:
 		if not catalog.is_basic_energy(card_id):
@@ -1328,19 +1362,31 @@ func _attach_from_discard(
 	var slots: Array[String] = []
 	match str(params.get("target", "self")):
 		"self":
-			slots.append(source_slot)
+			var source_pokemon := player.get_pokemon(source_slot)
+			if source_pokemon and _pokemon_matches_type(source_pokemon, target_pokemon_type):
+				slots.append(source_slot)
 		"bench":
 			for index in range(player.bench.size()):
-				if player.bench[index]:
+				if player.bench[index] and _pokemon_matches_type(player.bench[index], target_pokemon_type):
 					slots.append("bench_%d" % index)
 		_:
 			for row in player.get_all_pokemon():
-				if row["pokemon"]:
+				if row["pokemon"] and _pokemon_matches_type(row["pokemon"], target_pokemon_type):
 					slots.append(str(row["slot"]))
 	return _request_energy_target(
 		state, stack, player_idx, "discard",
 		matching.slice(0, min(int(params.get("amount", 1)), matching.size())),
 		slots)
+
+
+func _pokemon_matches_type(pokemon: PokemonState, target_type: String) -> bool:
+	if target_type.is_empty():
+		return true
+	var normalized := target_type.to_lower()
+	for card_type in catalog.get_card(pokemon.card_id).get("energy_types", []):
+		if str(card_type).to_lower() == normalized:
+			return true
+	return false
 
 
 func _request_energy_target(
@@ -1891,10 +1937,30 @@ func _attack_damage_formula(
 			if _energy_matches(energy_id, per_self_energy_type):
 				energy_count += 1
 		total += energy_count * int(params.get("per_energy", 0))
+	var per_self_damage_counter := int(params.get("per_self_damage_counter", 0))
+	if per_self_damage_counter > 0:
+		total += source.damage_counters * per_self_damage_counter
 	var condition_bonus: Dictionary = params.get("condition_bonus", {})
-	if str(condition_bonus.get("condition", "")) == "ko_by_attack_last_turn" and player.was_ko_by_attack:
+	var condition := str(condition_bonus.get("condition", ""))
+	var applies := false
+	var formula_opponent := state.get_player(1 - player_idx)
+	match condition:
+		"ko_by_attack_last_turn":
+			applies = player.was_ko_by_attack
+		"own_bench_damaged":
+			for bench_pokemon in player.bench:
+				if bench_pokemon and bench_pokemon.damage_counters > 0:
+					applies = true
+					break
+		"opponent_active_evolved":
+			applies = formula_opponent.active != null and not catalog.is_basic_pokemon(formula_opponent.active.card_id)
+		"opponent_active_damaged":
+			applies = formula_opponent.active != null and formula_opponent.active.damage_counters > 0
+		"own_hand_empty":
+			applies = player.hand.is_empty()
+	if applies:
 		total += int(condition_bonus.get("bonus", 0))
-		if bool(condition_bonus.get("consume", true)):
+		if condition == "ko_by_attack_last_turn" and bool(condition_bonus.get("consume", true)):
 			player.was_ko_by_attack = false
 	stack.context["base_damage"] = total
 	if bool(params.get("piercing", false)):

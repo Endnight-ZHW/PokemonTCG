@@ -21,6 +21,7 @@ from data.card_registry import CardRegistry
 from data.deck_definitions import (
     ALL_CARD_IDS,
     COLORLESS_DECK,
+    DARKNESS_DECK,
     DRAGON_DECK,
     FIGHTING_DECK,
     FIRE_DECK,
@@ -103,6 +104,11 @@ DECKS = {
         "name": "苍响·藏玛然特",
         "energy_type": "Metal",
         "cards": STEEL_DECK,
+    },
+    "darkness": {
+        "name": "獒教父ex",
+        "energy_type": "Darkness",
+        "cards": DARKNESS_DECK,
     },
 }
 
@@ -517,6 +523,7 @@ def _pokemon_payload(pokemon) -> dict[str, Any] | None:
         "used_abilities": sorted(pokemon.used_abilities),
         "damage_prevented_next_turn": pokemon.damage_prevented_next_turn,
         "all_prevented_next_turn": pokemon.all_prevented_next_turn,
+        "outgoing_damage_reduction_next_turn": pokemon.outgoing_damage_reduction_next_turn,
         "attack_locked": pokemon.attack_locked,
         "attack_locked_names": dict(pokemon.attack_locked_names),
         "dazzled": pokemon.dazzled,

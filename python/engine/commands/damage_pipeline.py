@@ -51,6 +51,14 @@ def resolve_damage(
                 current = max(0, current + delta)
                 logs.append(f"{source}效果：伤害{delta:+d}。")
 
+    outgoing_reduction = int(
+        getattr(attacker, "outgoing_damage_reduction_next_turn", 0) or 0
+    )
+    if outgoing_reduction > 0:
+        current = max(0, current - outgoing_reduction)
+        attacker.outgoing_damage_reduction_next_turn = 0
+        logs.append(f"恫吓效果：伤害-{outgoing_reduction}。")
+
     # Step 2: Weakness & resistance (unless piercing or disabled by match rules)
     if (not piercing and getattr(state, "apply_type_matchups", False)
             and defender and defender.card):

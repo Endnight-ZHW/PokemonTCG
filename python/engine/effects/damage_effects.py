@@ -151,12 +151,31 @@ def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
         energy_count = _count_attached_energy_of_type(attacker, str(energy_type))
         total += energy_count * per_energy
 
+    per_self_damage_counter = int(params.get("per_self_damage_counter", 0) or 0)
+    if per_self_damage_counter:
+        total += attacker.damage_counters * per_self_damage_counter
+
     condition_bonus = params.get("condition_bonus") or {}
     if isinstance(condition_bonus, dict):
         condition = str(condition_bonus.get("condition", "") or "")
-        if condition == "ko_by_attack_last_turn" and player.was_ko_by_attack:
+        applies = False
+        if condition == "ko_by_attack_last_turn":
+            applies = player.was_ko_by_attack
+        elif condition == "own_bench_damaged":
+            applies = any(
+                poke is not None and poke.damage_counters > 0
+                for poke in player.bench
+            )
+        elif condition == "opponent_active_evolved":
+            applies = defender is not None and not defender.card.is_basic_pokemon
+        elif condition == "opponent_active_damaged":
+            applies = defender is not None and defender.damage_counters > 0
+        elif condition == "own_hand_empty":
+            applies = len(player.hand) == 0
+
+        if applies:
             total += int(condition_bonus.get("bonus", 0) or 0)
-            if bool(condition_bonus.get("consume", True)):
+            if condition == "ko_by_attack_last_turn" and bool(condition_bonus.get("consume", True)):
                 player.was_ko_by_attack = False
 
     ignore_defender_effects = bool(params.get("ignore_defender_effects", False))

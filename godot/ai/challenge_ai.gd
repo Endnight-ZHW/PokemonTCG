@@ -890,7 +890,7 @@ func _effects_tactical_value(
 				value += 55.0
 			"prevent_damage", "prevent_all", "prevent_effects":
 				value += 80.0
-			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "self_attack_lock":
+			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "apply_outgoing_damage_reduction", "self_attack_lock":
 				value += 45.0
 			"damage", "any_pokemon_damage", "damage_counter_self", "place_counters_and_self_ko", "bench_damage":
 				value += int(params.get("amount", params.get("damage", 0))) * 1.2
@@ -1050,11 +1050,26 @@ func _effect_damage_estimate(
 					if _energy_card_matches_type(energy_id, per_self_energy_type, catalog):
 						energy_count += 1
 				total += energy_count * int(params.get("per_energy", 0))
+			if active:
+				total += active.damage_counters * int(params.get("per_self_damage_counter", 0))
 			var condition_bonus: Dictionary = params.get("condition_bonus", {})
-			if (
-				str(condition_bonus.get("condition", "")) == "ko_by_attack_last_turn"
-				and player.was_ko_by_attack
-			):
+			var condition := str(condition_bonus.get("condition", ""))
+			var applies := false
+			match condition:
+				"ko_by_attack_last_turn":
+					applies = player.was_ko_by_attack
+				"own_bench_damaged":
+					for bench_pokemon in player.bench:
+						if bench_pokemon and bench_pokemon.damage_counters > 0:
+							applies = true
+							break
+				"opponent_active_evolved":
+					applies = opponent.active != null and not catalog.is_basic_pokemon(opponent.active.card_id)
+				"opponent_active_damaged":
+					applies = opponent.active != null and opponent.active.damage_counters > 0
+				"own_hand_empty":
+					applies = player.hand.is_empty()
+			if applies:
 				total += int(condition_bonus.get("bonus", 0))
 			return total
 		"damage_per_hand_size":
@@ -1155,6 +1170,8 @@ func _modified_attack_damage(
 	for energy_id in attacker.energy_card_ids:
 		if energy_id == "svi-dtur":
 			damage -= 20
+	if attacker.outgoing_damage_reduction_next_turn > 0:
+		damage -= attacker.outgoing_damage_reduction_next_turn
 	if not attacker.attached_tool_id.is_empty():
 		for effect_value in catalog.get_card(attacker.attached_tool_id).get("trainer_effects", []):
 			var effect: Dictionary = effect_value
@@ -1168,6 +1185,14 @@ func _modified_attack_damage(
 				and state.get_player(actor).prizes.size() > state.get_player(1 - actor).prizes.size()
 			):
 				damage += 30
+	if not ignore_defender_effects and not defender.attached_tool_id.is_empty():
+		for effect_value in catalog.get_card(defender.attached_tool_id).get("trainer_effects", []):
+			var effect: Dictionary = effect_value
+			if str(effect.get("effect_type", "")) != "tool":
+				continue
+			var modifier := str(effect.get("params", {}).get("effect", ""))
+			if modifier == "damage_reduction_stage1" and catalog.is_stage1(defender.card_id):
+				damage -= int(effect.get("params", {}).get("amount", 30))
 	if state.apply_type_matchups and not piercing:
 		var attacking_type := "Colorless"
 		var attacking_card := catalog.get_card(attacker.card_id)

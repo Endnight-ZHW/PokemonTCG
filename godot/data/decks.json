@@ -111,6 +111,102 @@
     "key": "colorless",
     "name": "一家鼠ex"
   },
+  "darkness": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svd-mabosstiff-ex",
+        "count": 2
+      },
+      {
+        "card_id": "svd-maschiff",
+        "count": 3
+      },
+      {
+        "card_id": "svd-dodrio",
+        "count": 2
+      },
+      {
+        "card_id": "svd-doduo",
+        "count": 3
+      },
+      {
+        "card_id": "svd-seviper",
+        "count": 1
+      },
+      {
+        "card_id": "svd-absol",
+        "count": 1
+      },
+      {
+        "card_id": "svd-darkrai",
+        "count": 1
+      },
+      {
+        "card_id": "svd-morpeko",
+        "count": 1
+      },
+      {
+        "card_id": "svl-chat",
+        "count": 1
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "svd-dark-patch",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 3
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "svd-hard-belt",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-204",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-7",
+        "count": 15
+      }
+    ],
+    "energy_type": "Darkness",
+    "key": "darkness",
+    "name": "獒教父ex"
+  },
   "dragon": {
     "card_count": 60,
     "cards": [

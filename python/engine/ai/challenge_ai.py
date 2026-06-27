@@ -2335,6 +2335,41 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                         damage += bonus
                 elif opponent.active.damage_counters > 0:
                     damage += bonus
+            elif etype == "attack_damage_formula":
+                formula_damage = int(params.get("base", 0) or 0)
+                per_own_bench = int(params.get("per_own_bench", 0) or 0)
+                if per_own_bench:
+                    formula_damage += player.bench_count() * per_own_bench
+                per_counter = int(params.get("per_self_damage_counter", 0) or 0)
+                if per_counter:
+                    formula_damage += player.active.damage_counters * per_counter
+                energy_type = str(params.get("per_self_energy_type", "") or "").lower()
+                if energy_type:
+                    energy_count = sum(
+                        1 for c in player.active.energy_cards
+                        if energy_type in {
+                            str(e).lower()
+                            for e in getattr(c, "provides_energy", [])
+                        }
+                    )
+                    formula_damage += energy_count * int(params.get("per_energy", 0) or 0)
+                condition_bonus = params.get("condition_bonus") or {}
+                if isinstance(condition_bonus, dict):
+                    condition = str(condition_bonus.get("condition", "") or "")
+                    applies = False
+                    if condition == "ko_by_attack_last_turn":
+                        applies = player.was_ko_by_attack
+                    elif condition == "own_bench_damaged":
+                        applies = any(p is not None and p.damage_counters > 0 for p in player.bench)
+                    elif condition == "opponent_active_evolved":
+                        applies = opponent.active is not None and not opponent.active.card.is_basic_pokemon
+                    elif condition == "opponent_active_damaged":
+                        applies = opponent.active is not None and opponent.active.damage_counters > 0
+                    elif condition == "own_hand_empty":
+                        applies = len(player.hand) == 0
+                    if applies:
+                        formula_damage += int(condition_bonus.get("bonus", 0) or 0)
+                damage = max(damage, formula_damage)
             elif etype == "conditional_damage_heal":
                 base = int(params.get("base", damage) or 0)
                 bonus = int(params.get("bonus", 0) or 0)
@@ -2420,6 +2455,32 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 heads_damage = self._branch_expected_damage(state, player_idx, heads)
                 tails_damage = self._branch_expected_damage(state, player_idx, tails)
                 damage = max(damage, int((heads_damage + tails_damage) / 2))
+        damage = self._apply_estimated_damage_modifiers(state, player_idx, damage)
+        return max(0, damage)
+
+    def _apply_estimated_damage_modifiers(self, state: GameState, player_idx: int, damage: int) -> int:
+        player = state.get_player(player_idx)
+        opponent = state.get_player(1 - player_idx)
+        attacker = player.active
+        defender = opponent.active
+        if attacker is None or defender is None or damage <= 0:
+            return max(0, damage)
+
+        defender_tool = getattr(defender, "attached_tool", None)
+        if defender_tool is not None:
+            for effect in getattr(defender_tool, "trainer_effects", []) or []:
+                params = getattr(effect, "params", {}) or {}
+                if (
+                    params.get("effect") == "damage_reduction_stage1"
+                    and getattr(defender.card, "is_stage1", False)
+                ):
+                    damage -= int(params.get("amount", 30) or 30)
+
+        outgoing_reduction = int(
+            getattr(attacker, "outgoing_damage_reduction_next_turn", 0) or 0
+        )
+        if outgoing_reduction > 0:
+            damage -= outgoing_reduction
         return max(0, damage)
 
     @staticmethod
@@ -2531,7 +2592,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     value += 0
                 else:
                     value += 65 if opponent.bench_count() else 0
-            elif etype in ("prevent_all", "attack_lock_basic", "self_attack_lock"):
+            elif etype in (
+                "prevent_all",
+                "attack_lock_basic",
+                "apply_outgoing_damage_reduction",
+                "self_attack_lock",
+            ):
                 if target_immune_effects and etype != "self_attack_lock":
                     value += 0
                 else:

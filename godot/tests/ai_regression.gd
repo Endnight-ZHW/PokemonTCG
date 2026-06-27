@@ -7,7 +7,7 @@ const DEEP_DECK_KEYS := [
 
 const CHALLENGE_DECK_KEYS := [
 	"fire", "water", "psychic", "lightning",
-	"fighting", "colorless", "dragon", "grass", "steel",
+	"fighting", "colorless", "dragon", "grass", "darkness", "steel",
 ]
 
 var failures: Array[String] = []

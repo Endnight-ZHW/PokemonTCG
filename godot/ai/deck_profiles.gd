@@ -83,6 +83,15 @@ const PROFILES := {
 		"trainer": ["sv1-151", "sv1-153", "svm-marnie-pride", "svg2-exps", "svl-vitb"],
 		"energy": ["Metal"],
 	},
+	"darkness": {
+		"core": ["svd-mabosstiff-ex", "svd-dodrio"],
+		"engine": ["svd-maschiff", "svd-doduo", "svd-dark-patch", "svl-chat"],
+		"setup": ["svd-maschiff", "svd-doduo", "svd-absol", "svd-morpeko", "svl-chat"],
+		"bench": ["svd-maschiff", "svd-doduo", "svd-mabosstiff-ex"],
+		"evolution": ["svd-mabosstiff-ex", "svd-dodrio"],
+		"trainer": ["sv1-151", "sv1-153", "svd-dark-patch", "svd-hard-belt", "sv1-204"],
+		"energy": ["Darkness"],
+	},
 }
 
 

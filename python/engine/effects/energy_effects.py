@@ -35,6 +35,13 @@ def _energy_card_matches(card, energy_type: str) -> bool:
     return any(et.lower() == energy_type.lower() for et in card.provides_energy)
 
 
+def _pokemon_matches_target_type(pokemon, target_type: str) -> bool:
+    target_type = str(target_type or "").lower()
+    if not target_type:
+        return True
+    return any(str(card_type).lower() == target_type for card_type in pokemon.card.energy_types)
+
+
 def _handle_energy_attach(state, player, player_idx, params, source_slot):
     """Attach energy from hand or deck to a Pokemon."""
     amount = params.get("amount", 1)
@@ -441,6 +448,7 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
     amount = params.get("amount", 1)
     energy_type = params.get("energy_type", "any")
     target_spec = params.get("target", "self")
+    target_pokemon_type = str(params.get("target_pokemon_type", "") or "")
 
     matching = [
         c for c in player.discard
@@ -456,12 +464,18 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
         target_pokemon = player.active
         if target_pokemon is None:
             return ActionResult(False, "没有战斗宝可梦。")
+        if not _pokemon_matches_target_type(target_pokemon, target_pokemon_type):
+            return ActionResult(True, "没有符合条件的附着目标。")
         _attach_cards_to_pokemon(state, player, matching, count, target_pokemon, energy_type)
 
     elif target_spec == "bench":
-        bench_slots = [(i, p) for i, p in enumerate(player.bench) if p is not None]
+        bench_slots = [
+            (i, p)
+            for i, p in enumerate(player.bench)
+            if p is not None and _pokemon_matches_target_type(p, target_pokemon_type)
+        ]
         if not bench_slots:
-            return ActionResult(True, "备战区无宝可梦。")
+            return ActionResult(True, "备战区无符合条件的宝可梦。")
         if len(bench_slots) == 1:
             target_pokemon = bench_slots[0][1]
             _attach_cards_to_pokemon(state, player, matching, count, target_pokemon, energy_type)
@@ -513,10 +527,10 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
 
     elif target_spec == "self_or_bench":
         all_pokemon = []
-        if player.active:
+        if player.active and _pokemon_matches_target_type(player.active, target_pokemon_type):
             all_pokemon.append(("active", player.active))
         for i, p in enumerate(player.bench):
-            if p is not None:
+            if p is not None and _pokemon_matches_target_type(p, target_pokemon_type):
                 all_pokemon.append((f"bench_{i}", p))
         if not all_pokemon:
             return ActionResult(False, "没有目标宝可梦。")

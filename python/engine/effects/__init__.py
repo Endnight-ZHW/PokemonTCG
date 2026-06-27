@@ -33,6 +33,7 @@ from engine.effects.status_effects import (
     _handle_attack_fail,
     _handle_dazzling_beam,
     _handle_attack_lock_basic,
+    _handle_apply_outgoing_damage_reduction,
     _handle_self_attack_lock,
     _handle_prevent_all,
     _handle_prevent_damage,
@@ -176,6 +177,8 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         return _handle_damage_plus_bench(state, player, opponent, params)
     elif effect_type == "attack_lock_basic":
         return _handle_attack_lock_basic(state, opponent, params)
+    elif effect_type == "apply_outgoing_damage_reduction":
+        return _handle_apply_outgoing_damage_reduction(state, player, opponent, params)
     elif effect_type == "return_to_hand":
         return _handle_return_to_hand(state, player_idx, params, source_slot)
     elif effect_type == "piercing_marker":

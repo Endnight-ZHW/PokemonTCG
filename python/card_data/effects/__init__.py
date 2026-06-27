@@ -1,6 +1,7 @@
 """Aggregated built-in card effects."""
 
 from .colorless import EFFECTS as COLORLESS_EFFECTS
+from .darkness import EFFECTS as DARKNESS_EFFECTS
 from .dragon import EFFECTS as DRAGON_EFFECTS
 from .energy import EFFECTS as ENERGY_EFFECTS
 from .fighting import EFFECTS as FIGHTING_EFFECTS
@@ -14,6 +15,7 @@ from .water import EFFECTS as WATER_EFFECTS
 
 CARD_EFFECTS: dict[str, dict] = {}
 CARD_EFFECTS.update(COLORLESS_EFFECTS)
+CARD_EFFECTS.update(DARKNESS_EFFECTS)
 CARD_EFFECTS.update(DRAGON_EFFECTS)
 CARD_EFFECTS.update(ENERGY_EFFECTS)
 CARD_EFFECTS.update(FIGHTING_EFFECTS)

@@ -142,6 +142,27 @@ def _handle_attack_lock_basic(state, opponent, params):
     return ActionResult(True, "目标不是基础宝可梦，冻结无效。")
 
 
+def _handle_apply_outgoing_damage_reduction(state, player, opponent, params):
+    """Mark a Pokemon so its next attack deals less damage."""
+    target_str = params.get("target", "opponent_active")
+    amount = int(params.get("amount", 0) or 0)
+    target = opponent.active if target_str == "opponent_active" else player.active
+    if target is None or amount <= 0:
+        return ActionResult(True, "没有目标。")
+
+    if getattr(target, "all_prevented_next_turn", False):
+        target.all_prevented_next_turn = False
+        state._log(f"{target.card.name}免疫了恫吓的效果！")
+        return ActionResult(True, "免疫了效果。")
+
+    target.outgoing_damage_reduction_next_turn = max(
+        int(getattr(target, "outgoing_damage_reduction_next_turn", 0) or 0),
+        amount,
+    )
+    state._log(f"{target.card.name}下次使用招式的伤害-{amount}。")
+    return ActionResult(True, f"{target.card.name}被恫吓。")
+
+
 def _handle_self_attack_lock(state, player, params, source_slot):
     """Lock a specific attack from being used consecutively.
     Used by 岩窟冲撞: can't use on consecutive turns."""

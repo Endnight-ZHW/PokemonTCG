@@ -208,3 +208,20 @@ def _register_tool_modifier(tool_card, pokemon, player_idx: int,
                 return None
             event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, vital_mod,
                               source=source, owner_player=player_idx, priority=35)
+
+        # 坚硬束带: Stage 1 holder takes -30 attack damage.
+        if effect_name == "damage_reduction_stage1":
+            amount = int(eff.params.get("amount", 30) or 30)
+
+            def hard_belt_mod(data: dict, *, amount=amount) -> dict | None:
+                defender = data.get("defender")
+                if defender is not pokemon:
+                    return None
+                if data.get("ignore_defender_effects"):
+                    return None
+                if not getattr(pokemon.card, "is_stage1", False):
+                    return None
+                return {"delta": -amount, "source": "坚硬束带"}
+
+            event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, hard_belt_mod,
+                               source=source, owner_player=player_idx, priority=42)
