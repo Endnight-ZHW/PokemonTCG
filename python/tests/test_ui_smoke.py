@@ -43,7 +43,7 @@ from ui.screens.deck_select import DeckSelectScreen
 from ui.screens.end_screen import EndScreen
 from ui.screens.attached_cards_screen import AttachedCardsScreen
 from ui.screens.ai_training_screen import AITrainingScreen
-from ui.screens.card_image_screen import CardImageScreen
+from ui.screens.card_image_screen import CardImageScreen, PendingImage
 from ui.screens.card_image_screen import (
     CANDIDATE_ROW_H, LEFT_W, LEFT_X, RIGHT_W, RIGHT_X, ROW_H, WORK_H, WORK_TOP,
 )
@@ -217,6 +217,117 @@ class UiSmokeTests(unittest.TestCase):
         self.assertIn("svg-tatsu", duplicate_ids)
         self.assertIn("sv2-tatsu", duplicate_ids)
         screen.draw(self.surface)
+
+    def test_card_image_manager_search_accepts_text_input_and_clipboard_paste(self):
+        screen = CardImageScreen(self._manager())
+        screen.filter_type = "all"
+        screen._apply_filter_and_sort()
+        screen._activate_search_input()
+
+        screen.handle_event(pygame.event.Event(pygame.TEXTEDITING, {"text": "皮", "start": 0, "length": 1}))
+        self.assertEqual(screen._composition_text, "皮")
+        screen.handle_event(pygame.event.Event(pygame.TEXTINPUT, {"text": "皮卡丘"}))
+        self.assertEqual(screen._composition_text, "")
+        self.assertEqual(screen.search_query, "皮卡丘")
+        screen.search_query = ""
+
+        screen.manager._app = type("FakeApp", (), {
+            "_lb_scale": 0.5,
+            "_lb_ox": 10,
+            "_lb_oy": 20,
+        })()
+        self.assertEqual(
+            screen._window_rect(pygame.Rect(100, 50, 20, 10)),
+            pygame.Rect(60, 45, 10, 5),
+        )
+
+        screen.handle_event(pygame.event.Event(
+            pygame.KEYDOWN,
+            {"key": pygame.K_s, "unicode": "s", "mod": 0},
+        ))
+        screen.handle_event(pygame.event.Event(pygame.TEXTINPUT, {"text": "s"}))
+        self.assertEqual(screen.search_query, "s")
+        screen.search_query = ""
+
+        screen.handle_event(pygame.event.Event(pygame.TEXTINPUT, {"text": "sv2-"}))
+        with patch("ui.screens.card_image_screen._get_clipboard_text", return_value="tatsu\n"):
+            with patch.object(screen, "_paste_from_clipboard") as paste_image:
+                screen.handle_event(pygame.event.Event(
+                    pygame.KEYDOWN,
+                    {"key": pygame.K_v, "mod": pygame.KMOD_CTRL},
+                ))
+
+        self.assertEqual(screen.search_query, "sv2-tatsu")
+        self.assertEqual(len(screen.display_cards), 1)
+        self.assertEqual(screen.display_cards[0].card_id, "sv2-tatsu")
+        paste_image.assert_not_called()
+
+    def test_card_image_manager_draws_pending_image_preview(self):
+        screen = CardImageScreen(self._manager())
+        with temp_dir() as tmp:
+            image_path = os.path.join(tmp, "pending.png")
+            image = pygame.Surface((24, 36), pygame.SRCALPHA)
+            image.fill((220, 40, 80, 255))
+            pygame.image.save(image, image_path)
+
+            screen.pending_image = PendingImage(image_path, "pending.png", "剪贴板", is_temp=True)
+            screen.image_candidates = []
+            screen.draw(self.surface)
+
+            self.assertEqual(screen._preview_cache_key, image_path)
+            self.assertIsNotNone(screen._preview_cache_surface)
+
+    def test_card_image_manager_godot_sync_button_runs_export(self):
+        screen = CardImageScreen(self._manager())
+        self.assertIn("sync_godot", screen._button_rects())
+
+        with patch.object(screen, "_run_godot_sync_command", return_value=(True, "export ok")) as run_sync:
+            screen._start_godot_sync()
+            self._pump_until(screen, lambda: not screen._sync_active, frames=20, dt=0.05)
+
+        run_sync.assert_called_once()
+        self.assertIn("Godot同步完成", screen._toast_text)
+
+    def test_card_image_manager_treats_card_back_as_missing(self):
+        real = Card(api_id="test-real-image", name="真实卡图", supertype="Pokémon",
+                    subtypes=["Basic"], energy_types=["Fire"])
+        placeholder = Card(api_id="test-card-back", name="卡背占位", supertype="Pokémon",
+                           subtypes=["Basic"], energy_types=["Water"])
+        missing = Card(api_id="test-no-image", name="无卡图", supertype="Trainer",
+                       subtypes=["Item"], trainer_type="Item")
+        cards = {
+            real.api_id: real,
+            placeholder.api_id: placeholder,
+            missing.api_id: missing,
+        }
+
+        class FakeImageManager:
+            def has_card_image(self, card):
+                return card.api_id in {real.api_id, placeholder.api_id}
+
+            def has_real_card_image(self, card):
+                return card.api_id == real.api_id
+
+            def card_uses_card_back(self, card):
+                return card.api_id == placeholder.api_id
+
+            def get_unreferenced_images(self):
+                return []
+
+            def get_available_images(self):
+                return []
+
+        with patch("ui.screens.card_image_screen.get_image_manager", return_value=FakeImageManager()), \
+                patch.object(CardRegistry, "all_cards", return_value=cards):
+            screen = CardImageScreen(self._manager())
+
+        missing_ids = {entry.card_id for entry in screen.display_cards}
+        self.assertEqual(missing_ids, {placeholder.api_id, missing.api_id})
+
+        screen.filter_type = "mapped"
+        screen._apply_filter_and_sort()
+        mapped_ids = {entry.card_id for entry in screen.display_cards}
+        self.assertEqual(mapped_ids, {real.api_id})
 
     def test_card_image_manager_mouse_hit_targets_match_visible_rows(self):
         screen = CardImageScreen(self._manager())

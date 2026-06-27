@@ -4,6 +4,10 @@ import sys
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+# Ask SDL/Pygame to show the platform IME candidate UI when text input is active.
+# This must be set before pygame is imported by ui.game_app.
+os.environ.setdefault("SDL_IME_SHOW_UI", "1")
+
 # Force UTF-8 encoding for Windows console (safe method)
 if sys.platform == 'win32':
     try:

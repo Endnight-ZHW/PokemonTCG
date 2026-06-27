@@ -58,6 +58,7 @@ from engine.player_state import PokemonInPlay
 from engine.random_source import ScriptedRandomSource
 
 DEFAULT_OUTPUT = REPO_ROOT / "godot"
+CARD_ASSET_EXTS = {".webp", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff"}
 
 DECKS = {
     "fire": {
@@ -187,7 +188,29 @@ def _export_images(output: Path, mapping: dict[str, str]) -> dict[str, str]:
     card_back = PYTHON_ROOT / "data" / "images" / "卡背.webp"
     if card_back.is_file():
         shutil.copy2(card_back, target_root / "card_back.webp")
+    _remove_obsolete_card_assets(
+        target_root,
+        {Path(path).name for path in exported.values()} | {"card_back.webp"},
+    )
     return exported
+
+
+def _remove_obsolete_card_assets(target_root: Path, expected_names: set[str]) -> None:
+    """Remove generated card assets that are no longer referenced by exported data."""
+    if not target_root.is_dir():
+        return
+    expected_imports = {f"{name}.import" for name in expected_names}
+    for path in target_root.iterdir():
+        if not path.is_file():
+            continue
+        if path.suffix.lower() == ".import":
+            source_name = path.name[:-len(".import")]
+            source_ext = Path(source_name).suffix.lower()
+            if source_ext in CARD_ASSET_EXTS and path.name not in expected_imports:
+                path.unlink()
+            continue
+        if path.suffix.lower() in CARD_ASSET_EXTS and path.name not in expected_names:
+            path.unlink()
 
 
 def _card_payload(image_paths: dict[str, str]) -> dict[str, dict[str, Any]]:

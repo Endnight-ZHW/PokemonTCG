@@ -17,9 +17,13 @@ from ui.image_manager import ImageManager
 CardRegistry.initialize(ALL_CARD_IDS)
 
 
-def _write_file(path: Path, content: bytes = b"image") -> None:
+def _write_file(path: Path, content: bytes | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(content)
+    if content is not None:
+        path.write_bytes(content)
+        return
+    from PIL import Image
+    Image.new("RGBA", (2, 2), (255, 0, 0, 255)).save(path)
 
 
 class CardImageManagerTests(unittest.TestCase):
@@ -59,7 +63,48 @@ class CardImageManagerTests(unittest.TestCase):
             water_tatsugiri = CardRegistry.get("sv2-tatsu")
 
             self.assertIsNone(mgr.resolve_card_image(dragon_tatsugiri))
-            self.assertEqual(mgr.resolve_card_image(water_tatsugiri), str(specific))
+            self.assertEqual(
+                os.path.normpath(mgr.resolve_card_image(water_tatsugiri)),
+                os.path.normpath(specific),
+            )
+
+    def test_card_back_mapping_is_placeholder_not_real_card_image(self):
+        with temp_dir() as tmp:
+            root = Path(tmp)
+            card_back = root / "data" / "images" / "卡背.webp"
+            _write_file(card_back, b"back")
+            mapping_path = root / "data" / "card_image_mapping.json"
+            mapping_path.parent.mkdir(parents=True, exist_ok=True)
+            mapping_path.write_text(json.dumps({
+                "sv2-tatsu": "data/images/卡背.webp",
+            }, ensure_ascii=False), encoding="utf-8")
+
+            mgr = self._manager(root)
+            card = CardRegistry.get("sv2-tatsu")
+
+            self.assertTrue(mgr.has_card_image(card))
+            self.assertTrue(mgr.card_uses_card_back(card))
+            self.assertTrue(mgr.is_card_back_path("data/images/卡背.webp"))
+            self.assertFalse(mgr.has_real_card_image(card))
+
+    def test_normalize_preserves_card_back_placeholders(self):
+        with temp_dir() as tmp:
+            root = Path(tmp)
+            card_back = root / "data" / "images" / "卡背.webp"
+            _write_file(card_back, b"back")
+            mapping_path = root / "data" / "card_image_mapping.json"
+            mapping_path.parent.mkdir(parents=True, exist_ok=True)
+            mapping_path.write_text(json.dumps({
+                "sv2-tatsu": "data/images/卡背.webp",
+            }, ensure_ascii=False), encoding="utf-8")
+
+            mgr = self._manager(root)
+            mgr.normalize_card_image_library([CardRegistry.get("sv2-tatsu")])
+            normalized_mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(normalized_mapping, {"sv2-tatsu": os.path.normpath("data/images/卡背.webp")})
+            self.assertFalse((root / "data" / "images" / "宝可梦" / "米立龙__sv2-tatsu.webp").exists())
+            self.assertTrue(mgr.card_uses_card_back(CardRegistry.get("sv2-tatsu")))
 
     def test_normalize_card_image_library_writes_id_mapping_and_copies_shared_files(self):
         with temp_dir() as tmp:
@@ -68,9 +113,9 @@ class CardImageManagerTests(unittest.TestCase):
             water = root / "data" / "images" / "宝可梦" / "sv2-tatsu.png"
             orphan = root / "data" / "images" / "宝可梦" / "孤立图片.png"
             card_back = root / "data" / "images" / "卡背.webp"
-            _write_file(shared, b"dragon")
-            _write_file(water, b"water")
-            _write_file(orphan, b"orphan")
+            _write_file(shared)
+            _write_file(water)
+            _write_file(orphan)
             _write_file(card_back, b"back")
             mapping_path = root / "data" / "card_image_mapping.json"
             mapping_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,8 +137,8 @@ class CardImageManagerTests(unittest.TestCase):
             self.assertEqual(set(normalized_mapping), {"svg-tatsu", "sv2-tatsu"})
             self.assertTrue((root / normalized_mapping["svg-tatsu"]).exists())
             self.assertTrue((root / normalized_mapping["sv2-tatsu"]).exists())
-            self.assertEqual(Path(normalized_mapping["svg-tatsu"]).name, "米立龙__svg-tatsu.png")
-            self.assertEqual(Path(normalized_mapping["sv2-tatsu"]).name, "米立龙__sv2-tatsu.png")
+            self.assertEqual(Path(normalized_mapping["svg-tatsu"]).name, "米立龙__svg-tatsu.webp")
+            self.assertEqual(Path(normalized_mapping["sv2-tatsu"]).name, "米立龙__sv2-tatsu.webp")
             self.assertTrue(orphan.exists())
             self.assertTrue(card_back.exists())
 
@@ -140,6 +185,25 @@ class CardImageManagerTests(unittest.TestCase):
             self.assertFalse(result.deleted)
             self.assertIn("仍被", result.message)
             self.assertTrue(image.exists())
+
+    def test_delete_card_back_placeholder_keeps_shared_card_back_file(self):
+        with temp_dir() as tmp:
+            root = Path(tmp)
+            card_back = root / "data" / "images" / "卡背.webp"
+            _write_file(card_back, b"back")
+            mapping_path = root / "data" / "card_image_mapping.json"
+            mapping_path.parent.mkdir(parents=True, exist_ok=True)
+            mapping_path.write_text(json.dumps({
+                "sv2-tatsu": "data/images/卡背.webp",
+            }, ensure_ascii=False), encoding="utf-8")
+
+            mgr = self._manager(root)
+            result = mgr.delete_card_image_for_card(CardRegistry.get("sv2-tatsu"))
+            normalized_mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+
+            self.assertTrue(result.deleted, result.message)
+            self.assertTrue(card_back.exists())
+            self.assertEqual(normalized_mapping, {})
 
 
 if __name__ == "__main__":

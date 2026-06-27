@@ -653,11 +653,11 @@ class TestSnapshotAndResources(unittest.TestCase):
 
         self.assertEqual(
             mapping.get("svg-dram"),
-            "data\\images\\宝可梦\\老翁龙__svg-dram.png",
+            "data\\images\\宝可梦\\老翁龙__svg-dram.webp",
         )
         self.assertEqual(
             mapping.get("sv2-tatsu"),
-            "data\\images\\宝可梦\\米立龙__sv2-tatsu.png",
+            "data\\images\\宝可梦\\米立龙__sv2-tatsu.webp",
         )
         self.assertNotIn("老翁龙", mapping)
         self.assertNotIn("米立龙", mapping)

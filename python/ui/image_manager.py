@@ -253,11 +253,38 @@ class ImageManager:
             logger.warning("failed to load image: %s", path)
         return surface
 
+    def _write_webp_image(self, source_path: str, target_path: str) -> bool:
+        """Write source image to target_path as WebP, copying directly for WebP input."""
+        source_norm = os.path.normcase(os.path.normpath(source_path))
+        target_norm = os.path.normcase(os.path.normpath(target_path))
+        if source_norm == target_norm:
+            return True
+        try:
+            if os.path.splitext(source_path)[1].lower() == ".webp":
+                shutil.copy2(source_path, target_path)
+                return True
+            from PIL import Image
+            with Image.open(source_path) as img:
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+                img.save(target_path, format="WEBP", quality=95, method=6)
+            return True
+        except Exception as e:
+            logger.error("failed to convert image to WebP %s -> %s: %s", source_path, target_path, e)
+            return False
+
     def _path_is_under_image_cache(self, path: str) -> bool:
         try:
             return os.path.commonpath([os.path.normpath(path), self.image_cache_dir]) == self.image_cache_dir
         except ValueError:
             return False
+
+    def is_card_back_path(self, path: str | None) -> bool:
+        """Return True when a path points at the source card-back placeholder."""
+        if not path:
+            return False
+        card_back = os.path.normcase(os.path.normpath(os.path.join(self.image_cache_dir, "卡背.webp")))
+        return os.path.normcase(os.path.normpath(self._abs_path(path))) == card_back
 
     # ── Public resource API ──
 
@@ -308,22 +335,24 @@ class ImageManager:
         """Check whether the given Card has an exact resolvable image."""
         return self.resolve_card_image(card) is not None
 
+    def card_uses_card_back(self, card) -> bool:
+        """Check whether the given Card is explicitly mapped to the card back."""
+        return self.is_card_back_path(self.resolve_card_image(card))
+
+    def has_real_card_image(self, card) -> bool:
+        """Check whether a Card has an image that is not the card-back placeholder."""
+        path = self.resolve_card_image(card)
+        return path is not None and not self.is_card_back_path(path)
+
     def assign_card_image_for_card(self, card, source_path: str) -> bool:
-        """Copy an image into the canonical location and map it by api_id."""
+        """Copy an image into the canonical WebP location and map it by api_id."""
         if card is None or not getattr(card, "api_id", ""):
             return False
         if not source_path or not os.path.exists(source_path):
             return False
-        _, ext = os.path.splitext(source_path)
-        if not ext:
-            ext = ".webp"
-        target_path = self._target_path_for_card(card, ext)
+        target_path = self._target_path_for_card(card, ".webp")
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        try:
-            if os.path.normcase(os.path.normpath(source_path)) != os.path.normcase(os.path.normpath(target_path)):
-                shutil.copy2(source_path, target_path)
-        except OSError as e:
-            logger.error("failed to assign image: %s", e)
+        if not self._write_webp_image(source_path, target_path):
             return False
 
         self._custom_map[getattr(card, "api_id")] = self._rel_path(target_path)
@@ -334,7 +363,7 @@ class ImageManager:
         return True
 
     def normalize_card_image_library(self, cards: list) -> MigrationReport:
-        """Normalize mappings and filenames to api_id -> card_name__api_id.ext."""
+        """Normalize mappings and filenames to api_id -> card_name__api_id.webp."""
         old_map = dict(self._custom_map)
         new_map: dict[str, str] = {}
         legacy_sources: set[str] = set()
@@ -353,17 +382,17 @@ class ImageManager:
             if not source or not os.path.exists(source):
                 skipped += 1
                 continue
+            if self.is_card_back_path(source):
+                new_map[card.api_id] = self._rel_path(source)
+                already += 1
+                continue
 
-            _, ext = os.path.splitext(source)
-            target = self._target_path_for_card(card, ext or ".webp")
+            target = self._target_path_for_card(card, ".webp")
             os.makedirs(os.path.dirname(target), exist_ok=True)
             source_norm = os.path.normcase(os.path.normpath(source))
             target_norm = os.path.normcase(os.path.normpath(target))
             if source_norm != target_norm:
-                try:
-                    shutil.copy2(source, target)
-                except OSError as e:
-                    logger.error("failed to normalize image %s -> %s: %s", source, target, e)
+                if not self._write_webp_image(source, target):
                     skipped += 1
                     continue
                 copied += 1
@@ -416,6 +445,13 @@ class ImageManager:
             self._custom_map.pop(card.api_id, None)
             self._save_custom_mappings()
             return DeleteResult(False, "当前卡牌没有已绑定图像")
+        if self.is_card_back_path(path):
+            self._custom_map.pop(card.api_id, None)
+            self._surface_cache.pop(card.api_id, None)
+            self._surface_cache.pop(card.name, None)
+            self._save_custom_mappings()
+            self._image_map = self._scan_images()
+            return DeleteResult(True, "已移除卡背占位绑定", path)
 
         if not self._path_is_under_image_cache(path):
             return DeleteResult(False, "只能删除 data/images 内的卡图文件", path)
