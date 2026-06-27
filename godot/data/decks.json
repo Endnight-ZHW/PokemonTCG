@@ -699,6 +699,106 @@
     "key": "psychic",
     "name": "天然鸟"
   },
+  "steel": {
+    "card_count": 60,
+    "cards": [
+      {
+        "card_id": "svm-zamazenta",
+        "count": 2
+      },
+      {
+        "card_id": "svm-zacian",
+        "count": 2
+      },
+      {
+        "card_id": "svm-smeargle",
+        "count": 2
+      },
+      {
+        "card_id": "svm-bronzor",
+        "count": 3
+      },
+      {
+        "card_id": "svm-bronzong",
+        "count": 2
+      },
+      {
+        "card_id": "svm-skarmory",
+        "count": 1
+      },
+      {
+        "card_id": "svm-cobalion",
+        "count": 1
+      },
+      {
+        "card_id": "svm-dialga",
+        "count": 1
+      },
+      {
+        "card_id": "svm-klefki",
+        "count": 1
+      },
+      {
+        "card_id": "svm-orthworm",
+        "count": 1
+      },
+      {
+        "card_id": "sv3-134",
+        "count": 1
+      },
+      {
+        "card_id": "sv1-151",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-153",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-150",
+        "count": 4
+      },
+      {
+        "card_id": "sv2-catch",
+        "count": 2
+      },
+      {
+        "card_id": "svg2-exps",
+        "count": 1
+      },
+      {
+        "card_id": "svl-vitb",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-176",
+        "count": 1
+      },
+      {
+        "card_id": "sv2-young",
+        "count": 3
+      },
+      {
+        "card_id": "sv1-180",
+        "count": 4
+      },
+      {
+        "card_id": "sv1-189",
+        "count": 2
+      },
+      {
+        "card_id": "svm-marnie-pride",
+        "count": 2
+      },
+      {
+        "card_id": "sv1-ener-8",
+        "count": 15
+      }
+    ],
+    "energy_type": "Metal",
+    "key": "steel",
+    "name": "苍响·藏玛然特"
+  },
   "water": {
     "card_count": 60,
     "cards": [

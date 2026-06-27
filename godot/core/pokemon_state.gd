@@ -32,6 +32,21 @@ func current_hp(catalog: CardCatalog) -> int:
 				and catalog.is_basic_pokemon(card_id)
 			):
 				hp += 50
+	for ability in card.get("abilities", []):
+		for effect in ability.get("effects", []):
+			if str(effect.get("effect_type", "")) != "conditional_hp_boost":
+				continue
+			var params: Dictionary = effect.get("params", {})
+			var required := str(params.get("energy_type", "")).to_lower()
+			var threshold := int(params.get("threshold", 0))
+			var matching := 0
+			for energy_id in energy_card_ids:
+				for provided in catalog.provides_energy(energy_id):
+					if str(provided).to_lower() == required:
+						matching += 1
+						break
+			if matching >= threshold:
+				hp += int(params.get("amount", 0))
 	return max(0, hp - damage_counters * 10)
 
 

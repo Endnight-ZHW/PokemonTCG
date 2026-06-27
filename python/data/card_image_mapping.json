@@ -113,5 +113,16 @@
   "svl-trks": "data\\images\\物品\\健行鞋__svl-trks.png",
   "svl-vitb": "data\\images\\宝可梦道具\\活力头带__svl-vitb.png",
   "svl-zera": "data\\images\\宝可梦\\捷拉奥拉__svl-zera.png",
-  "svl-zinn": "data\\images\\支援者\\希嘉娜的决心__svl-zinn.png"
+  "svl-zinn": "data\\images\\支援者\\希嘉娜的决心__svl-zinn.png",
+  "svm-bronzong": "data\\images\\卡背.webp",
+  "svm-bronzor": "data\\images\\卡背.webp",
+  "svm-cobalion": "data\\images\\卡背.webp",
+  "svm-dialga": "data\\images\\卡背.webp",
+  "svm-klefki": "data\\images\\卡背.webp",
+  "svm-marnie-pride": "data\\images\\卡背.webp",
+  "svm-orthworm": "data\\images\\卡背.webp",
+  "svm-skarmory": "data\\images\\卡背.webp",
+  "svm-smeargle": "data\\images\\卡背.webp",
+  "svm-zacian": "data\\images\\卡背.webp",
+  "svm-zamazenta": "data\\images\\卡背.webp"
 }

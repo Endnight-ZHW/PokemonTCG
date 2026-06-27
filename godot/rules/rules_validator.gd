@@ -100,7 +100,7 @@ func can_use_ability(state: GameState, player_idx: int, slot: String, ability_na
 		var trigger := str(ability.get("trigger", ""))
 		if trigger in ["passive", "on_enter_play", "on_damaged"]:
 			return "该特性不能手动发动。"
-		if ability_name in pokemon.used_abilities:
+		if trigger != "repeatable" and ability_name in pokemon.used_abilities:
 			return "本回合已经使用过该特性。"
 		return ""
 	return "没有找到该特性。"

@@ -4,6 +4,7 @@ from engine.rules_constants import DAMAGE_PER_COUNTER
 from engine.enums import TurnPhase
 from engine.game_state import GameState, ActionResult, ActionRequest
 from engine.actions import PokemonRef, resolve_pokemon_ref
+from engine.commands.damage_pipeline import resolve_damage as event_damage_pipeline
 
 
 def _discard_pokemon_for_effect(state: GameState, player_idx: int, slot: str):
@@ -118,6 +119,66 @@ def _handle_damage(state, player, opponent, params, source_slot):
         return ActionResult(True, f"自身伤害: {amount}")
 
     return ActionResult(True, f"伤害: {amount}")
+
+
+def _count_attached_energy_of_type(pokemon, energy_type: str) -> int:
+    if pokemon is None:
+        return 0
+    energy_type = str(energy_type or "").lower()
+    return sum(
+        1
+        for card in pokemon.energy_cards
+        if any(str(provided).lower() == energy_type for provided in card.provides_energy)
+    )
+
+
+def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
+    """Primary attack damage formula that still uses the normal damage pipeline."""
+    attacker = player.get_pokemon(source_slot) or player.active
+    defender = opponent.active
+    if attacker is None or defender is None:
+        return ActionResult(False, "没有目标。")
+
+    total = int(params.get("base", 0) or 0)
+    per_own_bench = int(params.get("per_own_bench", 0) or 0)
+    if per_own_bench:
+        bench_count = sum(1 for poke in player.bench if poke is not None)
+        total += bench_count * per_own_bench
+
+    energy_type = params.get("per_self_energy_type")
+    if energy_type:
+        per_energy = int(params.get("per_energy", 0) or 0)
+        energy_count = _count_attached_energy_of_type(attacker, str(energy_type))
+        total += energy_count * per_energy
+
+    condition_bonus = params.get("condition_bonus") or {}
+    if isinstance(condition_bonus, dict):
+        condition = str(condition_bonus.get("condition", "") or "")
+        if condition == "ko_by_attack_last_turn" and player.was_ko_by_attack:
+            total += int(condition_bonus.get("bonus", 0) or 0)
+            if bool(condition_bonus.get("consume", True)):
+                player.was_ko_by_attack = False
+
+    ignore_defender_effects = bool(params.get("ignore_defender_effects", False))
+    if not ignore_defender_effects and _check_effect_damage_prevented(defender, state):
+        return ActionResult(True, "伤害被免疫。")
+
+    attacker_type = attacker.card.energy_types[0] if attacker.card.energy_types else "Colorless"
+    final_damage, mod_logs = event_damage_pipeline(
+        state,
+        attacker,
+        defender,
+        total,
+        attacker_type,
+        piercing=bool(params.get("piercing", False)),
+        ignore_defender_effects=ignore_defender_effects,
+    )
+    for log_msg in mod_logs:
+        state._log(log_msg)
+
+    defender.damage_counters += final_damage // DAMAGE_PER_COUNTER
+    state._log(f"对{defender.card.name}造成{final_damage}点伤害。")
+    return ActionResult(True, f"伤害: {final_damage}", damage_dealt=final_damage)
 
 
 def _check_bench_protection(target_state) -> bool:

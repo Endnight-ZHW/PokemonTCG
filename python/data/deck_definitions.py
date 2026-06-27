@@ -9,6 +9,7 @@ Deck themes:
     LIGHTNING DECK: Pikachu ex — High-damage core with energy recycling
     FIGHTING DECK: Koraidon ex — Fighting energy acceleration
     COLORLESS DECK: 一家鼠ex核心 — 手牌增伤，特殊能量灵活战术
+    STEEL DECK: 苍响·藏玛然特 — 钢属性多核心，能量转移与耐久推进
 """
 import random
 
@@ -333,10 +334,57 @@ GRASS_DECK = [
     ("sv1-ener-1", 12), # 基本草能量
 ]
 
+# ============================================================
+# ⚙ STEEL DECK — 苍响·藏玛然特 (60 cards)
+# Strategy: 苍响按备战数量推进，藏玛然特耐久反击。
+# 青铜钟转移钢能量，拖拖蚓在3钢能量后提高最大HP。
+# ============================================================
+
+STEEL_DECK = [
+    # Pokemon (16)
+    ("svm-zamazenta", 2),    # 藏玛然特 - 金属之盾 / 报仇
+    ("svm-zacian", 2),       # 苍响 - 战斗军团 / 薄片利刃
+    ("svm-smeargle", 2),     # 图图犬 - 多彩调色盘
+    ("svm-bronzor", 3),      # 铜镜怪 - 金属压制
+    ("svm-bronzong", 2),     # 青铜钟 - 金属转移
+    ("svm-skarmory", 1),     # 盔甲鸟 - 钢铁之刃
+    ("svm-cobalion", 1),     # 勾帕路翁 - 正义法则 / 跟进
+    ("svm-dialga", 1),       # 帝牙卢卡 - 时之逆流 / 金属爆破
+    ("svm-klefki", 1),       # 钥圈儿 - 解锁
+    ("svm-orthworm", 1),     # 拖拖蚓 - 营养铁质 / 刺穿
+
+    # Trainer (29)
+    ("sv3-134", 1),          # 厉害钓竿
+    ("sv1-151", 3),          # 巢穴球
+    ("sv1-153", 4),          # 高级球
+    ("sv1-150", 4),          # 宝可梦交替
+    ("sv2-catch", 2),        # 宝可梦捕捉器
+    ("svg2-exps", 1),        # 学习装置
+    ("svl-vitb", 2),         # 活力头带
+    ("sv1-176", 1),          # 裁判
+    ("sv2-young", 3),        # 短裤小子
+    ("sv1-180", 4),          # 妮莫
+    ("sv1-189", 2),          # 博士的研究
+    ("svm-marnie-pride", 2), # 玛俐的骄傲
+
+    # Energy (15)
+    ("sv1-ener-8", 15),      # 基本钢能量
+]
+
 # Collect all unique card IDs needed for all decks
 ALL_CARD_IDS = list(set(
     card_id
-    for deck in [FIRE_DECK, WATER_DECK, PSYCHIC_DECK_NATU, LIGHTNING_DECK, FIGHTING_DECK, COLORLESS_DECK, DRAGON_DECK, GRASS_DECK]
+    for deck in [
+        FIRE_DECK,
+        WATER_DECK,
+        PSYCHIC_DECK_NATU,
+        LIGHTNING_DECK,
+        FIGHTING_DECK,
+        COLORLESS_DECK,
+        DRAGON_DECK,
+        GRASS_DECK,
+        STEEL_DECK,
+    ]
     for card_id, _ in deck
 ))
 

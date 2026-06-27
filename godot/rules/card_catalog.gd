@@ -115,7 +115,7 @@ func filter_cards(card_ids: Array[String], filter_type: String, filter_name: Str
 				matches = is_basic_pokemon(card_id)
 			"pokemon":
 				matches = is_pokemon(card_id)
-			"basic_energy":
+			"basic", "basic_energy":
 				matches = is_basic_energy(card_id)
 			"energy":
 				matches = is_energy(card_id)

@@ -113,5 +113,16 @@
   "svl-trks": "res://assets/cards/svl-trks.png",
   "svl-vitb": "res://assets/cards/svl-vitb.png",
   "svl-zera": "res://assets/cards/svl-zera.png",
-  "svl-zinn": "res://assets/cards/svl-zinn.png"
+  "svl-zinn": "res://assets/cards/svl-zinn.png",
+  "svm-bronzong": "res://assets/cards/svm-bronzong.webp",
+  "svm-bronzor": "res://assets/cards/svm-bronzor.webp",
+  "svm-cobalion": "res://assets/cards/svm-cobalion.webp",
+  "svm-dialga": "res://assets/cards/svm-dialga.webp",
+  "svm-klefki": "res://assets/cards/svm-klefki.webp",
+  "svm-marnie-pride": "res://assets/cards/svm-marnie-pride.webp",
+  "svm-orthworm": "res://assets/cards/svm-orthworm.webp",
+  "svm-skarmory": "res://assets/cards/svm-skarmory.webp",
+  "svm-smeargle": "res://assets/cards/svm-smeargle.webp",
+  "svm-zacian": "res://assets/cards/svm-zacian.webp",
+  "svm-zamazenta": "res://assets/cards/svm-zamazenta.webp"
 }

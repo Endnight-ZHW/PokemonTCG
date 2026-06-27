@@ -13,6 +13,7 @@ const FULL_DAMAGE_EFFECT_TYPES: Array[String] = [
 	"damage_per_discard_psychic",
 	"conditional_damage_heal",
 	"mill_and_damage_per_energy",
+	"attack_damage_formula",
 ]
 
 var catalog: CardCatalog
@@ -632,7 +633,8 @@ func _use_ability(
 		var ability: Dictionary = ability_value
 		if str(ability.get("name", "")).to_lower() != ability_name.to_lower():
 			continue
-		pokemon.used_abilities.append(ability_name)
+		if str(ability.get("trigger", "")) != "repeatable":
+			pokemon.used_abilities.append(ability_name)
 		state.log_action("%s使用特性%s。" % [catalog.card_name(pokemon.card_id), ability_name])
 		return _run_effects(state, ability.get("effects", []), actor, slot, rng)
 	return _error("没有找到该特性。", "ability_not_found", state)
@@ -781,6 +783,7 @@ func _complete_attack_context(
 			int(stack.context.get("base_damage", 0)),
 			str(stack.context.get("attacking_type", "Colorless")),
 			bool(stack.context.get("piercing", false)),
+			bool(stack.context.get("ignore_defender_effects", false)),
 			events,
 		)
 	_resolve_knockouts(state, actor, events, true)
@@ -797,24 +800,53 @@ func _apply_attack_damage(
 	base_damage: int,
 	attacking_type: String,
 	piercing: bool,
+	ignore_defender_effects: bool,
 	events: Array[Dictionary],
 ) -> void:
 	var attacker := state.get_player(actor).active
 	var defender := state.get_player(1 - actor).active
 	if attacker == null or defender == null or base_damage <= 0:
 		return
-	if defender.damage_prevented_next_turn:
+	if defender.damage_prevented_next_turn and not ignore_defender_effects:
 		defender.damage_prevented_next_turn = false
 		defender.all_prevented_next_turn = false
 		events.append({"event_type": "damage_prevented", "data": {"player": 1 - actor}})
 		return
 	var damage := base_damage
-	for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
-		var ability: Dictionary = ability_value
-		for effect_value in ability.get("effects", []):
-			var effect: Dictionary = effect_value
-			if str(effect.get("effect_type", "")) == "aura_damage_reduction":
-				damage -= int(effect.get("params", {}).get("reduction", 20))
+	if not ignore_defender_effects:
+		for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			for effect_value in ability.get("effects", []):
+				var effect: Dictionary = effect_value
+				if str(effect.get("effect_type", "")) == "aura_damage_reduction":
+					var params: Dictionary = effect.get("params", {})
+					if bool(params.get("requires_attached_energy", false)) and defender.energy_card_ids.is_empty():
+						continue
+					damage -= int(params.get("reduction", 20))
+	for row in state.get_player(actor).get_all_pokemon():
+		var aura_source: PokemonState = row["pokemon"]
+		if aura_source == null:
+			continue
+		for ability_value in catalog.get_card(aura_source.card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			for effect_value in ability.get("effects", []):
+				var effect: Dictionary = effect_value
+				if str(effect.get("effect_type", "")) != "aura_damage_boost":
+					continue
+				var params: Dictionary = effect.get("params", {})
+				var attacker_subtype := str(params.get("attacker_subtype", ""))
+				var defender_type := str(params.get("defender_type", ""))
+				if (
+					not attacker_subtype.is_empty()
+					and attacker_subtype not in catalog.get_card(attacker.card_id).get("subtypes", [])
+				):
+					continue
+				if (
+					not defender_type.is_empty()
+					and defender_type not in catalog.get_card(defender.card_id).get("energy_types", [])
+				):
+					continue
+				damage += int(params.get("amount", 0))
 	for energy_id in attacker.energy_card_ids:
 		if energy_id == "svi-dtur":
 			damage -= 20
@@ -851,13 +883,13 @@ func _apply_attack_damage(
 	events.append({"event_type": "damage_dealt", "data": {
 		"player": 1 - actor, "slot": "active", "amount": damage,
 	}})
-	if damage > 0 and "svi-mirc" in defender.energy_card_ids:
+	if damage > 0 and not ignore_defender_effects and "svi-mirc" in defender.energy_card_ids:
 		var drawn := state.get_player(1 - actor).draw_cards(1)
 		if not drawn.is_empty():
 			events.append({"event_type": "cards_drawn", "data": {
 				"player": 1 - actor, "cards": drawn,
 			}})
-	if damage > 0:
+	if damage > 0 and not ignore_defender_effects:
 		_apply_reactive_thorns(state, actor, defender, events)
 
 
@@ -1034,6 +1066,8 @@ func _resolve_knockouts(
 					"card_id": pokemon.card_id,
 					"prizes": catalog.prize_value(pokemon.card_id),
 				})
+	if knockouts.is_empty():
+		return
 	for knockout in knockouts:
 		var defeated_idx := int(knockout["player"])
 		var defeated_player := state.get_player(defeated_idx)

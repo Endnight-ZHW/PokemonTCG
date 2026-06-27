@@ -301,14 +301,56 @@ func _heuristic_choice(
 	var count: int = maxi(request.min_select, request.max_select)
 	if not request.allow_duplicates:
 		count = mini(request.options.size(), count)
+	return ChoiceResponse.new(
+		request.request_id,
+		_ranked_choice_option_ids(request, ranked, count),
+	)
+
+
+func _ranked_choice_option_ids(
+	request: ChoiceRequest,
+	ranked: Array[int],
+	count: int,
+) -> Array[String]:
 	var selected: Array[String] = []
-	if request.allow_duplicates and count > 0:
-		for _index in range(count):
-			selected.append(str(request.options[ranked[0]]["option_id"]))
-	else:
+	if count <= 0 or ranked.is_empty():
+		return selected
+	if not request.allow_duplicates:
 		for index in ranked.slice(0, count):
 			selected.append(str(request.options[index]["option_id"]))
-	return ChoiceResponse.new(request.request_id, selected)
+		return selected
+	var max_per_target := int(request.metadata.get("max_per_target", 99))
+	if max_per_target >= count:
+		for _index in range(count):
+			selected.append(str(request.options[ranked[0]]["option_id"]))
+		return selected
+	var per_target: Dictionary = {}
+	for index in ranked:
+		if selected.size() >= count:
+			break
+		var option: Dictionary = request.options[index]
+		var target_key := _choice_target_key(option)
+		if not target_key.is_empty():
+			if int(per_target.get(target_key, 0)) >= max_per_target:
+				continue
+			per_target[target_key] = int(per_target.get(target_key, 0)) + 1
+		selected.append(str(option["option_id"]))
+	while selected.size() < count:
+		selected.append(str(request.options[ranked[0]]["option_id"]))
+	return selected
+
+
+func _choice_target_key(option: Dictionary) -> String:
+	var value_variant: Variant = option.get("value", {})
+	if value_variant is Dictionary:
+		var value: Dictionary = value_variant
+		var slot := str(value.get("slot", ""))
+		if not slot.is_empty():
+			return slot
+	var ref_variant: Variant = option.get("ref", {})
+	if ref_variant is Dictionary:
+		return str(Dictionary(ref_variant).get("slot", ""))
+	return ""
 
 
 func _option_score(
@@ -830,7 +872,7 @@ func _effects_tactical_value(
 				value += 125.0
 				if player.bench_count() < 2:
 					value += 35.0
-			"energy_attach", "draw_and_attach_energy", "attach_from_discard":
+			"energy_attach", "draw_and_attach_energy", "attach_from_discard", "look_top_attach_energy":
 				value += 145.0
 				if _has_energy_target_with_missing_cost(state, actor, catalog):
 					value += 85.0
@@ -850,8 +892,10 @@ func _effects_tactical_value(
 				value += 80.0
 			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "self_attack_lock":
 				value += 45.0
-			"damage", "any_pokemon_damage", "damage_counter_self", "place_counters_and_self_ko":
+			"damage", "any_pokemon_damage", "damage_counter_self", "place_counters_and_self_ko", "bench_damage":
 				value += int(params.get("amount", params.get("damage", 0))) * 1.2
+			"attack_damage_formula":
+				value += _effect_damage_estimate(state, actor, effect, catalog) * 1.1
 	return value
 
 
@@ -919,8 +963,13 @@ func _estimated_attack_damage(
 	var attack: Dictionary = attacks[attack_idx]
 	var effects: Array = attack.get("effects", [])
 	var full_damage := false
-	for effect in _flatten_effects(effects):
-		if str(effect.get("effect_type", "")) in [
+	var ignore_defender_effects := false
+	var piercing := false
+	var flattened := _flatten_effects(effects)
+	for effect in flattened:
+		var effect_type := str(effect.get("effect_type", ""))
+		if effect_type in [
+			"attack_damage_formula",
 			"damage_per_self_damage",
 			"damage_per_self_energy",
 			"damage_per_self_energy_type",
@@ -934,11 +983,18 @@ func _estimated_attack_damage(
 			"mill_and_damage_per_energy",
 		]:
 			full_damage = true
-			break
+		if effect_type == "attack_damage_formula":
+			var formula_params: Dictionary = effect.get("params", {})
+			ignore_defender_effects = (
+				ignore_defender_effects
+				or bool(formula_params.get("ignore_defender_effects", false))
+			)
+			piercing = piercing or bool(formula_params.get("piercing", false))
 	var damage := 0 if full_damage else int(attack.get("damage", 0))
-	for effect in _flatten_effects(effects):
+	for effect in flattened:
 		damage = max(damage, _effect_damage_estimate(state, actor, effect, catalog))
-	return _modified_attack_damage(state, actor, damage, catalog)
+	return _modified_attack_damage(
+		state, actor, damage, catalog, ignore_defender_effects, piercing)
 
 
 func _effect_damage_estimate(
@@ -984,6 +1040,23 @@ func _effect_damage_estimate(
 			return int(params.get("base", 0)) + count * int(params.get("per_energy", 0))
 		"damage_plus_bench":
 			return int(params.get("base", 0)) + player.bench_count() * int(params.get("per_bench", 0))
+		"attack_damage_formula":
+			var total := int(params.get("base", 0))
+			total += player.bench_count() * int(params.get("per_own_bench", 0))
+			var per_self_energy_type := str(params.get("per_self_energy_type", ""))
+			if active and not per_self_energy_type.is_empty():
+				var energy_count := 0
+				for energy_id in active.energy_card_ids:
+					if _energy_card_matches_type(energy_id, per_self_energy_type, catalog):
+						energy_count += 1
+				total += energy_count * int(params.get("per_energy", 0))
+			var condition_bonus: Dictionary = params.get("condition_bonus", {})
+			if (
+				str(condition_bonus.get("condition", "")) == "ko_by_attack_last_turn"
+				and player.was_ko_by_attack
+			):
+				total += int(condition_bonus.get("bonus", 0))
+			return total
 		"damage_per_hand_size":
 			return player.hand.size() * int(params.get("per", 0))
 		"damage_per_discard_psychic":
@@ -1010,23 +1083,75 @@ func _effect_damage_estimate(
 	return 0
 
 
+func _energy_card_matches_type(
+	card_id: String,
+	energy_type: String,
+	catalog: CardCatalog,
+) -> bool:
+	var normalized := energy_type.to_lower()
+	if normalized in ["", "any", "energy"]:
+		return catalog.is_energy(card_id)
+	if normalized in ["basic", "basic_energy"]:
+		return catalog.is_basic_energy(card_id)
+	if not catalog.is_energy(card_id):
+		return false
+	for provided in catalog.provides_energy(card_id):
+		var provided_type := str(provided).to_lower()
+		if provided_type == normalized or provided_type == "rainbow":
+			return true
+	return false
+
+
 func _modified_attack_damage(
 	state: GameState,
 	actor: int,
 	base_damage: int,
 	catalog: CardCatalog,
+	ignore_defender_effects: bool = false,
+	piercing: bool = false,
 ) -> int:
 	var attacker := state.get_player(actor).active
 	var defender := state.get_player(1 - actor).active
 	if attacker == null or defender == null or base_damage <= 0:
 		return max(0, base_damage)
 	var damage := base_damage
-	for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
-		var ability: Dictionary = ability_value
-		for effect_value in ability.get("effects", []):
-			var effect: Dictionary = effect_value
-			if str(effect.get("effect_type", "")) == "aura_damage_reduction":
-				damage -= int(effect.get("params", {}).get("reduction", 20))
+	if not ignore_defender_effects:
+		for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			for effect_value in ability.get("effects", []):
+				var effect: Dictionary = effect_value
+				if str(effect.get("effect_type", "")) == "aura_damage_reduction":
+					var params: Dictionary = effect.get("params", {})
+					if (
+						bool(params.get("requires_attached_energy", false))
+						and defender.energy_card_ids.is_empty()
+					):
+						continue
+					damage -= int(params.get("reduction", 20))
+	for row in state.get_player(actor).get_all_pokemon():
+		var aura_source: PokemonState = row["pokemon"]
+		if aura_source == null:
+			continue
+		for ability_value in catalog.get_card(aura_source.card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			for effect_value in ability.get("effects", []):
+				var effect: Dictionary = effect_value
+				if str(effect.get("effect_type", "")) != "aura_damage_boost":
+					continue
+				var params: Dictionary = effect.get("params", {})
+				var attacker_subtype := str(params.get("attacker_subtype", ""))
+				var defender_type := str(params.get("defender_type", ""))
+				if (
+					not attacker_subtype.is_empty()
+					and attacker_subtype not in catalog.get_card(attacker.card_id).get("subtypes", [])
+				):
+					continue
+				if (
+					not defender_type.is_empty()
+					and defender_type not in catalog.get_card(defender.card_id).get("energy_types", [])
+				):
+					continue
+				damage += int(params.get("amount", 0))
 	for energy_id in attacker.energy_card_ids:
 		if energy_id == "svi-dtur":
 			damage -= 20
@@ -1043,7 +1168,7 @@ func _modified_attack_damage(
 				and state.get_player(actor).prizes.size() > state.get_player(1 - actor).prizes.size()
 			):
 				damage += 30
-	if state.apply_type_matchups:
+	if state.apply_type_matchups and not piercing:
 		var attacking_type := "Colorless"
 		var attacking_card := catalog.get_card(attacker.card_id)
 		if not attacking_card.get("energy_types", []).is_empty():
@@ -1215,6 +1340,14 @@ func _best_pokemon_damage(pokemon: PokemonState, catalog: CardCatalog) -> int:
 					damage = max(damage, int(params.get("base", 0)) + pokemon.energy_card_ids.size() * int(params.get("per_energy", 0)))
 				"damage_plus_bench":
 					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
+				"attack_damage_formula":
+					var formula_damage := int(params.get("base", 0))
+					formula_damage += int(params.get("per_own_bench", 0)) * 3
+					if not str(params.get("per_self_energy_type", "")).is_empty():
+						formula_damage += pokemon.energy_card_ids.size() * int(params.get("per_energy", 0))
+					var condition_bonus: Dictionary = params.get("condition_bonus", {})
+					formula_damage += int(condition_bonus.get("bonus", 0))
+					damage = max(damage, formula_damage)
 		best = max(best, damage)
 	return best
 
@@ -1223,7 +1356,23 @@ func _pokemon_card_strength(card_id: String, energy_count: int, catalog: CardCat
 	var card := catalog.get_card(card_id)
 	var best_damage := 0
 	for attack in card.get("attacks", []):
-		best_damage = max(best_damage, int(attack.get("damage", 0)))
+		var damage := int(attack.get("damage", 0))
+		for effect_value in _flatten_effects(attack.get("effects", [])):
+			var effect: Dictionary = effect_value
+			var params: Dictionary = effect.get("params", {})
+			match str(effect.get("effect_type", "")):
+				"damage_plus_bench":
+					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
+				"damage_per_self_energy", "damage_per_self_energy_type":
+					damage = max(damage, int(params.get("base", 0)) + energy_count * int(params.get("per_energy", 0)))
+				"attack_damage_formula":
+					var formula_damage := int(params.get("base", 0))
+					formula_damage += int(params.get("per_own_bench", 0)) * 3
+					if not str(params.get("per_self_energy_type", "")).is_empty():
+						formula_damage += energy_count * int(params.get("per_energy", 0))
+					formula_damage += int(Dictionary(params.get("condition_bonus", {})).get("bonus", 0))
+					damage = max(damage, formula_damage)
+		best_damage = max(best_damage, damage)
 	return int(card.get("hp", 0)) + best_damage * 2.0 + energy_count * 35.0
 
 
@@ -1288,7 +1437,23 @@ func _pokemon_strength(pokemon: PokemonState, catalog: CardCatalog) -> float:
 	var card := catalog.get_card(pokemon.card_id)
 	var best_damage := 0
 	for attack in card.get("attacks", []):
-		best_damage = max(best_damage, int(attack.get("damage", 0)))
+		var damage := int(attack.get("damage", 0))
+		for effect_value in _flatten_effects(attack.get("effects", [])):
+			var effect: Dictionary = effect_value
+			var params: Dictionary = effect.get("params", {})
+			match str(effect.get("effect_type", "")):
+				"damage_plus_bench":
+					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
+				"damage_per_self_energy", "damage_per_self_energy_type":
+					damage = max(damage, int(params.get("base", 0)) + pokemon.energy_card_ids.size() * int(params.get("per_energy", 0)))
+				"attack_damage_formula":
+					var formula_damage := int(params.get("base", 0))
+					formula_damage += int(params.get("per_own_bench", 0)) * 3
+					if not str(params.get("per_self_energy_type", "")).is_empty():
+						formula_damage += pokemon.energy_card_ids.size() * int(params.get("per_energy", 0))
+					formula_damage += int(Dictionary(params.get("condition_bonus", {})).get("bonus", 0))
+					damage = max(damage, formula_damage)
+		best_damage = max(best_damage, damage)
 	return (
 		pokemon.current_hp(catalog)
 		+ best_damage * 2.0
@@ -1428,16 +1593,12 @@ func _neural_choice(
 	var count: int = maxi(request.min_select, request.max_select)
 	if not request.allow_duplicates:
 		count = mini(request.options.size(), count)
-	var selected: Array[String] = []
-	if request.allow_duplicates and count > 0:
-		for _index in range(count):
-			selected.append(str(request.options[ranked[0]]["option_id"]))
-	else:
-		for index in ranked.slice(0, count):
-			selected.append(str(request.options[index]["option_id"]))
 	return {
 		"success": true,
-		"response": ChoiceResponse.new(request.request_id, selected),
+		"response": ChoiceResponse.new(
+			request.request_id,
+			_ranked_choice_option_ids(request, ranked, count),
+		),
 	}
 
 

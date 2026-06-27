@@ -1,5 +1,18 @@
 """Search and deck-manipulation effect handlers."""
 from engine.game_state import GameState, ActionResult, ActionRequest
+from engine.actions import PokemonRef, resolve_pokemon_ref
+
+
+def _matches_energy_filter(card, filter_type: str) -> bool:
+    filter_type = str(filter_type or "any")
+    if filter_type in {"any", "energy"}:
+        return card.is_energy
+    if filter_type in {"basic", "basic_energy"}:
+        return card.is_basic_energy
+    return card.is_energy and any(
+        str(provided).lower() == filter_type.lower()
+        for provided in card.provides_energy
+    )
 
 
 def _handle_search(state, player_idx, params):
@@ -228,6 +241,90 @@ def _handle_look_top_deck(state, player_idx, params):
                             card_list=display_cards,
                             callback=look_callback,
                         ))
+
+
+def _handle_look_top_attach_energy(state, player_idx, params):
+    """Look at the top N cards, attach selected matching energy to one own Pokemon."""
+    count = int(params.get("count", 5) or 5)
+    take = int(params.get("take", 99) or 99)
+    filter_type = str(params.get("filter", "basic_energy") or "basic_energy")
+
+    player = state.get_player(player_idx)
+    top_cards = []
+    for _ in range(min(count, len(player.deck))):
+        top_cards.append(player.deck.pop())
+
+    eligible = [card for card in top_cards if _matches_energy_filter(card, filter_type)]
+    if not eligible:
+        player.deck.extend(top_cards)
+        player.shuffle_deck()
+        return ActionResult(True, "没有可附着的能量。")
+
+    def _put_rest_back(selected_cards):
+        selected_ids = {id(card) for card in selected_cards}
+        for card in top_cards:
+            if id(card) not in selected_ids:
+                player.deck.append(card)
+        player.shuffle_deck()
+
+    def _attach_to_target(target_selection, selected_cards):
+        target = None
+        for selected in target_selection or []:
+            if isinstance(selected, PokemonRef):
+                target = resolve_pokemon_ref(state, selected)
+                break
+            for _slot, candidate in player.get_all_pokemon():
+                if candidate is not None and candidate.card is selected:
+                    target = candidate
+                    break
+            if target is not None:
+                break
+        if target is None:
+            return ActionResult(False, "没有有效附着目标。")
+        for card in selected_cards:
+            target.energy_cards.append(card)
+        state._log(f"将{len(selected_cards)}张能量附着于{target.card.name}。")
+        return ActionResult(True, f"附着了{len(selected_cards)}张能量。")
+
+    def look_attach_callback(selected_cards):
+        selected = list(selected_cards[: min(take, len(selected_cards))])
+        _put_rest_back(selected)
+        if not selected:
+            state._log(f"{player.name}查看了牌库顶{count}张卡，没有选择能量。")
+            return ActionResult(True, "未选择能量。")
+
+        targets = [(slot, poke) for slot, poke in player.get_all_pokemon() if poke is not None]
+        if not targets:
+            return ActionResult(False, "没有宝可梦可附着能量。")
+        if len(targets) == 1:
+            return _attach_to_target([PokemonRef(player_idx, targets[0][0], targets[0][1].card.api_id)], selected)
+
+        return ActionRequest(
+            request_type="search_deck",
+            player=player_idx,
+            prompt=f"选择1只宝可梦附着{len(selected)}张能量。",
+            min_select=1,
+            max_select=1,
+            from_zone="board",
+            target_player="self",
+            card_list=[poke.card for _slot, poke in targets],
+            callback=lambda target_selection: _attach_to_target(target_selection, selected),
+        )
+
+    return ActionResult(
+        True,
+        f"查看牌库顶{len(top_cards)}张卡。",
+        pending_action=ActionRequest(
+            request_type="search_deck",
+            player=player_idx,
+            prompt=f"选择任意数量的基本能量附着于1只宝可梦。",
+            min_select=0,
+            max_select=min(take, len(eligible)),
+            from_zone="deck",
+            card_list=eligible,
+            callback=look_attach_callback,
+        ),
+    )
 
 
 def _handle_search_any_and_switch(state, player_idx, params):

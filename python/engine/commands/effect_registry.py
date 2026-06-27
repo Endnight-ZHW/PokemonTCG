@@ -26,6 +26,7 @@ EFFECT_TYPES = [
     "discard_fighting_energy_damage", "coin_flip_triple", "coin_flip_double_ko",
     "damage_per_self_damage", "damage_self_penalty", "conditional_damage_heal",
     "damage_per_evolved", "damage_per_self_energy_type", "damage_and_self_heal",
+    "attack_damage_formula", "bench_damage",
 
     "status", "conditional_status", "attack_fail", "dazzling_beam",
     "attack_lock_basic", "self_attack_lock", "prevent_all",
@@ -35,7 +36,7 @@ EFFECT_TYPES = [
 
     "energy_attach", "energy_discard", "energy_relocate", "attach_from_discard",
 
-    "search", "look_top_deck", "search_any_and_switch", "conditional_search_extra",
+    "search", "look_top_deck", "look_top_attach_energy", "search_any_and_switch", "conditional_search_extra",
 
     "heal", "potion_heal", "switch_self", "switch_opponent", "coin_flip",
     "conditional", "evolve_skip_stage", "discard", "return_to_hand",
@@ -44,7 +45,8 @@ EFFECT_TYPES = [
     "ability_discard_revive", "tool_exp_share", "draw_and_attach_energy",
 
     # Passive / no-op effects
-    "tool", "aura_damage_reduction", "conditional_zero_retreat",
+    "tool", "aura_damage_reduction", "aura_damage_boost",
+    "conditional_hp_boost", "conditional_zero_retreat", "reactive_thorns",
 ]
 
 

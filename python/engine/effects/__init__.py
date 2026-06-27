@@ -24,6 +24,8 @@ from engine.effects.damage_effects import (
     _handle_damage_per_evolved,
     _handle_damage_per_self_energy_type,
     _handle_damage_and_self_heal,
+    _handle_attack_damage_formula,
+    _handle_bench_damage,
 )
 from engine.effects.status_effects import (
     _handle_status,
@@ -57,6 +59,7 @@ from engine.effects.energy_effects import (
 from engine.effects.search_effects import (
     _handle_search,
     _handle_look_top_deck,
+    _handle_look_top_attach_energy,
     _handle_search_any_and_switch,
     _handle_conditional_search_extra,
 )
@@ -125,6 +128,8 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         return _handle_draw_until(state, player, params)
     elif effect_type == "damage_counter_self":
         return _handle_damage_counter_self(state, player, params, source_slot)
+    elif effect_type == "attack_damage_formula":
+        return _handle_attack_damage_formula(state, player, opponent, params, source_slot)
     elif effect_type == "conditional":
         return _handle_conditional(state, params, player_idx, source_slot)
     elif effect_type == "search":
@@ -137,6 +142,8 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         return _handle_evolve_skip(state, player, params)
     elif effect_type == "look_top_deck":
         return _handle_look_top_deck(state, player_idx, params)
+    elif effect_type == "look_top_attach_energy":
+        return _handle_look_top_attach_energy(state, player_idx, params)
     elif effect_type == "damage_per_energy":
         return _handle_damage_per_energy(state, player, opponent, params)
     elif effect_type == "attach_from_discard":
@@ -147,6 +154,8 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         return ActionResult(True, "道具效果已注册。")
     elif effect_type == "any_pokemon_damage":
         return _handle_any_pokemon_damage(state, player, opponent, params)
+    elif effect_type == "bench_damage":
+        return _handle_bench_damage(state, player, opponent, params)
     elif effect_type == "conditional_damage_bonus":
         return _handle_conditional_damage_bonus(state, player, opponent, params)
     elif effect_type == "mill_and_damage_per_energy":
@@ -159,7 +168,7 @@ def execute_effect(state: GameState, effect_def: dict | EffectDef,
         return _handle_prevent_all(state, player, params, source_slot)
     elif effect_type == "prevent_effects":
         return _handle_prevent_effects(state, player, params, source_slot)
-    elif effect_type == "aura_damage_reduction":
+    elif effect_type in {"aura_damage_reduction", "aura_damage_boost", "conditional_hp_boost", "reactive_thorns"}:
         # Passive aura abilities like 炎帝 压迫感 — handled automatically
         # in action_resolver._declare_attack, no manual execution needed
         return ActionResult(True, "")

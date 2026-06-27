@@ -339,9 +339,9 @@ def can_use_ability(state: GameState, player_idx: int,
     trigger = getattr(ability, "trigger", "")
     if trigger in ("passive", "on_enter_play", "on_damaged"):
         return False, f"特性'{ability_name}'不是可手动发动的特性。"
-    if trigger not in ("", "on_turn"):
+    if trigger not in ("", "on_turn", "repeatable"):
         return False, f"特性'{ability_name}'不能在主要阶段手动发动。"
-    if ability.name in pokemon.used_abilities:
+    if trigger != "repeatable" and ability.name in pokemon.used_abilities:
         return False, f"本回合已经使用过特性'{ability_name}'。"
 
     return True, ""

@@ -158,6 +158,19 @@ DECK_AI_PROFILES: dict[str, DeckAIProfile] = {
         attack_keywords=("evolved", "evolution", "bench"),
         weights=_weights(evolved_count=70, bench_count=22, core_in_play=80, preferred_bench=34),
     ),
+    "steel": DeckAIProfile(
+        key="steel",
+        name="Zacian Zamazenta metal transfer",
+        core_cards={"svm-zacian", "svm-zamazenta", "svm-bronzong", "svm-orthworm"},
+        engine_cards={"svm-bronzor", "svm-smeargle", "svm-cobalion", "svm-dialga"},
+        setup_active={"svm-smeargle", "svm-zamazenta", "svm-zacian", "svm-cobalion"},
+        preferred_bench={"svm-bronzor", "svm-smeargle", "svm-cobalion", "svm-orthworm"},
+        evolution_cards={"svm-bronzong"},
+        energy_types={"Metal"},
+        trainer_cards={"sv1-151", "sv1-153", "svm-marnie-pride", "svg2-exps", "svl-vitb"},
+        attack_keywords=("bench", "energy", "metal", "revenge"),
+        weights=_weights(core_in_play=86, engine_in_play=56, preferred_bench=32, matching_energy_attached=26, bench_count=16),
+    ),
 }
 
 

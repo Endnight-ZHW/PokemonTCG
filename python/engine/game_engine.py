@@ -27,6 +27,7 @@ from engine.rules_validator import (
     can_play_tool,
     can_retreat,
     can_use_ability,
+    check_win_condition,
     effective_retreat_cost,
     energy_card_units,
 )
@@ -121,6 +122,9 @@ class GameEngine:
             step.pending_choice.metadata["finish_attack_actor"] = actor
         if auto_resolve:
             step = self._resolve_all_choices(state, step, rng, choice_policy)
+
+        if action.action not in {PlayerAction.DECLARE_ATTACK, PlayerAction.END_TURN}:
+            step = self._resolve_non_attack_knockouts(state, step)
 
         if (
             auto_finish_attack
@@ -222,6 +226,10 @@ class GameEngine:
                     choice_policy=None,
                 ),
             )
+        elif step.pending_choice is None:
+            step = self._resolve_non_attack_knockouts(state, step)
+        step.winner = state.winner
+        step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
         return step
 
     def _finish_attack_turn(
@@ -291,6 +299,7 @@ class GameEngine:
                 "from_zone": request.from_zone,
                 "target_player": request.target_player,
                 "distribute_mode": request.distribute_mode,
+                "max_per_target": request.max_per_target,
                 "flip_count": request.flip_count,
                 "until_tails": request.until_tails,
                 "revision": getattr(state, "revision", 0),
@@ -651,6 +660,32 @@ class GameEngine:
             winner=state.winner,
             terminal=state.winner is not None or state.phase == TurnPhase.GAME_OVER,
         )
+
+    @staticmethod
+    def _resolve_non_attack_knockouts(state: GameState, step: StepResult) -> StepResult:
+        if (
+            not step.success
+            or step.pending_choice is not None
+            or state.phase in (TurnPhase.SETUP, TurnPhase.GAME_OVER)
+            or state.winner is not None
+        ):
+            return step
+        from engine.action_resolver import ActionResolver
+
+        state._ko_from_attack = False
+        ko_slots = ActionResolver(state)._check_kos()
+        if not ko_slots:
+            return step
+        if ko_slots and step.action_result is not None:
+            step.action_result.pokemon_ko.extend(ko_slots)
+        winner = check_win_condition(state)
+        if winner is not None:
+            state.winner = winner
+            state.phase = TurnPhase.GAME_OVER
+            state._log(f"{state.get_player(winner).name}获胜！")
+        step.winner = state.winner
+        step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
+        return step
 
     @staticmethod
     def _merge_steps(first: StepResult, second: StepResult) -> StepResult:

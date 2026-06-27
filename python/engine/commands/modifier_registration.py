@@ -33,7 +33,7 @@ def register_pokemon_modifiers(pokemon: PokemonInPlay, player_idx: int,
 
     # Register tool modifiers
     if pokemon.attached_tool:
-        _register_tool_modifier(pokemon.attached_tool, player_idx, source_prefix, event_bus)
+        _register_tool_modifier(pokemon.attached_tool, pokemon, player_idx, source_prefix, event_bus)
 
 
 def unregister_pokemon_modifiers(card_api_id: str, slot: str = "active",
@@ -59,16 +59,54 @@ def _register_ability_modifier(ability, pokemon, player_idx: int,
     ability_name = ability.name
     source = f"{source_prefix}:ability:{ability_name}"
 
-    # 压迫感 (Entei): -20 damage to opponent
-    if ability_name == "压迫感":
-        def entei_mod(data: dict) -> dict | None:
-            defender = data.get("defender")
-            if defender and defender.card.api_id == pokemon.card.api_id:
-                # This pokemon IS the defender → reduce incoming damage
-                return {"delta": -20, "source": ability_name}
-            return None
-        event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, entei_mod,
-                          source=source, owner_player=player_idx, priority=50)
+    for effect in getattr(ability, "effects", []) or []:
+        effect_type = getattr(effect, "effect_type", "")
+        params = getattr(effect, "params", {}) or {}
+
+        if effect_type == "aura_damage_reduction":
+            reduction = int(params.get("reduction", 0) or 0)
+            requires_attached_energy = bool(params.get("requires_attached_energy", False))
+
+            def reduction_mod(data: dict, *, reduction=reduction,
+                              requires_attached_energy=requires_attached_energy) -> dict | None:
+                defender = data.get("defender")
+                if defender is not pokemon:
+                    return None
+                if data.get("ignore_defender_effects"):
+                    return None
+                if requires_attached_energy and not pokemon.energy_cards:
+                    return None
+                return {"delta": -reduction, "source": ability_name}
+
+            event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, reduction_mod,
+                               source=source, owner_player=player_idx, priority=50)
+
+        if effect_type == "aura_damage_boost":
+            amount = int(params.get("amount", 0) or 0)
+            attacker_subtype = str(params.get("attacker_subtype", "") or "")
+            defender_type = str(params.get("defender_type", "") or "")
+
+            def boost_mod(data: dict, *, amount=amount,
+                          attacker_subtype=attacker_subtype,
+                          defender_type=defender_type) -> dict | None:
+                state = data.get("state")
+                attacker = data.get("attacker")
+                defender = data.get("defender")
+                if not (state and attacker and defender):
+                    return None
+                owner = state.get_player(player_idx)
+                if not any(poke is pokemon for _, poke in owner.get_all_pokemon() if poke):
+                    return None
+                if not any(poke is attacker for _, poke in owner.get_all_pokemon() if poke):
+                    return None
+                if attacker_subtype and attacker_subtype not in getattr(attacker.card, "subtypes", []):
+                    return None
+                if defender_type and defender_type not in getattr(defender.card, "energy_types", []):
+                    return None
+                return {"delta": amount, "source": ability_name}
+
+            event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, boost_mod,
+                               source=source, owner_player=player_idx, priority=45)
 
     # 团结一致 (Maushold ex): reactive thorns on damage
     if ability_name == "团结一致":
@@ -76,12 +114,14 @@ def _register_ability_modifier(ability, pokemon, player_idx: int,
             defender = data.get("defender")
             attacker = data.get("attacker")
             state = data.get("state")
+            if data.get("ignore_defender_effects") and defender is pokemon:
+                return None
             if defender and attacker and state:
-                if defender.card.api_id == pokemon.card.api_id:
+                if defender is pokemon:
                     # Count 一对鼠/一家鼠 on our field
                     maus_count = 0
-                    opponent = state.get_player(1 - player_idx)
-                    for _, poke in opponent.get_all_pokemon():
+                    owner = state.get_player(player_idx)
+                    for _, poke in owner.get_all_pokemon():
                         if poke and poke.card and poke.card.name in ("一对鼠", "一家鼠ex", "一家鼠"):
                             maus_count += 1
                     if maus_count > 0:
@@ -102,7 +142,10 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
     # 双重涡轮能量 (Double Turbo Energy): -20 damage
     if sc.api_id == "svi-dtur":
         def dtur_mod(data: dict) -> dict | None:
-            return {"delta": -20, "source": "双重涡轮能量"}
+            attacker = data.get("attacker")
+            if attacker is not None and sc in getattr(attacker, "energy_cards", []):
+                return {"delta": -20, "source": "双重涡轮能量"}
+            return None
         event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, dtur_mod,
                           source=source, owner_player=player_idx, priority=30)
 
@@ -111,14 +154,17 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
         def mirc_react(data: dict) -> dict | None:
             defender = data.get("defender")
             state = data.get("state")
+            if data.get("ignore_defender_effects") and defender is not None and sc in getattr(defender, "energy_cards", []):
+                return None
             if defender and state:
                 # Check if this energy is attached to the defender
                 for scc in defender.energy_cards:
-                    if scc.is_special_energy and scc.api_id == "svi-mirc":
-                        opponent = state.get_player(1 - player_idx)
-                        drawn = opponent.draw_cards(1)
-                        return {"delta": 0, "source": "奇迹能量",
-                                "log": f"奇迹能量效果：{opponent.name}抽取了1张卡。"}
+                    if scc is sc:
+                        owner = state.get_player(player_idx)
+                        drawn = owner.draw_cards(1)
+                        if drawn:
+                            return {"delta": 0, "source": "奇迹能量",
+                                    "log": f"奇迹能量效果：{owner.name}抽取了1张卡。"}
             return None
         event_bus.register(EventType.DAMAGE_DEALT, mirc_react,
                           source=source, owner_player=player_idx, priority=20)
@@ -128,8 +174,8 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
     # not needed since it's an on-attach trigger, not a damage modifier.
 
 
-def _register_tool_modifier(tool_card, player_idx: int, source_prefix: str,
-                             event_bus):
+def _register_tool_modifier(tool_card, pokemon, player_idx: int,
+                             source_prefix: str, event_bus):
     """Register tool card effects as event listeners."""
     if not hasattr(tool_card, 'trainer_effects'):
         return
@@ -143,7 +189,8 @@ def _register_tool_modifier(tool_card, player_idx: int, source_prefix: str,
         if effect_name == "damage_boost_when_behind":
             def defiance_mod(data: dict) -> dict | None:
                 state = data.get("state")
-                if state:
+                attacker = data.get("attacker")
+                if state and attacker is pokemon:
                     # owner is the attacker (attached tool affects outgoing damage)
                     player = state.get_player(player_idx)
                     opponent = state.get_player(1 - player_idx)
@@ -156,6 +203,8 @@ def _register_tool_modifier(tool_card, player_idx: int, source_prefix: str,
         # 活力头带: +10 unconditional
         if effect_name == "damage_boost_10":
             def vital_mod(data: dict) -> dict | None:
-                return {"delta": 10, "source": "活力头带"}
+                if data.get("attacker") is pokemon:
+                    return {"delta": 10, "source": "活力头带"}
+                return None
             event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, vital_mod,
                               source=source, owner_player=player_idx, priority=35)

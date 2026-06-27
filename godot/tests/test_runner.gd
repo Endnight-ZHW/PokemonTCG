@@ -48,9 +48,9 @@ func _run_phase_one_tests() -> void:
 	var fixture := _read_json("res://tests/fixtures/data_contract.json")
 	var models := _read_json("res://data/ai_models.json")
 
-	_check(cards.size() == 115, "Expected 115 exported cards")
-	_check(decks.size() == 8, "Expected 8 exported decks")
-	_check(fixture.get("counts", {}).get("effects", 0) == 72, "Expected 72 effect types")
+	_check(cards.size() == 126, "Expected 126 exported cards")
+	_check(decks.size() == 9, "Expected 9 exported decks")
+	_check(fixture.get("counts", {}).get("effects", 0) == 77, "Expected 77 effect types")
 	for deck_key in decks:
 		_check(decks[deck_key].get("card_count", 0) == 60, "Deck %s must contain 60 cards" % deck_key)
 	_check(models.get("models", {}).size() == 8, "Expected 8 Deep AI model manifest rows")
@@ -121,7 +121,7 @@ func _run_phase_two_tests() -> void:
 	var catalog := CardCatalog.new()
 	var engine := GameEngine.new(catalog)
 	var effect_types: Array = fixture.get("effect_types", [])
-	_check(effect_types.size() == 72, "Expected 72 exported effect type names")
+	_check(effect_types.size() == 77, "Expected 77 exported effect type names")
 	for effect_type in effect_types:
 		_check(
 			engine.effect_engine.supports_effect_type(str(effect_type)),
@@ -130,6 +130,7 @@ func _run_phase_two_tests() -> void:
 	_run_effect_examples(fixture, catalog, engine)
 	_run_python_golden_actions(engine)
 	_run_release_deck_playouts(catalog, engine)
+	_run_steel_rules_tests(catalog, engine)
 	_run_turn_state_regression_tests(catalog, engine)
 
 	var stack := ResolutionStack.new()
@@ -317,8 +318,8 @@ func _run_phase_three_tests() -> void:
 		_check(local_button.custom_minimum_size.y >= 48, "Touch target is below 48 px")
 	ui.show_deck_select()
 	_check(ui.current_screen == "decks", "Deck selection screen did not open")
-	_check(ui.deck_one_option.item_count == 8, "Player one deck list must contain 8 decks")
-	_check(ui.deck_two_option.item_count == 8, "Player two deck list must contain 8 decks")
+	_check(ui.deck_one_option.item_count == 9, "Player one deck list must contain 9 decks")
+	_check(ui.deck_two_option.item_count == 9, "Player two deck list must contain 9 decks")
 	var started: bool = ui.start_local_match_for_test("fire", "water")
 	_check(started, "UI could not start a local match")
 	_check(ui.current_screen == "game", "Game screen did not open")
@@ -2536,7 +2537,7 @@ func _run_local_ui_playout(ui: Node) -> void:
 		if actions.is_empty():
 			break
 		var previous_revision: int = ui.state.revision
-		var step: StepResult = ui._execute_action(_playout_action(actions))
+		var step: StepResult = ui._execute_action(_playout_action(actions, ui.state, ui.catalog))
 		_check(step.success, "Local UI action failed: %s" % step.message)
 		if not step.success:
 			break
@@ -2598,7 +2599,7 @@ func _run_effect_examples(
 	engine: GameEngine,
 ) -> void:
 	var examples: Dictionary = fixture.get("effect_examples", {})
-	_check(examples.size() == 72, "Expected one real example for every effect type")
+	_check(examples.size() == 77, "Expected one real example for every effect type")
 	for effect_type in examples:
 		var state := _effect_state()
 		var stack := ResolutionStack.new()
@@ -2855,6 +2856,205 @@ func _run_turn_state_regression_tests(
 	)
 
 
+func _run_steel_rules_tests(
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	_check(
+		FileAccess.file_exists("res://assets/cards/svm-zacian.webp"),
+		"Steel placeholder image was not exported",
+	)
+	var steel_setup := GameState.new()
+	var setup_step := engine.setup_game(
+		steel_setup,
+		catalog.expand_deck("steel"),
+		catalog.expand_deck("fire"),
+		PortableRandomSource.new(4201),
+	)
+	_check(setup_step.success, "Steel deck setup failed: %s" % setup_step.message)
+
+	var attack_state := _steel_battle_state()
+	attack_state.players[0].active = PokemonState.new("svm-zacian")
+	attack_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(attack_state.players[0].active, ["sv1-ener-8"])
+	attack_state.players[0].bench[0] = PokemonState.new("svm-bronzor")
+	attack_state.players[0].bench[1] = PokemonState.new("svm-smeargle")
+	attack_state.players[1].active = PokemonState.new("svm-zamazenta")
+	attack_state.players[1].active.placed_this_turn = false
+	_set_energy_cards(attack_state.players[1].active, ["sv1-ener-8"])
+	var step := engine.apply_action(
+		attack_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(4202),
+	)
+	_check(step.success, "Zacian attack failed: %s" % step.message)
+	_check(
+		attack_state.players[1].active.damage_counters == 4,
+		"Zacian Battle Legion did not ignore Zamazenta shield",
+	)
+
+	var transfer_state := _steel_battle_state()
+	transfer_state.players[0].active = PokemonState.new("svm-bronzong")
+	transfer_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(transfer_state.players[0].active, ["sv1-ener-8", "sv1-ener-5"])
+	transfer_state.players[0].bench[0] = PokemonState.new("svm-orthworm")
+	_set_energy_cards(transfer_state.players[0].bench[0], ["sv1-ener-8", "sv1-ener-8"])
+	step = engine.apply_action(
+		transfer_state,
+		GameAction.new("USE_ABILITY", {"slot": "active", "ability_name": "金属转移"}, false, 0),
+		PortableRandomSource.new(4203),
+	)
+	step = _apply_slot_choice(engine, transfer_state, step, "active", PortableRandomSource.new(4204))
+	step = _apply_slot_choice(engine, transfer_state, step, "bench_0", PortableRandomSource.new(4205))
+	_check(step.success, "Bronzong first transfer failed: %s" % step.message)
+	_check(
+		transfer_state.players[0].active.energy_card_ids == ["sv1-ener-5"]
+		and transfer_state.players[0].bench[0].energy_card_ids.size() == 3,
+		"Bronzong moved the wrong energy or failed to move Metal energy",
+	)
+	step = engine.apply_action(
+		transfer_state,
+		GameAction.new("USE_ABILITY", {"slot": "active", "ability_name": "金属转移"}, false, 0),
+		PortableRandomSource.new(4206),
+	)
+	step = _apply_slot_choice(engine, transfer_state, step, "active", PortableRandomSource.new(4207))
+	_check(step.success, "Bronzong repeat transfer failed: %s" % step.message)
+	_check(
+		transfer_state.players[0].active.energy_card_ids == ["sv1-ener-5", "sv1-ener-8"]
+		and transfer_state.players[0].active.used_abilities.is_empty(),
+		"Bronzong repeatable ability was marked used or failed to move Metal back",
+	)
+
+	var follow_up_state := _steel_battle_state()
+	follow_up_state.players[0].active = PokemonState.new("svm-cobalion")
+	follow_up_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(follow_up_state.players[0].active, ["sv1-ener-8", "sv1-ener-8"])
+	follow_up_state.players[0].bench[0] = PokemonState.new("svm-zacian")
+	follow_up_state.players[0].bench[1] = PokemonState.new("svm-zamazenta")
+	follow_up_state.players[0].deck = ["sv1-ener-8", "sv1-ener-8", "sv1-151"]
+	step = engine.apply_action(
+		follow_up_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(4208),
+	)
+	_check(step.success and step.pending_choice != null,
+		"Cobalion Follow-Up did not request energy distribution")
+	var follow_up_option := _choice_id_for_slot(step.pending_choice, "bench_0")
+	step = engine.apply_choice(
+		follow_up_state,
+		step.pending_choice,
+		ChoiceResponse.new(step.pending_choice.request_id, [
+			follow_up_option, follow_up_option,
+		]),
+		PortableRandomSource.new(42081),
+	)
+	_check(step.success, "Cobalion Follow-Up duplicate-target choice failed: %s" % step.message)
+	_check(
+		follow_up_state.players[0].bench[0].energy_card_ids.size() == 1
+		and follow_up_state.players[0].bench[1].energy_card_ids.is_empty()
+		and follow_up_state.players[0].deck.count("sv1-ener-8") == 1,
+		"Cobalion Follow-Up attached more than one energy to the same bench target",
+	)
+
+	var hp_state := _steel_battle_state()
+	hp_state.players[0].active = PokemonState.new("svm-orthworm")
+	hp_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(hp_state.players[0].active, ["sv1-ener-8", "sv1-ener-8", "sv1-ener-8"])
+	hp_state.players[0].active.damage_counters = 14
+	hp_state.players[0].bench[0] = PokemonState.new("svm-bronzong")
+	hp_state.players[0].bench[1] = PokemonState.new("svm-zacian")
+	_check(
+		hp_state.players[0].active.current_hp(catalog) == 90,
+		"Orthworm HP boost did not apply at three Metal energy",
+	)
+	step = engine.apply_action(
+		hp_state,
+		GameAction.new("USE_ABILITY", {"slot": "bench_0", "ability_name": "金属转移"}, false, 0),
+		PortableRandomSource.new(4209),
+	)
+	step = _apply_slot_choice(engine, hp_state, step, "bench_1", PortableRandomSource.new(4210))
+	_check(step.success, "Orthworm HP-drop transfer failed: %s" % step.message)
+	_check(
+		hp_state.players[0].active == null and "svm-orthworm" in hp_state.players[0].discard,
+		"Orthworm was not knocked out after dropping below the HP boost threshold",
+	)
+
+	var pierce_state := _steel_battle_state()
+	pierce_state.players[0].active = PokemonState.new("svm-orthworm")
+	pierce_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(pierce_state.players[0].active, [
+		"sv1-ener-8", "sv1-ener-8", "sv1-ener-8", "sv1-ener-8",
+	])
+	pierce_state.players[1].active = PokemonState.new("svm-zamazenta")
+	pierce_state.players[1].active.placed_this_turn = false
+	pierce_state.players[1].bench[0] = PokemonState.new("svm-zamazenta")
+	step = engine.apply_action(
+		pierce_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(4211),
+	)
+	step = _apply_slot_choice(engine, pierce_state, step, "bench_0", PortableRandomSource.new(4212))
+	_check(step.success, "Orthworm Pierce failed: %s" % step.message)
+	_check(
+		pierce_state.players[1].active.damage_counters == 10
+		and pierce_state.players[1].bench[0].damage_counters == 3,
+		"Orthworm Pierce did not damage active and selected bench correctly",
+	)
+
+
+func _steel_battle_state() -> GameState:
+	var state := GameState.new()
+	state.phase = "MAIN"
+	state.turn_number = 3
+	state.first_player_idx = 1
+	state.active_player_idx = 0
+	state.players[0].active = PokemonState.new("svm-zacian")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].deck = ["sv1-ener-8", "sv1-ener-8", "sv1-ener-8"]
+	state.players[0].prizes = ["sv1-ener-8", "sv1-ener-8"]
+	state.players[1].active = PokemonState.new("sv1-104")
+	state.players[1].active.placed_this_turn = false
+	state.players[1].deck = ["sv1-ener-5", "sv1-ener-5", "sv1-ener-5"]
+	state.players[1].prizes = ["sv1-ener-5", "sv1-ener-5"]
+	return state
+
+
+func _set_energy_cards(pokemon: PokemonState, card_ids: Array) -> void:
+	pokemon.energy_card_ids.clear()
+	pokemon.energy_card_ids.assign(card_ids)
+
+
+func _apply_slot_choice(
+	engine: GameEngine,
+	state: GameState,
+	step: StepResult,
+	slot: String,
+	rng: PortableRandomSource,
+) -> StepResult:
+	_check(step.success, "Cannot apply slot choice after failed step: %s" % step.message)
+	if not step.success or step.pending_choice == null:
+		return step
+	var request := step.pending_choice
+	var option_id := _choice_id_for_slot(request, slot)
+	if option_id.is_empty():
+		return step
+	return engine.apply_choice(
+		state,
+		request,
+		ChoiceResponse.new(request.request_id, [option_id]),
+		rng,
+	)
+
+
+func _choice_id_for_slot(request: ChoiceRequest, slot: String) -> String:
+	for option_value in request.options:
+		var option: Dictionary = option_value
+		if str(option.get("value", {}).get("slot", "")) == slot:
+			return str(option.get("option_id", ""))
+	_check(false, "Choice request %s did not include slot %s" % [request.request_type, slot])
+	return ""
+
+
 func _rule_summary(state: GameState) -> Dictionary:
 	var payload := state.to_dict()
 	payload.erase("action_log")
@@ -2950,7 +3150,7 @@ func _run_release_deck_playouts(
 			))
 			if actions.is_empty():
 				break
-			var selected := _playout_action(actions)
+			var selected := _playout_action(actions, state, catalog)
 			var step := engine.apply_action(state, selected, rng)
 			_check(step.success, "Illegal enumerated action %s: %s" % [
 				selected.action, step.message])
@@ -2984,7 +3184,11 @@ func _run_release_deck_playouts(
 			first_key, second_key])
 
 
-func _playout_action(actions: Array[GameAction]) -> GameAction:
+func _playout_action(
+	actions: Array[GameAction],
+	state: GameState = null,
+	catalog: CardCatalog = null,
+) -> GameAction:
 	var priorities := [
 		"PROMOTE",
 		"PLAY_BASIC",
@@ -2997,11 +3201,39 @@ func _playout_action(actions: Array[GameAction]) -> GameAction:
 		"DECLARE_ATTACK",
 		"END_TURN",
 	]
+	var repeatable_fallback: GameAction
 	for action_name in priorities:
 		for action in actions:
-			if action.action == action_name:
-				return action
-	return actions[0]
+			if action.action != action_name:
+				continue
+			if _is_repeatable_ability_action(state, catalog, action):
+				if repeatable_fallback == null:
+					repeatable_fallback = action
+				continue
+			return action
+	return repeatable_fallback if repeatable_fallback != null else actions[0]
+
+
+func _is_repeatable_ability_action(
+	state: GameState,
+	catalog: CardCatalog,
+	action: GameAction,
+) -> bool:
+	if state == null or catalog == null or action.action != "USE_ABILITY":
+		return false
+	var actor := action.actor if action.actor >= 0 else state.active_player_idx
+	if actor not in [0, 1]:
+		return false
+	var slot := str(action.params.get("slot", ""))
+	var ability_name := str(action.params.get("ability_name", ""))
+	var pokemon := state.get_player(actor).get_pokemon(slot)
+	if pokemon == null:
+		return false
+	for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
+		var ability: Dictionary = ability_value
+		if str(ability.get("name", "")) == ability_name:
+			return str(ability.get("trigger", "")) == "repeatable"
+	return false
 
 
 func _read_json(path: String) -> Dictionary:

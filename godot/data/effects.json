@@ -1716,5 +1716,259 @@
       "effect_type": "zinnia_resolve",
       "params": {}
     }
+  },
+  "svm-bronzong": {
+    "abilities": {
+      "金属转移": {
+        "effects": [
+          {
+            "effect_type": "energy_relocate",
+            "params": {
+              "amount": 1,
+              "energy_type": "Metal"
+            }
+          }
+        ],
+        "trigger": "repeatable"
+      }
+    },
+    "attacks": {
+      "意念头锤": {
+        "effects": []
+      }
+    }
+  },
+  "svm-bronzor": {
+    "attacks": {
+      "金属压制": {
+        "effects": [
+          {
+            "effect_type": "coin_flip",
+            "params": {
+              "on_heads": [
+                {
+                  "effect_type": "status",
+                  "params": {
+                    "status": "paralyzed",
+                    "target": "opponent_active"
+                  }
+                }
+              ],
+              "on_tails": []
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svm-cobalion": {
+    "abilities": {
+      "正义法则": {
+        "effects": [
+          {
+            "effect_type": "aura_damage_boost",
+            "params": {
+              "amount": 30,
+              "attacker_subtype": "Basic",
+              "defender_type": "Darkness"
+            }
+          }
+        ],
+        "trigger": "passive"
+      }
+    },
+    "attacks": {
+      "跟进": {
+        "effects": [
+          {
+            "effect_type": "energy_attach",
+            "params": {
+              "amount": 2,
+              "filter": "basic_energy",
+              "from_zone": "deck",
+              "max_per_target": 1,
+              "to": "bench"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svm-dialga": {
+    "attacks": {
+      "时之逆流": {
+        "effects": [
+          {
+            "effect_type": "search",
+            "params": {
+              "count": 1,
+              "destination": "hand",
+              "filter": "any",
+              "from_zone": "discard",
+              "reveal": true
+            }
+          }
+        ]
+      },
+      "金属爆破": {
+        "effects": [
+          {
+            "effect_type": "attack_damage_formula",
+            "params": {
+              "base": 60,
+              "per_energy": 20,
+              "per_self_energy_type": "Metal"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svm-klefki": {
+    "attacks": {
+      "解锁": {
+        "effects": [
+          {
+            "effect_type": "draw",
+            "params": {
+              "amount": 2,
+              "player": "self"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svm-marnie-pride": {
+    "trainer_effect": {
+      "effect_type": "attach_from_discard",
+      "params": {
+        "amount": 1,
+        "energy_type": "basic_energy",
+        "target": "bench"
+      }
+    }
+  },
+  "svm-orthworm": {
+    "abilities": {
+      "营养铁质": {
+        "effects": [
+          {
+            "effect_type": "conditional_hp_boost",
+            "params": {
+              "amount": 100,
+              "energy_type": "Metal",
+              "threshold": 3
+            }
+          }
+        ],
+        "trigger": "passive"
+      }
+    },
+    "attacks": {
+      "刺穿": {
+        "effects": [
+          {
+            "effect_type": "bench_damage",
+            "params": {
+              "amount": 30,
+              "choose_targets": true,
+              "count": 1,
+              "player": "opponent"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svm-skarmory": {
+    "attacks": {
+      "啄": {
+        "effects": []
+      },
+      "钢铁之刃": {
+        "effects": [
+          {
+            "effect_type": "self_attack_lock",
+            "params": {
+              "attack_name": "钢铁之刃"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svm-smeargle": {
+    "attacks": {
+      "冲撞": {
+        "effects": []
+      },
+      "多彩调色盘": {
+        "effects": [
+          {
+            "effect_type": "look_top_attach_energy",
+            "params": {
+              "count": 5,
+              "filter": "basic_energy",
+              "shuffle_rest": true,
+              "take": 99,
+              "target": "self_or_bench"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "svm-zacian": {
+    "attacks": {
+      "战斗军团": {
+        "effects": [
+          {
+            "effect_type": "attack_damage_formula",
+            "params": {
+              "base": 20,
+              "ignore_defender_effects": true,
+              "per_own_bench": 10,
+              "piercing": true
+            }
+          }
+        ]
+      },
+      "薄片利刃": {
+        "effects": []
+      }
+    }
+  },
+  "svm-zamazenta": {
+    "abilities": {
+      "金属之盾": {
+        "effects": [
+          {
+            "effect_type": "aura_damage_reduction",
+            "params": {
+              "reduction": 30,
+              "requires_attached_energy": true
+            }
+          }
+        ],
+        "trigger": "passive"
+      }
+    },
+    "attacks": {
+      "报仇": {
+        "effects": [
+          {
+            "effect_type": "attack_damage_formula",
+            "params": {
+              "base": 100,
+              "condition_bonus": {
+                "bonus": 120,
+                "condition": "ko_by_attack_last_turn"
+              }
+            }
+          }
+        ]
+      }
+    }
   }
 }

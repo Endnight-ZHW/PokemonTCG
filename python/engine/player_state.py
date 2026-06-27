@@ -27,13 +27,28 @@ class PokemonInPlay:
 
     @property
     def current_hp(self) -> int:
-        """Remaining HP (HP + tool_bonus - damage_counters * DAMAGE_PER_COUNTER)."""
-        tool_bonus = 0
+        """Remaining HP after tool/ability max-HP modifiers and damage counters."""
+        hp_bonus = 0
         if self.attached_tool and hasattr(self.attached_tool, 'trainer_effects'):
             for eff in self.attached_tool.trainer_effects:
                 if eff.params.get("effect") == "hp_boost_basic" and self.card.is_basic_pokemon:
-                    tool_bonus = TOOL_HP_BOOST
-        return max(0, self.card.hp + tool_bonus - self.damage_counters * DAMAGE_PER_COUNTER)
+                    hp_bonus += TOOL_HP_BOOST
+        for ability in self.card.abilities or []:
+            for eff in ability.effects or []:
+                if eff.effect_type != "conditional_hp_boost":
+                    continue
+                params = eff.params or {}
+                energy_type = str(params.get("energy_type", "") or "").lower()
+                threshold = int(params.get("threshold", 0) or 0)
+                amount = int(params.get("amount", 0) or 0)
+                matching = sum(
+                    1
+                    for card in self.energy_cards
+                    if any(str(provided).lower() == energy_type for provided in card.provides_energy)
+                )
+                if matching >= threshold:
+                    hp_bonus += amount
+        return max(0, self.card.hp + hp_bonus - self.damage_counters * DAMAGE_PER_COUNTER)
 
     @property
     def is_knocked_out(self) -> bool:

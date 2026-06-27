@@ -27,6 +27,7 @@ from data.deck_definitions import (
     GRASS_DECK,
     LIGHTNING_DECK,
     PSYCHIC_DECK_NATU,
+    STEEL_DECK,
     WATER_DECK,
 )
 from engine.actions import (
@@ -98,7 +99,23 @@ DECKS = {
         "energy_type": "Grass",
         "cards": GRASS_DECK,
     },
+    "steel": {
+        "name": "苍响·藏玛然特",
+        "energy_type": "Metal",
+        "cards": STEEL_DECK,
+    },
 }
+
+DEEP_AI_MODEL_DECK_KEYS = (
+    "fire",
+    "water",
+    "psychic",
+    "lightning",
+    "fighting",
+    "colorless",
+    "dragon",
+    "grass",
+)
 
 
 def _json_value(value: Any) -> Any:
@@ -210,7 +227,7 @@ def _deck_payload() -> dict[str, dict[str, Any]]:
 def _model_manifest() -> dict[str, Any]:
     model_root = PYTHON_ROOT / "data" / "ai_models"
     models: dict[str, Any] = {}
-    for deck_key in DECKS:
+    for deck_key in DEEP_AI_MODEL_DECK_KEYS:
         checkpoint = model_root / f"{deck_key}.pt"
         sidecar = model_root / f"{deck_key}.json"
         metadata: dict[str, Any] = {}

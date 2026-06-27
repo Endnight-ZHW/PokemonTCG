@@ -15,10 +15,10 @@ class GodotDataExportTests(unittest.TestCase):
             second_contract = export(second, copy_images=False)
 
             self.assertEqual(first_contract, second_contract)
-            self.assertEqual(first_contract["counts"]["cards"], 115)
-            self.assertEqual(first_contract["counts"]["decks"], 8)
-            self.assertEqual(len(first_contract["effect_types"]), 72)
-            self.assertEqual(len(first_contract["effect_examples"]), 72)
+            self.assertEqual(first_contract["counts"]["cards"], 126)
+            self.assertEqual(first_contract["counts"]["decks"], 9)
+            self.assertEqual(len(first_contract["effect_types"]), 77)
+            self.assertEqual(len(first_contract["effect_examples"]), 77)
             self.assertTrue(all(size == 60 for size in first_contract["deck_sizes"].values()))
             rules = json.loads(
                 (first / "tests" / "fixtures" / "rules_golden.json").read_text(
@@ -30,7 +30,7 @@ class GodotDataExportTests(unittest.TestCase):
             first_cards = json.loads((first / "data" / "cards.json").read_text(encoding="utf-8"))
             second_cards = json.loads((second / "data" / "cards.json").read_text(encoding="utf-8"))
             self.assertEqual(first_cards, second_cards)
-            self.assertEqual(len(first_cards), 115)
+            self.assertEqual(len(first_cards), 126)
             self.assertEqual(first_cards["svi-chim"]["card_bucket"], 3624)
             self.assertEqual(len(first_cards["svi-chim"]["ai_semantic_features"]), 53)
             encoder_fixture = json.loads(

@@ -71,6 +71,7 @@ FULL_DAMAGE_EFFECT_TYPES = {
     "damage_per_discard_psychic",
     "conditional_damage_heal",
     "mill_and_damage_per_energy",
+    "attack_damage_formula",
 }
 
 
@@ -239,6 +240,12 @@ class ActionResolver:
             return ActionResult(False, reason)
 
         player.attach_energy_from_hand(hand_idx, target_slot)
+        target = player.get_pokemon(target_slot)
+        if target:
+            unregister_pokemon_modifiers(target.card.api_id, target_slot,
+                                         event_bus=self.state.event_bus)
+            register_pokemon_modifiers(target, player_idx, target_slot,
+                                       event_bus=self.state.event_bus)
 
         slot_cn = "战斗宝可梦" if target_slot == "active" else f"备战区{target_slot.split('_')[1]}"
         msg = f"{player.name}将{card.name}附着于{slot_cn}。"
@@ -309,6 +316,10 @@ class ActionResolver:
             target = player.get_pokemon(target_slot)
             if target:
                 target.attached_tool = card
+                unregister_pokemon_modifiers(target.card.api_id, target_slot,
+                                             event_bus=self.state.event_bus)
+                register_pokemon_modifiers(target, player_idx, target_slot,
+                                           event_bus=self.state.event_bus)
 
         if card.is_trainer_stadium:
             if self.state.stadium_card:
@@ -351,7 +362,7 @@ class ActionResolver:
                 msg = f"{player.name}使用了{pokemon.card.name}的特性{ability.name}。"
                 self.state._log(msg)
                 result = self._execute_effects(ability.effects, player_idx, slot)
-                if result.success:
+                if result.success and ability.trigger != "repeatable":
                     pokemon.used_abilities.add(ability.name)
                 return result
 

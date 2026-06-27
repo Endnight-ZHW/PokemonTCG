@@ -7,9 +7,9 @@
     "svi-chim": 3624
   },
   "counts": {
-    "cards": 115,
-    "decks": 8,
-    "effects": 72
+    "cards": 126,
+    "decks": 9,
+    "effects": 77
   },
   "deck_sizes": {
     "colorless": 60,
@@ -19,6 +19,7 @@
     "grass": 60,
     "lightning": 60,
     "psychic": 60,
+    "steel": 60,
     "water": 60
   },
   "effect_examples": {
@@ -48,6 +49,16 @@
         "target": "bench"
       }
     },
+    "attack_damage_formula": {
+      "effect_type": "attack_damage_formula",
+      "params": {
+        "base": 100,
+        "condition_bonus": {
+          "bonus": 120,
+          "condition": "ko_by_attack_last_turn"
+        }
+      }
+    },
     "attack_fail": {
       "effect_type": "attack_fail",
       "params": {}
@@ -58,10 +69,27 @@
         "target": "opponent_active"
       }
     },
+    "aura_damage_boost": {
+      "effect_type": "aura_damage_boost",
+      "params": {
+        "amount": 30,
+        "attacker_subtype": "Basic",
+        "defender_type": "Darkness"
+      }
+    },
     "aura_damage_reduction": {
       "effect_type": "aura_damage_reduction",
       "params": {
         "reduction": 20
+      }
+    },
+    "bench_damage": {
+      "effect_type": "bench_damage",
+      "params": {
+        "amount": 30,
+        "choose_targets": true,
+        "count": 1,
+        "player": "opponent"
       }
     },
     "clara": {
@@ -150,6 +178,14 @@
       "params": {
         "base": 60,
         "bonus": 90
+      }
+    },
+    "conditional_hp_boost": {
+      "effect_type": "conditional_hp_boost",
+      "params": {
+        "amount": 100,
+        "energy_type": "Metal",
+        "threshold": 3
       }
     },
     "conditional_search_extra": {
@@ -384,6 +420,16 @@
         "draw": 4
       }
     },
+    "look_top_attach_energy": {
+      "effect_type": "look_top_attach_energy",
+      "params": {
+        "count": 5,
+        "filter": "basic_energy",
+        "shuffle_rest": true,
+        "take": 99,
+        "target": "self_or_bench"
+      }
+    },
     "look_top_deck": {
       "effect_type": "look_top_deck",
       "params": {
@@ -528,9 +574,12 @@
     "any_pokemon_damage",
     "arven",
     "attach_from_discard",
+    "attack_damage_formula",
     "attack_fail",
     "attack_lock_basic",
+    "aura_damage_boost",
     "aura_damage_reduction",
+    "bench_damage",
     "clara",
     "coin_flip",
     "coin_flip_double_ko",
@@ -540,6 +589,7 @@
     "conditional",
     "conditional_damage_bonus",
     "conditional_damage_heal",
+    "conditional_hp_boost",
     "conditional_search_extra",
     "conditional_status",
     "conditional_zero_retreat",
@@ -574,6 +624,7 @@
     "heal_all",
     "houb",
     "judge",
+    "look_top_attach_energy",
     "look_top_deck",
     "mill_and_damage_per_energy",
     "piercing_marker",

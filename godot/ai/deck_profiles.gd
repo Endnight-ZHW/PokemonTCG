@@ -74,6 +74,15 @@ const PROFILES := {
 		"trainer": ["sv1-152", "svg2-gard", "svg2-exps", "sv1-153"],
 		"energy": ["Grass", "Rainbow"],
 	},
+	"steel": {
+		"core": ["svm-zacian", "svm-zamazenta", "svm-bronzong", "svm-orthworm"],
+		"engine": ["svm-bronzor", "svm-smeargle", "svm-cobalion", "svm-dialga"],
+		"setup": ["svm-smeargle", "svm-zamazenta", "svm-zacian", "svm-cobalion"],
+		"bench": ["svm-bronzor", "svm-smeargle", "svm-cobalion", "svm-orthworm"],
+		"evolution": ["svm-bronzong"],
+		"trainer": ["sv1-151", "sv1-153", "svm-marnie-pride", "svg2-exps", "svl-vitb"],
+		"energy": ["Metal"],
+	},
 }
 
 

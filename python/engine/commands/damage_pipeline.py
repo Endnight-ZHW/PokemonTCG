@@ -22,6 +22,7 @@ def resolve_damage(
     base_damage: int,
     attacker_type: str,
     piercing: bool = False,
+    ignore_defender_effects: bool = False,
 ) -> tuple[int, list[str]]:
     """Run the full damage pipeline and return (final_damage, log_messages).
 
@@ -40,6 +41,7 @@ def resolve_damage(
         attacker=attacker,
         defender=defender,
         state=state,
+        ignore_defender_effects=ignore_defender_effects,
     )
     for mod in mod_results:
         if isinstance(mod, dict):
@@ -66,6 +68,7 @@ def resolve_damage(
         attacker=attacker,
         defender=defender,
         state=state,
+        ignore_defender_effects=ignore_defender_effects,
     )
     for react in react_results:
         if isinstance(react, dict):

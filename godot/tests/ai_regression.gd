@@ -1,8 +1,13 @@
 extends SceneTree
 
-const DECK_KEYS := [
+const DEEP_DECK_KEYS := [
 	"fire", "water", "psychic", "lightning",
 	"fighting", "colorless", "dragon", "grass",
+]
+
+const CHALLENGE_DECK_KEYS := [
+	"fire", "water", "psychic", "lightning",
+	"fighting", "colorless", "dragon", "grass", "steel",
 ]
 
 var failures: Array[String] = []
@@ -17,9 +22,10 @@ func _initialize() -> void:
 	var runtime := DeepAIRuntime.new()
 	var summaries: Array[Dictionary] = []
 	for mode in ["challenge", "deep"]:
-		for index in range(DECK_KEYS.size()):
-			var deck_key := str(DECK_KEYS[index])
-			var opponent_key := str(DECK_KEYS[(index + 1) % DECK_KEYS.size()])
+		var deck_keys := CHALLENGE_DECK_KEYS if mode == "challenge" else DEEP_DECK_KEYS
+		for index in range(deck_keys.size()):
+			var deck_key := str(deck_keys[index])
+			var opponent_key := str(deck_keys[(index + 1) % deck_keys.size()])
 			var backend: Variant = null
 			if mode == "deep":
 				if not runtime.load_for_deck(deck_key):
@@ -149,7 +155,7 @@ func _play_game(
 			action = GameAction.from_dict(decision["action"])
 			decisions += 1
 		else:
-			action = _automatic_action(legal)
+			action = _automatic_action(legal, state, catalog)
 		action.action_id = "regression:%d:%d" % [state.revision, actions_taken]
 		var step := engine.apply_action(state, action, rng)
 		if not step.success:
@@ -177,17 +183,48 @@ func _actor(state: GameState) -> int:
 	return state.active_player_idx
 
 
-func _automatic_action(actions: Array[GameAction]) -> GameAction:
+func _automatic_action(
+	actions: Array[GameAction],
+	state: GameState,
+	catalog: CardCatalog,
+) -> GameAction:
 	var priority := [
 		"PROMOTE", "PLAY_BASIC", "EVOLVE", "ATTACH_ENERGY", "PLAY_TRAINER",
 		"USE_ABILITY", "USE_STADIUM", "RETREAT", "DECLARE_ATTACK",
 		"SETUP_DONE", "END_TURN",
 	]
+	var repeatable_fallback: GameAction
 	for action_name in priority:
 		for action in actions:
-			if action.action == action_name:
-				return action
-	return actions[0]
+			if action.action != action_name:
+				continue
+			if _is_repeatable_ability_action(state, catalog, action):
+				if repeatable_fallback == null:
+					repeatable_fallback = action
+				continue
+			return action
+	return repeatable_fallback if repeatable_fallback != null else actions[0]
+
+
+func _is_repeatable_ability_action(
+	state: GameState,
+	catalog: CardCatalog,
+	action: GameAction,
+) -> bool:
+	if action.action != "USE_ABILITY":
+		return false
+	var actor := action.actor if action.actor >= 0 else state.active_player_idx
+	if actor not in [0, 1]:
+		return false
+	var pokemon := state.get_player(actor).get_pokemon(str(action.params.get("slot", "")))
+	if pokemon == null:
+		return false
+	var ability_name := str(action.params.get("ability_name", ""))
+	for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
+		var ability: Dictionary = ability_value
+		if str(ability.get("name", "")) == ability_name:
+			return str(ability.get("trigger", "")) == "repeatable"
+	return false
 
 
 func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:
@@ -198,7 +235,38 @@ func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:
 		maxi(request.min_select, request.max_select),
 	)
 	var selected: Array[String] = []
-	for index in range(count):
-		var option_index := 0 if request.allow_duplicates else index
-		selected.append(str(request.options[option_index]["option_id"]))
+	if request.allow_duplicates:
+		var max_per_target := int(request.metadata.get("max_per_target", 99))
+		var per_target: Dictionary = {}
+		for index in range(request.options.size()):
+			if selected.size() >= count:
+				break
+			var option: Dictionary = request.options[index]
+			var target_key := _automatic_choice_target_key(option)
+			if (
+				not target_key.is_empty()
+				and int(per_target.get(target_key, 0)) >= max_per_target
+			):
+				continue
+			if not target_key.is_empty():
+				per_target[target_key] = int(per_target.get(target_key, 0)) + 1
+			selected.append(str(option["option_id"]))
+		while selected.size() < count:
+			selected.append(str(request.options[0]["option_id"]))
+	else:
+		for index in range(count):
+			selected.append(str(request.options[index]["option_id"]))
 	return ChoiceResponse.new(request.request_id, selected)
+
+
+func _automatic_choice_target_key(option: Dictionary) -> String:
+	var value_variant: Variant = option.get("value", {})
+	if value_variant is Dictionary:
+		var value: Dictionary = value_variant
+		var slot := str(value.get("slot", ""))
+		if not slot.is_empty():
+			return slot
+	var ref_variant: Variant = option.get("ref", {})
+	if ref_variant is Dictionary:
+		return str(Dictionary(ref_variant).get("slot", ""))
+	return ""
