@@ -28,10 +28,8 @@ func start_match(
 		catalog.expand_deck(host_deck),
 		catalog.expand_deck(client_deck),
 		rng,
+		forced_first,
 	)
-	if result.success and forced_first in [0, 1]:
-		state.first_player_idx = forced_first
-		state.active_player_idx = forced_first
 	if result.success:
 		state.players[0].name = "房主"
 		state.players[1].name = "挑战者"

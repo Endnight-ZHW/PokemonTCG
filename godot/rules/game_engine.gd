@@ -31,6 +31,7 @@ func setup_game(
 	deck_one: Array[String],
 	deck_two: Array[String],
 	rng: PortableRandomSource,
+	forced_first: int = -1,
 ) -> StepResult:
 	if deck_one.size() != 60 or deck_two.size() != 60:
 		return _error("双方牌组都必须正好包含60张卡。", "invalid_deck_size", state)
@@ -47,7 +48,7 @@ func setup_game(
 	state.extra_draws = [0, 0]
 	state.setup_ready = [false, false]
 	state.action_log.clear()
-	state.setup_game(deck_one, deck_two, rng)
+	state.setup_game(deck_one, deck_two, rng, forced_first)
 	for player_idx in [0, 1]:
 		var player := state.get_player(player_idx)
 		var guard := 0
@@ -909,6 +910,7 @@ func _end_turn(
 	for row in outgoing.get_all_pokemon():
 		var pokemon: PokemonState = row["pokemon"]
 		if pokemon:
+			pokemon.dazzled = false
 			pokemon.attack_locked = false
 			var expired: Array[String] = []
 			for attack_name in pokemon.attack_locked_names:
@@ -916,6 +918,7 @@ func _end_turn(
 					expired.append(str(attack_name))
 			for attack_name in expired:
 				pokemon.attack_locked_names.erase(attack_name)
+	outgoing.was_ko_by_attack = false
 	state.active_player_idx = 1 - actor
 	state.turn_number += 1
 	state.get_player(state.active_player_idx).reset_turn_flags()

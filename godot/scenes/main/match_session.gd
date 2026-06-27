@@ -19,7 +19,7 @@ func configure(
 	rng = p_rng
 
 
-func legal_actions(actor: int, include_setup: bool = true) -> Array[GameAction]:
+func legal_actions(actor: int, validate_effects: bool = true) -> Array[GameAction]:
 	if state == null:
 		return []
-	return engine.legal_actions(state, actor, include_setup)
+	return engine.legal_actions(state, actor, validate_effects)

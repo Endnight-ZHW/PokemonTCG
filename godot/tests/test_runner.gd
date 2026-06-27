@@ -130,6 +130,7 @@ func _run_phase_two_tests() -> void:
 	_run_effect_examples(fixture, catalog, engine)
 	_run_python_golden_actions(engine)
 	_run_release_deck_playouts(catalog, engine)
+	_run_turn_state_regression_tests(catalog, engine)
 
 	var stack := ResolutionStack.new()
 	stack.context = {"finish_attack": true, "actor": 0}
@@ -601,6 +602,32 @@ func _run_phase_four_foundation_tests() -> void:
 	_check(not ai_ui.modal_layer.visible,
 		"Challenge AI match opened the local privacy overlay")
 	_check(ai_ui.state.players[1].name == "Challenge AI", "AI player name mismatch")
+	var fallback_state := _battle_state()
+	fallback_state.phase = "MAIN"
+	fallback_state.turn_number = 4
+	fallback_state.first_player_idx = 0
+	fallback_state.active_player_idx = 1
+	fallback_state.revision = 77
+	ai_ui.state = fallback_state
+	ai_ui.rng = PortableRandomSource.new(20260627)
+	ai_ui.ai_thinking = true
+	ai_ui.active_ai_request_id = "ai-failure-test"
+	ai_ui._refresh_game()
+	ai_ui._apply_ai_result({
+		"success": false,
+		"error": "forced_failure",
+		"request_id": "ai-failure-test",
+		"revision": fallback_state.revision,
+	})
+	_check(not ai_ui.ai_thinking, "AI failure fallback left the UI thinking")
+	_check(
+		ai_ui.state.active_player_idx == 0,
+		"AI failure fallback did not advance to the human turn",
+	)
+	_check(
+		ai_ui.state.revision > 77,
+		"AI failure fallback did not apply a legal fallback action",
+	)
 	ai_ui._stop_ai()
 	_check(
 		ai_ui.start_ai_match_for_test(
@@ -2380,6 +2407,137 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 				JSON.stringify(_rule_summary(state)),
 			],
 		)
+
+
+func _run_turn_state_regression_tests(
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	var ko_state := _battle_state()
+	ko_state.active_player_idx = 0
+	ko_state.first_player_idx = 0
+	ko_state.turn_number = 3
+	ko_state.players[1].was_ko_by_attack = true
+	var step := engine.apply_action(
+		ko_state,
+		GameAction.new("END_TURN", {}, true, 0),
+		PortableRandomSource.new(3101),
+	)
+	_check(step.success, "KO trigger window setup turn failed: %s" % step.message)
+	_check(
+		ko_state.active_player_idx == 1
+		and ko_state.players[1].was_ko_by_attack,
+		"KO-by-attack marker was cleared before the victim's response turn",
+	)
+	var stack := ResolutionStack.new()
+	stack.push_effect({
+		"effect_type": "conditional_damage_bonus",
+		"params": {"condition": "ko_by_attack_last_turn", "bonus": 20},
+	}, 1, "active")
+	var conditional := engine.effect_engine.resolve(
+		ko_state,
+		stack,
+		PortableRandomSource.new(3102),
+	)
+	_check(
+		conditional.success,
+		"KO-by-attack conditional effect failed: %s" % conditional.message,
+	)
+	_check(
+		ko_state.players[0].active.damage_counters == 2,
+		"KO-by-attack conditional effect did not apply its bonus damage",
+	)
+	_check(
+		not ko_state.players[1].was_ko_by_attack,
+		"KO-by-attack marker was not consumed by its conditional effect",
+	)
+
+	var unused_ko_state := _battle_state()
+	unused_ko_state.active_player_idx = 0
+	unused_ko_state.first_player_idx = 0
+	unused_ko_state.turn_number = 3
+	unused_ko_state.players[1].was_ko_by_attack = true
+	step = engine.apply_action(
+		unused_ko_state,
+		GameAction.new("END_TURN", {}, true, 0),
+		PortableRandomSource.new(3103),
+	)
+	_check(step.success, "Unused KO marker victim turn setup failed: %s" % step.message)
+	step = engine.apply_action(
+		unused_ko_state,
+		GameAction.new("END_TURN", {}, true, 1),
+		PortableRandomSource.new(3104),
+	)
+	_check(step.success, "Unused KO marker victim turn end failed: %s" % step.message)
+	_check(
+		not unused_ko_state.players[1].was_ko_by_attack,
+		"Unused KO-by-attack marker survived past the victim's response turn",
+	)
+
+	var prevention_state := _battle_state()
+	prevention_state.active_player_idx = 0
+	prevention_state.first_player_idx = 0
+	prevention_state.turn_number = 3
+	prevention_state.players[0].active.damage_prevented_next_turn = true
+	prevention_state.players[0].active.all_prevented_next_turn = true
+	step = engine.apply_action(
+		prevention_state,
+		GameAction.new("END_TURN", {}, true, 0),
+		PortableRandomSource.new(3105),
+	)
+	_check(step.success, "Prevention opponent turn setup failed: %s" % step.message)
+	_check(
+		prevention_state.players[0].active.damage_prevented_next_turn
+		and prevention_state.players[0].active.all_prevented_next_turn,
+		"Next-turn prevention expired before the opponent's response turn",
+	)
+	step = engine.apply_action(
+		prevention_state,
+		GameAction.new("END_TURN", {}, true, 1),
+		PortableRandomSource.new(3106),
+	)
+	_check(step.success, "Prevention owner next turn setup failed: %s" % step.message)
+	_check(
+		not prevention_state.players[0].active.damage_prevented_next_turn
+		and not prevention_state.players[0].active.all_prevented_next_turn,
+		"Next-turn prevention did not expire at the owner's next turn start",
+	)
+
+	var dazzled_state := _battle_state()
+	dazzled_state.active_player_idx = 1
+	dazzled_state.first_player_idx = 0
+	dazzled_state.turn_number = 4
+	dazzled_state.players[1].active.dazzled = true
+	step = engine.apply_action(
+		dazzled_state,
+		GameAction.new("END_TURN", {}, true, 1),
+		PortableRandomSource.new(3107),
+	)
+	_check(step.success, "Dazzled expiry turn failed: %s" % step.message)
+	_check(
+		not dazzled_state.players[1].active.dazzled,
+		"Dazzled marker survived after the affected player ended their turn",
+	)
+
+	var forced_state := GameState.new()
+	var forced := engine.setup_game(
+		forced_state,
+		catalog.expand_deck("fire"),
+		catalog.expand_deck("water"),
+		PortableRandomSource.new(3108),
+		1,
+	)
+	_check(forced.success, "Forced-first setup failed: %s" % forced.message)
+	_check(
+		forced_state.first_player_idx == 1
+		and forced_state.active_player_idx == 1,
+		"Forced-first setup did not set both first and active player",
+	)
+	_check(
+		not forced_state.action_log.is_empty()
+		and forced_state.action_log[0].find("玩家2先攻") >= 0,
+		"Forced-first setup log did not name the forced first player",
+	)
 
 
 func _rule_summary(state: GameState) -> Dictionary:

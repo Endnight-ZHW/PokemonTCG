@@ -298,10 +298,9 @@ func _heuristic_choice(
 			state, request, request.options[right], deck_key, catalog
 		)
 	)
-	var count: int = mini(
-		request.options.size(),
-		maxi(request.min_select, request.max_select),
-	)
+	var count: int = maxi(request.min_select, request.max_select)
+	if not request.allow_duplicates:
+		count = mini(request.options.size(), count)
 	var selected: Array[String] = []
 	if request.allow_duplicates and count > 0:
 		for _index in range(count):
@@ -1426,10 +1425,9 @@ func _neural_choice(
 	ranked.sort_custom(func(left: int, right: int) -> bool:
 		return float(logits[left]) > float(logits[right])
 	)
-	var count: int = mini(
-		request.options.size(),
-		maxi(request.min_select, request.max_select),
-	)
+	var count: int = maxi(request.min_select, request.max_select)
+	if not request.allow_duplicates:
+		count = mini(request.options.size(), count)
 	var selected: Array[String] = []
 	if request.allow_duplicates and count > 0:
 		for _index in range(count):

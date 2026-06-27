@@ -490,9 +490,10 @@ func start_local_match_for_test(
 	first_key: String,
 	second_key: String,
 	match_seed: int = -1,
+	forced_first: int = -1,
 ) -> bool:
 	game_mode = MODE_LOCAL
-	return _start_match(first_key, second_key, match_seed, -1)
+	return _start_match(first_key, second_key, match_seed, forced_first)
 
 
 func start_ai_match_for_test(
@@ -529,13 +530,11 @@ func _start_match(
 		catalog.expand_deck(first_key),
 		catalog.expand_deck(second_key),
 		rng,
+		forced_first,
 	)
 	if not result.success:
 		_show_toast(result.message, true)
 		return false
-	if forced_first in [0, 1]:
-		state.first_player_idx = forced_first
-		state.active_player_idx = forced_first
 	if game_mode != MODE_LOCAL:
 		state.players[0].name = "玩家 1"
 		state.players[1].name = "Deep AI" if game_mode == MODE_DEEP else "Challenge AI"
@@ -1649,7 +1648,8 @@ func _schedule_ai_action() -> void:
 	}
 	ai_thinking = ai_coordinator.start_request(request, ai_inference)
 	if not ai_thinking:
-		_show_toast("无法启动 AI 后台线程。", true)
+		_apply_ai_fallback_action("无法启动 AI 后台线程。")
+		return
 	_refresh_game()
 
 
@@ -1672,7 +1672,8 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 	}
 	ai_thinking = ai_coordinator.start_request(payload, ai_inference)
 	if not ai_thinking:
-		_show_toast("无法启动 AI 选择线程。", true)
+		_apply_ai_fallback_choice(request, "无法启动 AI 选择线程。")
+		return
 	_refresh_game()
 
 
@@ -1689,7 +1690,16 @@ func _apply_ai_result(result: Dictionary) -> void:
 		_maybe_start_ai()
 		return
 	if not bool(result.get("success", false)):
-		_show_toast("AI 决策失败：%s" % result.get("error", "unknown"), true)
+		var pending_on_failure := ResolutionStack.from_dict(
+			state.resolution_stack).pending_request
+		if pending_on_failure != null and pending_on_failure.player == 1:
+			_apply_ai_fallback_choice(
+				pending_on_failure,
+				"AI 决策失败：%s" % result.get("error", "unknown"),
+			)
+		else:
+			_apply_ai_fallback_action(
+				"AI 决策失败：%s" % result.get("error", "unknown"))
 		return
 	if bool(result.get("deep_fallback", false)):
 		_show_toast(
@@ -1720,8 +1730,15 @@ func _apply_ai_result(result: Dictionary) -> void:
 		action.action_id = "ai-action:%d:%d" % [state.revision, ai_request_sequence]
 		step = engine.apply_action(state, action, rng)
 	if not step.success:
-		_show_toast("AI 动作被规则拒绝：%s" % step.message, true)
-		_maybe_start_ai()
+		var pending_after_reject := ResolutionStack.from_dict(
+			state.resolution_stack).pending_request
+		if pending_after_reject != null and pending_after_reject.player == 1:
+			_apply_ai_fallback_choice(
+				pending_after_reject,
+				"AI 选择被规则拒绝：%s" % step.message,
+			)
+		else:
+			_apply_ai_fallback_action("AI 动作被规则拒绝：%s" % step.message)
 		return
 	_refresh_game()
 	if battle_screen and not step.events.is_empty():
@@ -1733,6 +1750,112 @@ func _apply_ai_result(result: Dictionary) -> void:
 		)
 	_show_toast(step.message if not step.message.is_empty() else "AI 完成动作。")
 	_continue_after_ai_step(step, previous_active, previous_phase)
+
+
+func _apply_ai_fallback_action(reason: String) -> void:
+	if state == null or current_screen != SCREEN_GAME or _current_actor() != 1:
+		return
+	var actions := engine.legal_actions(state, 1, true)
+	if actions.is_empty():
+		_show_toast("%s AI 没有合法动作。" % reason, true)
+		_refresh_game()
+		return
+	for action in _ordered_ai_fallback_actions(actions):
+		var previous_active := state.active_player_idx
+		var previous_phase := state.phase
+		var presentation_snapshot := (
+			battle_screen.capture_presentation_snapshot()
+			if battle_screen
+			else {}
+		)
+		ai_request_sequence += 1
+		action.action_id = "ai-fallback:%d:%d" % [state.revision, ai_request_sequence]
+		var step := engine.apply_action(state, action, rng)
+		if not step.success:
+			continue
+		_refresh_game()
+		if battle_screen and not step.events.is_empty():
+			battle_screen.play_presentation(
+				step.events,
+				state.revision,
+				1,
+				presentation_snapshot,
+			)
+		var message := step.message if not step.message.is_empty() else "AI 完成兜底动作。"
+		_show_toast("%s %s" % [reason, message], true)
+		_continue_after_ai_step(step, previous_active, previous_phase)
+		return
+	_show_toast("%s AI 兜底动作全部被规则拒绝。" % reason, true)
+	_refresh_game()
+
+
+func _ordered_ai_fallback_actions(actions: Array[GameAction]) -> Array[GameAction]:
+	var ordered: Array[GameAction] = []
+	for action_name in [
+		"PROMOTE",
+		"SETUP_DONE",
+		"DECLARE_ATTACK",
+		"END_TURN",
+		"PLAY_BASIC",
+		"ATTACH_ENERGY",
+		"EVOLVE",
+		"PLAY_TRAINER",
+		"USE_ABILITY",
+		"USE_STADIUM",
+		"RETREAT",
+	]:
+		for action in actions:
+			if action.action == action_name and action not in ordered:
+				ordered.append(action)
+	for action in actions:
+		if action not in ordered:
+			ordered.append(action)
+	return ordered
+
+
+func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:
+	if state == null or current_screen != SCREEN_GAME:
+		return
+	var response := _fallback_choice_response(request)
+	var previous_active := state.active_player_idx
+	var previous_phase := state.phase
+	var presentation_snapshot := (
+		battle_screen.capture_presentation_snapshot()
+		if battle_screen
+		else {}
+	)
+	var step := engine.apply_choice(state, request, response, rng)
+	if not step.success:
+		_show_toast("%s AI 兜底选择被规则拒绝：%s" % [reason, step.message], true)
+		_refresh_game()
+		return
+	_refresh_game()
+	if battle_screen and not step.events.is_empty():
+		battle_screen.play_presentation(
+			step.events,
+			state.revision,
+			request.player,
+			presentation_snapshot,
+		)
+	var message := step.message if not step.message.is_empty() else "AI 完成兜底选择。"
+	_show_toast("%s %s" % [reason, message], true)
+	_continue_after_ai_step(step, previous_active, previous_phase)
+
+
+func _fallback_choice_response(request: ChoiceRequest) -> ChoiceResponse:
+	if request.options.is_empty():
+		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	var count: int = maxi(request.min_select, request.max_select)
+	if not request.allow_duplicates:
+		count = mini(request.options.size(), count)
+	var selected: Array[String] = []
+	if request.allow_duplicates and count > 0:
+		for _index in range(count):
+			selected.append(str(request.options[0]["option_id"]))
+	else:
+		for index in range(count):
+			selected.append(str(request.options[index]["option_id"]))
+	return ChoiceResponse.new(request.request_id, selected)
 
 
 func _continue_after_ai_step(

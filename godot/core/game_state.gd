@@ -51,13 +51,18 @@ func is_player_first_turn(player_idx: int) -> bool:
 	return turn_number == 2
 
 
-func setup_game(deck_one: Array[String], deck_two: Array[String], rng: PortableRandomSource) -> void:
+func setup_game(
+	deck_one: Array[String],
+	deck_two: Array[String],
+	rng: PortableRandomSource,
+	forced_first: int = -1,
+) -> void:
 	players = [PlayerState.new("玩家1"), PlayerState.new("玩家2")]
 	players[0].deck = deck_one.duplicate()
 	players[1].deck = deck_two.duplicate()
 	rng.shuffle(players[0].deck)
 	rng.shuffle(players[1].deck)
-	first_player_idx = 0 if rng.coin() else 1
+	first_player_idx = forced_first if forced_first in [0, 1] else (0 if rng.coin() else 1)
 	active_player_idx = first_player_idx
 	turn_number = 1
 	players[0].draw_cards(7)

@@ -146,13 +146,14 @@ func reset_turn_flags() -> void:
 	stadium_played_this_turn = false
 	stadium_used_this_turn = false
 	healed_this_turn = false
-	was_ko_by_attack = false
 	for row in get_all_pokemon():
 		var pokemon: PokemonState = row["pokemon"]
 		if pokemon:
 			pokemon.placed_this_turn = false
 			pokemon.can_evolve_this_turn = true
 			pokemon.used_abilities.clear()
+			pokemon.damage_prevented_next_turn = false
+			pokemon.all_prevented_next_turn = false
 
 
 func to_dict() -> Dictionary:
