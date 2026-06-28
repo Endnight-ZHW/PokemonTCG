@@ -431,25 +431,12 @@ def _handle_discard(state, player, params):
 
 
 def _handle_return_to_hand(state, player_idx, params, source_slot):
-    """Deal 30 damage and return this Pokemon + all attached cards to hand."""
+    """Return this Pokemon + all attached cards to hand."""
     player = state.get_player(player_idx)
     source = player.get_pokemon(source_slot)
-    opponent = state.get_opponent()
 
     if source is None:
         return ActionResult(False, "没有宝可梦。")
-
-    # Deal 30 damage to opponent's active
-    damage = 30
-    if opponent.active:
-        if not opponent.active.damage_prevented_next_turn and not getattr(opponent.active, 'all_prevented_next_turn', False):
-            opponent.active.damage_counters += damage // DAMAGE_PER_COUNTER
-            state._log(f"对{opponent.active.card.name}造成了{damage}点伤害。")
-        else:
-            if opponent.active.damage_prevented_next_turn:
-                opponent.active.damage_prevented_next_turn = False
-            if getattr(opponent.active, 'all_prevented_next_turn', False):
-                opponent.active.all_prevented_next_turn = False
 
     # Return tool
     if source.attached_tool:
@@ -460,6 +447,11 @@ def _handle_return_to_hand(state, player_idx, params, source_slot):
     for evo_card in source.evolution_stack:
         player.hand.append(evo_card)
     source.evolution_stack.clear()
+
+    # Return attached energy
+    for energy_card in source.energy_cards:
+        player.hand.append(energy_card)
+    source.energy_cards.clear()
 
     # Return Pokemon card to hand
     player.hand.append(source.card)
@@ -472,7 +464,7 @@ def _handle_return_to_hand(state, player_idx, params, source_slot):
         player.bench[idx] = None
 
     state._log(f"{source.card.name}和所有附着卡回到了{player.name}的手牌。")
-    return ActionResult(True, f"{source.card.name}回到了手牌。", damage_dealt=damage)
+    return ActionResult(True, f"{source.card.name}回到了手牌。", damage_dealt=0)
 
 
 def _handle_piercing_marker(state, params):
@@ -480,6 +472,13 @@ def _handle_piercing_marker(state, params):
     This sets a flag on the state that damage_calculator will check."""
     # Store piercing flag on state for this attack resolution
     state._piercing_attack = True
+    ctx = getattr(state, "_attack_damage_context", None)
+    if isinstance(ctx, dict):
+        if params.get("ignore_weakness", True) or params.get("ignore_resistance", True):
+            ctx["piercing"] = True
+        if params.get("ignore_effects", False):
+            ctx["ignore_defender_effects"] = True
+            state._attack_ignore_defender_effects = True
     return ActionResult(True, "穿透攻击标记已设置。")
 
 

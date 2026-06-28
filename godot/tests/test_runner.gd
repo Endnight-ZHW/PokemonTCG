@@ -2959,6 +2959,194 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		"Cobalion did not accept a single legal attachment",
 	)
 
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv1-109")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-5", "svi-dtur"])
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(6111),
+	)
+	_check(step.success, "Variable damage attack with DTE failed: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 4,
+		"Variable attack damage did not pass through DTE reduction once",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv1-113")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, [
+		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
+	])
+	state.players[1].active.damage_prevented_next_turn = true
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(6112),
+	)
+	_check(step.success, "Conditional bonus prevention attack failed: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 0
+		and not state.players[1].active.damage_prevented_next_turn,
+		"Conditional bonus and base damage were not prevented as one attack damage packet",
+	)
+
+	state = _battle_state()
+	state.apply_type_matchups = true
+	state.players[0].active = PokemonState.new("svl-pikaex")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].active.attached_tool_id = "svl-vitb"
+	_set_energy_cards(state.players[0].active, ["sv1-ener-4"])
+	state.players[1].active = PokemonState.new("sv2-grex")
+	state.players[1].active.placed_this_turn = false
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(6113),
+	)
+	_check(step.success, "Type matchup damage-order attack failed: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 7,
+		"Weakness/resistance was not applied before tool damage modifiers",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv2-staryu")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-3", "sv1-ener-3"])
+	state.players[1].active.damage_prevented_next_turn = true
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(6114),
+	)
+	_check(step.success, "Piercing attack failed: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 3,
+		"Piercing attack did not ignore defender damage prevention",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv2-tatsu")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-3"])
+	state.players[0].active.attached_tool_id = "svl-vitb"
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(6115),
+	)
+	_check(step.success, "Tatsugiri return-to-hand attack failed: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 0
+		and state.players[0].active == null
+		and "sv2-tatsu" in state.players[0].hand
+		and "sv1-ener-3" in state.players[0].hand
+		and "svl-vitb" in state.players[0].hand,
+		"Tatsugiri return-to-hand dealt damage or failed to return attached cards",
+	)
+	_check(
+		state.winner == 1,
+		"Tatsugiri return-to-hand without bench did not lose by leaving no Pokemon in play",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv2-tatsu")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-3"])
+	state.players[0].bench[0] = PokemonState.new("svi-chim")
+	state.players[0].bench[0].placed_this_turn = false
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(6116),
+	)
+	_check(
+		step.success and state.pending_promotions == [0],
+		"Active leaving play during attack did not pause for attacker promotion",
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("PROMOTE", {"bench_idx": 0}, true, 0),
+		PortableRandomSource.new(6117),
+	)
+	_check(step.success, "Promotion after attack leave-play failed: %s" % step.message)
+	_check(
+		state.active_player_idx == 1
+		and state.phase == "MAIN"
+		and state.players[0].active.card_id == "svi-chim",
+		"Promotion after attack leave-play did not finish the attack turn",
+	)
+
+	state = _battle_state()
+	state.phase = "ATTACK"
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(6118),
+	)
+	_check(
+		not step.success and step.error_code == "illegal_attack",
+		"Direct second attack in ATTACK phase was not rejected",
+	)
+
+	state = _battle_state()
+	state.players[0].bench[0] = PokemonState.new("svi-chim")
+	_set_energy_cards(state.players[0].active, ["sv1-ener-5", "sv1-ener-5", "sv1-ener-5"])
+	step = engine.apply_action(
+		state,
+		GameAction.new("RETREAT", {"bench_idx": 0, "energy_indices": [0, 1, 2]}, false, 0),
+		PortableRandomSource.new(6119),
+	)
+	_check(
+		not step.success and step.error_code == "illegal_retreat",
+		"Direct retreat with extra energy payment was not rejected",
+	)
+	state = _battle_state()
+	state.players[0].bench[0] = PokemonState.new("svi-chim")
+	_set_energy_cards(state.players[0].active, ["svi-dtur"])
+	step = engine.apply_action(
+		state,
+		GameAction.new("RETREAT", {"bench_idx": 0, "energy_indices": [0]}, false, 0),
+		PortableRandomSource.new(6120),
+	)
+	_check(step.success, "Single Double Turbo retreat payment should be legal: %s" % step.message)
+
+	state = _battle_state()
+	state.players[0].deck = ["sv1-ener-5"]
+	var draw_stack := ResolutionStack.new()
+	draw_stack.push_effect({
+		"effect_type": "draw",
+		"params": {"amount": 3, "player": "self"},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(
+		state,
+		draw_stack,
+		PortableRandomSource.new(6121),
+	)
+	_check(step.success, "Partial draw effect failed: %s" % step.message)
+	_check(
+		state.winner < 0
+		and state.players[0].deck.is_empty()
+		and state.players[0].hand.size() == 2,
+		"Card-effect draw with insufficient deck caused a loss or drew the wrong amount",
+	)
+
+	state = _battle_state()
+	state.turn_number = 3
+	state.players[1].deck.clear()
+	step = engine.apply_action(
+		state,
+		GameAction.new("END_TURN", {}, true, 0),
+		PortableRandomSource.new(6122),
+	)
+	_check(
+		step.success and state.winner == 0,
+		"Turn-start empty-deck loss no longer works for the incoming player",
+	)
+
 
 func _run_python_golden_actions(engine: GameEngine) -> void:
 	var fixture := _read_json("res://tests/fixtures/rules_golden.json")

@@ -12,6 +12,11 @@ const FULL_DAMAGE_EFFECT_TYPES: Array[String] = [
 	"damage_self_penalty",
 	"damage_per_discard_psychic",
 	"conditional_damage_heal",
+	"damage_and_self_heal",
+	"discard_fighting_energy_damage",
+	"discard_hand_conditional_bonus",
+	"coin_flip_triple",
+	"coin_flip_until_tails",
 	"mill_and_damage_per_energy",
 	"attack_damage_formula",
 ]
@@ -30,7 +35,10 @@ const TARGET_DAMAGE_EFFECT_TYPES: Array[String] = [
 	"damage_self_penalty",
 	"discard_fighting_energy_damage",
 	"discard_hand_conditional_bonus",
+	"damage_and_self_heal",
 	"mill_and_damage_per_energy",
+	"coin_flip_triple",
+	"coin_flip_until_tails",
 	"attack_damage_formula",
 ]
 
@@ -753,10 +761,26 @@ func _declare_attack(
 			"data": {"player": actor, "self_damage": 30},
 		}]
 		_resolve_knockouts(state, actor, confused_events, false)
-		return _merge_steps(
-			StepResult.new(true, "混乱判定失败，攻击未生效。", null, confused_events),
-			_end_turn(state, actor, rng),
+		_resolve_empty_boards_and_promotions(state)
+		var confused_step := StepResult.new(
+			true,
+			"混乱判定失败，攻击未生效。",
+			null,
+			confused_events,
+			state.winner,
+			state.winner >= 0,
 		)
+		if state.winner >= 0:
+			return confused_step
+		if not state.pending_promotions.is_empty():
+			var promotion_stack := ResolutionStack.new()
+			promotion_stack.context = {
+				"finish_attack_after_promotions": true,
+				"actor": actor,
+			}
+			state.resolution_stack = promotion_stack.to_dict()
+			return confused_step
+		return _merge_steps(confused_step, _end_turn(state, actor, rng))
 	if attacker.dazzled:
 		attacker.dazzled = false
 		if not rng.coin():
@@ -825,10 +849,19 @@ func _complete_attack_context(
 			events,
 		)
 	_resolve_knockouts(state, actor, events, true)
-	state.resolution_stack = ResolutionStack.new().to_dict()
 	var damage_step := StepResult.new(true, "", null, events, state.winner, state.winner >= 0)
+	_resolve_empty_boards_and_promotions(state)
 	if state.winner >= 0:
+		state.resolution_stack = ResolutionStack.new().to_dict()
+		damage_step.winner = state.winner
+		damage_step.terminal = true
 		return damage_step
+	if not state.pending_promotions.is_empty():
+		stack.context["finish_attack_after_promotions"] = true
+		stack.context["actor"] = actor
+		state.resolution_stack = stack.to_dict()
+		return damage_step
+	state.resolution_stack = ResolutionStack.new().to_dict()
 	return _merge_steps(damage_step, _end_turn(state, actor, rng))
 
 
@@ -851,6 +884,20 @@ func _apply_attack_damage(
 		events.append({"event_type": "damage_prevented", "data": {"player": 1 - actor}})
 		return
 	var damage := base_damage
+	if state.apply_type_matchups and not piercing:
+		var defending_card := catalog.get_card(defender.card_id)
+		for weakness_value in defending_card.get("weaknesses", []):
+			var weakness: Dictionary = weakness_value
+			if str(weakness.get("energy_type", "")) == attacking_type:
+				var value := str(weakness.get("value", ""))
+				if value in ["×2", "x2"]:
+					damage *= 2
+				break
+		for resistance_value in defending_card.get("resistances", []):
+			var resistance: Dictionary = resistance_value
+			if str(resistance.get("energy_type", "")) == attacking_type:
+				damage -= abs(int(str(resistance.get("value", "0")).replace("-", "")))
+				break
 	if not ignore_defender_effects:
 		for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
 			var ability: Dictionary = ability_value
@@ -912,21 +959,6 @@ func _apply_attack_damage(
 			var modifier := str(effect.get("params", {}).get("effect", ""))
 			if modifier == "damage_reduction_stage1" and catalog.is_stage1(defender.card_id):
 				damage -= int(effect.get("params", {}).get("amount", 30))
-	damage = max(0, damage)
-	if state.apply_type_matchups and not piercing:
-		var defending_card := catalog.get_card(defender.card_id)
-		for weakness_value in defending_card.get("weaknesses", []):
-			var weakness: Dictionary = weakness_value
-			if str(weakness.get("energy_type", "")) == attacking_type:
-				var value := str(weakness.get("value", ""))
-				if value in ["×2", "x2"]:
-					damage *= 2
-				break
-		for resistance_value in defending_card.get("resistances", []):
-			var resistance: Dictionary = resistance_value
-			if str(resistance.get("energy_type", "")) == attacking_type:
-				damage -= abs(int(str(resistance.get("value", "0")).replace("-", "")))
-				break
 	damage = max(0, damage)
 	defender.damage_counters += int(float(damage) / 10.0)
 	events.append({"event_type": "damage_dealt", "data": {
@@ -1067,6 +1099,16 @@ func _promote(
 		"event_type": "promoted",
 		"data": {"player": actor, "bench_idx": bench_idx},
 	}]
+	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	if (
+		state.pending_promotions.is_empty()
+		and bool(stack.context.get("finish_attack_after_promotions", false))
+	):
+		var attack_actor := int(stack.context.get("actor", state.active_player_idx))
+		state.resolution_stack = ResolutionStack.new().to_dict()
+		var end_step := _end_turn(state, attack_actor, rng)
+		end_step.events = events + end_step.events
+		return end_step
 	if state.pending_promotions.is_empty() and state.phase == "DRAW":
 		var begin := _begin_turn(state, rng)
 		begin.events = events + begin.events
@@ -1152,14 +1194,21 @@ func _resolve_knockouts(
 		if from_attack and defeated_idx != attack_actor:
 			defeated_player.was_ko_by_attack = true
 		events.append({"event_type": "pokemon_ko", "data": knockout.duplicate(true)})
+	_resolve_empty_boards_and_promotions(state)
+
+
+func _resolve_empty_boards_and_promotions(state: GameState) -> void:
 	for player_idx in [0, 1]:
 		var player := state.get_player(player_idx)
-		if player.active == null and player.bench_count() > 0 and player_idx not in state.pending_promotions:
+		if (
+			player.active == null
+			and player.bench_count() > 0
+			and player_idx not in state.pending_promotions
+		):
 			state.pending_promotions.append(player_idx)
 	var rules_winner := validator.check_winner(state)
 	if rules_winner >= 0:
 		state.winner = rules_winner
-	if state.winner >= 0:
 		state.phase = "GAME_OVER"
 
 

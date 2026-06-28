@@ -97,7 +97,7 @@ class GameEngine:
         if action.action == "SETUP_DONE":
             return StepResult(True, "setup done", ActionResult(True, "setup done"), winner=state.winner)
         if action.action == "PROMOTE":
-            return self._apply_promotion(state, actor, action)
+            return self._apply_promotion(state, actor, action, rng)
 
         try:
             event_offset = len(getattr(state.event_stream, "_events", ()))
@@ -133,6 +133,7 @@ class GameEngine:
             and action.action == PlayerAction.DECLARE_ATTACK
             and state.winner is None
             and state.phase == TurnPhase.ATTACK
+            and state.pending_promotion_player < 0
             and step.pending_choice is None
         ):
             step = self._merge_steps(
@@ -145,6 +146,16 @@ class GameEngine:
                     choice_policy=choice_policy,
                 ),
             )
+        elif (
+            auto_finish_attack
+            and step.success
+            and action.action == PlayerAction.DECLARE_ATTACK
+            and state.winner is None
+            and state.phase == TurnPhase.ATTACK
+            and state.pending_promotion_player >= 0
+            and step.pending_choice is None
+        ):
+            state._finish_attack_after_promotions = actor
 
         step.winner = state.winner
         step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
@@ -216,6 +227,7 @@ class GameEngine:
             and attack_actor in (0, 1)
             and state.winner is None
             and state.phase == TurnPhase.ATTACK
+            and state.pending_promotion_player < 0
         ):
             step = self._merge_steps(
                 step,
@@ -227,6 +239,14 @@ class GameEngine:
                     choice_policy=None,
                 ),
             )
+        elif (
+            step.success
+            and attack_actor in (0, 1)
+            and state.winner is None
+            and state.phase == TurnPhase.ATTACK
+            and state.pending_promotion_player >= 0
+        ):
+            state._finish_attack_after_promotions = int(attack_actor)
         elif step.pending_choice is None:
             step = self._resolve_non_attack_knockouts(state, step)
         step.winner = state.winner
@@ -595,8 +615,13 @@ class GameEngine:
                 payments.append(indices)
         return tuple(payments)
 
-    @staticmethod
-    def _apply_promotion(state: GameState, actor: int, action: GameAction) -> StepResult:
+    def _apply_promotion(
+        self,
+        state: GameState,
+        actor: int,
+        action: GameAction,
+        rng: RandomSource,
+    ) -> StepResult:
         if state.pending_promotion_player != actor:
             return StepResult(False, "当前没有该玩家的晋升请求。", error_code="invalid_promotion")
         bench_idx = action.params.get("bench_idx")
@@ -618,13 +643,32 @@ class GameEngine:
         else:
             state.pop_pending_promotion()
         state.revision = getattr(state, "revision", 0) + 1
-        return StepResult(
+        step = StepResult(
             True,
             message,
             ActionResult(True, message),
             winner=state.winner,
             terminal=state.winner is not None or state.phase == TurnPhase.GAME_OVER,
         )
+        finish_actor = getattr(state, "_finish_attack_after_promotions", None)
+        if (
+            finish_actor in (0, 1)
+            and not state.pending_promotions
+            and state.winner is None
+            and state.phase == TurnPhase.ATTACK
+        ):
+            state._finish_attack_after_promotions = None
+            step = self._merge_steps(
+                step,
+                self._finish_attack_turn(
+                    state,
+                    int(finish_actor),
+                    rng,
+                    auto_resolve=False,
+                    choice_policy=None,
+                ),
+            )
+        return step
 
     @staticmethod
     def _stadium_is_activatable(state: GameState) -> bool:

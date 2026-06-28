@@ -241,8 +241,8 @@ func _execute_effect(
 				return _deal_damage(
 					state, player_idx, source_slot,
 					int(params.get("amount", 0)), events, false)
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				int(params.get("amount", 0)), events)
 		"damage_counter_self":
 			return _deal_damage(state, player_idx, source_slot, int(params.get("amount", 0)), events, false)
@@ -261,16 +261,14 @@ func _execute_effect(
 				_:
 					var count_source := player.get_pokemon(source_slot)
 					count = count_source.energy_card_ids.size() if count_source else 0
-			return _deal_damage(
-				state,
-				1 - player_idx,
-				"active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				int(params.get("base", 0)) + count * int(params.get("per_energy", 0)),
 				events,
 			)
 		"damage_per_hand_size":
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				player.hand.size() * int(params.get("per", 0)), events)
 		"damage_per_self_energy", "damage_per_self_energy_type":
 			var source := player.get_pokemon(source_slot)
@@ -286,8 +284,8 @@ func _execute_effect(
 						if provided.to_lower() == filter:
 							energy_count += 1
 							break
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				int(params.get("base", 0)) + energy_count * int(params.get("per_energy", 0)),
 				events)
 		"damage_per_discard_psychic":
@@ -295,27 +293,27 @@ func _execute_effect(
 			for card_id in player.discard:
 				if catalog.is_pokemon(card_id) and "Psychic" in catalog.get_card(card_id).get("energy_types", []):
 					psychic_count += 1
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				int(params.get("base", 0)) + psychic_count * int(params.get("per_card", 0)),
 				events)
 		"damage_plus_bench":
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				int(params.get("base", 0)) + player.bench_count() * int(params.get("per_bench", 0)),
 				events)
 		"damage_per_self_damage":
 			var self_pokemon := player.get_pokemon(source_slot)
 			var self_counters := self_pokemon.damage_counters if self_pokemon else 0
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				int(params.get("base", 0)) + self_counters * int(params.get("per_counter", 0)),
 				events)
 		"damage_self_penalty":
 			var penalty_source := player.get_pokemon(source_slot)
 			var penalty_count := penalty_source.damage_counters if penalty_source else 0
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				max(0, int(params.get("base", 0)) - penalty_count * int(params.get("per_counter", 0))),
 				events)
 		"damage_per_evolved":
@@ -324,19 +322,20 @@ func _execute_effect(
 				var pokemon: PokemonState = row["pokemon"]
 				if pokemon and not catalog.is_basic_pokemon(pokemon.card_id):
 					evolved += 1
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				evolved * int(params.get("per_evolved", 0)), events)
 		"conditional_damage_bonus":
-			return _conditional_damage_bonus(state, player_idx, params, events)
+			return _conditional_damage_bonus(state, stack, player_idx, params, events)
 		"conditional_damage_heal":
 			var total := int(params.get("base", 0))
 			if player.healed_this_turn:
 				total += int(params.get("bonus", 0))
-			return _deal_damage(state, 1 - player_idx, "active", total, events)
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active", total, events)
 		"damage_and_self_heal":
-			var damage_outcome := _deal_damage(
-				state, 1 - player_idx, "active", int(params.get("damage", 0)), events)
+			var damage_outcome := _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active", int(params.get("damage", 0)), events)
 			_heal_pokemon(state, player_idx, source_slot, int(params.get("heal", 0)), events)
 			return damage_outcome
 		"discard_hand_conditional_bonus":
@@ -347,7 +346,8 @@ func _execute_effect(
 				var count := player.discard_entire_hand()
 				events.append(_discard_event(
 					player_idx, "hand", discarded_cards, count))
-			return _deal_damage(state, 1 - player_idx, "active", total_damage, events)
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active", total_damage, events)
 		"discard_fighting_energy_damage":
 			var fighting_source := player.get_pokemon(source_slot)
 			if fighting_source == null:
@@ -361,8 +361,8 @@ func _execute_effect(
 				else:
 					kept.append(energy_id)
 			fighting_source.energy_card_ids = kept
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				int(params.get("base", 0)) + discarded * int(params.get("per_energy", 0)),
 				events)
 		"mill_and_damage_per_energy":
@@ -378,8 +378,8 @@ func _execute_effect(
 					player.deck.append(card_id)
 			rng.shuffle(player.deck)
 			events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				energies * int(params.get("damage_per", 0)), events)
 		"any_pokemon_damage":
 			return _request_board_target(
@@ -668,7 +668,6 @@ func _execute_effect(
 					_heal_pokemon(state, player_idx, str(row["slot"]), int(params.get("amount", 20)), events)
 			return _ok()
 		"return_to_hand":
-			_deal_damage(state, 1 - player_idx, "active", 30, events)
 			var return_source := player.get_pokemon(source_slot)
 			if return_source:
 				player.hand.append(return_source.card_id)
@@ -719,7 +718,10 @@ func _execute_effect(
 			_draw(state, player_idx, 3, events)
 			return _ok()
 		"piercing_marker":
-			stack.context["piercing"] = true
+			if bool(params.get("ignore_weakness", true)) or bool(params.get("ignore_resistance", true)):
+				stack.context["piercing"] = true
+			if bool(params.get("ignore_effects", false)):
+				stack.context["ignore_defender_effects"] = true
 			return _ok()
 		"tool", "tool_exp_share", "aura_damage_reduction", "aura_damage_boost", "conditional_hp_boost", "conditional_zero_retreat", "reactive_thorns":
 			return _ok()
@@ -1381,8 +1383,8 @@ func _resolve_coin(
 			elif branch is Array:
 				stack.push_effects(branch, player_idx, source_slot)
 		"coin_flip_triple":
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				heads * int(params.get("damage_per_head", 10)), events)
 		"coin_flip_double_ko":
 			if heads == 2:
@@ -1390,8 +1392,8 @@ func _resolve_coin(
 				if target:
 					target.damage_counters += max(1, ceili(float(target.current_hp(catalog)) / 10.0))
 		"coin_flip_until_tails":
-			return _deal_damage(
-				state, 1 - player_idx, "active",
+			return _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
 				heads * int(params.get("per_head", 20)), events)
 		"coin_flip_energy_discard":
 			if bool(results[0]):
@@ -2256,6 +2258,7 @@ func _matching_energy_ids(card_ids: Array, energy_type: String) -> Array[String]
 
 func _conditional_damage_bonus(
 	state: GameState,
+	stack: ResolutionStack,
 	player_idx: int,
 	params: Dictionary,
 	events: Array[Dictionary],
@@ -2281,8 +2284,36 @@ func _conditional_damage_bonus(
 			applies = count >= 5
 	if not applies:
 		return _ok("追加伤害条件未满足。")
+	return _deal_attack_or_effect_damage(
+		state, stack, player_idx, 1 - player_idx, "active",
+		int(params.get("bonus", 0)), events)
+
+
+func _deal_attack_or_effect_damage(
+	state: GameState,
+	stack: ResolutionStack,
+	attacker_idx: int,
+	target_player_idx: int,
+	slot: String,
+	amount: int,
+	events: Array[Dictionary],
+	consume_effect_immunity: bool = true,
+) -> Dictionary:
+	if (
+		bool(stack.context.get("finish_attack", false))
+		and target_player_idx == 1 - attacker_idx
+		and slot == "active"
+	):
+		stack.context["base_damage"] = int(stack.context.get("base_damage", 0)) + max(0, amount)
+		return _ok("攻击伤害已加入结算。")
 	return _deal_damage(
-		state, 1 - player_idx, "active", int(params.get("bonus", 0)), events)
+		state,
+		target_player_idx,
+		slot,
+		amount,
+		events,
+		consume_effect_immunity,
+	)
 
 
 func _deal_damage(
@@ -2371,11 +2402,7 @@ func _draw(
 	if amount <= 0:
 		return _ok()
 	var player := state.get_player(player_idx)
-	if player.deck.size() < amount:
-		state.winner = 1 - player_idx
-		state.phase = "GAME_OVER"
-		return _ok("%s牌库耗尽。" % player.name)
-	var cards := player.draw_cards(amount)
+	var cards := player.draw_cards(min(amount, player.deck.size()))
 	events.append({"event_type": "cards_drawn", "data": {
 		"player": player_idx, "cards": cards.duplicate(),
 	}})

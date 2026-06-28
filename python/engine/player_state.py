@@ -253,8 +253,6 @@ class PlayerState:
             raise ValueError(f"No Pokemon on bench slot {bench_idx}")
         self.bench[bench_idx] = None
         self.active = pokemon
-        # Reset flags when becoming active
-        pokemon.can_evolve_this_turn = True
 
     def switch_active_to_bench(self, bench_idx: int):
         """Move Active Pokemon to bench, swapping places."""

@@ -134,12 +134,17 @@ func can_retreat(
 		paid += max(1, catalog.provides_energy(player.active.energy_card_ids[index]).size())
 	if paid < retreat_cost:
 		return "所选能量不足以支付撤退费用。"
+	for raw_index in energy_indices:
+		var index := int(raw_index)
+		var units: int = max(1, catalog.provides_energy(player.active.energy_card_ids[index]).size())
+		if paid - units >= retreat_cost:
+			return "撤退费用不能包含多余能量。"
 	return ""
 
 
 func can_attack(state: GameState, player_idx: int, attack_idx: int) -> String:
-	if state.phase not in ["MAIN", "ATTACK"]:
-		return "当前阶段不能攻击。"
+	if state.phase != "MAIN":
+		return "只能在主要阶段攻击。"
 	if state.is_first_turn():
 		return "先攻玩家第一回合不能攻击。"
 	var active := state.get_player(player_idx).active

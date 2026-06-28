@@ -101,7 +101,6 @@ func promote_from_bench(index: int) -> bool:
 		return false
 	active = bench[index]
 	bench[index] = null
-	active.can_evolve_this_turn = true
 	return true
 
 

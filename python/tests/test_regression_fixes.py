@@ -453,6 +453,20 @@ class TestCardEffectAccuracy(unittest.TestCase):
             ChoiceResponse(request.request_id, tuple(option_ids)),
         )
 
+    def _register_board(self, state):
+        from engine.commands.modifier_registration import register_pokemon_modifiers
+
+        state.event_bus.clear()
+        for player_idx in (0, 1):
+            for slot, pokemon in state.get_player(player_idx).get_all_pokemon():
+                if pokemon is not None:
+                    register_pokemon_modifiers(
+                        pokemon,
+                        player_idx,
+                        slot,
+                        event_bus=state.event_bus,
+                    )
+
     def test_ultra_ball_requires_two_other_cards_and_stays_in_hand(self):
         state = self._battle_state()
         player = state.get_active_player()
@@ -713,6 +727,216 @@ class TestCardEffectAccuracy(unittest.TestCase):
         self.assertTrue(result.success, result.message)
         self.assertEqual(len(state.p1.active.energy_cards), 1)
         self.assertEqual(len(state.p1.bench[1].energy_cards), 1)
+
+    def test_attack_formula_damage_uses_single_pipeline(self):
+        engine = GameEngine()
+        state = self._battle_state(active_card_id="sv1-109")
+        state.p1.active.energy_cards = [
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("svi-dtur"),
+        ]
+        self._register_board(state)
+
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p2.active.damage_counters, 4)
+
+    def test_conditional_bonus_prevention_is_one_damage_packet(self):
+        state = self._battle_state(active_card_id="sv1-113")
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-5")] * 5
+        state.p2.active.damage_prevented_next_turn = True
+
+        step = GameEngine().apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p2.active.damage_counters, 0)
+        self.assertFalse(state.p2.active.damage_prevented_next_turn)
+
+    def test_weakness_applies_before_tool_modifiers(self):
+        state = self._battle_state(active_card_id="svl-pikaex")
+        state.apply_type_matchups = True
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-4")]
+        state.p1.active.attached_tool = CardRegistry.get("svl-vitb")
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"))
+        self._register_board(state)
+
+        step = GameEngine().apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, actor=0),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p2.active.damage_counters, 7)
+
+    def test_piercing_marker_ignores_defender_prevention(self):
+        state = self._battle_state(active_card_id="sv2-staryu")
+        state.p1.active.energy_cards = [
+            CardRegistry.get("sv1-ener-3"),
+            CardRegistry.get("sv1-ener-3"),
+        ]
+        state.p2.active.damage_prevented_next_turn = True
+
+        step = GameEngine().apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, actor=0),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p2.active.damage_counters, 3)
+
+    def test_zero_final_damage_does_not_trigger_damage_reactive_hooks(self):
+        from engine.commands.damage_pipeline import resolve_damage
+
+        state = self._battle_state()
+        state.p1.active.energy_cards = [CardRegistry.get("svi-dtur")]
+        state.p2.active.energy_cards = [CardRegistry.get("svi-mirc")]
+        state.p2.deck = [CardRegistry.get("sv1-ener-3")]
+        self._register_board(state)
+
+        damage, _logs = resolve_damage(
+            state,
+            state.p1.active,
+            state.p2.active,
+            10,
+            state.p1.active.card.energy_types[0],
+        )
+
+        self.assertEqual(damage, 0)
+        self.assertEqual(len(state.p2.hand), 0)
+        self.assertEqual(len(state.p2.deck), 1)
+
+    def test_failed_pending_attack_choice_does_not_apply_accumulated_damage(self):
+        from engine.action_resolver import ActionResolver
+
+        state = self._battle_state(active_card_id="sv1-114")
+        state.p1.active.energy_cards = [
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("sv1-ener-3"),
+        ]
+        resolver = ActionResolver(state)
+        pending = ActionRequest(
+            request_type="confirm",
+            player=0,
+            prompt="fail attack continuation",
+            callback=lambda _choice: ActionResult(False, "目标无效。"),
+        )
+
+        def fake_execute_effect(_effect, _player_idx, _source_slot):
+            return ActionResult(True, "等待选择。", pending_action=pending)
+
+        resolver._execute_effect = fake_execute_effect
+        result = resolver._declare_attack(0, 1)
+        self.assertTrue(result.success, result.log_message)
+        self.assertIsNotNone(result.pending_action)
+
+        continuation = result.pending_action.callback([])
+
+        self.assertFalse(continuation.success)
+        self.assertEqual(state.p2.active.damage_counters, 0)
+        self.assertIsNone(getattr(state, "_attack_damage_context", None))
+
+    def test_tatsugiri_return_to_hand_has_no_damage_and_checks_board(self):
+        state = self._battle_state(active_card_id="sv2-tatsu")
+        water = CardRegistry.get("sv1-ener-3")
+        tool = CardRegistry.get("svl-vitb")
+        state.p1.active.energy_cards = [water]
+        state.p1.active.attached_tool = tool
+
+        step = GameEngine().apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p2.active.damage_counters, 0)
+        self.assertIsNone(state.p1.active)
+        self.assertIn(CardRegistry.get("sv2-tatsu"), state.p1.hand)
+        self.assertIn(water, state.p1.hand)
+        self.assertIn(tool, state.p1.hand)
+        self.assertEqual(state.winner, 1)
+
+    def test_attack_leave_play_promotes_before_next_turn_draw(self):
+        engine = GameEngine()
+        state = self._battle_state(active_card_id="sv2-tatsu")
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3")]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p2.deck = [CardRegistry.get("sv1-ener-3")]
+
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.pending_promotions, [0])
+        self.assertEqual(state.phase, TurnPhase.ATTACK)
+        self.assertEqual(len(state.p2.hand), 0)
+
+        promote = engine.apply_action(
+            state,
+            GameAction("PROMOTE", {"bench_idx": 0}, actor=0),
+        )
+
+        self.assertTrue(promote.success, promote.message)
+        self.assertEqual(state.active_player_idx, 1)
+        self.assertEqual(state.phase, TurnPhase.MAIN)
+        self.assertEqual(len(state.p2.hand), 1)
+
+    def test_direct_second_attack_and_overpaid_retreat_are_rejected(self):
+        state = self._battle_state()
+        state.phase = TurnPhase.ATTACK
+        step = GameEngine().apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, actor=0),
+        )
+        self.assertFalse(step.success)
+
+        state = self._battle_state()
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3")] * 3
+        ok, _reason = can_retreat(state, 0, 0, [0, 1, 2])
+        self.assertFalse(ok)
+
+        state = self._battle_state()
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p1.active.energy_cards = [CardRegistry.get("svi-dtur")]
+        ok, reason = can_retreat(state, 0, 0, [0])
+        self.assertTrue(ok, reason)
+
+    def test_effect_draw_partial_but_turn_start_empty_deck_loses(self):
+        state = self._battle_state(active_card_id="sv2-delib")
+        state.p1.deck = [CardRegistry.get("sv1-ener-3")]
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.DECLARE_ATTACK,
+            player_idx=0,
+            attack_idx=0,
+        )
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertIsNone(state.winner)
+        self.assertEqual(len(state.p1.hand), 1)
+        self.assertEqual(len(state.p1.deck), 0)
+
+        state = self._battle_state()
+        state.turn_number = 3
+        state.p2.deck = []
+        end = TurnManager(state).perform_action(PlayerAction.END_TURN, player_idx=0)
+        self.assertTrue(end.success, end.log_message)
+        self.assertEqual(state.winner, 0)
 
 
 # ── 4. SearchScreen min_select ─────────────────────────────────────────────

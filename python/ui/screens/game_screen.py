@@ -2611,8 +2611,8 @@ class GameScreen(
             self._setup_done(player_idx)
             return
         elif action == "ENTER_ATTACK":
-            self.state.phase = TurnPhase.ATTACK
-            self.state._log("进入攻击阶段。请点击战斗宝可梦选择招式。")
+            self.state._log("请选择要使用的招式。")
+            self._show_attack_menu(player_idx)
             self._build_action_buttons()
             self._clear_selection()
             if self._is_remote_host:

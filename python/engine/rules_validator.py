@@ -276,6 +276,9 @@ def can_retreat(state: GameState, player_idx: int,
         )
         if paid_units < retreat_cost:
             return False, f"所选能量只能提供{paid_units}个，无法支付{retreat_cost}点撤退费用。"
+        for index in indices:
+            if paid_units - energy_card_units(player.active.energy_cards[index], player.active) >= retreat_cost:
+                return False, "撤退费用不能包含多余的能量卡。"
 
     return True, ""
 
@@ -283,9 +286,8 @@ def can_retreat(state: GameState, player_idx: int,
 def can_declare_attack(state: GameState, player_idx: int,
                        attack_idx: int) -> tuple[bool, str]:
     """Check if the Active Pokemon can declare an attack."""
-    if state.phase != TurnPhase.ATTACK:
-        if state.phase != TurnPhase.MAIN:
-            return False, "只能在主要阶段或攻击阶段进行攻击。"
+    if state.phase != TurnPhase.MAIN:
+        return False, "只能在主要阶段进行攻击。"
 
     player = state.get_player(player_idx)
 

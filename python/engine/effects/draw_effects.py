@@ -8,19 +8,6 @@ def _handle_draw(state, player, params):
     target_player = params.get("player", "self")
     actual_player = player if target_player == "self" else state.get_opponent()
 
-    from engine.enums import TurnPhase
-    from engine.rules_validator import check_win_condition
-
-    # PTCG rule: if a player cannot draw because their deck is empty, they lose
-    if len(actual_player.deck) < amount:
-        loser_idx = 0 if actual_player == state.p1 else 1
-        winner_idx = 1 - loser_idx
-        state.winner = winner_idx
-        state.phase = TurnPhase.GAME_OVER
-        state._log(f"{actual_player.name}无法抽牌（卡组不足{amount}张）！"
-                   f"{state.get_player(winner_idx).name}获胜！")
-        return ActionResult(True, f"{actual_player.name}卡组耗尽，游戏结束。")
-
     drawn = actual_player.draw_cards(amount)
     state._log(f"{actual_player.name}抽取了{len(drawn)}张卡。")
     return ActionResult(True, f"抽取了{len(drawn)}张卡。", cards_drawn=drawn)
