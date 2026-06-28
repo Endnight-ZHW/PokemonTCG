@@ -51,6 +51,7 @@ from engine.ai.dl.encoder import (
     card_bucket,
 )
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
+from engine.commands.dsl_compiler import compile_effect_to_spec, compile_effects_to_payload
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import GameEngine
 from engine.game_state import GameState
@@ -223,6 +224,7 @@ def _card_payload(image_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
         if card is None:
             raise ValueError(f"Release card is missing from CardRegistry: {card_id}")
         payload = _json_value(card)
+        _add_compiled_effects(payload)
         payload.update(
             {
                 "card_bucket": card_bucket(card_id),
@@ -234,6 +236,20 @@ def _card_payload(image_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
         )
         cards[card_id] = payload
     return cards
+
+
+def _add_compiled_effects(payload: dict[str, Any]) -> None:
+    for attack in payload.get("attacks", []):
+        attack["compiled_effects"] = compile_effects_to_payload(
+            attack.get("effects", [])
+        )
+    for ability in payload.get("abilities", []):
+        ability["compiled_effects"] = compile_effects_to_payload(
+            ability.get("effects", [])
+        )
+    payload["compiled_trainer_effects"] = compile_effects_to_payload(
+        payload.get("trainer_effects", [])
+    )
 
 
 def _deck_payload() -> dict[str, dict[str, Any]]:
@@ -338,6 +354,9 @@ def _effect_examples(value: Any, found: dict[str, dict[str, Any]] | None = None)
 
 def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, Any]:
     effect_types = sorted(_effect_types(CARD_EFFECTS))
+    effect_examples = {
+        key: value for key, value in sorted(_effect_examples(CARD_EFFECTS).items())
+    }
     return {
         "fixture_version": 2,
         "schema": {
@@ -355,8 +374,10 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
             "effects": len(effect_types),
         },
         "effect_types": effect_types,
-        "effect_examples": {
-            key: value for key, value in sorted(_effect_examples(CARD_EFFECTS).items())
+        "effect_examples": effect_examples,
+        "compiled_effect_examples": {
+            key: compile_effect_to_spec(value).to_dict()
+            for key, value in effect_examples.items()
         },
         "deck_sizes": {key: deck["card_count"] for key, deck in decks.items()},
         "card_bucket_samples": {
@@ -597,12 +618,18 @@ def _state_payload(state: GameState) -> dict[str, Any]:
         "setup_ready": [False, False],
         "pending_promotions": list(getattr(state, "pending_promotions", [])),
         "processed_action_ids": [],
-        "resolution_stack": {
-            "frames": [],
-            "pending_request": None,
-            "sequence": 0,
-            "context": {},
-        },
+        "resolution_stack": _json_value(
+            getattr(
+                state,
+                "resolution_stack",
+                {
+                    "frames": [],
+                    "pending_request": None,
+                    "sequence": 0,
+                    "context": {},
+                },
+            )
+        ),
     }
 
 

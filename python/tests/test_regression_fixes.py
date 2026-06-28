@@ -286,51 +286,49 @@ class TestGoingSecondFirstTurnBonuses(unittest.TestCase):
         self.assertEqual(result.pending_action.max_select, 3)
 
 
-# ── 3. SwitchPokemon Callback Semantics ────────────────────────────────────
+# ── 3. SwitchPokemon VM Continuation Semantics ─────────────────────────────
 
 class TestSwitchPendingSemantics(unittest.TestCase):
 
-    def test_switch_pokemon_non_optional_has_callback(self):
-        """SwitchPokemon ActionRequest MUST have a callback (unified semantics)."""
-        from engine.commands.base import ResolutionContext
+    def test_switch_pokemon_non_optional_has_vm_continuation(self):
+        """SwitchPokemon ActionRequest stores VM continuation instead of closure callback."""
+        from engine.commands.resolution_stack import ResolutionStack
         from engine.commands.primitives import SwitchPokemon
 
         state = _make_state_with_pokemon(bench_card_ids=["sv1-113"])
         state.get_active_player().bench[1] = PokemonInPlay(CardRegistry.get("sv1-113"))
 
-        ctx = ResolutionContext(state, 0, "active", None)
-        cmd = SwitchPokemon(target="self", optional=False)
-        result = cmd.execute(ctx)
+        stack = ResolutionStack(state)
+        stack.push(SwitchPokemon(target="self", optional=False))
+        result = stack.resolve_all(0, "active")
 
         self.assertTrue(result.success)
         self.assertIsNotNone(result.pending_choice)
-        self.assertIsNotNone(
-            result.pending_choice.callback,
-            "SwitchPokemon must provide a callback that performs the switch"
-        )
+        self.assertFalse(result.pending_choice._resolution_stack_had_callback)
+        self.assertIsNotNone(result.pending_choice.callback)
+        self.assertEqual(result.pending_choice.continuation.get("kind"), "switch_bench")
 
-    def test_switch_opponent_non_optional_has_callback(self):
-        """Switch opponent ActionRequest MUST have a callback."""
-        from engine.commands.base import ResolutionContext
+    def test_switch_opponent_non_optional_has_vm_continuation(self):
+        """Switch opponent ActionRequest stores the target player in continuation."""
+        from engine.commands.resolution_stack import ResolutionStack
         from engine.commands.primitives import SwitchPokemon
 
         state = _make_state_with_pokemon(bench_card_ids=["sv1-113"])
         state.get_opponent().bench[1] = PokemonInPlay(CardRegistry.get("sv1-113"))
 
-        ctx = ResolutionContext(state, 0, "active", None)
-        cmd = SwitchPokemon(target="opponent", you_choose=True)
-        result = cmd.execute(ctx)
+        stack = ResolutionStack(state)
+        stack.push(SwitchPokemon(target="opponent", you_choose=True))
+        result = stack.resolve_all(0, "active")
 
         self.assertTrue(result.success)
         self.assertIsNotNone(result.pending_choice)
-        self.assertIsNotNone(
-            result.pending_choice.callback,
-            "Switch opponent must provide a callback that performs the switch"
-        )
+        self.assertFalse(result.pending_choice._resolution_stack_had_callback)
+        self.assertEqual(result.pending_choice.continuation.get("kind"), "switch_bench")
+        self.assertEqual(result.pending_choice.continuation.get("target_player_idx"), 1)
 
-    def test_switch_callback_performs_actual_switch(self):
-        """The callback on a SwitchPokemon request must perform the switch."""
-        from engine.commands.base import ResolutionContext
+    def test_switch_continuation_performs_actual_switch(self):
+        """The wrapped VM continuation on a SwitchPokemon request performs the switch."""
+        from engine.commands.resolution_stack import ResolutionStack
         from engine.commands.primitives import SwitchPokemon
 
         state = _make_state_with_pokemon(bench_card_ids=["sv1-113"])
@@ -339,15 +337,11 @@ class TestSwitchPendingSemantics(unittest.TestCase):
         player.bench[1] = bench_poke
         original_active = player.active
 
-        ctx = ResolutionContext(state, 0, "active", None)
-        cmd = SwitchPokemon(target="self", optional=False)
-        result = cmd.execute(ctx)
+        stack = ResolutionStack(state)
+        stack.push(SwitchPokemon(target="self", optional=False))
+        result = stack.resolve_all(0, "active")
 
-        # Call the callback with bench_idx=1
-        callback = result.pending_choice.callback
-        self.assertIsNotNone(callback)
-
-        ret = callback(1)
+        result.pending_choice.callback(1)
         # After callback, bench[1] should be the old active, active should be the bench pokemon
         self.assertEqual(player.active, bench_poke)
         self.assertEqual(player.bench[1], original_active)
@@ -832,10 +826,10 @@ class TestCardEffectAccuracy(unittest.TestCase):
             callback=lambda _choice: ActionResult(False, "目标无效。"),
         )
 
-        def fake_execute_effect(_effect, _player_idx, _source_slot):
+        def fake_execute_effects(_effects, _player_idx, _source_slot):
             return ActionResult(True, "等待选择。", pending_action=pending)
 
-        resolver._execute_effect = fake_execute_effect
+        resolver._execute_effects = fake_execute_effects
         result = resolver._declare_attack(0, 1)
         self.assertTrue(result.success, result.log_message)
         self.assertIsNotNone(result.pending_action)
@@ -845,6 +839,35 @@ class TestCardEffectAccuracy(unittest.TestCase):
         self.assertFalse(continuation.success)
         self.assertEqual(state.p2.active.damage_counters, 0)
         self.assertIsNone(getattr(state, "_attack_damage_context", None))
+
+    def test_attack_effects_enter_one_resolution_stack(self):
+        from engine.action_resolver import ActionResolver
+
+        state = self._battle_state(active_card_id="sv1-114")
+        state.p1.active.energy_cards = [
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("sv1-ener-3"),
+        ]
+        resolver = ActionResolver(state)
+        attack = state.p1.active.card.attacks[1]
+        calls = []
+
+        def fake_execute_effects(effects, player_idx, source_slot):
+            calls.append((list(effects), player_idx, source_slot))
+            return ActionResult(True, "")
+
+        def reject_single_effect(_effect, _player_idx, _source_slot):
+            raise AssertionError("attack effects must resolve through one VM stack")
+
+        resolver._execute_effects = fake_execute_effects
+        resolver._execute_effect = reject_single_effect
+
+        result = resolver._declare_attack(0, 1)
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], list(attack.effects))
+        self.assertEqual(calls[0][1:], (0, "active"))
 
     def test_tatsugiri_return_to_hand_has_no_damage_and_checks_board(self):
         state = self._battle_state(active_card_id="sv2-tatsu")

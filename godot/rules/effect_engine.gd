@@ -82,6 +82,84 @@ const SUPPORTED_EFFECT_TYPES: Array[String] = [
 	"trekking_shoes",
 	"zinnia_resolve",
 ]
+const NATIVE_COMMAND_OPS: Array[String] = [
+	"apply_attack_lock_basic",
+	"apply_dazzling_beam",
+	"apply_outgoing_damage_reduction",
+	"apply_self_attack_lock",
+	"apply_status",
+	"attach_energy",
+	"attach_energy_from_discard",
+	"choose_damage_target",
+	"conditional",
+	"choose_heal_damage",
+	"conditional_search",
+	"conditional_status",
+	"deal_damage",
+	"deal_damage_per_discard_psychic",
+	"deal_damage_per_energy",
+	"deal_damage_per_evolved",
+	"deal_damage_per_hand_size",
+	"deal_damage_per_self_damage",
+	"deal_damage_per_self_energy",
+	"deal_damage_per_self_energy_type",
+	"deal_damage_plus_bench",
+	"deal_damage_with_self_penalty",
+	"deal_damage_then_heal",
+	"deal_bench_damage",
+	"conditional_damage",
+	"conditional_damage_then_heal",
+	"discard_cards",
+	"discard_then_draw_cards",
+	"discard_hand_then_damage",
+	"discard_energy_then_damage",
+	"discard_energy",
+	"draw_cards",
+	"draw_and_attach_energy",
+	"draw_until",
+	"draw_until_more_than_opponent",
+	"evolve_skip_stage",
+	"shuffle_then_draw_cards",
+	"shuffle_from_discard_to_deck",
+	"judge",
+	"fail_attack",
+	"hand_to_bottom_draw_until",
+	"look_top_deck",
+	"look_top_attach_energy",
+	"flip_coin",
+	"flip_coin_repeat_damage",
+	"flip_coin_then_discard_energy",
+	"flip_coin_then_ko",
+	"flip_until_tails",
+	"heal_all",
+	"heal_damage",
+	"hand_to_bottom_then_draw",
+	"mill_then_damage",
+	"place_damage_counters",
+	"place_counters_then_self_ko",
+	"prevent_all",
+	"prevent_damage",
+	"prevent_effects",
+	"recover_clara",
+	"register_aura_damage_boost",
+	"register_aura_damage_reduction",
+	"register_conditional_hp_boost",
+	"register_conditional_zero_retreat",
+	"register_reactive_thorns",
+	"register_tool_modifier",
+	"register_tool_exp_share",
+	"relocate_energy",
+	"return_to_hand",
+	"set_attack_flags",
+	"set_attack_damage_formula",
+	"search_cards",
+	"search_any_and_switch",
+	"search_item_and_tool",
+	"switch_pokemon",
+	"trekking_shoes",
+	"discard_then_revive",
+	"zinnia_resolve",
+]
 
 var catalog: CardCatalog
 
@@ -92,6 +170,645 @@ func _init(p_catalog: CardCatalog) -> void:
 
 func supports_effect_type(effect_type: String) -> bool:
 	return effect_type in SUPPORTED_EFFECT_TYPES
+
+
+func supports_command_spec(spec: Dictionary) -> bool:
+	if not spec.has("op"):
+		return false
+	var op := str(spec.get("op", ""))
+	if op not in NATIVE_COMMAND_OPS:
+		return false
+	var args := Dictionary(spec.get("args", {}))
+	if args.has("effect_type"):
+		return false
+	var branches := Dictionary(spec.get("branches", {}))
+	for branch_name in branches:
+		var branch_items: Variant = branches[branch_name]
+		if branch_items is Array:
+			for item in branch_items:
+				if item is Dictionary and not supports_command_spec(Dictionary(item)):
+					return false
+	return true
+
+
+func _execute_command_spec(
+	state: GameState,
+	stack: ResolutionStack,
+	_rng: PortableRandomSource,
+	spec: Dictionary,
+	player_idx: int,
+	source_slot: String,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var op := str(spec.get("op", ""))
+	if op not in NATIVE_COMMAND_OPS:
+		return {"_handled": false}
+	var args := Dictionary(spec.get("args", {}))
+	if args.has("effect_type"):
+		return {
+			"_handled": true,
+			"success": false,
+			"message": "VM command specs must not carry legacy effect_type args.",
+			"error_code": "legacy_effect_type_arg",
+		}
+	match op:
+		"attach_energy":
+			var attach_result := _energy_attach(state, stack, player_idx, source_slot, args)
+			attach_result["_handled"] = true
+			return attach_result
+		"attach_energy_from_discard":
+			var discard_attach_result := _attach_from_discard(state, stack, player_idx, source_slot, args)
+			discard_attach_result["_handled"] = true
+			return discard_attach_result
+		"relocate_energy":
+			var relocate_result := _energy_relocate_request(state, stack, player_idx, args)
+			relocate_result["_handled"] = true
+			return relocate_result
+		"choose_damage_target":
+			var choose_result := _choose_damage_target(state, stack, player_idx, args)
+			choose_result["_handled"] = true
+			return choose_result
+		"deal_damage":
+			var target := str(args.get("target", "opponent_active"))
+			if target == "self":
+				var self_result := _deal_damage(
+					state, player_idx, source_slot, int(args.get("amount", 0)), events)
+				self_result["_handled"] = true
+				return self_result
+			var damage_result := _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
+				int(args.get("amount", 0)), events)
+			damage_result["_handled"] = true
+			return damage_result
+		"deal_damage_per_discard_psychic":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"per_discard_psychic", args, events))
+		"deal_damage_per_energy":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"per_energy", args, events))
+		"deal_damage_per_evolved":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"per_evolved", args, events))
+		"deal_damage_per_hand_size":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"per_hand_size", args, events))
+		"deal_damage_per_self_damage":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"per_self_damage", args, events))
+		"deal_damage_per_self_energy":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"per_self_energy", args, events))
+		"deal_damage_per_self_energy_type":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"per_self_energy_type", args, events))
+		"deal_damage_plus_bench":
+			return _handled_formula_result(_deal_damage_formula_spec(
+				state, stack, player_idx, source_slot,
+				"plus_bench", args, events))
+		"deal_damage_with_self_penalty":
+			var penalty_source := state.get_player(player_idx).get_pokemon(source_slot)
+			var penalty_count := penalty_source.damage_counters if penalty_source else 0
+			var penalty_result := _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
+				max(0, int(args.get("base", 0)) - penalty_count * int(args.get("per_counter", 0))),
+				events)
+			penalty_result["_handled"] = true
+			return penalty_result
+		"conditional_damage_then_heal":
+			var conditional_total := int(args.get("base", 0))
+			if state.get_player(player_idx).healed_this_turn:
+				conditional_total += int(args.get("bonus", 0))
+			var conditional_damage_result := _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
+				conditional_total, events)
+			conditional_damage_result["_handled"] = true
+			return conditional_damage_result
+		"deal_damage_then_heal":
+			var damage_heal_result := _deal_attack_or_effect_damage(
+				state, stack, player_idx, 1 - player_idx, "active",
+				int(args.get("damage", 0)), events)
+			_heal_pokemon(state, player_idx, source_slot, int(args.get("heal", 0)), events)
+			damage_heal_result["_handled"] = true
+			return damage_heal_result
+		"conditional_damage":
+			var conditional_bonus_result := _conditional_damage_bonus(
+				state, stack, player_idx, args, events)
+			conditional_bonus_result["_handled"] = true
+			return conditional_bonus_result
+		"conditional":
+			var conditional_params := args.duplicate(true)
+			var conditional_branches := Dictionary(spec.get("branches", {}))
+			if conditional_branches.has("cost"):
+				conditional_params["cost"] = Array(conditional_branches["cost"]).duplicate(true)
+			if conditional_branches.has("on_pay"):
+				conditional_params["on_pay"] = Array(conditional_branches["on_pay"]).duplicate(true)
+			var conditional_result := _conditional_effect(
+				state, stack, player_idx, source_slot, conditional_params)
+			conditional_result["_handled"] = true
+			return conditional_result
+		"discard_hand_then_damage":
+			var discard_hand_damage_result := _discard_hand_then_damage(
+				state, stack, player_idx, args, events)
+			discard_hand_damage_result["_handled"] = true
+			return discard_hand_damage_result
+		"discard_energy_then_damage":
+			var discard_energy_damage_result := _discard_fighting_energy_then_damage(
+				state, stack, player_idx, source_slot, args, events)
+			discard_energy_damage_result["_handled"] = true
+			return discard_energy_damage_result
+		"deal_bench_damage":
+			var bench_result := _bench_damage(state, stack, player_idx, args, events)
+			bench_result["_handled"] = true
+			return bench_result
+		"place_damage_counters":
+			var counter_result := _deal_damage(
+				state, player_idx, source_slot, int(args.get("amount", 0)), events, false)
+			counter_result["_handled"] = true
+			return counter_result
+		"place_counters_then_self_ko":
+			var comet_result := _place_counters_then_self_ko(
+				state, stack, player_idx, source_slot, args)
+			comet_result["_handled"] = true
+			return comet_result
+		"apply_status":
+			var target_player_idx := (
+				1 - player_idx
+				if str(args.get("target", "opponent_active")) == "opponent_active"
+				else player_idx
+			)
+			var target_slot := (
+				"active"
+				if str(args.get("target", "opponent_active")) == "opponent_active"
+				else source_slot
+			)
+			var status_result := _apply_status(
+				state, target_player_idx, target_slot, str(args.get("status", "")), events)
+			status_result["_handled"] = true
+			return status_result
+		"conditional_status":
+			if str(args.get("condition", "")) == "ko_by_attack_last_turn":
+				if not state.get_player(player_idx).was_ko_by_attack:
+					return {"_handled": true, "success": true, "message": "条件未满足。"}
+				state.get_player(player_idx).was_ko_by_attack = false
+			var conditional_target_player_idx := (
+				1 - player_idx
+				if str(args.get("target", "opponent_active")) == "opponent_active"
+				else player_idx
+			)
+			var conditional_target_slot := (
+				"active"
+				if str(args.get("target", "opponent_active")) == "opponent_active"
+				else source_slot
+			)
+			var conditional_status_result := _apply_status(
+				state, conditional_target_player_idx, conditional_target_slot,
+				str(args.get("status", "")), events)
+			conditional_status_result["_handled"] = true
+			return conditional_status_result
+		"draw_cards":
+			var draw_player_idx := (
+				1 - player_idx
+				if str(args.get("player", "self")) == "opponent"
+				else player_idx
+			)
+			var draw_result := _draw(state, draw_player_idx, int(args.get("amount", 1)), events)
+			draw_result["_handled"] = true
+			return draw_result
+		"draw_and_attach_energy":
+			_draw_available(state, player_idx, 2, events)
+			var draw_attach_result := _attach_from_hand_to_bench(
+				state, stack, player_idx,
+				int(args.get("energy_count", 2)),
+				str(args.get("energy_type", "Grass")),
+				int(args.get("min_select", int(args.get("energy_count", 2)))))
+			draw_attach_result["_handled"] = true
+			return draw_attach_result
+		"draw_until":
+			var to_draw: int = max(0, int(args.get("target_hand_size", 5)) - state.get_player(player_idx).hand.size())
+			var draw_until_result := _draw_available(state, player_idx, to_draw, events)
+			draw_until_result["_handled"] = true
+			return draw_until_result
+		"draw_until_more_than_opponent":
+			var margin := int(args.get("margin", 1))
+			var more_to_draw: int = max(
+				0,
+				state.get_player(1 - player_idx).hand.size() + margin - state.get_player(player_idx).hand.size(),
+			)
+			var draw_more_result := _draw_available(state, player_idx, more_to_draw, events)
+			draw_more_result["_handled"] = true
+			return draw_more_result
+		"shuffle_then_draw_cards":
+			var shuffle_draw_result := _shuffle_then_draw_cards(
+				state, _rng, player_idx, args, events)
+			shuffle_draw_result["_handled"] = true
+			return shuffle_draw_result
+		"judge":
+			var judge_result := _judge(state, _rng, args, events)
+			judge_result["_handled"] = true
+			return judge_result
+		"shuffle_from_discard_to_deck":
+			var shuffle_discard_args := args.duplicate(true)
+			var shuffle_discard_result := _recover_from_discard_request(
+				state, stack, player_idx, shuffle_discard_args, "shuffle_to_deck")
+			shuffle_discard_result["_handled"] = true
+			return shuffle_discard_result
+		"recover_clara":
+			var clara_args := args.duplicate(true)
+			var clara_result := _recover_from_discard_request(
+				state, stack, player_idx, clara_args, "clara")
+			clara_result["_handled"] = true
+			return clara_result
+		"hand_to_bottom_then_draw":
+			var hand_bottom_result := _hand_to_bottom_then_draw_request(
+				state, stack, player_idx)
+			hand_bottom_result["_handled"] = true
+			return hand_bottom_result
+		"hand_to_bottom_draw_until":
+			var houb_player := state.get_player(player_idx)
+			if houb_player.hand.is_empty():
+				return {
+					"_handled": true,
+					"success": false,
+					"message": "没有其他手牌可以放回牌库底。",
+					"error_code": "effect_failed",
+				}
+			var houb_result := _request_cards(
+				state, stack, player_idx, "hand", houb_player.hand, "houb",
+				{"player_idx": player_idx, "target": int(args.get("target_hand_size", 5))},
+				1, 1, "选择1张手牌放回牌库底。")
+			houb_result["_handled"] = true
+			return houb_result
+		"zinnia_resolve":
+			var zinnia_result := _zinnia_resolve_request(
+				state, stack, player_idx, events)
+			zinnia_result["_handled"] = true
+			return zinnia_result
+		"search_cards":
+			var search_result := _search_request(state, stack, player_idx, args)
+			search_result["_handled"] = true
+			return search_result
+		"look_top_deck":
+			var look_top_result := _look_top_request(state, stack, player_idx, args)
+			look_top_result["_handled"] = true
+			return look_top_result
+		"look_top_attach_energy":
+			var look_top_attach_result := _look_top_attach_request(
+				state, stack, _rng, player_idx, args)
+			look_top_attach_result["_handled"] = true
+			return look_top_attach_result
+		"search_item_and_tool":
+			var arven_result := _arven_request(state, stack, player_idx)
+			arven_result["_handled"] = true
+			return arven_result
+		"conditional_search":
+			var conditional_search_result := _conditional_search_request(
+				state, stack, player_idx, args)
+			conditional_search_result["_handled"] = true
+			return conditional_search_result
+		"search_any_and_switch":
+			var survival_result := _search_any_and_switch(
+				stack, player_idx, source_slot, args)
+			survival_result["_handled"] = true
+			return survival_result
+		"trekking_shoes":
+			var trekking_result := _trekking_shoes_request(state, stack, player_idx)
+			trekking_result["_handled"] = true
+			return trekking_result
+		"discard_then_revive":
+			var revive_result := _ability_discard_revive(state, player_idx, args, events)
+			revive_result["_handled"] = true
+			return revive_result
+		"evolve_skip_stage":
+			var rare_candy_result := _rare_candy(state, player_idx, events)
+			rare_candy_result["_handled"] = true
+			return rare_candy_result
+		"discard_cards":
+			var discard_zone := str(args.get("from", args.get("from_zone", "hand")))
+			var discard_source: Array[String] = _zone(state.get_player(player_idx), discard_zone)
+			var discard_amount := int(args.get("amount", 1))
+			if discard_source.size() < discard_amount:
+				return {
+					"_handled": true,
+					"success": false,
+					"message": "手牌不足，无法支付丢弃代价。",
+					"error_code": "cost_not_payable",
+				}
+			if discard_amount <= 0:
+				return {
+					"_handled": true,
+					"success": false,
+					"message": "没有可丢弃的卡。",
+					"error_code": "effect_failed",
+				}
+			var discard_result := _request_cards(
+				state, stack, player_idx, discard_zone, discard_source, "discard_cards",
+				{"player_idx": player_idx, "zone": discard_zone},
+				discard_amount, discard_amount, "选择要丢弃的卡。")
+			discard_result["_handled"] = true
+			return discard_result
+		"discard_then_draw_cards":
+			var draw_amount := int(args.get("draw_amount", args.get("draw", 0)))
+			if bool(args.get("discard_hand", false)):
+				var discard_draw_player := state.get_player(player_idx)
+				var discarded_cards := discard_draw_player.hand.duplicate()
+				var discarded_count := discard_draw_player.discard_entire_hand()
+				events.append(_discard_event(player_idx, "hand", discarded_cards, discarded_count))
+				var discard_draw_result := _draw_available(state, player_idx, draw_amount, events)
+				discard_draw_result["_handled"] = true
+				return discard_draw_result
+			var select_discard_amount := int(args.get("discard_amount", args.get("amount", 1)))
+			var discard_then_draw_result := _request_cards(
+				state, stack, player_idx, "hand", state.get_player(player_idx).hand,
+				"discard_then_draw",
+				{"player_idx": player_idx, "draw_amount": draw_amount},
+				select_discard_amount, select_discard_amount, "选择要丢弃的手牌。")
+			discard_then_draw_result["_handled"] = true
+			return discard_then_draw_result
+		"discard_energy":
+			var energy_result := _discard_energy(
+				state, player_idx, source_slot, args)
+			energy_result["_handled"] = true
+			return energy_result
+		"flip_coin":
+			var coin_params := args.duplicate(true)
+			var branches := Dictionary(spec.get("branches", {}))
+			for branch_name in branches:
+				coin_params[str(branch_name)] = Array(branches[branch_name]).duplicate(true)
+			var coin_result := _coin_request(
+				state, stack, _rng, "branch", coin_params, player_idx, source_slot)
+			coin_result["_handled"] = true
+			return coin_result
+		"flip_coin_repeat_damage":
+			var repeat_coin_params := args.duplicate(true)
+			var repeat_coin_result := _coin_request(
+				state, stack, _rng, "repeat_damage", repeat_coin_params, player_idx, source_slot)
+			repeat_coin_result["_handled"] = true
+			return repeat_coin_result
+		"flip_coin_then_ko":
+			var ko_coin_params := args.duplicate(true)
+			var ko_coin_result := _coin_request(
+				state, stack, _rng, "double_ko", ko_coin_params, player_idx, source_slot)
+			ko_coin_result["_handled"] = true
+			return ko_coin_result
+		"flip_coin_then_discard_energy":
+			var discard_coin_params := args.duplicate(true)
+			var discard_coin_result := _coin_request(
+				state, stack, _rng, "discard_energy", discard_coin_params, player_idx, source_slot)
+			discard_coin_result["_handled"] = true
+			return discard_coin_result
+		"flip_until_tails":
+			var until_coin_params := args.duplicate(true)
+			var until_coin_result := _coin_request(
+				state, stack, _rng, "until_tails", until_coin_params, player_idx, source_slot)
+			until_coin_result["_handled"] = true
+			return until_coin_result
+		"choose_heal_damage":
+			var choose_heal_result := _request_injured_target(
+				state, stack, player_idx, int(args.get("amount", 30)))
+			choose_heal_result["_handled"] = true
+			return choose_heal_result
+		"heal_damage":
+			var heal_slot := source_slot
+			if str(args.get("target", "self")) == "self":
+				heal_slot = "active"
+			var heal_result := _heal_pokemon(
+				state, player_idx, heal_slot, int(args.get("amount", 0)), events)
+			heal_result["_handled"] = true
+			return heal_result
+		"heal_all":
+			for row in state.get_player(player_idx).get_all_pokemon():
+				var pokemon: PokemonState = row["pokemon"]
+				if pokemon:
+					_heal_pokemon(state, player_idx, str(row["slot"]), int(args.get("amount", 20)), events)
+			return {"_handled": true, "success": true, "message": ""}
+		"mill_then_damage":
+			var mill_result := _mill_then_damage(state, stack, _rng, player_idx, args, events)
+			mill_result["_handled"] = true
+			return mill_result
+		"switch_pokemon":
+			var switch_target := str(args.get("target", ""))
+			if switch_target.is_empty():
+				switch_target = "self"
+			var switch_result := _switch_request(
+				state,
+				stack,
+				player_idx,
+				1 - player_idx if switch_target == "opponent" else player_idx,
+				bool(args.get("optional", false)),
+				bool(args.get("you_choose", false)),
+			)
+			switch_result["_handled"] = true
+			return switch_result
+		"fail_attack":
+			return {"_handled": true, "success": true, "message": "招式失败。", "attack_failed": true}
+		"apply_dazzling_beam":
+			var dazzling_result := _apply_dazzling_beam(state, player_idx, args)
+			dazzling_result["_handled"] = true
+			return dazzling_result
+		"apply_attack_lock_basic":
+			var attack_lock_result := _apply_attack_lock_basic(state, player_idx, args)
+			attack_lock_result["_handled"] = true
+			return attack_lock_result
+		"apply_outgoing_damage_reduction":
+			var reduction_result := _apply_outgoing_damage_reduction(
+				state, player_idx, source_slot, args)
+			reduction_result["_handled"] = true
+			return reduction_result
+		"apply_self_attack_lock":
+			var self_lock_result := _apply_self_attack_lock(
+				state, player_idx, source_slot, args)
+			self_lock_result["_handled"] = true
+			return self_lock_result
+		"prevent_damage":
+			var prevent_damage_result := _apply_prevention(
+				state, player_idx, source_slot, true, false)
+			prevent_damage_result["_handled"] = true
+			return prevent_damage_result
+		"prevent_effects":
+			var prevent_effects_result := _apply_prevention(
+				state, player_idx, source_slot, false, true)
+			prevent_effects_result["_handled"] = true
+			return prevent_effects_result
+		"prevent_all":
+			var prevent_all_result := _apply_prevention(
+				state, player_idx, source_slot, true, true)
+			prevent_all_result["_handled"] = true
+			return prevent_all_result
+		"register_aura_damage_reduction":
+			return _register_named_vm_modifier(
+				state, player_idx, source_slot, "aura_damage_reduction", args)
+		"register_aura_damage_boost":
+			return _register_named_vm_modifier(
+				state, player_idx, source_slot, "aura_damage_boost", args)
+		"register_conditional_hp_boost":
+			return _register_named_vm_modifier(
+				state, player_idx, source_slot, "conditional_hp_boost", args)
+		"register_conditional_zero_retreat":
+			return _register_named_vm_modifier(
+				state, player_idx, source_slot, "conditional_zero_retreat", args)
+		"register_reactive_thorns":
+			return _register_named_vm_modifier(
+				state, player_idx, source_slot, "reactive_thorns", args)
+		"register_tool_exp_share":
+			return _register_named_vm_modifier(
+				state, player_idx, source_slot, "tool_exp_share", args)
+		"register_tool_modifier":
+			return _register_vm_modifier(state, player_idx, source_slot, args, "tool", "道具效果已注册。")
+		"set_attack_flags":
+			_set_attack_flags(stack, args)
+			return {"_handled": true, "success": true, "message": "穿透攻击标记已设置。"}
+		"set_attack_damage_formula":
+			var attack_formula_result := _attack_damage_formula(
+				state, stack, player_idx, source_slot, args)
+			attack_formula_result["_handled"] = true
+			return attack_formula_result
+		"return_to_hand":
+			var return_result := _return_to_hand(state, player_idx, source_slot)
+			return_result["_handled"] = true
+			return return_result
+	return {"_handled": false}
+
+
+func _apply_dazzling_beam(
+	state: GameState,
+	player_idx: int,
+	args: Dictionary,
+) -> Dictionary:
+	var target := (
+		state.get_player(1 - player_idx).active
+		if str(args.get("target", "opponent_active")) == "opponent_active"
+		else state.get_player(player_idx).active
+	)
+	if target:
+		if target.all_prevented_next_turn:
+			target.all_prevented_next_turn = false
+			return {"success": true, "message": "炫目效果被免疫。"}
+		target.dazzled = true
+	return {"success": true, "message": "目标被施加炫目效果。"}
+
+
+func _apply_attack_lock_basic(
+	state: GameState,
+	player_idx: int,
+	args: Dictionary,
+) -> Dictionary:
+	var target := (
+		state.get_player(1 - player_idx).active
+		if str(args.get("target", "opponent_active")) == "opponent_active"
+		else state.get_player(player_idx).active
+	)
+	if target:
+		if target.all_prevented_next_turn:
+			target.all_prevented_next_turn = false
+			return {"success": true, "message": "攻击封锁被免疫。"}
+		if catalog.is_basic_pokemon(target.card_id):
+			target.attack_locked = true
+	return {"success": true, "message": ""}
+
+
+func _apply_outgoing_damage_reduction(
+	state: GameState,
+	player_idx: int,
+	source_slot: String,
+	args: Dictionary,
+) -> Dictionary:
+	var target := (
+		state.get_player(1 - player_idx).active
+		if str(args.get("target", "opponent_active")) == "opponent_active"
+		else state.get_player(player_idx).get_pokemon(source_slot)
+	)
+	if target:
+		if target.all_prevented_next_turn:
+			target.all_prevented_next_turn = false
+			return {"success": true, "message": "恫吓效果被免疫。"}
+		target.outgoing_damage_reduction_next_turn = maxi(
+			target.outgoing_damage_reduction_next_turn,
+			int(args.get("amount", 0)),
+		)
+	return {"success": true, "message": ""}
+
+
+func _apply_self_attack_lock(
+	state: GameState,
+	player_idx: int,
+	source_slot: String,
+	args: Dictionary,
+) -> Dictionary:
+	var target := state.get_player(player_idx).get_pokemon(source_slot)
+	if target:
+		target.attack_locked_names[str(args.get("attack_name", ""))] = state.turn_number
+	return {"success": true, "message": ""}
+
+
+func _apply_prevention(
+	state: GameState,
+	player_idx: int,
+	source_slot: String,
+	prevent_damage: bool,
+	prevent_effects: bool,
+) -> Dictionary:
+	var target := state.get_player(player_idx).get_pokemon(source_slot)
+	if target:
+		if prevent_damage:
+			target.damage_prevented_next_turn = true
+		if prevent_effects:
+			target.all_prevented_next_turn = true
+	return {"success": true, "message": ""}
+
+
+func _register_named_vm_modifier(
+	state: GameState,
+	player_idx: int,
+	source_slot: String,
+	modifier_kind: String,
+	args: Dictionary,
+) -> Dictionary:
+	var result := _register_vm_modifier(state, player_idx, source_slot, args, modifier_kind, "")
+	result["_handled"] = true
+	return result
+
+
+func _register_vm_modifier(
+	state: GameState,
+	player_idx: int,
+	source_slot: String,
+	args: Dictionary,
+	modifier_kind: String,
+	message: String = "",
+) -> Dictionary:
+	var pokemon := state.get_player(player_idx).get_pokemon(source_slot)
+	if pokemon == null:
+		return {"_handled": true, "success": true, "message": ""}
+	if modifier_kind.is_empty():
+		return {"_handled": true, "success": true, "message": ""}
+	var source := "%d:%s:%s:%s:%s" % [
+		player_idx,
+		source_slot,
+		pokemon.card_id,
+		modifier_kind,
+		str(args.get("effect", "")),
+	]
+	var kept: Array[Dictionary] = []
+	for modifier in pokemon.modifiers:
+		if str(modifier.get("source", "")) != source:
+			kept.append(modifier)
+	pokemon.modifiers = kept
+	pokemon.modifiers.append({
+		"source": source,
+		"source_player": player_idx,
+		"source_slot": source_slot,
+		"source_card_id": pokemon.card_id,
+		"modifier_kind": modifier_kind,
+		"params": args.duplicate(true),
+	})
+	return {"_handled": true, "success": true, "message": message}
 
 
 func resolve(
@@ -230,503 +947,14 @@ func _execute_effect(
 	source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
+	if effect.has("op"):
+		var native := _execute_command_spec(state, stack, rng, effect, player_idx, source_slot, events)
+		if bool(native.get("_handled", false)):
+			native.erase("_handled")
+			return native
+		return _fail("不支持的VM指令: %s" % str(effect.get("op", "")), "unsupported_vm_op")
 	var effect_type := str(effect.get("effect_type", ""))
-	var params: Dictionary = effect.get("params", {})
-	var player := state.get_player(player_idx)
-	var opponent := state.get_player(1 - player_idx)
-
-	match effect_type:
-		"damage":
-			if str(params.get("target", "opponent_active")) == "self":
-				return _deal_damage(
-					state, player_idx, source_slot,
-					int(params.get("amount", 0)), events, false)
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				int(params.get("amount", 0)), events)
-		"damage_counter_self":
-			return _deal_damage(state, player_idx, source_slot, int(params.get("amount", 0)), events, false)
-		"attack_damage_formula":
-			return _attack_damage_formula(state, stack, player_idx, source_slot, params)
-		"damage_per_energy":
-			var count := 0
-			match str(params.get("count_from", "self")):
-				"opponent_active":
-					count = opponent.active.energy_card_ids.size() if opponent.active else 0
-				"all_opponent":
-					for row in opponent.get_all_pokemon():
-						var target_pokemon: PokemonState = row["pokemon"]
-						if target_pokemon:
-							count += target_pokemon.energy_card_ids.size()
-				_:
-					var count_source := player.get_pokemon(source_slot)
-					count = count_source.energy_card_ids.size() if count_source else 0
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				int(params.get("base", 0)) + count * int(params.get("per_energy", 0)),
-				events,
-			)
-		"damage_per_hand_size":
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				player.hand.size() * int(params.get("per", 0)), events)
-		"damage_per_self_energy", "damage_per_self_energy_type":
-			var source := player.get_pokemon(source_slot)
-			if source == null:
-				return _fail("没有攻击来源。")
-			var filter := str(params.get("energy_filter", params.get("energy_type", ""))).to_lower()
-			var energy_count := 0
-			for energy_id in source.energy_card_ids:
-				if filter.is_empty() or filter == "any":
-					energy_count += 1
-				else:
-					for provided in catalog.provides_energy(energy_id):
-						if provided.to_lower() == filter:
-							energy_count += 1
-							break
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				int(params.get("base", 0)) + energy_count * int(params.get("per_energy", 0)),
-				events)
-		"damage_per_discard_psychic":
-			var psychic_count := 0
-			for card_id in player.discard:
-				if catalog.is_pokemon(card_id) and "Psychic" in catalog.get_card(card_id).get("energy_types", []):
-					psychic_count += 1
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				int(params.get("base", 0)) + psychic_count * int(params.get("per_card", 0)),
-				events)
-		"damage_plus_bench":
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				int(params.get("base", 0)) + player.bench_count() * int(params.get("per_bench", 0)),
-				events)
-		"damage_per_self_damage":
-			var self_pokemon := player.get_pokemon(source_slot)
-			var self_counters := self_pokemon.damage_counters if self_pokemon else 0
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				int(params.get("base", 0)) + self_counters * int(params.get("per_counter", 0)),
-				events)
-		"damage_self_penalty":
-			var penalty_source := player.get_pokemon(source_slot)
-			var penalty_count := penalty_source.damage_counters if penalty_source else 0
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				max(0, int(params.get("base", 0)) - penalty_count * int(params.get("per_counter", 0))),
-				events)
-		"damage_per_evolved":
-			var evolved := 0
-			for row in player.get_all_pokemon():
-				var pokemon: PokemonState = row["pokemon"]
-				if pokemon and not catalog.is_basic_pokemon(pokemon.card_id):
-					evolved += 1
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				evolved * int(params.get("per_evolved", 0)), events)
-		"conditional_damage_bonus":
-			return _conditional_damage_bonus(state, stack, player_idx, params, events)
-		"conditional_damage_heal":
-			var total := int(params.get("base", 0))
-			if player.healed_this_turn:
-				total += int(params.get("bonus", 0))
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active", total, events)
-		"damage_and_self_heal":
-			var damage_outcome := _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active", int(params.get("damage", 0)), events)
-			_heal_pokemon(state, player_idx, source_slot, int(params.get("heal", 0)), events)
-			return damage_outcome
-		"discard_hand_conditional_bonus":
-			var total_damage := int(params.get("base_damage", 0))
-			if player.hand.size() >= int(params.get("threshold", 5)):
-				total_damage += int(params.get("bonus", 0))
-				var discarded_cards := player.hand.duplicate()
-				var count := player.discard_entire_hand()
-				events.append(_discard_event(
-					player_idx, "hand", discarded_cards, count))
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active", total_damage, events)
-		"discard_fighting_energy_damage":
-			var fighting_source := player.get_pokemon(source_slot)
-			if fighting_source == null:
-				return _fail("没有攻击来源。")
-			var kept: Array[String] = []
-			var discarded := 0
-			for energy_id in fighting_source.energy_card_ids:
-				if "Fighting" in catalog.provides_energy(energy_id):
-					player.discard.append(energy_id)
-					discarded += 1
-				else:
-					kept.append(energy_id)
-			fighting_source.energy_card_ids = kept
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				int(params.get("base", 0)) + discarded * int(params.get("per_energy", 0)),
-				events)
-		"mill_and_damage_per_energy":
-			var exposed: Array[String] = []
-			for _index in range(min(int(params.get("mill_count", 0)), player.deck.size())):
-				exposed.append(player.deck.pop_back())
-			var energies := 0
-			for card_id in exposed:
-				if catalog.is_energy(card_id):
-					player.discard.append(card_id)
-					energies += 1
-				else:
-					player.deck.append(card_id)
-			rng.shuffle(player.deck)
-			events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
-			return _deal_attack_or_effect_damage(
-				state, stack, player_idx, 1 - player_idx, "active",
-				energies * int(params.get("damage_per", 0)), events)
-		"any_pokemon_damage":
-			return _request_board_target(
-				state, stack, player_idx, 1 - player_idx, "damage_target",
-				{"amount": int(params.get("amount", 0)), "target_player": 1 - player_idx},
-				"选择1只对手宝可梦作为伤害目标。")
-		"bench_damage":
-			if not bool(params.get("choose_targets", true)):
-				var target_idx := 1 - player_idx
-				var applied := 0
-				for index in range(state.get_player(target_idx).bench.size()):
-					if applied >= int(params.get("count", 1)):
-						break
-					var bench_pokemon: PokemonState = state.get_player(target_idx).bench[index]
-					if bench_pokemon:
-						_deal_damage(
-							state,
-							target_idx,
-							"bench_%d" % index,
-							int(params.get("amount", 0)),
-							events,
-						)
-						applied += 1
-				return _ok("备战伤害已结算。")
-			return _request_bench_target(
-				state, stack, player_idx, 1 - player_idx, "bench_damage_target",
-				{"amount": int(params.get("amount", 0)), "target_player": 1 - player_idx},
-				"选择1只对手备战宝可梦作为伤害目标。",
-				int(params.get("count", 1)))
-		"place_counters_and_self_ko":
-			return _request_board_target(
-				state, stack, player_idx, 1 - player_idx, "place_counters_self_ko",
-				{
-					"counters": int(params.get("counters", 0)),
-					"source_player": player_idx,
-					"source_slot": source_slot,
-					"target_player": 1 - player_idx,
-				},
-				"选择1只对手宝可梦放置伤害指示物。")
-		"coin_flip", "coin_flip_triple", "coin_flip_double_ko", "coin_flip_until_tails", "coin_flip_energy_discard":
-			return _coin_request(state, stack, rng, effect_type, params, player_idx, source_slot)
-		"status", "conditional_status":
-			if effect_type == "conditional_status" and params.get("condition", "") == "ko_by_attack_last_turn":
-				if not player.was_ko_by_attack:
-					return _ok("条件未满足。")
-				player.was_ko_by_attack = false
-			return _apply_status(
-				state,
-				1 - player_idx if params.get("target", "opponent_active") == "opponent_active" else player_idx,
-				"active" if params.get("target", "opponent_active") == "opponent_active" else source_slot,
-				str(params.get("status", "")),
-				events)
-		"dazzling_beam":
-			if opponent.active:
-				if opponent.active.all_prevented_next_turn:
-					opponent.active.all_prevented_next_turn = false
-					return _ok("炫目效果被免疫。")
-				opponent.active.dazzled = true
-			return _ok("目标被施加炫目效果。")
-		"attack_lock_basic":
-			if opponent.active:
-				if opponent.active.all_prevented_next_turn:
-					opponent.active.all_prevented_next_turn = false
-					return _ok("攻击封锁被免疫。")
-				if catalog.is_basic_pokemon(opponent.active.card_id):
-					opponent.active.attack_locked = true
-			return _ok()
-		"apply_outgoing_damage_reduction":
-			var reduction_target := (
-				opponent.active
-				if str(params.get("target", "opponent_active")) == "opponent_active"
-				else player.get_pokemon(source_slot)
-			)
-			if reduction_target:
-				if reduction_target.all_prevented_next_turn:
-					reduction_target.all_prevented_next_turn = false
-					return _ok("恫吓效果被免疫。")
-				reduction_target.outgoing_damage_reduction_next_turn = maxi(
-					reduction_target.outgoing_damage_reduction_next_turn,
-					int(params.get("amount", 0)),
-				)
-			return _ok()
-		"self_attack_lock":
-			var lock_target := player.get_pokemon(source_slot)
-			if lock_target:
-				lock_target.attack_locked_names[str(params.get("attack_name", ""))] = state.turn_number
-			return _ok()
-		"prevent_damage":
-			var damage_target := player.get_pokemon(source_slot)
-			if damage_target:
-				damage_target.damage_prevented_next_turn = true
-			return _ok()
-		"prevent_effects":
-			var effect_target := player.get_pokemon(source_slot)
-			if effect_target:
-				effect_target.all_prevented_next_turn = true
-			return _ok()
-		"prevent_all":
-			var all_target := player.get_pokemon(source_slot)
-			if all_target:
-				all_target.damage_prevented_next_turn = true
-				all_target.all_prevented_next_turn = true
-			return _ok()
-		"attack_fail":
-			return {"success": true, "message": "招式失败。", "attack_failed": true}
-		"draw":
-			var draw_player_idx := (
-				1 - player_idx
-				if str(params.get("player", "self")) == "opponent"
-				else player_idx
-			)
-			return _draw(state, draw_player_idx, int(params.get("amount", 1)), events)
-		"draw_until":
-			return _draw_available(
-				state, player_idx,
-				max(0, int(params.get("target_hand_size", 5)) - player.hand.size()), events)
-		"draw_until_more":
-			return _draw_available(
-				state, player_idx,
-				max(0, opponent.hand.size() + 1 - player.hand.size()), events)
-		"discard_draw":
-			if bool(params.get("discard_hand", false)):
-				var discarded_cards := player.hand.duplicate()
-				var discarded_count := player.discard_entire_hand()
-				events.append(_discard_event(
-					player_idx, "hand", discarded_cards, discarded_count))
-			return _draw_available(state, player_idx, int(params.get("draw", 7)), events)
-		"shuffle_draw":
-			player.deck.append_array(player.hand)
-			player.hand.clear()
-			rng.shuffle(player.deck)
-			events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
-			return _draw_available(state, player_idx, int(params.get("draw", 5)), events)
-		"judge":
-			for index in [0, 1]:
-				var target_player := state.get_player(index)
-				target_player.deck.append_array(target_player.hand)
-				target_player.hand.clear()
-				rng.shuffle(target_player.deck)
-				events.append({"event_type": "deck_shuffled", "data": {"player": index}})
-				_draw_available(state, index, int(params.get("draw", 4)), events)
-			return _ok()
-		"discard_then_draw":
-			return _request_cards(
-				state, stack, player_idx, "hand", player.hand, "discard_then_draw",
-				{
-					"player_idx": player_idx,
-					"draw_amount": int(params.get("draw_amount", 3)),
-				},
-				int(params.get("discard_amount", 1)),
-				int(params.get("discard_amount", 1)),
-				"选择要丢弃的手牌。")
-		"discard":
-			var discard_zone := str(params.get("from", "hand"))
-			var discard_source: Array[String] = _zone(player, discard_zone)
-			var requested_discard_amount := int(params.get("amount", 1))
-			if discard_source.size() < requested_discard_amount:
-				return _fail("手牌不足，无法支付丢弃代价。", "cost_not_payable")
-			var discard_amount: int = requested_discard_amount
-			if discard_amount <= 0:
-				return _fail("没有可丢弃的卡。")
-			return _request_cards(
-				state, stack, player_idx, discard_zone, discard_source, "discard_cards",
-				{"player_idx": player_idx, "zone": discard_zone},
-				discard_amount, discard_amount, "选择要丢弃的卡。")
-		"hand_to_bottom_draw":
-			return _request_cards(
-				state, stack, player_idx, "hand", player.hand, "hand_bottom_draw",
-				{"player_idx": player_idx},
-				0, player.hand.size(), "选择任意张手牌放回牌库底。", true)
-		"houb":
-			if player.hand.is_empty():
-				return _fail("没有其他手牌可以放回牌库底。")
-			return _request_cards(
-				state, stack, player_idx, "hand", player.hand, "houb",
-				{"player_idx": player_idx, "target": int(params.get("target_hand_size", 5))},
-				1, 1, "选择1张手牌放回牌库底。")
-		"zinnia_resolve":
-			if player.hand.size() < 2:
-				return _fail("手牌不足2张。")
-			return _request_cards(
-				state, stack, player_idx, "hand", player.hand, "zinnia",
-				{"player_idx": player_idx, "draw_amount": opponent.bench_count() + (1 if opponent.active else 0)},
-				2, 2, "选择2张手牌丢弃。")
-		"search":
-			return _search_request(state, stack, player_idx, params)
-		"shuffle_from_discard":
-			var available := catalog.filter_cards(
-				player.discard,
-				str(params.get("filter", "any")),
-			)
-			return _request_cards(
-				state, stack, player_idx, "discard", available, "shuffle_from_discard",
-				{"player_idx": player_idx},
-				0, min(int(params.get("count", 1)), available.size()),
-				"选择要洗回牌库的卡。", true)
-		"clara":
-			var clara_available: Array[String] = []
-			for card_id in player.discard:
-				if catalog.is_pokemon(card_id) or catalog.is_basic_energy(card_id):
-					clara_available.append(card_id)
-			return _request_cards(
-				state, stack, player_idx, "discard", clara_available, "clara",
-				{
-					"player_idx": player_idx,
-					"pokemon_count": int(params.get("pokemon_count", 2)),
-					"energy_count": int(params.get("energy_count", 2)),
-				},
-				0, min(clara_available.size(), int(params.get("pokemon_count", 2)) + int(params.get("energy_count", 2))),
-				"选择弃牌区中的宝可梦和基本能量。", true)
-		"arven":
-			var arven_available: Array[String] = []
-			for card_id in player.deck:
-				if catalog.is_item(card_id) or catalog.is_tool(card_id):
-					arven_available.append(card_id)
-			return _request_cards(
-				state, stack, player_idx, "deck", arven_available, "arven",
-				{"player_idx": player_idx},
-				1, min(2, arven_available.size()),
-				"选择1张物品和1张宝可梦道具。")
-		"look_top_deck":
-			return _look_top_request(state, stack, player_idx, params)
-		"look_top_attach_energy":
-			return _look_top_attach_request(state, stack, rng, player_idx, params)
-		"trekking_shoes":
-			if player.deck.is_empty():
-				return _ok("牌库为空。")
-			return _confirm_request(
-				state, stack, player_idx, "trekking_shoes",
-				{"player_idx": player_idx, "card_id": player.deck[-1]},
-				"是否将牌库顶卡加入手牌？")
-		"energy_discard":
-			var from_opponent := str(params.get("from", "self")) != "self"
-			var discard_owner := opponent if from_opponent else player
-			var discard_source := (
-				discard_owner.active
-				if from_opponent
-				else player.get_pokemon(source_slot)
-			)
-			if discard_source == null:
-				return _fail("没有能量来源。")
-			if from_opponent and discard_source.all_prevented_next_turn:
-				discard_source.all_prevented_next_turn = false
-				return _ok("能量丢弃效果被免疫。")
-			var filter_type := str(params.get("filter", "any")).to_lower()
-			var kept_energy: Array[String] = []
-			var discarded_energy := 0
-			for energy_id in discard_source.energy_card_ids:
-				var matches := _energy_matches(energy_id, filter_type)
-				if matches and discarded_energy < int(params.get("amount", 1)):
-					discard_owner.discard.append(energy_id)
-					discarded_energy += 1
-				else:
-					kept_energy.append(energy_id)
-			discard_source.energy_card_ids = kept_energy
-			return _ok("丢弃了%d张能量。" % discarded_energy)
-		"energy_attach":
-			return _energy_attach(state, stack, player_idx, source_slot, params)
-		"attach_from_discard":
-			return _attach_from_discard(state, stack, player_idx, source_slot, params)
-		"energy_relocate":
-			return _energy_relocate_request(state, stack, player_idx, params)
-		"draw_and_attach_energy":
-			_draw_available(state, player_idx, 2, events)
-			return _attach_from_hand_to_bench(
-				state, stack, player_idx,
-				int(params.get("energy_count", 2)),
-				str(params.get("energy_type", "Grass")),
-				int(params.get("min_select", int(params.get("energy_count", 2)))))
-		"switch_self":
-			return _switch_request(
-				state, stack, player_idx, player_idx, bool(params.get("optional", false)), false)
-		"switch_opponent":
-			return _switch_request(
-				state, stack, player_idx, 1 - player_idx, false, bool(params.get("you_choose", false)))
-		"heal":
-			_heal_pokemon(state, player_idx, source_slot, int(params.get("amount", 0)), events)
-			return _ok()
-		"potion_heal":
-			return _request_injured_target(
-				state, stack, player_idx, int(params.get("amount", 30)))
-		"heal_all":
-			for row in player.get_all_pokemon():
-				var pokemon: PokemonState = row["pokemon"]
-				if pokemon:
-					_heal_pokemon(state, player_idx, str(row["slot"]), int(params.get("amount", 20)), events)
-			return _ok()
-		"return_to_hand":
-			var return_source := player.get_pokemon(source_slot)
-			if return_source:
-				player.hand.append(return_source.card_id)
-				player.hand.append_array(return_source.evolution_stack_ids)
-				player.hand.append_array(return_source.energy_card_ids)
-				if not return_source.attached_tool_id.is_empty():
-					player.hand.append(return_source.attached_tool_id)
-				if source_slot == "active":
-					player.active = null
-				else:
-					player.bench[source_slot.trim_prefix("bench_").to_int()] = null
-			return _ok()
-		"evolve_skip_stage":
-			return _rare_candy(state, player_idx, events)
-		"conditional":
-			return _conditional_effect(state, stack, player_idx, source_slot, params)
-		"conditional_search_extra":
-			var count := int(params.get("default_count", 1))
-			if (
-				player_idx != state.first_player_idx
-				and player_idx == state.active_player_idx
-				and state.is_player_first_turn(player_idx)
-			):
-				count = int(params.get("max_count", count))
-			return _search_request(state, stack, player_idx, {
-				"from_zone": "deck",
-				"filter": params.get("filter", "pokemon"),
-				"destination": "hand",
-				"count": count,
-				"min_select": 0 if count == int(params.get("max_count", count)) else 1,
-			})
-		"search_any_and_switch":
-			stack.push_effect({"effect_type": "switch_self", "params": {"optional": true}}, player_idx, source_slot)
-			stack.push_effect({"effect_type": "search", "params": {
-				"from_zone": "deck", "filter": "any", "destination": "hand",
-				"count": int(params.get("count", 2)),
-				"min_select": int(params.get("min_select", 0)),
-			}}, player_idx, source_slot)
-			return _ok()
-		"ability_discard_revive":
-			var revive_id := str(params.get("card_id", ""))
-			var discard_index := player.discard.find(revive_id)
-			var bench_slot := player.find_empty_bench_slot()
-			if discard_index < 0 or not player.hand.is_empty() or bench_slot < 0:
-				return _fail("紧急上浮条件不满足。")
-			player.discard.remove_at(discard_index)
-			player.place_bench(revive_id, bench_slot)
-			_draw(state, player_idx, 3, events)
-			return _ok()
-		"piercing_marker":
-			if bool(params.get("ignore_weakness", true)) or bool(params.get("ignore_resistance", true)):
-				stack.context["piercing"] = true
-			if bool(params.get("ignore_effects", false)):
-				stack.context["ignore_defender_effects"] = true
-			return _ok()
-		"tool", "tool_exp_share", "aura_damage_reduction", "aura_damage_boost", "conditional_hp_boost", "conditional_zero_retreat", "reactive_thorns":
-			return _ok()
-		_:
-			return _fail("未知效果类型: %s" % effect_type, "unknown_effect")
+	return _fail("结算栈效果缺少VM op: %s" % effect_type, "missing_vm_op")
 
 
 func _execute_continuation(
@@ -1098,6 +1326,184 @@ func _resolve_discard_attachment(
 	return _ok()
 
 
+func _hand_to_bottom_then_draw_request(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	if player.hand.is_empty():
+		return _ok("手牌为空，无需操作。")
+	return _request_cards(
+		state, stack, player_idx, "hand", player.hand, "hand_bottom_draw",
+		{"player_idx": player_idx},
+		0, player.hand.size(), "选择任意张手牌放回牌库底。", true)
+
+
+func _zinnia_resolve_request(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	if player.hand.size() < 2:
+		return _fail("手牌不足2张。")
+	var opponent := state.get_player(1 - player_idx)
+	var draw_amount := opponent.bench_count() + (1 if opponent.active else 0)
+	if player.hand.size() == 2:
+		var discarded_cards := player.hand.duplicate()
+		var discarded_count := player.discard_entire_hand()
+		events.append(_discard_event(player_idx, "hand", discarded_cards, discarded_count))
+		return _draw_available(state, player_idx, draw_amount, events)
+	return _request_cards(
+		state, stack, player_idx, "hand", player.hand, "zinnia",
+		{"player_idx": player_idx, "draw_amount": draw_amount},
+		2, 2, "选择2张手牌丢弃。")
+
+
+func _recover_from_discard_request(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	params: Dictionary,
+	mode: String,
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	if mode == "clara":
+		var clara_available: Array[String] = []
+		for card_id in player.discard:
+			if catalog.is_pokemon(card_id) or catalog.is_basic_energy(card_id):
+				clara_available.append(card_id)
+		if clara_available.is_empty():
+			return _ok("弃牌区没有可回收的卡。")
+		var pokemon_count := int(params.get("pokemon_count", 2))
+		var energy_count := int(params.get("energy_count", 2))
+		return _request_cards(
+			state, stack, player_idx, "discard", clara_available, "clara",
+			{
+				"player_idx": player_idx,
+				"pokemon_count": pokemon_count,
+				"energy_count": energy_count,
+			},
+			0, min(clara_available.size(), pokemon_count + energy_count),
+			"选择弃牌区中的宝可梦和基本能量。", true)
+
+	var available := catalog.filter_cards(
+		player.discard,
+		str(params.get("filter", "any")),
+	)
+	if available.is_empty():
+		return _fail("弃牌区没有符合条件的卡，卡牌保留在手牌中。", "no_legal_target")
+	return _request_cards(
+		state, stack, player_idx, "discard", available, "shuffle_from_discard",
+		{"player_idx": player_idx},
+		0, min(int(params.get("count", 3)), available.size()),
+		"选择要洗回牌库的卡。", true)
+
+
+func _arven_request(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var available: Array[String] = []
+	for card_id in player.deck:
+		if catalog.is_item(card_id) or catalog.is_tool(card_id):
+			available.append(card_id)
+	if available.is_empty():
+		return _ok("牌库中没有物品卡或宝可梦道具卡。")
+	return _request_cards(
+		state, stack, player_idx, "deck", available, "arven",
+		{"player_idx": player_idx},
+		1, min(2, available.size()),
+		"选择1张物品和1张宝可梦道具。")
+
+
+func _trekking_shoes_request(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	if player.deck.is_empty():
+		return _ok("牌库为空。")
+	return _confirm_request(
+		state, stack, player_idx, "trekking_shoes",
+		{"player_idx": player_idx, "card_id": player.deck[-1]},
+		"是否将牌库顶卡加入手牌？")
+
+
+func _conditional_search_request(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	params: Dictionary,
+) -> Dictionary:
+	var count := int(params.get("default_count", 1))
+	if (
+		player_idx != state.first_player_idx
+		and player_idx == state.active_player_idx
+		and state.is_player_first_turn(player_idx)
+	):
+		count = int(params.get("max_count", count))
+	return _search_request(state, stack, player_idx, {
+		"from_zone": "deck",
+		"filter": params.get("filter", "pokemon"),
+		"destination": "hand",
+		"count": count,
+		"min_select": 0 if count == int(params.get("max_count", count)) else 1,
+	})
+
+
+func _search_any_and_switch(
+	stack: ResolutionStack,
+	player_idx: int,
+	source_slot: String,
+	params: Dictionary,
+) -> Dictionary:
+	stack.push_effect(
+		{"op": "switch_pokemon", "args": {"target": "self", "optional": true}, "branches": {}},
+		player_idx,
+		source_slot,
+	)
+	stack.push_effect(
+		{
+			"op": "search_cards",
+			"args": {
+				"from_zone": "deck",
+				"filter": "any",
+				"destination": "hand",
+				"count": int(params.get("count", 2)),
+				"min_select": int(params.get("min_select", 0)),
+			},
+			"branches": {},
+		},
+		player_idx,
+		source_slot,
+	)
+	return _ok()
+
+
+func _ability_discard_revive(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var revive_id := str(params.get("card_id", ""))
+	var discard_index := player.discard.find(revive_id)
+	var bench_slot := player.find_empty_bench_slot()
+	if discard_index < 0 or not player.hand.is_empty() or bench_slot < 0:
+		return _fail("紧急上浮条件不满足。")
+	player.discard.remove_at(discard_index)
+	player.place_bench(revive_id, bench_slot)
+	_draw(state, player_idx, 3, events)
+	return _ok()
+
+
 func _search_request(
 	state: GameState,
 	stack: ResolutionStack,
@@ -1324,13 +1730,13 @@ func _coin_request(
 	state: GameState,
 	stack: ResolutionStack,
 	rng: PortableRandomSource,
-	effect_type: String,
+	coin_kind: String,
 	params: Dictionary,
 	player_idx: int,
 	source_slot: String,
 ) -> Dictionary:
 	var results: Array[bool] = []
-	if effect_type == "coin_flip_until_tails":
+	if coin_kind == "until_tails":
 		while true:
 			var result := rng.coin()
 			results.append(result)
@@ -1338,14 +1744,14 @@ func _coin_request(
 				break
 	else:
 		var count := int(params.get("flips", 1))
-		if effect_type == "coin_flip_triple":
+		if coin_kind == "repeat_damage":
 			count = int(params.get("flips", 3))
-		elif effect_type == "coin_flip_double_ko":
+		elif coin_kind == "double_ko":
 			count = 2
 		for _index in range(max(1, count)):
 			results.append(rng.coin())
 	stack.push_continuation("coin", {
-		"effect_type": effect_type,
+		"coin_kind": coin_kind,
 		"params": params.duplicate(true),
 		"player_idx": player_idx,
 		"source_slot": source_slot,
@@ -1366,7 +1772,7 @@ func _resolve_coin(
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var results: Array = data["results"]
-	var effect_type := str(data["effect_type"])
+	var coin_kind := str(data["coin_kind"])
 	var params: Dictionary = data["params"]
 	var player_idx := int(data["player_idx"])
 	var source_slot := str(data["source_slot"])
@@ -1375,27 +1781,27 @@ func _resolve_coin(
 		if result:
 			heads += 1
 	events.append({"event_type": "coin_flip", "data": {"results": results.duplicate()}})
-	match effect_type:
-		"coin_flip":
+	match coin_kind:
+		"branch":
 			var branch: Variant = params.get("on_heads", []) if bool(results[0]) else params.get("on_tails", [])
 			if branch is Dictionary:
 				stack.push_effect(branch, player_idx, source_slot)
 			elif branch is Array:
 				stack.push_effects(branch, player_idx, source_slot)
-		"coin_flip_triple":
+		"repeat_damage":
 			return _deal_attack_or_effect_damage(
 				state, stack, player_idx, 1 - player_idx, "active",
 				heads * int(params.get("damage_per_head", 10)), events)
-		"coin_flip_double_ko":
+		"double_ko":
 			if heads == 2:
 				var target := state.get_player(1 - player_idx).active
 				if target:
 					target.damage_counters += max(1, ceili(float(target.current_hp(catalog)) / 10.0))
-		"coin_flip_until_tails":
+		"until_tails":
 			return _deal_attack_or_effect_damage(
 				state, stack, player_idx, 1 - player_idx, "active",
 				heads * int(params.get("per_head", 20)), events)
-		"coin_flip_energy_discard":
+		"discard_energy":
 			if bool(results[0]):
 				var opponent := state.get_player(1 - player_idx)
 				var options: Array[Dictionary] = []
@@ -2149,6 +2555,8 @@ func _conditional_effect(
 	var cost: Variant = params.get("cost")
 	if cost is Dictionary:
 		stack.push_effect(cost, player_idx, source_slot)
+	elif cost is Array:
+		stack.push_effects(cost, player_idx, source_slot)
 	return _ok()
 
 
@@ -2247,6 +2655,36 @@ func _energy_matches(card_id: String, energy_type: String) -> bool:
 	return false
 
 
+func _discard_energy(
+	state: GameState,
+	player_idx: int,
+	source_slot: String,
+	params: Dictionary,
+) -> Dictionary:
+	var from_opponent := str(params.get("from", "self")) != "self"
+	var owner_idx := 1 - player_idx if from_opponent else player_idx
+	var owner := state.get_player(owner_idx)
+	var source := owner.active if from_opponent else owner.get_pokemon(source_slot)
+	if source == null:
+		return _fail("没有能量来源。")
+	if from_opponent and source.all_prevented_next_turn:
+		source.all_prevented_next_turn = false
+		return _ok("能量丢弃效果被免疫。")
+	var filter_type := str(params.get("filter", params.get("energy_type", "any"))).to_lower()
+	var kept_energy: Array[String] = []
+	var discarded_energy := 0
+	for energy_value in source.energy_card_ids:
+		var energy_id := str(energy_value)
+		var matches := _energy_matches(energy_id, filter_type)
+		if matches and discarded_energy < int(params.get("amount", 1)):
+			owner.discard.append(energy_id)
+			discarded_energy += 1
+		else:
+			kept_energy.append(energy_id)
+	source.energy_card_ids = kept_energy
+	return _ok("丢弃了%d张能量。" % discarded_energy)
+
+
 func _matching_energy_ids(card_ids: Array, energy_type: String) -> Array[String]:
 	var result: Array[String] = []
 	for card_value in card_ids:
@@ -2254,6 +2692,34 @@ func _matching_energy_ids(card_ids: Array, energy_type: String) -> Array[String]
 		if _energy_matches(card_id, energy_type):
 			result.append(card_id)
 	return result
+
+
+func _set_attack_flags(stack: ResolutionStack, params: Dictionary) -> void:
+	if bool(params.get("ignore_weakness", true)) or bool(params.get("ignore_resistance", true)):
+		stack.context["piercing"] = true
+	if bool(params.get("ignore_effects", false)):
+		stack.context["ignore_defender_effects"] = true
+
+
+func _return_to_hand(
+	state: GameState,
+	player_idx: int,
+	source_slot: String,
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var source := player.get_pokemon(source_slot)
+	if source == null:
+		return _fail("没有宝可梦。")
+	player.hand.append(source.card_id)
+	player.hand.append_array(source.evolution_stack_ids)
+	player.hand.append_array(source.energy_card_ids)
+	if not source.attached_tool_id.is_empty():
+		player.hand.append(source.attached_tool_id)
+	if source_slot == "active":
+		player.active = null
+	elif source_slot.begins_with("bench_"):
+		player.bench[source_slot.trim_prefix("bench_").to_int()] = null
+	return _ok()
 
 
 func _conditional_damage_bonus(
@@ -2287,6 +2753,221 @@ func _conditional_damage_bonus(
 	return _deal_attack_or_effect_damage(
 		state, stack, player_idx, 1 - player_idx, "active",
 		int(params.get("bonus", 0)), events)
+
+
+func _discard_hand_then_damage(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	params: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var discarded_cards := player.hand.duplicate()
+	var hand_size := player.discard_entire_hand()
+	events.append(_discard_event(player_idx, "hand", discarded_cards, hand_size))
+	var total_damage := int(params.get("base_damage", 0))
+	if hand_size >= int(params.get("threshold", 5)):
+		total_damage += int(params.get("bonus", 0))
+	return _deal_attack_or_effect_damage(
+		state, stack, player_idx, 1 - player_idx, "active", total_damage, events)
+
+
+func _discard_fighting_energy_then_damage(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	source_slot: String,
+	params: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var source := player.get_pokemon(source_slot)
+	if source == null:
+		return _fail("没有攻击来源。")
+	var kept: Array[String] = []
+	var discarded := 0
+	for energy_id in source.energy_card_ids:
+		if "Fighting" in catalog.provides_energy(energy_id):
+			player.discard.append(energy_id)
+			discarded += 1
+		else:
+			kept.append(energy_id)
+	source.energy_card_ids = kept
+	return _deal_attack_or_effect_damage(
+		state, stack, player_idx, 1 - player_idx, "active",
+		int(params.get("base", 0)) + discarded * int(params.get("per_energy", 0)),
+		events)
+
+
+func _mill_then_damage(
+	state: GameState,
+	stack: ResolutionStack,
+	rng: PortableRandomSource,
+	player_idx: int,
+	params: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var exposed: Array[String] = []
+	for _index in range(min(int(params.get("mill_count", 0)), player.deck.size())):
+		exposed.append(player.deck.pop_back())
+	var energies := 0
+	for card_id in exposed:
+		if catalog.is_energy(card_id):
+			player.discard.append(card_id)
+			energies += 1
+		else:
+			player.deck.append(card_id)
+	rng.shuffle(player.deck)
+	events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
+	return _deal_attack_or_effect_damage(
+		state, stack, player_idx, 1 - player_idx, "active",
+		energies * int(params.get("damage_per", 0)), events)
+
+
+func _bench_damage(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	params: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var target_player_key := str(params.get("player", params.get("target_player", "opponent")))
+	var target_idx := 1 - player_idx if target_player_key == "opponent" else player_idx
+	if not bool(params.get("choose_targets", true)):
+		var applied := 0
+		for index in range(state.get_player(target_idx).bench.size()):
+			if applied >= int(params.get("count", 1)):
+				break
+			var bench_pokemon: PokemonState = state.get_player(target_idx).bench[index]
+			if bench_pokemon:
+				_deal_damage(
+					state,
+					target_idx,
+					"bench_%d" % index,
+					int(params.get("amount", 0)),
+					events,
+				)
+				applied += 1
+		return _ok("备战伤害已结算。")
+	return _request_bench_target(
+		state, stack, player_idx, target_idx, "bench_damage_target",
+		{"amount": int(params.get("amount", 0)), "target_player": target_idx},
+		"选择1只对手备战宝可梦作为伤害目标。",
+		int(params.get("count", 1)))
+
+
+func _choose_damage_target(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	params: Dictionary,
+) -> Dictionary:
+	var target_player_key := str(params.get("player", params.get("target_player", "opponent")))
+	var target_idx := 1 - player_idx if target_player_key == "opponent" else player_idx
+	return _request_board_target(
+		state, stack, player_idx, target_idx, "damage_target",
+		{"amount": int(params.get("amount", 0)), "target_player": target_idx},
+		"选择1只对手宝可梦作为伤害目标。")
+
+
+func _place_counters_then_self_ko(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	source_slot: String,
+	params: Dictionary,
+) -> Dictionary:
+	var target_player_key := str(params.get("player", params.get("target_player", "opponent")))
+	var target_idx := 1 - player_idx if target_player_key == "opponent" else player_idx
+	return _request_board_target(
+		state, stack, player_idx, target_idx, "place_counters_self_ko",
+		{
+			"counters": int(params.get("counters", 0)),
+			"source_player": player_idx,
+			"source_slot": source_slot,
+			"target_player": target_idx,
+		},
+		"选择1只对手宝可梦放置伤害指示物。")
+
+
+func _deal_damage_formula_spec(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	source_slot: String,
+	formula_kind: String,
+	args: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var opponent := state.get_player(1 - player_idx)
+	var total := 0
+	match formula_kind:
+		"per_discard_psychic":
+			var psychic_count := 0
+			for card_id in player.discard:
+				if catalog.is_pokemon(card_id) and "Psychic" in catalog.get_card(card_id).get("energy_types", []):
+					psychic_count += 1
+			total = int(args.get("base", 80)) + psychic_count * int(args.get("per_card", 10))
+		"per_energy":
+			var energy_count := 0
+			match str(args.get("count_from", "self")):
+				"opponent_active":
+					energy_count = opponent.active.energy_card_ids.size() if opponent.active else 0
+				"all_opponent":
+					for row in opponent.get_all_pokemon():
+						var target_pokemon: PokemonState = row["pokemon"]
+						if target_pokemon:
+							energy_count += target_pokemon.energy_card_ids.size()
+				_:
+					var energy_source := player.get_pokemon(source_slot)
+					energy_count = energy_source.energy_card_ids.size() if energy_source else 0
+			total = int(args.get("base", 0)) + energy_count * int(args.get("per_energy", 0))
+		"per_evolved":
+			var evolved_count := 0
+			for row in player.get_all_pokemon():
+				var evolved_pokemon: PokemonState = row["pokemon"]
+				if evolved_pokemon and not catalog.is_basic_pokemon(evolved_pokemon.card_id):
+					evolved_count += 1
+			total = evolved_count * int(args.get("per_evolved", 50))
+		"per_hand_size":
+			total = player.hand.size() * int(args.get("per", 0))
+		"plus_bench":
+			total = int(args.get("base", 0)) + player.bench_count() * int(args.get("per_bench", 0))
+		"per_self_damage":
+			var source := player.get_pokemon(source_slot)
+			total = int(args.get("base", 0)) + (
+				(source.damage_counters if source else 0) * int(args.get("per_counter", 0))
+			)
+		"per_self_energy", "per_self_energy_type":
+			var self_source := player.get_pokemon(source_slot)
+			var default_filter := "Fire" if formula_kind == "per_self_energy" else "Grass"
+			var filter := str(args.get("energy_filter", args.get("energy_type", default_filter))).to_lower()
+			var self_energy_count := 0
+			if self_source:
+				for energy_id in self_source.energy_card_ids:
+					if filter.is_empty() or filter == "any":
+						self_energy_count += 1
+					else:
+						for provided in catalog.provides_energy(energy_id):
+							if str(provided).to_lower() == filter:
+								self_energy_count += 1
+								break
+			total = int(args.get("base", 60)) + self_energy_count * int(args.get("per_energy", 20))
+		_:
+			return {"_handled": false}
+	var result := _deal_attack_or_effect_damage(
+		state, stack, player_idx, 1 - player_idx, "active", total, events)
+	result["_handled"] = true
+	return result
+
+
+func _handled_formula_result(result: Dictionary) -> Dictionary:
+	if not bool(result.get("_handled", false)):
+		return result
+	return result
 
 
 func _deal_attack_or_effect_damage(
@@ -2407,6 +3088,40 @@ func _draw(
 		"player": player_idx, "cards": cards.duplicate(),
 	}})
 	return _ok("抽取了%d张卡。" % cards.size())
+
+
+func _shuffle_then_draw_cards(
+	state: GameState,
+	rng: PortableRandomSource,
+	player_idx: int,
+	params: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	if bool(params.get("shuffle_hand", false)):
+		player.deck.append_array(player.hand)
+		player.hand.clear()
+		rng.shuffle(player.deck)
+		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
+	return _draw_available(state, player_idx, int(params.get("draw", params.get("amount", 5))), events)
+
+
+func _judge(
+	state: GameState,
+	rng: PortableRandomSource,
+	params: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	for player_idx in [0, 1]:
+		var player := state.get_player(player_idx)
+		if player.hand.is_empty():
+			continue
+		player.deck.append_array(player.hand)
+		player.hand.clear()
+		rng.shuffle(player.deck)
+		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
+		_draw_available(state, player_idx, int(params.get("draw", params.get("amount", 4))), events)
+	return _ok()
 
 
 func _draw_available(

@@ -20,6 +20,7 @@ def _discard_pokemon_for_effect(state: GameState, player_idx: int, slot: str):
             pokemon.card.api_id,
             slot,
             event_bus=state.event_bus,
+            player_idx=player_idx,
         )
     except Exception:
         pass

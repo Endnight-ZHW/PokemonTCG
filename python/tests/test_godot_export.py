@@ -19,6 +19,7 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(first_contract["counts"]["decks"], 10)
             self.assertEqual(len(first_contract["effect_types"]), 78)
             self.assertEqual(len(first_contract["effect_examples"]), 78)
+            self.assertEqual(len(first_contract["compiled_effect_examples"]), 78)
             self.assertTrue(all(size == 60 for size in first_contract["deck_sizes"].values()))
             rules = json.loads(
                 (first / "tests" / "fixtures" / "rules_golden.json").read_text(
@@ -32,6 +33,7 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(first_cards, second_cards)
             self.assertEqual(len(first_cards), 137)
             self.assertEqual(first_cards["svi-chim"]["card_bucket"], 3624)
+            self.assertIn("compiled_effects", first_cards["svi-chim"]["attacks"][0])
             self.assertEqual(len(first_cards["svi-chim"]["ai_semantic_features"]), 53)
             encoder_fixture = json.loads(
                 (first / "tests" / "fixtures" / "ai_encoder_golden.json").read_text(

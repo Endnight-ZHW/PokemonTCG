@@ -53,6 +53,14 @@ class EventBus:
                 if l.source != source
             ]
 
+    def unregister_all_with_prefix(self, source_prefix: str):
+        """Remove all listeners whose source starts with a prefix."""
+        for event in self._listeners:
+            self._listeners[event] = [
+                l for l in self._listeners[event]
+                if not l.source.startswith(source_prefix)
+            ]
+
     def unregister_all_for_player(self, player_idx: int):
         """Remove all listeners owned by a specific player."""
         for event in self._listeners:

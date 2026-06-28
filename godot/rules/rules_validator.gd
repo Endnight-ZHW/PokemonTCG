@@ -176,6 +176,15 @@ func effective_retreat_cost(state: GameState, player: PlayerState) -> int:
 				for provided in catalog.provides_energy(energy_id):
 					if provided.to_lower() == required:
 						return 0
+	for modifier in player.active.modifiers:
+		if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) != "conditional_zero_retreat":
+			continue
+		var params: Dictionary = modifier.get("params", {})
+		var required := str(params.get("energy_type", "")).to_lower()
+		for energy_id in player.active.energy_card_ids:
+			for provided in catalog.provides_energy(energy_id):
+				if str(provided).to_lower() == required:
+					return 0
 	if not state.stadium_card_id.is_empty() and catalog.is_basic_pokemon(player.active.card_id):
 		for effect in catalog.get_card(state.stadium_card_id).get("trainer_effects", []):
 			if effect.get("params", {}).get("effect", "") == "reduce_retreat_cost_basics":

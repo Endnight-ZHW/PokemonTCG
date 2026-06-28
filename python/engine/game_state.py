@@ -1,7 +1,7 @@
 """GameState - central state management for both players."""
 import random
 from dataclasses import dataclass, field
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -36,6 +36,7 @@ class ActionRequest:
     source_name: str = ""  # For distribute_energy: source Pokemon name
     request_id: str = ""  # Network choice request correlation id
     can_cancel: bool = False
+    continuation: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -76,6 +77,12 @@ class GameState:
         self.mulligan_count: tuple[int, int] = (0, 0)  # (p1_mulligans, p2_mulligans)
         self.extra_draws: tuple[int, int] = (0, 0)  # Extra draws from opponent mulligans
         self.pending_promotions: list[int] = []  # Queue of player_idx who need to promote a bench Pokemon (supports simultaneous KOs)
+        self.resolution_stack: dict[str, Any] = {
+            "frames": [],
+            "pending_request": None,
+            "sequence": 0,
+            "context": {},
+        }
         self._piercing_attack: bool = False  # Set during attack resolution for piercing effects
         self._ko_from_attack: bool = False  # Flag set when a KO is from attack damage
         self._mulligan_bonus_given: set[int] = set()

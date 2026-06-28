@@ -102,6 +102,24 @@ class ProtocolV2Tests(unittest.TestCase):
         self.assertEqual(restored.request_id, "req-7")
         self.assertEqual(restored.pending_card.api_id, card.api_id)
 
+    def test_action_request_network_payload_does_not_expose_vm_continuation(self):
+        req = ActionRequest(
+            request_type="search_deck",
+            player=1,
+            prompt="查看牌库顶",
+            card_list=[CardRegistry.get("sv1-ener-1")],
+            continuation={
+                "kind": "look_top_deck",
+                "top_card_ids": ["hidden-card-id"],
+            },
+        )
+
+        payload = serialize_action_request(req)
+        restored = deserialize_action_request(payload)
+
+        self.assertNotIn("continuation", payload)
+        self.assertEqual(restored.continuation, {})
+
     def test_envelope_message_adds_v2_metadata(self):
         msg = envelope_message({"type": "action", "action": "END_TURN"}, 12)
         self.assertEqual(msg["version"], PROTOCOL_VERSION)

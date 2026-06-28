@@ -6,6 +6,660 @@
     "svg2-tort": 623,
     "svi-chim": 3624
   },
+  "compiled_effect_examples": {
+    "ability_discard_revive": {
+      "args": {
+        "card_id": "svg2-empo"
+      },
+      "branches": {},
+      "op": "discard_then_revive"
+    },
+    "any_pokemon_damage": {
+      "args": {
+        "amount": 40,
+        "piercing_on_bench": true,
+        "player": "opponent"
+      },
+      "branches": {},
+      "op": "choose_damage_target"
+    },
+    "apply_outgoing_damage_reduction": {
+      "args": {
+        "amount": 50,
+        "target": "opponent_active"
+      },
+      "branches": {},
+      "op": "apply_outgoing_damage_reduction"
+    },
+    "arven": {
+      "args": {},
+      "branches": {},
+      "op": "search_item_and_tool"
+    },
+    "attach_from_discard": {
+      "args": {
+        "amount": 2,
+        "energy_type": "basic",
+        "min_select": 0,
+        "target": "bench"
+      },
+      "branches": {},
+      "op": "attach_energy_from_discard"
+    },
+    "attack_damage_formula": {
+      "args": {
+        "base": 100,
+        "condition_bonus": {
+          "bonus": 120,
+          "condition": "own_bench_damaged",
+          "consume": false
+        }
+      },
+      "branches": {},
+      "op": "set_attack_damage_formula"
+    },
+    "attack_fail": {
+      "args": {},
+      "branches": {},
+      "op": "fail_attack"
+    },
+    "attack_lock_basic": {
+      "args": {
+        "target": "opponent_active"
+      },
+      "branches": {},
+      "op": "apply_attack_lock_basic"
+    },
+    "aura_damage_boost": {
+      "args": {
+        "amount": 30,
+        "attacker_subtype": "Basic",
+        "defender_type": "Darkness"
+      },
+      "branches": {},
+      "op": "register_aura_damage_boost"
+    },
+    "aura_damage_reduction": {
+      "args": {
+        "reduction": 20
+      },
+      "branches": {},
+      "op": "register_aura_damage_reduction"
+    },
+    "bench_damage": {
+      "args": {
+        "amount": 10,
+        "choose_targets": false,
+        "count": 5,
+        "player": "opponent"
+      },
+      "branches": {},
+      "op": "deal_bench_damage"
+    },
+    "clara": {
+      "args": {
+        "energy_count": 2,
+        "pokemon_count": 2
+      },
+      "branches": {},
+      "op": "recover_clara"
+    },
+    "coin_flip": {
+      "args": {},
+      "branches": {
+        "on_heads": [
+          {
+            "args": {
+              "amount": 60,
+              "target": "opponent_active"
+            },
+            "branches": {},
+            "op": "deal_damage"
+          },
+          {
+            "args": {},
+            "branches": {},
+            "op": "prevent_all"
+          }
+        ],
+        "on_tails": [
+          {
+            "args": {},
+            "branches": {},
+            "op": "fail_attack"
+          }
+        ]
+      },
+      "op": "flip_coin"
+    },
+    "coin_flip_double_ko": {
+      "args": {},
+      "branches": {},
+      "op": "flip_coin_then_ko"
+    },
+    "coin_flip_energy_discard": {
+      "args": {},
+      "branches": {},
+      "op": "flip_coin_then_discard_energy"
+    },
+    "coin_flip_triple": {
+      "args": {
+        "damage_per_head": 10,
+        "flips": 3
+      },
+      "branches": {},
+      "op": "flip_coin_repeat_damage"
+    },
+    "coin_flip_until_tails": {
+      "args": {
+        "per_head": 20
+      },
+      "branches": {},
+      "op": "flip_until_tails"
+    },
+    "conditional": {
+      "args": {},
+      "branches": {
+        "cost": [
+          {
+            "args": {
+              "amount": 2,
+              "from": "hand"
+            },
+            "branches": {},
+            "op": "discard_cards"
+          }
+        ],
+        "on_pay": [
+          {
+            "args": {
+              "count": 1,
+              "destination": "hand",
+              "filter": "pokemon",
+              "from_zone": "deck",
+              "reveal": true
+            },
+            "branches": {},
+            "op": "search_cards"
+          }
+        ]
+      },
+      "op": "conditional"
+    },
+    "conditional_damage_bonus": {
+      "args": {
+        "bonus": 30,
+        "condition": "opponent_active_evolved"
+      },
+      "branches": {},
+      "op": "conditional_damage"
+    },
+    "conditional_damage_heal": {
+      "args": {
+        "base": 60,
+        "bonus": 90
+      },
+      "branches": {},
+      "op": "conditional_damage_then_heal"
+    },
+    "conditional_hp_boost": {
+      "args": {
+        "amount": 100,
+        "energy_type": "Metal",
+        "threshold": 3
+      },
+      "branches": {},
+      "op": "register_conditional_hp_boost"
+    },
+    "conditional_search_extra": {
+      "args": {
+        "default_count": 1,
+        "filter": "grass_pokemon",
+        "max_count": 3
+      },
+      "branches": {},
+      "op": "conditional_search"
+    },
+    "conditional_status": {
+      "args": {
+        "condition": "ko_by_attack_last_turn",
+        "status": "paralyzed",
+        "target": "opponent_active"
+      },
+      "branches": {},
+      "op": "conditional_status"
+    },
+    "conditional_zero_retreat": {
+      "args": {
+        "energy_type": "psychic"
+      },
+      "branches": {},
+      "op": "register_conditional_zero_retreat"
+    },
+    "damage": {
+      "args": {
+        "amount": 60,
+        "target": "opponent_active"
+      },
+      "branches": {},
+      "op": "deal_damage"
+    },
+    "damage_and_self_heal": {
+      "args": {
+        "damage": 10,
+        "heal": 10
+      },
+      "branches": {},
+      "op": "deal_damage_then_heal"
+    },
+    "damage_counter_self": {
+      "args": {
+        "amount": 20
+      },
+      "branches": {},
+      "op": "place_damage_counters"
+    },
+    "damage_per_discard_psychic": {
+      "args": {
+        "base": 80,
+        "per_card": 10
+      },
+      "branches": {},
+      "op": "deal_damage_per_discard_psychic"
+    },
+    "damage_per_energy": {
+      "args": {
+        "base": 0,
+        "count_from": "opponent_active",
+        "per_energy": 30,
+        "target": "opponent_active"
+      },
+      "branches": {},
+      "op": "deal_damage_per_energy"
+    },
+    "damage_per_evolved": {
+      "args": {
+        "per_evolved": 50
+      },
+      "branches": {},
+      "op": "deal_damage_per_evolved"
+    },
+    "damage_per_hand_size": {
+      "args": {
+        "per": 20
+      },
+      "branches": {},
+      "op": "deal_damage_per_hand_size"
+    },
+    "damage_per_self_damage": {
+      "args": {
+        "base": 60,
+        "per_counter": 10
+      },
+      "branches": {},
+      "op": "deal_damage_per_self_damage"
+    },
+    "damage_per_self_energy": {
+      "args": {
+        "base": 60,
+        "energy_filter": "fire",
+        "per_energy": 20
+      },
+      "branches": {},
+      "op": "deal_damage_per_self_energy"
+    },
+    "damage_per_self_energy_type": {
+      "args": {
+        "base": 60,
+        "energy_type": "Grass",
+        "per_energy": 20
+      },
+      "branches": {},
+      "op": "deal_damage_per_self_energy_type"
+    },
+    "damage_plus_bench": {
+      "args": {
+        "base": 10,
+        "count_own_bench": true,
+        "per_bench": 20
+      },
+      "branches": {},
+      "op": "deal_damage_plus_bench"
+    },
+    "damage_self_penalty": {
+      "args": {
+        "base": 200,
+        "per_counter": 20
+      },
+      "branches": {},
+      "op": "deal_damage_with_self_penalty"
+    },
+    "dazzling_beam": {
+      "args": {
+        "target": "opponent_active"
+      },
+      "branches": {},
+      "op": "apply_dazzling_beam"
+    },
+    "discard": {
+      "args": {
+        "amount": 2,
+        "from": "hand"
+      },
+      "branches": {},
+      "op": "discard_cards"
+    },
+    "discard_draw": {
+      "args": {
+        "discard_hand": true,
+        "draw": 7
+      },
+      "branches": {},
+      "op": "discard_then_draw_cards"
+    },
+    "discard_fighting_energy_damage": {
+      "args": {
+        "base": 10,
+        "per_energy": 60
+      },
+      "branches": {},
+      "op": "discard_energy_then_damage"
+    },
+    "discard_hand_conditional_bonus": {
+      "args": {
+        "base_damage": 60,
+        "bonus": 150,
+        "threshold": 5
+      },
+      "branches": {},
+      "op": "discard_hand_then_damage"
+    },
+    "discard_then_draw": {
+      "args": {
+        "discard_amount": 1,
+        "draw_amount": 2
+      },
+      "branches": {},
+      "op": "discard_then_draw_cards"
+    },
+    "draw": {
+      "args": {
+        "amount": 1,
+        "player": "self"
+      },
+      "branches": {},
+      "op": "draw_cards"
+    },
+    "draw_and_attach_energy": {
+      "args": {
+        "energy_count": 2,
+        "energy_type": "Grass",
+        "min_select": 0
+      },
+      "branches": {},
+      "op": "draw_and_attach_energy"
+    },
+    "draw_until": {
+      "args": {
+        "target_hand_size": 6
+      },
+      "branches": {},
+      "op": "draw_until"
+    },
+    "draw_until_more": {
+      "args": {},
+      "branches": {},
+      "op": "draw_until_more_than_opponent"
+    },
+    "energy_attach": {
+      "args": {
+        "amount": 1,
+        "filter": "fighting",
+        "from_zone": "deck",
+        "to": "self"
+      },
+      "branches": {},
+      "op": "attach_energy"
+    },
+    "energy_discard": {
+      "args": {
+        "amount": 1,
+        "filter": "any",
+        "from": "self"
+      },
+      "branches": {},
+      "op": "discard_energy"
+    },
+    "energy_relocate": {
+      "args": {
+        "amount": 1,
+        "energy_type": "basic_energy",
+        "from_self": true
+      },
+      "branches": {},
+      "op": "relocate_energy"
+    },
+    "evolve_skip_stage": {
+      "args": {
+        "skip_to": "stage2"
+      },
+      "branches": {},
+      "op": "evolve_skip_stage"
+    },
+    "hand_to_bottom_draw": {
+      "args": {},
+      "branches": {},
+      "op": "hand_to_bottom_then_draw"
+    },
+    "heal": {
+      "args": {
+        "amount": 70,
+        "target": "self"
+      },
+      "branches": {},
+      "op": "heal_damage"
+    },
+    "heal_all": {
+      "args": {
+        "amount": 20
+      },
+      "branches": {},
+      "op": "heal_all"
+    },
+    "houb": {
+      "args": {
+        "target_hand_size": 5
+      },
+      "branches": {},
+      "op": "hand_to_bottom_draw_until"
+    },
+    "judge": {
+      "args": {
+        "draw": 4
+      },
+      "branches": {},
+      "op": "judge"
+    },
+    "look_top_attach_energy": {
+      "args": {
+        "count": 5,
+        "filter": "basic_energy",
+        "shuffle_rest": true,
+        "take": 99,
+        "target": "self_or_bench"
+      },
+      "branches": {},
+      "op": "look_top_attach_energy"
+    },
+    "look_top_deck": {
+      "args": {
+        "count": 7,
+        "filter": "water_pokemon_and_energy",
+        "min_select": 0,
+        "shuffle_rest": true,
+        "take": 99
+      },
+      "branches": {},
+      "op": "look_top_deck"
+    },
+    "mill_and_damage_per_energy": {
+      "args": {
+        "damage_per": 80,
+        "mill_count": 5
+      },
+      "branches": {},
+      "op": "mill_then_damage"
+    },
+    "piercing_marker": {
+      "args": {
+        "ignore_effects": true,
+        "ignore_resistance": true,
+        "ignore_weakness": true
+      },
+      "branches": {},
+      "op": "set_attack_flags"
+    },
+    "place_counters_and_self_ko": {
+      "args": {
+        "counters": 2,
+        "target": "opponent_any"
+      },
+      "branches": {},
+      "op": "place_counters_then_self_ko"
+    },
+    "potion_heal": {
+      "args": {
+        "amount": 30
+      },
+      "branches": {},
+      "op": "choose_heal_damage"
+    },
+    "prevent_all": {
+      "args": {},
+      "branches": {},
+      "op": "prevent_all"
+    },
+    "prevent_damage": {
+      "args": {},
+      "branches": {},
+      "op": "prevent_damage"
+    },
+    "prevent_effects": {
+      "args": {},
+      "branches": {},
+      "op": "prevent_effects"
+    },
+    "reactive_thorns": {
+      "args": {
+        "filter_names": [
+          "一对鼠",
+          "一家鼠ex",
+          "一家鼠"
+        ],
+        "per_pokemon": 3
+      },
+      "branches": {},
+      "op": "register_reactive_thorns"
+    },
+    "return_to_hand": {
+      "args": {},
+      "branches": {},
+      "op": "return_to_hand"
+    },
+    "search": {
+      "args": {
+        "count": 2,
+        "destination": "bench",
+        "filter": "basic_pokemon",
+        "from_zone": "deck",
+        "min_select": 0,
+        "reveal": true
+      },
+      "branches": {},
+      "op": "search_cards"
+    },
+    "search_any_and_switch": {
+      "args": {
+        "count": 2,
+        "min_select": 0,
+        "source_slot": "active",
+        "switch_optional": true
+      },
+      "branches": {},
+      "op": "search_any_and_switch"
+    },
+    "self_attack_lock": {
+      "args": {
+        "attack_name": "漆黑之刃"
+      },
+      "branches": {},
+      "op": "apply_self_attack_lock"
+    },
+    "shuffle_draw": {
+      "args": {
+        "affect": "self_only",
+        "draw": 5,
+        "shuffle_hand": true
+      },
+      "branches": {},
+      "op": "shuffle_then_draw_cards"
+    },
+    "shuffle_from_discard": {
+      "args": {
+        "count": 3,
+        "filter": "pokemon_and_energy"
+      },
+      "branches": {},
+      "op": "shuffle_from_discard_to_deck"
+    },
+    "status": {
+      "args": {
+        "status": "asleep",
+        "target": "opponent_active"
+      },
+      "branches": {},
+      "op": "apply_status"
+    },
+    "switch_opponent": {
+      "args": {
+        "target": "opponent",
+        "you_choose": true
+      },
+      "branches": {},
+      "op": "switch_pokemon"
+    },
+    "switch_self": {
+      "args": {
+        "optional": true,
+        "target": "self"
+      },
+      "branches": {},
+      "op": "switch_pokemon"
+    },
+    "tool": {
+      "args": {
+        "amount": 30,
+        "effect": "damage_reduction_stage1"
+      },
+      "branches": {},
+      "op": "register_tool_modifier"
+    },
+    "tool_exp_share": {
+      "args": {},
+      "branches": {},
+      "op": "register_tool_exp_share"
+    },
+    "trekking_shoes": {
+      "args": {},
+      "branches": {},
+      "op": "trekking_shoes"
+    },
+    "zinnia_resolve": {
+      "args": {},
+      "branches": {},
+      "op": "zinnia_resolve"
+    }
+  },
   "counts": {
     "cards": 137,
     "decks": 10,

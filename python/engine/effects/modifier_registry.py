@@ -28,7 +28,13 @@ def get_special_energy_damage_modifier(sc) -> int | None:
     Currently handles:
     - Double Turbo Energy (svi-dtur): -20 damage
     """
-    # 双重涡轮能量: -20
+    for effect in getattr(sc, "energy_effects", []) or []:
+        if effect.get("kind") != "modifier" or effect.get("hook") != "MODIFY_DAMAGE":
+            continue
+        effect_data = effect.get("effect") or {}
+        if "delta" in effect_data:
+            return int(effect_data.get("delta") or 0)
+
     if sc.api_id == "svi-dtur":
         return -20
 
@@ -67,6 +73,19 @@ def get_special_energy_attach_effect(card, player, target_slot):
     Currently handles:
     - 喷射能量 (svi-jete): auto-switch when attached to bench
     """
+    for effect in getattr(card, "energy_effects", []) or []:
+        if effect.get("kind") != "trigger" or effect.get("hook") != "ON_ATTACH":
+            continue
+        condition = effect.get("condition") or {}
+        effect_data = effect.get("effect") or {}
+        if (
+            effect_data.get("op") == "switch_with_active"
+            and condition.get("target") == "bench"
+            and target_slot != "active"
+            and player.active
+        ):
+            return True, f"{card.name}效果：切换了战斗宝可梦。"
+
     if card.is_special_energy and card.api_id == "svi-jete" and target_slot != "active":
         if player.active:
             return True, "喷射能量效果：切换了战斗宝可梦。"

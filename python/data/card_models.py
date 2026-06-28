@@ -68,6 +68,10 @@ class Card:
     trainer_type: str = ""  # Item, Supporter, Stadium, Tool
     trainer_text: str = ""
     trainer_effects: list[EffectDef] = field(default_factory=list)
+    # Energy-specific data-driven hooks/providers. These are intentionally not
+    # EffectDef entries, so they do not inflate the public attack/trainer effect
+    # type list while the VM migration is in progress.
+    energy_effects: list[dict] = field(default_factory=list)
 
     @property
     def is_basic_pokemon(self) -> bool:
@@ -139,10 +143,13 @@ class Card:
             name_stripped = name.replace(" Energy", "").replace("能量", "")
             return [name_stripped]
         elif self.is_special_energy:
+            for effect in self.energy_effects:
+                if effect.get("kind") == "provide_energy":
+                    return list(effect.get("types") or [])
             if self.api_id == "svi-dtur":
-                return ["Colorless", "Colorless"]  # 双重涡轮能量 provides 2C
+                return ["Colorless", "Colorless"]  # Backward-compatible fallback.
             if self.api_id == "svg2-lume":
-                return ["Rainbow"]  # 夜光能量: 1个全属性能量
+                return ["Rainbow"]
             return ["Colorless"]
         return []
 

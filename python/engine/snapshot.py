@@ -54,6 +54,7 @@ class PokemonSnapshot:
     attack_locked: bool = False
     attack_locked_names: dict = field(default_factory=dict)
     dazzled: bool = False
+    max_hp_modifiers: list[dict] = field(default_factory=list)
     paralyzed_since_turn: int = 0
 
 
@@ -74,6 +75,14 @@ class GameSnapshot:
     revision: int = 0
     choice_sequence: int = 0
     public_deck_keys: tuple[str | None, str | None] = (None, None)
+    resolution_stack: dict = field(
+        default_factory=lambda: {
+            "frames": [],
+            "pending_request": None,
+            "sequence": 0,
+            "context": {},
+        }
+    )
 
 
 class SnapshotManager:
@@ -151,6 +160,18 @@ def snapshot_state(state: GameState) -> GameSnapshot:
         revision=getattr(state, "revision", 0),
         choice_sequence=getattr(state, "choice_sequence", 0),
         public_deck_keys=tuple(getattr(state, "public_deck_keys", (None, None))),
+        resolution_stack=copy.deepcopy(
+            getattr(
+                state,
+                "resolution_stack",
+                {
+                    "frames": [],
+                    "pending_request": None,
+                    "sequence": 0,
+                    "context": {},
+                },
+            )
+        ),
     )
 
 
@@ -169,6 +190,18 @@ def restore_state(state: GameState, snap: GameSnapshot):
     state.choice_sequence = getattr(snap, "choice_sequence", 0)
     state.public_deck_keys = tuple(
         getattr(snap, "public_deck_keys", (None, None))
+    )
+    state.resolution_stack = copy.deepcopy(
+        getattr(
+            snap,
+            "resolution_stack",
+            {
+                "frames": [],
+                "pending_request": None,
+                "sequence": 0,
+                "context": {},
+            },
+        )
     )
     state._piercing_attack = False
     state._ko_from_attack = False
@@ -281,6 +314,7 @@ def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
         attack_locked=p.attack_locked,
         attack_locked_names=dict(p.attack_locked_names),
         dazzled=p.dazzled,
+        max_hp_modifiers=copy.deepcopy(getattr(p, "max_hp_modifiers", [])),
         paralyzed_since_turn=p.paralyzed_since_turn,
     )
 
@@ -304,6 +338,7 @@ def _restore_pokemon(snap: PokemonSnapshot) -> PokemonInPlay:
     pokemon.attack_locked = snap.attack_locked
     pokemon.attack_locked_names = dict(snap.attack_locked_names)
     pokemon.dazzled = snap.dazzled
+    pokemon.max_hp_modifiers = copy.deepcopy(snap.max_hp_modifiers)
     pokemon.paralyzed_since_turn = snap.paralyzed_since_turn
     return pokemon
 

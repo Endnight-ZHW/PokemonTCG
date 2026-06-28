@@ -510,7 +510,7 @@ func _play_basic(
 	for ability_value in catalog.get_card(card_id).get("abilities", []):
 		var ability: Dictionary = ability_value
 		if str(ability.get("trigger", "")) == "on_enter_play":
-			effects.append_array(ability.get("effects", []))
+			effects.append_array(_ability_runtime_effects(ability))
 	if effects.is_empty():
 		return StepResult.new(true, "宝可梦已放置。", null, [placement_event])
 	var step := _run_effects(state, effects, actor, target, rng)
@@ -562,7 +562,7 @@ func _evolve(
 	for ability_value in catalog.get_card(card_id).get("abilities", []):
 		var ability: Dictionary = ability_value
 		if str(ability.get("trigger", "")) == "on_enter_play":
-			effects.append_array(ability.get("effects", []))
+			effects.append_array(_ability_runtime_effects(ability))
 	if effects.is_empty():
 		return StepResult.new(true, "进化完成。", null, [evolution_event])
 	var step := _run_effects(state, effects, actor, slot, rng)
@@ -656,7 +656,7 @@ func _play_trainer(
 		if catalog.is_supporter(card_id):
 			player.supporter_played_this_turn = true
 	state.log_action("%s使用了%s。" % [player.name, catalog.card_name(card_id)])
-	var effects: Array = catalog.get_card(card_id).get("trainer_effects", [])
+	var effects: Array = _trainer_runtime_effects(card_id)
 	if effects.is_empty():
 		return StepResult.new(true, "训练家卡已使用。", null, [play_event])
 	var step := _run_effects(state, effects, actor, "active", rng)
@@ -682,7 +682,7 @@ func _use_ability(
 		if str(ability.get("trigger", "")) != "repeatable":
 			pokemon.used_abilities.append(ability_name)
 		state.log_action("%s使用特性%s。" % [catalog.card_name(pokemon.card_id), ability_name])
-		return _run_effects(state, ability.get("effects", []), actor, slot, rng)
+		return _run_effects(state, _ability_runtime_effects(ability), actor, slot, rng)
 	return _error("没有找到该特性。", "ability_not_found", state)
 
 
@@ -697,7 +697,7 @@ func _use_stadium(
 	if player.stadium_used_this_turn:
 		return _error("本回合已使用过竞技场效果。", "stadium_already_used", state)
 	player.stadium_used_this_turn = true
-	var effects: Array = catalog.get_card(state.stadium_card_id).get("trainer_effects", [])
+	var effects: Array = _trainer_runtime_effects(state.stadium_card_id)
 	return _run_effects(state, effects, actor, "active", rng)
 
 
@@ -806,7 +806,7 @@ func _declare_attack(
 		"attacking_type": attacking_type,
 	}
 	var step := _run_effects(
-		state, attack.get("effects", []), actor, "active", rng, context)
+		state, _attack_runtime_effects(attack), actor, "active", rng, context)
 	if not step.success or step.pending_choice:
 		step.events.push_front(attack_event)
 		return step
@@ -827,6 +827,45 @@ func _run_effects(
 	stack.context = context.duplicate(true)
 	stack.push_effects(effects, actor, source_slot)
 	return effect_engine.resolve(state, stack, rng)
+
+
+func _ability_runtime_effects(ability: Dictionary) -> Array:
+	var compiled: Array = ability.get("compiled_effects", [])
+	if not compiled.is_empty():
+		return compiled
+	var raw: Array = ability.get("effects", [])
+	if raw.is_empty():
+		return []
+	return [_missing_compiled_effect("ability:%s" % str(ability.get("name", "")))]
+
+
+func _trainer_runtime_effects(card_id: String) -> Array:
+	var card := catalog.get_card(card_id)
+	var compiled: Array = card.get("compiled_trainer_effects", [])
+	if not compiled.is_empty():
+		return compiled
+	var raw: Array = card.get("trainer_effects", [])
+	if raw.is_empty():
+		return []
+	return [_missing_compiled_effect("trainer:%s" % card_id)]
+
+
+func _attack_runtime_effects(attack: Dictionary) -> Array:
+	var compiled: Array = attack.get("compiled_effects", [])
+	if not compiled.is_empty():
+		return compiled
+	var raw: Array = attack.get("effects", [])
+	if raw.is_empty():
+		return []
+	return [_missing_compiled_effect("attack:%s" % str(attack.get("name", "")))]
+
+
+func _missing_compiled_effect(source: String) -> Dictionary:
+	return {
+		"op": "__missing_compiled_effect__",
+		"args": {"source": source},
+		"branches": {},
+	}
 
 
 func _complete_attack_context(
@@ -908,6 +947,13 @@ func _apply_attack_damage(
 					if bool(params.get("requires_attached_energy", false)) and defender.energy_card_ids.is_empty():
 						continue
 					damage -= int(params.get("reduction", 20))
+		for modifier in defender.modifiers:
+			if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) != "aura_damage_reduction":
+				continue
+			var reduction_params: Dictionary = modifier.get("params", {})
+			if bool(reduction_params.get("requires_attached_energy", false)) and defender.energy_card_ids.is_empty():
+				continue
+			damage -= int(reduction_params.get("reduction", 20))
 	for row in state.get_player(actor).get_all_pokemon():
 		var aura_source: PokemonState = row["pokemon"]
 		if aura_source == null:
@@ -932,6 +978,23 @@ func _apply_attack_damage(
 				):
 					continue
 				damage += int(params.get("amount", 0))
+		for modifier in aura_source.modifiers:
+			if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) != "aura_damage_boost":
+				continue
+			var boost_params: Dictionary = modifier.get("params", {})
+			var boost_attacker_subtype := str(boost_params.get("attacker_subtype", ""))
+			var boost_defender_type := str(boost_params.get("defender_type", ""))
+			if (
+				not boost_attacker_subtype.is_empty()
+				and boost_attacker_subtype not in catalog.get_card(attacker.card_id).get("subtypes", [])
+			):
+				continue
+			if (
+				not boost_defender_type.is_empty()
+				and boost_defender_type not in catalog.get_card(defender.card_id).get("energy_types", [])
+			):
+				continue
+			damage += int(boost_params.get("amount", 0))
 	for energy_id in attacker.energy_card_ids:
 		if energy_id == "svi-dtur":
 			damage -= 20
@@ -951,6 +1014,18 @@ func _apply_attack_damage(
 				and state.get_player(actor).prizes.size() > state.get_player(1 - actor).prizes.size()
 			):
 				damage += 30
+	for modifier_row in attacker.modifiers:
+		if str(modifier_row.get("modifier_kind", modifier_row.get("effect_type", ""))) != "tool":
+			continue
+		var attacker_tool_params: Dictionary = modifier_row.get("params", {})
+		var attacker_tool_effect := str(attacker_tool_params.get("effect", ""))
+		if attacker_tool_effect == "damage_boost_10":
+			damage += 10
+		elif (
+			attacker_tool_effect == "damage_boost_when_behind"
+			and state.get_player(actor).prizes.size() > state.get_player(1 - actor).prizes.size()
+		):
+			damage += 30
 	if not ignore_defender_effects and not defender.attached_tool_id.is_empty():
 		for effect_value in catalog.get_card(defender.attached_tool_id).get("trainer_effects", []):
 			var effect: Dictionary = effect_value
@@ -959,6 +1034,16 @@ func _apply_attack_damage(
 			var modifier := str(effect.get("params", {}).get("effect", ""))
 			if modifier == "damage_reduction_stage1" and catalog.is_stage1(defender.card_id):
 				damage -= int(effect.get("params", {}).get("amount", 30))
+	if not ignore_defender_effects:
+		for modifier_row in defender.modifiers:
+			if str(modifier_row.get("modifier_kind", modifier_row.get("effect_type", ""))) != "tool":
+				continue
+			var defender_tool_params: Dictionary = modifier_row.get("params", {})
+			if (
+				str(defender_tool_params.get("effect", "")) == "damage_reduction_stage1"
+				and catalog.is_stage1(defender.card_id)
+			):
+				damage -= int(defender_tool_params.get("amount", 30))
 	damage = max(0, damage)
 	defender.damage_counters += int(float(damage) / 10.0)
 	events.append({"event_type": "damage_dealt", "data": {
@@ -999,6 +1084,23 @@ func _apply_reactive_thorns(
 				events.append({"event_type": "damage_counters_placed", "data": {
 					"player": actor, "slot": "active", "count": counters,
 				}})
+	for modifier in defender.modifiers:
+		if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) != "reactive_thorns":
+			continue
+		var params: Dictionary = modifier.get("params", {})
+		var modifier_names: Array = params.get("filter_names", [])
+		var modifier_count := 0
+		for row in state.get_player(1 - actor).get_all_pokemon():
+			var pokemon: PokemonState = row["pokemon"]
+			if pokemon and catalog.card_name(pokemon.card_id) in modifier_names:
+				modifier_count += 1
+		var modifier_counters := modifier_count * int(params.get("per_pokemon", 3))
+		var modifier_attacker := state.get_player(actor).active
+		if modifier_attacker and modifier_counters > 0:
+			modifier_attacker.damage_counters += modifier_counters
+			events.append({"event_type": "damage_counters_placed", "data": {
+				"player": actor, "slot": "active", "count": modifier_counters,
+			}})
 
 
 func _end_turn(
@@ -1231,8 +1333,13 @@ func _apply_exp_share(
 		var bench_pokemon: PokemonState = player.bench[bench_index]
 		if (
 			bench_pokemon is PokemonState
-			and not bench_pokemon.attached_tool_id.is_empty()
-			and _tool_has_effect(bench_pokemon.attached_tool_id, "tool_exp_share")
+			and (
+				(
+					not bench_pokemon.attached_tool_id.is_empty()
+					and _tool_has_effect(bench_pokemon.attached_tool_id, "tool_exp_share")
+				)
+				or _pokemon_has_modifier(bench_pokemon, "tool_exp_share")
+			)
 		):
 			var energy_id: String = knocked_out.energy_card_ids.pop_at(basic_energy_index)
 			bench_pokemon.energy_card_ids.append(energy_id)
@@ -1257,6 +1364,13 @@ func _apply_exp_share(
 func _tool_has_effect(tool_id: String, effect_type: String) -> bool:
 	for effect_value in catalog.get_card(tool_id).get("trainer_effects", []):
 		if str(effect_value.get("effect_type", "")) == effect_type:
+			return true
+	return false
+
+
+func _pokemon_has_modifier(pokemon: PokemonState, effect_type: String) -> bool:
+	for modifier in pokemon.modifiers:
+		if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) == effect_type:
 			return true
 	return false
 

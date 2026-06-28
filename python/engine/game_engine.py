@@ -330,6 +330,7 @@ class GameEngine:
                 "flip_count": request.flip_count,
                 "until_tails": request.until_tails,
                 "revision": getattr(state, "revision", 0),
+                "continuation": dict(getattr(request, "continuation", {}) or {}),
             },
             legacy_request=request,
         )

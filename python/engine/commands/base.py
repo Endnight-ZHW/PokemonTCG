@@ -59,7 +59,7 @@ class ResolutionContext:
 
     @property
     def opponent(self):
-        return self.state.get_opponent()
+        return self.state.get_player(1 - self.player_idx)
 
     def push_side(self, command: ICommand):
         """Push a new command onto the stack (for triggered effects)."""

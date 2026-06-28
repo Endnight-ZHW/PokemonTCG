@@ -7,6 +7,27 @@ from engine.game_state import GameState, ActionResult, ActionRequest
 from data.card_registry import CardRegistry
 
 
+def _resolve_effects_with_vm(state, effects, player_idx, source_slot):
+    from engine.commands.registry import build_command
+    from engine.commands.resolution_stack import ResolutionStack
+
+    effect_list = effects if isinstance(effects, list) else [effects]
+    stack = ResolutionStack(state)
+    stack.push_many([build_command(effect) for effect in effect_list])
+    result = stack.resolve_all(player_idx, source_slot)
+    return ActionResult(
+        success=result.success,
+        log_message=" ".join(result.log_messages),
+        damage_dealt=result.damage_dealt,
+        cards_drawn=result.cards_drawn,
+        cards_discarded=result.cards_discarded,
+        pokemon_ko=result.pokemon_ko,
+        status_applied=result.status_applied,
+        pending_action=result.pending_choice,
+        attack_failed=result.attack_failed,
+    )
+
+
 def _handle_heal(state, player, params):
     amount = params.get("amount", 0)
     target_str = params.get("target", "self")
@@ -205,7 +226,6 @@ def _handle_switch_opponent(state, opponent, params, opponent_idx=1, player_idx=
 
 def _handle_coin_flip(state, params, player_idx, source_slot):
     """Single coin flip. Returns pending_action so UI can animate the coin."""
-    from engine.effects import execute_effect
 
     branch_heads = params.get("on_heads")
     branch_tails = params.get("on_tails")
@@ -221,19 +241,7 @@ def _handle_coin_flip(state, params, player_idx, source_slot):
             if isinstance(branch, list):
                 if not branch:
                     return ActionResult(True, f"硬币: {cn}.")
-                result_action = ActionResult(True, "")
-                for eff in branch:
-                    eff_result = execute_effect(state, eff, player_idx, source_slot)
-                    result_action.log_message += eff_result.log_message + " "
-                    result_action.damage_dealt += eff_result.damage_dealt
-                    result_action.pending_action = eff_result.pending_action or result_action.pending_action
-                    result_action.attack_failed = result_action.attack_failed or eff_result.attack_failed
-                    if not eff_result.success:
-                        result_action.success = False
-                        break
-                return result_action
-            else:
-                return execute_effect(state, branch, player_idx, source_slot)
+            return _resolve_effects_with_vm(state, branch, player_idx, source_slot)
 
         return ActionResult(True, f"硬币: {cn}.")
 
@@ -253,7 +261,6 @@ def _handle_conditional(state, params, player_idx, source_slot):
     """Conditional effect: pay a cost to get an effect.
     If cost requires UI interaction (pending_action), the on_pay is chained
     to execute after the cost callback completes."""
-    from engine.effects import execute_effect
     cost = params.get("cost")
     on_pay = params.get("on_pay")
     optional = params.get("optional", False)
@@ -268,7 +275,7 @@ def _handle_conditional(state, params, player_idx, source_slot):
         player.was_ko_by_attack = False
 
     if cost:
-        cost_result = execute_effect(state, cost, player_idx, source_slot)
+        cost_result = _resolve_effects_with_vm(state, cost, player_idx, source_slot)
         if not cost_result.success and not optional:
             return ActionResult(False, "无法支付代价。")
 
@@ -278,22 +285,14 @@ def _handle_conditional(state, params, player_idx, source_slot):
             def chained(selected_cards):
                 if orig_callback:
                     orig_callback(selected_cards)
-                pay_result = execute_effect(state, on_pay, player_idx, source_slot)
+                pay_result = _resolve_effects_with_vm(state, on_pay, player_idx, source_slot)
                 # Return the second pending_action so the UI can chain it
                 return pay_result.pending_action
             cost_result.pending_action.callback = chained
             return cost_result
 
     if on_pay:
-        if isinstance(on_pay, list):
-            result_action = ActionResult(True, "")
-            for eff in on_pay:
-                eff_result = execute_effect(state, eff, player_idx, source_slot)
-                result_action.log_message += eff_result.log_message + " "
-                result_action.pending_action = eff_result.pending_action or result_action.pending_action
-            return result_action
-        else:
-            return execute_effect(state, on_pay, player_idx, source_slot)
+        return _resolve_effects_with_vm(state, on_pay, player_idx, source_slot)
 
     return ActionResult(True, "条件效果已结算。")
 
@@ -347,7 +346,7 @@ def _handle_evolve_skip(state, player, params):
     player.evolve_pokemon(slot_name, stage2)
 
     # Re-register ability modifiers for the new evolution card
-    unregister_pokemon_modifiers(old_api_id, slot_name, event_bus=state.event_bus)
+    unregister_pokemon_modifiers(old_api_id, slot_name, event_bus=state.event_bus, player_idx=player_idx)
     register_pokemon_modifiers(pokemon, player_idx, slot_name, event_bus=state.event_bus)
 
     # Trigger on_enter_play abilities on the new Stage 2 card

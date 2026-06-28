@@ -16,6 +16,7 @@ var outgoing_damage_reduction_next_turn := 0
 var attack_locked := false
 var attack_locked_names: Dictionary = {}
 var dazzled := false
+var modifiers: Array[Dictionary] = []
 var paralyzed_since_turn := 0
 
 
@@ -48,6 +49,20 @@ func current_hp(catalog: CardCatalog) -> int:
 						break
 			if matching >= threshold:
 				hp += int(params.get("amount", 0))
+	for modifier in modifiers:
+		if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) != "conditional_hp_boost":
+			continue
+		var params: Dictionary = modifier.get("params", {})
+		var required := str(params.get("energy_type", "")).to_lower()
+		var threshold := int(params.get("threshold", 0))
+		var matching := 0
+		for energy_id in energy_card_ids:
+			for provided in catalog.provides_energy(energy_id):
+				if str(provided).to_lower() == required:
+					matching += 1
+					break
+		if matching >= threshold:
+			hp += int(params.get("amount", 0))
 	return max(0, hp - damage_counters * 10)
 
 
@@ -89,7 +104,7 @@ func has_enough_energy(cost: Array, catalog: CardCatalog) -> bool:
 
 
 func to_dict() -> Dictionary:
-	return {
+	var payload := {
 		"card_id": card_id,
 		"damage_counters": damage_counters,
 		"energy_card_ids": energy_card_ids.duplicate(),
@@ -107,6 +122,9 @@ func to_dict() -> Dictionary:
 		"dazzled": dazzled,
 		"paralyzed_since_turn": paralyzed_since_turn,
 	}
+	if not modifiers.is_empty():
+		payload["modifiers"] = modifiers.duplicate(true)
+	return payload
 
 
 static func from_dict(data: Dictionary) -> PokemonState:
@@ -125,5 +143,8 @@ static func from_dict(data: Dictionary) -> PokemonState:
 	result.attack_locked = bool(data.get("attack_locked", false))
 	result.attack_locked_names = Dictionary(data.get("attack_locked_names", {})).duplicate(true)
 	result.dazzled = bool(data.get("dazzled", false))
+	for modifier in data.get("modifiers", []):
+		if modifier is Dictionary:
+			result.modifiers.append(Dictionary(modifier).duplicate(true))
 	result.paralyzed_since_turn = int(data.get("paralyzed_since_turn", 0))
 	return result

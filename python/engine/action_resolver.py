@@ -147,8 +147,10 @@ class ActionResolver:
         self.state._log(msg)
 
         result = ActionResult(True, msg)
-        for effect in stadium.trainer_effects:
-            eff_result = self._execute_effect(effect, player_idx, "active")
+        if stadium.trainer_effects:
+            eff_result = self._execute_effects(
+                stadium.trainer_effects, player_idx, "active"
+            )
             merge_action_results(result, eff_result)
 
         if result.success:
@@ -218,7 +220,8 @@ class ActionResolver:
         pokemon = player.get_pokemon(slot)
         if pokemon:
             unregister_pokemon_modifiers(old_card.api_id, slot,
-                                          event_bus=self.state.event_bus)
+                                          event_bus=self.state.event_bus,
+                                          player_idx=player_idx)
             register_pokemon_modifiers(pokemon, player_idx, slot,
                                        event_bus=self.state.event_bus)
 
@@ -251,7 +254,8 @@ class ActionResolver:
         target = player.get_pokemon(target_slot)
         if target:
             unregister_pokemon_modifiers(target.card.api_id, target_slot,
-                                         event_bus=self.state.event_bus)
+                                         event_bus=self.state.event_bus,
+                                         player_idx=player_idx)
             register_pokemon_modifiers(target, player_idx, target_slot,
                                        event_bus=self.state.event_bus)
 
@@ -342,7 +346,8 @@ class ActionResolver:
             if target:
                 target.attached_tool = card
                 unregister_pokemon_modifiers(target.card.api_id, target_slot,
-                                             event_bus=self.state.event_bus)
+                                             event_bus=self.state.event_bus,
+                                             player_idx=player_idx)
                 register_pokemon_modifiers(target, player_idx, target_slot,
                                            event_bus=self.state.event_bus)
 
@@ -475,10 +480,11 @@ class ActionResolver:
             "ignore_defender_effects": False,
         }
 
-        # Execute custom effects
-        for effect in attack.effects:
-            eff_result = self._execute_effect(
-                effect, player_idx, "active"
+        # Execute all attack effects in one VM stack so pending choices resume
+        # the remaining effects before the final attack damage frame.
+        if attack.effects:
+            eff_result = self._execute_effects(
+                attack.effects, player_idx, "active"
             )
             merge_action_results(result, eff_result)
 
@@ -623,7 +629,7 @@ class ActionResolver:
         stack = ResolutionStack(self.state)
         try:
             commands = [build_command(e) for e in effects]
-        except KeyError as e:
+        except (KeyError, ValueError) as e:
             return ActionResult(False, str(e))
         stack.push_many(commands)
         rr = stack.resolve_all(player_idx, source_slot)
@@ -640,11 +646,6 @@ class ActionResolver:
             attack_failed=rr.attack_failed,
         )
         return result
-
-    def _execute_effect(self, effect_def, player_idx: int,
-                        source_slot: str) -> ActionResult:
-        """Execute a single effect via the ResolutionStack (1-item stack)."""
-        return self._execute_effects([effect_def], player_idx, source_slot)
 
     # ---- KO Checking ----
 
@@ -680,7 +681,19 @@ class ActionResolver:
 
         # Unregister modifier listeners for the KO'd Pokemon
         unregister_pokemon_modifiers(pokemon.card.api_id, slot,
-                                      event_bus=self.state.event_bus)
+                                      event_bus=self.state.event_bus,
+                                      player_idx=player_idx)
+
+        for hook_result in self.state.event_bus.emit(
+            EventType.POKEMON_KO,
+            state=self.state,
+            player_idx=player_idx,
+            slot=slot,
+            knocked_out=pokemon,
+            from_attack=bool(self.state._ko_from_attack),
+        ):
+            if isinstance(hook_result, dict) and hook_result.get("log"):
+                self.state._log(str(hook_result["log"]))
 
         self.state.discard_pokemon(player_idx, slot)
         self.state._log(f"{player.name}的{pokemon.card.name}被击倒了！")

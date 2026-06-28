@@ -23,6 +23,7 @@ class PokemonInPlay:
     attack_locked: bool = False  # For attack_lock_basic effect (雪暴马 冻结)
     attack_locked_names: dict = field(default_factory=dict)  # attack_name → turn_applied (岩窟冲撞 self-lock)
     dazzled: bool = False  # For dazzling_beam (炫目光束): next attack requires coin flip
+    max_hp_modifiers: list[dict] = field(default_factory=list)
     used_abilities: set[str] = field(default_factory=set)
     paralyzed_since_turn: int = 0  # Track which turn paralysis was applied for correct duration
 
@@ -49,6 +50,20 @@ class PokemonInPlay:
                 )
                 if matching >= threshold:
                     hp_bonus += amount
+        for modifier in self.max_hp_modifiers:
+            modifier_kind = modifier.get("modifier_kind", modifier.get("effect_type"))
+            if modifier_kind != "conditional_hp_boost":
+                continue
+            energy_type = str(modifier.get("energy_type", "") or "").lower()
+            threshold = int(modifier.get("threshold", 0) or 0)
+            amount = int(modifier.get("amount", 0) or 0)
+            matching = sum(
+                1
+                for card in self.energy_cards
+                if any(str(provided).lower() == energy_type for provided in card.provides_energy)
+            )
+            if matching >= threshold:
+                hp_bonus += amount
         return max(0, self.card.hp + hp_bonus - self.damage_counters * DAMAGE_PER_COUNTER)
 
     @property
@@ -60,7 +75,22 @@ class PokemonInPlay:
         """All energy types provided by cards in energy_cards (unified list)."""
         result = []
         for card in self.energy_cards:
-            result.extend(card.provides_energy)
+            provided = list(card.provides_energy)
+            for effect in getattr(card, "energy_effects", []) or []:
+                if (
+                    effect.get("kind") == "provide_energy"
+                    and effect.get("downgrade_if_other_special")
+                ):
+                    has_other_special = any(
+                        other is not card and other.is_special_energy
+                        for other in self.energy_cards
+                    )
+                    if has_other_special:
+                        provided = [
+                            "Colorless" if energy == "Rainbow" else energy
+                            for energy in provided
+                        ]
+            result.extend(provided)
         return result
 
     def has_special_energy(self, api_id: str) -> bool:
@@ -81,16 +111,9 @@ class PokemonInPlay:
     def has_enough_energy(self, cost: list[str]) -> bool:
         """Check if attached energy satisfies attack cost.
         Colorless costs can be paid by any energy type.
-        Rainbow (夜光能量) can pay for any type, but downgrades to Colorless
-        if another special energy is attached to this Pokemon."""
+        Rainbow providers can pay for any type. Provider-specific downgrade
+        rules are applied by available_energy."""
         available = self.available_energy
-
-        # 夜光能量 downgrade: if another special energy is attached,
-        # treat "Rainbow" as "Colorless"
-        has_lume = self.has_special_energy("svg2-lume")
-        has_other = any(c.is_special_energy and c.api_id != "svg2-lume" for c in self.energy_cards)
-        if has_lume and has_other:
-            available = ["Colorless" if e == "Rainbow" else e for e in available]
 
         # Match specific (non-Colorless) requirements first
         for required in cost:

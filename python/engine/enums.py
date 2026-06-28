@@ -43,6 +43,7 @@ class EventType(Enum):
     AFTER_ATTACK = auto()
     DAMAGE_ABOUT_TO_BE_DEALT = auto()
     DAMAGE_DEALT = auto()
+    CAN_RETREAT = auto()
     POKEMON_KO = auto()
     CHECKUP_START = auto()
     RETREAT = auto()

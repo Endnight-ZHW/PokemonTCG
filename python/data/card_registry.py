@@ -116,6 +116,12 @@ class CardRegistry:
                 params=trainer_effects.get("params", {}),
             )]
 
+        energy_effects = [
+            dict(effect)
+            for effect in effects_data.get("energy_effects", [])
+            if isinstance(effect, dict)
+        ]
+
         # Build trainer_type string
         subtypes = raw.get("subtypes", [])
         trainer_type = ""
@@ -148,6 +154,7 @@ class CardRegistry:
             flavor_text=raw.get("flavorText", ""),
             trainer_type=trainer_type,
             trainer_effects=trainer_effects,
+            energy_effects=energy_effects,
         )
 
     @staticmethod

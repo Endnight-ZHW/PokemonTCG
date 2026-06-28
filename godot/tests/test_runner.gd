@@ -57,6 +57,7 @@ func _run_phase_one_tests() -> void:
 	_check(models.get("state_numeric_size", 0) == 960, "Deep AI state size mismatch")
 	_check(models.get("state_card_slots", 0) == 96, "Deep AI card slot count mismatch")
 	_check(models.get("action_numeric_size", 0) == 178, "Deep AI action size mismatch")
+	_check_release_effects_have_compiled_ir(cards)
 
 	for card_id in fixture.get("card_bucket_samples", {}):
 		_check(
@@ -127,7 +128,151 @@ func _run_phase_two_tests() -> void:
 			engine.effect_engine.supports_effect_type(str(effect_type)),
 			"Unsupported effect type: %s" % effect_type,
 		)
-	_run_effect_examples(fixture, catalog, engine)
+	var compiled_examples: Dictionary = fixture.get("compiled_effect_examples", {})
+	_check(compiled_examples.size() == 78, "Expected one compiled example for every effect type")
+	for effect_type in compiled_examples:
+		_check(
+			engine.effect_engine.supports_command_spec(Dictionary(compiled_examples[effect_type])),
+			"Unsupported compiled effect spec: %s" % effect_type,
+		)
+	var raw_examples: Dictionary = fixture.get("effect_examples", {})
+	_check(raw_examples.size() == 78, "Expected one raw metadata example for every effect type")
+	for effect_type in raw_examples:
+		var raw_effect := Dictionary(raw_examples[effect_type])
+		_check(
+			str(raw_effect.get("effect_type", "")) == str(effect_type),
+			"Raw effect metadata key mismatch for %s" % effect_type,
+		)
+		_check(
+			not engine.effect_engine.supports_command_spec(raw_effect),
+			"Raw effect metadata must not be accepted as a VM command: %s" % effect_type,
+		)
+	var explicit_marker_ops := {
+		"apply_outgoing_damage_reduction": "apply_outgoing_damage_reduction",
+		"attack_lock_basic": "apply_attack_lock_basic",
+		"dazzling_beam": "apply_dazzling_beam",
+		"prevent_all": "prevent_all",
+		"prevent_damage": "prevent_damage",
+		"prevent_effects": "prevent_effects",
+		"self_attack_lock": "apply_self_attack_lock",
+	}
+	for effect_type in explicit_marker_ops:
+		var spec := Dictionary(compiled_examples.get(effect_type, {}))
+		_check(
+			str(spec.get("op", "")) == str(explicit_marker_ops[effect_type]),
+			"Immediate marker effect did not compile to explicit op: %s" % effect_type,
+		)
+		_check(
+			not Dictionary(spec.get("args", {})).has("effect_type"),
+			"Immediate marker op still carries legacy effect_type args: %s" % effect_type,
+		)
+	var explicit_formula_ops := {
+		"damage_per_discard_psychic": "deal_damage_per_discard_psychic",
+		"damage_per_energy": "deal_damage_per_energy",
+		"damage_per_evolved": "deal_damage_per_evolved",
+		"damage_per_hand_size": "deal_damage_per_hand_size",
+		"damage_per_self_damage": "deal_damage_per_self_damage",
+		"damage_per_self_energy": "deal_damage_per_self_energy",
+		"damage_per_self_energy_type": "deal_damage_per_self_energy_type",
+		"damage_plus_bench": "deal_damage_plus_bench",
+	}
+	for effect_type in explicit_formula_ops:
+		var spec := Dictionary(compiled_examples.get(effect_type, {}))
+		_check(
+			str(spec.get("op", "")) == str(explicit_formula_ops[effect_type]),
+			"Damage formula effect did not compile to explicit op: %s" % effect_type,
+		)
+		_check(
+			not Dictionary(spec.get("args", {})).has("effect_type"),
+			"Damage formula op still carries legacy effect_type args: %s" % effect_type,
+		)
+	var wrapper_ops_without_effect_type := {
+		"clara": "recover_clara",
+		"coin_flip_double_ko": "flip_coin_then_ko",
+		"coin_flip_energy_discard": "flip_coin_then_discard_energy",
+		"coin_flip_triple": "flip_coin_repeat_damage",
+		"coin_flip_until_tails": "flip_until_tails",
+		"shuffle_from_discard": "shuffle_from_discard_to_deck",
+		"switch_opponent": "switch_pokemon",
+		"switch_self": "switch_pokemon",
+		"tool": "register_tool_modifier",
+	}
+	for effect_type in wrapper_ops_without_effect_type:
+		var spec := Dictionary(compiled_examples.get(effect_type, {}))
+		_check(
+			str(spec.get("op", "")) == str(wrapper_ops_without_effect_type[effect_type]),
+			"Wrapper effect did not compile to expected op: %s" % effect_type,
+		)
+		_check(
+			not Dictionary(spec.get("args", {})).has("effect_type"),
+			"Wrapper op still carries legacy effect_type args: %s" % effect_type,
+		)
+	_check(
+		str(Dictionary(compiled_examples["switch_self"]).get("args", {}).get("target", "")) == "self",
+		"switch_self compiled IR must carry explicit target",
+	)
+	_check(
+		str(Dictionary(compiled_examples["switch_opponent"]).get("args", {}).get("target", "")) == "opponent",
+		"switch_opponent compiled IR must carry explicit target",
+	)
+	var explicit_modifier_ops := {
+		"aura_damage_boost": "register_aura_damage_boost",
+		"aura_damage_reduction": "register_aura_damage_reduction",
+		"conditional_hp_boost": "register_conditional_hp_boost",
+		"conditional_zero_retreat": "register_conditional_zero_retreat",
+		"reactive_thorns": "register_reactive_thorns",
+		"tool_exp_share": "register_tool_exp_share",
+	}
+	for effect_type in explicit_modifier_ops:
+		var spec := Dictionary(compiled_examples.get(effect_type, {}))
+		_check(
+			str(spec.get("op", "")) == str(explicit_modifier_ops[effect_type]),
+			"Modifier effect did not compile to explicit registration op: %s" % effect_type,
+		)
+		_check(
+			not Dictionary(spec.get("args", {})).has("effect_type"),
+			"Modifier registration op still carries legacy effect_type args: %s" % effect_type,
+		)
+	for effect_type in compiled_examples:
+		var spec := Dictionary(compiled_examples[effect_type])
+		_check(
+			not Dictionary(spec.get("args", {})).has("effect_type"),
+			"Compiled release IR still carries legacy effect_type args: %s" % effect_type,
+		)
+	_check(
+		not engine.effect_engine.supports_command_spec({
+			"op": "legacy_effect",
+			"args": {"effect_type": "draw", "amount": 1},
+			"branches": {},
+		}),
+		"Unknown compiled VM op must not be accepted through legacy effect_type fallback",
+	)
+	var retired_vm_ops := [
+		"deal_damage_formula",
+		"recover_from_discard",
+		"register_modifier",
+		"register_trigger",
+	]
+	for op in retired_vm_ops:
+		_check(
+			not engine.effect_engine.supports_command_spec({
+				"op": op,
+				"args": {},
+				"branches": {},
+			}),
+			"Retired VM op must not be accepted: %s" % op,
+		)
+	_check(
+		not engine.effect_engine.supports_command_spec({
+			"op": "deal_damage",
+			"args": {"effect_type": "damage", "amount": 10},
+			"branches": {},
+		}),
+		"Native VM op must not accept legacy effect_type args",
+	)
+	_run_compiled_effect_examples(fixture, catalog, engine)
+	_run_native_command_spec_tests(engine)
+	_run_compiled_runtime_dispatch_tests(engine)
 	_run_python_golden_actions(engine)
 	_run_release_deck_playouts(catalog, engine)
 	_run_steel_rules_tests(catalog, engine)
@@ -137,7 +282,7 @@ func _run_phase_two_tests() -> void:
 
 	var stack := ResolutionStack.new()
 	stack.context = {"finish_attack": true, "actor": 0}
-	stack.push_effect({"effect_type": "draw", "params": {"amount": 1}}, 0, "active")
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
 	var restored_stack := ResolutionStack.from_dict(stack.to_dict())
 	_check(restored_stack.to_dict() == stack.to_dict(), "ResolutionStack roundtrip failed")
 
@@ -302,6 +447,45 @@ func _run_phase_two_tests() -> void:
 		"Player one opening hand has no Basic")
 	_check(_contains_basic(setup_state.players[1].hand, catalog),
 		"Player two opening hand has no Basic")
+
+
+func _check_release_effects_have_compiled_ir(cards: Dictionary) -> void:
+	for card_id in cards:
+		var card: Dictionary = cards[card_id]
+		var trainer_effects := _variant_array(card.get("trainer_effects", []))
+		var compiled_trainer := _variant_array(card.get("compiled_trainer_effects", []))
+		if not trainer_effects.is_empty():
+			_check(
+				trainer_effects.size() == compiled_trainer.size(),
+				"Trainer %s has raw effects without matching compiled IR" % card_id,
+			)
+		var abilities := _variant_array(card.get("abilities", []))
+		for ability_index in range(abilities.size()):
+			var ability: Dictionary = abilities[ability_index]
+			var ability_effects := _variant_array(ability.get("effects", []))
+			var compiled_ability := _variant_array(ability.get("compiled_effects", []))
+			if not ability_effects.is_empty():
+				_check(
+					ability_effects.size() == compiled_ability.size(),
+					"Ability %s[%d] has raw effects without matching compiled IR" % [card_id, ability_index],
+				)
+		var attacks := _variant_array(card.get("attacks", []))
+		for attack_index in range(attacks.size()):
+			var attack: Dictionary = attacks[attack_index]
+			var attack_effects := _variant_array(attack.get("effects", []))
+			var compiled_attack := _variant_array(attack.get("compiled_effects", []))
+			if not attack_effects.is_empty():
+				_check(
+					attack_effects.size() == compiled_attack.size(),
+					"Attack %s[%d] has raw effects without matching compiled IR" % [card_id, attack_index],
+				)
+
+
+func _variant_array(value: Variant) -> Array:
+	var result: Array = []
+	if value is Array:
+		result = value
+	return result
 
 
 func _run_phase_three_tests() -> void:
@@ -2595,13 +2779,13 @@ func _contains_basic(card_ids: Array[String], catalog: CardCatalog) -> bool:
 	return false
 
 
-func _run_effect_examples(
+func _run_compiled_effect_examples(
 	fixture: Dictionary,
 	catalog: CardCatalog,
 	engine: GameEngine,
 ) -> void:
-	var examples: Dictionary = fixture.get("effect_examples", {})
-	_check(examples.size() == 78, "Expected one real example for every effect type")
+	var examples: Dictionary = fixture.get("compiled_effect_examples", {})
+	_check(examples.size() == 78, "Expected one compiled example for every effect type")
 	for effect_type in examples:
 		var state := _effect_state()
 		var stack := ResolutionStack.new()
@@ -2609,8 +2793,13 @@ func _run_effect_examples(
 		var step := engine.effect_engine.resolve(
 			state, stack, PortableRandomSource.new(20260620))
 		_check(
-			step.error_code not in ["unknown_effect", "unknown_continuation"],
-			"Effect dispatch failed for %s: %s" % [effect_type, step.message],
+			step.error_code not in [
+				"missing_vm_op",
+				"unknown_continuation",
+				"unknown_effect",
+				"unsupported_vm_op",
+			],
+			"Compiled effect dispatch failed for %s: %s" % [effect_type, step.message],
 		)
 		var guard := 0
 		while step.success and step.pending_choice and guard < 32:
@@ -2633,16 +2822,2254 @@ func _run_effect_examples(
 				PortableRandomSource.new(20260620 + guard),
 			)
 			_check(
-				step.error_code not in ["unknown_effect", "unknown_continuation"],
-				"Effect continuation failed for %s: %s" % [effect_type, step.message],
+				step.error_code not in [
+					"missing_vm_op",
+					"unknown_continuation",
+					"unknown_effect",
+					"unsupported_vm_op",
+				],
+				"Compiled effect continuation failed for %s: %s" % [effect_type, step.message],
 			)
-		_check(guard < 32, "Effect choice chain exceeded guard for %s" % effect_type)
+		_check(guard < 32, "Compiled effect choice chain exceeded guard for %s" % effect_type)
 		if step.pending_choice:
 			var saved := ResolutionStack.from_dict(state.resolution_stack)
 			_check(
 				saved.to_dict() == ResolutionStack.from_dict(saved.to_dict()).to_dict(),
-				"Pending effect stack is not serializable for %s" % effect_type,
+				"Pending compiled effect stack is not serializable for %s" % effect_type,
 			)
+
+
+func _run_native_command_spec_tests(engine: GameEngine) -> void:
+	var state := _effect_state()
+	state.players[0].deck = ["sv1-ener-2"]
+	var stack := ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	var step := engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260621))
+	_check(step.success, "Native draw_cards command spec failed: %s" % step.message)
+	_check(state.players[0].hand.has("sv1-ener-2"), "Native draw_cards did not draw a card")
+
+	state = _effect_state()
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "legacy_effect",
+		"args": {"effect_type": "draw", "amount": 1},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062101))
+	_check(
+		not step.success and step.error_code == "unsupported_vm_op",
+		"Unknown compiled VM op was dispatched through legacy effect fallback",
+	)
+
+	state = _effect_state()
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage",
+		"args": {"effect_type": "damage", "amount": 20},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062103))
+	_check(
+		not step.success and step.error_code == "legacy_effect_type_arg",
+		"Native VM op accepted legacy effect_type args at runtime",
+	)
+
+	state = _effect_state()
+	stack = ResolutionStack.new()
+	stack.push_effect({"effect_type": "draw", "params": {"amount": 1}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062102))
+	_check(
+		not step.success and step.error_code == "missing_vm_op",
+		"Raw effect dict was accepted as a VM stack command",
+	)
+
+	state = _effect_state()
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "deal_damage", "args": {"amount": 20}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260622))
+	_check(step.success, "Native deal_damage command spec failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 3, "Native deal_damage did not damage opponent active")
+
+	state = _effect_state()
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "apply_status", "args": {"status": "asleep"}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260623))
+	_check(step.success, "Native apply_status command spec failed: %s" % step.message)
+	_check("ASLEEP" in state.players[1].active.status_conditions, "Native apply_status did not apply status")
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2", "sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_until", "args": {"target_hand_size": 2}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260624))
+	_check(step.success, "Native draw_until command spec failed: %s" % step.message)
+	_check(state.players[0].hand.size() == 2, "Native draw_until did not draw to target hand size")
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1"]
+	state.players[1].hand = ["sv1-ener-2", "sv1-ener-3", "sv1-ener-4"]
+	state.players[0].deck = ["sv1-ener-5", "sv1-ener-6", "sv1-ener-7"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_until_more_than_opponent", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606241))
+	_check(step.success, "Native draw_until_more_than_opponent command spec failed: %s" % step.message)
+	_check(state.players[0].hand.size() == 4,
+		"Native draw_until_more_than_opponent did not draw above opponent hand size")
+
+	state = _effect_state()
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "heal_all", "args": {"amount": 20}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260625))
+	_check(step.success, "Native heal_all command spec failed: %s" % step.message)
+	_check(state.players[0].active.damage_counters == 0, "Native heal_all did not heal active Pokemon")
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[0].active.damage_counters = 4
+	state.players[0].bench[0].damage_counters = 5
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({"op": "choose_heal_damage", "args": {"amount": 30}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606251))
+	_check(step.success and step.pending_choice != null,
+		"Native choose_heal_damage command spec did not pause for choice")
+	var heal_option := _choice_id_for_slot(step.pending_choice, "bench_0")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [heal_option]),
+		PortableRandomSource.new(202606252),
+	)
+	_check(step.success, "Native choose_heal_damage command spec failed to resume: %s" % step.message)
+	_check(state.players[0].active.damage_counters == 4,
+		"Native choose_heal_damage healed the wrong Pokemon")
+	_check(state.players[0].bench[0].damage_counters == 2,
+		"Native choose_heal_damage did not heal selected Pokemon")
+	_check(state.players[0].hand == ["sv1-ener-2"],
+		"Native choose_heal_damage did not resume remaining command")
+
+	state = _effect_state()
+	state.players[0].was_ko_by_attack = true
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "conditional_status",
+		"args": {"status": "paralyzed", "condition": "ko_by_attack_last_turn"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260626))
+	_check(step.success, "Native conditional_status command spec failed: %s" % step.message)
+	_check("PARALYZED" in state.players[1].active.status_conditions, "Native conditional_status did not apply status")
+
+	state = _effect_state()
+	state.turn_number = 7
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "apply_dazzling_beam",
+		"args": {"target": "opponent_active"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606261))
+	_check(step.success, "Native apply_dazzling_beam command spec failed: %s" % step.message)
+	_check(state.players[1].active.dazzled,
+		"Native dazzling_beam did not set dazzled marker")
+
+	state.players[1].active.dazzled = false
+	state.players[1].active.all_prevented_next_turn = true
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "apply_dazzling_beam",
+		"args": {"target": "opponent_active"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606262))
+	_check(step.success, "Native dazzling_beam immunity branch failed: %s" % step.message)
+	_check(not state.players[1].active.dazzled,
+		"Native dazzling_beam ignored effect immunity")
+	_check(not state.players[1].active.all_prevented_next_turn,
+		"Native dazzling_beam did not consume effect immunity")
+
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "apply_attack_lock_basic",
+		"args": {"target": "opponent_active"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606263))
+	_check(step.success, "Native apply_attack_lock_basic command spec failed: %s" % step.message)
+	_check(state.players[1].active.attack_locked,
+		"Native attack_lock_basic did not lock basic active")
+
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "apply_outgoing_damage_reduction",
+		"args": {
+			"target": "opponent_active",
+			"amount": 50,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606264))
+	_check(step.success, "Native apply_outgoing_damage_reduction command spec failed: %s" % step.message)
+	_check(state.players[1].active.outgoing_damage_reduction_next_turn == 50,
+		"Native apply_outgoing_damage_reduction did not set reduction marker")
+
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "apply_self_attack_lock",
+		"args": {"attack_name": "漆黑之刃"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606265))
+	_check(step.success, "Native apply_self_attack_lock command spec failed: %s" % step.message)
+	_check(int(state.players[0].active.attack_locked_names.get("漆黑之刃", -1)) == 7,
+		"Native self_attack_lock did not store the attack lock turn")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv1-104")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-5"])
+	state.players[1].active = PokemonState.new("sv2-delib")
+	state.players[1].active.placed_this_turn = false
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_aura_damage_reduction",
+		"args": {"reduction": 20},
+		"branches": {},
+	}, 1, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062651))
+	_check(step.success, "Native register_aura_damage_reduction failed: %s" % step.message)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(2026062652),
+	)
+	_check(step.success, "Native aura_damage_reduction attack failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 0,
+		"Native aura_damage_reduction modifier did not reduce attack damage to zero")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	_set_energy_cards(state.players[0].active, ["sv1-ener-2"])
+	state.players[1].active = PokemonState.new("svd-seviper")
+	state.players[1].active.placed_this_turn = false
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_aura_damage_boost",
+		"args": {
+			"amount": 30,
+			"attacker_subtype": "Basic",
+			"defender_type": "Darkness",
+		},
+		"branches": {},
+	}, 0, "bench_0")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062653))
+	_check(step.success, "Native register_aura_damage_boost failed: %s" % step.message)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(2026062654),
+	)
+	_check(step.success, "Native aura_damage_boost attack failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 6,
+		"Native aura_damage_boost modifier did not boost attack damage")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv1-104")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-5"])
+	state.players[1].active = PokemonState.new("sv2-delib")
+	state.players[1].active.placed_this_turn = false
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_reactive_thorns",
+		"args": {
+			"filter_names": ["信使鸟"],
+			"per_pokemon": 1,
+		},
+		"branches": {},
+	}, 1, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062655))
+	_check(step.success, "Native register_reactive_thorns failed: %s" % step.message)
+	_check(state.players[1].active.modifiers.size() == 1,
+		"Native reactive_thorns register_trigger did not store a VM modifier")
+	var reactive_modifier := Dictionary(state.players[1].active.modifiers[0])
+	_check(
+		str(reactive_modifier.get("modifier_kind", "")) == "reactive_thorns"
+		and not reactive_modifier.has("effect_type"),
+		"Native modifier row must store modifier_kind instead of effect_type",
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(2026062656),
+	)
+	_check(step.success, "Native reactive_thorns attack failed: %s" % step.message)
+	_check(
+		state.players[0].active != null and state.players[0].active.damage_counters == 1,
+		"Native reactive_thorns trigger did not place counters on attacker; counters=%s" % [
+			str(state.players[0].active.damage_counters if state.players[0].active else -1)
+		],
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-5"])
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_conditional_zero_retreat",
+		"args": {"energy_type": "psychic"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062657))
+	_check(step.success, "Native register_conditional_zero_retreat failed: %s" % step.message)
+	_check(engine.validator.effective_retreat_cost(state, state.players[0]) == 0,
+		"Native conditional_zero_retreat modifier did not set retreat cost to zero")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-8", "sv1-ener-8", "sv1-ener-8"])
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_conditional_hp_boost",
+		"args": {
+			"energy_type": "Metal",
+			"threshold": 3,
+			"amount": 100,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062658))
+	_check(step.success, "Native register_conditional_hp_boost failed: %s" % step.message)
+	_check(state.players[0].active.current_hp(engine.catalog) == 150,
+		"Native conditional_hp_boost modifier did not increase HP")
+	var hp_snapshot := GameState.from_dict(state.snapshot())
+	_check(hp_snapshot.players[0].active.current_hp(engine.catalog) == 150,
+		"Native conditional_hp_boost modifier was not preserved in snapshot")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-2"])
+	state.players[1].active = PokemonState.new("sv2-delib")
+	state.players[1].active.placed_this_turn = false
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_tool_modifier",
+		"args": {"effect": "damage_boost_10"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062659))
+	_check(step.success, "Native register_tool_modifier failed: %s" % step.message)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(2026062660),
+	)
+	_check(step.success, "Native tool modifier attack failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 4,
+		"Native register_tool_modifier damage boost did not apply")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].active.damage_counters = 99
+	_set_energy_cards(state.players[0].active, ["sv1-ener-2"])
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_tool_exp_share",
+		"args": {},
+		"branches": {},
+	}, 0, "bench_0")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062661))
+	_check(step.success, "Native register_tool_exp_share failed: %s" % step.message)
+	var ko_events: Array[Dictionary] = []
+	engine._resolve_knockouts(state, 1, ko_events, true)
+	_check(
+		state.players[0].active == null
+		and state.players[0].bench[0].energy_card_ids == ["sv1-ener-2"]
+		and "sv1-ener-2" not in state.players[0].discard,
+		"Native tool_exp_share modifier did not move basic energy before KO discard",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "flip_coin",
+		"args": {},
+		"branches": {
+			"on_heads": [{"op": "draw_cards", "args": {"amount": 1}, "branches": {}}],
+			"on_tails": [{"op": "draw_cards", "args": {"amount": 1}, "branches": {}}],
+		},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260627))
+	_check(step.success and step.pending_choice != null, "Native flip_coin command spec did not pause for choice")
+	var coin_stack := ResolutionStack.from_dict(state.resolution_stack)
+	var coin_frame := Dictionary(coin_stack.frames[coin_stack.frames.size() - 1])
+	var coin_data := Dictionary(coin_frame.get("data", {}))
+	_check(
+		str(coin_data.get("coin_kind", "")) == "branch"
+		and not coin_data.has("effect_type"),
+		"Native flip_coin continuation must store coin_kind instead of effect_type",
+	)
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, []),
+		PortableRandomSource.new(20260628),
+	)
+	_check(step.success, "Native flip_coin command spec failed to resume: %s" % step.message)
+	_check(state.players[0].hand.size() == 1, "Native flip_coin branch did not resolve after choice")
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "switch_pokemon",
+		"args": {"target": "self"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260629))
+	_check(step.success and step.pending_choice != null,
+		"Native switch_pokemon command spec did not pause for choice")
+	var switch_option := _choice_id_for_slot(step.pending_choice, "bench_1")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [switch_option]),
+		PortableRandomSource.new(20260630),
+	)
+	_check(step.success, "Native switch_pokemon command spec failed to resume: %s" % step.message)
+	_check(state.players[0].active.card_id == "svf-rio", "Native switch_pokemon did not switch active Pokemon")
+	_check(state.players[0].hand.size() == 1, "Native switch_pokemon did not resume remaining command")
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2"]
+	state.players[0].deck = ["sv1-ener-3", "sv1-ener-4"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "shuffle_then_draw_cards",
+		"args": {"shuffle_hand": true, "draw": 2},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606301))
+	_check(step.success, "Native shuffle_then_draw_cards command spec failed: %s" % step.message)
+	var shuffle_draw_cards := state.players[0].hand.duplicate()
+	shuffle_draw_cards.append_array(state.players[0].deck)
+	shuffle_draw_cards.sort()
+	_check(
+		state.players[0].hand.size() == 2
+		and state.players[0].deck.size() == 2
+		and shuffle_draw_cards == ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3", "sv1-ener-4"],
+		"Native shuffle_then_draw_cards did not preserve hand/deck cards",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1"]
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[1].hand = []
+	state.players[1].deck = ["sv1-ener-3"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "judge", "args": {"draw": 1}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606302))
+	_check(step.success, "Native judge command spec failed: %s" % step.message)
+	var judge_cards := state.players[0].hand.duplicate()
+	judge_cards.append_array(state.players[0].deck)
+	judge_cards.sort()
+	_check(
+		state.players[0].hand.size() == 1
+		and state.players[0].deck.size() == 1
+		and judge_cards == ["sv1-ener-1", "sv1-ener-2"],
+		"Native judge did not preserve shuffled player's cards",
+	)
+	_check(
+		state.players[1].hand.is_empty()
+		and state.players[1].deck == ["sv1-ener-3"],
+		"Native judge did not skip empty-hand player",
+	)
+
+	state = _effect_state()
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[0].discard = ["sv1-104", "sv1-ener-1", "svf-potion"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "shuffle_from_discard_to_deck",
+		"args": {"filter": "pokemon_and_energy", "count": 2},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606303))
+	_check(step.success and step.pending_choice != null,
+		"Native recover_from_discard shuffle path did not pause for choice")
+	var recover_shuffle_options: Array[String] = [
+		str(step.pending_choice.options[0]["option_id"]),
+		str(step.pending_choice.options[1]["option_id"]),
+	]
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, recover_shuffle_options),
+		PortableRandomSource.new(202606304),
+	)
+	_check(step.success, "Native recover_from_discard shuffle path failed: %s" % step.message)
+	var recovered_deck := state.players[0].deck.duplicate()
+	recovered_deck.sort()
+	_check(
+		state.players[0].discard == ["svf-potion"]
+		and recovered_deck == ["sv1-104", "sv1-ener-1", "sv1-ener-2"],
+		"Native recover_from_discard did not shuffle selected discard cards into deck",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].discard = ["sv1-104", "sv1-ener-1", "svf-potion"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "recover_clara",
+		"args": {"pokemon_count": 1, "energy_count": 1},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606305))
+	_check(step.success and step.pending_choice != null,
+		"Native recover_from_discard clara path did not pause for choice")
+	var clara_options: Array[String] = [
+		str(step.pending_choice.options[0]["option_id"]),
+		str(step.pending_choice.options[1]["option_id"]),
+	]
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, clara_options),
+		PortableRandomSource.new(202606306),
+	)
+	_check(step.success, "Native recover_from_discard clara path failed: %s" % step.message)
+	_check(
+		state.players[0].hand == ["sv1-104", "sv1-ener-1"]
+		and state.players[0].discard == ["svf-potion"],
+		"Native recover_from_discard clara path did not recover selected cards to hand",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2"]
+	state.players[0].deck = ["sv1-ener-3", "sv1-ener-4"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "hand_to_bottom_then_draw", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606307))
+	_check(step.success and step.pending_choice != null,
+		"Native hand_to_bottom_then_draw did not pause for choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(202606308),
+	)
+	_check(step.success, "Native hand_to_bottom_then_draw failed: %s" % step.message)
+	_check(
+		state.players[0].hand == ["sv1-ener-2", "sv1-ener-4"]
+		and state.players[0].deck == ["sv1-ener-1", "sv1-ener-3"],
+		"Native hand_to_bottom_then_draw did not bottom selected card and draw",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	state.players[0].deck = ["sv1-ener-4", "sv1-ener-5"]
+	state.players[0].discard = []
+	state.players[1].active = PokemonState.new("sv2-delib")
+	state.players[1].bench[0] = PokemonState.new("sv1-104")
+	state.players[1].bench[1] = null
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "zinnia_resolve", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606309))
+	_check(step.success and step.pending_choice != null,
+		"Native zinnia_resolve did not pause for discard choice")
+	var zinnia_options: Array[String] = [
+		str(step.pending_choice.options[0]["option_id"]),
+		str(step.pending_choice.options[1]["option_id"]),
+	]
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, zinnia_options),
+		PortableRandomSource.new(202606310),
+	)
+	_check(step.success, "Native zinnia_resolve failed: %s" % step.message)
+	var zinnia_discard := state.players[0].discard.duplicate()
+	zinnia_discard.sort()
+	_check(
+		zinnia_discard == ["sv1-ener-1", "sv1-ener-2"]
+		and state.players[0].hand == ["sv1-ener-3", "sv1-ener-5", "sv1-ener-4"],
+		"Native zinnia_resolve did not discard and draw expected cards",
+	)
+
+	state = _effect_state()
+	state.players[0].deck = ["sv1-ener-1", "sv1-104", "sv1-ener-2"]
+	state.players[0].bench[0] = null
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "search_cards",
+		"args": {
+			"from_zone": "deck",
+			"filter": "basic_pokemon",
+			"destination": "bench",
+			"count": 1,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606311))
+	_check(step.success and step.pending_choice != null,
+		"Native search_cards deck path did not pause for choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(202606312),
+	)
+	_check(step.success, "Native search_cards deck path failed: %s" % step.message)
+	var search_deck_remaining := state.players[0].deck.duplicate()
+	search_deck_remaining.sort()
+	_check(
+		state.players[0].bench[0] != null
+		and state.players[0].bench[0].card_id == "sv1-104"
+		and search_deck_remaining == ["sv1-ener-1", "sv1-ener-2"],
+		"Native search_cards deck path did not bench selected Pokemon",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].discard = ["sv1-ener-1", "svf-potion"]
+	state.players[0].deck = ["sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "search_cards",
+		"args": {
+			"from_zone": "discard",
+			"filter": "basic_energy",
+			"destination": "hand",
+			"count": 1,
+			"min_select": 0,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606313))
+	_check(step.success and step.pending_choice != null,
+		"Native search_cards discard path did not pause for choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(202606314),
+	)
+	_check(step.success, "Native search_cards discard path failed: %s" % step.message)
+	_check(
+		state.players[0].hand == ["sv1-ener-1", "sv1-ener-2"]
+		and state.players[0].discard == ["svf-potion"],
+		"Native search_cards discard path did not move card and resume draw",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-1", "svf-potion", "svl-vitb"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "search_item_and_tool", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606315))
+	_check(step.success and step.pending_choice != null,
+		"Native search_item_and_tool did not pause for choice")
+	var arven_options: Array[String] = [
+		str(step.pending_choice.options[0]["option_id"]),
+		str(step.pending_choice.options[1]["option_id"]),
+	]
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, arven_options),
+		PortableRandomSource.new(202606316),
+	)
+	_check(step.success, "Native search_item_and_tool failed: %s" % step.message)
+	_check(
+		state.players[0].hand == ["svf-potion", "svl-vitb"]
+		and state.players[0].deck == ["sv1-ener-1"],
+		"Native search_item_and_tool did not move item and tool to hand",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-1", "svf-potion"]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "trekking_shoes", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606317))
+	_check(step.success and step.pending_choice != null,
+		"Native trekking_shoes did not pause for confirm choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, ["confirm:no"]),
+		PortableRandomSource.new(202606318),
+	)
+	_check(step.success, "Native trekking_shoes failed: %s" % step.message)
+	_check(
+		state.players[0].hand == ["sv1-ener-1"]
+		and state.players[0].discard == ["svf-potion"],
+		"Native trekking_shoes did not discard top and draw next card",
+	)
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "flip_coin_repeat_damage",
+		"args": {"flips": 3, "damage_per_head": 10},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606319))
+	_check(step.success and step.pending_choice != null,
+		"Native flip_coin_repeat_damage did not create coin request")
+	var repeat_results: Array = step.pending_choice.metadata.get("predetermined_flips", [])
+	var repeat_heads := 0
+	for result in repeat_results:
+		if bool(result):
+			repeat_heads += 1
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, []),
+		PortableRandomSource.new(202606320),
+	)
+	_check(step.success, "Native flip_coin_repeat_damage failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == repeat_heads,
+		"Native flip_coin_repeat_damage produced damage inconsistent with flips")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "flip_until_tails",
+		"args": {"per_head": 20},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606321))
+	_check(step.success and step.pending_choice != null,
+		"Native flip_until_tails did not create coin request")
+	var until_results: Array = step.pending_choice.metadata.get("predetermined_flips", [])
+	var until_heads := 0
+	for result in until_results:
+		if bool(result):
+			until_heads += 1
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, []),
+		PortableRandomSource.new(202606322),
+	)
+	_check(step.success, "Native flip_until_tails failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == until_heads * 2,
+		"Native flip_until_tails produced damage inconsistent with flips")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "flip_coin_then_ko", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606323))
+	_check(step.success and step.pending_choice != null,
+		"Native flip_coin_then_ko did not create coin request")
+	var ko_results: Array = step.pending_choice.metadata.get("predetermined_flips", [])
+	var should_ko := ko_results.size() >= 2 and bool(ko_results[0]) and bool(ko_results[1])
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, []),
+		PortableRandomSource.new(202606324),
+	)
+	_check(step.success, "Native flip_coin_then_ko failed: %s" % step.message)
+	_check(state.players[1].active.is_knocked_out(engine.catalog) == should_ko,
+		"Native flip_coin_then_ko result did not match predetermined flips")
+
+	state = _effect_state()
+	state.first_player_idx = 0
+	state.active_player_idx = 1
+	state.turn_number = 2
+	state.players[1].hand = []
+	state.players[1].deck = ["svg2-zaru", "sv1-104", "svg2-tort"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "conditional_search",
+		"args": {"filter": "grass_pokemon", "max_count": 3, "default_count": 1},
+		"branches": {},
+	}, 1, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606325))
+	_check(step.success and step.pending_choice != null,
+		"Native conditional_search did not pause for choice")
+	_check(step.pending_choice.min_select == 0 and step.pending_choice.max_select == 2,
+		"Native conditional_search did not expose optional second-turn search bounds")
+	var conditional_options: Array[String] = []
+	for option in step.pending_choice.options:
+		conditional_options.append(str(option["option_id"]))
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, conditional_options),
+		PortableRandomSource.new(202606326),
+	)
+	_check(step.success, "Native conditional_search failed: %s" % step.message)
+	_check(
+		state.players[1].hand == ["svg2-zaru", "svg2-tort"]
+		and state.players[1].deck == ["sv1-104"],
+		"Native conditional_search did not move selected Grass Pokemon",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["svf-potion", "sv1-ener-1"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "look_top_deck",
+		"args": {
+			"count": 2,
+			"take": 1,
+			"filter": "energy",
+			"destination": "hand",
+			"rest_bottom": true,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063261))
+	_check(step.success and step.pending_choice != null,
+		"Native look_top_deck did not pause for hand choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063262),
+	)
+	_check(step.success, "Native look_top_deck hand choice failed: %s" % step.message)
+	_check(
+		state.players[0].hand == ["sv1-ener-1"]
+		and state.players[0].deck == ["svf-potion"],
+		"Native look_top_deck did not move selected top card to hand",
+	)
+
+	state = _effect_state()
+	state.players[0].bench[0] = PokemonState.new("svl-pikaex")
+	state.players[0].deck = ["svf-potion", "sv1-ener-4"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "look_top_deck",
+		"args": {
+			"count": 2,
+			"take": 1,
+			"filter": "lightning_energy",
+			"destination": "bench_energy",
+			"shuffle_rest": true,
+			"min_select": 0,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063263))
+	_check(step.success and step.pending_choice != null,
+		"Native look_top_deck did not pause for bench-energy choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063264),
+	)
+	_check(step.success, "Native look_top_deck bench-energy choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids == ["sv1-ener-4"]
+		and state.players[0].deck == ["svf-potion"],
+		"Native look_top_deck did not attach Lightning energy to the only bench target",
+	)
+
+	state = _effect_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].deck = ["svf-potion", "sv1-ener-1", "sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "look_top_attach_energy",
+		"args": {"count": 3, "take": 2, "filter": "basic_energy"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063265))
+	_check(step.success and step.pending_choice != null,
+		"Native look_top_attach_energy did not pause for energy choice")
+	var top_energy_ids: Array[String] = []
+	for option in step.pending_choice.options:
+		top_energy_ids.append(str(option["option_id"]))
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, top_energy_ids),
+		PortableRandomSource.new(2026063266),
+	)
+	_check(step.success and step.pending_choice != null,
+		"Native look_top_attach_energy did not continue to target choice")
+	var attach_target_id := ""
+	for option_value in step.pending_choice.options:
+		var option: Dictionary = option_value
+		if str(option.get("value", {}).get("slot", "")) == "bench_0":
+			attach_target_id = str(option.get("option_id", ""))
+			break
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [attach_target_id]),
+		PortableRandomSource.new(2026063267),
+	)
+	_check(step.success, "Native look_top_attach_energy target choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids == ["sv1-ener-2", "sv1-ener-1"]
+		and state.players[0].deck == ["svf-potion"],
+		"Native look_top_attach_energy did not attach selected top energies",
+	)
+
+	state = _effect_state()
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].hand = ["sv1-ener-1"]
+	state.players[0].deck = ["sv1-ener-1"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "draw_and_attach_energy",
+		"args": {"energy_count": 2, "energy_type": "Grass", "min_select": 0},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063268))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.min_select == 0
+		and step.pending_choice.max_select == 2,
+		"Native draw_and_attach_energy did not expose optional energy distribution",
+	)
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063269),
+	)
+	_check(step.success, "Native draw_and_attach_energy choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.size() == 1
+		and state.players[0].hand.size() == 1,
+		"Native draw_and_attach_energy did not allow attaching fewer than max",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	state.players[0].deck = ["sv1-104"]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "conditional",
+		"args": {},
+		"branches": {
+			"cost": [{
+				"op": "discard_cards",
+				"args": {"amount": 2, "from": "hand"},
+				"branches": {},
+			}],
+			"on_pay": [{
+				"op": "search_cards",
+				"args": {
+					"from_zone": "deck",
+					"filter": "pokemon",
+					"destination": "hand",
+					"count": 1,
+				},
+				"branches": {},
+			}],
+		},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063270))
+	_check(step.success and step.pending_choice != null,
+		"Native conditional did not pause for cost choice")
+	var discard_ids: Array[String] = []
+	for index in range(2):
+		discard_ids.append(str(step.pending_choice.options[index]["option_id"]))
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, discard_ids),
+		PortableRandomSource.new(2026063271),
+	)
+	_check(step.success and step.pending_choice != null,
+		"Native conditional did not continue to on_pay search")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063272),
+	)
+	_check(step.success, "Native conditional search branch failed: %s" % step.message)
+	_check(
+		state.players[0].discard.size() == 2
+		and "sv1-ener-1" in state.players[0].discard
+		and "sv1-ener-2" in state.players[0].discard
+		and state.players[0].hand == ["sv1-ener-3", "sv1-104"],
+		"Native conditional did not resolve cost before on_pay branch",
+	)
+
+	state = _effect_state()
+	state.players[0].was_ko_by_attack = true
+	state.players[0].deck = ["sv1-ener-1"]
+	state.players[0].hand = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "conditional",
+		"args": {"condition": "ko_by_attack_last_turn"},
+		"branches": {
+			"on_pay": [{
+				"op": "draw_cards",
+				"args": {"amount": 1},
+				"branches": {},
+			}],
+		},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063273))
+	_check(step.success, "Native conditional ko condition failed: %s" % step.message)
+	_check(
+		not state.players[0].was_ko_by_attack
+		and state.players[0].hand == ["sv1-ener-1"],
+		"Native conditional did not consume ko marker and resolve branch",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	state.players[0].deck = ["sv1-ener-4", "sv1-ener-5", "sv1-ener-6"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "hand_to_bottom_draw_until",
+		"args": {"target_hand_size": 5},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063274))
+	_check(step.success and step.pending_choice != null,
+		"Native hand_to_bottom_draw_until did not pause for hand choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063275),
+	)
+	_check(step.success, "Native hand_to_bottom_draw_until choice failed: %s" % step.message)
+	_check(
+		state.players[0].hand == ["sv1-ener-2", "sv1-ener-3", "sv1-ener-6", "sv1-ener-5", "sv1-ener-4"]
+		and state.players[0].deck == ["sv1-ener-1"],
+		"Native hand_to_bottom_draw_until did not put selected card on deck bottom",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = []
+	state.players[0].deck = ["sv1-ener-1", "sv1-ener-6"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy",
+		"args": {"amount": 1, "from_zone": "deck", "filter": "fighting", "to": "self"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063276))
+	_check(step.success and step.pending_choice != null,
+		"Native attach_energy self did not request target")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063277),
+	)
+	_check(step.success, "Native attach_energy self choice failed: %s" % step.message)
+	_check(
+		state.players[0].active.energy_card_ids == ["sv1-ener-6"]
+		and state.players[0].deck == ["sv1-ener-1"],
+		"Native attach_energy self did not attach Fighting energy from deck",
+	)
+
+	state = _effect_state()
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[1] = PokemonState.new("svf-rio")
+	state.players[0].hand = ["sv1-ener-4"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy",
+		"args": {"amount": 1, "from_zone": "hand", "filter": "lightning", "to": "bench", "optional": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063278))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.min_select == 0,
+		"Native attach_energy optional bench did not expose optional target choice",
+	)
+	var bench_zero_attach := ""
+	for option_value in step.pending_choice.options:
+		var option: Dictionary = option_value
+		if str(option.get("value", {}).get("slot", "")) == "bench_0":
+			bench_zero_attach = str(option.get("option_id", ""))
+			break
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [bench_zero_attach]),
+		PortableRandomSource.new(2026063279),
+	)
+	_check(step.success, "Native attach_energy optional bench choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids == ["sv1-ener-4"]
+		and state.players[0].hand.is_empty(),
+		"Native attach_energy optional bench did not attach hand energy",
+	)
+
+	state = _effect_state()
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[1] = PokemonState.new("svf-rio")
+	state.players[0].deck = ["sv1-ener-1", "sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy",
+		"args": {
+			"amount": 2,
+			"from_zone": "deck",
+			"filter": "basic_energy",
+			"to": "bench",
+			"max_per_target": 1,
+			"min_select": 0,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063280))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "distribute_energy"
+		and step.pending_choice.min_select == 0,
+		"Native attach_energy bench distribution did not expose optional distribution",
+	)
+	var bench_distribution_ids: Array[String] = []
+	for option in step.pending_choice.options:
+		bench_distribution_ids.append(str(option["option_id"]))
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, bench_distribution_ids),
+		PortableRandomSource.new(2026063281),
+	)
+	_check(step.success, "Native attach_energy bench distribution failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.size() == 1
+		and state.players[0].bench[1].energy_card_ids.size() == 1
+		and state.players[0].deck.is_empty(),
+		"Native attach_energy bench distribution did not attach one energy per target",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = []
+	state.first_player_idx = 1
+	state.active_player_idx = 0
+	state.turn_number = 2
+	state.players[0].deck = ["sv1-ener-5", "sv1-ener-5", "sv1-ener-5"]
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy",
+		"args": {"amount": 1, "from_zone": "deck", "filter": "psychic", "to": "any", "going_second_bonus": 3},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063282))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.max_select == 3,
+		"Native attach_energy going-second bonus did not expose three attachments",
+	)
+	var active_attach_id := ""
+	for option_value in step.pending_choice.options:
+		var option: Dictionary = option_value
+		if str(option.get("value", {}).get("slot", "")) == "active":
+			active_attach_id = str(option.get("option_id", ""))
+			break
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [active_attach_id, active_attach_id, active_attach_id]),
+		PortableRandomSource.new(2026063283),
+	)
+	_check(step.success, "Native attach_energy going-second choice failed: %s" % step.message)
+	_check(
+		state.players[0].active.energy_card_ids.size() == 3
+		and state.players[0].deck.is_empty(),
+		"Native attach_energy going-second bonus did not attach three energies to one target",
+	)
+
+	state = _effect_state()
+	state.players[0].active = PokemonState.new("svg2-tort")
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[1] = null
+	state.players[0].deck = ["sv1-ener-3", "sv1-ener-3"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy",
+		"args": {"amount": 2, "from_zone": "deck", "filter": "water", "to": "self_basic", "min_select": 0},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063284))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.options.size() == 1
+		and str(step.pending_choice.options[0].get("value", {}).get("slot", "")) == "bench_0",
+		"Native attach_energy self_basic did not restrict targets to Basic Pokemon",
+	)
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [
+			str(step.pending_choice.options[0]["option_id"]),
+			str(step.pending_choice.options[0]["option_id"]),
+		]),
+		PortableRandomSource.new(2026063285),
+	)
+	_check(step.success, "Native attach_energy self_basic choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.size() == 2
+		and state.players[0].deck.is_empty(),
+		"Native attach_energy self_basic did not attach only to Basic target",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = []
+	state.players[0].discard = ["sv1-ener-2", "sv1-ener-1"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy_from_discard",
+		"args": {"amount": 1, "energy_type": "fire", "target": "self"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063286))
+	_check(step.success and step.pending_choice != null,
+		"Native attach_energy_from_discard self did not request target")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063287),
+	)
+	_check(step.success, "Native attach_energy_from_discard self choice failed: %s" % step.message)
+	_check(
+		state.players[0].active.energy_card_ids == ["sv1-ener-2"]
+		and state.players[0].discard == ["sv1-ener-1"],
+		"Native attach_energy_from_discard did not attach Fire energy from discard",
+	)
+
+	state = _effect_state()
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[1] = PokemonState.new("svf-rio")
+	state.players[0].discard = ["sv1-ener-7"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy_from_discard",
+		"args": {"amount": 1, "energy_type": "darkness", "target": "bench"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063288))
+	_check(step.success and step.pending_choice != null,
+		"Native attach_energy_from_discard bench did not request target")
+	var bench_one_discard_attach := ""
+	for option_value in step.pending_choice.options:
+		var option: Dictionary = option_value
+		if str(option.get("value", {}).get("slot", "")) == "bench_1":
+			bench_one_discard_attach = str(option.get("option_id", ""))
+			break
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [bench_one_discard_attach]),
+		PortableRandomSource.new(2026063289),
+	)
+	_check(step.success, "Native attach_energy_from_discard bench choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[1].energy_card_ids == ["sv1-ener-7"]
+		and state.players[0].discard.is_empty(),
+		"Native attach_energy_from_discard did not attach Darkness energy to chosen bench",
+	)
+
+	state = _effect_state()
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[1] = PokemonState.new("svf-rio")
+	state.players[0].discard = ["sv1-ener-1", "sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy_from_discard",
+		"args": {"amount": 2, "energy_type": "basic", "target": "bench", "min_select": 0},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063290))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "distribute_energy"
+		and step.pending_choice.min_select == 0,
+		"Native attach_energy_from_discard distribution did not expose optional distribution",
+	)
+	var discard_distribution_ids: Array[String] = []
+	for option in step.pending_choice.options:
+		discard_distribution_ids.append(str(option["option_id"]))
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, discard_distribution_ids),
+		PortableRandomSource.new(2026063291),
+	)
+	_check(step.success, "Native attach_energy_from_discard distribution failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.size() == 1
+		and state.players[0].bench[1].energy_card_ids.size() == 1
+		and state.players[0].discard.is_empty(),
+		"Native attach_energy_from_discard did not distribute discard energies",
+	)
+
+	state = _effect_state()
+	state.players[0].bench[0] = PokemonState.new("svd-seviper")
+	state.players[0].bench[1] = PokemonState.new("sv2-delib")
+	state.players[0].discard = ["sv1-ener-7"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy_from_discard",
+		"args": {
+			"amount": 1,
+			"energy_type": "Darkness",
+			"target": "bench",
+			"target_pokemon_type": "Darkness",
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063292))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.options.size() == 1
+		and str(step.pending_choice.options[0].get("value", {}).get("slot", "")) == "bench_0",
+		"Native attach_energy_from_discard did not filter Darkness targets",
+	)
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063293),
+	)
+	_check(step.success, "Native attach_energy_from_discard filtered choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids == ["sv1-ener-7"]
+		and state.players[0].bench[1].energy_card_ids.is_empty(),
+		"Native attach_energy_from_discard ignored target_pokemon_type",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = ["sv1-ener-1", "sv1-ener-2"]
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[0].energy_card_ids.clear()
+	state.players[0].bench[1] = null
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "relocate_energy",
+		"args": {"amount": 1, "from_self": true, "energy_type": "basic_energy"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063294))
+	_check(step.success and step.pending_choice != null,
+		"Native relocate_energy from_self did not request target")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(2026063295),
+	)
+	_check(step.success, "Native relocate_energy from_self target failed: %s" % step.message)
+	_check(
+		state.players[0].active.energy_card_ids == ["sv1-ener-2"]
+		and state.players[0].bench[0].energy_card_ids == ["sv1-ener-1"],
+		"Native relocate_energy from_self did not move one basic energy",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = ["sv1-ener-1", "sv1-ener-2"]
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[0].energy_card_ids.clear()
+	state.players[0].bench[1] = PokemonState.new("svf-rio")
+	state.players[0].bench[1].energy_card_ids.clear()
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "relocate_energy",
+		"args": {"amount": 99, "from_self": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063296))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "distribute_energy"
+		and step.pending_choice.min_select == 2,
+		"Native relocate_energy from_self distribution did not request all energies",
+	)
+	var relocate_distribution_ids: Array[String] = []
+	for option in step.pending_choice.options:
+		relocate_distribution_ids.append(str(option["option_id"]))
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, relocate_distribution_ids),
+		PortableRandomSource.new(2026063297),
+	)
+	_check(step.success, "Native relocate_energy from_self distribution failed: %s" % step.message)
+	_check(
+		state.players[0].active.energy_card_ids.is_empty()
+		and state.players[0].bench[0].energy_card_ids.size() == 1
+		and state.players[0].bench[1].energy_card_ids.size() == 1,
+		"Native relocate_energy did not distribute active energies",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = ["sv1-ener-1", "sv1-ener-2"]
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[0].energy_card_ids.clear()
+	state.players[0].bench[0].energy_card_ids.append("sv1-ener-3")
+	state.players[0].bench[1] = PokemonState.new("svf-rio")
+	state.players[0].bench[1].energy_card_ids.clear()
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "relocate_energy",
+		"args": {"amount": 2, "min_select": 0, "same_target": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063298))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "select_energy_source",
+		"Native relocate_energy did not request source when multiple sources exist",
+	)
+	var active_relocate_source := ""
+	for option_value in step.pending_choice.options:
+		var option: Dictionary = option_value
+		if str(option.get("value", {}).get("slot", "")) == "active":
+			active_relocate_source = str(option.get("option_id", ""))
+			break
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [active_relocate_source]),
+		PortableRandomSource.new(2026063299),
+	)
+	_check(step.success and step.pending_choice != null,
+		"Native relocate_energy source choice did not continue to targets")
+	var bench_one_relocate := ""
+	for option_value in step.pending_choice.options:
+		var option: Dictionary = option_value
+		if str(option.get("value", {}).get("slot", "")) == "bench_1":
+			bench_one_relocate = str(option.get("option_id", ""))
+			break
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [bench_one_relocate, bench_one_relocate]),
+		PortableRandomSource.new(2026063300),
+	)
+	_check(step.success, "Native relocate_energy same-target distribution failed: %s" % step.message)
+	_check(
+		state.players[0].active.energy_card_ids.is_empty()
+		and state.players[0].bench[1].energy_card_ids == ["sv1-ener-1", "sv1-ener-2"]
+		and state.players[0].bench[0].energy_card_ids == ["sv1-ener-3"],
+		"Native relocate_energy did not keep same-target relocation",
+	)
+
+	state = _effect_state()
+	state.players[0].active = PokemonState.new("sv2-tatsu")
+	state.players[0].bench[0] = PokemonState.new("svf-rio")
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-1"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "search_any_and_switch",
+		"args": {"count": 1, "min_select": 0, "switch_optional": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606327))
+	_check(step.success and step.pending_choice != null,
+		"Native search_any_and_switch did not pause for search choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(202606328),
+	)
+	_check(step.success and step.pending_choice != null,
+		"Native search_any_and_switch did not continue to switch confirm")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, ["confirm:yes"]),
+		PortableRandomSource.new(202606329),
+	)
+	_check(step.success and step.pending_choice != null,
+		"Native search_any_and_switch did not continue to bench selection")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(202606330),
+	)
+	_check(step.success, "Native search_any_and_switch switch choice failed: %s" % step.message)
+	_check(
+		state.players[0].active.card_id == "svf-rio"
+		and state.players[0].hand == ["sv1-ener-1"],
+		"Native search_any_and_switch did not search then switch",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].discard = ["svg2-empo"]
+	state.players[0].deck = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	state.players[0].bench[0] = null
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_then_revive",
+		"args": {"card_id": "svg2-empo"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606331))
+	_check(step.success, "Native discard_then_revive failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0] != null
+		and state.players[0].bench[0].card_id == "svg2-empo"
+		and state.players[0].discard.is_empty()
+		and state.players[0].hand == ["sv1-ener-3", "sv1-ener-2", "sv1-ener-1"],
+		"Native discard_then_revive did not revive and draw",
+	)
+
+	state = _effect_state()
+	state.turn_number = 3
+	state.players[0].active = PokemonState.new("svg2-turt")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].active.can_evolve_this_turn = true
+	state.players[0].hand = ["svg2-tort"]
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "evolve_skip_stage", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063321))
+	_check(step.success, "Native evolve_skip_stage failed: %s" % step.message)
+	_check(
+		state.players[0].active.card_id == "svg2-tort"
+		and state.players[0].active.evolution_stack_ids == ["svg2-turt"]
+		and state.players[0].hand.is_empty()
+		and not state.players[0].active.can_evolve_this_turn,
+		"Native evolve_skip_stage did not evolve Basic directly to Stage 2",
+	)
+
+	state = _effect_state()
+	state.players[1].active.energy_card_ids = ["sv1-ener-1"]
+	state.players[1].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "flip_coin_then_discard_energy",
+		"args": {},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2))
+	_check(step.success and step.pending_choice != null,
+		"Native flip_coin_then_discard_energy did not create coin request")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, []),
+		PortableRandomSource.new(202606333),
+	)
+	_check(step.success and step.pending_choice != null,
+		"Native flip_coin_then_discard_energy did not continue to attachment choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(202606334),
+	)
+	_check(step.success, "Native flip_coin_then_discard_energy attachment choice failed: %s" % step.message)
+	_check(
+		state.players[1].active.energy_card_ids.is_empty()
+		and state.players[1].discard == ["sv1-ener-1"],
+		"Native flip_coin_then_discard_energy did not discard selected energy",
+	)
+
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "register_tool_exp_share",
+		"args": {},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606332))
+	_check(step.success, "Native register_tool_exp_share failed: %s" % step.message)
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	state.players[0].deck = ["sv1-ener-4"]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "discard_cards",
+		"args": {"amount": 2, "from": "hand"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260631))
+	_check(step.success and step.pending_choice != null,
+		"Native discard_cards command spec did not pause for choice")
+	var discard_options: Array[String] = [
+		str(step.pending_choice.options[0]["option_id"]),
+		str(step.pending_choice.options[1]["option_id"]),
+	]
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, discard_options),
+		PortableRandomSource.new(20260632),
+	)
+	_check(step.success, "Native discard_cards command spec failed to resume: %s" % step.message)
+	_check(state.players[0].discard == ["sv1-ener-2", "sv1-ener-1"],
+		"Native discard_cards discarded the wrong hand cards")
+	_check(state.players[0].hand == ["sv1-ener-3", "sv1-ener-4"],
+		"Native discard_cards did not resume remaining command")
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2"]
+	state.players[0].deck = ["sv1-ener-3", "sv1-ener-4"]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_then_draw_cards",
+		"args": {"discard_hand": true, "draw": 2},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606321))
+	_check(step.success, "Native discard_then_draw_cards discard-hand spec failed: %s" % step.message)
+	_check(state.players[0].discard == ["sv1-ener-1", "sv1-ener-2"],
+		"Native discard_then_draw_cards did not discard the whole hand")
+	_check(state.players[0].hand == ["sv1-ener-4", "sv1-ener-3"],
+		"Native discard_then_draw_cards did not draw after discarding hand")
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	state.players[0].deck = ["sv1-ener-4", "sv1-ener-5"]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_then_draw_cards",
+		"args": {"discard_amount": 1, "draw_amount": 1},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606322))
+	_check(step.success and step.pending_choice != null,
+		"Native discard_then_draw_cards did not pause for discard choice")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
+		PortableRandomSource.new(202606323),
+	)
+	_check(step.success, "Native discard_then_draw_cards failed to resume: %s" % step.message)
+	_check(state.players[0].discard == ["sv1-ener-1"],
+		"Native discard_then_draw_cards discarded the wrong selected card")
+	_check(state.players[0].hand == ["sv1-ener-2", "sv1-ener-3", "sv1-ener-5"],
+		"Native discard_then_draw_cards did not draw after selected discard")
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[0].discard = []
+	state.players[0].active.energy_card_ids = ["sv1-ener-5", "sv1-ener-6"]
+	state.players[1].active.energy_card_ids = ["sv1-ener-3"]
+	state.players[1].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"amount": 1, "from": "self", "filter": "any"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260633))
+	_check(step.success, "Native discard_energy command spec failed: %s" % step.message)
+	_check(state.players[0].active.energy_card_ids == ["sv1-ener-6"],
+		"Native discard_energy did not remove self energy")
+	_check(state.players[0].discard == ["sv1-ener-5"],
+		"Native discard_energy did not put self energy in owner discard")
+	_check(state.players[0].hand == ["sv1-ener-2"],
+		"Native discard_energy did not continue remaining command")
+
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"amount": 1, "from": "opponent", "filter": "any"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260634))
+	_check(step.success, "Native opponent discard_energy command spec failed: %s" % step.message)
+	_check(state.players[1].active.energy_card_ids.is_empty(),
+		"Native discard_energy did not remove opponent energy")
+	_check(state.players[1].discard == ["sv1-ener-3"],
+		"Native discard_energy did not put opponent energy in owner discard")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_per_hand_size",
+		"args": {"per": 10},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260635))
+	_check(step.success, "Native damage_per_hand_size formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 3,
+		"Native damage_per_hand_size formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_plus_bench",
+		"args": {"base": 10, "per_bench": 20},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260636))
+	_check(step.success, "Native damage_plus_bench formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 5,
+		"Native damage_plus_bench formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[0].active.damage_counters = 2
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_per_self_damage",
+		"args": {"base": 60, "per_counter": 10},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260637))
+	_check(step.success, "Native damage_per_self_damage formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 8,
+		"Native damage_per_self_damage formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[0].active.damage_counters = 3
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_with_self_penalty",
+		"args": {"base": 200, "per_counter": 20},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260638))
+	_check(step.success, "Native damage_self_penalty formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 14,
+		"Native damage_self_penalty formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 1
+	stack = ResolutionStack.new()
+	stack.context["finish_attack"] = true
+	stack.context["base_damage"] = 30
+	stack.push_effect({
+		"op": "conditional_damage",
+		"args": {"bonus": 120, "condition": "opponent_active_damaged"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606379))
+	_check(step.success, "Native conditional_damage command spec failed: %s" % step.message)
+	var saved_conditional_stack := ResolutionStack.from_dict(state.resolution_stack)
+	_check(int(saved_conditional_stack.context.get("base_damage", 0)) == 150,
+		"Native conditional_damage did not accumulate bonus in attack context")
+	_check(state.players[1].active.damage_counters == 1,
+		"Native conditional_damage applied damage outside attack context")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].was_ko_by_attack = true
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "conditional_damage",
+		"args": {"bonus": 90, "condition": "ko_by_attack_last_turn"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063791))
+	_check(step.success, "Native conditional_damage ko condition failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 9,
+		"Native conditional_damage did not apply ko_by_attack bonus")
+	_check(not state.players[0].was_ko_by_attack,
+		"Native conditional_damage did not consume was_ko_by_attack")
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3", "sv1-ener-4"]
+	state.players[0].discard = []
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_hand_then_damage",
+		"args": {"threshold": 5, "base_damage": 60, "bonus": 150},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063792))
+	_check(step.success, "Native discard_hand_then_damage command spec failed: %s" % step.message)
+	_check(state.players[0].hand.is_empty(),
+		"Native discard_hand_then_damage did not discard hand below threshold")
+	_check(state.players[0].discard == ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3", "sv1-ener-4"],
+		"Native discard_hand_then_damage discarded wrong hand cards")
+	_check(state.players[1].active.damage_counters == 6,
+		"Native discard_hand_then_damage produced wrong base damage")
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = ["sv1-ener-6", "sv1-ener-5"]
+	state.players[0].discard = []
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_energy_then_damage",
+		"args": {"base": 10, "per_energy": 60},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063793))
+	_check(step.success, "Native discard_energy_then_damage command spec failed: %s" % step.message)
+	_check(state.players[0].active.energy_card_ids == ["sv1-ener-5"],
+		"Native discard_energy_then_damage did not keep non-fighting energy")
+	_check(state.players[0].discard == ["sv1-ener-6"],
+		"Native discard_energy_then_damage did not discard fighting energy")
+	_check(state.players[1].active.damage_counters == 7,
+		"Native discard_energy_then_damage produced wrong damage")
+
+	state = _effect_state()
+	state.players[0].deck = ["sv2-delib", "sv1-ener-1", "sv1-ener-2"]
+	state.players[0].discard = []
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "mill_then_damage",
+		"args": {"mill_count": 3, "damage_per": 40},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063794))
+	_check(step.success, "Native mill_then_damage command spec failed: %s" % step.message)
+	_check(state.players[0].discard == ["sv1-ener-2", "sv1-ener-1"],
+		"Native mill_then_damage did not discard revealed energies")
+	_check(state.players[1].active.damage_counters == 8,
+		"Native mill_then_damage produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].healed_this_turn = true
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "conditional_damage_then_heal",
+		"args": {"base": 60, "bonus": 90},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063801))
+	_check(step.success, "Native conditional_damage_then_heal command spec failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 15,
+		"Native conditional_damage_then_heal produced wrong damage")
+
+	state = _effect_state()
+	state.players[0].active.damage_counters = 3
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_then_heal",
+		"args": {"damage": 10, "heal": 20},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063802))
+	_check(step.success, "Native deal_damage_then_heal command spec failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 1,
+		"Native deal_damage_then_heal did not damage opponent")
+	_check(state.players[0].active.damage_counters == 1,
+		"Native deal_damage_then_heal did not heal source")
+	_check(state.players[0].healed_this_turn,
+		"Native deal_damage_then_heal did not mark healed_this_turn")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[1].active.energy_card_ids = ["sv1-ener-1", "sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_per_energy",
+		"args": {
+			"base": 10,
+			"per_energy": 20,
+			"count_from": "opponent_active",
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606381))
+	_check(step.success, "Native damage_per_energy formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 5,
+		"Native damage_per_energy formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].active.energy_card_ids = ["sv1-ener-2", "sv1-ener-5"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_per_self_energy",
+		"args": {
+			"base": 30,
+			"per_energy": 30,
+			"energy_filter": "fire",
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606382))
+	_check(step.success, "Native damage_per_self_energy formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 6,
+		"Native damage_per_self_energy formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].active.energy_card_ids = ["sv1-ener-1", "sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_per_self_energy_type",
+		"args": {
+			"base": 60,
+			"per_energy": 20,
+			"energy_type": "Grass",
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606383))
+	_check(step.success, "Native damage_per_self_energy_type formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 8,
+		"Native damage_per_self_energy_type formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].discard = ["sv1-106", "svi-chim"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_per_discard_psychic",
+		"args": {"base": 80, "per_card": 10},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606384))
+	_check(step.success, "Native damage_per_discard_psychic formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 9,
+		"Native damage_per_discard_psychic formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].bench[0] = PokemonState.new("svg2-tort")
+	state.players[0].bench[1] = PokemonState.new("sv1-106")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage_per_evolved",
+		"args": {"per_evolved": 50},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606385))
+	_check(step.success, "Native damage_per_evolved formula failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 10,
+		"Native damage_per_evolved formula produced wrong damage")
+
+	state = _effect_state()
+	state.players[0].active.damage_counters = 2
+	state.players[0].active.energy_card_ids = ["sv1-ener-2"]
+	state.players[0].bench[0].damage_counters = 1
+	state.players[0].bench[1] = PokemonState.new("sv2-38")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "set_attack_damage_formula",
+		"args": {
+			"base": 100,
+			"per_own_bench": 20,
+			"per_self_energy_type": "Fire",
+			"per_energy": 30,
+			"per_self_damage_counter": 10,
+			"condition_bonus": {
+				"condition": "own_bench_damaged",
+				"bonus": 50,
+				"consume": false,
+			},
+			"piercing": true,
+			"ignore_defender_effects": true,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606386))
+	_check(step.success, "Native set_attack_damage_formula command spec failed: %s" % step.message)
+	var saved_formula_stack := ResolutionStack.from_dict(state.resolution_stack)
+	_check(int(saved_formula_stack.context.get("base_damage", 0)) == 240,
+		"Native set_attack_damage_formula produced wrong base damage")
+	_check(bool(saved_formula_stack.context.get("piercing", false)),
+		"Native set_attack_damage_formula did not set piercing context")
+	_check(bool(saved_formula_stack.context.get("ignore_defender_effects", false)),
+		"Native set_attack_damage_formula did not set ignore defender context")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.context["finish_attack"] = true
+	stack.push_effect({"op": "deal_damage", "args": {"amount": 30}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "set_attack_flags",
+		"args": {"ignore_weakness": true, "ignore_resistance": true, "ignore_effects": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260639))
+	_check(step.success, "Native set_attack_flags command spec failed: %s" % step.message)
+	var saved_attack_stack := ResolutionStack.from_dict(state.resolution_stack)
+	_check(bool(saved_attack_stack.context.get("piercing", false)),
+		"Native set_attack_flags did not set piercing context")
+	_check(bool(saved_attack_stack.context.get("ignore_defender_effects", false)),
+		"Native set_attack_flags did not set ignore defender context")
+	_check(int(saved_attack_stack.context.get("base_damage", 0)) == 30,
+		"Native set_attack_flags did not preserve accumulated damage context")
+
+	state = _effect_state()
+	state.players[0].active.card_id = "sv2-tatsu"
+	state.players[0].active.evolution_stack_ids = ["sv2-38"]
+	state.players[0].active.energy_card_ids = ["sv1-ener-3"]
+	state.players[0].active.attached_tool_id = "svl-vitb"
+	state.players[0].hand = []
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "return_to_hand", "args": {}, "branches": {}}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260640))
+	_check(step.success, "Native return_to_hand command spec failed: %s" % step.message)
+	_check(state.players[0].active == null, "Native return_to_hand did not clear active slot")
+	_check(state.players[0].hand == ["sv2-tatsu", "sv2-38", "sv1-ener-3", "svl-vitb"],
+		"Native return_to_hand returned the wrong cards to hand")
+
+	state = _effect_state()
+	state.players[1].bench[0] = PokemonState.new("svi-chim")
+	state.players[1].bench[1] = PokemonState.new("svf-rio")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_bench_damage",
+		"args": {"amount": 10, "count": 5, "player": "opponent", "choose_targets": false},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260641))
+	_check(step.success, "Native auto deal_bench_damage command spec failed: %s" % step.message)
+	_check(
+		state.players[1].bench[0].damage_counters == 1
+		and state.players[1].bench[1].damage_counters == 1,
+		"Native auto deal_bench_damage did not damage opponent bench",
+	)
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[1].bench[0] = PokemonState.new("svi-chim")
+	state.players[1].bench[1] = PokemonState.new("svf-rio")
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "deal_bench_damage",
+		"args": {"amount": 30, "count": 1, "player": "opponent", "choose_targets": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260642))
+	_check(step.success and step.pending_choice != null,
+		"Native choice deal_bench_damage command spec did not pause for choice")
+	var bench_damage_option := _choice_id_for_slot(step.pending_choice, "bench_1")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [bench_damage_option]),
+		PortableRandomSource.new(20260643),
+	)
+	_check(step.success, "Native choice deal_bench_damage failed to resume: %s" % step.message)
+	_check(
+		state.players[1].bench[0].damage_counters == 0
+		and state.players[1].bench[1].damage_counters == 3,
+		"Native choice deal_bench_damage damaged the wrong bench target",
+	)
+	_check(state.players[0].hand == ["sv1-ener-2"],
+		"Native choice deal_bench_damage did not resume remaining command")
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[1].active.damage_counters = 0
+	state.players[1].bench[0] = PokemonState.new("svi-chim")
+	state.players[1].bench[1] = null
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "choose_damage_target",
+		"args": {"amount": 40, "player": "opponent", "piercing_on_bench": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260644))
+	_check(step.success and step.pending_choice != null,
+		"Native choose_damage_target command spec did not pause for choice")
+	var any_damage_option := _choice_id_for_slot(step.pending_choice, "bench_0")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [any_damage_option]),
+		PortableRandomSource.new(20260645),
+	)
+	_check(step.success, "Native choose_damage_target failed to resume: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 0
+		and state.players[1].bench[0].damage_counters == 4,
+		"Native choose_damage_target damaged the wrong target",
+	)
+	_check(state.players[0].hand == ["sv1-ener-2"],
+		"Native choose_damage_target did not resume remaining command")
+
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[0].active = PokemonState.new("sv2-starm")
+	state.players[0].bench[0] = PokemonState.new("svi-chim")
+	state.players[1].active.damage_counters = 0
+	state.players[1].bench[0] = PokemonState.new("svi-chim")
+	state.players[1].bench[1] = null
+	stack = ResolutionStack.new()
+	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
+	stack.push_effect({
+		"op": "place_counters_then_self_ko",
+		"args": {"counters": 2, "target_player": "opponent"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260646))
+	_check(step.success and step.pending_choice != null,
+		"Native place_counters_then_self_ko command spec did not pause for choice")
+	var comet_option := _choice_id_for_slot(step.pending_choice, "bench_0")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [comet_option]),
+		PortableRandomSource.new(20260647),
+	)
+	_check(step.success, "Native place_counters_then_self_ko failed to resume: %s" % step.message)
+	_check(state.players[1].bench[0].damage_counters == 2,
+		"Native place_counters_then_self_ko did not place target counters")
+	_check(state.players[0].active != null and state.players[0].active.damage_counters > 0,
+		"Native place_counters_then_self_ko did not put source into KO state")
+	_check(state.players[0].hand == ["sv1-ener-2"],
+		"Native place_counters_then_self_ko did not resume remaining command")
+
+
+func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
+	var trainer_id := "__test_compiled_trainer"
+	engine.catalog.cards[trainer_id] = {
+		"api_id": trainer_id,
+		"name": "Compiled Trainer Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Item"],
+		"trainer_type": "Item",
+		"trainer_effects": [{"effect_type": "__raw_should_not_run__", "params": {}}],
+		"compiled_trainer_effects": [{
+			"op": "draw_cards",
+			"args": {"amount": 1},
+			"branches": {},
+		}],
+		"abilities": [],
+		"attacks": [],
+	}
+	var state := _effect_state()
+	state.players[0].hand = [trainer_id]
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[0].discard = []
+	var step := engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(20260648),
+	)
+	_check(step.success, "Compiled trainer runtime dispatch failed: %s" % step.message)
+	_check(state.players[0].hand == ["sv1-ener-2"],
+		"Compiled trainer runtime did not execute compiled draw_cards")
+	_check(state.players[0].discard == [trainer_id],
+		"Compiled trainer runtime did not discard the played item")
+
+	var ability_id := "__test_compiled_ability"
+	engine.catalog.cards[ability_id] = {
+		"api_id": ability_id,
+		"name": "Compiled Ability Probe",
+		"supertype": "Pokémon",
+		"subtypes": ["Basic"],
+		"hp": 60,
+		"energy_types": ["Colorless"],
+		"retreat_cost": 1,
+		"weaknesses": [],
+		"resistances": [],
+		"provides_energy": [],
+		"abilities": [{
+			"name": "Compiled Ability",
+			"trigger": "repeatable",
+			"effects": [{"effect_type": "__raw_should_not_run__", "params": {}}],
+			"compiled_effects": [{
+				"op": "draw_cards",
+				"args": {"amount": 1},
+				"branches": {},
+			}],
+		}],
+		"attacks": [],
+		"trainer_effects": [],
+		"compiled_trainer_effects": [],
+	}
+	state = _effect_state()
+	state.players[0].active = PokemonState.new(ability_id)
+	state.players[0].deck = ["sv1-ener-3"]
+	state.players[0].hand = []
+	step = engine.apply_action(
+		state,
+		GameAction.new("USE_ABILITY", {
+			"slot": "active",
+			"ability_name": "Compiled Ability",
+		}, false, 0),
+		PortableRandomSource.new(20260649),
+	)
+	_check(step.success, "Compiled ability runtime dispatch failed: %s" % step.message)
+	_check(state.players[0].hand == ["sv1-ener-3"],
+		"Compiled ability runtime did not execute compiled draw_cards")
+
+	var attack_id := "__test_compiled_attack"
+	engine.catalog.cards[attack_id] = {
+		"api_id": attack_id,
+		"name": "Compiled Attack Probe",
+		"supertype": "Pokémon",
+		"subtypes": ["Basic"],
+		"hp": 60,
+		"energy_types": ["Colorless"],
+		"retreat_cost": 1,
+		"weaknesses": [],
+		"resistances": [],
+		"provides_energy": [],
+		"abilities": [],
+		"attacks": [{
+			"name": "Compiled Strike",
+			"cost": [],
+			"converted_energy_cost": 0,
+			"damage": 0,
+			"effects": [{"effect_type": "__raw_should_not_run__", "params": {}}],
+			"compiled_effects": [{
+				"op": "draw_cards",
+				"args": {"amount": 1},
+				"branches": {},
+			}],
+		}],
+		"trainer_effects": [],
+		"compiled_trainer_effects": [],
+	}
+	state = _effect_state()
+	state.players[0].active = PokemonState.new(attack_id)
+	state.players[0].deck = ["sv1-ener-4"]
+	state.players[0].hand = []
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(20260650),
+	)
+	_check(step.success, "Compiled attack runtime dispatch failed: %s" % step.message)
+	_check(state.players[0].hand == ["sv1-ener-4"],
+		"Compiled attack runtime did not execute compiled draw_cards")
 
 
 func _effect_state() -> GameState:
@@ -3118,8 +5545,9 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	state.players[0].deck = ["sv1-ener-5"]
 	var draw_stack := ResolutionStack.new()
 	draw_stack.push_effect({
-		"effect_type": "draw",
-		"params": {"amount": 3, "player": "self"},
+		"op": "draw_cards",
+		"args": {"amount": 3, "player": "self"},
+		"branches": {},
 	}, 0, "active")
 	step = engine.effect_engine.resolve(
 		state,
@@ -3206,8 +5634,9 @@ func _run_turn_state_regression_tests(
 	)
 	var stack := ResolutionStack.new()
 	stack.push_effect({
-		"effect_type": "conditional_damage_bonus",
-		"params": {"condition": "ko_by_attack_last_turn", "bonus": 20},
+		"op": "conditional_damage",
+		"args": {"condition": "ko_by_attack_last_turn", "bonus": 20},
+		"branches": {},
 	}, 1, "active")
 	var conditional := engine.effect_engine.resolve(
 		ko_state,

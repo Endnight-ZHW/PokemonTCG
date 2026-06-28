@@ -1246,7 +1246,17 @@
       "params": {}
     }
   },
-  "svg2-lume": {},
+  "svg2-lume": {
+    "energy_effects": [
+      {
+        "downgrade_if_other_special": true,
+        "kind": "provide_energy",
+        "types": [
+          "Rainbow"
+        ]
+      }
+    ]
+  },
   "svg2-shro": {
     "attacks": {
       "吸取": {
@@ -1410,7 +1420,26 @@
       }
     }
   },
-  "svi-dtur": {},
+  "svi-dtur": {
+    "energy_effects": [
+      {
+        "kind": "provide_energy",
+        "types": [
+          "Colorless",
+          "Colorless"
+        ]
+      },
+      {
+        "effect": {
+          "delta": -20
+        },
+        "hook": "MODIFY_DAMAGE",
+        "kind": "modifier",
+        "priority": 30,
+        "scope": "attached_attacker"
+      }
+    ]
+  },
   "svi-enst": {
     "trainer_effect": {
       "effect_type": "look_top_deck",
@@ -1572,7 +1601,28 @@
       }
     }
   },
-  "svi-jete": {},
+  "svi-jete": {
+    "energy_effects": [
+      {
+        "kind": "provide_energy",
+        "types": [
+          "Colorless"
+        ]
+      },
+      {
+        "condition": {
+          "from_zone": "hand",
+          "target": "bench"
+        },
+        "effect": {
+          "op": "switch_with_active"
+        },
+        "hook": "ON_ATTACH",
+        "kind": "trigger",
+        "priority": 20
+      }
+    ]
+  },
   "svi-maus": {
     "abilities": {
       "团结一致": {
@@ -1631,7 +1681,29 @@
       }
     }
   },
-  "svi-mirc": {},
+  "svi-mirc": {
+    "energy_effects": [
+      {
+        "kind": "provide_energy",
+        "types": [
+          "Colorless"
+        ]
+      },
+      {
+        "condition": {
+          "min_damage": 10,
+          "scope": "attached_defender"
+        },
+        "effect": {
+          "amount": 1,
+          "op": "draw_cards"
+        },
+        "hook": "AFTER_DAMAGE",
+        "kind": "trigger",
+        "priority": 20
+      }
+    ]
+  },
   "svi-monf": {
     "attacks": {
       "喷射火焰": {
@@ -1759,7 +1831,27 @@
       }
     }
   },
-  "svi-trea": {},
+  "svi-trea": {
+    "energy_effects": [
+      {
+        "kind": "provide_energy",
+        "types": [
+          "Colorless"
+        ]
+      },
+      {
+        "condition": {
+          "source_zone": "prizes"
+        },
+        "effect": {
+          "op": "attach_to_benched_pokemon"
+        },
+        "hook": "ON_PRIZE_REVEALED",
+        "kind": "trigger",
+        "priority": 20
+      }
+    ]
+  },
   "svl-chat": {
     "attacks": {
       "循环抽取": {

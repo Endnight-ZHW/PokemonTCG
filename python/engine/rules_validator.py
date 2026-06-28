@@ -1,6 +1,6 @@
 """Rules validator - checks if actions are legal under PTCG rules."""
 from typing import Optional, Tuple
-from engine.enums import TurnPhase, PlayerAction, StatusType
+from engine.enums import TurnPhase, PlayerAction, StatusType, EventType
 from engine.game_state import GameState
 from engine.player_state import PlayerState, PokemonInPlay
 from engine.rules_constants import DECK_SIZE, MAX_BENCH_SIZE, MAX_COPIES_PER_CARD
@@ -436,6 +436,20 @@ def effective_retreat_cost(state, player) -> int:
                 if active.card.is_basic_pokemon:
                     retreat_cost = max(0, retreat_cost - 1)
                 break
+
+    for mod in state.event_bus.emit(
+        EventType.CAN_RETREAT,
+        state=state,
+        player=player,
+        pokemon=active,
+        retreat_cost=retreat_cost,
+    ):
+        if not isinstance(mod, dict):
+            continue
+        if "set_cost" in mod:
+            retreat_cost = max(0, int(mod.get("set_cost", retreat_cost) or 0))
+        elif "delta" in mod:
+            retreat_cost = max(0, retreat_cost + int(mod.get("delta", 0) or 0))
 
     return retreat_cost
 
