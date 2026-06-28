@@ -5,7 +5,8 @@ EFFECTS = {'svi-sqwk': {'attacks': {'呼朋引伴': {'effects': [{'effect_type':
                                                            'filter': 'basic_pokemon',
                                                            'destination': 'bench',
                                                            'reveal': True,
-                                                           'count': 2}}]},
+                                                           'count': 2,
+                                                           'min_select': 0}}]},
                           '飞翔': {'effects': [{'effect_type': 'coin_flip',
                                               'params': {'on_heads': [{'effect_type': 'damage',
                                                                        'params': {'amount': 60,
@@ -57,7 +58,8 @@ EFFECTS = {'svi-sqwk': {'attacks': {'呼朋引伴': {'effects': [{'effect_type':
  'svf-hawl': {'attacks': {'展示姿态': {'effects': [{'effect_type': 'attach_from_discard',
                                                 'params': {'amount': 2,
                                                            'energy_type': 'basic',
-                                                           'target': 'bench'}}]},
+                                                           'target': 'bench',
+                                                           'min_select': 0}}]},
                           '挥落': {'effects': [{'effect_type': 'conditional_damage_bonus',
                                               'params': {'bonus': 30,
                                                          'condition': 'opponent_active_evolved'}}]}}},
@@ -66,4 +68,7 @@ EFFECTS = {'svi-sqwk': {'attacks': {'呼朋引伴': {'effects': [{'effect_type':
  'svg-milt': {'attacks': {'活泼冲撞': {'effects': [{'effect_type': 'conditional_damage_heal',
                                                 'params': {'base': 60, 'bonus': 90}}]}}},
  'svg-cast': {'attacks': {'双重抽取': {'effects': [{'effect_type': 'draw', 'params': {'amount': 2}}]},
-                          '暴风': {'effects': [{'effect_type': 'energy_relocate', 'params': {'amount': 1}}]}}}}
+                          '暴风': {'effects': [{'effect_type': 'energy_relocate',
+                                              'params': {'amount': 1,
+                                                         'from_self': True,
+                                                         'energy_type': 'basic_energy'}}]}}}}

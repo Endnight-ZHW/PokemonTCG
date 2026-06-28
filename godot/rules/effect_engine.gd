@@ -535,8 +535,10 @@ func _execute_effect(
 		"discard":
 			var discard_zone := str(params.get("from", "hand"))
 			var discard_source: Array[String] = _zone(player, discard_zone)
-			var discard_amount: int = min(
-				int(params.get("amount", 1)), discard_source.size())
+			var requested_discard_amount := int(params.get("amount", 1))
+			if discard_source.size() < requested_discard_amount:
+				return _fail("手牌不足，无法支付丢弃代价。", "cost_not_payable")
+			var discard_amount: int = requested_discard_amount
 			if discard_amount <= 0:
 				return _fail("没有可丢弃的卡。")
 			return _request_cards(
@@ -645,7 +647,8 @@ func _execute_effect(
 			return _attach_from_hand_to_bench(
 				state, stack, player_idx,
 				int(params.get("energy_count", 2)),
-				str(params.get("energy_type", "Grass")))
+				str(params.get("energy_type", "Grass")),
+				int(params.get("min_select", int(params.get("energy_count", 2)))))
 		"switch_self":
 			return _switch_request(
 				state, stack, player_idx, player_idx, bool(params.get("optional", false)), false)
@@ -695,12 +698,14 @@ func _execute_effect(
 				"filter": params.get("filter", "pokemon"),
 				"destination": "hand",
 				"count": count,
+				"min_select": 0 if count == int(params.get("max_count", count)) else 1,
 			})
 		"search_any_and_switch":
 			stack.push_effect({"effect_type": "switch_self", "params": {"optional": true}}, player_idx, source_slot)
 			stack.push_effect({"effect_type": "search", "params": {
 				"from_zone": "deck", "filter": "any", "destination": "hand",
 				"count": int(params.get("count", 2)),
+				"min_select": int(params.get("min_select", 0)),
 			}}, player_idx, source_slot)
 			return _ok()
 		"ability_discard_revive":
@@ -870,7 +875,7 @@ func _execute_continuation(
 				int(data["amount"]), events)
 		"energy_attach_target":
 			if selected.is_empty():
-				return _fail("没有选择附能目标。")
+				return _ok("未选择附能目标。")
 			return _attach_cards(
 				state,
 				int(data["player_idx"]),
@@ -885,12 +890,17 @@ func _execute_continuation(
 			var attach_source: Array[String] = _zone(attach_player, attach_zone)
 			var attach_cards: Array = data["card_ids"]
 			var max_per_target := int(data.get("max_per_target", 99))
+			var forced_attach_slot := ""
+			if bool(data.get("same_target", false)) and not selected.is_empty():
+				forced_attach_slot = str(selected[0].get("value", {}).get("slot", ""))
 			var per_target: Dictionary = {}
 			for index in range(min(attach_cards.size(), selected.size())):
 				var energy_id := str(attach_cards[index])
 				var source_index := attach_source.find(energy_id)
 				var target_slot := str(
 					selected[index].get("value", {}).get("slot", ""))
+				if not forced_attach_slot.is_empty():
+					target_slot = forced_attach_slot
 				if int(per_target.get(target_slot, 0)) >= max_per_target:
 					continue
 				var attach_target := attach_player.get_pokemon(target_slot)
@@ -935,10 +945,12 @@ func _execute_continuation(
 				str(selected[0].get("value", {}).get("slot", "")),
 				int(data["amount"]),
 				str(data.get("energy_type", "any")),
+				int(data.get("min_select", -1)),
+				bool(data.get("same_target", false)),
 			)
 		"energy_relocate_target":
 			if selected.is_empty():
-				return _fail("没有选择能量目标。")
+				return _ok("未选择能量目标。")
 			var relocate_player := state.get_player(int(data["player_idx"]))
 			var source := relocate_player.get_pokemon(str(data["source_slot"]))
 			var target_relocate := relocate_player.get_pokemon(str(selected[0].get("value", {}).get("slot", "")))
@@ -964,9 +976,14 @@ func _execute_continuation(
 				int(data["amount"]),
 				min(distribution_ids.size(), selected.size()),
 			)
+			var forced_relocate_slot := ""
+			if bool(data.get("same_target", false)) and not selected.is_empty():
+				forced_relocate_slot = str(selected[0].get("value", {}).get("slot", ""))
 			for index in range(move_count):
 				var target_slot := str(
 					selected[index].get("value", {}).get("slot", ""))
+				if not forced_relocate_slot.is_empty():
+					target_slot = forced_relocate_slot
 				var distribution_target := distribution_player.get_pokemon(target_slot)
 				if distribution_target:
 					var energy_id := str(distribution_ids[index])
@@ -976,11 +993,15 @@ func _execute_continuation(
 						distribution_target.energy_card_ids.append(energy_id)
 			return _ok()
 		"look_top":
-			return _resolve_look_top(state, rng, data, selected, events)
+			return _resolve_look_top(state, stack, rng, data, selected, events)
 		"look_top_attach_energy":
 			return _resolve_look_top_attach_energy(state, stack, rng, data, selected, events)
 		"look_top_attach_target":
 			return _resolve_look_top_attach_target(state, data, selected, events)
+		"detached_energy_distribution":
+			return _resolve_detached_energy_distribution(state, data, selected, events)
+		"discard_attachment":
+			return _resolve_discard_attachment(state, data, selected, events)
 		"trekking_shoes":
 			var trekking_player := state.get_player(int(data["player_idx"]))
 			var keep := not selected.is_empty() and bool(selected[0].get("value", false))
@@ -995,6 +1016,84 @@ func _execute_continuation(
 			return _ok()
 		_:
 			return _fail("未知续执行操作: %s" % operation, "unknown_continuation")
+
+
+func _resolve_detached_energy_distribution(
+	state: GameState,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player_idx := int(data["player_idx"])
+	var player := state.get_player(player_idx)
+	var card_ids: Array = data.get("card_ids", [])
+	var max_per_target := int(data.get("max_per_target", 99))
+	var per_target: Dictionary = {}
+	for index in range(min(card_ids.size(), selected.size())):
+		var target_slot := str(selected[index].get("value", {}).get("slot", ""))
+		if int(per_target.get(target_slot, 0)) >= max_per_target:
+			continue
+		var target := player.get_pokemon(target_slot)
+		if target == null:
+			continue
+		var card_id := str(card_ids[index])
+		target.energy_card_ids.append(card_id)
+		per_target[target_slot] = int(per_target.get(target_slot, 0)) + 1
+		events.append({
+			"event_type": "energy_attached",
+			"actor": player_idx,
+			"card_id": card_id,
+			"source": {"player": player_idx, "zone": "deck", "index": -1},
+			"target": {"player": player_idx, "slot": target_slot},
+			"data": {
+				"player": player_idx,
+				"slot": target_slot,
+				"card_id": card_id,
+				"source_zone": "deck",
+				"source_index": -1,
+			},
+		})
+	return _ok()
+
+
+func _resolve_discard_attachment(
+	state: GameState,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	events: Array[Dictionary],
+) -> Dictionary:
+	if selected.is_empty():
+		return _fail("没有选择要丢弃的能量。")
+	var value: Dictionary = selected[0].get("value", {})
+	var target_player := int(value.get("player", -1))
+	var target_slot := str(value.get("slot", ""))
+	var energy_index := int(value.get("index", -1))
+	var card_id := str(value.get("card_id", ""))
+	if target_player < 0:
+		return _fail("能量引用无效。")
+	var target := state.get_player(target_player).get_pokemon(target_slot)
+	if (
+		target == null
+		or energy_index < 0
+		or energy_index >= target.energy_card_ids.size()
+		or str(target.energy_card_ids[energy_index]) != card_id
+	):
+		return _fail("选择的能量已不存在。")
+	state.get_player(target_player).discard.append(target.energy_card_ids.pop_at(energy_index))
+	events.append({
+		"event_type": "card_discarded",
+		"actor": int(data.get("player_idx", state.active_player_idx)),
+		"card_id": card_id,
+		"source": {
+			"player": target_player,
+			"slot": target_slot,
+			"attachment_type": "energy",
+			"index": energy_index,
+		},
+		"target": {"player": target_player, "zone": "discard"},
+		"data": {"player": target_player, "slot": target_slot, "card_id": card_id},
+	})
+	return _ok()
 
 
 func _search_request(
@@ -1013,6 +1112,11 @@ func _search_request(
 	)
 	if available.is_empty():
 		return _ok("没有符合条件的卡。")
+	var requested_count := int(params.get("count", 1))
+	var min_select: int = min(
+		int(params.get("min_select", min(1, requested_count))),
+		min(requested_count, available.size())
+	)
 	return _request_cards(
 		state, stack, player_idx, zone, available, "search_move",
 		{
@@ -1021,9 +1125,10 @@ func _search_request(
 			"destination": str(params.get("destination", "hand")),
 			"shuffle": zone == "deck",
 		},
-		min(1, int(params.get("count", 1))),
-		min(int(params.get("count", 1)), available.size()),
-		"选择符合条件的卡。")
+		min_select,
+		min(requested_count, available.size()),
+		"选择符合条件的卡。",
+		min_select <= 0)
 
 
 func _request_cards(
@@ -1291,11 +1396,40 @@ func _resolve_coin(
 		"coin_flip_energy_discard":
 			if bool(results[0]):
 				var opponent := state.get_player(1 - player_idx)
+				var options: Array[Dictionary] = []
 				for row in opponent.get_all_pokemon():
 					var pokemon: PokemonState = row["pokemon"]
-					if pokemon and not pokemon.energy_card_ids.is_empty():
-						opponent.discard.append(pokemon.energy_card_ids.pop_back())
-						break
+					if pokemon == null:
+						continue
+					var slot := str(row["slot"])
+					for index in range(pokemon.energy_card_ids.size()):
+						var energy_id := str(pokemon.energy_card_ids[index])
+						options.append({
+							"option_id": "attachment:%d:%s:energy:%d:%s" % [1 - player_idx, slot, index, energy_id],
+							"label": "%s - %s" % [catalog.card_name(pokemon.card_id), catalog.card_name(energy_id)],
+							"ref": EntityRef.new("attachment", 1 - player_idx, "", slot, index, "energy", energy_id).to_dict(),
+							"value": {
+								"player": 1 - player_idx,
+								"slot": slot,
+								"index": index,
+								"card_id": energy_id,
+							},
+						})
+				if options.is_empty():
+					return _ok("对手场上没有能量。")
+				stack.push_continuation("discard_attachment", {"player_idx": player_idx})
+				stack.pending_request = ChoiceRequest.new(
+					stack.next_request_id(state, player_idx, "discard_attachment"),
+					"select_attachment",
+					player_idx,
+					"选择对手场上的1个能量丢弃。",
+					options,
+					1,
+					1,
+					false,
+					false,
+					{"revision": state.revision},
+				)
 	return _ok()
 
 
@@ -1315,14 +1449,24 @@ func _energy_attach(
 		if _energy_matches(card_id, filter):
 			matching.append(card_id)
 	var amount := int(params.get("amount", 1))
+	var base_amount := amount
+	var bonus_applied := false
 	if state.active_player_idx != state.first_player_idx and state.is_player_first_turn(player_idx):
 		amount = max(amount, int(params.get("going_second_bonus", amount)))
+		bonus_applied = amount > base_amount
 	if matching.is_empty():
 		return _ok("没有符合条件的能量。")
+	var optional_count := bool(params.has("min_select") or params.get("optional", false) or bonus_applied)
+	var min_select := int(params.get("min_select", 0 if optional_count else -1))
 	var target_spec := str(params.get("to", "self"))
 	var target_slots: Array[String] = []
-	if target_spec in ["self", "self_basic"]:
+	if target_spec == "self":
 		target_slots.append(source_slot)
+	elif target_spec == "self_basic":
+		for row in player.get_all_pokemon():
+			var pokemon: PokemonState = row["pokemon"]
+			if pokemon and catalog.is_basic_pokemon(pokemon.card_id):
+				target_slots.append(str(row["slot"]))
 	elif target_spec == "bench":
 		for index in range(player.bench.size()):
 			if player.bench[index]:
@@ -1333,7 +1477,10 @@ func _energy_attach(
 				target_slots.append(str(row["slot"]))
 	return _request_energy_target(
 		state, stack, player_idx, zone, matching.slice(0, min(amount, matching.size())),
-		target_slots, int(params.get("max_per_target", 99)))
+		target_slots, int(params.get("max_per_target", 99)),
+		min_select,
+		min(amount, matching.size()) if optional_count else -1,
+		target_spec in ["self_basic", "any"])
 
 
 func _attach_from_discard(
@@ -1359,6 +1506,9 @@ func _attach_from_discard(
 					break
 	if matching.is_empty():
 		return _ok("弃牌区没有符合条件的能量。")
+	var amount: int = min(int(params.get("amount", 1)), matching.size())
+	var optional_count := bool(params.has("min_select") or params.get("optional", false))
+	var min_select := int(params.get("min_select", 0 if optional_count else -1))
 	var slots: Array[String] = []
 	match str(params.get("target", "self")):
 		"self":
@@ -1375,8 +1525,12 @@ func _attach_from_discard(
 					slots.append(str(row["slot"]))
 	return _request_energy_target(
 		state, stack, player_idx, "discard",
-		matching.slice(0, min(int(params.get("amount", 1)), matching.size())),
-		slots)
+		matching.slice(0, amount),
+		slots,
+		99,
+		min_select,
+		amount if optional_count else -1,
+		str(params.get("target", "self")) == "self_or_bench")
 
 
 func _pokemon_matches_type(pokemon: PokemonState, target_type: String) -> bool:
@@ -1397,6 +1551,9 @@ func _request_energy_target(
 	card_ids: Array,
 	target_slots: Array[String],
 	max_per_target: int = 99,
+	min_select: int = -1,
+	max_select: int = -1,
+	same_target: bool = false,
 ) -> Dictionary:
 	if target_slots.is_empty():
 		return _ok("没有附能目标。")
@@ -1420,11 +1577,17 @@ func _request_energy_target(
 		if capped_card_ids.size() > 1
 		else "energy_attach_target"
 	)
+	var request_min := capped_card_ids.size() if capped_card_ids.size() > 1 else 1
+	var request_max := request_min
+	if max_select >= 0:
+		request_max = min(max_select, capped_card_ids.size())
+		request_min = min(request_max, max(0, min_select))
 	stack.push_continuation(operation, {
 		"player_idx": player_idx,
 		"source_zone": source_zone,
 		"card_ids": capped_card_ids,
 		"max_per_target": max_per_target,
+		"same_target": same_target,
 	})
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, player_idx, operation),
@@ -1432,10 +1595,10 @@ func _request_energy_target(
 		player_idx,
 		"为每张能量选择附着目标。" if capped_card_ids.size() > 1 else "选择附着能量的宝可梦。",
 		options,
-		capped_card_ids.size() if capped_card_ids.size() > 1 else 1,
-		capped_card_ids.size() if capped_card_ids.size() > 1 else 1,
+		request_min,
+		request_max,
 		capped_card_ids.size() > 1,
-		false,
+		request_min <= 0,
 		{"revision": state.revision, "max_per_target": max_per_target},
 	)
 	return _ok()
@@ -1517,11 +1680,15 @@ func _energy_relocate_request(
 			str(source_options[0].get("value", {}).get("slot", "")),
 			int(params.get("amount", 1)),
 			energy_type,
+			int(params.get("min_select", -1)),
+			bool(params.get("same_target", false)),
 		)
 	stack.push_continuation("energy_relocate_source", {
 		"player_idx": player_idx,
 		"amount": int(params.get("amount", 1)),
 		"energy_type": energy_type,
+		"min_select": int(params.get("min_select", -1)),
+		"same_target": bool(params.get("same_target", false)),
 	})
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, player_idx, "energy_relocate_source"),
@@ -1542,6 +1709,8 @@ func _request_relocation_targets(
 	source_slot: String,
 	amount: int,
 	energy_type: String = "any",
+	min_select: int = -1,
+	same_target: bool = false,
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var source := player.get_pokemon(source_slot)
@@ -1563,6 +1732,11 @@ func _request_relocation_targets(
 	if options.is_empty():
 		return _ok("没有能量转移目标。")
 	var move_count: int = min(amount, matching_energy.size())
+	var request_min := move_count if move_count > 1 else 1
+	var request_max := request_min
+	if min_select >= 0:
+		request_min = min(move_count, max(0, min_select))
+		request_max = move_count
 	var operation := (
 		"energy_relocate_distribution"
 		if move_count > 1
@@ -1574,6 +1748,7 @@ func _request_relocation_targets(
 		"amount": move_count,
 		"energy_type": energy_type,
 		"card_ids": matching_energy.slice(0, move_count),
+		"same_target": same_target,
 	})
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, player_idx, operation),
@@ -1581,9 +1756,10 @@ func _request_relocation_targets(
 		player_idx,
 		"为每张能量选择转移目标。" if move_count > 1 else "选择能量转移目标。",
 		options,
-		move_count if move_count > 1 else 1,
-		move_count if move_count > 1 else 1,
+		request_min,
+		request_max,
 		move_count > 1,
+		request_min <= 0,
 	)
 	return _ok()
 
@@ -1594,6 +1770,7 @@ func _attach_from_hand_to_bench(
 	player_idx: int,
 	amount: int,
 	energy_type: String,
+	min_select: int = -1,
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var matching: Array[String] = []
@@ -1608,7 +1785,10 @@ func _attach_from_hand_to_bench(
 		return _ok()
 	return _request_energy_target(
 		state, stack, player_idx, "hand",
-		matching.slice(0, min(amount, matching.size())), slots)
+		matching.slice(0, min(amount, matching.size())), slots, 99,
+		min_select,
+		min(amount, matching.size()) if min_select >= 0 else -1,
+		true)
 
 
 func _look_top_request(
@@ -1687,6 +1867,7 @@ func _look_top_attach_request(
 
 func _resolve_look_top(
 	state: GameState,
+	stack: ResolutionStack,
 	rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
@@ -1704,15 +1885,69 @@ func _resolve_look_top(
 			remaining.append(card_id)
 	var destination := str(data["destination"])
 	if destination == "bench_energy":
-		var bench_target: PokemonState
-		for pokemon in player.bench:
-			if pokemon:
-				bench_target = pokemon
-				break
-		if bench_target:
-			bench_target.energy_card_ids.append_array(selected_cards)
+		if bool(data["shuffle_rest"]):
+			player.deck.append_array(remaining)
+			rng.shuffle(player.deck)
+			events.append({"event_type": "deck_shuffled", "data": {
+				"player": int(data["player_idx"]),
+			}})
+		elif bool(data["rest_bottom"]):
+			for card_id in remaining:
+				player.deck.push_front(card_id)
 		else:
-			player.hand.append_array(selected_cards)
+			player.deck.append_array(remaining)
+		if selected_cards.is_empty():
+			events.append({"event_type": "cards_selected", "data": {
+				"player": int(data["player_idx"]), "count": 0,
+			}})
+			return _ok("未选择能量。")
+		var options: Array[Dictionary] = []
+		for index in range(player.bench.size()):
+			var pokemon: PokemonState = player.bench[index]
+			if pokemon == null:
+				continue
+			var card_data := catalog.get_card(pokemon.card_id)
+			if not ("Lightning" in card_data.get("energy_types", [])):
+				continue
+			var slot := "bench_%d" % index
+			options.append({
+				"option_id": "pokemon:%d:%s:%s" % [int(data["player_idx"]), slot, pokemon.card_id],
+				"label": catalog.card_name(pokemon.card_id),
+				"ref": EntityRef.new("pokemon", int(data["player_idx"]), "", slot, -1, "", pokemon.card_id).to_dict(),
+				"value": {"slot": slot, "card_id": pokemon.card_id},
+			})
+		if options.is_empty():
+			player.deck.append_array(selected_cards)
+			rng.shuffle(player.deck)
+			events.append({"event_type": "deck_shuffled", "data": {
+				"player": int(data["player_idx"]),
+			}})
+			return _ok("没有备战雷宝可梦。")
+		if options.size() == 1:
+			for energy_id in selected_cards:
+				player.get_pokemon(str(options[0].get("value", {}).get("slot", ""))).energy_card_ids.append(energy_id)
+			return _ok()
+		stack.push_continuation("detached_energy_distribution", {
+			"player_idx": int(data["player_idx"]),
+			"card_ids": selected_cards,
+			"max_per_target": 99,
+		})
+		stack.pending_request = ChoiceRequest.new(
+			stack.next_request_id(state, int(data["player_idx"]), "detached_energy_distribution"),
+			"distribute_energy",
+			int(data["player_idx"]),
+			"为电气发生器选择附着目标。",
+			options,
+			selected_cards.size(),
+			selected_cards.size(),
+			true,
+			false,
+			{"revision": state.revision, "max_per_target": 99},
+		)
+		events.append({"event_type": "cards_selected", "data": {
+			"player": int(data["player_idx"]), "count": selected_cards.size(),
+		}})
+		return _ok()
 	else:
 		player.hand.append_array(selected_cards)
 	if bool(data["shuffle_rest"]):

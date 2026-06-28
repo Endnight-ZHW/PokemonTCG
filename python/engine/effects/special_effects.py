@@ -2,7 +2,7 @@
 import random
 from engine.rules_constants import DAMAGE_PER_COUNTER
 from engine.enums import TurnPhase
-from engine.actions import PokemonRef, resolve_pokemon_ref
+from engine.actions import AttachmentRef, PokemonRef, resolve_pokemon_ref
 from engine.game_state import GameState, ActionResult, ActionRequest
 from data.card_registry import CardRegistry
 
@@ -395,8 +395,9 @@ def _handle_discard(state, player, params):
         hand_count = len(player.hand)
         if hand_count == 0:
             return ActionResult(False, "手牌为空，无法丢弃。")
-        if hand_count <= amount:
-            # Not enough cards - discard all
+        if hand_count < amount:
+            return ActionResult(False, f"手牌不足，必须丢弃{amount}张。")
+        if hand_count == amount:
             indices = list(range(hand_count))
             player.discard_from_hand(indices)
             state._log(f"从手牌丢弃了{hand_count}张卡。")
@@ -802,16 +803,10 @@ def _handle_coin_flip_until_tails(state, params, player_idx, source_slot):
 def _handle_coin_flip_energy_discard(state, params, player_idx, source_slot):
     """Coin flip: heads → discard 1 energy from opponent's Pokemon.
     Used by 粉碎之锤."""
-    player = state.get_player(player_idx)
-    opponent = state.get_opponent()
+    opponent_idx = 1 - player_idx
+    opponent = state.get_player(opponent_idx)
 
-    # Collect opponent Pokemon with energy
-    energy_targets = []
-    for slot_name, poke in opponent.get_all_pokemon():
-        if poke and poke.energy_cards:
-            energy_targets.append((slot_name, poke, len(poke.energy_cards)))
-
-    if not energy_targets:
+    if not any(poke and poke.energy_cards for _slot, poke in opponent.get_all_pokemon()):
         return ActionResult(True, "对手场上没有能量可丢弃。")
 
     def on_flip_complete(results: list[bool]):
@@ -822,17 +817,49 @@ def _handle_coin_flip_energy_discard(state, params, player_idx, source_slot):
         if not is_heads:
             return ActionResult(True, f"硬币: {cn}。没有丢弃能量。")
 
-        # Choose opponent's Pokemon with energy to discard from
-        # Auto-select: first Pokemon with energy (usually active)
-        target_slot, target_poke, energy_count = energy_targets[0]
+        attachment_options = []
+        for slot_name, poke in opponent.get_all_pokemon():
+            if not poke:
+                continue
+            for idx, energy in enumerate(poke.energy_cards):
+                attachment_options.append({
+                    "player": opponent_idx,
+                    "slot": slot_name,
+                    "attachment_type": "energy",
+                    "index": idx,
+                    "card_id": energy.api_id,
+                    "label": f"{poke.card.name} - {energy.name}",
+                })
+        if not attachment_options:
+            return ActionResult(True, "对手场上没有能量可丢弃。")
 
-        # Discard 1 energy and place it in the owner's discard pile
-        if target_poke.energy_cards:
-            discarded_energy = target_poke.energy_cards.pop()
-            opponent.discard.append(discarded_energy)
+        def on_attachment_chosen(selected_refs):
+            ref = selected_refs[0] if selected_refs else None
+            if not isinstance(ref, AttachmentRef):
+                return ActionResult(False, "没有选择有效能量。")
+            target_poke = state.get_player(ref.player).get_pokemon(ref.slot)
+            if (
+                target_poke is None
+                or ref.index < 0
+                or ref.index >= len(target_poke.energy_cards)
+                or target_poke.energy_cards[ref.index].api_id != ref.card_id
+            ):
+                return ActionResult(False, "选择的能量已不存在。")
+            discarded_energy = target_poke.energy_cards.pop(ref.index)
+            state.get_player(ref.player).discard.append(discarded_energy)
+            state._log(f"从{target_poke.card.name}身上丢弃了{discarded_energy.name}。")
+            return ActionResult(True, f"粉碎之锤：丢弃了{target_poke.card.name}的1个能量。")
 
-        state._log(f"从{target_poke.card.name}身上丢弃了1个能量到弃牌区。")
-        return ActionResult(True, f"粉碎之锤：丢弃了{target_poke.card.name}的1个能量。")
+        return ActionRequest(
+            request_type="select_attachment",
+            player=player_idx,
+            prompt="选择对手场上的1个能量丢弃。",
+            min_select=1,
+            max_select=1,
+            target_player="opponent",
+            target_info=attachment_options,
+            callback=on_attachment_chosen,
+        )
 
     return ActionResult(
         True, "掷硬币中...",
@@ -920,8 +947,9 @@ def _handle_draw_and_attach_energy(state, player, params, player_idx):
         return ActionResult(True, f"抽了{drawn_count}张，但备战区没有宝可梦。")
 
     max_attach = min(energy_count, len(grass_energy_in_hand))
+    min_attach = min(int(params.get("min_select", max_attach) or 0), max_attach)
 
-    if len(bench_slots) == 1 and max_attach <= energy_count:
+    if len(bench_slots) == 1 and min_attach == max_attach and max_attach <= energy_count:
         # Auto-attach to the only bench Pokemon
         idx, bp = bench_slots[0]
         attached = 0
@@ -940,15 +968,18 @@ def _handle_draw_and_attach_energy(state, player, params, player_idx):
     ]
 
     def on_distributed(assignments):
+        chosen_slot = assignments[0][1] if assignments else ""
+        attached = 0
         for ei, tgt_slot in assignments:
             if ei < len(energy_to_distribute):
                 card = energy_to_distribute[ei]
                 if card in player.hand:
                     player.hand.remove(card)
-                    bp = player.get_pokemon(tgt_slot)
+                    bp = player.get_pokemon(chosen_slot or tgt_slot)
                     if bp:
                         bp.energy_cards.append(card)
-        state._log(f"将{len(assignments)}张G能量附着于备战区。")
+                        attached += 1
+        state._log(f"将{attached}张G能量附着于备战区。")
 
     return ActionResult(True, f"选择最多{max_attach}张G能量分配到备战宝可梦。",
                         pending_action=ActionRequest(
@@ -958,6 +989,9 @@ def _handle_draw_and_attach_energy(state, player, params, player_idx):
                             card_list=energy_to_distribute,
                             target_info=targets_info,
                             distribute_mode="distribute",
+                            min_select=min_attach,
+                            max_select=max_attach,
+                            max_per_target=max_attach,
                             source_name="菜种的活力",
                             callback=on_distributed,
                         ))

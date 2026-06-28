@@ -194,6 +194,7 @@
               "destination": "hand",
               "filter": "basic_energy",
               "from_zone": "deck",
+              "min_select": 0,
               "reveal": true
             }
           }
@@ -203,7 +204,9 @@
         "effects": [
           {
             "effect_type": "switch_self",
-            "params": {}
+            "params": {
+              "optional": true
+            }
           }
         ]
       }
@@ -266,8 +269,10 @@
         "count": 5,
         "destination": "bench_energy",
         "filter": "lightning_energy",
-        "rest_bottom": true,
-        "take": 2
+        "min_select": 0,
+        "shuffle_rest": true,
+        "take": 2,
+        "target_pokemon_type": "Lightning"
       }
     }
   },
@@ -279,6 +284,7 @@
         "destination": "hand",
         "filter": "basic_energy",
         "from_zone": "discard",
+        "min_select": 0,
         "reveal": true
       }
     }
@@ -362,6 +368,7 @@
   "sv1-ener-4": {},
   "sv1-ener-5": {},
   "sv1-ener-6": {},
+  "sv1-ener-7": {},
   "sv1-ener-8": {},
   "sv2-38": {
     "attacks": {
@@ -403,7 +410,8 @@
       "params": {
         "count": 7,
         "filter": "water_pokemon_and_energy",
-        "rest_bottom": true,
+        "min_select": 0,
+        "shuffle_rest": true,
         "take": 99
       }
     }
@@ -567,6 +575,7 @@
               "amount": 2,
               "filter": "water",
               "from_zone": "deck",
+              "min_select": 0,
               "to": "self_basic"
             }
           }
@@ -818,7 +827,8 @@
     "trainer_effect": {
       "effect_type": "energy_relocate",
       "params": {
-        "amount": 1
+        "amount": 1,
+        "energy_type": "basic_energy"
       }
     }
   },
@@ -849,6 +859,7 @@
             "params": {
               "amount": 2,
               "energy_type": "basic",
+              "min_select": 0,
               "target": "bench"
             }
           }
@@ -1047,7 +1058,9 @@
           {
             "effect_type": "energy_relocate",
             "params": {
-              "amount": 1
+              "amount": 1,
+              "energy_type": "basic_energy",
+              "from_self": true
             }
           }
         ]
@@ -1143,6 +1156,7 @@
             "effect_type": "search_any_and_switch",
             "params": {
               "count": 2,
+              "min_select": 0,
               "source_slot": "active",
               "switch_optional": true
             }
@@ -1197,7 +1211,8 @@
       "effect_type": "draw_and_attach_energy",
       "params": {
         "energy_count": 2,
-        "energy_type": "Grass"
+        "energy_type": "Grass",
+        "min_select": 0
       }
     }
   },
@@ -1387,6 +1402,7 @@
             "params": {
               "amount": 2,
               "energy_type": "fire",
+              "min_select": 0,
               "target": "self_or_bench"
             }
           }
@@ -1644,6 +1660,7 @@
         "filter": "any",
         "filter_name": "妮莫",
         "from_zone": "discard",
+        "min_select": 0,
         "reveal": true
       }
     }
@@ -1652,7 +1669,9 @@
     "trainer_effect": {
       "effect_type": "energy_relocate",
       "params": {
-        "amount": 2
+        "amount": 2,
+        "min_select": 0,
+        "same_target": true
       }
     }
   },
@@ -1674,6 +1693,7 @@
               "destination": "bench",
               "filter": "basic_pokemon",
               "from_zone": "deck",
+              "min_select": 0,
               "reveal": true
             }
           }
@@ -2008,6 +2028,7 @@
               "filter": "basic_energy",
               "from_zone": "deck",
               "max_per_target": 1,
+              "min_select": 0,
               "to": "bench"
             }
           }

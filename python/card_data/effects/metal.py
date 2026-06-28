@@ -144,6 +144,7 @@ EFFECTS = {
                             "filter": "basic_energy",
                             "to": "bench",
                             "max_per_target": 1,
+                            "min_select": 0,
                         },
                     }
                 ]

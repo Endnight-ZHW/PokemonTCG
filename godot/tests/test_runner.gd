@@ -133,6 +133,7 @@ func _run_phase_two_tests() -> void:
 	_run_steel_rules_tests(catalog, engine)
 	_run_darkness_rules_tests(catalog, engine)
 	_run_turn_state_regression_tests(catalog, engine)
+	_run_card_effect_accuracy_tests(engine)
 
 	var stack := ResolutionStack.new()
 	stack.context = {"finish_attack": true, "actor": 0}
@@ -2690,6 +2691,275 @@ func _effect_state() -> GameState:
 	return state
 
 
+func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
+	var state := _battle_state()
+	state.players[0].hand = ["sv1-153", "sv1-ener-5"]
+	state.players[0].deck = ["sv1-104"]
+	var step := engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(6100),
+	)
+	_check(
+		not step.success and step.error_code == "cost_not_payable",
+		"Ultra Ball succeeded without two discard cards or returned the wrong error",
+	)
+	_check(
+		state.players[0].hand == ["sv1-153", "sv1-ener-5"]
+		and state.players[0].discard.is_empty(),
+		"Ultra Ball cost failure did not keep the card in hand",
+	)
+	_check(
+		not _has_hand_action(engine.legal_actions(state, 0, false), "PLAY_TRAINER", 0),
+		"Ultra Ball with unpaid discard cost was listed as legal",
+	)
+
+	state = _battle_state()
+	state.players[0].hand = ["svd-dark-patch"]
+	state.players[0].discard = ["sv1-ener-7"]
+	state.players[0].bench[0] = PokemonState.new("svd-doduo")
+	_check(
+		not _has_hand_action(engine.legal_actions(state, 0, false), "PLAY_TRAINER", 0),
+		"Dark Patch without a Darkness bench target was listed as legal",
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(61001),
+	)
+	_check(
+		not step.success and step.error_code == "no_legal_target",
+		"Dark Patch without a legal target was not rejected",
+	)
+	_check(
+		state.players[0].hand == ["svd-dark-patch"]
+		and state.players[0].discard == ["sv1-ener-7"]
+		and state.players[0].bench[0].energy_card_ids.is_empty(),
+		"Rejected Dark Patch mutated the game state",
+	)
+
+	state = _battle_state()
+	state.players[0].hand = ["sv2-catch"]
+	_check(
+		not _has_hand_action(engine.legal_actions(state, 0, false), "PLAY_TRAINER", 0),
+		"Pokemon Catcher without opponent bench was listed as legal",
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(61002),
+	)
+	_check(
+		not step.success and step.error_code == "no_legal_target",
+		"Pokemon Catcher without opponent bench was not rejected",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svm-bronzong")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-8"])
+	_check(
+		not _has_action(engine.legal_actions(state, 0, false), "USE_ABILITY", {"slot": "active"}),
+		"Bronzong Metal Transfer without a target was listed as legal",
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("USE_ABILITY", {"slot": "active", "ability_name": "金属转移"}, false, 0),
+		PortableRandomSource.new(61003),
+	)
+	_check(
+		not step.success and step.error_code == "no_legal_target",
+		"Bronzong Metal Transfer without a target was not rejected",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv1-113")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-5"])
+	state.players[0].deck = ["sv1-ener-3"]
+	_check(
+		not _has_action(engine.legal_actions(state, 0, false), "DECLARE_ATTACK", {"attack_idx": 0}),
+		"Cresselia zero-damage attack without matching deck energy was listed as legal",
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(61004),
+	)
+	_check(
+		not step.success and step.error_code == "no_legal_target",
+		"Cresselia zero-damage attack without a legal target was not rejected",
+	)
+
+	state = _battle_state()
+	state.players[0].hand = ["sv1-170"]
+	state.players[0].bench[0] = PokemonState.new("svl-pikaex")
+	state.players[0].bench[1] = PokemonState.new("sv2-delib")
+	state.players[0].deck = [
+		"sv1-ener-3", "sv1-ener-3", "sv1-ener-3", "sv1-ener-4", "sv1-ener-4",
+	]
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(6101),
+	)
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.min_select == 0
+		and step.pending_choice.max_select == 2,
+		"Electric Generator did not allow selecting 0-2 energy",
+	)
+	if step.pending_choice:
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, []),
+			PortableRandomSource.new(6102),
+		)
+	_check(step.success, "Electric Generator zero choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.is_empty()
+		and state.players[0].bench[1].energy_card_ids.is_empty()
+		and state.players[0].deck.size() == 5,
+		"Electric Generator zero choice changed board or lost deck cards",
+	)
+
+	state = _battle_state()
+	state.players[0].hand = ["sv1-170"]
+	state.players[0].bench[0] = PokemonState.new("svl-pikaex")
+	state.players[0].bench[1] = PokemonState.new("sv2-delib")
+	state.players[0].deck = [
+		"sv1-ener-3", "sv1-ener-3", "sv1-ener-3", "sv1-ener-4", "sv1-ener-4",
+	]
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(6103),
+	)
+	if step.pending_choice:
+		var electric_ids: Array[String] = []
+		for index in range(min(2, step.pending_choice.options.size())):
+			electric_ids.append(str(step.pending_choice.options[index]["option_id"]))
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, electric_ids),
+			PortableRandomSource.new(6104),
+		)
+	_check(step.success, "Electric Generator two choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.size() == 2
+		and state.players[0].bench[1].energy_card_ids.is_empty()
+		and state.players[0].deck.size() == 3,
+		"Electric Generator did not attach only to benched Lightning Pokemon",
+	)
+
+	state = _battle_state()
+	state.players[0].hand = ["svg2-hamm"]
+	_set_energy_cards(state.players[1].active, ["sv1-ener-3"])
+	state.players[1].bench[0] = PokemonState.new("sv2-delib")
+	_set_energy_cards(state.players[1].bench[0], ["sv1-ener-4"])
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(2),
+	)
+	if step.pending_choice:
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, []),
+			PortableRandomSource.new(6105),
+		)
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "select_attachment",
+		"Crushing Hammer did not request a specific attachment after heads",
+	)
+	if step.pending_choice:
+		var bench_attachment_id := ""
+		for option_value in step.pending_choice.options:
+			var option: Dictionary = option_value
+			if str(option.get("value", {}).get("slot", "")) == "bench_0":
+				bench_attachment_id = str(option.get("option_id", ""))
+				break
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, [bench_attachment_id]),
+			PortableRandomSource.new(6106),
+		)
+	_check(step.success, "Crushing Hammer attachment choice failed: %s" % step.message)
+	_check(
+		state.players[1].active.energy_card_ids == ["sv1-ener-3"]
+		and state.players[1].bench[0].energy_card_ids.is_empty()
+		and "sv1-ener-4" in state.players[1].discard,
+		"Crushing Hammer discarded the wrong energy attachment",
+	)
+
+	state = _battle_state()
+	state.players[0].hand = ["svg2-gard", "sv1-ener-1", "sv1-ener-1"]
+	state.players[0].deck.clear()
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(6107),
+	)
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.min_select == 0
+		and step.pending_choice.max_select == 2,
+		"Gardenia did not allow optional energy attachment",
+	)
+	if step.pending_choice:
+		var target_id := _choice_id_for_slot(step.pending_choice, "bench_0")
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, [target_id]),
+			PortableRandomSource.new(6108),
+		)
+	_check(step.success, "Gardenia one-energy choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.size() == 1,
+		"Gardenia did not accept attaching fewer than the maximum",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svm-cobalion")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-8", "sv1-ener-8"])
+	state.players[0].bench[0] = PokemonState.new("svm-zacian")
+	state.players[0].bench[1] = PokemonState.new("svm-zamazenta")
+	state.players[0].deck = ["sv1-ener-8", "sv1-ener-8"]
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(6109),
+	)
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.min_select == 0
+		and step.pending_choice.max_select == 2,
+		"Cobalion Follow-Up did not allow attaching fewer than two energy",
+	)
+	if step.pending_choice:
+		var cobalion_target := _choice_id_for_slot(step.pending_choice, "bench_1")
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, [cobalion_target]),
+			PortableRandomSource.new(6110),
+		)
+	_check(step.success, "Cobalion one-energy choice failed: %s" % step.message)
+	_check(
+		state.players[0].bench[0].energy_card_ids.is_empty()
+		and state.players[0].bench[1].energy_card_ids.size() == 1,
+		"Cobalion did not accept a single legal attachment",
+	)
+
+
 func _run_python_golden_actions(engine: GameEngine) -> void:
 	var fixture := _read_json("res://tests/fixtures/rules_golden.json")
 	var cases: Dictionary = fixture.get("cases", {})
@@ -3192,6 +3462,25 @@ func _choice_id_for_slot(request: ChoiceRequest, slot: String) -> String:
 			return str(option.get("option_id", ""))
 	_check(false, "Choice request %s did not include slot %s" % [request.request_type, slot])
 	return ""
+
+
+func _has_hand_action(actions: Array, action_name: String, hand_idx: int) -> bool:
+	return _has_action(actions, action_name, {"hand_idx": hand_idx})
+
+
+func _has_action(actions: Array, action_name: String, params: Dictionary = {}) -> bool:
+	for action_value in actions:
+		var action: GameAction = action_value
+		if action.action != action_name:
+			continue
+		var matches := true
+		for key in params:
+			if action.params.get(key) != params[key]:
+				matches = false
+				break
+		if matches:
+			return true
+	return false
 
 
 func _rule_summary(state: GameState) -> Dictionary:

@@ -16,6 +16,24 @@ const FULL_DAMAGE_EFFECT_TYPES: Array[String] = [
 	"attack_damage_formula",
 ]
 
+const TARGET_DAMAGE_EFFECT_TYPES: Array[String] = [
+	"damage",
+	"conditional_damage_bonus",
+	"damage_per_discard_psychic",
+	"damage_per_energy",
+	"damage_per_evolved",
+	"damage_per_hand_size",
+	"damage_per_self_damage",
+	"damage_per_self_energy",
+	"damage_per_self_energy_type",
+	"damage_plus_bench",
+	"damage_self_penalty",
+	"discard_fighting_energy_damage",
+	"discard_hand_conditional_bonus",
+	"mill_and_damage_per_energy",
+	"attack_damage_formula",
+]
+
 var catalog: CardCatalog
 var validator: RulesValidator
 var effect_engine: EffectEngine
@@ -173,7 +191,11 @@ func legal_actions(
 			if validator.can_play_trainer(state, actor, card_id).is_empty():
 				var trainer_action := GameAction.new(
 					"PLAY_TRAINER", {"hand_idx": hand_idx}, false, actor, source)
-				if not validate_effects or _simulated_action_succeeds(state, trainer_action):
+				if (
+					_action_cost_error(state, trainer_action, actor).is_empty()
+					and _action_target_availability_error(state, trainer_action, actor).is_empty()
+					and (not validate_effects or _simulated_action_succeeds(state, trainer_action))
+				):
 					_add_action(actions, seen, trainer_action)
 
 	for row in player.get_all_pokemon():
@@ -192,12 +214,18 @@ func legal_actions(
 					actor,
 					EntityRef.new("pokemon", actor, "", slot, -1, "", pokemon.card_id),
 				)
-				if not validate_effects or _simulated_action_succeeds(state, ability_action):
+				if (
+					_action_target_availability_error(state, ability_action, actor).is_empty()
+					and (not validate_effects or _simulated_action_succeeds(state, ability_action))
+				):
 					_add_action(actions, seen, ability_action)
 
 	if _stadium_is_activatable(state) and not player.stadium_used_this_turn:
 		var stadium_action := GameAction.new("USE_STADIUM", {}, false, actor)
-		if not validate_effects or _simulated_action_succeeds(state, stadium_action):
+		if (
+			_action_target_availability_error(state, stadium_action, actor).is_empty()
+			and (not validate_effects or _simulated_action_succeeds(state, stadium_action))
+		):
 			_add_action(actions, seen, stadium_action)
 
 	for bench_idx in range(player.bench.size()):
@@ -220,13 +248,15 @@ func legal_actions(
 		var attacks: Array = catalog.get_card(player.active.card_id).get("attacks", [])
 		for attack_idx in range(attacks.size()):
 			if validator.can_attack(state, actor, attack_idx).is_empty():
-				_add_action(actions, seen, GameAction.new(
+				var attack_action := GameAction.new(
 					"DECLARE_ATTACK",
 					{"attack_idx": attack_idx},
 					true,
 					actor,
 					EntityRef.new("pokemon", actor, "", "active", -1, "", player.active.card_id),
-				))
+				)
+				if _action_target_availability_error(state, attack_action, actor).is_empty():
+					_add_action(actions, seen, attack_action)
 	_add_action(actions, seen, GameAction.new("END_TURN", {}, true, actor))
 	return actions
 
@@ -247,6 +277,12 @@ func apply_action(
 	var reference_error := _validate_action_references(state, action)
 	if not reference_error.is_empty():
 		return _error(reference_error, "stale_action_reference", state)
+	var cost_error := _action_cost_error(state, action, actor)
+	if not cost_error.is_empty():
+		return _error(cost_error, "cost_not_payable", state)
+	var target_error := _action_target_availability_error(state, action, actor)
+	if not target_error.is_empty():
+		return _error(target_error, "no_legal_target", state)
 
 	var snapshot := state.snapshot()
 	state.revision += 1
@@ -574,6 +610,8 @@ func _play_trainer(
 	var reason := validator.can_play_trainer(state, actor, card_id, target_slot)
 	if not reason.is_empty():
 		return _error(reason, "illegal_trainer", state)
+	if card_id == "sv1-153" and player.hand.size() - 1 < 2:
+		return _error("高级球需要丢弃2张其他手牌。", "cost_not_payable", state)
 	player.hand.remove_at(hand_idx)
 	if catalog.is_tool(card_id):
 		var tool_target := player.get_pokemon(target_slot)
@@ -1217,6 +1255,731 @@ func _simulated_action_succeeds(state: GameState, action: GameAction) -> bool:
 	var simulation := GameState.from_dict(state.snapshot())
 	var result := apply_action(simulation, action, PortableRandomSource.new(1))
 	return result.success
+
+
+func _action_cost_error(
+	state: GameState,
+	action: GameAction,
+	actor: int,
+) -> String:
+	if action.action != "PLAY_TRAINER":
+		return ""
+	var player := state.get_player(actor)
+	var hand_idx := int(action.params.get("hand_idx", -1))
+	if hand_idx < 0 or hand_idx >= player.hand.size():
+		return ""
+	var effects: Array = catalog.get_card(str(player.hand[hand_idx])).get("trainer_effects", [])
+	if effects.is_empty() or _effects_cost_is_payable(state, actor, effects, hand_idx):
+		return ""
+	return "无法支付代价。"
+
+
+func _action_target_availability_error(
+	state: GameState,
+	action: GameAction,
+	actor: int,
+) -> String:
+	match action.action:
+		"PLAY_TRAINER":
+			var player := state.get_player(actor)
+			var hand_idx := int(action.params.get("hand_idx", -1))
+			if hand_idx < 0 or hand_idx >= player.hand.size():
+				return ""
+			var card_id := str(player.hand[hand_idx])
+			var effects: Array = catalog.get_card(card_id).get("trainer_effects", [])
+			if effects.is_empty():
+				return ""
+			var source_slot := str(action.params.get("target_slot", "active"))
+			if source_slot.is_empty():
+				source_slot = "active"
+			if not _effects_have_legal_target(state, actor, effects, source_slot, hand_idx):
+				return "没有合法目标，不能使用。"
+		"USE_ABILITY":
+			var slot := str(action.params.get("slot", ""))
+			var pokemon := state.get_player(actor).get_pokemon(slot)
+			if pokemon == null:
+				return ""
+			var ability_name := str(action.params.get("ability_name", "")).to_lower()
+			for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
+				var ability: Dictionary = ability_value
+				if str(ability.get("name", "")).to_lower() != ability_name:
+					continue
+				var ability_effects: Array = ability.get("effects", [])
+				if (
+					not ability_effects.is_empty()
+					and not _effects_have_legal_target(state, actor, ability_effects, slot)
+				):
+					return "没有合法目标，不能使用该特性。"
+				break
+		"USE_STADIUM":
+			if state.stadium_card_id.is_empty():
+				return ""
+			var stadium_effects: Array = catalog.get_card(state.stadium_card_id).get("trainer_effects", [])
+			if (
+				not stadium_effects.is_empty()
+				and not _effects_have_legal_target(state, actor, stadium_effects, "active")
+			):
+				return "没有合法目标，不能使用竞技场。"
+		"DECLARE_ATTACK":
+			var attacker := state.get_player(actor).active
+			if attacker == null:
+				return ""
+			var attack_idx := int(action.params.get("attack_idx", -1))
+			var attacks: Array = catalog.get_card(attacker.card_id).get("attacks", [])
+			if attack_idx < 0 or attack_idx >= attacks.size():
+				return ""
+			var attack: Dictionary = attacks[attack_idx]
+			if int(attack.get("damage", 0)) > 0 and state.get_player(1 - actor).active != null:
+				return ""
+			if not _effects_have_legal_target(state, actor, attack.get("effects", []), "active"):
+				return "没有合法目标，不能使用该招式。"
+	return ""
+
+
+func _effects_have_legal_target(
+	state: GameState,
+	player_idx: int,
+	effects: Variant,
+	source_slot: String = "active",
+	exclude_hand_index: int = -1,
+	depth: int = 0,
+) -> bool:
+	if depth > 8:
+		return false
+	var effect_list := _effect_list(effects)
+	if effect_list.is_empty():
+		return true
+	var player := state.get_player(player_idx)
+	var opponent := state.get_player(1 - player_idx)
+	var saw_checked_effect := false
+	for effect_value in effect_list:
+		if not (effect_value is Dictionary):
+			continue
+		var effect: Dictionary = effect_value
+		var effect_type := str(effect.get("effect_type", ""))
+		if effect_type.is_empty():
+			continue
+		var raw_params: Variant = effect.get("params", {})
+		var params: Dictionary = {}
+		if raw_params is Dictionary:
+			params = Dictionary(raw_params)
+		if effect_type in TARGET_DAMAGE_EFFECT_TYPES:
+			return opponent.active != null
+		if _effect_is_always_usable(effect_type):
+			return true
+		match effect_type:
+			"hand_to_bottom_draw", "houb":
+				saw_checked_effect = true
+				if _available_hand_count(player, exclude_hand_index) > 0:
+					return true
+			"zinnia_resolve":
+				saw_checked_effect = true
+				if _available_hand_count(player, exclude_hand_index) >= 2:
+					return true
+			"search":
+				saw_checked_effect = true
+				if _search_has_target(state, player_idx, params, exclude_hand_index):
+					return true
+			"look_top_deck":
+				saw_checked_effect = true
+				if _look_top_has_target(state, player_idx, params):
+					return true
+			"conditional_search_extra", "search_any_and_switch":
+				saw_checked_effect = true
+				var search_params := params.duplicate(true)
+				search_params["from_zone"] = str(search_params.get("from_zone", "deck"))
+				search_params["destination"] = str(search_params.get("destination", "hand"))
+				if not search_params.has("filter"):
+					search_params["filter"] = "grass_pokemon" if effect_type == "conditional_search_extra" else "any"
+				if _search_has_target(state, player_idx, search_params, exclude_hand_index):
+					return true
+			"look_top_attach_energy":
+				saw_checked_effect = true
+				if _look_top_attach_has_target(state, player_idx, params):
+					return true
+			"arven":
+				saw_checked_effect = true
+				for card_id in player.deck:
+					if catalog.is_item(card_id) or catalog.is_tool(card_id):
+						return true
+			"shuffle_from_discard":
+				saw_checked_effect = true
+				if _zone_has_matching_cards(player.discard, params):
+					return true
+			"clara":
+				saw_checked_effect = true
+				for card_id in player.discard:
+					if catalog.is_pokemon(card_id) or catalog.is_basic_energy(card_id):
+						return true
+			"energy_attach":
+				saw_checked_effect = true
+				if _energy_attach_has_target(state, player_idx, params, source_slot, exclude_hand_index):
+					return true
+			"attach_from_discard":
+				saw_checked_effect = true
+				var attach_params := params.duplicate(true)
+				attach_params["from_zone"] = "discard"
+				if _energy_attach_has_target(state, player_idx, attach_params, source_slot, exclude_hand_index):
+					return true
+			"draw_and_attach_energy":
+				saw_checked_effect = true
+				var draw_attach_params := {
+					"from_zone": "hand",
+					"filter": str(params.get("energy_type", "Grass")),
+					"amount": int(params.get("energy_count", 2)),
+					"to": "bench",
+				}
+				if _energy_attach_has_target(
+					state, player_idx, draw_attach_params, source_slot, exclude_hand_index, true
+				):
+					return true
+			"energy_relocate":
+				saw_checked_effect = true
+				if _energy_relocate_has_target(state, player_idx, params, source_slot):
+					return true
+			"switch_self":
+				saw_checked_effect = true
+				if player.active != null and player.bench_count() > 0:
+					return true
+			"switch_opponent":
+				saw_checked_effect = true
+				if (
+					opponent.active != null
+					and opponent.bench_count() > 0
+					and not opponent.active.all_prevented_next_turn
+				):
+					return true
+			"heal":
+				saw_checked_effect = true
+				if _heal_has_target(player, params, source_slot):
+					return true
+			"heal_all", "potion_heal", "damage_and_self_heal", "conditional_damage_heal":
+				saw_checked_effect = true
+				if _player_has_damaged_pokemon(player):
+					return true
+				if effect_type in ["damage_and_self_heal", "conditional_damage_heal"] and opponent.active != null:
+					return true
+			"energy_discard":
+				saw_checked_effect = true
+				if _energy_discard_has_target(state, player_idx, params, source_slot):
+					return true
+			"coin_flip_energy_discard":
+				saw_checked_effect = true
+				if _player_has_attached_energy(opponent):
+					return true
+			"any_pokemon_damage", "place_counters_and_self_ko":
+				saw_checked_effect = true
+				if _player_has_effect_target_pokemon(opponent):
+					return true
+			"bench_damage":
+				saw_checked_effect = true
+				if opponent.bench_count() > 0:
+					return true
+			"status", "conditional_status", "attack_lock_basic", "dazzling_beam":
+				saw_checked_effect = true
+				if opponent.active != null and not opponent.active.all_prevented_next_turn:
+					return true
+			"damage_counter_self":
+				saw_checked_effect = true
+				var source := player.get_pokemon(source_slot)
+				if source != null and source.current_hp(catalog) > int(params.get("amount", 0)):
+					return true
+			"evolve_skip_stage":
+				saw_checked_effect = true
+				if _rare_candy_has_target(state, player_idx, exclude_hand_index):
+					return true
+			"ability_discard_revive":
+				saw_checked_effect = true
+				var revive_id := str(params.get("card_id", ""))
+				if (
+					not revive_id.is_empty()
+					and player.discard.has(revive_id)
+					and player.hand.is_empty()
+					and player.find_empty_bench_slot() >= 0
+				):
+					return true
+			"conditional":
+				saw_checked_effect = true
+				if _conditional_has_target(
+					state, player_idx, params, source_slot, exclude_hand_index, depth
+				):
+					return true
+			"coin_flip", "coin_flip_triple", "coin_flip_double_ko", "coin_flip_until_tails":
+				saw_checked_effect = true
+				if _coin_has_target(state, player_idx, params, source_slot, exclude_hand_index, depth):
+					return true
+			_:
+				return true
+	return not saw_checked_effect
+
+
+func _effect_list(effects: Variant) -> Array:
+	var result: Array = []
+	if effects is Array:
+		result = effects
+	elif effects is Dictionary:
+		result.append(effects)
+	return result
+
+
+func _effect_is_always_usable(effect_type: String) -> bool:
+	return effect_type in [
+		"draw",
+		"shuffle_draw",
+		"discard_draw",
+		"discard_then_draw",
+		"draw_until",
+		"draw_until_more",
+		"judge",
+		"trekking_shoes",
+		"return_to_hand",
+		"self_attack_lock",
+		"prevent_all",
+		"prevent_damage",
+		"prevent_effects",
+		"piercing_marker",
+		"tool",
+		"tool_exp_share",
+		"aura_damage_reduction",
+		"aura_damage_boost",
+		"conditional_hp_boost",
+		"conditional_zero_retreat",
+		"reactive_thorns",
+		"apply_outgoing_damage_reduction",
+	]
+
+
+func _effects_cost_is_payable(
+	state: GameState,
+	player_idx: int,
+	effects: Variant,
+	exclude_hand_index: int,
+) -> bool:
+	for effect_value in _effect_list(effects):
+		if not (effect_value is Dictionary):
+			continue
+		var effect: Dictionary = effect_value
+		var effect_type := str(effect.get("effect_type", ""))
+		if effect_type == "discard":
+			if not _cost_is_payable(state, player_idx, effect, exclude_hand_index):
+				return false
+		elif effect_type == "conditional":
+			var raw_params: Variant = effect.get("params", {})
+			if not (raw_params is Dictionary):
+				continue
+			var cost: Variant = Dictionary(raw_params).get("cost")
+			if cost != null and not _cost_is_payable(state, player_idx, cost, exclude_hand_index):
+				return false
+	return true
+
+
+func _available_hand_count(player: PlayerState, exclude_hand_index: int) -> int:
+	if exclude_hand_index < 0:
+		return player.hand.size()
+	return max(0, player.hand.size() - 1)
+
+
+func _zone_cards(
+	state: GameState,
+	player_idx: int,
+	zone: String,
+	exclude_hand_index: int = -1,
+) -> Array[String]:
+	var player := state.get_player(player_idx)
+	var result: Array[String] = []
+	match zone:
+		"discard":
+			result.assign(player.discard)
+		"hand":
+			for index in range(player.hand.size()):
+				if index != exclude_hand_index:
+					result.append(player.hand[index])
+		_:
+			result.assign(player.deck)
+	return result
+
+
+func _search_has_target(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	exclude_hand_index: int,
+) -> bool:
+	var player := state.get_player(player_idx)
+	var destination := str(params.get("destination", "hand"))
+	if destination == "bench" and player.find_empty_bench_slot() < 0:
+		return false
+	if destination == "bench_energy" and _energy_effect_target_slots(state, player_idx, params, "active").is_empty():
+		return false
+	var from_zone := str(params.get("from_zone", "deck"))
+	var pool := _zone_cards(state, player_idx, from_zone, exclude_hand_index)
+	return _zone_has_matching_cards(pool, params)
+
+
+func _look_top_has_target(state: GameState, player_idx: int, params: Dictionary) -> bool:
+	var player := state.get_player(player_idx)
+	if str(params.get("destination", "hand")) == "bench_energy":
+		if _energy_effect_target_slots(state, player_idx, params, "active").is_empty():
+			return false
+	var count: int = min(int(params.get("count", 1)), player.deck.size())
+	var pool: Array[String] = []
+	for offset in range(count):
+		pool.append(player.deck[player.deck.size() - 1 - offset])
+	return _zone_has_matching_cards(pool, params)
+
+
+func _look_top_attach_has_target(state: GameState, player_idx: int, params: Dictionary) -> bool:
+	var player := state.get_player(player_idx)
+	if not player.has_any_pokemon_in_play():
+		return false
+	var count: int = min(int(params.get("count", 5)), player.deck.size())
+	var filter_type := str(params.get("filter", "basic_energy"))
+	for offset in range(count):
+		var card_id := str(player.deck[player.deck.size() - 1 - offset])
+		if _energy_matches(card_id, filter_type):
+			return true
+	return false
+
+
+func _zone_has_matching_cards(card_ids: Array, params: Dictionary) -> bool:
+	var filter_type := str(params.get("filter", "any"))
+	var filter_name := str(params.get("filter_name", ""))
+	for card_id_value in card_ids:
+		if _card_matches_filter(str(card_id_value), filter_type, filter_name):
+			return true
+	return false
+
+
+func _card_matches_filter(card_id: String, filter_type: String, filter_name: String = "") -> bool:
+	if not filter_name.is_empty() and catalog.card_name(card_id) != filter_name:
+		return false
+	var normalized := filter_type.to_lower()
+	match normalized:
+		"", "any":
+			return true
+		"basic_pokemon":
+			return catalog.is_basic_pokemon(card_id)
+		"pokemon":
+			return catalog.is_pokemon(card_id)
+		"basic", "basic_energy", "basic_energy_card":
+			return catalog.is_basic_energy(card_id)
+		"energy", "energy_card":
+			return catalog.is_energy(card_id)
+		"supporter":
+			return catalog.is_supporter(card_id)
+		"item":
+			return catalog.is_item(card_id)
+		"item_or_tool":
+			return catalog.is_item(card_id) or catalog.is_tool(card_id)
+		"pokemon_and_energy":
+			return catalog.is_pokemon(card_id) or catalog.is_basic_energy(card_id)
+		"grass_pokemon":
+			return catalog.is_pokemon(card_id) and "Grass" in catalog.get_card(card_id).get("energy_types", [])
+		"water_pokemon_and_energy":
+			return (
+				(catalog.is_pokemon(card_id) and "Water" in catalog.get_card(card_id).get("energy_types", []))
+				or _energy_matches(card_id, "water")
+			)
+	if normalized.ends_with("_energy"):
+		return _energy_matches(card_id, normalized)
+	return true
+
+
+func _energy_matches(card_id: String, filter_type: String) -> bool:
+	if not catalog.is_energy(card_id):
+		return false
+	var normalized := filter_type.to_lower()
+	if normalized in ["", "any", "energy"]:
+		return true
+	if normalized in ["basic", "basic_energy"]:
+		return catalog.is_basic_energy(card_id)
+	if normalized.ends_with("_energy"):
+		normalized = normalized.trim_suffix("_energy")
+	if normalized == "basic":
+		return catalog.is_basic_energy(card_id)
+	for provided in catalog.provides_energy(card_id):
+		if str(provided).to_lower() == normalized:
+			return true
+	return false
+
+
+func _energy_attach_has_target(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	source_slot: String,
+	exclude_hand_index: int,
+	include_deck: bool = false,
+) -> bool:
+	var player := state.get_player(player_idx)
+	var from_zone := str(params.get("from_zone", "deck"))
+	var filter_type := str(params.get("filter", params.get("energy_type", "any")))
+	var source_cards: Array[String] = []
+	match from_zone:
+		"discard":
+			source_cards.assign(player.discard)
+		"hand":
+			source_cards = _zone_cards(state, player_idx, "hand", exclude_hand_index)
+			if include_deck:
+				source_cards.append_array(player.deck)
+		_:
+			source_cards.assign(player.deck)
+	var has_energy := false
+	for card_id in source_cards:
+		if _energy_matches(card_id, filter_type):
+			has_energy = true
+			break
+	if not has_energy:
+		return false
+	return not _energy_effect_target_slots(state, player_idx, params, source_slot).is_empty()
+
+
+func _energy_effect_target_slots(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	source_slot: String,
+) -> Array[String]:
+	var player := state.get_player(player_idx)
+	var target_spec := str(params.get("to", params.get("target", "self")))
+	var target_type := str(params.get("target_pokemon_type", ""))
+	if str(params.get("destination", "")) == "bench_energy":
+		target_spec = "bench"
+		if target_type.is_empty():
+			target_type = "Lightning"
+	var slots: Array[String] = []
+	match target_spec:
+		"self":
+			var pokemon := player.get_pokemon(source_slot)
+			if pokemon != null and _pokemon_matches_target_type(pokemon, target_type):
+				slots.append(source_slot)
+		"bench":
+			for index in range(player.bench.size()):
+				var bench_pokemon: PokemonState = player.bench[index]
+				if bench_pokemon != null and _pokemon_matches_target_type(bench_pokemon, target_type):
+					slots.append("bench_%d" % index)
+		"self_basic":
+			for row in player.get_all_pokemon():
+				var own_pokemon: PokemonState = row["pokemon"]
+				if (
+					own_pokemon != null
+					and catalog.is_basic_pokemon(own_pokemon.card_id)
+					and _pokemon_matches_target_type(own_pokemon, target_type)
+				):
+					slots.append(str(row["slot"]))
+		"any", "self_or_bench":
+			for row in player.get_all_pokemon():
+				var any_pokemon: PokemonState = row["pokemon"]
+				if any_pokemon != null and _pokemon_matches_target_type(any_pokemon, target_type):
+					slots.append(str(row["slot"]))
+		_:
+			var explicit_pokemon := player.get_pokemon(target_spec)
+			if explicit_pokemon != null and _pokemon_matches_target_type(explicit_pokemon, target_type):
+				slots.append(target_spec)
+	return slots
+
+
+func _pokemon_matches_target_type(pokemon: PokemonState, target_type: String) -> bool:
+	if target_type.is_empty():
+		return true
+	var normalized := target_type.to_lower()
+	for card_type in catalog.get_card(pokemon.card_id).get("energy_types", []):
+		if str(card_type).to_lower() == normalized:
+			return true
+	return false
+
+
+func _energy_relocate_has_target(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	source_slot: String,
+) -> bool:
+	var player := state.get_player(player_idx)
+	var energy_type := str(params.get("energy_type", params.get("filter", "any")))
+	var candidates: Array[Dictionary] = []
+	if bool(params.get("from_self", false)):
+		candidates.append({"slot": source_slot, "pokemon": player.get_pokemon(source_slot)})
+	else:
+		candidates = player.get_all_pokemon()
+	var target_slots: Array[String] = []
+	for row in player.get_all_pokemon():
+		if row["pokemon"] != null:
+			target_slots.append(str(row["slot"]))
+	if target_slots.size() < 2:
+		return false
+	for row in candidates:
+		var pokemon: PokemonState = row["pokemon"]
+		var slot := str(row["slot"])
+		if pokemon == null:
+			continue
+		var has_matching_energy := false
+		for energy_id in pokemon.energy_card_ids:
+			if _energy_matches(energy_id, energy_type):
+				has_matching_energy = true
+				break
+		if not has_matching_energy:
+			continue
+		for target_slot in target_slots:
+			if target_slot != slot:
+				return true
+	return false
+
+
+func _heal_has_target(player: PlayerState, params: Dictionary, source_slot: String) -> bool:
+	var target := str(params.get("target", "self"))
+	if target == "all":
+		return _player_has_damaged_pokemon(player)
+	var pokemon := player.get_pokemon(source_slot if target == "self" else target)
+	return pokemon != null and pokemon.damage_counters > 0
+
+
+func _energy_discard_has_target(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	source_slot: String,
+) -> bool:
+	var from_target := str(params.get("from", "self"))
+	var owner := state.get_player(player_idx if from_target == "self" else 1 - player_idx)
+	var pokemon := owner.get_pokemon(source_slot) if from_target == "self" else owner.active
+	if pokemon == null:
+		return false
+	if from_target != "self" and pokemon.all_prevented_next_turn:
+		return false
+	var energy_type := str(params.get("filter", params.get("energy_type", "any")))
+	for energy_id in pokemon.energy_card_ids:
+		if _energy_matches(energy_id, energy_type):
+			return true
+	return false
+
+
+func _rare_candy_has_target(
+	state: GameState,
+	player_idx: int,
+	exclude_hand_index: int,
+) -> bool:
+	if state.is_player_first_turn(player_idx):
+		return false
+	var player := state.get_player(player_idx)
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null or not catalog.is_basic_pokemon(pokemon.card_id):
+			continue
+		if pokemon.placed_this_turn or not pokemon.can_evolve_this_turn:
+			continue
+		var basic_name := catalog.card_name(pokemon.card_id)
+		for hand_index in range(player.hand.size()):
+			if hand_index == exclude_hand_index:
+				continue
+			var stage2_id := str(player.hand[hand_index])
+			if catalog.is_stage2(stage2_id) and _stage2_can_evolve_from_basic(stage2_id, basic_name):
+				return true
+	return false
+
+
+func _stage2_can_evolve_from_basic(stage2_id: String, basic_name: String) -> bool:
+	var stage1_name := str(catalog.get_card(stage2_id).get("evolves_from", ""))
+	if stage1_name.is_empty():
+		return false
+	for candidate_id_value in catalog.cards:
+		var candidate_id := str(candidate_id_value)
+		if catalog.card_name(candidate_id) != stage1_name:
+			continue
+		if str(catalog.get_card(candidate_id).get("evolves_from", "")).to_lower() == basic_name.to_lower():
+			return true
+	return false
+
+
+func _conditional_has_target(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	source_slot: String,
+	exclude_hand_index: int,
+	depth: int,
+) -> bool:
+	var player := state.get_player(player_idx)
+	if str(params.get("condition", "")) == "ko_by_attack_last_turn" and not player.was_ko_by_attack:
+		return false
+	var cost: Variant = params.get("cost")
+	if cost != null and not _cost_is_payable(state, player_idx, cost, exclude_hand_index):
+		return false
+	var on_pay: Variant = params.get("on_pay", [])
+	return _effects_have_legal_target(
+		state, player_idx, on_pay, source_slot, exclude_hand_index, depth + 1
+	)
+
+
+func _coin_has_target(
+	state: GameState,
+	player_idx: int,
+	params: Dictionary,
+	source_slot: String,
+	exclude_hand_index: int,
+	depth: int,
+) -> bool:
+	var branch_found := false
+	for key in ["on_heads", "on_tails", "on_success", "on_fail"]:
+		var branch: Variant = params.get(key, [])
+		if _effect_list(branch).is_empty():
+			continue
+		branch_found = true
+		if _effects_have_legal_target(
+			state, player_idx, branch, source_slot, exclude_hand_index, depth + 1
+		):
+			return true
+	return not branch_found
+
+
+func _cost_is_payable(
+	state: GameState,
+	player_idx: int,
+	cost: Variant,
+	exclude_hand_index: int,
+) -> bool:
+	var player := state.get_player(player_idx)
+	for cost_value in _effect_list(cost):
+		if not (cost_value is Dictionary):
+			continue
+		var cost_effect: Dictionary = cost_value
+		if str(cost_effect.get("effect_type", "")) != "discard":
+			continue
+		var raw_params: Variant = cost_effect.get("params", {})
+		var params: Dictionary = {}
+		if raw_params is Dictionary:
+			params = Dictionary(raw_params)
+		var from_zone := str(params.get("from", params.get("from_zone", "hand")))
+		var amount := int(params.get("amount", 1))
+		if from_zone == "hand" and _available_hand_count(player, exclude_hand_index) < amount:
+			return false
+		if from_zone == "discard" and player.discard.size() < amount:
+			return false
+	return true
+
+
+func _player_has_damaged_pokemon(player: PlayerState) -> bool:
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon != null and pokemon.damage_counters > 0:
+			return true
+	return false
+
+
+func _player_has_attached_energy(player: PlayerState) -> bool:
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon != null and not pokemon.energy_card_ids.is_empty():
+			return true
+	return false
+
+
+func _player_has_effect_target_pokemon(player: PlayerState) -> bool:
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon != null and not pokemon.all_prevented_next_turn:
+			return true
+	return false
 
 
 func _stadium_is_activatable(state: GameState) -> bool:

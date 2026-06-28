@@ -22,7 +22,8 @@ EFFECTS = {'svi-chim': {'attacks': {'火花': {'effects': [{'effect_type': 'ener
  'svi-chiy': {'attacks': {'闪焰生成': {'effects': [{'effect_type': 'attach_from_discard',
                                                 'params': {'amount': 2,
                                                            'energy_type': 'fire',
-                                                           'target': 'self_or_bench'}}]},
+                                                           'target': 'self_or_bench',
+                                                           'min_select': 0}}]},
                           '嫉妒业火': {'effects': [{'effect_type': 'conditional_damage_bonus',
                                                 'params': {'bonus': 90,
                                                            'condition': 'ko_by_attack_last_turn'}}]}}}}

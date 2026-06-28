@@ -23,6 +23,7 @@ def _handle_search(state, player_idx, params):
     destination = params.get("destination", "hand")
     reveal = params.get("reveal", True)
     count = params.get("count", 1)
+    min_select = int(params.get("min_select", 0 if params.get("optional", False) else min(1, count)) or 0)
 
     player = state.get_player(player_idx)
     search_pool = player.deck if from_zone == "deck" else player.discard
@@ -85,10 +86,11 @@ def _handle_search(state, player_idx, params):
                             player=player_idx,
                             prompt=f"从{from_zone}选择{count}张卡（{filter_type}）",
                             filter_fn=matches,
-                            min_select=min(1, count),
+                            min_select=min(min_select, min(count, len(valid_cards))),
                             max_select=count,
                             from_zone=from_zone,
                             card_list=valid_cards,
+                            can_cancel=min_select <= 0,
                             callback=search_callback,
                         ))
 
@@ -141,6 +143,7 @@ def _handle_look_top_deck(state, player_idx, params):
     shuffle_rest = params.get("shuffle_rest", False)
     filter_type = params.get("filter", "")
     destination = params.get("destination", "hand")
+    min_select = int(params.get("min_select", 0 if take >= 99 else 1) or 0)
 
     player = state.get_player(player_idx)
     # Take top `count` cards from deck
@@ -165,32 +168,54 @@ def _handle_look_top_deck(state, player_idx, params):
     else:
         display_cards = top_cards
 
+    if not display_cards:
+        player.deck.extend(top_cards)
+        if shuffle_rest:
+            player.shuffle_deck()
+        return ActionResult(True, f"牌库顶{count}张没有可选择的卡。")
+
+    def _put_rest_back(selected_cards):
+        remaining_selected = list(selected_cards)
+        rest = []
+        for card in top_cards:
+            if card in remaining_selected:
+                remaining_selected.remove(card)
+            else:
+                rest.append(card)
+        if shuffle_rest:
+            player.deck.extend(rest)
+            player.shuffle_deck()
+        else:
+            for card in rest:
+                if rest_bottom:
+                    player.deck.insert(0, card)
+                else:
+                    player.deck.append(card)
+
     # Callback after player picks
     def look_callback(selected_cards):
         taken = list(selected_cards[:take])
         if destination == "bench_energy":
-            # Put untaken cards back to bottom of deck immediately
-            for card in top_cards:
-                if card not in taken:
-                    if rest_bottom:
-                        player.deck.insert(0, card)
-                    else:
-                        player.deck.append(card)
+            _put_rest_back(taken)
             state._log(f"{player.name}查看了牌库顶{count}张卡，选择了{len(taken)}张。")
 
             bench_pokes = [(i, p) for i, p in enumerate(player.bench)
                           if p is not None and p.card.energy_types and
                           "Lightning" in p.card.energy_types]
+            if not taken:
+                return ActionResult(True, "未选择能量。")
             if not bench_pokes:
+                player.deck.extend(taken)
+                player.shuffle_deck()
                 state._log("备战区没有雷属性宝可梦可附着能量。")
-                return
+                return ActionResult(True, "备战区没有雷属性宝可梦可附着能量。")
             if len(bench_pokes) == 1 and len(taken) <= 1:
                 # Auto-attach single energy to the only bench Pokemon
                 idx, bp = bench_pokes[0]
                 for card in taken:
                     bp.energy_cards.append(card)
                 state._log(f"将{len(taken)}张能量附着于备战区{bp.card.name}。")
-                return
+                return ActionResult(True, f"附着了{len(taken)}张能量。")
 
             # Use energy distribution screen
             targets_info = [
@@ -213,16 +238,24 @@ def _handle_look_top_deck(state, player_idx, params):
                 card_list=taken,
                 target_info=targets_info,
                 distribute_mode="distribute",
+                min_select=len(taken),
+                max_select=len(taken),
                 source_name="电气发生器",
                 callback=on_distributed,
             )
         else:
             # Put selected cards into hand (Pokegear etc.)
+            remaining_taken = list(taken)
+            rest = []
             for card in top_cards:
-                if card in taken:
+                if card in remaining_taken:
+                    remaining_taken.remove(card)
                     player.hand.append(card)
                     state._log(f"{player.name}将{card.name}加入手牌。")
-                elif rest_bottom:
+                else:
+                    rest.append(card)
+            for card in rest:
+                if rest_bottom:
                     player.deck.insert(0, card)
                 else:
                     player.deck.append(card)
@@ -235,10 +268,11 @@ def _handle_look_top_deck(state, player_idx, params):
                             request_type="search_deck",
                             player=player_idx,
                             prompt=f"从牌库顶选择最多{take}张卡。",
-                            min_select=0 if take >= 99 else 1,
+                            min_select=min(min_select, min(take, len(display_cards))),
                             max_select=take,
                             from_zone="deck",
                             card_list=display_cards,
+                            can_cancel=min_select <= 0,
                             callback=look_callback,
                         ))
 
@@ -383,10 +417,11 @@ def _handle_search_any_and_switch(state, player_idx, params):
                             request_type="search_deck",
                             player=player_idx,
                             prompt=f"从牌库选择最多{count}张卡加入手牌（生存战略）",
-                            min_select=1,
+                            min_select=int(params.get("min_select", 0) or 0),
                             max_select=count,
                             from_zone="deck",
                             card_list=list(player.deck),
+                            can_cancel=int(params.get("min_select", 0) or 0) <= 0,
                             callback=survival_callback,
                         ))
 
@@ -421,15 +456,17 @@ def _handle_conditional_search_extra(state, player_idx, params):
         state._log(f"{player.name}从牌库选择了{len(selected_cards[:search_count])}张G宝可梦。")
 
     prompt_extra = f"（后攻首回合，可搜索最多{max_count}张）" if search_count == max_count else ""
+    min_select = 0 if search_count == max_count else 1
 
     return ActionResult(True, f"从牌库选择最多{search_count}张G宝可梦。",
                         pending_action=ActionRequest(
                             request_type="search_deck",
                             player=player_idx,
                             prompt=f"选择最多{search_count}张G宝可梦加入手牌（唤群之歌）{prompt_extra}",
-                            min_select=1,
+                            min_select=min_select,
                             max_select=search_count,
                             from_zone="deck",
                             card_list=search_pool,
+                            can_cancel=min_select <= 0,
                             callback=grass_search_callback,
                         ))

@@ -163,7 +163,9 @@ class DarknessDeckRulesTests(unittest.TestCase):
             GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
             auto_resolve=True,
         )
-        self.assertTrue(result.success, result.message)
+        self.assertFalse(result.success, result.message)
+        self.assertIn("没有合法目标", result.message)
+        self.assertEqual([card.api_id for card in no_target.p1.hand], ["svd-dark-patch"])
         self.assertIn("sv1-ener-7", [card.api_id for card in no_target.p1.discard])
         self.assertEqual(no_target.p1.bench[0].energy_cards, [])
 

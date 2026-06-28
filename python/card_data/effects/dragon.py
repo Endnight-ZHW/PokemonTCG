@@ -8,5 +8,6 @@ EFFECTS = {'svg-alt': {'abilities': {'哼唱治愈': {'trigger': 'on_turn',
  'svg-tatsu': {'attacks': {'水枪': {'effects': []},
                            '生存战略': {'effects': [{'effect_type': 'search_any_and_switch',
                                                  'params': {'count': 2,
+                                                            'min_select': 0,
                                                             'switch_optional': True,
                                                             'source_slot': 'active'}}]}}}}

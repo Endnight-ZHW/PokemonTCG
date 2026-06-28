@@ -15,6 +15,7 @@ from engine.actions import (
     StepResult,
 )
 from engine.enums import PlayerAction, TurnPhase
+from engine.effects.availability import effects_have_legal_target
 from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.random_source import RandomSource
 from engine.rules_validator import (
@@ -281,8 +282,14 @@ class GameEngine:
             if request.distribute_mode == "source_select":
                 min_select = max_select = 1
             else:
-                amount = max(1, len(request.card_list))
-                min_select = max_select = amount
+                amount = max(0, len(request.card_list))
+                if amount > 1 and request.min_select == 1 and request.max_select == 1:
+                    # Backward compatibility for older handlers that meant
+                    # "assign every listed energy" but did not set bounds.
+                    min_select = max_select = amount
+                else:
+                    max_select = min(amount, max_select if max_select > 0 else amount)
+                    min_select = min(max_select, min_select)
                 allow_duplicates = True
         can_cancel = min_select <= 0 or bool(getattr(request, "can_cancel", False))
         return ChoiceRequest(
@@ -358,6 +365,21 @@ class GameEngine:
                         option for option in request.options
                         if isinstance(option.value, dict)
                         and str(option.value.get("slot", "")) == str(slot)
+                    ),
+                    None,
+                )
+                if match is not None:
+                    option_ids.append(match.option_id)
+            return ChoiceResponse(request.request_id, tuple(option_ids))
+        if request.request_type == "select_attachment":
+            option_ids = []
+            for selected in payload or []:
+                selected_id = getattr(selected, "ref_id", str(selected))
+                match = next(
+                    (
+                        option for option in request.options
+                        if option.option_id == selected_id
+                        or getattr(option.ref, "ref_id", "") == selected_id
                     ),
                     None,
                 )
@@ -458,26 +480,42 @@ class GameEngine:
                             target=PokemonRef(actor, slot, pokemon.card.api_id),
                         ))
             elif card.is_trainer_supporter and can_play_supporter(state, actor)[0]:
-                add(GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}, actor=actor, source=source))
+                if not card.trainer_effects or effects_have_legal_target(
+                    state, actor, card.trainer_effects, exclude_hand_index=hand_idx
+                ):
+                    add(GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}, actor=actor, source=source))
             elif card.is_trainer_stadium and can_play_stadium(state, actor, card)[0]:
-                add(GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}, actor=actor, source=source))
+                if not card.trainer_effects or effects_have_legal_target(
+                    state, actor, card.trainer_effects, exclude_hand_index=hand_idx
+                ):
+                    add(GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}, actor=actor, source=source))
             elif card.is_trainer_item and can_play_item(state, actor)[0]:
-                add(GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}, actor=actor, source=source))
+                if not card.trainer_effects or effects_have_legal_target(
+                    state, actor, card.trainer_effects, exclude_hand_index=hand_idx
+                ):
+                    add(GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": hand_idx}, actor=actor, source=source))
 
         for slot, pokemon in player.get_all_pokemon():
             if pokemon is None:
                 continue
             for ability in pokemon.card.abilities:
                 if can_use_ability(state, actor, slot, ability.name)[0]:
-                    add(GameAction(
-                        PlayerAction.USE_ABILITY,
-                        {"slot": slot, "ability_name": ability.name},
-                        actor=actor,
-                        source=PokemonRef(actor, slot, pokemon.card.api_id),
-                    ))
+                    if not ability.effects or effects_have_legal_target(
+                        state, actor, ability.effects, source_slot=slot
+                    ):
+                        add(GameAction(
+                            PlayerAction.USE_ABILITY,
+                            {"slot": slot, "ability_name": ability.name},
+                            actor=actor,
+                            source=PokemonRef(actor, slot, pokemon.card.api_id),
+                        ))
 
         if self._stadium_is_activatable(state) and not player.stadium_used_this_turn:
-            add(GameAction(PlayerAction.USE_STADIUM, {}, actor=actor))
+            stadium = state.stadium_card
+            if stadium is None or effects_have_legal_target(
+                state, actor, stadium.trainer_effects
+            ):
+                add(GameAction(PlayerAction.USE_STADIUM, {}, actor=actor))
 
         for bench_idx, pokemon in enumerate(player.bench):
             if pokemon is None:
@@ -640,6 +678,15 @@ class GameEngine:
                     for _ in range(max(1, flip_count))
                 ]
             return ChoiceResponse(request.request_id, tuple(results))
+        if request.request_type == "distribute_energy" and request.allow_duplicates and request.options:
+            count = max(request.min_select, request.max_select)
+            max_per_target = int(request.metadata.get("max_per_target", 99) or 99)
+            selected: list[str] = []
+            if max_per_target == 1:
+                selected = [option.option_id for option in request.options[:count]]
+            else:
+                selected = [request.options[0].option_id for _ in range(count)]
+            return ChoiceResponse(request.request_id, tuple(selected))
         count = min(len(request.options), max(request.min_select, min(request.max_select, len(request.options))))
         return ChoiceResponse(request.request_id, tuple(option.option_id for option in request.options[:count]))
 
@@ -779,10 +826,22 @@ class GameEngine:
             options = []
             for idx, target in enumerate(request.target_info or []):
                 slot = str(target.get("slot", ""))
-                player_idx = request.player if request.player in (0, 1) else state.active_player_idx
+                player_idx = int(target.get("player", request.player if request.player in (0, 1) else state.active_player_idx))
                 pokemon = state.get_player(player_idx).get_pokemon(slot)
                 ref = PokemonRef(player_idx, slot, pokemon.card.api_id if pokemon else "")
                 options.append(ChoiceOption(ref.ref_id, target.get("name", slot), ref, target))
+            return options
+        if request.request_type == "select_attachment":
+            options = []
+            for target in request.target_info or []:
+                player_idx = int(target.get("player", request.player))
+                slot = str(target.get("slot", ""))
+                attachment_type = str(target.get("attachment_type", "energy"))
+                index = int(target.get("index", 0))
+                card_id = str(target.get("card_id", ""))
+                ref = AttachmentRef(player_idx, slot, attachment_type, index, card_id)
+                label = str(target.get("label") or target.get("name") or card_id)
+                options.append(ChoiceOption(ref.ref_id, label, ref, target))
             return options
 
         refs = self._card_list_refs(state, request)
@@ -848,6 +907,8 @@ class GameEngine:
                 (energy_idx, str(option.value.get("slot", "")))
                 for energy_idx, option in enumerate(selected)
             ]
+        if request.request_type == "select_attachment":
+            return [option.ref for option in selected if isinstance(option.ref, AttachmentRef)]
         pokemon_refs = [option.ref for option in selected if isinstance(option.ref, PokemonRef)]
         if pokemon_refs:
             return pokemon_refs

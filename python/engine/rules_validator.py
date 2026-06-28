@@ -312,6 +312,10 @@ def can_declare_attack(state: GameState, player_idx: int,
         return False, f"这只宝可梦在上个回合使用了「{attack.name}」，无法连续使用。"
     if not player.active.has_enough_energy(attack.cost):
         return False, f"能量不足以使用{attack.name}。需要: {attack.cost}。"
+    if attack.damage <= 0:
+        from engine.effects.availability import attack_has_legal_target
+        if not attack_has_legal_target(state, player_idx, attack, "active"):
+            return False, "没有合法目标，不能使用该招式。"
 
     return True, ""
 

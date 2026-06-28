@@ -1252,8 +1252,8 @@ class ChallengeAITests(unittest.TestCase):
 
         self.assertFalse(any(action.action == PlayerAction.PLAY_TRAINER for action in actions))
         trace = ai.explain_legal_actions(state, 1)
-        self.assertTrue(
-            any(row.get("reason") == "effect_has_no_available_value" for row in trace["rejected"])
+        self.assertFalse(
+            any(row.get("action") == PlayerAction.PLAY_TRAINER.name for row in trace["generated"])
         )
 
     def test_catcher_with_opponent_bench_switches_on_forced_heads(self):
@@ -1316,7 +1316,7 @@ class ChallengeAITests(unittest.TestCase):
         result = step.action_result
 
         self.assertFalse(result.success)
-        self.assertIn("对手备战区没有宝可梦", result.log_message)
+        self.assertIn("没有合法目标", result.log_message)
 
     def test_single_bench_energy_choice_prefers_core_attack_plan(self):
         state = GameState()

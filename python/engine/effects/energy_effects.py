@@ -42,20 +42,96 @@ def _pokemon_matches_target_type(pokemon, target_type: str) -> bool:
     return any(str(card_type).lower() == target_type for card_type in pokemon.card.energy_types)
 
 
+def _slot_for_pokemon(player, target_pokemon):
+    for slot, pokemon in player.get_all_pokemon():
+        if pokemon is target_pokemon:
+            return slot
+    return ""
+
+
+def _request_energy_distribution(
+    state,
+    player,
+    player_idx,
+    source_pool,
+    from_zone,
+    zone_name,
+    energy_cards,
+    targets_info,
+    *,
+    min_select,
+    max_select,
+    max_per_target=99,
+    source_name="",
+    same_target=False,
+):
+    max_select = min(max(0, int(max_select)), len(energy_cards))
+    min_select = min(max_select, max(0, int(min_select)))
+    if max_select <= 0:
+        return ActionResult(True, f"{zone_name}中无匹配的能量。")
+
+    def _on_distributed(assignments):
+        forced_slot = assignments[0][1] if same_target and assignments else ""
+        attached_count = 0
+        per_target: dict[str, int] = {}
+        for ei, tgt_slot in assignments:
+            if ei >= len(energy_cards):
+                continue
+            target_slot = forced_slot or tgt_slot
+            if per_target.get(target_slot, 0) >= max_per_target:
+                continue
+            card = energy_cards[ei]
+            if card not in source_pool:
+                continue
+            target = player.get_pokemon(target_slot)
+            if target is None:
+                continue
+            source_pool.remove(card)
+            target.energy_cards.append(card)
+            per_target[target_slot] = per_target.get(target_slot, 0) + 1
+            attached_count += 1
+        if from_zone == "deck":
+            player.shuffle_deck()
+        state._log(f"从{zone_name}附着了{attached_count}个能量。")
+
+    return ActionResult(
+        True,
+        f"选择最多{max_select}个能量附着。",
+        pending_action=ActionRequest(
+            request_type="distribute_energy",
+            player=player_idx,
+            prompt=f"分配能量 — {source_name or zone_name}",
+            card_list=list(energy_cards[:max_select]),
+            target_info=targets_info,
+            distribute_mode="distribute",
+            min_select=min_select,
+            max_select=max_select,
+            max_per_target=max_per_target,
+            source_name=source_name or zone_name,
+            callback=_on_distributed,
+        ),
+    )
+
+
 def _handle_energy_attach(state, player, player_idx, params, source_slot):
     """Attach energy from hand or deck to a Pokemon."""
     amount = params.get("amount", 1)
+    base_amount = amount
     from_zone = params.get("from_zone", "hand")
     filter_type = params.get("filter", "any")
     to_target = params.get("to", "self")
     going_second_bonus = params.get("going_second_bonus", 0)
     optional = params.get("optional", False)
     max_per_target = int(params.get("max_per_target", 99) or 99)
+    bonus_applied = False
 
     if going_second_bonus > 0:
         if state.is_going_second_first_turn(player_idx):
             amount = going_second_bonus
+            bonus_applied = amount > base_amount
             state._log(f"后攻最初回合！可附着最多{amount}张能量。")
+    optional_count = bool(optional or bonus_applied or "min_select" in params)
+    min_attach = int(params.get("min_select", 0 if optional_count else 1) or 0)
 
     source_pool, zone_name = _energy_source(player, from_zone)
     if not _matching_energy_cards(source_pool, filter_type):
@@ -74,6 +150,29 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
             return ActionResult(False, "场上没有宝可梦可附着能量。")
         if len(all_slots) == 1:
             target_slot = all_slots[0][0]
+        elif optional_count:
+            source_pool, zone_name = _energy_source(player, from_zone)
+            matching = _matching_energy_cards(source_pool, filter_type)
+            energy_to_distribute = matching[:min(amount, len(matching))]
+            targets_info = [
+                {"slot": slot_name, "name": poke.card.name}
+                for slot_name, poke in all_slots
+            ]
+            return _request_energy_distribution(
+                state,
+                player,
+                player_idx,
+                source_pool,
+                from_zone,
+                zone_name,
+                energy_to_distribute,
+                targets_info,
+                min_select=min_attach,
+                max_select=len(energy_to_distribute),
+                max_per_target=amount,
+                source_name=zone_name,
+                same_target=True,
+            )
         else:
             def _do_any_attach(selected_cards):
                 for card in selected_cards:
@@ -110,9 +209,29 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
         if len(bench_slots) == 1:
             target_slot = f"bench_{bench_slots[0][0]}"
             amount = min(amount, max_per_target)
+            if optional_count:
+                source_pool, zone_name = _energy_source(player, from_zone)
+                matching = _matching_energy_cards(source_pool, filter_type)
+                energy_to_distribute = matching[:min(amount, len(matching))]
+                return _request_energy_distribution(
+                    state,
+                    player,
+                    player_idx,
+                    source_pool,
+                    from_zone,
+                    zone_name,
+                    energy_to_distribute,
+                    [{"slot": target_slot, "name": bench_slots[0][1].card.name, "bench_idx": bench_slots[0][0]}],
+                    min_select=min_attach,
+                    max_select=len(energy_to_distribute),
+                    max_per_target=max_per_target,
+                    source_name=zone_name,
+                )
         elif amount <= 1:
             # Single energy: simple bench pick
             def _do_bench_attach(selected_bench_idx):
+                if selected_bench_idx is None:
+                    return
                 t_slot = f"bench_{selected_bench_idx}"
                 t = player.get_pokemon(t_slot)
                 if t is None:
@@ -124,8 +243,10 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
                                     request_type="select_own_bench_energy",
                                     player=player_idx,
                                     prompt="选择1只备战宝可梦附着能量。",
+                                    min_select=0 if optional_count else 1,
                                     max_select=1,
                                     bench_indices=bench_indices,
+                                    can_cancel=optional_count,
                                     callback=_do_bench_attach,
                                 ))
         else:
@@ -168,6 +289,8 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
                                     card_list=energy_to_distribute,
                                     target_info=targets_info,
                                     distribute_mode="distribute",
+                                    min_select=min_attach if optional_count else len(energy_to_distribute),
+                                    max_select=len(energy_to_distribute),
                                     max_per_target=max_per_target,
                                     source_name=from_zone_name,
                                     callback=_on_distributed,
@@ -183,6 +306,48 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
             return ActionResult(False, "没有基础宝可梦可附着能量。")
         if len(basic_pokemon) == 1:
             target_slot = basic_pokemon[0][0]
+            if optional_count:
+                source_pool, zone_name = _energy_source(player, from_zone)
+                matching = _matching_energy_cards(source_pool, filter_type)
+                energy_to_distribute = matching[:min(amount, len(matching))]
+                return _request_energy_distribution(
+                    state,
+                    player,
+                    player_idx,
+                    source_pool,
+                    from_zone,
+                    zone_name,
+                    energy_to_distribute,
+                    [{"slot": target_slot, "name": basic_pokemon[0][1].card.name}],
+                    min_select=min_attach,
+                    max_select=len(energy_to_distribute),
+                    max_per_target=amount,
+                    source_name=zone_name,
+                    same_target=True,
+                )
+        elif optional_count:
+            source_pool, zone_name = _energy_source(player, from_zone)
+            matching = _matching_energy_cards(source_pool, filter_type)
+            energy_to_distribute = matching[:min(amount, len(matching))]
+            targets_info = [
+                {"slot": slot_name, "name": poke.card.name}
+                for slot_name, poke in basic_pokemon
+            ]
+            return _request_energy_distribution(
+                state,
+                player,
+                player_idx,
+                source_pool,
+                from_zone,
+                zone_name,
+                energy_to_distribute,
+                targets_info,
+                min_select=min_attach,
+                max_select=len(energy_to_distribute),
+                max_per_target=amount,
+                source_name=zone_name,
+                same_target=True,
+            )
         else:
             def _do_basic_attach(selected_cards):
                 for card in selected_cards:
@@ -218,6 +383,27 @@ def _handle_energy_attach(state, player, player_idx, params, source_slot):
         if optional:
             return ActionResult(True, "无目标宝可梦。")
         return ActionResult(False, f"No Pokemon at {target_slot}.")
+
+    if optional_count:
+        source_pool, zone_name = _energy_source(player, from_zone)
+        matching = _matching_energy_cards(source_pool, filter_type)
+        energy_to_distribute = matching[:min(amount, len(matching))]
+        target_slot = _slot_for_pokemon(player, target)
+        return _request_energy_distribution(
+            state,
+            player,
+            player_idx,
+            source_pool,
+            from_zone,
+            zone_name,
+            energy_to_distribute,
+            [{"slot": target_slot, "name": target.card.name}],
+            min_select=min_attach,
+            max_select=len(energy_to_distribute),
+            max_per_target=amount,
+            source_name=zone_name,
+            same_target=True,
+        )
 
     return _attach_energy_to_target(state, player, from_zone, filter_type, amount, target, optional)
 
@@ -290,11 +476,31 @@ def _do_energy_relocate(state, source_poke, target_poke, move_count, energy_type
     state._log(f"将{moved}个能量从{source_poke.card.name}转附到{target_poke.card.name}。")
 
 
+def _relocate_assignments(state, player, source_poke, energy_cards_to_move, assignments, same_target=False):
+    forced_slot = assignments[0][1] if same_target and assignments else ""
+    moved = 0
+    for ei, tgt_slot in assignments:
+        if ei >= len(energy_cards_to_move):
+            continue
+        card = energy_cards_to_move[ei]
+        if card not in source_poke.energy_cards:
+            continue
+        target = player.get_pokemon(forced_slot or tgt_slot)
+        if target is None:
+            continue
+        source_poke.energy_cards.remove(card)
+        target.energy_cards.append(card)
+        moved += 1
+    state._log(f"将{moved}个能量从{source_poke.card.name}转附。")
+
+
 def _handle_energy_relocate(state, player, player_idx, params):
     """Move energy between Pokemon. Used by 波琵, 代欧奇希斯, etc."""
     amount = params.get("amount", 2)
     from_self = params.get("from_self", False)
     energy_type = params.get("energy_type", params.get("filter", "any"))
+    same_target = bool(params.get("same_target", False))
+    optional_count = "min_select" in params or bool(params.get("optional", False))
 
     if from_self:
         # ── 代欧奇希斯 / 投掷猴: move energy from active to bench ──
@@ -311,9 +517,27 @@ def _handle_energy_relocate(state, player, player_idx, params):
             return ActionResult(True, "备战区没有宝可梦可转附能量。")
 
         move_count = min(amount, len(matching_source))
+        min_move = min(move_count, int(params.get("min_select", move_count if not optional_count else 0) or 0))
 
         # Single bench: auto-transfer
         if len(bench_pokemon) == 1:
+            if optional_count:
+                energy_cards_to_move = list(matching_source[:move_count])
+                idx, target_poke = bench_pokemon[0]
+                return ActionResult(True, "选择要转附的能量数量。",
+                                    pending_action=ActionRequest(
+                                        request_type="distribute_energy",
+                                        player=player_idx,
+                                        prompt=f"分配能量 — {source_poke.card.name}",
+                                        card_list=energy_cards_to_move,
+                                        target_info=[{"slot": f"bench_{idx}", "name": target_poke.card.name, "bench_idx": idx}],
+                                        distribute_mode="distribute",
+                                        min_select=min_move,
+                                        max_select=move_count,
+                                        max_per_target=move_count,
+                                        source_name=source_poke.card.name,
+                                        callback=lambda assignments: _relocate_assignments(state, player, source_poke, energy_cards_to_move, assignments),
+                                    ))
             target_poke = bench_pokemon[0][1]
             _do_energy_relocate(state, source_poke, target_poke, move_count, energy_type)
             return ActionResult(True,
@@ -349,6 +573,8 @@ def _handle_energy_relocate(state, player, player_idx, params):
                                 card_list=energy_cards_to_move,
                                 target_info=targets_info,
                                 distribute_mode="distribute",
+                                min_select=min_move,
+                                max_select=move_count,
                                 source_name=source_poke.card.name,
                                 callback=_on_distributed,
                             ))
@@ -389,6 +615,7 @@ def _handle_energy_relocate(state, player, player_idx, params):
             return None
 
         move_n = min(amount, len(matching_src))
+        min_move = min(move_n, int(params.get("min_select", move_n if not optional_count else 0) or 0))
         # Build target list (all Pokemon except source)
         targets_info = []
         for sname, p in player.get_all_pokemon():
@@ -405,13 +632,14 @@ def _handle_energy_relocate(state, player, player_idx, params):
         energy_cards_to_move = list(matching_src[:move_n])
 
         def _on_distributed(dist_assignments):
+            forced_slot = dist_assignments[0][1] if same_target and dist_assignments else ""
             for ei, tgt_slot in dist_assignments:
                 if ei >= len(energy_cards_to_move):
                     continue
                 card = energy_cards_to_move[ei]
                 if card in src.energy_cards:
                     src.energy_cards.remove(card)
-                    tgt = player.get_pokemon(tgt_slot)
+                    tgt = player.get_pokemon(forced_slot or tgt_slot)
                     if tgt:
                         tgt.energy_cards.append(card)
             state._log(f"将{len(dist_assignments)}个能量从{src.card.name}转附。")
@@ -423,6 +651,8 @@ def _handle_energy_relocate(state, player, player_idx, params):
             card_list=energy_cards_to_move,
             target_info=targets_info,
             distribute_mode="paired",
+            min_select=min_move,
+            max_select=move_n,
             max_per_target=move_n,
             source_name=src.card.name,
             callback=_on_distributed,
@@ -449,6 +679,7 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
     energy_type = params.get("energy_type", "any")
     target_spec = params.get("target", "self")
     target_pokemon_type = str(params.get("target_pokemon_type", "") or "")
+    optional_count = "min_select" in params or bool(params.get("optional", False))
 
     matching = [
         c for c in player.discard
@@ -457,6 +688,7 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
                                       for et in c.provides_energy))
     ]
     count = min(amount, len(matching))
+    min_attach = min(count, int(params.get("min_select", count if not optional_count else 0) or 0))
     if count == 0:
         return ActionResult(True, "弃牌区没有符合条件的能量。")
 
@@ -466,6 +698,22 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
             return ActionResult(False, "没有战斗宝可梦。")
         if not _pokemon_matches_target_type(target_pokemon, target_pokemon_type):
             return ActionResult(True, "没有符合条件的附着目标。")
+        if optional_count:
+            return _request_energy_distribution(
+                state,
+                player,
+                player_idx,
+                player.discard,
+                "discard",
+                "弃牌区",
+                matching[:count],
+                [{"slot": "active", "name": target_pokemon.card.name}],
+                min_select=min_attach,
+                max_select=count,
+                max_per_target=count,
+                source_name="弃牌区",
+                same_target=True,
+            )
         _attach_cards_to_pokemon(state, player, matching, count, target_pokemon, energy_type)
 
     elif target_spec == "bench":
@@ -478,10 +726,27 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
             return ActionResult(True, "备战区无符合条件的宝可梦。")
         if len(bench_slots) == 1:
             target_pokemon = bench_slots[0][1]
+            if optional_count:
+                return _request_energy_distribution(
+                    state,
+                    player,
+                    player_idx,
+                    player.discard,
+                    "discard",
+                    "弃牌区",
+                    matching[:count],
+                    [{"slot": f"bench_{bench_slots[0][0]}", "name": target_pokemon.card.name, "bench_idx": bench_slots[0][0]}],
+                    min_select=min_attach,
+                    max_select=count,
+                    max_per_target=count,
+                    source_name="弃牌区",
+                )
             _attach_cards_to_pokemon(state, player, matching, count, target_pokemon, energy_type)
         elif count <= 1:
             # Single energy: simple bench pick
             def _do_bench_attach(selected_idx):
+                if selected_idx is None:
+                    return
                 t = player.get_pokemon(f"bench_{selected_idx}")
                 if t is None:
                     return
@@ -491,8 +756,10 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
                                     request_type="select_own_bench_energy",
                                     player=player_idx,
                                     prompt="选择1只备战宝可梦附着能量。",
+                                    min_select=0 if optional_count else 1,
                                     max_select=1,
                                     bench_indices=[i for i, _ in bench_slots],
+                                    can_cancel=optional_count,
                                     callback=_do_bench_attach,
                                 ))
         else:
@@ -521,6 +788,8 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
                                     card_list=energy_to_distribute,
                                     target_info=targets_info,
                                     distribute_mode="distribute",
+                                    min_select=min_attach if optional_count else len(energy_to_distribute),
+                                    max_select=len(energy_to_distribute),
                                     source_name="弃牌区",
                                     callback=_on_distributed,
                                 ))
@@ -534,6 +803,26 @@ def _handle_attach_from_discard(state, player, player_idx, params, source_slot):
                 all_pokemon.append((f"bench_{i}", p))
         if not all_pokemon:
             return ActionResult(False, "没有目标宝可梦。")
+        if optional_count:
+            targets_info = [
+                {"slot": slot_name, "name": poke.card.name}
+                for slot_name, poke in all_pokemon
+            ]
+            return _request_energy_distribution(
+                state,
+                player,
+                player_idx,
+                player.discard,
+                "discard",
+                "弃牌区",
+                matching[:count],
+                targets_info,
+                min_select=min_attach,
+                max_select=count,
+                max_per_target=count,
+                source_name="弃牌区",
+                same_target=True,
+            )
         if len(all_pokemon) == 1:
             _attach_cards_to_pokemon(state, player, matching, count, all_pokemon[0][1], energy_type)
         else:

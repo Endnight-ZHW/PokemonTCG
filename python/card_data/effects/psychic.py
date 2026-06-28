@@ -44,5 +44,7 @@ EFFECTS = {'sv1-104': {'attacks': {'啃咬': {'effects': []}, '幽魂射击': {'
                                                          'filter': 'basic_energy',
                                                          'destination': 'hand',
                                                          'count': 2,
+                                                         'min_select': 0,
                                                          'reveal': True}}]},
-                         '旋转折返': {'effects': [{'effect_type': 'switch_self', 'params': {}}]}}}}
+                         '旋转折返': {'effects': [{'effect_type': 'switch_self',
+                                               'params': {'optional': True}}]}}}}

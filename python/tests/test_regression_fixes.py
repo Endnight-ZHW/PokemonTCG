@@ -23,6 +23,9 @@ from engine.game_state import GameState, ActionRequest, ActionResult
 from engine.turn_manager import TurnManager
 from engine.enums import TurnPhase, PlayerAction
 from engine.player_state import PokemonInPlay, PlayerState
+from engine.actions import ChoiceResponse, GameAction
+from engine.game_engine import GameEngine
+from engine.random_source import ScriptedRandomSource
 from engine.rules_validator import (
     parse_bench_idx,
     parse_slot,
@@ -431,6 +434,285 @@ class TestEffectSemantics(unittest.TestCase):
         self.assertEqual(len(player.hand), 2)
         self.assertEqual(len(result.cards_drawn), 2)
         self.assertIn("抽取", result.log_message)
+
+
+class TestCardEffectAccuracy(unittest.TestCase):
+
+    def _battle_state(self, active_card_id="sv2-delib"):
+        state = _give_prizes(_make_state_with_pokemon(active_card_id=active_card_id))
+        state.phase = TurnPhase.MAIN
+        state.turn_number = 3
+        state.first_player_idx = 0
+        state.active_player_idx = 0
+        return state
+
+    def _choose(self, engine, state, request, option_ids=()):
+        return engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, tuple(option_ids)),
+        )
+
+    def test_ultra_ball_requires_two_other_cards_and_stays_in_hand(self):
+        state = self._battle_state()
+        player = state.get_active_player()
+        ultra_ball = CardRegistry.get("sv1-153")
+        filler = CardRegistry.get("sv1-ener-3")
+        player.hand = [ultra_ball, filler]
+        player.deck = [CardRegistry.get("sv2-delib")]
+
+        result = TurnManager(state).perform_action(
+            PlayerAction.PLAY_TRAINER,
+            player_idx=0,
+            hand_idx=0,
+        )
+
+        self.assertFalse(result.success)
+        self.assertIn("无法支付代价", result.log_message)
+        self.assertEqual(player.hand, [ultra_ball, filler])
+        self.assertEqual(player.discard, [])
+
+    def test_dedenne_can_decline_switch_after_damage(self):
+        state = self._battle_state(active_card_id="sv1-114")
+        player = state.get_active_player()
+        opponent = state.get_opponent()
+        player.active.energy_cards = [
+            CardRegistry.get("sv1-ener-5"),
+            CardRegistry.get("sv1-ener-3"),
+        ]
+        player.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        original_active = player.active
+        engine = GameEngine()
+
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            auto_resolve=False,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertIsNotNone(step.pending_choice)
+        self.assertEqual(step.pending_choice.request_type, "confirm")
+        no_option = next(option for option in step.pending_choice.options if option.value is False)
+        result = self._choose(engine, state, step.pending_choice, (no_option.option_id,))
+
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(opponent.active.damage_counters, 5)
+        self.assertIs(player.active, original_active)
+
+    def test_optional_searches_can_choose_zero_cards(self):
+        engine = GameEngine()
+
+        state = self._battle_state(active_card_id="sv1-114")
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3")]
+        state.p1.deck = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-4")]
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(step.pending_choice.min_select, 0)
+        result = self._choose(engine, state, step.pending_choice, ())
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p1.hand), 0)
+        self.assertEqual(len(state.p1.deck), 2)
+
+        state = self._battle_state(active_card_id="svi-sqwk")
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3")]
+        state.p1.deck = [CardRegistry.get("sv2-delib"), CardRegistry.get("sv1-113")]
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(step.pending_choice.min_select, 0)
+        result = self._choose(engine, state, step.pending_choice, ())
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(state.p1.bench_count(), 0)
+
+        state = self._battle_state()
+        recovery = CardRegistry.get("sv1-171")
+        state.p1.hand = [recovery]
+        state.p1.discard = [CardRegistry.get("sv1-ener-3"), CardRegistry.get("sv1-ener-4")]
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(step.pending_choice.min_select, 0)
+        result = self._choose(engine, state, step.pending_choice, ())
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len([card for card in state.p1.discard if card.is_basic_energy]), 2)
+
+    def test_electric_generator_zero_one_two_and_lightning_bench_only(self):
+        engine = GameEngine()
+        lightning = CardRegistry.get("sv1-ener-4")
+        water = CardRegistry.get("sv1-ener-3")
+
+        state = self._battle_state()
+        state.p1.hand = [CardRegistry.get("sv1-170")]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p1.bench[1] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.deck = [water, water, water, lightning, lightning]
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        self.assertEqual(step.pending_choice.min_select, 0)
+        result = self._choose(engine, state, step.pending_choice, ())
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 0)
+        self.assertEqual(len(state.p1.deck), 5)
+
+        state = self._battle_state()
+        state.p1.hand = [CardRegistry.get("sv1-170")]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p1.bench[1] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.deck = [water, water, water, lightning, lightning]
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        one_energy = step.pending_choice.options[0]
+        result = self._choose(engine, state, step.pending_choice, (one_energy.option_id,))
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
+        self.assertEqual(len(state.p1.bench[1].energy_cards), 0)
+        self.assertEqual(len(state.p1.deck), 4)
+
+        state = self._battle_state()
+        state.p1.hand = [CardRegistry.get("sv1-170")]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svl-pikaex"))
+        state.p1.deck = [water, water, water, lightning, lightning]
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        ids = tuple(option.option_id for option in step.pending_choice.options[:2])
+        target_step = self._choose(engine, state, step.pending_choice, ids)
+        self.assertTrue(target_step.success, target_step.message)
+        self.assertIsNotNone(target_step.pending_choice)
+        target = target_step.pending_choice.options[0]
+        result = self._choose(
+            engine,
+            state,
+            target_step.pending_choice,
+            (target.option_id, target.option_id),
+        )
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 2)
+
+    def test_crushing_hammer_discards_selected_attachment(self):
+        state = self._battle_state()
+        state.p1.hand = [CardRegistry.get("svg2-hamm")]
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-3")]
+        state.p2.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        selected_energy = CardRegistry.get("sv1-ener-4")
+        state.p2.bench[0].energy_cards = [selected_energy]
+        engine = GameEngine()
+
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
+            ScriptedRandomSource([True]),
+            auto_resolve=False,
+        )
+        heads = next(option for option in step.pending_choice.options if option.value is True)
+        target_step = self._choose(engine, state, step.pending_choice, (heads.option_id,))
+        self.assertTrue(target_step.success, target_step.message)
+        self.assertEqual(target_step.pending_choice.request_type, "select_attachment")
+        bench_energy = next(
+            option
+            for option in target_step.pending_choice.options
+            if option.ref.slot == "bench_0"
+        )
+        result = self._choose(engine, state, target_step.pending_choice, (bench_energy.option_id,))
+
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p2.active.energy_cards), 1)
+        self.assertEqual(state.p2.bench[0].energy_cards, [])
+        self.assertIn(selected_energy, state.p2.discard)
+
+    def test_optional_energy_distribution_effects_accept_less_than_max(self):
+        engine = GameEngine()
+        grass = CardRegistry.get("sv1-ener-1")
+        metal = CardRegistry.get("sv1-ener-8")
+        water = CardRegistry.get("sv1-ener-3")
+
+        state = self._battle_state()
+        state.p1.hand = [CardRegistry.get("svg2-gard")]
+        state.p1.deck = []
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.hand.extend([grass, grass])
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        self.assertEqual(step.pending_choice.min_select, 0)
+        target = step.pending_choice.options[0]
+        result = self._choose(engine, state, step.pending_choice, (target.option_id,))
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
+
+        state = self._battle_state(active_card_id="svm-cobalion")
+        state.p1.active.energy_cards = [metal, metal]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svm-zacian"))
+        state.p1.bench[1] = PokemonInPlay(CardRegistry.get("svm-zamazenta"))
+        state.p1.deck = [metal, metal]
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        self.assertEqual(step.pending_choice.min_select, 0)
+        bench_1 = next(option for option in step.pending_choice.options if option.value.get("slot") == "bench_1")
+        result = self._choose(engine, state, step.pending_choice, (bench_1.option_id,))
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 0)
+        self.assertEqual(len(state.p1.bench[1].energy_cards), 1)
+
+        state = self._battle_state(active_card_id="svg-cast")
+        state.p1.active.energy_cards = [water, CardRegistry.get("svi-jete")]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            auto_resolve=False,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNone(step.pending_choice)
+        self.assertEqual(state.p1.active.energy_cards, [CardRegistry.get("svi-jete")])
+        self.assertEqual(state.p1.bench[0].energy_cards, [water])
+
+        state = self._battle_state()
+        state.p1.hand = [CardRegistry.get("svi-popp")]
+        state.p1.active.energy_cards = [water, metal]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.bench[1] = PokemonInPlay(CardRegistry.get("sv1-113"))
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
+            auto_resolve=False,
+        )
+        source = next(option for option in step.pending_choice.options if option.value.get("slot") == "active")
+        target_step = self._choose(engine, state, step.pending_choice, (source.option_id,))
+        self.assertEqual(target_step.pending_choice.min_select, 0)
+        bench_1 = next(
+            option
+            for option in target_step.pending_choice.options
+            if option.value.get("slot") == "bench_1"
+        )
+        result = self._choose(engine, state, target_step.pending_choice, (bench_1.option_id,))
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(state.p1.active.energy_cards), 1)
+        self.assertEqual(len(state.p1.bench[1].energy_cards), 1)
 
 
 # ── 4. SearchScreen min_select ─────────────────────────────────────────────

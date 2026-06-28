@@ -18,6 +18,10 @@ from engine.commands.damage_pipeline import resolve_damage as event_damage_pipel
 from engine.effects.modifier_registry import (
     get_special_energy_attach_effect,
 )
+from engine.effects.availability import (
+    effects_cost_is_payable,
+    effects_have_legal_target,
+)
 from data.card_models import Card
 from engine.commands.resolution_stack import ResolutionStack
 from engine.commands.registry import build_command
@@ -291,6 +295,23 @@ class ActionResolver:
             if not ok:
                 return ActionResult(False, reason)
 
+        if card.trainer_effects:
+            if not effects_cost_is_payable(
+                self.state,
+                player_idx,
+                card.trainer_effects,
+                exclude_hand_index=hand_idx,
+            ):
+                return ActionResult(False, "无法支付代价。")
+            if not effects_have_legal_target(
+                self.state,
+                player_idx,
+                card.trainer_effects,
+                source_slot=params.get("target_slot", "active"),
+                exclude_hand_index=hand_idx,
+            ):
+                return ActionResult(False, "没有合法目标，不能使用。")
+
         # Pop card from hand BEFORE executing effects,
         # so discard-cost card_list doesn't include this card.
         # If effects fail, put the card back.
@@ -359,6 +380,13 @@ class ActionResolver:
 
         for ability in pokemon.card.abilities:
             if ability.name.lower() == ability_name.lower():
+                if ability.effects and not effects_have_legal_target(
+                    self.state,
+                    player_idx,
+                    ability.effects,
+                    source_slot=slot,
+                ):
+                    return ActionResult(False, "没有合法目标，不能使用该特性。")
                 msg = f"{player.name}使用了{pokemon.card.name}的特性{ability.name}。"
                 self.state._log(msg)
                 result = self._execute_effects(ability.effects, player_idx, slot)
