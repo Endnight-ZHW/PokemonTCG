@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from engine.enums import PlayerAction
+from engine.effects.runtime_effects import trainer_runtime_effects
 
 
 class ExpertSequencingMixin:
@@ -58,7 +59,7 @@ class ExpertSequencingMixin:
             hand_idx = action.params.get("hand_idx")
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                 card = player.hand[hand_idx]
-                effects = getattr(card, "trainer_effects", []) or []
+                effects = trainer_runtime_effects(card)
                 if self._effects_include_terminal_development(effects):
                     bonus += 75.0
                 if self._effects_include_draw(effects) and len(player.hand) <= 4:

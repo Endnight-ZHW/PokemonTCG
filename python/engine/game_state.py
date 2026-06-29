@@ -83,14 +83,15 @@ class GameState:
             "sequence": 0,
             "context": {},
         }
-        self._piercing_attack: bool = False  # Set during attack resolution for piercing effects
         self._ko_from_attack: bool = False  # Flag set when a KO is from attack damage
         self._mulligan_bonus_given: set[int] = set()
         self.is_network_view: bool = False
         self.random_source = None
         self.event_stream: GameEventStream = GameEventStream()
         from engine.effects.event_bus import EventBus
+        from engine.effects.modifier_manager import ModifierManager
         self.event_bus = EventBus()
+        self.modifier_manager = ModifierManager(self.event_bus)
 
     def get_active_player(self) -> PlayerState:
         return self.p1 if self.active_player_idx == 0 else self.p2

@@ -58,6 +58,11 @@ class CardRegistry:
                     ))
             return result
 
+        def _compile_effects(effects: list[EffectDef]) -> list[dict]:
+            from engine.commands.ir import compile_effects_to_payload
+
+            return compile_effects_to_payload(effects)
+
         # Parse attacks
         attacks = []
         raw_attacks = raw.get("attacks", [])
@@ -65,12 +70,14 @@ class CardRegistry:
             atk_name = atk.get("name", "")
             curated = effects_data.get("attacks", {}).get(atk_name, {})
             cost = atk.get("cost", [])
+            attack_effects = _make_effects(curated.get("effects", []))
             attacks.append(AttackDef(
                 name=atk_name,
                 cost=cost,
                 damage=cls._parse_damage(atk.get("damage", "0")),
                 text=atk.get("text", ""),
-                effects=_make_effects(curated.get("effects", [])),
+                effects=attack_effects,
+                compiled_effects=_compile_effects(attack_effects),
                 converted_energy_cost=atk.get("convertedEnergyCost", len(cost)),
             ))
 
@@ -81,12 +88,14 @@ class CardRegistry:
             ab_name = ab.get("name", "")
             ab_type = ab.get("type", "Ability")
             curated = effects_data.get("abilities", {}).get(ab_name, {})
+            ability_effects = _make_effects(curated.get("effects", []))
             abilities.append(AbilityDef(
                 name=ab_name,
                 text=ab.get("text", ""),
                 ability_type=ab_type,
                 trigger=curated.get("trigger", ""),
-                effects=_make_effects(curated.get("effects", [])),
+                effects=ability_effects,
+                compiled_effects=_compile_effects(ability_effects),
             ))
 
         # Parse weaknesses
@@ -115,6 +124,11 @@ class CardRegistry:
                 effect_type=trainer_effects.get("effect_type", ""),
                 params=trainer_effects.get("params", {}),
             )]
+        elif trainer_effects:
+            trainer_effects = _make_effects(trainer_effects)
+        else:
+            trainer_effects = []
+        compiled_trainer_effects = _compile_effects(trainer_effects)
 
         energy_effects = [
             dict(effect)
@@ -154,6 +168,7 @@ class CardRegistry:
             flavor_text=raw.get("flavorText", ""),
             trainer_type=trainer_type,
             trainer_effects=trainer_effects,
+            compiled_trainer_effects=compiled_trainer_effects,
             energy_effects=energy_effects,
         )
 

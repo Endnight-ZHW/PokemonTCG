@@ -19,6 +19,7 @@ class AttackDef:
     text: str                 # Raw card text for display
     effects: list[EffectDef] = field(default_factory=list)
     converted_energy_cost: int = 0
+    compiled_effects: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -29,6 +30,7 @@ class AbilityDef:
     ability_type: str = "Ability"  # Ability, Poke-Power, Poke-Body, VSTAR Power
     trigger: str = ""             # Event trigger: on_enter_play, on_turn_start, static, etc.
     effects: list[EffectDef] = field(default_factory=list)
+    compiled_effects: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -72,6 +74,7 @@ class Card:
     # EffectDef entries, so they do not inflate the public attack/trainer effect
     # type list while the VM migration is in progress.
     energy_effects: list[dict] = field(default_factory=list)
+    compiled_trainer_effects: list[dict] = field(default_factory=list)
 
     @property
     def is_basic_pokemon(self) -> bool:

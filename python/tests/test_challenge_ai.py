@@ -761,7 +761,9 @@ class ChallengeAITests(unittest.TestCase):
                 "--games",
                 "1",
                 "--max-steps",
-                "30",
+                "20",
+                "--search-preset",
+                "beam",
             ],
             cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
             capture_output=True,
@@ -1074,6 +1076,24 @@ class ChallengeAITests(unittest.TestCase):
                     "",
                     effects=[{"effect_type": "damage_per_energy", "params": {"count_from": "opponent_active", "per_energy": 30}}],
                 ),
+                AttackDef(
+                    "Compiled Mind",
+                    [],
+                    0,
+                    "",
+                    effects=[{
+                        "op": "deal_damage",
+                        "args": {
+                            "formula_ast": {
+                                "op": "mul",
+                                "factors": [
+                                    {"op": "hand_size", "player": "self"},
+                                    {"const": 30},
+                                ],
+                            },
+                        },
+                    }],
+                ),
             ],
         )
         state = GameState()
@@ -1089,6 +1109,215 @@ class ChallengeAITests(unittest.TestCase):
         ai = ChallengeAI(AIConfig(policy_path=None))
         self.assertEqual(ai._estimated_attack_damage(state, 1, 0), 80)
         self.assertEqual(ai._estimated_attack_damage(state, 1, 1), 60)
+        self.assertEqual(ai._estimated_attack_damage(state, 1, 2), 120)
+
+    def test_ai_effect_helpers_understand_compiled_ir(self):
+        from engine.commands.ir import CommandSpec
+
+        state = GameState()
+        state.p1.deck = [CardRegistry.get("sv1-ener-3")] * 5
+        state.p2.deck = [CardRegistry.get("sv1-ener-2")] * 5
+        compiled_draw = {"op": "draw_cards", "args": {"amount": 2}}
+        compiled_coin = {
+            "op": "flip_coin",
+            "args": {},
+            "branches": {
+                "on_heads": [compiled_draw],
+                "on_tails": [{"op": "search_cards", "args": {"count": 1}}],
+            },
+        }
+        ai = ChallengeAI(AIConfig(policy_path=None))
+
+        self.assertEqual(ai._effect_type(compiled_draw), "draw")
+        self.assertEqual(ai._effect_params(compiled_draw), {"amount": 2})
+        self.assertNotIn("effect_type", json.dumps(compiled_coin))
+        self.assertTrue(ai._effects_include_type(compiled_coin, "draw"))
+        self.assertTrue(ai._effects_include_draw([compiled_draw]))
+        self.assertTrue(ai._effects_include_draw([compiled_coin]))
+        self.assertTrue(ai._attack_has_productive_effect([compiled_coin]))
+        self.assertGreater(ai._static_effect_value([compiled_coin]), 14)
+        self.assertEqual(ai._estimated_draw_count(state, 0, [compiled_coin]), 2)
+        misleading_raw = {
+            "effect_type": "energy_discard",
+            "params": {"from": "opponent"},
+            "op": "draw_cards",
+            "args": {"amount": 3},
+        }
+        self.assertEqual(ai._effect_type(misleading_raw), "draw")
+        self.assertEqual(ai._estimated_draw_count(state, 0, [misleading_raw]), 3)
+        self.assertTrue(ai._effects_include_draw([misleading_raw]))
+        self.assertFalse(ai._effects_include_type([misleading_raw], "energy_discard"))
+        misleading_raw_branch = {
+            "effect_type": "coin_flip",
+            "params": {
+                "on_heads": [{
+                    "effect_type": "draw",
+                    "params": {"amount": 9},
+                }],
+                "draw": 9,
+            },
+            "op": "flip_coin",
+            "args": {},
+            "branches": {
+                "on_heads": [{"op": "search_cards", "args": {"count": 1}}],
+            },
+        }
+        self.assertTrue(ai._effects_include_type([misleading_raw_branch], "search"))
+        self.assertFalse(ai._effects_include_draw([misleading_raw_branch]))
+        self.assertEqual(ai._estimated_draw_count(state, 0, [misleading_raw_branch]), 0)
+        self.assertNotIn("draw", ai._effect_params(misleading_raw_branch))
+        compiled_conditional = {
+            "op": "conditional",
+            "args": {},
+            "branches": {
+                "cost": [{"op": "discard_cards", "args": {"amount": 1}}],
+                "on_pay": [compiled_draw],
+            },
+        }
+        self.assertIn("on_pay", ai._effect_params(compiled_conditional))
+        self.assertEqual(ai._estimated_draw_count(state, 0, [compiled_conditional]), 2)
+        self.assertEqual(
+            ai._effect_type({"op": "switch_pokemon", "args": {"target": "opponent"}}),
+            "switch_opponent",
+        )
+        compiled_formula = {
+            "op": "deal_damage",
+            "args": {
+                "formula_ast": {
+                    "op": "add",
+                    "terms": [
+                        {"const": 10},
+                        {
+                            "op": "mul",
+                            "factors": [
+                                {"op": "bench_count", "player": "self"},
+                                {"const": 20},
+                            ],
+                        },
+                    ],
+                },
+            },
+        }
+        self.assertEqual(ai._effect_type(compiled_formula), "damage_plus_bench")
+        self.assertTrue(ai._effects_include_type([compiled_formula], "damage_plus_bench"))
+        compiled_object = CommandSpec(
+            op="flip_coin",
+            args={},
+            branches={
+                "on_heads": (
+                    CommandSpec(op="draw_cards", args={"amount": 4}),
+                ),
+            },
+        )
+        self.assertEqual(ai._effect_type(compiled_object), "coin_flip")
+        self.assertIn("on_heads", ai._effect_params(compiled_object))
+        self.assertTrue(ai._effects_include_draw([compiled_object]))
+        self.assertEqual(ai._estimated_draw_count(state, 0, [compiled_object]), 4)
+
+        class MisleadingCompiledObject:
+            op = "draw_cards"
+            args = {"amount": 5}
+            branches = {}
+            effect_type = "energy_discard"
+            params = {"amount": 9}
+
+        self.assertEqual(ai._effect_type(MisleadingCompiledObject()), "draw")
+        self.assertEqual(ai._estimated_draw_count(state, 0, [MisleadingCompiledObject()]), 5)
+        self.assertFalse(ai._effects_include_type([MisleadingCompiledObject()], "energy_discard"))
+
+    def test_card_scoring_uses_compiled_trainer_ir_over_misleading_raw_effects(self):
+        from engine.effects.runtime_effects import trainer_runtime_effects
+
+        state = self._simple_public_state()
+        state.active_player_idx = 0
+        state.p2.active.energy_cards = [CardRegistry.get("sv1-ener-3")]
+        compiled_draw = [{
+            "op": "draw_cards",
+            "args": {"amount": 2},
+            "branches": {},
+        }]
+        clean_compiled = Card(
+            api_id="test-clean-compiled-draw",
+            name="Clean Compiled Draw",
+            supertype="Trainer",
+            subtypes=["Item"],
+            trainer_effects=[],
+            compiled_trainer_effects=compiled_draw,
+        )
+        misleading_compiled = Card(
+            api_id="test-misleading-compiled-draw",
+            name="Misleading Compiled Draw",
+            supertype="Trainer",
+            subtypes=["Item"],
+            trainer_effects=[{
+                "effect_type": "energy_discard",
+                "params": {"from": "opponent", "filter": "any"},
+            }],
+            compiled_trainer_effects=compiled_draw,
+        )
+        raw_only_disruption = Card(
+            api_id="test-raw-only-disruption",
+            name="Raw Only Disruption",
+            supertype="Trainer",
+            subtypes=["Item"],
+            trainer_effects=[{
+                "effect_type": "energy_discard",
+                "params": {"from": "opponent", "filter": "any"},
+            }],
+            compiled_trainer_effects=[],
+        )
+        state.p1.hand = [clean_compiled, misleading_compiled, raw_only_disruption]
+        ai = ChallengeAI(AIConfig(policy_path=None))
+
+        self.assertEqual(ai._effect_type(trainer_runtime_effects(misleading_compiled)[0]), "draw")
+        self.assertEqual(ai._effect_type(trainer_runtime_effects(raw_only_disruption)[0]), "energy_discard")
+        self.assertAlmostEqual(
+            ai._card_value(state, 0, misleading_compiled),
+            ai._card_value(state, 0, clean_compiled),
+        )
+        self.assertAlmostEqual(
+            ai._search_card_value(state, 0, misleading_compiled),
+            ai._search_card_value(state, 0, clean_compiled),
+        )
+        self.assertAlmostEqual(
+            ai._trainer_action_priority(
+                state, 0, AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 1})
+            ),
+            ai._trainer_action_priority(
+                state, 0, AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
+            ),
+        )
+
+    def test_challenge_ai_uses_runtime_effect_selectors_instead_of_raw_fields(self):
+        import ast
+        import inspect
+        import engine.ai.challenge_ai as challenge_module
+        import engine.ai.challenge.sequencing as sequencing_module
+
+        forbidden_attrs = {
+            "effects",
+            "trainer_effects",
+            "compiled_effects",
+            "compiled_trainer_effects",
+        }
+        offenders: list[str] = []
+        for module in (challenge_module, sequencing_module):
+            tree = ast.parse(inspect.getsource(module))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Attribute) and node.attr in forbidden_attrs:
+                    offenders.append(f"{module.__name__}:{node.lineno}:{node.attr}")
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "getattr"
+                    and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value in forbidden_attrs
+                ):
+                    offenders.append(
+                        f"{module.__name__}:{node.lineno}:getattr({node.args[1].value})"
+                    )
+        self.assertEqual(offenders, [])
 
     def test_attach_priority_favors_active_attack_readiness(self):
         base = CardRegistry.get("sv2-delib")

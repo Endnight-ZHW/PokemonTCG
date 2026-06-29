@@ -1,7 +1,18 @@
 """Pre-play legality helpers for effect target/resource availability."""
 from __future__ import annotations
 
+from collections.abc import Iterable as IterableABC
 from typing import Any
+
+try:
+    from engine.commands.ir import OP_BY_EFFECT_TYPE
+except Exception:  # pragma: no cover - keep helper importable in data tools.
+    OP_BY_EFFECT_TYPE = {}
+
+from engine.effects.runtime_effects import (
+    MISSING_COMPILED_OP,
+    strict_attack_runtime_effects as attack_runtime_effects,
+)
 
 
 DAMAGE_EFFECT_TYPES = {
@@ -23,17 +34,94 @@ DAMAGE_EFFECT_TYPES = {
 }
 
 
+OP_LEGACY_ALIASES = {
+    op: effect_type
+    for effect_type, op in OP_BY_EFFECT_TYPE.items()
+}
+OP_LEGACY_ALIASES.update({
+    "deal_damage_per_self_damage": "damage_per_self_damage",
+    "deal_damage_per_self_energy": "damage_per_self_energy",
+    "discard_cards": "discard",
+    "draw_cards": "draw",
+    "flip_coin": "coin_flip",
+    "flip_coin_repeat_damage": "coin_flip_triple",
+    "flip_coin_then_discard_energy": "coin_flip_energy_discard",
+    "flip_coin_then_ko": "coin_flip_double_ko",
+    "flip_until_tails": "coin_flip_until_tails",
+    "hand_to_bottom_draw_until": "houb",
+    "hand_to_bottom_then_draw": "hand_to_bottom_draw",
+    "heal_damage": "heal",
+})
+
+
+def _is_effect_like(value: Any) -> bool:
+    if isinstance(value, dict):
+        return bool(value.get("effect_type") or value.get("op"))
+    return hasattr(value, "effect_type") or hasattr(value, "op")
+
+
+def _as_effect_list(effects: Any) -> list[Any]:
+    if effects is None:
+        return []
+    if _is_effect_like(effects):
+        return [effects]
+    if isinstance(effects, (list, tuple)):
+        return list(effects)
+    if isinstance(effects, IterableABC) and not isinstance(effects, (str, bytes, dict)):
+        return list(effects)
+    return [effects]
+
+
 def effect_type(effect: Any) -> str:
     if isinstance(effect, dict):
+        op = str(effect.get("op", "") or "")
+        if op:
+            if op == "switch_pokemon":
+                target = str(effect_params(effect).get("target", "self") or "self")
+                return "switch_opponent" if target == "opponent" else "switch_self"
+            if op == "attach_energy":
+                from_zone = str(effect_params(effect).get("from_zone", "") or "")
+                return "attach_from_discard" if from_zone == "discard" else "energy_attach"
+            return OP_LEGACY_ALIASES.get(op, op)
         return str(effect.get("effect_type", "") or "")
+    op = str(getattr(effect, "op", "") or "")
+    if op:
+        params = effect_params(effect)
+        if op == "switch_pokemon":
+            target = str(params.get("target", "self") or "self")
+            return "switch_opponent" if target == "opponent" else "switch_self"
+        if op == "attach_energy":
+            from_zone = str(params.get("from_zone", "") or "")
+            return "attach_from_discard" if from_zone == "discard" else "energy_attach"
+        return OP_LEGACY_ALIASES.get(op, op)
     return str(getattr(effect, "effect_type", "") or "")
 
 
 def effect_params(effect: Any) -> dict[str, Any]:
     if isinstance(effect, dict):
-        params = effect.get("params", {}) or {}
+        params: dict[str, Any] = {}
+        raw_params = effect.get("params", {}) or {}
+        if isinstance(raw_params, dict):
+            params.update(raw_params)
+        args = effect.get("args", {}) or {}
+        if isinstance(args, dict):
+            params.update(args)
+        branches = effect.get("branches", {}) or {}
+        if isinstance(branches, dict):
+            for key, value in branches.items():
+                params.setdefault(key, value)
     else:
-        params = getattr(effect, "params", {}) or {}
+        params = {}
+        raw_params = getattr(effect, "params", {}) or {}
+        if isinstance(raw_params, dict):
+            params.update(raw_params)
+        args = getattr(effect, "args", {}) or {}
+        if isinstance(args, dict):
+            params.update(args)
+        branches = getattr(effect, "branches", {}) or {}
+        if isinstance(branches, dict):
+            for key, value in branches.items():
+                params.setdefault(key, value)
     return dict(params) if isinstance(params, dict) else {}
 
 
@@ -54,10 +142,7 @@ def effects_have_legal_target(
     """
     if _depth > 8:
         return False
-    if effects is None:
-        return True
-    if isinstance(effects, dict) or hasattr(effects, "effect_type"):
-        effects = [effects]
+    effects = _as_effect_list(effects)
     if not effects:
         return True
 
@@ -70,6 +155,8 @@ def effects_have_legal_target(
         params = effect_params(effect)
         if not etype:
             continue
+        if etype == MISSING_COMPILED_OP:
+            return False
         if etype in DAMAGE_EFFECT_TYPES:
             return opponent.active is not None
         if etype in {
@@ -236,13 +323,11 @@ def effects_cost_is_payable(
     exclude_hand_index: int | None = None,
 ) -> bool:
     """Return whether explicit discard costs in these effects can be paid."""
-    if effects is None:
-        return True
-    if isinstance(effects, dict) or hasattr(effects, "effect_type"):
-        effects = [effects]
-    for effect in effects:
+    for effect in _as_effect_list(effects):
         etype = effect_type(effect)
         params = effect_params(effect)
+        if etype == MISSING_COMPILED_OP:
+            return False
         if etype == "discard" and not _cost_is_payable(
             state,
             player_idx,
@@ -265,7 +350,12 @@ def effects_cost_is_payable(
 def attack_has_legal_target(state, player_idx: int, attack, source_slot: str = "active") -> bool:
     if getattr(attack, "damage", 0) > 0 and state.get_player(1 - player_idx).active is not None:
         return True
-    return effects_have_legal_target(state, player_idx, getattr(attack, "effects", []) or [], source_slot=source_slot)
+    return effects_have_legal_target(
+        state,
+        player_idx,
+        attack_runtime_effects(attack),
+        source_slot=source_slot,
+    )
 
 
 def _available_hand_count(player, exclude_hand_index: int | None) -> int:
@@ -560,7 +650,7 @@ def _coin_has_target(
 
 
 def _cost_is_payable(state, player_idx: int, cost: Any, exclude_hand_index: int | None) -> bool:
-    costs = cost if isinstance(cost, list) else [cost]
+    costs = _as_effect_list(cost)
     player = state.get_player(player_idx)
     for item in costs:
         etype = effect_type(item)

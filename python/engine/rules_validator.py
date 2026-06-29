@@ -1,9 +1,11 @@
 """Rules validator - checks if actions are legal under PTCG rules."""
 from typing import Optional, Tuple
-from engine.enums import TurnPhase, PlayerAction, StatusType, EventType
+from engine.enums import TurnPhase, PlayerAction, StatusType
 from engine.game_state import GameState
 from engine.player_state import PlayerState, PokemonInPlay
 from engine.rules_constants import DECK_SIZE, MAX_BENCH_SIZE, MAX_COPIES_PER_CARD
+from engine.effects.availability import effect_params
+from engine.effects.runtime_effects import strict_trainer_runtime_effects as trainer_runtime_effects
 from data.card_models import Card
 
 
@@ -59,6 +61,15 @@ def check_bench_bounds(bench_idx: int) -> Tuple[bool, str]:
     return True, ""
 
 
+def _attached_tool_allows_first_turn_evolution(target) -> bool:
+    if not target.attached_tool:
+        return False
+    return any(
+        effect_params(effect).get("effect") == "can_evolve_on_first_turn"
+        for effect in trainer_runtime_effects(target.attached_tool)
+    )
+
+
 def can_play_basic(state: GameState, player_idx: int, card: Card,
                    target: str) -> tuple[bool, str]:
     """Check if a Basic Pokemon can be played to a slot."""
@@ -110,23 +121,13 @@ def can_evolve(state: GameState, player_idx: int, slot: str,
         return False, (f"{evolution_card.name}是从{evolution_card.evolves_from}"
                        f"进化而来，不是{target.card.name}。")
 
-    allows_first_turn_evo = False
-    if target.attached_tool and hasattr(target.attached_tool, 'trainer_effects'):
-        for eff in target.attached_tool.trainer_effects:
-            if eff.params.get("effect") == "can_evolve_on_first_turn":
-                allows_first_turn_evo = True
-                break
+    allows_first_turn_evo = _attached_tool_allows_first_turn_evolution(target)
 
     if state.is_player_first_turn(player_idx) and not allows_first_turn_evo:
         return False, "First-turn evolution is not allowed."
 
     if target.placed_this_turn:
-        allows_first_turn_evo = False
-        if target.attached_tool and hasattr(target.attached_tool, 'trainer_effects'):
-            for eff in target.attached_tool.trainer_effects:
-                if eff.params.get("effect") == "can_evolve_on_first_turn":
-                    allows_first_turn_evo = True
-                    break
+        allows_first_turn_evo = _attached_tool_allows_first_turn_evolution(target)
         if not allows_first_turn_evo:
             return False, "当回合上场的宝可梦不能进化。"
 
@@ -413,45 +414,9 @@ def validate_deck(deck: list[Card], deck_name: str = "") -> tuple[bool, str]:
 def effective_retreat_cost(state, player) -> int:
     """Calculate the effective retreat cost of the active Pokemon,
     accounting for abilities (薄雾飘浮) and stadiums (Beach Court)."""
-    from engine.player_state import PlayerState
-    active = player.active
-    if active is None:
-        return 0
+    from engine.effects.retreat_modifier_hooks import effective_retreat_cost as _effective_retreat_cost
 
-    retreat_cost = active.card.retreat_cost
-
-    # 拉帝亚斯 薄雾飘浮: 0 retreat if specific energy type attached
-    for ab in (active.card.abilities or []):
-        for eff in (ab.effects or []):
-            if eff.effect_type == "conditional_zero_retreat":
-                energy_type = eff.params.get("energy_type", "")
-                if any(any(et.lower() == energy_type.lower() for et in c.provides_energy)
-                       for c in active.energy_cards):
-                    return 0
-
-    # Beach Court stadium: basic Pokemon retreat cost -1
-    if state.stadium_card:
-        for eff in state.stadium_card.trainer_effects:
-            if eff.effect_type == "stadium" and eff.params.get("effect") == "reduce_retreat_cost_basics":
-                if active.card.is_basic_pokemon:
-                    retreat_cost = max(0, retreat_cost - 1)
-                break
-
-    for mod in state.event_bus.emit(
-        EventType.CAN_RETREAT,
-        state=state,
-        player=player,
-        pokemon=active,
-        retreat_cost=retreat_cost,
-    ):
-        if not isinstance(mod, dict):
-            continue
-        if "set_cost" in mod:
-            retreat_cost = max(0, int(mod.get("set_cost", retreat_cost) or 0))
-        elif "delta" in mod:
-            retreat_cost = max(0, retreat_cost + int(mod.get("delta", 0) or 0))
-
-    return retreat_cost
+    return _effective_retreat_cost(state, player)
 
 
 # Backward-compatible private name used by older UI/action code.

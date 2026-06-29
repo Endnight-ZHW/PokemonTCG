@@ -7,13 +7,21 @@ from engine.game_state import GameState, ActionResult, ActionRequest
 from data.card_registry import CardRegistry
 
 
-def _resolve_effects_with_vm(state, effects, player_idx, source_slot):
+def _build_runtime_command(effect):
+    from engine.commands.dsl_compiler import compile_command_spec
     from engine.commands.registry import build_command
+
+    if isinstance(effect, dict) and "op" in effect:
+        return compile_command_spec(effect)
+    return build_command(effect)
+
+
+def _resolve_effects_with_vm(state, effects, player_idx, source_slot):
     from engine.commands.resolution_stack import ResolutionStack
 
     effect_list = effects if isinstance(effects, list) else [effects]
     stack = ResolutionStack(state)
-    stack.push_many([build_command(effect) for effect in effect_list])
+    stack.push_many([_build_runtime_command(effect) for effect in effect_list])
     result = stack.resolve_all(player_idx, source_slot)
     return ActionResult(
         success=result.success,
@@ -310,7 +318,6 @@ def _handle_evolve_skip(state, player, params):
         unregister_pokemon_modifiers,
     )
     from engine.commands.resolution_stack import ResolutionStack
-    from engine.commands.registry import build_command
 
     player_idx = 0 if state.p1 is player else 1
 
@@ -350,10 +357,17 @@ def _handle_evolve_skip(state, player, params):
     register_pokemon_modifiers(pokemon, player_idx, slot_name, event_bus=state.event_bus)
 
     # Trigger on_enter_play abilities on the new Stage 2 card
+    from engine.effects.runtime_effects import (
+        strict_ability_runtime_effects as ability_runtime_effects,
+    )
+
     for ability in stage2.abilities:
         if ability.trigger == "on_enter_play":
             stack = ResolutionStack(state)
-            commands = [build_command(e) for e in ability.effects]
+            commands = [
+                _build_runtime_command(effect)
+                for effect in ability_runtime_effects(ability)
+            ]
             stack.push_many(commands)
             stack.resolve_all(player_idx, slot_name)
 
@@ -469,15 +483,18 @@ def _handle_return_to_hand(state, player_idx, params, source_slot):
 def _handle_piercing_marker(state, params):
     """Mark that the current attack should ignore weakness/resistance.
     This sets a flag on the state that damage_calculator will check."""
-    # Store piercing flag on state for this attack resolution
-    state._piercing_attack = True
-    ctx = getattr(state, "_attack_damage_context", None)
-    if isinstance(ctx, dict):
-        if params.get("ignore_weakness", True) or params.get("ignore_resistance", True):
-            ctx["piercing"] = True
-        if params.get("ignore_effects", False):
-            ctx["ignore_defender_effects"] = True
-            state._attack_ignore_defender_effects = True
+    from engine.commands.attack_frames import set_attack_damage_flags
+
+    set_attack_damage_flags(
+        state,
+        piercing=(
+            True
+            if params.get("ignore_weakness", True)
+            or params.get("ignore_resistance", True)
+            else None
+        ),
+        ignore_defender_effects=True if params.get("ignore_effects", False) else None,
+    )
     return ActionResult(True, "穿透攻击标记已设置。")
 
 

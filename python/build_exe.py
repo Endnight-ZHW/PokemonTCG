@@ -34,7 +34,7 @@ HIDDEN_IMPORTS = [
     "engine.rules_validator",
     "engine.effects", "engine.effects.event_bus", "engine.effects.damage_effects",
     "engine.effects.draw_effects", "engine.effects.energy_effects",
-    "engine.effects.modifier_registry", "engine.effects.search_effects",
+    "engine.effects.search_effects",
     "engine.effects.special_effects", "engine.effects.status_effects",
     "network.network_manager", "network.state_serializer", "network.message_protocol",
     "ui.game_app", "ui.screen_manager", "ui.image_manager", "ui.font_manager",

@@ -37,6 +37,7 @@ from engine.actions import (
     CardRef,
     ChoiceOption,
     ChoiceRequest,
+    ChoiceResponse,
     GameAction,
     PokemonRef,
 )
@@ -52,6 +53,7 @@ from engine.ai.dl.encoder import (
 )
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.commands.dsl_compiler import compile_effect_to_spec, compile_effects_to_payload
+from engine.commands.vm_contract import VM_IR_VERSION
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import GameEngine
 from engine.game_state import GameState
@@ -359,6 +361,13 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
     }
     return {
         "fixture_version": 2,
+        "vm_version": VM_IR_VERSION,
+        "vm": {
+            "ir_version": VM_IR_VERSION,
+            "command_shape": ["op", "args", "branches"],
+            "runtime_effect_source": "compiled_effects",
+            "legacy_effect_type_args_allowed": False,
+        },
         "schema": {
             "python_rules_version": RULES_SCHEMA_VERSION,
             "python_action_version": ACTION_SCHEMA_VERSION,
@@ -640,6 +649,7 @@ def _state_summary(state: GameState) -> dict[str, Any]:
     payload.pop("setup_ready", None)
     payload.pop("processed_action_ids", None)
     payload.pop("revision", None)
+    payload.pop("choice_sequence", None)
     return payload
 
 
@@ -657,6 +667,109 @@ def _base_golden_state() -> GameState:
     state.p1.prizes = [psychic] * 6
     state.p2.prizes = [psychic] * 6
     return state
+
+
+def _cobalion_attack_choice_case(
+    engine: GameEngine,
+    *,
+    cancel_choice: bool,
+) -> dict[str, Any]:
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(CardRegistry.get("svm-cobalion"), placed_this_turn=False)
+    state.p1.active.energy_cards = [
+        CardRegistry.get("sv1-ener-8"),
+        CardRegistry.get("sv1-ener-8"),
+    ]
+    state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svm-zacian"), placed_this_turn=False)
+    state.p1.bench[1] = PokemonInPlay(CardRegistry.get("svm-zamazenta"), placed_this_turn=False)
+    state.p1.deck = [CardRegistry.get("sv1-ener-8"), CardRegistry.get("sv1-ener-8")]
+    initial = _state_payload(state)
+    actions = [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }]
+    step = engine.apply_action(
+        state,
+        GameAction(PlayerAction.DECLARE_ATTACK, actions[0]["params"], actor=0),
+        ScriptedRandomSource(seed=20),
+        auto_resolve=False,
+    )
+    if not step.success or step.pending_choice is None:
+        raise RuntimeError(f"Golden pending attack did not pause: {step.message}")
+    pending_summary = _state_summary(state)
+    pending_stack = _json_value(state.resolution_stack)
+    pending_request = pending_stack.get("pending_request") or {}
+    if cancel_choice:
+        response = ChoiceResponse(step.pending_choice.request_id, (), cancelled=True)
+    else:
+        bench_1 = next(
+            option
+            for option in step.pending_choice.options
+            if isinstance(option.value, dict) and option.value.get("slot") == "bench_1"
+        )
+        response = ChoiceResponse(step.pending_choice.request_id, (bench_1.option_id,))
+    result = engine.apply_choice(
+        state,
+        step.pending_choice,
+        response,
+        ScriptedRandomSource(seed=21 if not cancel_choice else 22),
+    )
+    if not result.success:
+        raise RuntimeError(f"Golden pending attack choice failed: {result.message}")
+    return {
+        "initial_state": initial,
+        "actions": actions,
+        "pending_after_action": {
+            "expected": pending_summary,
+            "request": {
+                "request_id": pending_request.get("request_id", ""),
+                "request_type": pending_request.get("request_type", ""),
+                "player": pending_request.get("player", 0),
+                "min_select": pending_request.get("min_select", 0),
+                "max_select": pending_request.get("max_select", 0),
+                "allow_duplicates": pending_request.get("allow_duplicates", False),
+                "can_cancel": pending_request.get("can_cancel", False),
+                "option_ids": [
+                    option.get("option_id", "")
+                    for option in pending_request.get("options", [])
+                ],
+                "metadata": {
+                    "finish_attack_actor": pending_request.get("metadata", {}).get(
+                        "finish_attack_actor"
+                    ),
+                    "continuation_kind": pending_request.get("metadata", {})
+                    .get("continuation", {})
+                    .get("kind", ""),
+                },
+            },
+            "stack": {
+                "frame_kinds": [
+                    frame.get("kind", "")
+                    for frame in pending_stack.get("frames", [])
+                ],
+                "continuation_operations": [
+                    frame.get("operation", "")
+                    for frame in pending_stack.get("frames", [])
+                    if frame.get("kind") == "continuation"
+                ],
+                "continuation_data_kinds": [
+                    (frame.get("data") or {}).get("kind", "")
+                    for frame in pending_stack.get("frames", [])
+                    if frame.get("kind") == "continuation"
+                ],
+                "pending_request_type": pending_request.get("request_type", ""),
+            },
+        },
+        "choice_response": {
+            "request_id": response.request_id,
+            "option_ids": list(response.option_ids),
+            "cancelled": response.cancelled,
+        },
+        "expected": _state_summary(state),
+    }
 
 
 def _golden_action_cases() -> dict[str, Any]:
@@ -733,6 +846,15 @@ def _golden_action_cases() -> dict[str, Any]:
         "actions": actions,
         "expected": _state_summary(state),
     }
+
+    cases["pending_attack_choice_continuation"] = _cobalion_attack_choice_case(
+        engine,
+        cancel_choice=False,
+    )
+    cases["pending_attack_choice_cancel"] = _cobalion_attack_choice_case(
+        engine,
+        cancel_choice=True,
+    )
     return {"fixture_version": 1, "cases": cases}
 
 

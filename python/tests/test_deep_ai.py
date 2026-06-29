@@ -891,6 +891,100 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(bench_example.request_type, "select_bench")
         self.assertEqual(bench_example.teacher_target_index, 0)
 
+    def test_encoder_effect_features_understand_compiled_ir(self):
+        import inspect
+        import engine.ai.dl.encoder as encoder_module
+        from engine.commands.ir import CommandSpec
+
+        encoder = ActionStateEncoder()
+        card = Card(
+            api_id="test-compiled-effects",
+            name="Compiled Effects",
+            supertype="Trainer",
+            subtypes=["Item"],
+            trainer_effects=[
+                {"effect_type": "energy_discard", "params": {"amount": 9}},
+            ],
+            compiled_trainer_effects=[
+                CommandSpec(
+                    op="draw_cards",
+                    args={"amount": 1},
+                    branches={
+                        "on_success": (
+                            CommandSpec(op="search_cards", args={"count": 1}),
+                        ),
+                    },
+                ),
+                {"op": "discard_cards", "args": {"from": "hand", "amount": 2}},
+                {
+                    "op": "flip_coin",
+                    "effect_type": "coin_flip",
+                    "args": {},
+                    "params": {
+                        "on_heads": [
+                            {"effect_type": "energy_attach", "params": {"amount": 9}},
+                        ],
+                    },
+                    "branches": {
+                        "on_heads": [
+                            {"op": "discard_cards", "args": {"from_zone": "hand", "amount": 1}},
+                        ],
+                    },
+                },
+            ],
+        )
+
+        tokens = encoder._effect_tokens_for_action_card(card)
+        self.assertIn("draw", tokens)
+        self.assertIn("search", tokens)
+        self.assertIn("coin", tokens)
+        self.assertNotIn("energy", tokens)
+        self.assertEqual(encoder._discard_cost_amount(card), 3)
+        encoder_source = inspect.getsource(encoder_module.ActionStateEncoder)
+        self.assertIn("trainer_runtime_effects", encoder_source)
+        self.assertNotIn("effect_type(", encoder_source)
+        self.assertNotIn("card.trainer_effects", encoder_source)
+
+    def test_training_target_filter_uses_compiled_trainer_ir(self):
+        from engine.ai.dl.training import _action_has_no_available_target
+
+        state = self._simple_state()
+        compiled_effects = [{
+            "op": "draw_cards",
+            "args": {"amount": 1},
+            "branches": {},
+        }]
+        card = Card(
+            api_id="test-training-compiled-effects",
+            name="Training Compiled Effects",
+            supertype="Trainer",
+            subtypes=["Item"],
+            trainer_effects=[
+                {"effect_type": "energy_discard", "params": {"amount": 9}},
+            ],
+            compiled_trainer_effects=compiled_effects,
+        )
+        state.p2.hand = [card]
+
+        class RecordingAI:
+            seen_effects = None
+
+            def _effects_have_available_value(self, _state, _player_idx, effects):
+                self.seen_effects = effects
+                return True
+
+        ai = RecordingAI()
+        filtered = _action_has_no_available_target(
+            ai,
+            state,
+            1,
+            AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}),
+        )
+
+        self.assertFalse(filtered)
+        self.assertEqual(ai.seen_effects, compiled_effects)
+        self.assertNotIn("energy_discard", json.dumps(ai.seen_effects))
+
     def test_workers_use_process_pool_for_model_game_tasks(self):
         from engine.ai.dl import training as dl_training
 

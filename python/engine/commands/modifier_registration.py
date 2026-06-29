@@ -1,15 +1,41 @@
-"""Register/unregister modifier event listeners when Pokemon enter/leave play.
-
-Replaces the hardcoded api_id checks in action_resolver.py and
-modifier_registry.py with dynamic event listener registration.
-"""
+"""Register/unregister MBF modifier hooks when Pokemon enter/leave play."""
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-from engine.enums import EventType
+from engine.effects.availability import effect_params, effect_type
+from engine.effects.modifier_manager import (
+    AFTER_DAMAGE,
+    CAN_RETREAT,
+    MODIFY_DAMAGE,
+    POKEMON_KO,
+    ModifierManager,
+)
+from engine.effects.runtime_effects import (
+    strict_ability_runtime_effects as ability_runtime_effects,
+    strict_trainer_runtime_effects as trainer_runtime_effects,
+)
 
 if TYPE_CHECKING:
     from engine.player_state import PokemonInPlay
+
+
+def _register_mbf_hook(
+    event_bus,
+    hook: str,
+    callback,
+    *,
+    source: str,
+    owner_player: int,
+    priority: int = 0,
+) -> None:
+    """Register event-backed hooks through the MBF facade."""
+    ModifierManager(event_bus).register(
+        hook,
+        callback,
+        source=source,
+        owner_player=owner_player,
+        priority=priority,
+    )
 
 
 def register_pokemon_modifiers(pokemon: PokemonInPlay, player_idx: int,
@@ -62,29 +88,17 @@ def _register_ability_modifier(ability, pokemon, player_idx: int,
     ability_name = ability.name
     source = f"{source_prefix}:ability:{ability_name}"
 
-    for effect in getattr(ability, "effects", []) or []:
-        effect_type = getattr(effect, "effect_type", "")
-        params = getattr(effect, "params", {}) or {}
+    for effect in ability_runtime_effects(ability):
+        effect_kind = effect_type(effect)
+        params = effect_params(effect)
         register_effect_modifier(
-            effect_type,
+            effect_kind,
             params,
             pokemon,
             player_idx,
             source=source,
             event_bus=event_bus,
             source_name=ability_name,
-        )
-
-    # 团结一致 (Maushold ex): reactive thorns on damage
-    if ability_name == "团结一致":
-        register_effect_modifier(
-            "reactive_thorns",
-            {"filter_names": ["一对鼠", "一家鼠ex", "一家鼠"], "per_pokemon": 3},
-            pokemon,
-            player_idx,
-            source=source,
-            event_bus=event_bus,
-            source_name="团结一致",
         )
 
 
@@ -120,8 +134,9 @@ def register_effect_modifier(
                 return None
             return {"delta": -reduction, "source": source_name}
 
-        event_bus.register(
-            EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+        _register_mbf_hook(
+            event_bus,
+            MODIFY_DAMAGE,
             reduction_mod,
             source=source,
             owner_player=player_idx,
@@ -153,8 +168,9 @@ def register_effect_modifier(
                 return None
             return {"delta": amount, "source": source_name}
 
-        event_bus.register(
-            EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+        _register_mbf_hook(
+            event_bus,
+            MODIFY_DAMAGE,
             boost_mod,
             source=source,
             owner_player=player_idx,
@@ -184,15 +200,30 @@ def register_effect_modifier(
             thorn_counters = matching_count * per_pokemon
             if thorn_counters <= 0:
                 return None
-            attacker.damage_counters += thorn_counters
+            from engine.commands.trigger_commands import (
+                pokemon_ref_for_state,
+                trigger_place_damage_counters_spec,
+            )
+
+            attacker_ref = pokemon_ref_for_state(state, attacker)
+            if attacker_ref is None:
+                return None
+
             return {
-                "delta": 0,
                 "source": source_name,
-                "log": f"{source_name}：放置了{thorn_counters}个伤害指示物！",
+                "command_specs": [
+                    trigger_place_damage_counters_spec(
+                        attacker_ref[0],
+                        attacker_ref[1],
+                        thorn_counters,
+                        source_name,
+                    )
+                ],
             }
 
-        event_bus.register(
-            EventType.DAMAGE_DEALT,
+        _register_mbf_hook(
+            event_bus,
+            AFTER_DAMAGE,
             reactive_thorns,
             source=source,
             owner_player=player_idx,
@@ -214,8 +245,9 @@ def register_effect_modifier(
                 return {"set_cost": 0, "source": source_name}
             return None
 
-        event_bus.register(
-            EventType.CAN_RETREAT,
+        _register_mbf_hook(
+            event_bus,
+            CAN_RETREAT,
             zero_retreat,
             source=source,
             owner_player=player_idx,
@@ -254,7 +286,7 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
         hook = effect.get("hook")
         priority = int(effect.get("priority", 20) or 20)
 
-        if kind == "modifier" and hook == "MODIFY_DAMAGE":
+        if kind == "modifier" and hook == MODIFY_DAMAGE:
             effect_data = effect.get("effect") or {}
             delta = int(effect_data.get("delta", 0) or 0)
             scope = str(effect.get("scope", "") or "")
@@ -277,15 +309,16 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                     return {"delta": delta, "source": sc.name}
                 return None
 
-            event_bus.register(
-                EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+            _register_mbf_hook(
+                event_bus,
+                MODIFY_DAMAGE,
                 energy_damage_mod,
                 source=source,
                 owner_player=player_idx,
                 priority=priority,
             )
 
-        if kind == "trigger" and hook == "AFTER_DAMAGE":
+        if kind == "trigger" and hook == AFTER_DAMAGE:
             effect_data = effect.get("effect") or {}
             condition = effect.get("condition") or {}
             op = effect_data.get("op")
@@ -316,18 +349,16 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                 state = data.get("state")
                 if not holder or not state or sc not in getattr(holder, "energy_cards", []):
                     return None
-                owner = state.get_player(player_idx)
-                drawn = owner.draw_cards(amount)
-                if drawn:
-                    return {
-                        "delta": 0,
-                        "source": sc.name,
-                        "log": f"{sc.name}效果：{owner.name}抽取了{len(drawn)}张卡。",
-                    }
-                return None
+                from engine.commands.trigger_commands import trigger_draw_cards_spec
 
-            event_bus.register(
-                EventType.DAMAGE_DEALT,
+                return {
+                    "source": sc.name,
+                    "command_specs": [trigger_draw_cards_spec(player_idx, amount, sc.name)],
+                }
+
+            _register_mbf_hook(
+                event_bus,
+                AFTER_DAMAGE,
                 energy_after_damage,
                 source=source,
                 owner_player=player_idx,
@@ -341,8 +372,14 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
             if attacker is not None and sc in getattr(attacker, "energy_cards", []):
                 return {"delta": -20, "source": "双重涡轮能量"}
             return None
-        event_bus.register(EventType.DAMAGE_ABOUT_TO_BE_DEALT, dtur_mod,
-                          source=source, owner_player=player_idx, priority=30)
+        _register_mbf_hook(
+            event_bus,
+            MODIFY_DAMAGE,
+            dtur_mod,
+            source=source,
+            owner_player=player_idx,
+            priority=30,
+        )
 
     if sc.api_id == "svi-mirc" and not getattr(sc, "energy_effects", None):
         def mirc_react(data: dict) -> dict | None:
@@ -354,14 +391,21 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                 # Check if this energy is attached to the defender
                 for scc in defender.energy_cards:
                     if scc is sc:
-                        owner = state.get_player(player_idx)
-                        drawn = owner.draw_cards(1)
-                        if drawn:
-                            return {"delta": 0, "source": "奇迹能量",
-                                    "log": f"奇迹能量效果：{owner.name}抽取了1张卡。"}
+                        from engine.commands.trigger_commands import trigger_draw_cards_spec
+
+                        return {
+                            "source": "奇迹能量",
+                            "command_specs": [trigger_draw_cards_spec(player_idx, 1, "奇迹能量")],
+                        }
             return None
-        event_bus.register(EventType.DAMAGE_DEALT, mirc_react,
-                          source=source, owner_player=player_idx, priority=20)
+        _register_mbf_hook(
+            event_bus,
+            AFTER_DAMAGE,
+            mirc_react,
+            source=source,
+            owner_player=player_idx,
+            priority=20,
+        )
 
     # 喷射能量 (Jet Energy): switch on attach to bench
     # Handled separately in energy attach flow — event-based registration
@@ -371,16 +415,18 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
 def _register_tool_modifier(tool_card, pokemon, player_idx: int,
                              source_prefix: str, event_bus):
     """Register tool card effects as event listeners."""
-    if not hasattr(tool_card, 'trainer_effects'):
+    effects = trainer_runtime_effects(tool_card)
+    if not effects:
         return
 
     source = f"{source_prefix}:tool:{tool_card.api_id}"
 
-    for eff in tool_card.trainer_effects:
-        effect_name = eff.params.get("effect", "") or getattr(eff, "effect_type", "")
+    for eff in effects:
+        params = effect_params(eff)
+        effect_name = params.get("effect", "") or effect_type(eff)
         register_tool_effect_modifier(
             effect_name,
-            eff.params,
+            params,
             pokemon,
             player_idx,
             source=f"{source}:{effect_name}",
@@ -418,8 +464,9 @@ def register_tool_effect_modifier(
                     return {"delta": 30, "source": source_name}
             return None
 
-        event_bus.register(
-            EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+        _register_mbf_hook(
+            event_bus,
+            MODIFY_DAMAGE,
             defiance_mod,
             source=source,
             owner_player=player_idx,
@@ -434,8 +481,9 @@ def register_tool_effect_modifier(
                 return {"delta": 10, "source": source_name}
             return None
 
-        event_bus.register(
-            EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+        _register_mbf_hook(
+            event_bus,
+            MODIFY_DAMAGE,
             vital_mod,
             source=source,
             owner_player=player_idx,
@@ -457,8 +505,9 @@ def register_tool_effect_modifier(
                 return None
             return {"delta": -amount, "source": source_name}
 
-        event_bus.register(
-            EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+        _register_mbf_hook(
+            event_bus,
+            MODIFY_DAMAGE,
             hard_belt_mod,
             source=source,
             owner_player=player_idx,
@@ -468,8 +517,6 @@ def register_tool_effect_modifier(
 
     if effect_name == "tool_exp_share":
         def exp_share(data: dict) -> dict | None:
-            if data.get("exp_share_used"):
-                return None
             if not data.get("from_attack"):
                 return None
             if int(data.get("player_idx", -1)) != player_idx:
@@ -480,17 +527,42 @@ def register_tool_effect_modifier(
             for card in list(getattr(knocked_out, "energy_cards", [])):
                 if not getattr(card, "is_basic_energy", False):
                     continue
-                knocked_out.energy_cards.remove(card)
-                pokemon.energy_cards.append(card)
-                data["exp_share_used"] = True
+                state = data.get("state")
+                from_player_idx = int(data.get("player_idx", player_idx))
+                from_slot = str(data.get("slot", "active") or "active")
+                from engine.commands.trigger_commands import (
+                    pokemon_ref_for_state,
+                    trigger_move_basic_energy_spec,
+                )
+
+                source_ref = None
+                if state is not None:
+                    source = state.get_player(from_player_idx).get_pokemon(from_slot)
+                    if source is knocked_out:
+                        source_ref = (from_player_idx, from_slot)
+                    else:
+                        source_ref = pokemon_ref_for_state(state, knocked_out)
+                target_ref = pokemon_ref_for_state(state, pokemon)
+                if source_ref is None or target_ref is None:
+                    return None
                 return {
                     "source": source_name,
-                    "log": f"{source_name}效果：将{card.name}转附给{pokemon.card.name}。",
+                    "exclusive_group": "tool_exp_share",
+                    "command_specs": [
+                        trigger_move_basic_energy_spec(
+                            source_ref[0],
+                            source_ref[1],
+                            target_ref[0],
+                            target_ref[1],
+                            source_name,
+                        )
+                    ],
                 }
             return None
 
-        event_bus.register(
-            EventType.POKEMON_KO,
+        _register_mbf_hook(
+            event_bus,
+            POKEMON_KO,
             exp_share,
             source=source,
             owner_player=player_idx,

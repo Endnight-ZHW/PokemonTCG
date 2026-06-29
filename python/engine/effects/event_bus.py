@@ -7,6 +7,10 @@ logger = get_logger(__name__)
 from engine.enums import EventType
 
 
+class EventBusError(ValueError):
+    """Raised when a registered rule hook fails during event emission."""
+
+
 @dataclass
 class EventListener:
     """A registered listener for game events."""
@@ -14,6 +18,7 @@ class EventListener:
     source: str         # "ability:Infernal Reign", "tool:Rocky Helmet"
     owner_player: int   # Which player owns this
     priority: int = 0
+    sequence: int = 0
     active: bool = True
 
 
@@ -24,19 +29,22 @@ class EventBus:
         self._listeners: dict[EventType, list[EventListener]] = {
             e: [] for e in EventType
         }
+        self._sequence = 0
 
     def register(self, event: EventType, callback: Callable,
                  source: str, owner_player: int, priority: int = 0):
         """Register an event listener."""
+        self._sequence += 1
         listener = EventListener(
             callback=callback,
             source=source,
             owner_player=owner_player,
             priority=priority,
+            sequence=self._sequence,
         )
         self._listeners[event].append(listener)
-        # Sort by priority (higher priority = runs first)
-        self._listeners[event].sort(key=lambda l: -l.priority)
+        # Higher priority resolves first; equal priority follows register order.
+        self._listeners[event].sort(key=lambda l: (-l.priority, l.sequence))
 
     def unregister(self, event: EventType, source: str):
         """Remove all listeners from a given source for a given event."""
@@ -81,6 +89,9 @@ class EventBus:
                         results.append(result)
                 except Exception as e:
                     logger.error("EventBus error [%s]: %s", listener.source, e)
+                    raise EventBusError(
+                        f"EventBus listener {listener.source} failed: {e}"
+                    ) from e
         return results
 
     def clear(self):

@@ -2,7 +2,7 @@
 import random
 from dataclasses import dataclass, field
 from typing import Optional
-from engine.rules_constants import DAMAGE_PER_COUNTER, MAX_BENCH_SIZE, PRIZE_CARDS, TOOL_HP_BOOST
+from engine.rules_constants import MAX_BENCH_SIZE, PRIZE_CARDS
 from engine.enums import StatusType
 
 
@@ -30,41 +30,9 @@ class PokemonInPlay:
     @property
     def current_hp(self) -> int:
         """Remaining HP after tool/ability max-HP modifiers and damage counters."""
-        hp_bonus = 0
-        if self.attached_tool and hasattr(self.attached_tool, 'trainer_effects'):
-            for eff in self.attached_tool.trainer_effects:
-                if eff.params.get("effect") == "hp_boost_basic" and self.card.is_basic_pokemon:
-                    hp_bonus += TOOL_HP_BOOST
-        for ability in self.card.abilities or []:
-            for eff in ability.effects or []:
-                if eff.effect_type != "conditional_hp_boost":
-                    continue
-                params = eff.params or {}
-                energy_type = str(params.get("energy_type", "") or "").lower()
-                threshold = int(params.get("threshold", 0) or 0)
-                amount = int(params.get("amount", 0) or 0)
-                matching = sum(
-                    1
-                    for card in self.energy_cards
-                    if any(str(provided).lower() == energy_type for provided in card.provides_energy)
-                )
-                if matching >= threshold:
-                    hp_bonus += amount
-        for modifier in self.max_hp_modifiers:
-            modifier_kind = modifier.get("modifier_kind", modifier.get("effect_type"))
-            if modifier_kind != "conditional_hp_boost":
-                continue
-            energy_type = str(modifier.get("energy_type", "") or "").lower()
-            threshold = int(modifier.get("threshold", 0) or 0)
-            amount = int(modifier.get("amount", 0) or 0)
-            matching = sum(
-                1
-                for card in self.energy_cards
-                if any(str(provided).lower() == energy_type for provided in card.provides_energy)
-            )
-            if matching >= threshold:
-                hp_bonus += amount
-        return max(0, self.card.hp + hp_bonus - self.damage_counters * DAMAGE_PER_COUNTER)
+        from engine.effects.pokemon_stat_hooks import current_hp
+
+        return current_hp(self)
 
     @property
     def is_knocked_out(self) -> bool:

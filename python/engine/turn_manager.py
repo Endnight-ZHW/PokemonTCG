@@ -111,8 +111,14 @@ class TurnManager:
 
     # ---- Action Handling ----
 
-    def perform_action(self, action: PlayerAction, player_idx: int,
-                       **params) -> ActionResult:
+    def perform_action(
+        self,
+        action: PlayerAction,
+        player_idx: int,
+        *,
+        finish_attack_in_stack: bool = False,
+        **params,
+    ) -> ActionResult:
         """Validate and execute a player action."""
         if getattr(self.state, "is_network_view", False):
             return ActionResult(False, "客户端视图状态不能执行规则动作。")
@@ -126,14 +132,23 @@ class TurnManager:
         if self.state.phase == TurnPhase.SETUP and action != PlayerAction.PLAY_BASIC:
             return ActionResult(False, "Only place Basics during Setup.")
 
-        result = self.resolver.resolve(action, player_idx=player_idx, **params)
+        result = self.resolver.resolve(
+            action,
+            player_idx=player_idx,
+            finish_attack_in_stack=finish_attack_in_stack,
+            **params,
+        )
         if result.success:
             self.state.revision = getattr(self.state, "revision", 0) + 1
 
         # After attack, stay in ATTACK phase until player clicks End Turn.
         # A final KO may already have moved the game to GAME_OVER.
         if action == PlayerAction.DECLARE_ATTACK and result.success:
-            if self.state.winner is None and self.state.phase != TurnPhase.GAME_OVER:
+            if (
+                self.state.winner is None
+                and self.state.phase == TurnPhase.MAIN
+                and self.state.active_player_idx == player_idx
+            ):
                 self.state.phase = TurnPhase.ATTACK
 
         elif action == PlayerAction.END_TURN and result.success:

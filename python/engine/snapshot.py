@@ -83,6 +83,7 @@ class GameSnapshot:
             "context": {},
         }
     )
+    event_stream: list[dict] = field(default_factory=list)
 
 
 class SnapshotManager:
@@ -172,6 +173,7 @@ def snapshot_state(state: GameState) -> GameSnapshot:
                 },
             )
         ),
+        event_stream=_snapshot_event_stream(state),
     )
 
 
@@ -203,7 +205,7 @@ def restore_state(state: GameState, snap: GameSnapshot):
             },
         )
     )
-    state._piercing_attack = False
+    _restore_event_stream(state, getattr(snap, "event_stream", []))
     state._ko_from_attack = False
     state._mulligan_bonus_given = set(snap.mulligan_bonus_given)
 
@@ -242,11 +244,62 @@ def state_from_snapshot(snap: GameSnapshot, *, rebuild_event_bus: bool = True) -
     return state
 
 
+def snapshot_to_dict(snap: GameSnapshot) -> dict:
+    """Convert a GameSnapshot to a JSON-compatible dictionary."""
+    return {
+        "turn_number": int(snap.turn_number),
+        "phase": str(snap.phase),
+        "active_player_idx": int(snap.active_player_idx),
+        "first_player_idx": int(snap.first_player_idx),
+        "p1": _player_snapshot_to_dict(snap.p1),
+        "p2": _player_snapshot_to_dict(snap.p2),
+        "stadium_card_id": snap.stadium_card_id,
+        "winner": snap.winner,
+        "apply_type_matchups": bool(snap.apply_type_matchups),
+        "mulligan_bonus_given": list(snap.mulligan_bonus_given),
+        "pending_promotions": list(snap.pending_promotions),
+        "revision": int(snap.revision),
+        "choice_sequence": int(snap.choice_sequence),
+        "public_deck_keys": list(snap.public_deck_keys),
+        "resolution_stack": copy.deepcopy(snap.resolution_stack),
+        "event_stream": copy.deepcopy(snap.event_stream),
+    }
+
+
+def snapshot_from_dict(data: dict) -> GameSnapshot:
+    """Rebuild a GameSnapshot from snapshot_to_dict output."""
+    return GameSnapshot(
+        turn_number=int(data.get("turn_number", 0)),
+        phase=str(data.get("phase", "SETUP")),
+        active_player_idx=int(data.get("active_player_idx", 0)),
+        first_player_idx=int(data.get("first_player_idx", 0)),
+        p1=_player_snapshot_from_dict(dict(data.get("p1", {}))),
+        p2=_player_snapshot_from_dict(dict(data.get("p2", {}))),
+        stadium_card_id=data.get("stadium_card_id"),
+        winner=data.get("winner"),
+        apply_type_matchups=bool(data.get("apply_type_matchups", False)),
+        mulligan_bonus_given=list(data.get("mulligan_bonus_given", [])),
+        pending_promotions=list(data.get("pending_promotions", [])),
+        revision=int(data.get("revision", 0)),
+        choice_sequence=int(data.get("choice_sequence", 0)),
+        public_deck_keys=tuple(data.get("public_deck_keys", [None, None])),
+        resolution_stack=copy.deepcopy(
+            data.get(
+                "resolution_stack",
+                {"frames": [], "pending_request": None, "sequence": 0, "context": {}},
+            )
+        ),
+        event_stream=copy.deepcopy(data.get("event_stream", [])),
+    )
+
+
 def rebuild_state_event_bus(state: GameState):
     """Re-register event-driven modifiers after snapshot restore."""
     from engine.commands.modifier_registration import register_pokemon_modifiers
+    from engine.effects.modifier_manager import ModifierManager
 
     state.event_bus.clear()
+    state.modifier_manager = ModifierManager(state.event_bus)
     for player_idx in (0, 1):
         player = state.get_player(player_idx)
         for slot, pokemon in player.get_all_pokemon():
@@ -257,6 +310,128 @@ def rebuild_state_event_bus(state: GameState):
                     slot,
                     event_bus=state.event_bus,
                 )
+
+
+def _snapshot_event_stream(state: GameState) -> list[dict]:
+    events = getattr(getattr(state, "event_stream", None), "_events", ())
+    return [
+        {
+            "event_type": getattr(event, "event_type", ""),
+            "data": copy.deepcopy(getattr(event, "data", {}) or {}),
+        }
+        for event in events
+    ]
+
+
+def _player_snapshot_to_dict(snap: PlayerSnapshot) -> dict:
+    return {
+        "name": snap.name,
+        "hand_ids": list(snap.hand_ids),
+        "deck_ids": list(snap.deck_ids),
+        "discard_ids": list(snap.discard_ids),
+        "prize_ids": list(snap.prize_ids),
+        "active": _pokemon_snapshot_to_dict(snap.active),
+        "bench": [_pokemon_snapshot_to_dict(pokemon) for pokemon in snap.bench],
+        "supporter_played": bool(snap.supporter_played),
+        "energy_attached": bool(snap.energy_attached),
+        "retreated": bool(snap.retreated),
+        "stadium_played": bool(snap.stadium_played),
+        "stadium_used": bool(snap.stadium_used),
+        "healed": bool(snap.healed),
+        "vstar_used": bool(snap.vstar_used),
+        "was_ko_by_attack": bool(snap.was_ko_by_attack),
+    }
+
+
+def _player_snapshot_from_dict(data: dict) -> PlayerSnapshot:
+    bench = [
+        _pokemon_snapshot_from_dict(item) if isinstance(item, dict) else None
+        for item in data.get("bench", [])
+    ]
+    while len(bench) < 5:
+        bench.append(None)
+    return PlayerSnapshot(
+        name=str(data.get("name", "")),
+        hand_ids=list(data.get("hand_ids", [])),
+        deck_ids=list(data.get("deck_ids", [])),
+        discard_ids=list(data.get("discard_ids", [])),
+        prize_ids=list(data.get("prize_ids", [])),
+        active=(
+            _pokemon_snapshot_from_dict(data["active"])
+            if isinstance(data.get("active"), dict)
+            else None
+        ),
+        bench=bench[:5],
+        supporter_played=bool(data.get("supporter_played", False)),
+        energy_attached=bool(data.get("energy_attached", False)),
+        retreated=bool(data.get("retreated", False)),
+        stadium_played=bool(data.get("stadium_played", False)),
+        stadium_used=bool(data.get("stadium_used", False)),
+        healed=bool(data.get("healed", False)),
+        vstar_used=bool(data.get("vstar_used", False)),
+        was_ko_by_attack=bool(data.get("was_ko_by_attack", False)),
+    )
+
+
+def _pokemon_snapshot_to_dict(snap: PokemonSnapshot | None) -> dict | None:
+    if snap is None:
+        return None
+    return {
+        "card_id": snap.card_id,
+        "damage_counters": int(snap.damage_counters),
+        "energy_card_ids": list(snap.energy_card_ids),
+        "attached_tool_id": snap.attached_tool_id,
+        "status_conditions": list(snap.status_conditions),
+        "evolution_stack_ids": list(snap.evolution_stack_ids),
+        "can_evolve_this_turn": bool(snap.can_evolve_this_turn),
+        "placed_this_turn": bool(snap.placed_this_turn),
+        "used_abilities": list(snap.used_abilities),
+        "damage_prevented": bool(snap.damage_prevented),
+        "all_prevented": bool(snap.all_prevented),
+        "outgoing_damage_reduction": int(snap.outgoing_damage_reduction),
+        "attack_locked": bool(snap.attack_locked),
+        "attack_locked_names": copy.deepcopy(snap.attack_locked_names),
+        "dazzled": bool(snap.dazzled),
+        "max_hp_modifiers": copy.deepcopy(snap.max_hp_modifiers),
+        "paralyzed_since_turn": int(snap.paralyzed_since_turn),
+    }
+
+
+def _pokemon_snapshot_from_dict(data: dict) -> PokemonSnapshot:
+    return PokemonSnapshot(
+        card_id=str(data.get("card_id", "")),
+        damage_counters=int(data.get("damage_counters", 0)),
+        energy_card_ids=list(data.get("energy_card_ids", [])),
+        attached_tool_id=data.get("attached_tool_id"),
+        status_conditions=list(data.get("status_conditions", [])),
+        evolution_stack_ids=list(data.get("evolution_stack_ids", [])),
+        can_evolve_this_turn=bool(data.get("can_evolve_this_turn", True)),
+        placed_this_turn=bool(data.get("placed_this_turn", True)),
+        used_abilities=list(data.get("used_abilities", [])),
+        damage_prevented=bool(data.get("damage_prevented", False)),
+        all_prevented=bool(data.get("all_prevented", False)),
+        outgoing_damage_reduction=int(data.get("outgoing_damage_reduction", 0)),
+        attack_locked=bool(data.get("attack_locked", False)),
+        attack_locked_names=copy.deepcopy(data.get("attack_locked_names", {})),
+        dazzled=bool(data.get("dazzled", False)),
+        max_hp_modifiers=copy.deepcopy(data.get("max_hp_modifiers", [])),
+        paralyzed_since_turn=int(data.get("paralyzed_since_turn", 0)),
+    )
+
+
+def _restore_event_stream(state: GameState, events: list[dict]) -> None:
+    from engine.events.game_events import GameEvent, GameEventStream
+
+    if not hasattr(state, "event_stream") or state.event_stream is None:
+        state.event_stream = GameEventStream()
+    state.event_stream._events = [
+        GameEvent(
+            str(event.get("event_type", "")),
+            copy.deepcopy(event.get("data", {}) or {}),
+        )
+        for event in events
+        if isinstance(event, dict)
+    ]
 
 
 def _snapshot_player(player: PlayerState) -> PlayerSnapshot:

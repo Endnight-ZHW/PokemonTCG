@@ -1,0 +1,250 @@
+"""Board-target pending-choice continuation handlers."""
+from __future__ import annotations
+
+from engine.commands.choice_helpers import resolve_board_choice
+
+
+def register_board_continuations(registry, stack) -> None:
+    registry.register(
+        "switch_confirm",
+        lambda _req, cont, choice, _player_idx, _slot:
+            resolve_switch_confirm(stack, cont, choice),
+    )
+    registry.register(
+        "switch_bench",
+        lambda _req, cont, choice, _player_idx, _slot:
+            resolve_switch_bench(stack, cont, choice),
+    )
+    registry.register(
+        "bench_damage_targets",
+        lambda _req, cont, choice, _player_idx, _slot:
+            resolve_bench_damage_targets(stack, cont, choice),
+    )
+    registry.register(
+        "choose_damage_target",
+        lambda _req, cont, choice, _player_idx, _slot:
+            resolve_choose_damage_target(stack, cont, choice),
+    )
+    registry.register(
+        "place_counters_then_self_ko",
+        lambda _req, cont, choice, player_idx, slot:
+            resolve_place_counters_then_self_ko(stack, cont, choice, player_idx, slot),
+    )
+    registry.register(
+        "choose_heal_damage",
+        lambda _req, cont, choice, _player_idx, _slot:
+            resolve_choose_heal_damage(stack, cont, choice),
+    )
+
+
+def resolve_switch_confirm(
+    stack,
+    continuation: dict,
+    choice,
+):
+    from engine.game_state import ActionRequest, ActionResult
+
+    if not bool(choice):
+        return ActionResult(True, "未替换宝可梦。")
+
+    bench_indices = [
+        int(index)
+        for index in continuation.get("bench_indices", []) or []
+    ]
+    target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
+    if len(bench_indices) == 1:
+        return resolve_switch_bench(
+            stack,
+            {
+                "target_player_idx": target_player_idx,
+                "bench_indices": bench_indices,
+            },
+            bench_indices[0],
+        )
+
+    return ActionRequest(
+        request_type=str(continuation.get("request_type", "select_bench")),
+        player=int(continuation.get("chooser_idx", target_player_idx) or 0),
+        prompt="选择要替换上场的宝可梦",
+        min_select=1,
+        max_select=1,
+        target_player=str(continuation.get("request_target_player", "self")),
+        bench_indices=bench_indices,
+        continuation={
+            "kind": "switch_bench",
+            "target_player_idx": target_player_idx,
+            "bench_indices": bench_indices,
+        },
+    )
+
+
+def resolve_switch_bench(stack, continuation: dict, choice):
+    from engine.game_state import ActionResult
+
+    try:
+        bench_idx = int(choice)
+    except (TypeError, ValueError):
+        return ActionResult(False, "没有选择有效的备战宝可梦。")
+
+    allowed = continuation.get("bench_indices", None)
+    if allowed is not None:
+        allowed_indices = {int(index) for index in allowed or []}
+        if allowed_indices and bench_idx not in allowed_indices:
+            return ActionResult(False, "选择的备战宝可梦不在可用范围内。")
+
+    target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
+    player = stack.state.get_player(target_player_idx)
+    if (
+        bench_idx < 0
+        or bench_idx >= len(player.bench)
+        or player.active is None
+        or player.bench[bench_idx] is None
+    ):
+        return ActionResult(False, "选择的备战宝可梦已不存在。")
+
+    active_name = player.active.card.name
+    bench_name = player.bench[bench_idx].card.name
+    player.switch_active_to_bench(bench_idx)
+    stack.state._log(f"将{active_name}与{bench_name}互换了。")
+    return ActionResult(True, "替换了战斗宝可梦。")
+
+
+def resolve_bench_damage_targets(
+    stack,
+    continuation: dict,
+    choice,
+):
+    from engine.game_state import ActionResult
+    from engine.rules_constants import DAMAGE_PER_COUNTER
+
+    target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
+    target_state = stack.state.get_player(target_player_idx)
+    amount = int(continuation.get("amount", 0) or 0)
+    count = int(continuation.get("count", 1) or 1)
+    counters = amount // DAMAGE_PER_COUNTER
+    allowed = {
+        int(index)
+        for index in continuation.get("bench_indices", []) or []
+    }
+    selected_indices = []
+    for item in list(choice or [])[:count]:
+        try:
+            selected_indices.append(int(item))
+        except (TypeError, ValueError):
+            continue
+
+    hits = 0
+    for index in selected_indices:
+        if allowed and index not in allowed:
+            continue
+        if 0 <= index < len(target_state.bench) and target_state.bench[index]:
+            target_state.bench[index].damage_counters += counters
+            hits += 1
+    stack.state._log(
+        f"对{target_state.name}的备战区造成了{hits}次{amount}点伤害。"
+    )
+    return ActionResult(True, f"Bench damage dealt to {hits} Pokemon.")
+
+
+def resolve_choose_damage_target(
+    stack,
+    continuation: dict,
+    choice,
+):
+    from engine.game_state import ActionResult
+    from engine.rules_constants import DAMAGE_PER_COUNTER
+    from engine.commands.primitives_combat import _consume_effect_damage_prevention
+
+    target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
+    _slot_name, target_poke = resolve_board_choice(
+        stack.state,
+        target_player_idx,
+        choice,
+    )
+    if target_poke is None:
+        return ActionResult(True, "")
+    if _consume_effect_damage_prevention(stack.state, target_poke):
+        return ActionResult(True, "")
+
+    amount = int(continuation.get("amount", 0) or 0)
+    target_poke.damage_counters += amount // DAMAGE_PER_COUNTER
+    stack.state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
+    return ActionResult(True, "")
+
+
+def resolve_place_counters_then_self_ko(
+    stack,
+    continuation: dict,
+    choice,
+    player_idx: int,
+    source_slot: str,
+):
+    from engine.enums import TurnPhase
+    from engine.game_state import ActionResult
+    from engine.commands.primitives_combat import (
+        _discard_pokemon_for_effect,
+        _handle_effect_ko_if_needed,
+        _set_promotion_or_game_over,
+    )
+
+    target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
+    slot_name, target_poke = resolve_board_choice(
+        stack.state,
+        target_player_idx,
+        choice,
+    )
+    if target_poke is None or not slot_name:
+        return ActionResult(True, "神秘彗星没有选择目标。")
+
+    counters = int(continuation.get("counters", 0) or 0)
+    ko_slots: list[str] = []
+    target_poke.damage_counters += counters
+    stack.state._log(f"在{target_poke.card.name}身上放置了{counters}个伤害指示物。")
+    _handle_effect_ko_if_needed(
+        stack.state,
+        target_player_idx,
+        slot_name,
+        target_poke,
+        ko_slots,
+    )
+    if stack.state.phase != TurnPhase.GAME_OVER:
+        source = _discard_pokemon_for_effect(
+            stack.state,
+            player_idx,
+            source_slot,
+        )
+        if source:
+            stack.state._log(f"{source.card.name}被放置于弃牌区。")
+            if source_slot == "active":
+                _set_promotion_or_game_over(stack.state, player_idx)
+
+    return ActionResult(
+        True,
+        "神秘彗星结算完毕。",
+        pokemon_ko=list(ko_slots),
+    )
+
+
+def resolve_choose_heal_damage(
+    stack,
+    continuation: dict,
+    choice,
+):
+    from engine.game_state import ActionResult
+    from engine.rules_constants import DAMAGE_PER_COUNTER
+
+    target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
+    _slot_name, target_poke = resolve_board_choice(
+        stack.state,
+        target_player_idx,
+        choice,
+    )
+    if target_poke is None:
+        return ActionResult(False, "无效的回复目标。")
+
+    amount = int(continuation.get("amount", 0) or 0)
+    counters = amount // DAMAGE_PER_COUNTER
+    target_poke.damage_counters = max(0, target_poke.damage_counters - counters)
+    stack.state.get_player(target_player_idx).healed_this_turn = True
+    stack.state._log(f"{target_poke.card.name}回复了{amount}点HP。")
+    return ActionResult(True, f"{target_poke.card.name}回复了{amount}点HP。")

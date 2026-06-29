@@ -1,99 +1,49 @@
 """Action resolver - executes game actions and mutates GameState."""
 import random
-from engine.rules_constants import DAMAGE_PER_COUNTER, COIN_FLIP_THRESHOLD
-from engine.enums import TurnPhase, StatusType, PlayerAction, EventType
-from engine.game_state import GameState, ActionResult, ActionRequest
+from engine.rules_constants import COIN_FLIP_THRESHOLD
+from engine.enums import TurnPhase, StatusType, PlayerAction
+from engine.game_state import GameState, ActionResult
 from engine.rules_validator import (
     can_play_basic, can_evolve, can_attach_energy, can_play_supporter,
     can_play_item, can_play_stadium, can_play_tool, can_retreat,
     can_declare_attack, can_use_ability, check_win_condition
 )
-from engine.player_state import PokemonInPlay
 from engine.commands.modifier_registration import (
     register_pokemon_modifiers,
     unregister_pokemon_modifiers,
 )
-from engine.commands.damage_pipeline import resolve_damage as event_damage_pipeline
-from engine.effects.modifier_registry import (
-    get_special_energy_attach_effect,
-)
 from engine.effects.availability import (
+    effect_params,
     effects_cost_is_payable,
     effects_have_legal_target,
 )
+from engine.effects.runtime_effects import (
+    strict_ability_runtime_effects as ability_runtime_effects,
+    strict_attack_runtime_effects as attack_runtime_effects,
+    strict_trainer_runtime_effects as trainer_runtime_effects,
+)
 from data.card_models import Card
-from engine.commands.resolution_stack import ResolutionStack
+from engine.commands.attack_frames import clear_attack_damage_context
+from engine.commands.dsl_compiler import compile_command_spec
 from engine.commands.registry import build_command
-from engine.commands.base import CommandResult
+from engine.effect_runner import (
+    FULL_DAMAGE_EFFECT_TYPES,
+    FULL_DAMAGE_VM_OPS,
+    VMEffectRunner,
+    attack_effects_replace_base_damage as _attack_effects_replace_base_damage,
+    build_runtime_command as _build_runtime_command,
+    command_result_to_action_result,
+    effect_args as _effect_args,
+    effect_op as _effect_op,
+    effect_replaces_base_damage as _effect_replaces_base_damage,
+    effect_type as _effect_type,
+    merge_action_results,
+)
 
 
-def _cr_to_ar(cr: CommandResult) -> ActionResult:
+def _cr_to_ar(cr) -> ActionResult:
     """Convert CommandResult to ActionResult (legacy compatibility)."""
-    return ActionResult(
-        success=cr.success,
-        log_message=cr.log_message,
-        damage_dealt=cr.damage_dealt,
-        cards_drawn=cr.cards_drawn,
-        cards_discarded=getattr(cr, 'cards_discarded', 0),
-        pokemon_ko=cr.pokemon_ko,
-        status_applied=cr.status_applied,
-        pending_action=cr.pending_choice,
-        attack_failed=cr.attack_failed,
-    )
-
-
-def merge_action_results(target: ActionResult, source: ActionResult) -> ActionResult:
-    """Merge source into target, preserving all user-visible result fields."""
-    if source.log_message:
-        target.log_message = (
-            f"{target.log_message} {source.log_message}".strip()
-            if target.log_message else source.log_message
-        )
-    target.success = target.success and source.success
-    target.damage_dealt += source.damage_dealt
-    target.cards_drawn.extend(source.cards_drawn)
-    target.cards_discarded += source.cards_discarded
-    target.pokemon_ko.extend(source.pokemon_ko)
-    target.status_applied.extend(source.status_applied)
-    target.prize_taken = target.prize_taken or source.prize_taken
-    target.attack_failed = target.attack_failed or source.attack_failed
-    if source.pending_action:
-        target.pending_action = source.pending_action
-    return target
-
-
-FULL_DAMAGE_EFFECT_TYPES = {
-    "damage_per_self_damage",
-    "damage_per_self_energy",
-    "damage_per_self_energy_type",
-    "damage_plus_bench",
-    "damage_per_hand_size",
-    "damage_per_energy",
-    "damage_per_evolved",
-    "damage_self_penalty",
-    "damage_per_discard_psychic",
-    "conditional_damage_heal",
-    "damage_and_self_heal",
-    "discard_fighting_energy_damage",
-    "discard_hand_conditional_bonus",
-    "coin_flip_triple",
-    "coin_flip_until_tails",
-    "mill_and_damage_per_energy",
-    "attack_damage_formula",
-}
-
-
-def _effect_type(effect) -> str:
-    if isinstance(effect, dict):
-        return str(effect.get("type") or effect.get("effect_type") or "")
-    return str(getattr(effect, "type", "") or getattr(effect, "effect_type", ""))
-
-
-def _attack_effects_replace_base_damage(attack) -> bool:
-    return any(
-        _effect_type(effect) in FULL_DAMAGE_EFFECT_TYPES
-        for effect in getattr(attack, "effects", []) or []
-    )
+    return command_result_to_action_result(cr)
 
 
 class ActionResolver:
@@ -102,7 +52,20 @@ class ActionResolver:
     def __init__(self, state: GameState):
         self.state = state
 
-    def resolve(self, action: PlayerAction, **params) -> ActionResult:
+    def _effect_runner(self) -> VMEffectRunner:
+        return VMEffectRunner(
+            self.state,
+            compile_command_spec=compile_command_spec,
+            build_command=build_command,
+        )
+
+    def resolve(
+        self,
+        action: PlayerAction,
+        *,
+        finish_attack_in_stack: bool = False,
+        **params,
+    ) -> ActionResult:
         action_map = {
             PlayerAction.PLAY_BASIC: self._play_basic,
             PlayerAction.EVOLVE: self._evolve,
@@ -117,6 +80,8 @@ class ActionResolver:
         handler = action_map.get(action)
         if handler is None:
             return ActionResult(False, f"未知动作: {action}")
+        if action == PlayerAction.DECLARE_ATTACK:
+            params["finish_attack_in_stack"] = finish_attack_in_stack
         return handler(**params)
 
     def _use_stadium(self, player_idx: int) -> ActionResult:
@@ -135,8 +100,8 @@ class ActionResolver:
         # Check stadium type — only activatable stadiums can be triggered
         stadium = self.state.stadium_card
         stadium_type = "passive"
-        for effect in stadium.trainer_effects:
-            if hasattr(effect, 'params') and effect.params.get("stadium_type") == "activatable":
+        for effect in trainer_runtime_effects(stadium):
+            if effect_params(effect).get("stadium_type") == "activatable":
                 stadium_type = "activatable"
                 break
 
@@ -147,9 +112,10 @@ class ActionResolver:
         self.state._log(msg)
 
         result = ActionResult(True, msg)
-        if stadium.trainer_effects:
+        stadium_effects = trainer_runtime_effects(stadium)
+        if stadium_effects:
             eff_result = self._execute_effects(
-                stadium.trainer_effects, player_idx, "active"
+                stadium_effects, player_idx, "active"
             )
             merge_action_results(result, eff_result)
 
@@ -195,8 +161,9 @@ class ActionResolver:
         result = ActionResult(True, msg)
         for ability in card.abilities:
             if ability.trigger == "on_enter_play":
+                ability_effects = ability_runtime_effects(ability)
                 ab_results = self._execute_effects(
-                    ability.effects, player_idx, target
+                    ability_effects, player_idx, target
                 )
                 result.log_message += f" | 特性: {ability.name}"
                 merge_action_results(result, ab_results)
@@ -231,8 +198,9 @@ class ActionResolver:
         result = ActionResult(True, msg)
         for ability in card.abilities:
             if ability.trigger == "on_enter_play":
+                ability_effects = ability_runtime_effects(ability)
                 ab_results = self._execute_effects(
-                    ability.effects, player_idx, slot
+                    ability_effects, player_idx, slot
                 )
                 result.log_message += f" | 特性: {ability.name}"
                 merge_action_results(result, ab_results)
@@ -263,15 +231,28 @@ class ActionResolver:
         msg = f"{player.name}将{card.name}附着于{slot_cn}。"
         self.state._log(msg)
 
-        # Special energy on-attach effects (generic hook)
-        should_switch, switch_msg = get_special_energy_attach_effect(card, player, target_slot)
-        if should_switch:
-            bench_idx = int(target_slot.split("_")[1])
-            target = player.get_pokemon(target_slot)
-            player.switch_active_to_bench(bench_idx)
-            poke_name = target.card.name if target else "宝可梦"
-            self.state._log(f"喷射能量效果：将{poke_name}切换为战斗宝可梦！")
-            msg += " " + switch_msg
+        from engine.commands.trigger_commands import (
+            collect_on_attach_command_specs,
+            execute_trigger_commands,
+        )
+
+        trigger_specs = collect_on_attach_command_specs(
+            card,
+            player_idx,
+            target_slot,
+            "hand",
+        )
+        if trigger_specs:
+            trigger_result = execute_trigger_commands(
+                self.state,
+                trigger_specs,
+                player_idx=player_idx,
+                source_slot=target_slot,
+            )
+            if trigger_result.log_message:
+                msg += " " + trigger_result.log_message
+            if not trigger_result.success:
+                return ActionResult(False, msg)
 
         return ActionResult(True, msg)
 
@@ -303,18 +284,19 @@ class ActionResolver:
             if not ok:
                 return ActionResult(False, reason)
 
-        if card.trainer_effects:
+        trainer_effects = trainer_runtime_effects(card)
+        if trainer_effects:
             if not effects_cost_is_payable(
                 self.state,
                 player_idx,
-                card.trainer_effects,
+                trainer_effects,
                 exclude_hand_index=hand_idx,
             ):
                 return ActionResult(False, "无法支付代价。")
             if not effects_have_legal_target(
                 self.state,
                 player_idx,
-                card.trainer_effects,
+                trainer_effects,
                 source_slot=params.get("target_slot", "active"),
                 exclude_hand_index=hand_idx,
             ):
@@ -330,9 +312,9 @@ class ActionResolver:
         self.state._log(msg)
 
         result = ActionResult(True, msg)
-        if card.trainer_effects:
+        if trainer_effects:
             effect_result = self._execute_effects(
-                card.trainer_effects, player_idx, "active"
+                trainer_effects, player_idx, "active"
             )
             if not effect_result.success:
                 # Effect failed — return card to hand
@@ -389,16 +371,17 @@ class ActionResolver:
 
         for ability in pokemon.card.abilities:
             if ability.name.lower() == ability_name.lower():
-                if ability.effects and not effects_have_legal_target(
+                ability_effects = ability_runtime_effects(ability)
+                if ability_effects and not effects_have_legal_target(
                     self.state,
                     player_idx,
-                    ability.effects,
+                    ability_effects,
                     source_slot=slot,
                 ):
                     return ActionResult(False, "没有合法目标，不能使用该特性。")
                 msg = f"{player.name}使用了{pokemon.card.name}的特性{ability.name}。"
                 self.state._log(msg)
-                result = self._execute_effects(ability.effects, player_idx, slot)
+                result = self._execute_effects(ability_effects, player_idx, slot)
                 if result.success and ability.trigger != "repeatable":
                     pokemon.used_abilities.add(ability.name)
                 return result
@@ -428,7 +411,13 @@ class ActionResolver:
         self.state._log(msg)
         return ActionResult(True, msg)
 
-    def _declare_attack(self, player_idx: int, attack_idx: int) -> ActionResult:
+    def _declare_attack(
+        self,
+        player_idx: int,
+        attack_idx: int,
+        *,
+        finish_attack_in_stack: bool = False,
+    ) -> ActionResult:
         ok, reason = can_declare_attack(self.state, player_idx, attack_idx)
         if not ok:
             return ActionResult(False, reason)
@@ -470,7 +459,7 @@ class ActionResolver:
         result = ActionResult(True, msg)
 
         replace_base_damage = _attack_effects_replace_base_damage(attack)
-        self.state._attack_damage_context = {
+        attack_damage_context = {
             "active": True,
             "player_idx": player_idx,
             "attacker": attacker,
@@ -480,135 +469,22 @@ class ActionResolver:
             "ignore_defender_effects": False,
         }
 
-        # Execute all attack effects in one VM stack so pending choices resume
-        # the remaining effects before the final attack damage frame.
-        if attack.effects:
-            eff_result = self._execute_effects(
-                attack.effects, player_idx, "active"
-            )
-            merge_action_results(result, eff_result)
+        # Execute all attack effects and the final damage/KO frame in one VM
+        # stack so pending choices resume the remaining attack frames.
+        eff_result = self._execute_attack_effects(
+            attack_runtime_effects(attack),
+            player_idx,
+            "active",
+            attack_damage_context,
+            finish_attack_in_stack=finish_attack_in_stack,
+        )
+        merge_action_results(result, eff_result)
 
         if not result.success:
-            self.state._attack_damage_context = None
+            clear_attack_damage_context(self.state)
             return result
 
-        # Apply full accumulated attack damage + KO checks. If a pending action
-        # (e.g. coin flip) was generated by effects, defer damage until it
-        # resolves so all branches contribute to one damage pipeline pass.
-        if result.pending_action:
-            def finish_attack_result(inner):
-                if inner is None:
-                    inner = ActionResult(True, "")
-                if isinstance(inner, ActionRequest):
-                    wrap_attack_request(inner)
-                    return inner
-                if isinstance(inner, ActionResult) and not inner.success:
-                    self.state._attack_damage_context = None
-                    self.state._piercing_attack = False
-                    self.state._attack_ignore_defender_effects = False
-                    return inner
-                if isinstance(inner, ActionResult) and inner.pending_action:
-                    wrap_attack_request(inner.pending_action)
-                    return inner
-                self._apply_accumulated_attack_damage(inner)
-                self._do_attack_ko_checks(inner)
-                return inner
-
-            def wrap_attack_request(request):
-                orig_callback = request.callback
-
-                def attack_complete_wrapper(choice_result):
-                    inner = (
-                        orig_callback(choice_result)
-                        if orig_callback
-                        else ActionResult(True, "")
-                    )
-                    return finish_attack_result(inner)
-
-                request.callback = attack_complete_wrapper
-
-            wrap_attack_request(result.pending_action)
-        else:
-            self._apply_accumulated_attack_damage(result)
-            self._do_attack_ko_checks(result)
-
         return result
-
-    def _apply_accumulated_attack_damage(self, result):
-        ctx = getattr(self.state, "_attack_damage_context", None)
-        if not ctx:
-            return
-        self.state._attack_damage_context = None
-        self.state._piercing_attack = False
-        self.state._attack_ignore_defender_effects = False
-        if result.attack_failed:
-            return
-        player_idx = int(ctx.get("player_idx", self.state.active_player_idx))
-        attacker = ctx.get("attacker") or self.state.get_player(player_idx).active
-        defender = self.state.get_player(1 - player_idx).active
-        base_damage = int(ctx.get("base_damage", 0) or 0)
-        if attacker is None or defender is None or base_damage <= 0:
-            return
-        self._apply_attack_damage(
-            defender,
-            attacker,
-            base_damage,
-            str(ctx.get("attacker_type", "Colorless")),
-            result,
-            bool(ctx.get("piercing", False)),
-            bool(ctx.get("ignore_defender_effects", False)),
-        )
-
-    def _apply_attack_damage(
-        self,
-        defender,
-        attacker,
-        base_damage: int,
-        attacker_type: str,
-        result,
-        piercing: bool = False,
-        ignore_defender_effects: bool = False,
-    ):
-        """Apply base attack damage via the event-driven damage pipeline."""
-        if defender.damage_prevented_next_turn and not ignore_defender_effects:
-            defender.damage_prevented_next_turn = False
-            defender.all_prevented_next_turn = False
-            self.state._log(f"{defender.card.name}免疫了所有伤害！")
-            return
-
-        final_damage, mod_logs = event_damage_pipeline(
-            self.state, attacker, defender,
-            base_damage, attacker_type,
-            piercing=piercing,
-            ignore_defender_effects=ignore_defender_effects,
-        )
-        for log_msg in mod_logs:
-            self.state._log(log_msg)
-
-        counters = final_damage // DAMAGE_PER_COUNTER
-        defender.damage_counters += counters
-        result.damage_dealt += final_damage
-
-        self.state._log(f"对{defender.card.name}造成了{final_damage}点伤害"
-                        f"（剩余HP {defender.current_hp}）。")
-
-    def _do_attack_ko_checks(self, result):
-        """Check KOs and win condition after attack damage."""
-        self.state._ko_from_attack = True
-        ko_results = self._check_kos()
-        self.state._ko_from_attack = False
-        result.pokemon_ko.extend(ko_results)
-        for player_idx in (0, 1):
-            player = self.state.get_player(player_idx)
-            if player.active is None and player.has_any_pokemon_in_play():
-                self.state.pending_promotion_player = player_idx
-
-        from engine.rules_validator import check_win_condition
-        winner = check_win_condition(self.state)
-        if winner is not None:
-            self.state.winner = winner
-            self.state.phase = TurnPhase.GAME_OVER
-            self.state._log(f"{self.state.get_player(winner).name}获胜！")
 
     def _end_turn(self, player_idx: int) -> ActionResult:
         msg = f"{self.state.get_player(player_idx).name}结束了回合。"
@@ -619,108 +495,38 @@ class ActionResolver:
 
     def _execute_effects(self, effects: list, player_idx: int,
                          source_slot: str) -> ActionResult:
-        """Execute a list of effects using the ResolutionStack.
+        """Execute normal effects through the VM effect runner."""
+        return self._effect_runner().execute_effects(effects, player_idx, source_slot)
 
-        Each effect is built into an ICommand via the registry and pushed
-        onto a LIFO ResolutionStack. Triggers (on_enter_play abilities, etc.)
-        push new commands onto the stack, which resolve before the caller
-        continues — correctly modeling nested trigger trees.
-        """
-        stack = ResolutionStack(self.state)
-        try:
-            commands = [build_command(e) for e in effects]
-        except (KeyError, ValueError) as e:
-            return ActionResult(False, str(e))
-        stack.push_many(commands)
-        rr = stack.resolve_all(player_idx, source_slot)
-
-        result = ActionResult(
-            success=rr.success,
-            log_message=" ".join(rr.log_messages),
-            damage_dealt=rr.damage_dealt,
-            cards_drawn=rr.cards_drawn,
-            cards_discarded=rr.cards_discarded,
-            pokemon_ko=rr.pokemon_ko,
-            status_applied=rr.status_applied,
-            pending_action=rr.pending_choice,
-            attack_failed=rr.attack_failed,
+    def _execute_attack_effects(
+        self,
+        effects: list,
+        player_idx: int,
+        source_slot: str,
+        attack_damage_context: dict,
+        *,
+        finish_attack_in_stack: bool = False,
+    ) -> ActionResult:
+        return self._effect_runner().execute_attack_effects(
+            effects,
+            player_idx,
+            source_slot,
+            attack_damage_context,
+            finish_attack_in_stack=finish_attack_in_stack,
         )
-        return result
 
     # ---- KO Checking ----
 
     def _check_kos(self) -> list[str]:
-        ko_slots = []
-
-        for player_idx in [0, 1]:
-            player = self.state.get_player(player_idx)
-
-            if player.active and player.active.is_knocked_out:
-                ko_slots.append(f"p{player_idx}_active")
-                self._handle_ko(player_idx, "active")
-
-            for i, pokemon in enumerate(player.bench):
-                if pokemon and pokemon.is_knocked_out:
-                    ko_slots.append(f"p{player_idx}_bench_{i}")
-                    self._handle_ko(player_idx, f"bench_{i}")
-
-        return ko_slots
+        return self._effect_runner().check_kos()
 
     def _handle_ko(self, player_idx: int, slot: str):
-        player = self.state.get_player(player_idx)
-        opponent = self.state.get_player(1 - player_idx)
-        pokemon = player.get_pokemon(slot)
-
-        if pokemon is None:
-            return
-
-        if self.state._ko_from_attack:
-            player.was_ko_by_attack = True
-
-        prize_count = pokemon.card.prize_value
-
-        # Unregister modifier listeners for the KO'd Pokemon
-        unregister_pokemon_modifiers(pokemon.card.api_id, slot,
-                                      event_bus=self.state.event_bus,
-                                      player_idx=player_idx)
-
-        for hook_result in self.state.event_bus.emit(
-            EventType.POKEMON_KO,
-            state=self.state,
-            player_idx=player_idx,
-            slot=slot,
-            knocked_out=pokemon,
-            from_attack=bool(self.state._ko_from_attack),
-        ):
-            if isinstance(hook_result, dict) and hook_result.get("log"):
-                self.state._log(str(hook_result["log"]))
-
-        self.state.discard_pokemon(player_idx, slot)
-        self.state._log(f"{player.name}的{pokemon.card.name}被击倒了！")
-
-        for _ in range(prize_count):
-            if opponent.prizes:
-                opponent.take_prize()
-                self.state._log(
-                    f"{opponent.name}获得了奖品卡！"
-                    f"（剩余{len(opponent.prizes)}张）"
-                )
-
-        if not player.has_any_pokemon_in_play():
-            self.state.winner = 1 - player_idx
-            self.state._log(
-                f"{opponent.name}获胜——对手场上没有宝可梦了！"
-            )
-            self.state.phase = TurnPhase.GAME_OVER
-            return
-
-        if slot == "active":
-            self._prompt_bench_promotion(player_idx)
+        self._effect_runner().handle_ko(player_idx, slot)
 
     def _prompt_bench_promotion(self, player_idx: int):
         """Let the UI handle bench promotion selection.
         Sets a flag so TurnManager pauses before advancing the turn."""
-        self.state.pending_promotion_player = player_idx
+        self._effect_runner().prompt_bench_promotion(player_idx)
 
     # ---- Pokemon Checkup ----
 

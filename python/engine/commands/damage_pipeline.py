@@ -22,6 +22,7 @@ def resolve_damage(
     attacker_type: str,
     piercing: bool = False,
     ignore_defender_effects: bool = False,
+    trigger_commands: list | None = None,
 ) -> tuple[int, list[str]]:
     """Run the full damage pipeline and return (final_damage, log_messages).
 
@@ -93,5 +94,22 @@ def resolve_damage(
             msg = react.get("log", "")
             if msg:
                 logs.append(msg)
+    from engine.commands.trigger_commands import (
+        command_specs_from_trigger_results,
+        execute_trigger_commands,
+    )
+
+    commands = command_specs_from_trigger_results(react_results)
+    if trigger_commands is not None:
+        trigger_commands.extend(commands)
+    elif commands:
+        command_result = execute_trigger_commands(state, commands)
+        if command_result.log_message:
+            logs.append(command_result.log_message)
+        if not command_result.success:
+            raise ValueError(
+                command_result.log_message
+                or "Damage trigger settlement failed"
+            )
 
     return current, logs

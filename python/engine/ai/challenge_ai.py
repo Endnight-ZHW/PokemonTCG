@@ -19,10 +19,24 @@ from engine.ai.challenge.layers import ActionEnumerator, ChoicePolicy, Evaluator
 from engine.ai.challenge.sequencing import ExpertSequencingMixin
 from engine.ai.challenge.tactics import ExpertTacticsMixin
 from engine.ai.challenge.types import AIAction, AIChoice, AIConfig
+from engine.ai.effect_features import (
+    as_effect_list,
+    effect_branch,
+    effect_branches,
+    effect_feature_names,
+    effect_params,
+    effect_type,
+    iter_effects_recursive,
+)
 from engine.ai.profiles import (
     get_deck_ai_profile,
     load_policy_weights,
     merged_profile_weights,
+)
+from engine.effects.runtime_effects import (
+    ability_runtime_effects,
+    attack_runtime_effects,
+    trainer_runtime_effects,
 )
 from engine.rules_validator import (
     can_attach_energy,
@@ -243,7 +257,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if not isinstance(attack_idx, int) or not (0 <= attack_idx < len(player.active.card.attacks)):
                 continue
             attack = player.active.card.attacks[attack_idx]
-            effects = getattr(attack, "effects", []) or []
+            effects = attack_runtime_effects(attack)
             if self._attack_draw_pressure_is_unsafe(state, player_idx, action):
                 continue
             if not self._attack_has_productive_effect(effects):
@@ -282,7 +296,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 continue
             damage = self._estimated_attack_damage(state, player_idx, attack_idx)
             attack = player.active.card.attacks[attack_idx]
-            effect_value = self._effect_tactical_value(state, player_idx, attack.effects)
+            effect_value = self._effect_tactical_value(
+                state, player_idx, attack_runtime_effects(attack)
+            )
             if self._attack_draw_pressure_is_unsafe(state, player_idx, action):
                 continue
             if damage <= 0 and effect_value <= 0:
@@ -348,7 +364,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if not any(
             self._effect_type(effect) == "damage_per_self_damage"
             for attack in opponent.active.card.attacks
-            for effect in getattr(attack, "effects", []) or []
+            for effect in attack_runtime_effects(attack)
         ):
             return False
 
@@ -381,7 +397,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         for attack_idx, attack in enumerate(player.active.card.attacks):
             if not any(
                 self._effect_type(effect) == "damage_per_self_damage"
-                for effect in getattr(attack, "effects", []) or []
+                for effect in attack_runtime_effects(attack)
             ):
                 continue
             if self._missing_energy_count(player.active, attack.cost) <= 1:
@@ -431,12 +447,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         hand_idx = action.params.get("hand_idx")
         if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
             return False
-        effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
+        effects = trainer_runtime_effects(player.hand[hand_idx])
         return self._effects_include_major_hand_refresh(effects)
 
     def _effects_include_major_hand_refresh(self, effects: list[Any]) -> bool:
-        if isinstance(effects, dict):
-            effects = [effects]
+        effects = as_effect_list(effects)
         for effect in effects or []:
             etype = self._effect_type(effect)
             if etype in {
@@ -451,9 +466,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 params = self._effect_params(effect)
                 if int(params.get("draw_amount", params.get("draw", 0)) or 0) >= 3:
                     return True
-            params = self._effect_params(effect)
             for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
-                branch = params.get(key) or []
+                branch = effect_branch(effect, key)
                 if self._effects_include_major_hand_refresh(branch):
                     return True
         return False
@@ -529,7 +543,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             ability = self._ability_for_action(state, player_idx, action)
             if ability is None:
                 return 0.0
-            effects = getattr(ability, "effects", []) or []
+            effects = ability_runtime_effects(ability)
             effect_value = self._effect_tactical_value(
                 state, player_idx, effects, source_slot=slot if isinstance(slot, str) else None
             )
@@ -542,7 +556,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             hand_idx = action.params.get("hand_idx")
             if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
                 return 0.0
-            effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
+            effects = trainer_runtime_effects(player.hand[hand_idx])
             if self._effects_include_major_hand_refresh(effects) and not allow_draw:
                 return 0.0
             effect_value = self._effect_tactical_value(state, player_idx, effects)
@@ -567,8 +581,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return value if value >= 80.0 else 0.0
 
     def _effects_include_terminal_development(self, effects: list[Any]) -> bool:
-        if isinstance(effects, dict):
-            effects = [effects]
+        effects = as_effect_list(effects)
         for effect in effects or []:
             etype = self._effect_type(effect)
             if etype in {
@@ -583,9 +596,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 "shuffle_from_discard",
             }:
                 return True
-            params = self._effect_params(effect)
-            for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
-                branch = params.get(key) or []
+            for branch in effect_branches(effect):
                 if self._effects_include_terminal_development(branch):
                     return True
         return False
@@ -635,7 +646,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             ability = self._ability_for_action(state, player_idx, action)
             if ability is None:
                 return 0.0
-            effects = getattr(ability, "effects", []) or []
+            effects = ability_runtime_effects(ability)
             if not self._ability_converts_pre_draw_resource(state, player_idx, slot, effects):
                 return 0.0
             value += 85.0
@@ -664,8 +675,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         source_slot: Any,
         effects: list[Any],
     ) -> bool:
-        if isinstance(effects, dict):
-            effects = [effects]
+        effects = as_effect_list(effects)
         for effect in effects or []:
             etype = self._effect_type(effect)
             params = dict(self._effect_params(effect))
@@ -683,9 +693,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     state, player_idx, source_slot if isinstance(source_slot, str) else None, params
                 ) > 0:
                     return True
-            nested = self._effect_params(effect)
-            for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
-                branch = nested.get(key) or []
+            for branch in effect_branches(effect):
                 if self._ability_converts_pre_draw_resource(state, player_idx, source_slot, branch):
                     return True
         return False
@@ -710,7 +718,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
         attack = player.active.card.attacks[attack_idx]
         damage = self._estimated_attack_damage(state, player_idx, attack_idx)
-        effect_value = self._effect_tactical_value(state, player_idx, attack.effects)
+        effect_value = self._effect_tactical_value(
+            state, player_idx, attack_runtime_effects(attack)
+        )
         if damage >= opponent.active.current_hp:
             return None
         if damage >= 95 or effect_value >= 95:
@@ -769,7 +779,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 pokemon = player.get_pokemon(slot)
                 if pokemon is not None:
                     ability = next((a for a in pokemon.card.abilities if a.name == ability_name), None)
-                    effects = getattr(ability, "effects", []) if ability is not None else []
+                    effects = ability_runtime_effects(ability) if ability is not None else []
             value += max(0.0, delta) * 0.35 + max(0.0, quick - 300.0) * 0.20
             value += self._effect_tactical_value(state, player_idx, effects, source_slot=slot if isinstance(slot, str) else None) * 0.35
             if self._attack_has_productive_effect(effects):
@@ -779,7 +789,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             player = state.get_player(player_idx)
             hand_idx = action.params.get("hand_idx")
             if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
-                effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
+                effects = trainer_runtime_effects(player.hand[hand_idx])
             value += max(0.0, delta) * 0.25 + max(0.0, quick - 360.0) * 0.18
             value += self._effect_tactical_value(state, player_idx, effects) * 0.45
             if self._attack_has_productive_effect(effects):
@@ -855,8 +865,6 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             self.random.setstate(rng_state)
 
     def _attack_has_productive_effect(self, effects: list[Any]) -> bool:
-        if isinstance(effects, dict):
-            effects = [effects]
         productive = {
             "draw",
             "shuffle_draw",
@@ -871,12 +879,16 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             "energy_relocate",
             "look_top_deck",
         }
-        return any(self._effect_type(effect) in productive for effect in effects or [])
+        return any(
+            any(name in productive for name in effect_feature_names(effect))
+            for effect in iter_effects_recursive(effects)
+        )
 
     def _effects_include_draw(self, effects: list[Any]) -> bool:
-        if isinstance(effects, dict):
-            effects = [effects]
-        return any("draw" in self._effect_type(effect) for effect in effects or [])
+        return any(
+            any("draw" in name for name in effect_feature_names(effect))
+            for effect in iter_effects_recursive(effects)
+        )
 
     def _should_override_with_ko_attack(
         self, state: GameState, player_idx: int, preferred: AIAction, ko_attack: AIAction
@@ -1160,7 +1172,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if action.action == PlayerAction.PLAY_TRAINER:
                 hand_idx = action.params.get("hand_idx")
                 if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
-                    effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
+                    effects = trainer_runtime_effects(player.hand[hand_idx])
                     if self._draw_pressure_is_unsafe(state, player_idx, effects):
                         self._trace_rejection(trace, action, "draw_or_search_deck_pressure")
                         continue
@@ -1183,19 +1195,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return filtered
 
     def _effects_include_type(self, effects: list[Any], effect_type: str) -> bool:
-        if isinstance(effects, dict):
-            effects = [effects]
-        for effect in effects or []:
-            if self._effect_type(effect) == effect_type:
-                return True
-            params = self._effect_params(effect)
-            for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
-                branch = params.get(key) or []
-                if isinstance(branch, dict):
-                    branch = [branch]
-                if self._effects_include_type(branch, effect_type):
-                    return True
-        return False
+        return any(
+            effect_type in effect_feature_names(effect)
+            for effect in iter_effects_recursive(effects)
+        )
 
     def _switch_self_has_good_target(self, state: GameState, player_idx: int) -> bool:
         player = state.get_player(player_idx)
@@ -1294,7 +1297,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 player = state.get_player(player_idx)
                 if isinstance(hand_idx, int) and 0 <= hand_idx < len(player.hand):
                     card = player.hand[hand_idx]
-                    if getattr(card, "trainer_effects", None):
+                    if trainer_runtime_effects(card):
                         need_sim = True
             elif action.action == PlayerAction.USE_ABILITY:
                 pass  # can_use_ability already fully validates
@@ -1325,10 +1328,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     def _ability_has_available_value(
         self, state: GameState, player_idx: int, slot: str, ability: Any
     ) -> bool:
-        if self._draw_pressure_is_unsafe(state, player_idx, getattr(ability, "effects", []) or []):
+        effects = ability_runtime_effects(ability)
+        if self._draw_pressure_is_unsafe(state, player_idx, effects):
             return False
         return self._effects_have_available_value(
-            state, player_idx, getattr(ability, "effects", []) or [], source_slot=slot
+            state, player_idx, effects, source_slot=slot
         )
 
     def _draw_pressure_is_unsafe(self, state: GameState, player_idx: int, effects: list[Any]) -> bool:
@@ -1363,12 +1367,13 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if opponent.active is not None and self._estimated_attack_damage(state, player_idx, attack_idx) >= opponent.active.current_hp:
             return False
         return self._draw_pressure_is_unsafe(
-            state, player_idx, player.active.card.attacks[attack_idx].effects
+            state,
+            player_idx,
+            attack_runtime_effects(player.active.card.attacks[attack_idx]),
         )
 
     def _estimated_draw_count(self, state: GameState, player_idx: int, effects: list[Any]) -> int:
-        if isinstance(effects, dict):
-            effects = [effects]
+        effects = as_effect_list(effects)
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
         total = 0
@@ -1392,15 +1397,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             elif etype == "zinnia_resolve":
                 opp_count = (1 if opponent.active else 0) + opponent.bench_count()
                 total += max(0, opp_count - 1)
-            nested = params
-            for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
-                branch = nested.get(key) or []
+            for branch in effect_branches(effect):
                 total += self._estimated_draw_count(state, player_idx, branch)
         return total
 
     def _estimated_deck_search_count(self, effects: list[Any]) -> int:
-        if isinstance(effects, dict):
-            effects = [effects]
+        effects = as_effect_list(effects)
         total = 0
         for effect in effects or []:
             etype = self._effect_type(effect)
@@ -1412,9 +1414,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 total += int(params.get("take", 1) or 1)
             elif etype == "arven":
                 total += 2
-            nested = params
-            for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
-                branch = nested.get(key) or []
+            for branch in effect_branches(effect):
                 total += self._estimated_deck_search_count(branch)
         return total
 
@@ -1428,8 +1428,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
     ) -> bool:
         if _depth > 8:
             return False
-        if isinstance(effects, dict) or hasattr(effects, "effect_type"):
-            effects = [effects]
+        effects = as_effect_list(effects)
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
         saw_known_resource_effect = False
@@ -1553,9 +1552,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if not self._effect_cost_is_payable(state, player_idx, cost):
                 return False
 
-        on_pay = params.get("on_pay") or []
-        if isinstance(on_pay, dict) or hasattr(on_pay, "effect_type"):
-            on_pay = [on_pay]
+        on_pay = list(effect_branches({"params": {"on_pay": params.get("on_pay") or []}}))
         if not on_pay:
             return True
         return self._effects_have_available_value(
@@ -1572,9 +1569,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         _depth: int,
     ) -> bool:
         for key in ("on_heads", "on_tails", "on_success", "on_fail"):
-            branch = params.get(key) or []
-            if isinstance(branch, dict) or hasattr(branch, "effect_type"):
-                branch = [branch]
+            branch = list(effect_branches({"params": {key: params.get(key) or []}}))
             if branch and self._effects_have_available_value(
                 state, player_idx, branch, source_slot=source_slot, _depth=_depth
             ):
@@ -2138,7 +2133,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             player.active = pokemon
             return max(
                 [
-                    self._effect_tactical_value(state, player_idx, attack.effects)
+                    self._effect_tactical_value(
+                        state, player_idx, attack_runtime_effects(attack)
+                    )
                     for attack in pokemon.card.attacks
                     if self._missing_energy_count(pokemon, attack.cost) == 0
                 ] or [0.0]
@@ -2185,7 +2182,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 pressure = max(pressure, damage * 1.2)
                 if damage >= opponent.active.current_hp:
                     pressure += 260 + opponent.active.card.prize_value * 110
-                pressure += self._effect_tactical_value(state, player_idx, attack.effects)
+                pressure += self._effect_tactical_value(
+                    state, player_idx, attack_runtime_effects(attack)
+                )
         pressure += self._target_immunity_penalty(opponent.active) * 0.5
         return pressure
 
@@ -2218,7 +2217,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         for attack_idx, attack in enumerate(player.active.card.attacks):
             if not can_declare_attack(state, player_idx, attack_idx)[0]:
                 continue
-            for effect in attack.effects:
+            for effect in attack_runtime_effects(attack):
                 etype = self._effect_type(effect)
                 params = self._effect_params(effect)
                 if etype in ("any_pokemon_damage", "place_counters_and_self_ko"):
@@ -2250,7 +2249,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         best = 0.0
         for attack in pokemon.card.attacks:
             missing = self._missing_energy_count(pokemon, attack.cost)
-            impact = attack.damage + self._static_effect_value(attack.effects)
+            impact = attack.damage + self._static_effect_value(
+                attack_runtime_effects(attack)
+            )
             if missing == 0:
                 readiness_bonus = 80
             elif missing == 1:
@@ -2286,7 +2287,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             for attack_idx, attack in enumerate(pokemon.card.attacks):
                 missing = self._missing_energy_count(pokemon, attack.cost)
                 damage = self._estimated_attack_damage(state, player_idx, attack_idx)
-                impact = damage + self._static_effect_value(attack.effects) * 0.75
+                impact = damage + self._static_effect_value(
+                    attack_runtime_effects(attack)
+                ) * 0.75
                 if missing == 0:
                     value = 78 + impact * 0.82
                 elif missing == 1:
@@ -2315,7 +2318,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return 0
         attack = player.active.card.attacks[attack_idx]
         damage = attack.damage
-        for effect in attack.effects:
+        for effect in attack_runtime_effects(attack):
+            compiled_damage = self._compiled_damage_value(state, player_idx, effect)
+            if compiled_damage is not None:
+                damage = max(damage, compiled_damage)
+                continue
+
             etype = self._effect_type(effect)
             params = self._effect_params(effect)
             if etype == "conditional_damage_bonus":
@@ -2450,13 +2458,43 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             elif etype == "coin_flip_double_ko":
                 damage = max(damage, int(opponent.active.current_hp * 0.25))
             elif etype == "coin_flip":
-                heads = params.get("on_heads") or []
-                tails = params.get("on_tails") or []
+                heads = effect_branch(effect, "on_heads")
+                tails = effect_branch(effect, "on_tails")
                 heads_damage = self._branch_expected_damage(state, player_idx, heads)
                 tails_damage = self._branch_expected_damage(state, player_idx, tails)
                 damage = max(damage, int((heads_damage + tails_damage) / 2))
         damage = self._apply_estimated_damage_modifiers(state, player_idx, damage)
         return max(0, damage)
+
+    def _compiled_damage_value(self, state: GameState, player_idx: int, effect: Any) -> int | None:
+        if not isinstance(effect, dict) or str(effect.get("op", "") or "") != "deal_damage":
+            return None
+
+        params = self._effect_params(effect)
+        target = str(params.get("target", "opponent_active") or "opponent_active")
+        if target not in {"opponent_active", "any_opponent"}:
+            return None
+
+        formula_ast = params.get("formula_ast")
+        if formula_ast is not None:
+            try:
+                from engine.commands.base import ResolutionContext
+                from engine.commands.formula_ast import evaluate_formula_ast
+                from engine.commands.resolution_stack import ResolutionStack
+
+                ctx = ResolutionContext(
+                    state,
+                    player_idx,
+                    "active",
+                    ResolutionStack(state),
+                )
+                return evaluate_formula_ast(formula_ast, ctx)
+            except (TypeError, ValueError):
+                return None
+
+        if "amount" in params:
+            return int(params.get("amount", 0) or 0)
+        return None
 
     def _apply_estimated_damage_modifiers(self, state: GameState, player_idx: int, damage: int) -> int:
         player = state.get_player(player_idx)
@@ -2468,8 +2506,8 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
         defender_tool = getattr(defender, "attached_tool", None)
         if defender_tool is not None:
-            for effect in getattr(defender_tool, "trainer_effects", []) or []:
-                params = getattr(effect, "params", {}) or {}
+            for effect in trainer_runtime_effects(defender_tool):
+                params = self._effect_params(effect)
                 if (
                     params.get("effect") == "damage_reduction_stage1"
                     and getattr(defender.card, "is_stage1", False)
@@ -2485,25 +2523,18 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     @staticmethod
     def _effect_type(effect: Any) -> str:
-        if isinstance(effect, dict):
-            return str(effect.get("effect_type", ""))
-        return str(getattr(effect, "effect_type", ""))
+        return effect_type(effect)
 
     @staticmethod
     def _effect_params(effect: Any) -> dict[str, Any]:
-        if isinstance(effect, dict):
-            params = effect.get("params", {})
-        else:
-            params = getattr(effect, "params", {})
-        return params if isinstance(params, dict) else {}
+        return effect_params(effect)
 
     def _branch_expected_damage(self, state: GameState, player_idx: int, effects: list[Any]) -> int:
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
         if not player.active or not opponent.active:
             return 0
-        if isinstance(effects, dict):
-            effects = [effects]
+        effects = as_effect_list(effects)
         damage = 0
         for effect in effects or []:
             etype = self._effect_type(effect)
@@ -2528,8 +2559,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
         target_immune_effects = getattr(opponent.active, 'all_prevented_next_turn', False) if opponent.active else False
-        if isinstance(effects, dict):
-            effects = [effects]
+        effects = as_effect_list(effects)
         value = 0.0
         for effect in effects or []:
             etype = self._effect_type(effect)
@@ -2632,22 +2662,45 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return value
 
     def _static_effect_value(self, effects: list[Any]) -> float:
-        if isinstance(effects, dict):
-            effects = [effects]
         value = 0.0
-        for effect in effects or []:
-            etype = self._effect_type(effect)
-            if etype in ("draw", "search", "look_top_deck", "shuffle_draw", "discard_then_draw", "trekking_shoes", "houb", "zinnia_resolve"):
+        resource_effects = {
+            "draw",
+            "search",
+            "look_top_deck",
+            "shuffle_draw",
+            "discard_then_draw",
+            "trekking_shoes",
+            "houb",
+            "zinnia_resolve",
+        }
+        energy_effects = {
+            "energy_attach",
+            "attach_from_discard",
+            "draw_and_attach_energy",
+            "energy_relocate",
+        }
+        prevention_effects = {"prevent_all", "attack_lock_basic"}
+        healing_effects = {
+            "heal",
+            "heal_all",
+            "potion_heal",
+            "damage_and_self_heal",
+            "conditional_damage_heal",
+        }
+        disruption_effects = {"energy_discard", "switch_opponent", "any_pokemon_damage"}
+        for effect in iter_effects_recursive(effects):
+            names = set(effect_feature_names(effect))
+            if names & resource_effects:
                 value += 35
-            elif etype in ("energy_attach", "attach_from_discard", "draw_and_attach_energy", "energy_relocate"):
+            elif names & energy_effects:
                 value += 42
-            elif etype in ("prevent_all", "attack_lock_basic"):
+            elif names & prevention_effects:
                 value += 60
-            elif etype in ("heal", "heal_all", "potion_heal", "damage_and_self_heal", "conditional_damage_heal"):
+            elif names & healing_effects:
                 value += 32
-            elif etype in ("energy_discard", "switch_opponent", "any_pokemon_damage"):
+            elif names & disruption_effects:
                 value += 45
-            elif "coin" in etype:
+            elif any("coin" in name for name in names):
                 value += 14
             else:
                 value += 10
@@ -2786,7 +2839,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 value += 18
             if card.is_trainer_stadium:
                 value += 12
-            for effect in getattr(card, "trainer_effects", []) or []:
+            for effect in trainer_runtime_effects(card):
                 etype = self._effect_type(effect)
                 if etype in ("search", "look_top_deck", "arven", "evolve_skip_stage"):
                     value += 55
@@ -2821,7 +2874,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if "energy" in prompt or "energy" in from_zone:
                 value += 28
         if getattr(card, "is_trainer", False):
-            effects = getattr(card, "trainer_effects", []) or []
+            effects = trainer_runtime_effects(card)
             value += self._effect_tactical_value(state, player_idx, effects) * 0.45
         if getattr(card, "api_id", "") in self.profile.core_cards:
             value += 70
@@ -2860,7 +2913,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             attack_idx = action.params["attack_idx"]
             attack = player.active.card.attacks[attack_idx] if player.active else None
             effect_bonus = self._effect_tactical_value(
-                state, player_idx, getattr(attack, "effects", []) if attack else []
+                state,
+                player_idx,
+                attack_runtime_effects(attack) if attack else [],
             )
             damage = self._estimated_attack_damage(state, player_idx, attack_idx)
             ko_bonus = 0.0
@@ -2890,7 +2945,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
             return 0.0
         card = player.hand[hand_idx]
-        effects = getattr(card, "trainer_effects", []) or []
+        effects = trainer_runtime_effects(card)
         value = self._effect_tactical_value(state, player_idx, effects) * 1.4
         value += self._card_value(state, player_idx, card) * 0.18
         target_slot = action.params.get("target_slot")
@@ -2914,7 +2969,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         ability = next((a for a in pokemon.card.abilities if a.name == ability_name), None)
         if ability is None:
             return 0.0
-        value = self._effect_tactical_value(state, player_idx, ability.effects, source_slot=slot) * 1.5
+        value = self._effect_tactical_value(
+            state,
+            player_idx,
+            ability_runtime_effects(ability),
+            source_slot=slot,
+        ) * 1.5
         value += self._pokemon_development_value(pokemon) * 0.12
         if self._best_missing_energy(pokemon) > 0:
             value += 25
@@ -2956,7 +3016,12 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if not getattr(card, "attacks", None):
             return 0.0
         return max(
-            (atk.damage - len(atk.cost) * 15 + self._static_effect_value(atk.effects) for atk in card.attacks),
+            (
+                atk.damage
+                - len(atk.cost) * 15
+                + self._static_effect_value(attack_runtime_effects(atk))
+                for atk in card.attacks
+            ),
             default=0.0,
         )
 
@@ -3409,7 +3474,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             progress = max(0, before - after)
             if progress <= 0:
                 continue
-            impact = float(getattr(attack, "damage", 0) or 0) + self._static_effect_value(attack.effects) * 0.6
+            impact = (
+                float(getattr(attack, "damage", 0) or 0)
+                + self._static_effect_value(attack_runtime_effects(attack)) * 0.6
+            )
             value = progress * (45.0 + min(130.0, impact * 0.38))
             if after == 0:
                 value += 95.0 + min(90.0, impact * 0.28)

@@ -32,6 +32,7 @@ from engine.ai.dl.replay import ReplayBuffer
 
 from engine.ai.training import DECK_SPECS, _determine_soft_winner, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
+from engine.effects.runtime_effects import trainer_runtime_effects
 from engine.game_state import GameState
 from engine.snapshot import snapshot_state, state_from_snapshot
 from engine.turn_manager import TurnManager
@@ -1419,7 +1420,7 @@ def _action_has_no_available_target(ai: Any, state, player_idx: int, action: AIA
         hand_idx = action.params.get("hand_idx")
         if not isinstance(hand_idx, int) or not (0 <= hand_idx < len(player.hand)):
             return True
-        effects = getattr(player.hand[hand_idx], "trainer_effects", []) or []
+        effects = trainer_runtime_effects(player.hand[hand_idx])
         return bool(effects) and not ai._effects_have_available_value(state, player_idx, effects)
     except Exception:
         return False

@@ -22,11 +22,48 @@ func push_effects(effects: Array, player_idx: int, source_slot: String) -> void:
 
 
 func push_continuation(operation: String, data: Dictionary) -> void:
+	var continuation_data := data.duplicate(true)
+	if not continuation_data.has("kind"):
+		continuation_data["kind"] = operation
 	frames.append({
 		"kind": "continuation",
 		"operation": operation,
-		"data": data.duplicate(true),
+		"data": continuation_data,
 	})
+
+
+func push_finalize_attack(actor: int) -> void:
+	frames.append({
+		"kind": "finalize_attack",
+		"actor": actor,
+	})
+
+
+func push_finalize_attack_turn(actor: int) -> void:
+	frames.append({
+		"kind": "finalize_attack_turn",
+		"actor": actor,
+	})
+
+
+func has_finalize_attack_frame() -> bool:
+	return not frames.is_empty() and str(frames[-1].get("kind", "")) == "finalize_attack"
+
+
+func has_finalize_attack_turn_frame() -> bool:
+	return not frames.is_empty() and str(frames[-1].get("kind", "")) == "finalize_attack_turn"
+
+
+func pop_finalize_attack() -> Dictionary:
+	if not has_finalize_attack_frame():
+		return {}
+	return pop_frame()
+
+
+func pop_finalize_attack_turn() -> Dictionary:
+	if not has_finalize_attack_turn_frame():
+		return {}
+	return pop_frame()
 
 
 func pop_frame() -> Dictionary:

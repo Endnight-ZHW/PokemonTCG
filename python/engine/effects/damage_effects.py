@@ -101,15 +101,12 @@ def _check_effect_damage_prevented(defender, state) -> bool:
 
 
 def _attack_context_for_opponent_active(state, player, opponent):
-    ctx = getattr(state, "_attack_damage_context", None)
-    if not isinstance(ctx, dict) or not ctx.get("active"):
-        return None
+    from engine.commands.attack_frames import (
+        attack_context_for_opponent_active as current_attack_context_for_opponent_active,
+    )
+
     player_idx = 0 if player is state.p1 else 1
-    if int(ctx.get("player_idx", -1)) != player_idx:
-        return None
-    if opponent.active is None:
-        return None
-    return ctx
+    return current_attack_context_for_opponent_active(state, player_idx, opponent)
 
 
 def _queue_or_apply_opponent_active_damage(
@@ -125,9 +122,10 @@ def _queue_or_apply_opponent_active_damage(
     if opponent.active is None:
         return None
     damage = max(0, int(amount or 0))
-    ctx = _attack_context_for_opponent_active(state, player, opponent)
-    if ctx is not None:
-        ctx["base_damage"] = int(ctx.get("base_damage", 0) or 0) + damage
+    from engine.commands.attack_frames import add_attack_damage
+
+    player_idx = 0 if player is state.p1 else 1
+    if add_attack_damage(state, player_idx, opponent, damage):
         if log_msg:
             state._log(log_msg)
         return ActionResult(True, result_msg or f"伤害: {damage}", damage_dealt=0)
@@ -216,11 +214,17 @@ def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
                 player.was_ko_by_attack = False
 
     ignore_defender_effects = bool(params.get("ignore_defender_effects", False))
-    ctx = _attack_context_for_opponent_active(state, player, opponent)
-    if ctx is not None:
-        ctx["base_damage"] = total
-        ctx["piercing"] = bool(params.get("piercing", False))
-        ctx["ignore_defender_effects"] = ignore_defender_effects
+    from engine.commands.attack_frames import set_attack_damage_total
+
+    player_idx = 0 if player is state.p1 else 1
+    if set_attack_damage_total(
+        state,
+        player_idx,
+        opponent,
+        total,
+        piercing=bool(params.get("piercing", False)),
+        ignore_defender_effects=ignore_defender_effects,
+    ):
         return ActionResult(True, "攻击伤害公式已设置。")
 
     if not ignore_defender_effects and _check_effect_damage_prevented(defender, state):

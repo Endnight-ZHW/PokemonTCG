@@ -3,6 +3,38 @@ extends SceneTree
 var failures: Array[String] = []
 
 
+class MalformedAfterDamageTriggerCommands:
+	extends VMTriggerCommands
+
+	func _init(p_catalog: CardCatalog) -> void:
+		catalog = p_catalog
+
+	func collect_after_damage_commands(
+		_state: GameState,
+		_context: Dictionary,
+		commands: Array[Dictionary],
+	) -> void:
+		commands.append({"command_specs": [42]})
+
+
+class MalformedPokemonKoTriggerCommands:
+	extends VMTriggerCommands
+
+	func _init(p_catalog: CardCatalog) -> void:
+		catalog = p_catalog
+
+	func collect_pokemon_ko_commands(
+		_state: GameState,
+		_defeated_idx: int,
+		_source_slot: String,
+		_knocked_out: PokemonState,
+		_from_attack: bool,
+		_attack_actor: int,
+		commands: Array[Dictionary],
+	) -> void:
+		commands.append({"command_specs": [42]})
+
+
 func _initialize() -> void:
 	_run_phase_zero_tests()
 	_run_phase_one_tests()
@@ -51,6 +83,14 @@ func _run_phase_one_tests() -> void:
 	_check(cards.size() == 137, "Expected 137 exported cards")
 	_check(decks.size() == 10, "Expected 10 exported decks")
 	_check(fixture.get("counts", {}).get("effects", 0) == 78, "Expected 78 effect types")
+	_check(
+		int(fixture.get("vm_version", 0)) == VMContract.IR_VERSION,
+		"Fixture VM version must match Godot VMContract",
+	)
+	_check(
+		str(fixture.get("vm", {}).get("runtime_effect_source", "")) == "compiled_effects",
+		"Runtime must use compiled VM effects",
+	)
 	for deck_key in decks:
 		_check(decks[deck_key].get("card_count", 0) == 60, "Deck %s must contain 60 cards" % deck_key)
 	_check(models.get("models", {}).size() == 8, "Expected 8 Deep AI model manifest rows")
@@ -166,25 +206,49 @@ func _run_phase_two_tests() -> void:
 			not Dictionary(spec.get("args", {})).has("effect_type"),
 			"Immediate marker op still carries legacy effect_type args: %s" % effect_type,
 		)
-	var explicit_formula_ops := {
-		"damage_per_discard_psychic": "deal_damage_per_discard_psychic",
-		"damage_per_energy": "deal_damage_per_energy",
-		"damage_per_evolved": "deal_damage_per_evolved",
-		"damage_per_hand_size": "deal_damage_per_hand_size",
-		"damage_per_self_damage": "deal_damage_per_self_damage",
-		"damage_per_self_energy": "deal_damage_per_self_energy",
-		"damage_per_self_energy_type": "deal_damage_per_self_energy_type",
-		"damage_plus_bench": "deal_damage_plus_bench",
-	}
-	for effect_type in explicit_formula_ops:
+	var formula_ast_effects := [
+		"damage_per_discard_psychic",
+		"damage_per_energy",
+		"damage_per_evolved",
+		"damage_per_hand_size",
+		"damage_per_self_damage",
+		"damage_per_self_energy",
+		"damage_per_self_energy_type",
+		"damage_plus_bench",
+		"damage_self_penalty",
+		"attack_damage_formula",
+	]
+	var legacy_formula_ops := [
+		"deal_damage_per_discard_psychic",
+		"deal_damage_per_energy",
+		"deal_damage_per_evolved",
+		"deal_damage_per_hand_size",
+		"deal_damage_per_self_damage",
+		"deal_damage_per_self_energy",
+		"deal_damage_per_self_energy_type",
+		"deal_damage_plus_bench",
+		"deal_damage_with_self_penalty",
+		"set_attack_damage_formula",
+	]
+	for effect_type in formula_ast_effects:
 		var spec := Dictionary(compiled_examples.get(effect_type, {}))
 		_check(
-			str(spec.get("op", "")) == str(explicit_formula_ops[effect_type]),
-			"Damage formula effect did not compile to explicit op: %s" % effect_type,
+			str(spec.get("op", "")) == "deal_damage",
+			"Damage formula effect did not compile to generic deal_damage op: %s" % effect_type,
+		)
+		_check(
+			Dictionary(spec.get("args", {})).has("formula_ast"),
+			"Damage formula effect did not carry formula_ast: %s" % effect_type,
 		)
 		_check(
 			not Dictionary(spec.get("args", {})).has("effect_type"),
 			"Damage formula op still carries legacy effect_type args: %s" % effect_type,
+		)
+	for effect_type in compiled_examples:
+		var spec := Dictionary(compiled_examples.get(effect_type, {}))
+		_check(
+			not (str(spec.get("op", "")) in legacy_formula_ops),
+			"Compiled example still uses legacy formula op: %s" % effect_type,
 		)
 	var wrapper_ops_without_effect_type := {
 		"clara": "recover_clara",
@@ -270,6 +334,926 @@ func _run_phase_two_tests() -> void:
 		}),
 		"Native VM op must not accept legacy effect_type args",
 	)
+	_check(
+		engine.effect_engine.runtime is VMRuntime
+		and engine.effect_engine.runtime.catalog == engine.catalog,
+		"EffectEngine did not initialize a VMRuntime facade",
+	)
+	var effect_engine_facade_source := _read_text("res://rules/effect_engine.gd")
+	for facade_alias in [
+		"vm_interpreter",
+		"trainer_continuations",
+		"board_continuations",
+		"energy_continuations",
+		"look_top_continuations",
+		"draw_commands",
+		"trainer_commands",
+		"modifier_commands",
+		"energy_commands",
+		"status_commands",
+		"coin_commands",
+		"board_commands",
+		"look_top_commands",
+		"combat_commands",
+		"trigger_commands",
+	]:
+		_check(
+			effect_engine_facade_source.find("var %s:" % facade_alias) == -1
+			and effect_engine_facade_source.find("%s = runtime.%s" % [facade_alias, facade_alias]) == -1,
+			"EffectEngine facade must not mirror VMRuntime module field: %s" % facade_alias,
+		)
+	for forbidden_facade_handler_prefix in [
+		"func _cmd_",
+		"func _continue_",
+		"func _request_",
+		"func _register_",
+		"func _execute_",
+		"func _deal_",
+		"func _draw",
+		"func _move_",
+		"func _discard_",
+		"func _apply_",
+	]:
+		_check(
+			effect_engine_facade_source.find(forbidden_facade_handler_prefix) == -1,
+			"EffectEngine facade must not define concrete VM handler prefix: %s" % forbidden_facade_handler_prefix,
+		)
+	_check(
+		VMContract.supports_effect_type("draw")
+		and VMContract.supports_effect_type("zinnia_resolve")
+		and not VMContract.supports_effect_type("__unknown_effect__")
+		and VMContract.native_command_ops().has("draw_cards")
+		and VMContract.native_command_ops().has("trigger_switch_with_active")
+		and not VMContract.native_command_ops().has("__unknown_vm_op__"),
+		"VM effect/op support matrix must live in VMContract",
+	)
+	_check(
+		engine.effect_engine.runtime.vm_interpreter.has_method("resolve")
+		and engine.effect_engine.runtime.vm_interpreter.has_method("apply_choice")
+		and engine.effect_engine.runtime.vm_interpreter.has_method("execute_effect")
+		and not engine.effect_engine.has_method("_register_command_handlers")
+		and not engine.effect_engine.has_method("_register_continuations")
+		and not engine.effect_engine.has_method("_execute_command_spec")
+		and not engine.effect_engine.has_method("_execute_effect")
+		and not engine.effect_engine.has_method("_execute_continuation"),
+		"VM runtime assembly and resolution loops must live below EffectEngine",
+	)
+	_check(
+		engine.effect_engine.supports_command_handler("draw_cards")
+		and engine.effect_engine.supports_command_handler("apply_status")
+		and engine.effect_engine.supports_command_handler("apply_dazzling_beam")
+		and engine.effect_engine.supports_command_handler("deal_damage")
+		and engine.effect_engine.supports_command_handler("deal_damage_per_energy")
+		and engine.effect_engine.supports_command_handler("deal_damage_per_hand_size")
+		and engine.effect_engine.supports_command_handler("discard_energy")
+		and engine.effect_engine.supports_command_handler("discard_energy_then_damage")
+		and engine.effect_engine.supports_command_handler("mill_then_damage")
+		and engine.effect_engine.supports_command_handler("prevent_all")
+		and engine.effect_engine.supports_command_handler("register_tool_modifier")
+		and engine.effect_engine.supports_command_handler("return_to_hand")
+		and engine.effect_engine.supports_command_handler("set_attack_damage_formula")
+		and engine.effect_engine.supports_command_handler("set_attack_flags")
+		and engine.effect_engine.supports_command_handler("trigger_draw_cards")
+		and engine.effect_engine.supports_command_handler("trigger_move_basic_energy")
+		and engine.effect_engine.supports_command_handler("trigger_place_damage_counters")
+		and engine.effect_engine.supports_command_handler("trigger_switch_with_active"),
+		"VM command registry is missing known command handlers",
+	)
+	_check(
+		not engine.effect_engine.supports_command_handler("__unknown_vm_op__"),
+		"VM command registry accepted an unknown command handler",
+	)
+	for op in engine.effect_engine.native_command_ops():
+		_check(
+			engine.effect_engine.supports_command_handler(str(op)),
+			"Native VM op is missing an executable command handler: %s" % str(op),
+		)
+	_check(
+		engine.effect_engine.supports_continuation("search_move")
+		and engine.effect_engine.supports_continuation("energy_relocate_distribution")
+		and engine.effect_engine.supports_continuation("trekking_shoes"),
+		"VM continuation registry is missing known continuation handlers",
+	)
+	_check(
+		engine.effect_engine.runtime.trainer_continuations is VMTrainerContinuations
+		and not engine.effect_engine.has_method("_continue_arven")
+		and not engine.effect_engine.has_method("_continue_discard_then_draw"),
+		"Trainer continuations must be registered through VMTrainerContinuations",
+	)
+	_check(
+		engine.effect_engine.runtime.board_continuations is VMBoardContinuations
+		and not engine.effect_engine.has_method("_continue_switch")
+		and not engine.effect_engine.has_method("_continue_coin")
+		and not engine.effect_engine.has_method("_continue_discard_attachment"),
+		"Board continuations must be registered through VMBoardContinuations",
+	)
+	_check(
+		engine.effect_engine.runtime.energy_continuations is VMEnergyContinuations
+		and not engine.effect_engine.has_method("_continue_energy_attach_target")
+		and not engine.effect_engine.has_method("_continue_energy_relocate_distribution"),
+		"Energy continuations must be registered through VMEnergyContinuations",
+	)
+	_check(
+		engine.effect_engine.runtime.look_top_continuations is VMLookTopContinuations
+		and not engine.effect_engine.has_method("_continue_look_top")
+		and not engine.effect_engine.has_method("_continue_trekking_shoes"),
+		"Look-top continuations must be registered through VMLookTopContinuations",
+	)
+	_check(
+		engine.effect_engine.runtime.draw_commands is VMDrawCommands
+		and not engine.effect_engine.has_method("_cmd_draw_cards")
+		and not engine.effect_engine.has_method("_cmd_draw_until")
+		and not engine.effect_engine.has_method("_cmd_shuffle_then_draw_cards"),
+		"Draw command handlers must be registered through VMDrawCommands",
+	)
+	var zone_helpers := VMZoneHelpers.new()
+	_check(
+		zone_helpers.has_method("zone")
+		and zone_helpers.has_method("draw_available")
+		and zone_helpers.has_method("move_selected_cards")
+		and zone_helpers.has_method("remove_selected_from_zone")
+		and zone_helpers.has_method("discard_event")
+		and not engine.effect_engine.has_method("_zone")
+		and not engine.effect_engine.has_method("_draw")
+		and not engine.effect_engine.has_method("_draw_available")
+		and not engine.effect_engine.has_method("_move_selected_cards")
+		and not engine.effect_engine.has_method("_remove_selected_from_zone")
+		and not engine.effect_engine.has_method("_discard_event"),
+		"Zone mutation helpers must live in VMZoneHelpers, not EffectEngine",
+	)
+	var choice_requests := VMChoiceRequests.new()
+	_check(
+		choice_requests.has_method("request_cards")
+		and choice_requests.has_method("confirm_request")
+		and not engine.effect_engine.has_method("_request_cards")
+		and not engine.effect_engine.has_method("_confirm_request"),
+		"Generic choice request builders must live in VMChoiceRequests, not EffectEngine",
+	)
+	var vm_result := VMResult.new()
+	_check(
+		vm_result.has_method("ok")
+		and vm_result.has_method("fail")
+		and bool(VMResult.ok().get("success", false))
+		and not bool(VMResult.fail("x").get("success", true))
+		and not engine.effect_engine.has_method("_ok")
+		and not engine.effect_engine.has_method("_fail"),
+		"VM result dictionaries must be built through VMResult, not EffectEngine",
+	)
+	var vm_result_user_source := (
+		_read_text("res://rules/vm/board_continuations.gd")
+		+ _read_text("res://rules/vm/energy_commands.gd")
+		+ _read_text("res://rules/vm/energy_continuations.gd")
+		+ _read_text("res://rules/vm/look_top_continuations.gd")
+		+ _read_text("res://rules/vm/trainer_commands.gd")
+		+ _read_text("res://rules/vm/trainer_continuations.gd")
+		+ _read_text("res://rules/vm/vm_interpreter.gd")
+	)
+	_check(
+		vm_result_user_source.find("._ok(") == -1
+		and vm_result_user_source.find("._fail(") == -1,
+		"VM modules must not depend on facade _ok/_fail result helpers",
+	)
+	var effect_engine_source := _read_text("res://rules/effect_engine.gd")
+	var vm_runtime_source := _read_text("res://rules/vm/runtime.gd")
+	_check(
+		effect_engine_source.find("const SUPPORTED_EFFECT_TYPES") == -1
+		and effect_engine_source.find("const NATIVE_COMMAND_OPS") == -1
+		and effect_engine_source.find("DAMAGE_PER_COUNTER") == -1
+		and effect_engine_source.find("VMContract.native_command_ops()") == -1
+		and effect_engine_source.find("VMContract.supports_effect_type") == -1
+		and vm_runtime_source.find("VMContract.native_command_ops()") >= 0
+		and vm_runtime_source.find("VMContract.supports_effect_type") >= 0,
+		"VM support lists and runtime registration must live below EffectEngine",
+	)
+	var runtime_effects := VMRuntimeEffects.new()
+	_check(
+		runtime_effects.has_method("trainer_effects")
+		and runtime_effects.has_method("ability_effects")
+		and runtime_effects.has_method("strict_trainer_effects")
+		and runtime_effects.has_method("missing_compiled_effect")
+		and runtime_effects.has_method("effect_kind")
+		and runtime_effects.has_method("effect_args"),
+		"Godot VM runtime effect selectors must live in VMRuntimeEffects",
+	)
+	_check(
+		runtime_effects.has_method("availability_effect_kind")
+		and runtime_effects.has_method("availability_effect_params")
+		and runtime_effects.has_method("replaces_attack_base_damage")
+		and runtime_effects.has_method("effect_list"),
+		"Godot VM availability effect parsing must live in VMRuntimeEffects",
+	)
+	_check(
+		VMRuntimeEffects.availability_effect_kind({"op": "choose_heal_damage", "args": {}, "branches": {}}) == "potion_heal"
+		and VMRuntimeEffects.availability_effect_kind({
+			"op": "switch_pokemon",
+			"args": {"target": "opponent"},
+			"branches": {},
+		}) == "switch_opponent"
+		and VMRuntimeEffects.availability_effect_kind({
+			"op": "set_attack_flags",
+			"args": {"piercing": true},
+			"branches": {},
+		}) == "piercing_marker"
+		and VMRuntimeEffects.replaces_attack_base_damage({
+			"op": "deal_damage",
+			"args": {"formula_ast": {"const": 40}},
+			"branches": {},
+		}),
+		"VMRuntimeEffects availability aliases changed rule semantics",
+	)
+	_check(
+		engine.availability is VMAvailability
+		and engine.action_availability is VMActionAvailability
+		and engine.action_executor is VMActionExecutor
+		and engine.action_dispatcher is VMActionDispatcher
+		and engine.action_availability.catalog == engine.catalog
+		and engine.action_availability.validator == engine.validator
+		and engine.action_availability.availability == engine.availability
+		and engine.action_availability.attack_settlement == engine.attack_settlement
+		and engine.action_executor.catalog == engine.catalog
+		and engine.action_executor.validator == engine.validator
+		and engine.action_executor.availability == engine.availability
+		and engine.action_executor.effect_engine == engine.effect_engine
+		and engine.action_executor.turn_settlement == engine.turn_settlement
+		and engine.action_dispatcher.action_executor == engine.action_executor
+		and engine.action_dispatcher.promotion_settlement == engine.promotion_settlement
+		and engine.action_dispatcher.attack_settlement == engine.attack_settlement
+		and engine.action_dispatcher.turn_settlement == engine.turn_settlement
+		and engine.action_availability.has_method("legal_actions")
+		and engine.action_availability.has_method("action_cost_error")
+		and engine.action_availability.has_method("action_target_availability_error")
+		and engine.action_availability.has_method("validate_action_references")
+		and engine.action_availability.has_method("retreat_payments")
+		and engine.action_executor.has_method("play_basic")
+		and engine.action_executor.has_method("play_trainer")
+		and engine.action_executor.has_method("run_effects")
+		and engine.action_dispatcher.has_method("register_action")
+		and engine.action_dispatcher.has_method("supports_action")
+		and engine.action_dispatcher.has_method("dispatch")
+		and engine.action_dispatcher.supports_action("NOOP")
+		and engine.action_dispatcher.supports_action("SETUP_DONE")
+		and engine.action_dispatcher.supports_action("PROMOTE")
+		and engine.action_dispatcher.supports_action("PLAY_BASIC")
+		and engine.action_dispatcher.supports_action("EVOLVE")
+		and engine.action_dispatcher.supports_action("ATTACH_ENERGY")
+		and engine.action_dispatcher.supports_action("PLAY_TRAINER")
+		and engine.action_dispatcher.supports_action("USE_ABILITY")
+		and engine.action_dispatcher.supports_action("USE_STADIUM")
+		and engine.action_dispatcher.supports_action("RETREAT")
+		and engine.action_dispatcher.supports_action("DECLARE_ATTACK")
+		and engine.action_dispatcher.supports_action("END_TURN")
+		and engine.availability.has_method("effects_have_legal_target")
+		and engine.availability.has_method("effects_cost_is_payable")
+		and engine.availability.has_method("stadium_is_activatable")
+		and not engine.has_method("_effects_have_legal_target")
+		and not engine.has_method("_effects_cost_is_payable")
+		and not engine.has_method("_stadium_is_activatable"),
+		"Godot legal action and target/cost checks must live in VM availability services",
+	)
+	_check(
+		engine.transaction_manager is VMTransactionManager
+		and engine.action_settlement is VMActionSettlement
+		and engine.action_settlement.knockout_settlement == engine.knockout_settlement
+		and engine.action_settlement.transaction_manager == engine.transaction_manager
+		and engine.action_settlement.has_method("apply_action")
+		and engine.choice_settlement is VMChoiceSettlement
+		and engine.choice_settlement.effect_engine == engine.effect_engine
+		and engine.choice_settlement.attack_settlement == engine.attack_settlement
+		and engine.choice_settlement.knockout_settlement == engine.knockout_settlement
+		and engine.choice_settlement.transaction_manager == engine.transaction_manager
+		and engine.choice_settlement.has_method("apply_choice")
+		and engine.transaction_manager.has_method("capture_transaction")
+		and engine.transaction_manager.has_method("rollback_failed_step")
+		and engine.transaction_manager.has_method("restore_cancelled_action")
+		and engine.transaction_manager.has_method("cancel_action_checkpoint")
+		and not engine.has_method("_merge_steps")
+		and not engine.has_method("_capture_transaction")
+		and not engine.has_method("_rollback_failed_step")
+		and not engine.has_method("_rollback_transaction")
+		and not engine.has_method("_restore_state")
+		and not engine.has_method("_cancel_action_checkpoint"),
+		"Public action/choice transaction rollback must live in VMTransactionManager",
+	)
+	var mbf_hook_source := (
+		_read_text("res://rules/vm/damage_modifier_hooks.gd")
+		+ _read_text("res://rules/vm/pokemon_stat_hooks.gd")
+		+ _read_text("res://rules/vm/retreat_modifier_hooks.gd")
+		+ _read_text("res://rules/vm/trigger_commands.gd")
+	)
+	_check(
+		mbf_hook_source.find("get(\"trainer_effects\"") == -1
+		and mbf_hook_source.find("get(\"effects\"") == -1,
+		"Godot MBF/trigger hooks must read effects through VMRuntimeEffects, not raw effect lists",
+	)
+	_check(
+		mbf_hook_source.find("VMRuntimeEffects.trainer_effects(") == -1
+		and mbf_hook_source.find("VMRuntimeEffects.ability_effects(") == -1
+		and mbf_hook_source.find("VMRuntimeEffects.attack_effects(") == -1
+		and mbf_hook_source.find("VMRuntimeEffects.strict_trainer_effects(") >= 0
+		and mbf_hook_source.find("VMRuntimeEffects.strict_ability_effects(") >= 0,
+		"Godot MBF/trigger hooks must use strict compiled IR selectors at runtime",
+	)
+	var game_engine_source := _read_text("res://rules/game_engine.gd")
+	_check(
+		game_engine_source.find("get(\"compiled_effects\"") == -1
+		and game_engine_source.find("get(\"compiled_trainer_effects\"") == -1
+		and game_engine_source.find("get(\"trainer_effects\"") == -1
+		and game_engine_source.find("get(\"effects\"") == -1
+		and game_engine_source.find("__missing_compiled_effect__") == -1,
+		"GameEngine runtime effect selection must delegate through VMRuntimeEffects",
+	)
+	_check(
+		game_engine_source.find("func _availability_effect_kind") == -1
+		and game_engine_source.find("func _availability_effect_params") == -1
+		and game_engine_source.find("func _effect_list") == -1
+		and game_engine_source.find("func _effect_replaces_attack_base_damage") == -1,
+		"GameEngine availability parsing must delegate through VMRuntimeEffects",
+	)
+	_check(
+		game_engine_source.find("func _effects_have_legal_target") == -1
+		and game_engine_source.find("func _effects_cost_is_payable") == -1
+		and game_engine_source.find("func _search_has_target") == -1
+		and game_engine_source.find("func _energy_attach_has_target") == -1
+		and game_engine_source.find("func _cost_is_payable") == -1
+		and game_engine_source.find("func _stadium_is_activatable") == -1,
+		"GameEngine concrete availability target/cost logic must live in VMAvailability",
+	)
+	var action_availability_source := _read_text("res://rules/vm/action_availability.gd")
+	_check(
+		action_availability_source.find("func legal_actions") >= 0
+		and action_availability_source.find("func setup_actions") >= 0
+		and action_availability_source.find("func retreat_payments") >= 0
+		and action_availability_source.find("func action_cost_error") >= 0
+		and action_availability_source.find("func action_target_availability_error") >= 0
+		and action_availability_source.find("func validate_action_references") >= 0
+		and game_engine_source.find("func _setup_actions") == -1
+		and game_engine_source.find("func _retreat_payments") == -1
+		and game_engine_source.find("func _simulated_action_succeeds") == -1
+		and game_engine_source.find("func _action_cost_error") == -1
+		and game_engine_source.find("func _action_target_availability_error") == -1
+		and game_engine_source.find("func _validate_action_references") == -1
+		and game_engine_source.find("func _add_action") == -1,
+		"GameEngine legal action enumeration must delegate through VMActionAvailability",
+	)
+	var action_executor_source := _read_text("res://rules/vm/action_executor.gd")
+	_check(
+		action_executor_source.find("func setup_done") >= 0
+		and action_executor_source.find("func play_basic") >= 0
+		and action_executor_source.find("func evolve") >= 0
+		and action_executor_source.find("func attach_energy") >= 0
+		and action_executor_source.find("func play_trainer") >= 0
+		and action_executor_source.find("func use_ability") >= 0
+		and action_executor_source.find("func use_stadium") >= 0
+		and action_executor_source.find("func retreat") >= 0
+		and action_executor_source.find("func run_effects") >= 0
+		and game_engine_source.find("func _setup_done") == -1
+		and game_engine_source.find("func _play_basic") == -1
+		and game_engine_source.find("func _evolve") == -1
+		and game_engine_source.find("func _attach_energy") == -1
+		and game_engine_source.find("func _play_trainer") == -1
+		and game_engine_source.find("func _use_ability") == -1
+		and game_engine_source.find("func _use_stadium") == -1
+		and game_engine_source.find("func _retreat") == -1
+		and game_engine_source.find("func _run_effects") == -1
+		and game_engine_source.find("func _ability_runtime_effects") == -1
+		and game_engine_source.find("func _trainer_runtime_effects") == -1,
+		"Concrete public action execution must live in VMActionExecutor, not GameEngine",
+	)
+	var action_dispatcher_source := _read_text("res://rules/vm/action_dispatcher.gd")
+	_check(
+		action_dispatcher_source.find("register_action(\"NOOP\"") >= 0
+		and action_dispatcher_source.find("register_action(\"SETUP_DONE\"") >= 0
+		and action_dispatcher_source.find("register_action(\"PROMOTE\"") >= 0
+		and action_dispatcher_source.find("register_action(\"PLAY_BASIC\"") >= 0
+		and action_dispatcher_source.find("register_action(\"EVOLVE\"") >= 0
+		and action_dispatcher_source.find("register_action(\"ATTACH_ENERGY\"") >= 0
+		and action_dispatcher_source.find("register_action(\"PLAY_TRAINER\"") >= 0
+		and action_dispatcher_source.find("register_action(\"USE_ABILITY\"") >= 0
+		and action_dispatcher_source.find("register_action(\"USE_STADIUM\"") >= 0
+		and action_dispatcher_source.find("register_action(\"RETREAT\"") >= 0
+		and action_dispatcher_source.find("register_action(\"DECLARE_ATTACK\"") >= 0
+		and action_dispatcher_source.find("register_action(\"END_TURN\"") >= 0
+		and action_dispatcher_source.find("unknown_action") >= 0
+		and game_engine_source.find("func _dispatch_action") == -1
+		and game_engine_source.find("match action.action") == -1
+		and game_engine_source.find("unknown_action") == -1,
+		"Public action dispatch must be registered through VMActionDispatcher, not GameEngine",
+	)
+	var action_settlement_source := _read_text("res://rules/vm/action_settlement.gd")
+	_check(
+		action_settlement_source.find("capture_transaction") >= 0
+		and action_settlement_source.find("rollback_failed_step") >= 0
+		and action_settlement_source.find("resolve_knockouts") >= 0
+		and action_settlement_source.find("store_cancel_action_checkpoint") >= 0
+		and action_settlement_source.find("processed_action_ids.append") >= 0
+		and game_engine_source.find("capture_transaction") == -1
+		and game_engine_source.find("rollback_failed_step") == -1
+		and game_engine_source.find("store_cancel_action_checkpoint") == -1
+		and game_engine_source.find("processed_action_ids.append") == -1
+		and game_engine_source.find("result.pending_choice") == -1
+		and game_engine_source.find("resolve_knockouts(") == -1,
+		"Public action post-dispatch settlement must live in VMActionSettlement, not GameEngine",
+	)
+	var choice_settlement_source := _read_text("res://rules/vm/choice_settlement.gd")
+	_check(
+		choice_settlement_source.find("effect_engine.apply_choice") >= 0
+		and choice_settlement_source.find("has_finalize_attack_frame") >= 0
+		and choice_settlement_source.find("complete_attack_context") >= 0
+		and game_engine_source.find("effect_engine.apply_choice") == -1
+		and game_engine_source.find("has_finalize_attack_frame") == -1
+		and game_engine_source.find("complete_attack_context") == -1
+		and game_engine_source.find("func _merge_steps") == -1,
+		"Choice continuation settlement must live in VMChoiceSettlement, not GameEngine",
+	)
+	var transaction_source := _read_text("res://rules/vm/transaction_manager.gd")
+	_check(
+		transaction_source.find("capture_transaction") >= 0
+		and transaction_source.find("rollback_failed_step") >= 0
+		and transaction_source.find("restore_cancelled_action") >= 0
+		and game_engine_source.find("func _capture_transaction") == -1
+		and game_engine_source.find("func _rollback_failed_step") == -1
+		and game_engine_source.find("func _rollback_transaction") == -1
+		and game_engine_source.find("func _restore_state") == -1
+		and game_engine_source.find("func _cancel_action_checkpoint") == -1,
+		"Public action/choice transaction rollback must be routed through VMTransactionManager",
+	)
+	_check(
+		engine.effect_engine.runtime.trainer_commands is VMTrainerCommands
+		and engine.effect_engine.runtime.trainer_commands.catalog == engine.catalog
+		and not engine.effect_engine.has_method("_cmd_discard_cards")
+		and not engine.effect_engine.has_method("_cmd_search_cards")
+		and not engine.effect_engine.has_method("_cmd_zinnia_resolve")
+		and not engine.effect_engine.has_method("_hand_to_bottom_then_draw_request")
+		and not engine.effect_engine.has_method("_zinnia_resolve_request")
+		and not engine.effect_engine.has_method("_recover_from_discard_request")
+		and not engine.effect_engine.has_method("_arven_request")
+		and not engine.effect_engine.has_method("_trekking_shoes_request")
+		and not engine.effect_engine.has_method("_conditional_search_request")
+		and not engine.effect_engine.has_method("_search_request")
+		and engine.effect_engine.runtime.trainer_commands.has_method("zinnia_resolve_request")
+		and engine.effect_engine.runtime.trainer_commands.has_method("search_request"),
+		"Trainer command handlers must be registered through VMTrainerCommands",
+	)
+	var trainer_vm_source := (
+		_read_text("res://rules/vm/trainer_commands.gd")
+		+ _read_text("res://rules/vm/trainer_continuations.gd")
+	)
+	_check(
+		trainer_vm_source.find("facade_ref") == -1
+		and trainer_vm_source.find("p_facade") == -1
+		and trainer_vm_source.find("_facade(") == -1
+		and trainer_vm_source.find("weakref(") == -1
+		and trainer_vm_source.find(".catalog") == -1,
+		"Trainer VM commands/continuations must receive explicit services, not EffectEngine facade refs",
+	)
+	_check(
+		engine.effect_engine.runtime.modifier_commands is VMModifierCommands
+		and not engine.effect_engine.has_method("_cmd_register_reactive_thorns")
+		and not engine.effect_engine.has_method("_cmd_register_tool_modifier")
+		and not engine.effect_engine.has_method("_register_vm_modifier"),
+		"Modifier command handlers must be registered through VMModifierCommands",
+	)
+	_check(
+		engine.attack_settlement is VMAttackSettlement
+		and engine.knockout_settlement is VMKnockoutSettlement
+		and engine.knockout_settlement.catalog == engine.catalog
+		and engine.knockout_settlement.validator == engine.validator
+		and engine.attack_settlement.knockout_settlement == engine.knockout_settlement
+		and engine.attack_settlement.effect_engine == engine.effect_engine
+		and not engine.has_method("_declare_attack")
+		and not engine.has_method("_run_attack_effects")
+		and not engine.has_method("_attack_runtime_effects")
+		and not engine.has_method("_complete_attack_context")
+		and not engine.has_method("_resolve_attack_turn_frame")
+		and not engine.has_method("_apply_attack_damage")
+		and not engine.has_method("_resolve_trigger_commands")
+		and not engine.has_method("_collect_exp_share_commands")
+		and not engine.has_method("_resolve_knockouts")
+		and not engine.has_method("_resolve_empty_boards_and_promotions")
+		and not engine.attack_settlement.has_method("resolve_trigger_commands")
+		and not engine.attack_settlement.has_method("collect_exp_share_commands")
+		and engine.attack_settlement.has_method("declare_attack")
+		and engine.attack_settlement.has_method("run_attack_effects")
+		and engine.attack_settlement.has_method("attack_runtime_effects")
+		and engine.attack_settlement.has_method("complete_attack_context")
+		and engine.attack_settlement.has_method("resolve_attack_turn_frame")
+		and engine.attack_settlement.has_method("apply_attack_damage")
+		and not engine.attack_settlement.has_method("resolve_knockouts")
+		and not engine.attack_settlement.has_method("resolve_empty_boards_and_promotions")
+		and engine.knockout_settlement.has_method("resolve_knockouts")
+		and engine.knockout_settlement.has_method("resolve_empty_boards_and_promotions"),
+		"Attack settlement must be routed through VMAttackSettlement",
+	)
+	_check(
+		engine.attack_settlement.trigger_command_runner is VMTriggerCommands
+		and engine.effect_engine.runtime.trigger_commands is VMTriggerCommands
+		and engine.attack_settlement.trigger_command_runner == engine.effect_engine.runtime.trigger_commands
+		and engine.knockout_settlement.trigger_command_runner == engine.effect_engine.runtime.trigger_commands
+		and engine.attack_settlement.trigger_command_runner.has_method("resolve_commands")
+		and engine.attack_settlement.trigger_command_runner.has_method("command_specs_from_payloads")
+		and engine.attack_settlement.trigger_command_runner.has_method("collect_after_damage_commands")
+		and engine.attack_settlement.trigger_command_runner.has_method("collect_pokemon_ko_commands")
+		and not engine.attack_settlement.trigger_command_runner.has_method("collect_exp_share_commands")
+		and not VMDamageModifierHooks.new().has_method("collect_after_damage_commands")
+		and engine.attack_settlement.trigger_command_runner.has_method("tool_has_effect")
+		and engine.attack_settlement.trigger_command_runner.has_method("pokemon_has_modifier"),
+		"Trigger command execution must be routed through VMTriggerCommands",
+	)
+	var trigger_specs_result := engine.effect_engine.runtime.trigger_commands.command_specs_from_payloads([{
+		"op": "draw_cards",
+		"player": 1,
+		"amount": 1,
+		"source": "structural_test",
+	}])
+	var trigger_specs: Array = trigger_specs_result.get("commands", [])
+	_check(
+		bool(trigger_specs_result.get("success", false))
+		and trigger_specs.size() == 1
+		and str(trigger_specs[0].get("op", "")) == "trigger_draw_cards"
+		and trigger_specs[0].get("args") is Dictionary
+		and trigger_specs[0].get("branches") is Dictionary
+		and engine.effect_engine.supports_command_spec(trigger_specs[0]),
+		"Trigger payloads must normalize to supported VM command specs",
+	)
+	var grouped_trigger_specs_result := engine.effect_engine.runtime.trigger_commands.command_specs_from_payloads([
+		{
+			"exclusive_group": "test_group",
+			"command_specs": [{
+				"op": "trigger_draw_cards",
+				"args": {"player": 1, "amount": 1, "source": "first_group"},
+				"branches": {},
+			}],
+		},
+		{
+			"exclusive_group": "test_group",
+			"command_specs": [{
+				"op": "trigger_place_damage_counters",
+				"args": {"player": 0, "slot": "active", "count": 1, "source": "duplicate_group"},
+				"branches": {},
+			}],
+		},
+		{
+			"exclusive_group": "other_group",
+			"op": "draw_cards",
+			"player": 0,
+			"amount": 1,
+			"source": "other_group",
+		},
+	])
+	var grouped_trigger_specs: Array = grouped_trigger_specs_result.get("commands", [])
+	_check(
+		bool(grouped_trigger_specs_result.get("success", false))
+		and grouped_trigger_specs.size() == 2
+		and str(grouped_trigger_specs[0].get("op", "")) == "trigger_draw_cards"
+		and str(grouped_trigger_specs[0].get("args", {}).get("source", "")) == "first_group"
+		and str(grouped_trigger_specs[1].get("op", "")) == "trigger_draw_cards"
+		and str(grouped_trigger_specs[1].get("args", {}).get("source", "")) == "other_group",
+		"Trigger payload exclusive_group must keep the first stable-priority command spec",
+	)
+	var empty_group_trigger_specs_result := engine.effect_engine.runtime.trigger_commands.command_specs_from_payloads([
+		{"exclusive_group": "empty_first", "command_specs": []},
+		{"exclusive_group": "empty_first", "command_specs": [null]},
+		{
+			"exclusive_group": "empty_first",
+			"command_specs": [{
+				"op": "trigger_draw_cards",
+				"args": {"player": 1, "amount": 1, "source": "empty_first"},
+				"branches": {},
+			}],
+		},
+	])
+	var empty_group_trigger_specs: Array = empty_group_trigger_specs_result.get("commands", [])
+	_check(
+		bool(empty_group_trigger_specs_result.get("success", false))
+		and empty_group_trigger_specs.size() == 1
+		and str(empty_group_trigger_specs[0].get("op", "")) == "trigger_draw_cards"
+		and str(empty_group_trigger_specs[0].get("args", {}).get("source", "")) == "empty_first",
+		"Empty trigger exclusive_group payloads must not block a later command spec",
+	)
+	var non_trigger_spec_result := engine.effect_engine.runtime.trigger_commands.command_specs_from_payloads([{
+		"op": "draw_cards",
+		"args": {"amount": 1},
+		"branches": {},
+	}])
+	_check(
+		not bool(non_trigger_spec_result.get("success", true))
+		and str(non_trigger_spec_result.get("error_code", "")) == "invalid_trigger_op",
+		"Explicit trigger command specs must reject ordinary VM ops",
+	)
+	var trigger_command_source := _read_text("res://rules/vm/trigger_commands.gd")
+	var trigger_executor_start := trigger_command_source.find("func cmd_trigger_draw_cards(")
+	_check(
+		trigger_executor_start > 0,
+		"Trigger command source no longer exposes registered trigger_* executors",
+	)
+	var trigger_collector_source := trigger_command_source.substr(0, trigger_executor_start)
+	var trigger_executor_source := trigger_command_source.substr(trigger_executor_start)
+	for forbidden_collector_mutation in [
+		".draw_cards(",
+		".damage_counters +=",
+		".energy_card_ids.pop_at(",
+		".energy_card_ids.append(",
+		".switch_active_to_bench(",
+		".hand.append(",
+		".deck.pop",
+		".discard.append(",
+	]:
+		_check(
+			trigger_collector_source.find(forbidden_collector_mutation) == -1,
+			"Trigger collectors must return command specs, not mutate board state: %s" % forbidden_collector_mutation,
+		)
+	_check(
+		trigger_executor_source.find(".draw_cards(") >= 0
+		and trigger_executor_source.find(".damage_counters +=") >= 0
+		and trigger_executor_source.find(".energy_card_ids.pop_at(") >= 0
+		and trigger_executor_source.find(".energy_card_ids.append(") >= 0
+		and trigger_executor_source.find(".switch_active_to_bench(") >= 0,
+		"Trigger board mutations must stay inside registered trigger_* command executors",
+	)
+	var trigger_resolution_source := (
+		_read_text("res://rules/vm/trigger_commands.gd")
+		+ _read_text("res://rules/vm/action_executor.gd")
+		+ _read_text("res://rules/vm/energy_commands.gd")
+		+ _read_text("res://rules/vm/energy_continuations.gd")
+		+ _read_text("res://rules/vm/attack_settlement.gd")
+		+ _read_text("res://rules/vm/knockout_settlement.gd")
+		+ _read_text("res://rules/vm/action_settlement.gd")
+		+ _read_text("res://rules/vm/choice_settlement.gd")
+		+ _read_text("res://rules/vm/turn_settlement.gd")
+	)
+	_check(
+		trigger_resolution_source.find("func resolve_commands(") >= 0
+		and trigger_resolution_source.find("var normalized := command_specs_from_payloads") >= 0
+		and trigger_resolution_source.find("\"invalid_trigger_payload\"") >= 0
+		and trigger_resolution_source.find("\"invalid_trigger_command_specs\"") >= 0
+		and trigger_resolution_source.find("\"invalid_trigger_op\"") >= 0
+		and trigger_resolution_source.find("push_error(\"Trigger command failed") == -1
+		and trigger_resolution_source.find("trigger_result := effect_engine.runtime.trigger_commands.resolve_commands") >= 0
+		and trigger_resolution_source.find("trigger_result := trigger_commands.resolve_commands") >= 0
+		and trigger_resolution_source.find("trigger_result := trigger_command_runner.resolve_commands") >= 0
+		and trigger_resolution_source.find("ko_result := knockout_settlement.resolve_knockouts") >= 0,
+		"Trigger command failures must propagate as VMResult/StepResult instead of being swallowed",
+	)
+	_check(
+		engine.turn_settlement is VMTurnSettlement
+		and engine.attack_settlement.turn_settlement == engine.turn_settlement
+		and engine.promotion_settlement is VMPromotionSettlement
+		and engine.promotion_settlement.attack_settlement == engine.attack_settlement
+		and engine.promotion_settlement.turn_settlement == engine.turn_settlement
+		and engine.turn_settlement.knockout_settlement == engine.knockout_settlement
+		and not engine.has_method("_end_turn")
+		and not engine.has_method("_begin_turn")
+		and not engine.has_method("_resolve_checkup")
+		and not engine.has_method("_promote")
+		and not engine.attack_settlement.has_method("_facade")
+		and not engine.turn_settlement.has_method("_attack_settlement")
+		and engine.turn_settlement.has_method("end_turn")
+		and engine.turn_settlement.has_method("begin_turn")
+		and engine.turn_settlement.has_method("resolve_checkup")
+		and engine.promotion_settlement.has_method("apply_promotion"),
+		"Turn and promotion settlement must be routed through VM settlement modules",
+	)
+	var settlement_vm_source := (
+		_read_text("res://rules/vm/attack_settlement.gd")
+		+ _read_text("res://rules/vm/action_settlement.gd")
+		+ _read_text("res://rules/vm/turn_settlement.gd")
+		+ _read_text("res://rules/vm/knockout_settlement.gd")
+		+ _read_text("res://rules/vm/promotion_settlement.gd")
+		+ _read_text("res://rules/vm/choice_settlement.gd")
+	)
+	_check(
+		settlement_vm_source.find("weakref(") == -1
+		and settlement_vm_source.find("_attack_settlement(") == -1
+		and settlement_vm_source.find("attack_settlement_ref") == -1,
+		"Action, attack, turn, KO, promotion, and choice settlement modules must use explicit service references",
+	)
+	_check(
+		game_engine_source.find("func _declare_attack") == -1
+		and game_engine_source.find("func _run_attack_effects") == -1
+		and game_engine_source.find("func _attack_runtime_effects") == -1
+		and game_engine_source.find("func _promote") == -1,
+		"GameEngine must delegate attack declaration, attack effect stack construction, and promotion settlement",
+	)
+	_check(
+		engine.effect_engine.runtime.energy_commands is VMEnergyCommands
+		and engine.effect_engine.runtime.energy_commands.catalog == engine.catalog
+		and engine.effect_engine.runtime.energy_commands.trigger_commands == engine.effect_engine.runtime.trigger_commands
+		and engine.effect_engine.runtime.energy_continuations.energy_commands == engine.effect_engine.runtime.energy_commands
+		and engine.effect_engine.runtime.energy_continuations.trigger_commands == engine.effect_engine.runtime.trigger_commands
+		and not engine.effect_engine.has_method("_cmd_attach_energy")
+		and not engine.effect_engine.has_method("_cmd_draw_and_attach_energy")
+		and not engine.effect_engine.has_method("_cmd_relocate_energy")
+		and not engine.effect_engine.has_method("_energy_attach")
+		and not engine.effect_engine.has_method("_attach_from_discard")
+		and not engine.effect_engine.has_method("_request_energy_target")
+		and not engine.effect_engine.has_method("_attach_cards")
+		and not engine.effect_engine.has_method("_energy_relocate_request")
+		and not engine.effect_engine.has_method("_request_relocation_targets")
+		and not engine.effect_engine.has_method("_attach_from_hand_to_bench")
+		and not engine.effect_engine.has_method("_discard_energy")
+		and not engine.effect_engine.has_method("_energy_matches")
+		and not engine.effect_engine.has_method("_matching_energy_ids")
+		and engine.effect_engine.runtime.energy_commands.has_method("energy_attach")
+		and engine.effect_engine.runtime.energy_commands.has_method("request_energy_target")
+		and engine.effect_engine.runtime.energy_commands.has_method("request_relocation_targets"),
+		"Energy command handlers must be registered through VMEnergyCommands",
+	)
+	var energy_vm_source := (
+		_read_text("res://rules/vm/energy_commands.gd")
+		+ _read_text("res://rules/vm/energy_continuations.gd")
+	)
+	_check(
+		energy_vm_source.find("facade_ref") == -1
+		and energy_vm_source.find("p_facade") == -1
+		and energy_vm_source.find("_facade(") == -1
+		and energy_vm_source.find("weakref(") == -1
+		and energy_vm_source.find("var facade") == -1
+		and energy_vm_source.find("facade.") == -1,
+		"Energy VM commands/continuations must receive explicit services, not EffectEngine facade refs",
+	)
+	_check(
+		engine.effect_engine.runtime.status_commands is VMStatusCommands
+		and not engine.effect_engine.has_method("_cmd_apply_status")
+		and not engine.effect_engine.has_method("_cmd_prevent_damage")
+		and not engine.effect_engine.has_method("_cmd_set_attack_flags")
+		and not engine.effect_engine.has_method("_apply_status"),
+		"Status command handlers must be registered through VMStatusCommands",
+	)
+	_check(
+		engine.effect_engine.runtime.coin_commands is VMCoinCommands
+		and engine.effect_engine.runtime.coin_commands.catalog == engine.catalog
+		and engine.effect_engine.runtime.coin_commands.combat_damage == engine.effect_engine.runtime.combat_commands.damage
+		and not engine.effect_engine.has_method("_cmd_flip_coin")
+		and not engine.effect_engine.has_method("_coin_request")
+		and not engine.effect_engine.has_method("_resolve_coin"),
+		"Coin command handlers must be registered through VMCoinCommands",
+	)
+	var coin_vm_source := _read_text("res://rules/vm/coin_commands.gd")
+	_check(
+		coin_vm_source.find("facade_ref") == -1
+		and coin_vm_source.find("p_facade") == -1
+		and coin_vm_source.find("_facade(") == -1
+		and coin_vm_source.find("weakref(") == -1
+		and coin_vm_source.find("var facade") == -1
+		and coin_vm_source.find("facade.") == -1
+		and coin_vm_source.find("func ok") == -1,
+		"Coin VM commands must receive explicit services and use VMResult, not EffectEngine facade refs",
+	)
+	_check(
+		engine.effect_engine.runtime.board_commands is VMBoardCommands
+		and engine.effect_engine.runtime.board_commands.catalog == engine.catalog
+		and engine.effect_engine.runtime.board_continuations.board_commands == engine.effect_engine.runtime.board_commands
+		and engine.effect_engine.runtime.board_continuations.coin_commands == engine.effect_engine.runtime.coin_commands
+		and engine.effect_engine.runtime.board_continuations.combat_damage == engine.effect_engine.runtime.combat_commands.damage
+		and not engine.effect_engine.has_method("_cmd_switch_pokemon")
+		and not engine.effect_engine.has_method("_cmd_return_to_hand")
+		and not engine.effect_engine.has_method("_rare_candy")
+		and not engine.effect_engine.has_method("_return_to_hand")
+		and not engine.effect_engine.has_method("_request_board_target")
+		and not engine.effect_engine.has_method("_request_bench_target")
+		and not engine.effect_engine.has_method("_switch_request")
+		and engine.effect_engine.runtime.board_commands.has_method("request_board_target")
+		and engine.effect_engine.runtime.board_commands.has_method("request_bench_target")
+		and engine.effect_engine.runtime.board_commands.has_method("switch_request"),
+		"Board command handlers must be registered through VMBoardCommands",
+	)
+	var board_vm_source := (
+		_read_text("res://rules/vm/board_commands.gd")
+		+ _read_text("res://rules/vm/board_continuations.gd")
+	)
+	_check(
+		board_vm_source.find("facade_ref") == -1
+		and board_vm_source.find("p_facade") == -1
+		and board_vm_source.find("_facade(") == -1
+		and board_vm_source.find("weakref(") == -1
+		and board_vm_source.find("var facade") == -1
+		and board_vm_source.find("facade.") == -1,
+		"Board VM commands/continuations must receive explicit services, not EffectEngine facade refs",
+	)
+	_check(
+		engine.effect_engine.runtime.look_top_commands is VMLookTopCommands
+		and engine.effect_engine.runtime.look_top_commands.catalog == engine.catalog
+		and engine.effect_engine.runtime.look_top_commands.energy_commands == engine.effect_engine.runtime.energy_commands
+		and engine.effect_engine.runtime.look_top_continuations.catalog == engine.catalog
+		and not engine.effect_engine.has_method("_cmd_look_top_deck")
+		and not engine.effect_engine.has_method("_cmd_look_top_attach_energy")
+		and not engine.effect_engine.has_method("_look_top_request"),
+		"Look-top command handlers must be registered through VMLookTopCommands",
+	)
+	var look_top_vm_source := (
+		_read_text("res://rules/vm/look_top_commands.gd")
+		+ _read_text("res://rules/vm/look_top_continuations.gd")
+	)
+	_check(
+		look_top_vm_source.find("facade_ref") == -1
+		and look_top_vm_source.find("p_facade") == -1
+		and look_top_vm_source.find("_facade(") == -1
+		and look_top_vm_source.find("weakref(") == -1
+		and look_top_vm_source.find("var facade") == -1
+		and look_top_vm_source.find("facade.") == -1,
+		"Look-top VM commands/continuations must receive explicit services, not EffectEngine facade refs",
+	)
+	_check(
+		engine.effect_engine.runtime.combat_commands is VMCombatCommands
+		and engine.effect_engine.runtime.combat_commands.catalog == engine.catalog
+		and engine.effect_engine.runtime.combat_commands.trainer_commands == engine.effect_engine.runtime.trainer_commands
+		and engine.effect_engine.runtime.combat_commands.board_commands == engine.effect_engine.runtime.board_commands
+		and engine.effect_engine.runtime.combat_commands.damage is VMCombatDamage
+		and engine.effect_engine.runtime.combat_commands.formula is VMCombatFormula
+		and engine.effect_engine.runtime.combat_commands.choice is VMCombatChoice
+		and engine.effect_engine.runtime.combat_commands.conditionals is VMCombatConditionals
+		and engine.effect_engine.runtime.combat_commands.combo is VMCombatCombo
+		and engine.effect_engine.runtime.combat_commands.formula.damage == engine.effect_engine.runtime.combat_commands.damage
+		and engine.effect_engine.runtime.combat_commands.choice.board_commands == engine.effect_engine.runtime.board_commands
+		and engine.effect_engine.runtime.combat_commands.choice.damage == engine.effect_engine.runtime.combat_commands.damage
+		and engine.effect_engine.runtime.combat_commands.conditionals.damage == engine.effect_engine.runtime.combat_commands.damage
+		and engine.effect_engine.runtime.combat_commands.combo.damage == engine.effect_engine.runtime.combat_commands.damage
+		and not engine.effect_engine.has_method("_cmd_deal_damage")
+		and not engine.effect_engine.has_method("_cmd_conditional")
+		and not engine.effect_engine.has_method("_cmd_heal_damage")
+		and not engine.effect_engine.has_method("_cmd_set_attack_damage_formula")
+		and not engine.effect_engine.has_method("_deal_damage")
+		and not engine.effect_engine.has_method("_heal_pokemon")
+		and not engine.effect_engine.has_method("_attack_damage_formula")
+		and not engine.effect_engine.has_method("_evaluate_formula_ast")
+		and not engine.effect_engine.has_method("_eval_formula_node")
+		and not engine.effect_engine.has_method("_formula_energy_count")
+		and not engine.effect_engine.has_method("_selected_bench_damage")
+		and not engine.effect_engine.runtime.combat_commands.has_method("deal_damage")
+		and not engine.effect_engine.runtime.combat_commands.has_method("attack_damage_formula")
+		and not engine.effect_engine.runtime.combat_commands.has_method("evaluate_formula_ast")
+		and engine.effect_engine.runtime.combat_commands.formula.has_method("evaluate_formula_ast")
+		and not engine.effect_engine.runtime.combat_commands.has_method("request_injured_target")
+		and not engine.effect_engine.runtime.combat_commands.has_method("conditional_effect")
+		and not engine.effect_engine.runtime.combat_commands.has_method("discard_hand_then_damage")
+		and not engine.effect_engine.runtime.combat_commands.has_method("mill_then_damage"),
+		"Combat command handlers must be registered through VMCombatCommands submodules",
+	)
+	var combat_vm_source := (
+		_read_text("res://rules/vm/combat_commands.gd")
+		+ _read_text("res://rules/vm/combat_choice.gd")
+		+ _read_text("res://rules/vm/combat_combo.gd")
+		+ _read_text("res://rules/vm/combat_damage.gd")
+		+ _read_text("res://rules/vm/combat_formula.gd")
+		+ _read_text("res://rules/vm/combat_conditionals.gd")
+	)
+	_check(
+		combat_vm_source.find("facade_ref") == -1
+		and combat_vm_source.find("p_facade") == -1
+		and combat_vm_source.find("_facade(") == -1
+		and combat_vm_source.find("weakref(") == -1
+		and combat_vm_source.find("var facade") == -1
+		and combat_vm_source.find("facade.") == -1
+		and combat_vm_source.find("func ok") == -1
+		and combat_vm_source.find("func fail") == -1,
+		"Combat VM modules must receive explicit services and use VMResult, not facade refs or local result helpers",
+	)
+	var vm_result_source := (
+		combat_vm_source
+		+ _read_text("res://rules/vm/choice_requests.gd")
+		+ _read_text("res://rules/vm/zone_helpers.gd")
+		+ _read_text("res://rules/vm/draw_commands.gd")
+		+ _read_text("res://rules/vm/status_commands.gd")
+		+ _read_text("res://rules/vm/modifier_commands.gd")
+		+ _read_text("res://rules/vm/trigger_commands.gd")
+		+ _read_text("res://rules/vm/continuation_registry.gd")
+	)
+	_check(
+		vm_result_source.find("func ok") == -1
+		and vm_result_source.find("func fail") == -1
+		and vm_result_source.find("return ok(") == -1
+		and vm_result_source.find("return fail(") == -1,
+		"VM modules must use VMResult instead of local result helper functions",
+	)
+	_check(
+		not engine.effect_engine.supports_continuation("__unknown_continuation__"),
+		"VM continuation registry accepted an unknown continuation",
+	)
+	var modifier_manager := VMModifierManager.new()
+	modifier_manager.register_hook(VMModifierManager.MAX_HP, "late", 0, 10)
+	modifier_manager.register_hook(VMModifierManager.MAX_HP, "early", 0, 20)
+	modifier_manager.register_hook(VMModifierManager.MAX_HP, "tie", 0, 10)
+	var modifier_hooks := modifier_manager.hooks_for(VMModifierManager.MAX_HP)
+	_check(
+		modifier_hooks.size() == 3
+		and str(modifier_hooks[0].get("source", "")) == "early"
+		and str(modifier_hooks[1].get("source", "")) == "late"
+		and str(modifier_hooks[2].get("source", "")) == "tie",
+		"VM modifier hook priority order is unstable",
+	)
+	modifier_manager.register_hook(
+		VMModifierManager.AFTER_DAMAGE,
+		"payload_source",
+		1,
+		0,
+		{"kind": "payload_check"},
+	)
+	var payload_hooks := modifier_manager.hooks_for(VMModifierManager.AFTER_DAMAGE)
+	_check(
+		payload_hooks.size() == 1
+		and str(payload_hooks[0].get("payload", {}).get("kind", "")) == "payload_check",
+		"VM modifier hook payload was not preserved",
+	)
 	_run_compiled_effect_examples(fixture, catalog, engine)
 	_run_native_command_spec_tests(engine)
 	_run_compiled_runtime_dispatch_tests(engine)
@@ -282,9 +1266,21 @@ func _run_phase_two_tests() -> void:
 
 	var stack := ResolutionStack.new()
 	stack.context = {"finish_attack": true, "actor": 0}
+	stack.push_finalize_attack(0)
 	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
 	var restored_stack := ResolutionStack.from_dict(stack.to_dict())
 	_check(restored_stack.to_dict() == stack.to_dict(), "ResolutionStack roundtrip failed")
+	_check(
+		restored_stack.frames[0].get("kind", "") == "finalize_attack",
+		"ResolutionStack did not preserve finalize_attack frame",
+	)
+	var attack_turn_stack := ResolutionStack.new()
+	attack_turn_stack.push_finalize_attack_turn(0)
+	var restored_attack_turn_stack := ResolutionStack.from_dict(attack_turn_stack.to_dict())
+	_check(
+		restored_attack_turn_stack.has_finalize_attack_turn_frame(),
+		"ResolutionStack did not preserve finalize_attack_turn frame",
+	)
 
 	var hidden_state := GameState.new()
 	hidden_state.players[0].hand = ["sv1-104"]
@@ -370,6 +1366,13 @@ func _run_phase_two_tests() -> void:
 	cancel_state.turn_number = 3
 	cancel_state.first_player_idx = 0
 	cancel_state.players[0].hand = ["svi-cait", "sv1-ener-5"]
+	cancel_state.action_log = ["preexisting log"]
+	cancel_state.event_stream.push("preexisting", {"value": 1})
+	var cancel_before_snapshot := cancel_state.snapshot()
+	var cancel_before_events := cancel_state.event_stream._events.duplicate(true)
+	var cancel_before_revision := cancel_state.revision
+	var cancel_rng := PortableRandomSource.new(16)
+	var cancel_before_rng := cancel_rng.get_state()
 	var cancel_action := GameAction.new(
 		"PLAY_TRAINER",
 		{"hand_idx": 0},
@@ -378,18 +1381,273 @@ func _run_phase_two_tests() -> void:
 		EntityRef.new("card", 0, "hand", "", 0, "", "svi-cait"),
 	)
 	var cancel_step := engine.apply_action(
-		cancel_state, cancel_action, PortableRandomSource.new(16))
+		cancel_state, cancel_action, cancel_rng)
 	_check(cancel_step.pending_choice != null, "Cancellable trainer did not request choice")
 	if cancel_step.pending_choice:
+		var cancel_stack := ResolutionStack.from_dict(cancel_state.resolution_stack)
+		_check(
+			cancel_stack.context.get("cancel_action_checkpoint") is Dictionary,
+			"Cancellable trainer did not serialize a cancel checkpoint",
+		)
+		var cancel_checkpoint := Dictionary(cancel_stack.context.get("cancel_action_checkpoint", {}))
+		_check(
+			Dictionary(cancel_checkpoint.get("state", {})).get("revision", -1) == cancel_before_revision,
+			"Cancel checkpoint did not capture the pre-action revision",
+		)
 		var cancelled := engine.apply_choice(
 			cancel_state,
 			cancel_step.pending_choice,
 			ChoiceResponse.new(cancel_step.pending_choice.request_id, [], true),
-			PortableRandomSource.new(17),
+			cancel_rng,
 		)
 		_check(cancelled.success, "Trainer cancellation failed")
 		_check(cancel_state.players[0].hand == ["svi-cait", "sv1-ener-5"],
 			"Trainer cancellation did not restore the pre-action state")
+		var expected_cancel_snapshot := cancel_before_snapshot.duplicate(true)
+		expected_cancel_snapshot["revision"] = cancel_before_revision + 1
+		_check(
+			cancel_state.snapshot() == expected_cancel_snapshot,
+			"Trainer cancellation did not restore the serialized action checkpoint",
+		)
+		_check(
+			cancel_state.event_stream._events == cancel_before_events,
+			"Trainer cancellation did not restore event stream",
+		)
+		_check(
+			cancel_rng.get_state() == cancel_before_rng,
+			"Trainer cancellation did not restore RNG state",
+		)
+		var restored_cancel_stack := ResolutionStack.from_dict(cancel_state.resolution_stack)
+		_check(
+			restored_cancel_stack.pending_request == null
+			and restored_cancel_stack.frames.is_empty()
+			and not restored_cancel_stack.context.has("cancel_action_checkpoint"),
+			"Trainer cancellation left pending stack data behind",
+		)
+
+	var partial_fail_id := "__test_partial_action_rollback"
+	engine.catalog.cards[partial_fail_id] = {
+		"api_id": partial_fail_id,
+		"name": "Partial Action Rollback",
+		"supertype": "Trainer",
+		"subtypes": ["Item"],
+		"trainer_type": "Item",
+		"trainer_effects": [],
+		"compiled_trainer_effects": [
+			{
+				"op": "shuffle_then_draw_cards",
+				"args": {"draw": 1, "shuffle_hand": true},
+				"branches": {},
+			},
+			{
+				"op": "choose_heal_damage",
+				"args": {"amount": 30, "target_player": "self"},
+				"branches": {},
+			},
+		],
+		"abilities": [],
+		"attacks": [],
+	}
+	var partial_fail_state := _battle_state()
+	partial_fail_state.players[0].hand = [partial_fail_id, "sv1-ener-5"]
+	partial_fail_state.players[0].deck = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	partial_fail_state.action_log = ["preexisting log"]
+	partial_fail_state.event_stream.push("preexisting", {"value": 1})
+	var partial_before_snapshot := partial_fail_state.snapshot()
+	var partial_before_events := partial_fail_state.event_stream._events.duplicate(true)
+	var partial_rng := PortableRandomSource.new(20260661)
+	var partial_before_rng := partial_rng.get_state()
+	var partial_step := engine.apply_action(
+		partial_fail_state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		partial_rng,
+	)
+	_check(
+		not partial_step.success and partial_step.message.find("没有受伤的宝可梦") >= 0,
+		"Partial action rollback fixture did not fail after the second VM command",
+	)
+	_check(
+		partial_fail_state.snapshot() == partial_before_snapshot,
+		"Failed public action did not restore state after earlier VM mutations",
+	)
+	_check(
+		partial_rng.get_state() == partial_before_rng,
+		"Failed public action did not restore RNG state after shuffle",
+	)
+	_check(
+		partial_fail_state.event_stream._events == partial_before_events,
+		"Failed public action did not restore event stream after earlier VM mutations",
+	)
+	_check(
+		partial_step.pending_choice == null and partial_step.events.is_empty(),
+		"Failed public action StepResult still exposes rolled-back pending/events",
+	)
+
+	var trigger_fail_state := _battle_state()
+	_set_energy_cards(trigger_fail_state.players[0].active, ["sv1-ener-5"])
+	trigger_fail_state.event_stream.push("preexisting", {"value": 2})
+	var trigger_fail_before_snapshot := trigger_fail_state.snapshot()
+	var trigger_fail_before_events := trigger_fail_state.event_stream._events.duplicate(true)
+	var trigger_fail_rng := PortableRandomSource.new(20260662)
+	var trigger_fail_before_rng := trigger_fail_rng.get_state()
+	var original_trigger_runner := engine.effect_engine.runtime.trigger_commands
+	var malformed_runner := MalformedAfterDamageTriggerCommands.new(engine.catalog)
+	engine.attack_settlement.set_trigger_command_runner(malformed_runner)
+	var trigger_fail_step := engine.apply_action(
+		trigger_fail_state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		trigger_fail_rng,
+	)
+	engine.attack_settlement.set_trigger_command_runner(original_trigger_runner)
+	_check(
+		not trigger_fail_step.success
+		and trigger_fail_step.error_code == "invalid_trigger_payload",
+		"Malformed after-damage trigger did not fail public attack settlement",
+	)
+	_check(
+		trigger_fail_state.snapshot() == trigger_fail_before_snapshot,
+		"Failed attack trigger settlement did not roll back applied damage and turn state",
+	)
+	_check(
+		trigger_fail_state.event_stream._events == trigger_fail_before_events,
+		"Failed attack trigger settlement did not restore event stream",
+	)
+	_check(
+		trigger_fail_rng.get_state() == trigger_fail_before_rng,
+		"Failed attack trigger settlement did not restore RNG state",
+	)
+	_check(
+		trigger_fail_step.pending_choice == null and trigger_fail_step.events.is_empty(),
+		"Failed attack trigger StepResult still exposes rolled-back pending/events",
+	)
+
+	var rollback_state := _battle_state()
+	rollback_state.players[0].discard = ["sv1-ener-5"]
+	rollback_state.players[0].deck = ["sv1-104", "svi-chim", "sv1-ener-5"]
+	rollback_state.event_stream.push("preexisting", {"value": 1})
+	var rollback_stack := ResolutionStack.new()
+	rollback_stack.push_effect({"op": "__bad_after_choice__", "args": {}, "branches": {}}, 0, "active")
+	rollback_stack.push_continuation("shuffle_from_discard", {"player_idx": 0})
+	var rollback_option := {
+		"option_id": "card:discard:0:sv1-ener-5",
+		"label": "Fire Energy",
+		"ref": EntityRef.new("card", 0, "discard", "", 0, "", "sv1-ener-5").to_dict(),
+		"value": {"index": 0, "card_id": "sv1-ener-5"},
+	}
+	var rollback_request := ChoiceRequest.new(
+		"choice:rollback",
+		"shuffle_from_discard",
+		0,
+		"选择要洗回牌库的卡。",
+		[rollback_option],
+		1,
+		1,
+		false,
+		false,
+		{"revision": rollback_state.revision},
+	)
+	rollback_stack.pending_request = rollback_request
+	rollback_state.resolution_stack = rollback_stack.to_dict()
+	var rollback_before_state := rollback_state.snapshot()
+	var rollback_before_events := rollback_state.event_stream._events.duplicate(true)
+	var rollback_rng := PortableRandomSource.new(20260660)
+	var rollback_before_rng := rollback_rng.get_state()
+	var rollback_step := engine.apply_choice(
+		rollback_state,
+		rollback_request,
+		ChoiceResponse.new(rollback_request.request_id, [str(rollback_option["option_id"])]),
+		rollback_rng,
+	)
+	_check(
+		not rollback_step.success and rollback_step.error_code == "unsupported_vm_op",
+		"Choice failure fixture did not hit unsupported VM op",
+	)
+	_check(
+		rollback_state.snapshot() == rollback_before_state,
+		"Failed choice did not restore state and resolution stack",
+	)
+	_check(
+		rollback_rng.get_state() == rollback_before_rng,
+		"Failed choice did not restore RNG state",
+	)
+	_check(
+		rollback_state.event_stream._events == rollback_before_events,
+		"Failed choice did not restore event stream",
+	)
+	_check(
+		rollback_step.pending_choice == null and rollback_step.events.is_empty(),
+		"Failed choice StepResult still exposes rolled-back pending/events",
+	)
+
+	var choice_ko_state := _battle_state()
+	choice_ko_state.players[1].bench[0] = PokemonState.new("svi-chim")
+	choice_ko_state.event_stream.push("preexisting", {"value": 2})
+	var choice_ko_stack := ResolutionStack.new()
+	choice_ko_stack.push_continuation(
+		"damage_target",
+		{"target_player": 1, "amount": 999},
+	)
+	var choice_ko_card_id := choice_ko_state.players[1].active.card_id
+	var choice_ko_option := {
+		"option_id": "pokemon:1:active:%s" % choice_ko_card_id,
+		"label": catalog.card_name(choice_ko_card_id),
+		"ref": EntityRef.new("pokemon", 1, "", "active", -1, "", choice_ko_card_id).to_dict(),
+		"value": {"slot": "active", "card_id": choice_ko_card_id},
+	}
+	var choice_ko_request := ChoiceRequest.new(
+		"choice:ko-trigger-rollback",
+		"damage_target",
+		0,
+		"选择1只对手宝可梦作为伤害目标。",
+		[choice_ko_option],
+		1,
+		1,
+		false,
+		false,
+		{"revision": choice_ko_state.revision},
+	)
+	choice_ko_stack.pending_request = choice_ko_request
+	choice_ko_state.resolution_stack = choice_ko_stack.to_dict()
+	var choice_ko_before_state := choice_ko_state.snapshot()
+	var choice_ko_before_stack := choice_ko_state.resolution_stack.duplicate(true)
+	var choice_ko_before_events := choice_ko_state.event_stream._events.duplicate(true)
+	var choice_ko_rng := PortableRandomSource.new(20260661)
+	var choice_ko_before_rng := choice_ko_rng.get_state()
+	var original_ko_runner := engine.knockout_settlement.trigger_command_runner
+	engine.knockout_settlement.trigger_command_runner = (
+		MalformedPokemonKoTriggerCommands.new(engine.catalog)
+	)
+	var choice_ko_step := engine.apply_choice(
+		choice_ko_state,
+		choice_ko_request,
+		ChoiceResponse.new(choice_ko_request.request_id, [str(choice_ko_option["option_id"])]),
+		choice_ko_rng,
+	)
+	engine.knockout_settlement.trigger_command_runner = original_ko_runner
+	_check(
+		not choice_ko_step.success and choice_ko_step.error_code == "invalid_trigger_payload",
+		"Post-choice KO trigger failure fixture did not hit invalid trigger payload",
+	)
+	_check(
+		choice_ko_state.snapshot() == choice_ko_before_state,
+		"Failed post-choice KO trigger did not restore state snapshot",
+	)
+	_check(
+		choice_ko_state.resolution_stack == choice_ko_before_stack,
+		"Failed post-choice KO trigger did not restore exact resolution stack",
+	)
+	_check(
+		choice_ko_rng.get_state() == choice_ko_before_rng,
+		"Failed post-choice KO trigger did not restore RNG state",
+	)
+	_check(
+		choice_ko_state.event_stream._events == choice_ko_before_events,
+		"Failed post-choice KO trigger did not restore event stream",
+	)
+	_check(
+		choice_ko_step.pending_choice == null and choice_ko_step.events.is_empty(),
+		"Failed post-choice KO trigger StepResult still exposes rolled-back pending/events",
+	)
 
 	var self_ko_state := _battle_state()
 	self_ko_state.turn_number = 3
@@ -2849,6 +4107,251 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	_check(state.players[0].hand.has("sv1-ener-2"), "Native draw_cards did not draw a card")
 
 	state = _effect_state()
+	state.players[1].hand = []
+	state.players[1].deck = ["sv1-ener-3"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "trigger_draw_cards",
+		"args": {"player": 1, "amount": 1, "source": "trigger_test"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062111))
+	_check(step.success, "Native trigger_draw_cards command spec failed: %s" % step.message)
+	_check(state.players[1].hand == ["sv1-ener-3"], "Native trigger_draw_cards drew for wrong player")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "trigger_place_damage_counters",
+		"args": {"player": 1, "slot": "active", "count": 2, "source": "trigger_test"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062112))
+	_check(step.success, "Native trigger_place_damage_counters command spec failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 2,
+		"Native trigger_place_damage_counters placed counters on wrong target")
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = ["sv1-ener-2"]
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "trigger_move_basic_energy",
+		"args": {
+			"from_player": 0,
+			"from_slot": "active",
+			"to_player": 0,
+			"to_slot": "bench_0",
+			"source": "trigger_test",
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062113))
+	_check(step.success, "Native trigger_move_basic_energy command spec failed: %s" % step.message)
+	_check(
+		state.players[0].active.energy_card_ids.is_empty()
+		and state.players[0].bench[0].energy_card_ids == ["sv1-ener-2"],
+		"Native trigger_move_basic_energy did not move basic energy",
+	)
+
+	state = _effect_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "trigger_switch_with_active",
+		"args": {"player": 0, "bench_idx": 0, "source": "trigger_test", "slot": "bench_0"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062114))
+	_check(step.success, "Native trigger_switch_with_active command spec failed: %s" % step.message)
+	_check(
+		state.players[0].active.card_id == "sv2-delib"
+		and state.players[0].bench[0].card_id == "svi-chim",
+		"Native trigger_switch_with_active did not switch active with selected bench",
+	)
+
+	state = _effect_state()
+	state.players[1].hand = []
+	state.players[1].deck = ["sv1-ener-4"]
+	stack = ResolutionStack.new()
+	stack.push_finalize_attack_turn(0)
+	var trigger_events: Array[Dictionary] = []
+	var trigger_result := engine.effect_engine.runtime.trigger_commands.resolve_commands(
+		state,
+		0,
+		[{"op": "draw_cards", "player": 1, "amount": 1, "source": "stack_trigger"}],
+		trigger_events,
+		stack,
+	)
+	_check(
+		bool(trigger_result.get("success", false))
+		and stack.has_finalize_attack_turn_frame()
+		and state.players[1].hand == ["sv1-ener-4"]
+		and trigger_events.size() == 1,
+		"Trigger payload did not resolve through active ResolutionStack without disturbing existing frames",
+	)
+	var bad_trigger_events: Array[Dictionary] = []
+	var bad_trigger_result := engine.effect_engine.runtime.trigger_commands.resolve_commands(
+		state,
+		0,
+		[{"op": "__unknown_trigger__", "args": {}, "branches": {}}],
+		bad_trigger_events,
+		stack,
+	)
+	_check(
+		not bool(bad_trigger_result.get("success", true))
+		and str(bad_trigger_result.get("error_code", "")) == "invalid_trigger_op"
+		and stack.has_finalize_attack_turn_frame()
+		and bad_trigger_events.is_empty(),
+		"Invalid trigger command did not fail structurally while preserving active stack frames",
+	)
+	var malformed_trigger_events: Array[Dictionary] = []
+	var malformed_trigger_result := engine.effect_engine.runtime.trigger_commands.resolve_commands(
+		state,
+		0,
+		[{"command_specs": {"op": "draw_cards"}}],
+		malformed_trigger_events,
+		stack,
+	)
+	_check(
+		not bool(malformed_trigger_result.get("success", true))
+		and str(malformed_trigger_result.get("error_code", "")) == "invalid_trigger_command_specs"
+		and stack.has_finalize_attack_turn_frame()
+		and malformed_trigger_events.is_empty(),
+		"Non-array trigger command_specs payload did not fail structurally",
+	)
+	var object_payload_trigger_events: Array[Dictionary] = []
+	var object_payload_trigger_result := engine.effect_engine.runtime.trigger_commands.resolve_commands(
+		state,
+		0,
+		[{"command_specs": [42]}],
+		object_payload_trigger_events,
+		stack,
+	)
+	_check(
+		not bool(object_payload_trigger_result.get("success", true))
+		and str(object_payload_trigger_result.get("error_code", "")) == "invalid_trigger_payload"
+		and stack.has_finalize_attack_turn_frame()
+		and object_payload_trigger_events.is_empty(),
+		"Non-dictionary trigger command_specs item did not fail structurally",
+	)
+	var non_trigger_payload_events: Array[Dictionary] = []
+	var non_trigger_payload_result := engine.effect_engine.runtime.trigger_commands.resolve_commands(
+		state,
+		0,
+		[{
+			"command_specs": [{
+				"op": "draw_cards",
+				"args": {"amount": 1},
+				"branches": {},
+			}],
+		}],
+		non_trigger_payload_events,
+		stack,
+	)
+	_check(
+		not bool(non_trigger_payload_result.get("success", true))
+		and str(non_trigger_payload_result.get("error_code", "")) == "invalid_trigger_op"
+		and stack.has_finalize_attack_turn_frame()
+		and non_trigger_payload_events.is_empty(),
+		"Explicit non-trigger VM command_specs payload did not fail structurally",
+	)
+
+	state = _effect_state()
+	_set_energy_cards(state.players[1].active, ["svi-mirc"])
+	var after_damage_commands: Array[Dictionary] = []
+	engine.effect_engine.runtime.trigger_commands.collect_after_damage_commands(
+		state,
+		{
+			"actor": 0,
+			"attacker": state.players[0].active,
+			"defender": state.players[1].active,
+			"damage": 30,
+			"ignore_defender_effects": false,
+		},
+		after_damage_commands,
+	)
+	_check(
+		after_damage_commands.size() == 1
+		and str(after_damage_commands[0].get("op", "")) == "trigger_draw_cards"
+		and str(after_damage_commands[0].get("args", {}).get("source", "")) == "svi-mirc"
+		and engine.effect_engine.supports_command_spec(after_damage_commands[0]),
+		"Native AFTER_DAMAGE hook did not produce a supported trigger command spec",
+	)
+
+	state = _effect_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	var on_attach_trigger_commands: Array[Dictionary] = []
+	engine.effect_engine.runtime.trigger_commands.collect_on_attach_commands(
+		"svi-jete",
+		0,
+		"bench_0",
+		"hand",
+		on_attach_trigger_commands,
+	)
+	_check(
+		on_attach_trigger_commands.size() == 1
+		and str(on_attach_trigger_commands[0].get("op", "")) == "trigger_switch_with_active"
+		and int(on_attach_trigger_commands[0].get("args", {}).get("bench_idx", -1)) == 0
+		and engine.effect_engine.supports_command_spec(on_attach_trigger_commands[0]),
+		"Native ON_ATTACH hook did not produce a supported Jet Energy trigger command",
+	)
+	var active_attach_trigger_commands: Array[Dictionary] = []
+	engine.effect_engine.runtime.trigger_commands.collect_on_attach_commands(
+		"svi-jete",
+		0,
+		"active",
+		"hand",
+		active_attach_trigger_commands,
+	)
+	_check(active_attach_trigger_commands.is_empty(), "Native ON_ATTACH hook fired for active Jet Energy attach")
+	state.players[0].hand = ["svi-jete"]
+	step = engine.apply_action(
+		state,
+		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "bench_0"}, true, 0),
+		PortableRandomSource.new(2026062115),
+	)
+	_check(step.success, "Jet Energy manual attach failed: %s" % step.message)
+	_check(
+		state.players[0].active.card_id == "sv2-delib"
+		and state.players[0].active.energy_card_ids == ["svi-jete"]
+		and state.players[0].bench[0].card_id == "svi-chim",
+		"Jet Energy manual attach did not resolve ON_ATTACH switch via trigger command",
+	)
+
+	state = _effect_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].hand = ["svi-jete"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "attach_energy",
+		"args": {"amount": 1, "from_zone": "hand", "filter": "any", "to": "bench"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062116))
+	_check(step.success and step.pending_choice != null,
+		"Jet Energy VM attach did not request bench target")
+	var jet_attach_option := _choice_id_for_slot(step.pending_choice, "bench_0")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [jet_attach_option]),
+		PortableRandomSource.new(2026062117),
+	)
+	_check(step.success, "Jet Energy VM attach choice failed: %s" % step.message)
+	_check(
+		state.players[0].active.card_id == "sv2-delib"
+		and state.players[0].active.energy_card_ids == ["svi-jete"]
+		and state.players[0].bench[0].card_id == "svi-chim",
+		"Jet Energy VM attach did not resolve ON_ATTACH switch via trigger command",
+	)
+
+	state = _effect_state()
 	stack = ResolutionStack.new()
 	stack.push_effect({
 		"op": "legacy_effect",
@@ -2889,6 +4392,167 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260622))
 	_check(step.success, "Native deal_damage command spec failed: %s" % step.message)
 	_check(state.players[1].active.damage_counters == 3, "Native deal_damage did not damage opponent active")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].active.damage_counters = 2
+	state.players[0].active.energy_card_ids = ["sv1-ener-2", "sv1-ener-5"]
+	state.players[0].hand = ["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage",
+		"args": {
+			"formula_ast": {
+				"op": "add",
+				"terms": [
+					{
+						"op": "mul",
+						"factors": [{"op": "hand_size"}, {"const": 10}],
+					},
+					{
+						"op": "mul",
+						"factors": [
+							{"op": "energy_count", "scope": "self", "energy_type": "Fire"},
+							{"const": 20},
+						],
+					},
+					{
+						"op": "mul",
+						"factors": [
+							{"op": "damage_counters", "target": "self"},
+							{"const": 10},
+						],
+					},
+				],
+			},
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062201))
+	_check(step.success, "Native deal_damage formula_ast command spec failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 7,
+		"Native deal_damage formula_ast produced wrong damage")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].bench[0] = PokemonState.new("svg2-tort")
+	state.players[0].bench[1] = PokemonState.new("sv1-106")
+	state.players[0].discard = ["sv1-106", "svi-chim", "sv1-ener-5"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage",
+		"args": {
+			"piercing": true,
+			"formula_ast": {
+				"op": "add",
+				"terms": [
+					{"const": 30},
+					{
+						"op": "mul",
+						"factors": [
+							{
+								"op": "discard_count",
+								"player": "self",
+								"filter": {
+									"card_type": "pokemon",
+									"energy_type": "Psychic",
+								},
+							},
+							{"const": 10},
+						],
+					},
+					{
+						"op": "mul",
+						"factors": [
+							{"op": "evolved_count", "player": "self"},
+							{"const": 20},
+						],
+					},
+					{
+						"op": "div",
+						"args": [
+							{"op": "sub", "args": [{"const": 40}, {"const": 10}]},
+							{"const": 3},
+						],
+					},
+				],
+			},
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062202))
+	_check(step.success, "Native compound formula_ast command spec failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 9,
+		"Native compound formula_ast did not cover discard/evolved/arithmetic")
+
+	var conditional_formula_spec := {
+		"op": "deal_damage",
+		"args": {
+			"formula_ast": {
+				"op": "add",
+				"terms": [
+					{"const": 10},
+					{
+						"op": "if",
+						"condition": "own_hand_empty",
+						"then": {"const": 30},
+						"else": {"const": 0},
+					},
+					{
+						"op": "mul",
+						"factors": [
+							{"op": "condition", "condition": "opponent_active_damaged"},
+							{"const": 20},
+						],
+					},
+				],
+			},
+		},
+		"branches": {},
+	}
+	state = _effect_state()
+	state.players[0].hand = []
+	state.players[1].active.damage_counters = 1
+	stack = ResolutionStack.new()
+	stack.push_effect(conditional_formula_spec, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062204))
+	_check(step.success, "Native conditional formula_ast true branch failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 7,
+		"Native conditional formula_ast did not apply true branch and condition node")
+
+	state = _effect_state()
+	state.players[0].hand = ["sv1-ener-2"]
+	state.players[1].active.damage_counters = 0
+	stack = ResolutionStack.new()
+	stack.push_effect(conditional_formula_spec, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062205))
+	_check(step.success, "Native conditional formula_ast false branch failed: %s" % step.message)
+	_check(state.players[1].active.damage_counters == 1,
+		"Native conditional formula_ast did not apply false branch")
+
+	state = _effect_state()
+	state.players[1].active.damage_counters = 0
+	state.players[0].active.energy_card_ids = ["sv1-ener-2"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage",
+		"args": {
+			"formula_ast": {
+				"op": "energy_count",
+				"scope": "sideboard",
+				"energy_type": "Fire",
+			},
+		},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062203))
+	_check(
+		not step.success and step.error_code == "invalid_formula_ast",
+		"Native formula_ast accepted an unknown energy_count scope",
+	)
+	_check(state.players[1].active.damage_counters == 0,
+		"Invalid formula_ast mutated damage before failing")
 
 	state = _effect_state()
 	stack = ResolutionStack.new()
@@ -3114,6 +4778,39 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 			str(state.players[0].active.damage_counters if state.players[0].active else -1)
 		],
 	)
+	var reactive_event_has_source := false
+	for event in step.events:
+		if (
+			str(event.get("event_type", "")) == "damage_counters_placed"
+			and str(event.get("data", {}).get("source", "")) == "reactive_thorns"
+		):
+			reactive_event_has_source = true
+			break
+	_check(reactive_event_has_source, "Native reactive_thorns did not resolve via trigger command event")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv1-104")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-5"])
+	state.players[1].active = PokemonState.new("sv2-delib")
+	state.players[1].active.placed_this_turn = false
+	_set_energy_cards(state.players[1].active, ["svi-mirc"])
+	state.players[1].deck = ["sv1-ener-3", "sv1-ener-4"]
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(20260626561),
+	)
+	_check(step.success, "Native miracle energy trigger attack failed: %s" % step.message)
+	var miracle_event_has_source := false
+	for event in step.events:
+		if (
+			str(event.get("event_type", "")) == "cards_drawn"
+			and str(event.get("data", {}).get("source", "")) == "svi-mirc"
+		):
+			miracle_event_has_source = true
+			break
+	_check(miracle_event_has_source, "Native miracle energy did not resolve via trigger command event")
 
 	state = _battle_state()
 	state.players[0].active = PokemonState.new("svi-chim")
@@ -3128,8 +4825,11 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	}, 0, "active")
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062657))
 	_check(step.success, "Native register_conditional_zero_retreat failed: %s" % step.message)
-	_check(engine.validator.effective_retreat_cost(state, state.players[0]) == 0,
-		"Native conditional_zero_retreat modifier did not set retreat cost to zero")
+	_check(
+		VMRetreatModifierHooks.effective_retreat_cost(state, engine.catalog, state.players[0]) == 0
+		and engine.validator.effective_retreat_cost(state, state.players[0]) == 0,
+		"Native conditional_zero_retreat modifier did not set retreat cost to zero through CAN_RETREAT hooks",
+	)
 
 	state = _battle_state()
 	state.players[0].active = PokemonState.new("svi-chim")
@@ -3147,8 +4847,11 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	}, 0, "active")
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062658))
 	_check(step.success, "Native register_conditional_hp_boost failed: %s" % step.message)
-	_check(state.players[0].active.current_hp(engine.catalog) == 150,
-		"Native conditional_hp_boost modifier did not increase HP")
+	_check(
+		state.players[0].active.current_hp(engine.catalog) == 150
+		and VMPokemonStatHooks.current_hp(state.players[0].active, engine.catalog) == 150,
+		"Native conditional_hp_boost modifier did not increase HP through MAX_HP hooks",
+	)
 	var hp_snapshot := GameState.from_dict(state.snapshot())
 	_check(hp_snapshot.players[0].active.current_hp(engine.catalog) == 150,
 		"Native conditional_hp_boost modifier was not preserved in snapshot")
@@ -3191,13 +4894,57 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062661))
 	_check(step.success, "Native register_tool_exp_share failed: %s" % step.message)
 	var ko_events: Array[Dictionary] = []
-	engine._resolve_knockouts(state, 1, ko_events, true)
+	engine.knockout_settlement.resolve_knockouts(state, 1, ko_events, true)
 	_check(
 		state.players[0].active == null
 		and state.players[0].bench[0].energy_card_ids == ["sv1-ener-2"]
 		and "sv1-ener-2" not in state.players[0].discard,
 		"Native tool_exp_share modifier did not move basic energy before KO discard",
 	)
+	var exp_share_event_has_source := false
+	for event in ko_events:
+		if (
+			str(event.get("event_type", "")) == "energy_attached"
+			and str(event.get("data", {}).get("source", "")) == "exp_share"
+		):
+			exp_share_event_has_source = true
+			break
+	_check(exp_share_event_has_source, "Native tool_exp_share did not resolve via trigger command event")
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-2"])
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[0].modifiers.append({"modifier_kind": "tool_exp_share"})
+	var ko_trigger_commands: Array[Dictionary] = []
+	engine.effect_engine.runtime.trigger_commands.collect_pokemon_ko_commands(
+		state,
+		0,
+		"active",
+		state.players[0].active,
+		true,
+		1,
+		ko_trigger_commands,
+	)
+	_check(
+		ko_trigger_commands.size() == 1
+		and str(ko_trigger_commands[0].get("op", "")) == "trigger_move_basic_energy"
+		and str(ko_trigger_commands[0].get("args", {}).get("to_slot", "")) == "bench_0"
+		and engine.effect_engine.supports_command_spec(ko_trigger_commands[0]),
+		"Native POKEMON_KO hook did not produce a supported Exp Share trigger command",
+	)
+	var non_attack_ko_commands: Array[Dictionary] = []
+	engine.effect_engine.runtime.trigger_commands.collect_pokemon_ko_commands(
+		state,
+		0,
+		"active",
+		state.players[0].active,
+		false,
+		1,
+		non_attack_ko_commands,
+	)
+	_check(non_attack_ko_commands.is_empty(), "Native POKEMON_KO hook fired outside attack KO")
 
 	state = _effect_state()
 	state.players[0].hand = []
@@ -4964,7 +6711,10 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 		"supertype": "Trainer",
 		"subtypes": ["Item"],
 		"trainer_type": "Item",
-		"trainer_effects": [{"effect_type": "__raw_should_not_run__", "params": {}}],
+		"trainer_effects": [{
+			"effect_type": "energy_discard",
+			"params": {"from": "opponent", "filter": "not_real_energy"},
+		}],
 		"compiled_trainer_effects": [{
 			"op": "draw_cards",
 			"args": {"amount": 1},
@@ -4977,6 +6727,12 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 	state.players[0].hand = [trainer_id]
 	state.players[0].deck = ["sv1-ener-2"]
 	state.players[0].discard = []
+	_check(
+		engine.action_availability.action_target_availability_error(
+			state, GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0), 0
+		).is_empty(),
+		"Compiled trainer availability still used raw trainer_effects",
+	)
 	var step := engine.apply_action(
 		state,
 		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
@@ -4987,6 +6743,34 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 		"Compiled trainer runtime did not execute compiled draw_cards")
 	_check(state.players[0].discard == [trainer_id],
 		"Compiled trainer runtime did not discard the played item")
+
+	var missing_compiled_id := "__test_missing_compiled_trainer"
+	engine.catalog.cards[missing_compiled_id] = {
+		"api_id": missing_compiled_id,
+		"name": "Missing Compiled Trainer Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Item"],
+		"trainer_type": "Item",
+		"trainer_effects": [{
+			"effect_type": "draw",
+			"params": {"amount": 1},
+		}],
+		"compiled_trainer_effects": [],
+		"abilities": [],
+		"attacks": [],
+	}
+	state = _effect_state()
+	state.players[0].hand = [missing_compiled_id]
+	state.players[0].deck = ["sv1-ener-2"]
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(202606481),
+	)
+	_check(
+		not step.success and step.error_code == "unsupported_vm_op",
+		"Missing compiled trainer effects must fail instead of executing raw effects",
+	)
 
 	var ability_id := "__test_compiled_ability"
 	engine.catalog.cards[ability_id] = {
@@ -5003,7 +6787,10 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 		"abilities": [{
 			"name": "Compiled Ability",
 			"trigger": "repeatable",
-			"effects": [{"effect_type": "__raw_should_not_run__", "params": {}}],
+			"effects": [{
+				"effect_type": "energy_discard",
+				"params": {"from": "opponent", "filter": "not_real_energy"},
+			}],
 			"compiled_effects": [{
 				"op": "draw_cards",
 				"args": {"amount": 1},
@@ -5018,6 +6805,17 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 	state.players[0].active = PokemonState.new(ability_id)
 	state.players[0].deck = ["sv1-ener-3"]
 	state.players[0].hand = []
+	_check(
+		engine.action_availability.action_target_availability_error(
+			state,
+			GameAction.new("USE_ABILITY", {
+				"slot": "active",
+				"ability_name": "Compiled Ability",
+			}, false, 0),
+			0
+		).is_empty(),
+		"Compiled ability availability still used raw ability effects",
+	)
 	step = engine.apply_action(
 		state,
 		GameAction.new("USE_ABILITY", {
@@ -5048,7 +6846,10 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 			"cost": [],
 			"converted_energy_cost": 0,
 			"damage": 0,
-			"effects": [{"effect_type": "__raw_should_not_run__", "params": {}}],
+			"effects": [{
+				"effect_type": "energy_discard",
+				"params": {"from": "opponent", "filter": "not_real_energy"},
+			}],
 			"compiled_effects": [{
 				"op": "draw_cards",
 				"args": {"amount": 1},
@@ -5062,6 +6863,12 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 	state.players[0].active = PokemonState.new(attack_id)
 	state.players[0].deck = ["sv1-ener-4"]
 	state.players[0].hand = []
+	_check(
+		engine.action_availability.action_target_availability_error(
+			state, GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0), 0
+		).is_empty(),
+		"Compiled attack availability still used raw attack effects",
+	)
 	step = engine.apply_action(
 		state,
 		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
@@ -5070,6 +6877,353 @@ func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:
 	_check(step.success, "Compiled attack runtime dispatch failed: %s" % step.message)
 	_check(state.players[0].hand == ["sv1-ener-4"],
 		"Compiled attack runtime did not execute compiled draw_cards")
+
+	var compiled_tool_id := "__test_compiled_tool_modifier"
+	engine.catalog.cards[compiled_tool_id] = {
+		"api_id": compiled_tool_id,
+		"name": "Compiled Tool Modifier Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Tool"],
+		"trainer_type": "Tool",
+		"trainer_effects": [{
+			"effect_type": "tool",
+			"params": {"effect": "damage_reduction_stage1", "amount": 90},
+		}],
+		"compiled_trainer_effects": [{
+			"op": "register_tool_modifier",
+			"args": {"effect": "hp_boost_basic", "amount": 50},
+			"branches": {},
+		}],
+		"abilities": [],
+		"attacks": [],
+	}
+	var compiled_probe_id := "__test_compiled_modifier_pokemon"
+	engine.catalog.cards[compiled_probe_id] = {
+		"api_id": compiled_probe_id,
+		"name": "Compiled Modifier Pokemon",
+		"supertype": "Pokémon",
+		"subtypes": ["Basic"],
+		"hp": 60,
+		"energy_types": ["Colorless"],
+		"retreat_cost": 2,
+		"weaknesses": [],
+		"resistances": [],
+		"provides_energy": [],
+		"abilities": [{
+			"name": "Compiled Retreat",
+			"trigger": "static",
+			"effects": [{
+				"effect_type": "conditional_hp_boost",
+				"params": {"energy_type": "Metal", "threshold": 99, "amount": 999},
+			}],
+			"compiled_effects": [{
+				"op": "register_conditional_zero_retreat",
+				"args": {"energy_type": "Psychic"},
+				"branches": {},
+			}],
+		}],
+		"attacks": [],
+		"trainer_effects": [],
+		"compiled_trainer_effects": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new(compiled_probe_id)
+	state.players[0].active.attached_tool_id = compiled_tool_id
+	state.players[0].active.energy_card_ids = ["sv1-ener-5"]
+	_check(
+		VMPokemonStatHooks.current_hp(state.players[0].active, engine.catalog) == 110,
+		"Compiled-first MAX_HP hook still used raw tool trainer_effects",
+	)
+	_check(
+		VMRetreatModifierHooks.effective_retreat_cost(state, engine.catalog, state.players[0]) == 0,
+		"Compiled-first CAN_RETREAT hook still used raw ability effects",
+	)
+
+	var compiled_damage_tool_id := "__test_compiled_damage_tool"
+	engine.catalog.cards[compiled_damage_tool_id] = {
+		"api_id": compiled_damage_tool_id,
+		"name": "Compiled Damage Tool Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Tool"],
+		"trainer_type": "Tool",
+		"trainer_effects": [{
+			"effect_type": "tool",
+			"params": {"effect": "damage_reduction_stage1", "amount": 90},
+		}],
+		"compiled_trainer_effects": [{
+			"op": "register_tool_modifier",
+			"args": {"effect": "damage_boost_10"},
+			"branches": {},
+		}],
+		"abilities": [],
+		"attacks": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.attached_tool_id = compiled_damage_tool_id
+	state.players[1].active = PokemonState.new("sv2-delib")
+	var modified_damage := VMDamageModifierHooks.apply_modify_damage(
+		state,
+		engine.catalog,
+		{
+			"actor": 0,
+			"attacker": state.players[0].active,
+			"defender": state.players[1].active,
+			"damage": 30,
+		},
+	)
+	_check(modified_damage == 40,
+		"Compiled-first MODIFY_DAMAGE hook still used raw tool trainer_effects")
+
+	var compiled_reactive_id := "__test_compiled_reactive"
+	engine.catalog.cards[compiled_reactive_id] = {
+		"api_id": compiled_reactive_id,
+		"name": "Reactive Probe",
+		"supertype": "Pokémon",
+		"subtypes": ["Basic"],
+		"hp": 60,
+		"energy_types": ["Colorless"],
+		"retreat_cost": 1,
+		"weaknesses": [],
+		"resistances": [],
+		"provides_energy": [],
+		"abilities": [{
+			"name": "Compiled Reactive",
+			"trigger": "static",
+			"effects": [{
+				"effect_type": "conditional_hp_boost",
+				"params": {"energy_type": "Metal", "threshold": 99, "amount": 999},
+			}],
+			"compiled_effects": [{
+				"op": "register_reactive_thorns",
+				"args": {"filter_names": ["Reactive Probe"], "per_pokemon": 2},
+				"branches": {},
+			}],
+		}],
+		"attacks": [],
+		"trainer_effects": [],
+		"compiled_trainer_effects": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[1].active = PokemonState.new(compiled_reactive_id)
+	var after_damage_commands: Array[Dictionary] = []
+	engine.effect_engine.runtime.trigger_commands.collect_after_damage_commands(
+		state,
+		{
+			"actor": 0,
+			"attacker": state.players[0].active,
+			"defender": state.players[1].active,
+			"damage": 10,
+		},
+		after_damage_commands,
+	)
+	_check(
+		after_damage_commands.size() == 1
+		and str(after_damage_commands[0].get("op", "")) == "trigger_place_damage_counters"
+		and int(after_damage_commands[0].get("args", {}).get("count", 0)) == 2,
+		"Compiled-first AFTER_DAMAGE hook still used raw ability effects",
+	)
+
+	var compiled_exp_share_id := "__test_compiled_exp_share_tool"
+	engine.catalog.cards[compiled_exp_share_id] = {
+		"api_id": compiled_exp_share_id,
+		"name": "Compiled Exp Share Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Tool"],
+		"trainer_type": "Tool",
+		"trainer_effects": [],
+		"compiled_trainer_effects": [{
+			"op": "register_tool_exp_share",
+			"args": {},
+			"branches": {},
+		}],
+		"abilities": [],
+		"attacks": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.energy_card_ids = ["sv1-ener-2"]
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[0].attached_tool_id = compiled_exp_share_id
+	var compiled_ko_commands: Array[Dictionary] = []
+	engine.effect_engine.runtime.trigger_commands.collect_pokemon_ko_commands(
+		state,
+		0,
+		"active",
+		state.players[0].active,
+		true,
+		1,
+		compiled_ko_commands,
+	)
+	_check(
+		compiled_ko_commands.size() == 1
+		and str(compiled_ko_commands[0].get("op", "")) == "trigger_move_basic_energy",
+		"Compiled-first POKEMON_KO hook still used raw tool trainer_effects",
+	)
+
+	var raw_only_tool_id := "__test_raw_only_tool_modifier"
+	engine.catalog.cards[raw_only_tool_id] = {
+		"api_id": raw_only_tool_id,
+		"name": "Raw Only Tool Modifier Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Tool"],
+		"trainer_type": "Tool",
+		"trainer_effects": [{
+			"effect_type": "tool",
+			"params": {"effect": "hp_boost_basic", "amount": 50},
+		}],
+		"compiled_trainer_effects": [],
+		"abilities": [],
+		"attacks": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new(compiled_probe_id)
+	state.players[0].active.attached_tool_id = raw_only_tool_id
+	_check(
+		VMPokemonStatHooks.current_hp(state.players[0].active, engine.catalog) == 60,
+		"Raw-only MAX_HP hook executed without compiled trainer IR",
+	)
+
+	var raw_only_retreat_id := "__test_raw_only_retreat"
+	engine.catalog.cards[raw_only_retreat_id] = {
+		"api_id": raw_only_retreat_id,
+		"name": "Raw Only Retreat Probe",
+		"supertype": "Pokémon",
+		"subtypes": ["Basic"],
+		"hp": 60,
+		"energy_types": ["Colorless"],
+		"retreat_cost": 2,
+		"weaknesses": [],
+		"resistances": [],
+		"provides_energy": [],
+		"abilities": [{
+			"name": "Raw Retreat",
+			"trigger": "static",
+			"effects": [{
+				"effect_type": "conditional_zero_retreat",
+				"params": {"energy_type": "Psychic"},
+			}],
+			"compiled_effects": [],
+		}],
+		"attacks": [],
+		"trainer_effects": [],
+		"compiled_trainer_effects": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new(raw_only_retreat_id)
+	state.players[0].active.energy_card_ids = ["sv1-ener-5"]
+	_check(
+		VMRetreatModifierHooks.effective_retreat_cost(state, engine.catalog, state.players[0]) == 2,
+		"Raw-only CAN_RETREAT hook executed without compiled ability IR",
+	)
+
+	var raw_only_damage_tool_id := "__test_raw_only_damage_tool"
+	engine.catalog.cards[raw_only_damage_tool_id] = {
+		"api_id": raw_only_damage_tool_id,
+		"name": "Raw Only Damage Tool Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Tool"],
+		"trainer_type": "Tool",
+		"trainer_effects": [{
+			"effect_type": "tool",
+			"params": {"effect": "damage_boost_10"},
+		}],
+		"compiled_trainer_effects": [],
+		"abilities": [],
+		"attacks": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.attached_tool_id = raw_only_damage_tool_id
+	state.players[1].active = PokemonState.new("sv2-delib")
+	modified_damage = VMDamageModifierHooks.apply_modify_damage(
+		state,
+		engine.catalog,
+		{
+			"actor": 0,
+			"attacker": state.players[0].active,
+			"defender": state.players[1].active,
+			"damage": 30,
+		},
+	)
+	_check(modified_damage == 30,
+		"Raw-only MODIFY_DAMAGE hook executed without compiled trainer IR")
+
+	var raw_only_reactive_id := "__test_raw_only_reactive"
+	engine.catalog.cards[raw_only_reactive_id] = {
+		"api_id": raw_only_reactive_id,
+		"name": "Raw Only Reactive Probe",
+		"supertype": "Pokémon",
+		"subtypes": ["Basic"],
+		"hp": 60,
+		"energy_types": ["Colorless"],
+		"retreat_cost": 1,
+		"weaknesses": [],
+		"resistances": [],
+		"provides_energy": [],
+		"abilities": [{
+			"name": "Raw Reactive",
+			"trigger": "static",
+			"effects": [{
+				"effect_type": "reactive_thorns",
+				"params": {"filter_names": ["Raw Only Reactive Probe"], "per_pokemon": 2},
+			}],
+			"compiled_effects": [],
+		}],
+		"attacks": [],
+		"trainer_effects": [],
+		"compiled_trainer_effects": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[1].active = PokemonState.new(raw_only_reactive_id)
+	after_damage_commands.clear()
+	engine.effect_engine.runtime.trigger_commands.collect_after_damage_commands(
+		state,
+		{
+			"actor": 0,
+			"attacker": state.players[0].active,
+			"defender": state.players[1].active,
+			"damage": 10,
+		},
+		after_damage_commands,
+	)
+	_check(after_damage_commands.is_empty(),
+		"Raw-only AFTER_DAMAGE hook executed without compiled ability IR")
+
+	var raw_only_exp_share_id := "__test_raw_only_exp_share_tool"
+	engine.catalog.cards[raw_only_exp_share_id] = {
+		"api_id": raw_only_exp_share_id,
+		"name": "Raw Only Exp Share Probe",
+		"supertype": "Trainer",
+		"subtypes": ["Tool"],
+		"trainer_type": "Tool",
+		"trainer_effects": [{
+			"effect_type": "tool_exp_share",
+			"params": {},
+		}],
+		"compiled_trainer_effects": [],
+		"abilities": [],
+		"attacks": [],
+	}
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.energy_card_ids = ["sv1-ener-2"]
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[0].attached_tool_id = raw_only_exp_share_id
+	compiled_ko_commands.clear()
+	engine.effect_engine.runtime.trigger_commands.collect_pokemon_ko_commands(
+		state,
+		0,
+		"active",
+		state.players[0].active,
+		true,
+		1,
+		compiled_ko_commands,
+	)
+	_check(compiled_ko_commands.is_empty(),
+		"Raw-only POKEMON_KO hook executed without compiled trainer IR")
 
 
 func _effect_state() -> GameState:
@@ -5387,6 +7541,54 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	)
 
 	state = _battle_state()
+	state.players[0].active = PokemonState.new("svm-cobalion")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-8", "sv1-ener-8"])
+	state.players[0].bench[0] = PokemonState.new("svm-zacian")
+	state.players[0].deck = ["sv1-ener-8", "sv1-ener-8"]
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(61101),
+	)
+	_check(
+		step.success and step.pending_choice != null and step.pending_choice.can_cancel,
+		"Cobalion optional attack did not expose cancellable choice",
+	)
+	if step.pending_choice:
+		var cancel_request := step.pending_choice
+		var cancel_stack := ResolutionStack.from_dict(state.resolution_stack)
+		var cancel_frame_kinds: Array[String] = []
+		for frame in cancel_stack.frames:
+			cancel_frame_kinds.append(str(frame.get("kind", "")))
+		_check(
+			cancel_stack.pending_request != null
+			and cancel_frame_kinds == ["finalize_attack", "continuation"]
+			and not cancel_stack.context.has("cancel_action_checkpoint"),
+			"Optional attack choice stack did not preserve attack continuation without action checkpoint",
+		)
+		step = engine.apply_choice(
+			state,
+			cancel_request,
+			ChoiceResponse.new(cancel_request.request_id, [], true),
+			PortableRandomSource.new(61102),
+		)
+	_check(step.success, "Cobalion optional attack cancellation failed: %s" % step.message)
+	_check(
+		step.pending_choice == null
+		and ResolutionStack.from_dict(state.resolution_stack).frames.is_empty()
+		and ResolutionStack.from_dict(state.resolution_stack).pending_request == null,
+		"Cobalion optional attack cancellation left pending stack data behind",
+	)
+	_check(
+		state.active_player_idx == 1
+		and state.phase == "MAIN"
+		and state.players[0].deck == ["sv1-ener-8", "sv1-ener-8"]
+		and state.players[0].bench[0].energy_card_ids.is_empty(),
+		"Cobalion optional attack cancellation did not skip attachment and finish attack turn",
+	)
+
+	state = _battle_state()
 	state.players[0].active = PokemonState.new("sv1-109")
 	state.players[0].active.placed_this_turn = false
 	_set_energy_cards(state.players[0].active, ["sv1-ener-5", "svi-dtur"])
@@ -5456,6 +7658,61 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	)
 
 	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv2-38")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-3"])
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(61141),
+	)
+	_check(
+		step.success and step.pending_choice != null,
+		"Coin attack did not pause for pending choice",
+	)
+	var pending_attack_stack := ResolutionStack.from_dict(state.resolution_stack)
+	var has_finalize_attack := false
+	for frame in pending_attack_stack.frames:
+		if str(frame.get("kind", "")) == "finalize_attack":
+			has_finalize_attack = true
+			break
+	_check(has_finalize_attack, "Pending attack stack did not preserve finalize_attack frame")
+	var restored_attack_state := GameState.from_dict(state.snapshot())
+	var restored_attack_stack := ResolutionStack.from_dict(restored_attack_state.resolution_stack)
+	_check(
+		restored_attack_stack.to_dict() == pending_attack_stack.to_dict(),
+		"Pending attack stack changed across GameState snapshot roundtrip",
+	)
+	var restored_has_finalize_attack := false
+	for frame in restored_attack_stack.frames:
+		if str(frame.get("kind", "")) == "finalize_attack":
+			restored_has_finalize_attack = true
+			break
+	_check(
+		restored_attack_stack.pending_request != null
+		and restored_has_finalize_attack,
+		"Restored pending attack stack lost request or finalize_attack frame",
+	)
+	var restored_attack_request := restored_attack_stack.pending_request
+	step = engine.apply_choice(
+		restored_attack_state,
+		restored_attack_request,
+		ChoiceResponse.new(restored_attack_request.request_id, []),
+		PortableRandomSource.new(61142),
+	)
+	_check(
+		step.success
+		and step.pending_choice == null
+		and restored_attack_state.active_player_idx == 1
+		and restored_attack_state.phase == "MAIN",
+		"Restored pending attack choice did not consume finalize_attack frame and finish the turn",
+	)
+	_check(
+		ResolutionStack.from_dict(restored_attack_state.resolution_stack).frames.is_empty(),
+		"Restored attack finalize frame remained after attack completion",
+	)
+
+	state = _battle_state()
 	state.players[0].active = PokemonState.new("sv2-tatsu")
 	state.players[0].active.placed_this_turn = false
 	_set_energy_cards(state.players[0].active, ["sv1-ener-3"])
@@ -5494,6 +7751,12 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		step.success and state.pending_promotions == [0],
 		"Active leaving play during attack did not pause for attacker promotion",
 	)
+	var pending_promotion_stack := ResolutionStack.from_dict(state.resolution_stack)
+	_check(
+		bool(pending_promotion_stack.context.get("finish_attack_after_promotions", false))
+		and pending_promotion_stack.has_finalize_attack_turn_frame(),
+		"Attack promotion pause did not preserve finalize_attack_turn frame",
+	)
 	step = engine.apply_action(
 		state,
 		GameAction.new("PROMOTE", {"bench_idx": 0}, true, 0),
@@ -5505,6 +7768,10 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		and state.phase == "MAIN"
 		and state.players[0].active.card_id == "svi-chim",
 		"Promotion after attack leave-play did not finish the attack turn",
+	)
+	_check(
+		ResolutionStack.from_dict(state.resolution_stack).frames.is_empty(),
+		"Promotion after attack did not consume finalize_attack_turn frame",
 	)
 
 	state = _battle_state()
@@ -5579,11 +7846,12 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 func _run_python_golden_actions(engine: GameEngine) -> void:
 	var fixture := _read_json("res://tests/fixtures/rules_golden.json")
 	var cases: Dictionary = fixture.get("cases", {})
-	_check(cases.size() == 3, "Expected three Python golden action cases")
+	_check(cases.size() == 5, "Expected five Python golden action cases")
 	for case_name in cases:
 		var row: Dictionary = cases[case_name]
 		var state := GameState.from_dict(row["initial_state"])
 		var action_index := 0
+		var last_result: StepResult = null
 		for action_value in row.get("actions", []):
 			var action_row: Dictionary = action_value
 			var result := engine.apply_action(
@@ -5596,12 +7864,106 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 				),
 				PortableRandomSource.new(700 + action_index),
 			)
+			last_result = result
 			_check(
 				result.success,
 				"Golden action %s[%d] failed: %s" % [
 					case_name, action_index, result.message],
 			)
 			action_index += 1
+		var pending_after: Dictionary = row.get("pending_after_action", {})
+		if not pending_after.is_empty():
+			_check(last_result != null and last_result.pending_choice != null,
+				"Golden action %s did not expose expected pending choice" % case_name)
+			_check(
+				_deep_equal(_rule_summary(state), pending_after.get("expected", {})),
+				"Python/Godot pending rule mismatch for %s\nexpected=%s\nactual=%s" % [
+					case_name,
+					JSON.stringify(pending_after.get("expected", {})),
+					JSON.stringify(_rule_summary(state)),
+				],
+			)
+			var stack := ResolutionStack.from_dict(state.resolution_stack)
+			var expected_request: Dictionary = pending_after.get("request", {})
+			_check(stack.pending_request != null,
+				"Golden action %s did not serialize pending request" % case_name)
+			if stack.pending_request != null:
+				_check(
+					stack.pending_request.request_type == str(expected_request.get("request_type", ""))\
+					and stack.pending_request.player == int(expected_request.get("player", -1))\
+					and stack.pending_request.min_select == int(expected_request.get("min_select", -1))\
+					and stack.pending_request.max_select == int(expected_request.get("max_select", -1))\
+					and stack.pending_request.allow_duplicates == bool(expected_request.get("allow_duplicates", false))\
+					and stack.pending_request.can_cancel == bool(expected_request.get("can_cancel", false)),
+					"Golden pending request fields differ for %s" % case_name,
+				)
+				var actual_option_ids: Array = []
+				for option in stack.pending_request.options:
+					actual_option_ids.append(str(option.get("option_id", "")))
+				_check(
+					_deep_equal(actual_option_ids, expected_request.get("option_ids", [])),
+					"Golden pending request options differ for %s" % case_name,
+				)
+				var expected_metadata: Dictionary = Dictionary(expected_request.get("metadata", {}))
+				if not expected_metadata.is_empty():
+					var actual_metadata: Dictionary = stack.pending_request.metadata
+					var actual_continuation: Dictionary = {}
+					if actual_metadata.get("continuation", {}) is Dictionary:
+						actual_continuation = Dictionary(actual_metadata.get("continuation", {}))
+					_check(
+						int(actual_metadata.get("finish_attack_actor", -1))\
+						== int(expected_metadata.get("finish_attack_actor", -1))\
+						and str(actual_continuation.get("kind", ""))\
+						== str(expected_metadata.get("continuation_kind", "")),
+						"Golden pending request metadata differs for %s" % case_name,
+					)
+			var frame_kinds: Array = []
+			var continuation_operations: Array = []
+			var continuation_data_kinds: Array = []
+			for frame in stack.frames:
+				frame_kinds.append(str(frame.get("kind", "")))
+				if str(frame.get("kind", "")) == "continuation":
+					continuation_operations.append(str(frame.get("operation", "")))
+					var continuation_data: Dictionary = Dictionary(frame.get("data", {}))
+					continuation_data_kinds.append(str(continuation_data.get("kind", "")))
+			var expected_stack: Dictionary = pending_after.get("stack", {})
+			_check(
+				_deep_equal(frame_kinds, expected_stack.get("frame_kinds", [])),
+				"Golden pending stack frames differ for %s" % case_name,
+			)
+			_check(
+				_deep_equal(
+					continuation_operations,
+					expected_stack.get("continuation_operations", []),
+				)
+				and _deep_equal(
+					continuation_data_kinds,
+					expected_stack.get("continuation_data_kinds", []),
+				)
+				and (
+					stack.pending_request == null
+					or stack.pending_request.request_type
+					== str(expected_stack.get("pending_request_type", ""))
+				),
+				"Golden pending stack continuation data differs for %s" % case_name,
+			)
+			var response_data: Dictionary = row.get("choice_response", {}).duplicate(true)
+			if str(case_name) == "pending_attack_choice_cancel":
+				_check(
+					bool(response_data.get("cancelled", false)),
+					"Golden cancel case did not carry a cancelled choice response",
+				)
+			response_data["request_id"] = last_result.pending_choice.request_id
+			var choice_step := engine.apply_choice(
+				state,
+				last_result.pending_choice,
+				ChoiceResponse.from_dict(response_data),
+				PortableRandomSource.new(800 + action_index),
+			)
+			_check(
+				choice_step.success,
+				"Golden choice %s failed: %s" % [case_name, choice_step.message],
+			)
 		_check(
 			_deep_equal(_rule_summary(state), row["expected"]),
 			"Python/Godot rule mismatch for %s\nexpected=%s\nactual=%s" % [
@@ -6107,6 +8469,7 @@ func _rule_summary(state: GameState) -> Dictionary:
 	payload.erase("setup_ready")
 	payload.erase("processed_action_ids")
 	payload.erase("revision")
+	payload.erase("choice_sequence")
 	return payload
 
 
@@ -6291,6 +8654,14 @@ func _read_json(path: String) -> Dictionary:
 		_check(false, "Invalid dictionary JSON in %s" % path)
 		return {}
 	return parsed
+
+
+func _read_text(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		_check(false, "Unable to open %s" % path)
+		return ""
+	return file.get_as_text()
 
 
 func _check(condition: bool, message: String) -> void:

@@ -25,6 +25,7 @@ from engine.enums import TurnPhase, PlayerAction
 from engine.player_state import PokemonInPlay, PlayerState
 from engine.actions import ChoiceResponse, GameAction
 from engine.game_engine import GameEngine
+from engine.events.game_events import GameEvent
 from engine.random_source import ScriptedRandomSource
 from engine.rules_validator import (
     parse_bench_idx,
@@ -33,7 +34,7 @@ from engine.rules_validator import (
     can_retreat,
 )
 from engine.rules_constants import MAX_BENCH_SIZE
-from engine.snapshot import restore_state, snapshot_state
+from engine.snapshot import clone_state, restore_state, snapshot_state
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK, expand_deck
 
@@ -811,7 +812,9 @@ class TestCardEffectAccuracy(unittest.TestCase):
         self.assertEqual(len(state.p2.deck), 1)
 
     def test_failed_pending_attack_choice_does_not_apply_accumulated_damage(self):
+        from engine import action_resolver as action_resolver_module
         from engine.action_resolver import ActionResolver
+        from engine.commands.base import CommandResult
 
         state = self._battle_state(active_card_id="sv1-114")
         state.p1.active.energy_cards = [
@@ -819,28 +822,33 @@ class TestCardEffectAccuracy(unittest.TestCase):
             CardRegistry.get("sv1-ener-3"),
         ]
         resolver = ActionResolver(state)
-        pending = ActionRequest(
-            request_type="confirm",
-            player=0,
-            prompt="fail attack continuation",
-            callback=lambda _choice: ActionResult(False, "目标无效。"),
-        )
 
-        def fake_execute_effects(_effects, _player_idx, _source_slot):
-            return ActionResult(True, "等待选择。", pending_action=pending)
+        class PendingFailCommand:
+            def execute(self, _ctx):
+                pending = ActionRequest(
+                    request_type="confirm",
+                    player=0,
+                    prompt="fail attack continuation",
+                    callback=lambda _choice: ActionResult(False, "目标无效。"),
+                )
+                return CommandResult.ok("等待选择。", pending_choice=pending)
 
-        resolver._execute_effects = fake_execute_effects
-        result = resolver._declare_attack(0, 1)
-        self.assertTrue(result.success, result.log_message)
-        self.assertIsNotNone(result.pending_action)
+        original_compile_command_spec = action_resolver_module.compile_command_spec
+        action_resolver_module.compile_command_spec = lambda _effect: PendingFailCommand()
+        try:
+            result = resolver._declare_attack(0, 1)
+            self.assertTrue(result.success, result.log_message)
+            self.assertIsNotNone(result.pending_action)
 
-        continuation = result.pending_action.callback([])
+            continuation = result.pending_action.callback([])
+        finally:
+            action_resolver_module.compile_command_spec = original_compile_command_spec
 
         self.assertFalse(continuation.success)
         self.assertEqual(state.p2.active.damage_counters, 0)
-        self.assertIsNone(getattr(state, "_attack_damage_context", None))
+        self.assertFalse(hasattr(state, "_attack_damage_context"))
 
-    def test_attack_effects_enter_one_resolution_stack(self):
+    def test_attack_effects_enter_attack_resolution_stack(self):
         from engine.action_resolver import ActionResolver
 
         state = self._battle_state(active_card_id="sv1-114")
@@ -852,22 +860,58 @@ class TestCardEffectAccuracy(unittest.TestCase):
         attack = state.p1.active.card.attacks[1]
         calls = []
 
-        def fake_execute_effects(effects, player_idx, source_slot):
-            calls.append((list(effects), player_idx, source_slot))
+        def fake_execute_effects(
+            effects,
+            player_idx,
+            source_slot,
+            attack_context,
+            *,
+            finish_attack_in_stack=False,
+        ):
+            calls.append((list(effects), player_idx, source_slot, dict(attack_context)))
             return ActionResult(True, "")
 
-        def reject_single_effect(_effect, _player_idx, _source_slot):
-            raise AssertionError("attack effects must resolve through one VM stack")
-
-        resolver._execute_effects = fake_execute_effects
-        resolver._execute_effect = reject_single_effect
+        resolver._execute_attack_effects = fake_execute_effects
 
         result = resolver._declare_attack(0, 1)
 
         self.assertTrue(result.success, result.log_message)
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][0], list(attack.effects))
-        self.assertEqual(calls[0][1:], (0, "active"))
+        self.assertEqual(calls[0][0], list(attack.compiled_effects))
+        self.assertEqual(calls[0][1:3], (0, "active"))
+        self.assertTrue(calls[0][3]["active"])
+        self.assertEqual(calls[0][3]["player_idx"], 0)
+
+    def test_attack_damage_context_is_stack_scoped_without_state_bridge(self):
+        from engine.commands.attack_frames import (
+            attack_damage_context,
+            begin_attack_damage_context,
+            clear_attack_damage_context,
+        )
+        from engine.commands.resolution_stack import ResolutionStack
+
+        state = self._battle_state(active_card_id="sv1-114")
+        stack = ResolutionStack(state)
+        context = {
+            "active": True,
+            "player_idx": 0,
+            "attacker": state.p1.active,
+            "base_damage": 40,
+        }
+
+        self.assertIs(begin_attack_damage_context(state, stack, context), context)
+        self.assertIs(stack.context["attack_damage"], context)
+        self.assertIs(attack_damage_context(state, stack), context)
+        self.assertIsNone(attack_damage_context(state))
+        self.assertFalse(hasattr(state, "_attack_damage_context"))
+        self.assertFalse(hasattr(state, "_piercing_attack"))
+        self.assertFalse(hasattr(state, "_attack_ignore_defender_effects"))
+
+        clear_attack_damage_context(state, stack)
+
+        self.assertNotIn("attack_damage", stack.context)
+        self.assertIsNone(attack_damage_context(state, stack))
+        self.assertFalse(hasattr(state, "_attack_damage_context"))
 
     def test_tatsugiri_return_to_hand_has_no_damage_and_checks_board(self):
         state = self._battle_state(active_card_id="sv2-tatsu")
@@ -1174,6 +1218,32 @@ class TestSnapshotAndResources(unittest.TestCase):
                          [c.api_id for c in cards[:3]])
         self.assertEqual([c.api_id for c in state.p1.discard],
                          [c.api_id for c in cards[1:4]])
+
+    def test_snapshot_restore_and_clone_preserve_event_stream(self):
+        state = GameState()
+        state.event_stream.push(GameEvent("preexisting", {"amount": 1}))
+        state.event_stream.push(GameEvent("pending_choice", {"slot": "active"}))
+
+        snap = snapshot_state(state)
+        state.event_stream.push(GameEvent("mutated", {"amount": 99}))
+        restore_state(state, snap)
+
+        self.assertEqual(
+            [(event.event_type, event.data) for event in state.event_stream._events],
+            [
+                ("preexisting", {"amount": 1}),
+                ("pending_choice", {"slot": "active"}),
+            ],
+        )
+
+        cloned = clone_state(state)
+        self.assertEqual(
+            [(event.event_type, event.data) for event in cloned.event_stream._events],
+            [
+                ("preexisting", {"amount": 1}),
+                ("pending_choice", {"slot": "active"}),
+            ],
+        )
 
     def test_card_image_mapping_uses_id_keys_and_normalized_filenames(self):
         root = Path(__file__).resolve().parents[1]

@@ -74,15 +74,15 @@ OP_BY_EFFECT_TYPE: dict[str, str] = {
     "damage": "deal_damage",
     "damage_and_self_heal": "deal_damage_then_heal",
     "damage_counter_self": "place_damage_counters",
-    "damage_per_discard_psychic": "deal_damage_per_discard_psychic",
-    "damage_per_energy": "deal_damage_per_energy",
-    "damage_per_evolved": "deal_damage_per_evolved",
-    "damage_per_hand_size": "deal_damage_per_hand_size",
-    "damage_per_self_damage": "deal_damage_per_self_damage",
-    "damage_per_self_energy": "deal_damage_per_self_energy",
-    "damage_per_self_energy_type": "deal_damage_per_self_energy_type",
-    "damage_plus_bench": "deal_damage_plus_bench",
-    "damage_self_penalty": "deal_damage_with_self_penalty",
+    "damage_per_discard_psychic": "deal_damage",
+    "damage_per_energy": "deal_damage",
+    "damage_per_evolved": "deal_damage",
+    "damage_per_hand_size": "deal_damage",
+    "damage_per_self_damage": "deal_damage",
+    "damage_per_self_energy": "deal_damage",
+    "damage_per_self_energy_type": "deal_damage",
+    "damage_plus_bench": "deal_damage",
+    "damage_self_penalty": "deal_damage",
     "dazzling_beam": "apply_dazzling_beam",
     "discard": "discard_cards",
     "discard_draw": "discard_then_draw_cards",
@@ -135,6 +135,10 @@ EFFECT_TYPE_ARG_OPS = frozenset()
 def compile_effect_to_spec(effect_def: Any) -> CommandSpec:
     """Compile one EffectDef/dict into serializable IR."""
     effect_type, params = _effect_parts(effect_def)
+    formula_args = _formula_args_for_effect(effect_type, params)
+    if formula_args is not None:
+        return CommandSpec(op="deal_damage", args=_json_safe(formula_args), branches={})
+
     op = OP_BY_EFFECT_TYPE.get(effect_type)
     if op is None:
         raise ValueError(f"No VM IR op registered for effect_type={effect_type!r}")
@@ -151,6 +155,149 @@ def compile_effect_to_spec(effect_def: Any) -> CommandSpec:
     if op == "switch_pokemon" and "target" not in args:
         args["target"] = "opponent" if effect_type == "switch_opponent" else "self"
     return CommandSpec(op=op, args=args, branches=branches)
+
+
+def _formula_args_for_effect(effect_type: str, params: dict[str, Any]) -> dict[str, Any] | None:
+    formula_ast = _formula_ast_for_effect(effect_type, params)
+    if formula_ast is None:
+        return None
+    args: dict[str, Any] = {"formula_ast": formula_ast}
+    if "target" in params:
+        args["target"] = params["target"]
+    if effect_type == "attack_damage_formula":
+        if params.get("piercing", False):
+            args["piercing"] = True
+        if params.get("ignore_defender_effects", False):
+            args["ignore_defender_effects"] = True
+        condition_bonus = params.get("condition_bonus") or {}
+        if (
+            isinstance(condition_bonus, dict)
+            and str(condition_bonus.get("condition", "") or "") == "ko_by_attack_last_turn"
+            and bool(condition_bonus.get("consume", True))
+        ):
+            args["consume_condition"] = "ko_by_attack_last_turn"
+    return args
+
+
+def _formula_ast_for_effect(effect_type: str, params: dict[str, Any]) -> dict[str, Any] | None:
+    if effect_type == "attack_damage_formula":
+        terms: list[Any] = [_const(params.get("base", 0))]
+        per_own_bench = int(params.get("per_own_bench", 0) or 0)
+        if per_own_bench:
+            terms.append(_mul({"op": "bench_count", "player": "self"}, _const(per_own_bench)))
+        per_counter = int(params.get("per_self_damage_counter", 0) or 0)
+        if per_counter:
+            terms.append(_mul({"op": "damage_counters", "target": "self"}, _const(per_counter)))
+        energy_type = str(params.get("per_self_energy_type", "") or "")
+        if energy_type:
+            terms.append(_mul(
+                {"op": "energy_count", "scope": "self", "energy_type": energy_type},
+                _const(params.get("per_energy", 0)),
+            ))
+        condition_bonus = params.get("condition_bonus") or {}
+        if isinstance(condition_bonus, dict):
+            condition = str(condition_bonus.get("condition", "") or "")
+            if condition:
+                terms.append({
+                    "op": "if",
+                    "condition": condition,
+                    "then": _const(condition_bonus.get("bonus", 0)),
+                    "else": _const(0),
+                })
+        return terms[0] if len(terms) == 1 else _add(*terms)
+    if effect_type == "damage_per_discard_psychic":
+        return _add(
+            _const(params.get("base", 80)),
+            _mul(
+                {
+                    "op": "discard_count",
+                    "player": "self",
+                    "filter": {"card_type": "pokemon", "energy_type": "Psychic"},
+                },
+                _const(params.get("per_card", 10)),
+            ),
+        )
+    if effect_type == "damage_per_energy":
+        return _add(
+            _const(params.get("base", 0)),
+            _mul(
+                {
+                    "op": "energy_count",
+                    "scope": str(params.get("count_from", "self") or "self"),
+                    "energy_type": str(params.get("energy_filter", params.get("energy_type", "any")) or "any"),
+                },
+                _const(params.get("per_energy", 0)),
+            ),
+        )
+    if effect_type == "damage_per_evolved":
+        return _mul(
+            {"op": "evolved_count", "player": "self"},
+            _const(params.get("per_evolved", 50)),
+        )
+    if effect_type == "damage_per_hand_size":
+        return _mul({"op": "hand_size", "player": "self"}, _const(params.get("per", 0)))
+    if effect_type == "damage_per_self_damage":
+        return _add(
+            _const(params.get("base", 0)),
+            _mul(
+                {"op": "damage_counters", "target": "self"},
+                _const(params.get("per_counter", 0)),
+            ),
+        )
+    if effect_type == "damage_per_self_energy":
+        return _add(
+            _const(params.get("base", 60)),
+            _mul(
+                {
+                    "op": "energy_count",
+                    "scope": "self",
+                    "energy_type": str(params.get("energy_filter", "fire") or "fire"),
+                },
+                _const(params.get("per_energy", 20)),
+            ),
+        )
+    if effect_type == "damage_per_self_energy_type":
+        return _add(
+            _const(params.get("base", 60)),
+            _mul(
+                {
+                    "op": "energy_count",
+                    "scope": "self",
+                    "energy_type": str(params.get("energy_type", "Grass") or "Grass"),
+                },
+                _const(params.get("per_energy", 20)),
+            ),
+        )
+    if effect_type == "damage_plus_bench":
+        return _add(
+            _const(params.get("base", 0)),
+            _mul({"op": "bench_count", "player": "self"}, _const(params.get("per_bench", 0))),
+        )
+    if effect_type == "damage_self_penalty":
+        return _sub(
+            _const(params.get("base", 0)),
+            _mul(
+                {"op": "damage_counters", "target": "self"},
+                _const(params.get("per_counter", 0)),
+            ),
+        )
+    return None
+
+
+def _const(value: Any) -> dict[str, int]:
+    return {"const": int(value or 0)}
+
+
+def _add(*terms: Any) -> dict[str, Any]:
+    return {"op": "add", "terms": list(terms)}
+
+
+def _mul(*factors: Any) -> dict[str, Any]:
+    return {"op": "mul", "factors": list(factors)}
+
+
+def _sub(lhs: Any, rhs: Any) -> dict[str, Any]:
+    return {"op": "sub", "lhs": lhs, "rhs": rhs}
 
 
 def compile_effects_to_specs(effect_defs: Iterable[Any]) -> list[CommandSpec]:

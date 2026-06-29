@@ -1,7 +1,10 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.export_godot_data import export
 
@@ -26,7 +29,10 @@ class GodotDataExportTests(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
-            self.assertEqual(len(rules["cases"]), 3)
+            self.assertEqual(len(rules["cases"]), 5)
+            self.assertTrue(
+                rules["cases"]["pending_attack_choice_cancel"]["choice_response"]["cancelled"]
+            )
 
             first_cards = json.loads((first / "data" / "cards.json").read_text(encoding="utf-8"))
             second_cards = json.loads((second / "data" / "cards.json").read_text(encoding="utf-8"))
@@ -34,6 +40,16 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(len(first_cards), 137)
             self.assertEqual(first_cards["svi-chim"]["card_bucket"], 3624)
             self.assertIn("compiled_effects", first_cards["svi-chim"]["attacks"][0])
+            compiled_dump = json.dumps(first_cards, sort_keys=True)
+            legacy_formula_ops = (
+                "deal_damage_per_hand_size",
+                "deal_damage_per_self_damage",
+                "deal_damage_plus_bench",
+                "deal_damage_with_self_penalty",
+                "set_attack_damage_formula",
+            )
+            for op in legacy_formula_ops:
+                self.assertNotIn(f'"op": "{op}"', compiled_dump)
             self.assertEqual(len(first_cards["svi-chim"]["ai_semantic_features"]), 53)
             encoder_fixture = json.loads(
                 (first / "tests" / "fixtures" / "ai_encoder_golden.json").read_text(

@@ -30,9 +30,19 @@ from engine.actions import (
     GameAction,
     PokemonRef,
 )
+from engine.ai.effect_features import (
+    effect_feature_names,
+    effect_params,
+    iter_effects_recursive,
+)
 from engine.ai.observation import Observation
 from engine.ai.profiles import get_deck_ai_profile
 from engine.enums import PlayerAction, TurnPhase
+from engine.effects.runtime_effects import (
+    ability_runtime_effects,
+    attack_runtime_effects,
+    trainer_runtime_effects,
+)
 
 
 CARD_BUCKET_COUNT = 4096
@@ -1177,8 +1187,12 @@ class ActionStateEncoder:
         if not player.active or not isinstance(attack_idx, int) or attack_idx >= len(player.active.card.attacks):
             return [0.0] * 24
         attack = player.active.card.attacks[attack_idx]
-        effects = getattr(attack, "effects", []) or []
-        effect_names = [str(getattr(e, "effect_type", e.get("effect_type", "")) if isinstance(e, dict) else getattr(e, "effect_type", "")) for e in effects]
+        effects = attack_runtime_effects(attack)
+        effect_names = [
+            name
+            for effect in self._iter_effects_recursive(effects)
+            for name in effect_feature_names(effect)
+        ]
         joined_names = self._normalized_effect_tokens(effect_names)
         features = [
             1.0,
@@ -1236,14 +1250,14 @@ class ActionStateEncoder:
     def _card_effect_names(self, card) -> set[str]:
         names: list[str] = []
         for attack in getattr(card, "attacks", []) or []:
-            for effect in self._iter_effects_recursive(getattr(attack, "effects", []) or []):
+            for effect in self._iter_effects_recursive(attack_runtime_effects(attack)):
                 names.append(self._effect_name(effect))
             names.append(getattr(attack, "text", "") or "")
         for ability in getattr(card, "abilities", []) or []:
             names.append(getattr(ability, "text", "") or "")
-            for effect in self._iter_effects_recursive(getattr(ability, "effects", []) or []):
+            for effect in self._iter_effects_recursive(ability_runtime_effects(ability)):
                 names.append(self._effect_name(effect))
-        for effect in self._iter_effects_recursive(getattr(card, "trainer_effects", []) or []):
+        for effect in self._iter_effects_recursive(trainer_runtime_effects(card)):
             names.append(self._effect_name(effect))
         names.extend(getattr(card, "rules", []) or [])
         names.append(getattr(card, "trainer_text", "") or "")
@@ -1252,19 +1266,28 @@ class ActionStateEncoder:
     def _effect_tokens_for_action_card(self, card) -> set[str]:
         if card is None:
             return set()
-        names = [self._effect_name(effect) for effect in self._iter_effects_recursive(getattr(card, "trainer_effects", []) or [])]
+        names = [
+            self._effect_name(effect)
+            for effect in self._iter_effects_recursive(trainer_runtime_effects(card))
+        ]
         for attack in getattr(card, "attacks", []) or []:
-            names.extend(self._effect_name(effect) for effect in self._iter_effects_recursive(getattr(attack, "effects", []) or []))
+            names.extend(
+                self._effect_name(effect)
+                for effect in self._iter_effects_recursive(attack_runtime_effects(attack))
+            )
         for ability in getattr(card, "abilities", []) or []:
-            names.extend(self._effect_name(effect) for effect in self._iter_effects_recursive(getattr(ability, "effects", []) or []))
+            names.extend(
+                self._effect_name(effect)
+                for effect in self._iter_effects_recursive(ability_runtime_effects(ability))
+            )
         return self._normalized_effect_tokens(names)
 
     def _discard_cost_amount(self, card) -> int:
         if card is None:
             return 0
         amount = 0
-        for effect in self._iter_effects_recursive(getattr(card, "trainer_effects", []) or []):
-            if self._effect_name(effect) != "discard":
+        for effect in self._iter_effects_recursive(trainer_runtime_effects(card)):
+            if "discard" not in effect_feature_names(effect):
                 continue
             params = self._effect_params(effect)
             from_zone = str(params.get("from", params.get("from_zone", "hand")) or "hand")
@@ -1273,33 +1296,13 @@ class ActionStateEncoder:
         return amount
 
     def _effect_name(self, effect) -> str:
-        if isinstance(effect, dict):
-            return str(effect.get("effect_type", ""))
-        return str(getattr(effect, "effect_type", effect))
+        return " ".join(effect_feature_names(effect))
 
     def _effect_params(self, effect) -> dict[str, Any]:
-        if isinstance(effect, dict):
-            params = effect.get("params", {})
-        else:
-            params = getattr(effect, "params", {})
-        return params if isinstance(params, dict) else {}
+        return effect_params(effect)
 
     def _iter_effects_recursive(self, effects):
-        if isinstance(effects, dict) or hasattr(effects, "effect_type"):
-            effects = [effects]
-        for effect in effects or []:
-            yield effect
-            params = self._effect_params(effect)
-            for key in ("on_heads", "on_tails", "on_success", "on_fail", "on_pay"):
-                branch = params.get(key) or []
-                if isinstance(branch, dict) or hasattr(branch, "effect_type"):
-                    branch = [branch]
-                yield from self._iter_effects_recursive(branch)
-            cost = params.get("cost")
-            if cost:
-                if isinstance(cost, dict) or hasattr(cost, "effect_type"):
-                    cost = [cost]
-                yield from self._iter_effects_recursive(cost)
+        yield from iter_effects_recursive(effects)
 
     def _normalized_effect_tokens(self, names) -> set[str]:
         joined = " ".join(str(name) for name in names).lower()

@@ -48,15 +48,27 @@
     },
     "attack_damage_formula": {
       "args": {
-        "base": 100,
-        "condition_bonus": {
-          "bonus": 120,
-          "condition": "own_bench_damaged",
-          "consume": false
+        "formula_ast": {
+          "op": "add",
+          "terms": [
+            {
+              "const": 100
+            },
+            {
+              "condition": "own_bench_damaged",
+              "else": {
+                "const": 0
+              },
+              "op": "if",
+              "then": {
+                "const": 120
+              }
+            }
+          ]
         }
       },
       "branches": {},
-      "op": "set_attack_damage_formula"
+      "op": "deal_damage"
     },
     "attack_fail": {
       "args": {},
@@ -261,78 +273,227 @@
     },
     "damage_per_discard_psychic": {
       "args": {
-        "base": 80,
-        "per_card": 10
+        "formula_ast": {
+          "op": "add",
+          "terms": [
+            {
+              "const": 80
+            },
+            {
+              "factors": [
+                {
+                  "filter": {
+                    "card_type": "pokemon",
+                    "energy_type": "Psychic"
+                  },
+                  "op": "discard_count",
+                  "player": "self"
+                },
+                {
+                  "const": 10
+                }
+              ],
+              "op": "mul"
+            }
+          ]
+        }
       },
       "branches": {},
-      "op": "deal_damage_per_discard_psychic"
+      "op": "deal_damage"
     },
     "damage_per_energy": {
       "args": {
-        "base": 0,
-        "count_from": "opponent_active",
-        "per_energy": 30,
+        "formula_ast": {
+          "op": "add",
+          "terms": [
+            {
+              "const": 0
+            },
+            {
+              "factors": [
+                {
+                  "energy_type": "any",
+                  "op": "energy_count",
+                  "scope": "opponent_active"
+                },
+                {
+                  "const": 30
+                }
+              ],
+              "op": "mul"
+            }
+          ]
+        },
         "target": "opponent_active"
       },
       "branches": {},
-      "op": "deal_damage_per_energy"
+      "op": "deal_damage"
     },
     "damage_per_evolved": {
       "args": {
-        "per_evolved": 50
+        "formula_ast": {
+          "factors": [
+            {
+              "op": "evolved_count",
+              "player": "self"
+            },
+            {
+              "const": 50
+            }
+          ],
+          "op": "mul"
+        }
       },
       "branches": {},
-      "op": "deal_damage_per_evolved"
+      "op": "deal_damage"
     },
     "damage_per_hand_size": {
       "args": {
-        "per": 20
+        "formula_ast": {
+          "factors": [
+            {
+              "op": "hand_size",
+              "player": "self"
+            },
+            {
+              "const": 20
+            }
+          ],
+          "op": "mul"
+        }
       },
       "branches": {},
-      "op": "deal_damage_per_hand_size"
+      "op": "deal_damage"
     },
     "damage_per_self_damage": {
       "args": {
-        "base": 60,
-        "per_counter": 10
+        "formula_ast": {
+          "op": "add",
+          "terms": [
+            {
+              "const": 60
+            },
+            {
+              "factors": [
+                {
+                  "op": "damage_counters",
+                  "target": "self"
+                },
+                {
+                  "const": 10
+                }
+              ],
+              "op": "mul"
+            }
+          ]
+        }
       },
       "branches": {},
-      "op": "deal_damage_per_self_damage"
+      "op": "deal_damage"
     },
     "damage_per_self_energy": {
       "args": {
-        "base": 60,
-        "energy_filter": "fire",
-        "per_energy": 20
+        "formula_ast": {
+          "op": "add",
+          "terms": [
+            {
+              "const": 60
+            },
+            {
+              "factors": [
+                {
+                  "energy_type": "fire",
+                  "op": "energy_count",
+                  "scope": "self"
+                },
+                {
+                  "const": 20
+                }
+              ],
+              "op": "mul"
+            }
+          ]
+        }
       },
       "branches": {},
-      "op": "deal_damage_per_self_energy"
+      "op": "deal_damage"
     },
     "damage_per_self_energy_type": {
       "args": {
-        "base": 60,
-        "energy_type": "Grass",
-        "per_energy": 20
+        "formula_ast": {
+          "op": "add",
+          "terms": [
+            {
+              "const": 60
+            },
+            {
+              "factors": [
+                {
+                  "energy_type": "Grass",
+                  "op": "energy_count",
+                  "scope": "self"
+                },
+                {
+                  "const": 20
+                }
+              ],
+              "op": "mul"
+            }
+          ]
+        }
       },
       "branches": {},
-      "op": "deal_damage_per_self_energy_type"
+      "op": "deal_damage"
     },
     "damage_plus_bench": {
       "args": {
-        "base": 10,
-        "count_own_bench": true,
-        "per_bench": 20
+        "formula_ast": {
+          "op": "add",
+          "terms": [
+            {
+              "const": 10
+            },
+            {
+              "factors": [
+                {
+                  "op": "bench_count",
+                  "player": "self"
+                },
+                {
+                  "const": 20
+                }
+              ],
+              "op": "mul"
+            }
+          ]
+        }
       },
       "branches": {},
-      "op": "deal_damage_plus_bench"
+      "op": "deal_damage"
     },
     "damage_self_penalty": {
       "args": {
-        "base": 200,
-        "per_counter": 20
+        "formula_ast": {
+          "lhs": {
+            "const": 200
+          },
+          "op": "sub",
+          "rhs": {
+            "factors": [
+              {
+                "op": "damage_counters",
+                "target": "self"
+              },
+              {
+                "const": 20
+              }
+            ],
+            "op": "mul"
+          }
+        }
       },
       "branches": {},
-      "op": "deal_damage_with_self_penalty"
+      "op": "deal_damage"
     },
     "dazzling_beam": {
       "args": {
@@ -1345,5 +1506,16 @@
     "protocol_version": 3,
     "python_action_version": 2,
     "python_rules_version": 2
-  }
+  },
+  "vm": {
+    "command_shape": [
+      "op",
+      "args",
+      "branches"
+    ],
+    "ir_version": 1,
+    "legacy_effect_type_args_allowed": false,
+    "runtime_effect_source": "compiled_effects"
+  },
+  "vm_version": 1
 }
