@@ -339,6 +339,12 @@ layout_mode = 2
 
 [node name="BattleHUD" parent="BattleRoot/Body" instance=ExtResource("8_hud")]
 
+[node name="LogPanel" parent="BattleRoot/Body/BattleHUD" instance=ExtResource("10_log")]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
 [node name="OverlayPanels" type="Control" parent="."]
 z_index = 20
 mouse_filter = 2
@@ -351,8 +357,6 @@ grow_vertical = 2
 editor_description = "战斗详情与日志浮层。它们不参与 Body 布局，因此不会压缩牌桌宽度。"
 
 [node name="DetailPanel" parent="OverlayPanels" instance=ExtResource("9_detail")]
-
-[node name="LogPanel" parent="OverlayPanels" instance=ExtResource("10_log")]
 
 [node name="ActionPanel" parent="." instance=ExtResource("11_action")]
 

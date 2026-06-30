@@ -297,11 +297,12 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 | 右侧阶段 HUD | `scenes/battle/components/battle_phase_hud.tscn` |
 | 预留动作面板 | `scenes/battle/components/battle_action_panel.tscn` |
 | 战斗内卡牌详情浮层 | `scenes/battle/components/battle_detail_panel.tscn` |
-| 战斗日志浮层 | `scenes/battle/components/battle_log_panel.tscn` |
+| 右侧行动日志面板 | `scenes/battle/components/battle_log_panel.tscn` |
 
-`BattleHUD` 只保留右侧贴边阶段轨，`DetailPanel` 和 `LogPanel` 位于
-`battle_table.tscn` 根节点下的 `OverlayPanels`，由脚本定位成浮层。如果要调详情或日志
-外观，优先打开对应组件场景；如果要调浮层在牌桌上的位置，再看 `BattleTable._layout_overlay_drawers()`。
+`BattleHUD` 位于右侧边栏，包含阶段轨和 `LogPanel` 行动日志；日志不覆盖牌桌或手牌。
+`DetailPanel` 位于 `battle_table.tscn` 根节点下的 `OverlayPanels`，由脚本定位成浮层。
+如果要调详情或日志外观，优先打开对应组件场景；如果要调详情浮层在牌桌上的位置，
+再看 `BattleTable._layout_overlay_drawers()`。
 
 战斗界面最容易误解的一点：`OpponentActive`、`OwnActive`、`OpponentBench0` 等固定卡位
 虽然在场景树里能拖动，但运行时会被 `_layout_board()` 重新计算位置。想调整体比例时，

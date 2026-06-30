@@ -3065,6 +3065,30 @@ func _run_visual_upgrade_tests() -> void:
 			"cards", []).is_empty(),
 		"Legacy draw event leaked the opponent's card identity",
 	)
+	var director_probe := PresentationDirector.new()
+	root.add_child(director_probe)
+	var shuffle_signal := {}
+	var normalized_shuffle := PresentationEvent.normalize({
+		"event_type": "deck_shuffled",
+		"actor": 0,
+		"data": {"player": 0},
+	}, 9, 0, 0)
+	director_probe.card_motion_requested.connect(func(
+		event: Dictionary,
+		_duration: float,
+	) -> void:
+		shuffle_signal["motion"] = str(event.get("event_type", "")) == "deck_shuffled"
+	)
+	director_probe._dispatch(normalized_shuffle)
+	_check(
+		bool(shuffle_signal.get("motion", false)),
+		"Deck shuffle presentation did not request card motion",
+	)
+	_check(
+		director_probe._duration_for(normalized_shuffle) > 0.5,
+		"Deck shuffle presentation does not have an explicit motion duration",
+	)
+	director_probe.queue_free()
 
 	var packed := load("res://scenes/battle/battle_screen.tscn") as PackedScene
 	_check(packed != null, "Battle screen scene failed to load")
@@ -3161,10 +3185,22 @@ func _run_visual_upgrade_tests() -> void:
 		_check(battle.zones.size() == 7,
 			"Battle screen does not expose every required tabletop zone")
 		_check(
+			battle.log_panel != null
+			and battle.log_panel.get_parent() == battle.hud
+			and battle.get_node_or_null("OverlayPanels/LogPanel") == null,
+			"Battle log panel is still mounted as a board overlay instead of the HUD sidebar",
+		)
+		_check(
 			(battle.zones["opponent_deck"] as ZoneView).stack_visual_mode == "deck"
 			and (battle.zones["own_deck"] as ZoneView).stack_visual_mode == "deck"
+			and (battle.zones["opponent_discard"] as ZoneView).stack_visual_mode == "discard"
+			and (battle.zones["own_discard"] as ZoneView).stack_visual_mode == "discard"
 			and (battle.zones["own_prizes"] as ZoneView).stack_visual_mode == "prizes",
-			"Battle zones did not enable deck/prize stack visuals",
+			"Battle zones did not enable deck/discard/prize stack visuals",
+		)
+		_check(
+			(battle.zones["own_discard"] as ZoneView)._stack_layer_count() >= 1,
+			"Discard pile did not expose a physical stack thickness",
 		)
 		_check(battle.phase_advance_button != null,
 			"Battle screen is missing the dedicated phase advance button")
@@ -3338,6 +3374,14 @@ func _run_visual_upgrade_tests() -> void:
 				{"player": 1, "zone": "hand"},
 			),
 			"Opponent hidden-zone card motion would reveal card identity",
+		)
+		_check(
+			battle._motion_card_hidden_from_view(
+				"sv1-151",
+				{"player": 1, "zone": "prizes"},
+				{"player": 1, "zone": "hand"},
+			),
+			"Opponent prize motion would reveal card identity",
 		)
 		_check(
 			not battle._motion_card_hidden_from_view(
@@ -3961,6 +4005,43 @@ func _run_visual_upgrade_tests() -> void:
 				"cards_drawn",
 				0,
 			)
+		var paper_flyer := (
+			battle.table._active_flyers[-1] as Control
+			if not battle.table._active_flyers.is_empty()
+			else null
+		)
+		_check(
+			paper_flyer != null
+			and paper_flyer.has_meta("paper_card_token")
+			and paper_flyer.find_child("PaperEdge", true, false) != null
+			and paper_flyer.find_child("PaperGloss", true, false) != null,
+			"Flying card did not use the physical paper-card token",
+		)
+		battle._clear_transient_visuals()
+		var shuffle_spawned: bool = battle.table._spawn_shuffle_motion(
+			{"player": 0, "zone": "deck"},
+			0.78,
+		)
+		var shuffle_cards := 0
+		var shuffle_cards_are_physical := true
+		for flyer_value in battle.table._active_flyers:
+			var flyer := flyer_value as Control
+			if flyer == null:
+				continue
+			if flyer.has_meta("shuffle_card"):
+				shuffle_cards += 1
+			shuffle_cards_are_physical = (
+				shuffle_cards_are_physical
+				and flyer.has_meta("paper_card_token")
+			)
+		_check(
+			shuffle_spawned
+			and shuffle_cards == battle.table._shuffle_card_count()
+			and battle.table._active_flyers.size() <= battle.table._max_active_flyers()
+			and shuffle_cards_are_physical,
+			"Deck shuffle did not create bounded physical card-back flyers",
+		)
+		battle._clear_transient_visuals()
 		var stale_cover := Control.new()
 		stale_cover.name = "PresentationCover"
 		battle.effects.add_child(stale_cover)
@@ -4059,6 +4140,15 @@ func _run_visual_upgrade_tests() -> void:
 		_check(
 			not reduced_drawn.is_presentation_hidden(),
 			"Reduced motion draw did not reveal the hand card",
+		)
+		battle._on_card_motion_requested({
+			"event_type": "deck_shuffled",
+			"actor": 0,
+			"data": {"player": 0},
+		}, 0.78)
+		_check(
+			battle._active_flyers.is_empty(),
+			"Reduced motion shuffle spawned long-running card flyers",
 		)
 		battle.director.clear_for_resync()
 		battle._clear_transient_visuals()

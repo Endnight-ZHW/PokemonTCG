@@ -128,18 +128,28 @@ func _draw() -> void:
 		var offset := step * float(layer)
 		var layer_rect := Rect2(offset, size)
 		var t := float(layer) / float(maxi(1, layers))
-		var fill := _stack_color().darkened(0.05 + t * 0.10)
-		fill.a = 0.72
-		var border := DesignTokens.BORDER.lightened(0.18)
-		border.a = 0.72
-		draw_rect(layer_rect, fill, true)
-		draw_rect(layer_rect, border, false, 1.25)
-		var side := Color(0.0, 0.0, 0.0, 0.18 + t * 0.12)
+		var fill := _stack_color().darkened(0.04 + t * 0.08)
+		fill.a = 0.78
+		var paper_edge := _paper_edge_color().lerp(_stack_color(), t * 0.16)
+		paper_edge.a = 0.92
+		var border := _stack_border_color()
+		border.a = 0.70
+		draw_rect(layer_rect, paper_edge, true)
+		draw_rect(layer_rect.grow(-2.0), fill, true)
+		draw_rect(layer_rect, border, false, 1.15)
+		var side := Color(0.0, 0.0, 0.0, 0.16 + t * 0.14)
 		draw_line(
 			layer_rect.position + Vector2(layer_rect.size.x, 4.0),
 			layer_rect.position + layer_rect.size + Vector2(0.0, -4.0),
 			side,
 			2.0,
+		)
+		var highlight := Color(1.0, 1.0, 1.0, 0.08 - t * 0.025)
+		draw_line(
+			layer_rect.position + Vector2(5.0, 3.0),
+			layer_rect.position + Vector2(layer_rect.size.x - 5.0, 3.0),
+			highlight,
+			1.0,
 		)
 
 
@@ -201,7 +211,11 @@ func _stack_layer_count() -> int:
 		0.0,
 		1.0,
 	)
-	var max_layers := 9 if stack_visual_mode == "deck" else 7
+	var max_layers := 7
+	if stack_visual_mode == "deck":
+		max_layers = 9
+	elif stack_visual_mode == "discard":
+		max_layers = 8
 	return clampi(int(ceil(ratio * float(max_layers))), 1, max_layers)
 
 
@@ -223,7 +237,26 @@ func _stack_color() -> Color:
 			return Color("#2b3342")
 		"prizes":
 			return Color("#48313c")
+		"discard":
+			return Color("#28323d")
 	return Color("#253240")
+
+
+func _paper_edge_color() -> Color:
+	if stack_visual_mode == "prizes":
+		return Color("#d6c8d2")
+	return Color("#d9dde2")
+
+
+func _stack_border_color() -> Color:
+	match stack_visual_mode:
+		"deck":
+			return DesignTokens.GOLD.darkened(0.25)
+		"discard":
+			return DesignTokens.CYAN.darkened(0.25)
+		"prizes":
+			return DesignTokens.PURPLE.lightened(0.10)
+	return DesignTokens.BORDER.lightened(0.18)
 
 
 func _apply_frame_style() -> void:
@@ -234,6 +267,9 @@ func _apply_frame_style() -> void:
 	if is_hidden_zone and count > 0:
 		fill = Color("#172038")
 		border = DesignTokens.GOLD.darkened(0.16)
+	elif stack_visual_mode == "discard" and count > 0:
+		fill = Color(0.052, 0.070, 0.088, 0.94)
+		border = DesignTokens.CYAN.darkened(0.18)
 	elif not card_id.is_empty():
 		fill = Color(0.055, 0.08, 0.12, 0.92)
 		border = DesignTokens.CYAN.darkened(0.18)

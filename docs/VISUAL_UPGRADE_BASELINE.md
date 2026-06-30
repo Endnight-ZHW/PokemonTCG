@@ -48,6 +48,7 @@ Godot 版本以 Pygame 已有表现为最低覆盖线，并在信息层级、响
 - `card-actions.png`
 - `draw.png`
 - `discard.png`
+- `shuffle.png`
 - `energy-attach.png`
 - `evolve.png`
 - `choice.png`

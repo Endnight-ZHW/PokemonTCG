@@ -185,6 +185,7 @@ func _dispatch(event: Dictionary) -> void:
 				"player": int(data.get("player", event.get("actor", -1))),
 				"zone": "deck",
 			}
+			card_motion_requested.emit(event, _duration_for(event))
 			burst_requested.emit("shuffle", deck_target, DesignTokens.CYAN)
 		"turn_start":
 			audio_requested.emit("turn_change")
@@ -218,6 +219,7 @@ func _duration_for(event: Dictionary) -> float:
 		"promoted": 0.82,
 		"pokemon_ko": 1.35,
 		"prize_taken": 0.58,
+		"deck_shuffled": 0.78,
 		"coin_flip": 0.9,
 		"turn_start": 0.8,
 	}.get(event_type, 0.28))

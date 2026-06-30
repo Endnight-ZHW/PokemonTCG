@@ -20,12 +20,12 @@ content_margin_bottom = 12.0
 
 [node name="LogPanel" type="PanelContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(320, 148)
-layout_mode = 0
-offset_right = 320.0
-offset_bottom = 148.0
+custom_minimum_size = Vector2(0, 180)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_styles/panel = SubResource("Style_hud")
-editor_description = "战斗行动日志浮层。只负责显示最近日志，位置由 BattleTable 根据牌桌尺寸摆放。"
+editor_description = "战斗行动日志面板。作为 BattleHUD 右侧栏内容显示最近日志，不覆盖牌桌。"
 script = ExtResource("1_log")
 
 [node name="Content" type="VBoxContainer" parent="."]

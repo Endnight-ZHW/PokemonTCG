@@ -18,10 +18,18 @@ signal inspect_zone_requested(context: Dictionary)
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const MIN_FLYING_CARD_DURATION := 0.06
 const FLYING_CARD_FINISH_PAD := 0.055
+const MAX_ACTIVE_FLYERS_HIGH := 12
+const MAX_ACTIVE_FLYERS_LOW := 8
+const PAPER_CARD_BASE_SIZE := Vector2(94, 132)
+const SHUFFLE_CARD_LIMITS := {
+	"high": 7,
+	"medium": 5,
+	"low": 3,
+}
 
 @export_category("Table Layout")
 @export_group("HUD")
-@export var hud_width := 128.0
+@export var hud_width := 260.0
 @export_group("Table Margins")
 @export var table_side_margin := 22.0
 @export var table_top_margin := 16.0
@@ -171,9 +179,9 @@ func _resolve_scene_nodes() -> void:
 	detail_text = get_node(
 		"OverlayPanels/DetailPanel/Row/TextColumn/DetailText"
 	) as RichTextLabel
-	log_panel = get_node("OverlayPanels/LogPanel") as BattleLogPanel
+	log_panel = get_node("BattleRoot/Body/BattleHUD/LogPanel") as BattleLogPanel
 	log_label = get_node(
-		"OverlayPanels/LogPanel/Content/LogLabel"
+		"BattleRoot/Body/BattleHUD/LogPanel/Content/LogLabel"
 	) as RichTextLabel
 	opponent_hand_surface = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentHandSurface"
@@ -534,7 +542,9 @@ func _bind_scene_nodes() -> void:
 		detail_panel.z_index = 34
 		_ensure_detail_close_button()
 	if log_panel:
-		log_panel.z_index = 33
+		log_panel.z_index = 0
+		log_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		log_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	playmat.quality_profile = AppSettings.resolved_quality_profile()
 	effects.quality_profile = AppSettings.resolved_quality_profile()
 	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -594,6 +604,8 @@ func _bind_scene_nodes() -> void:
 	}
 	(zones["opponent_deck"] as ZoneView).set_stack_visual("deck", 60, "up")
 	(zones["own_deck"] as ZoneView).set_stack_visual("deck", 60, "down")
+	(zones["opponent_discard"] as ZoneView).set_stack_visual("discard", 60, "up")
+	(zones["own_discard"] as ZoneView).set_stack_visual("discard", 60, "down")
 	(zones["opponent_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
 	(zones["own_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
 	for view in [opponent_active, own_active] + opponent_bench + own_bench:
@@ -1403,15 +1415,8 @@ func _layout_overlay_drawers() -> void:
 		340.0,
 	)
 	var drawer_x := board_origin.x + board_panel.size.x - drawer_width - 14.0
-	var log_width := clampf(
-		board_panel.size.x * 0.30,
-		320.0,
-		460.0,
-	)
-	var log_x := board_origin.x + board_panel.size.x - log_width - 14.0
 	var detail_height := clampf(board_panel.size.y * 0.28, 190.0, 240.0)
 	var action_height := clampf(board_panel.size.y * 0.42, 240.0, 360.0)
-	var log_height := clampf(board_panel.size.y * 0.24, 156.0, 220.0)
 	if detail_panel:
 		detail_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
 		detail_panel.size = Vector2(drawer_width, detail_height)
@@ -1426,13 +1431,6 @@ func _layout_overlay_drawers() -> void:
 			board_origin.y + 20.0,
 		)
 		detail_close_button.size = Vector2(28.0, 28.0)
-	if log_panel:
-		log_panel.position = Vector2(
-			log_x,
-			board_origin.y + board_panel.size.y - log_height - 14.0,
-		)
-		log_panel.size = Vector2(log_width, log_height)
-		log_panel.custom_minimum_size = Vector2(log_width, log_height)
 
 
 func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
@@ -2140,28 +2138,16 @@ func _spawn_presentation_cover(card_id_value: String, target_view: CardView) -> 
 		texture = _texture_for_card_id("")
 	if texture == null or effects == null:
 		return null
-	var cover := Control.new()
-	cover.name = "PresentationCover"
-	cover.set_meta("battle_transient_visual", true)
-	cover.set_meta("battle_transient_kind", "PresentationCover")
-	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cover := _create_paper_card_token(
+		texture,
+		target_view.size,
+		"PresentationCover",
+		96,
+		0.68,
+	)
 	cover.size = target_view.size
 	cover.position = _effects_local(target_view.global_center()) - cover.size * 0.5
 	cover.pivot_offset = cover.size * 0.5
-	cover.z_index = 96
-	var shadow_panel := Panel.new()
-	shadow_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shadow_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shadow_panel.position = Vector2(0, 5)
-	shadow_panel.add_theme_stylebox_override("panel", DesignTokens.shadow_style(10))
-	cover.add_child(shadow_panel)
-	var image_rect := TextureRect.new()
-	image_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	image_rect.texture = texture
-	image_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	image_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	cover.add_child(image_rect)
 	effects.add_child(cover)
 	return cover
 
@@ -2312,8 +2298,17 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			"player": int(data.get("player", actor)),
 			"zone": "discard",
 		}
+	elif event_type == "deck_shuffled":
+		source = {
+			"player": int(data.get("player", actor)),
+			"zone": "deck",
+		}
+		target = source.duplicate(true)
 	if AppSettings.reduced_motion:
 		effects.burst(resolve_endpoint_center(target), _motion_landing_color(event_type), "card_move")
+		return
+	if event_type == "deck_shuffled":
+		_spawn_shuffle_motion(source, duration)
 		return
 	if _spawn_slot_transition(event, duration):
 		return
@@ -2451,7 +2446,12 @@ func _source_points_for_event(
 	var start := _snapshot_endpoint_center(source, fallback_start)
 	var result: Array[Vector2] = []
 	for index in range(visible_count):
-		result.append(start + _stack_offset(index, visible_count, false))
+		result.append(start + _zone_motion_offset(
+			source,
+			index,
+			visible_count,
+			true,
+		))
 	return result
 
 
@@ -2480,11 +2480,10 @@ func _target_points_for_event(
 		if result.size() >= visible_count:
 			return result
 	for index in range(visible_count):
-		result.append(fallback_finish + _stack_offset(
-			index,
-			visible_count,
-			zone_name == "hand",
-		))
+		var offset := _stack_offset(index, visible_count, zone_name == "hand")
+		if not zone_name.is_empty() and zone_name != "hand":
+			offset = _zone_motion_offset(target, index, visible_count, false)
+		result.append(fallback_finish + offset)
 	return result
 
 
@@ -2629,6 +2628,52 @@ func _stack_offset(index: int, visible_count: int, hand_target: bool) -> Vector2
 		(float(index) - float(visible_count - 1) * 0.5) * 7.0,
 		-float(index) * 3.0,
 	)
+
+
+func _zone_motion_offset(
+	endpoint: Dictionary,
+	index: int,
+	visible_count: int,
+	leaving_stack: bool,
+) -> Vector2:
+	var zone_name := str(endpoint.get("zone", ""))
+	if zone_name.is_empty() or zone_name == "hand":
+		return _stack_offset(index, visible_count, zone_name == "hand")
+	var zone := _zone_view_for_endpoint(endpoint)
+	var direction := "up"
+	var depth := 0.55
+	if zone:
+		direction = zone.stack_visual_direction
+		depth = zone.table_depth
+	var step := _stack_visual_step(direction, depth)
+	var clamped_index := clampi(index, 0, maxi(0, visible_count - 1))
+	var stack_bias := step * float(mini(clamped_index + 1, 4))
+	if not leaving_stack:
+		stack_bias *= 0.36 if zone_name == "discard" else 0.55
+	var axis := Vector2(-step.y, step.x)
+	if axis.length_squared() <= 0.0001:
+		axis = Vector2.RIGHT
+	else:
+		axis = axis.normalized()
+	var spread := 5.0 if leaving_stack else 7.0
+	if zone_name == "discard" and not leaving_stack:
+		spread = 12.0
+	var fan := axis * (
+		(float(clamped_index) - float(visible_count - 1) * 0.5) * spread
+	)
+	return stack_bias + fan
+
+
+func _stack_visual_step(direction: String, depth: float) -> Vector2:
+	var depth_scale := 0.75 + clampf(depth, 0.0, 1.0) * 0.55
+	match direction:
+		"down":
+			return Vector2(3.6, 3.2) * depth_scale
+		"left":
+			return Vector2(-3.6, 2.4) * depth_scale
+		"right":
+			return Vector2(3.6, 2.4) * depth_scale
+	return Vector2(3.6, -3.2) * depth_scale
 
 
 func _texture_for_card_id(card_id: String) -> Texture2D:
@@ -2823,6 +2868,215 @@ func _motion_landing_color(event_type: String) -> Color:
 	)
 
 
+func _create_paper_card_token(
+	texture: Texture2D,
+	size_value: Vector2,
+	transient_kind: String,
+	z_value: int,
+	depth: float = 0.55,
+) -> Control:
+	var card := Control.new()
+	card.name = transient_kind
+	card.set_meta("battle_transient_visual", true)
+	card.set_meta("battle_transient_kind", transient_kind)
+	card.set_meta("paper_card_token", true)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.size = size_value
+	card.custom_minimum_size = size_value
+	card.pivot_offset = size_value * 0.5
+	card.z_index = z_value
+
+	var shadow := Panel.new()
+	shadow.name = "PaperShadow"
+	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shadow.position = Vector2(1.0 + depth * 2.0, 5.0 + depth * 5.0)
+	shadow.size = size_value
+	shadow.add_theme_stylebox_override(
+		"panel",
+		DesignTokens.shadow_style(int(8.0 + depth * 7.0)),
+	)
+	card.add_child(shadow)
+
+	var thickness := 2.0 + depth * 2.4
+	var edge := Panel.new()
+	edge.name = "PaperEdge"
+	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	edge.position = Vector2(thickness * 0.62, thickness)
+	edge.size = size_value
+	edge.add_theme_stylebox_override(
+		"panel",
+		DesignTokens.panel_style(
+			Color("#d8dde4"),
+			8,
+			Color(0.60, 0.64, 0.70, 0.48),
+			1,
+			0,
+		),
+	)
+	card.add_child(edge)
+
+	var face := Panel.new()
+	face.name = "PaperFace"
+	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	face.size = size_value
+	face.add_theme_stylebox_override(
+		"panel",
+		DesignTokens.panel_style(
+			Color("#eef1f5"),
+			8,
+			Color(0.20, 0.25, 0.32, 0.58),
+			1,
+			0,
+		),
+	)
+	card.add_child(face)
+
+	var inset := maxf(2.0, minf(size_value.x, size_value.y) * 0.032)
+	var image := TextureRect.new()
+	image.name = "PaperImage"
+	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	image.texture = texture
+	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	image.position = Vector2(inset, inset)
+	image.size = Vector2(
+		maxf(1.0, size_value.x - inset * 2.0),
+		maxf(1.0, size_value.y - inset * 2.0),
+	)
+	image.z_index = 2
+	card.add_child(image)
+
+	var gloss := ColorRect.new()
+	gloss.name = "PaperGloss"
+	gloss.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	gloss.color = Color(1.0, 1.0, 1.0, 0.10)
+	gloss.position = Vector2(inset * 1.5, inset * 1.5)
+	gloss.size = Vector2(
+		maxf(1.0, size_value.x - inset * 3.0),
+		maxf(3.0, size_value.y * 0.17),
+	)
+	gloss.z_index = 3
+	card.add_child(gloss)
+	return card
+
+
+func _max_active_flyers() -> int:
+	return (
+		MAX_ACTIVE_FLYERS_LOW
+		if AppSettings.resolved_quality_profile() == "low"
+		else MAX_ACTIVE_FLYERS_HIGH
+	)
+
+
+func _flying_card_size(event_type: String) -> Vector2:
+	if event_type in ["pokemon_played", "pokemon_evolved", "stadium_changed"]:
+		return PAPER_CARD_BASE_SIZE * 1.08
+	if event_type == "energy_attached":
+		return PAPER_CARD_BASE_SIZE * 0.94
+	if event_type == "deck_shuffled":
+		return PAPER_CARD_BASE_SIZE * 0.90
+	return PAPER_CARD_BASE_SIZE
+
+
+func _motion_depth_for_point(point: Vector2) -> float:
+	if effects == null or effects.size.y <= 0.0:
+		return 0.55
+	return clampf(point.y / effects.size.y, 0.0, 1.0)
+
+
+func _shuffle_card_count() -> int:
+	return int(SHUFFLE_CARD_LIMITS.get(AppSettings.resolved_quality_profile(), 5))
+
+
+func _spawn_shuffle_motion(endpoint: Dictionary, duration: float) -> bool:
+	if effects == null:
+		return false
+	var texture := _texture_for_card_id("")
+	if texture == null:
+		return false
+	var count := _shuffle_card_count()
+	if count <= 0:
+		return false
+	var origin := _snapshot_endpoint_center(endpoint, resolve_endpoint_center(endpoint))
+	var playable_duration := maxf(0.0, duration - FLYING_CARD_FINISH_PAD)
+	if playable_duration < MIN_FLYING_CARD_DURATION:
+		_landing_burst(origin, "deck_shuffled")
+		return true
+	var max_delay := minf(playable_duration * 0.24, 0.032 * float(maxi(0, count - 1)))
+	var delay_step := max_delay / float(maxi(1, count - 1))
+	var spawned := false
+	for index in range(count):
+		_prune_flyers()
+		while _active_flyers.size() >= _max_active_flyers():
+			var oldest: Control = _active_flyers.pop_front()
+			_dispose_flyer(oldest)
+		var delay := float(index) * delay_step
+		var motion_duration := playable_duration - delay
+		if motion_duration < MIN_FLYING_CARD_DURATION:
+			continue
+		var start: Vector2 = origin + _zone_motion_offset(endpoint, index, count, true) * 0.55
+		var side: float = -1.0 if index % 2 == 0 else 1.0
+		var row: float = floor(float(index) * 0.5)
+		var split: Vector2 = origin + Vector2(
+			side * (38.0 + row * 9.0),
+			(float(index) - float(count - 1) * 0.5) * 5.0,
+		)
+		var finish: Vector2 = origin + _zone_motion_offset(endpoint, count - index - 1, count, false) * 0.32
+		var spin: float = side * (9.0 + row * 2.0)
+		var flyer := _create_paper_card_token(
+			texture,
+			_flying_card_size("deck_shuffled"),
+			"FlyingCard",
+			110 + index,
+			_motion_depth_for_point(origin),
+		)
+		flyer.set_meta("shuffle_card", true)
+		flyer.position = start - flyer.size * 0.5
+		flyer.rotation_degrees = -spin * 0.22
+		effects.add_child(flyer)
+		_active_flyers.append(flyer)
+		var tween := create_tween()
+		if delay > 0.0:
+			tween.tween_interval(delay)
+		_flyer_tweens[flyer.get_instance_id()] = tween
+		tween.tween_method(
+			_update_shuffle_card.bind(flyer, start, split, finish, spin),
+			0.0,
+			1.0,
+			motion_duration,
+		).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+		tween.tween_callback(_finish_flyer.bind(flyer, origin, "deck_shuffled"))
+		spawned = true
+	return spawned
+
+
+func _update_shuffle_card(
+	progress: float,
+	flying_value: Variant,
+	start: Vector2,
+	split: Vector2,
+	finish: Vector2,
+	spin: float,
+) -> void:
+	if not is_instance_valid(flying_value):
+		return
+	var flying := flying_value as Control
+	if flying == null:
+		return
+	var point := Vector2.ZERO
+	if progress < 0.48:
+		var outward := sin((progress / 0.48) * PI * 0.5)
+		point = start.lerp(split, outward)
+	else:
+		var inward := (progress - 0.48) / 0.52
+		inward = 1.0 - pow(1.0 - inward, 2.0)
+		point = split.lerp(finish, inward)
+	flying.position = point - flying.size * 0.5
+	flying.rotation_degrees = lerpf(-spin * 0.35, spin, sin(progress * PI))
+	flying.scale = Vector2.ONE * (1.0 + sin(progress * PI) * 0.08)
+	flying.modulate.a = clampf(minf(progress * 6.0, (1.0 - progress) * 9.0), 0.0, 1.0)
+
+
 func _spawn_flying_card(
 	texture: Texture2D,
 	start: Vector2,
@@ -2833,31 +3087,19 @@ func _spawn_flying_card(
 	index: int,
 ) -> void:
 	_prune_flyers()
-	while _active_flyers.size() >= 12:
+	while _active_flyers.size() >= _max_active_flyers():
 		var oldest: Control = _active_flyers.pop_front()
 		_dispose_flyer(oldest)
-	var flying := Control.new()
-	flying.name = "FlyingCard"
-	flying.set_meta("battle_transient_visual", true)
-	flying.set_meta("battle_transient_kind", "FlyingCard")
-	flying.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	flying.size = Vector2(94, 132)
+	var flying_size := _flying_card_size(event_type)
+	var flying := _create_paper_card_token(
+		texture,
+		flying_size,
+		"FlyingCard",
+		100 + index,
+		_motion_depth_for_point((start + finish) * 0.5),
+	)
 	flying.position = start - flying.size * 0.5
 	flying.pivot_offset = flying.size * 0.5
-	flying.z_index = 100 + index
-	var shadow := Panel.new()
-	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shadow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shadow.position = Vector2(0, 7)
-	shadow.add_theme_stylebox_override("panel", DesignTokens.shadow_style(12))
-	flying.add_child(shadow)
-	var image := TextureRect.new()
-	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	image.texture = texture
-	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	image.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	flying.add_child(image)
 	effects.add_child(flying)
 	_active_flyers.append(flying)
 	var arc_height := maxf(

@@ -223,6 +223,18 @@ func _render_previews() -> void:
 		quit(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
+	ui.battle_screen.play_presentation([{
+		"event_type": "deck_shuffled",
+		"actor": 0,
+		"source": {"player": 0, "zone": "deck"},
+		"target": {"player": 0, "zone": "deck"},
+		"data": {"player": 0},
+	}], demo.revision + 111, 0)
+	await create_timer(0.24).timeout
+	if not _capture("shuffle.png"):
+		quit(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
 
 	var energy_snapshot: Dictionary = ui.battle_screen.capture_presentation_snapshot()
 	if not demo.players[0].hand.is_empty():
