@@ -3653,6 +3653,37 @@ func _run_visual_upgrade_tests() -> void:
 			and snapshot_discard_starts[0].distance_to(discard_expected) < 0.01,
 			"Discard animation did not use the pre-refresh hand snapshot",
 		)
+		var normalized_discard := PresentationEvent.normalize({
+			"event_type": "cards_discarded",
+			"actor": 0,
+			"source": {"player": 0, "zone": "hand", "index": 1},
+			"target": {"player": 0, "zone": "discard"},
+			"amount": 1,
+			"data": {
+				"player": 0,
+				"count": 1,
+				"card_ids": ["sv1-ener-5"],
+			},
+		}, 51, 0, 0)
+		var discard_zone := battle.zones["own_discard"] as ZoneView
+		var normalized_discard_events: Array[Dictionary] = [normalized_discard]
+		battle._stage_presentation_targets(normalized_discard_events, discard_snapshot)
+		var discard_count_label := (
+			discard_zone.get_node_or_null("Frame/CountLabel") as Label
+			if discard_zone != null
+			else null
+		)
+		_check(
+			discard_zone != null
+			and discard_zone.count == 1
+			and discard_zone.card_id == "sv1-ener-5"
+			and int(discard_zone.inspect_context.get("count", -1)) == 1
+			and discard_count_label != null
+			and discard_count_label.modulate.a >= 0.99,
+			"Discard presentation hid or mutated the discard pile count/context",
+		)
+		battle._on_presentation_event_finished(normalized_discard)
+		battle._clear_transient_visuals()
 
 		state.players[0].hand = ["svi-chim", "sv1-ener-5"]
 		state.players[0].bench[0] = null
@@ -4013,10 +4044,19 @@ func _run_visual_upgrade_tests() -> void:
 		_check(
 			paper_flyer != null
 			and paper_flyer.has_meta("paper_card_token")
+			and paper_flyer.has_meta("card_motion_entity")
 			and paper_flyer.find_child("PaperEdge", true, false) != null
 			and paper_flyer.find_child("PaperGloss", true, false) != null,
-			"Flying card did not use the physical paper-card token",
+			"Card motion entity did not use the physical paper-card token",
 		)
+		if paper_flyer != null:
+			battle.table._finish_flyer(paper_flyer, Vector2(40, 40), "cards_drawn")
+			_check(
+				is_instance_valid(paper_flyer)
+				and paper_flyer.visible
+				and paper_flyer.modulate.a >= 0.99,
+				"Card motion entity disappeared before presentation handoff",
+			)
 		battle._clear_transient_visuals()
 		var shuffle_spawned: bool = battle.table._spawn_shuffle_motion(
 			{"player": 0, "zone": "deck"},
@@ -4039,7 +4079,7 @@ func _run_visual_upgrade_tests() -> void:
 			and shuffle_cards == battle.table._shuffle_card_count()
 			and battle.table._active_flyers.size() <= battle.table._max_active_flyers()
 			and shuffle_cards_are_physical,
-			"Deck shuffle did not create bounded physical card-back flyers",
+			"Deck shuffle did not create bounded physical card-back motion entities",
 		)
 		battle._clear_transient_visuals()
 		var stale_cover := Control.new()

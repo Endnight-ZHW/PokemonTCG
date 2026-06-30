@@ -17,7 +17,7 @@ signal inspect_zone_requested(context: Dictionary)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const MIN_FLYING_CARD_DURATION := 0.06
-const FLYING_CARD_FINISH_PAD := 0.055
+const FLYING_CARD_FINISH_PAD := 0.0
 const MAX_ACTIVE_FLYERS_HIGH := 12
 const MAX_ACTIVE_FLYERS_LOW := 8
 const PAPER_CARD_BASE_SIZE := Vector2(94, 132)
@@ -409,6 +409,8 @@ func capture_presentation_snapshot() -> Dictionary:
 			"card_id": view.card_id,
 			"hand_index": view.hand_index,
 			"center": _effects_local(view.global_center()),
+			"size": view.size,
+			"rotation_degrees": view.rotation_degrees,
 			"hidden": view.is_hidden_card,
 		})
 	for view in opponent_hand_views:
@@ -416,6 +418,8 @@ func capture_presentation_snapshot() -> Dictionary:
 			continue
 		(snapshot["opponent_hand"] as Array).append({
 			"center": _effects_local(view.global_center()),
+			"size": view.size,
+			"rotation_degrees": view.rotation_degrees,
 			"hidden": true,
 		})
 	for key_value in slot_views.keys():
@@ -426,6 +430,8 @@ func capture_presentation_snapshot() -> Dictionary:
 		(snapshot["slots"] as Dictionary)[key] = {
 			"card_id": view.card_id,
 			"center": _effects_local(view.global_center()),
+			"size": view.size,
+			"rotation_degrees": view.rotation_degrees,
 			"empty": view.empty,
 			"hidden": view.is_hidden_card,
 		}
@@ -437,6 +443,8 @@ func capture_presentation_snapshot() -> Dictionary:
 		(snapshot["zones"] as Dictionary)[logical_key] = {
 			"card_id": zone.card_id,
 			"center": _zone_center(str(zone_key)),
+			"size": zone.size,
+			"rotation_degrees": zone.rotation_degrees,
 			"count": zone.count,
 			"hidden": zone.is_hidden_zone,
 		}
@@ -2204,12 +2212,12 @@ func _flash_presentation_feedbacks(event_id: String) -> void:
 
 func _on_presentation_event_finished(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
-	_clear_active_flyers()
-	_finish_presentation_covers(event_id)
 	var nodes: Array = _presentation_reveals.get(event_id, [])
 	for node_value in nodes:
 		_reveal_presentation_node(_valid_control(node_value))
 	_presentation_reveals.erase(event_id)
+	_finish_presentation_covers(event_id)
+	_clear_active_flyers()
 	_flash_presentation_feedbacks(event_id)
 
 
@@ -2314,6 +2322,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		return
 	var base_start := resolve_endpoint_center(source)
 	var base_finish := resolve_endpoint_center(target)
+	var base_size := _flying_card_size(event_type)
 	var starts := _source_points_for_event(
 		source,
 		card_ids,
@@ -2325,6 +2334,30 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		card_ids,
 		visible_count,
 		base_finish,
+		event,
+	)
+	var start_sizes := _source_sizes_for_event(
+		source,
+		card_ids,
+		visible_count,
+		base_size,
+	)
+	var finish_sizes := _target_sizes_for_event(
+		target,
+		visible_count,
+		base_size,
+		event,
+	)
+	var start_rotations := _source_rotations_for_event(
+		source,
+		card_ids,
+		visible_count,
+		0.0,
+	)
+	var finish_rotations := _target_rotations_for_event(
+		target,
+		visible_count,
+		0.0,
 		event,
 	)
 	for index in range(visible_count):
@@ -2348,6 +2381,10 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			float(timing.get("delay", 0.0)),
 			event_type,
 			index,
+			start_sizes[index] if index < start_sizes.size() else base_size,
+			finish_sizes[index] if index < finish_sizes.size() else base_size,
+			start_rotations[index] if index < start_rotations.size() else 0.0,
+			finish_rotations[index] if index < finish_rotations.size() else 0.0,
 		)
 
 
@@ -2487,17 +2524,165 @@ func _target_points_for_event(
 	return result
 
 
+func _source_sizes_for_event(
+	source: Dictionary,
+	card_ids: Array,
+	visible_count: int,
+	fallback_size: Vector2,
+) -> Array[Vector2]:
+	var player := int(source.get("player", view_player))
+	var zone_name := str(source.get("zone", ""))
+	var source_index := int(source.get("index", -1))
+	var result: Array[Vector2] = []
+	if (
+		zone_name == "hand"
+		and player == view_player
+		and int(_presentation_snapshot.get("view_player", view_player)) == view_player
+	):
+		for row in _hand_motion_rows_from_snapshot(
+			card_ids,
+			visible_count,
+			Vector2.ZERO,
+			fallback_size,
+			source_index,
+		):
+			result.append(_vector_or_default(row.get("size"), fallback_size))
+		return result
+	var size_value := _snapshot_endpoint_size(
+		source,
+		_current_endpoint_size(source, fallback_size),
+	)
+	for _index in range(visible_count):
+		result.append(size_value)
+	return result
+
+
+func _target_sizes_for_event(
+	target: Dictionary,
+	visible_count: int,
+	fallback_size: Vector2,
+	event: Dictionary,
+) -> Array[Vector2]:
+	var zone_name := str(target.get("zone", ""))
+	var player := int(target.get("player", view_player))
+	var result: Array[Vector2] = []
+	if zone_name == "hand" and player == view_player:
+		for view_value in _hand_target_views_for_incoming(event):
+			var view := view_value as CardView
+			if view:
+				result.append(view.size)
+		if result.size() >= visible_count:
+			return result
+	elif zone_name == "hand" and player != view_player:
+		for view_value in _opponent_hand_target_views_for_incoming(event):
+			var view := view_value as CardView
+			if view:
+				result.append(view.size)
+		if result.size() >= visible_count:
+			return result
+	var size_value := _current_endpoint_size(target, fallback_size)
+	while result.size() < visible_count:
+		result.append(size_value)
+	return result
+
+
+func _source_rotations_for_event(
+	source: Dictionary,
+	card_ids: Array,
+	visible_count: int,
+	fallback_rotation: float,
+) -> Array[float]:
+	var player := int(source.get("player", view_player))
+	var zone_name := str(source.get("zone", ""))
+	var source_index := int(source.get("index", -1))
+	var result: Array[float] = []
+	if (
+		zone_name == "hand"
+		and player == view_player
+		and int(_presentation_snapshot.get("view_player", view_player)) == view_player
+	):
+		for row in _hand_motion_rows_from_snapshot(
+			card_ids,
+			visible_count,
+			Vector2.ZERO,
+			Vector2.ZERO,
+			source_index,
+		):
+			result.append(float(row.get("rotation_degrees", fallback_rotation)))
+		return result
+	var rotation := _snapshot_endpoint_rotation(
+		source,
+		_current_endpoint_rotation(source, fallback_rotation),
+	)
+	for _index in range(visible_count):
+		result.append(rotation)
+	return result
+
+
+func _target_rotations_for_event(
+	target: Dictionary,
+	visible_count: int,
+	fallback_rotation: float,
+	event: Dictionary,
+) -> Array[float]:
+	var zone_name := str(target.get("zone", ""))
+	var player := int(target.get("player", view_player))
+	var result: Array[float] = []
+	if zone_name == "hand" and player == view_player:
+		for view_value in _hand_target_views_for_incoming(event):
+			var view := view_value as CardView
+			if view:
+				result.append(view.rotation_degrees)
+		if result.size() >= visible_count:
+			return result
+	elif zone_name == "hand" and player != view_player:
+		for view_value in _opponent_hand_target_views_for_incoming(event):
+			var view := view_value as CardView
+			if view:
+				result.append(view.rotation_degrees)
+		if result.size() >= visible_count:
+			return result
+	var rotation := _current_endpoint_rotation(target, fallback_rotation)
+	while result.size() < visible_count:
+		result.append(rotation)
+	return result
+
+
 func _hand_start_points_from_snapshot(
 	card_ids: Array,
 	visible_count: int,
 	fallback_start: Vector2,
 	source_index: int = -1,
 ) -> Array[Vector2]:
-	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
+	var rows := _hand_motion_rows_from_snapshot(
+		card_ids,
+		visible_count,
+		fallback_start,
+		hand_card_size,
+		source_index,
+	)
 	var result: Array[Vector2] = []
+	for row in rows:
+		result.append(_vector_or_default(row.get("center"), fallback_start))
+	return result
+
+
+func _hand_motion_rows_from_snapshot(
+	card_ids: Array,
+	visible_count: int,
+	fallback_start: Vector2,
+	fallback_size: Vector2,
+	source_index: int = -1,
+) -> Array[Dictionary]:
+	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
+	var result: Array[Dictionary] = []
 	if snapshot_hand.is_empty():
 		for _index in range(visible_count):
-			result.append(fallback_start)
+			result.append({
+				"center": fallback_start,
+				"size": fallback_size,
+				"rotation_degrees": 0.0,
+			})
 		return result
 	var used: Array[bool] = []
 	for _row in snapshot_hand:
@@ -2512,6 +2697,8 @@ func _hand_start_points_from_snapshot(
 	for index in range(visible_count):
 		var target_id := requested_ids[index] if index < requested_ids.size() else ""
 		var start := fallback_start
+		var size_value := fallback_size
+		var rotation := 0.0
 		var preferred_index := source_index + index if source_index >= 0 else -1
 		if preferred_index >= 0 and preferred_index < snapshot_hand.size():
 			var preferred: Dictionary = snapshot_hand[preferred_index]
@@ -2524,6 +2711,8 @@ func _hand_start_points_from_snapshot(
 			):
 				used[preferred_index] = true
 				start = _vector_or_default(preferred.get("center"), fallback_start)
+				size_value = _vector_or_default(preferred.get("size"), fallback_size)
+				rotation = float(preferred.get("rotation_degrees", 0.0))
 		if start == fallback_start and has_identity and not target_id.is_empty():
 			for hand_index in range(snapshot_hand.size()):
 				var row: Dictionary = snapshot_hand[hand_index]
@@ -2531,8 +2720,14 @@ func _hand_start_points_from_snapshot(
 					continue
 				used[hand_index] = true
 				start = _vector_or_default(row.get("center"), fallback_start)
+				size_value = _vector_or_default(row.get("size"), fallback_size)
+				rotation = float(row.get("rotation_degrees", 0.0))
 				break
-		result.append(start)
+		result.append({
+			"center": start,
+			"size": size_value,
+			"rotation_degrees": rotation,
+		})
 	return result
 
 
@@ -2557,6 +2752,70 @@ func _snapshot_endpoint_center(endpoint: Dictionary, fallback: Vector2) -> Vecto
 		var zone_row := _snapshot_zone_row(player, zone_name)
 		if not zone_row.is_empty():
 			return _vector_or_default(zone_row.get("center"), fallback)
+	return fallback
+
+
+func _snapshot_endpoint_size(endpoint: Dictionary, fallback: Vector2) -> Vector2:
+	var player := int(endpoint.get("player", view_player))
+	var slot_name := str(endpoint.get("slot", ""))
+	if not slot_name.is_empty():
+		var slot_row := _snapshot_slot_row(player, slot_name)
+		if not slot_row.is_empty():
+			return _vector_or_default(slot_row.get("size"), fallback)
+	var zone_name := str(endpoint.get("zone", ""))
+	if not zone_name.is_empty():
+		var zone_row := _snapshot_zone_row(player, zone_name)
+		if not zone_row.is_empty():
+			return _vector_or_default(zone_row.get("size"), fallback)
+	return fallback
+
+
+func _snapshot_endpoint_rotation(endpoint: Dictionary, fallback: float) -> float:
+	var player := int(endpoint.get("player", view_player))
+	var slot_name := str(endpoint.get("slot", ""))
+	if not slot_name.is_empty():
+		var slot_row := _snapshot_slot_row(player, slot_name)
+		if not slot_row.is_empty():
+			return float(slot_row.get("rotation_degrees", fallback))
+	var zone_name := str(endpoint.get("zone", ""))
+	if not zone_name.is_empty():
+		var zone_row := _snapshot_zone_row(player, zone_name)
+		if not zone_row.is_empty():
+			return float(zone_row.get("rotation_degrees", fallback))
+	return fallback
+
+
+func _current_endpoint_size(endpoint: Dictionary, fallback: Vector2) -> Vector2:
+	var slot_name := str(endpoint.get("slot", ""))
+	if not slot_name.is_empty():
+		var view := _slot_view_for_endpoint(endpoint)
+		if view:
+			return view.size
+	var zone_name := str(endpoint.get("zone", ""))
+	if not zone_name.is_empty():
+		if zone_name == "hand":
+			return (
+				hand_card_size
+				if int(endpoint.get("player", view_player)) == view_player
+				else opponent_hand_card_size
+			)
+		var zone := _zone_view_for_endpoint(endpoint)
+		if zone:
+			return zone.size
+	return fallback
+
+
+func _current_endpoint_rotation(endpoint: Dictionary, fallback: float) -> float:
+	var slot_name := str(endpoint.get("slot", ""))
+	if not slot_name.is_empty():
+		var view := _slot_view_for_endpoint(endpoint)
+		if view:
+			return view.rotation_degrees
+	var zone_name := str(endpoint.get("zone", ""))
+	if not zone_name.is_empty() and zone_name != "hand":
+		var zone := _zone_view_for_endpoint(endpoint)
+		if zone:
+			return zone.rotation_degrees
 	return fallback
 
 
@@ -2743,6 +3002,11 @@ func _spawn_slot_transition(event: Dictionary, duration: float) -> bool:
 		if finish_view == null:
 			continue
 		var finish := _effects_local(finish_view.global_center())
+		var start_size := _vector_or_default(
+			snapshot_row.get("size"),
+			finish_view.size,
+		)
+		var start_rotation := float(snapshot_row.get("rotation_degrees", 0.0))
 		var timing := _flying_card_timing(index, movements.size(), duration, false)
 		if not bool(timing.get("spawn", false)):
 			_landing_burst(finish, event_type)
@@ -2763,6 +3027,10 @@ func _spawn_slot_transition(event: Dictionary, duration: float) -> bool:
 			float(timing.get("delay", 0.0)),
 			event_type,
 			index,
+			start_size,
+			finish_view.size,
+			start_rotation,
+			finish_view.rotation_degrees,
 		)
 		spawned = true
 		index += 1
@@ -2960,6 +3228,38 @@ func _create_paper_card_token(
 	return card
 
 
+func _resize_paper_card_token(card: Control, size_value: Vector2) -> void:
+	if card == null or not is_instance_valid(card):
+		return
+	card.size = size_value
+	card.custom_minimum_size = size_value
+	card.pivot_offset = size_value * 0.5
+	var shadow := card.get_node_or_null("PaperShadow") as Panel
+	if shadow:
+		shadow.size = size_value
+	var edge := card.get_node_or_null("PaperEdge") as Panel
+	if edge:
+		edge.size = size_value
+	var face := card.get_node_or_null("PaperFace") as Panel
+	if face:
+		face.size = size_value
+	var inset := maxf(2.0, minf(size_value.x, size_value.y) * 0.032)
+	var image := card.get_node_or_null("PaperImage") as TextureRect
+	if image:
+		image.position = Vector2(inset, inset)
+		image.size = Vector2(
+			maxf(1.0, size_value.x - inset * 2.0),
+			maxf(1.0, size_value.y - inset * 2.0),
+		)
+	var gloss := card.get_node_or_null("PaperGloss") as ColorRect
+	if gloss:
+		gloss.position = Vector2(inset * 1.5, inset * 1.5)
+		gloss.size = Vector2(
+			maxf(1.0, size_value.x - inset * 3.0),
+			maxf(3.0, size_value.y * 0.17),
+		)
+
+
 func _max_active_flyers() -> int:
 	return (
 		MAX_ACTIVE_FLYERS_LOW
@@ -3026,13 +3326,17 @@ func _spawn_shuffle_motion(endpoint: Dictionary, duration: float) -> bool:
 		var flyer := _create_paper_card_token(
 			texture,
 			_flying_card_size("deck_shuffled"),
-			"FlyingCard",
+			"CardMotionEntity",
 			110 + index,
 			_motion_depth_for_point(origin),
 		)
 		flyer.set_meta("shuffle_card", true)
+		flyer.set_meta("card_motion_entity", true)
+		flyer.set_meta("motion_start", start)
+		flyer.set_meta("motion_finish", finish)
 		flyer.position = start - flyer.size * 0.5
 		flyer.rotation_degrees = -spin * 0.22
+		flyer.modulate.a = 1.0
 		effects.add_child(flyer)
 		_active_flyers.append(flyer)
 		var tween := create_tween()
@@ -3074,7 +3378,7 @@ func _update_shuffle_card(
 	flying.position = point - flying.size * 0.5
 	flying.rotation_degrees = lerpf(-spin * 0.35, spin, sin(progress * PI))
 	flying.scale = Vector2.ONE * (1.0 + sin(progress * PI) * 0.08)
-	flying.modulate.a = clampf(minf(progress * 6.0, (1.0 - progress) * 9.0), 0.0, 1.0)
+	flying.modulate.a = 1.0
 
 
 func _spawn_flying_card(
@@ -3085,21 +3389,34 @@ func _spawn_flying_card(
 	delay: float,
 	event_type: String,
 	index: int,
+	start_size: Vector2 = Vector2.ZERO,
+	finish_size: Vector2 = Vector2.ZERO,
+	start_rotation: float = 0.0,
+	finish_rotation: float = 0.0,
 ) -> void:
 	_prune_flyers()
 	while _active_flyers.size() >= _max_active_flyers():
 		var oldest: Control = _active_flyers.pop_front()
 		_dispose_flyer(oldest)
-	var flying_size := _flying_card_size(event_type)
+	var default_size := _flying_card_size(event_type)
+	var flying_size := start_size if start_size != Vector2.ZERO else default_size
+	var landing_size := finish_size if finish_size != Vector2.ZERO else default_size
 	var flying := _create_paper_card_token(
 		texture,
 		flying_size,
-		"FlyingCard",
+		"CardMotionEntity",
 		100 + index,
 		_motion_depth_for_point((start + finish) * 0.5),
 	)
+	flying.set_meta("card_motion_entity", true)
+	flying.set_meta("motion_start", start)
+	flying.set_meta("motion_finish", finish)
+	flying.set_meta("motion_start_size", flying_size)
+	flying.set_meta("motion_finish_size", landing_size)
 	flying.position = start - flying.size * 0.5
 	flying.pivot_offset = flying.size * 0.5
+	flying.rotation_degrees = start_rotation
+	flying.modulate.a = 1.0
 	effects.add_child(flying)
 	_active_flyers.append(flying)
 	var arc_height := maxf(
@@ -3120,7 +3437,17 @@ func _spawn_flying_card(
 		tween.tween_interval(delay)
 	_flyer_tweens[flying.get_instance_id()] = tween
 	tween.tween_method(
-		_update_flyer.bind(flying, start, control, finish, spin),
+		_update_flyer.bind(
+			flying,
+			start,
+			control,
+			finish,
+			spin,
+			flying_size,
+			landing_size,
+			start_rotation,
+			finish_rotation,
+		),
 		0.0,
 		1.0,
 		duration,
@@ -3135,6 +3462,10 @@ func _update_flyer(
 	control: Vector2,
 	finish: Vector2,
 	spin: float,
+	start_size: Vector2,
+	finish_size: Vector2,
+	start_rotation: float,
+	finish_rotation: float,
 ) -> void:
 	if not is_instance_valid(flying_value):
 		return
@@ -3147,11 +3478,16 @@ func _update_flyer(
 		+ control * 2.0 * inverse * progress
 		+ finish * progress * progress
 	)
-	flying.position = point - flying.size * 0.5
-	flying.rotation_degrees = lerpf(-spin * 0.35, spin, progress)
+	var size_value := start_size.lerp(finish_size, progress)
+	_resize_paper_card_token(flying, size_value)
+	flying.position = point - size_value * 0.5
+	flying.rotation_degrees = (
+		lerpf(start_rotation, finish_rotation, progress)
+		+ sin(progress * PI) * spin * 0.12
+	)
 	var lift := 1.0 + sin(progress * PI) * 0.16
 	flying.scale = Vector2.ONE * lift
-	flying.modulate.a = clampf(minf(progress * 5.0, (1.0 - progress) * 8.0), 0.0, 1.0)
+	flying.modulate.a = 1.0
 
 
 func _finish_flyer(
@@ -3165,10 +3501,15 @@ func _finish_flyer(
 	if flying == null:
 		return
 	_flyer_tweens.erase(flying.get_instance_id())
-	_active_flyers.erase(flying)
-	flying.visible = false
-	flying.modulate.a = 0.0
-	flying.queue_free()
+	flying.set_meta("motion_completed", true)
+	if flying.has_meta("motion_finish_size"):
+		_resize_paper_card_token(
+			flying,
+			_vector_or_default(flying.get_meta("motion_finish_size"), flying.size),
+		)
+	flying.position = finish - flying.size * 0.5
+	flying.scale = Vector2.ONE
+	flying.modulate.a = 1.0
 	if effects:
 		effects.burst(
 			finish,
@@ -3213,7 +3554,7 @@ func _clear_active_flyers() -> void:
 			flyer.modulate.a = 0.0
 			flyer.free()
 	_active_flyers.clear()
-	_clear_effect_child_controls(["FlyingCard"])
+	_clear_effect_child_controls(["CardMotionEntity", "FlyingCard"])
 
 
 func _clear_transient_visuals() -> void:
@@ -3242,7 +3583,7 @@ func _clear_effect_child_controls(prefixes: Array = []) -> void:
 		return
 	var active_prefixes := prefixes.duplicate()
 	if active_prefixes.is_empty():
-		active_prefixes = ["PresentationCover", "FlyingCard"]
+		active_prefixes = ["PresentationCover", "CardMotionEntity", "FlyingCard"]
 	for child in effects.get_children():
 		var control := child as Control
 		if control == null or not is_instance_valid(control):

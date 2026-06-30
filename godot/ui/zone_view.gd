@@ -91,25 +91,25 @@ func set_action(row: Dictionary = {}) -> void:
 func set_presentation_hidden(value: bool) -> void:
 	_presentation_hidden = value
 	_kill_presentation_tween()
-	_set_content_alpha(0.0 if value else 1.0)
+	_set_top_card_alpha(0.0 if value else 1.0)
 
 
 func reveal_presentation(duration: float = 0.14, delay: float = 0.0) -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
 	if duration <= 0.0:
-		_set_content_alpha(1.0)
+		_set_top_card_alpha(1.0)
 		return
 	_presentation_tween = create_tween()
 	if delay > 0.0:
 		_presentation_tween.tween_interval(delay)
-	_presentation_tween.tween_method(_set_content_alpha, 0.0, 1.0, duration)
+	_presentation_tween.tween_method(_set_top_card_alpha, 0.0, 1.0, duration)
 
 
 func clear_presentation_state() -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
-	_set_content_alpha(1.0)
+	_set_top_card_alpha(1.0)
 
 
 func is_presentation_hidden() -> bool:
@@ -193,8 +193,8 @@ func _on_action_pressed() -> void:
 		action_requested.emit(action)
 
 
-func _set_content_alpha(alpha: float) -> void:
-	for node in [image, count_label, empty_label]:
+func _set_top_card_alpha(alpha: float) -> void:
+	for node in [image, empty_label]:
 		if node:
 			node.modulate.a = alpha
 
