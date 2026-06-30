@@ -2034,7 +2034,6 @@ func _run_phase_four_foundation_tests() -> void:
 		"revision": state.revision,
 		"request_id": "deterministic",
 		"mode": "challenge",
-		"difficulty": "fast",
 		"deck_key": "psychic",
 		"seed": 77,
 		"simulation_budget": 4,
@@ -2079,7 +2078,7 @@ func _run_phase_four_foundation_tests() -> void:
 		_check(
 			fallback_result.get("deep_fallback", false)
 			and fallback_result.get("fallback_reason", "") == "runtime_unavailable",
-			"Deep AI runtime failure did not switch to standard Challenge AI",
+			"Deep AI runtime failure did not switch to strongest Challenge AI",
 		)
 	var cancelled_result := worker.decide(
 		ai_request,
@@ -2137,10 +2136,13 @@ func _run_phase_four_foundation_tests() -> void:
 	_check(deep_button != null and not deep_button.disabled,
 		"Deep AI menu entry is unavailable")
 	ai_ui.show_deck_select("challenge")
-	_check(ai_ui.difficulty_option.item_count == 3, "AI difficulty presets are missing")
+	_check(
+		ai_ui.find_child("AIDifficultyOption", true, false) == null,
+		"AI difficulty selector was still visible",
+	)
 	_check(
 		ai_ui.start_ai_match_for_test(
-			"challenge", "fire", "water", "fast", 0, 20260621),
+			"challenge", "fire", "water", 0, 20260621),
 		"Unable to start Challenge AI match",
 	)
 	_check(ai_ui.current_view_player == 0, "AI match exposed the AI player view")
@@ -2176,14 +2178,14 @@ func _run_phase_four_foundation_tests() -> void:
 	ai_ui._stop_ai()
 	_check(
 		ai_ui.start_ai_match_for_test(
-			"challenge", "fire", "water", "fast", 0),
+			"challenge", "fire", "water", 0),
 		"Unable to start Challenge AI match with automatic seed",
 	)
 	var automatic_seed_a := int(ai_ui.last_match_seed)
 	ai_ui._stop_ai()
 	_check(
 		ai_ui.start_ai_match_for_test(
-			"challenge", "fire", "water", "fast", 0),
+			"challenge", "fire", "water", 0),
 		"Unable to restart Challenge AI match with automatic seed",
 	)
 	var automatic_seed_b := int(ai_ui.last_match_seed)
@@ -2194,7 +2196,7 @@ func _run_phase_four_foundation_tests() -> void:
 	ai_ui._stop_ai()
 	_check(
 		ai_ui.start_ai_match_for_test(
-			"deep", "fire", "water", "fast", 0, 20260621),
+			"deep", "fire", "water", 0, 20260621),
 		"Unable to start Deep AI match",
 	)
 	_check(ai_ui.current_view_player == 0, "Deep AI match exposed the AI player view")
@@ -2209,6 +2211,14 @@ func _run_ai_strength_regression_tests(
 	_engine: GameEngine,
 	worker: NativeChallengeAI,
 ) -> void:
+	var strongest_preset := NativeChallengeAI.strongest_preset()
+	_check(
+		float(strongest_preset.get("seconds", 0.0)) == 10.0
+		and int(strongest_preset.get("simulations", 0)) > 768
+		and int(strongest_preset.get("depth", 0)) > 16,
+		"Challenge AI strongest preset did not replace difficulty budgets",
+	)
+
 	var ko_state := GameState.new()
 	ko_state.phase = "MAIN"
 	ko_state.turn_number = 5
@@ -2217,7 +2227,7 @@ func _run_ai_strength_regression_tests(
 	ko_state.public_deck_keys = ["lightning", "water"]
 	ko_state.players[0].active = PokemonState.new("svl-zera")
 	ko_state.players[0].active.placed_this_turn = false
-	ko_state.players[0].active.energy_card_ids = ["sv1-ener-4", "sv1-ener-4"]
+	ko_state.players[0].active.energy_card_ids.assign(["sv1-ener-4", "sv1-ener-4"])
 	ko_state.players[0].prizes = [
 		"sv1-ener-4", "sv1-ener-4", "sv1-ener-4",
 		"sv1-ener-4", "sv1-ener-4", "sv1-ener-4",
@@ -2237,6 +2247,36 @@ func _run_ai_strength_regression_tests(
 		"AI fallback did not take an immediate KO before ending turn",
 	)
 
+	var safe_damage_state := GameState.new()
+	safe_damage_state.phase = "MAIN"
+	safe_damage_state.turn_number = 5
+	safe_damage_state.first_player_idx = 1
+	safe_damage_state.active_player_idx = 0
+	safe_damage_state.public_deck_keys = ["darkness", "lightning"]
+	safe_damage_state.players[0].active = PokemonState.new("svd-maschiff")
+	safe_damage_state.players[0].active.placed_this_turn = false
+	safe_damage_state.players[0].active.energy_card_ids.assign(["sv1-ener-7", "sv1-ener-7"])
+	safe_damage_state.players[1].active = PokemonState.new("svl-pikaex")
+	safe_damage_state.players[1].active.placed_this_turn = false
+	var safe_damage_actions: Array[GameAction] = [
+		GameAction.new("END_TURN", {}, true, 0),
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+	]
+	var damaging_fallback := worker._validated_or_fallback_action(
+		safe_damage_state,
+		0,
+		safe_damage_actions[0],
+		safe_damage_actions,
+		"darkness",
+		catalog,
+		_engine,
+		20260630,
+	)
+	_check(
+		damaging_fallback != null and damaging_fallback.action == "DECLARE_ATTACK",
+		"AI fallback ended the turn instead of taking a safe damaging attack",
+	)
+
 	var energy_state := GameState.new()
 	energy_state.phase = "MAIN"
 	energy_state.turn_number = 5
@@ -2247,7 +2287,7 @@ func _run_ai_strength_regression_tests(
 	energy_state.players[0].active.placed_this_turn = false
 	energy_state.players[1].active = PokemonState.new("svl-pikaex")
 	energy_state.players[1].active.placed_this_turn = false
-	energy_state.players[1].active.energy_card_ids = ["sv1-ener-4"]
+	energy_state.players[1].active.energy_card_ids.assign(["sv1-ener-4"])
 	energy_state.players[1].hand = ["sv1-ener-4"]
 	var energy_action := _ai_decision_for_actions(worker, energy_state, 1, "lightning", [
 		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
@@ -2259,6 +2299,32 @@ func _run_ai_strength_regression_tests(
 		and energy_action.action == "ATTACH_ENERGY"
 		and str(energy_action.params.get("target_slot", "")) == "active",
 		"AI fallback did not delay a weak attack for obvious core energy",
+	)
+
+	var bench_energy_state := GameState.new()
+	bench_energy_state.phase = "MAIN"
+	bench_energy_state.turn_number = 5
+	bench_energy_state.first_player_idx = 0
+	bench_energy_state.active_player_idx = 1
+	bench_energy_state.public_deck_keys = ["water", "lightning"]
+	bench_energy_state.players[0].active = PokemonState.new("sv2-delib")
+	bench_energy_state.players[0].active.placed_this_turn = false
+	bench_energy_state.players[1].active = PokemonState.new("svl-chat")
+	bench_energy_state.players[1].active.placed_this_turn = false
+	bench_energy_state.players[1].bench[0] = PokemonState.new("svl-pikaex")
+	bench_energy_state.players[1].bench[0].placed_this_turn = false
+	bench_energy_state.players[1].bench[0].energy_card_ids.assign(["sv1-ener-4"])
+	bench_energy_state.players[1].hand = ["sv1-ener-4"]
+	var bench_energy_action := _ai_decision_for_actions(worker, bench_energy_state, 1, "lightning", [
+		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1),
+		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "bench_0"}, false, 1),
+		GameAction.new("END_TURN", {}, true, 1),
+	], "bench-core-energy-plan")
+	_check(
+		bench_energy_action != null
+		and bench_energy_action.action == "ATTACH_ENERGY"
+		and str(bench_energy_action.params.get("target_slot", "")) == "bench_0",
+		"AI energy plan attached to a low-value active instead of the core attacker",
 	)
 
 	var draw_state := GameState.new()
@@ -2665,7 +2731,6 @@ func _ai_decision_for_actions(
 		"revision": state.revision,
 		"request_id": request_id,
 		"mode": "challenge",
-		"difficulty": "fast",
 		"deck_key": deck_key,
 		"seed": 20260626,
 		"simulation_budget": 0,
@@ -3276,14 +3341,12 @@ func _run_visual_upgrade_tests() -> void:
 		mode: String,
 		first_key: String,
 		second_key: String,
-		difficulty: String,
 		forced_first: int,
 	) -> void:
 		deck_signal.merge({
 			"mode": mode,
 			"first": first_key,
 			"second": second_key,
-			"difficulty": difficulty,
 			"forced_first": forced_first,
 		}, true)
 	)
@@ -3298,8 +3361,10 @@ func _run_visual_upgrade_tests() -> void:
 		"Deck page start signal omitted the first deck")
 	_check(not str(deck_signal.get("second", "")).is_empty(),
 		"Deck page start signal omitted the second deck")
-	_check(deck_signal.get("difficulty", "") == "standard",
-		"Deck page start signal omitted the selected difficulty")
+	_check(
+		deck_page.find_child("AIDifficultyOption", true, false) == null,
+		"Deck page still exposed an AI difficulty selector",
+	)
 	_check(not str(deck_signal.get("details", "")).is_empty(),
 		"Deck page details signal omitted the selected deck")
 	deck_page.queue_free()

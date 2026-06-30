@@ -395,14 +395,14 @@ GameEngine.apply_choice(state, request, response, rng)
 - 新增原生 Challenge AI：
   - 公开信息 Observation 与隐藏信息确定化。
   - 8 套牌组配置、动作评分、选择评分和可取消搜索。
-  - 快速 64 次/0.5 秒、标准 256 次/1.5 秒、困难 768 次/4 秒，默认标准。
-- 新增专用 AI 协调线程。请求携带状态快照、actor、revision、request ID、模式、难度、牌组和 seed；主线程只接受序列化结果，并在应用前校验 revision/request ID。
-- Challenge AI 与 Deep AI 菜单已开放，支持双方牌组、难度和先后手选择；人类固定为玩家 1，AI 固定为玩家 2，AI 手牌不会显示给人类。
+  - 传统 AI 只保留最强内部预设，默认 12000 次模拟、10 秒上限、24 层搜索；旧难度字段仅作为兼容别名。
+- 新增专用 AI 协调线程。请求携带状态快照、actor、revision、request ID、模式、牌组和 seed；主线程只接受序列化结果，并在应用前校验 revision/request ID。
+- Challenge AI 与 Deep AI 菜单已开放，支持双方牌组和先后手选择；人类固定为玩家 1，AI 固定为玩家 2，AI 手牌不会显示给人类。
 - 从 8 个已批准检查点导出 opset 17 FP32 ONNX。每个模型同时输出 `action_logits`、`state_value` 与 `choice_logits`，支持动态动作/选择候选数量。
 - 新增 `OnnxInference` GDExtension，提供模型加载/卸载、SHA-256 与尺寸校验、批量候选推理、错误信息、运行耗时、Runtime 版本和 Provider 查询。
 - ONNX Runtime 仅启用 `CPUExecutionProvider`。模型通过 Godot `FileAccess` 从 PCK/APK 读取到内存；一次只加载当前 AI 牌组模型。
 - 新增 Python rules/action v2 → Godot v3 的显式兼容桥。模型不会仅因 Godot schema 版本为 v3 而被错误拒绝。
-- Deep AI 固定 256 次模拟与 8 秒看门狗。模型缺失、SHA/版本错误、推理失败、运行时不可用或零次有效模拟时，会回退标准 Challenge AI 并返回明确原因。
+- Deep AI 固定 256 次模拟与 8 秒看门狗。模型缺失、SHA/版本错误、推理失败、运行时不可用或零次有效模拟时，会回退最强 Challenge AI 并返回明确原因。
 - 暂停、应用切后台、退出对局、返回标题和节点销毁均会取消并等待搜索线程；退出对局和返回标题同时卸载模型。
 - 发布预设显式包含 8 个 ONNX 模型、ONNX Runtime 许可证与 NOTICE，并排除测试、工具和候选模型。
 
@@ -822,7 +822,7 @@ GameEngine.apply_choice(state, request, response, rng)
 - 实现动作和 `ChoiceRequest` 的统一候选生成，确保 AI 能完成嵌套选择、能量分配、晋升和取消逻辑。
 - 将搜索运行在 WorkerThreadPool 或专用线程；主线程只接收不可变快照和最终决策。
 - 添加搜索超时、取消令牌、对局结束清理和 Android 切后台中止处理。
-- 在现有模式选择页开放 Challenge AI，并提供难度、双方牌组和先后手配置。
+- 在现有模式选择页开放 Challenge AI，并提供双方牌组和先后手配置。
 - 建立至少以下回归：
   - 8 套牌组分别作为 AI 使用。
   - AI 不提交非法动作或过期选择。

@@ -103,7 +103,6 @@ func _play_game(
 					"revision": state.revision,
 					"request_id": "choice:%d" % actions_taken,
 					"mode": mode,
-					"difficulty": "fast",
 					"deck_key": deck_key,
 					"seed": game_seed + actions_taken * 31,
 				}, func() -> bool: return false, backend)
@@ -137,7 +136,6 @@ func _play_game(
 				"revision": state.revision,
 				"request_id": "action:%d" % actions_taken,
 				"mode": mode,
-				"difficulty": "fast",
 				"deck_key": deck_key,
 				"seed": game_seed + actions_taken * 7919,
 				"simulation_budget": 64,

@@ -7,7 +7,6 @@ signal start_requested(
 	mode: String,
 	first_deck_key: String,
 	second_deck_key: String,
-	difficulty: String,
 	forced_first_player: int,
 )
 
@@ -16,7 +15,6 @@ var mode := "local"
 
 @onready var deck_one_option: OptionButton = %DeckOneOption
 @onready var deck_two_option: OptionButton = %DeckTwoOption
-@onready var difficulty_option: OptionButton = %AIDifficultyOption
 @onready var first_player_option: OptionButton = %FirstPlayerOption
 @onready var mode_description: Label = %ModeDescription
 
@@ -70,9 +68,6 @@ func _resolve_nodes() -> void:
 	) as OptionButton
 	deck_two_option = get_node(
 		"Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content/DeckTwoOption"
-	) as OptionButton
-	difficulty_option = get_node(
-		"Root/Center/MainPanel/Margin/Content/AISettings/AIDifficultyOption"
 	) as OptionButton
 	first_player_option = get_node(
 		"Root/Center/MainPanel/Margin/Content/AISettings/FirstPlayerOption"
@@ -152,15 +147,6 @@ func _populate_decks(option: OptionButton) -> void:
 
 
 func _populate_ai_options() -> void:
-	difficulty_option.clear()
-	for row in [
-		["快速 · 64 次 / 0.5 秒", "fast"],
-		["标准 · 256 次 / 1.5 秒", "standard"],
-		["困难 · 768 次 / 4 秒", "hard"],
-	]:
-		difficulty_option.add_item(row[0])
-		difficulty_option.set_item_metadata(difficulty_option.item_count - 1, row[1])
-	difficulty_option.select(1)
 	first_player_option.clear()
 	for row in [["先后手随机", -1], ["玩家 1 先攻", 0], ["AI 先攻", 1]]:
 		first_player_option.add_item(row[0])
@@ -196,12 +182,8 @@ func _refresh_preview(option: OptionButton, preview: HBoxContainer) -> void:
 func _emit_start_requested() -> void:
 	if deck_one_option.item_count == 0 or deck_two_option.item_count == 0:
 		return
-	var difficulty := "standard"
 	var forced_first := -1
 	if mode != "local":
-		difficulty = str(
-			difficulty_option.get_item_metadata(difficulty_option.selected)
-		)
 		forced_first = int(
 			first_player_option.get_item_metadata(first_player_option.selected)
 		)
@@ -209,6 +191,5 @@ func _emit_start_requested() -> void:
 		mode,
 		str(deck_one_option.get_item_metadata(deck_one_option.selected)),
 		str(deck_two_option.get_item_metadata(deck_two_option.selected)),
-		difficulty,
 		forced_first,
 	)

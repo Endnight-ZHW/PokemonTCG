@@ -40,7 +40,6 @@ var selected_entity_key := ""
 var selected_choice_ids: Array[String] = []
 var option_buttons: Array[Button] = []
 var game_mode := MODE_LOCAL
-var ai_difficulty := "standard"
 var ai_deck_key := ""
 var ai_thinking := false
 var ai_request_sequence := 0
@@ -71,7 +70,6 @@ var modal_host_controller: ModalHost
 var deck_one_option: OptionButton
 var deck_two_option: OptionButton
 var mode_description: Label
-var difficulty_option: OptionButton
 var first_player_option: OptionButton
 var network_role_option: OptionButton
 var network_address_input: LineEdit
@@ -434,14 +432,12 @@ func _show_deck_select(mode: String = MODE_LOCAL) -> void:
 	deck_one_option = page.deck_one_option
 	deck_two_option = page.deck_two_option
 	mode_description = page.mode_description
-	difficulty_option = page.difficulty_option
 	first_player_option = page.first_player_option
 
 func _on_match_start_requested(
 	mode: String,
 	first_key: String,
 	second_key: String,
-	difficulty: String,
 	forced_first: int,
 ) -> void:
 	game_mode = mode
@@ -452,7 +448,6 @@ func _on_match_start_requested(
 		_start_deep_match_with_loading(
 			first_key,
 			second_key,
-			difficulty,
 			forced_first,
 		)
 	else:
@@ -460,7 +455,6 @@ func _on_match_start_requested(
 			mode,
 			first_key,
 			second_key,
-			difficulty,
 			forced_first,
 		)
 
@@ -468,7 +462,6 @@ func _on_match_start_requested(
 func _start_deep_match_with_loading(
 	human_key: String,
 	opponent_key: String,
-	difficulty: String,
 	forced_first: int,
 ) -> void:
 	_show_loading("正在校验并加载 Deep AI 模型…")
@@ -477,7 +470,6 @@ func _start_deep_match_with_loading(
 		MODE_DEEP,
 		human_key,
 		opponent_key,
-		difficulty,
 		forced_first,
 	)
 	_hide_loading()
@@ -497,12 +489,10 @@ func start_ai_match_for_test(
 	mode: String,
 	human_key: String,
 	opponent_key: String,
-	difficulty: String = "standard",
 	forced_first: int = -1,
 	match_seed: int = -1,
 ) -> bool:
 	game_mode = mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
-	ai_difficulty = difficulty if difficulty in NativeChallengeAI.DIFFICULTIES else "standard"
 	ai_deck_key = opponent_key
 	return _start_match(human_key, opponent_key, match_seed, forced_first)
 
@@ -1604,10 +1594,7 @@ func _schedule_ai_action() -> void:
 		rows.append(action.to_dict())
 	ai_request_sequence += 1
 	active_ai_request_id = "ai:%d:%d" % [state.revision, ai_request_sequence]
-	var preset: Dictionary = NativeChallengeAI.DIFFICULTIES.get(
-		ai_difficulty,
-		NativeChallengeAI.DIFFICULTIES["standard"],
-	)
+	var preset := NativeChallengeAI.strongest_preset()
 	var request := {
 		"kind": "action",
 		"state": state.snapshot(),
@@ -1615,7 +1602,6 @@ func _schedule_ai_action() -> void:
 		"revision": state.revision,
 		"request_id": active_ai_request_id,
 		"mode": game_mode,
-		"difficulty": ai_difficulty,
 		"deck_key": ai_deck_key,
 		"seed": int(rng.next_u32()),
 		"simulation_budget": int(preset["simulations"]),
@@ -1644,7 +1630,6 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 		"revision": state.revision,
 		"request_id": active_ai_request_id,
 		"mode": game_mode,
-		"difficulty": ai_difficulty,
 		"deck_key": ai_deck_key,
 		"seed": int(rng.next_u32()),
 	}

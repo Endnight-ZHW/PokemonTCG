@@ -238,11 +238,6 @@ layout_mode = 2
 theme_override_constants/separation = 20
 alignment = 1
 
-[node name="AIDifficultyOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/AISettings"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(300, 54)
-layout_mode = 2
-
 [node name="FirstPlayerOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/AISettings"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 54)
