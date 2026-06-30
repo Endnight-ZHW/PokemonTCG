@@ -911,15 +911,29 @@ func _kill_presentation_tween() -> void:
 	_presentation_tween = null
 
 
-func _dispose_flash_overlay(overlay: ColorRect) -> void:
-	_flash_overlays.erase(overlay)
-	if overlay and is_instance_valid(overlay):
+func _dispose_flash_overlay(overlay_value: Variant) -> void:
+	var overlay_is_valid := is_instance_valid(overlay_value)
+	var live_overlays: Array[ColorRect] = []
+	for existing_value in _flash_overlays:
+		if not is_instance_valid(existing_value):
+			continue
+		if overlay_is_valid and existing_value == overlay_value:
+			continue
+		live_overlays.append(existing_value)
+	_flash_overlays = live_overlays
+	if not overlay_is_valid:
+		return
+	var overlay := overlay_value as ColorRect
+	if overlay:
 		overlay.queue_free()
 
 
 func _clear_flash_overlays() -> void:
-	for overlay in _flash_overlays:
-		if overlay and is_instance_valid(overlay):
+	for overlay_value in _flash_overlays.duplicate():
+		if not is_instance_valid(overlay_value):
+			continue
+		var overlay := overlay_value as ColorRect
+		if overlay:
 			overlay.queue_free()
 	_flash_overlays.clear()
 

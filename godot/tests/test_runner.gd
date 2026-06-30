@@ -3705,6 +3705,9 @@ func _run_visual_upgrade_tests() -> void:
 			energy_event_id,
 			[],
 		)
+		var energy_cover_node: Control = null
+		if not energy_covers.is_empty():
+			energy_cover_node = energy_covers[0] as Control
 		_check(
 			energy_covers.size() == 1,
 			"Energy attachment did not stage an old-slot presentation cover",
@@ -3724,6 +3727,13 @@ func _run_visual_upgrade_tests() -> void:
 		_check(
 			not battle._presentation_covers.has(energy_event_id),
 			"Energy attachment cover was not released after presentation",
+		)
+		_check(
+			energy_cover_node == null
+			or not is_instance_valid(energy_cover_node)
+			or energy_cover_node.is_queued_for_deletion()
+			or not energy_cover_node.visible,
+			"Energy attachment cover remained visible over the revealed slot",
 		)
 		_check(
 			not energy_slot.is_presentation_hidden(),
@@ -3837,6 +3847,189 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		battle.director.clear_for_resync()
 		battle._clear_transient_visuals()
+
+		state.players[0].active = PokemonState.new("sv1-104")
+		state.players[0].bench[0] = PokemonState.new("svi-chim")
+		state.players[0].bench[1] = null
+		battle.update_view(state, 0, rows, "", false, "local")
+		var switch_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		state.players[0].switch_active_to_bench(0)
+		battle.update_view(state, 0, rows, "", false, "local")
+		var switch_event := {
+			"event_type": "switched",
+			"actor": 0,
+			"data": {"player": 0, "slot": "bench_0"},
+		}
+		var normalized_switch := PresentationEvent.normalize(switch_event, 49, 0, 0)
+		var normalized_switches: Array[Dictionary] = [normalized_switch]
+		battle._stage_presentation_targets(normalized_switches, switch_snapshot)
+		var switched_active: Variant = battle.get_slot_view(0, "active")
+		var switched_bench: Variant = battle.get_slot_view(0, "bench_0")
+		_check(
+			switched_active.is_presentation_hidden()
+			and switched_bench.is_presentation_hidden(),
+			"Switch presentation did not mask both active and bench slots",
+		)
+		var switch_spawned: bool = battle.table._spawn_slot_transition(
+			normalized_switch,
+			0.12,
+		)
+		_check(switch_spawned, "Switch presentation did not handle slot transition")
+		_check(
+			battle.table._active_flyers.size() == 2,
+			"Switch presentation did not create bounded active/bench flyers",
+		)
+		var switch_timing: Dictionary = battle.table._flying_card_timing(
+			1,
+			2,
+			0.12,
+			false,
+		)
+		_check(
+			bool(switch_timing.get("spawn", false))
+			and float(switch_timing.get("delay", 0.0))
+			+ float(switch_timing.get("duration", 0.0)) <= 0.12,
+			"Switch flyer timing can outlive its presentation event",
+		)
+		var too_short_timing: Dictionary = battle.table._flying_card_timing(0, 1, 0.05)
+		_check(
+			not bool(too_short_timing.get("spawn", true)),
+			"Extremely short presentation events still spawn lingering flyers",
+		)
+		battle._on_presentation_event_finished(normalized_switch)
+		_check(
+			not switched_active.is_presentation_hidden()
+			and not switched_bench.is_presentation_hidden(),
+			"Switch presentation did not reveal both swapped slots",
+		)
+		battle._clear_transient_visuals()
+		_check(
+			battle.table._active_flyers.is_empty()
+			and battle.table._flyer_tweens.is_empty(),
+			"Switch transient cleanup left active flying cards",
+		)
+
+		state.players[0].active = PokemonState.new("sv1-104")
+		state.players[0].bench[0] = null
+		state.players[0].bench[1] = PokemonState.new("svi-chim")
+		battle.update_view(state, 0, rows, "", false, "local")
+		var retreat_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		state.players[0].switch_active_to_bench(1)
+		battle.update_view(state, 0, rows, "", false, "local")
+		var retreat_event := {
+			"event_type": "retreat",
+			"actor": 0,
+			"data": {"player": 0, "bench_idx": 1},
+		}
+		var normalized_retreat := PresentationEvent.normalize(retreat_event, 50, 0, 0)
+		var normalized_retreats: Array[Dictionary] = [normalized_retreat]
+		battle._stage_presentation_targets(normalized_retreats, retreat_snapshot)
+		var retreat_active: Variant = battle.get_slot_view(0, "active")
+		var retreat_bench: Variant = battle.get_slot_view(0, "bench_1")
+		_check(
+			retreat_active.is_presentation_hidden()
+			and retreat_bench.is_presentation_hidden(),
+			"Retreat presentation did not mask both active and bench slots",
+		)
+		battle._on_presentation_event_finished(normalized_retreat)
+		_check(
+			not retreat_active.is_presentation_hidden()
+			and not retreat_bench.is_presentation_hidden(),
+			"Retreat presentation did not reveal both swapped slots",
+		)
+		var director_was_playing: bool = battle.director.is_playing()
+		battle.director._playing = true
+		battle._stage_presentation_targets(normalized_switches, switch_snapshot)
+		battle._stage_presentation_targets(normalized_retreats, retreat_snapshot)
+		battle.director._playing = director_was_playing
+		battle._clear_transient_visuals()
+		_check(
+			battle.table._presentation_mask_counts.is_empty()
+			and not battle.own_active.is_presentation_hidden()
+			and not (battle.own_bench[0] as CardView).is_presentation_hidden()
+			and not (battle.own_bench[1] as CardView).is_presentation_hidden(),
+			"Continuous staged presentations left stale slot masks",
+		)
+		var cleanup_texture: Texture2D = battle.table._texture_for_card_id("sv1-104")
+		if cleanup_texture:
+			battle.table._spawn_flying_card(
+				cleanup_texture,
+				Vector2(20, 20),
+				Vector2(40, 40),
+				0.12,
+				0.0,
+				"cards_drawn",
+				0,
+			)
+		var stale_cover := Control.new()
+		stale_cover.name = "PresentationCover"
+		battle.effects.add_child(stale_cover)
+		var stale_flyer := Control.new()
+		stale_flyer.name = "FlyingCard"
+		battle.effects.add_child(stale_flyer)
+		battle.own_active.set_presentation_hidden(true)
+		(battle.own_bench[0] as CardView).set_presentation_hidden(true)
+		(battle.hand_views[0] as CardView).set_presentation_hidden(true)
+		(battle.zones["own_deck"] as ZoneView).set_presentation_hidden(true)
+		battle._clear_transient_visuals()
+		_check(
+			not battle.own_active.is_presentation_hidden()
+			and not (battle.own_bench[0] as CardView).is_presentation_hidden()
+			and not (battle.hand_views[0] as CardView).is_presentation_hidden()
+			and not (battle.zones["own_deck"] as ZoneView).is_presentation_hidden()
+			and battle.table._active_flyers.is_empty()
+			and (
+				not is_instance_valid(stale_cover)
+				or stale_cover.is_queued_for_deletion()
+				or not stale_cover.visible
+			)
+			and (
+				not is_instance_valid(stale_flyer)
+				or stale_flyer.is_queued_for_deletion()
+				or not stale_flyer.visible
+			),
+			"Transient cleanup did not restore every presentation node type",
+		)
+		var freed_cover_event_id := "freed-cover-regression"
+		var freed_cover := Control.new()
+		battle.effects.add_child(freed_cover)
+		battle.table._presentation_covers[freed_cover_event_id] = [freed_cover]
+		freed_cover.free()
+		battle.table._finish_presentation_covers(freed_cover_event_id)
+		_check(
+			not battle.table._presentation_covers.has(freed_cover_event_id),
+			"Presentation cover cleanup tried to cast a freed cover",
+		)
+		var freed_flash_overlay := ColorRect.new()
+		battle.own_active._flash_overlays.append(freed_flash_overlay)
+		freed_flash_overlay.free()
+		battle.own_active._dispose_flash_overlay(freed_flash_overlay)
+		_check(
+			battle.own_active._flash_overlays.is_empty(),
+			"Flash overlay cleanup did not ignore a freed tween callback target",
+		)
+		var long_logs := [
+			"第一条很长的行动日志，用于验证旧日志会被裁剪而不是挤占整个面板。",
+			"第二条很长的行动日志，用于验证中文自动换行不会丢失最新内容。",
+			"第三条很长的行动日志，用于验证 RichTextLabel 保持滚动状态。",
+			"第四条很长的行动日志，用于验证日志面板至少保留四条记录。",
+			"第五条很长的行动日志，用于验证日志面板会根据高度限制条数。",
+			"第六条很长的行动日志，用于验证战斗过程中的详细信息可读。",
+			"第七条很长的行动日志，用于验证最近记录显示完整。",
+			"最后一条很长的行动日志，用于验证面板滚动到最新行动。",
+		]
+		var battle_log_panel := battle.log_panel as BattleLogPanel
+		_check(battle_log_panel != null, "Battle log panel was not typed as BattleLogPanel")
+		battle_log_panel.size = Vector2(420, 200)
+		battle_log_panel.update_entries(long_logs)
+		_check(
+			battle_log_panel.visible
+			and battle.log_label.autowrap_mode == TextServer.AUTOWRAP_WORD_SMART
+			and battle.log_label.scroll_following
+			and battle.log_label.text.contains("最后一条很长的行动日志")
+			and not battle.log_label.text.contains("第一条很长的行动日志"),
+			"Battle log panel did not wrap, trim, and follow recent entries",
+		)
 
 		var settings_node: Node = root.get_node("AppSettings")
 		var previous_animation_mode := str(settings_node.get("animation_mode"))

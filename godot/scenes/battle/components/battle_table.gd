@@ -16,6 +16,8 @@ signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
+const MIN_FLYING_CARD_DURATION := 0.06
+const FLYING_CARD_FINISH_PAD := 0.055
 
 @export_category("Table Layout")
 @export_group("HUD")
@@ -76,7 +78,7 @@ var detail_image: TextureRect
 var detail_title: Label
 var detail_text: RichTextLabel
 var detail_close_button: Button
-var log_panel: PanelContainer
+var log_panel: BattleLogPanel
 var log_label: RichTextLabel
 var opponent_hand_surface: Control
 var opponent_hand_count_badge: Label
@@ -169,7 +171,7 @@ func _resolve_scene_nodes() -> void:
 	detail_text = get_node(
 		"OverlayPanels/DetailPanel/Row/TextColumn/DetailText"
 	) as RichTextLabel
-	log_panel = get_node("OverlayPanels/LogPanel") as PanelContainer
+	log_panel = get_node("OverlayPanels/LogPanel") as BattleLogPanel
 	log_label = get_node(
 		"OverlayPanels/LogPanel/Content/LogLabel"
 	) as RichTextLabel
@@ -615,6 +617,7 @@ func _bind_scene_nodes() -> void:
 	director.sequence_finished.connect(func() -> void:
 		input_blocker.visible = false
 		_clear_presentation_masks(true)
+		_clear_active_flyers()
 	)
 	director.event_finished.connect(_on_presentation_event_finished)
 	director.floating_text_requested.connect(_on_floating_text_requested)
@@ -893,14 +896,16 @@ func _refresh_all_actions_panel() -> void:
 
 
 func _refresh_log() -> void:
+	if log_panel:
+		log_panel.update_entries(state_ref.action_log)
+		return
 	var start := maxi(0, state_ref.action_log.size() - 7)
 	var lines: Array[String] = []
 	for index in range(start, state_ref.action_log.size()):
 		lines.append("[color=#62d7ff]◆[/color] " + state_ref.action_log[index])
-	if log_panel:
-		log_panel.visible = not lines.is_empty()
-	log_label.text = "\n".join(lines)
-	log_label.scroll_to_line(maxi(0, lines.size() - 1))
+	if log_label:
+		log_label.text = "\n".join(lines)
+		log_label.scroll_to_line(maxi(0, lines.size() - 1))
 
 
 func _refresh_target_hints() -> void:
@@ -1398,9 +1403,15 @@ func _layout_overlay_drawers() -> void:
 		340.0,
 	)
 	var drawer_x := board_origin.x + board_panel.size.x - drawer_width - 14.0
+	var log_width := clampf(
+		board_panel.size.x * 0.30,
+		320.0,
+		460.0,
+	)
+	var log_x := board_origin.x + board_panel.size.x - log_width - 14.0
 	var detail_height := clampf(board_panel.size.y * 0.28, 190.0, 240.0)
 	var action_height := clampf(board_panel.size.y * 0.42, 240.0, 360.0)
-	var log_height := clampf(board_panel.size.y * 0.18, 118.0, 160.0)
+	var log_height := clampf(board_panel.size.y * 0.24, 156.0, 220.0)
 	if detail_panel:
 		detail_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
 		detail_panel.size = Vector2(drawer_width, detail_height)
@@ -1417,11 +1428,11 @@ func _layout_overlay_drawers() -> void:
 		detail_close_button.size = Vector2(28.0, 28.0)
 	if log_panel:
 		log_panel.position = Vector2(
-			drawer_x,
+			log_x,
 			board_origin.y + board_panel.size.y - log_height - 14.0,
 		)
-		log_panel.size = Vector2(drawer_width, log_height)
-		log_panel.custom_minimum_size = Vector2(drawer_width, log_height)
+		log_panel.size = Vector2(log_width, log_height)
+		log_panel.custom_minimum_size = Vector2(log_width, log_height)
 
 
 func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
@@ -2116,7 +2127,7 @@ func _stage_presentation_cover(event: Dictionary) -> void:
 	var covers: Array[Control] = []
 	if _presentation_covers.has(event_id):
 		for value in _presentation_covers[event_id]:
-			var existing := value as Control
+			var existing := _valid_control(value)
 			if existing:
 				covers.append(existing)
 	covers.append(cover)
@@ -2131,6 +2142,8 @@ func _spawn_presentation_cover(card_id_value: String, target_view: CardView) -> 
 		return null
 	var cover := Control.new()
 	cover.name = "PresentationCover"
+	cover.set_meta("battle_transient_visual", true)
+	cover.set_meta("battle_transient_kind", "PresentationCover")
 	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cover.size = target_view.size
 	cover.position = _effects_local(target_view.global_center()) - cover.size * 0.5
@@ -2157,36 +2170,25 @@ func _finish_presentation_covers(event_id: String) -> bool:
 	var covers: Array = _presentation_covers.get(event_id, [])
 	_presentation_covers.erase(event_id)
 	if covers.is_empty():
+		_clear_effect_child_controls(["PresentationCover"])
 		return false
-	var flash_immediately := AppSettings.reduced_motion
+	var had_cover := false
 	for cover_value in covers:
-		var cover := cover_value as Control
-		if cover == null or not is_instance_valid(cover):
+		var cover := _valid_control(cover_value)
+		if cover == null:
 			continue
-		if AppSettings.reduced_motion:
-			_dispose_presentation_cover(cover)
-			continue
-		var tween := create_tween().set_parallel(true)
-		_presentation_cover_tweens[cover.get_instance_id()] = tween
-		tween.tween_property(cover, "modulate:a", 0.0, 0.14)
-		tween.tween_property(cover, "scale", Vector2.ONE * 1.025, 0.14)
-		tween.chain().tween_callback(
-			_finish_cover_and_feedback.bind(cover, event_id)
-		)
-	if flash_immediately:
-		_flash_presentation_feedbacks(event_id)
-	return true
-
-
-func _finish_cover_and_feedback(cover: Control, event_id: String) -> void:
-	_dispose_presentation_cover(cover)
-	_flash_presentation_feedbacks(event_id)
+		had_cover = true
+		_dispose_presentation_cover(cover)
+	_clear_effect_child_controls(["PresentationCover"])
+	return had_cover
 
 
 func _dispose_presentation_cover(cover: Control) -> void:
 	if cover == null or not is_instance_valid(cover):
 		return
 	_presentation_cover_tweens.erase(cover.get_instance_id())
+	cover.visible = false
+	cover.modulate.a = 0.0
 	cover.queue_free()
 
 
@@ -2198,51 +2200,36 @@ func _clear_presentation_covers() -> void:
 	_presentation_cover_tweens.clear()
 	for covers in _presentation_covers.values():
 		for cover_value in covers:
-			var cover := cover_value as Control
-			if cover and is_instance_valid(cover):
-				cover.queue_free()
+			var cover := _valid_control(cover_value)
+			_dispose_presentation_cover(cover)
 	_presentation_covers.clear()
+	_clear_effect_child_controls(["PresentationCover"])
 
 
 func _flash_presentation_feedbacks(event_id: String) -> void:
 	var nodes: Array = _presentation_feedbacks.get(event_id, [])
 	_presentation_feedbacks.erase(event_id)
 	for node_value in nodes:
-		var view := node_value as CardView
-		if view == null or not is_instance_valid(view):
+		var view := _valid_card_view(node_value)
+		if view == null:
 			continue
 		view.flash(DesignTokens.GOLD, 0.22)
 
 
 func _on_presentation_event_finished(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
+	_clear_active_flyers()
+	_finish_presentation_covers(event_id)
 	var nodes: Array = _presentation_reveals.get(event_id, [])
 	for node_value in nodes:
-		_reveal_presentation_node(node_value as Control)
+		_reveal_presentation_node(_valid_control(node_value))
 	_presentation_reveals.erase(event_id)
-	var had_covers := _finish_presentation_covers(event_id)
-	if not had_covers:
-		_flash_presentation_feedbacks(event_id)
+	_flash_presentation_feedbacks(event_id)
 
 
 func _clear_presentation_masks(reveal: bool) -> void:
-	var seen: Dictionary = {}
-	for nodes in _presentation_reveals.values():
-		for node_value in nodes:
-			var node := node_value as Control
-			if node == null or not is_instance_valid(node):
-				continue
-			var instance_id := node.get_instance_id()
-			if seen.has(instance_id):
-				continue
-			seen[instance_id] = true
-			if reveal:
-				if node is CardView:
-					(node as CardView).clear_presentation_state()
-				elif node is ZoneView:
-					(node as ZoneView).clear_presentation_state()
-				else:
-					node.modulate.a = 1.0
+	if reveal:
+		_clear_all_presentation_nodes()
 	_presentation_reveals.clear()
 	_presentation_mask_counts.clear()
 	_clear_presentation_covers()
@@ -2250,6 +2237,45 @@ func _clear_presentation_masks(reveal: bool) -> void:
 	_presentation_event_hand_targets.clear()
 	_presentation_hand_target_cursor.clear()
 	_presentation_hand_removed_counts.clear()
+
+
+func _clear_all_presentation_nodes() -> void:
+	var seen: Dictionary = {}
+	for view in hand_views:
+		_clear_presentation_control(view, seen)
+	for view in opponent_hand_views:
+		_clear_presentation_control(view, seen)
+	for view_value in slot_views.values():
+		_clear_presentation_control(_valid_control(view_value), seen)
+	for zone_value in zones.values():
+		_clear_presentation_control(_valid_control(zone_value), seen)
+
+
+func _clear_presentation_control(node: Control, seen: Dictionary) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	var instance_id := node.get_instance_id()
+	if seen.has(instance_id):
+		return
+	seen[instance_id] = true
+	if node is CardView:
+		(node as CardView).clear_presentation_state()
+	elif node is ZoneView:
+		(node as ZoneView).clear_presentation_state()
+	else:
+		node.modulate.a = 1.0
+
+
+func _valid_control(value: Variant) -> Control:
+	if not is_instance_valid(value):
+		return null
+	return value as Control
+
+
+func _valid_card_view(value: Variant) -> CardView:
+	if not is_instance_valid(value):
+		return null
+	return value as CardView
 
 
 func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
@@ -2287,7 +2313,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			"zone": "discard",
 		}
 	if AppSettings.reduced_motion:
-		effects.burst(resolve_endpoint_center(target), DesignTokens.CYAN, "card_move")
+		effects.burst(resolve_endpoint_center(target), _motion_landing_color(event_type), "card_move")
 		return
 	if _spawn_slot_transition(event, duration):
 		return
@@ -2315,12 +2341,16 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			continue
 		var start := starts[index] if index < starts.size() else base_start
 		var finish := finishes[index] if index < finishes.size() else base_finish
+		var timing := _flying_card_timing(index, visible_count, duration)
+		if not bool(timing.get("spawn", false)):
+			_landing_burst(finish, event_type)
+			continue
 		_spawn_flying_card(
 			texture,
 			start,
 			finish,
-			maxf(0.18, duration - float(index) * motion_stagger_delay),
-			float(index) * motion_stagger_delay,
+			float(timing.get("duration", 0.0)),
+			float(timing.get("delay", 0.0)),
 			event_type,
 			index,
 		)
@@ -2605,7 +2635,12 @@ func _texture_for_card_id(card_id: String) -> Texture2D:
 	var texture_path := "res://assets/cards/card_back.webp"
 	if not card_id.is_empty():
 		texture_path = str(CardDatabase.get_card(card_id).get("image_path", ""))
-	return CardTextureCache.get_texture(texture_path)
+		if texture_path.is_empty():
+			texture_path = "res://assets/cards/card_back.webp"
+	var texture := CardTextureCache.get_texture(texture_path)
+	if texture == null and texture_path != "res://assets/cards/card_back.webp":
+		texture = CardTextureCache.get_texture("res://assets/cards/card_back.webp")
+	return texture
 
 
 func _motion_card_hidden_from_view(
@@ -2662,6 +2697,13 @@ func _spawn_slot_transition(event: Dictionary, duration: float) -> bool:
 		var finish_view := get_slot_view(player, to_slot)
 		if finish_view == null:
 			continue
+		var finish := _effects_local(finish_view.global_center())
+		var timing := _flying_card_timing(index, movements.size(), duration, false)
+		if not bool(timing.get("spawn", false)):
+			_landing_burst(finish, event_type)
+			spawned = true
+			index += 1
+			continue
 		var texture := _texture_for_card_id(card_id)
 		if texture == null:
 			continue
@@ -2671,9 +2713,9 @@ func _spawn_slot_transition(event: Dictionary, duration: float) -> bool:
 				snapshot_row.get("center"),
 				resolve_endpoint_center({"player": player, "slot": from_slot}),
 			),
-			_effects_local(finish_view.global_center()),
-			maxf(0.18, duration - float(index) * motion_stagger_delay),
-			float(index) * motion_stagger_delay,
+			finish,
+			float(timing.get("duration", 0.0)),
+			float(timing.get("delay", 0.0)),
 			event_type,
 			index,
 		)
@@ -2740,6 +2782,47 @@ func _discard_hand_start_points(
 	return result
 
 
+func _flying_card_timing(
+	index: int,
+	total_count: int,
+	event_duration: float,
+	stagger: bool = true,
+) -> Dictionary:
+	var playable_duration := maxf(0.0, event_duration - FLYING_CARD_FINISH_PAD)
+	if playable_duration < MIN_FLYING_CARD_DURATION:
+		return {"spawn": false, "delay": 0.0, "duration": 0.0}
+	var count := maxi(1, total_count)
+	var clamped_index := clampi(index, 0, count - 1)
+	var max_delay := minf(
+		playable_duration * 0.35,
+		motion_stagger_delay * float(maxi(0, count - 1)),
+	)
+	var delay_step := 0.0
+	if stagger and count > 1:
+		delay_step = minf(
+			motion_stagger_delay,
+			max_delay / float(count - 1),
+		)
+	var delay := float(clamped_index) * delay_step
+	var flight_duration := playable_duration - delay
+	if flight_duration < MIN_FLYING_CARD_DURATION:
+		return {"spawn": false, "delay": 0.0, "duration": 0.0}
+	return {"spawn": true, "delay": delay, "duration": flight_duration}
+
+
+func _landing_burst(finish: Vector2, event_type: String) -> void:
+	if effects:
+		effects.burst(finish, _motion_landing_color(event_type), "card_land")
+
+
+func _motion_landing_color(event_type: String) -> Color:
+	return (
+		DesignTokens.GOLD
+		if event_type in ["cards_drawn", "prize_taken"]
+		else DesignTokens.CYAN
+	)
+
+
 func _spawn_flying_card(
 	texture: Texture2D,
 	start: Vector2,
@@ -2754,6 +2837,9 @@ func _spawn_flying_card(
 		var oldest: Control = _active_flyers.pop_front()
 		_dispose_flyer(oldest)
 	var flying := Control.new()
+	flying.name = "FlyingCard"
+	flying.set_meta("battle_transient_visual", true)
+	flying.set_meta("battle_transient_kind", "FlyingCard")
 	flying.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	flying.size = Vector2(94, 132)
 	flying.position = start - flying.size * 0.5
@@ -2838,12 +2924,15 @@ func _finish_flyer(
 		return
 	_flyer_tweens.erase(flying.get_instance_id())
 	_active_flyers.erase(flying)
+	flying.visible = false
+	flying.modulate.a = 0.0
 	flying.queue_free()
-	effects.burst(
-		finish,
-		DesignTokens.GOLD if event_type in ["cards_drawn", "prize_taken"] else DesignTokens.CYAN,
-		"card_land",
-	)
+	if effects:
+		effects.burst(
+			finish,
+			_motion_landing_color(event_type),
+			"card_land",
+		)
 
 
 func _mask_and_reveal_drawn_cards(count: int, duration: float) -> void:
@@ -2870,29 +2959,28 @@ func _prune_flyers() -> void:
 	_active_flyers = live
 
 
-func _clear_transient_visuals() -> void:
-	_clear_presentation_masks(true)
+func _clear_active_flyers() -> void:
 	for tween_value in _flyer_tweens.values():
 		var tween := tween_value as Tween
 		if tween and tween.is_valid():
 			tween.kill()
 	_flyer_tweens.clear()
-	for flyer in _active_flyers:
+	for flyer in _active_flyers.duplicate():
 		if is_instance_valid(flyer):
+			flyer.visible = false
+			flyer.modulate.a = 0.0
 			flyer.free()
 	_active_flyers.clear()
+	_clear_effect_child_controls(["FlyingCard"])
+
+
+func _clear_transient_visuals() -> void:
+	_clear_presentation_masks(true)
+	_clear_active_flyers()
 	if effects:
 		effects.clear_transients()
-	for view in hand_views:
-		if is_instance_valid(view):
-			view.clear_presentation_state()
-	for view in opponent_hand_views:
-		if is_instance_valid(view):
-			view.clear_presentation_state()
-	for zone_value in zones.values():
-		var zone := zone_value as ZoneView
-		if zone and is_instance_valid(zone):
-			zone.clear_presentation_state()
+	_clear_effect_child_controls()
+	_clear_all_presentation_nodes()
 
 
 func _dispose_flyer(flying: Control) -> void:
@@ -2902,7 +2990,47 @@ func _dispose_flyer(flying: Control) -> void:
 	if tween and tween.is_valid():
 		tween.kill()
 	_flyer_tweens.erase(flying.get_instance_id())
+	flying.visible = false
+	flying.modulate.a = 0.0
 	flying.free()
+
+
+func _clear_effect_child_controls(prefixes: Array = []) -> void:
+	if effects == null:
+		return
+	var active_prefixes := prefixes.duplicate()
+	if active_prefixes.is_empty():
+		active_prefixes = ["PresentationCover", "FlyingCard"]
+	for child in effects.get_children():
+		var control := child as Control
+		if control == null or not is_instance_valid(control):
+			continue
+		var name_value := str(control.name)
+		var kind_value := str(control.get_meta("battle_transient_kind", ""))
+		var should_clear := false
+		for prefix_value in active_prefixes:
+			var prefix := str(prefix_value)
+			if name_value.begins_with(prefix) or kind_value == prefix:
+				should_clear = true
+				break
+		if not should_clear and prefixes.is_empty():
+			should_clear = true
+		if not should_clear:
+			continue
+		var instance_id := control.get_instance_id()
+		var flyer_tween := _flyer_tweens.get(instance_id) as Tween
+		if flyer_tween and flyer_tween.is_valid():
+			flyer_tween.kill()
+		_flyer_tweens.erase(instance_id)
+		var cover_tween := _presentation_cover_tweens.get(instance_id) as Tween
+		if cover_tween and cover_tween.is_valid():
+			cover_tween.kill()
+		_presentation_cover_tweens.erase(instance_id)
+		_active_flyers.erase(control)
+		control.visible = false
+		control.modulate.a = 0.0
+		if not control.is_queued_for_deletion():
+			control.queue_free()
 
 
 func _on_camera_impulse_requested(strength: float, duration: float) -> void:
