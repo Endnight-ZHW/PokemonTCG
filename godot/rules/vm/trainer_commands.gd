@@ -272,11 +272,12 @@ func recover_from_discard_request(
 	)
 	if available.is_empty():
 		return VMResult.fail("弃牌区没有符合条件的卡，卡牌保留在手牌中。", "no_legal_target")
+	var max_select: int = min(int(params.get("count", 3)), available.size())
 	return VMChoiceRequests.request_cards(
 		catalog,
 		state, stack, player_idx, "discard", available, "shuffle_from_discard",
 		{"player_idx": player_idx},
-		0, min(int(params.get("count", 3)), available.size()),
+		min(1, max_select), max_select,
 		"选择要洗回牌库的卡。", true)
 
 

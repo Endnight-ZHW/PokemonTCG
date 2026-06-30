@@ -126,7 +126,7 @@ func filter_cards(card_ids: Array[String], filter_type: String, filter_name: Str
 			"item_or_tool":
 				matches = is_item(card_id) or is_tool(card_id)
 			"pokemon_and_energy":
-				matches = is_pokemon(card_id) or is_energy(card_id)
+				matches = is_pokemon(card_id) or is_basic_energy(card_id)
 			"grass_pokemon":
 				matches = is_pokemon(card_id) and "Grass" in card.get("energy_types", [])
 			"water_pokemon_and_energy":

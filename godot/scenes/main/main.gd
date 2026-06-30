@@ -1567,9 +1567,8 @@ func _choice_metadata_text(request: ChoiceRequest) -> String:
 func _refresh_log() -> void:
 	if log_label == null:
 		return
-	var start: int = max(0, state.action_log.size() - 6)
 	var rows: Array[String] = []
-	for index in range(start, state.action_log.size()):
+	for index in range(state.action_log.size()):
 		rows.append("• " + state.action_log[index])
 	log_label.text = "\n".join(rows)
 	log_label.scroll_to_line(max(0, rows.size() - 1))

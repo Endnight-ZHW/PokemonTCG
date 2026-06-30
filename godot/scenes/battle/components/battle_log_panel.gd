@@ -1,9 +1,6 @@
 class_name BattleLogPanel
 extends PanelContainer
 
-const MIN_VISIBLE_ENTRIES := 4
-const MAX_VISIBLE_ENTRIES := 7
-
 @onready var log_label: RichTextLabel = %LogLabel
 
 
@@ -20,9 +17,8 @@ func update_entries(action_log: Array) -> void:
 		visible = false
 		log_label.text = ""
 		return
-	var start := maxi(0, action_log.size() - _entry_limit())
 	var lines: Array[String] = []
-	for index in range(start, action_log.size()):
+	for index in range(action_log.size()):
 		lines.append("[color=#62d7ff]◆[/color] " + str(action_log[index]))
 	visible = not lines.is_empty()
 	log_label.text = "\n".join(lines)
@@ -40,18 +36,6 @@ func _configure_label() -> void:
 	log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	log_label.scroll_active = true
 	log_label.scroll_following = true
-
-
-func _entry_limit() -> int:
-	var line_height := 17.0
-	if log_label:
-		line_height = maxf(
-			line_height,
-			float(log_label.get_theme_font_size("normal_font_size")) * 1.45,
-		)
-	var available_height := maxf(0.0, size.y - 48.0)
-	var estimated := int(floor(available_height / line_height))
-	return clampi(estimated, MIN_VISIBLE_ENTRIES, MAX_VISIBLE_ENTRIES)
 
 
 func _scroll_to_latest() -> void:

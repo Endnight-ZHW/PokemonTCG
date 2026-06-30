@@ -119,6 +119,7 @@ var _presentation_cover_tweens: Dictionary = {}
 var _presentation_event_hand_targets: Dictionary = {}
 var _presentation_hand_target_cursor: Dictionary = {}
 var _presentation_hand_removed_counts: Dictionary = {}
+var _presentation_zone_states: Dictionary = {}
 var _ai_thinking_started_msec := 0
 
 
@@ -919,9 +920,8 @@ func _refresh_log() -> void:
 	if log_panel:
 		log_panel.update_entries(state_ref.action_log)
 		return
-	var start := maxi(0, state_ref.action_log.size() - 7)
 	var lines: Array[String] = []
-	for index in range(start, state_ref.action_log.size()):
+	for index in range(state_ref.action_log.size()):
 		lines.append("[color=#62d7ff]◆[/color] " + state_ref.action_log[index])
 	if log_label:
 		log_label.text = "\n".join(lines)
@@ -1726,6 +1726,7 @@ func _stage_presentation_targets(
 	_presentation_event_hand_targets.clear()
 	_presentation_hand_target_cursor.clear()
 	_presentation_hand_removed_counts.clear()
+	_stage_presentation_zone_states(events, previous_snapshot)
 	for event in events:
 		var event_id := str(event.get("event_id", ""))
 		if event_id.is_empty():
@@ -1743,6 +1744,277 @@ func _stage_presentation_targets(
 		_stage_presentation_cover(event)
 
 
+func _stage_presentation_zone_states(
+	events: Array[Dictionary],
+	previous_snapshot: Dictionary,
+) -> void:
+	_presentation_zone_states.clear()
+	var zones_snapshot: Dictionary = previous_snapshot.get("zones", {})
+	if zones_snapshot.is_empty():
+		return
+	var affected: Dictionary = {}
+	for event in events:
+		for endpoint in _zone_endpoints_for_event(event):
+			var key := _presentation_zone_key(endpoint)
+			if key.is_empty():
+				continue
+			affected[key] = true
+	for key_value in affected.keys():
+		var key := str(key_value)
+		var row: Dictionary = Dictionary(zones_snapshot.get(key, {})).duplicate(true)
+		if row.is_empty():
+			continue
+		_presentation_zone_states[key] = row
+		_apply_presentation_zone_state(key)
+
+
+func _zone_endpoints_for_event(event: Dictionary) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var event_type := str(event.get("event_type", ""))
+	var actor := int(event.get("actor", view_player))
+	var data: Dictionary = event.get("data", {})
+	var source := _event_source_endpoint(event)
+	var target := _event_target_endpoint(event)
+	match event_type:
+		"cards_drawn":
+			result.append({"player": actor, "zone": "deck"})
+		"prize_taken":
+			result.append({"player": actor, "zone": "prizes"})
+		"cards_discarded":
+			if str(source.get("zone", "")).is_empty():
+				source = {"player": actor, "zone": "hand"}
+			result.append({"player": actor, "zone": "discard"})
+			if str(source.get("zone", "")) != "hand":
+				result.append(source)
+		"trainer_played":
+			result.append({"player": actor, "zone": "discard"})
+		"stadium_changed":
+			result.append({"player": -1, "zone": "stadium"})
+		"card_moved":
+			result.append(source)
+			result.append(target)
+		"pokemon_ko":
+			result.append({
+				"player": int(data.get("player", actor)),
+				"zone": "discard",
+			})
+		"deck_shuffled":
+			result.append({
+				"player": int(data.get("player", actor)),
+				"zone": "deck",
+			})
+	return result
+
+
+func _presentation_zone_key(endpoint: Dictionary) -> String:
+	var zone_name := str(endpoint.get("zone", ""))
+	if zone_name.is_empty() or zone_name == "hand":
+		return ""
+	if zone_name == "stadium":
+		return "-1:stadium"
+	return "%d:%s" % [int(endpoint.get("player", view_player)), zone_name]
+
+
+func _apply_presentation_zone_state(key: String) -> void:
+	var row: Dictionary = Dictionary(_presentation_zone_states.get(key, {}))
+	if row.is_empty():
+		return
+	var endpoint := _endpoint_from_presentation_zone_key(key)
+	if endpoint.is_empty():
+		return
+	var zone := _zone_view_for_endpoint(endpoint)
+	if zone == null:
+		return
+	var zone_name := str(endpoint.get("zone", ""))
+	var player := int(endpoint.get("player", view_player))
+	var count_value := maxi(0, int(row.get("count", zone.count)))
+	var card_id_value := str(row.get("card_id", zone.card_id))
+	if count_value <= 0:
+		card_id_value = ""
+	zone.configure(
+		_zone_title(zone_name),
+		card_id_value,
+		count_value,
+		bool(row.get("hidden", zone.is_hidden_zone)),
+		_presentation_zone_context(
+			player,
+			zone_name,
+			card_id_value,
+			count_value,
+			bool(row.get("hidden", zone.is_hidden_zone)),
+		),
+	)
+
+
+func _endpoint_from_presentation_zone_key(key: String) -> Dictionary:
+	if key == "-1:stadium":
+		return {"player": -1, "zone": "stadium"}
+	var parts := key.split(":")
+	if parts.size() != 2:
+		return {}
+	return {"player": int(parts[0]), "zone": str(parts[1])}
+
+
+func _presentation_zone_context(
+	player: int,
+	zone_name: String,
+	card_id_value: String,
+	count_value: int,
+	hidden: bool,
+) -> Dictionary:
+	var visible_ids: Array[String] = []
+	if not hidden and not card_id_value.is_empty():
+		visible_ids.append(card_id_value)
+	return {
+		"player": player,
+		"zone": zone_name,
+		"title": _zone_title(zone_name),
+		"card_ids": visible_ids,
+		"count": count_value,
+		"hidden": hidden,
+		"card_id": card_id_value,
+	}
+
+
+func _apply_presentation_zone_event(event: Dictionary) -> void:
+	if _presentation_zone_states.is_empty():
+		return
+	var event_type := str(event.get("event_type", ""))
+	var actor := int(event.get("actor", view_player))
+	var data: Dictionary = event.get("data", {})
+	var source := _event_source_endpoint(event)
+	var target := _event_target_endpoint(event)
+	match event_type:
+		"cards_drawn":
+			_adjust_presentation_zone(
+				{"player": actor, "zone": "deck"},
+				-_event_amount(event, _event_card_ids(event)),
+				[],
+			)
+		"prize_taken":
+			_adjust_presentation_zone(
+				{"player": actor, "zone": "prizes"},
+				-_event_amount(event, _event_card_ids(event)),
+				[],
+			)
+		"cards_discarded":
+			_adjust_presentation_zone(
+				{"player": actor, "zone": "discard"},
+				_event_amount(event, _event_card_ids(event)),
+				_event_card_ids(event),
+			)
+			if str(source.get("zone", "")) != "hand":
+				_adjust_presentation_zone(
+					source,
+					-_event_amount(event, _event_card_ids(event)),
+					[],
+				)
+		"trainer_played":
+			_adjust_presentation_zone(
+				{"player": actor, "zone": "discard"},
+				1,
+				_event_card_ids(event),
+			)
+		"stadium_changed":
+			_set_presentation_zone_top(
+				{"player": -1, "zone": "stadium"},
+				str(event.get("card_id", data.get("card_id", ""))),
+				1,
+			)
+		"card_moved":
+			var card_ids := _event_card_ids(event)
+			var amount := _event_amount(event, card_ids)
+			_adjust_presentation_zone(source, -amount, [])
+			_adjust_presentation_zone(target, amount, card_ids)
+		"pokemon_ko":
+			_adjust_presentation_zone(
+				{"player": int(data.get("player", actor)), "zone": "discard"},
+				_event_amount(event, _event_card_ids(event)),
+				_event_card_ids(event),
+			)
+
+
+func _adjust_presentation_zone(
+	endpoint: Dictionary,
+	delta: int,
+	card_ids: Array,
+) -> void:
+	var key := _presentation_zone_key(endpoint)
+	if key.is_empty() or not _presentation_zone_states.has(key):
+		return
+	var row: Dictionary = Dictionary(_presentation_zone_states.get(key, {})).duplicate(true)
+	var next_count := maxi(0, int(row.get("count", 0)) + delta)
+	row["count"] = next_count
+	if next_count <= 0:
+		row["card_id"] = ""
+	elif delta > 0:
+		var top_card := _last_card_id(card_ids)
+		if not top_card.is_empty():
+			row["card_id"] = top_card
+	elif delta < 0:
+		var current_final := _current_zone_row(endpoint)
+		row["card_id"] = str(current_final.get("card_id", row.get("card_id", "")))
+	_presentation_zone_states[key] = row
+	_apply_presentation_zone_state(key)
+
+
+func _set_presentation_zone_top(
+	endpoint: Dictionary,
+	card_id_value: String,
+	count_value: int,
+) -> void:
+	var key := _presentation_zone_key(endpoint)
+	if key.is_empty() or not _presentation_zone_states.has(key):
+		return
+	var row: Dictionary = Dictionary(_presentation_zone_states.get(key, {})).duplicate(true)
+	row["count"] = maxi(0, count_value)
+	row["card_id"] = "" if int(row["count"]) <= 0 else card_id_value
+	_presentation_zone_states[key] = row
+	_apply_presentation_zone_state(key)
+
+
+func _last_card_id(card_ids: Array) -> String:
+	for index in range(card_ids.size() - 1, -1, -1):
+		var card_id_value := str(card_ids[index])
+		if not card_id_value.is_empty():
+			return card_id_value
+	return ""
+
+
+func _current_zone_row(endpoint: Dictionary) -> Dictionary:
+	var zone_name := str(endpoint.get("zone", ""))
+	var player_idx := int(endpoint.get("player", view_player))
+	if zone_name == "stadium":
+		return {
+			"card_id": state_ref.stadium_card_id if state_ref else "",
+			"count": 0 if state_ref == null or state_ref.stadium_card_id.is_empty() else 1,
+			"hidden": false,
+		}
+	if state_ref == null or player_idx < 0 or player_idx >= state_ref.players.size():
+		return {}
+	var player := state_ref.get_player(player_idx)
+	match zone_name:
+		"discard":
+			return {
+				"card_id": player.discard[-1] if not player.discard.is_empty() else "",
+				"count": player.discard.size(),
+				"hidden": false,
+			}
+		"deck":
+			return {
+				"card_id": "",
+				"count": player.deck.size(),
+				"hidden": true,
+			}
+		"prizes":
+			return {
+				"card_id": "",
+				"count": player.prizes.size(),
+				"hidden": true,
+			}
+	return {}
+
+
 func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 	var result: Array[Control] = []
 	var event_type := str(event.get("event_type", ""))
@@ -1755,35 +2027,26 @@ func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 			source = {"player": actor, "zone": "deck"}
 			target = {"player": actor, "zone": "hand"}
 			result.append_array(_hand_target_views_for_incoming(event))
-			_append_unique_control(result, _zone_view_for_endpoint(source))
 		"prize_taken":
 			source = {"player": actor, "zone": "prizes"}
 			target = {"player": actor, "zone": "hand"}
 			result.append_array(_hand_target_views_for_incoming(event))
-			_append_unique_control(result, _zone_view_for_endpoint(source))
 		"cards_discarded":
 			if str(source.get("zone", "")).is_empty():
 				source = {"player": actor, "zone": "hand"}
 			target = {"player": actor, "zone": "discard"}
-			_append_unique_control(result, _zone_view_for_endpoint(target))
-			if str(source.get("zone", "")) != "hand":
-				_append_unique_control(result, _zone_view_for_endpoint(source))
 		"pokemon_played":
 			if _should_mask_slot_result(event):
 				_append_unique_control(result, _slot_view_for_endpoint(target))
 		"trainer_played", "stadium_changed":
-			_append_unique_control(result, _zone_view_for_endpoint(target))
+			pass
 		"card_moved":
-			result.append_array(_target_controls_for_endpoint(target, event))
-			_append_unique_control(result, _zone_view_for_endpoint(source))
+			if not str(target.get("slot", "")).is_empty() or str(target.get("zone", "")) == "hand":
+				result.append_array(_target_controls_for_endpoint(target, event))
 		"pokemon_ko":
 			var player := int(data.get("player", actor))
 			var slot_name := str(data.get("slot", "active"))
 			_append_unique_control(result, get_slot_view(player, slot_name))
-			_append_unique_control(
-				result,
-				_zone_view_for_endpoint({"player": player, "zone": "discard"}),
-			)
 		"retreat", "switched", "promoted":
 			for view in _switch_slot_views_for_event(event):
 				_append_unique_control(result, view)
@@ -2212,6 +2475,7 @@ func _flash_presentation_feedbacks(event_id: String) -> void:
 
 func _on_presentation_event_finished(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
+	_apply_presentation_zone_event(event)
 	var nodes: Array = _presentation_reveals.get(event_id, [])
 	for node_value in nodes:
 		_reveal_presentation_node(_valid_control(node_value))
@@ -2231,6 +2495,9 @@ func _clear_presentation_masks(reveal: bool) -> void:
 	_presentation_event_hand_targets.clear()
 	_presentation_hand_target_cursor.clear()
 	_presentation_hand_removed_counts.clear()
+	_presentation_zone_states.clear()
+	if state_ref != null:
+		_refresh_field()
 
 
 func _clear_all_presentation_nodes() -> void:

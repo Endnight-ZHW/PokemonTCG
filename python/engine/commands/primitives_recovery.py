@@ -49,6 +49,7 @@ class RecoverFromDiscard:
         available = [card for card in player.discard if matches(card)]
         if not available:
             return CommandResult.fail("弃牌区没有符合条件的卡，卡牌保留在手牌中。")
+        max_select = min(count, len(available))
 
         return CommandResult.ok(
             f"Choose up to {count} cards from discard.",
@@ -56,10 +57,11 @@ class RecoverFromDiscard:
                 request_type="search_deck",
                 player=ctx.player_idx,
                 prompt=f"从弃牌区选择最多{count}张卡",
-                min_select=0,
-                max_select=count,
+                min_select=1,
+                max_select=max_select,
                 from_zone="discard",
                 card_list=available,
+                can_cancel=True,
                 continuation={
                     "kind": "recover_from_discard_to_deck",
                     "player_idx": ctx.player_idx,

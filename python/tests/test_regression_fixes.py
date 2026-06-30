@@ -212,6 +212,50 @@ class TestCrushingHammerDiscard(unittest.TestCase):
         self.assertIn("对手场上没有能量", result.log_message)
 
 
+class TestDiscardRecoveryEffects(unittest.TestCase):
+
+    def test_shuffle_from_discard_requires_selection_and_filters_basic_energy(self):
+        from engine.effects.draw_effects import _handle_shuffle_from_discard
+
+        state = GameState()
+        player = state.p1
+        player.deck = [CardRegistry.get("sv1-ener-2")]
+        player.discard = [
+            CardRegistry.get("sv1-104"),
+            CardRegistry.get("sv1-ener-1"),
+            CardRegistry.get("svi-mirc"),
+            CardRegistry.get("svf-potion"),
+        ]
+
+        result = _handle_shuffle_from_discard(
+            state,
+            player,
+            0,
+            {"count": 3, "filter": "pokemon_and_energy"},
+        )
+
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_action)
+        request = result.pending_action
+        self.assertEqual(request.min_select, 1)
+        self.assertEqual(request.max_select, 2)
+        self.assertTrue(request.can_cancel)
+        self.assertCountEqual(
+            [card.api_id for card in request.card_list],
+            ["sv1-104", "sv1-ener-1"],
+        )
+
+        empty = request.callback([])
+        self.assertFalse(empty.success)
+        resolved = request.callback(list(request.card_list))
+        self.assertTrue(resolved.success)
+        self.assertEqual([card.api_id for card in player.discard], ["svi-mirc", "svf-potion"])
+        self.assertCountEqual(
+            [card.api_id for card in player.deck],
+            ["sv1-ener-2", "sv1-104", "sv1-ener-1"],
+        )
+
+
 # ── 2b. Turn-Relative Bonuses ─────────────────────────────────────────────
 
 class TestGoingSecondFirstTurnBonuses(unittest.TestCase):

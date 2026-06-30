@@ -32,8 +32,7 @@ def resolve_recover_from_discard_to_deck(
     player = stack.state.get_player(player_idx)
     selected = take_selected_cards_from_zone(player, "discard", choice, count)
     if not selected:
-        stack.state._log(f"{player.name}没有从弃牌区选择卡牌。")
-        return ActionResult(True, "没有选择卡牌。")
+        return ActionResult(False, "至少选择1张卡。")
     player.deck.extend(selected)
     player.shuffle_deck()
     stack.state._log(f"{player.name}将{len(selected)}张卡从弃牌区洗回牌库。")

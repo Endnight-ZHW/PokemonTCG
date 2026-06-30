@@ -122,14 +122,34 @@ func continue_shuffle_from_discard(
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
 ) -> Dictionary:
-	var player := state.get_player(int(data["player_idx"]))
+	var player_idx := int(data["player_idx"])
+	var player := state.get_player(player_idx)
+	if selected.is_empty():
+		return VMResult.fail("至少选择1张卡。", "choice_count")
 	var shuffled: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "discard", selected, false)
+	if shuffled.is_empty():
+		return VMResult.fail("没有可洗回牌库的卡。", "choice_count")
 	player.deck.append_array(shuffled)
 	rng.shuffle(player.deck)
+	events.append({
+		"event_type": "card_moved",
+		"actor": player_idx,
+		"source": {"player": player_idx, "zone": "discard"},
+		"target": {"player": player_idx, "zone": "deck"},
+		"amount": shuffled.size(),
+		"data": {
+			"player": player_idx,
+			"source_zone": "discard",
+			"target_zone": "deck",
+			"card_ids": shuffled.duplicate(),
+			"count": shuffled.size(),
+		},
+	})
 	events.append({"event_type": "deck_shuffled", "data": {
-		"player": int(data["player_idx"]),
+		"player": player_idx,
 	}})
-	return VMResult.ok()
+	state.log_action("%s将%d张卡从弃牌区洗回牌库。" % [player.name, shuffled.size()])
+	return VMResult.ok("将%d张卡洗回牌库。" % shuffled.size())
 
 
 func continue_clara(

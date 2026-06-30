@@ -2075,6 +2075,7 @@ class VmIrContractTests(unittest.TestCase):
         state.p1.discard = [
             CardRegistry.get("sv1-104"),
             CardRegistry.get("sv1-ener-1"),
+            CardRegistry.get("svi-mirc"),
             CardRegistry.get("svf-potion"),
         ]
         stack = ResolutionStack(state)
@@ -2097,6 +2098,16 @@ class VmIrContractTests(unittest.TestCase):
             request.metadata.get("continuation", {}).get("kind"),
             "recover_from_discard_to_deck",
         )
+        self.assertEqual(request.min_select, 1)
+        self.assertEqual(request.max_select, 2)
+        self.assertTrue(request.can_cancel)
+        self.assertCountEqual(
+            [getattr(option.ref, "card_id", "") for option in request.options],
+            ["sv1-104", "sv1-ener-1"],
+        )
+        empty_step = engine.apply_choice(state, request, ChoiceResponse(request.request_id, ()))
+        self.assertFalse(empty_step.success)
+        self.assertEqual(empty_step.error_code, "choice_count")
         selected = tuple(
             option.option_id
             for option in request.options
@@ -2104,10 +2115,14 @@ class VmIrContractTests(unittest.TestCase):
         )
         step = engine.apply_choice(state, request, ChoiceResponse(request.request_id, selected))
         self.assertTrue(step.success, step.message)
-        self.assertEqual([card.api_id for card in state.p1.discard], ["svf-potion"])
+        self.assertEqual([card.api_id for card in state.p1.discard], ["svi-mirc", "svf-potion"])
         self.assertCountEqual(
             [card.api_id for card in state.p1.deck],
             ["sv1-ener-2", "sv1-104", "sv1-ener-1"],
+        )
+        self.assertTrue(
+            any("2张卡从弃牌区洗回牌库" in row for row in state.action_log),
+            state.action_log,
         )
 
         state = GameState()

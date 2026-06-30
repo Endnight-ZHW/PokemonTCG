@@ -259,25 +259,27 @@ def _handle_shuffle_from_discard(state, player, player_idx, params):
     # Callback after player picks
     def shuffle_callback(selected_cards):
         if not selected_cards:
-            state._log(f"{player.name}没有从弃牌区选择卡牌。")
-            return
+            return ActionResult(False, "至少选择1张卡。")
         for card in selected_cards:
             if card in player.discard:
                 player.discard.remove(card)
                 player.deck.append(card)
         player.shuffle_deck()
         state._log(f"{player.name}将{len(selected_cards)}张卡从弃牌区洗回牌库。")
+        return ActionResult(True, f"将{len(selected_cards)}张卡洗回牌库。")
 
     zone_name = "弃牌区"
+    max_select = min(count, len(available))
     return ActionResult(True, f"Choose up to {count} cards from discard.",
                         pending_action=ActionRequest(
                             request_type="search_deck",
                             player=player_idx,
                             prompt=f"从{zone_name}选择最多{count}张卡",
-                            min_select=0,
-                            max_select=count,
+                            min_select=1,
+                            max_select=max_select,
                             from_zone="discard",
                             card_list=available,
+                            can_cancel=True,
                             callback=shuffle_callback,
                         ))
 

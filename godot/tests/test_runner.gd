@@ -187,6 +187,15 @@ func _run_phase_two_tests() -> void:
 			not engine.effect_engine.supports_command_spec(raw_effect),
 			"Raw effect metadata must not be accepted as a VM command: %s" % effect_type,
 		)
+	_check_release_compiled_command_specs(catalog, engine)
+	var recovery_filter := catalog.filter_cards(
+		["sv1-104", "sv1-ener-1", "svi-mirc", "svf-potion"],
+		"pokemon_and_energy",
+	)
+	_check(
+		recovery_filter == ["sv1-104", "sv1-ener-1"],
+		"pokemon_and_energy filter must include Pokemon and basic Energy only",
+	)
 	var explicit_marker_ops := {
 		"apply_outgoing_damage_reduction": "apply_outgoing_damage_reduction",
 		"attack_lock_basic": "apply_attack_lock_basic",
@@ -1737,6 +1746,53 @@ func _check_release_effects_have_compiled_ir(cards: Dictionary) -> void:
 					attack_effects.size() == compiled_attack.size(),
 					"Attack %s[%d] has raw effects without matching compiled IR" % [card_id, attack_index],
 				)
+
+
+func _check_release_compiled_command_specs(catalog: CardCatalog, engine: GameEngine) -> void:
+	for card_id in catalog.cards:
+		var card := catalog.get_card(str(card_id))
+		_check_compiled_specs(
+			engine,
+			_variant_array(card.get("compiled_trainer_effects", [])),
+			"trainer:%s" % str(card_id),
+		)
+		var abilities := _variant_array(card.get("abilities", []))
+		for ability_index in range(abilities.size()):
+			var ability: Dictionary = abilities[ability_index]
+			_check_compiled_specs(
+				engine,
+				_variant_array(ability.get("compiled_effects", [])),
+				"ability:%s[%d]" % [str(card_id), ability_index],
+			)
+		var attacks := _variant_array(card.get("attacks", []))
+		for attack_index in range(attacks.size()):
+			var attack: Dictionary = attacks[attack_index]
+			_check_compiled_specs(
+				engine,
+				_variant_array(attack.get("compiled_effects", [])),
+				"attack:%s[%d]" % [str(card_id), attack_index],
+			)
+
+
+func _check_compiled_specs(engine: GameEngine, specs: Array, source: String) -> void:
+	for spec_index in range(specs.size()):
+		var spec: Dictionary = specs[spec_index]
+		_check(
+			str(spec.get("op", "")) != "__missing_compiled_effect__",
+			"%s[%d] still has missing compiled effect marker" % [source, spec_index],
+		)
+		_check(
+			not Dictionary(spec.get("args", {})).has("effect_type"),
+			"%s[%d] still carries legacy effect_type args" % [source, spec_index],
+		)
+		_check(
+			engine.effect_engine.supports_command_spec(spec),
+			"%s[%d] compiled VM command is unsupported: %s" % [
+				source,
+				spec_index,
+				str(spec.get("op", "")),
+			],
+		)
 
 
 func _variant_array(value: Variant) -> Array:
@@ -3556,6 +3612,26 @@ func _run_visual_upgrade_tests() -> void:
 		}
 		battle.play_presentation([draw_event], 41, 0, draw_snapshot)
 		var drawn_view: Variant = battle.hand_views[2]
+		var draw_deck_zone := battle.zones["own_deck"] as ZoneView
+		var draw_deck_image := (
+			draw_deck_zone.get_node_or_null("Frame/Image") as TextureRect
+			if draw_deck_zone != null
+			else null
+		)
+		_check(
+			draw_deck_zone != null
+			and not draw_deck_zone.is_presentation_hidden()
+			and draw_deck_zone.has_visible_card_back(),
+			"Draw presentation hid the deck card-back texture: hidden=%s count=%d zone_hidden=%s texture=%s alpha=%.2f fallback=%s fallback_alpha=%.2f" % [
+				str(draw_deck_zone.is_presentation_hidden()) if draw_deck_zone != null else "null",
+				draw_deck_zone.count if draw_deck_zone != null else -1,
+				str(draw_deck_zone.is_hidden_zone) if draw_deck_zone != null else "null",
+				str(draw_deck_image.texture != null) if draw_deck_image != null else "null",
+				draw_deck_image.modulate.a if draw_deck_image != null else -1.0,
+				str(draw_deck_zone.fallback_back_panel.visible) if draw_deck_zone != null and draw_deck_zone.fallback_back_panel != null else "null",
+				draw_deck_zone.fallback_back_panel.modulate.a if draw_deck_zone != null and draw_deck_zone.fallback_back_panel != null else -1.0,
+			],
+		)
 		_check(
 			drawn_view.is_presentation_hidden(),
 			"Draw animation exposed the new hand card before landing",
@@ -3759,14 +3835,107 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		_check(
 			discard_zone != null
-			and discard_zone.count == 1
-			and discard_zone.card_id == "sv1-ener-5"
-			and int(discard_zone.inspect_context.get("count", -1)) == 1
-			and discard_count_label != null
-			and discard_count_label.modulate.a >= 0.99,
-			"Discard presentation hid or mutated the discard pile count/context",
+			and discard_zone.count == 0
+			and discard_zone.card_id == ""
+			and int(discard_zone.inspect_context.get("count", -1)) == 0
+			and discard_count_label != null,
+			"Discard presentation did not hold the previous discard pile state before landing: count=%d card=%s context=%d label_visible=%s" % [
+				discard_zone.count,
+				discard_zone.card_id,
+				int(discard_zone.inspect_context.get("count", -1)),
+				str(discard_count_label.visible) if discard_count_label != null else "null",
+			],
 		)
 		battle._on_presentation_event_finished(normalized_discard)
+		_check(
+			discard_zone.count == 1
+			and discard_zone.card_id == "sv1-ener-5"
+			and int(discard_zone.inspect_context.get("count", -1)) == 1
+			and discard_count_label.visible,
+			"Discard presentation did not reveal the updated discard pile state after landing",
+		)
+		battle._clear_transient_visuals()
+
+		state.players[0].hand = ["sv1-189", "sv1-104", "sv1-ener-5"]
+		state.players[0].deck = [
+			"sv1-ener-1",
+			"sv1-ener-2",
+			"sv1-ener-3",
+			"sv1-ener-4",
+			"sv1-ener-5",
+			"sv1-ener-6",
+			"sv1-ener-7",
+			"sv1-ener-8",
+		]
+		state.players[0].discard.clear()
+		state.players[0].supporter_played_this_turn = false
+		battle.update_view(state, 0, rows, "", false, "local")
+		var professor_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		var professor_step := engine.apply_action(
+			state,
+			GameAction.new(
+				"PLAY_TRAINER",
+				{"hand_idx": 0},
+				false,
+				0,
+				EntityRef.new("card", 0, "hand", "", 0, "", "sv1-189"),
+			),
+			PortableRandomSource.new(202606251),
+		)
+		_check(professor_step.success,
+			"Professor's Research action failed in the zone presentation regression")
+		battle.update_view(state, 0, rows, "", false, "local")
+		var professor_events: Array[Dictionary] = PresentationEvent.normalize_all(
+			professor_step.events,
+			state.revision,
+			0,
+		)
+		var professor_play_event := {}
+		var professor_discard_event := {}
+		var professor_draw_event := {}
+		for event in professor_events:
+			match str(event.get("event_type", "")):
+				"trainer_played":
+					professor_play_event = event
+				"cards_discarded":
+					professor_discard_event = event
+				"cards_drawn":
+					professor_draw_event = event
+		_check(
+			not professor_play_event.is_empty()
+			and not professor_discard_event.is_empty()
+			and not professor_draw_event.is_empty(),
+			"Professor's Research did not emit trainer/discard/draw presentation events",
+		)
+		var professor_deck_zone := battle.zones["own_deck"] as ZoneView
+		var professor_discard_zone := battle.zones["own_discard"] as ZoneView
+		battle._stage_presentation_targets(professor_events, professor_snapshot)
+		_check(
+			professor_deck_zone.count == 8
+			and professor_discard_zone.count == 0
+			and professor_discard_zone.card_id == "",
+			"Professor's Research presentation jumped deck/discard zones to final state before animation",
+		)
+		battle._on_presentation_event_finished(professor_play_event)
+		_check(
+			professor_deck_zone.count == 8
+			and professor_discard_zone.count == 1
+			and professor_discard_zone.card_id == "sv1-189",
+			"Professor's Research trainer landing did not update only the discard pile",
+		)
+		battle._on_presentation_event_finished(professor_discard_event)
+		_check(
+			professor_deck_zone.count == 8
+			and professor_discard_zone.count == 3
+			and professor_discard_zone.card_id == "sv1-ener-5",
+			"Professor's Research discard landing did not advance discard before draw",
+		)
+		battle._on_presentation_event_finished(professor_draw_event)
+		_check(
+			professor_deck_zone.count == 1
+			and professor_discard_zone.count == 3,
+			"Professor's Research draw landing did not advance the deck after the draw",
+		)
 		battle._clear_transient_visuals()
 
 		state.players[0].hand = ["svi-chim", "sv1-ener-5"]
@@ -3995,14 +4164,18 @@ func _run_visual_upgrade_tests() -> void:
 		battle.play_presentation([stadium_event], 43, 0, stadium_snapshot)
 		var stadium_zone: Variant = battle.zones["stadium"]
 		_check(
-			stadium_zone.is_presentation_hidden(),
-			"Stadium zone exposed the new card before landing",
+			not stadium_zone.is_presentation_hidden()
+			and stadium_zone.count == 0
+			and stadium_zone.card_id == "",
+			"Stadium zone did not hold the previous state before landing",
 		)
 		battle._on_presentation_event_finished(
 			PresentationEvent.normalize(stadium_event, 43, 0, 0))
 		_check(
-			not stadium_zone.is_presentation_hidden(),
-			"Stadium zone did not reveal after the card landed",
+			not stadium_zone.is_presentation_hidden()
+			and stadium_zone.count == 1
+			and stadium_zone.card_id == "sv1-189",
+			"Stadium zone did not advance after the card landed",
 		)
 		battle.director.clear_for_resync()
 		battle._clear_transient_visuals()
@@ -4214,7 +4387,7 @@ func _run_visual_upgrade_tests() -> void:
 			"Flash overlay cleanup did not ignore a freed tween callback target",
 		)
 		var long_logs := [
-			"第一条很长的行动日志，用于验证旧日志会被裁剪而不是挤占整个面板。",
+			"第一条很长的行动日志，用于验证完整日志可滚动而不是被裁剪。",
 			"第二条很长的行动日志，用于验证中文自动换行不会丢失最新内容。",
 			"第三条很长的行动日志，用于验证 RichTextLabel 保持滚动状态。",
 			"第四条很长的行动日志，用于验证日志面板至少保留四条记录。",
@@ -4231,9 +4404,10 @@ func _run_visual_upgrade_tests() -> void:
 			battle_log_panel.visible
 			and battle.log_label.autowrap_mode == TextServer.AUTOWRAP_WORD_SMART
 			and battle.log_label.scroll_following
+			and battle.log_label.text.contains("第一条很长的行动日志")
 			and battle.log_label.text.contains("最后一条很长的行动日志")
-			and not battle.log_label.text.contains("第一条很长的行动日志"),
-			"Battle log panel did not wrap, trim, and follow recent entries",
+			and battle.log_label.scroll_active,
+			"Battle log panel did not wrap, retain, and follow full entries",
 		)
 
 		var settings_node: Node = root.get_node("AppSettings")
@@ -5455,16 +5629,24 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 
 	state = _effect_state()
 	state.players[0].deck = ["sv1-ener-2"]
-	state.players[0].discard = ["sv1-104", "sv1-ener-1", "svf-potion"]
+	state.players[0].discard = ["sv1-104", "sv1-ener-1", "svi-mirc", "svf-potion"]
 	stack = ResolutionStack.new()
 	stack.push_effect({
 		"op": "shuffle_from_discard_to_deck",
-		"args": {"filter": "pokemon_and_energy", "count": 2},
+		"args": {"filter": "pokemon_and_energy", "count": 3},
 		"branches": {},
 	}, 0, "active")
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606303))
 	_check(step.success and step.pending_choice != null,
 		"Native recover_from_discard shuffle path did not pause for choice")
+	_check(
+		step.pending_choice != null
+		and step.pending_choice.min_select == 1
+		and step.pending_choice.max_select == 2
+		and step.pending_choice.can_cancel
+		and step.pending_choice.options.size() == 2,
+		"Native recover_from_discard must require one selectable Pokemon/basic Energy and be cancellable",
+	)
 	var recover_shuffle_options: Array[String] = [
 		str(step.pending_choice.options[0]["option_id"]),
 		str(step.pending_choice.options[1]["option_id"]),
@@ -5478,10 +5660,108 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	_check(step.success, "Native recover_from_discard shuffle path failed: %s" % step.message)
 	var recovered_deck := state.players[0].deck.duplicate()
 	recovered_deck.sort()
+	var recovery_moved_event := false
+	for event in step.events:
+		var event_source: Dictionary = event.get("source", {})
+		var event_target: Dictionary = event.get("target", {})
+		var event_data: Dictionary = event.get("data", {})
+		if (
+			str(event.get("event_type", "")) == "card_moved"
+			and str(event_source.get("zone", "")) == "discard"
+			and str(event_target.get("zone", "")) == "deck"
+			and Array(event_data.get("card_ids", [])).size() == 2
+		):
+			recovery_moved_event = true
 	_check(
-		state.players[0].discard == ["svf-potion"]
+		state.players[0].discard == ["svi-mirc", "svf-potion"]
 		and recovered_deck == ["sv1-104", "sv1-ener-1", "sv1-ener-2"],
 		"Native recover_from_discard did not shuffle selected discard cards into deck",
+	)
+	_check(recovery_moved_event, "Native recover_from_discard did not emit discard-to-deck card_moved event")
+	_check(
+		not state.action_log.is_empty()
+		and state.action_log[-1].find("2张卡从弃牌区洗回牌库") >= 0,
+		"Native recover_from_discard did not write an action log entry",
+	)
+
+	state = _effect_state()
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[0].discard = ["sv1-104", "sv1-ener-1"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "shuffle_from_discard_to_deck",
+		"args": {"filter": "pokemon_and_energy", "count": 2},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606314))
+	_check(step.success and step.pending_choice != null,
+		"Native recover_from_discard empty-choice fixture did not pause")
+	if step.pending_choice:
+		var empty_recover := engine.effect_engine.apply_choice(
+			state,
+			ResolutionStack.from_dict(state.resolution_stack),
+			ChoiceResponse.new(step.pending_choice.request_id, []),
+			PortableRandomSource.new(202606315),
+		)
+		_check(
+			not empty_recover.success and empty_recover.error_code == "choice_count",
+			"Native recover_from_discard allowed an empty non-cancel choice",
+		)
+
+	var super_rod_cancel_state := _battle_state()
+	super_rod_cancel_state.turn_number = 3
+	super_rod_cancel_state.first_player_idx = 0
+	super_rod_cancel_state.players[0].hand = ["sv3-134"]
+	super_rod_cancel_state.players[0].discard = ["sv1-104", "sv1-ener-1"]
+	super_rod_cancel_state.players[0].deck = ["sv1-ener-2"]
+	super_rod_cancel_state.action_log = ["preexisting log"]
+	var super_rod_cancel_snapshot := super_rod_cancel_state.snapshot()
+	var super_rod_cancel_rng := PortableRandomSource.new(202606316)
+	var super_rod_cancel_rng_state := super_rod_cancel_rng.get_state()
+	var super_rod_cancel_step := engine.apply_action(
+		super_rod_cancel_state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		super_rod_cancel_rng,
+	)
+	_check(
+		super_rod_cancel_step.success
+		and super_rod_cancel_step.pending_choice != null
+		and super_rod_cancel_step.pending_choice.can_cancel,
+		"Super Rod did not produce a cancellable discard recovery request",
+	)
+	if super_rod_cancel_step.pending_choice:
+		var cancelled_super_rod := engine.apply_choice(
+			super_rod_cancel_state,
+			super_rod_cancel_step.pending_choice,
+			ChoiceResponse.new(super_rod_cancel_step.pending_choice.request_id, [], true),
+			super_rod_cancel_rng,
+		)
+		var expected_super_rod_cancel := super_rod_cancel_snapshot.duplicate(true)
+		expected_super_rod_cancel["revision"] = int(expected_super_rod_cancel["revision"]) + 1
+		_check(cancelled_super_rod.success, "Super Rod cancellation failed: %s" % cancelled_super_rod.message)
+		_check(
+			super_rod_cancel_state.snapshot() == expected_super_rod_cancel
+			and super_rod_cancel_rng.get_state() == super_rod_cancel_rng_state,
+			"Super Rod cancellation did not restore pre-action state and RNG",
+		)
+
+	state = _effect_state()
+	state.players[0].deck = ["sv1-ener-2"]
+	state.players[0].discard = ["sv1-104", "sv1-ener-1", "svi-mirc", "sv1-ener-3"]
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "shuffle_from_discard_to_deck",
+		"args": {"filter": "basic_energy", "count": 5},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606317))
+	_check(
+		step.success
+		and step.pending_choice != null
+		and step.pending_choice.min_select == 1
+		and step.pending_choice.max_select == 2
+		and step.pending_choice.options.size() == 2,
+		"Energy Recycler must expose only basic Energy and require one selection",
 	)
 
 	state = _effect_state()
