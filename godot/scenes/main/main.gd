@@ -106,6 +106,7 @@ var modal_body: VBoxContainer
 var modal_confirm: Button
 var modal_cancel: Button
 var active_request: ChoiceRequest
+var active_choice_panel: ChoicePanel
 var ui_initialized := false
 var _modal_generation := 0
 
@@ -817,6 +818,7 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 
 func _show_choice_overlay(request: ChoiceRequest) -> void:
 	active_request = request
+	active_choice_panel = null
 	selected_choice_ids.clear()
 	option_buttons.clear()
 	_open_modal(request.prompt, "确认选择", "取消" if request.can_cancel else "")
@@ -824,43 +826,31 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	var metadata_text := _choice_metadata_text(request)
 	var panel := CHOICE_PANEL_SCENE.instantiate() as ChoicePanel
 	modal_body.add_child(panel)
+	active_choice_panel = panel
 	panel.configure(metadata_text, not request.options.is_empty())
+	panel.option_toggled.connect(_toggle_choice)
 	var energy_cards := _choice_energy_cards(request)
 	if not energy_cards.is_empty():
-		_add_choice_energy_preview(panel, energy_cards)
-	var card_grid := panel.card_grid
-	var visual_count := 0
+		panel.add_energy_preview(energy_cards, catalog)
 	for option in request.options:
 		var option_id := str(option.get("option_id", ""))
 		var option_card_id := _choice_option_card_id(option)
-		if option_card_id.is_empty() or visual_count >= 10:
+		if option_id.is_empty():
 			continue
-		var card_view := CARD_SCENE.instantiate() as CardView
-		card_view.custom_minimum_size = Vector2(86, 121)
-		card_view.configure(option_card_id, null, false, -1, request.player, "", true)
-		card_view.tooltip_text = str(option.get("label", option_card_id))
-		card_view.activated.connect(func(
-			_card_id: String,
-			_hand_index: int,
-			_player: int,
-			_slot: String,
-		) -> void:
-			_toggle_choice(option_id)
-		)
-		card_grid.add_child(card_view)
-		visual_count += 1
-	if visual_count > 0:
-		card_grid.visible = true
-	else:
-		card_grid.visible = false
-	for option in request.options:
-		var option_id := str(option.get("option_id", ""))
-		var option_button := _button(str(option.get("label", option_id)), 52)
-		option_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		option_button.set_meta("option_id", option_id)
-		option_button.pressed.connect(_toggle_choice.bind(option_id))
-		option_buttons.append(option_button)
-		panel.option_list.add_child(option_button)
+		if not option_card_id.is_empty():
+			panel.add_card_option(
+				option_id,
+				option_card_id,
+				_choice_option_caption(option),
+				request.player,
+			)
+		else:
+			option_buttons.append(
+				panel.add_text_option(
+					option_id,
+					str(option.get("label", option_id)),
+				)
+			)
 	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
 	if request.can_cancel:
 		modal_cancel.pressed.connect(_cancel_choice, CONNECT_ONE_SHOT)
@@ -875,6 +865,32 @@ func _choice_option_card_id(option: Dictionary) -> String:
 	if option.get("ref") is Dictionary:
 		return str(option["ref"].get("card_id", ""))
 	return ""
+
+
+func _choice_option_caption(option: Dictionary) -> String:
+	var label_text := str(option.get("label", ""))
+	if option.get("value") is Dictionary:
+		var value_data: Dictionary = option["value"]
+		var value_slot := str(value_data.get("slot", ""))
+		if not value_slot.is_empty():
+			return _slot_name(value_slot)
+	if option.get("ref") is Dictionary:
+		var ref: Dictionary = option["ref"]
+		var ref_slot := str(ref.get("slot", ""))
+		if not ref_slot.is_empty():
+			return _slot_name(ref_slot)
+		var zone := str(ref.get("zone", ""))
+		if not zone.is_empty():
+			var zone_text := _zone_name(zone)
+			var index := int(ref.get("index", -1))
+			if index >= 0:
+				return "%s %d" % [zone_text, index + 1]
+			return zone_text
+	if option.get("value") is Dictionary:
+		var indexed_value: Dictionary = option["value"]
+		if indexed_value.has("index"):
+			return "#%d" % (int(indexed_value.get("index", -1)) + 1)
+	return label_text
 
 
 func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
@@ -907,28 +923,6 @@ func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
 	return result
 
 
-func _add_choice_energy_preview(panel: ChoicePanel, card_ids: Array[String]) -> void:
-	var note := _modal_label(
-		"待分配能量。若需要把多张能量放到同一目标，可以重复点击同一个目标按钮。",
-		14,
-		DesignTokens.TEXT_MUTED,
-	)
-	var grid := GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
-	for card_id in card_ids:
-		var card := CARD_SCENE.instantiate() as CardView
-		card.custom_minimum_size = Vector2(70, 99)
-		card.configure(card_id, null, false, -1, -1, "", true)
-		card.tooltip_text = catalog.card_name(card_id)
-		grid.add_child(card)
-	panel.add_child(note)
-	panel.add_child(grid)
-	panel.move_child(note, 1)
-	panel.move_child(grid, 2)
-
-
 func _toggle_choice(option_id: String) -> void:
 	_play_click()
 	if active_request == null:
@@ -948,19 +942,12 @@ func _toggle_choice(option_id: String) -> void:
 func _refresh_choice_buttons() -> void:
 	if active_request == null:
 		return
-	for button in option_buttons:
-		var option_id := str(button.get_meta("option_id", ""))
-		var count := selected_choice_ids.count(option_id)
-		var base_text := button.text.split("  ×")[0]
-		button.text = "%s  ×%d" % [base_text, count] if count > 0 else base_text
-		if count > 0:
-			button.add_theme_stylebox_override(
-				"normal",
-				GameUITheme.panel_style(
-					Color("#29435a"), 10, GameUITheme.COLOR_ACCENT, 3),
-			)
-		else:
-			button.remove_theme_stylebox_override("normal")
+	if active_choice_panel:
+		active_choice_panel.refresh_selection(
+			selected_choice_ids,
+			active_request.max_select,
+			active_request.allow_duplicates,
+		)
 	modal_confirm.disabled = not (
 		selected_choice_ids.size() >= active_request.min_select
 		and selected_choice_ids.size() <= active_request.max_select
@@ -1282,6 +1269,7 @@ func _close_modal() -> void:
 	_modal_generation += 1
 	var close_generation := _modal_generation
 	active_request = null
+	active_choice_panel = null
 	selected_choice_ids.clear()
 	option_buttons.clear()
 	if not modal_layer.visible:
@@ -2066,6 +2054,16 @@ func _slot_name(slot: String) -> String:
 	if slot.begins_with("bench_"):
 		return "备战区 %d" % (slot.trim_prefix("bench_").to_int() + 1)
 	return slot
+
+
+func _zone_name(zone: String) -> String:
+	return {
+		"hand": "手牌",
+		"deck": "牌库",
+		"discard": "弃牌区",
+		"prizes": "奖品区",
+		"lost_zone": "放逐区",
+	}.get(zone, zone)
 
 
 func _phase_name(phase: String) -> String:

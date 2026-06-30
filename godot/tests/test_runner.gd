@@ -1822,8 +1822,40 @@ func _run_phase_three_tests() -> void:
 	choice_ui._execute_action(trainer)
 	_check(choice_ui.modal_layer.visible, "Choice overlay was not displayed")
 	_check(choice_ui.active_request != null, "Choice overlay has no request")
-	_check(choice_ui.option_buttons.size() > 0, "Choice overlay has no option buttons")
+	var choice_panel := choice_ui.active_choice_panel as ChoicePanel
+	_check(choice_panel != null, "Choice overlay has no ChoicePanel")
+	if choice_panel:
+		_check(choice_panel.card_option_count() > 0, "Choice overlay has no card tiles")
+		_check(
+			choice_panel.text_option_count() == 0 and choice_ui.option_buttons.is_empty(),
+			"Card choice overlay duplicated card options as text buttons",
+		)
 	choice_ui.queue_free()
+
+	var choice_panel_scene := load("res://ui/dialogs/choice_panel.tscn") as PackedScene
+	_check(choice_panel_scene != null, "ChoicePanel scene failed to load")
+	if choice_panel_scene:
+		var panel := choice_panel_scene.instantiate() as ChoicePanel
+		root.add_child(panel)
+		panel.configure("请选择 0-2 项。", true)
+		panel.add_card_option("dup:target", "sv1-104", "备战区 1", 0)
+		panel.refresh_selection(["dup:target", "dup:target"], 2, true)
+		_check(panel.card_option_count() == 1, "ChoicePanel did not create one card tile")
+		_check(
+			panel.selected_count_for("dup:target") == 2,
+			"ChoicePanel duplicate selection count was not tracked",
+		)
+		panel.clear_options()
+		panel.add_text_option("confirm:yes", "是")
+		panel.add_text_option("confirm:no", "否")
+		panel.refresh_selection(["confirm:yes"], 1, false)
+		_check(panel.card_option_count() == 0, "Non-card choices created card tiles")
+		_check(panel.text_option_count() == 2, "Non-card choices did not create compact buttons")
+		_check(
+			panel.selected_count_for("confirm:yes") == 1,
+			"Non-card choice selection state was not tracked",
+		)
+		panel.queue_free()
 
 
 func _run_phase_four_foundation_tests() -> void:
