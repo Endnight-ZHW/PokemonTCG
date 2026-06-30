@@ -35,6 +35,7 @@ from engine.rules_validator import (
 )
 from engine.rules_constants import MAX_BENCH_SIZE
 from engine.snapshot import clone_state, restore_state, snapshot_state
+from data.card_models import Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK, expand_deck
 
@@ -1289,14 +1290,28 @@ class TestUseStadiumDispatch(unittest.TestCase):
     def test_use_stadium_on_valid_stadium(self):
         """Test that USE_STADIUM action resolves correctly when stadium is in play."""
         state = _make_state_with_pokemon()
-        stadium = CardRegistry.get("svg2-skyf")  # Sky Field
-        if stadium is None:
-            self.skipTest("Sky Field stadium not in registry")
+        draw_card = CardRegistry.get("sv1-ener-2")
+        stadium = Card(
+            api_id="test-activatable-stadium",
+            name="Activatable Stadium",
+            supertype="Trainer",
+            subtypes=["Stadium"],
+            trainer_type="Stadium",
+            compiled_trainer_effects=[{
+                "op": "draw_cards",
+                "args": {"amount": 1, "stadium_type": "activatable"},
+                "branches": {},
+            }],
+        )
         state.stadium_card = stadium
+        state.p1.deck = [draw_card]
         tm = TurnManager(state)
+
         result = tm.perform_action(PlayerAction.USE_STADIUM, player_idx=0)
-        # Should succeed if stadium exists
-        self.assertTrue(result.success)
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-2"])
+        self.assertTrue(state.p1.stadium_used_this_turn)
 
     def test_use_stadium_without_stadium_fails(self):
         """USE_STADIUM without a stadium in play should fail."""
