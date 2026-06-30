@@ -287,24 +287,144 @@ func _heuristic_choice(
 	catalog: CardCatalog,
 ) -> ChoiceResponse:
 	if request.options.is_empty():
-		return ChoiceResponse.new(request.request_id, [])
+		return ChoiceResponse.new(
+			request.request_id,
+			[],
+			request.can_cancel and request.min_select <= 0,
+		)
+	var continuation := _pending_choice_continuation(state)
+	if request.request_type == "confirm":
+		var confirmed := _confirm_choice(state, request, continuation, deck_key, catalog)
+		return ChoiceResponse.new(
+			request.request_id,
+			["confirm:yes" if confirmed else "confirm:no"],
+		)
+	if _is_arven_choice(request, continuation):
+		return ChoiceResponse.new(
+			request.request_id,
+			_arven_choice_option_ids(state, request, deck_key, catalog),
+		)
+	var mode := _choice_score_mode(request, continuation)
 	var ranked: Array[int] = []
 	for index in range(request.options.size()):
 		ranked.append(index)
 	ranked.sort_custom(func(left: int, right: int) -> bool:
-		return _option_score(
-			state, request, request.options[left], deck_key, catalog
-		) > _option_score(
-			state, request, request.options[right], deck_key, catalog
-		)
+		var left_score := _option_score(
+			state, request, request.options[left], deck_key, catalog, mode)
+		var right_score := _option_score(
+			state, request, request.options[right], deck_key, catalog, mode)
+		if is_equal_approx(left_score, right_score):
+			return left < right
+		return left_score > right_score
 	)
-	var count: int = maxi(request.min_select, request.max_select)
-	if not request.allow_duplicates:
-		count = mini(request.options.size(), count)
+	var max_count: int = _choice_max_count(request)
+	var min_count: int = max(0, request.min_select)
+	if min_count <= 0:
+		var positive_ranked: Array[int] = []
+		for index in ranked:
+			if _option_score(
+				state, request, request.options[index], deck_key, catalog, mode
+			) <= 0.0:
+				continue
+			positive_ranked.append(index)
+			if not request.allow_duplicates and positive_ranked.size() >= max_count:
+				break
+		if positive_ranked.is_empty() and request.can_cancel:
+			return ChoiceResponse.new(request.request_id, [], true)
+		var optional_count: int = max_count if request.allow_duplicates else positive_ranked.size()
+		return ChoiceResponse.new(
+			request.request_id,
+			_ranked_choice_option_ids(request, positive_ranked, optional_count),
+		)
+	var count: int = max(min_count, max_count)
 	return ChoiceResponse.new(
 		request.request_id,
 		_ranked_choice_option_ids(request, ranked, count),
 	)
+
+
+func _pending_choice_continuation(state: GameState) -> Dictionary:
+	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	if stack.frames.is_empty():
+		return {}
+	var frame: Dictionary = stack.frames[-1]
+	if str(frame.get("kind", "")) != "continuation":
+		return {}
+	return frame
+
+
+func _choice_max_count(request: ChoiceRequest) -> int:
+	var max_count: int = max(0, request.max_select)
+	if not request.allow_duplicates:
+		max_count = mini(request.options.size(), max_count)
+	return max_count
+
+
+func _choice_score_mode(request: ChoiceRequest, continuation: Dictionary) -> String:
+	var operation := str(continuation.get("operation", ""))
+	var prompt := request.prompt.to_lower()
+	if operation in ["discard_then_draw", "discard_cards", "hand_bottom_draw", "houb", "zinnia"]:
+		return "discard"
+	if request.request_type in ["select_energy_target", "distribute_energy", "look_top_attach_energy"]:
+		return "energy"
+	if request.request_type in ["select_heal_target"] or "heal" in prompt or "回复" in request.prompt:
+		return "heal"
+	if request.request_type in ["select_opponent_bench", "bench_damage_target", "damage_target", "place_counters_self_ko"]:
+		return "target"
+	if request.request_type == "select_bench" and operation == "switch":
+		return "self_switch"
+	if (
+		"discard" in prompt
+		or "bottom" in prompt
+		or "丢" in request.prompt
+		or "弃" in request.prompt
+		or "放回" in request.prompt
+		or "牌库底" in request.prompt
+	):
+		return "discard"
+	return "search"
+
+
+func _is_arven_choice(request: ChoiceRequest, continuation: Dictionary) -> bool:
+	return request.request_type == "arven" or str(continuation.get("operation", "")) == "arven"
+
+
+func _arven_choice_option_ids(
+	state: GameState,
+	request: ChoiceRequest,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> Array[String]:
+	var best_item := -1
+	var best_item_score := -INF
+	var best_tool := -1
+	var best_tool_score := -INF
+	for index in range(request.options.size()):
+		var option: Dictionary = request.options[index]
+		var card_id := _choice_option_card_id(option)
+		var score := _card_keep_value(state, request.player, card_id, deck_key, catalog)
+		if catalog.is_item(card_id) and score > best_item_score:
+			best_item = index
+			best_item_score = score
+		elif catalog.is_tool(card_id) and score > best_tool_score:
+			best_tool = index
+			best_tool_score = score
+	var selected: Array[String] = []
+	if best_item >= 0:
+		selected.append(str(request.options[best_item]["option_id"]))
+	if best_tool >= 0 and selected.size() < request.max_select:
+		selected.append(str(request.options[best_tool]["option_id"]))
+	if selected.is_empty() and request.min_select > 0:
+		var fallback := 0
+		for index in range(1, request.options.size()):
+			if _card_keep_value(
+				state, request.player, _choice_option_card_id(request.options[index]), deck_key, catalog
+			) > _card_keep_value(
+				state, request.player, _choice_option_card_id(request.options[fallback]), deck_key, catalog
+			):
+				fallback = index
+		selected.append(str(request.options[fallback]["option_id"]))
+	return selected
 
 
 func _ranked_choice_option_ids(
@@ -341,15 +461,24 @@ func _ranked_choice_option_ids(
 
 
 func _choice_target_key(option: Dictionary) -> String:
+	var player := -1
+	var ref_variant: Variant = option.get("ref", {})
+	if ref_variant is Dictionary:
+		player = int(Dictionary(ref_variant).get("player", -1))
 	var value_variant: Variant = option.get("value", {})
 	if value_variant is Dictionary:
 		var value: Dictionary = value_variant
+		player = int(value.get("player", player))
 		var slot := str(value.get("slot", ""))
 		if not slot.is_empty():
-			return slot
-	var ref_variant: Variant = option.get("ref", {})
+			return "%d:%s" % [player, slot]
 	if ref_variant is Dictionary:
-		return str(Dictionary(ref_variant).get("slot", ""))
+		var ref_slot := str(Dictionary(ref_variant).get("slot", ""))
+		if not ref_slot.is_empty():
+			return "%d:%s" % [player, ref_slot]
+	var option_parts := str(option.get("option_id", "")).split(":")
+	if option_parts.size() >= 3 and option_parts[0] in ["pokemon", "attachment"]:
+		return "%s:%s" % [option_parts[1], option_parts[2]]
 	return ""
 
 
@@ -359,28 +488,226 @@ func _option_score(
 	option: Dictionary,
 	deck_key: String,
 	catalog: CardCatalog,
+	mode: String = "search",
 ) -> float:
-	var option_id := str(option.get("option_id", ""))
-	if request.request_type == "confirm":
-		return 1000.0 if option_id == "confirm:yes" else 0.0
-	var ref: Dictionary = option.get("ref", {})
-	var value: Dictionary = option.get("value", {})
-	var card_id := str(ref.get("card_id", value.get("card_id", "")))
-	var score := _card_priority(card_id, deck_key, catalog)
-	var slot := str(ref.get("slot", value.get("slot", "")))
-	var target_player := int(ref.get("player", request.player))
+	var card_id := _choice_option_card_id(option)
+	if mode == "discard":
+		return _discard_choice_score(state, request.player, card_id, deck_key, catalog)
+	var score := _card_keep_value(state, request.player, card_id, deck_key, catalog)
+	var slot := _choice_option_slot(option)
+	var target_player := _choice_option_player(option, request.player)
 	var pokemon := state.get_player(target_player).get_pokemon(slot)
 	if pokemon:
 		var hp := pokemon.current_hp(catalog)
-		if target_player != request.player:
-			score += 500.0 - hp
-		elif "heal" in request.request_type:
+		if mode == "target" or target_player != request.player:
+			score += _target_priority(pokemon, catalog)
+		elif mode == "heal":
 			score += pokemon.damage_counters * 30.0
+		elif mode == "energy":
+			score += _energy_choice_target_value(
+				state, target_player, slot, card_id, deck_key, catalog)
+		elif mode == "self_switch":
+			score += _promotion_value_for_state(
+				state, target_player, pokemon, deck_key, catalog)
 		else:
 			score += pokemon.energy_card_ids.size() * 12.0
 			if slot == "active":
 				score += 20.0
 	return score
+
+
+func _choice_option_card_id(option: Dictionary) -> String:
+	var ref_variant: Variant = option.get("ref", {})
+	if ref_variant is Dictionary:
+		var ref: Dictionary = ref_variant
+		var card_id := str(ref.get("card_id", ""))
+		if not card_id.is_empty():
+			return card_id
+	var value_variant: Variant = option.get("value", {})
+	if value_variant is Dictionary:
+		var value: Dictionary = value_variant
+		return str(value.get("card_id", ""))
+	return ""
+
+
+func _choice_option_slot(option: Dictionary) -> String:
+	var ref_variant: Variant = option.get("ref", {})
+	if ref_variant is Dictionary:
+		var ref: Dictionary = ref_variant
+		var slot := str(ref.get("slot", ""))
+		if not slot.is_empty():
+			return slot
+	var value_variant: Variant = option.get("value", {})
+	if value_variant is Dictionary:
+		return str(Dictionary(value_variant).get("slot", ""))
+	var option_parts := str(option.get("option_id", "")).split(":")
+	if option_parts.size() >= 3 and option_parts[0] in ["pokemon", "attachment"]:
+		return str(option_parts[2])
+	return ""
+
+
+func _choice_option_player(option: Dictionary, fallback: int) -> int:
+	var ref_variant: Variant = option.get("ref", {})
+	if ref_variant is Dictionary:
+		var ref: Dictionary = ref_variant
+		if ref.has("player"):
+			return int(ref["player"])
+	var value_variant: Variant = option.get("value", {})
+	if value_variant is Dictionary:
+		var value: Dictionary = value_variant
+		if value.has("player"):
+			return int(value["player"])
+	var option_parts := str(option.get("option_id", "")).split(":")
+	if option_parts.size() >= 2 and option_parts[0] in ["pokemon", "attachment"]:
+		return int(option_parts[1])
+	return fallback
+
+
+func _card_keep_value(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	if card_id.is_empty():
+		return 0.0
+	var player := state.get_player(actor)
+	var value := _card_priority(card_id, deck_key, catalog)
+	if catalog.is_pokemon(card_id):
+		value += int(catalog.get_card(card_id).get("hp", 0)) * 0.25
+	if catalog.is_energy(card_id) and _has_energy_target_with_missing_cost(state, actor, catalog):
+		value += 50.0
+	if catalog.is_trainer(card_id):
+		value += 18.0
+	var duplicate_count := 0
+	for hand_card_id in player.hand:
+		if hand_card_id == card_id:
+			duplicate_count += 1
+	if duplicate_count >= 2:
+		value -= min(90.0, float(duplicate_count - 1) * 35.0)
+	return value
+
+
+func _discard_choice_score(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	var keep_value := _card_keep_value(state, actor, card_id, deck_key, catalog)
+	var score := -keep_value
+	var duplicate_count := 0
+	for hand_card_id in player.hand:
+		if hand_card_id == card_id:
+			duplicate_count += 1
+	if duplicate_count > 1:
+		score += min(120.0, float(duplicate_count - 1) * 55.0)
+	if catalog.is_energy(card_id) and player.energy_attached_this_turn:
+		score += 35.0
+	if catalog.is_trainer(card_id) and player.supporter_played_this_turn and catalog.is_supporter(card_id):
+		score += 30.0
+	return score
+
+
+func _energy_choice_target_value(
+	state: GameState,
+	actor: int,
+	slot: String,
+	energy_card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var pokemon := state.get_player(actor).get_pokemon(slot)
+	if pokemon == null:
+		return -INF
+	var before := _best_missing_energy(pokemon, catalog)
+	var after := (
+		_best_missing_energy_with_extra(pokemon, energy_card_id, catalog)
+		if not energy_card_id.is_empty() and catalog.is_energy(energy_card_id)
+		else before
+	)
+	var progress: int = max(0, before - after)
+	var value := progress * 85.0
+	if before > 0 and after == 0:
+		value += 155.0 + _best_pokemon_damage(pokemon, catalog) * 0.25
+	elif before > 1 and after == 1:
+		value += 65.0
+	if AIDeckProfiles.contains(deck_key, "core", pokemon.card_id):
+		value += 65.0
+	if slot == "active":
+		value += 28.0
+	return value
+
+
+func _target_priority(pokemon: PokemonState, catalog: CardCatalog) -> float:
+	if pokemon == null:
+		return -INF
+	var max_hp := int(catalog.get_card(pokemon.card_id).get("hp", 0))
+	return (
+		catalog.prize_value(pokemon.card_id) * 160.0
+		+ max(0, max_hp - pokemon.current_hp(catalog)) * 2.0
+		+ pokemon.energy_card_ids.size() * 26.0
+		+ _best_pokemon_damage(pokemon, catalog) * 0.35
+		- pokemon.current_hp(catalog) * 0.45
+	)
+
+
+func _confirm_choice(
+	state: GameState,
+	request: ChoiceRequest,
+	continuation: Dictionary,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	var data: Dictionary = Dictionary(continuation.get("data", {}))
+	var operation := str(continuation.get("operation", data.get("kind", "")))
+	if operation == "trekking_shoes":
+		var top_card_id := str(data.get("card_id", ""))
+		if top_card_id.is_empty() and not state.get_player(request.player).deck.is_empty():
+			top_card_id = state.get_player(request.player).deck[-1]
+		return _should_keep_top_deck_card(state, request.player, top_card_id, deck_key, catalog)
+	if operation == "confirm_switch":
+		var chooser := int(data.get("chooser", request.player))
+		var target_player := int(data.get("target_player", request.player))
+		if target_player == chooser:
+			return _switch_self_has_good_target(state, chooser, deck_key, catalog)
+		return _switch_opponent_has_good_target(state, chooser, target_player, catalog)
+	if "牌库顶" in request.prompt:
+		var top_id := state.get_player(request.player).deck[-1] if not state.get_player(request.player).deck.is_empty() else ""
+		return _should_keep_top_deck_card(state, request.player, top_id, deck_key, catalog)
+	var prompt_l := request.prompt.to_lower()
+	if "switch" in prompt_l or "替换" in request.prompt or "交换" in request.prompt:
+		return _switch_self_has_good_target(state, request.player, deck_key, catalog)
+	if "heal" in prompt_l or "回复" in request.prompt:
+		for row in state.get_player(request.player).get_all_pokemon():
+			var pokemon: PokemonState = row["pokemon"]
+			if pokemon and pokemon.damage_counters > 0:
+				return true
+		return false
+	return true
+
+
+func _should_keep_top_deck_card(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	if card_id.is_empty():
+		return false
+	if (
+		AIDeckProfiles.contains(deck_key, "core", card_id)
+		or AIDeckProfiles.contains(deck_key, "evolution", card_id)
+		or AIDeckProfiles.contains(deck_key, "engine", card_id)
+	):
+		return true
+	if catalog.is_energy(card_id) and _has_energy_target_with_missing_cost(state, actor, catalog):
+		return true
+	return _card_keep_value(state, actor, card_id, deck_key, catalog) >= 55.0
 
 
 func _heuristic_priors(
@@ -455,6 +782,31 @@ func _validated_or_fallback_action(
 			state, actor, preferred, actions, deck_key, catalog, engine, seed + 17)
 		if pre_attack != null:
 			return pre_attack
+
+	if _should_avoid_repeating_ability(state, actor, preferred, catalog):
+		var follow_up_attack := _best_productive_attack(
+			state, actor, actions, deck_key, catalog, engine, seed + 14)
+		if follow_up_attack != null:
+			return follow_up_attack
+		var follow_up_development := _best_productive_nonterminal_action(
+			state, actor, actions, deck_key, catalog, engine, seed + 15, preferred)
+		if follow_up_development != null:
+			return follow_up_development
+		var follow_up_end_turn := _find_action(actions, "END_TURN")
+		if follow_up_end_turn != null:
+			return follow_up_end_turn
+
+	if preferred.action == "RETREAT":
+		var retreat_idx := int(preferred.params.get("bench_idx", -1))
+		if not _retreat_has_good_target(state, actor, retreat_idx, deck_key, catalog):
+			var safe_development := _best_productive_nonterminal_action(
+				state, actor, actions, deck_key, catalog, engine, seed + 18, preferred)
+			if safe_development != null:
+				return safe_development
+			var safe_end_turn := _find_action(actions, "END_TURN")
+			if safe_end_turn != null and _action_executes_successfully(
+				state, actor, safe_end_turn, deck_key, catalog, engine, seed + 20):
+				return safe_end_turn
 
 	if preferred.action in ["RETREAT", "END_TURN"]:
 		var development := _best_productive_nonterminal_action(
@@ -579,6 +931,8 @@ func _best_productive_nonterminal_action(
 		var action := actions[action_index]
 		if action == excluded or not productive_types.has(action.action):
 			continue
+		if _should_avoid_repeating_ability(state, actor, action, catalog):
+			continue
 		var development_value := _development_action_value(state, actor, action, deck_key, catalog)
 		if development_value <= 0.0:
 			continue
@@ -678,8 +1032,19 @@ func _action_score(
 			score += 180.0
 			if str(action.params.get("target", "")) == "active":
 				score += 200.0
+				if (
+					AIDeckProfiles.contains(deck_key, "bench", card_id)
+					and not AIDeckProfiles.contains(deck_key, "setup", card_id)
+					and _has_alternative_setup_active_in_hand(state, actor, card_id, deck_key, catalog)
+				):
+					score -= 260.0
 			if AIDeckProfiles.contains(deck_key, "setup", card_id):
 				score += 160.0
+			elif (
+				str(action.params.get("target", "")) != "active"
+				and AIDeckProfiles.contains(deck_key, "bench", card_id)
+			):
+				score += 70.0
 			score += _development_action_value(state, actor, action, deck_key, catalog) * 0.5
 		"SETUP_DONE":
 			score -= 30.0 if player.bench_count() < 2 else 0.0
@@ -695,14 +1060,23 @@ func _action_score(
 			score += 160.0
 			score += _development_action_value(state, actor, action, deck_key, catalog) * 0.75
 		"USE_ABILITY", "USE_STADIUM":
-			score += 190.0
-			score += _development_action_value(state, actor, action, deck_key, catalog) * 0.75
+			var development_value := _development_action_value(state, actor, action, deck_key, catalog)
+			if development_value > 0.0:
+				score += 190.0 + development_value * 0.75
+			else:
+				score -= 220.0
+			if _should_avoid_repeating_ability(state, actor, action, catalog):
+				score -= 650.0
 		"RETREAT":
 			score += 70.0
 			var bench_idx := int(action.params.get("bench_idx", -1))
 			if bench_idx >= 0 and bench_idx < player.bench.size():
 				var target: PokemonState = player.bench[bench_idx]
 				if target != null and player.active != null:
+					if _retreat_has_good_target(state, actor, bench_idx, deck_key, catalog):
+						score += 180.0
+					else:
+						score -= 420.0
 					score += (
 						_best_pokemon_damage(target, catalog)
 						- _best_pokemon_damage(player.active, catalog)
@@ -711,7 +1085,7 @@ func _action_score(
 			var promote_idx := int(action.params.get("bench_idx", -1))
 			if promote_idx >= 0 and promote_idx < player.bench.size():
 				var pokemon: PokemonState = player.bench[promote_idx]
-				score += _pokemon_strength(pokemon, catalog)
+				score += _promotion_value_for_state(state, actor, pokemon, deck_key, catalog)
 		"DECLARE_ATTACK":
 			score += 360.0
 			if player.active:
@@ -804,6 +1178,11 @@ func _development_action_value(
 				basic_value += 70.0
 			if AIDeckProfiles.contains(deck_key, "setup", card_id):
 				basic_value += 80.0
+			if (
+				str(action.params.get("target", "")) != "active"
+				and AIDeckProfiles.contains(deck_key, "bench", card_id)
+			):
+				basic_value += 70.0
 			return basic_value
 		"PLAY_TRAINER":
 			if card_id.is_empty():
@@ -877,7 +1256,7 @@ func _effects_tactical_value(
 				if _has_energy_target_with_missing_cost(state, actor, catalog):
 					value += 85.0
 			"energy_relocate":
-				value += 75.0
+				value += _energy_relocate_value(state, actor, params, catalog)
 			"heal", "heal_all", "potion_heal", "conditional_damage_heal", "damage_and_self_heal":
 				value += _healing_value(state, actor)
 			"switch_self":
@@ -892,9 +1271,11 @@ func _effects_tactical_value(
 				value += 80.0
 			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "apply_outgoing_damage_reduction", "self_attack_lock":
 				value += 45.0
-			"damage", "any_pokemon_damage", "damage_counter_self", "place_counters_and_self_ko", "bench_damage":
+			"damage", "any_pokemon_damage", "place_counters_and_self_ko", "bench_damage", "damage_and_self_heal":
 				value += int(params.get("amount", params.get("damage", 0))) * 1.2
-			"attack_damage_formula":
+			"damage_counter_self":
+				value -= int(params.get("amount", params.get("damage", 20))) * 0.8
+			"attack_damage_formula", "conditional_damage_bonus", "discard_fighting_energy_damage", "discard_hand_conditional_bonus":
 				value += _effect_damage_estimate(state, actor, effect, catalog) * 1.1
 	return value
 
@@ -980,6 +1361,10 @@ func _estimated_attack_damage(
 			"damage_self_penalty",
 			"damage_per_discard_psychic",
 			"conditional_damage_heal",
+			"discard_fighting_energy_damage",
+			"discard_hand_conditional_bonus",
+			"damage_and_self_heal",
+			"any_pokemon_damage",
 			"mill_and_damage_per_energy",
 		]:
 			full_damage = true
@@ -992,7 +1377,20 @@ func _estimated_attack_damage(
 			piercing = piercing or bool(formula_params.get("piercing", false))
 	var damage := 0 if full_damage else int(attack.get("damage", 0))
 	for effect in flattened:
-		damage = max(damage, _effect_damage_estimate(state, actor, effect, catalog))
+		var effect_type := str(effect.get("effect_type", ""))
+		if effect_type == "coin_flip":
+			var params: Dictionary = effect.get("params", {})
+			if _branch_has_effect_type(params.get("on_tails", []), "attack_fail"):
+				damage = int(round(
+					(float(damage) + float(_branch_damage_estimate(
+						state, actor, params.get("on_heads", []), catalog))) * 0.5
+				))
+				continue
+		var estimate := _effect_damage_estimate(state, actor, effect, catalog)
+		if effect_type == "conditional_damage_bonus":
+			damage += estimate
+		else:
+			damage = max(damage, estimate)
 	return _modified_attack_damage(
 		state, actor, damage, catalog, ignore_defender_effects, piercing)
 
@@ -1010,6 +1408,9 @@ func _effect_damage_estimate(
 	match str(effect.get("effect_type", "")):
 		"damage":
 			return int(params.get("amount", 0))
+		"conditional_damage_bonus":
+			return int(params.get("bonus", params.get("amount", 0))) if _conditional_damage_bonus_applies(
+				state, actor, params, catalog) else 0
 		"damage_per_self_damage":
 			return int(params.get("base", 0)) + (active.damage_counters if active else 0) * int(params.get("per_counter", 0))
 		"damage_per_self_energy", "damage_per_self_energy_type":
@@ -1074,12 +1475,23 @@ func _effect_damage_estimate(
 			return total
 		"damage_per_hand_size":
 			return player.hand.size() * int(params.get("per", 0))
+		"discard_hand_conditional_bonus":
+			var hand_base := int(params.get("base_damage", params.get("base", 0)))
+			var threshold := int(params.get("threshold", 5))
+			return hand_base + (int(params.get("bonus", 0)) if player.hand.size() >= threshold else 0)
 		"damage_per_discard_psychic":
 			var psychic_count := 0
 			for card_id in player.discard:
 				if catalog.is_pokemon(card_id) and "Psychic" in catalog.get_card(card_id).get("energy_types", []):
 					psychic_count += 1
 			return int(params.get("base", 0)) + psychic_count * int(params.get("per_card", 0))
+		"discard_fighting_energy_damage":
+			var fighting_count := 0
+			if active:
+				for energy_id in active.energy_card_ids:
+					if "Fighting" in catalog.provides_energy(energy_id):
+						fighting_count += 1
+			return int(params.get("base", 10)) + fighting_count * int(params.get("per_energy", 60))
 		"damage_per_evolved":
 			var evolved := 0
 			for row in player.get_all_pokemon():
@@ -1089,13 +1501,85 @@ func _effect_damage_estimate(
 			return evolved * int(params.get("per_evolved", 0))
 		"conditional_damage_heal":
 			return int(params.get("base", 0)) + (int(params.get("bonus", 0)) if player.healed_this_turn else 0)
+		"damage_and_self_heal":
+			return int(params.get("damage", params.get("amount", 0)))
+		"any_pokemon_damage", "bench_damage", "place_counters_and_self_ko":
+			return int(params.get("amount", params.get("damage", 0)))
+		"mill_and_damage_per_energy":
+			var energy_seen := 0
+			for card_id in player.deck.slice(max(0, player.deck.size() - int(params.get("mill_count", 5)))):
+				if catalog.is_energy(card_id):
+					energy_seen += 1
+			return energy_seen * int(params.get("damage_per", 0))
 		"damage_self_penalty":
 			return max(0, int(params.get("base", 0)) - (active.damage_counters if active else 0) * int(params.get("per_counter", 0)))
 		"coin_flip_triple":
 			return int(float(params.get("damage_per_head", 10)) * 1.5)
 		"coin_flip_until_tails":
 			return int(params.get("per_head", 20))
+		"coin_flip_double_ko":
+			return int((opponent.active.current_hp(catalog) if opponent.active else 0) * 0.25)
+		"coin_flip":
+			return int((
+				_branch_damage_estimate(state, actor, params.get("on_heads", []), catalog)
+				+ _branch_damage_estimate(state, actor, params.get("on_tails", []), catalog)
+			) * 0.5)
 	return 0
+
+
+func _conditional_damage_bonus_applies(
+	state: GameState,
+	actor: int,
+	params: Dictionary,
+	_catalog: CardCatalog,
+) -> bool:
+	var player := state.get_player(actor)
+	var opponent := state.get_player(1 - actor)
+	match str(params.get("condition", "")):
+		"opponent_active_damaged":
+			return opponent.active != null and opponent.active.damage_counters > 0
+		"field_energy_ge_5":
+			var count := 0
+			for row in player.get_all_pokemon():
+				var pokemon: PokemonState = row["pokemon"]
+				if pokemon:
+					count += pokemon.energy_card_ids.size()
+			return count >= 5
+		"opponent_active_evolved":
+			return opponent.active != null and not _catalog.is_basic_pokemon(opponent.active.card_id)
+		"ko_by_attack_last_turn":
+			return player.was_ko_by_attack
+		_:
+			return opponent.active != null and opponent.active.damage_counters > 0
+
+
+func _branch_damage_estimate(
+	state: GameState,
+	actor: int,
+	branch: Variant,
+	catalog: CardCatalog,
+) -> int:
+	var effects: Array = []
+	if branch is Dictionary:
+		effects = [branch]
+	elif branch is Array:
+		effects = branch
+	var best := 0
+	for effect in _flatten_effects(effects):
+		best = max(best, _effect_damage_estimate(state, actor, effect, catalog))
+	return best
+
+
+func _branch_has_effect_type(branch: Variant, effect_type: String) -> bool:
+	var effects: Array = []
+	if branch is Dictionary:
+		effects = [branch]
+	elif branch is Array:
+		effects = branch
+	for effect in _flatten_effects(effects):
+		if str(effect.get("effect_type", "")) == effect_type:
+			return true
+	return false
 
 
 func _energy_card_matches_type(
@@ -1283,6 +1767,199 @@ func _best_potential_retaliation_damage(
 	return best
 
 
+func _switch_self_has_good_target(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	var player := state.get_player(actor)
+	if player.active == null or player.bench_count() <= 0:
+		return false
+	for index in range(player.bench.size()):
+		if player.bench[index] and _retreat_has_good_target(state, actor, index, deck_key, catalog):
+			return true
+	return false
+
+
+func _switch_opponent_has_good_target(
+	state: GameState,
+	actor: int,
+	target_player: int,
+	catalog: CardCatalog,
+) -> bool:
+	var opponent := state.get_player(target_player)
+	if opponent.active == null or opponent.bench_count() <= 0:
+		return false
+	var active_priority := _target_priority(opponent.active, catalog)
+	var best_bench_priority := -INF
+	for pokemon in opponent.bench:
+		if pokemon:
+			best_bench_priority = max(best_bench_priority, _target_priority(pokemon, catalog))
+	if best_bench_priority <= active_priority + 20.0:
+		return false
+	var own_active := state.get_player(actor).active
+	if own_active != null:
+		var current_ko := _best_available_damage(state, actor, catalog) >= opponent.active.current_hp(catalog)
+		if current_ko:
+			return false
+	return true
+
+
+func _retreat_has_good_target(
+	state: GameState,
+	actor: int,
+	bench_idx: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	var player := state.get_player(actor)
+	if player.active == null or bench_idx < 0 or bench_idx >= player.bench.size():
+		return false
+	var target: PokemonState = player.bench[bench_idx]
+	if target == null:
+		return false
+	var opponent := state.get_player(1 - actor)
+	var target_ready_damage := _best_ready_pokemon_damage(state, actor, target, catalog)
+	if opponent.active != null and target_ready_damage >= opponent.active.current_hp(catalog):
+		return true
+	var opponent_damage := _best_available_damage(state, 1 - actor, catalog)
+	var active_survives := opponent_damage < player.active.current_hp(catalog)
+	var target_falls := opponent_damage >= target.current_hp(catalog)
+	if active_survives and target_falls:
+		return false
+	var target_is_core := AIDeckProfiles.contains(deck_key, "core", target.card_id)
+	var target_is_engine := (
+		AIDeckProfiles.contains(deck_key, "engine", target.card_id)
+		or AIDeckProfiles.contains(deck_key, "bench", target.card_id)
+	)
+	var active_max_hp := int(catalog.get_card(player.active.card_id).get("hp", 0))
+	var active_safe: bool = (
+		player.active.status_conditions.is_empty()
+		and player.active.current_hp(catalog) > max(50, active_max_hp * 0.45)
+	)
+	if active_safe and not target_is_core and target_is_engine and target_ready_damage < 70:
+		return false
+	var active_value := _promotion_value_for_state(
+		state, actor, player.active, deck_key, catalog)
+	var target_value := _promotion_value_for_state(state, actor, target, deck_key, catalog)
+	if (
+		not player.active.status_conditions.is_empty()
+		or player.active.current_hp(catalog) <= max(40, active_max_hp * 0.35)
+	):
+		return target_value > active_value - 20.0
+	return target_value > active_value + 25.0
+
+
+func _promotion_value_for_state(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	if pokemon == null:
+		return -INF
+	var value := _pokemon_strength(pokemon, catalog)
+	var missing := _best_missing_energy(pokemon, catalog)
+	var ready_damage := _best_ready_pokemon_damage(state, actor, pokemon, catalog)
+	var opponent := state.get_player(1 - actor)
+	if missing == 0:
+		value += 140.0 + ready_damage * 0.85
+		if opponent.active != null and ready_damage >= opponent.active.current_hp(catalog):
+			value += 240.0 + catalog.prize_value(opponent.active.card_id) * 110.0
+	elif missing == 1:
+		value += 55.0 + _best_pokemon_damage(pokemon, catalog) * 0.20
+	else:
+		value -= min(120.0, missing * 35.0)
+	value += pokemon.energy_card_ids.size() * 18.0
+	if _best_available_damage_against_candidate(state, actor, pokemon, catalog) >= pokemon.current_hp(catalog):
+		value -= 85.0
+		var can_trade := opponent.active != null and ready_damage >= opponent.active.current_hp(catalog)
+		if not can_trade:
+			value -= 90.0
+			if AIDeckProfiles.contains(deck_key, "core", pokemon.card_id):
+				value -= 55.0
+			if AIDeckProfiles.contains(deck_key, "engine", pokemon.card_id):
+				value -= 30.0
+	if (
+		missing > 0
+		and AIDeckProfiles.contains(deck_key, "bench", pokemon.card_id)
+		and not AIDeckProfiles.contains(deck_key, "setup", pokemon.card_id)
+	):
+		value -= 70.0 + min(80.0, missing * 24.0)
+	return value
+
+
+func _best_ready_pokemon_damage(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	catalog: CardCatalog,
+) -> int:
+	if pokemon == null:
+		return 0
+	var player := state.get_player(actor)
+	var original_active := player.active
+	var best := 0
+	player.active = pokemon
+	for attack_idx in range(catalog.get_card(pokemon.card_id).get("attacks", []).size()):
+		var attack: Dictionary = catalog.get_card(pokemon.card_id).get("attacks", [])[attack_idx]
+		if _missing_energy_count(pokemon, attack.get("cost", []), catalog) <= 0:
+			best = max(best, _estimated_attack_damage(state, actor, attack_idx, catalog))
+	player.active = original_active
+	return best
+
+
+func _best_available_damage(
+	state: GameState,
+	actor: int,
+	catalog: CardCatalog,
+) -> int:
+	var player := state.get_player(actor)
+	if player.active == null:
+		return 0
+	var best := 0
+	var attacks: Array = catalog.get_card(player.active.card_id).get("attacks", [])
+	for attack_idx in range(attacks.size()):
+		var attack: Dictionary = attacks[attack_idx]
+		if _missing_energy_count(player.active, attack.get("cost", []), catalog) <= 0:
+			best = max(best, _estimated_attack_damage(state, actor, attack_idx, catalog))
+	return best
+
+
+func _best_available_damage_against_candidate(
+	state: GameState,
+	actor: int,
+	candidate: PokemonState,
+	catalog: CardCatalog,
+) -> int:
+	var player := state.get_player(actor)
+	var original_active := player.active
+	player.active = candidate
+	var damage := _best_available_damage(state, 1 - actor, catalog)
+	player.active = original_active
+	return damage
+
+
+func _has_alternative_setup_active_in_hand(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	var player := state.get_player(actor)
+	for hand_card_id in player.hand:
+		if (
+			hand_card_id != card_id
+			and catalog.is_basic_pokemon(hand_card_id)
+			and AIDeckProfiles.contains(deck_key, "setup", hand_card_id)
+		):
+			return true
+	return false
+
+
 func _best_missing_energy(pokemon: PokemonState, catalog: CardCatalog) -> int:
 	if pokemon == null:
 		return 99
@@ -1416,7 +2093,91 @@ func _has_energy_target_with_missing_cost(
 ) -> bool:
 	for row in state.get_player(actor).get_all_pokemon():
 		var pokemon: PokemonState = row["pokemon"]
-		if pokemon and _best_missing_energy(pokemon, catalog) > 0:
+		if pokemon == null:
+			continue
+		var best_missing := _best_missing_energy(pokemon, catalog)
+		if best_missing > 0 and best_missing < 99:
+			return true
+		var attacks: Array = catalog.get_card(pokemon.card_id).get("attacks", [])
+		for attack in attacks:
+			var missing := _missing_energy_count(pokemon, attack.get("cost", []), catalog)
+			if missing > 0 and missing <= 2:
+				return true
+	return false
+
+
+func _energy_relocate_value(
+	state: GameState,
+	actor: int,
+	params: Dictionary,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	if player.active == null or player.bench_count() <= 0:
+		return -120.0
+	var energy_type := str(params.get("energy_type", params.get("filter", "any")))
+	var best := -120.0
+	for source_row in player.get_all_pokemon():
+		var source: PokemonState = source_row["pokemon"]
+		var source_slot := str(source_row["slot"])
+		if source == null:
+			continue
+		for energy_id in source.energy_card_ids:
+			if not _energy_card_matches_type(energy_id, energy_type, catalog):
+				continue
+			for target_row in player.get_all_pokemon():
+				var target: PokemonState = target_row["pokemon"]
+				var target_slot := str(target_row["slot"])
+				if target == null or target_slot == source_slot:
+					continue
+				var before := _best_missing_energy(target, catalog)
+				var after := _best_missing_energy_with_extra(target, energy_id, catalog)
+				if after >= before:
+					continue
+				var value := float(before - after) * 85.0
+				if target_slot == "active":
+					value += 90.0
+				if after == 0:
+					value += 130.0 + _best_pokemon_damage(target, catalog) * 0.20
+				if source_slot == "active" and target_slot != "active":
+					value -= 80.0
+				best = max(best, value)
+	return best
+
+
+func _should_avoid_repeating_ability(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	catalog: CardCatalog,
+) -> bool:
+	if action.action != "USE_ABILITY" or state.action_log.is_empty():
+		return false
+	var ability_name := str(action.params.get("ability_name", ""))
+	if ability_name.is_empty():
+		return false
+	if not _ability_is_repeatable(state, actor, action, ability_name, catalog):
+		return false
+	return ability_name in str(state.action_log[-1])
+
+
+func _ability_is_repeatable(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	ability_name: String,
+	catalog: CardCatalog,
+) -> bool:
+	var slot := str(action.params.get("slot", "active"))
+	var pokemon := state.get_player(actor).get_pokemon(slot)
+	if pokemon == null:
+		return false
+	for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
+		var ability: Dictionary = ability_value
+		if (
+			str(ability.get("name", "")) == ability_name
+			and str(ability.get("trigger", "")) == "repeatable"
+		):
 			return true
 	return false
 
@@ -1511,9 +2272,16 @@ func _select_ucb(
 	priors: Array[float],
 	total_visits: int,
 ) -> int:
+	var best_unvisited := -1
+	var best_unvisited_prior := -INF
 	for index in range(visits.size()):
 		if visits[index] == 0:
-			return index
+			var prior := priors[index] if index < priors.size() else 0.0
+			if best_unvisited < 0 or prior > best_unvisited_prior:
+				best_unvisited = index
+				best_unvisited_prior = prior
+	if best_unvisited >= 0:
+		return best_unvisited
 	var best := 0
 	var best_score := -INF
 	for index in range(visits.size()):

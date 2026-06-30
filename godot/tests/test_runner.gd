@@ -2358,6 +2358,294 @@ func _run_ai_strength_regression_tests(
 		"AI action scoring did not benefit from the current actor deck profile",
 	)
 
+	var setup_lightning := GameState.new()
+	setup_lightning.phase = "SETUP"
+	setup_lightning.active_player_idx = 0
+	setup_lightning.public_deck_keys = ["lightning", "water"]
+	setup_lightning.players[0].hand = ["svl-pikaex", "svl-thun", "svl-emol"]
+	var setup_lightning_action := _ai_decision_for_actions(worker, setup_lightning, 0, "lightning", [
+		GameAction.new("PLAY_BASIC", {"hand_idx": 0, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 1, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 2, "target": "active"}, false, 0),
+	], "setup-lightning-active")
+	_check(
+		setup_lightning_action != null
+		and int(setup_lightning_action.params.get("hand_idx", -1)) != 0,
+		"AI setup chose lightning bench core Pikachu ex as active over setup pivots",
+	)
+
+	var setup_fighting := GameState.new()
+	setup_fighting.phase = "SETUP"
+	setup_fighting.active_player_idx = 0
+	setup_fighting.public_deck_keys = ["fighting", "water"]
+	setup_fighting.players[0].hand = ["svf-rio", "svf-farf", "svf-hawl"]
+	var setup_fighting_action := _ai_decision_for_actions(worker, setup_fighting, 0, "fighting", [
+		GameAction.new("PLAY_BASIC", {"hand_idx": 0, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 1, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 2, "target": "active"}, false, 0),
+	], "setup-fighting-active")
+	_check(
+		setup_fighting_action != null
+		and int(setup_fighting_action.params.get("hand_idx", -1)) != 0,
+		"AI setup chose Riolu active when fighting setup pivots were available",
+	)
+
+	var setup_psychic := GameState.new()
+	setup_psychic.phase = "SETUP"
+	setup_psychic.active_player_idx = 0
+	setup_psychic.public_deck_keys = ["psychic", "water"]
+	setup_psychic.players[0].hand = ["sv1-107", "sv1-111", "sv1-113"]
+	var setup_psychic_action := _ai_decision_for_actions(worker, setup_psychic, 0, "psychic", [
+		GameAction.new("PLAY_BASIC", {"hand_idx": 0, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 1, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 2, "target": "active"}, false, 0),
+	], "setup-psychic-active")
+	_check(
+		setup_psychic_action != null
+		and int(setup_psychic_action.params.get("hand_idx", -1)) == 2,
+		"AI setup did not choose the psychic setup pivot over Natu/Latios",
+	)
+
+	var houb_state := GameState.new()
+	houb_state.public_deck_keys = ["fighting", "water"]
+	houb_state.players[0].active = PokemonState.new("svf-farf")
+	houb_state.players[0].hand = ["svf-luca", "svf-rio", "sv1-ener-1", "sv1-ener-1"]
+	_set_ai_choice_continuation(houb_state, "houb", {"player_idx": 0, "target": 5})
+	var houb_request := ChoiceRequest.new(
+		"choice:houb", "houb", 0, "Choose one card to bottom.",
+		_ai_choice_options_for_zone(catalog, houb_state, 0, "hand"),
+		1, 1)
+	var houb_response := _ai_choice_for_request(
+		worker, houb_state, 0, "fighting", houb_request, "houb-discard-cost")
+	_check(
+		houb_response != null
+		and houb_response.option_ids.size() == 1
+		and houb_response.option_ids[0].ends_with(":sv1-ener-1"),
+		"AI houb choice did not prefer duplicate off-plan energy over core/evolution cards",
+	)
+
+	var zinnia_state := GameState.new()
+	zinnia_state.public_deck_keys = ["fighting", "water"]
+	zinnia_state.players[0].active = PokemonState.new("svf-farf")
+	zinnia_state.players[0].hand = ["svf-luca", "svf-rio", "sv1-ener-1", "sv1-ener-1", "svf-potion"]
+	_set_ai_choice_continuation(zinnia_state, "zinnia", {"player_idx": 0, "draw_amount": 3})
+	var zinnia_request := ChoiceRequest.new(
+		"choice:zinnia", "zinnia", 0, "Choose two cards to discard.",
+		_ai_choice_options_for_zone(catalog, zinnia_state, 0, "hand"),
+		2, 2)
+	var zinnia_response := _ai_choice_for_request(
+		worker, zinnia_state, 0, "fighting", zinnia_request, "zinnia-discard-cost")
+	_check(
+		zinnia_response != null
+		and zinnia_response.option_ids.size() == 2
+		and not zinnia_response.option_ids.has("card:hand:0:svf-luca")
+		and not zinnia_response.option_ids.has("card:hand:1:svf-rio"),
+		"AI zinnia discard selected unique fighting core or evolution setup cards",
+	)
+
+	var arven_state := GameState.new()
+	arven_state.public_deck_keys = ["psychic", "water"]
+	arven_state.players[0].deck = ["sv1-151", "sv1-152", "sv1-201", "sv1-202"]
+	_set_ai_choice_continuation(arven_state, "arven", {"player_idx": 0})
+	var arven_request := ChoiceRequest.new(
+		"choice:arven", "arven", 0, "Choose an item and a tool.",
+		_ai_choice_options_for_zone(catalog, arven_state, 0, "deck"),
+		1, 2)
+	var arven_response := _ai_choice_for_request(
+		worker, arven_state, 0, "psychic", arven_request, "arven-item-tool")
+	var arven_item_count := 0
+	var arven_tool_count := 0
+	if arven_response != null:
+		for option_id in arven_response.option_ids:
+			var parts := str(option_id).split(":")
+			var selected_card_id := str(parts[parts.size() - 1])
+			if catalog.is_item(selected_card_id):
+				arven_item_count += 1
+			if catalog.is_tool(selected_card_id):
+				arven_tool_count += 1
+	_check(
+		arven_response != null
+		and arven_response.option_ids.size() == 2
+		and arven_item_count == 1
+		and arven_tool_count == 1,
+		"AI arven choice did not limit selection to one item and one Pokemon tool",
+	)
+
+	var optional_state := GameState.new()
+	optional_state.public_deck_keys = ["psychic", "water"]
+	optional_state.players[0].hand = ["sv1-ener-1"]
+	_set_ai_choice_continuation(optional_state, "search_move", {"player_idx": 0})
+	var optional_request := ChoiceRequest.new(
+		"choice:optional", "search_move", 0, "Choose optional card.",
+		_ai_choice_options_for_zone(catalog, optional_state, 0, "hand"),
+		0, 1, false, true)
+	var optional_response := _ai_choice_for_request(
+		worker, optional_state, 0, "psychic", optional_request, "optional-no-positive")
+	_check(
+		optional_response != null and optional_response.cancelled,
+		"AI optional choice did not cancel when no positive option existed",
+	)
+
+	var shoes_keep_state := GameState.new()
+	shoes_keep_state.public_deck_keys = ["psychic", "water"]
+	shoes_keep_state.players[0].active = PokemonState.new("sv1-113")
+	shoes_keep_state.players[0].active.energy_card_ids = ["sv1-ener-5"]
+	shoes_keep_state.players[0].deck = ["sv1-ener-5"]
+	_set_ai_choice_continuation(shoes_keep_state, "trekking_shoes", {
+		"player_idx": 0,
+		"card_id": "sv1-ener-5",
+	})
+	var shoes_keep_response := _ai_choice_for_request(
+		worker, shoes_keep_state, 0, "psychic",
+		ChoiceRequest.new(
+			"choice:shoes-keep", "confirm", 0, "Keep top card?",
+			_ai_confirm_options(), 1, 1),
+		"trekking-shoes-keep")
+	_check(
+		shoes_keep_response != null
+		and shoes_keep_response.option_ids == ["confirm:yes"],
+		"AI trekking shoes did not keep missing psychic energy",
+	)
+
+	var shoes_discard_state := GameState.new()
+	shoes_discard_state.public_deck_keys = ["psychic", "water"]
+	shoes_discard_state.players[0].hand = ["sv1-180", "sv1-180"]
+	shoes_discard_state.players[0].deck = ["sv1-180"]
+	_set_ai_choice_continuation(shoes_discard_state, "trekking_shoes", {
+		"player_idx": 0,
+		"card_id": "sv1-180",
+	})
+	var shoes_discard_response := _ai_choice_for_request(
+		worker, shoes_discard_state, 0, "psychic",
+		ChoiceRequest.new(
+			"choice:shoes-discard", "confirm", 0, "Keep top card?",
+			_ai_confirm_options(), 1, 1),
+		"trekking-shoes-discard")
+	_check(
+		shoes_discard_response != null
+		and shoes_discard_response.option_ids == ["confirm:no"],
+		"AI trekking shoes kept a low-value duplicate draw supporter",
+	)
+
+	var target_state := GameState.new()
+	target_state.public_deck_keys = ["lightning", "psychic"]
+	target_state.players[0].active = PokemonState.new("sv1-104")
+	target_state.players[0].bench[0] = PokemonState.new("sv1-107")
+	target_state.players[0].bench[1] = PokemonState.new("svl-pikaex")
+	target_state.players[0].bench[1].damage_counters = 12
+	target_state.players[1].active = PokemonState.new("sv1-104")
+	target_state.players[1].bench[0] = PokemonState.new("svl-pikaex")
+	target_state.players[1].bench[1] = PokemonState.new("sv1-107")
+	var target_options: Array[Dictionary] = [
+		{
+			"option_id": "pokemon:0:bench_0:sv1-107",
+			"label": "bench0",
+			"value": {"slot": "bench_0", "card_id": "sv1-107"},
+		},
+		{
+			"option_id": "pokemon:0:bench_1:svl-pikaex",
+			"label": "bench1",
+			"value": {"slot": "bench_1", "card_id": "svl-pikaex"},
+		},
+	]
+	var target_response := _ai_choice_for_request(
+		worker, target_state, 1, "psychic",
+		ChoiceRequest.new(
+			"choice:target", "select_opponent_bench", 1, "Choose opponent bench.",
+			target_options, 1, 1),
+		"opponent-target-player-parse")
+	_check(
+		target_response != null
+		and target_response.option_ids == ["pokemon:0:bench_1:svl-pikaex"],
+		"AI opponent bench target did not parse target player from option id",
+	)
+
+	var switch_state := GameState.new()
+	switch_state.public_deck_keys = ["psychic", "dragon"]
+	switch_state.players[0].active = PokemonState.new("sv1-104")
+	switch_state.players[0].bench[0] = PokemonState.new("sv1-107")
+	switch_state.players[1].active = PokemonState.new("svg-dram")
+	switch_state.players[1].active.energy_card_ids = ["sv1-ener-1", "sv1-ener-2"]
+	_set_ai_choice_continuation(switch_state, "confirm_switch", {
+		"chooser": 0,
+		"target_player": 0,
+	})
+	var switch_response := _ai_choice_for_request(
+		worker, switch_state, 0, "psychic",
+		ChoiceRequest.new(
+			"choice:switch", "confirm", 0, "Switch active Pokemon?",
+			_ai_confirm_options(), 1, 1),
+		"confirm-self-switch")
+	_check(
+		switch_response != null
+		and switch_response.option_ids == ["confirm:no"],
+		"AI optional self-switch exposed an unsafe unready engine Pokemon",
+	)
+	_check(
+		not worker._retreat_has_good_target(switch_state, 0, 0, "psychic", catalog),
+		"AI retreat helper allowed retreat into a target that current opponent active can KO",
+	)
+
+	var ucb_visits: Array[int] = [0, 0, 0]
+	var ucb_totals: Array[float] = [0.0, 0.0, 0.0]
+	var ucb_priors: Array[float] = [0.15, 0.80, 0.30]
+	_check(
+		worker._select_ucb(ucb_visits, ucb_totals, ucb_priors, 0) == 1,
+		"AI UCB did not explore the highest-prior unvisited action first",
+	)
+
+	var cresselia_state := GameState.new()
+	cresselia_state.players[0].active = PokemonState.new("sv1-113")
+	cresselia_state.players[0].active.energy_card_ids = ["sv1-ener-5", "sv1-ener-5"]
+	cresselia_state.players[0].bench[0] = PokemonState.new("sv1-104")
+	cresselia_state.players[0].bench[0].energy_card_ids.assign([
+		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
+	])
+	cresselia_state.players[1].active = PokemonState.new("sv2-delib")
+	_check(
+		worker._estimated_attack_damage(cresselia_state, 0, 1, catalog) >= 120,
+		"AI damage estimate ignored Cresselia field energy conditional bonus",
+	)
+
+	var lucario_state := GameState.new()
+	lucario_state.players[0].active = PokemonState.new("svf-luca")
+	lucario_state.players[0].active.energy_card_ids = ["sv1-ener-6", "sv1-ener-6"]
+	lucario_state.players[1].active = PokemonState.new("sv2-delib")
+	_check(
+		worker._estimated_attack_damage(lucario_state, 0, 0, catalog) >= 130,
+		"AI damage estimate ignored Lucario fighting energy discard damage",
+	)
+
+	var greedent_state := GameState.new()
+	greedent_state.players[0].active = PokemonState.new("svi-gree")
+	greedent_state.players[0].active.energy_card_ids = ["sv1-ener-1", "sv1-ener-2"]
+	greedent_state.players[0].hand.assign([
+		"sv1-ener-1", "sv1-ener-2", "sv1-ener-3", "sv1-ener-4", "sv1-ener-5",
+	])
+	greedent_state.players[1].active = PokemonState.new("sv2-delib")
+	_check(
+		worker._estimated_attack_damage(greedent_state, 0, 1, catalog) >= 210,
+		"AI damage estimate ignored Greedent discard-hand threshold damage",
+	)
+
+	var coin_ko_state := GameState.new()
+	coin_ko_state.players[0].active = PokemonState.new("svf-klea")
+	coin_ko_state.players[0].active.energy_card_ids = ["sv1-ener-6", "sv1-ener-6"]
+	coin_ko_state.players[1].active = PokemonState.new("svl-pikaex")
+	_check(
+		worker._estimated_attack_damage(coin_ko_state, 0, 0, catalog) > 0,
+		"AI damage estimate ignored coin-flip KO expected damage",
+	)
+
+	var coin_fail_state := GameState.new()
+	coin_fail_state.players[0].active = PokemonState.new("sv2-38")
+	coin_fail_state.players[0].active.energy_card_ids = ["sv1-ener-3"]
+	coin_fail_state.players[1].active = PokemonState.new("sv1-104")
+	_check(
+		worker._estimated_attack_damage(coin_fail_state, 0, 0, catalog) == 15,
+		"AI damage estimate did not halve coin-flip attack-fail damage",
+	)
+
 
 func _ai_decision_for_actions(
 	worker: NativeChallengeAI,
@@ -2390,6 +2678,73 @@ func _ai_decision_for_actions(
 	if not result.get("success", false):
 		return null
 	return GameAction.from_dict(result["action"])
+
+
+func _ai_choice_for_request(
+	worker: NativeChallengeAI,
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	choice: ChoiceRequest,
+	request_id: String,
+) -> ChoiceResponse:
+	var result := worker.decide({
+		"kind": "choice",
+		"state": state.snapshot(),
+		"actor": actor,
+		"revision": state.revision,
+		"request_id": request_id,
+		"mode": "challenge",
+		"deck_key": deck_key,
+		"choice": choice.to_dict(),
+	}, func() -> bool: return false)
+	_check(result.get("success", false), "AI choice decision failed: %s" % result.get("error", "unknown"))
+	if not result.get("success", false):
+		return null
+	return ChoiceResponse.from_dict(result["choice_response"])
+
+
+func _set_ai_choice_continuation(
+	state: GameState,
+	operation: String,
+	data: Dictionary,
+) -> void:
+	var stack := ResolutionStack.new()
+	stack.push_continuation(operation, data)
+	state.resolution_stack = stack.to_dict()
+
+
+func _ai_choice_options_for_zone(
+	catalog: CardCatalog,
+	state: GameState,
+	player_idx: int,
+	zone: String,
+) -> Array[Dictionary]:
+	var source: Array[String] = []
+	match zone:
+		"hand":
+			source = state.get_player(player_idx).hand
+		"deck":
+			source = state.get_player(player_idx).deck
+		"discard":
+			source = state.get_player(player_idx).discard
+	var options: Array[Dictionary] = []
+	for index in range(source.size()):
+		var card_id := source[index]
+		options.append({
+			"option_id": "card:%s:%d:%s" % [zone, index, card_id],
+			"label": catalog.card_name(card_id),
+			"ref": EntityRef.new("card", player_idx, zone, "", index, "", card_id).to_dict(),
+			"value": {"index": index, "card_id": card_id},
+		})
+	return options
+
+
+func _ai_confirm_options() -> Array[Dictionary]:
+	return [
+		{"option_id": "confirm:yes", "label": "Yes", "value": true},
+		{"option_id": "confirm:no", "label": "No", "value": false},
+	]
 
 
 func _run_phase_five_foundation_tests() -> void:

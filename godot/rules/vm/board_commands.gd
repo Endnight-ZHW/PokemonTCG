@@ -198,6 +198,7 @@ func switch_request(
 			options.append({
 				"option_id": "pokemon:%d:%s:%s" % [target_player_idx, slot, pokemon.card_id],
 				"label": catalog.card_name(pokemon.card_id),
+				"ref": EntityRef.new("pokemon", target_player_idx, "", slot, -1, "", pokemon.card_id).to_dict(),
 				"value": {"slot": slot, "card_id": pokemon.card_id},
 			})
 	if options.is_empty():
