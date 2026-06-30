@@ -64,14 +64,14 @@ def save_opponent_pool(pool: OpponentPool, deck_key: str) -> None:
 
 def load_opponent_pool(deck_key: str, max_snapshots: int = 3) -> OpponentPool:
     """Load opponent pool from disk, or return an empty pool."""
-    import torch
+    from engine.ai.dl.model import safe_torch_load
 
     pool = OpponentPool(max_snapshots=max_snapshots)
     path = _opponent_pool_path(deck_key)
     if not os.path.exists(path):
         return pool
     try:
-        data = torch.load(path, map_location="cpu")
+        data = safe_torch_load(path, map_location="cpu")
         for entry in data.get("snapshots", []):
             pool.add(entry["model_state"], entry["model_config"])
     except Exception:

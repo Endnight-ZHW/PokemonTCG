@@ -29,6 +29,26 @@ TORCH_AVAILABLE = torch is not None
 CHECKPOINT_VERSION = 9  # +slot-aware masked card attention
 
 
+def safe_torch_load(path: str, map_location: Any = "cpu") -> Any:
+    """Load trusted project checkpoints without PyTorch's unsafe-load warning."""
+    if not TORCH_AVAILABLE:
+        raise RuntimeError("PyTorch is not installed.")
+    serialization = getattr(torch, "serialization", None)
+    add_safe_globals = getattr(serialization, "add_safe_globals", None)
+    if callable(add_safe_globals):
+        try:
+            from torch.torch_version import TorchVersion
+            add_safe_globals([TorchVersion])
+        except Exception:
+            pass
+    try:
+        return torch.load(path, map_location=map_location, weights_only=True)
+    except TypeError as exc:
+        if "weights_only" not in str(exc):
+            raise
+        return torch.load(path, map_location=map_location)
+
+
 if TORCH_AVAILABLE:
 
     class DeepActionModel(nn.Module):
@@ -296,7 +316,7 @@ def save_checkpoint(path: str, model, metadata: dict[str, Any] | None = None) ->
 def load_checkpoint(path: str, device: str = "cpu"):
     if not TORCH_AVAILABLE:
         raise RuntimeError("PyTorch is not installed.")
-    payload = torch.load(path, map_location=device)
+    payload = safe_torch_load(path, map_location=device)
     if isinstance(payload, dict) and "model_state" in payload:
         version = int(payload.get("version") or 0)
         config = dict(payload.get("model_config") or {})

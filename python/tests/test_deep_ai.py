@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import unittest
+import warnings
 from unittest import mock
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -1141,6 +1142,61 @@ class DeepAITests(unittest.TestCase):
             self.assertEqual(run_started["requested_device"], "cuda")
             self.assertEqual(run_started["device"], "cpu")
             self.assertFalse(run_started["cuda_available"])
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_load_checkpoint_uses_weights_only_without_futurewarning(self):
+        from engine.ai.dl.model import create_model, load_checkpoint, save_checkpoint, torch
+
+        with temp_dir() as tmpdir:
+            path = os.path.join(tmpdir, "model.pt")
+            model = create_model(choice_head_enabled=True)
+            save_checkpoint(path, model, {"trainer": "test", "torch_version": torch.__version__})
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", FutureWarning)
+                restored, payload = load_checkpoint(path, "cpu")
+
+        self.assertTrue(getattr(restored, "choice_head_enabled", False))
+        self.assertEqual(payload.get("metadata", {}).get("trainer"), "test")
+        self.assertFalse(
+            any("weights_only=False" in str(item.message) for item in caught)
+        )
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_dl_ai_loads_checkpoint_with_schema_metadata_split(self):
+        from engine.ai.dl.model import create_model, save_checkpoint, torch
+
+        with temp_dir() as tmpdir:
+            path = os.path.join(tmpdir, "model.pt")
+            model = create_model(choice_head_enabled=True)
+            save_checkpoint(
+                path,
+                model,
+                {
+                    "planner_version": 1,
+                    "seed": 17,
+                    "trainer": "test",
+                    "torch_version": torch.__version__,
+                },
+            )
+            ai = DeepLearningAI(
+                "fire",
+                DeepLearningAIConfig(
+                    model_path=path,
+                    device="cpu",
+                    use_mcts=False,
+                    fallback_config=AIConfig(
+                        thinking_time_seconds=0.01,
+                        deterministic_search=False,
+                        max_sequence_depth=0,
+                        max_turn_actions=8,
+                        search_algorithm="beam",
+                    ),
+                ),
+            )
+
+        self.assertTrue(ai.model_available)
+        self.assertEqual(ai.model_metadata.get("planner_version"), 1)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
     def test_v9_checkpoint_saves_and_legacy_v5_restores_choice_head(self):

@@ -40,6 +40,26 @@ from engine.turn_manager import TurnManager
 
 DEFAULT_MODEL_DIR = os.path.join("data", "ai_models")
 
+
+def _make_grad_scaler(enabled: bool):
+    if not TORCH_AVAILABLE:
+        return None
+    amp_module = getattr(torch, "amp", None)
+    grad_scaler_cls = getattr(amp_module, "GradScaler", None)
+    if grad_scaler_cls is not None:
+        try:
+            return grad_scaler_cls("cuda", enabled=enabled)
+        except TypeError:
+            try:
+                return grad_scaler_cls(device_type="cuda", enabled=enabled)
+            except TypeError:
+                pass
+    cuda_amp_module = getattr(getattr(torch, "cuda", None), "amp", None)
+    grad_scaler_cls = getattr(cuda_amp_module, "GradScaler", None)
+    if grad_scaler_cls is None:
+        return None
+    return grad_scaler_cls(enabled=enabled)
+
 FAST_TRAINING_AI_SEARCH = {
     "thinking_time_seconds": 0.0,
     "beam_width": 4,
@@ -2255,10 +2275,7 @@ def _train_deck_pipeline(
         )
         if callable(parameters_fn) else None
     )
-    grad_scaler = (
-        torch.cuda.amp.GradScaler(enabled=amp_enabled)
-        if optimizer is not None else None
-    )
+    grad_scaler = _make_grad_scaler(amp_enabled) if optimizer is not None else None
 
     emit({
         "type": "deck_started",

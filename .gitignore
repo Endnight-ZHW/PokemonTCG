@@ -59,6 +59,8 @@ godot/native/**/*.obj.import
 godot/native/**/.sconsign.dblite
 godot/bin/**/*.exp
 godot/bin/**/*.lib
+godot/bin/**/*.TMP
+godot/bin/**/~*
 .tools/
 .cache/
 

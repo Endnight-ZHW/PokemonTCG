@@ -430,9 +430,9 @@ class DeepLearningAI:
             model, payload = load_checkpoint(path, self.config.device)
             metadata = dict(payload.get("metadata") or {})
             schema = dict(payload.get("schema") or {})
-            if not schema:
-                schema = metadata
-            if not _schema_is_current(schema):
+            merged_schema = dict(schema)
+            merged_schema.update(metadata)
+            if not _schema_is_current(merged_schema):
                 _logger.warning(
                     "deep-learning model schema mismatch for %s; using Rules AI fallback",
                     path,

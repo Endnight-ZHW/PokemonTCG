@@ -186,16 +186,6 @@ class GameScreen(
         self.hovered_opp_discard_zone = False
         self.hovered_player_deck = False
         self.hovered_player_discard_zone = False
-        self.hovered_stadium_card = False
-        self.hovered_stadium_btn = False
-        self.hovered_quit_btn = False
-        self.hovered_concede_btn = False
-
-        # Discard view buttons (deprecated — clicking discard zone now opens view)
-        self.opp_discard_btn_rect: pygame.Rect | None = None
-        self.player_discard_btn_rect: pygame.Rect | None = None
-        self.hovered_opp_discard = False
-        self.hovered_player_discard = False
 
         self.hovered_active: bool = False
         self.hovered_opp_bench: int | None = None
