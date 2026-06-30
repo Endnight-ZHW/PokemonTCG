@@ -17,6 +17,7 @@ var stack_visual_mode := ""
 var stack_visual_max_count := 0
 var stack_visual_direction := "up"
 var table_depth := 0.55
+var _texture_cache: Node
 
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
@@ -165,8 +166,8 @@ func _refresh() -> void:
 	elif not card_id.is_empty():
 		texture_path = str(catalog.get_card(card_id).get("image_path", ""))
 	image.texture = (
-		load(texture_path) as Texture2D
-		if not texture_path.is_empty() and ResourceLoader.exists(texture_path)
+		_card_texture(texture_path)
+		if not texture_path.is_empty()
 		else null
 	)
 	empty_label.visible = image.texture == null
@@ -191,6 +192,23 @@ func _on_action_pressed() -> void:
 	var action: GameAction = action_button.get_meta("action") as GameAction
 	if action:
 		action_requested.emit(action)
+
+
+func _card_texture(path: String) -> Texture2D:
+	var texture_cache := _card_texture_cache()
+	if texture_cache and texture_cache.has_method("get_texture"):
+		return texture_cache.call("get_texture", path) as Texture2D
+	return load(path) as Texture2D
+
+
+func _card_texture_cache() -> Node:
+	if _texture_cache and is_instance_valid(_texture_cache):
+		return _texture_cache
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	_texture_cache = tree.root.get_node_or_null("CardTextureCache")
+	return _texture_cache
 
 
 func _set_top_card_alpha(alpha: float) -> void:

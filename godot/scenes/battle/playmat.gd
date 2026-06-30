@@ -1,7 +1,12 @@
 class_name BattlePlaymat
 extends Control
 
-var quality_profile := "high"
+var quality_profile := "high":
+	set(value):
+		quality_profile = value
+		_update_processing()
+		if is_inside_tree():
+			queue_redraw()
 var _time := 0.0
 var _redraw_accumulator := 0.0
 var _field_guides: Array[Dictionary] = []
@@ -9,7 +14,8 @@ var _field_guides: Array[Dictionary] = []
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_process(true)
+	set_process(false)
+	_update_processing()
 
 
 func _process(delta: float) -> void:
@@ -21,6 +27,12 @@ func _process(delta: float) -> void:
 	if _redraw_accumulator >= interval:
 		_redraw_accumulator = 0.0
 		queue_redraw()
+
+
+func _update_processing() -> void:
+	if not is_inside_tree():
+		return
+	set_process(quality_profile != "low")
 
 
 func set_field_guides(guides: Array[Dictionary]) -> void:

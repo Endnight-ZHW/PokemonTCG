@@ -10,7 +10,7 @@ const MAX_FLOATING_TEXTS := 18
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_process(true)
+	set_process(false)
 
 
 func burst(position_value: Vector2, color: Color, kind: String) -> void:
@@ -32,6 +32,9 @@ func burst(position_value: Vector2, color: Color, kind: String) -> void:
 			"size": randf_range(2.0, 6.0),
 			"gravity": Vector2(0, 65.0),
 		})
+	if count > 0:
+		_update_processing()
+		queue_redraw()
 
 
 func floating_text(
@@ -48,15 +51,19 @@ func floating_text(
 		"life": 1.05,
 		"total": 1.05,
 	})
+	_update_processing()
+	queue_redraw()
 
 
 func clear_transients() -> void:
 	particles.clear()
 	floating_texts.clear()
+	set_process(false)
 	queue_redraw()
 
 
 func _process(delta: float) -> void:
+	var had_transients := not particles.is_empty() or not floating_texts.is_empty()
 	var live_particles: Array[Dictionary] = []
 	for row in particles:
 		row["life"] = float(row["life"]) - delta
@@ -74,8 +81,13 @@ func _process(delta: float) -> void:
 		row["position"] = Vector2(row["position"]) + Vector2(0, -38.0) * delta
 		live_texts.append(row)
 	floating_texts = live_texts
-	if not particles.is_empty() or not floating_texts.is_empty():
+	if had_transients:
 		queue_redraw()
+	_update_processing()
+
+
+func _update_processing() -> void:
+	set_process(not particles.is_empty() or not floating_texts.is_empty())
 
 
 func _draw() -> void:

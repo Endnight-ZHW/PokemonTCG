@@ -1774,6 +1774,12 @@ func _run_phase_three_tests() -> void:
 	_check(ui.find_child("ActionList", true, false) != null, "Action list is missing")
 	ui._close_modal()
 	ui._refresh_game()
+	if (
+		ui.battle_screen
+		and ui.battle_screen.action_panel
+		and not ui.battle_screen.action_panel.visible
+	):
+		ui.battle_screen.all_actions_button.pressed.emit()
 	_check(ui.action_list.get_child_count() > 0, "Setup actions were not rendered")
 	var setup_actions: Array[GameAction] = ui.engine.legal_actions(ui.state, 0, false)
 	var active_action: GameAction
@@ -1788,6 +1794,12 @@ func _run_phase_three_tests() -> void:
 	if active_action:
 		ui._execute_action(active_action)
 		_check(ui.state.players[0].active != null, "UI action did not mutate rules state")
+		if (
+			ui.battle_screen
+			and ui.battle_screen.action_panel
+			and not ui.battle_screen.action_panel.visible
+		):
+			ui.battle_screen.all_actions_button.pressed.emit()
 		_check(ui.action_list.get_child_count() > 0, "UI actions did not refresh")
 	_run_local_ui_playout(ui)
 	_check(ui.current_screen == "end", "Completed local UI match did not show end screen")
@@ -3152,6 +3164,28 @@ func _run_visual_upgrade_tests() -> void:
 			rows.append({"action": action, "label": action.action})
 		battle.update_view(state, 0, rows, "", false, "local")
 		_check(
+			battle.effects != null and not battle.effects.is_processing(),
+			"Idle battle effects layer kept processing",
+		)
+		if battle.effects:
+			battle.effects.floating_text("10", Vector2(40, 40), Color.WHITE)
+			_check(
+				battle.effects.is_processing(),
+				"Battle effects layer did not process active floating text",
+			)
+			battle.effects.clear_transients()
+			_check(
+				not battle.effects.is_processing(),
+				"Battle effects layer kept processing after transients cleared",
+			)
+		if battle.playmat:
+			battle.playmat.quality_profile = "low"
+			_check(
+				not battle.playmat.is_processing(),
+				"Low-quality playmat kept dynamic processing enabled",
+			)
+			battle.playmat.quality_profile = "high"
+		_check(
 			battle.own_active != null
 			and battle.own_active.card_id == state.players[0].active.card_id,
 			"Battle screen did not bind the public active card",
@@ -3234,6 +3268,24 @@ func _run_visual_upgrade_tests() -> void:
 			(battle.zones["own_discard"] as ZoneView)._stack_layer_count() >= 1,
 			"Discard pile did not expose a physical stack thickness",
 		)
+		var texture_cache: Node = root.get_node("CardTextureCache")
+		var zone_scene := load("res://ui/zone_view.tscn") as PackedScene
+		_check(zone_scene != null, "ZoneView scene failed to load")
+		if zone_scene:
+			var cache_zone := zone_scene.instantiate() as ZoneView
+			texture_cache.call("clear")
+			texture_cache.call("reset_stats")
+			var zone_texture := cache_zone._card_texture("res://assets/cards/card_back.webp")
+			_check(zone_texture != null, "ZoneView could not load the card-back texture")
+			var cache_stats: Dictionary = texture_cache.call("stats")
+			_check(
+				int(cache_stats.get("misses", 0)) >= 1
+				and int(cache_stats.get("entries", 0)) >= 1,
+				"ZoneView did not load card art through CardTextureCache: %s"
+				% JSON.stringify(cache_stats),
+			)
+			cache_zone.free()
+			texture_cache.call("clear")
 		_check(battle.phase_advance_button != null,
 			"Battle screen is missing the dedicated phase advance button")
 		_check(

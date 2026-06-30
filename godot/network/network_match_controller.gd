@@ -115,6 +115,10 @@ func poll() -> Array[Dictionary]:
 	return _drain_events()
 
 
+func needs_poll() -> bool:
+	return transport != null or not events.is_empty()
+
+
 func submit_action(action: GameAction) -> bool:
 	if player_idx < 0:
 		return false

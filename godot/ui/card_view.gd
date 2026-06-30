@@ -88,6 +88,7 @@ var damage_badge: Label
 var energy_row: HBoxContainer
 var tool_badge: Label
 var _empty_slot_label_text := ""
+var _texture_cache: Node
 
 
 func _ready() -> void:
@@ -164,7 +165,7 @@ func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
 	for row in rows:
 		var action: GameAction = row.get("action")
 		signature_parts.append("%s:%s" % [
-			JSON.stringify(action.to_dict()) if action else "",
+			_action_signature(action),
 			str(row.get("label", action.action if action else "")),
 		])
 	var signature := "|".join(signature_parts)
@@ -947,10 +948,58 @@ func _card_data(value: String) -> Dictionary:
 	return {}
 
 
+func _action_signature(action: GameAction) -> String:
+	if action == null:
+		return ""
+	var parts: Array[String] = [
+		action.action,
+		str(action.actor),
+		str(action.terminal),
+		action.action_id,
+		_entity_signature(action.source),
+		_entity_signature(action.target),
+	]
+	var keys: Array = action.params.keys()
+	keys.sort()
+	for key in keys:
+		parts.append("%s=%s" % [str(key), _value_signature(action.params[key])])
+	return "|".join(parts)
+
+
+func _entity_signature(ref: EntityRef) -> String:
+	if ref == null:
+		return ""
+	return "%s,%d,%s,%s,%d,%s,%s" % [
+		ref.kind,
+		ref.player,
+		ref.zone,
+		ref.slot,
+		ref.index,
+		ref.attachment_type,
+		ref.card_id,
+	]
+
+
+func _value_signature(value: Variant) -> String:
+	if value is Dictionary:
+		var keys: Array = value.keys()
+		keys.sort()
+		var parts: Array[String] = []
+		for key in keys:
+			parts.append("%s:%s" % [str(key), _value_signature(value[key])])
+		return "{" + ",".join(parts) + "}"
+	if value is Array:
+		var parts: Array[String] = []
+		for item in value:
+			parts.append(_value_signature(item))
+		return "[" + ",".join(parts) + "]"
+	return str(value)
+
+
 func _card_texture(path: String) -> Texture2D:
 	if path.is_empty():
 		return null
-	var texture_cache := _root_child("CardTextureCache")
+	var texture_cache := _card_texture_cache()
 	if texture_cache and texture_cache.has_method("get_texture"):
 		return texture_cache.call("get_texture", path) as Texture2D
 	return (
@@ -958,6 +1007,13 @@ func _card_texture(path: String) -> Texture2D:
 		if ResourceLoader.exists(path)
 		else null
 	)
+
+
+func _card_texture_cache() -> Node:
+	if _texture_cache and is_instance_valid(_texture_cache):
+		return _texture_cache
+	_texture_cache = _root_child("CardTextureCache")
+	return _texture_cache
 
 
 func _reduced_motion_enabled() -> bool:

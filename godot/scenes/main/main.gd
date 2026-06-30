@@ -66,9 +66,6 @@ var loading_label: Label
 var shell_animations: AnimationPlayer
 var lifecycle_network_interrupted := false
 var screen_router: ScreenRouter
-var match_session: MatchSession
-var ai_match_driver: AIMatchDriver
-var network_session_driver: NetworkSessionDriver
 var modal_host_controller: ModalHost
 
 var deck_one_option: OptionButton
@@ -112,6 +109,7 @@ var _modal_generation := 0
 
 
 func _ready() -> void:
+	set_process(false)
 	initialize_ui()
 	if "--phase4-ai-smoke" in OS.get_cmdline_user_args():
 		_run_phase_four_export_smoke()
@@ -167,12 +165,13 @@ func _run_phase_six_export_smoke() -> void:
 
 
 func _process(_delta: float) -> void:
-	_poll_network()
-	if not ai_thinking:
-		return
-	var result := ai_coordinator.poll_result()
-	if not result.is_empty():
-		_apply_ai_result(result)
+	if network_controller.needs_poll():
+		_poll_network()
+	if ai_thinking:
+		var result := ai_coordinator.poll_result()
+		if not result.is_empty():
+			_apply_ai_result(result)
+	_refresh_process_state()
 
 
 func _exit_tree() -> void:
@@ -222,11 +221,6 @@ func _build_shell() -> void:
 	) as Label
 	shell_animations = get_node("ShellAnimations") as AnimationPlayer
 	screen_router = get_node_or_null("Controllers/ScreenRouter") as ScreenRouter
-	match_session = get_node_or_null("Controllers/MatchSession") as MatchSession
-	ai_match_driver = get_node_or_null("Controllers/AIMatchDriver") as AIMatchDriver
-	network_session_driver = get_node_or_null(
-		"Controllers/NetworkSessionDriver"
-	) as NetworkSessionDriver
 	modal_host_controller = get_node_or_null("Controllers/ModalHost") as ModalHost
 	if screen_router:
 		screen_router.configure(screen_host)
@@ -336,6 +330,7 @@ func _on_network_connect_requested(
 		if role == "host"
 		else "正在连接房主……"
 	)
+	_refresh_process_state()
 
 
 func _poll_network() -> void:
@@ -422,6 +417,7 @@ func _stop_network() -> void:
 	network_legal_actions.clear()
 	network_choice_request = null
 	network_player_idx = -1
+	_refresh_process_state()
 
 
 func _show_deck_select(mode: String = MODE_LOCAL) -> void:
@@ -578,10 +574,7 @@ func _build_game_screen() -> void:
 	battle_screen.inspect_zone_requested.connect(_show_zone_inspector)
 	screen_host.add_child(battle_screen)
 	battle_screen.initialize_ui()
-	action_list = VBoxContainer.new()
-	action_list.name = "ActionCompatibility"
-	action_list.visible = false
-	battle_screen.add_child(action_list)
+	action_list = battle_screen.action_list
 	log_label = battle_screen.log_label
 	detail_image = battle_screen.detail_image
 	detail_title = battle_screen.detail_title
@@ -597,14 +590,11 @@ func _refresh_game() -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
 	if battle_screen:
-		_free_children(action_list)
-		var compatibility_rows := _current_action_rows()
-		if not compatibility_rows.is_empty():
-			action_list.add_child(Label.new())
+		var rows := _current_action_rows()
 		battle_screen.update_view(
 			state,
 			current_view_player,
-			_current_action_rows(),
+			rows,
 			selected_entity_key,
 			ai_thinking,
 			game_mode,
@@ -1635,6 +1625,7 @@ func _schedule_ai_action() -> void:
 		"actions": rows,
 	}
 	ai_thinking = ai_coordinator.start_request(request, ai_inference)
+	_refresh_process_state()
 	if not ai_thinking:
 		_apply_ai_fallback_action("无法启动 AI 后台线程。")
 		return
@@ -1659,6 +1650,7 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 		"seed": int(rng.next_u32()),
 	}
 	ai_thinking = ai_coordinator.start_request(payload, ai_inference)
+	_refresh_process_state()
 	if not ai_thinking:
 		_apply_ai_fallback_choice(request, "无法启动 AI 选择线程。")
 		return
@@ -1667,6 +1659,7 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 
 func _apply_ai_result(result: Dictionary) -> void:
 	ai_thinking = false
+	_refresh_process_state()
 	if state == null or current_screen != SCREEN_GAME:
 		return
 	if bool(result.get("cancelled", false)):
@@ -1884,6 +1877,7 @@ func _stop_ai() -> void:
 	ai_inference = null
 	ai_thinking = false
 	active_ai_request_id = ""
+	_refresh_process_state()
 
 
 func _show_toast(message: String, is_error: bool = false) -> void:
@@ -1983,6 +1977,7 @@ func _notification(what: int) -> void:
 		if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
 			ai_coordinator.cancel_and_wait()
 			ai_thinking = false
+			_refresh_process_state()
 		elif game_mode == MODE_NETWORK and (
 			current_screen == SCREEN_NETWORK or current_screen == SCREEN_GAME
 		):
@@ -2028,10 +2023,8 @@ func _disconnect_button(button: Button) -> void:
 		button.pressed.disconnect(connection["callable"])
 
 
-func _free_children(parent: Node) -> void:
-	for child in parent.get_children():
-		parent.remove_child(child)
-		child.queue_free()
+func _refresh_process_state() -> void:
+	set_process(ai_thinking or network_controller.needs_poll())
 
 
 func _free_children_immediate(parent: Node) -> void:
