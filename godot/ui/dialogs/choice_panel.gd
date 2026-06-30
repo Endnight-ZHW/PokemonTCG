@@ -14,22 +14,36 @@ const ENERGY_CARD_SIZE := Vector2(54, 76)
 @onready var energy_grid: HFlowContainer = %EnergyGrid
 @onready var card_grid: GridContainer = %CardGrid
 @onready var option_list: VBoxContainer = %OptionList
+@onready var preview_panel: PanelContainer = %PreviewPanel
+@onready var preview_image: TextureRect = %PreviewImage
+@onready var preview_title: Label = %PreviewTitle
+@onready var preview_text: RichTextLabel = %PreviewText
 
+var catalog: CardCatalog
 var _option_cards: Dictionary = {}
 var _option_badges: Dictionary = {}
 var _option_buttons: Dictionary = {}
+var _option_card_ids: Dictionary = {}
 var _selection_counts: Dictionary = {}
+var _previewed_card_id := ""
 
 
-func configure(metadata_text: String, has_options: bool) -> void:
+func configure(
+	metadata_text: String,
+	has_options: bool,
+	p_catalog: CardCatalog = null,
+) -> void:
 	_resolve_nodes()
+	catalog = p_catalog
 	clear_options()
+	_configure_preview_panel()
 	metadata_label.text = metadata_text
 	metadata_label.visible = not metadata_text.is_empty()
 	empty_label.visible = not has_options
 	card_grid.visible = false
 	option_list.visible = false
 	energy_preview.visible = false
+	_hide_preview()
 
 
 func clear_options() -> void:
@@ -40,7 +54,9 @@ func clear_options() -> void:
 	_option_cards.clear()
 	_option_badges.clear()
 	_option_buttons.clear()
+	_option_card_ids.clear()
 	_selection_counts.clear()
+	_hide_preview()
 
 
 func add_card_option(
@@ -83,12 +99,17 @@ func add_card_option(
 	card_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card_view.configure(card_id, null, false, -1, player, "", true)
 	card_view.tooltip_text = caption_text if not caption_text.is_empty() else card_id
+	card_view.focus_entered.connect(_preview_card.bind(card_id))
+	card_view.detail_requested.connect(func(_card_id: String) -> void:
+		_preview_card(card_id)
+	)
 	card_view.activated.connect(func(
 		_card_id: String,
 		_hand_index: int,
 		_owner: int,
 		_slot: String,
 	) -> void:
+		_preview_card(card_id)
 		option_toggled.emit(option_id)
 	)
 	card_area.add_child(card_view)
@@ -134,7 +155,10 @@ func add_card_option(
 	card_grid.add_child(tile)
 	_option_cards[option_id] = card_view
 	_option_badges[option_id] = badge
+	_option_card_ids[option_id] = card_id
 	_selection_counts[option_id] = 0
+	if _previewed_card_id.is_empty():
+		_preview_card(card_id)
 	return card_view
 
 
@@ -159,6 +183,8 @@ func add_text_option(option_id: String, label_text: String) -> Button:
 
 func add_energy_preview(card_ids: Array[String], catalog: CardCatalog) -> void:
 	_resolve_nodes()
+	if self.catalog == null and catalog != null:
+		self.catalog = catalog
 	if card_ids.is_empty():
 		energy_preview.visible = false
 		return
@@ -168,7 +194,19 @@ func add_energy_preview(card_ids: Array[String], catalog: CardCatalog) -> void:
 		var card := CARD_SCENE.instantiate() as CardView
 		card.custom_minimum_size = ENERGY_CARD_SIZE
 		card.configure(card_id, null, false, -1, -1, "", true)
-		card.tooltip_text = catalog.card_name(card_id)
+		card.tooltip_text = _card_name(card_id)
+		card.focus_entered.connect(_preview_card.bind(card_id))
+		card.detail_requested.connect(func(_card_id: String) -> void:
+			_preview_card(card_id)
+		)
+		card.activated.connect(func(
+			_card_id: String,
+			_hand_index: int,
+			_owner: int,
+			_slot: String,
+		) -> void:
+			_preview_card(card_id)
+		)
 		energy_grid.add_child(card)
 
 
@@ -225,13 +263,186 @@ func selected_count_for(option_id: String) -> int:
 	return int(_selection_counts.get(option_id, 0))
 
 
+func previewed_card_id() -> String:
+	return _previewed_card_id
+
+
+func is_preview_visible() -> bool:
+	return preview_panel != null and preview_panel.visible
+
+
 func _resolve_nodes() -> void:
 	metadata_label = get_node("MetadataLabel") as Label
 	empty_label = get_node("EmptyLabel") as Label
-	energy_preview = get_node("EnergyPreview") as VBoxContainer
-	energy_grid = get_node("EnergyPreview/EnergyGrid") as HFlowContainer
-	card_grid = get_node("CardGrid") as GridContainer
-	option_list = get_node("OptionList") as VBoxContainer
+	energy_preview = get_node("ContentRow/ChoiceColumn/EnergyPreview") as VBoxContainer
+	energy_grid = get_node(
+		"ContentRow/ChoiceColumn/EnergyPreview/EnergyGrid"
+	) as HFlowContainer
+	card_grid = get_node("ContentRow/ChoiceColumn/CardGrid") as GridContainer
+	option_list = get_node("ContentRow/ChoiceColumn/OptionList") as VBoxContainer
+	preview_panel = get_node("ContentRow/PreviewPanel") as PanelContainer
+	preview_image = get_node(
+		"ContentRow/PreviewPanel/PreviewContent/PreviewImage"
+	) as TextureRect
+	preview_title = get_node(
+		"ContentRow/PreviewPanel/PreviewContent/PreviewTitle"
+	) as Label
+	preview_text = get_node(
+		"ContentRow/PreviewPanel/PreviewContent/PreviewText"
+	) as RichTextLabel
+
+
+func _configure_preview_panel() -> void:
+	if preview_panel:
+		preview_panel.add_theme_stylebox_override(
+			"panel",
+			DesignTokens.panel_style(
+				Color(0.055, 0.10, 0.17, 0.94),
+				DesignTokens.RADIUS_SMALL,
+				DesignTokens.BORDER_SOFT,
+				1,
+				8,
+			),
+		)
+	if preview_text:
+		preview_text.bbcode_enabled = true
+		preview_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		preview_text.scroll_active = true
+
+
+func _preview_card(card_id: String) -> void:
+	_resolve_nodes()
+	_configure_preview_panel()
+	if card_id.is_empty():
+		_hide_preview()
+		return
+	var card := _card_data(card_id)
+	if card.is_empty():
+		_hide_preview()
+		return
+	_previewed_card_id = card_id
+	preview_panel.visible = true
+	preview_image.texture = _texture_for_path(str(card.get("image_path", "")))
+	preview_title.text = str(card.get("name", card_id))
+	preview_text.text = _card_detail_bbcode(card_id)
+	preview_text.scroll_to_line(0)
+
+
+func _hide_preview() -> void:
+	_previewed_card_id = ""
+	if preview_panel:
+		preview_panel.visible = false
+	if preview_image:
+		preview_image.texture = null
+	if preview_title:
+		preview_title.text = "卡牌预览"
+	if preview_text:
+		preview_text.text = "选择卡牌查看效果。"
+
+
+func _card_detail_bbcode(card_id: String) -> String:
+	var card := _card_data(card_id)
+	var rows: Array[String] = []
+	rows.append("[color=#9eb0ca]%s[/color]" % _card_type_text(card))
+	if int(card.get("hp", 0)) > 0:
+		rows.append("HP %d" % int(card.get("hp", 0)))
+	if int(card.get("retreat_cost", 0)) > 0:
+		rows.append("撤退费用：%d" % int(card.get("retreat_cost", 0)))
+	if not str(card.get("evolves_from", "")).is_empty():
+		rows.append("进化自：%s" % str(card.get("evolves_from", "")))
+	var provides := _string_array(card.get("provides_energy", []))
+	if not provides.is_empty():
+		rows.append("提供能量：%s" % " / ".join(provides))
+	for ability_value in card.get("abilities", []):
+		var ability: Dictionary = ability_value
+		rows.append("[color=#62d7ff]特性 · %s[/color]\n%s" % [
+			str(ability.get("name", "")),
+			str(ability.get("text", "")),
+		])
+	for attack_value in card.get("attacks", []):
+		var attack: Dictionary = attack_value
+		rows.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
+			str(attack.get("name", "")),
+			str(attack.get("damage", "")),
+			str(attack.get("text", "")),
+		])
+	if not str(card.get("trainer_text", "")).is_empty():
+		rows.append(str(card.get("trainer_text", "")))
+	for rule_value in card.get("rules", []):
+		var rule := str(rule_value)
+		if not rule.is_empty() and rule not in rows:
+			rows.append(rule)
+	for effect_value in card.get("energy_effects", []):
+		var effect: Dictionary = effect_value
+		var effect_text := _energy_effect_text(effect)
+		if not effect_text.is_empty() and effect_text not in rows:
+			rows.append(effect_text)
+	return "\n\n".join(rows)
+
+
+func _card_type_text(card: Dictionary) -> String:
+	var supertype := str(card.get("supertype", ""))
+	var subtypes := _string_array(card.get("subtypes", []))
+	return "%s%s" % [
+		supertype,
+		" · %s" % " / ".join(subtypes) if not subtypes.is_empty() else "",
+	]
+
+
+func _energy_effect_text(effect: Dictionary) -> String:
+	var kind := str(effect.get("kind", ""))
+	match kind:
+		"provide_energy":
+			var types := _string_array(effect.get("types", []))
+			return "能量效果：提供 %s" % " / ".join(types) if not types.is_empty() else ""
+		"modifier":
+			return "能量效果：伤害修正 %s" % JSON.stringify(effect.get("effect", {}))
+		"trigger":
+			return "能量效果：附着触发 %s" % JSON.stringify(effect.get("effect", {}))
+	return "能量效果：%s" % JSON.stringify(effect)
+
+
+func _string_array(values: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if values is Array:
+		for value in values:
+			var text := str(value)
+			if not text.is_empty():
+				result.append(text)
+	return result
+
+
+func _card_name(card_id: String) -> String:
+	return str(_card_data(card_id).get("name", card_id))
+
+
+func _card_data(card_id: String) -> Dictionary:
+	if catalog:
+		return catalog.get_card(card_id)
+	var database := _root_child("CardDatabase")
+	if database and database.has_method("get_card"):
+		return database.call("get_card", card_id)
+	return {}
+
+
+func _texture_for_path(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	var texture_cache := _root_child("CardTextureCache")
+	if texture_cache and texture_cache.has_method("get_texture"):
+		return texture_cache.call("get_texture", path) as Texture2D
+	return (
+		load(path) as Texture2D
+		if ResourceLoader.exists(path)
+		else null
+	)
+
+
+func _root_child(node_name: String) -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	return tree.root.get_node_or_null(node_name)
 
 
 func _clear_children(parent: Node) -> void:
@@ -244,5 +455,6 @@ func _clear_children(parent: Node) -> void:
 func _on_tile_gui_input(event: InputEvent, option_id: String, tile: Control) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if not event.pressed:
+			_preview_card(str(_option_card_ids.get(option_id, "")))
 			option_toggled.emit(option_id)
 		tile.accept_event()

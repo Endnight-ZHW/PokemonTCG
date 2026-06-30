@@ -305,9 +305,9 @@ func _render_previews() -> void:
 		"选择一张要加入手牌的卡牌",
 		[
 			{
-				"option_id": "card:deck:0:sv1-189",
-				"label": "博士的研究",
-				"value": {"index": 0, "card_id": "sv1-189"},
+				"option_id": "card:deck:0:sv1-104",
+				"label": "墓仔狗",
+				"value": {"index": 0, "card_id": "sv1-104"},
 			},
 			{
 				"option_id": "card:deck:1:sv1-151",
@@ -356,12 +356,19 @@ func _render_previews() -> void:
 	energy_stack.push_continuation("energy_attach_distribution", {
 		"player_idx": 0,
 		"source_zone": "hand",
-		"card_ids": ["sv1-ener-2", "sv1-ener-2"],
+		"card_ids": ["svi-jete", "svi-dtur"],
 	})
 	energy_stack.pending_request = energy_choice
 	demo.resolution_stack = energy_stack.to_dict()
 	ui.show_choice(energy_choice)
 	await process_frame
+	var energy_preview_card := (
+		ui.active_choice_panel.energy_grid.get_child(0) as CardView
+		if ui.active_choice_panel and ui.active_choice_panel.energy_grid.get_child_count() > 0
+		else null
+	)
+	if energy_preview_card:
+		energy_preview_card.activated.emit("svi-jete", -1, -1, "")
 	await create_timer(0.25).timeout
 	if not _capture("choice-energy.png"):
 		quit(1)

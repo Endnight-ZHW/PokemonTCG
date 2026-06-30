@@ -1242,6 +1242,11 @@ func _layout_table_zones(metrics: Dictionary) -> void:
 	var arena_middle := (float(metrics["arena_top"]) + float(metrics["arena_bottom"])) * 0.5
 	var top_zone_y := top_margin + 18.0 * layout_scale
 	var own_zone_y := own_hand_y - zone_visual_size.y - 12.0 * layout_scale
+	var own_zone_shift_down := 110.0 * layout_scale
+	own_zone_y = minf(
+		own_zone_y + own_zone_shift_down,
+		float(metrics["height"]) - zone_visual_size.y - float(metrics["bottom_margin"]),
+	)
 	var opponent_discard_y := top_zone_y + zone_visual_size.y + zone_gap
 	var own_discard_y := own_zone_y - zone_visual_size.y - zone_gap
 	_place_perspective_zone(
@@ -1417,6 +1422,7 @@ func _layout_overlay_drawers() -> void:
 	if board_panel == null:
 		return
 	var board_origin := board_panel.global_position - global_position
+	var board_rect := Rect2(board_origin, board_panel.size)
 	var drawer_width := clampf(
 		board_panel.size.x * 0.23,
 		260.0,
@@ -1426,19 +1432,70 @@ func _layout_overlay_drawers() -> void:
 	var detail_height := clampf(board_panel.size.y * 0.28, 190.0, 240.0)
 	var action_height := clampf(board_panel.size.y * 0.42, 240.0, 360.0)
 	if detail_panel:
-		detail_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
-		detail_panel.size = Vector2(drawer_width, detail_height)
-		detail_panel.custom_minimum_size = Vector2(drawer_width, detail_height)
+		var detail_rect := _detail_drawer_rect(board_rect, drawer_width, detail_height)
+		detail_panel.position = detail_rect.position
+		detail_panel.size = detail_rect.size
+		detail_panel.custom_minimum_size = detail_rect.size
 	if action_panel:
 		action_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
 		action_panel.size = Vector2(drawer_width, action_height)
 		action_panel.custom_minimum_size = Vector2(drawer_width, action_height)
 	if detail_close_button:
+		var close_anchor := (
+			detail_panel.position if detail_panel else Vector2(drawer_x, board_origin.y + 14.0)
+		)
+		var close_width := detail_panel.size.x if detail_panel else drawer_width
 		detail_close_button.position = Vector2(
-			drawer_x + drawer_width - 34.0,
-			board_origin.y + 20.0,
+			close_anchor.x + close_width - 34.0,
+			close_anchor.y + 6.0,
 		)
 		detail_close_button.size = Vector2(28.0, 28.0)
+
+
+func _detail_drawer_rect(
+	board_rect: Rect2,
+	drawer_width: float,
+	default_height: float,
+) -> Rect2:
+	var margin := 14.0
+	var gap := 18.0
+	var detail_gap := 26.0
+	var minimum_height := 120.0
+	var discard_rect := _control_rect_in_table(zones.get("opponent_discard") as Control)
+	var own_discard_rect := _control_rect_in_table(zones.get("own_discard") as Control)
+	var own_deck_rect := _control_rect_in_table(zones.get("own_deck") as Control)
+	var right_edge := (
+		discard_rect.end.x if discard_rect.size != Vector2.ZERO else board_rect.end.x - margin
+	)
+	var x_value := clampf(
+		right_edge - drawer_width,
+		board_rect.position.x + margin,
+		board_rect.end.x - drawer_width - margin,
+	)
+	var preferred_y := (
+		discard_rect.end.y + detail_gap
+		if discard_rect.size != Vector2.ZERO
+		else board_rect.position.y + margin
+	)
+	var lower_zone_top := board_rect.end.y - margin
+	if own_discard_rect.size != Vector2.ZERO:
+		lower_zone_top = minf(lower_zone_top, own_discard_rect.position.y - gap)
+	if own_deck_rect.size != Vector2.ZERO:
+		lower_zone_top = minf(lower_zone_top, own_deck_rect.position.y - gap)
+	var max_height := maxf(minimum_height, lower_zone_top - preferred_y)
+	var height_value := minf(default_height, max_height)
+	var y_value := clampf(
+		preferred_y,
+		board_rect.position.y + margin,
+		maxf(board_rect.position.y + margin, lower_zone_top - height_value),
+	)
+	return Rect2(Vector2(x_value, y_value), Vector2(drawer_width, height_value))
+
+
+func _control_rect_in_table(control: Control) -> Rect2:
+	if control == null or not is_instance_valid(control):
+		return Rect2()
+	return Rect2(control.global_position - global_position, control.size)
 
 
 func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:

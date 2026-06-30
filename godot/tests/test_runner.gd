@@ -1895,6 +1895,18 @@ func _run_phase_three_tests() -> void:
 	if choice_panel:
 		_check(choice_panel.card_option_count() > 0, "Choice overlay has no card tiles")
 		_check(
+			choice_panel.is_preview_visible()
+			and not choice_panel.previewed_card_id().is_empty()
+			and choice_panel.preview_text.text.contains("HP"),
+			"Card choice overlay did not show an automatic card preview",
+		)
+		_check(
+			choice_ui.modal_panel.custom_minimum_size == choice_ui._choice_modal_size(true)
+			and choice_ui.modal_panel.custom_minimum_size.x
+			>= choice_ui._choice_modal_size(false).x,
+			"Card choice overlay did not use the responsive preview modal",
+		)
+		_check(
 			choice_panel.text_option_count() == 0 and choice_ui.option_buttons.is_empty(),
 			"Card choice overlay duplicated card options as text buttons",
 		)
@@ -1905,10 +1917,23 @@ func _run_phase_three_tests() -> void:
 	if choice_panel_scene:
 		var panel := choice_panel_scene.instantiate() as ChoicePanel
 		root.add_child(panel)
-		panel.configure("请选择 0-2 项。", true)
+		panel.configure("请选择 0-2 项。", true, CardCatalog.new())
 		panel.add_card_option("dup:target", "sv1-104", "备战区 1", 0)
+		var second_card := panel.add_card_option("dup:second", "sv1-151", "牌库 2", 0)
 		panel.refresh_selection(["dup:target", "dup:target"], 2, true)
-		_check(panel.card_option_count() == 1, "ChoicePanel did not create one card tile")
+		_check(panel.card_option_count() == 2, "ChoicePanel did not create card tiles")
+		_check(
+			panel.is_preview_visible()
+			and panel.previewed_card_id() == "sv1-104"
+			and panel.preview_text.text.contains("HP"),
+			"ChoicePanel did not automatically preview the first card option",
+		)
+		second_card.activated.emit("sv1-151", -1, 0, "")
+		_check(
+			panel.previewed_card_id() == "sv1-151"
+			and panel.preview_title.text.contains("巢穴球"),
+			"ChoicePanel did not update preview from card activation",
+		)
 		_check(
 			panel.selected_count_for("dup:target") == 2,
 			"ChoicePanel duplicate selection count was not tracked",
@@ -1919,6 +1944,10 @@ func _run_phase_three_tests() -> void:
 		panel.refresh_selection(["confirm:yes"], 1, false)
 		_check(panel.card_option_count() == 0, "Non-card choices created card tiles")
 		_check(panel.text_option_count() == 2, "Non-card choices did not create compact buttons")
+		_check(
+			not panel.is_preview_visible() and panel.previewed_card_id().is_empty(),
+			"Non-card choices left the card preview visible",
+		)
 		_check(
 			panel.selected_count_for("confirm:yes") == 1,
 			"Non-card choice selection state was not tracked",
@@ -3639,6 +3668,43 @@ func _run_visual_upgrade_tests() -> void:
 		for action in engine.legal_actions(state, 0, true):
 			rows.append({"action": action, "label": action.action})
 		battle.update_view(state, 0, rows, "", false, "local")
+		battle._layout_board()
+		battle.show_card_detail("sv1-104")
+		var detail_rect := Rect2(battle.detail_panel.global_position, battle.detail_panel.size)
+		var opponent_deck_rect := Rect2(
+			(battle.zones["opponent_deck"] as ZoneView).global_position,
+			(battle.zones["opponent_deck"] as ZoneView).size,
+		)
+		var opponent_discard_rect := Rect2(
+			(battle.zones["opponent_discard"] as ZoneView).global_position,
+			(battle.zones["opponent_discard"] as ZoneView).size,
+		)
+		var own_discard_rect := Rect2(
+			(battle.zones["own_discard"] as ZoneView).global_position,
+			(battle.zones["own_discard"] as ZoneView).size,
+		)
+		var own_deck_rect := Rect2(
+			(battle.zones["own_deck"] as ZoneView).global_position,
+			(battle.zones["own_deck"] as ZoneView).size,
+		)
+		var lower_zone_top := minf(
+			own_discard_rect.position.y,
+			own_deck_rect.position.y,
+		)
+		var has_detail_space_below_discard := (
+			lower_zone_top - opponent_discard_rect.end.y >= 120.0
+		)
+		_check(
+			not detail_rect.intersects(opponent_deck_rect)
+			and not detail_rect.intersects(own_discard_rect)
+			and not detail_rect.intersects(own_deck_rect)
+			and (
+				not has_detail_space_below_discard
+				or detail_rect.position.y >= opponent_discard_rect.end.y - 1.0
+			),
+			"Battle detail panel overlapped side zones or ignored discard anchor",
+		)
+		battle.hide_card_detail()
 		_check(
 			battle.effects != null and not battle.effects.is_processing(),
 			"Idle battle effects layer kept processing",
@@ -4807,6 +4873,7 @@ func _run_visual_upgrade_tests() -> void:
 			"Flash overlay cleanup did not ignore a freed tween callback target",
 		)
 		var long_logs := [
+			"玩家 1 将一对鼠放到[active]圈\n换行内容",
 			"第一条很长的行动日志，用于验证完整日志可滚动而不是被裁剪。",
 			"第二条很长的行动日志，用于验证中文自动换行不会丢失最新内容。",
 			"第三条很长的行动日志，用于验证 RichTextLabel 保持滚动状态。",
@@ -4822,8 +4889,11 @@ func _run_visual_upgrade_tests() -> void:
 		battle_log_panel.update_entries(long_logs)
 		_check(
 			battle_log_panel.visible
+			and not battle.log_label.bbcode_enabled
 			and battle.log_label.autowrap_mode == TextServer.AUTOWRAP_WORD_SMART
 			and battle.log_label.scroll_following
+			and not battle.log_label.text.contains("◆")
+			and battle.log_label.text.contains("玩家 1 将一对鼠放到[active]圈 换行内容")
 			and battle.log_label.text.contains("第一条很长的行动日志")
 			and battle.log_label.text.contains("最后一条很长的行动日志")
 			and battle.log_label.scroll_active,

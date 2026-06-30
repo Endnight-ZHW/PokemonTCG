@@ -801,15 +801,22 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	active_choice_panel = null
 	selected_choice_ids.clear()
 	option_buttons.clear()
+	var energy_cards := _choice_energy_cards(request)
+	var has_card_preview := not energy_cards.is_empty()
+	for option in request.options:
+		if not _choice_option_card_id(option).is_empty():
+			has_card_preview = true
+			break
 	_open_modal(request.prompt, "确认选择", "取消" if request.can_cancel else "")
+	if has_card_preview:
+		modal_panel.custom_minimum_size = _choice_modal_size(true)
 	modal_title.text = _choice_title(request)
 	var metadata_text := _choice_metadata_text(request)
 	var panel := CHOICE_PANEL_SCENE.instantiate() as ChoicePanel
 	modal_body.add_child(panel)
 	active_choice_panel = panel
-	panel.configure(metadata_text, not request.options.is_empty())
+	panel.configure(metadata_text, not request.options.is_empty(), catalog)
 	panel.option_toggled.connect(_toggle_choice)
-	var energy_cards := _choice_energy_cards(request)
 	if not energy_cards.is_empty():
 		panel.add_energy_preview(energy_cards, catalog)
 	for option in request.options:
@@ -835,6 +842,21 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	if request.can_cancel:
 		modal_cancel.pressed.connect(_cancel_choice, CONNECT_ONE_SHOT)
 	_refresh_choice_buttons()
+
+
+func _choice_modal_size(has_preview: bool) -> Vector2:
+	var viewport_size := Vector2(1280, 720)
+	if is_inside_tree():
+		viewport_size = get_viewport_rect().size
+	else:
+		var tree := Engine.get_main_loop() as SceneTree
+		if tree and tree.root:
+			viewport_size = Vector2(tree.root.size)
+	var target := Vector2(980, 660) if has_preview else Vector2(720, 620)
+	return Vector2(
+		minf(target.x, maxf(640.0, viewport_size.x - 96.0)),
+		minf(target.y, maxf(520.0, viewport_size.y - 72.0)),
+	)
 
 
 func _choice_option_card_id(option: Dictionary) -> String:

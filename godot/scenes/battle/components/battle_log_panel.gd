@@ -19,7 +19,7 @@ func update_entries(action_log: Array) -> void:
 		return
 	var lines: Array[String] = []
 	for index in range(action_log.size()):
-		lines.append("[color=#62d7ff]◆[/color] " + str(action_log[index]))
+		lines.append("- " + _single_line(str(action_log[index])))
 	visible = not lines.is_empty()
 	log_label.text = "\n".join(lines)
 	call_deferred("_scroll_to_latest")
@@ -32,10 +32,14 @@ func _resolve_nodes() -> void:
 func _configure_label() -> void:
 	if log_label == null:
 		return
-	log_label.bbcode_enabled = true
+	log_label.bbcode_enabled = false
 	log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	log_label.scroll_active = true
 	log_label.scroll_following = true
+
+
+func _single_line(value: String) -> String:
+	return value.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip_edges()
 
 
 func _scroll_to_latest() -> void:

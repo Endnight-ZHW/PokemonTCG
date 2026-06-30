@@ -22,32 +22,83 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
 text = "点击确认继续结算。"
 
-[node name="EnergyPreview" type="VBoxContainer" parent="."]
+[node name="ContentRow" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="ChoiceColumn" type="VBoxContainer" parent="ContentRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="EnergyPreview" type="VBoxContainer" parent="ContentRow/ChoiceColumn"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="EnergyPreviewLabel" type="Label" parent="EnergyPreview"]
+[node name="EnergyPreviewLabel" type="Label" parent="ContentRow/ChoiceColumn/EnergyPreview"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
 theme_override_font_sizes/font_size = 13
 text = "待分配能量"
 
-[node name="EnergyGrid" type="HFlowContainer" parent="EnergyPreview"]
+[node name="EnergyGrid" type="HFlowContainer" parent="ContentRow/ChoiceColumn/EnergyPreview"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
 
-[node name="CardGrid" type="GridContainer" parent="."]
+[node name="CardGrid" type="GridContainer" parent="ContentRow/ChoiceColumn"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/h_separation = 10
 theme_override_constants/v_separation = 10
 columns = 5
 
-[node name="OptionList" type="VBoxContainer" parent="."]
+[node name="OptionList" type="VBoxContainer" parent="ContentRow/ChoiceColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
+
+[node name="PreviewPanel" type="PanelContainer" parent="ContentRow"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(270, 430)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PreviewContent" type="VBoxContainer" parent="ContentRow/PreviewPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PreviewImage" type="TextureRect" parent="ContentRow/PreviewPanel/PreviewContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(206, 288)
+layout_mode = 2
+size_flags_horizontal = 4
+expand_mode = 1
+stretch_mode = 5
+
+[node name="PreviewTitle" type="Label" parent="ContentRow/PreviewPanel/PreviewContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "卡牌预览"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="PreviewText" type="RichTextLabel" parent="ContentRow/PreviewPanel/PreviewContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/normal_font_size = 12
+bbcode_enabled = true
+scroll_active = true
+autowrap_mode = 3
+text = "选择卡牌查看效果。"
