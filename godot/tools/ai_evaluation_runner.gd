@@ -57,6 +57,8 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"strategy_b_path": "",
 		"deck_keys": [],
 		"seed_blocks_per_deck": DEFAULT_SEED_BLOCKS_PER_DECK,
+		"seed_block_start": 0,
+		"seed_block_count": 0,
 		"seed": DEFAULT_SEED,
 		"max_actions": DEFAULT_MAX_ACTIONS,
 		"eval_preset": "Custom",
@@ -85,6 +87,12 @@ func _parse_args(args: Array[String]) -> Dictionary:
 				index += 2
 			"--seed-blocks-per-deck":
 				config["seed_blocks_per_deck"] = maxi(1, int(value))
+				index += 2
+			"--seed-block-start":
+				config["seed_block_start"] = maxi(0, int(value))
+				index += 2
+			"--seed-block-count":
+				config["seed_block_count"] = maxi(0, int(value))
 				index += 2
 			"--seed":
 				config["seed"] = int(value)
@@ -168,11 +176,20 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var worker := NativeChallengeAI.new()
 	var matches: Array[Dictionary] = []
 	var seed_blocks := maxi(1, int(config.get("seed_blocks_per_deck", DEFAULT_SEED_BLOCKS_PER_DECK)))
+	var seed_block_start := clampi(int(config.get("seed_block_start", 0)), 0, seed_blocks - 1)
+	var requested_seed_block_count := int(config.get("seed_block_count", 0))
+	var seed_block_count := seed_blocks - seed_block_start
+	if requested_seed_block_count > 0:
+		seed_block_count = mini(seed_block_count, requested_seed_block_count)
 	var base_seed := int(config.get("seed", DEFAULT_SEED))
 	var max_actions := maxi(1, int(config.get("max_actions", DEFAULT_MAX_ACTIONS)))
-	for deck_index in range(selected_decks.size()):
-		var deck_key := str(selected_decks[deck_index])
-		for block_index in range(seed_blocks):
+	for selected_deck_index in range(selected_decks.size()):
+		var deck_key := str(selected_decks[selected_deck_index])
+		var deck_index := DEFAULT_DECK_KEYS.find(deck_key)
+		if deck_index < 0:
+			deck_index = selected_deck_index
+		for block_offset in range(seed_block_count):
+			var block_index := seed_block_start + block_offset
 			var game_seed := _game_seed(base_seed, deck_index, block_index)
 			var forced_first := block_index % 2
 			matches.append(_play_match(
@@ -218,6 +235,8 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		"config": {
 			"seed": base_seed,
 			"seed_blocks_per_deck": seed_blocks,
+			"seed_block_start": seed_block_start,
+			"seed_block_count": seed_block_count,
 			"max_actions": max_actions,
 			"eval_preset": str(config.get("eval_preset", "Custom")),
 		},

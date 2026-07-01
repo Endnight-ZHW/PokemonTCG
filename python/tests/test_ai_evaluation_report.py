@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from scripts.merge_ai_evaluation_shards import MergeError, merge_payloads
 from scripts.render_ai_evaluation_report import DECK_LABELS, evaluation_verdict, render_file
 from scripts.validate_ai_evaluation import validate_evaluation_gate
 from tests.temp_utils import temp_dir
@@ -50,6 +51,63 @@ def _schema2_payload(**summary_overrides):
         "seat": {"seat_counts": {"a_player_0": 20, "a_player_1": 20}},
         "terminal_reasons": {"game_over": 40},
         "matches": [],
+    }
+
+
+def _match(deck: str, block: int, seat: int, winner: str) -> dict:
+    return {
+        "deck": deck,
+        "seed": 17 + block * 10007,
+        "seed_block": block,
+        "seat": seat,
+        "strategy_a_player": 0 if seat == 0 else 1,
+        "forced_first_player": block % 2,
+        "strategy_a_first": (0 if seat == 0 else 1) == block % 2,
+        "winner": winner,
+        "engine_winner": 0 if winner == "A" else 1,
+        "score": 1000.0 if winner == "A" else -1000.0,
+        "terminal_reason": "game_over",
+        "terminal_message": "",
+        "actions": 10,
+        "turns": 3,
+        "decisions": 10,
+        "choices": 2,
+        "average_decision_ms": 5.0,
+        "elapsed_ms": 100,
+        "invalid_actions": 0,
+        "choice_failures": 0,
+        "rule_exceptions": 0,
+        "time_capped_decisions": 0,
+        "max_actions_exhausted": False,
+    }
+
+
+def _shard(block: int, *, fingerprint: str = "same", seed: int = 17) -> dict:
+    return {
+        "schema_version": 2,
+        "self_check": False,
+        "eval_preset": "Smoke",
+        "mode": "mirror",
+        "deck_keys": ["fire"],
+        "config": {
+            "seed": seed,
+            "seed_blocks_per_deck": 2,
+            "seed_block_start": block,
+            "seed_block_count": 1,
+            "max_actions": 80,
+            "eval_preset": "Smoke",
+        },
+        "strategies": {"A": {"id": "a"}, "B": {"id": "b"}},
+        "strategy_fingerprint": {"A": fingerprint, "B": fingerprint, "equal": True},
+        "summary": {"games": 2},
+        "per_deck": {},
+        "paired": {},
+        "seat": {},
+        "terminal_reasons": {},
+        "matches": [
+            _match("fire", block, 0, "A"),
+            _match("fire", block, 1, "B"),
+        ],
     }
 
 
@@ -197,6 +255,32 @@ class AIEvaluationReportTests(unittest.TestCase):
             "decision_ms_p95_regression",
             validate_evaluation_gate(slow, gate="nightly", baseline=baseline)["errors"],
         )
+
+    def test_nightly_gate_rejects_time_capped_decisions(self):
+        payload = _schema2_payload(time_capped_decision_rate=0.01)
+
+        self.assertIn(
+            "time_capped_decision_rate",
+            validate_evaluation_gate(payload, gate="nightly")["errors"],
+        )
+
+    def test_merge_shards_recomputes_schema2_metrics(self):
+        merged = merge_payloads([_shard(0), _shard(1)], workers=2)
+
+        self.assertEqual(merged["summary"]["games"], 4)
+        self.assertEqual(merged["summary"]["paired_pairs"], 2)
+        self.assertEqual(merged["per_deck"]["fire"]["games"], 4)
+        self.assertEqual(merged["seat"]["seat_counts"], {"a_player_0": 2, "a_player_1": 2})
+        self.assertEqual(merged["terminal_reasons"], {"game_over": 4})
+        self.assertEqual(merged["config"]["parallel_workers"], 2)
+
+    def test_merge_shards_rejects_strategy_mismatch(self):
+        with self.assertRaisesRegex(MergeError, "strategy_fingerprint"):
+            merge_payloads([_shard(0, fingerprint="a"), _shard(1, fingerprint="b")], workers=2)
+
+    def test_merge_shards_rejects_config_mismatch(self):
+        with self.assertRaisesRegex(MergeError, "config:seed"):
+            merge_payloads([_shard(0, seed=17), _shard(1, seed=99)], workers=2)
 
 
 if __name__ == "__main__":

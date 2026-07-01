@@ -8,6 +8,7 @@ param(
     [int]$SeedBlocksPerDeck = 50,
     [int]$Seed = 17,
     [int]$MaxActions = 1200,
+    [int]$Workers = 1,
     [string]$OutputDir = ''
 )
 
@@ -125,7 +126,6 @@ $runnerArgs = @(
     '--path', (Join-Path $repoRoot 'godot'),
     '--script', 'res://tools/ai_evaluation_runner.gd',
     '--',
-    '--output', $jsonPath,
     '--eval-preset', $EvalPreset,
     '--seed-blocks-per-deck', ([string][Math]::Max(1, $SeedBlocksPerDeck)),
     '--seed', ([string]$Seed),
@@ -143,21 +143,137 @@ foreach ($deckKey in $Deck) {
     }
 }
 
-$godotOutput = & $godot @runnerArgs 2>&1
-$godotOutput | ForEach-Object { Write-Host $_ }
-$godotExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-if ($godotExit -ne 0) {
-    throw "Godot AI evaluation failed with exit code $godotExit"
+function Test-GodotShardOutput {
+    param(
+        [string]$StdoutPath,
+        [string]$StderrPath,
+        [string]$JsonPath,
+        [int]$ExitCode
+    )
+    $outputLines = @()
+    if (Test-Path -LiteralPath $StdoutPath) {
+        $outputLines += Get-Content -LiteralPath $StdoutPath
+    }
+    if (Test-Path -LiteralPath $StderrPath) {
+        $outputLines += Get-Content -LiteralPath $StderrPath
+    }
+    $outputLines | ForEach-Object { Write-Host $_ }
+    $joined = $outputLines -join "`n"
+    if ($ExitCode -ne 0) {
+        throw "Godot AI evaluation failed with exit code $ExitCode. stdout=$StdoutPath stderr=$StderrPath"
+    }
+    if ($joined -match '(?m)^(SCRIPT ERROR|ERROR):') {
+        throw "Godot emitted script/runtime errors during AI evaluation. stdout=$StdoutPath stderr=$StderrPath"
+    }
+    if ($joined -notmatch 'AI_EVALUATION_OK') {
+        throw "Godot AI evaluation success marker was not emitted. stdout=$StdoutPath stderr=$StderrPath"
+    }
+    if (-not (Test-Path -LiteralPath $JsonPath)) {
+        throw "Godot AI evaluation did not write $JsonPath"
+    }
 }
-$joinedGodotOutput = $godotOutput -join "`n"
-if ($joinedGodotOutput -match '(?m)^(SCRIPT ERROR|ERROR):') {
-    throw 'Godot emitted script/runtime errors during AI evaluation.'
+
+function Invoke-GodotShard {
+    param(
+        [string[]]$BaseArgs,
+        [string]$ShardJsonPath,
+        [int]$SeedBlockStart,
+        [int]$SeedBlockCount,
+        [string]$StdoutPath,
+        [string]$StderrPath
+    )
+    $args = @($BaseArgs)
+    $args += @(
+        '--output', $ShardJsonPath,
+        '--seed-block-start', ([string]$SeedBlockStart),
+        '--seed-block-count', ([string]$SeedBlockCount)
+    )
+    $output = & $godot @args 2>&1
+    $output | Set-Content -LiteralPath $StdoutPath -Encoding UTF8
+    '' | Set-Content -LiteralPath $StderrPath -Encoding UTF8
+    Test-GodotShardOutput `
+        -StdoutPath $StdoutPath `
+        -StderrPath $StderrPath `
+        -JsonPath $ShardJsonPath `
+        -ExitCode $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE })
 }
-if ($joinedGodotOutput -notmatch 'AI_EVALUATION_OK') {
-    throw 'Godot AI evaluation success marker was not emitted.'
+
+$workerCount = [Math]::Max(1, $Workers)
+if ($workerCount -le 1) {
+    Invoke-GodotShard `
+        -BaseArgs $runnerArgs `
+        -ShardJsonPath $jsonPath `
+        -SeedBlockStart 0 `
+        -SeedBlockCount ([Math]::Max(1, $SeedBlocksPerDeck)) `
+        -StdoutPath (Join-Path $OutputDir 'godot.stdout.log') `
+        -StderrPath (Join-Path $OutputDir 'godot.stderr.log')
 }
-if (-not (Test-Path -LiteralPath $jsonPath)) {
-    throw "Godot AI evaluation did not write $jsonPath"
+else {
+    $shardsRoot = Join-Path $OutputDir 'shards'
+    New-Item -ItemType Directory -Force -Path $shardsRoot | Out-Null
+    $shardCount = [Math]::Min($workerCount, [Math]::Max(1, $SeedBlocksPerDeck))
+    $blocksPerShard = [int][Math]::Ceiling([double][Math]::Max(1, $SeedBlocksPerDeck) / [double]$shardCount)
+    $processes = @()
+    $shardJsonPaths = @()
+    for ($shardIndex = 0; $shardIndex -lt $shardCount; $shardIndex++) {
+        $start = $shardIndex * $blocksPerShard
+        if ($start -ge $SeedBlocksPerDeck) {
+            continue
+        }
+        $count = [Math]::Min($blocksPerShard, $SeedBlocksPerDeck - $start)
+        $shardDir = Join-Path $shardsRoot ('shard-{0:D3}' -f $shardIndex)
+        New-Item -ItemType Directory -Force -Path $shardDir | Out-Null
+        $shardJson = Join-Path $shardDir 'results.json'
+        $stdoutPath = Join-Path $shardDir 'stdout.log'
+        $stderrPath = Join-Path $shardDir 'stderr.log'
+        $args = @($runnerArgs)
+        $args += @(
+            '--output', $shardJson,
+            '--seed-block-start', ([string]$start),
+            '--seed-block-count', ([string]$count)
+        )
+        $process = Start-Process `
+            -FilePath $godot `
+            -ArgumentList $args `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath `
+            -WindowStyle Hidden `
+            -PassThru
+        $processes += [pscustomobject]@{
+            Process = $process
+            Json = $shardJson
+            Stdout = $stdoutPath
+            Stderr = $stderrPath
+            Start = $start
+            Count = $count
+        }
+        $shardJsonPaths += $shardJson
+    }
+    foreach ($item in $processes) {
+        $item.Process.WaitForExit()
+        Test-GodotShardOutput `
+            -StdoutPath $item.Stdout `
+            -StderrPath $item.Stderr `
+            -JsonPath $item.Json `
+            -ExitCode $item.Process.ExitCode
+    }
+    $mergeArgs = @(
+        (Join-Path $repoRoot 'python\scripts\merge_ai_evaluation_shards.py'),
+        '--output', $jsonPath,
+        '--workers', ([string]$workerCount)
+    )
+    foreach ($path in $shardJsonPaths) {
+        $mergeArgs += @('--input', $path)
+    }
+    $mergeOutput = & $python @mergeArgs 2>&1
+    $mergeOutput | ForEach-Object { Write-Host $_ }
+    $mergeExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    if ($mergeExit -ne 0) {
+        throw "AI evaluation shard merge failed with exit code $mergeExit"
+    }
+    if (-not (Test-Path -LiteralPath $jsonPath)) {
+        throw "AI evaluation shard merge did not write $jsonPath"
+    }
 }
 
 $reportOutput = & $python `

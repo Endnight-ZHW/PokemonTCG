@@ -50,6 +50,8 @@ def validate_evaluation_gate(
     )
     if max_action_rate > 0.01:
         errors.append("max_action_exhaustion_rate")
+    if _float(summary.get("time_capped_decision_rate")) > 0.0:
+        errors.append("time_capped_decision_rate")
 
     if normalized_gate == "quick":
         if _float(summary.get("paired_point_delta")) <= 0.0:
