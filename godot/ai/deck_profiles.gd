@@ -21,8 +21,8 @@ const PROFILES := {
 		"energy": ["Water"],
 	},
 	"psychic": {
-		"core": ["sv1-106", "sv1-110", "sv1-111", "sv1-112", "sv1-113"],
-		"engine": ["sv1-107", "sv1-108", "sv1-109", "sv1-114", "sv1-171"],
+		"core": ["sv1-106", "sv1-111", "sv1-112", "sv1-113"],
+		"engine": ["sv1-107", "sv1-108", "sv1-109", "sv1-110", "sv1-114", "sv1-171"],
 		"setup": ["sv1-109", "sv1-110", "sv1-113", "sv1-114", "sv1-104"],
 		"bench": ["sv1-107", "sv1-110", "sv1-111", "sv1-112", "sv1-113", "sv1-114"],
 		"evolution": ["sv1-108", "sv1-106"],
@@ -30,8 +30,8 @@ const PROFILES := {
 		"energy": ["Psychic"],
 	},
 	"lightning": {
-		"core": ["svl-pikaex", "svl-flaa2"],
-		"engine": ["svl-mare2", "svl-thun", "svl-chat", "svl-ensw", "sv1-170", "svl-trks"],
+		"core": ["svl-pikaex"],
+		"engine": ["svl-mare2", "svl-flaa2", "svl-thun", "svl-chat", "svl-ensw", "sv1-170", "svl-trks"],
 		"setup": ["svl-thun", "svl-emol", "svl-chat", "svl-mare2", "svl-chin"],
 		"bench": ["svl-pikaex", "svl-mare2", "svl-chin"],
 		"evolution": ["svl-flaa2", "svl-lant"],
@@ -75,13 +75,14 @@ const PROFILES := {
 		"energy": ["Grass", "Rainbow"],
 	},
 	"steel": {
-		"core": ["svm-zacian", "svm-zamazenta", "svm-bronzong", "svm-orthworm"],
-		"engine": ["svm-bronzor", "svm-smeargle", "svm-cobalion", "svm-dialga"],
+		"core": ["svm-zacian", "svm-zamazenta", "svm-orthworm"],
+		"engine": ["svm-bronzor", "svm-bronzong", "svm-smeargle", "svm-cobalion", "svm-dialga"],
 		"setup": ["svm-smeargle", "svm-zamazenta", "svm-zacian", "svm-cobalion"],
 		"bench": ["svm-bronzor", "svm-smeargle", "svm-cobalion", "svm-orthworm"],
 		"evolution": ["svm-bronzong"],
 		"trainer": ["sv1-151", "sv1-153", "svm-marnie-pride", "svg2-exps", "svl-vitb"],
 		"energy": ["Metal"],
+		"high_impact_damage_floor": 100,
 	},
 	"darkness": {
 		"core": ["svd-mabosstiff-ex", "svd-dodrio"],
@@ -101,3 +102,7 @@ static func get_profile(deck_key: String) -> Dictionary:
 
 static func contains(deck_key: String, group: String, card_id: String) -> bool:
 	return card_id in get_profile(deck_key).get(group, [])
+
+
+static func high_impact_damage_floor(deck_key: String) -> int:
+	return int(get_profile(deck_key).get("high_impact_damage_floor", 110))

@@ -644,12 +644,13 @@ func _energy_choice_target_value(
 	)
 	var power_progress: int = max(0, power_before - power_after)
 	var damage_ceiling := _best_pokemon_damage(pokemon, catalog)
+	var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
 	var value := progress * 85.0
 	if before > 0 and after == 0:
 		value += 155.0 + damage_ceiling * 0.25
 	elif before > 1 and after == 1:
 		value += 65.0
-	if damage_ceiling >= 110 and power_progress > 0:
+	if damage_ceiling >= high_impact_floor and power_progress > 0:
 		value += power_progress * 105.0
 		if power_after == 0:
 			value += 165.0 + damage_ceiling * 0.25
@@ -692,7 +693,7 @@ func _energy_plan_target_bonus(
 		bonus += 22.0
 		if not pokemon.energy_card_ids.is_empty():
 			bonus -= 55.0 * pokemon.energy_card_ids.size()
-		if _best_pokemon_damage(pokemon, catalog) < 110:
+		if _best_pokemon_damage(pokemon, catalog) < AIDeckProfiles.high_impact_damage_floor(deck_key):
 			bonus -= 25.0
 	if slot != "active" and AIDeckProfiles.contains(deck_key, "bench", pokemon.card_id):
 		bonus += 34.0
@@ -708,7 +709,8 @@ func _energy_plan_target_bonus(
 		else high_impact_missing
 	)
 	var high_impact_progress: int = max(0, high_impact_missing - high_impact_after)
-	if damage_ceiling >= 110 and high_impact_progress > 0:
+	var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
+	if damage_ceiling >= high_impact_floor and high_impact_progress > 0:
 		bonus += high_impact_progress * 110.0
 		if high_impact_after == 0:
 			bonus += 170.0 + damage_ceiling * 0.25
@@ -720,7 +722,7 @@ func _energy_plan_target_bonus(
 		bonus += 35.0
 	elif missing == 1:
 		bonus += 25.0
-	elif missing <= 3 and damage_ceiling >= 110:
+	elif missing <= 3 and damage_ceiling >= high_impact_floor:
 		bonus += 30.0
 	var max_hp := int(card.get("hp", 0))
 	if (
@@ -744,10 +746,11 @@ func _has_better_bench_energy_plan(
 	var player := state.get_player(actor)
 	if player.active == null:
 		return false
+	var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
 	if (
 		AIDeckProfiles.contains(deck_key, "core", player.active.card_id)
 		and player.active.current_hp(catalog) > max(50, int(catalog.get_card(player.active.card_id).get("hp", 0)) * 0.35)
-		and _best_pokemon_damage(player.active, catalog) >= 110
+		and _best_pokemon_damage(player.active, catalog) >= high_impact_floor
 	):
 		return false
 	var active_before := _best_missing_energy(player.active, catalog)
@@ -758,7 +761,7 @@ func _has_better_bench_energy_plan(
 	var active_progresses := (
 		active_after < active_before
 		or (
-			active_damage >= 110
+			active_damage >= high_impact_floor
 			and active_power_after < active_power_before
 		)
 	)
@@ -774,7 +777,7 @@ func _has_better_bench_energy_plan(
 		var progresses_bench := (
 			after < before
 			or (
-				bench_damage >= 110
+				bench_damage >= high_impact_floor
 				and bench_power_after < bench_power_before
 			)
 		)
@@ -788,7 +791,7 @@ func _has_better_bench_energy_plan(
 			progresses_bench
 			and before > 0
 			and after == 0
-			and bench_damage >= max(110, active_damage + 40)
+			and bench_damage >= max(high_impact_floor, active_damage + 40)
 		):
 			return true
 	return false
@@ -1426,7 +1429,8 @@ func _development_action_value(
 				attach_value += 175.0 + damage_ceiling * 0.25
 			elif before > 1 and after == 1:
 				attach_value += 70.0
-			if damage_ceiling >= 110 and power_progress > 0:
+			var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
+			if damage_ceiling >= high_impact_floor and power_progress > 0:
 				attach_value += power_progress * 120.0
 				if power_after == 0:
 					attach_value += 190.0 + damage_ceiling * 0.25
@@ -1535,7 +1539,12 @@ func _effects_tactical_value(
 				if player.deck.size() <= amount:
 					value -= 260.0
 				else:
-					value += min(amount, 7) * 34.0
+					var draw_value: float = min(amount, 7) * 34.0
+					if player.hand.size() >= 8:
+						draw_value -= min(amount, 7) * 22.0
+					elif player.hand.size() >= 6:
+						draw_value -= min(amount, 7) * 10.0
+					value += draw_value
 					if player.hand.size() <= 3:
 						value += 55.0
 			"discard_draw", "shuffle_draw", "judge", "hand_to_bottom_draw", "discard_then_draw":
@@ -1543,7 +1552,12 @@ func _effects_tactical_value(
 				if player.deck.size() <= draw_count:
 					value -= 220.0
 				else:
-					value += 95.0 + min(draw_count, 7) * 24.0
+					var refresh_value: float = 95.0 + min(draw_count, 7) * 24.0
+					if player.hand.size() >= 8:
+						refresh_value -= 85.0
+					elif player.hand.size() >= 6:
+						refresh_value -= 35.0
+					value += refresh_value
 					if player.hand.size() <= 4:
 						value += 65.0
 			"search", "conditional_search_extra", "search_any_and_switch", "arven", "houb":
@@ -2405,6 +2419,10 @@ func _best_pokemon_damage(pokemon: PokemonState, catalog: CardCatalog) -> int:
 					damage = max(damage, int(params.get("base", 0)) + pokemon.energy_card_ids.size() * int(params.get("per_energy", 0)))
 				"damage_plus_bench":
 					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
+				"damage_self_penalty":
+					damage = max(damage, max(0, int(params.get("base", 0)) - pokemon.damage_counters * int(params.get("per_counter", 0))))
+				"conditional_damage_bonus":
+					damage += int(params.get("bonus", params.get("amount", 0)))
 				"attack_damage_formula":
 					var formula_damage := int(params.get("base", 0))
 					formula_damage += int(params.get("per_own_bench", 0)) * 3
@@ -2430,6 +2448,10 @@ func _pokemon_card_strength(card_id: String, energy_count: int, catalog: CardCat
 					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
 				"damage_per_self_energy", "damage_per_self_energy_type":
 					damage = max(damage, int(params.get("base", 0)) + energy_count * int(params.get("per_energy", 0)))
+				"damage_self_penalty":
+					damage = max(damage, int(params.get("base", 0)))
+				"conditional_damage_bonus":
+					damage += int(params.get("bonus", params.get("amount", 0)))
 				"attack_damage_formula":
 					var formula_damage := int(params.get("base", 0))
 					formula_damage += int(params.get("per_own_bench", 0)) * 3
@@ -2521,7 +2543,11 @@ func _should_avoid_repeating_ability(
 		return false
 	if not _ability_is_repeatable(state, actor, action, ability_name, catalog):
 		return false
-	return ability_name in str(state.action_log[-1])
+	var start_index: int = max(0, state.action_log.size() - 6)
+	for index in range(start_index, state.action_log.size()):
+		if ability_name in str(state.action_log[index]):
+			return true
+	return false
 
 
 func _ability_is_repeatable(
@@ -2595,6 +2621,10 @@ func _pokemon_strength(pokemon: PokemonState, catalog: CardCatalog) -> float:
 					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
 				"damage_per_self_energy", "damage_per_self_energy_type":
 					damage = max(damage, int(params.get("base", 0)) + pokemon.energy_card_ids.size() * int(params.get("per_energy", 0)))
+				"damage_self_penalty":
+					damage = max(damage, max(0, int(params.get("base", 0)) - pokemon.damage_counters * int(params.get("per_counter", 0))))
+				"conditional_damage_bonus":
+					damage += int(params.get("bonus", params.get("amount", 0)))
 				"attack_damage_formula":
 					var formula_damage := int(params.get("base", 0))
 					formula_damage += int(params.get("per_own_bench", 0)) * 3

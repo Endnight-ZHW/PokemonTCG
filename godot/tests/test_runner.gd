@@ -2633,6 +2633,77 @@ func _run_ai_strength_regression_tests(
 		"AI trekking shoes kept a low-value duplicate draw supporter",
 	)
 
+	var low_hand_draw_state := GameState.new()
+	low_hand_draw_state.phase = "MAIN"
+	low_hand_draw_state.public_deck_keys = ["psychic", "water"]
+	low_hand_draw_state.players[0].active = PokemonState.new("sv1-113")
+	low_hand_draw_state.players[0].hand = ["sv1-180", "sv1-ener-5"]
+	low_hand_draw_state.players[0].deck = [
+		"sv1-ener-5", "sv1-ener-5", "sv1-107", "sv1-108", "sv1-109",
+	]
+	var high_hand_draw_state := GameState.from_dict(low_hand_draw_state.snapshot())
+	high_hand_draw_state.players[0].hand = [
+		"sv1-180", "sv1-ener-5", "sv1-ener-5", "sv1-107", "sv1-108",
+		"sv1-109", "sv1-110", "sv1-111", "sv1-112",
+	]
+	var draw_trainer_action := GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0)
+	_check(
+		worker._action_score(
+			high_hand_draw_state, 0, draw_trainer_action, "psychic", catalog)
+		< worker._action_score(
+			low_hand_draw_state, 0, draw_trainer_action, "psychic", catalog),
+		"AI draw trainer score did not decrease for saturated hands",
+	)
+
+	_check(
+		not AIDeckProfiles.contains("psychic", "core", "sv1-110")
+		and AIDeckProfiles.contains("psychic", "engine", "sv1-110")
+		and not AIDeckProfiles.contains("steel", "core", "svm-bronzong")
+		and AIDeckProfiles.contains("steel", "engine", "svm-bronzong")
+		and not AIDeckProfiles.contains("lightning", "core", "svl-flaa2")
+		and AIDeckProfiles.contains("lightning", "engine", "svl-flaa2")
+		and AIDeckProfiles.contains("lightning", "evolution", "svl-flaa2"),
+		"AI deck profiles still treat engine Pokemon as primary core cards",
+	)
+	_check(
+		AIDeckProfiles.high_impact_damage_floor("steel") == 100
+		and AIDeckProfiles.high_impact_damage_floor("psychic") == 110,
+		"AI deck profiles did not preserve deck-specific high-impact damage floors",
+	)
+
+	var steel_floor_state := GameState.new()
+	steel_floor_state.players[0].active = PokemonState.new("svm-zacian")
+	steel_floor_state.players[0].active.energy_card_ids.assign([
+		"sv1-ener-8", "sv1-ener-8",
+	])
+	_check(
+		worker._energy_plan_target_bonus(
+			steel_floor_state, 0, "active", "sv1-ener-8", "steel", catalog) > 400.0,
+		"AI steel energy planning did not treat 100-damage core attacks as high impact",
+	)
+
+	var repeat_window_state := GameState.new()
+	repeat_window_state.phase = "MAIN"
+	repeat_window_state.public_deck_keys = ["steel", "fire"]
+	repeat_window_state.players[0].active = PokemonState.new("svm-bronzong")
+	repeat_window_state.action_log = [
+		"青铜钟使用特性金属转移。",
+		"玩家1附着了钢能量。",
+		"苍响使用了战斗军团。",
+	]
+	_check(
+		worker._should_avoid_repeating_ability(
+			repeat_window_state,
+			0,
+			GameAction.new("USE_ABILITY", {
+				"slot": "active",
+				"ability_name": "金属转移",
+			}, false, 0),
+			catalog,
+		),
+		"AI repeatable ability guard ignored recent non-adjacent ability use",
+	)
+
 	var target_state := GameState.new()
 	target_state.public_deck_keys = ["lightning", "psychic"]
 	target_state.players[0].active = PokemonState.new("sv1-104")
@@ -2711,6 +2782,24 @@ func _run_ai_strength_regression_tests(
 	_check(
 		worker._estimated_attack_damage(cresselia_state, 0, 1, catalog) >= 120,
 		"AI damage estimate ignored Cresselia field energy conditional bonus",
+	)
+	_check(
+		worker._best_pokemon_damage(cresselia_state.players[0].active, catalog) >= 120,
+		"AI potential damage ignored Cresselia conditional damage ceiling",
+	)
+
+	var cetitan_state := GameState.new()
+	cetitan_state.players[0].active = PokemonState.new("svg-ceti")
+	var damaged_cetitan := PokemonState.new("svg-ceti")
+	damaged_cetitan.damage_counters = 4
+	_check(
+		worker._best_pokemon_damage(cetitan_state.players[0].active, catalog) >= 200,
+		"AI potential damage ignored self-damage penalty attack ceiling",
+	)
+	_check(
+		worker._pokemon_strength(cetitan_state.players[0].active, catalog)
+		> worker._pokemon_strength(damaged_cetitan, catalog),
+		"AI board strength ignored self-damage penalty attack decay",
 	)
 
 	var lucario_state := GameState.new()
