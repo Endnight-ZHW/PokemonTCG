@@ -20,6 +20,9 @@ const CHOICE_TYPES := [
 	"select_opponent_bench", "select_own_bench_energy", "select_bench_targets",
 	"distribute_energy", "confirm",
 ]
+const CHOICE_TYPE_ALIASES := {
+	"evolve_skip_stage": "search_deck",
+}
 const TARGET_SLOTS := ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]
 
 var catalog: CardCatalog
@@ -148,7 +151,7 @@ func encode_choice(
 	index: int,
 ) -> Dictionary:
 	var numeric: Array[float] = []
-	numeric.append_array(_one_hot(CHOICE_TYPES.find(request.request_type), CHOICE_TYPES.size()))
+	numeric.append_array(_one_hot(_choice_type_index(request.request_type), CHOICE_TYPES.size()))
 	var ref: Dictionary = option.get("ref", {})
 	var kind := str(ref.get("kind", ""))
 	numeric.append_array([
@@ -207,6 +210,11 @@ static func _one_hot(index: int, size: int) -> Array[float]:
 	if index >= 0 and index < size:
 		values[index] = 1.0
 	return values
+
+
+static func _choice_type_index(request_type: String) -> int:
+	var encoded_type := str(CHOICE_TYPE_ALIASES.get(request_type, request_type))
+	return CHOICE_TYPES.find(encoded_type)
 
 
 static func _pad_float(values: Array[float], size: int) -> Array[float]:

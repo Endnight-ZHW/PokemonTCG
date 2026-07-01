@@ -1963,7 +1963,109 @@ func _run_phase_three_tests() -> void:
 			panel.selected_count_for("confirm:yes") == 1,
 			"Non-card choice selection state was not tracked",
 		)
+		panel.clear_options()
+		panel.add_revealed_cards(["svf-potion"], CardCatalog.new(), "牌库顶")
+		_check(
+			panel.energy_preview.visible
+			and panel.energy_preview_label.text == "牌库顶"
+			and panel.previewed_card_id() == "svf-potion"
+			and panel.preview_title.text.contains("伤药"),
+			"ChoicePanel did not preview revealed non-option cards",
+		)
 		panel.queue_free()
+
+	var energy_ui := packed.instantiate()
+	root.add_child(energy_ui)
+	energy_ui.initialize_ui()
+	if choice_panel_scene:
+		var energy_panel := choice_panel_scene.instantiate() as ChoicePanel
+		root.add_child(energy_panel)
+		energy_panel.configure("请选择 3-3 项。", true, CardCatalog.new())
+		energy_panel.add_text_option("target:active", "战斗区")
+		energy_panel.add_text_option("target:bench_0", "备战区 1")
+		energy_panel.add_energy_preview(
+			["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"], CardCatalog.new())
+		energy_ui.active_request = ChoiceRequest.new(
+			"choice:energy",
+			"distribute_energy",
+			0,
+			"分配能量",
+			[
+				{"option_id": "target:active", "label": "战斗区", "value": {"slot": "active"}},
+				{"option_id": "target:bench_0", "label": "备战区 1", "value": {"slot": "bench_0"}},
+			],
+			3,
+			3,
+			true,
+			false,
+			{},
+		)
+		energy_ui.active_choice_panel = energy_panel
+		energy_ui.selected_choice_ids.clear()
+		energy_ui.selected_choice_ids.append_array([
+			"target:active", "target:bench_0", "target:active"])
+		energy_ui._refresh_choice_buttons()
+		_check(
+			energy_panel._energy_assignment_labels.size() == 3
+			and energy_panel._energy_assignment_labels[1].text.contains("备战区 1"),
+			"Energy distribution preview did not show assigned targets",
+		)
+		energy_ui._rewind_energy_distribution(1)
+		_check(
+			energy_ui.selected_choice_ids == ["target:active"]
+			and energy_panel._energy_assignment_labels[1].text == "当前",
+			"Energy distribution rewind did not roll back to the selected energy",
+		)
+		energy_ui._undo_energy_distribution()
+		_check(
+			energy_ui.selected_choice_ids.is_empty()
+			and energy_panel._energy_assignment_labels[0].text == "当前",
+			"Energy distribution undo did not remove the last assignment",
+		)
+		energy_ui.selected_choice_ids.clear()
+		energy_ui.selected_choice_ids.append_array(["target:active", "target:bench_0"])
+		energy_ui._clear_energy_distribution()
+		_check(
+			energy_ui.selected_choice_ids.is_empty()
+			and energy_panel._energy_assignment_labels[0].text == "当前",
+			"Energy distribution clear did not reset assignments",
+		)
+		energy_panel.queue_free()
+	energy_ui.queue_free()
+
+	var retreat_ui := packed.instantiate()
+	root.add_child(retreat_ui)
+	retreat_ui.initialize_ui()
+	var retreat_state := _battle_state()
+	retreat_state.turn_number = 3
+	retreat_state.phase = "MAIN"
+	retreat_state.players[0].active = PokemonState.new("sv1-104")
+	retreat_state.players[0].active.placed_this_turn = false
+	_set_energy_cards(retreat_state.players[0].active, ["sv1-ener-5"])
+	retreat_state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	retreat_state.players[0].bench[0].placed_this_turn = false
+	retreat_state.players[0].discard = []
+	retreat_ui.state = retreat_state
+	retreat_ui.current_screen = "game"
+	retreat_ui.current_view_player = 0
+	retreat_ui.game_mode = "local"
+	retreat_ui._build_game_screen()
+	var retreat_step: StepResult = retreat_ui._execute_action(
+		GameAction.new("RETREAT", {"bench_idx": 0, "energy_indices": [0]}, false, 0))
+	_check(
+		retreat_step.success
+		and retreat_ui.modal_layer.visible
+		and retreat_ui.active_request == null,
+		"Retreat action did not show a confirmation modal before execution",
+	)
+	_check(
+		retreat_ui.state.players[0].active.card_id == "sv1-104"
+		and retreat_ui.state.players[0].bench[0].card_id == "sv2-delib"
+		and retreat_ui.state.players[0].discard.is_empty()
+		and not retreat_ui.state.players[0].retreated_this_turn,
+		"Retreat confirmation changed state before the player confirmed",
+	)
+	retreat_ui.queue_free()
 
 
 func _run_phase_four_foundation_tests() -> void:
@@ -5152,7 +5254,12 @@ func _run_local_ui_playout(ui: Node) -> void:
 		if actions.is_empty():
 			break
 		var previous_revision: int = ui.state.revision
-		var step: StepResult = ui._execute_action(_playout_action(actions, ui.state, ui.catalog))
+		var action := _playout_action(actions, ui.state, ui.catalog)
+		var step: StepResult = (
+			ui._execute_action_now(action)
+			if action.action == "RETREAT"
+			else ui._execute_action(action)
+		)
 		_check(step.success, "Local UI action failed: %s" % step.message)
 		if not step.success:
 			break
@@ -5862,6 +5969,32 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		"Native self_attack_lock did not store the attack lock turn")
 
 	state = _battle_state()
+	state.turn_number = 7
+	state.phase = "MAIN"
+	state.players[0].active = PokemonState.new("svd-darkrai")
+	state.players[0].active.placed_this_turn = false
+	state.players[1].active = PokemonState.new("sv2-delib")
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "apply_self_attack_lock",
+		"args": {"attack_name": "漆黑之刃", "scope": "all"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062650))
+	_check(step.success, "Native scope=all self_attack_lock failed: %s" % step.message)
+	_check(
+		int(state.players[0].active.attack_locked_names.get("__all__", -1)) == 7,
+		"Native scope=all self_attack_lock did not store all-attack marker",
+	)
+	var first_attack_check: String = engine.validator.can_attack(state, 0, 0)
+	var second_attack_check: String = engine.validator.can_attack(state, 0, 1)
+	_check(
+		not first_attack_check.is_empty()
+		and not second_attack_check.is_empty(),
+		"Native scope=all self_attack_lock did not block every attack",
+	)
+
+	state = _battle_state()
 	state.players[0].active = PokemonState.new("sv1-104")
 	state.players[0].active.placed_this_turn = false
 	_set_energy_cards(state.players[0].active, ["sv1-ener-5"])
@@ -6535,6 +6668,11 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606317))
 	_check(step.success and step.pending_choice != null,
 		"Native trekking_shoes did not pause for confirm choice")
+	_check(
+		step.pending_choice.metadata.get("top_card_id", "") == "svf-potion"
+		and step.pending_choice.metadata.get("revealed_card_ids", []) == ["svf-potion"],
+		"Native trekking_shoes did not expose the revealed top card metadata",
+	)
 	step = engine.effect_engine.apply_choice(
 		state,
 		ResolutionStack.from_dict(state.resolution_stack),
@@ -7376,17 +7514,41 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	state.players[0].active = PokemonState.new("svg2-turt")
 	state.players[0].active.placed_this_turn = false
 	state.players[0].active.can_evolve_this_turn = true
+	state.players[0].bench[0] = PokemonState.new("svg2-turt")
+	state.players[0].bench[0].placed_this_turn = false
+	state.players[0].bench[0].can_evolve_this_turn = true
 	state.players[0].hand = ["svg2-tort"]
 	stack = ResolutionStack.new()
 	stack.push_effect({"op": "evolve_skip_stage", "args": {}, "branches": {}}, 0, "active")
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063321))
-	_check(step.success, "Native evolve_skip_stage failed: %s" % step.message)
+	_check(step.success and step.pending_choice != null,
+		"Native evolve_skip_stage did not pause for target choice: %s" % step.message)
 	_check(
-		state.players[0].active.card_id == "svg2-tort"
-		and state.players[0].active.evolution_stack_ids == ["svg2-turt"]
+		step.pending_choice.request_type == "evolve_skip_stage"
+		and step.pending_choice.options.size() == 2,
+		"Native evolve_skip_stage did not expose candidate evolution pairs",
+	)
+	var rare_candy_choice_id := ""
+	for option in step.pending_choice.options:
+		if str(option.get("value", {}).get("slot", "")) == "bench_0":
+			rare_candy_choice_id = str(option.get("option_id", ""))
+			break
+	_check(not rare_candy_choice_id.is_empty(),
+		"Native evolve_skip_stage did not include the non-first bench candidate")
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [rare_candy_choice_id]),
+		PortableRandomSource.new(2026063322),
+	)
+	_check(step.success, "Native evolve_skip_stage choice failed: %s" % step.message)
+	_check(
+		state.players[0].active.card_id == "svg2-turt"
+		and state.players[0].bench[0].card_id == "svg2-tort"
+		and state.players[0].bench[0].evolution_stack_ids == ["svg2-turt"]
 		and state.players[0].hand.is_empty()
-		and not state.players[0].active.can_evolve_this_turn,
-		"Native evolve_skip_stage did not evolve Basic directly to Stage 2",
+		and not state.players[0].bench[0].can_evolve_this_turn,
+		"Native evolve_skip_stage did not evolve the selected Basic directly to Stage 2",
 	)
 
 	state = _effect_state()

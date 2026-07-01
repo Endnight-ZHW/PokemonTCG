@@ -51,6 +51,23 @@ class VMChoiceManager:
                     min_select = min(max_select, min_select)
                 allow_duplicates = True
         can_cancel = min_select <= 0 or bool(getattr(request, "can_cancel", False))
+        continuation = dict(getattr(request, "continuation", {}) or {})
+        metadata = {
+            "from_zone": request.from_zone,
+            "target_player": request.target_player,
+            "distribute_mode": request.distribute_mode,
+            "max_per_target": request.max_per_target,
+            "flip_count": request.flip_count,
+            "until_tails": request.until_tails,
+            "revision": getattr(state, "revision", 0),
+            "continuation": continuation,
+        }
+        top_card_id = str(
+            continuation.get("top_card_id", continuation.get("card_id", "")) or ""
+        )
+        if request.request_type == "confirm" and top_card_id:
+            metadata["top_card_id"] = top_card_id
+            metadata["revealed_card_ids"] = [top_card_id]
         return ChoiceRequest(
             request_id=request_id,
             request_type=request.request_type,
@@ -61,16 +78,7 @@ class VMChoiceManager:
             max_select=max_select,
             allow_duplicates=allow_duplicates,
             can_cancel=can_cancel,
-            metadata={
-                "from_zone": request.from_zone,
-                "target_player": request.target_player,
-                "distribute_mode": request.distribute_mode,
-                "max_per_target": request.max_per_target,
-                "flip_count": request.flip_count,
-                "until_tails": request.until_tails,
-                "revision": getattr(state, "revision", 0),
-                "continuation": dict(getattr(request, "continuation", {}) or {}),
-            },
+            metadata=metadata,
             legacy_request=request,
         )
 
@@ -94,6 +102,30 @@ class VMChoiceManager:
                 request.request_id,
                 ("confirm:yes" if payload else "confirm:no",),
             )
+        if request.request_type == "evolve_skip_stage":
+            selected_payload = (
+                payload[0]
+                if isinstance(payload, (list, tuple)) and payload
+                else payload
+            )
+            if isinstance(selected_payload, dict):
+                match = next(
+                    (
+                        option for option in request.options
+                        if isinstance(option.value, dict)
+                        and int(option.value.get("hand_index", -1))
+                        == int(selected_payload.get("hand_index", -2))
+                        and str(option.value.get("slot", ""))
+                        == str(selected_payload.get("slot", ""))
+                        and str(option.value.get("card_id", ""))
+                        == str(selected_payload.get("card_id", ""))
+                    ),
+                    None,
+                )
+                return ChoiceResponse(
+                    request.request_id,
+                    (match.option_id,) if match is not None else (),
+                )
         if request.request_type in {
             "select_bench",
             "select_opponent_bench",
@@ -207,6 +239,8 @@ class VMChoiceManager:
             return [option_id == "coin:heads" for option_id in response.option_ids]
         if request.request_type == "confirm":
             return bool(selected and selected[0].value)
+        if request.request_type == "evolve_skip_stage":
+            return selected[0].value if selected else None
         if request.request_type in {"select_bench", "select_opponent_bench", "select_own_bench_energy"}:
             return int(selected[0].value) if selected else None
         if request.request_type == "select_bench_targets":
@@ -289,6 +323,23 @@ class VMChoiceManager:
                 ChoiceOption("confirm:yes", "是", value=True),
                 ChoiceOption("confirm:no", "否", value=False),
             ]
+        if request.request_type == "evolve_skip_stage":
+            options = []
+            for target in request.target_info or []:
+                if not isinstance(target, dict):
+                    continue
+                hand_index = int(target.get("hand_index", -1))
+                card_id = str(target.get("card_id", ""))
+                ref = CardRef(request.player, "hand", hand_index, card_id)
+                option_id = (
+                    f'rare_candy:{target.get("slot", "")}:{hand_index}:{card_id}'
+                )
+                label = str(
+                    target.get("name")
+                    or f'{target.get("base_name", "")} → {target.get("evolution_name", "")}'
+                )
+                options.append(ChoiceOption(option_id, label, ref, target))
+            return options
         if request.request_type == "distribute_energy":
             options = []
             for target in request.target_info or []:

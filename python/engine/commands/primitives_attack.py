@@ -174,13 +174,18 @@ class SelfAttackLock:
     """Lock a named source attack from being used consecutively."""
 
     attack_name: str = ""
+    scope: str = "attack"
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult
 
         target = ctx.player.get_pokemon(ctx.source_slot)
-        if target and self.attack_name:
-            target.attack_locked_names[self.attack_name] = ctx.state.turn_number
+        lock_key = "__all__" if str(self.scope).lower() == "all" else self.attack_name
+        if target and lock_key:
+            target.attack_locked_names[lock_key] = ctx.state.turn_number
+            if lock_key == "__all__":
+                ctx.state._log(f"{target.card.name}下回合无法使用招式。")
+                return CommandResult.ok("下回合无法使用招式。")
             ctx.state._log(f"{target.card.name}下回合无法使用「{self.attack_name}」。")
         return CommandResult.ok(f"「{self.attack_name}」已锁定，下回合无法使用。")
 

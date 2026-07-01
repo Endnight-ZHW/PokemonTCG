@@ -26,6 +26,11 @@ def register_board_continuations(registry, stack) -> None:
             resolve_choose_damage_target(stack, cont, choice),
     )
     registry.register(
+        "evolve_skip_stage",
+        lambda _req, cont, choice, _player_idx, _slot:
+            resolve_evolve_skip_stage(stack, cont, choice),
+    )
+    registry.register(
         "place_counters_then_self_ko",
         lambda _req, cont, choice, player_idx, slot:
             resolve_place_counters_then_self_ko(stack, cont, choice, player_idx, slot),
@@ -170,6 +175,81 @@ def resolve_choose_damage_target(
     target_poke.damage_counters += amount // DAMAGE_PER_COUNTER
     stack.state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
     return ActionResult(True, "")
+
+
+def resolve_evolve_skip_stage(stack, continuation: dict, choice):
+    from engine.commands.modifier_registration import (
+        register_pokemon_modifiers,
+        unregister_pokemon_modifiers,
+    )
+    from engine.commands.primitives_recovery import (
+        EvolveSkipStage,
+        _build_runtime_command,
+    )
+    from engine.commands.resolution_stack import ResolutionStack
+    from engine.effects.runtime_effects import (
+        strict_ability_runtime_effects as ability_runtime_effects,
+    )
+    from engine.game_state import ActionResult
+
+    player_idx = int(continuation.get("player_idx", 0) or 0)
+    state = stack.state
+    if state.is_player_first_turn(player_idx):
+        return ActionResult(False, "第一回合不能使用神奇糖果。")
+    selected = choice
+    if isinstance(selected, (list, tuple)):
+        selected = selected[0] if selected else None
+    if not isinstance(selected, dict):
+        return ActionResult(False, "没有选择神奇糖果进化目标。")
+
+    player = state.get_player(player_idx)
+    slot_name = str(selected.get("slot", "") or "")
+    hand_index = int(selected.get("hand_index", -1))
+    stage2_id = str(selected.get("card_id", "") or "")
+    base_id = str(selected.get("base_card_id", "") or "")
+    if hand_index < 0 or hand_index >= len(player.hand):
+        return ActionResult(False, "进化卡已不在手牌中。")
+    stage2 = player.hand[hand_index]
+    if getattr(stage2, "api_id", "") != stage2_id:
+        return ActionResult(False, "进化卡已变化。")
+    pokemon = player.get_pokemon(slot_name)
+    if pokemon is None:
+        return ActionResult(False, "进化目标已不存在。")
+    if getattr(pokemon.card, "api_id", "") != base_id:
+        return ActionResult(False, "进化目标已变化。")
+    if (
+        not pokemon.card.is_basic_pokemon
+        or pokemon.placed_this_turn
+        or not pokemon.can_evolve_this_turn
+        or not getattr(stage2, "is_stage2", False)
+        or not EvolveSkipStage._stage2_matches_basic(stage2, pokemon.card.name)
+    ):
+        return ActionResult(False, "选择的神奇糖果进化不合法。")
+
+    old_name = pokemon.card.name
+    old_api_id = pokemon.card.api_id
+    player.hand.pop(hand_index)
+    player.evolve_pokemon(slot_name, stage2)
+
+    unregister_pokemon_modifiers(
+        old_api_id,
+        slot_name,
+        event_bus=state.event_bus,
+        player_idx=player_idx,
+    )
+    register_pokemon_modifiers(pokemon, player_idx, slot_name, event_bus=state.event_bus)
+
+    for ability in stage2.abilities or []:
+        if ability.trigger == "on_enter_play":
+            effect_stack = ResolutionStack(state)
+            effect_stack.push_many([
+                _build_runtime_command(effect)
+                for effect in ability_runtime_effects(ability)
+            ])
+            effect_stack.resolve_all(player_idx, slot_name)
+
+    state._log(f"{player.name}使用神奇糖果将{old_name}进化成了{stage2.name}！")
+    return ActionResult(True, f"Rare Candy: {old_name} -> {stage2.name}")
 
 
 def resolve_place_counters_then_self_ko(

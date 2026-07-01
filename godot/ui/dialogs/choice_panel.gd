@@ -2,6 +2,9 @@ class_name ChoicePanel
 extends VBoxContainer
 
 signal option_toggled(option_id: String)
+signal energy_index_requested(index: int)
+signal undo_requested
+signal clear_requested
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const CARD_TILE_SIZE := Vector2(112, 172)
@@ -11,7 +14,9 @@ const ENERGY_CARD_SIZE := Vector2(54, 76)
 @onready var metadata_label: Label = %MetadataLabel
 @onready var empty_label: Label = %EmptyLabel
 @onready var energy_preview: VBoxContainer = %EnergyPreview
+@onready var energy_preview_label: Label = %EnergyPreviewLabel
 @onready var energy_grid: HFlowContainer = %EnergyGrid
+@onready var energy_actions: HBoxContainer = %EnergyActions
 @onready var card_grid: GridContainer = %CardGrid
 @onready var option_list: VBoxContainer = %OptionList
 @onready var preview_panel: PanelContainer = %PreviewPanel
@@ -24,7 +29,11 @@ var _option_cards: Dictionary = {}
 var _option_badges: Dictionary = {}
 var _option_buttons: Dictionary = {}
 var _option_card_ids: Dictionary = {}
+var _option_labels: Dictionary = {}
 var _selection_counts: Dictionary = {}
+var _energy_preview_cards: Array[CardView] = []
+var _energy_assignment_labels: Array[Label] = []
+var _energy_distribution_mode := false
 var _previewed_card_id := ""
 
 
@@ -55,7 +64,11 @@ func clear_options() -> void:
 	_option_badges.clear()
 	_option_buttons.clear()
 	_option_card_ids.clear()
+	_option_labels.clear()
 	_selection_counts.clear()
+	_energy_preview_cards.clear()
+	_energy_assignment_labels.clear()
+	_energy_distribution_mode = false
 	_hide_preview()
 
 
@@ -156,6 +169,7 @@ func add_card_option(
 	_option_cards[option_id] = card_view
 	_option_badges[option_id] = badge
 	_option_card_ids[option_id] = card_id
+	_option_labels[option_id] = caption_text if not caption_text.is_empty() else _card_name(card_id)
 	_selection_counts[option_id] = 0
 	if _previewed_card_id.is_empty():
 		_preview_card(card_id)
@@ -176,12 +190,30 @@ func add_text_option(option_id: String, label_text: String) -> Button:
 		option_toggled.emit(option_id)
 	)
 	_option_buttons[option_id] = button
+	_option_labels[option_id] = label_text
 	_selection_counts[option_id] = 0
 	option_list.add_child(button)
 	return button
 
 
 func add_energy_preview(card_ids: Array[String], catalog: CardCatalog) -> void:
+	_add_preview_cards(card_ids, catalog, "待分配能量", true)
+
+
+func add_revealed_cards(
+	card_ids: Array[String],
+	catalog: CardCatalog,
+	label_text: String = "已查看卡牌",
+) -> void:
+	_add_preview_cards(card_ids, catalog, label_text, false)
+
+
+func _add_preview_cards(
+	card_ids: Array[String],
+	catalog: CardCatalog,
+	label_text: String,
+	interactive_distribution: bool,
+) -> void:
 	_resolve_nodes()
 	if self.catalog == null and catalog != null:
 		self.catalog = catalog
@@ -189,15 +221,27 @@ func add_energy_preview(card_ids: Array[String], catalog: CardCatalog) -> void:
 		energy_preview.visible = false
 		return
 	energy_preview.visible = true
+	energy_preview_label.text = label_text
+	energy_actions.visible = interactive_distribution
+	_energy_distribution_mode = interactive_distribution
 	_clear_children(energy_grid)
-	for card_id in card_ids:
+	_energy_preview_cards.clear()
+	_energy_assignment_labels.clear()
+	for index in range(card_ids.size()):
+		var preview_index := index
+		var card_id := card_ids[index]
+		var preview_card_id := card_id
+		var tile := VBoxContainer.new()
+		tile.mouse_filter = Control.MOUSE_FILTER_PASS
+		tile.alignment = BoxContainer.ALIGNMENT_CENTER
+		tile.add_theme_constant_override("separation", 3)
 		var card := CARD_SCENE.instantiate() as CardView
 		card.custom_minimum_size = ENERGY_CARD_SIZE
 		card.configure(card_id, null, false, -1, -1, "", true)
 		card.tooltip_text = _card_name(card_id)
-		card.focus_entered.connect(_preview_card.bind(card_id))
+		card.focus_entered.connect(_preview_card.bind(preview_card_id))
 		card.detail_requested.connect(func(_card_id: String) -> void:
-			_preview_card(card_id)
+			_preview_card(preview_card_id)
 		)
 		card.activated.connect(func(
 			_card_id: String,
@@ -205,9 +249,26 @@ func add_energy_preview(card_ids: Array[String], catalog: CardCatalog) -> void:
 			_owner: int,
 			_slot: String,
 		) -> void:
-			_preview_card(card_id)
+			_preview_card(preview_card_id)
+			if interactive_distribution:
+				energy_index_requested.emit(preview_index)
 		)
-		energy_grid.add_child(card)
+		tile.add_child(card)
+		_energy_preview_cards.append(card)
+		var assignment := Label.new()
+		assignment.custom_minimum_size = Vector2(76, 18)
+		assignment.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		assignment.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		assignment.tooltip_text = "尚未分配"
+		assignment.add_theme_font_size_override("font_size", 10)
+		assignment.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+		assignment.text = "待分配"
+		assignment.visible = interactive_distribution
+		tile.add_child(assignment)
+		_energy_assignment_labels.append(assignment)
+		energy_grid.add_child(tile)
+	if _previewed_card_id.is_empty() and not card_ids.is_empty():
+		_preview_card(str(card_ids[0]))
 
 
 func refresh_selection(
@@ -249,6 +310,7 @@ func refresh_selection(
 			)
 		else:
 			button.remove_theme_stylebox_override("normal")
+	_refresh_energy_assignment_labels(selected_ids)
 
 
 func card_option_count() -> int:
@@ -275,9 +337,15 @@ func _resolve_nodes() -> void:
 	metadata_label = get_node("MetadataLabel") as Label
 	empty_label = get_node("EmptyLabel") as Label
 	energy_preview = get_node("ContentRow/ChoiceColumn/EnergyPreview") as VBoxContainer
+	energy_preview_label = get_node(
+		"ContentRow/ChoiceColumn/EnergyPreview/EnergyPreviewLabel"
+	) as Label
 	energy_grid = get_node(
 		"ContentRow/ChoiceColumn/EnergyPreview/EnergyGrid"
 	) as HFlowContainer
+	energy_actions = get_node(
+		"ContentRow/ChoiceColumn/EnergyPreview/EnergyActions"
+	) as HBoxContainer
 	card_grid = get_node("ContentRow/ChoiceColumn/CardGrid") as GridContainer
 	option_list = get_node("ContentRow/ChoiceColumn/OptionList") as VBoxContainer
 	preview_panel = get_node("ContentRow/PreviewPanel") as PanelContainer
@@ -290,6 +358,46 @@ func _resolve_nodes() -> void:
 	preview_text = get_node(
 		"ContentRow/PreviewPanel/PreviewContent/PreviewText"
 	) as RichTextLabel
+	if energy_actions and not energy_actions.has_meta("choice_panel_connected"):
+		energy_actions.set_meta("choice_panel_connected", true)
+		var undo_button := energy_actions.get_node("UndoButton") as Button
+		var clear_button := energy_actions.get_node("ClearButton") as Button
+		undo_button.pressed.connect(func() -> void:
+			undo_requested.emit()
+		)
+		clear_button.pressed.connect(func() -> void:
+			clear_requested.emit()
+		)
+
+
+func _refresh_energy_assignment_labels(selected_ids: Array[String]) -> void:
+	if _energy_assignment_labels.is_empty():
+		return
+	if not _energy_distribution_mode:
+		return
+	for index in range(_energy_assignment_labels.size()):
+		var label := _energy_assignment_labels[index]
+		var card := _energy_preview_cards[index] if index < _energy_preview_cards.size() else null
+		if index < selected_ids.size():
+			var option_id := str(selected_ids[index])
+			var target_label := str(_option_labels.get(option_id, option_id))
+			label.text = "→ %s" % target_label
+			label.tooltip_text = target_label
+			label.add_theme_color_override("font_color", DesignTokens.GOLD)
+			if card:
+				card.set_selected(true)
+		elif index == selected_ids.size():
+			label.text = "当前"
+			label.tooltip_text = "下一张将分配的能量"
+			label.add_theme_color_override("font_color", DesignTokens.CYAN)
+			if card:
+				card.set_selected(true)
+		else:
+			label.text = "待分配"
+			label.tooltip_text = "尚未分配"
+			label.add_theme_color_override("font_color", DesignTokens.TEXT_MUTED)
+			if card:
+				card.set_selected(false)
 
 
 func _configure_preview_panel() -> void:

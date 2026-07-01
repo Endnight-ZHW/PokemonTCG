@@ -239,7 +239,10 @@ func apply_self_attack_lock(
 ) -> Dictionary:
 	var target := state.get_player(player_idx).get_pokemon(source_slot)
 	if target:
-		target.attack_locked_names[str(args.get("attack_name", ""))] = state.turn_number
+		var scope := str(args.get("scope", "attack")).to_lower()
+		var lock_key := "__all__" if scope == "all" else str(args.get("attack_name", ""))
+		if not lock_key.is_empty():
+			target.attack_locked_names[lock_key] = state.turn_number
 	return VMResult.ok()
 
 

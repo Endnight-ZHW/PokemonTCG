@@ -806,6 +806,7 @@ class VmIrContractTests(unittest.TestCase):
             "switch_bench",
             "bench_damage_targets",
             "choose_damage_target",
+            "evolve_skip_stage",
             "place_counters_then_self_ko",
             "choose_heal_damage",
         }
@@ -815,6 +816,7 @@ class VmIrContractTests(unittest.TestCase):
             "_resolve_switch_bench_continuation",
             "_resolve_bench_damage_targets_continuation",
             "_resolve_choose_damage_target_continuation",
+            "_resolve_evolve_skip_stage_continuation",
             "_resolve_place_counters_then_self_ko_continuation",
             "_resolve_choose_heal_damage_continuation",
         }
@@ -3120,6 +3122,8 @@ class VmIrContractTests(unittest.TestCase):
             request.metadata.get("continuation", {}).get("kind"),
             "trekking_shoes",
         )
+        self.assertEqual(request.metadata.get("top_card_id"), "svf-potion")
+        self.assertEqual(request.metadata.get("revealed_card_ids"), ["svf-potion"])
         step = engine.apply_choice(
             state,
             request,
@@ -3342,16 +3346,40 @@ class VmIrContractTests(unittest.TestCase):
         state.p1.active = PokemonInPlay(CardRegistry.get("svg2-turt"))
         state.p1.active.placed_this_turn = False
         state.p1.active.can_evolve_this_turn = True
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svg2-turt"))
+        state.p1.bench[0].placed_this_turn = False
+        state.p1.bench[0].can_evolve_this_turn = True
         state.p1.hand = [CardRegistry.get("svg2-tort")]
         state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
         stack = ResolutionStack(state)
         stack.push(compile_command_spec({"op": "evolve_skip_stage", "args": {}, "branches": {}}))
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success, result.log_messages)
-        self.assertEqual(state.p1.active.card.api_id, "svg2-tort")
-        self.assertEqual([card.api_id for card in state.p1.active.evolution_stack], ["svg2-turt"])
+        self.assertIsNotNone(result.pending_choice)
+        self.assertEqual(result.pending_choice.request_type, "evolve_skip_stage")
+        request = engine.choice_request(state, result.pending_choice)
+        self.assertEqual(request.request_type, "evolve_skip_stage")
+        self.assertEqual(len(request.options), 2)
+        from engine.ai.challenge_ai import ChallengeAI
+
+        ai_choice = ChallengeAI().resolve_pending_action(state, result.pending_choice)
+        self.assertFalse(ai_choice.cancelled)
+        self.assertIn(ai_choice.option_ids[0], [option.option_id for option in request.options])
+        bench_option = next(
+            option for option in request.options
+            if option.value.get("slot") == "bench_0"
+        )
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (bench_option.option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p1.active.card.api_id, "svg2-turt")
+        self.assertEqual(state.p1.bench[0].card.api_id, "svg2-tort")
+        self.assertEqual([card.api_id for card in state.p1.bench[0].evolution_stack], ["svg2-turt"])
         self.assertEqual(state.p1.hand, [])
-        self.assertFalse(state.p1.active.can_evolve_this_turn)
+        self.assertFalse(state.p1.bench[0].can_evolve_this_turn)
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -3621,6 +3649,24 @@ class VmIrContractTests(unittest.TestCase):
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertEqual(state.p1.active.attack_locked_names["漆黑之刃"], 7)
+
+        state = GameState()
+        state.turn_number = 7
+        state.p1.active = PokemonInPlay(CardRegistry.get("svd-darkrai"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "apply_self_attack_lock",
+            "args": {"attack_name": "漆黑之刃", "scope": "all"},
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        self.assertTrue(result.success)
+        self.assertEqual(state.p1.active.attack_locked_names["__all__"], 7)
+        from engine.rules_validator import can_declare_attack
+
+        self.assertFalse(can_declare_attack(state, 0, 0)[0])
+        self.assertFalse(can_declare_attack(state, 0, 1)[0])
 
         from engine.commands.damage_pipeline import resolve_damage
         from engine.rules_validator import effective_retreat_cost

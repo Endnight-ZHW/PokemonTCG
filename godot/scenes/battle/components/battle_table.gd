@@ -1608,12 +1608,21 @@ func _compact_card_action_row(row: Dictionary) -> Dictionary:
 		"USE_ABILITY":
 			result["label"] = str(action.params.get("ability_name", "发动特性"))
 		"RETREAT":
-			result["label"] = "撤退到这里"
+			result["label"] = "撤退到这里 · %s" % _retreat_compact_suffix(action)
 		"PROMOTE":
 			result["label"] = "晋升"
 		"USE_STADIUM":
 			result["label"] = "发动"
 	return result
+
+
+func _retreat_compact_suffix(action: GameAction) -> String:
+	var count := 0
+	if action != null:
+		count = action.params.get("energy_indices", []).size()
+	if count <= 0:
+		return "免费"
+	return "丢%d能量" % count
 
 
 func _action_matches_selected(action: GameAction) -> bool:

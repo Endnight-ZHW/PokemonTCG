@@ -713,6 +713,13 @@ func _matching_selected_pokemon_target_actions(
 
 
 func _execute_action(action: GameAction) -> StepResult:
+	if action.action == "RETREAT":
+		_show_retreat_confirmation(action)
+		return StepResult.new(true, "等待确认撤退。")
+	return _execute_action_now(action)
+
+
+func _execute_action_now(action: GameAction) -> StepResult:
 	if game_mode == MODE_NETWORK:
 		_play_click()
 		var accepted := network_controller.submit_action(action)
@@ -802,7 +809,8 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	selected_choice_ids.clear()
 	option_buttons.clear()
 	var energy_cards := _choice_energy_cards(request)
-	var has_card_preview := not energy_cards.is_empty()
+	var revealed_cards := _choice_revealed_cards(request)
+	var has_card_preview := not energy_cards.is_empty() or not revealed_cards.is_empty()
 	for option in request.options:
 		if not _choice_option_card_id(option).is_empty():
 			has_card_preview = true
@@ -817,8 +825,13 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	active_choice_panel = panel
 	panel.configure(metadata_text, not request.options.is_empty(), catalog)
 	panel.option_toggled.connect(_toggle_choice)
+	panel.energy_index_requested.connect(_rewind_energy_distribution)
+	panel.undo_requested.connect(_undo_energy_distribution)
+	panel.clear_requested.connect(_clear_energy_distribution)
 	if not energy_cards.is_empty():
 		panel.add_energy_preview(energy_cards, catalog)
+	elif not revealed_cards.is_empty():
+		panel.add_revealed_cards(revealed_cards, catalog)
 	for option in request.options:
 		var option_id := str(option.get("option_id", ""))
 		var option_card_id := _choice_option_card_id(option)
@@ -874,6 +887,10 @@ func _choice_option_caption(option: Dictionary) -> String:
 	if option.get("value") is Dictionary:
 		var value_data: Dictionary = option["value"]
 		var value_slot := str(value_data.get("slot", ""))
+		var base_name := str(value_data.get("base_name", ""))
+		var evolution_name := str(value_data.get("evolution_name", ""))
+		if not value_slot.is_empty() and not base_name.is_empty() and not evolution_name.is_empty():
+			return "%s · %s → %s" % [_slot_name(value_slot), base_name, evolution_name]
 		if not value_slot.is_empty():
 			return _slot_name(value_slot)
 	if option.get("ref") is Dictionary:
@@ -925,6 +942,81 @@ func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
 	return result
 
 
+func _show_retreat_confirmation(action: GameAction) -> void:
+	_play_click()
+	_open_modal("确认撤退", "确认撤退", "取消")
+	modal_panel.custom_minimum_size = Vector2(640, 420)
+	var lines := _retreat_confirmation_lines(action)
+	var body := Label.new()
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_font_size_override("font_size", 18)
+	body.add_theme_color_override("font_color", DesignTokens.TEXT)
+	body.text = "\n".join(lines)
+	modal_body.add_child(body)
+	modal_confirm.pressed.connect(func() -> void:
+		_play_click()
+		_close_modal()
+		_execute_action_now(action)
+	, CONNECT_ONE_SHOT)
+	modal_cancel.pressed.connect(func() -> void:
+		_play_click()
+		_close_modal()
+	, CONNECT_ONE_SHOT)
+
+
+func _retreat_confirmation_lines(action: GameAction) -> Array[String]:
+	var actor := action.actor if action.actor != null else _current_actor()
+	var player := state.get_player(actor)
+	var bench_idx := int(action.params.get("bench_idx", -1))
+	var target_name := "备战宝可梦"
+	if bench_idx >= 0 and bench_idx < player.bench.size() and player.bench[bench_idx]:
+		target_name = catalog.card_name(player.bench[bench_idx].card_id)
+	var energy_names := _retreat_energy_names(action)
+	var active_name := catalog.card_name(player.active.card_id) if player.active else "战斗宝可梦"
+	var cost_text := "无需丢弃能量" if energy_names.is_empty() else "将丢弃：%s" % "、".join(energy_names)
+	return [
+		"%s 将撤退，%s 将进入战斗区。" % [active_name, target_name],
+		cost_text,
+	]
+
+
+func _retreat_energy_names(action: GameAction) -> Array[String]:
+	var result: Array[String] = []
+	var actor := action.actor if action.actor != null else _current_actor()
+	if state == null or actor not in [0, 1]:
+		return result
+	var active := state.get_player(actor).active
+	if active == null:
+		return result
+	for raw_index in action.params.get("energy_indices", []):
+		var index := int(raw_index)
+		if index >= 0 and index < active.energy_card_ids.size():
+			result.append(catalog.card_name(str(active.energy_card_ids[index])))
+	return result
+
+
+func _retreat_energy_suffix(action: GameAction) -> String:
+	var names := _retreat_energy_names(action)
+	if names.is_empty():
+		return "（无需丢弃能量）"
+	return "（丢弃：%s）" % "、".join(names)
+
+
+func _choice_revealed_cards(request: ChoiceRequest) -> Array[String]:
+	var result: Array[String] = []
+	if request == null:
+		return result
+	for value in request.metadata.get("revealed_card_ids", []):
+		var card_id := str(value)
+		if not card_id.is_empty():
+			result.append(card_id)
+	if result.is_empty():
+		var top_card_id := str(request.metadata.get("top_card_id", ""))
+		if not top_card_id.is_empty():
+			result.append(top_card_id)
+	return result
+
+
 func _toggle_choice(option_id: String) -> void:
 	_play_click()
 	if active_request == null:
@@ -938,6 +1030,37 @@ func _toggle_choice(option_id: String) -> void:
 			selected_choice_ids.remove_at(existing)
 		elif selected_choice_ids.size() < active_request.max_select:
 			selected_choice_ids.append(option_id)
+	_refresh_choice_buttons()
+
+
+func _rewind_energy_distribution(index: int) -> void:
+	if active_request == null or active_request.request_type != "distribute_energy":
+		return
+	if index < 0 or index >= selected_choice_ids.size():
+		return
+	_play_click()
+	while selected_choice_ids.size() > index:
+		selected_choice_ids.pop_back()
+	_refresh_choice_buttons()
+
+
+func _undo_energy_distribution() -> void:
+	if active_request == null or active_request.request_type != "distribute_energy":
+		return
+	if selected_choice_ids.is_empty():
+		return
+	_play_click()
+	selected_choice_ids.pop_back()
+	_refresh_choice_buttons()
+
+
+func _clear_energy_distribution() -> void:
+	if active_request == null or active_request.request_type != "distribute_energy":
+		return
+	if selected_choice_ids.is_empty():
+		return
+	_play_click()
+	selected_choice_ids.clear()
 	_refresh_choice_buttons()
 
 
@@ -1529,7 +1652,10 @@ func _action_label(action: GameAction) -> String:
 		"USE_STADIUM":
 			return "发动竞技场"
 		"RETREAT":
-			return "撤退 → 备战区 %d" % (int(action.params.get("bench_idx", 0)) + 1)
+			return "撤退 → 备战区 %d%s" % [
+				int(action.params.get("bench_idx", 0)) + 1,
+				_retreat_energy_suffix(action),
+			]
 		"DECLARE_ATTACK":
 			var active := state.get_player(action.actor).active
 			var attacks: Array = catalog.get_card(active.card_id).get("attacks", []) if active else []
@@ -1563,6 +1689,7 @@ func _choice_title(request: ChoiceRequest) -> String:
 		"coin_flip": "硬币结算",
 		"confirm": "确认操作",
 		"distribute_energy": "分配能量",
+		"evolve_skip_stage": "神奇糖果",
 	}.get(request.request_type, "选择")
 
 

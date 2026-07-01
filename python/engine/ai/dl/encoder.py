@@ -77,6 +77,9 @@ CHOICE_TYPES = [
     "distribute_energy",
     "confirm",
 ]
+CHOICE_TYPE_ALIASES = {
+    "evolve_skip_stage": "search_deck",
+}
 
 ENERGY_TYPES = [
     "Grass",
@@ -164,6 +167,14 @@ def _one_hot(index: int, size: int) -> list[float]:
     if 0 <= index < size:
         values[index] = 1.0
     return values
+
+
+def _choice_type_one_hot(request_type: str) -> list[float]:
+    encoded_type = CHOICE_TYPE_ALIASES.get(str(request_type), str(request_type))
+    return (
+        _one_hot(CHOICE_TYPES.index(encoded_type), len(CHOICE_TYPES))
+        if encoded_type in CHOICE_TYPES else [0.0] * len(CHOICE_TYPES)
+    )
 
 
 def _norm(value: float, divisor: float) -> float:
@@ -344,10 +355,7 @@ class ActionStateEncoder:
         index: int = 0,
     ) -> EncodedAction:
         numeric: list[float] = []
-        numeric.extend(
-            _one_hot(CHOICE_TYPES.index(request_type), len(CHOICE_TYPES))
-            if request_type in CHOICE_TYPES else [0.0] * len(CHOICE_TYPES)
-        )
+        numeric.extend(_choice_type_one_hot(request_type))
         ref = option.ref
         numeric.extend([
             _norm(index + 1, 64.0),
@@ -458,10 +466,7 @@ class ActionStateEncoder:
     def _encode_choice_legacy(self, state, player_idx: int, request_type: str, candidate: Any, index: int = 0) -> EncodedAction:
         """Encode one pending ActionRequest candidate for the optional choice head."""
         numeric: list[float] = []
-        numeric.extend(
-            _one_hot(CHOICE_TYPES.index(request_type), len(CHOICE_TYPES))
-            if request_type in CHOICE_TYPES else [0.0] * len(CHOICE_TYPES)
-        )
+        numeric.extend(_choice_type_one_hot(request_type))
         numeric.extend([
             _norm(index + 1, 64.0),
             _bool(hasattr(candidate, "api_id")),

@@ -311,6 +311,8 @@ def can_declare_attack(state: GameState, player_idx: int,
         return False, f"在{', '.join(cn)}状态下不能攻击。"
 
     attack = player.active.card.attacks[attack_idx]
+    if "__all__" in player.active.attack_locked_names:
+        return False, "这只宝可梦在上个回合使用了会限制自己的招式，无法使用招式。"
     if attack.name in player.active.attack_locked_names:
         return False, f"这只宝可梦在上个回合使用了「{attack.name}」，无法连续使用。"
     if not player.active.has_enough_energy(attack.cost):

@@ -206,7 +206,10 @@ def make_outgoing_damage_reduction(params: dict, **_kw):
 def make_self_attack_lock(params: dict, **_kw):
     from engine.commands.primitives_attack import SelfAttackLock
 
-    return SelfAttackLock(attack_name=str(params.get("attack_name", "") or ""))
+    return SelfAttackLock(
+        attack_name=str(params.get("attack_name", "") or ""),
+        scope=str(params.get("scope", "attack") or "attack"),
+    )
 
 
 def make_register_modifier(modifier_kind: str):

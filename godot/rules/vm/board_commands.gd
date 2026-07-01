@@ -35,7 +35,7 @@ func cmd_discard_then_revive(
 
 func cmd_evolve_skip_stage(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	_args: Dictionary,
 	_branches: Dictionary,
@@ -43,7 +43,7 @@ func cmd_evolve_skip_stage(
 	_source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	return rare_candy(state, player_idx, events)
+	return rare_candy(state, stack, player_idx, events)
 
 
 func cmd_return_to_hand(
@@ -265,10 +265,16 @@ func ability_discard_revive(
 	return VMResult.ok()
 
 
-func rare_candy(state: GameState, player_idx: int, events: Array[Dictionary]) -> Dictionary:
+func rare_candy(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	_events: Array[Dictionary],
+) -> Dictionary:
 	var player := state.get_player(player_idx)
 	if state.is_player_first_turn(player_idx):
 		return VMResult.fail("第一回合不能使用神奇糖果。")
+	var options: Array[Dictionary] = []
 	for row in player.get_all_pokemon():
 		var pokemon: PokemonState = row["pokemon"]
 		if pokemon == null or not catalog.is_basic_pokemon(pokemon.card_id):
@@ -279,41 +285,53 @@ func rare_candy(state: GameState, player_idx: int, events: Array[Dictionary]) ->
 			var stage2_id := player.hand[hand_index]
 			if not catalog.is_stage2(stage2_id):
 				continue
-			var evolves_from := str(catalog.get_card(stage2_id).get("evolves_from", ""))
-			var stage1_name := evolves_from
-			var basic_matches := false
-			for candidate_id in catalog.cards:
-				if catalog.card_name(candidate_id) == stage1_name:
-					basic_matches = (
-						str(catalog.get_card(candidate_id).get("evolves_from", "")).to_lower()
-						== catalog.card_name(pokemon.card_id).to_lower()
-					)
-					if basic_matches:
-						break
-			if not basic_matches:
+			if not stage2_can_evolve_from_basic(stage2_id, pokemon.card_id):
 				continue
-			player.hand.remove_at(hand_index)
-			pokemon.evolution_stack_ids.append(pokemon.card_id)
-			pokemon.card_id = stage2_id
-			pokemon.status_conditions.clear()
-			pokemon.can_evolve_this_turn = false
 			var target_slot := str(row["slot"])
-			events.append({
-				"event_type": "pokemon_evolved",
-				"actor": player_idx,
-				"card_id": stage2_id,
-				"source": {"player": player_idx, "zone": "hand", "index": hand_index},
-				"target": {"player": player_idx, "slot": target_slot},
-				"data": {
-					"player": player_idx,
+			var base_name := catalog.card_name(pokemon.card_id)
+			var stage2_name := catalog.card_name(stage2_id)
+			options.append({
+				"option_id": "rare_candy:%s:%d:%s" % [target_slot, hand_index, stage2_id],
+				"label": "%s → %s" % [base_name, stage2_name],
+				"ref": EntityRef.new(
+					"card", player_idx, "hand", "", hand_index, "", stage2_id).to_dict(),
+				"value": {
 					"slot": target_slot,
+					"base_card_id": pokemon.card_id,
+					"base_name": base_name,
+					"hand_index": hand_index,
 					"card_id": stage2_id,
-					"source_zone": "hand",
-					"source_index": hand_index,
+					"evolution_name": stage2_name,
 				},
 			})
-			return VMResult.ok()
-	return VMResult.fail("没有可用神奇糖果进化的目标。")
+	if options.is_empty():
+		return VMResult.fail("没有可用神奇糖果进化的目标。")
+	stack.push_continuation("evolve_skip_stage", {"player_idx": player_idx})
+	stack.pending_request = ChoiceRequest.new(
+		stack.next_request_id(state, player_idx, "evolve_skip_stage"),
+		"evolve_skip_stage",
+		player_idx,
+		"选择神奇糖果进化目标。",
+		options,
+		1,
+		1,
+		false,
+		false,
+		{"revision": state.revision},
+	)
+	return VMResult.ok("选择神奇糖果进化目标。")
+
+
+func stage2_can_evolve_from_basic(stage2_id: String, basic_id: String) -> bool:
+	var stage1_name := str(catalog.get_card(stage2_id).get("evolves_from", ""))
+	if stage1_name.is_empty():
+		return false
+	var basic_name := catalog.card_name(basic_id).to_lower()
+	for candidate_id in catalog.cards:
+		if catalog.card_name(candidate_id) != stage1_name:
+			continue
+		return str(catalog.get_card(candidate_id).get("evolves_from", "")).to_lower() == basic_name
+	return false
 
 
 func return_to_hand(

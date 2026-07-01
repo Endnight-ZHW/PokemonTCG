@@ -130,7 +130,7 @@ EFFECTS = {
                 "effects": [
                     {
                         "effect_type": "self_attack_lock",
-                        "params": {"attack_name": "漆黑之刃"},
+                        "params": {"attack_name": "漆黑之刃", "scope": "all"},
                     }
                 ]
             },

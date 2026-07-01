@@ -156,6 +156,8 @@ func can_attack(state: GameState, player_idx: int, attack_idx: int) -> String:
 	if attack_idx < 0 or attack_idx >= attacks.size():
 		return "无效的攻击序号。"
 	var attack: Dictionary = attacks[attack_idx]
+	if active.attack_locked_names.has("__all__"):
+		return "这只宝可梦无法使用招式。"
 	if active.attack_locked_names.has(attack.get("name", "")):
 		return "该招式不能连续使用。"
 	if not active.has_enough_energy(attack.get("cost", []), catalog):

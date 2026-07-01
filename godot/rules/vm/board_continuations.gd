@@ -25,6 +25,7 @@ func register(interpreter: VMInterpreter) -> void:
 		"confirm_switch": Callable(self, "continue_confirm_switch"),
 		"coin": Callable(self, "continue_coin"),
 		"damage_target": Callable(self, "continue_damage_target"),
+		"evolve_skip_stage": Callable(self, "continue_evolve_skip_stage"),
 		"bench_damage_target": Callable(self, "continue_bench_damage_target"),
 		"place_counters_self_ko": Callable(self, "continue_place_counters_self_ko"),
 		"heal_target": Callable(self, "continue_heal_target"),
@@ -91,6 +92,17 @@ func continue_damage_target(
 		state, selected, int(data["target_player"]), int(data["amount"]), events)
 
 
+func continue_evolve_skip_stage(
+	state: GameState,
+	_stack: ResolutionStack,
+	_rng: PortableRandomSource,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	events: Array[Dictionary],
+) -> Dictionary:
+	return resolve_evolve_skip_stage(state, data, selected, events)
+
+
 func continue_bench_damage_target(
 	state: GameState,
 	_stack: ResolutionStack,
@@ -129,6 +141,67 @@ func continue_place_counters_self_ko(
 		self_target.damage_counters += max(
 			1, ceili(float(self_target.current_hp(catalog)) / 10.0))
 	return VMResult.ok()
+
+
+func resolve_evolve_skip_stage(
+	state: GameState,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	events: Array[Dictionary],
+) -> Dictionary:
+	if selected.is_empty():
+		return VMResult.fail("没有选择神奇糖果进化目标。", "choice_count")
+	var player_idx := int(data.get("player_idx", state.active_player_idx))
+	if state.is_player_first_turn(player_idx):
+		return VMResult.fail("第一回合不能使用神奇糖果。", "illegal_evolution")
+	var value: Dictionary = selected[0].get("value", {})
+	var slot := str(value.get("slot", ""))
+	var hand_index := int(value.get("hand_index", -1))
+	var stage2_id := str(value.get("card_id", ""))
+	var base_card_id := str(value.get("base_card_id", ""))
+	var player := state.get_player(player_idx)
+	if hand_index < 0 or hand_index >= player.hand.size():
+		return VMResult.fail("进化卡已不在手牌中。", "stale_choice")
+	if str(player.hand[hand_index]) != stage2_id:
+		return VMResult.fail("进化卡已变化。", "stale_choice")
+	var target := player.get_pokemon(slot)
+	if target == null:
+		return VMResult.fail("进化目标已不存在。", "stale_choice")
+	if target.card_id != base_card_id:
+		return VMResult.fail("进化目标已变化。", "stale_choice")
+	if not catalog.is_basic_pokemon(target.card_id):
+		return VMResult.fail("神奇糖果只能选择基础宝可梦。", "illegal_evolution")
+	if target.placed_this_turn or not target.can_evolve_this_turn:
+		return VMResult.fail("这只宝可梦本回合不能进化。", "illegal_evolution")
+	if not catalog.is_stage2(stage2_id):
+		return VMResult.fail("选择的卡不是2阶进化宝可梦。", "illegal_evolution")
+	if not board_commands.stage2_can_evolve_from_basic(stage2_id, target.card_id):
+		return VMResult.fail("进化来源不匹配。", "illegal_evolution")
+	player.hand.remove_at(hand_index)
+	target.evolution_stack_ids.append(target.card_id)
+	target.card_id = stage2_id
+	target.status_conditions.clear()
+	target.can_evolve_this_turn = false
+	events.append({
+		"event_type": "pokemon_evolved",
+		"actor": player_idx,
+		"card_id": stage2_id,
+		"source": {"player": player_idx, "zone": "hand", "index": hand_index},
+		"target": {"player": player_idx, "slot": slot},
+		"data": {
+			"player": player_idx,
+			"slot": slot,
+			"card_id": stage2_id,
+			"source_zone": "hand",
+			"source_index": hand_index,
+		},
+	})
+	state.log_action("%s使用神奇糖果将%s进化为%s。" % [
+		player.name,
+		catalog.card_name(base_card_id),
+		catalog.card_name(stage2_id),
+	])
+	return VMResult.ok("神奇糖果进化完成。")
 
 
 func continue_heal_target(

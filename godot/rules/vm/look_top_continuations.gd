@@ -64,6 +64,9 @@ func continue_trekking_shoes(
 	var keep := not selected.is_empty() and bool(selected[0].get("value", false))
 	if player.deck.is_empty():
 		return VMResult.ok()
+	var expected_top := str(data.get("card_id", ""))
+	if not expected_top.is_empty() and str(player.deck[-1]) != expected_top:
+		return VMResult.fail("牌库顶卡已变化，无法继续结算。", "stale_choice")
 	var top: String = player.deck.pop_back()
 	if keep:
 		player.hand.append(top)

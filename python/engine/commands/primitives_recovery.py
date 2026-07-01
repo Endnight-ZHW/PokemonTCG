@@ -288,66 +288,49 @@ class EvolveSkipStage:
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult
-        from engine.commands.modifier_registration import (
-            register_pokemon_modifiers,
-            unregister_pokemon_modifiers,
-        )
-        from engine.commands.resolution_stack import ResolutionStack
+        from engine.game_state import ActionRequest
 
         player = ctx.player
         if ctx.state.is_player_first_turn(ctx.player_idx):
             return CommandResult.fail("第一回合不能使用神奇糖果。")
 
-        basic_slots = []
+        candidates = []
         for slot_name, pokemon in player.get_all_pokemon():
             if pokemon is None or not pokemon.card.is_basic_pokemon:
                 continue
             if pokemon.placed_this_turn or not pokemon.can_evolve_this_turn:
                 continue
-            matching_stage2 = [
-                card
-                for card in player.hand
-                if getattr(card, "is_stage2", False)
-                and self._stage2_matches_basic(card, pokemon.card.name)
-            ]
-            if matching_stage2:
-                basic_slots.append((slot_name, pokemon, matching_stage2))
+            for hand_index, card in enumerate(player.hand):
+                if (
+                    getattr(card, "is_stage2", False)
+                    and self._stage2_matches_basic(card, pokemon.card.name)
+                ):
+                    candidates.append({
+                        "slot": slot_name,
+                        "base_card_id": pokemon.card.api_id,
+                        "base_name": pokemon.card.name,
+                        "hand_index": hand_index,
+                        "card_id": card.api_id,
+                        "evolution_name": card.name,
+                        "name": f"{pokemon.card.name} → {card.name}",
+                    })
 
-        if not basic_slots:
+        if not candidates:
             ctx.state._log(f"{player.name}场上没有符合条件的基础宝可梦可以使用神奇糖果。")
             return CommandResult.fail("没有有效的进化目标，卡牌保留在手牌中。")
 
-        slot_name, pokemon, stage2_cards = basic_slots[0]
-        stage2 = stage2_cards[0]
-        old_name = pokemon.card.name
-        old_api_id = pokemon.card.api_id
-        hand_idx = player.hand.index(stage2)
-        player.hand.pop(hand_idx)
-        player.evolve_pokemon(slot_name, stage2)
-
-        unregister_pokemon_modifiers(
-            old_api_id,
-            slot_name,
-            event_bus=ctx.state.event_bus,
-            player_idx=ctx.player_idx,
+        return CommandResult.ok(
+            "选择神奇糖果进化目标。",
+            pending_choice=ActionRequest(
+                request_type="evolve_skip_stage",
+                player=ctx.player_idx,
+                prompt="选择神奇糖果进化目标。",
+                min_select=1,
+                max_select=1,
+                target_info=candidates,
+                continuation={"kind": "evolve_skip_stage", "player_idx": ctx.player_idx},
+            ),
         )
-        register_pokemon_modifiers(pokemon, ctx.player_idx, slot_name, event_bus=ctx.state.event_bus)
-
-        for ability in stage2.abilities or []:
-            if ability.trigger == "on_enter_play":
-                from engine.effects.runtime_effects import (
-                    strict_ability_runtime_effects as ability_runtime_effects,
-                )
-
-                stack = ResolutionStack(ctx.state)
-                stack.push_many([
-                    _build_runtime_command(effect)
-                    for effect in ability_runtime_effects(ability)
-                ])
-                stack.resolve_all(ctx.player_idx, slot_name)
-
-        ctx.state._log(f"{player.name}使用神奇糖果将{old_name}进化成了{stage2.name}！")
-        return CommandResult.ok(f"Rare Candy: {old_name} -> {stage2.name}")
 
     @staticmethod
     def _stage2_matches_basic(stage2_card, target_basic_name: str) -> bool:

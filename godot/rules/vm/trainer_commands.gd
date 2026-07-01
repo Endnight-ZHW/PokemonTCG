@@ -309,10 +309,15 @@ func trekking_shoes_request(
 	var player := state.get_player(player_idx)
 	if player.deck.is_empty():
 		return VMResult.ok("牌库为空。")
+	var top_card_id := player.deck[-1]
 	return VMChoiceRequests.confirm_request(
 		state, stack, player_idx, "trekking_shoes",
-		{"player_idx": player_idx, "card_id": player.deck[-1]},
-		"是否将牌库顶卡加入手牌？")
+		{"player_idx": player_idx, "card_id": top_card_id},
+		"牌库顶是「%s」。是否将其加入手牌？\n（选「否」将丢弃此卡并抽1张）" % catalog.card_name(top_card_id),
+		{
+			"top_card_id": top_card_id,
+			"revealed_card_ids": [top_card_id],
+		})
 
 
 func conditional_search_request(

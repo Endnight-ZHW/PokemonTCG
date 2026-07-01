@@ -1028,6 +1028,15 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if req.request_type == "distribute_energy":
             return AIChoice(assignments=self._choose_energy_assignments(state, player_idx, req))
 
+        if req.request_type == "evolve_skip_stage":
+            candidate = self._choose_evolve_skip_stage_candidate(state, player_idx, req)
+            if candidate is not None:
+                return AIChoice(
+                    selected_cards=[candidate],
+                    option_ids=[self._evolve_skip_stage_option_id(candidate)],
+                )
+            return AIChoice(cancelled=True, confirmed=False)
+
         return AIChoice(cancelled=True, confirmed=False)
 
     def apply_choice(
@@ -1086,6 +1095,15 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         elif req.request_type == "distribute_energy":
             if req.callback:
                 result = req.callback(choice.assignments)
+
+        elif req.request_type == "evolve_skip_stage":
+            selected = (
+                choice.selected_cards[0]
+                if choice.selected_cards and isinstance(choice.selected_cards[0], dict)
+                else self._choose_evolve_skip_stage_candidate(state, req.player, req)
+            )
+            if selected is not None and req.callback:
+                result = req.callback(selected)
 
         self._consume_pending_card(state, req)
         return result
@@ -1790,6 +1808,53 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             flips = max(1, req.flip_count)
             return AIChoice(coin_results=[self.random.random() < 0.5 for _ in range(flips)])
         return self.resolve_pending_action(state, req)
+
+    def _choose_evolve_skip_stage_candidate(
+        self,
+        state: GameState,
+        player_idx: int,
+        req: ActionRequest,
+    ) -> dict[str, Any] | None:
+        candidates = [
+            candidate for candidate in (getattr(req, "target_info", None) or [])
+            if isinstance(candidate, dict)
+        ]
+        if not candidates:
+            return None
+        owner_idx = player_idx if player_idx in (0, 1) else state.active_player_idx
+        player = state.get_player(owner_idx)
+
+        def candidate_value(candidate: dict[str, Any]) -> float:
+            slot = str(candidate.get("slot", "") or "")
+            card_id = str(candidate.get("card_id", "") or "")
+            value = 0.0
+            try:
+                from data.card_registry import CardRegistry
+
+                stage2 = CardRegistry.get(card_id) if card_id else None
+            except Exception:
+                stage2 = None
+            if stage2 is not None:
+                value += self._search_card_value(state, owner_idx, stage2, req)
+                value += max(0, int(getattr(stage2, "hp", 0))) * 0.2
+                if getattr(stage2, "api_id", "") in self.profile.evolution_cards:
+                    value += 50
+            target = player.get_pokemon(slot)
+            if target is not None:
+                value += self._promotion_value_for_state(state, owner_idx, target) * 0.1
+            if slot == "active":
+                value += 12
+            return value
+
+        return max(candidates, key=candidate_value)
+
+    @staticmethod
+    def _evolve_skip_stage_option_id(candidate: dict[str, Any]) -> str:
+        return "rare_candy:%s:%d:%s" % (
+            str(candidate.get("slot", "") or ""),
+            int(candidate.get("hand_index", -1)),
+            str(candidate.get("card_id", "") or ""),
+        )
 
     def _choose_bench_slot(self, state: GameState, req: ActionRequest) -> int | None:
         player = self._request_target_player(state, req)

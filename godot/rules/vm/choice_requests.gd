@@ -56,11 +56,15 @@ static func confirm_request(
 	operation: String,
 	data: Dictionary,
 	prompt: String,
+	metadata: Dictionary = {},
 ) -> Dictionary:
 	var options: Array[Dictionary] = [
 		{"option_id": "confirm:yes", "label": "是", "value": true},
 		{"option_id": "confirm:no", "label": "否", "value": false},
 	]
+	var request_metadata := metadata.duplicate(true)
+	if not request_metadata.has("revision"):
+		request_metadata["revision"] = state.revision
 	stack.push_continuation(operation, data)
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, player_idx, "confirm"),
@@ -70,5 +74,8 @@ static func confirm_request(
 		options,
 		1,
 		1,
+		false,
+		false,
+		request_metadata,
 	)
 	return VMResult.ok()
