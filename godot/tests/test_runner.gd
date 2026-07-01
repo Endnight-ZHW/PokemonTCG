@@ -82,6 +82,17 @@ func _run_phase_one_tests() -> void:
 
 	_check(cards.size() == 137, "Expected 137 exported cards")
 	_check(decks.size() == 10, "Expected 10 exported decks")
+	var deck_keys := decks.keys()
+	deck_keys.sort()
+	var profile_keys := AIDeckProfiles.PROFILES.keys()
+	profile_keys.sort()
+	_check(
+		deck_keys == profile_keys,
+		"Godot deck keys and Challenge AI profile keys must match. decks=%s profiles=%s" % [
+			JSON.stringify(deck_keys),
+			JSON.stringify(profile_keys),
+		],
+	)
 	_check(fixture.get("counts", {}).get("effects", 0) == 78, "Expected 78 effect types")
 	_check(
 		int(fixture.get("vm_version", 0)) == VMContract.IR_VERSION,
