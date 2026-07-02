@@ -40,6 +40,8 @@ WINNER_LABELS = {
 
 MODE_LABELS = {
     "mirror": "镜像换座",
+    "balanced": "均衡矩阵",
+    "matrix": "跨牌组矩阵",
 }
 
 
@@ -98,6 +100,16 @@ def _diagnostic_count(summary: dict[str, Any]) -> int:
     )
 
 
+def _decision_diagnostic_count(payload: dict[str, Any]) -> int:
+    diagnostics = payload.get("decision_diagnostics") or {}
+    return int((diagnostics or {}).get("total") or 0) if isinstance(diagnostics, dict) else 0
+
+
+def _golden_failure_count(payload: dict[str, Any]) -> int:
+    golden = payload.get("golden_scenarios") or {}
+    return int((golden or {}).get("failed") or 0) if isinstance(golden, dict) else 0
+
+
 def _strategies_equal(payload: dict[str, Any]) -> bool:
     fingerprint = payload.get("strategy_fingerprint") or {}
     if isinstance(fingerprint, dict) and fingerprint.get("equal") is not None:
@@ -111,6 +123,10 @@ def evaluation_verdict(payload: dict[str, Any]) -> str:
     diagnostics = _diagnostic_count(summary)
     if diagnostics > 0:
         return "诊断未通过：存在非法动作、选择失败或规则异常，暂不判断强度。"
+    if _decision_diagnostic_count(payload) > 0:
+        return "诊断未通过：存在决策错因计数，暂不判断强度。"
+    if _golden_failure_count(payload) > 0:
+        return "诊断未通过：关键局面金样例失败。"
     max_action_rate = _float(
         summary.get("max_action_exhaustion_rate"),
         _float(summary.get("max_actions_exhaustions")) / max(1, int(summary.get("games") or 0)),
@@ -156,6 +172,8 @@ def _kpi_cards(payload: dict[str, Any]) -> str:
     seat_counts = seat.get("seat_counts") or {}
     seat_gap = abs(int(seat_counts.get("a_player_0") or 0) - int(seat_counts.get("a_player_1") or 0))
     diagnostics = _diagnostic_count(summary)
+    decision_diagnostics = _decision_diagnostic_count(payload)
+    golden_failed = _golden_failure_count(payload)
     cards = [
         ("总对局数", _int(summary.get("games")), "已完成的评测对局"),
         ("A 点数率", _pct(summary.get("point_rate")), "raw 胜场 + 0.5 * 平局"),
@@ -171,6 +189,8 @@ def _kpi_cards(payload: dict[str, Any]) -> str:
         ("座位偏差", _int(seat_gap), "策略 A 的玩家编号不平衡"),
         ("动作截断", _int(summary.get("max_actions_exhaustions")), "达到动作上限的对局"),
         ("诊断问题", _int(diagnostics), "干净评测应为 0"),
+        ("决策错因", _int(decision_diagnostics), "错因计数应为 0"),
+        ("金样例失败", _int(golden_failed), "关键局面回归失败数"),
     ]
     return "\n".join(
         f"""
@@ -201,6 +221,59 @@ def _deck_rows(payload: dict[str, Any]) -> str:
               <td>{_int(stats.get("wins"))}/{_int(stats.get("draws"))}/{_int(stats.get("losses"))}</td>
               <td>{_num(stats.get("average_score"), 0)}</td>
               <td>{_num(stats.get("average_decision_ms"))} ms</td>
+            </tr>
+            """
+        )
+    return "\n".join(rows)
+
+
+def _matrix_rows(payload: dict[str, Any]) -> str:
+    matrix = payload.get("matrix") or {}
+    if not matrix:
+        return '<tr><td colspan="5">无跨牌组矩阵数据</td></tr>'
+    rows = []
+    for deck_a in sorted(matrix, key=lambda key: list(DECK_LABELS).index(key) if key in DECK_LABELS else 999):
+        opponents = matrix.get(deck_a) or {}
+        for deck_b in sorted(opponents, key=lambda key: list(DECK_LABELS).index(key) if key in DECK_LABELS else 999):
+            stats = opponents.get(deck_b) or {}
+            rows.append(
+                f"""
+                <tr>
+                  <td><b>{escape(DECK_LABELS.get(str(deck_a), str(deck_a)))}</b><span>{escape(str(deck_a))}</span></td>
+                  <td><b>{escape(DECK_LABELS.get(str(deck_b), str(deck_b)))}</b><span>{escape(str(deck_b))}</span></td>
+                  <td>{_pct(stats.get("point_rate"))}</td>
+                  <td>{_int(stats.get("wins"))}/{_int(stats.get("draws"))}/{_int(stats.get("losses"))}</td>
+                  <td>{_num(stats.get("average_score"), 0)}</td>
+                </tr>
+                """
+            )
+    return "\n".join(rows)
+
+
+def _diagnostic_rows(payload: dict[str, Any]) -> str:
+    labels = (payload.get("decision_diagnostics") or {}).get("labels") or {}
+    if not labels:
+        return '<tr><td colspan="2">无决策诊断数据</td></tr>'
+    rows = []
+    for label, count in sorted(labels.items(), key=lambda item: (-int(item[1] or 0), str(item[0]))):
+        rows.append(f"<tr><td>{escape(str(label))}</td><td>{_int(count)}</td></tr>")
+    return "\n".join(rows)
+
+
+def _golden_rows(payload: dict[str, Any]) -> str:
+    cases = (payload.get("golden_scenarios") or {}).get("cases") or []
+    if not cases:
+        return '<tr><td colspan="4">无金样例数据</td></tr>'
+    rows = []
+    for row in cases:
+        status = "通过" if row.get("passed") else "失败"
+        rows.append(
+            f"""
+            <tr>
+              <td>{escape(str(row.get("name", "")))}</td>
+              <td>{escape(status)}</td>
+              <td>{escape(str(row.get("expected", "")))}</td>
+              <td>{escape(str(row.get("actual", "")))}</td>
             </tr>
             """
         )
@@ -280,6 +353,7 @@ def render_report(payload: dict[str, Any]) -> str:
     .kpi span, .kpi em { display:block; color:var(--muted); font-style:normal; }
     .kpi strong { display:block; font-size:25px; margin:10px 0; }
     .grid2 { display:grid; grid-template-columns: 1.25fr .75fr; gap:24px; }
+    .grid3 { display:grid; grid-template-columns: 1fr 1fr; gap:24px; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:10px 10px; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:middle; }
     th { color:var(--muted); font-weight:600; font-size:13px; }
@@ -290,7 +364,7 @@ def render_report(payload: dict[str, Any]) -> str:
     .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
     .pill { border:1px solid var(--line); background:rgba(255,255,255,.04); border-radius:999px; padding:7px 10px; color:var(--muted); }
     .scroll { max-height:680px; overflow:auto; }
-    @media (max-width: 980px) { .verdict, .grid2 { grid-template-columns:1fr; } .kpis { grid-template-columns: repeat(2, minmax(0,1fr)); } main, header { padding-left:18px; padding-right:18px; } }
+    @media (max-width: 980px) { .verdict, .grid2, .grid3 { grid-template-columns:1fr; } .kpis { grid-template-columns: repeat(2, minmax(0,1fr)); } main, header { padding-left:18px; padding-right:18px; } }
     """
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -332,6 +406,13 @@ def render_report(payload: dict[str, Any]) -> str:
         <tbody>{_deck_rows(payload)}</tbody>
       </table>
     </section>
+    <section class="panel">
+      <h2>跨牌组矩阵</h2>
+      <table>
+        <thead><tr><th>策略 A 牌组</th><th>策略 B 牌组</th><th>A 点数率</th><th>胜/平/负</th><th>平均分差</th></tr></thead>
+        <tbody>{_matrix_rows(payload)}</tbody>
+      </table>
+    </section>
     <section class="grid2">
       <div class="panel">
         <h2>先后手偏差</h2>
@@ -345,6 +426,22 @@ def render_report(payload: dict[str, Any]) -> str:
         <table>
           <thead><tr><th>原因</th><th>占比</th><th>对局</th></tr></thead>
           <tbody>{_terminal_rows(payload)}</tbody>
+        </table>
+      </div>
+    </section>
+    <section class="grid3">
+      <div class="panel">
+        <h2>决策诊断</h2>
+        <table>
+          <thead><tr><th>错因</th><th>次数</th></tr></thead>
+          <tbody>{_diagnostic_rows(payload)}</tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>金样例</h2>
+        <table>
+          <thead><tr><th>场景</th><th>状态</th><th>期望</th><th>实际</th></tr></thead>
+          <tbody>{_golden_rows(payload)}</tbody>
         </table>
       </div>
     </section>

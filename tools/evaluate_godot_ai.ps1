@@ -9,6 +9,12 @@ param(
     [int]$Seed = 17,
     [int]$MaxActions = 1200,
     [int]$Workers = 1,
+    [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
+    [string]$MatchupMode = '',
+    [int]$CrossSeedBlocksPerMatchup = -1,
+    [ValidateSet('', 'stability', 'strength', 'auto')]
+    [string]$ValidateGate = '',
+    [string]$Baseline = '',
     [string]$OutputDir = ''
 )
 
@@ -53,6 +59,15 @@ switch ($EvalPreset) {
         if (-not $PSBoundParameters.ContainsKey('SeedBlocksPerDeck')) {
             $SeedBlocksPerDeck = 50
         }
+        if (-not $PSBoundParameters.ContainsKey('CrossSeedBlocksPerMatchup')) {
+            $CrossSeedBlocksPerMatchup = 10
+        }
+        if (-not $PSBoundParameters.ContainsKey('MatchupMode')) {
+            $MatchupMode = 'Balanced'
+        }
+        if (-not $PSBoundParameters.ContainsKey('ValidateGate')) {
+            $ValidateGate = 'auto'
+        }
         if (-not $PSBoundParameters.ContainsKey('MaxActions')) {
             $MaxActions = 1200
         }
@@ -71,11 +86,15 @@ if (-not (Test-Path -LiteralPath $python)) {
 
 $StrategyA = Resolve-RepoPathOrEmpty $StrategyA
 $StrategyB = Resolve-RepoPathOrEmpty $StrategyB
+$Baseline = Resolve-RepoPathOrEmpty $Baseline
 if (-not [string]::IsNullOrWhiteSpace($StrategyA) -and -not (Test-Path -LiteralPath $StrategyA)) {
     throw "StrategyA file not found: $StrategyA"
 }
 if (-not [string]::IsNullOrWhiteSpace($StrategyB) -and -not (Test-Path -LiteralPath $StrategyB)) {
     throw "StrategyB file not found: $StrategyB"
+}
+if (-not [string]::IsNullOrWhiteSpace($Baseline) -and -not (Test-Path -LiteralPath $Baseline)) {
+    throw "Baseline file not found: $Baseline"
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -131,6 +150,12 @@ $runnerArgs = @(
     '--seed', ([string]$Seed),
     '--max-actions', ([string][Math]::Max(1, $MaxActions))
 )
+if (-not [string]::IsNullOrWhiteSpace($MatchupMode)) {
+    $runnerArgs += @('--matchup-mode', $MatchupMode)
+}
+if ($CrossSeedBlocksPerMatchup -ge 0) {
+    $runnerArgs += @('--cross-seed-blocks-per-matchup', ([string][Math]::Max(0, $CrossSeedBlocksPerMatchup)))
+}
 if (-not [string]::IsNullOrWhiteSpace($StrategyA)) {
     $runnerArgs += @('--strategy-a', $StrategyA)
 }
@@ -287,6 +312,23 @@ if ($reportExit -ne 0) {
 }
 if (-not (Test-Path -LiteralPath $htmlPath)) {
     throw "AI evaluation report did not write $htmlPath"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ValidateGate)) {
+    $validateArgs = @(
+        (Join-Path $repoRoot 'python\scripts\validate_ai_evaluation.py'),
+        '--input', $jsonPath,
+        '--gate', $ValidateGate
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Baseline)) {
+        $validateArgs += @('--baseline', $Baseline)
+    }
+    $validateOutput = & $python @validateArgs 2>&1
+    $validateOutput | ForEach-Object { Write-Host $_ }
+    $validateExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    if ($validateExit -ne 0) {
+        throw "AI evaluation gate failed with exit code $validateExit"
+    }
 }
 
 Write-Host "AI evaluation JSON: $jsonPath"

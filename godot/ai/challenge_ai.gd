@@ -9,10 +9,24 @@ const DIFFICULTIES := {
 	"standard": {"simulations": 12000, "seconds": 10.0, "depth": 24},
 	"hard": {"simulations": 12000, "seconds": 10.0, "depth": 24},
 }
+const DIAGNOSTIC_LABELS := [
+	"missed_immediate_ko",
+	"ended_with_productive_attack",
+	"ended_with_productive_development",
+	"weak_attack_before_development",
+	"retreat_without_good_target",
+	"trainer_first_choice_cancelled",
+	"unsafe_draw_pressure_attack",
+	"unsafe_retaliation_attack",
+]
 
 
 static func strongest_preset() -> Dictionary:
 	return Dictionary(DIFFICULTIES[STRONGEST_DIFFICULTY]).duplicate(true)
+
+
+static func diagnostic_labels() -> Array:
+	return DIAGNOSTIC_LABELS.duplicate()
 
 
 func decide(
@@ -1035,6 +1049,90 @@ func _validated_or_fallback_action(
 			return action
 	var fallback_end := _find_action(actions, "END_TURN")
 	return fallback_end if fallback_end != null else actions[0]
+
+
+func diagnose_decision(
+	state: GameState,
+	actor: int,
+	selected: GameAction,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+) -> Dictionary:
+	var result := {}
+	for label in DIAGNOSTIC_LABELS:
+		result[label] = 0
+	if selected == null or actions.is_empty():
+		return result
+
+	var ko_attack := _best_immediate_ko_attack(
+		state, actor, actions, deck_key, catalog, engine, seed + 101)
+	if ko_attack != null and not _diagnostic_same_action(selected, ko_attack):
+		result["missed_immediate_ko"] = 1
+
+	if selected.action == "END_TURN":
+		var productive_attack := _best_productive_attack(
+			state, actor, actions, deck_key, catalog, engine, seed + 103)
+		if productive_attack != null:
+			result["ended_with_productive_attack"] = 1
+		var productive_development := _best_productive_nonterminal_action(
+			state, actor, actions, deck_key, catalog, engine, seed + 107, selected)
+		if productive_development != null:
+			result["ended_with_productive_development"] = 1
+
+	if selected.action == "DECLARE_ATTACK":
+		var pre_attack := _best_pre_attack_development_action(
+			state, actor, selected, actions, deck_key, catalog, engine, seed + 109)
+		if pre_attack != null:
+			result["weak_attack_before_development"] = 1
+		if _attack_draw_pressure_is_unsafe(state, actor, selected, catalog):
+			result["unsafe_draw_pressure_attack"] = 1
+		if _attack_feeds_dangerous_retaliation(state, actor, selected, catalog):
+			result["unsafe_retaliation_attack"] = 1
+
+	if selected.action == "RETREAT":
+		var retreat_idx := int(selected.params.get("bench_idx", -1))
+		if not _retreat_has_good_target(state, actor, retreat_idx, deck_key, catalog):
+			result["retreat_without_good_target"] = 1
+
+	if (
+		selected.action == "PLAY_TRAINER"
+		and _action_first_choice_cancelled(
+			state, actor, selected, deck_key, catalog, engine, seed + 113)
+	):
+		result["trainer_first_choice_cancelled"] = 1
+
+	return result
+
+
+func _diagnostic_same_action(left: GameAction, right: GameAction) -> bool:
+	if left == null and right == null:
+		return true
+	if left == null or right == null:
+		return false
+	return (
+		left.action == right.action
+		and left.actor == right.actor
+		and left.params == right.params
+		and (
+			(left.source == null and right.source == null)
+			or (
+				left.source != null
+				and right.source != null
+				and left.source.to_dict() == right.source.to_dict()
+			)
+		)
+		and (
+			(left.target == null and right.target == null)
+			or (
+				left.target != null
+				and right.target != null
+				and left.target.to_dict() == right.target.to_dict()
+			)
+		)
+	)
 
 
 func _best_immediate_ko_attack(

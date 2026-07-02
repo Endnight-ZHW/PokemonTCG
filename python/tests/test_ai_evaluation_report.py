@@ -48,6 +48,15 @@ def _schema2_payload(**summary_overrides):
             "fire": {"paired_point_delta": 0.04},
             "water": {"paired_point_delta": 0.06},
         },
+        "per_matchup": {
+            "fire_vs_water": {"paired_point_delta": 0.04},
+            "water_vs_fire": {"paired_point_delta": 0.06},
+        },
+        "decision_diagnostics": {
+            "total": 0,
+            "labels": {"missed_immediate_ko": 0},
+        },
+        "golden_scenarios": {"total": 1, "passed": 1, "failed": 0, "cases": []},
         "seat": {"seat_counts": {"a_player_0": 20, "a_player_1": 20}},
         "terminal_reasons": {"game_over": 40},
         "matches": [],
@@ -57,6 +66,12 @@ def _schema2_payload(**summary_overrides):
 def _match(deck: str, block: int, seat: int, winner: str) -> dict:
     return {
         "deck": deck,
+        "strategy_a_deck": deck,
+        "strategy_b_deck": deck,
+        "player_decks": [deck, deck],
+        "matchup_key": f"{deck}_vs_{deck}",
+        "matchup_kind": "mirror",
+        "pair_key": f"{deck}:{deck}:{block}:{17 + block * 10007}",
         "seed": 17 + block * 10007,
         "seed_block": block,
         "seat": seat,
@@ -74,6 +89,7 @@ def _match(deck: str, block: int, seat: int, winner: str) -> dict:
         "choices": 2,
         "average_decision_ms": 5.0,
         "elapsed_ms": 100,
+        "decision_diagnostics": {"missed_immediate_ko": 0},
         "invalid_actions": 0,
         "choice_failures": 0,
         "rule_exceptions": 0,
@@ -84,25 +100,37 @@ def _match(deck: str, block: int, seat: int, winner: str) -> dict:
 
 def _shard(block: int, *, fingerprint: str = "same", seed: int = 17) -> dict:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "self_check": False,
         "eval_preset": "Smoke",
         "mode": "mirror",
+        "matchup_mode": "Mirror",
         "deck_keys": ["fire"],
         "config": {
             "seed": seed,
             "seed_blocks_per_deck": 2,
+            "cross_seed_blocks_per_matchup": 0,
             "seed_block_start": block,
             "seed_block_count": 1,
             "max_actions": 80,
             "eval_preset": "Smoke",
+            "matchup_mode": "Mirror",
         },
         "strategies": {"A": {"id": "a"}, "B": {"id": "b"}},
         "strategy_fingerprint": {"A": fingerprint, "B": fingerprint, "equal": True},
         "summary": {"games": 2},
         "per_deck": {},
+        "per_matchup": {},
+        "matrix": {},
         "paired": {},
         "seat": {},
+        "decision_diagnostics": {"total": 0, "labels": {"missed_immediate_ko": 0}},
+        "golden_scenarios": {
+            "total": 1,
+            "passed": 1,
+            "failed": 0,
+            "cases": [{"name": "immediate_ko", "passed": True}],
+        },
         "terminal_reasons": {},
         "matches": [
             _match("fire", block, 0, "A"),
@@ -264,12 +292,63 @@ class AIEvaluationReportTests(unittest.TestCase):
             validate_evaluation_gate(payload, gate="nightly")["errors"],
         )
 
-    def test_merge_shards_recomputes_schema2_metrics(self):
+    def test_auto_gate_uses_stability_for_self_check(self):
+        payload = _schema2_payload(
+            paired_point_delta=0.0,
+            probability_a_better=0.5,
+            paired_delta_ci95={"lower": -0.1, "upper": 0.1, "samples": 400},
+        )
+        payload["self_check"] = True
+        payload["strategy_fingerprint"] = {"A": "same", "B": "same", "equal": True}
+
+        result = validate_evaluation_gate(payload, gate="auto")
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["gate"], "nightly-stability")
+
+    def test_stability_gate_rejects_decision_and_golden_failures(self):
+        payload = _schema2_payload()
+        payload["decision_diagnostics"] = {
+            "total": 1,
+            "labels": {"missed_immediate_ko": 1},
+        }
+        self.assertIn(
+            "decision_diagnostics_nonzero",
+            validate_evaluation_gate(payload, gate="stability")["errors"],
+        )
+
+        payload = _schema2_payload()
+        payload["golden_scenarios"] = {
+            "total": 1,
+            "passed": 0,
+            "failed": 1,
+            "cases": [{"name": "immediate_ko", "passed": False}],
+        }
+        self.assertIn(
+            "golden_scenarios_failed",
+            validate_evaluation_gate(payload, gate="stability")["errors"],
+        )
+
+    def test_strength_gate_rejects_matchup_floor_regression(self):
+        payload = _schema2_payload()
+        payload["per_matchup"]["fire_vs_water"]["paired_point_delta"] = -0.09
+
+        self.assertIn(
+            "fire_vs_water:paired_delta_below_floor",
+            validate_evaluation_gate(payload, gate="strength")["errors"],
+        )
+
+    def test_merge_shards_recomputes_schema3_metrics(self):
         merged = merge_payloads([_shard(0), _shard(1)], workers=2)
 
+        self.assertEqual(merged["schema_version"], 3)
         self.assertEqual(merged["summary"]["games"], 4)
         self.assertEqual(merged["summary"]["paired_pairs"], 2)
         self.assertEqual(merged["per_deck"]["fire"]["games"], 4)
+        self.assertEqual(merged["per_matchup"]["fire_vs_fire"]["games"], 4)
+        self.assertEqual(merged["matrix"]["fire"]["fire"]["games"], 4)
+        self.assertEqual(merged["decision_diagnostics"]["total"], 0)
+        self.assertEqual(merged["golden_scenarios"]["failed"], 0)
         self.assertEqual(merged["seat"]["seat_counts"], {"a_player_0": 2, "a_player_1": 2})
         self.assertEqual(merged["terminal_reasons"], {"game_over": 4})
         self.assertEqual(merged["config"]["parallel_workers"], 2)

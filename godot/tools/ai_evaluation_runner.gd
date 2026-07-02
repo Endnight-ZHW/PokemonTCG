@@ -12,12 +12,16 @@ const DEFAULT_DECK_KEYS := [
 	"steel",
 	"water",
 ]
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 const DEFAULT_SEED_BLOCKS_PER_DECK := 50
+const DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP := 10
 const DEFAULT_SEED := 17
 const DEFAULT_MAX_ACTIONS := 1200
 const BOOTSTRAP_ITERATIONS := 400
 const BOOTSTRAP_SEED := 90210
+const MATCHUP_MODE_MIRROR := "Mirror"
+const MATCHUP_MODE_BALANCED := "Balanced"
+const MATCHUP_MODE_MATRIX := "Matrix"
 
 var _had_error := false
 
@@ -57,11 +61,13 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"strategy_b_path": "",
 		"deck_keys": [],
 		"seed_blocks_per_deck": DEFAULT_SEED_BLOCKS_PER_DECK,
+		"cross_seed_blocks_per_matchup": DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP,
 		"seed_block_start": 0,
 		"seed_block_count": 0,
 		"seed": DEFAULT_SEED,
 		"max_actions": DEFAULT_MAX_ACTIONS,
 		"eval_preset": "Custom",
+		"matchup_mode": "",
 		"output": "",
 		"output_dir": "",
 	}
@@ -88,6 +94,9 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--seed-blocks-per-deck":
 				config["seed_blocks_per_deck"] = maxi(1, int(value))
 				index += 2
+			"--cross-seed-blocks-per-matchup":
+				config["cross_seed_blocks_per_matchup"] = maxi(0, int(value))
+				index += 2
 			"--seed-block-start":
 				config["seed_block_start"] = maxi(0, int(value))
 				index += 2
@@ -102,6 +111,9 @@ func _parse_args(args: Array[String]) -> Dictionary:
 				index += 2
 			"--eval-preset":
 				config["eval_preset"] = value
+				index += 2
+			"--matchup-mode":
+				config["matchup_mode"] = _canonical_matchup_mode(value)
 				index += 2
 			"--output":
 				config["output"] = value
@@ -140,6 +152,29 @@ func _validation_errors(catalog: CardCatalog) -> Array[String]:
 	return errors
 
 
+func _canonical_matchup_mode(value: String) -> String:
+	var normalized := value.strip_edges().to_lower()
+	match normalized:
+		"mirror":
+			return MATCHUP_MODE_MIRROR
+		"balanced":
+			return MATCHUP_MODE_BALANCED
+		"matrix":
+			return MATCHUP_MODE_MATRIX
+		_:
+			return ""
+
+
+func _matchup_mode(config: Dictionary) -> String:
+	var explicit := _canonical_matchup_mode(str(config.get("matchup_mode", "")))
+	if not explicit.is_empty():
+		return explicit
+	var preset := str(config.get("eval_preset", "Custom"))
+	if preset == "Nightly":
+		return MATCHUP_MODE_BALANCED
+	return MATCHUP_MODE_MIRROR
+
+
 func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var selected_decks: Array = _selected_deck_keys(config)
 	var strategy_a := _load_strategy(
@@ -159,15 +194,20 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"created_at_unix": int(Time.get_unix_time_from_system()),
 			"self_check": false,
 			"eval_preset": str(config.get("eval_preset", "Custom")),
-			"mode": "mirror",
+			"mode": _matchup_mode(config).to_lower(),
+			"matchup_mode": _matchup_mode(config),
 			"deck_keys": selected_decks,
 			"config": config,
 			"strategies": {},
 			"strategy_fingerprint": {"A": "", "B": "", "equal": false},
 			"summary": empty_summary,
 			"per_deck": {},
+			"per_matchup": {},
+			"matrix": {},
 			"paired": _summarize_pairs([]),
 			"seat": _summarize_seats([]),
+			"decision_diagnostics": _empty_diagnostics_summary(),
+			"golden_scenarios": _empty_golden_summary(),
 			"terminal_reasons": {},
 			"matches": [],
 		}
@@ -176,6 +216,8 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var worker := NativeChallengeAI.new()
 	var matches: Array[Dictionary] = []
 	var seed_blocks := maxi(1, int(config.get("seed_blocks_per_deck", DEFAULT_SEED_BLOCKS_PER_DECK)))
+	var cross_seed_blocks := maxi(0, int(config.get(
+		"cross_seed_blocks_per_matchup", DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP)))
 	var seed_block_start := clampi(int(config.get("seed_block_start", 0)), 0, seed_blocks - 1)
 	var requested_seed_block_count := int(config.get("seed_block_count", 0))
 	var seed_block_count := seed_blocks - seed_block_start
@@ -183,62 +225,125 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		seed_block_count = mini(seed_block_count, requested_seed_block_count)
 	var base_seed := int(config.get("seed", DEFAULT_SEED))
 	var max_actions := maxi(1, int(config.get("max_actions", DEFAULT_MAX_ACTIONS)))
+	var matchup_mode := _matchup_mode(config)
+	var run_mirror := matchup_mode in [MATCHUP_MODE_MIRROR, MATCHUP_MODE_BALANCED]
+	var run_cross := matchup_mode in [MATCHUP_MODE_BALANCED, MATCHUP_MODE_MATRIX]
 	for selected_deck_index in range(selected_decks.size()):
 		var deck_key := str(selected_decks[selected_deck_index])
 		var deck_index := DEFAULT_DECK_KEYS.find(deck_key)
 		if deck_index < 0:
 			deck_index = selected_deck_index
-		for block_offset in range(seed_block_count):
-			var block_index := seed_block_start + block_offset
-			var game_seed := _game_seed(base_seed, deck_index, block_index)
-			var forced_first := block_index % 2
-			matches.append(_play_match(
-				catalog,
-				engine,
-				worker,
-				deck_key,
-				strategy_a,
-				strategy_b,
-				game_seed,
-				block_index,
-				0,
-				forced_first,
-				max_actions,
-			))
-			matches.append(_play_match(
-				catalog,
-				engine,
-				worker,
-				deck_key,
-				strategy_a,
-				strategy_b,
-				game_seed,
-				block_index,
-				1,
-				forced_first,
-				max_actions,
-			))
+		if run_mirror:
+			for block_offset in range(seed_block_count):
+				var block_index := seed_block_start + block_offset
+				var game_seed := _game_seed(base_seed, deck_index, block_index)
+				var forced_first := block_index % 2
+				matches.append(_play_match(
+					catalog,
+					engine,
+					worker,
+					deck_key,
+					deck_key,
+					strategy_a,
+					strategy_b,
+					game_seed,
+					block_index,
+					0,
+					forced_first,
+					max_actions,
+					"mirror",
+				))
+				matches.append(_play_match(
+					catalog,
+					engine,
+					worker,
+					deck_key,
+					deck_key,
+					strategy_a,
+					strategy_b,
+					game_seed,
+					block_index,
+					1,
+					forced_first,
+					max_actions,
+					"mirror",
+				))
+	if run_cross and cross_seed_blocks > 0:
+		var cross_end := mini(cross_seed_blocks, seed_block_start + seed_block_count)
+		for strategy_a_deck_index in range(selected_decks.size()):
+			var strategy_a_deck := str(selected_decks[strategy_a_deck_index])
+			var deck_a_index := DEFAULT_DECK_KEYS.find(strategy_a_deck)
+			if deck_a_index < 0:
+				deck_a_index = strategy_a_deck_index
+			for strategy_b_deck_index in range(selected_decks.size()):
+				var strategy_b_deck := str(selected_decks[strategy_b_deck_index])
+				if strategy_b_deck == strategy_a_deck:
+					continue
+				var deck_b_index := DEFAULT_DECK_KEYS.find(strategy_b_deck)
+				if deck_b_index < 0:
+					deck_b_index = strategy_b_deck_index
+				for block_index in range(seed_block_start, cross_end):
+					var cross_seed := _cross_game_seed(
+						base_seed, deck_a_index, deck_b_index, block_index)
+					var forced_first := block_index % 2
+					matches.append(_play_match(
+						catalog,
+						engine,
+						worker,
+						strategy_a_deck,
+						strategy_b_deck,
+						strategy_a,
+						strategy_b,
+						cross_seed,
+						block_index,
+						0,
+						forced_first,
+						max_actions,
+						"cross",
+					))
+					matches.append(_play_match(
+						catalog,
+						engine,
+						worker,
+						strategy_a_deck,
+						strategy_b_deck,
+						strategy_a,
+						strategy_b,
+						cross_seed,
+						block_index,
+						1,
+						forced_first,
+						max_actions,
+						"cross",
+					))
 	var summary := _summarize_matches(matches)
 	summary["point_rate_ci95"] = _bootstrap_point_rate_ci(matches, BOOTSTRAP_SEED)
 	var paired := _summarize_pairs(matches)
 	_apply_paired_summary(summary, paired)
 	var per_deck := _summarize_by_deck(matches)
 	_apply_per_deck_paired_summaries(per_deck, matches)
+	var per_matchup := _summarize_by_matchup(matches)
+	_apply_per_matchup_paired_summaries(per_matchup, matches)
 	var strategy_fingerprint := _strategy_fingerprint_summary(strategy_a, strategy_b, selected_decks)
+	var diagnostics := _summarize_decision_diagnostics(matches)
+	var golden_scenarios := _run_golden_scenarios(catalog, engine, worker)
 	return {
 		"schema_version": SCHEMA_VERSION,
 		"created_at_unix": int(Time.get_unix_time_from_system()),
 		"self_check": self_check,
 		"eval_preset": str(config.get("eval_preset", "Custom")),
-		"mode": "mirror",
+		"mode": matchup_mode.to_lower(),
+		"matchup_mode": matchup_mode,
 		"deck_keys": selected_decks,
 		"config": {
 			"seed": base_seed,
 			"seed_blocks_per_deck": seed_blocks,
+			"cross_seed_blocks_per_matchup": cross_seed_blocks,
 			"seed_block_start": seed_block_start,
 			"seed_block_count": seed_block_count,
 			"max_actions": max_actions,
 			"eval_preset": str(config.get("eval_preset", "Custom")),
+			"matchup_mode": matchup_mode,
 		},
 		"strategies": {
 			"A": _public_strategy(strategy_a),
@@ -247,8 +352,12 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		"strategy_fingerprint": strategy_fingerprint,
 		"summary": summary,
 		"per_deck": per_deck,
+		"per_matchup": per_matchup,
+		"matrix": _summarize_matrix(matches),
 		"paired": paired,
 		"seat": _summarize_seats(matches),
+		"decision_diagnostics": diagnostics,
+		"golden_scenarios": golden_scenarios,
 		"terminal_reasons": _count_by(matches, "terminal_reason"),
 		"matches": matches,
 	}
@@ -271,6 +380,16 @@ func _selected_deck_keys(config: Dictionary) -> Array:
 
 func _game_seed(base_seed: int, deck_index: int, block_index: int) -> int:
 	return int(base_seed + deck_index * 1_000_003 + block_index * 10_007)
+
+
+func _cross_game_seed(base_seed: int, deck_a_index: int, deck_b_index: int, block_index: int) -> int:
+	return int(
+		base_seed
+		+ 50_000_000
+		+ deck_a_index * 1_000_003
+		+ deck_b_index * 97_409
+		+ block_index * 10_007
+	)
 
 
 func _load_strategy(path: String, fallback_id: String, fallback_label: String) -> Dictionary:
@@ -350,7 +469,8 @@ func _play_match(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	worker: NativeChallengeAI,
-	deck_key: String,
+	strategy_a_deck: String,
+	strategy_b_deck: String,
 	strategy_a: Dictionary,
 	strategy_b: Dictionary,
 	seed: int,
@@ -358,27 +478,46 @@ func _play_match(
 	seat: int,
 	forced_first: int,
 	max_actions: int,
+	matchup_kind: String,
 ) -> Dictionary:
 	var started_ms := Time.get_ticks_msec()
 	var strategy_a_player := 0 if seat == 0 else 1
+	var player_decks: Array[String] = []
+	if strategy_a_player == 0:
+		player_decks.assign([strategy_a_deck, strategy_b_deck])
+	else:
+		player_decks.assign([strategy_b_deck, strategy_a_deck])
 	var state := GameState.new()
-	state.public_deck_keys = [deck_key, deck_key]
+	state.public_deck_keys = player_decks
 	var rng := PortableRandomSource.new(seed)
 	var setup := engine.setup_game(
 		state,
-		catalog.expand_deck(deck_key),
-		catalog.expand_deck(deck_key),
+		catalog.expand_deck(player_decks[0]),
+		catalog.expand_deck(player_decks[1]),
 		rng,
 		forced_first,
 	)
 	if not setup.success:
-		return _failed_match_row(deck_key, seed, seed_block, seat, strategy_a_player, "setup_failed", setup.message)
-	state.public_deck_keys = [deck_key, deck_key]
+		return _failed_match_row(
+			strategy_a_deck,
+			strategy_b_deck,
+			player_decks,
+			seed,
+			seed_block,
+			seat,
+			strategy_a_player,
+			forced_first,
+			matchup_kind,
+			"setup_failed",
+			setup.message,
+		)
+	state.public_deck_keys = player_decks
 
 	var actions_taken := 0
 	var decisions := 0
 	var choices := 0
 	var total_decision_ms := 0.0
+	var decision_diagnostics := _empty_diagnostic_counts()
 	var time_capped_decisions := 0
 	var invalid_actions := 0
 	var choice_failures := 0
@@ -390,7 +529,10 @@ func _play_match(
 		if pending:
 			var choice_actor := _choice_actor(state, pending)
 			var choice_strategy := strategy_a if choice_actor == strategy_a_player else strategy_b
-			var choice_result := _decide_choice(worker, state, pending, choice_actor, deck_key, choice_strategy, seed, actions_taken + choices)
+			var choice_deck_key := str(player_decks[choice_actor])
+			var choice_result := _decide_choice(
+				worker, state, pending, choice_actor, choice_deck_key,
+				choice_strategy, seed, actions_taken + choices)
 			total_decision_ms += float(choice_result.get("elapsed_ms", 0.0))
 			if not bool(choice_result.get("success", false)):
 				choice_failures += 1
@@ -414,10 +556,12 @@ func _play_match(
 			terminal_message = "No legal action for actor=%d phase=%s" % [actor, state.phase]
 			break
 		var actor_strategy := strategy_a if actor == strategy_a_player else strategy_b
-		var decision := _decide_action(worker, state, legal, actor, deck_key, actor_strategy, seed, actions_taken)
+		var actor_deck_key := str(player_decks[actor])
+		var decision := _decide_action(
+			worker, state, legal, actor, actor_deck_key, actor_strategy, seed, actions_taken)
 		total_decision_ms += float(decision.get("elapsed_ms", 0.0))
 		decisions += 1
-		var requested_budget := int(_strategy_params(actor_strategy, deck_key).get("simulation_budget", 1))
+		var requested_budget := int(_strategy_params(actor_strategy, actor_deck_key).get("simulation_budget", 1))
 		if int(decision.get("simulations", requested_budget)) < requested_budget:
 			time_capped_decisions += 1
 		if not bool(decision.get("success", false)):
@@ -426,6 +570,19 @@ func _play_match(
 			terminal_message = str(decision.get("error", "decision_failed"))
 			break
 		var action := GameAction.from_dict(decision["action"])
+		_merge_diagnostic_counts(
+			decision_diagnostics,
+			worker.diagnose_decision(
+				state,
+				actor,
+				action,
+				legal,
+				actor_deck_key,
+				catalog,
+				engine,
+				seed + actions_taken * 65537 + actor,
+			),
+		)
 		if not _action_matches_legal(action, legal):
 			invalid_actions += 1
 		action.action_id = "eval:%d:%d:%d" % [state.revision, actions_taken, actor]
@@ -441,8 +598,16 @@ func _play_match(
 		terminal_reason = "game_over" if state.winner >= 0 else "max_actions"
 	var winner := _winner_label(state.winner, strategy_a_player)
 	var score := _score_state(state, strategy_a_player, catalog)
+	var matchup_key := _matchup_key(strategy_a_deck, strategy_b_deck)
+	var pair_key := _pair_key_for_values(strategy_a_deck, strategy_b_deck, seed_block, seed)
 	return {
-		"deck": deck_key,
+		"deck": strategy_a_deck,
+		"strategy_a_deck": strategy_a_deck,
+		"strategy_b_deck": strategy_b_deck,
+		"player_decks": player_decks,
+		"matchup_key": matchup_key,
+		"matchup_kind": matchup_kind,
+		"pair_key": pair_key,
 		"seed": seed,
 		"seed_block": seed_block,
 		"seat": seat,
@@ -460,6 +625,7 @@ func _play_match(
 		"choices": choices,
 		"average_decision_ms": round(total_decision_ms / max(1, decisions + choices) * 1000.0) / 1000.0,
 		"elapsed_ms": Time.get_ticks_msec() - started_ms,
+		"decision_diagnostics": decision_diagnostics,
 		"invalid_actions": invalid_actions,
 		"choice_failures": choice_failures,
 		"rule_exceptions": rule_exceptions,
@@ -469,22 +635,33 @@ func _play_match(
 
 
 func _failed_match_row(
-	deck_key: String,
+	strategy_a_deck: String,
+	strategy_b_deck: String,
+	player_decks: Array[String],
 	seed: int,
 	seed_block: int,
 	seat: int,
 	strategy_a_player: int,
+	forced_first: int,
+	matchup_kind: String,
 	reason: String,
 	message: String,
 ) -> Dictionary:
+	var matchup_key := _matchup_key(strategy_a_deck, strategy_b_deck)
 	return {
-		"deck": deck_key,
+		"deck": strategy_a_deck,
+		"strategy_a_deck": strategy_a_deck,
+		"strategy_b_deck": strategy_b_deck,
+		"player_decks": player_decks,
+		"matchup_key": matchup_key,
+		"matchup_kind": matchup_kind,
+		"pair_key": _pair_key_for_values(strategy_a_deck, strategy_b_deck, seed_block, seed),
 		"seed": seed,
 		"seed_block": seed_block,
 		"seat": seat,
 		"strategy_a_player": strategy_a_player,
-		"forced_first_player": 0,
-		"strategy_a_first": strategy_a_player == 0,
+		"forced_first_player": forced_first,
+		"strategy_a_first": strategy_a_player == forced_first,
 		"winner": "draw",
 		"engine_winner": -1,
 		"score": 0.0,
@@ -496,6 +673,7 @@ func _failed_match_row(
 		"choices": 0,
 		"average_decision_ms": 0.0,
 		"elapsed_ms": 0,
+		"decision_diagnostics": _empty_diagnostic_counts(),
 		"invalid_actions": 0,
 		"choice_failures": 0,
 		"rule_exceptions": 1,
@@ -587,6 +765,27 @@ func _winner_label(engine_winner: int, strategy_a_player: int) -> String:
 	if engine_winner == 1 - strategy_a_player:
 		return "B"
 	return "draw"
+
+
+func _matchup_key(strategy_a_deck: String, strategy_b_deck: String) -> String:
+	return "%s_vs_%s" % [strategy_a_deck, strategy_b_deck]
+
+
+func _pair_key_for_values(strategy_a_deck: String, strategy_b_deck: String, seed_block: int, seed: int) -> String:
+	return "%s:%s:%d:%d" % [strategy_a_deck, strategy_b_deck, seed_block, seed]
+
+
+func _empty_diagnostic_counts() -> Dictionary:
+	var result := {}
+	for label in NativeChallengeAI.diagnostic_labels():
+		result[str(label)] = 0
+	return result
+
+
+func _merge_diagnostic_counts(target: Dictionary, source: Dictionary) -> void:
+	for label in NativeChallengeAI.diagnostic_labels():
+		var key := str(label)
+		target[key] = int(target.get(key, 0)) + int(source.get(key, 0))
 
 
 func _score_state(state: GameState, strategy_a_player: int, catalog: CardCatalog) -> float:
@@ -774,14 +973,14 @@ func _elo_delta(point_rate: float) -> float:
 	return 400.0 * log(clamped / (1.0 - clamped)) / log(10.0)
 
 
-func _summarize_matches(matches: Array[Dictionary]) -> Dictionary:
+func _summarize_matches(matches: Array) -> Dictionary:
 	var stats := _empty_stats()
 	for row in matches:
 		_merge_match(stats, row)
 	return _finalize_stats(stats)
 
 
-func _summarize_by_deck(matches: Array[Dictionary]) -> Dictionary:
+func _summarize_by_deck(matches: Array) -> Dictionary:
 	var rows := {}
 	var grouped_matches := {}
 	for row in matches:
@@ -895,6 +1094,9 @@ func _bootstrap_point_rate_ci(matches: Array, seed: int) -> Dictionary:
 
 
 func _pair_key(row: Dictionary) -> String:
+	var explicit := str(row.get("pair_key", ""))
+	if not explicit.is_empty():
+		return explicit
 	return "%s:%d:%d" % [
 		str(row.get("deck", "")),
 		int(row.get("seed_block", 0)),
@@ -918,6 +1120,10 @@ func _pair_row_from_matches(rows: Array) -> Dictionary:
 	var point_rate := points / float(games)
 	return {
 		"deck": str(first.get("deck", "")),
+		"strategy_a_deck": str(first.get("strategy_a_deck", first.get("deck", ""))),
+		"strategy_b_deck": str(first.get("strategy_b_deck", first.get("deck", ""))),
+		"matchup_key": str(first.get("matchup_key", "")),
+		"matchup_kind": str(first.get("matchup_kind", "mirror")),
 		"seed": int(first.get("seed", 0)),
 		"seed_block": int(first.get("seed_block", 0)),
 		"games": games,
@@ -929,7 +1135,7 @@ func _pair_row_from_matches(rows: Array) -> Dictionary:
 	}
 
 
-func _paired_rows(matches: Array[Dictionary]) -> Array[Dictionary]:
+func _paired_rows(matches: Array) -> Array[Dictionary]:
 	var groups := {}
 	for row in matches:
 		var key := _pair_key(row)
@@ -955,6 +1161,34 @@ func _group_pairs_by_deck(pair_rows: Array) -> Dictionary:
 		if not groups.has(deck_key):
 			groups[deck_key] = []
 		var rows: Array = groups[deck_key]
+		rows.append(row)
+	return groups
+
+
+func _group_matches_by_matchup(matches: Array) -> Dictionary:
+	var groups := {}
+	for row_value in matches:
+		var row: Dictionary = row_value
+		var key := str(row.get("matchup_key", ""))
+		if key.is_empty():
+			key = _matchup_key(str(row.get("deck", "")), str(row.get("deck", "")))
+		if not groups.has(key):
+			groups[key] = []
+		var rows: Array = groups[key]
+		rows.append(row)
+	return groups
+
+
+func _group_pairs_by_matchup(pair_rows: Array) -> Dictionary:
+	var groups := {}
+	for row_value in pair_rows:
+		var row: Dictionary = row_value
+		var key := str(row.get("matchup_key", ""))
+		if key.is_empty():
+			key = _matchup_key(str(row.get("deck", "")), str(row.get("deck", "")))
+		if not groups.has(key):
+			groups[key] = []
+		var rows: Array = groups[key]
 		rows.append(row)
 	return groups
 
@@ -1022,7 +1256,7 @@ func _summarize_pair_rows(pair_rows: Array, seed: int) -> Dictionary:
 	}
 
 
-func _summarize_pairs(matches: Array[Dictionary]) -> Dictionary:
+func _summarize_pairs(matches: Array) -> Dictionary:
 	return _summarize_pair_rows(_paired_rows(matches), BOOTSTRAP_SEED + 777)
 
 
@@ -1038,7 +1272,7 @@ func _apply_paired_summary(target: Dictionary, paired: Dictionary) -> void:
 		target[key] = paired.get(key)
 
 
-func _apply_per_deck_paired_summaries(per_deck: Dictionary, matches: Array[Dictionary]) -> void:
+func _apply_per_deck_paired_summaries(per_deck: Dictionary, matches: Array) -> void:
 	var grouped_pairs := _group_pairs_by_deck(_paired_rows(matches))
 	for deck_key in per_deck.keys():
 		var pair_rows: Array = grouped_pairs.get(deck_key, [])
@@ -1047,6 +1281,239 @@ func _apply_per_deck_paired_summaries(per_deck: Dictionary, matches: Array[Dicti
 			BOOTSTRAP_SEED + 1000 + absi(str(deck_key).hash()) % 100000,
 		)
 		_apply_paired_summary(per_deck[deck_key], paired)
+
+
+func _summarize_by_matchup(matches: Array) -> Dictionary:
+	var result := {}
+	var grouped := _group_matches_by_matchup(matches)
+	var keys := grouped.keys()
+	keys.sort()
+	for key in keys:
+		var rows: Array = grouped[key]
+		var stats := _summarize_matches(rows)
+		stats["point_rate_ci95"] = _bootstrap_point_rate_ci(
+			rows,
+			BOOTSTRAP_SEED + absi(str(key).hash()) % 100000,
+		)
+		result[key] = stats
+	return result
+
+
+func _apply_per_matchup_paired_summaries(per_matchup: Dictionary, matches: Array) -> void:
+	var grouped_pairs := _group_pairs_by_matchup(_paired_rows(matches))
+	for key in per_matchup.keys():
+		var pair_rows: Array = grouped_pairs.get(key, [])
+		var paired := _summarize_pair_rows(
+			pair_rows,
+			BOOTSTRAP_SEED + 2000 + absi(str(key).hash()) % 100000,
+		)
+		_apply_paired_summary(per_matchup[key], paired)
+
+
+func _summarize_matrix(matches: Array) -> Dictionary:
+	var cells := {}
+	for row in matches:
+		var strategy_a_deck := str(row.get("strategy_a_deck", row.get("deck", "")))
+		var strategy_b_deck := str(row.get("strategy_b_deck", row.get("deck", "")))
+		if not cells.has(strategy_a_deck):
+			cells[strategy_a_deck] = {}
+		var deck_row: Dictionary = cells[strategy_a_deck]
+		if not deck_row.has(strategy_b_deck):
+			deck_row[strategy_b_deck] = []
+		var rows: Array = deck_row[strategy_b_deck]
+		rows.append(row)
+	var result := {}
+	var deck_keys := cells.keys()
+	deck_keys.sort()
+	for strategy_a_deck in deck_keys:
+		result[strategy_a_deck] = {}
+		var opponent_keys: Array = Dictionary(cells[strategy_a_deck]).keys()
+		opponent_keys.sort()
+		for strategy_b_deck in opponent_keys:
+			result[strategy_a_deck][strategy_b_deck] = _summarize_matches(
+				cells[strategy_a_deck][strategy_b_deck])
+	return result
+
+
+func _empty_diagnostics_summary() -> Dictionary:
+	return {
+		"total": 0,
+		"labels": _empty_diagnostic_counts(),
+	}
+
+
+func _summarize_decision_diagnostics(matches: Array) -> Dictionary:
+	var labels := _empty_diagnostic_counts()
+	var total := 0
+	var per_deck := {}
+	var per_matchup := {}
+	for row in matches:
+		var row_counts: Dictionary = row.get("decision_diagnostics", {})
+		var deck_key := str(row.get("strategy_a_deck", row.get("deck", "")))
+		var matchup_key := str(row.get("matchup_key", ""))
+		if not per_deck.has(deck_key):
+			per_deck[deck_key] = _empty_diagnostic_counts()
+		if not per_matchup.has(matchup_key):
+			per_matchup[matchup_key] = _empty_diagnostic_counts()
+		for label in NativeChallengeAI.diagnostic_labels():
+			var key := str(label)
+			var value := int(row_counts.get(key, 0))
+			labels[key] = int(labels.get(key, 0)) + value
+			per_deck[deck_key][key] = int(per_deck[deck_key].get(key, 0)) + value
+			per_matchup[matchup_key][key] = int(per_matchup[matchup_key].get(key, 0)) + value
+			total += value
+	return {
+		"total": total,
+		"labels": labels,
+		"per_deck": per_deck,
+		"per_matchup": per_matchup,
+	}
+
+
+func _empty_golden_summary() -> Dictionary:
+	return {
+		"total": 0,
+		"passed": 0,
+		"failed": 0,
+		"cases": [],
+	}
+
+
+func _run_golden_scenarios(catalog: CardCatalog, engine: GameEngine, worker: NativeChallengeAI) -> Dictionary:
+	var cases: Array[Dictionary] = []
+
+	var ko_state := GameState.new()
+	ko_state.phase = "MAIN"
+	ko_state.turn_number = 5
+	ko_state.first_player_idx = 1
+	ko_state.active_player_idx = 0
+	ko_state.public_deck_keys = ["lightning", "water"]
+	ko_state.players[0].active = PokemonState.new("svl-zera")
+	ko_state.players[0].active.placed_this_turn = false
+	ko_state.players[0].active.energy_card_ids.assign(["sv1-ener-4", "sv1-ener-4"])
+	ko_state.players[1].active = PokemonState.new("sv2-delib")
+	ko_state.players[1].active.placed_this_turn = false
+	var ko_action := _golden_decision_for_actions(worker, ko_state, 0, "lightning", [
+		GameAction.new("END_TURN", {}, true, 0),
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+	], "golden-ko")
+	cases.append(_golden_case(
+		"immediate_ko_before_pass",
+		ko_action != null and ko_action.action == "DECLARE_ATTACK",
+		ko_action,
+		"DECLARE_ATTACK",
+	))
+
+	var energy_state := GameState.new()
+	energy_state.phase = "MAIN"
+	energy_state.turn_number = 5
+	energy_state.first_player_idx = 0
+	energy_state.active_player_idx = 1
+	energy_state.public_deck_keys = ["dragon", "lightning"]
+	energy_state.players[0].active = PokemonState.new("svg-dram")
+	energy_state.players[0].active.placed_this_turn = false
+	energy_state.players[1].active = PokemonState.new("svl-pikaex")
+	energy_state.players[1].active.placed_this_turn = false
+	energy_state.players[1].active.energy_card_ids.assign(["sv1-ener-4"])
+	energy_state.players[1].hand = ["sv1-ener-4"]
+	var energy_action := _golden_decision_for_actions(worker, energy_state, 1, "lightning", [
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
+		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1),
+		GameAction.new("END_TURN", {}, true, 1),
+	], "golden-energy")
+	cases.append(_golden_case(
+		"weak_attack_waits_for_core_energy",
+		energy_action != null
+		and energy_action.action == "ATTACH_ENERGY"
+		and str(energy_action.params.get("target_slot", "")) == "active",
+		energy_action,
+		"ATTACH_ENERGY active",
+	))
+
+	var draw_state := GameState.new()
+	draw_state.phase = "MAIN"
+	draw_state.turn_number = 5
+	draw_state.first_player_idx = 0
+	draw_state.active_player_idx = 1
+	draw_state.public_deck_keys = ["dragon", "psychic"]
+	draw_state.players[0].active = PokemonState.new("svg-dram")
+	draw_state.players[0].active.placed_this_turn = false
+	draw_state.players[1].active = PokemonState.new("sv1-104")
+	draw_state.players[1].active.placed_this_turn = false
+	draw_state.players[1].active.energy_card_ids = ["sv1-ener-5"]
+	draw_state.players[1].hand = ["sv1-180"]
+	draw_state.players[1].deck = [
+		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
+		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
+	]
+	var draw_action := _golden_decision_for_actions(worker, draw_state, 1, "psychic", [
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 1),
+		GameAction.new("END_TURN", {}, true, 1),
+	], "golden-draw")
+	cases.append(_golden_case(
+		"weak_attack_waits_for_productive_draw",
+		draw_action != null and draw_action.action == "PLAY_TRAINER",
+		draw_action,
+		"PLAY_TRAINER",
+	))
+
+	var failed := 0
+	for row in cases:
+		if not bool(row.get("passed", false)):
+			failed += 1
+	return {
+		"total": cases.size(),
+		"passed": cases.size() - failed,
+		"failed": failed,
+		"cases": cases,
+	}
+
+
+func _golden_decision_for_actions(
+	worker: NativeChallengeAI,
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	actions: Array,
+	request_id: String,
+) -> GameAction:
+	var rows: Array = []
+	for action in actions:
+		rows.append(action.to_dict())
+	var result := worker.decide({
+		"kind": "action",
+		"state": state.snapshot(),
+		"actor": actor,
+		"revision": state.revision,
+		"request_id": request_id,
+		"mode": "challenge",
+		"deck_key": deck_key,
+		"seed": 20260702,
+		"simulation_budget": 0,
+		"seconds": 0.0,
+		"max_depth": 1,
+		"deterministic": true,
+		"actions": rows,
+	}, Callable(self, "_not_cancelled"), null)
+	if not bool(result.get("success", false)):
+		return null
+	return GameAction.from_dict(result["action"])
+
+
+func _golden_case(name: String, passed: bool, action: GameAction, expected: String) -> Dictionary:
+	return {
+		"name": name,
+		"passed": passed,
+		"expected": expected,
+		"actual": _action_summary(action),
+	}
+
+
+func _action_summary(action: GameAction) -> String:
+	if action == null:
+		return "null"
+	return "%s %s" % [action.action, JSON.stringify(action.params)]
 
 
 func _strategy_fingerprint_summary(

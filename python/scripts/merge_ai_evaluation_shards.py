@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 BOOTSTRAP_ITERATIONS = 400
 BOOTSTRAP_SEED = 90210
 DECK_ORDER = [
@@ -199,6 +199,17 @@ def _group_by_deck(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]
     return dict(grouped)
 
 
+def _group_by_matchup(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        key = str(row.get("matchup_key") or "")
+        if not key:
+            deck = str(row.get("deck") or "")
+            key = f"{deck}_vs_{deck}"
+        grouped[key].append(row)
+    return dict(grouped)
+
+
 def _bootstrap_point_rate_ci(matches: list[dict[str, Any]], seed: int) -> dict[str, Any]:
     if not matches:
         return _ci([])
@@ -219,6 +230,9 @@ def _bootstrap_point_rate_ci(matches: list[dict[str, Any]], seed: int) -> dict[s
 
 
 def _pair_key(row: dict[str, Any]) -> tuple[str, int, int]:
+    explicit = row.get("pair_key")
+    if explicit:
+        return (str(explicit), 0, 0)
     return (
         str(row.get("deck") or ""),
         _int(row.get("seed_block")),
@@ -239,6 +253,10 @@ def _paired_rows(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
         point_rate = points / games
         pairs.append({
             "deck": str(first.get("deck") or ""),
+            "strategy_a_deck": str(first.get("strategy_a_deck") or first.get("deck") or ""),
+            "strategy_b_deck": str(first.get("strategy_b_deck") or first.get("deck") or ""),
+            "matchup_key": str(first.get("matchup_key") or ""),
+            "matchup_kind": str(first.get("matchup_kind") or "mirror"),
             "seed": _int(first.get("seed")),
             "seed_block": _int(first.get("seed_block")),
             "games": games,
@@ -323,6 +341,99 @@ def _summarize_by_deck(matches: list[dict[str, Any]], pair_rows: list[dict[str, 
     return result
 
 
+def _summarize_by_matchup(matches: list[dict[str, Any]], pair_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    pairs_by_matchup = _group_by_matchup(pair_rows)
+    result: dict[str, Any] = {}
+    for matchup, rows in sorted(_group_by_matchup(matches).items()):
+        stats = _summarize_matches(rows)
+        stats["point_rate_ci95"] = _bootstrap_point_rate_ci(
+            rows,
+            BOOTSTRAP_SEED + _stable_deck_seed(matchup),
+        )
+        paired = _summarize_pairs(
+            pairs_by_matchup.get(matchup, []),
+            BOOTSTRAP_SEED + 2000 + _stable_deck_seed(matchup),
+        )
+        _apply_paired_summary(stats, paired)
+        result[matchup] = stats
+    return result
+
+
+def _summarize_matrix(matches: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+    for row in matches:
+        deck_a = str(row.get("strategy_a_deck") or row.get("deck") or "")
+        deck_b = str(row.get("strategy_b_deck") or row.get("deck") or "")
+        grouped[deck_a][deck_b].append(row)
+    result: dict[str, dict[str, Any]] = {}
+    for deck_a in sorted(grouped, key=_deck_sort_key):
+        result[deck_a] = {}
+        for deck_b in sorted(grouped[deck_a], key=_deck_sort_key):
+            result[deck_a][deck_b] = _summarize_matches(grouped[deck_a][deck_b])
+    return result
+
+
+DIAGNOSTIC_LABELS = (
+    "missed_immediate_ko",
+    "ended_with_productive_attack",
+    "ended_with_productive_development",
+    "weak_attack_before_development",
+    "retreat_without_good_target",
+    "trainer_first_choice_cancelled",
+    "unsafe_draw_pressure_attack",
+    "unsafe_retaliation_attack",
+)
+
+
+def _empty_diagnostic_counts() -> dict[str, int]:
+    return {label: 0 for label in DIAGNOSTIC_LABELS}
+
+
+def _summarize_decision_diagnostics(matches: list[dict[str, Any]]) -> dict[str, Any]:
+    labels = _empty_diagnostic_counts()
+    per_deck: dict[str, dict[str, int]] = {}
+    per_matchup: dict[str, dict[str, int]] = {}
+    total = 0
+    for row in matches:
+        deck = str(row.get("strategy_a_deck") or row.get("deck") or "")
+        matchup = str(row.get("matchup_key") or f"{deck}_vs_{deck}")
+        per_deck.setdefault(deck, _empty_diagnostic_counts())
+        per_matchup.setdefault(matchup, _empty_diagnostic_counts())
+        row_counts = row.get("decision_diagnostics") or {}
+        for label in DIAGNOSTIC_LABELS:
+            value = _int(row_counts.get(label))
+            labels[label] += value
+            per_deck[deck][label] += value
+            per_matchup[matchup][label] += value
+            total += value
+    return {
+        "total": total,
+        "labels": labels,
+        "per_deck": per_deck,
+        "per_matchup": per_matchup,
+    }
+
+
+def _merge_golden_scenarios(shards: list[dict[str, Any]]) -> dict[str, Any]:
+    cases_by_name: dict[str, dict[str, Any]] = {}
+    for payload in shards:
+        for row in (payload.get("golden_scenarios") or {}).get("cases") or []:
+            name = str(row.get("name") or "")
+            if not name:
+                continue
+            existing = cases_by_name.get(name)
+            if existing is None or bool(existing.get("passed", True)):
+                cases_by_name[name] = dict(row)
+    cases = [cases_by_name[name] for name in sorted(cases_by_name)]
+    failed = sum(1 for row in cases if not bool(row.get("passed")))
+    return {
+        "total": len(cases),
+        "passed": len(cases) - failed,
+        "failed": failed,
+        "cases": cases,
+    }
+
+
 def _summarize_seats(matches: list[dict[str, Any]]) -> dict[str, Any]:
     first = _empty_stats()
     second = _empty_stats()
@@ -383,7 +494,14 @@ def _validate_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
             raise MergeError(f"shard_{index}:deck_keys")
         config = payload.get("config") or {}
         ref_config = reference.get("config") or {}
-        for key in ("seed", "seed_blocks_per_deck", "max_actions", "eval_preset"):
+        for key in (
+            "seed",
+            "seed_blocks_per_deck",
+            "cross_seed_blocks_per_matchup",
+            "max_actions",
+            "eval_preset",
+            "matchup_mode",
+        ):
             if config.get(key) != ref_config.get(key):
                 raise MergeError(f"shard_{index}:config:{key}")
     return reference
@@ -396,7 +514,8 @@ def merge_payloads(shards: list[dict[str, Any]], *, workers: int = 1) -> dict[st
     for shard_index, payload in enumerate(shards):
         for row in payload.get("matches") or []:
             key = (
-                str(row.get("deck") or ""),
+                str(row.get("strategy_a_deck") or row.get("deck") or ""),
+                str(row.get("strategy_b_deck") or row.get("deck") or ""),
                 _int(row.get("seed_block")),
                 _int(row.get("seed")),
                 _int(row.get("seat")),
@@ -427,14 +546,19 @@ def merge_payloads(shards: list[dict[str, Any]], *, workers: int = 1) -> dict[st
         "self_check": bool(reference.get("self_check")),
         "eval_preset": reference.get("eval_preset"),
         "mode": reference.get("mode", "mirror"),
+        "matchup_mode": reference.get("matchup_mode", "Mirror"),
         "deck_keys": reference.get("deck_keys") or [],
         "config": config,
         "strategies": reference.get("strategies") or {},
         "strategy_fingerprint": reference.get("strategy_fingerprint") or {},
         "summary": summary,
         "per_deck": _summarize_by_deck(matches, pair_rows),
+        "per_matchup": _summarize_by_matchup(matches, pair_rows),
+        "matrix": _summarize_matrix(matches),
         "paired": paired,
         "seat": _summarize_seats(matches),
+        "decision_diagnostics": _summarize_decision_diagnostics(matches),
+        "golden_scenarios": _merge_golden_scenarios(shards),
         "terminal_reasons": dict(Counter(str(row.get("terminal_reason") or "") for row in matches)),
         "matches": matches,
         "shards": [

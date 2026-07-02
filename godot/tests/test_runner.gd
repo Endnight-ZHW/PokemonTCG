@@ -2388,6 +2388,24 @@ func _run_ai_strength_regression_tests(
 		ko_action != null and ko_action.action == "DECLARE_ATTACK",
 		"AI fallback did not take an immediate KO before ending turn",
 	)
+	var ko_diagnostic_actions: Array[GameAction] = [
+		GameAction.new("END_TURN", {}, true, 0),
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+	]
+	var ko_diagnostics := worker.diagnose_decision(
+		ko_state,
+		0,
+		GameAction.new("END_TURN", {}, true, 0),
+		ko_diagnostic_actions,
+		"lightning",
+		catalog,
+		_engine,
+		20260702,
+	)
+	_check(
+		int(ko_diagnostics.get("missed_immediate_ko", 0)) == 1,
+		"AI diagnostic interface did not flag a missed immediate KO",
+	)
 
 	var safe_damage_state := GameState.new()
 	safe_damage_state.phase = "MAIN"
