@@ -10,6 +10,7 @@
 - `ChallengeAIMath` GDExtension 已接入局面评估的纯数值聚合；GDScript 仍负责从真实状态和卡表抽取特征，原生端不复制规则。
 - `tools/evaluate_godot_ai.ps1 -Profile` 会让 schema v3 JSON 产出 `performance_profile`。
 - HTML 报告会显示 `性能 Profile` 和 `Profile 计数`。
+- `tools/evaluate_godot_ai.ps1 -DynamicAIBudget` 会在未显式传入策略文件时生成 opt-in 动态预算 strongest 策略，用于缩短评测吞吐时间。
 - `python/scripts/summarize_ai_evaluation_profile.py` 用于输出耗时榜和 C++/GDExtension 候选方向。
 - `python/scripts/compare_ai_evaluation_profiles.py` 用于对比两个结果文件，验证 match 结果等价并输出耗时比例。
 - `tools/evaluate_godot_ai.ps1 -DisableAICache` 仅用于 benchmark，对照旧的每次决策新建 catalog/engine 行为。
@@ -36,6 +37,24 @@ Nightly profile 会更接近真实热点，但会增加计时开销。需要 pro
 ```powershell
 .\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -MatchupMode Balanced -CrossSeedBlocksPerMatchup 10 -Workers 8 -Profile -ValidateGate auto
 ```
+
+## 动态思考预算
+
+动态预算是评测吞吐优化，默认关闭，不会自动影响玩家对局或显式 strategy JSON。它保留 strongest 的 `simulation_budget` 上限、`max_depth`、UCB 公式、启发式分数和 RNG seed，只允许 Challenge AI 在根动作明显稳定时提前停止。
+
+```powershell
+.\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -Workers 8 -DynamicAIBudget -Profile -ValidateGate equivalence
+```
+
+显式传入 `-StrategyA` 或 `-StrategyB` 时，脚本不会注入动态预算；需要在策略 JSON 里自行写入 `dynamic_budget`。结果 JSON 会记录 `budget_stop_reason` 聚合后的 `dynamic_budget_stop_reasons`、`dynamic_budget_stop_rate`，profile 会记录 `ai_dynamic_budget_checks`、`ai_dynamic_budget_confidence_stops`、`ai_dynamic_budget_single_action_stops` 和 `ai_dynamic_budget_budget_exhausted`。
+
+动态预算不要求固定 seed 决策完全等价。验收使用统计等价 gate：
+
+```powershell
+python python\scripts\validate_ai_evaluation.py --input .test_tmp\ai_eval\nightly-dynamic\results.json --gate nightly-equivalence
+```
+
+该 gate 要求无 invalid action、choice failure、rule exception、golden failure，`time_capped_decision_rate == 0`，按策略诊断计数中候选 A 不比基线 B 更多，并要求 paired delta CI 下界不低于 `-0.02`、每 deck 不低于 `-0.04`、每 matchup 不低于 `-0.08`。如果 gate 失败，只把动态预算作为 opt-in profile 工具保留，不推荐用于全量强度评测。
 
 ## A/B Benchmark
 

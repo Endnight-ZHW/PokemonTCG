@@ -7,6 +7,10 @@ const DECKS_PATH := "res://data/decks.json"
 var cards: Dictionary = {}
 var decks: Dictionary = {}
 var _expanded_deck_cache: Dictionary = {}
+var _card_supertype_cache: Dictionary = {}
+var _card_subtypes_cache: Dictionary = {}
+var _provides_energy_cache: Dictionary = {}
+var _prize_value_cache: Dictionary = {}
 
 
 func _init() -> void:
@@ -42,70 +46,67 @@ func card_name(card_id: String) -> String:
 
 
 func is_pokemon(card_id: String) -> bool:
-	return get_card(card_id).get("supertype", "") == "Pokémon"
+	return _card_supertype(card_id) == "Pokémon"
 
 
 func is_basic_pokemon(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Pokémon" and "Basic" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Pokémon" and _card_has_subtype(card_id, "Basic")
 
 
 func is_stage1(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Pokémon" and "Stage 1" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Pokémon" and _card_has_subtype(card_id, "Stage 1")
 
 
 func is_stage2(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Pokémon" and "Stage 2" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Pokémon" and _card_has_subtype(card_id, "Stage 2")
 
 
 func is_energy(card_id: String) -> bool:
-	return get_card(card_id).get("supertype", "") == "Energy"
+	return _card_supertype(card_id) == "Energy"
 
 
 func is_basic_energy(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Energy" and "Basic" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Energy" and _card_has_subtype(card_id, "Basic")
 
 
 func is_special_energy(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Energy" and "Special" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Energy" and _card_has_subtype(card_id, "Special")
 
 
 func is_trainer(card_id: String) -> bool:
-	return get_card(card_id).get("supertype", "") == "Trainer"
+	return _card_supertype(card_id) == "Trainer"
 
 
 func is_item(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Trainer" and "Item" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Trainer" and _card_has_subtype(card_id, "Item")
 
 
 func is_supporter(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Trainer" and "Supporter" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Trainer" and _card_has_subtype(card_id, "Supporter")
 
 
 func is_stadium(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Trainer" and "Stadium" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Trainer" and _card_has_subtype(card_id, "Stadium")
 
 
 func is_tool(card_id: String) -> bool:
-	var card := get_card(card_id)
-	return card.get("supertype", "") == "Trainer" and "Tool" in card.get("subtypes", [])
+	return _card_supertype(card_id) == "Trainer" and _card_has_subtype(card_id, "Tool")
 
 
 func provides_energy(card_id: String) -> Array[String]:
 	var result: Array[String] = []
-	result.assign(get_card(card_id).get("provides_energy", []))
+	if not _provides_energy_cache.has(card_id):
+		var cached: Array[String] = []
+		cached.assign(get_card(card_id).get("provides_energy", []))
+		_provides_energy_cache[card_id] = cached
+	result.assign(_provides_energy_cache[card_id])
 	return result
 
 
 func prize_value(card_id: String) -> int:
-	return int(get_card(card_id).get("prize_value", 1))
+	if not _prize_value_cache.has(card_id):
+		_prize_value_cache[card_id] = int(get_card(card_id).get("prize_value", 1))
+	return int(_prize_value_cache[card_id])
 
 
 func filter_cards(card_ids: Array[String], filter_type: String, filter_name: String = "") -> Array[String]:
@@ -148,6 +149,20 @@ func filter_cards(card_ids: Array[String], filter_type: String, filter_name: Str
 		if matches:
 			result.append(card_id)
 	return result
+
+
+func _card_supertype(card_id: String) -> String:
+	if not _card_supertype_cache.has(card_id):
+		_card_supertype_cache[card_id] = str(get_card(card_id).get("supertype", ""))
+	return str(_card_supertype_cache[card_id])
+
+
+func _card_has_subtype(card_id: String, subtype: String) -> bool:
+	if not _card_subtypes_cache.has(card_id):
+		var cached: Array[String] = []
+		cached.assign(get_card(card_id).get("subtypes", []))
+		_card_subtypes_cache[card_id] = cached
+	return subtype in _card_subtypes_cache[card_id]
 
 
 func _read_json(path: String) -> Dictionary:

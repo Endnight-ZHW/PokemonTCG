@@ -135,6 +135,39 @@ func snapshot() -> Dictionary:
 	return to_dict().duplicate(true)
 
 
+func clone_state() -> GameState:
+	var result := GameState.new()
+	if players.size() == 2:
+		result.players = [
+			players[0].clone_state(),
+			players[1].clone_state(),
+		]
+	result.active_player_idx = active_player_idx
+	result.phase = phase
+	result.turn_number = turn_number
+	result.first_player_idx = first_player_idx
+	result.stadium_card_id = stadium_card_id
+	result.winner = winner
+	result.revision = revision
+	result.choice_sequence = choice_sequence
+	result.public_deck_keys = []
+	for value in public_deck_keys:
+		result.public_deck_keys.append(str(value) if value != null else "")
+	while result.public_deck_keys.size() < 2:
+		result.public_deck_keys.append("")
+	result.public_deck_keys.resize(2)
+	result.apply_type_matchups = apply_type_matchups
+	result.action_log.assign(action_log)
+	result.mulligan_count.assign(mulligan_count)
+	result.extra_draws.assign(extra_draws)
+	result.setup_ready.assign(setup_ready)
+	result.pending_promotions.assign(pending_promotions)
+	result.processed_action_ids.assign(processed_action_ids)
+	result.resolution_stack = resolution_stack.duplicate(true)
+	result.event_stream = GameEventStream.new()
+	return result
+
+
 static func from_dict(data: Dictionary) -> GameState:
 	var result := GameState.new()
 	var player_rows: Array = data.get("players", [])

@@ -186,6 +186,7 @@ def _kpi_cards(payload: dict[str, Any]) -> str:
         ("完成率", _pct(summary.get("completion_rate")), "正常结束对局占比"),
         ("平均决策", f"{_num(summary.get('average_decision_ms'))} ms", "动作与选择平均耗时"),
         ("P95 决策", f"{_num(summary.get('decision_ms_p95'))} ms", "按对局平均耗时分位"),
+        ("动态停止", _pct(summary.get("dynamic_budget_stop_rate")), "single_action + confidence 占动作决策比"),
         ("座位偏差", _int(seat_gap), "策略 A 的玩家编号不平衡"),
         ("动作截断", _int(summary.get("max_actions_exhaustions")), "达到动作上限的对局"),
         ("诊断问题", _int(diagnostics), "干净评测应为 0"),

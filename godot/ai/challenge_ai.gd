@@ -19,6 +19,21 @@ const DIAGNOSTIC_LABELS := [
 	"unsafe_draw_pressure_attack",
 	"unsafe_retaliation_attack",
 ]
+const DYNAMIC_BUDGET_DEFAULTS := {
+	"enabled": false,
+	"min_simulations": 128,
+	"ambiguous_min_simulations": 512,
+	"check_interval": 32,
+	"stable_checks": 3,
+	"ambiguous_stable_checks": 5,
+	"min_mean_gap": 0.10,
+	"ambiguous_mean_gap": 0.14,
+	"min_best_visits": 32,
+	"min_best_visit_share": 0.35,
+	"clear_prior_gap": 0.25,
+	"max_root_actions_for_clear": 10,
+	"single_action_simulations": 0,
+}
 
 var _catalog_cache: CardCatalog = null
 var _engine_cache: GameEngine = null
@@ -173,17 +188,38 @@ func _search_action(
 	_profile_add_elapsed(profile, "decode_actions_ms", decode_started)
 	if actions.is_empty():
 		return {"success": false, "error": "no_legal_action"}
+	_profile_count(profile, "root_action_count", actions.size())
 	var deck_key := _deck_key_for_actor(state, actor, str(request.get("deck_key", "")))
 	var mode := str(request.get("mode", "challenge"))
 	var preset := strongest_preset()
 	var simulation_budget := int(
 		256 if mode == "deep" else request.get("simulation_budget", preset["simulations"])
 	)
+	var budget_requested := simulation_budget
 	var seconds := float(8.0 if mode == "deep" else request.get("seconds", preset["seconds"]))
 	var max_depth := int(request.get("max_depth", preset["depth"]))
 	var deterministic := bool(request.get("deterministic", false))
 	var deadline := Time.get_ticks_usec() + int(seconds * 1000000.0)
 	var request_seed := int(request.get("seed", 17))
+	var dynamic_budget := _dynamic_budget_config(request.get("dynamic_budget", {}))
+	if mode == "deep":
+		dynamic_budget["enabled"] = false
+	var dynamic_enabled := bool(dynamic_budget.get("enabled", false))
+	if dynamic_enabled and actions.size() == 1 and int(dynamic_budget["single_action_simulations"]) <= 0:
+		_profile_count(profile, "dynamic_budget_single_action_stops")
+		return {
+			"success": true,
+			"kind": "action",
+			"action": actions[0].to_dict(),
+			"simulations": 0,
+			"budget_requested": budget_requested,
+			"budget_stop_reason": "single_action",
+			"dynamic_budget_enabled": true,
+			"deep_fallback": false,
+			"fallback_reason": "",
+		}
+	if dynamic_enabled and actions.size() == 1:
+		simulation_budget = mini(simulation_budget, int(dynamic_budget["single_action_simulations"]))
 	var priors: Array[float] = []
 	var deep_error := ""
 	if mode == "deep" and inference != null:
@@ -199,12 +235,13 @@ func _search_action(
 	if mode == "deep" and not deep_error.is_empty():
 		var fallback_preset := strongest_preset()
 		simulation_budget = int(request.get("simulation_budget", fallback_preset["simulations"]))
+		budget_requested = simulation_budget
 		seconds = float(request.get("seconds", fallback_preset["seconds"]))
 		max_depth = int(request.get("max_depth", fallback_preset["depth"]))
 		deadline = Time.get_ticks_usec() + int(seconds * 1000000.0)
 	if priors.size() != actions.size():
 		var priors_started := _profile_start(profile)
-		priors = _heuristic_priors(state, actor, actions, deck_key, catalog)
+		priors = _heuristic_priors(state, actor, actions, deck_key, catalog, profile)
 		_profile_add_elapsed(profile, "heuristic_priors_ms", priors_started)
 
 	var visits: Array[int] = []
@@ -214,15 +251,31 @@ func _search_action(
 	visits.fill(0)
 	totals.fill(0.0)
 	var completed := 0
+	var stop_reason := "disabled"
+	var dynamic_ambiguous := _dynamic_budget_is_ambiguous(actions.size(), priors, dynamic_budget)
+	var dynamic_min_simulations := int(
+		dynamic_budget["ambiguous_min_simulations"]
+		if dynamic_ambiguous
+		else dynamic_budget["min_simulations"]
+	)
+	var dynamic_stable_required := int(
+		dynamic_budget["ambiguous_stable_checks"]
+		if dynamic_ambiguous
+		else dynamic_budget["stable_checks"]
+	)
+	var dynamic_check_interval := int(dynamic_budget["check_interval"])
+	var dynamic_last_best := -1
+	var dynamic_stable_checks := 0
 	while completed < simulation_budget:
 		if cancel_check.call():
 			return {"success": false, "cancelled": true, "error": "cancelled"}
 		if not deterministic and Time.get_ticks_usec() >= deadline:
+			stop_reason = "deadline"
 			break
 		var selected := _select_ucb(visits, totals, priors, completed)
 		var determinize_started := _profile_start(profile)
-		var simulation := AIObservationBuilder.determinize(
-			request["state"],
+		var simulation := AIObservationBuilder.determinize_state(
+			state,
 			actor,
 			request_seed + completed * 7919,
 			catalog,
@@ -248,6 +301,27 @@ func _search_action(
 		totals[selected] += value
 		completed += 1
 		_profile_count(profile, "simulations")
+		if (
+			dynamic_enabled
+			and completed >= dynamic_min_simulations
+			and completed % dynamic_check_interval == 0
+		):
+			_profile_count(profile, "dynamic_budget_checks")
+			var confidence_best := _dynamic_budget_confident_index(
+				visits, totals, priors, completed, dynamic_budget, dynamic_ambiguous)
+			if confidence_best >= 0:
+				if confidence_best == dynamic_last_best:
+					dynamic_stable_checks += 1
+				else:
+					dynamic_last_best = confidence_best
+					dynamic_stable_checks = 1
+				if dynamic_stable_checks >= dynamic_stable_required:
+					stop_reason = "confidence"
+					_profile_count(profile, "dynamic_budget_confidence_stops")
+					break
+			else:
+				dynamic_last_best = -1
+				dynamic_stable_checks = 0
 	if completed == 0 and mode == "deep":
 		var fallback_request: Dictionary = request.duplicate(true)
 		fallback_request["mode"] = "challenge"
@@ -255,6 +329,7 @@ func _search_action(
 		fallback_request.erase("simulation_budget")
 		fallback_request.erase("seconds")
 		fallback_request.erase("max_depth")
+		fallback_request.erase("dynamic_budget")
 		var fallback := _search_action(
 			fallback_request,
 			state,
@@ -268,24 +343,13 @@ func _search_action(
 		fallback["deep_fallback"] = true
 		fallback["fallback_reason"] = "zero_valid_simulations"
 		return fallback
-	var best := 0
-	for index in range(1, actions.size()):
-		var left_average := totals[index] / maxi(1, visits[index])
-		var right_average := totals[best] / maxi(1, visits[best])
-		if (
-			visits[index] > visits[best]
-			or (
-				visits[index] == visits[best]
-				and (
-					left_average > right_average
-					or (
-						is_equal_approx(left_average, right_average)
-						and priors[index] > priors[best]
-					)
-				)
-			)
-		):
-			best = index
+	if dynamic_enabled:
+		if stop_reason == "disabled":
+			stop_reason = "budget_exhausted"
+			_profile_count(profile, "dynamic_budget_budget_exhausted")
+		elif stop_reason == "deadline":
+			_profile_count(profile, "dynamic_budget_deadline_stops")
+	var best := _best_search_index(visits, totals, priors)
 	var selected_action := _validated_or_fallback_action(
 		state,
 		actor,
@@ -295,12 +359,16 @@ func _search_action(
 		catalog,
 		engine,
 		request_seed + completed * 15485863,
+		profile,
 	)
 	return {
 		"success": true,
 		"kind": "action",
 		"action": selected_action.to_dict(),
 		"simulations": completed,
+		"budget_requested": budget_requested,
+		"budget_stop_reason": stop_reason,
+		"dynamic_budget_enabled": dynamic_enabled,
 		"deep_fallback": not deep_error.is_empty(),
 		"fallback_reason": deep_error,
 	}
@@ -336,9 +404,11 @@ func _simulate(
 		_profile_add_elapsed(profile, "rollout_legal_actions_ms", legal_started)
 		if actions.is_empty():
 			break
+		_profile_count(profile, "rollout_depth_steps")
+		_profile_count(profile, "rollout_action_count", actions.size())
 		var action_deck_key := _deck_key_for_actor(state, actor, deck_key)
 		var heuristic_started := _profile_start(profile)
-		var action := _best_heuristic_action(state, actor, actions, action_deck_key, catalog)
+		var action := _best_heuristic_action(state, actor, actions, action_deck_key, catalog, profile)
 		_profile_add_elapsed(profile, "rollout_heuristic_action_ms", heuristic_started)
 		apply_started = _profile_start(profile)
 		step = engine.apply_action(state, action, rng)
@@ -1006,11 +1076,12 @@ func _heuristic_priors(
 	actions: Array[GameAction],
 	deck_key: String,
 	catalog: CardCatalog,
+	profile: Dictionary = {},
 ) -> Array[float]:
 	var scores: Array[float] = []
 	var maximum := -INF
 	for action in actions:
-		var score := _action_score(state, actor, action, deck_key, catalog)
+		var score := _action_score(state, actor, action, deck_key, catalog, profile)
 		scores.append(score)
 		maximum = max(maximum, score)
 	var priors: Array[float] = []
@@ -1030,11 +1101,12 @@ func _best_heuristic_action(
 	actions: Array[GameAction],
 	deck_key: String,
 	catalog: CardCatalog,
+	profile: Dictionary = {},
 ) -> GameAction:
 	var best := actions[0]
 	var best_score := -INF
 	for action in actions:
-		var score := _action_score(state, actor, action, deck_key, catalog)
+		var score := _action_score(state, actor, action, deck_key, catalog, profile)
 		if score > best_score:
 			best = action
 			best_score = score
@@ -1050,8 +1122,10 @@ func _validated_or_fallback_action(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	profile: Dictionary = {},
 ) -> GameAction:
-	var ko_attack := _best_immediate_ko_attack(state, actor, actions, deck_key, catalog, engine, seed)
+	var ko_attack := _best_immediate_ko_attack(
+		state, actor, actions, deck_key, catalog, engine, seed, profile)
 	if ko_attack != null and _should_override_with_ko(preferred, ko_attack, state, actor, catalog):
 		return ko_attack
 
@@ -1061,25 +1135,25 @@ func _validated_or_fallback_action(
 			or _attack_feeds_dangerous_retaliation(state, actor, preferred, catalog)
 		):
 			var safe_development := _best_productive_nonterminal_action(
-				state, actor, actions, deck_key, catalog, engine, seed + 11, preferred)
+				state, actor, actions, deck_key, catalog, engine, seed + 11, preferred, profile)
 			if safe_development != null:
 				return safe_development
 			var end_turn := _find_action(actions, "END_TURN")
 			if end_turn != null and _action_executes_successfully(
-				state, actor, end_turn, deck_key, catalog, engine, seed + 13):
+				state, actor, end_turn, deck_key, catalog, engine, seed + 13, profile):
 				return end_turn
 		var pre_attack := _best_pre_attack_development_action(
-			state, actor, preferred, actions, deck_key, catalog, engine, seed + 17)
+			state, actor, preferred, actions, deck_key, catalog, engine, seed + 17, profile)
 		if pre_attack != null:
 			return pre_attack
 
 	if _should_avoid_repeating_ability(state, actor, preferred, catalog):
 		var follow_up_attack := _best_productive_attack(
-			state, actor, actions, deck_key, catalog, engine, seed + 14)
+			state, actor, actions, deck_key, catalog, engine, seed + 14, profile)
 		if follow_up_attack != null:
 			return follow_up_attack
 		var follow_up_development := _best_productive_nonterminal_action(
-			state, actor, actions, deck_key, catalog, engine, seed + 15, preferred)
+			state, actor, actions, deck_key, catalog, engine, seed + 15, preferred, profile)
 		if follow_up_development != null:
 			return follow_up_development
 		var follow_up_end_turn := _find_action(actions, "END_TURN")
@@ -1090,23 +1164,23 @@ func _validated_or_fallback_action(
 		var retreat_idx := int(preferred.params.get("bench_idx", -1))
 		if not _retreat_has_good_target(state, actor, retreat_idx, deck_key, catalog):
 			var safe_development := _best_productive_nonterminal_action(
-				state, actor, actions, deck_key, catalog, engine, seed + 18, preferred)
+				state, actor, actions, deck_key, catalog, engine, seed + 18, preferred, profile)
 			if safe_development != null:
 				return safe_development
 			var safe_end_turn := _find_action(actions, "END_TURN")
 			if safe_end_turn != null and _action_executes_successfully(
-				state, actor, safe_end_turn, deck_key, catalog, engine, seed + 20):
+				state, actor, safe_end_turn, deck_key, catalog, engine, seed + 20, profile):
 				return safe_end_turn
 
 	if preferred.action in ["RETREAT", "END_TURN"]:
 		var development := _best_productive_nonterminal_action(
-			state, actor, actions, deck_key, catalog, engine, seed + 19, preferred)
+			state, actor, actions, deck_key, catalog, engine, seed + 19, preferred, profile)
 		if development != null:
 			return development
 
 	if preferred.action == "PLAY_TRAINER" and _is_major_hand_refresh_action(state, actor, preferred, catalog):
 		var before_refresh := _best_productive_nonterminal_action(
-			state, actor, actions, deck_key, catalog, engine, seed + 23, preferred)
+			state, actor, actions, deck_key, catalog, engine, seed + 23, preferred, profile)
 		if before_refresh != null:
 			return before_refresh
 
@@ -1116,20 +1190,20 @@ func _validated_or_fallback_action(
 			state, actor, preferred, deck_key, catalog, engine, seed + 24)
 	):
 		var cancelled_attack := _best_productive_attack(
-			state, actor, actions, deck_key, catalog, engine, seed + 25)
+			state, actor, actions, deck_key, catalog, engine, seed + 25, profile)
 		if cancelled_attack != null:
 			return cancelled_attack
 		var cancelled_damage := _best_damaging_attack(
-			state, actor, actions, deck_key, catalog, engine, seed + 26)
+			state, actor, actions, deck_key, catalog, engine, seed + 26, profile)
 		if cancelled_damage != null:
 			return cancelled_damage
 		var cancelled_development := _best_productive_nonterminal_action(
-			state, actor, actions, deck_key, catalog, engine, seed + 27, preferred)
+			state, actor, actions, deck_key, catalog, engine, seed + 27, preferred, profile)
 		if cancelled_development != null:
 			return cancelled_development
 		var cancelled_end := _find_action(actions, "END_TURN")
 		if cancelled_end != null and _action_executes_successfully(
-			state, actor, cancelled_end, deck_key, catalog, engine, seed + 28):
+			state, actor, cancelled_end, deck_key, catalog, engine, seed + 28, profile):
 			return cancelled_end
 
 	if (
@@ -1137,36 +1211,36 @@ func _validated_or_fallback_action(
 		and _development_action_value(state, actor, preferred, deck_key, catalog) <= 0.0
 	):
 		var active_attack := _best_productive_attack(
-			state, actor, actions, deck_key, catalog, engine, seed + 25)
+			state, actor, actions, deck_key, catalog, engine, seed + 25, profile)
 		if active_attack != null:
 			return active_attack
 		var active_damage := _best_damaging_attack(
-			state, actor, actions, deck_key, catalog, engine, seed + 26)
+			state, actor, actions, deck_key, catalog, engine, seed + 26, profile)
 		if active_damage != null:
 			return active_damage
 		var active_development := _best_productive_nonterminal_action(
-			state, actor, actions, deck_key, catalog, engine, seed + 27, preferred)
+			state, actor, actions, deck_key, catalog, engine, seed + 27, preferred, profile)
 		if active_development != null:
 			return active_development
 		var active_end := _find_action(actions, "END_TURN")
 		if active_end != null and _action_executes_successfully(
-			state, actor, active_end, deck_key, catalog, engine, seed + 28):
+			state, actor, active_end, deck_key, catalog, engine, seed + 28, profile):
 			return active_end
 
 	if preferred.action == "END_TURN":
 		var productive_attack := _best_productive_attack(
-			state, actor, actions, deck_key, catalog, engine, seed + 29)
+			state, actor, actions, deck_key, catalog, engine, seed + 29, profile)
 		if productive_attack != null:
 			return productive_attack
 		var damaging_attack := _best_damaging_attack(
-			state, actor, actions, deck_key, catalog, engine, seed + 31)
+			state, actor, actions, deck_key, catalog, engine, seed + 31, profile)
 		if damaging_attack != null:
 			return damaging_attack
 
-	if _action_executes_successfully(state, actor, preferred, deck_key, catalog, engine, seed + 33):
+	if _action_executes_successfully(state, actor, preferred, deck_key, catalog, engine, seed + 33, profile):
 		return preferred
 	for action in actions:
-		if _action_executes_successfully(state, actor, action, deck_key, catalog, engine, seed + 39):
+		if _action_executes_successfully(state, actor, action, deck_key, catalog, engine, seed + 39, profile):
 			return action
 	var fallback_end := _find_action(actions, "END_TURN")
 	return fallback_end if fallback_end != null else actions[0]
@@ -1264,6 +1338,7 @@ func _best_immediate_ko_attack(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	profile: Dictionary = {},
 ) -> GameAction:
 	var opponent := state.get_player(1 - actor)
 	if opponent.active == null:
@@ -1278,7 +1353,7 @@ func _best_immediate_ko_attack(
 			continue
 		var value := damage + catalog.prize_value(opponent.active.card_id) * 140.0
 		if value > best_value and _action_executes_successfully(
-			state, actor, action, deck_key, catalog, engine, seed + int(value)):
+			state, actor, action, deck_key, catalog, engine, seed + int(value), profile):
 			best = action
 			best_value = value
 	return best
@@ -1311,6 +1386,7 @@ func _best_pre_attack_development_action(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	profile: Dictionary = {},
 ) -> GameAction:
 	if attack_action.action != "DECLARE_ATTACK":
 		return null
@@ -1324,7 +1400,7 @@ func _best_pre_attack_development_action(
 	if not is_weak and active_missing <= 0:
 		return null
 	return _best_productive_nonterminal_action(
-		state, actor, actions, deck_key, catalog, engine, seed, attack_action)
+		state, actor, actions, deck_key, catalog, engine, seed, attack_action, profile)
 
 
 func _best_productive_nonterminal_action(
@@ -1336,6 +1412,7 @@ func _best_productive_nonterminal_action(
 	engine: GameEngine,
 	seed: int,
 	excluded: GameAction = null,
+	profile: Dictionary = {},
 ) -> GameAction:
 	var productive_types := {
 		"ATTACH_ENERGY": true,
@@ -1364,12 +1441,12 @@ func _best_productive_nonterminal_action(
 		):
 			continue
 		var sim_score := _simulated_action_score(
-			state, actor, action, deck_key, catalog, engine, seed + action_index * 7919)
+			state, actor, action, deck_key, catalog, engine, seed + action_index * 7919, profile)
 		if sim_score <= -INF / 2.0:
 			continue
 		var delta := sim_score - base_score
 		var value := development_value + delta * 0.45 + _action_score(
-			state, actor, action, deck_key, catalog) * 0.04
+			state, actor, action, deck_key, catalog, profile) * 0.04
 		if action.action == "PLAY_BASIC" and state.get_player(actor).bench_count() < 2:
 			value += 45.0
 		if action.action == "EVOLVE":
@@ -1392,6 +1469,7 @@ func _best_productive_attack(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	profile: Dictionary = {},
 ) -> GameAction:
 	var best: GameAction = null
 	var best_value := -INF
@@ -1411,7 +1489,7 @@ func _best_productive_attack(
 		if value <= 0.0:
 			continue
 		if value > best_value and _action_executes_successfully(
-			state, actor, action, deck_key, catalog, engine, seed + attack_idx):
+			state, actor, action, deck_key, catalog, engine, seed + attack_idx, profile):
 			best = action
 			best_value = value
 	return best
@@ -1425,6 +1503,7 @@ func _best_damaging_attack(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	profile: Dictionary = {},
 ) -> GameAction:
 	var base_score := _evaluate_raw(state, actor, catalog)
 	var best: GameAction = null
@@ -1444,7 +1523,7 @@ func _best_damaging_attack(
 		if damage <= 0 and effect_value <= 0.0:
 			continue
 		var sim_score := _simulated_action_score(
-			state, actor, action, deck_key, catalog, engine, seed + attack_idx * 9973)
+			state, actor, action, deck_key, catalog, engine, seed + attack_idx * 9973, profile)
 		if sim_score <= -INF / 2.0:
 			continue
 		var value := (sim_score - base_score) + damage * 0.55 + effect_value * 0.35
@@ -1462,15 +1541,22 @@ func _simulated_action_score(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	profile: Dictionary = {},
 ) -> float:
-	var simulation := GameState.from_dict(state.snapshot())
+	var score_started := _profile_start(profile)
+	_profile_count(profile, "simulated_action_score_calls")
+	var simulation := state.clone_state()
 	var rng := PortableRandomSource.new(seed)
 	var step := engine.apply_action(simulation, action, rng)
 	if not step.success:
+		_profile_add_elapsed(profile, "simulated_action_score_ms", score_started)
 		return -INF
 	if not _resolve_choices(simulation, actor, deck_key, catalog, engine, rng):
+		_profile_add_elapsed(profile, "simulated_action_score_ms", score_started)
 		return -INF
-	return _evaluate_raw(simulation, actor, catalog)
+	var result := _evaluate_raw(simulation, actor, catalog)
+	_profile_add_elapsed(profile, "simulated_action_score_ms", score_started)
+	return result
 
 
 func _action_executes_successfully(
@@ -1481,8 +1567,10 @@ func _action_executes_successfully(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	profile: Dictionary = {},
 ) -> bool:
-	return _simulated_action_score(state, actor, action, deck_key, catalog, engine, seed) > -INF / 2.0
+	return _simulated_action_score(
+		state, actor, action, deck_key, catalog, engine, seed, profile) > -INF / 2.0
 
 
 func _action_first_choice_cancelled(
@@ -1494,7 +1582,7 @@ func _action_first_choice_cancelled(
 	engine: GameEngine,
 	seed: int,
 ) -> bool:
-	var simulation := GameState.from_dict(state.snapshot())
+	var simulation := state.clone_state()
 	var rng := PortableRandomSource.new(seed)
 	var step := engine.apply_action(simulation, action, rng)
 	if not step.success:
@@ -1514,7 +1602,10 @@ func _action_score(
 	action: GameAction,
 	deck_key: String,
 	catalog: CardCatalog,
+	profile: Dictionary = {},
 ) -> float:
+	var score_started := _profile_start(profile)
+	_profile_count(profile, "action_score_calls")
 	var player := state.get_player(actor)
 	var card_id := _action_card_id(state, actor, action)
 	var score := _card_priority(card_id, deck_key, catalog)
@@ -1604,6 +1695,7 @@ func _action_score(
 						score -= 420.0
 		"END_TURN":
 			score -= 220.0
+	_profile_add_elapsed(profile, "action_score_ms", score_started)
 	return score
 
 
@@ -2296,7 +2388,7 @@ func _attack_feeds_dangerous_retaliation(
 	if not has_retaliation_scaler:
 		return false
 	var before := _best_potential_retaliation_damage(state, 1 - actor, catalog)
-	var simulated := GameState.from_dict(state.snapshot())
+	var simulated := state.clone_state()
 	var simulated_opponent := simulated.get_player(1 - actor).active
 	if simulated_opponent == null:
 		return false
@@ -2961,6 +3053,142 @@ func _select_ucb(
 		if average + exploration > best_score:
 			best_score = average + exploration
 			best = index
+	return best
+
+
+func _dynamic_budget_config(raw: Variant) -> Dictionary:
+	var config := DYNAMIC_BUDGET_DEFAULTS.duplicate(true)
+	if raw is bool:
+		config["enabled"] = bool(raw)
+	elif raw is Dictionary:
+		var source := Dictionary(raw)
+		for key in config.keys():
+			if source.has(key):
+				config[key] = source[key]
+	config["enabled"] = bool(config.get("enabled", false))
+	config["min_simulations"] = maxi(1, int(config.get("min_simulations", 128)))
+	config["ambiguous_min_simulations"] = maxi(
+		int(config["min_simulations"]),
+		int(config.get("ambiguous_min_simulations", 512))
+	)
+	config["check_interval"] = maxi(1, int(config.get("check_interval", 32)))
+	config["stable_checks"] = maxi(1, int(config.get("stable_checks", 3)))
+	config["ambiguous_stable_checks"] = maxi(
+		1,
+		int(config.get("ambiguous_stable_checks", 5))
+	)
+	config["min_mean_gap"] = max(0.0, float(config.get("min_mean_gap", 0.10)))
+	config["ambiguous_mean_gap"] = max(
+		0.0,
+		float(config.get("ambiguous_mean_gap", 0.14))
+	)
+	config["min_best_visits"] = maxi(1, int(config.get("min_best_visits", 32)))
+	config["min_best_visit_share"] = clampf(
+		float(config.get("min_best_visit_share", 0.35)),
+		0.0,
+		1.0
+	)
+	config["clear_prior_gap"] = max(0.0, float(config.get("clear_prior_gap", 0.25)))
+	config["max_root_actions_for_clear"] = maxi(
+		1,
+		int(config.get("max_root_actions_for_clear", 10))
+	)
+	config["single_action_simulations"] = maxi(
+		0,
+		int(config.get("single_action_simulations", 0))
+	)
+	return config
+
+
+func _dynamic_budget_is_ambiguous(
+	action_count: int,
+	priors: Array[float],
+	config: Dictionary,
+) -> bool:
+	if action_count > int(config.get("max_root_actions_for_clear", 10)):
+		return true
+	if action_count < 2 or priors.size() < 2:
+		return false
+	var top := -INF
+	var second := -INF
+	for prior in priors:
+		var value := float(prior)
+		if value > top:
+			second = top
+			top = value
+		elif value > second:
+			second = value
+	return top - second < float(config.get("clear_prior_gap", 0.25))
+
+
+func _all_actions_visited(visits: Array[int]) -> bool:
+	for count in visits:
+		if count <= 0:
+			return false
+	return true
+
+
+func _best_search_index(
+	visits: Array[int],
+	totals: Array[float],
+	priors: Array[float],
+) -> int:
+	var best := 0
+	var best_visits := -1
+	var best_average := -INF
+	var best_prior := -INF
+	for index in range(visits.size()):
+		var count := int(visits[index])
+		var average := totals[index] / count if count > 0 else -INF
+		var prior := priors[index] if index < priors.size() else 0.0
+		if count > best_visits:
+			best = index
+			best_visits = count
+			best_average = average
+			best_prior = prior
+		elif count == best_visits:
+			if average > best_average:
+				best = index
+				best_average = average
+				best_prior = prior
+			elif is_equal_approx(average, best_average) and prior > best_prior:
+				best = index
+				best_prior = prior
+	return best
+
+
+func _dynamic_budget_confident_index(
+	visits: Array[int],
+	totals: Array[float],
+	priors: Array[float],
+	completed: int,
+	config: Dictionary,
+	ambiguous: bool,
+) -> int:
+	if completed <= 0 or not _all_actions_visited(visits):
+		return -1
+	var best := _best_search_index(visits, totals, priors)
+	var best_visits := int(visits[best])
+	if best_visits < int(config.get("min_best_visits", 32)):
+		return -1
+	if float(best_visits) / float(completed) < float(config.get("min_best_visit_share", 0.35)):
+		return -1
+	var best_average := totals[best] / best_visits
+	var next_average := -INF
+	for index in range(visits.size()):
+		if index == best:
+			continue
+		var count := int(visits[index])
+		if count <= 0:
+			return -1
+		next_average = max(next_average, totals[index] / count)
+	var margin_required := float(
+		config.get("ambiguous_mean_gap", 0.14)
+		if ambiguous
+		else config.get("min_mean_gap", 0.10)
+	)
+	if best_average - next_average < margin_required:
+		return -1
 	return best
 
 

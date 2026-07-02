@@ -352,6 +352,62 @@ class AIEvaluationReportTests(unittest.TestCase):
             validate_evaluation_gate(payload, gate="nightly")["errors"],
         )
 
+    def test_equivalence_gate_allows_statistical_ties(self):
+        payload = _schema2_payload(
+            paired_point_delta=-0.005,
+            paired_delta_ci95={"lower": -0.02, "upper": 0.01, "samples": 400},
+            probability_a_better=0.45,
+        )
+        payload["strategy_fingerprint"] = {"A": "same", "B": "same", "equal": True}
+
+        result = validate_evaluation_gate(payload, gate="equivalence")
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["gate"], "nightly-equivalence")
+
+    def test_equivalence_gate_uses_strategy_diagnostic_delta(self):
+        payload = _schema2_payload()
+        payload["decision_diagnostics"] = {
+            "total": 6,
+            "labels": {"weak_attack_before_development": 6},
+            "by_strategy": {
+                "A": {"total": 2, "labels": {"weak_attack_before_development": 2}},
+                "B": {"total": 4, "labels": {"weak_attack_before_development": 4}},
+                "delta": {"total": -2, "labels": {"weak_attack_before_development": -2}},
+            },
+        }
+
+        self.assertTrue(validate_evaluation_gate(payload, gate="equivalence")["valid"])
+
+        payload["decision_diagnostics"]["by_strategy"]["delta"]["total"] = 1
+        self.assertIn(
+            "decision_diagnostics_regression",
+            validate_evaluation_gate(payload, gate="equivalence")["errors"],
+        )
+
+    def test_equivalence_gate_rejects_statistical_regressions(self):
+        payload = _schema2_payload(
+            paired_delta_ci95={"lower": -0.021, "upper": 0.01, "samples": 400},
+        )
+        self.assertIn(
+            "paired_delta_ci_below_equivalence_floor",
+            validate_evaluation_gate(payload, gate="nightly-equivalence")["errors"],
+        )
+
+        weak_deck = _schema2_payload()
+        weak_deck["per_deck"]["water"]["paired_point_delta"] = -0.041
+        self.assertIn(
+            "water:paired_delta_below_equivalence_floor",
+            validate_evaluation_gate(weak_deck, gate="nightly-equivalence")["errors"],
+        )
+
+        weak_matchup = _schema2_payload()
+        weak_matchup["per_matchup"]["fire_vs_water"]["paired_point_delta"] = -0.081
+        self.assertIn(
+            "fire_vs_water:paired_delta_below_equivalence_floor",
+            validate_evaluation_gate(weak_matchup, gate="nightly-equivalence")["errors"],
+        )
+
     def test_auto_gate_uses_stability_for_self_check(self):
         payload = _schema2_payload(
             paired_point_delta=0.0,
@@ -408,6 +464,7 @@ class AIEvaluationReportTests(unittest.TestCase):
         self.assertEqual(merged["per_matchup"]["fire_vs_fire"]["games"], 4)
         self.assertEqual(merged["matrix"]["fire"]["fire"]["games"], 4)
         self.assertEqual(merged["decision_diagnostics"]["total"], 0)
+        self.assertEqual(merged["decision_diagnostics"]["by_strategy"]["delta"]["total"], 0)
         self.assertEqual(merged["golden_scenarios"]["failed"], 0)
         self.assertEqual(merged["seat"]["seat_counts"], {"a_player_0": 2, "a_player_1": 2})
         self.assertEqual(merged["terminal_reasons"], {"game_over": 4})

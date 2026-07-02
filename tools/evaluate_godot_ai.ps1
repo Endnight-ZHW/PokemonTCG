@@ -18,7 +18,7 @@ param(
     [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
     [string]$MatchupMode = '',
     [int]$CrossSeedBlocksPerMatchup = -1,
-    [ValidateSet('', 'stability', 'strength', 'auto')]
+    [ValidateSet('', 'stability', 'strength', 'equivalence', 'nightly-equivalence', 'auto')]
     [string]$ValidateGate = '',
     [string]$Baseline = '',
     [string[]]$MergeInput = @(),
@@ -26,6 +26,7 @@ param(
     [switch]$SkipReport,
     [switch]$SkipValidate,
     [switch]$Profile,
+    [switch]$DynamicAIBudget,
     [switch]$DisableAICache,
     [switch]$DisableNativeMath,
     [string]$OutputDir = ''
@@ -168,6 +169,37 @@ $jsonPath = Join-Path $OutputDir 'results.json'
 $htmlPath = Join-Path $OutputDir 'report.html'
 
 if (
+    -not $mergeOnly -and
+    [string]::IsNullOrWhiteSpace($StrategyA) -and
+    [string]::IsNullOrWhiteSpace($StrategyB) -and
+    $DynamicAIBudget
+) {
+    $presetStrategyPath = Join-Path $OutputDir 'preset_strategy.json'
+    $presetStrategy = [ordered]@{
+        id = 'dynamic-budget-strongest'
+        label = 'Dynamic Budget Strongest'
+        preset = 'strongest'
+        dynamic_budget = [ordered]@{
+            enabled = $true
+            min_simulations = 128
+            ambiguous_min_simulations = 512
+            check_interval = 32
+            stable_checks = 3
+            ambiguous_stable_checks = 5
+            min_mean_gap = 0.10
+            ambiguous_mean_gap = 0.14
+            min_best_visits = 32
+            min_best_visit_share = 0.35
+            clear_prior_gap = 0.25
+            max_root_actions_for_clear = 10
+            single_action_simulations = 0
+        }
+    }
+    $presetStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $presetStrategyPath -Encoding UTF8
+    $StrategyA = $presetStrategyPath
+    $StrategyB = $presetStrategyPath
+}
+elseif (
     -not $mergeOnly -and
     [string]::IsNullOrWhiteSpace($StrategyA) -and
     [string]::IsNullOrWhiteSpace($StrategyB) -and

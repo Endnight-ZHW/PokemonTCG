@@ -157,6 +157,10 @@ func _run_phase_one_tests() -> void:
 	state.players[0].hand = ["sv1-ener-2"]
 	var restored_state := GameState.from_dict(state.snapshot())
 	_check(restored_state.to_dict() == state.to_dict(), "GameState snapshot roundtrip failed")
+	_check(
+		state.clone_state().to_dict() == restored_state.to_dict(),
+		"GameState clone_state did not match snapshot roundtrip",
+	)
 
 	_check(
 		FileAccess.file_exists("res://assets/cards/card_back.webp"),

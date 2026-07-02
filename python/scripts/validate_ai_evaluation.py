@@ -41,6 +41,8 @@ def _normalized_gate(payload: dict[str, Any], gate: str) -> str:
         return "nightly-stability"
     if normalized == "strength":
         return "nightly-strength"
+    if normalized == "equivalence":
+        return "nightly-equivalence"
     if normalized == "nightly":
         return "nightly-strength"
     if normalized == "auto":
@@ -55,6 +57,25 @@ def _decision_diagnostic_total(payload: dict[str, Any]) -> int:
     if isinstance(diagnostics, dict):
         return _int(diagnostics.get("total"))
     return 0
+
+
+def _decision_diagnostic_regression(payload: dict[str, Any]) -> int | None:
+    diagnostics = payload.get("decision_diagnostics") or {}
+    if not isinstance(diagnostics, dict):
+        return None
+    if "by_strategy" not in diagnostics:
+        return None
+    by_strategy = diagnostics.get("by_strategy") or {}
+    if not isinstance(by_strategy, dict):
+        return None
+    delta = by_strategy.get("delta") or {}
+    if isinstance(delta, dict) and delta.get("total") is not None:
+        return _int(delta.get("total"))
+    left = by_strategy.get("A") or {}
+    right = by_strategy.get("B") or {}
+    if isinstance(left, dict) and isinstance(right, dict):
+        return _int(left.get("total")) - _int(right.get("total"))
+    return None
 
 
 def _golden_failures(payload: dict[str, Any]) -> int:
@@ -89,10 +110,10 @@ def validate_evaluation_gate(
     if _float(summary.get("time_capped_decision_rate")) > 0.0:
         errors.append("time_capped_decision_rate")
 
-    if normalized_gate in {"nightly-stability", "nightly-strength"}:
+    if normalized_gate in {"nightly-stability", "nightly-strength", "nightly-equivalence"}:
         if _float(summary.get("completion_rate"), 1.0) < 0.95:
             errors.append("completion_rate")
-        if _decision_diagnostic_total(payload) != 0:
+        if normalized_gate != "nightly-equivalence" and _decision_diagnostic_total(payload) != 0:
             errors.append("decision_diagnostics_nonzero")
         if _golden_failures(payload) != 0:
             errors.append("golden_scenarios_failed")
@@ -102,6 +123,22 @@ def validate_evaluation_gate(
             errors.append("paired_delta_not_positive")
     elif normalized_gate == "nightly-stability":
         pass
+    elif normalized_gate == "nightly-equivalence":
+        diagnostic_delta = _decision_diagnostic_regression(payload)
+        if diagnostic_delta is None:
+            if _decision_diagnostic_total(payload) != 0:
+                errors.append("decision_diagnostics_nonzero")
+        elif diagnostic_delta > 0:
+            errors.append("decision_diagnostics_regression")
+        interval = summary.get("paired_delta_ci95") or {}
+        if _float(interval.get("lower") if isinstance(interval, dict) else None) < -0.02:
+            errors.append("paired_delta_ci_below_equivalence_floor")
+        for deck_key, stats in per_deck.items():
+            if _float((stats or {}).get("paired_point_delta")) < -0.04:
+                errors.append(f"{deck_key}:paired_delta_below_equivalence_floor")
+        for matchup_key, stats in (payload.get("per_matchup") or {}).items():
+            if _float((stats or {}).get("paired_point_delta")) < -0.08:
+                errors.append(f"{matchup_key}:paired_delta_below_equivalence_floor")
     elif normalized_gate == "nightly-strength":
         if payload.get("self_check") or _strategies_equal(payload):
             errors.append("strength_gate_requires_distinct_strategies")
@@ -133,8 +170,10 @@ def validate_evaluation_gate(
         "paired_point_delta": _float(summary.get("paired_point_delta")),
         "probability_a_better": _float(summary.get("probability_a_better")),
         "max_action_exhaustion_rate": max_action_rate,
+        "time_capped_decision_rate": _float(summary.get("time_capped_decision_rate")),
         "completion_rate": _float(summary.get("completion_rate")),
         "decision_diagnostics": _decision_diagnostic_total(payload),
+        "decision_diagnostic_delta": _decision_diagnostic_regression(payload),
         "golden_failures": _golden_failures(payload),
     }
 
@@ -150,8 +189,10 @@ def main() -> int:
             "nightly",
             "nightly-stability",
             "nightly-strength",
+            "nightly-equivalence",
             "stability",
             "strength",
+            "equivalence",
             "auto",
         ],
         default="nightly-strength",

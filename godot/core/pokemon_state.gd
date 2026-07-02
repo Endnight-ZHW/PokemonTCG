@@ -89,6 +89,27 @@ func to_dict() -> Dictionary:
 	return payload
 
 
+func clone_state() -> PokemonState:
+	var result := PokemonState.new(card_id)
+	result.damage_counters = damage_counters
+	result.energy_card_ids.assign(energy_card_ids)
+	result.attached_tool_id = attached_tool_id
+	result.status_conditions.assign(status_conditions)
+	result.evolution_stack_ids.assign(evolution_stack_ids)
+	result.can_evolve_this_turn = can_evolve_this_turn
+	result.placed_this_turn = placed_this_turn
+	result.used_abilities.assign(used_abilities)
+	result.damage_prevented_next_turn = damage_prevented_next_turn
+	result.all_prevented_next_turn = all_prevented_next_turn
+	result.outgoing_damage_reduction_next_turn = outgoing_damage_reduction_next_turn
+	result.attack_locked = attack_locked
+	result.attack_locked_names = attack_locked_names.duplicate(true)
+	result.dazzled = dazzled
+	result.modifiers.assign(modifiers.duplicate(true))
+	result.paralyzed_since_turn = paralyzed_since_turn
+	return result
+
+
 static func from_dict(data: Dictionary) -> PokemonState:
 	var result := PokemonState.new(str(data.get("card_id", "")))
 	result.damage_counters = int(data.get("damage_counters", 0))

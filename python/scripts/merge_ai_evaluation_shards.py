@@ -107,6 +107,7 @@ def _empty_stats() -> dict[str, Any]:
         "choice_failures": 0,
         "rule_exceptions": 0,
         "time_capped_decisions": 0,
+        "dynamic_budget_stop_reasons": {},
         "max_actions_exhaustions": 0,
     }
 
@@ -146,6 +147,13 @@ def _merge_match(stats: dict[str, Any], row: dict[str, Any]) -> None:
     stats["choice_failures"] += _int(row.get("choice_failures"))
     stats["rule_exceptions"] += _int(row.get("rule_exceptions"))
     stats["time_capped_decisions"] += _int(row.get("time_capped_decisions"))
+    stop_reasons = row.get("dynamic_budget_stop_reasons") or {}
+    if isinstance(stop_reasons, dict):
+        target = stats["dynamic_budget_stop_reasons"]
+        for reason, count in stop_reasons.items():
+            reason_key = str(reason)
+            if reason_key:
+                target[reason_key] = _int(target.get(reason_key)) + _int(count)
     if bool(row.get("max_actions_exhausted")):
         stats["max_actions_exhaustions"] += 1
 
@@ -180,6 +188,11 @@ def _finalize_stats(stats: dict[str, Any]) -> dict[str, Any]:
     result["decision_ms_p50"] = _round(_percentile(list(stats.get("decision_ms_values") or []), 0.50), 3)
     result["decision_ms_p95"] = _round(_percentile(list(stats.get("decision_ms_values") or []), 0.95), 3)
     result["time_capped_decision_rate"] = _round(_float(stats.get("time_capped_decisions")) / decisions, 4)
+    stop_reasons = dict(stats.get("dynamic_budget_stop_reasons") or {})
+    dynamic_stops = _int(stop_reasons.get("single_action")) + _int(stop_reasons.get("confidence"))
+    result["dynamic_budget_stop_reasons"] = stop_reasons
+    result["dynamic_budget_stops"] = dynamic_stops
+    result["dynamic_budget_stop_rate"] = _round(dynamic_stops / decisions, 4)
     result["elo_delta"] = _round(_elo_delta(point_rate), 3)
     result.pop("decision_ms_values", None)
     return result
@@ -393,6 +406,10 @@ def _summarize_decision_diagnostics(matches: list[dict[str, Any]]) -> dict[str, 
     labels = _empty_diagnostic_counts()
     per_deck: dict[str, dict[str, int]] = {}
     per_matchup: dict[str, dict[str, int]] = {}
+    by_strategy = {
+        "A": _empty_diagnostic_counts(),
+        "B": _empty_diagnostic_counts(),
+    }
     total = 0
     for row in matches:
         deck = str(row.get("strategy_a_deck") or row.get("deck") or "")
@@ -400,17 +417,38 @@ def _summarize_decision_diagnostics(matches: list[dict[str, Any]]) -> dict[str, 
         per_deck.setdefault(deck, _empty_diagnostic_counts())
         per_matchup.setdefault(matchup, _empty_diagnostic_counts())
         row_counts = row.get("decision_diagnostics") or {}
+        row_by_strategy = row.get("decision_diagnostics_by_strategy") or {}
         for label in DIAGNOSTIC_LABELS:
             value = _int(row_counts.get(label))
             labels[label] += value
             per_deck[deck][label] += value
             per_matchup[matchup][label] += value
             total += value
+            if isinstance(row_by_strategy, dict):
+                for strategy_key in ("A", "B"):
+                    strategy_counts = row_by_strategy.get(strategy_key) or {}
+                    if isinstance(strategy_counts, dict):
+                        by_strategy[strategy_key][label] += _int(strategy_counts.get(label))
+    by_strategy_summary: dict[str, Any] = {}
+    for strategy_key in ("A", "B"):
+        by_strategy_summary[strategy_key] = {
+            "total": sum(by_strategy[strategy_key].values()),
+            "labels": by_strategy[strategy_key],
+        }
+    delta_labels = {
+        label: by_strategy["A"][label] - by_strategy["B"][label]
+        for label in DIAGNOSTIC_LABELS
+    }
+    by_strategy_summary["delta"] = {
+        "total": sum(delta_labels.values()),
+        "labels": delta_labels,
+    }
     return {
         "total": total,
         "labels": labels,
         "per_deck": per_deck,
         "per_matchup": per_matchup,
+        "by_strategy": by_strategy_summary,
     }
 
 

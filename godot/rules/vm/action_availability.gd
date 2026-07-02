@@ -284,7 +284,7 @@ func simulated_action_succeeds(
 ) -> bool:
 	if not apply_action_for_simulation.is_valid():
 		return true
-	var simulation := GameState.from_dict(state.snapshot())
+	var simulation := state.clone_state()
 	var result: StepResult = apply_action_for_simulation.call(
 		simulation, action, PortableRandomSource.new(1))
 	return result.success

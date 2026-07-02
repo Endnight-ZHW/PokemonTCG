@@ -178,6 +178,30 @@ func to_dict() -> Dictionary:
 	}
 
 
+func clone_state() -> PlayerState:
+	var result := PlayerState.new(name)
+	result.deck.assign(deck)
+	result.hand.assign(hand)
+	result.discard.assign(discard)
+	result.prizes.assign(prizes)
+	result.active = active.clone_state() if active else null
+	result.bench = []
+	for pokemon in bench:
+		result.bench.append(pokemon.clone_state() if pokemon is PokemonState else null)
+	while result.bench.size() < MAX_BENCH_SIZE:
+		result.bench.append(null)
+	result.bench.resize(MAX_BENCH_SIZE)
+	result.supporter_played_this_turn = supporter_played_this_turn
+	result.energy_attached_this_turn = energy_attached_this_turn
+	result.retreated_this_turn = retreated_this_turn
+	result.stadium_played_this_turn = stadium_played_this_turn
+	result.stadium_used_this_turn = stadium_used_this_turn
+	result.healed_this_turn = healed_this_turn
+	result.vstar_power_used = vstar_power_used
+	result.was_ko_by_attack = was_ko_by_attack
+	return result
+
+
 static func from_dict(data: Dictionary) -> PlayerState:
 	var result := PlayerState.new(str(data.get("name", "玩家")))
 	result.deck.assign(data.get("deck", []))

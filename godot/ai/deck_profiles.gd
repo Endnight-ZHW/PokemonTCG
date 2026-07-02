@@ -95,14 +95,32 @@ const PROFILES := {
 	},
 }
 
+static var _membership_cache: Dictionary = {}
+
 
 static func get_profile(deck_key: String) -> Dictionary:
 	return Dictionary(PROFILES.get(deck_key, {}))
 
 
 static func contains(deck_key: String, group: String, card_id: String) -> bool:
-	return card_id in get_profile(deck_key).get(group, [])
+	var profile_membership := _membership_for_deck(deck_key)
+	var group_membership: Dictionary = profile_membership.get(group, {})
+	return group_membership.has(card_id)
 
 
 static func high_impact_damage_floor(deck_key: String) -> int:
 	return int(get_profile(deck_key).get("high_impact_damage_floor", 110))
+
+
+static func _membership_for_deck(deck_key: String) -> Dictionary:
+	if _membership_cache.has(deck_key):
+		return _membership_cache[deck_key]
+	var profile := get_profile(deck_key)
+	var membership := {}
+	for group in ["core", "engine", "setup", "bench", "evolution", "trainer", "energy"]:
+		var group_membership := {}
+		for value in profile.get(group, []):
+			group_membership[str(value)] = true
+		membership[group] = group_membership
+	_membership_cache[deck_key] = membership
+	return membership

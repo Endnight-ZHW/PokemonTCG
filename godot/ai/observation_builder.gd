@@ -49,7 +49,25 @@ static func determinize(
 	determinize_seed: int,
 	catalog: CardCatalog,
 ) -> GameState:
-	var state := GameState.from_dict(snapshot)
+	return _determinize_mutable(
+		GameState.from_dict(snapshot), perspective, determinize_seed, catalog)
+
+
+static func determinize_state(
+	base_state: GameState,
+	perspective: int,
+	determinize_seed: int,
+	catalog: CardCatalog,
+) -> GameState:
+	return _determinize_mutable(base_state.clone_state(), perspective, determinize_seed, catalog)
+
+
+static func _determinize_mutable(
+	state: GameState,
+	perspective: int,
+	determinize_seed: int,
+	catalog: CardCatalog,
+) -> GameState:
 	var rng := PortableRandomSource.new(determinize_seed)
 	var own := state.get_player(perspective)
 	var own_unknown: Array = own.deck.duplicate()

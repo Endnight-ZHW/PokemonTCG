@@ -500,6 +500,7 @@ func _load_strategy(path: String, fallback_id: String, fallback_label: String) -
 		"seconds": payload.get("seconds", null),
 		"max_depth": payload.get("max_depth", null),
 		"deterministic": payload.get("deterministic", null),
+		"dynamic_budget": _copy_dynamic_budget(payload.get("dynamic_budget", null)),
 		"per_deck_overrides": Dictionary(payload.get("per_deck_overrides", {})).duplicate(true),
 	}
 	return strategy
@@ -516,6 +517,7 @@ func _public_strategy(strategy: Dictionary) -> Dictionary:
 		"seconds": strategy.get("seconds", null),
 		"max_depth": strategy.get("max_depth", null),
 		"deterministic": strategy.get("deterministic", null),
+		"dynamic_budget": _copy_dynamic_budget(strategy.get("dynamic_budget", null)),
 		"effective_default": effective,
 		"per_deck_overrides": strategy.get("per_deck_overrides", {}),
 	}
@@ -534,6 +536,7 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 		"seconds": float(preset.get("seconds", 0.0)),
 		"max_depth": int(preset.get("depth", 1)),
 		"deterministic": false,
+		"dynamic_budget": {},
 	}
 	_apply_strategy_overrides(params, strategy)
 	var per_deck := Dictionary(strategy.get("per_deck_overrides", {}))
@@ -543,6 +546,7 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 	params["seconds"] = max(0.0, float(params["seconds"]))
 	params["max_depth"] = maxi(1, int(params["max_depth"]))
 	params["deterministic"] = bool(params["deterministic"])
+	params["dynamic_budget"] = _copy_dynamic_budget(params.get("dynamic_budget", {}))
 	params_cache[deck_key] = params.duplicate(true)
 	strategy["_params_cache"] = params_cache
 	return params.duplicate(true)
@@ -561,6 +565,16 @@ func _apply_strategy_overrides(params: Dictionary, source: Dictionary) -> void:
 		params["max_depth"] = int(source["depth"])
 	if source.get("deterministic") != null:
 		params["deterministic"] = bool(source["deterministic"])
+	if source.get("dynamic_budget") != null:
+		params["dynamic_budget"] = _copy_dynamic_budget(source["dynamic_budget"])
+
+
+func _copy_dynamic_budget(value: Variant) -> Variant:
+	if value is Dictionary:
+		return Dictionary(value).duplicate(true)
+	if value is bool:
+		return bool(value)
+	return {}
 
 
 func _play_match(
@@ -628,7 +642,12 @@ func _play_match(
 	var choices := 0
 	var total_decision_ms := 0.0
 	var decision_diagnostics := _empty_diagnostic_counts()
+	var decision_diagnostics_by_strategy := {
+		"A": _empty_diagnostic_counts(),
+		"B": _empty_diagnostic_counts(),
+	}
 	var time_capped_decisions := 0
+	var dynamic_budget_stop_reasons := {}
 	var invalid_actions := 0
 	var choice_failures := 0
 	var rule_exceptions := 0
@@ -684,7 +703,14 @@ func _play_match(
 		decisions += 1
 		_perf_count(performance_profile, "decisions")
 		var requested_budget := int(_strategy_params(actor_strategy, actor_deck_key).get("simulation_budget", 1))
-		if int(decision.get("simulations", requested_budget)) < requested_budget:
+		var budget_stop_reason := str(decision.get("budget_stop_reason", ""))
+		if budget_stop_reason.is_empty() and int(decision.get("simulations", requested_budget)) < requested_budget:
+			budget_stop_reason = "deadline"
+		if not budget_stop_reason.is_empty():
+			dynamic_budget_stop_reasons[budget_stop_reason] = (
+				int(dynamic_budget_stop_reasons.get(budget_stop_reason, 0)) + 1
+			)
+		if budget_stop_reason == "deadline":
 			time_capped_decisions += 1
 		if not bool(decision.get("success", false)):
 			rule_exceptions += 1
@@ -693,19 +719,19 @@ func _play_match(
 			break
 		var action := GameAction.from_dict(decision["action"])
 		var diagnose_started := _perf_start(performance_profile)
-		_merge_diagnostic_counts(
-			decision_diagnostics,
-			worker.diagnose_decision(
-				state,
-				actor,
-				action,
-				legal,
-				actor_deck_key,
-				catalog,
-				engine,
-				seed + actions_taken * 65537 + actor,
-			),
+		var diagnostics := worker.diagnose_decision(
+			state,
+			actor,
+			action,
+			legal,
+			actor_deck_key,
+			catalog,
+			engine,
+			seed + actions_taken * 65537 + actor,
 		)
+		_merge_diagnostic_counts(decision_diagnostics, diagnostics)
+		var actor_strategy_label := "A" if actor == strategy_a_player else "B"
+		_merge_diagnostic_counts(decision_diagnostics_by_strategy[actor_strategy_label], diagnostics)
 		_perf_add_elapsed(performance_profile, "runner_diagnose_ms", diagnose_started)
 		if not _action_matches_legal(action, legal):
 			invalid_actions += 1
@@ -759,10 +785,12 @@ func _play_match(
 		"average_decision_ms": round(total_decision_ms / max(1, decisions + choices) * 1000.0) / 1000.0,
 		"elapsed_ms": Time.get_ticks_msec() - started_ms,
 		"decision_diagnostics": decision_diagnostics,
+		"decision_diagnostics_by_strategy": decision_diagnostics_by_strategy,
 		"invalid_actions": invalid_actions,
 		"choice_failures": choice_failures,
 		"rule_exceptions": rule_exceptions,
 		"time_capped_decisions": time_capped_decisions,
+		"dynamic_budget_stop_reasons": dynamic_budget_stop_reasons,
 		"max_actions_exhausted": terminal_reason == "max_actions",
 	}
 
@@ -813,10 +841,15 @@ func _failed_match_row(
 		"average_decision_ms": 0.0,
 		"elapsed_ms": 0,
 		"decision_diagnostics": _empty_diagnostic_counts(),
+		"decision_diagnostics_by_strategy": {
+			"A": _empty_diagnostic_counts(),
+			"B": _empty_diagnostic_counts(),
+		},
 		"invalid_actions": 0,
 		"choice_failures": 0,
 		"rule_exceptions": 1,
 		"time_capped_decisions": 0,
+		"dynamic_budget_stop_reasons": {},
 		"max_actions_exhausted": false,
 	}
 
@@ -851,6 +884,7 @@ func _decide_action(
 		"seconds": float(params["seconds"]),
 		"max_depth": int(params["max_depth"]),
 		"deterministic": bool(params["deterministic"]),
+		"dynamic_budget": _copy_dynamic_budget(params.get("dynamic_budget", {})),
 		"profile": profile_enabled,
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,
@@ -1107,8 +1141,20 @@ func _empty_stats() -> Dictionary:
 		"choice_failures": 0,
 		"rule_exceptions": 0,
 		"time_capped_decisions": 0,
+		"dynamic_budget_stop_reasons": {},
 		"max_actions_exhaustions": 0,
 	}
+
+
+func _merge_count_dict(target: Dictionary, source: Variant) -> void:
+	if not (source is Dictionary):
+		return
+	var source_dict := Dictionary(source)
+	for key in source_dict.keys():
+		var name := str(key)
+		if name.is_empty():
+			continue
+		target[name] = int(target.get(name, 0)) + int(source_dict[key])
 
 
 func _merge_match(stats: Dictionary, row: Dictionary) -> void:
@@ -1147,6 +1193,7 @@ func _merge_match(stats: Dictionary, row: Dictionary) -> void:
 	stats["choice_failures"] = int(stats["choice_failures"]) + int(row.get("choice_failures", 0))
 	stats["rule_exceptions"] = int(stats["rule_exceptions"]) + int(row.get("rule_exceptions", 0))
 	stats["time_capped_decisions"] = int(stats["time_capped_decisions"]) + int(row.get("time_capped_decisions", 0))
+	_merge_count_dict(stats["dynamic_budget_stop_reasons"], row.get("dynamic_budget_stop_reasons", {}))
 	if bool(row.get("max_actions_exhausted", false)):
 		stats["max_actions_exhaustions"] = int(stats["max_actions_exhaustions"]) + 1
 
@@ -1188,6 +1235,14 @@ func _finalize_stats(stats: Dictionary) -> Dictionary:
 	result["decision_ms_p50"] = _round_to(_percentile(decision_values, 0.50), 3)
 	result["decision_ms_p95"] = _round_to(_percentile(decision_values, 0.95), 3)
 	result["time_capped_decision_rate"] = round(float(stats.get("time_capped_decisions", 0)) / float(decisions) * 10000.0) / 10000.0
+	var stop_reasons := Dictionary(stats.get("dynamic_budget_stop_reasons", {})).duplicate(true)
+	var dynamic_stops := (
+		int(stop_reasons.get("single_action", 0))
+		+ int(stop_reasons.get("confidence", 0))
+	)
+	result["dynamic_budget_stop_reasons"] = stop_reasons
+	result["dynamic_budget_stops"] = dynamic_stops
+	result["dynamic_budget_stop_rate"] = round(float(dynamic_stops) / float(decisions) * 10000.0) / 10000.0
 	result["elo_delta"] = round(_elo_delta(point_rate) * 1000.0) / 1000.0
 	result.erase("decision_ms_values")
 	return result
@@ -1564,6 +1619,11 @@ func _empty_diagnostics_summary() -> Dictionary:
 	return {
 		"total": 0,
 		"labels": _empty_diagnostic_counts(),
+		"by_strategy": {
+			"A": {"total": 0, "labels": _empty_diagnostic_counts()},
+			"B": {"total": 0, "labels": _empty_diagnostic_counts()},
+			"delta": {"total": 0, "labels": _empty_diagnostic_counts()},
+		},
 	}
 
 
@@ -1572,8 +1632,13 @@ func _summarize_decision_diagnostics(matches: Array) -> Dictionary:
 	var total := 0
 	var per_deck := {}
 	var per_matchup := {}
+	var by_strategy := {
+		"A": _empty_diagnostic_counts(),
+		"B": _empty_diagnostic_counts(),
+	}
 	for row in matches:
 		var row_counts: Dictionary = row.get("decision_diagnostics", {})
+		var row_by_strategy := Dictionary(row.get("decision_diagnostics_by_strategy", {}))
 		var deck_key := str(row.get("strategy_a_deck", row.get("deck", "")))
 		var matchup_key := str(row.get("matchup_key", ""))
 		if not per_deck.has(deck_key):
@@ -1587,11 +1652,38 @@ func _summarize_decision_diagnostics(matches: Array) -> Dictionary:
 			per_deck[deck_key][key] = int(per_deck[deck_key].get(key, 0)) + value
 			per_matchup[matchup_key][key] = int(per_matchup[matchup_key].get(key, 0)) + value
 			total += value
+			for strategy_key in ["A", "B"]:
+				var strategy_counts := Dictionary(row_by_strategy.get(strategy_key, {}))
+				by_strategy[strategy_key][key] = (
+					int(by_strategy[strategy_key].get(key, 0))
+					+ int(strategy_counts.get(key, 0))
+				)
+	var by_strategy_summary := {}
+	var delta_labels := _empty_diagnostic_counts()
+	for strategy_key in ["A", "B"]:
+		var strategy_total := 0
+		for label in NativeChallengeAI.diagnostic_labels():
+			strategy_total += int(by_strategy[strategy_key].get(str(label), 0))
+		by_strategy_summary[strategy_key] = {
+			"total": strategy_total,
+			"labels": by_strategy[strategy_key],
+		}
+	var delta_total := 0
+	for label in NativeChallengeAI.diagnostic_labels():
+		var key := str(label)
+		var delta := int(by_strategy["A"].get(key, 0)) - int(by_strategy["B"].get(key, 0))
+		delta_labels[key] = delta
+		delta_total += delta
+	by_strategy_summary["delta"] = {
+		"total": delta_total,
+		"labels": delta_labels,
+	}
 	return {
 		"total": total,
 		"labels": labels,
 		"per_deck": per_deck,
 		"per_matchup": per_matchup,
+		"by_strategy": by_strategy_summary,
 	}
 
 
