@@ -1,4 +1,4 @@
-"""Merge parallel Godot traditional-AI evaluation shards into one schema-v2 result."""
+"""Merge parallel Godot traditional-AI evaluation shards into one schema-v3 result."""
 from __future__ import annotations
 
 import argparse
@@ -434,6 +434,25 @@ def _merge_golden_scenarios(shards: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _merge_performance_profiles(shards: list[dict[str, Any]]) -> dict[str, Any]:
+    enabled = any(bool((payload.get("performance_profile") or {}).get("enabled")) for payload in shards)
+    if not enabled:
+        return {"enabled": False}
+    segments: Counter[str] = Counter()
+    counts: Counter[str] = Counter()
+    for payload in shards:
+        profile = payload.get("performance_profile") or {}
+        for key, value in (profile.get("segments_ms") or {}).items():
+            segments[str(key)] += _float(value)
+        for key, value in (profile.get("counts") or {}).items():
+            counts[str(key)] += _int(value)
+    return {
+        "enabled": True,
+        "segments_ms": {key: _round(segments[key], 3) for key in sorted(segments)},
+        "counts": {key: counts[key] for key in sorted(counts)},
+    }
+
+
 def _summarize_seats(matches: list[dict[str, Any]]) -> dict[str, Any]:
     first = _empty_stats()
     second = _empty_stats()
@@ -469,13 +488,23 @@ def _deck_sort_key(deck: str) -> tuple[int, str]:
         return (999, deck)
 
 
-def _match_sort_key(row: dict[str, Any]) -> tuple[int, int, int, int]:
+def _match_sort_key(row: dict[str, Any]) -> tuple[int, int, int, int, int]:
     deck = str(row.get("deck") or "")
     return (
         _deck_sort_key(deck)[0],
+        _int(row.get("task_index")),
         _int(row.get("seed_block")),
         _int(row.get("seat")),
         _int(row.get("strategy_a_player")),
+    )
+
+
+def _source_task_shard_count(payload: dict[str, Any]) -> int:
+    config = payload.get("config") or {}
+    return max(
+        1,
+        _int(config.get("task_shard_count"), 1),
+        _int(config.get("source_task_shard_count"), 1),
     )
 
 
@@ -501,6 +530,9 @@ def _validate_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
             "max_actions",
             "eval_preset",
             "matchup_mode",
+            "profile",
+            "disable_ai_cache",
+            "disable_native_math",
         ):
             if config.get(key) != ref_config.get(key):
                 raise MergeError(f"shard_{index}:config:{key}")
@@ -537,6 +569,15 @@ def merge_payloads(shards: list[dict[str, Any]], *, workers: int = 1) -> dict[st
     config = dict(reference.get("config") or {})
     config["seed_block_start"] = 0
     config["seed_block_count"] = _int(config.get("seed_blocks_per_deck"))
+    config["task_start"] = 0
+    config["task_count"] = 0
+    config["task_shard_index"] = 0
+    config["task_shard_count"] = 1
+    config["task_pairs_run"] = len(pair_rows)
+    config["source_task_shard_count"] = max(
+        1,
+        max(_source_task_shard_count(payload) for payload in shards),
+    )
     config["parallel_workers"] = max(1, int(workers))
     config["shards"] = len(shards)
 
@@ -559,6 +600,7 @@ def merge_payloads(shards: list[dict[str, Any]], *, workers: int = 1) -> dict[st
         "seat": _summarize_seats(matches),
         "decision_diagnostics": _summarize_decision_diagnostics(matches),
         "golden_scenarios": _merge_golden_scenarios(shards),
+        "performance_profile": _merge_performance_profiles(shards),
         "terminal_reasons": dict(Counter(str(row.get("terminal_reason") or "") for row in matches)),
         "matches": matches,
         "shards": [

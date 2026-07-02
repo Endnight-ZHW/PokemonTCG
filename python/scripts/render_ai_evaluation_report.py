@@ -280,6 +280,28 @@ def _golden_rows(payload: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
+def _profile_segment_rows(payload: dict[str, Any]) -> str:
+    profile = payload.get("performance_profile") or {}
+    segments = profile.get("segments_ms") or {}
+    if not profile.get("enabled") or not segments:
+        return '<tr><td colspan="2">未启用性能 profile</td></tr>'
+    rows = []
+    for key, value in sorted(segments.items(), key=lambda item: (-_float(item[1]), str(item[0])))[:20]:
+        rows.append(f"<tr><td>{escape(str(key))}</td><td>{_num(value, 3)} ms</td></tr>")
+    return "\n".join(rows)
+
+
+def _profile_count_rows(payload: dict[str, Any]) -> str:
+    profile = payload.get("performance_profile") or {}
+    counts = profile.get("counts") or {}
+    if not profile.get("enabled") or not counts:
+        return '<tr><td colspan="2">未启用性能 profile</td></tr>'
+    rows = []
+    for key, value in sorted(counts.items(), key=lambda item: str(item[0])):
+        rows.append(f"<tr><td>{escape(str(key))}</td><td>{_int(value)}</td></tr>")
+    return "\n".join(rows)
+
+
 def _terminal_rows(payload: dict[str, Any]) -> str:
     reasons = payload.get("terminal_reasons") or {}
     if not reasons:
@@ -442,6 +464,22 @@ def render_report(payload: dict[str, Any]) -> str:
         <table>
           <thead><tr><th>场景</th><th>状态</th><th>期望</th><th>实际</th></tr></thead>
           <tbody>{_golden_rows(payload)}</tbody>
+        </table>
+      </div>
+    </section>
+    <section class="grid3">
+      <div class="panel">
+        <h2>性能 Profile</h2>
+        <table>
+          <thead><tr><th>阶段</th><th>累计耗时</th></tr></thead>
+          <tbody>{_profile_segment_rows(payload)}</tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>Profile 计数</h2>
+        <table>
+          <thead><tr><th>指标</th><th>次数</th></tr></thead>
+          <tbody>{_profile_count_rows(payload)}</tbody>
         </table>
       </div>
     </section>

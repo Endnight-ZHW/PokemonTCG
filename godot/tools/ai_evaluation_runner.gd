@@ -64,10 +64,18 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"cross_seed_blocks_per_matchup": DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP,
 		"seed_block_start": 0,
 		"seed_block_count": 0,
+		"task_start": 0,
+		"task_count": 0,
+		"task_shard_index": 0,
+		"task_shard_count": 1,
 		"seed": DEFAULT_SEED,
 		"max_actions": DEFAULT_MAX_ACTIONS,
 		"eval_preset": "Custom",
 		"matchup_mode": "",
+		"skip_golden": false,
+		"profile": false,
+		"disable_ai_cache": false,
+		"disable_native_math": false,
 		"output": "",
 		"output_dir": "",
 	}
@@ -103,6 +111,18 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--seed-block-count":
 				config["seed_block_count"] = maxi(0, int(value))
 				index += 2
+			"--task-start":
+				config["task_start"] = maxi(0, int(value))
+				index += 2
+			"--task-count":
+				config["task_count"] = maxi(0, int(value))
+				index += 2
+			"--task-shard-index":
+				config["task_shard_index"] = maxi(0, int(value))
+				index += 2
+			"--task-shard-count":
+				config["task_shard_count"] = maxi(1, int(value))
+				index += 2
 			"--seed":
 				config["seed"] = int(value)
 				index += 2
@@ -115,6 +135,18 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--matchup-mode":
 				config["matchup_mode"] = _canonical_matchup_mode(value)
 				index += 2
+			"--skip-golden":
+				config["skip_golden"] = true
+				index += 1
+			"--profile":
+				config["profile"] = true
+				index += 1
+			"--disable-ai-cache":
+				config["disable_ai_cache"] = true
+				index += 1
+			"--disable-native-math":
+				config["disable_native_math"] = true
+				index += 1
 			"--output":
 				config["output"] = value
 				index += 2
@@ -208,6 +240,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"seat": _summarize_seats([]),
 			"decision_diagnostics": _empty_diagnostics_summary(),
 			"golden_scenarios": _empty_golden_summary(),
+			"performance_profile": _finalize_performance_profile(_new_performance_profile(false)),
 			"terminal_reasons": {},
 			"matches": [],
 		}
@@ -215,6 +248,9 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var engine := GameEngine.new(catalog)
 	var worker := NativeChallengeAI.new()
 	var matches: Array[Dictionary] = []
+	var performance_profile := _new_performance_profile(bool(config.get("profile", false)))
+	var disable_ai_cache := bool(config.get("disable_ai_cache", false))
+	var disable_native_math := bool(config.get("disable_native_math", false))
 	var seed_blocks := maxi(1, int(config.get("seed_blocks_per_deck", DEFAULT_SEED_BLOCKS_PER_DECK)))
 	var cross_seed_blocks := maxi(0, int(config.get(
 		"cross_seed_blocks_per_matchup", DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP)))
@@ -228,6 +264,12 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var matchup_mode := _matchup_mode(config)
 	var run_mirror := matchup_mode in [MATCHUP_MODE_MIRROR, MATCHUP_MODE_BALANCED]
 	var run_cross := matchup_mode in [MATCHUP_MODE_BALANCED, MATCHUP_MODE_MATRIX]
+	var task_start := maxi(0, int(config.get("task_start", 0)))
+	var task_count := maxi(0, int(config.get("task_count", 0)))
+	var task_shard_count := maxi(1, int(config.get("task_shard_count", 1)))
+	var task_shard_index := clampi(int(config.get("task_shard_index", 0)), 0, task_shard_count - 1)
+	var task_candidates := 0
+	var task_pairs_run := 0
 	for selected_deck_index in range(selected_decks.size()):
 		var deck_key := str(selected_decks[selected_deck_index])
 		var deck_index := DEFAULT_DECK_KEYS.find(deck_key)
@@ -236,6 +278,13 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		if run_mirror:
 			for block_offset in range(seed_block_count):
 				var block_index := seed_block_start + block_offset
+				var task_index := task_candidates
+				task_candidates += 1
+				if not _task_belongs_to_range(task_index, task_start, task_count):
+					continue
+				if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+					continue
+				task_pairs_run += 1
 				var game_seed := _game_seed(base_seed, deck_index, block_index)
 				var forced_first := block_index % 2
 				matches.append(_play_match(
@@ -252,6 +301,12 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					forced_first,
 					max_actions,
 					"mirror",
+					task_index,
+					task_shard_index,
+					task_shard_count,
+					performance_profile,
+					disable_ai_cache,
+					disable_native_math,
 				))
 				matches.append(_play_match(
 					catalog,
@@ -267,6 +322,12 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					forced_first,
 					max_actions,
 					"mirror",
+					task_index,
+					task_shard_index,
+					task_shard_count,
+					performance_profile,
+					disable_ai_cache,
+					disable_native_math,
 				))
 	if run_cross and cross_seed_blocks > 0:
 		var cross_end := mini(cross_seed_blocks, seed_block_start + seed_block_count)
@@ -283,6 +344,13 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 				if deck_b_index < 0:
 					deck_b_index = strategy_b_deck_index
 				for block_index in range(seed_block_start, cross_end):
+					var task_index := task_candidates
+					task_candidates += 1
+					if not _task_belongs_to_range(task_index, task_start, task_count):
+						continue
+					if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+						continue
+					task_pairs_run += 1
 					var cross_seed := _cross_game_seed(
 						base_seed, deck_a_index, deck_b_index, block_index)
 					var forced_first := block_index % 2
@@ -300,6 +368,12 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						forced_first,
 						max_actions,
 						"cross",
+						task_index,
+						task_shard_index,
+						task_shard_count,
+						performance_profile,
+						disable_ai_cache,
+						disable_native_math,
 					))
 					matches.append(_play_match(
 						catalog,
@@ -315,6 +389,12 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						forced_first,
 						max_actions,
 						"cross",
+						task_index,
+						task_shard_index,
+						task_shard_count,
+						performance_profile,
+						disable_ai_cache,
+						disable_native_math,
 					))
 	var summary := _summarize_matches(matches)
 	summary["point_rate_ci95"] = _bootstrap_point_rate_ci(matches, BOOTSTRAP_SEED)
@@ -326,7 +406,9 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	_apply_per_matchup_paired_summaries(per_matchup, matches)
 	var strategy_fingerprint := _strategy_fingerprint_summary(strategy_a, strategy_b, selected_decks)
 	var diagnostics := _summarize_decision_diagnostics(matches)
-	var golden_scenarios := _run_golden_scenarios(catalog, engine, worker)
+	var golden_scenarios := _empty_golden_summary()
+	if not bool(config.get("skip_golden", false)):
+		golden_scenarios = _run_golden_scenarios(catalog, engine, worker)
 	return {
 		"schema_version": SCHEMA_VERSION,
 		"created_at_unix": int(Time.get_unix_time_from_system()),
@@ -341,9 +423,19 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"cross_seed_blocks_per_matchup": cross_seed_blocks,
 			"seed_block_start": seed_block_start,
 			"seed_block_count": seed_block_count,
+			"task_start": task_start,
+			"task_count": task_count,
+			"task_shard_index": task_shard_index,
+			"task_shard_count": task_shard_count,
+			"task_candidates": task_candidates,
+			"task_pairs_run": task_pairs_run,
 			"max_actions": max_actions,
 			"eval_preset": str(config.get("eval_preset", "Custom")),
 			"matchup_mode": matchup_mode,
+			"skip_golden": bool(config.get("skip_golden", false)),
+			"profile": bool(config.get("profile", false)),
+			"disable_ai_cache": disable_ai_cache,
+			"disable_native_math": disable_native_math,
 		},
 		"strategies": {
 			"A": _public_strategy(strategy_a),
@@ -358,6 +450,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		"seat": _summarize_seats(matches),
 		"decision_diagnostics": diagnostics,
 		"golden_scenarios": golden_scenarios,
+		"performance_profile": _finalize_performance_profile(performance_profile),
 		"terminal_reasons": _count_by(matches, "terminal_reason"),
 		"matches": matches,
 	}
@@ -429,6 +522,9 @@ func _public_strategy(strategy: Dictionary) -> Dictionary:
 
 
 func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
+	var params_cache: Dictionary = Dictionary(strategy.get("_params_cache", {}))
+	if params_cache.has(deck_key):
+		return Dictionary(params_cache[deck_key]).duplicate(true)
 	var preset_name := str(strategy.get("preset", NativeChallengeAI.STRONGEST_DIFFICULTY))
 	var preset := NativeChallengeAI.strongest_preset()
 	if NativeChallengeAI.DIFFICULTIES.has(preset_name):
@@ -447,7 +543,9 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 	params["seconds"] = max(0.0, float(params["seconds"]))
 	params["max_depth"] = maxi(1, int(params["max_depth"]))
 	params["deterministic"] = bool(params["deterministic"])
-	return params
+	params_cache[deck_key] = params.duplicate(true)
+	strategy["_params_cache"] = params_cache
+	return params.duplicate(true)
 
 
 func _apply_strategy_overrides(params: Dictionary, source: Dictionary) -> void:
@@ -479,6 +577,12 @@ func _play_match(
 	forced_first: int,
 	max_actions: int,
 	matchup_kind: String,
+	task_index: int,
+	task_shard_index: int,
+	task_shard_count: int,
+	performance_profile: Dictionary,
+	disable_ai_cache: bool,
+	disable_native_math: bool,
 ) -> Dictionary:
 	var started_ms := Time.get_ticks_msec()
 	var strategy_a_player := 0 if seat == 0 else 1
@@ -490,6 +594,7 @@ func _play_match(
 	var state := GameState.new()
 	state.public_deck_keys = player_decks
 	var rng := PortableRandomSource.new(seed)
+	var setup_started := _perf_start(performance_profile)
 	var setup := engine.setup_game(
 		state,
 		catalog.expand_deck(player_decks[0]),
@@ -497,7 +602,9 @@ func _play_match(
 		rng,
 		forced_first,
 	)
+	_perf_add_elapsed(performance_profile, "runner_setup_game_ms", setup_started)
 	if not setup.success:
+		_perf_count(performance_profile, "matches_failed_setup")
 		return _failed_match_row(
 			strategy_a_deck,
 			strategy_b_deck,
@@ -508,6 +615,9 @@ func _play_match(
 			strategy_a_player,
 			forced_first,
 			matchup_kind,
+			task_index,
+			task_shard_index,
+			task_shard_count,
 			"setup_failed",
 			setup.message,
 		)
@@ -532,15 +642,20 @@ func _play_match(
 			var choice_deck_key := str(player_decks[choice_actor])
 			var choice_result := _decide_choice(
 				worker, state, pending, choice_actor, choice_deck_key,
-				choice_strategy, seed, actions_taken + choices)
+				choice_strategy, seed, actions_taken + choices,
+				_perf_enabled(performance_profile), disable_ai_cache, disable_native_math)
 			total_decision_ms += float(choice_result.get("elapsed_ms", 0.0))
+			_merge_decision_profile(performance_profile, choice_result.get("profile", {}))
 			if not bool(choice_result.get("success", false)):
 				choice_failures += 1
 				terminal_reason = "choice_failed"
 				terminal_message = str(choice_result.get("error", "choice_failed"))
 				break
 			var response := ChoiceResponse.from_dict(choice_result["choice_response"])
+			_perf_count(performance_profile, "choices")
+			var choice_apply_started := _perf_start(performance_profile)
 			var choice_step := engine.apply_choice(state, pending, response, rng)
+			_perf_add_elapsed(performance_profile, "runner_apply_choice_ms", choice_apply_started)
 			choices += 1
 			if not choice_step.success:
 				choice_failures += 1
@@ -550,17 +665,24 @@ func _play_match(
 			continue
 
 		var actor := _current_actor(state)
+		var legal_started := _perf_start(performance_profile)
 		var legal := engine.legal_actions(state, actor, true)
+		_perf_add_elapsed(performance_profile, "runner_legal_actions_ms", legal_started)
 		if legal.is_empty():
 			terminal_reason = "no_legal_action"
 			terminal_message = "No legal action for actor=%d phase=%s" % [actor, state.phase]
 			break
 		var actor_strategy := strategy_a if actor == strategy_a_player else strategy_b
 		var actor_deck_key := str(player_decks[actor])
+		var decide_started := _perf_start(performance_profile)
 		var decision := _decide_action(
-			worker, state, legal, actor, actor_deck_key, actor_strategy, seed, actions_taken)
+			worker, state, legal, actor, actor_deck_key, actor_strategy, seed, actions_taken,
+			_perf_enabled(performance_profile), disable_ai_cache, disable_native_math)
+		_perf_add_elapsed(performance_profile, "runner_decide_action_wall_ms", decide_started)
+		_merge_decision_profile(performance_profile, decision.get("profile", {}))
 		total_decision_ms += float(decision.get("elapsed_ms", 0.0))
 		decisions += 1
+		_perf_count(performance_profile, "decisions")
 		var requested_budget := int(_strategy_params(actor_strategy, actor_deck_key).get("simulation_budget", 1))
 		if int(decision.get("simulations", requested_budget)) < requested_budget:
 			time_capped_decisions += 1
@@ -570,6 +692,7 @@ func _play_match(
 			terminal_message = str(decision.get("error", "decision_failed"))
 			break
 		var action := GameAction.from_dict(decision["action"])
+		var diagnose_started := _perf_start(performance_profile)
 		_merge_diagnostic_counts(
 			decision_diagnostics,
 			worker.diagnose_decision(
@@ -583,10 +706,13 @@ func _play_match(
 				seed + actions_taken * 65537 + actor,
 			),
 		)
+		_perf_add_elapsed(performance_profile, "runner_diagnose_ms", diagnose_started)
 		if not _action_matches_legal(action, legal):
 			invalid_actions += 1
 		action.action_id = "eval:%d:%d:%d" % [state.revision, actions_taken, actor]
+		var apply_started := _perf_start(performance_profile)
 		var step := engine.apply_action(state, action, rng)
+		_perf_add_elapsed(performance_profile, "runner_apply_action_ms", apply_started)
 		actions_taken += 1
 		if not step.success:
 			invalid_actions += 1
@@ -596,8 +722,12 @@ func _play_match(
 
 	if terminal_reason.is_empty():
 		terminal_reason = "game_over" if state.winner >= 0 else "max_actions"
+	_perf_count(performance_profile, "matches")
+	_perf_count(performance_profile, "actions", actions_taken)
 	var winner := _winner_label(state.winner, strategy_a_player)
+	var score_started := _perf_start(performance_profile)
 	var score := _score_state(state, strategy_a_player, catalog)
+	_perf_add_elapsed(performance_profile, "runner_score_state_ms", score_started)
 	var matchup_key := _matchup_key(strategy_a_deck, strategy_b_deck)
 	var pair_key := _pair_key_for_values(strategy_a_deck, strategy_b_deck, seed_block, seed)
 	return {
@@ -607,6 +737,9 @@ func _play_match(
 		"player_decks": player_decks,
 		"matchup_key": matchup_key,
 		"matchup_kind": matchup_kind,
+		"task_index": task_index,
+		"task_shard_index": task_shard_index,
+		"task_shard_count": task_shard_count,
 		"pair_key": pair_key,
 		"seed": seed,
 		"seed_block": seed_block,
@@ -644,6 +777,9 @@ func _failed_match_row(
 	strategy_a_player: int,
 	forced_first: int,
 	matchup_kind: String,
+	task_index: int,
+	task_shard_index: int,
+	task_shard_count: int,
 	reason: String,
 	message: String,
 ) -> Dictionary:
@@ -655,6 +791,9 @@ func _failed_match_row(
 		"player_decks": player_decks,
 		"matchup_key": matchup_key,
 		"matchup_kind": matchup_kind,
+		"task_index": task_index,
+		"task_shard_index": task_shard_index,
+		"task_shard_count": task_shard_count,
 		"pair_key": _pair_key_for_values(strategy_a_deck, strategy_b_deck, seed_block, seed),
 		"seed": seed,
 		"seed_block": seed_block,
@@ -691,6 +830,9 @@ func _decide_action(
 	strategy: Dictionary,
 	seed: int,
 	action_index: int,
+	profile_enabled: bool,
+	disable_ai_cache: bool,
+	disable_native_math: bool,
 ) -> Dictionary:
 	var rows: Array = []
 	for action in legal:
@@ -709,6 +851,9 @@ func _decide_action(
 		"seconds": float(params["seconds"]),
 		"max_depth": int(params["max_depth"]),
 		"deterministic": bool(params["deterministic"]),
+		"profile": profile_enabled,
+		"disable_cache": disable_ai_cache,
+		"disable_native_math": disable_native_math,
 		"actions": rows,
 	}, Callable(self, "_not_cancelled"), null)
 
@@ -722,6 +867,9 @@ func _decide_choice(
 	strategy: Dictionary,
 	seed: int,
 	choice_index: int,
+	profile_enabled: bool,
+	disable_ai_cache: bool,
+	disable_native_math: bool,
 ) -> Dictionary:
 	var params := _strategy_params(strategy, deck_key)
 	return worker.decide({
@@ -738,6 +886,9 @@ func _decide_choice(
 		"seconds": float(params["seconds"]),
 		"max_depth": int(params["max_depth"]),
 		"deterministic": bool(params["deterministic"]),
+		"profile": profile_enabled,
+		"disable_cache": disable_ai_cache,
+		"disable_native_math": disable_native_math,
 	}, Callable(self, "_not_cancelled"), null)
 
 
@@ -773,6 +924,80 @@ func _matchup_key(strategy_a_deck: String, strategy_b_deck: String) -> String:
 
 func _pair_key_for_values(strategy_a_deck: String, strategy_b_deck: String, seed_block: int, seed: int) -> String:
 	return "%s:%s:%d:%d" % [strategy_a_deck, strategy_b_deck, seed_block, seed]
+
+
+func _new_performance_profile(enabled: bool) -> Dictionary:
+	return {
+		"enabled": enabled,
+		"segments_ms": {},
+		"counts": {},
+	}
+
+
+func _perf_enabled(profile: Dictionary) -> bool:
+	return bool(profile.get("enabled", false))
+
+
+func _perf_add_ms(profile: Dictionary, key: String, elapsed_ms: float) -> void:
+	if not _perf_enabled(profile):
+		return
+	var segments: Dictionary = profile["segments_ms"]
+	segments[key] = float(segments.get(key, 0.0)) + elapsed_ms
+
+
+func _perf_add_elapsed(profile: Dictionary, key: String, started_usec: int) -> void:
+	if not _perf_enabled(profile):
+		return
+	_perf_add_ms(profile, key, float(Time.get_ticks_usec() - started_usec) / 1000.0)
+
+
+func _perf_start(profile: Dictionary) -> int:
+	return Time.get_ticks_usec() if _perf_enabled(profile) else 0
+
+
+func _perf_count(profile: Dictionary, key: String, value: int = 1) -> void:
+	if not _perf_enabled(profile):
+		return
+	var counts: Dictionary = profile["counts"]
+	counts[key] = int(counts.get(key, 0)) + value
+
+
+func _merge_decision_profile(target: Dictionary, source_variant: Variant) -> void:
+	if not _perf_enabled(target) or not (source_variant is Dictionary):
+		return
+	var source: Dictionary = source_variant
+	for key in Dictionary(source.get("segments_ms", {})).keys():
+		_perf_add_ms(target, "ai_%s" % str(key), float(source["segments_ms"][key]))
+	for key in Dictionary(source.get("counts", {})).keys():
+		_perf_count(target, "ai_%s" % str(key), int(source["counts"][key]))
+
+
+func _finalize_performance_profile(profile: Dictionary) -> Dictionary:
+	if not _perf_enabled(profile):
+		return {"enabled": false}
+	var segments := {}
+	var segment_keys: Array = Dictionary(profile.get("segments_ms", {})).keys()
+	segment_keys.sort()
+	for key in segment_keys:
+		segments[str(key)] = _round_to(float(profile["segments_ms"][key]), 3)
+	var counts := {}
+	var count_keys: Array = Dictionary(profile.get("counts", {})).keys()
+	count_keys.sort()
+	for key in count_keys:
+		counts[str(key)] = int(profile["counts"][key])
+	return {
+		"enabled": true,
+		"segments_ms": segments,
+		"counts": counts,
+	}
+
+
+func _task_belongs_to_range(task_index: int, task_start: int, task_count: int) -> bool:
+	return task_count <= 0 or (task_index >= task_start and task_index < task_start + task_count)
+
+
+func _task_belongs_to_shard(task_index: int, task_shard_index: int, task_shard_count: int) -> bool:
+	return task_shard_count <= 1 or task_index % task_shard_count == task_shard_index
 
 
 func _empty_diagnostic_counts() -> Dictionary:

@@ -20,6 +20,12 @@ const DIAGNOSTIC_LABELS := [
 	"unsafe_retaliation_attack",
 ]
 
+var _catalog_cache: CardCatalog = null
+var _engine_cache: GameEngine = null
+var _native_math: Variant = null
+var _native_math_checked := false
+var _disable_native_math := false
+
 
 static func strongest_preset() -> Dictionary:
 	return Dictionary(DIFFICULTIES[STRONGEST_DIFFICULTY]).duplicate(true)
@@ -29,18 +35,95 @@ static func diagnostic_labels() -> Array:
 	return DIAGNOSTIC_LABELS.duplicate()
 
 
+func _cached_catalog() -> CardCatalog:
+	if _catalog_cache == null:
+		_catalog_cache = CardCatalog.new()
+	return _catalog_cache
+
+
+func _cached_engine(catalog: CardCatalog) -> GameEngine:
+	if _engine_cache == null or _engine_cache.catalog != catalog:
+		_engine_cache = GameEngine.new(catalog)
+	return _engine_cache
+
+
+func _cached_native_math() -> Variant:
+	if _disable_native_math:
+		return null
+	if not _native_math_checked:
+		_native_math_checked = true
+		if ClassDB.class_exists("ChallengeAIMath"):
+			_native_math = ClassDB.instantiate("ChallengeAIMath")
+	return _native_math
+
+
+func _new_decision_profile() -> Dictionary:
+	return {
+		"enabled": true,
+		"segments_ms": {},
+		"counts": {},
+	}
+
+
+func _profile_enabled(profile: Dictionary) -> bool:
+	return bool(profile.get("enabled", false))
+
+
+func _profile_add_ms(profile: Dictionary, key: String, elapsed_ms: float) -> void:
+	if not _profile_enabled(profile):
+		return
+	var segments: Dictionary = profile["segments_ms"]
+	segments[key] = float(segments.get(key, 0.0)) + elapsed_ms
+
+
+func _profile_add_elapsed(profile: Dictionary, key: String, started_usec: int) -> void:
+	if not _profile_enabled(profile):
+		return
+	_profile_add_ms(profile, key, float(Time.get_ticks_usec() - started_usec) / 1000.0)
+
+
+func _profile_start(profile: Dictionary) -> int:
+	return Time.get_ticks_usec() if _profile_enabled(profile) else 0
+
+
+func _profile_count(profile: Dictionary, key: String, value: int = 1) -> void:
+	if not _profile_enabled(profile):
+		return
+	var counts: Dictionary = profile["counts"]
+	counts[key] = int(counts.get(key, 0)) + value
+
+
+func _public_decision_profile(profile: Dictionary) -> Dictionary:
+	if not _profile_enabled(profile):
+		return {}
+	var segments := {}
+	for key in Dictionary(profile.get("segments_ms", {})).keys():
+		segments[str(key)] = round(float(profile["segments_ms"][key]) * 1000.0) / 1000.0
+	return {
+		"segments_ms": segments,
+		"counts": Dictionary(profile.get("counts", {})).duplicate(true),
+	}
+
+
 func decide(
 	request: Dictionary,
 	cancel_check: Callable,
 	inference: Variant = null,
 ) -> Dictionary:
 	var started := Time.get_ticks_usec()
-	var catalog := CardCatalog.new()
-	var engine := GameEngine.new(catalog)
+	var profile := _new_decision_profile() if bool(request.get("profile", false)) else {}
+	var previous_disable_native_math := _disable_native_math
+	_disable_native_math = bool(request.get("disable_native_math", false))
+	var context_started := _profile_start(profile)
+	var disable_cache := bool(request.get("disable_cache", false))
+	var catalog := CardCatalog.new() if disable_cache else _cached_catalog()
+	var engine := GameEngine.new(catalog) if disable_cache else _cached_engine(catalog)
 	var state := GameState.from_dict(request["state"])
 	var actor := int(request["actor"])
+	_profile_add_elapsed(profile, "request_context_ms", context_started)
 	var result: Dictionary
 	if str(request.get("kind", "action")) == "choice":
+		var choice_started := _profile_start(profile)
 		result = _choose_request(
 			state,
 			ChoiceRequest.from_dict(request["choice"]),
@@ -50,6 +133,7 @@ func decide(
 			inference,
 			str(request.get("mode", "challenge")),
 		)
+		_profile_add_elapsed(profile, "choice_ms", choice_started)
 	else:
 		result = _search_action(
 			request,
@@ -59,10 +143,14 @@ func decide(
 			engine,
 			cancel_check,
 			inference,
+			profile,
 		)
 	result["revision"] = int(request["revision"])
 	result["request_id"] = str(request.get("request_id", ""))
 	result["elapsed_ms"] = (Time.get_ticks_usec() - started) / 1000.0
+	if _profile_enabled(profile):
+		result["profile"] = _public_decision_profile(profile)
+	_disable_native_math = previous_disable_native_math
 	return result
 
 
@@ -74,12 +162,15 @@ func _search_action(
 	engine: GameEngine,
 	cancel_check: Callable,
 	inference: Variant,
+	profile: Dictionary = {},
 ) -> Dictionary:
+	var decode_started := _profile_start(profile)
 	var actions: Array[GameAction] = []
 	for row in request.get("actions", []):
 		actions.append(GameAction.from_dict(row))
 	if actions.is_empty():
 		actions = engine.legal_actions(state, actor, false)
+	_profile_add_elapsed(profile, "decode_actions_ms", decode_started)
 	if actions.is_empty():
 		return {"success": false, "error": "no_legal_action"}
 	var deck_key := _deck_key_for_actor(state, actor, str(request.get("deck_key", "")))
@@ -96,7 +187,9 @@ func _search_action(
 	var priors: Array[float] = []
 	var deep_error := ""
 	if mode == "deep" and inference != null:
+		var neural_started := _profile_start(profile)
 		var neural := _neural_action_priors(state, actor, actions, deck_key, catalog, inference)
+		_profile_add_elapsed(profile, "neural_priors_ms", neural_started)
 		if bool(neural.get("success", false)):
 			priors.assign(neural["priors"])
 		else:
@@ -110,7 +203,9 @@ func _search_action(
 		max_depth = int(request.get("max_depth", fallback_preset["depth"]))
 		deadline = Time.get_ticks_usec() + int(seconds * 1000000.0)
 	if priors.size() != actions.size():
+		var priors_started := _profile_start(profile)
 		priors = _heuristic_priors(state, actor, actions, deck_key, catalog)
+		_profile_add_elapsed(profile, "heuristic_priors_ms", priors_started)
 
 	var visits: Array[int] = []
 	var totals: Array[float] = []
@@ -125,15 +220,18 @@ func _search_action(
 		if not deterministic and Time.get_ticks_usec() >= deadline:
 			break
 		var selected := _select_ucb(visits, totals, priors, completed)
+		var determinize_started := _profile_start(profile)
 		var simulation := AIObservationBuilder.determinize(
 			request["state"],
 			actor,
 			request_seed + completed * 7919,
 			catalog,
 		)
+		_profile_add_elapsed(profile, "determinize_ms", determinize_started)
 		var simulation_rng := PortableRandomSource.new(
 			request_seed + completed * 104729
 		)
+		var simulate_started := _profile_start(profile)
 		var value := _simulate(
 			simulation,
 			actor,
@@ -143,10 +241,13 @@ func _search_action(
 			engine,
 			simulation_rng,
 			max_depth,
+			profile,
 		)
+		_profile_add_elapsed(profile, "simulate_total_ms", simulate_started)
 		visits[selected] += 1
 		totals[selected] += value
 		completed += 1
+		_profile_count(profile, "simulations")
 	if completed == 0 and mode == "deep":
 		var fallback_request: Dictionary = request.duplicate(true)
 		fallback_request["mode"] = "challenge"
@@ -162,6 +263,7 @@ func _search_action(
 			engine,
 			cancel_check,
 			null,
+			profile,
 		)
 		fallback["deep_fallback"] = true
 		fallback["fallback_reason"] = "zero_valid_simulations"
@@ -213,31 +315,50 @@ func _simulate(
 	engine: GameEngine,
 	rng: PortableRandomSource,
 	max_depth: int,
+	profile: Dictionary = {},
 ) -> float:
+	var apply_started := _profile_start(profile)
 	var step := engine.apply_action(state, first_action, rng)
+	_profile_add_elapsed(profile, "rollout_apply_action_ms", apply_started)
 	if not step.success:
 		return -1.0
+	var resolve_started := _profile_start(profile)
 	if not _resolve_choices(state, perspective, deck_key, catalog, engine, rng):
+		_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
 		return -1.0
+	_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
 	if state.winner >= 0:
 		return 1.0 if state.winner == perspective else -1.0
 	for _depth in range(max_depth):
 		var actor := _current_actor(state)
+		var legal_started := _profile_start(profile)
 		var actions := engine.legal_actions(state, actor, false)
+		_profile_add_elapsed(profile, "rollout_legal_actions_ms", legal_started)
 		if actions.is_empty():
 			break
 		var action_deck_key := _deck_key_for_actor(state, actor, deck_key)
+		var heuristic_started := _profile_start(profile)
 		var action := _best_heuristic_action(state, actor, actions, action_deck_key, catalog)
+		_profile_add_elapsed(profile, "rollout_heuristic_action_ms", heuristic_started)
+		apply_started = _profile_start(profile)
 		step = engine.apply_action(state, action, rng)
+		_profile_add_elapsed(profile, "rollout_apply_action_ms", apply_started)
 		if not step.success:
 			break
+		resolve_started = _profile_start(profile)
 		if not _resolve_choices(state, perspective, deck_key, catalog, engine, rng):
+			_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
 			break
+		_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
 		if state.winner >= 0:
 			return 1.0 if state.winner == perspective else -1.0
 		if state.active_player_idx == perspective and actor != perspective:
 			break
-	return _evaluate(state, perspective, catalog)
+	var evaluate_started := _profile_start(profile)
+	var evaluation := _evaluate(state, perspective, catalog)
+	_profile_add_elapsed(profile, "rollout_evaluate_ms", evaluate_started)
+	_profile_count(profile, "rollout_evaluations")
+	return evaluation
 
 
 func _resolve_choices(
@@ -2707,6 +2828,36 @@ func _card_priority(card_id: String, deck_key: String, catalog: CardCatalog) -> 
 func _pokemon_strength(pokemon: PokemonState, catalog: CardCatalog) -> float:
 	if pokemon == null:
 		return -1000.0
+	var features := _pokemon_strength_feature_row(pokemon, catalog)
+	var native_math: Variant = _cached_native_math()
+	if native_math != null:
+		return float(native_math.call(
+			"pokemon_strength",
+			float(features[0]),
+			float(features[1]),
+			float(features[2]),
+		))
+	return _pokemon_strength_from_features(features)
+
+
+func _pokemon_strength_from_features(features: PackedFloat64Array) -> float:
+	return float(features[0]) + float(features[1]) * 2.0 + float(features[2]) * 35.0
+
+
+func _pokemon_strength_gdscript(pokemon: PokemonState, catalog: CardCatalog) -> float:
+	if pokemon == null:
+		return -1000.0
+	return _pokemon_strength_from_features(_pokemon_strength_feature_row(pokemon, catalog))
+
+
+func _pokemon_strength_feature_row(pokemon: PokemonState, catalog: CardCatalog) -> PackedFloat64Array:
+	var result := PackedFloat64Array()
+	result.resize(3)
+	if pokemon == null:
+		result[0] = -1000.0
+		result[1] = 0.0
+		result[2] = 0.0
+		return result
 	var card := catalog.get_card(pokemon.card_id)
 	var best_damage := 0
 	for attack in card.get("attacks", []):
@@ -2731,11 +2882,20 @@ func _pokemon_strength(pokemon: PokemonState, catalog: CardCatalog) -> float:
 					formula_damage += int(Dictionary(params.get("condition_bonus", {})).get("bonus", 0))
 					damage = max(damage, formula_damage)
 		best_damage = max(best_damage, damage)
-	return (
-		pokemon.current_hp(catalog)
-		+ best_damage * 2.0
-		+ pokemon.energy_card_ids.size() * 35.0
-	)
+	result[0] = float(pokemon.current_hp(catalog))
+	result[1] = float(best_damage)
+	result[2] = float(pokemon.energy_card_ids.size())
+	return result
+
+
+func _pokemon_strength_features(player: PlayerState, catalog: CardCatalog) -> PackedFloat64Array:
+	var result := PackedFloat64Array()
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null:
+			continue
+		result.append_array(_pokemon_strength_feature_row(pokemon, catalog))
+	return result
 
 
 func _evaluate(state: GameState, perspective: int, catalog: CardCatalog) -> float:
@@ -2747,13 +2907,31 @@ func _evaluate_raw(state: GameState, perspective: int, catalog: CardCatalog) -> 
 		return 1800.0 if state.winner == perspective else -1800.0
 	var own := state.get_player(perspective)
 	var opponent := state.get_player(1 - perspective)
+	var native_math: Variant = _cached_native_math()
+	if native_math != null:
+		return float(native_math.call(
+			"evaluate_board_features",
+			float(opponent.prizes.size() - own.prizes.size()),
+			float(own.hand.size() - opponent.hand.size()),
+			float(own.deck.size() - opponent.deck.size()),
+			_pokemon_strength_features(own, catalog),
+			_pokemon_strength_features(opponent, catalog),
+		))
+	return _evaluate_raw_gdscript(state, perspective, catalog)
+
+
+func _evaluate_raw_gdscript(state: GameState, perspective: int, catalog: CardCatalog) -> float:
+	if state.winner >= 0:
+		return 1800.0 if state.winner == perspective else -1800.0
+	var own := state.get_player(perspective)
+	var opponent := state.get_player(1 - perspective)
 	var score := float(opponent.prizes.size() - own.prizes.size()) * 220.0
 	score += (own.hand.size() - opponent.hand.size()) * 4.0
 	score += (own.deck.size() - opponent.deck.size()) * 0.5
 	for row in own.get_all_pokemon():
-		score += _pokemon_strength(row["pokemon"], catalog) if row["pokemon"] else 0.0
+		score += _pokemon_strength_gdscript(row["pokemon"], catalog) if row["pokemon"] else 0.0
 	for row in opponent.get_all_pokemon():
-		score -= _pokemon_strength(row["pokemon"], catalog) if row["pokemon"] else 0.0
+		score -= _pokemon_strength_gdscript(row["pokemon"], catalog) if row["pokemon"] else 0.0
 	return score
 
 

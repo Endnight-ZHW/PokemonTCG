@@ -1,5 +1,6 @@
 #include "register_types.hpp"
 
+#include "challenge_ai_math.hpp"
 #include "onnx_inference.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
@@ -11,6 +12,7 @@ void initialize_onnx_ai_module(ModuleInitializationLevel level) {
     if (level != MODULE_INITIALIZATION_LEVEL_SCENE) {
         return;
     }
+    GDREGISTER_CLASS(ChallengeAIMath);
     GDREGISTER_CLASS(OnnxInference);
 }
 

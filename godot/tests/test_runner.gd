@@ -2360,6 +2360,7 @@ func _run_ai_strength_regression_tests(
 		and int(strongest_preset.get("depth", 0)) > 16,
 		"Challenge AI strongest preset did not replace difficulty budgets",
 	)
+	_check(ClassDB.class_exists("ChallengeAIMath"), "ChallengeAIMath GDExtension class is unavailable")
 
 	var ko_state := GameState.new()
 	ko_state.phase = "MAIN"
@@ -2388,6 +2389,25 @@ func _run_ai_strength_regression_tests(
 		ko_action != null and ko_action.action == "DECLARE_ATTACK",
 		"AI fallback did not take an immediate KO before ending turn",
 	)
+	var ko_plain_result := _ai_decision_result_for_actions(worker, ko_state, 0, "lightning", [
+		GameAction.new("END_TURN", {}, true, 0),
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+	], "ko-profile-off", false)
+	var ko_profile_result := _ai_decision_result_for_actions(worker, ko_state, 0, "lightning", [
+		GameAction.new("END_TURN", {}, true, 0),
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+	], "ko-profile-on", true)
+	_check(
+		ko_plain_result.get("success", false)
+		and ko_profile_result.get("success", false)
+		and ko_plain_result.get("action", {}) == ko_profile_result.get("action", {}),
+		"AI profile instrumentation changed the selected action",
+	)
+	_check(
+		ko_profile_result.has("profile")
+		and Dictionary(ko_profile_result.get("profile", {})).has("segments_ms"),
+		"AI profile instrumentation did not return profile segments",
+	)
 	var ko_diagnostic_actions: Array[GameAction] = [
 		GameAction.new("END_TURN", {}, true, 0),
 		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
@@ -2405,6 +2425,32 @@ func _run_ai_strength_regression_tests(
 	_check(
 		int(ko_diagnostics.get("missed_immediate_ko", 0)) == 1,
 		"AI diagnostic interface did not flag a missed immediate KO",
+	)
+
+	var eval_state := GameState.new()
+	eval_state.phase = "MAIN"
+	eval_state.turn_number = 6
+	eval_state.active_player_idx = 0
+	eval_state.public_deck_keys = ["lightning", "water"]
+	eval_state.players[0].active = PokemonState.new("svl-zera")
+	eval_state.players[0].active.energy_card_ids.assign(["sv1-ener-4", "sv1-ener-4"])
+	eval_state.players[0].bench[0] = PokemonState.new("svl-pikaex")
+	eval_state.players[0].bench[0].energy_card_ids.assign(["sv1-ener-4"])
+	eval_state.players[0].hand = ["sv1-ener-4", "svl-flaa2"]
+	eval_state.players[0].deck = ["sv1-ener-4", "sv1-ener-4", "svl-mareep"]
+	eval_state.players[0].prizes = ["sv1-ener-4", "sv1-ener-4", "sv1-ener-4"]
+	eval_state.players[1].active = PokemonState.new("sv2-grex")
+	eval_state.players[1].active.damage_counters = 3
+	eval_state.players[1].active.energy_card_ids.assign(["sv1-ener-3"])
+	eval_state.players[1].bench[0] = PokemonState.new("sv2-39")
+	eval_state.players[1].hand = ["sv1-ener-3"]
+	eval_state.players[1].deck = ["sv1-ener-3", "sv1-ener-3"]
+	eval_state.players[1].prizes = ["sv1-ener-3", "sv1-ener-3", "sv1-ener-3", "sv1-ener-3"]
+	var gdscript_eval := worker._evaluate_raw_gdscript(eval_state, 0, catalog)
+	var native_eval := worker._evaluate_raw(eval_state, 0, catalog)
+	_check(
+		is_equal_approx(native_eval, gdscript_eval),
+		"ChallengeAIMath native evaluation differs from GDScript fallback",
 	)
 
 	var safe_damage_state := GameState.new()
@@ -2970,10 +3016,27 @@ func _ai_decision_for_actions(
 	actions: Array,
 	request_id: String,
 ) -> GameAction:
+	var result := _ai_decision_result_for_actions(
+		worker, state, actor, deck_key, actions, request_id, false)
+	_check(result.get("success", false), "AI strength decision failed: %s" % result.get("error", "unknown"))
+	if not result.get("success", false):
+		return null
+	return GameAction.from_dict(result["action"])
+
+
+func _ai_decision_result_for_actions(
+	worker: NativeChallengeAI,
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	actions: Array,
+	request_id: String,
+	profile: bool,
+) -> Dictionary:
 	var rows: Array = []
 	for action in actions:
 		rows.append(action.to_dict())
-	var result := worker.decide({
+	return worker.decide({
 		"kind": "action",
 		"state": state.snapshot(),
 		"actor": actor,
@@ -2986,12 +3049,9 @@ func _ai_decision_for_actions(
 		"seconds": 0.0,
 		"max_depth": 1,
 		"deterministic": true,
+		"profile": profile,
 		"actions": rows,
 	}, func() -> bool: return false)
-	_check(result.get("success", false), "AI strength decision failed: %s" % result.get("error", "unknown"))
-	if not result.get("success", false):
-		return null
-	return GameAction.from_dict(result["action"])
 
 
 func _ai_choice_for_request(

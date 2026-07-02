@@ -7,7 +7,9 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from scripts.merge_ai_evaluation_shards import MergeError, merge_payloads
+from scripts.compare_ai_evaluation_profiles import compare_profiles
 from scripts.render_ai_evaluation_report import DECK_LABELS, evaluation_verdict, render_file
+from scripts.summarize_ai_evaluation_profile import summarize_profile
 from scripts.validate_ai_evaluation import validate_evaluation_gate
 from tests.temp_utils import temp_dir
 
@@ -63,7 +65,18 @@ def _schema2_payload(**summary_overrides):
     }
 
 
-def _match(deck: str, block: int, seat: int, winner: str) -> dict:
+def _match(
+    deck: str,
+    block: int,
+    seat: int,
+    winner: str,
+    *,
+    task_index: int | None = None,
+    task_shard_index: int = 0,
+    task_shard_count: int = 1,
+) -> dict:
+    if task_index is None:
+        task_index = block
     return {
         "deck": deck,
         "strategy_a_deck": deck,
@@ -71,6 +84,9 @@ def _match(deck: str, block: int, seat: int, winner: str) -> dict:
         "player_decks": [deck, deck],
         "matchup_key": f"{deck}_vs_{deck}",
         "matchup_kind": "mirror",
+        "task_index": task_index,
+        "task_shard_index": task_shard_index,
+        "task_shard_count": task_shard_count,
         "pair_key": f"{deck}:{deck}:{block}:{17 + block * 10007}",
         "seed": 17 + block * 10007,
         "seed_block": block,
@@ -98,7 +114,14 @@ def _match(deck: str, block: int, seat: int, winner: str) -> dict:
     }
 
 
-def _shard(block: int, *, fingerprint: str = "same", seed: int = 17) -> dict:
+def _shard(
+    block: int,
+    *,
+    fingerprint: str = "same",
+    seed: int = 17,
+    task_shard_index: int = 0,
+    task_shard_count: int = 1,
+) -> dict:
     return {
         "schema_version": 3,
         "self_check": False,
@@ -112,9 +135,19 @@ def _shard(block: int, *, fingerprint: str = "same", seed: int = 17) -> dict:
             "cross_seed_blocks_per_matchup": 0,
             "seed_block_start": block,
             "seed_block_count": 1,
+            "task_start": block,
+            "task_count": 1,
+            "task_shard_index": task_shard_index,
+            "task_shard_count": task_shard_count,
+            "task_candidates": 2,
+            "task_pairs_run": 1,
             "max_actions": 80,
             "eval_preset": "Smoke",
             "matchup_mode": "Mirror",
+            "skip_golden": False,
+            "profile": True,
+            "disable_ai_cache": False,
+            "disable_native_math": False,
         },
         "strategies": {"A": {"id": "a"}, "B": {"id": "b"}},
         "strategy_fingerprint": {"A": fingerprint, "B": fingerprint, "equal": True},
@@ -131,10 +164,37 @@ def _shard(block: int, *, fingerprint: str = "same", seed: int = 17) -> dict:
             "failed": 0,
             "cases": [{"name": "immediate_ko", "passed": True}],
         },
+        "performance_profile": {
+            "enabled": True,
+            "segments_ms": {
+                "runner_setup_game_ms": 1.5,
+                "ai_determinize_ms": 2.0,
+            },
+            "counts": {
+                "matches": 2,
+                "ai_simulations": 4,
+            },
+        },
         "terminal_reasons": {},
         "matches": [
-            _match("fire", block, 0, "A"),
-            _match("fire", block, 1, "B"),
+            _match(
+                "fire",
+                block,
+                0,
+                "A",
+                task_index=block,
+                task_shard_index=task_shard_index,
+                task_shard_count=task_shard_count,
+            ),
+            _match(
+                "fire",
+                block,
+                1,
+                "B",
+                task_index=block,
+                task_shard_index=task_shard_index,
+                task_shard_count=task_shard_count,
+            ),
         ],
     }
 
@@ -352,6 +412,47 @@ class AIEvaluationReportTests(unittest.TestCase):
         self.assertEqual(merged["seat"]["seat_counts"], {"a_player_0": 2, "a_player_1": 2})
         self.assertEqual(merged["terminal_reasons"], {"game_over": 4})
         self.assertEqual(merged["config"]["parallel_workers"], 2)
+        self.assertEqual(merged["config"]["task_start"], 0)
+        self.assertEqual(merged["config"]["task_count"], 0)
+        self.assertEqual(merged["config"]["task_shard_count"], 1)
+        self.assertEqual(merged["config"]["task_pairs_run"], 2)
+        self.assertTrue(merged["performance_profile"]["enabled"])
+        self.assertEqual(merged["performance_profile"]["segments_ms"]["runner_setup_game_ms"], 3.0)
+        self.assertEqual(merged["performance_profile"]["counts"]["ai_simulations"], 8)
+
+    def test_merge_task_shards_recomputes_task_metadata(self):
+        merged = merge_payloads([
+            _shard(0, task_shard_index=0, task_shard_count=2),
+            _shard(1, task_shard_index=1, task_shard_count=2),
+        ], workers=2)
+
+        self.assertEqual(merged["summary"]["games"], 4)
+        self.assertEqual(merged["config"]["source_task_shard_count"], 2)
+        self.assertEqual(merged["config"]["task_shard_count"], 1)
+        self.assertEqual(merged["config"]["task_pairs_run"], 2)
+
+    def test_profile_summary_reports_hot_path_candidates(self):
+        merged = merge_payloads([_shard(0), _shard(1)], workers=2)
+
+        summary = summarize_profile(merged, top=2)
+
+        self.assertTrue(summary["enabled"])
+        self.assertEqual(summary["simulations"], 8)
+        self.assertEqual(summary["top_segments"][0]["segment"], "ai_determinize_ms")
+        self.assertIn("determinization", summary["top_segments"][0]["candidate"])
+
+    def test_profile_compare_checks_equivalence_and_ratios(self):
+        baseline = merge_payloads([_shard(0), _shard(1)], workers=2)
+        candidate = json.loads(json.dumps(baseline))
+        baseline["elapsed_ms"] = 1000
+        candidate["elapsed_ms"] = 500
+        candidate["performance_profile"]["segments_ms"]["ai_determinize_ms"] = 2.0
+
+        comparison = compare_profiles(baseline, candidate)
+
+        self.assertTrue(comparison["same_match_results"])
+        self.assertEqual(comparison["elapsed_ms"]["ratio"], 0.5)
+        self.assertEqual(comparison["segments"]["ai_determinize_ms"]["ratio"], 0.5)
 
     def test_merge_shards_rejects_strategy_mismatch(self):
         with self.assertRaisesRegex(MergeError, "strategy_fingerprint"):

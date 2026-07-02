@@ -9,12 +9,25 @@ param(
     [int]$Seed = 17,
     [int]$MaxActions = 1200,
     [int]$Workers = 1,
+    [int]$SeedBlockStart = 0,
+    [int]$SeedBlockCount = 0,
+    [int]$TaskStart = 0,
+    [int]$TaskCount = 0,
+    [int]$ShardIndex = -1,
+    [int]$ShardCount = 0,
     [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
     [string]$MatchupMode = '',
     [int]$CrossSeedBlocksPerMatchup = -1,
     [ValidateSet('', 'stability', 'strength', 'auto')]
     [string]$ValidateGate = '',
     [string]$Baseline = '',
+    [string[]]$MergeInput = @(),
+    [switch]$ShardOnly,
+    [switch]$SkipReport,
+    [switch]$SkipValidate,
+    [switch]$Profile,
+    [switch]$DisableAICache,
+    [switch]$DisableNativeMath,
     [string]$OutputDir = ''
 )
 
@@ -33,6 +46,18 @@ function Resolve-RepoPathOrEmpty {
         return $Path
     }
     return (Join-Path $repoRoot $Path)
+}
+
+function Resolve-RepoPathList {
+    param([string[]]$Paths)
+    $resolved = @()
+    foreach ($path in $Paths) {
+        if ([string]::IsNullOrWhiteSpace($path)) {
+            continue
+        }
+        $resolved += (Resolve-RepoPathOrEmpty $path)
+    }
+    return $resolved
 }
 
 switch ($EvalPreset) {
@@ -74,10 +99,38 @@ switch ($EvalPreset) {
     }
 }
 
+if ($SkipValidate -or $ShardOnly) {
+    $ValidateGate = ''
+}
+if ($ShardOnly) {
+    $SkipReport = $true
+}
+if ($Workers -lt 1) {
+    throw 'Workers must be >= 1.'
+}
+if ($SeedBlockStart -lt 0 -or $SeedBlockCount -lt 0) {
+    throw 'SeedBlockStart and SeedBlockCount must be >= 0.'
+}
+if ($TaskStart -lt 0 -or $TaskCount -lt 0) {
+    throw 'TaskStart and TaskCount must be >= 0.'
+}
+if ($ShardCount -lt 0) {
+    throw 'ShardCount must be >= 0.'
+}
+if ($ShardIndex -ge 0 -and $ShardCount -le 0) {
+    throw 'ShardIndex requires ShardCount.'
+}
+if ($ShardCount -gt 0 -and ($ShardIndex -lt 0 -or $ShardIndex -ge $ShardCount)) {
+    throw "ShardIndex must be in [0, $($ShardCount - 1)]."
+}
+
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 
-if (-not (Test-Path -LiteralPath $godot)) {
+$mergeInputPaths = @(Resolve-RepoPathList $MergeInput)
+$mergeOnly = $mergeInputPaths.Count -gt 0
+
+if (-not $mergeOnly -and -not (Test-Path -LiteralPath $godot)) {
     throw 'Godot 4.7 is not installed. Run tools/setup_godot_toolchain.ps1 first.'
 }
 if (-not (Test-Path -LiteralPath $python)) {
@@ -96,6 +149,11 @@ if (-not [string]::IsNullOrWhiteSpace($StrategyB) -and -not (Test-Path -LiteralP
 if (-not [string]::IsNullOrWhiteSpace($Baseline) -and -not (Test-Path -LiteralPath $Baseline)) {
     throw "Baseline file not found: $Baseline"
 }
+foreach ($path in $mergeInputPaths) {
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "MergeInput file not found: $path"
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -110,6 +168,7 @@ $jsonPath = Join-Path $OutputDir 'results.json'
 $htmlPath = Join-Path $OutputDir 'report.html'
 
 if (
+    -not $mergeOnly -and
     [string]::IsNullOrWhiteSpace($StrategyA) -and
     [string]::IsNullOrWhiteSpace($StrategyB) -and
     $EvalPreset -in @('Smoke', 'Quick')
@@ -156,6 +215,15 @@ if (-not [string]::IsNullOrWhiteSpace($MatchupMode)) {
 if ($CrossSeedBlocksPerMatchup -ge 0) {
     $runnerArgs += @('--cross-seed-blocks-per-matchup', ([string][Math]::Max(0, $CrossSeedBlocksPerMatchup)))
 }
+if ($Profile) {
+    $runnerArgs += @('--profile')
+}
+if ($DisableAICache) {
+    $runnerArgs += @('--disable-ai-cache')
+}
+if ($DisableNativeMath) {
+    $runnerArgs += @('--disable-native-math')
+}
 if (-not [string]::IsNullOrWhiteSpace($StrategyA)) {
     $runnerArgs += @('--strategy-a', $StrategyA)
 }
@@ -198,21 +266,68 @@ function Test-GodotShardOutput {
     }
 }
 
+function New-GodotShardArgs {
+    param(
+        [string[]]$BaseArgs,
+        [string]$ShardJsonPath,
+        [int]$SeedBlockStart,
+        [int]$SeedBlockCount,
+        [int]$TaskStart,
+        [int]$TaskCount,
+        [int]$TaskShardIndex,
+        [int]$TaskShardCount,
+        [bool]$SkipGolden
+    )
+    $args = @($BaseArgs)
+    $args += @('--output', $ShardJsonPath)
+    if ($SeedBlockStart -gt 0 -or $SeedBlockCount -gt 0) {
+        $args += @(
+            '--seed-block-start', ([string]$SeedBlockStart),
+            '--seed-block-count', ([string]$SeedBlockCount)
+        )
+    }
+    if ($TaskStart -gt 0 -or $TaskCount -gt 0) {
+        $args += @(
+            '--task-start', ([string]$TaskStart),
+            '--task-count', ([string]$TaskCount)
+        )
+    }
+    if ($TaskShardCount -gt 1) {
+        $args += @(
+            '--task-shard-index', ([string]$TaskShardIndex),
+            '--task-shard-count', ([string]$TaskShardCount)
+        )
+    }
+    if ($SkipGolden) {
+        $args += @('--skip-golden')
+    }
+    return $args
+}
+
 function Invoke-GodotShard {
     param(
         [string[]]$BaseArgs,
         [string]$ShardJsonPath,
         [int]$SeedBlockStart,
         [int]$SeedBlockCount,
+        [int]$TaskStart,
+        [int]$TaskCount,
+        [int]$TaskShardIndex,
+        [int]$TaskShardCount,
         [string]$StdoutPath,
-        [string]$StderrPath
+        [string]$StderrPath,
+        [bool]$SkipGolden
     )
-    $args = @($BaseArgs)
-    $args += @(
-        '--output', $ShardJsonPath,
-        '--seed-block-start', ([string]$SeedBlockStart),
-        '--seed-block-count', ([string]$SeedBlockCount)
-    )
+    $args = New-GodotShardArgs `
+        -BaseArgs $BaseArgs `
+        -ShardJsonPath $ShardJsonPath `
+        -SeedBlockStart $SeedBlockStart `
+        -SeedBlockCount $SeedBlockCount `
+        -TaskStart $TaskStart `
+        -TaskCount $TaskCount `
+        -TaskShardIndex $TaskShardIndex `
+        -TaskShardCount $TaskShardCount `
+        -SkipGolden $SkipGolden
     $output = & $godot @args 2>&1
     $output | Set-Content -LiteralPath $StdoutPath -Encoding UTF8
     '' | Set-Content -LiteralPath $StderrPath -Encoding UTF8
@@ -223,71 +338,21 @@ function Invoke-GodotShard {
         -ExitCode $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE })
 }
 
-$workerCount = [Math]::Max(1, $Workers)
-if ($workerCount -le 1) {
-    Invoke-GodotShard `
-        -BaseArgs $runnerArgs `
-        -ShardJsonPath $jsonPath `
-        -SeedBlockStart 0 `
-        -SeedBlockCount ([Math]::Max(1, $SeedBlocksPerDeck)) `
-        -StdoutPath (Join-Path $OutputDir 'godot.stdout.log') `
-        -StderrPath (Join-Path $OutputDir 'godot.stderr.log')
-}
-else {
-    $shardsRoot = Join-Path $OutputDir 'shards'
-    New-Item -ItemType Directory -Force -Path $shardsRoot | Out-Null
-    $shardCount = [Math]::Min($workerCount, [Math]::Max(1, $SeedBlocksPerDeck))
-    $blocksPerShard = [int][Math]::Ceiling([double][Math]::Max(1, $SeedBlocksPerDeck) / [double]$shardCount)
-    $processes = @()
-    $shardJsonPaths = @()
-    for ($shardIndex = 0; $shardIndex -lt $shardCount; $shardIndex++) {
-        $start = $shardIndex * $blocksPerShard
-        if ($start -ge $SeedBlocksPerDeck) {
-            continue
-        }
-        $count = [Math]::Min($blocksPerShard, $SeedBlocksPerDeck - $start)
-        $shardDir = Join-Path $shardsRoot ('shard-{0:D3}' -f $shardIndex)
-        New-Item -ItemType Directory -Force -Path $shardDir | Out-Null
-        $shardJson = Join-Path $shardDir 'results.json'
-        $stdoutPath = Join-Path $shardDir 'stdout.log'
-        $stderrPath = Join-Path $shardDir 'stderr.log'
-        $args = @($runnerArgs)
-        $args += @(
-            '--output', $shardJson,
-            '--seed-block-start', ([string]$start),
-            '--seed-block-count', ([string]$count)
-        )
-        $process = Start-Process `
-            -FilePath $godot `
-            -ArgumentList $args `
-            -RedirectStandardOutput $stdoutPath `
-            -RedirectStandardError $stderrPath `
-            -WindowStyle Hidden `
-            -PassThru
-        $processes += [pscustomobject]@{
-            Process = $process
-            Json = $shardJson
-            Stdout = $stdoutPath
-            Stderr = $stderrPath
-            Start = $start
-            Count = $count
-        }
-        $shardJsonPaths += $shardJson
-    }
-    foreach ($item in $processes) {
-        $item.Process.WaitForExit()
-        Test-GodotShardOutput `
-            -StdoutPath $item.Stdout `
-            -StderrPath $item.Stderr `
-            -JsonPath $item.Json `
-            -ExitCode $item.Process.ExitCode
+function Invoke-AIEvaluationMerge {
+    param(
+        [string[]]$InputPaths,
+        [string]$OutputPath,
+        [int]$WorkerCount
+    )
+    if ($InputPaths.Count -lt 1) {
+        throw 'No AI evaluation shard inputs were provided for merge.'
     }
     $mergeArgs = @(
         (Join-Path $repoRoot 'python\scripts\merge_ai_evaluation_shards.py'),
-        '--output', $jsonPath,
-        '--workers', ([string]$workerCount)
+        '--output', $OutputPath,
+        '--workers', ([string][Math]::Max(1, $WorkerCount))
     )
-    foreach ($path in $shardJsonPaths) {
+    foreach ($path in $InputPaths) {
         $mergeArgs += @('--input', $path)
     }
     $mergeOutput = & $python @mergeArgs 2>&1
@@ -296,22 +361,105 @@ else {
     if ($mergeExit -ne 0) {
         throw "AI evaluation shard merge failed with exit code $mergeExit"
     }
-    if (-not (Test-Path -LiteralPath $jsonPath)) {
-        throw "AI evaluation shard merge did not write $jsonPath"
+    if (-not (Test-Path -LiteralPath $OutputPath)) {
+        throw "AI evaluation shard merge did not write $OutputPath"
     }
 }
 
-$reportOutput = & $python `
-    (Join-Path $repoRoot 'python\scripts\render_ai_evaluation_report.py') `
-    --input $jsonPath `
-    --output $htmlPath 2>&1
-$reportOutput | ForEach-Object { Write-Host $_ }
-$reportExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-if ($reportExit -ne 0) {
-    throw "AI evaluation report rendering failed with exit code $reportExit"
+if ($mergeOnly) {
+    Invoke-AIEvaluationMerge `
+        -InputPaths $mergeInputPaths `
+        -OutputPath $jsonPath `
+        -WorkerCount ([Math]::Max($Workers, $mergeInputPaths.Count))
 }
-if (-not (Test-Path -LiteralPath $htmlPath)) {
-    throw "AI evaluation report did not write $htmlPath"
+else {
+    $workerCount = [Math]::Max(1, $Workers)
+    $outerShardCount = if ($ShardCount -gt 0) { $ShardCount } else { 1 }
+    $taskShardCount = $outerShardCount * $workerCount
+    $taskShardBaseIndex = if ($ShardCount -gt 0) { $ShardIndex * $workerCount } else { 0 }
+
+    if ($workerCount -le 1) {
+        $taskShardIndex = $taskShardBaseIndex
+        Invoke-GodotShard `
+            -BaseArgs $runnerArgs `
+            -ShardJsonPath $jsonPath `
+            -SeedBlockStart $SeedBlockStart `
+            -SeedBlockCount $SeedBlockCount `
+            -TaskStart $TaskStart `
+            -TaskCount $TaskCount `
+            -TaskShardIndex $taskShardIndex `
+            -TaskShardCount $taskShardCount `
+            -StdoutPath (Join-Path $OutputDir 'godot.stdout.log') `
+            -StderrPath (Join-Path $OutputDir 'godot.stderr.log') `
+            -SkipGolden ($taskShardCount -gt 1 -and $taskShardIndex -ne 0)
+    }
+    else {
+        $shardsRoot = Join-Path $OutputDir 'shards'
+        New-Item -ItemType Directory -Force -Path $shardsRoot | Out-Null
+        $processes = @()
+        $shardJsonPaths = @()
+        for ($workerIndex = 0; $workerIndex -lt $workerCount; $workerIndex++) {
+            $taskShardIndex = $taskShardBaseIndex + $workerIndex
+            $shardDir = Join-Path $shardsRoot ('shard-{0:D3}' -f $workerIndex)
+            New-Item -ItemType Directory -Force -Path $shardDir | Out-Null
+            $shardJson = Join-Path $shardDir 'results.json'
+            $stdoutPath = Join-Path $shardDir 'stdout.log'
+            $stderrPath = Join-Path $shardDir 'stderr.log'
+            $args = New-GodotShardArgs `
+                -BaseArgs $runnerArgs `
+                -ShardJsonPath $shardJson `
+                -SeedBlockStart $SeedBlockStart `
+                -SeedBlockCount $SeedBlockCount `
+                -TaskStart $TaskStart `
+                -TaskCount $TaskCount `
+                -TaskShardIndex $taskShardIndex `
+                -TaskShardCount $taskShardCount `
+                -SkipGolden ($taskShardCount -gt 1 -and $taskShardIndex -ne 0)
+            $process = Start-Process `
+                -FilePath $godot `
+                -ArgumentList $args `
+                -RedirectStandardOutput $stdoutPath `
+                -RedirectStandardError $stderrPath `
+                -WindowStyle Hidden `
+                -PassThru
+            $processes += [pscustomobject]@{
+                Process = $process
+                Json = $shardJson
+                Stdout = $stdoutPath
+                Stderr = $stderrPath
+                TaskShardIndex = $taskShardIndex
+                TaskShardCount = $taskShardCount
+            }
+            $shardJsonPaths += $shardJson
+        }
+        foreach ($item in $processes) {
+            $item.Process.WaitForExit()
+            Test-GodotShardOutput `
+                -StdoutPath $item.Stdout `
+                -StderrPath $item.Stderr `
+                -JsonPath $item.Json `
+                -ExitCode $item.Process.ExitCode
+        }
+        Invoke-AIEvaluationMerge `
+            -InputPaths $shardJsonPaths `
+            -OutputPath $jsonPath `
+            -WorkerCount $workerCount
+    }
+}
+
+if (-not $SkipReport) {
+    $reportOutput = & $python `
+        (Join-Path $repoRoot 'python\scripts\render_ai_evaluation_report.py') `
+        --input $jsonPath `
+        --output $htmlPath 2>&1
+    $reportOutput | ForEach-Object { Write-Host $_ }
+    $reportExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    if ($reportExit -ne 0) {
+        throw "AI evaluation report rendering failed with exit code $reportExit"
+    }
+    if (-not (Test-Path -LiteralPath $htmlPath)) {
+        throw "AI evaluation report did not write $htmlPath"
+    }
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ValidateGate)) {
@@ -332,4 +480,9 @@ if (-not [string]::IsNullOrWhiteSpace($ValidateGate)) {
 }
 
 Write-Host "AI evaluation JSON: $jsonPath"
-Write-Host "AI evaluation report: $htmlPath"
+if (-not $SkipReport) {
+    Write-Host "AI evaluation report: $htmlPath"
+}
+if ($ShardOnly) {
+    Write-Host 'AI evaluation shard-only mode: report and validation skipped.'
+}

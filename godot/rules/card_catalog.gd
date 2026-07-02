@@ -6,6 +6,7 @@ const DECKS_PATH := "res://data/decks.json"
 
 var cards: Dictionary = {}
 var decks: Dictionary = {}
+var _expanded_deck_cache: Dictionary = {}
 
 
 func _init() -> void:
@@ -22,11 +23,17 @@ func get_deck(deck_key: String) -> Dictionary:
 
 
 func expand_deck(deck_key: String) -> Array[String]:
+	if _expanded_deck_cache.has(deck_key):
+		var cached: Array = _expanded_deck_cache[deck_key]
+		var cached_copy: Array[String] = []
+		cached_copy.assign(cached.duplicate())
+		return cached_copy
 	var result: Array[String] = []
 	var deck := get_deck(deck_key)
 	for row in deck.get("cards", []):
 		for _index in range(int(row.get("count", 0))):
 			result.append(str(row.get("card_id", "")))
+	_expanded_deck_cache[deck_key] = result.duplicate()
 	return result
 
 
