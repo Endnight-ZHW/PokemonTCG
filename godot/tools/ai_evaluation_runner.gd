@@ -500,6 +500,7 @@ func _load_strategy(path: String, fallback_id: String, fallback_label: String) -
 		"seconds": payload.get("seconds", null),
 		"max_depth": payload.get("max_depth", null),
 		"deterministic": payload.get("deterministic", null),
+		"heuristic_variant": str(payload.get("heuristic_variant", NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT)),
 		"dynamic_budget": _copy_dynamic_budget(payload.get("dynamic_budget", null)),
 		"per_deck_overrides": Dictionary(payload.get("per_deck_overrides", {})).duplicate(true),
 	}
@@ -517,6 +518,7 @@ func _public_strategy(strategy: Dictionary) -> Dictionary:
 		"seconds": strategy.get("seconds", null),
 		"max_depth": strategy.get("max_depth", null),
 		"deterministic": strategy.get("deterministic", null),
+		"heuristic_variant": strategy.get("heuristic_variant", NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT),
 		"dynamic_budget": _copy_dynamic_budget(strategy.get("dynamic_budget", null)),
 		"effective_default": effective,
 		"per_deck_overrides": strategy.get("per_deck_overrides", {}),
@@ -536,6 +538,7 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 		"seconds": float(preset.get("seconds", 0.0)),
 		"max_depth": int(preset.get("depth", 1)),
 		"deterministic": false,
+		"heuristic_variant": NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
 		"dynamic_budget": {},
 	}
 	_apply_strategy_overrides(params, strategy)
@@ -546,6 +549,10 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 	params["seconds"] = max(0.0, float(params["seconds"]))
 	params["max_depth"] = maxi(1, int(params["max_depth"]))
 	params["deterministic"] = bool(params["deterministic"])
+	params["heuristic_variant"] = str(params.get(
+		"heuristic_variant",
+		NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
+	))
 	params["dynamic_budget"] = _copy_dynamic_budget(params.get("dynamic_budget", {}))
 	params_cache[deck_key] = params.duplicate(true)
 	strategy["_params_cache"] = params_cache
@@ -565,6 +572,8 @@ func _apply_strategy_overrides(params: Dictionary, source: Dictionary) -> void:
 		params["max_depth"] = int(source["depth"])
 	if source.get("deterministic") != null:
 		params["deterministic"] = bool(source["deterministic"])
+	if source.get("heuristic_variant") != null:
+		params["heuristic_variant"] = str(source["heuristic_variant"])
 	if source.get("dynamic_budget") != null:
 		params["dynamic_budget"] = _copy_dynamic_budget(source["dynamic_budget"])
 
@@ -728,6 +737,10 @@ func _play_match(
 			catalog,
 			engine,
 			seed + actions_taken * 65537 + actor,
+			str(_strategy_params(actor_strategy, actor_deck_key).get(
+				"heuristic_variant",
+				NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
+			)),
 		)
 		_merge_diagnostic_counts(decision_diagnostics, diagnostics)
 		var actor_strategy_label := "A" if actor == strategy_a_player else "B"
@@ -884,6 +897,10 @@ func _decide_action(
 		"seconds": float(params["seconds"]),
 		"max_depth": int(params["max_depth"]),
 		"deterministic": bool(params["deterministic"]),
+		"heuristic_variant": str(params.get(
+			"heuristic_variant",
+			NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
+		)),
 		"dynamic_budget": _copy_dynamic_budget(params.get("dynamic_budget", {})),
 		"profile": profile_enabled,
 		"disable_cache": disable_ai_cache,
@@ -920,6 +937,10 @@ func _decide_choice(
 		"seconds": float(params["seconds"]),
 		"max_depth": int(params["max_depth"]),
 		"deterministic": bool(params["deterministic"]),
+		"heuristic_variant": str(params.get(
+			"heuristic_variant",
+			NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
+		)),
 		"profile": profile_enabled,
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,

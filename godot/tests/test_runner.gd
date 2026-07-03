@@ -2457,6 +2457,254 @@ func _run_ai_strength_regression_tests(
 		"ChallengeAIMath native evaluation differs from GDScript fallback",
 	)
 
+	var previous_ai_variant := worker._heuristic_variant
+	worker._heuristic_variant = NativeChallengeAI.HEURISTIC_VARIANT_SEMANTIC_V2
+	var semantic_risk_state := GameState.new()
+	semantic_risk_state.phase = "MAIN"
+	semantic_risk_state.turn_number = 7
+	semantic_risk_state.active_player_idx = 0
+	semantic_risk_state.public_deck_keys = ["water", "lightning"]
+	semantic_risk_state.players[0].active = PokemonState.new("sv2-delib")
+	semantic_risk_state.players[0].active.energy_card_ids.assign(["sv1-ener-3"])
+	semantic_risk_state.players[0].deck = [
+		"sv1-ener-3", "sv1-ener-3", "sv2-38", "sv2-39",
+		"sv2-cand", "sv2-staryu", "sv1-152", "sv1-153",
+	]
+	semantic_risk_state.players[1].active = PokemonState.new("svl-pikaex")
+	semantic_risk_state.players[1].active.energy_card_ids.assign([
+		"sv1-ener-4", "sv1-ener-4", "sv1-ener-4",
+	])
+	semantic_risk_state.players[1].deck = [
+		"sv1-ener-4", "sv1-ener-4", "svl-mare2", "svl-flaa2",
+	]
+	var semantic_safe_state := GameState.from_dict(semantic_risk_state.snapshot())
+	semantic_safe_state.players[1].active.energy_card_ids.clear()
+	var semantic_locked_state := GameState.from_dict(semantic_risk_state.snapshot())
+	semantic_locked_state.players[1].active.attack_locked = true
+	var semantic_protected_state := GameState.from_dict(semantic_risk_state.snapshot())
+	semantic_protected_state.players[0].active.damage_prevented_next_turn = true
+	var semantic_thin_deck_state := GameState.from_dict(semantic_safe_state.snapshot())
+	semantic_thin_deck_state.players[0].deck = ["sv1-ener-3"]
+	var semantic_risk_score := worker._evaluate_raw(semantic_risk_state, 0, catalog)
+	var semantic_safe_score := worker._evaluate_raw(semantic_safe_state, 0, catalog)
+	var semantic_locked_score := worker._evaluate_raw(semantic_locked_state, 0, catalog)
+	var semantic_protected_score := worker._evaluate_raw(semantic_protected_state, 0, catalog)
+	var semantic_thin_deck_score := worker._evaluate_raw(semantic_thin_deck_state, 0, catalog)
+	worker._heuristic_variant = previous_ai_variant
+	_check(
+		semantic_safe_score > semantic_risk_score + 120.0,
+		"Semantic v2 evaluation did not penalize immediate next-turn KO risk",
+	)
+	_check(
+		semantic_locked_score > semantic_risk_score + 80.0,
+		"Semantic v2 evaluation did not value attack locks against a ready threat",
+	)
+	_check(
+		semantic_protected_score > semantic_risk_score + 60.0,
+		"Semantic v2 evaluation did not value next-turn damage prevention",
+	)
+	_check(
+		semantic_safe_score > semantic_thin_deck_score + 80.0,
+		"Semantic v2 evaluation did not penalize dangerous deck pressure",
+	)
+	var semantic_variant_result := _ai_decision_result_for_actions(
+		worker, ko_state, 0, "lightning", [
+			GameAction.new("END_TURN", {}, true, 0),
+			GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		], "semantic-variant-plumbing", false, NativeChallengeAI.HEURISTIC_VARIANT_SEMANTIC_V2)
+	_check(
+		semantic_variant_result.get("heuristic_variant", "") == NativeChallengeAI.HEURISTIC_VARIANT_SEMANTIC_V2,
+		"AI request did not preserve the semantic_v2 heuristic variant",
+	)
+	var semantic_choice_state := GameState.new()
+	semantic_choice_state.phase = "MAIN"
+	semantic_choice_state.public_deck_keys = ["psychic", "water"]
+	semantic_choice_state.players[0].active = PokemonState.new("sv1-113")
+	semantic_choice_state.players[0].active.energy_card_ids.clear()
+	semantic_choice_state.players[0].deck = ["sv1-180", "sv1-ener-5"]
+	var semantic_choice_stack := ResolutionStack.new()
+	VMChoiceRequests.request_cards(
+		catalog,
+		semantic_choice_state,
+		semantic_choice_stack,
+		0,
+		"deck",
+		semantic_choice_state.players[0].deck,
+		"search_move",
+		{
+			"player_idx": 0,
+			"source_zone": "deck",
+			"destination": "hand",
+			"shuffle": false,
+		},
+		0,
+		1,
+		"Choose optional search target.",
+		true,
+	)
+	semantic_choice_state.resolution_stack = semantic_choice_stack.to_dict()
+	var semantic_choice_response := _ai_choice_for_request(
+		worker,
+		semantic_choice_state,
+		0,
+		"psychic",
+		semantic_choice_stack.pending_request,
+		"semantic-choice-lookahead",
+		NativeChallengeAI.HEURISTIC_VARIANT_SEMANTIC_V2,
+	)
+	_check(
+		semantic_choice_response != null
+		and not semantic_choice_response.cancelled
+		and semantic_choice_response.option_ids.size() == 1
+		and semantic_choice_response.option_ids[0].ends_with(":sv1-ener-5"),
+		"Semantic v2 choice lookahead did not select the missing energy search target: %s" % [
+			JSON.stringify(semantic_choice_response.to_dict() if semantic_choice_response != null else {})
+		],
+	)
+	var semantic_feature_variant := worker._heuristic_variant
+	worker._heuristic_variant = NativeChallengeAI.HEURISTIC_VARIANT_SEMANTIC_V2
+	var colorless_draw_plan_state := GameState.new()
+	colorless_draw_plan_state.public_deck_keys = ["colorless", "psychic"]
+	colorless_draw_plan_state.players[0].active = PokemonState.new("svi-ambi")
+	colorless_draw_plan_state.players[0].active.energy_card_ids = ["svi-dtur", "svi-mirc"]
+	colorless_draw_plan_state.players[0].hand = [
+		"sv1-180", "sv1-180", "sv1-151", "sv1-153",
+		"svi-tand", "svi-maus", "svi-dtur", "svi-jete",
+	]
+	colorless_draw_plan_state.players[0].deck = [
+		"svi-gree", "svi-aipo", "sv1-151", "sv1-153", "svi-dtur", "svi-mirc",
+	]
+	_check(
+		worker._semantic_draw_value(colorless_draw_plan_state, 0, 2, false, "colorless", catalog) > 60.0,
+		"Semantic v2 undervalued draw while a colorless hand-size attack plan was online",
+	)
+	var psychic_discard_plan_state := GameState.new()
+	psychic_discard_plan_state.public_deck_keys = ["psychic", "water"]
+	psychic_discard_plan_state.players[0].active = PokemonState.new("sv1-113")
+	psychic_discard_plan_state.players[0].hand = ["sv1-107", "sv1-107", "sv1-180"]
+	psychic_discard_plan_state.players[0].deck = ["sv1-106"]
+	var duplicate_psychic_discard := worker._discard_choice_score(
+		psychic_discard_plan_state, 0, "sv1-107", "psychic", catalog)
+	var draw_trainer_discard := worker._discard_choice_score(
+		psychic_discard_plan_state, 0, "sv1-180", "psychic", catalog)
+	var water_line_state := GameState.new()
+	water_line_state.public_deck_keys = ["water", "psychic"]
+	water_line_state.players[0].active = PokemonState.new("sv2-delib")
+	water_line_state.players[0].hand = ["sv2-grex", "sv2-38"]
+	water_line_state.players[0].deck = ["sv2-39", "sv1-ener-3"]
+	var froakie_keep := worker._card_keep_value(
+		water_line_state, 0, "sv2-38", "water", catalog)
+	var naked_greninja_keep := worker._card_keep_value(
+		water_line_state, 0, "sv2-grex", "water", catalog)
+	var water_ready_line_state := water_line_state.clone_state()
+	water_ready_line_state.players[0].bench[0] = PokemonState.new("sv2-39")
+	var ready_greninja_keep := worker._card_keep_value(
+		water_ready_line_state, 0, "sv2-grex", "water", catalog)
+	var thin_deck_draw_state := GameState.new()
+	thin_deck_draw_state.public_deck_keys = ["water", "psychic"]
+	thin_deck_draw_state.players[0].active = PokemonState.new("sv2-delib")
+	thin_deck_draw_state.players[0].hand = [
+		"sv1-151", "sv1-152", "sv1-153", "sv2-catch", "sv2-cand", "sv2-38",
+	]
+	thin_deck_draw_state.players[0].deck = [
+		"sv1-ener-3", "sv1-ener-3", "sv2-38", "sv2-39", "sv2-staryu", "sv2-starm",
+	]
+	var thin_draw_value := worker._semantic_draw_value(
+		thin_deck_draw_state, 0, 3, false, "water", catalog)
+	var bench_search_state := GameState.new()
+	bench_search_state.public_deck_keys = ["fighting", "water"]
+	bench_search_state.players[0].active = PokemonState.new("svf-rio")
+	bench_search_state.players[0].hand = ["sv1-151", "sv1-176", "sv1-153"]
+	bench_search_state.players[0].deck = ["svf-pass", "svf-rio", "svf-scyt", "sv1-ener-6"]
+	var nest_ball_discard := worker._discard_choice_score(
+		bench_search_state, 0, "sv1-151", "fighting", catalog)
+	var judge_discard := worker._discard_choice_score(
+		bench_search_state, 0, "sv1-176", "fighting", catalog)
+	var fighting_line_focus_state := GameState.new()
+	fighting_line_focus_state.public_deck_keys = ["fighting", "water"]
+	fighting_line_focus_state.players[0].active = PokemonState.new("svf-scyt")
+	fighting_line_focus_state.players[0].bench[0] = PokemonState.new("svf-rio")
+	fighting_line_focus_state.players[0].hand = ["svf-luca", "svf-klea"]
+	fighting_line_focus_state.players[0].deck = ["svf-rio", "svf-scyt", "sv1-ener-6"]
+	var lucario_keep := worker._card_keep_value(
+		fighting_line_focus_state, 0, "svf-luca", "fighting", catalog)
+	var kleavor_keep := worker._card_keep_value(
+		fighting_line_focus_state, 0, "svf-klea", "fighting", catalog)
+	var lucario_evolve_value := worker._development_action_value(
+		fighting_line_focus_state,
+		0,
+		GameAction.new("EVOLVE", {"hand_idx": 0, "slot": "bench_0"}, false, 0),
+		"fighting",
+		catalog,
+	)
+	var kleavor_active_evolve_value := worker._development_action_value(
+		fighting_line_focus_state,
+		0,
+		GameAction.new("EVOLVE", {"hand_idx": 1, "slot": "active"}, false, 0),
+		"fighting",
+		catalog,
+	)
+	var steel_relocate_source_state := GameState.new()
+	steel_relocate_source_state.public_deck_keys = ["steel", "water"]
+	steel_relocate_source_state.players[0].active = PokemonState.new("svm-zacian")
+	steel_relocate_source_state.players[0].active.energy_card_ids.assign([
+		"sv1-ener-8", "sv1-ener-8",
+	])
+	steel_relocate_source_state.players[0].bench[0] = PokemonState.new("svm-smeargle")
+	steel_relocate_source_state.players[0].bench[0].energy_card_ids.assign([
+		"sv1-ener-8", "sv1-ener-8",
+	])
+	var steel_source_context := {"energy_type": "Metal"}
+	var steel_smeargle_source := worker._energy_source_choice_value(
+		steel_relocate_source_state,
+		0,
+		"bench_0",
+		steel_source_context,
+		"steel",
+		catalog,
+	)
+	var steel_zacian_source := worker._energy_source_choice_value(
+		steel_relocate_source_state,
+		0,
+		"active",
+		steel_source_context,
+		"steel",
+		catalog,
+	)
+	worker._heuristic_variant = semantic_feature_variant
+	_check(
+		duplicate_psychic_discard > draw_trainer_discard,
+		"Semantic v2 discard choice did not recognize duplicate Psychic Pokemon as discard-damage fuel",
+	)
+	_check(
+		froakie_keep > naked_greninja_keep,
+		"Semantic v2 search keep value preferred a naked Stage 2 core over its missing basic",
+	)
+	_check(
+		ready_greninja_keep > naked_greninja_keep + 120.0,
+		"Semantic v2 did not raise Stage 2 core value after the Stage 1 prerequisite was in play",
+	)
+	_check(
+		thin_draw_value < 0.0,
+		"Semantic v2 undervalued thin-deck pressure for draw effects",
+	)
+	_check(
+		nest_ball_discard < judge_discard,
+		"Semantic v2 discard choice did not protect basic bench search while the bench was empty",
+	)
+	_check(
+		lucario_keep > kleavor_keep + 40.0,
+		"Semantic v2 fighting line focus allowed Kleavor to outrank Lucario while Riolu was available",
+	)
+	_check(
+		lucario_evolve_value > kleavor_active_evolve_value + 80.0,
+		"Semantic v2 active side-core evolve value still blocked the Lucario line",
+	)
+	_check(
+		steel_smeargle_source > steel_zacian_source + 120.0,
+		"Semantic v2 metal relocation source choice still strips energy from a ready Zacian",
+	)
+
 	var safe_damage_state := GameState.new()
 	safe_damage_state.phase = "MAIN"
 	safe_damage_state.turn_number = 5
@@ -3036,6 +3284,7 @@ func _ai_decision_result_for_actions(
 	actions: Array,
 	request_id: String,
 	profile: bool,
+	heuristic_variant: String = NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
 ) -> Dictionary:
 	var rows: Array = []
 	for action in actions:
@@ -3054,6 +3303,7 @@ func _ai_decision_result_for_actions(
 		"max_depth": 1,
 		"deterministic": true,
 		"profile": profile,
+		"heuristic_variant": heuristic_variant,
 		"actions": rows,
 	}, func() -> bool: return false)
 
@@ -3065,6 +3315,7 @@ func _ai_choice_for_request(
 	deck_key: String,
 	choice: ChoiceRequest,
 	request_id: String,
+	heuristic_variant: String = NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
 ) -> ChoiceResponse:
 	var result := worker.decide({
 		"kind": "choice",
@@ -3074,6 +3325,7 @@ func _ai_choice_for_request(
 		"request_id": request_id,
 		"mode": "challenge",
 		"deck_key": deck_key,
+		"heuristic_variant": heuristic_variant,
 		"choice": choice.to_dict(),
 	}, func() -> bool: return false)
 	_check(result.get("success", false), "AI choice decision failed: %s" % result.get("error", "unknown"))

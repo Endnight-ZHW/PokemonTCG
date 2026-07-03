@@ -2,6 +2,9 @@ class_name NativeChallengeAI
 extends RefCounted
 
 const STRONGEST_DIFFICULTY := "strongest"
+const HEURISTIC_VARIANT_LEGACY := "legacy"
+const HEURISTIC_VARIANT_SEMANTIC_V2 := "semantic_v2"
+const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_LEGACY
 const DIFFICULTIES := {
 	"strongest": {"simulations": 12000, "seconds": 10.0, "depth": 24},
 	# Compatibility aliases for older saves/tests that still send a difficulty.
@@ -34,12 +37,42 @@ const DYNAMIC_BUDGET_DEFAULTS := {
 	"max_root_actions_for_clear": 10,
 	"single_action_simulations": 0,
 }
+const SCORE_WEIGHTS := {
+	"prize_race": 42.0,
+	"ready_attacker": 58.0,
+	"backup_attacker": 34.0,
+	"active_ko_risk": 170.0,
+	"active_damage_pressure": 62.0,
+	"resource_out": 32.0,
+	"status_lock": 118.0,
+	"protection": 126.0,
+	"deck_danger": 135.0,
+	"hand_size_plan": 92.0,
+	"discard_fuel": 76.0,
+	"evolution_line_plan": 86.0,
+	"thin_deck_draw": 96.0,
+}
+const EFFECT_VALUE_WEIGHTS := {
+	"draw_card": 27.0,
+	"search_base": 84.0,
+	"energy_accel_base": 112.0,
+	"switch_base": 72.0,
+	"disruption_base": 65.0,
+	"protection_base": 76.0,
+	"status_base": 58.0,
+}
+const SEMANTIC_CHOICE_LOOKAHEAD_MAX_OPTIONS := 8
+const ROLLOUT_LOOKAHEAD_MAX_ACTIONS := 8
+const ROLLOUT_LOOKAHEAD_TOP_N := 2
 
 var _catalog_cache: CardCatalog = null
 var _engine_cache: GameEngine = null
 var _native_math: Variant = null
 var _native_math_checked := false
 var _disable_native_math := false
+var _heuristic_variant := DEFAULT_HEURISTIC_VARIANT
+var _pre_evolution_ids_cache: Dictionary = {}
+var _core_evolution_line_cache: Dictionary = {}
 
 
 static func strongest_preset() -> Dictionary:
@@ -48,6 +81,20 @@ static func strongest_preset() -> Dictionary:
 
 static func diagnostic_labels() -> Array:
 	return DIAGNOSTIC_LABELS.duplicate()
+
+
+static func heuristic_variants() -> Array[String]:
+	return [HEURISTIC_VARIANT_LEGACY, HEURISTIC_VARIANT_SEMANTIC_V2]
+
+
+func _normalize_heuristic_variant(value: String) -> String:
+	if value == HEURISTIC_VARIANT_SEMANTIC_V2:
+		return HEURISTIC_VARIANT_SEMANTIC_V2
+	return HEURISTIC_VARIANT_LEGACY
+
+
+func _semantic_v2_enabled() -> bool:
+	return _heuristic_variant == HEURISTIC_VARIANT_SEMANTIC_V2
 
 
 func _cached_catalog() -> CardCatalog:
@@ -128,7 +175,10 @@ func decide(
 	var started := Time.get_ticks_usec()
 	var profile := _new_decision_profile() if bool(request.get("profile", false)) else {}
 	var previous_disable_native_math := _disable_native_math
+	var previous_heuristic_variant := _heuristic_variant
 	_disable_native_math = bool(request.get("disable_native_math", false))
+	_heuristic_variant = _normalize_heuristic_variant(str(
+		request.get("heuristic_variant", DEFAULT_HEURISTIC_VARIANT)))
 	var context_started := _profile_start(profile)
 	var disable_cache := bool(request.get("disable_cache", false))
 	var catalog := CardCatalog.new() if disable_cache else _cached_catalog()
@@ -145,6 +195,8 @@ func decide(
 			actor,
 			str(request.get("deck_key", "")),
 			catalog,
+			engine,
+			int(request.get("seed", 17)),
 			inference,
 			str(request.get("mode", "challenge")),
 		)
@@ -163,9 +215,11 @@ func decide(
 	result["revision"] = int(request["revision"])
 	result["request_id"] = str(request.get("request_id", ""))
 	result["elapsed_ms"] = (Time.get_ticks_usec() - started) / 1000.0
+	result["heuristic_variant"] = _heuristic_variant
 	if _profile_enabled(profile):
 		result["profile"] = _public_decision_profile(profile)
 	_disable_native_math = previous_disable_native_math
+	_heuristic_variant = previous_heuristic_variant
 	return result
 
 
@@ -361,6 +415,19 @@ func _search_action(
 		request_seed + completed * 15485863,
 		profile,
 	)
+	if _semantic_v2_enabled() and selected_action.action == "END_TURN":
+		var terminal_attack := _best_productive_attack(
+			state,
+			actor,
+			actions,
+			deck_key,
+			catalog,
+			engine,
+			request_seed + completed * 15485863 + 47,
+			profile,
+		)
+		if terminal_attack != null:
+			selected_action = terminal_attack
 	return {
 		"success": true,
 		"kind": "action",
@@ -397,6 +464,7 @@ func _simulate(
 	_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
 	if state.winner >= 0:
 		return 1.0 if state.winner == perspective else -1.0
+	var opponent_rollout_lookahead_used := false
 	for _depth in range(max_depth):
 		var actor := _current_actor(state)
 		var legal_started := _profile_start(profile)
@@ -408,7 +476,24 @@ func _simulate(
 		_profile_count(profile, "rollout_action_count", actions.size())
 		var action_deck_key := _deck_key_for_actor(state, actor, deck_key)
 		var heuristic_started := _profile_start(profile)
-		var action := _best_heuristic_action(state, actor, actions, action_deck_key, catalog, profile)
+		var allow_opponent_lookahead := (
+			not opponent_rollout_lookahead_used
+			and actor != perspective
+			and state.phase == "MAIN"
+		)
+		var action := _rollout_policy_action(
+			state,
+			perspective,
+			actor,
+			actions,
+			action_deck_key,
+			catalog,
+			engine,
+			allow_opponent_lookahead,
+			profile,
+		)
+		if allow_opponent_lookahead:
+			opponent_rollout_lookahead_used = true
 		_profile_add_elapsed(profile, "rollout_heuristic_action_ms", heuristic_started)
 		apply_started = _profile_start(profile)
 		step = engine.apply_action(state, action, rng)
@@ -461,6 +546,8 @@ func _choose_request(
 	actor: int,
 	deck_key: String,
 	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
 	inference: Variant,
 	mode: String,
 ) -> Dictionary:
@@ -480,6 +567,9 @@ func _choose_request(
 			request,
 			_deck_key_for_actor(state, request.player, deck_key),
 			catalog,
+			engine,
+			seed,
+			true,
 		)
 	return {
 		"success": true,
@@ -496,6 +586,9 @@ func _heuristic_choice(
 	request: ChoiceRequest,
 	deck_key: String,
 	catalog: CardCatalog,
+	engine: GameEngine = null,
+	seed: int = 17,
+	enable_lookahead: bool = false,
 ) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(
@@ -516,6 +609,11 @@ func _heuristic_choice(
 			_arven_choice_option_ids(state, request, deck_key, catalog),
 		)
 	var mode := _choice_score_mode(request, continuation)
+	if enable_lookahead and _semantic_v2_enabled() and engine != null:
+		var lookahead := _semantic_lookahead_choice(
+			state, request, deck_key, catalog, engine, seed, mode)
+		if lookahead != null:
+			return lookahead
 	var ranked: Array[int] = []
 	for index in range(request.options.size()):
 		ranked.append(index)
@@ -554,6 +652,98 @@ func _heuristic_choice(
 	)
 
 
+func _semantic_lookahead_choice(
+	state: GameState,
+	request: ChoiceRequest,
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+	mode: String,
+) -> ChoiceResponse:
+	if request.options.size() > SEMANTIC_CHOICE_LOOKAHEAD_MAX_OPTIONS:
+		return null
+	if not _choice_request_matches_pending(state, request):
+		return null
+	var ranked: Array[int] = []
+	for index in range(request.options.size()):
+		ranked.append(index)
+	ranked.sort_custom(func(left: int, right: int) -> bool:
+		var left_score := _option_score(
+			state, request, request.options[left], deck_key, catalog, mode)
+		var right_score := _option_score(
+			state, request, request.options[right], deck_key, catalog, mode)
+		if is_equal_approx(left_score, right_score):
+			return left < right
+		return left_score > right_score
+	)
+	var max_count: int = _choice_max_count(request)
+	var min_count: int = max(0, request.min_select)
+	var count: int = max(min_count, max_count)
+	if not request.allow_duplicates:
+		count = mini(count, request.options.size())
+	if count <= 0:
+		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+
+	var baseline := _evaluate_raw(state, request.player, catalog)
+	var best_response: ChoiceResponse = null
+	var best_score := -INF
+	var best_option_score := -INF
+	var candidate_count: int = mini(ranked.size(), SEMANTIC_CHOICE_LOOKAHEAD_MAX_OPTIONS)
+	for candidate_offset in range(candidate_count):
+		var anchor := ranked[candidate_offset]
+		var candidate_ranked: Array[int] = [anchor]
+		for index in ranked:
+			if index != anchor:
+				candidate_ranked.append(index)
+		var option_ids := _ranked_choice_option_ids(request, candidate_ranked, count)
+		if option_ids.is_empty() and min_count > 0:
+			continue
+		var response := ChoiceResponse.new(request.request_id, option_ids, false)
+		var simulation := state.clone_state()
+		var rng := PortableRandomSource.new(seed + candidate_offset * 7919 + anchor * 101)
+		var step := engine.apply_choice(simulation, request, response, rng)
+		if not step.success:
+			continue
+		if not _resolve_choices(simulation, request.player, deck_key, catalog, engine, rng):
+			continue
+		var score := _evaluate_raw(simulation, request.player, catalog)
+		var option_score := _option_score(state, request, request.options[anchor], deck_key, catalog, mode)
+		score += option_score * _semantic_choice_option_weight(mode)
+		if score > best_score:
+			best_score = score
+			best_option_score = option_score
+			best_response = response
+	if best_response == null:
+		return null
+	if (
+		min_count <= 0
+		and request.can_cancel
+		and best_score <= baseline + 2.0
+		and best_option_score <= 0.0
+	):
+		return ChoiceResponse.new(request.request_id, [], true)
+	return best_response
+
+
+func _semantic_choice_option_weight(mode: String) -> float:
+	match mode:
+		"search":
+			return 0.28
+		"discard":
+			return 0.18
+		"energy", "energy_source":
+			return 0.12
+		"target", "self_switch", "heal":
+			return 0.10
+	return 0.08
+
+
+func _choice_request_matches_pending(state: GameState, request: ChoiceRequest) -> bool:
+	var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
+	return pending != null and pending.request_id == request.request_id
+
+
 func _pending_choice_continuation(state: GameState) -> Dictionary:
 	var stack := ResolutionStack.from_dict(state.resolution_stack)
 	if stack.frames.is_empty():
@@ -576,6 +766,8 @@ func _choice_score_mode(request: ChoiceRequest, continuation: Dictionary) -> Str
 	var prompt := request.prompt.to_lower()
 	if operation in ["discard_then_draw", "discard_cards", "hand_bottom_draw", "houb", "zinnia"]:
 		return "discard"
+	if request.request_type == "select_energy_source" or operation == "energy_relocate_source":
+		return "energy_source"
 	if request.request_type in ["select_energy_target", "distribute_energy", "look_top_attach_energy"]:
 		return "energy"
 	if request.request_type in ["select_heal_target"] or "heal" in prompt or "回复" in request.prompt:
@@ -704,6 +896,16 @@ func _option_score(
 	var card_id := _choice_option_card_id(option)
 	if mode == "discard":
 		return _discard_choice_score(state, request.player, card_id, deck_key, catalog)
+	var continuation := _pending_choice_continuation(state)
+	if mode == "energy_source":
+		return _energy_source_choice_value(
+			state,
+			_choice_option_player(option, request.player),
+			_choice_option_slot(option),
+			continuation,
+			deck_key,
+			catalog,
+		)
 	var score := _card_keep_value(state, request.player, card_id, deck_key, catalog)
 	var slot := _choice_option_slot(option)
 	var target_player := _choice_option_player(option, request.player)
@@ -716,7 +918,13 @@ func _option_score(
 			score += pokemon.damage_counters * 30.0
 		elif mode == "energy":
 			score += _energy_choice_target_value(
-				state, target_player, slot, card_id, deck_key, catalog)
+				state,
+				target_player,
+				slot,
+				_choice_energy_card_id(continuation, catalog),
+				deck_key,
+				catalog,
+			)
 		elif mode == "self_switch":
 			score += _promotion_value_for_state(
 				state, target_player, pokemon, deck_key, catalog)
@@ -774,6 +982,17 @@ func _choice_option_player(option: Dictionary, fallback: int) -> int:
 	return fallback
 
 
+func _choice_energy_card_id(continuation: Dictionary, catalog: CardCatalog) -> String:
+	for value in continuation.get("card_ids", []):
+		var card_id := str(value)
+		if catalog.is_energy(card_id):
+			return card_id
+	var card_id := str(continuation.get("card_id", ""))
+	if catalog.is_energy(card_id):
+		return card_id
+	return ""
+
+
 func _card_keep_value(
 	state: GameState,
 	actor: int,
@@ -787,10 +1006,15 @@ func _card_keep_value(
 	var value := _card_priority(card_id, deck_key, catalog)
 	if catalog.is_pokemon(card_id):
 		value += int(catalog.get_card(card_id).get("hp", 0)) * 0.25
+		if _semantic_v2_enabled():
+			value += _core_evolution_line_card_bonus(
+				state, actor, card_id, deck_key, catalog)
 	if catalog.is_energy(card_id) and _has_energy_target_with_missing_cost(state, actor, catalog):
 		value += 50.0
 	if catalog.is_trainer(card_id):
 		value += 18.0
+		if _semantic_v2_enabled():
+			value += _bench_setup_search_card_bonus(state, actor, card_id, deck_key, catalog)
 	var duplicate_count := 0
 	for hand_card_id in player.hand:
 		if hand_card_id == card_id:
@@ -798,6 +1022,65 @@ func _card_keep_value(
 	if duplicate_count >= 2:
 		value -= min(90.0, float(duplicate_count - 1) * 35.0)
 	return value
+
+
+func _core_evolution_line_card_bonus(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	if deck_key.is_empty() or not catalog.is_pokemon(card_id):
+		return 0.0
+	var player := state.get_player(actor)
+	var best := 0.0
+	for core_value in AIDeckProfiles.get_profile(deck_key).get("core", []):
+		var core_id := str(core_value)
+		if core_id.is_empty() or not catalog.is_pokemon(core_id):
+			continue
+		var parts := _core_evolution_line_parts(core_id, deck_key, catalog)
+		var stage1_ids: Array[String] = []
+		stage1_ids.assign(parts.get("stage1", []))
+		var basic_ids: Array[String] = []
+		basic_ids.assign(parts.get("basic", []))
+		if stage1_ids.is_empty() and basic_ids.is_empty():
+			continue
+		var has_core := _player_has_any_pokemon_id_in_play(player, [core_id])
+		var has_stage1 := _player_has_any_pokemon_id_in_play(player, stage1_ids)
+		var has_basic := _player_has_any_pokemon_id_in_play(player, basic_ids)
+		var bonus := 0.0
+		if card_id == core_id:
+			if catalog.is_stage2(core_id):
+				if has_stage1:
+					bonus = 170.0
+				elif has_basic:
+					bonus = 70.0
+				elif not has_core:
+					bonus = -145.0
+			elif catalog.is_stage1(core_id):
+				if has_basic:
+					bonus = 130.0
+				elif not has_core:
+					bonus = -55.0
+		elif card_id in stage1_ids:
+			if has_basic:
+				bonus = 145.0
+			elif not has_stage1 and not has_core:
+				bonus = 25.0
+		elif card_id in basic_ids:
+			if not has_basic and not has_stage1 and not has_core:
+				bonus = 155.0
+			elif has_basic and not has_stage1 and not has_core:
+				bonus = 55.0
+		if catalog.is_stage2(core_id):
+			bonus *= 1.15
+		if catalog.prize_value(core_id) >= 2:
+			bonus *= 1.1
+		bonus *= _core_line_focus_multiplier(state, actor, core_id, deck_key, catalog)
+		if absf(bonus) > absf(best):
+			best = bonus
+	return best
 
 
 func _discard_choice_score(
@@ -820,7 +1103,205 @@ func _discard_choice_score(
 		score += 35.0
 	if catalog.is_trainer(card_id) and player.supporter_played_this_turn and catalog.is_supporter(card_id):
 		score += 30.0
+	if _semantic_v2_enabled() and _discard_fuels_damage_plan(state, actor, card_id, catalog):
+		score += float(SCORE_WEIGHTS["discard_fuel"])
 	return score
+
+
+func _core_evolution_line_parts(
+	core_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> Dictionary:
+	var cache_key := "%s|%s" % [deck_key, core_id]
+	if _core_evolution_line_cache.has(cache_key):
+		return Dictionary(_core_evolution_line_cache[cache_key]).duplicate(true)
+	var stage1_ids: Array[String] = []
+	var basic_ids: Array[String] = []
+	if catalog.is_stage2(core_id):
+		stage1_ids = _pre_evolution_ids(core_id, deck_key, catalog)
+		for stage1_id in stage1_ids:
+			for basic_id in _pre_evolution_ids(stage1_id, deck_key, catalog):
+				if basic_id not in basic_ids:
+					basic_ids.append(basic_id)
+	elif catalog.is_stage1(core_id):
+		basic_ids = _pre_evolution_ids(core_id, deck_key, catalog)
+	var result := {
+		"stage1": stage1_ids,
+		"basic": basic_ids,
+	}
+	_core_evolution_line_cache[cache_key] = result.duplicate(true)
+	return result
+
+
+func _pre_evolution_ids(
+	card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> Array[String]:
+	var cache_key := "%s|%s" % [deck_key, card_id]
+	if _pre_evolution_ids_cache.has(cache_key):
+		var cached_result: Array[String] = []
+		cached_result.assign(_pre_evolution_ids_cache[cache_key])
+		return cached_result
+	var previous_name := str(catalog.get_card(card_id).get("evolves_from", ""))
+	var result: Array[String] = []
+	if previous_name.is_empty() or deck_key.is_empty():
+		_pre_evolution_ids_cache[cache_key] = result.duplicate()
+		return result
+	for candidate_id in catalog.expand_deck(deck_key):
+		if candidate_id in result:
+			continue
+		if catalog.is_pokemon(candidate_id) and catalog.card_name(candidate_id) == previous_name:
+			result.append(candidate_id)
+	_pre_evolution_ids_cache[cache_key] = result.duplicate()
+	return result
+
+
+func _player_has_any_pokemon_id_in_play(player: PlayerState, card_ids: Array[String]) -> bool:
+	if card_ids.is_empty():
+		return false
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon != null and pokemon.card_id in card_ids:
+			return true
+	return false
+
+
+func _player_has_any_pokemon_id_available(
+	player: PlayerState,
+	card_ids: Array[String],
+) -> bool:
+	if card_ids.is_empty():
+		return false
+	if _player_has_any_pokemon_id_in_play(player, card_ids):
+		return true
+	return _zone_has_any_card_id(player.hand, card_ids) or _zone_has_any_card_id(player.deck, card_ids)
+
+
+func _core_line_focus_multiplier(
+	state: GameState,
+	actor: int,
+	core_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var primary_core_id := _primary_core_line_card_id(deck_key, catalog)
+	if primary_core_id.is_empty() or core_id == primary_core_id:
+		return 1.0
+	var player := state.get_player(actor)
+	if _player_has_any_pokemon_id_in_play(player, [primary_core_id]):
+		return 0.72
+	var primary_parts := _core_evolution_line_parts(primary_core_id, deck_key, catalog)
+	var primary_ids: Array[String] = [primary_core_id]
+	var primary_stage1_ids: Array[String] = []
+	primary_stage1_ids.assign(primary_parts.get("stage1", []))
+	var primary_basic_ids: Array[String] = []
+	primary_basic_ids.assign(primary_parts.get("basic", []))
+	primary_ids.append_array(primary_stage1_ids)
+	primary_ids.append_array(primary_basic_ids)
+	if _player_has_any_pokemon_id_available(player, primary_ids):
+		return 0.42
+	return 0.65
+
+
+func _primary_core_line_card_id(deck_key: String, catalog: CardCatalog) -> String:
+	for core_value in AIDeckProfiles.get_profile(deck_key).get("core", []):
+		var core_id := str(core_value)
+		if core_id.is_empty() or not catalog.is_pokemon(core_id):
+			continue
+		var parts := _core_evolution_line_parts(core_id, deck_key, catalog)
+		var stage1_ids: Array = parts.get("stage1", [])
+		var basic_ids: Array = parts.get("basic", [])
+		if not stage1_ids.is_empty() or not basic_ids.is_empty():
+			return core_id
+	return ""
+
+
+func _primary_core_line_ids(deck_key: String, catalog: CardCatalog) -> Array[String]:
+	var primary_core_id := _primary_core_line_card_id(deck_key, catalog)
+	var result: Array[String] = []
+	if primary_core_id.is_empty() or not catalog.is_pokemon(primary_core_id):
+		return result
+	result.append(primary_core_id)
+	var primary_parts := _core_evolution_line_parts(primary_core_id, deck_key, catalog)
+	var stage1_ids: Array[String] = []
+	stage1_ids.assign(primary_parts.get("stage1", []))
+	var basic_ids: Array[String] = []
+	basic_ids.assign(primary_parts.get("basic", []))
+	result.append_array(stage1_ids)
+	result.append_array(basic_ids)
+	return result
+
+
+func _card_is_secondary_core(card_id: String, deck_key: String, catalog: CardCatalog) -> bool:
+	var primary_core_id := _primary_core_line_card_id(deck_key, catalog)
+	if primary_core_id.is_empty() or card_id == primary_core_id:
+		return false
+	var core_values: Array = AIDeckProfiles.get_profile(deck_key).get("core", [])
+	return core_values.find(card_id) >= 0
+
+
+func _bench_setup_search_card_bonus(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	if player.bench_count() >= 3:
+		return 0.0
+	var finds_basic_to_bench := false
+	for effect in _flatten_effects(catalog.get_card(card_id).get("trainer_effects", [])):
+		if str(effect.get("effect_type", "")) != "search":
+			continue
+		var params: Dictionary = effect.get("params", {})
+		if (
+			str(params.get("destination", "")) == "bench"
+			and str(params.get("filter", "")) == "basic_pokemon"
+		):
+			finds_basic_to_bench = true
+			break
+	if not finds_basic_to_bench:
+		return 0.0
+	var basic_outs := 0
+	for deck_card_id in player.deck:
+		if catalog.is_basic_pokemon(deck_card_id):
+			basic_outs += 1
+	if basic_outs <= 0:
+		return 0.0
+	var value: float = 55.0 + min(80.0, basic_outs * 10.0)
+	if player.bench_count() == 0:
+		value += 150.0
+	elif player.bench_count() == 1:
+		value += 75.0
+	if player.active != null:
+		var opponent_damage := _best_available_damage(state, 1 - actor, catalog)
+		if opponent_damage >= player.active.current_hp(catalog):
+			value += 95.0
+	if _has_core_basic_out_in_deck(player, deck_key, catalog):
+		value += 55.0
+	return value
+
+
+func _has_core_basic_out_in_deck(
+	player: PlayerState,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	if deck_key.is_empty():
+		return false
+	for deck_card_id in player.deck:
+		if not catalog.is_basic_pokemon(deck_card_id):
+			continue
+		if (
+			AIDeckProfiles.contains(deck_key, "setup", deck_card_id)
+			or AIDeckProfiles.contains(deck_key, "bench", deck_card_id)
+			or AIDeckProfiles.contains(deck_key, "core", deck_card_id)
+		):
+			return true
+	return false
 
 
 func _energy_choice_target_value(
@@ -869,6 +1350,77 @@ func _energy_choice_target_value(
 	if slot == "active":
 		value += 28.0
 	return value
+
+
+func _energy_source_choice_value(
+	state: GameState,
+	actor: int,
+	slot: String,
+	continuation: Dictionary,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var pokemon := state.get_player(actor).get_pokemon(slot)
+	if pokemon == null:
+		return -INF
+	var energy_type := str(continuation.get("energy_type", "any"))
+	var energy_index := _matching_energy_index_for_type(pokemon, energy_type, catalog)
+	if energy_index < 0:
+		return -INF
+	var energy_id := str(pokemon.energy_card_ids[energy_index])
+	var before_missing := _best_missing_energy(pokemon, catalog)
+	var before_high_impact := _high_impact_missing_energy(pokemon, "", catalog)
+	var before_ready_damage := _best_ready_pokemon_damage(state, actor, pokemon, catalog)
+	var damage_ceiling := _best_pokemon_damage(pokemon, catalog)
+	pokemon.energy_card_ids.remove_at(energy_index)
+	var after_missing := _best_missing_energy(pokemon, catalog)
+	var after_high_impact := _high_impact_missing_energy(pokemon, "", catalog)
+	pokemon.energy_card_ids.insert(energy_index, energy_id)
+
+	var cost := 0.0
+	if before_missing == 0 and after_missing > 0:
+		cost += 220.0 + max(before_ready_damage, damage_ceiling) * 0.45
+	elif after_missing > before_missing:
+		cost += float(after_missing - before_missing) * 95.0
+	var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
+	if (
+		damage_ceiling >= high_impact_floor
+		and before_high_impact == 0
+		and after_high_impact > 0
+	):
+		cost += 190.0 + damage_ceiling * 0.35
+	elif after_high_impact > before_high_impact:
+		cost += float(after_high_impact - before_high_impact) * 70.0
+	if slot == "active":
+		cost += 80.0
+		if before_ready_damage > 0:
+			cost += 60.0 + before_ready_damage * 0.35
+		var max_hp := int(catalog.get_card(pokemon.card_id).get("hp", 0))
+		if pokemon.current_hp(catalog) <= max(40, max_hp * 0.35):
+			cost -= 60.0
+	if AIDeckProfiles.contains(deck_key, "core", pokemon.card_id):
+		cost += 65.0
+	if (
+		AIDeckProfiles.contains(deck_key, "engine", pokemon.card_id)
+		and not AIDeckProfiles.contains(deck_key, "core", pokemon.card_id)
+	):
+		cost -= 35.0
+	if pokemon.energy_card_ids.size() >= 3 and after_missing == 0:
+		cost -= 100.0
+	elif before_missing >= 2 and before_high_impact >= 2:
+		cost -= 45.0
+	return -cost
+
+
+func _matching_energy_index_for_type(
+	pokemon: PokemonState,
+	energy_type: String,
+	catalog: CardCatalog,
+) -> int:
+	for index in range(pokemon.energy_card_ids.size()):
+		if _energy_card_matches_type(str(pokemon.energy_card_ids[index]), energy_type, catalog):
+			return index
+	return -1
 
 
 func _energy_plan_target_bonus(
@@ -1113,6 +1665,75 @@ func _best_heuristic_action(
 	return best
 
 
+func _rollout_policy_action(
+	state: GameState,
+	perspective: int,
+	actor: int,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	allow_opponent_lookahead: bool,
+	profile: Dictionary = {},
+) -> GameAction:
+	if (
+		not _semantic_v2_enabled()
+		or not allow_opponent_lookahead
+		or actions.size() > ROLLOUT_LOOKAHEAD_MAX_ACTIONS
+	):
+		return _best_heuristic_action(state, actor, actions, deck_key, catalog, profile)
+	var ranked: Array[int] = []
+	for index in range(actions.size()):
+		ranked.append(index)
+	ranked.sort_custom(func(left: int, right: int) -> bool:
+		var left_score := _action_score(state, actor, actions[left], deck_key, catalog, profile)
+		var right_score := _action_score(state, actor, actions[right], deck_key, catalog, profile)
+		if is_equal_approx(left_score, right_score):
+			return left < right
+		return left_score > right_score
+	)
+	var base_perspective_score := _evaluate_raw(state, perspective, catalog)
+	var best_action := actions[ranked[0]]
+	var best_actor_score := -INF
+	var candidate_count: int = mini(ranked.size(), ROLLOUT_LOOKAHEAD_TOP_N)
+	for candidate_offset in range(candidate_count):
+		var action_index := ranked[candidate_offset]
+		var action := actions[action_index]
+		var sim_score := _simulated_action_score(
+			state,
+			actor,
+			action,
+			deck_key,
+			catalog,
+			engine,
+			state.revision + actor * 104729 + action_index * 7919,
+			profile,
+		)
+		if sim_score <= -INF / 2.0:
+			continue
+		var perspective_after := _simulated_action_score(
+			state,
+			perspective,
+			action,
+			deck_key,
+			catalog,
+			engine,
+			state.revision + perspective * 65537 + action_index * 3571,
+			profile,
+		)
+		if perspective_after <= -INF / 2.0:
+			perspective_after = base_perspective_score
+		var actor_value: float = (
+			sim_score
+			- max(0.0, perspective_after - base_perspective_score) * 0.35
+			+ _action_score(state, actor, action, deck_key, catalog, profile) * 0.03
+		)
+		if actor_value > best_actor_score:
+			best_actor_score = actor_value
+			best_action = action
+	return best_action
+
+
 func _validated_or_fallback_action(
 	state: GameState,
 	actor: int,
@@ -1228,6 +1849,11 @@ func _validated_or_fallback_action(
 			return active_end
 
 	if preferred.action == "END_TURN":
+		if _semantic_v2_enabled():
+			var direct_attack := _best_productive_attack_candidate(
+				state, actor, actions, deck_key, catalog)
+			if direct_attack != null:
+				return direct_attack
 		var productive_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 29, profile)
 		if productive_attack != null:
@@ -1255,16 +1881,27 @@ func diagnose_decision(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
+	heuristic_variant: String = "",
 ) -> Dictionary:
+	var previous_heuristic_variant := _heuristic_variant
+	if not heuristic_variant.is_empty():
+		_heuristic_variant = _normalize_heuristic_variant(heuristic_variant)
 	var result := {}
 	for label in DIAGNOSTIC_LABELS:
 		result[label] = 0
 	if selected == null or actions.is_empty():
+		if not heuristic_variant.is_empty():
+			_heuristic_variant = previous_heuristic_variant
 		return result
 
 	var ko_attack := _best_immediate_ko_attack(
 		state, actor, actions, deck_key, catalog, engine, seed + 101)
-	if ko_attack != null and not _diagnostic_same_action(selected, ko_attack):
+	if (
+		ko_attack != null
+		and not _diagnostic_same_action(selected, ko_attack)
+		and not _selected_attack_takes_active_ko(
+			state, actor, selected, deck_key, catalog, engine, seed + 102)
+	):
 		result["missed_immediate_ko"] = 1
 
 	if selected.action == "END_TURN":
@@ -1299,6 +1936,8 @@ func diagnose_decision(
 	):
 		result["trainer_first_choice_cancelled"] = 1
 
+	if not heuristic_variant.is_empty():
+		_heuristic_variant = previous_heuristic_variant
 	return result
 
 
@@ -1328,6 +1967,35 @@ func _diagnostic_same_action(left: GameAction, right: GameAction) -> bool:
 			)
 		)
 	)
+
+
+func _selected_attack_takes_active_ko(
+	state: GameState,
+	actor: int,
+	selected: GameAction,
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+) -> bool:
+	if selected == null or selected.action != "DECLARE_ATTACK":
+		return false
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null:
+		return false
+	var estimated_damage := _estimated_attack_damage(
+		state, actor, int(selected.params.get("attack_idx", -1)), catalog)
+	if estimated_damage >= opponent.active.current_hp(catalog):
+		return true
+	var simulation := state.clone_state()
+	var action := GameAction.from_dict(selected.to_dict())
+	action.actor = actor
+	var rng := PortableRandomSource.new(seed)
+	var step := engine.apply_action(simulation, action, rng)
+	if not step.success:
+		return false
+	var simulated_opponent := simulation.get_player(1 - actor)
+	return simulated_opponent.active == null
 
 
 func _best_immediate_ko_attack(
@@ -1485,11 +2153,41 @@ func _best_productive_attack(
 		var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
 		var effects := _attack_effects(state, actor, attack_idx, catalog)
 		var value := damage * 1.2 + _effects_tactical_value(
-			state, actor, effects, "active", catalog)
+			state, actor, effects, "active", catalog, deck_key)
 		if value <= 0.0:
 			continue
 		if value > best_value and _action_executes_successfully(
 			state, actor, action, deck_key, catalog, engine, seed + attack_idx, profile):
+			best = action
+			best_value = value
+	return best
+
+
+func _best_productive_attack_candidate(
+	state: GameState,
+	actor: int,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+) -> GameAction:
+	var best: GameAction = null
+	var best_value := -INF
+	for action in actions:
+		if action.action != "DECLARE_ATTACK":
+			continue
+		if (
+			_attack_draw_pressure_is_unsafe(state, actor, action, catalog)
+			or _attack_feeds_dangerous_retaliation(state, actor, action, catalog)
+		):
+			continue
+		var attack_idx := int(action.params.get("attack_idx", -1))
+		var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
+		var effects := _attack_effects(state, actor, attack_idx, catalog)
+		var value := damage * 1.2 + _effects_tactical_value(
+			state, actor, effects, "active", catalog, deck_key)
+		if value <= 0.0:
+			continue
+		if value > best_value:
 			best = action
 			best_value = value
 	return best
@@ -1519,7 +2217,7 @@ func _best_damaging_attack(
 		var attack_idx := int(action.params.get("attack_idx", -1))
 		var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
 		var effect_value := _effects_tactical_value(
-			state, actor, _attack_effects(state, actor, attack_idx, catalog), "active", catalog)
+			state, actor, _attack_effects(state, actor, attack_idx, catalog), "active", catalog, deck_key)
 		if damage <= 0 and effect_value <= 0.0:
 			continue
 		var sim_score := _simulated_action_score(
@@ -1682,12 +2380,12 @@ func _action_score(
 					var damage := _estimated_attack_damage(state, actor, attack_idx, catalog)
 					var effects: Array = attacks[attack_idx].get("effects", [])
 					score += damage * 3.4
-					score += _effects_tactical_value(state, actor, effects, "active", catalog)
+					score += _effects_tactical_value(state, actor, effects, "active", catalog, deck_key)
 					var opponent := state.get_opponent(actor)
 					if opponent.active and damage >= opponent.active.current_hp(catalog):
 						score += 900.0
 					elif damage <= 30 and _effects_tactical_value(
-						state, actor, effects, "active", catalog) <= 0.0:
+						state, actor, effects, "active", catalog, deck_key) <= 0.0:
 						score -= 260.0
 					if _attack_draw_pressure_is_unsafe(state, actor, action, catalog):
 						score -= 450.0
@@ -1778,6 +2476,9 @@ func _development_action_value(
 				evolve_value += 95.0
 			if AIDeckProfiles.contains(deck_key, "evolution", card_id):
 				evolve_value += 70.0
+			if _semantic_v2_enabled():
+				evolve_value -= _active_side_core_evolve_blocking_penalty(
+					state, actor, evolve_slot, evolve_target, card_id, deck_key, catalog)
 			return evolve_value
 		"PLAY_BASIC":
 			if card_id.is_empty() or player.bench_count() >= PlayerState.MAX_BENCH_SIZE:
@@ -1812,7 +2513,7 @@ func _development_action_value(
 				var ability: Dictionary = ability_value
 				if str(ability.get("name", "")) == ability_name:
 					return 65.0 + _effects_tactical_value(
-						state, actor, ability.get("effects", []), slot, catalog)
+						state, actor, ability.get("effects", []), slot, catalog, deck_key)
 			return 0.0
 		"USE_STADIUM":
 			if state.stadium_card_id.is_empty():
@@ -1823,8 +2524,61 @@ func _development_action_value(
 				catalog.get_card(state.stadium_card_id).get("trainer_effects", []),
 				"active",
 				catalog,
+				deck_key,
 			)
 	return 0.0
+
+
+func _active_side_core_evolve_blocking_penalty(
+	state: GameState,
+	actor: int,
+	evolve_slot: String,
+	evolve_target: PokemonState,
+	evolved_card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	if evolve_slot != "active" or evolve_target == null:
+		return 0.0
+	if not _card_is_secondary_core(evolved_card_id, deck_key, catalog):
+		return 0.0
+	var evolved_probe := evolve_target.clone_state()
+	evolved_probe.evolution_stack_ids.append(evolve_target.card_id)
+	evolved_probe.card_id = evolved_card_id
+	var evolved_ready_damage := _best_ready_pokemon_damage(
+		state, actor, evolved_probe, catalog)
+	if evolved_ready_damage >= AIDeckProfiles.high_impact_damage_floor(deck_key):
+		return 0.0
+	var before_retreat := int(catalog.get_card(evolve_target.card_id).get("retreat_cost", 0))
+	var after_retreat := int(catalog.get_card(evolved_card_id).get("retreat_cost", 0))
+	var attached_energy := evolve_target.energy_card_ids.size()
+	var penalty := 0.0
+	if after_retreat > before_retreat:
+		penalty += 115.0 + float(after_retreat - before_retreat) * 55.0
+	if after_retreat > attached_energy:
+		penalty += 90.0
+	var player := state.get_player(actor)
+	var primary_ids := _primary_core_line_ids(deck_key, catalog)
+	if _player_has_any_pokemon_id_available(player, primary_ids):
+		penalty += 115.0
+	for bench_pokemon in player.bench:
+		if bench_pokemon == null:
+			continue
+		var bench_ready_damage := _best_ready_pokemon_damage(
+			state, actor, bench_pokemon, catalog)
+		var bench_missing := _best_missing_energy(bench_pokemon, catalog)
+		if (
+			bench_ready_damage >= max(80, evolved_ready_damage + 40)
+			or (
+				bench_pokemon.card_id in primary_ids
+				and (bench_pokemon.energy_card_ids.size() >= 1 or bench_missing <= 1)
+			)
+		):
+			penalty += 115.0
+			break
+	if after_retreat >= 2 and evolved_ready_damage <= 40:
+		penalty += 70.0
+	return min(430.0, penalty)
 
 
 func _effects_tactical_value(
@@ -1835,6 +2589,9 @@ func _effects_tactical_value(
 	catalog: CardCatalog,
 	deck_key: String = "",
 ) -> float:
+	if _semantic_v2_enabled():
+		return _semantic_effects_tactical_value(
+			state, actor, effects, source_slot, catalog, deck_key)
 	var player := state.get_player(actor)
 	var opponent := state.get_player(1 - actor)
 	var profile_key := deck_key
@@ -1904,6 +2661,431 @@ func _effects_tactical_value(
 			"attack_damage_formula", "conditional_damage_bonus", "discard_fighting_energy_damage", "discard_hand_conditional_bonus":
 				value += _effect_damage_estimate(state, actor, effect, catalog) * 1.1
 	return value
+
+
+func _semantic_effects_tactical_value(
+	state: GameState,
+	actor: int,
+	effects: Array,
+	source_slot: String,
+	catalog: CardCatalog,
+	deck_key: String = "",
+) -> float:
+	var profile_key := deck_key
+	if profile_key.is_empty():
+		profile_key = _deck_key_for_actor(state, actor, "")
+	var value := 0.0
+	for effect in _flatten_effects(effects):
+		var effect_type := str(effect.get("effect_type", ""))
+		var params: Dictionary = effect.get("params", {})
+		match effect_type:
+			"draw", "draw_until", "draw_until_more":
+				value += _semantic_draw_value(
+					state, actor, int(params.get("amount", params.get("target", 2))), false, profile_key, catalog)
+			"discard_draw", "shuffle_draw", "judge", "hand_to_bottom_draw", "discard_then_draw":
+				value += _semantic_draw_value(
+					state, actor, int(params.get("draw", params.get("amount", 4))), true, profile_key, catalog)
+			"search", "conditional_search_extra", "search_any_and_switch", "arven", "houb":
+				value += _semantic_search_value(state, actor, params, profile_key, catalog)
+			"clara":
+				value += _clara_recovery_value(state, actor, profile_key, catalog)
+			"energy_attach", "draw_and_attach_energy", "attach_from_discard", "look_top_attach_energy":
+				value += _semantic_energy_accel_value(state, actor, profile_key, catalog)
+			"energy_relocate":
+				value += _energy_relocate_value(state, actor, params, catalog)
+			"heal", "heal_all", "potion_heal", "conditional_damage_heal", "damage_and_self_heal":
+				value += _semantic_healing_value(state, actor, catalog)
+			"switch_self":
+				value += _semantic_switch_self_value(state, actor, profile_key, catalog)
+			"switch_opponent":
+				value += _semantic_switch_opponent_value(state, actor, catalog)
+			"energy_discard", "coin_flip_energy_discard":
+				value += _semantic_energy_disruption_value(state, actor, catalog)
+			"discard", "discard_hand_conditional_bonus":
+				value += _semantic_hand_disruption_value(state, actor)
+			"prevent_damage", "prevent_all", "prevent_effects":
+				value += _semantic_protection_effect_value(state, actor, profile_key, catalog)
+			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "apply_outgoing_damage_reduction", "self_attack_lock":
+				value += _semantic_status_effect_value(state, actor, effect_type, params, catalog)
+			"damage", "any_pokemon_damage", "place_counters_and_self_ko", "bench_damage", "damage_and_self_heal":
+				value += _semantic_damage_effect_value(state, actor, effect, catalog)
+			"damage_counter_self":
+				value -= int(params.get("amount", params.get("damage", 20))) * 1.0
+			"attack_damage_formula", "conditional_damage_bonus", "discard_fighting_energy_damage", "discard_hand_conditional_bonus":
+				value += _semantic_damage_effect_value(state, actor, effect, catalog)
+			"shuffle_from_discard", "ability_discard_revive":
+				value += 60.0 + _resource_outs_value(state, actor, profile_key, catalog) * 0.35
+			"tool", "tool_exp_share":
+				value += 52.0 + _active_ko_risk_value(state, actor, profile_key, catalog) * 0.12
+			"evolve_skip_stage":
+				value += 145.0 + _resource_outs_value(state, actor, profile_key, catalog) * 0.35
+			"return_to_hand":
+				value += _semantic_return_to_hand_value(state, actor, source_slot, profile_key, catalog)
+	return value
+
+
+func _semantic_draw_value(
+	state: GameState,
+	actor: int,
+	amount: int,
+	refresh: bool,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	if amount <= 0:
+		return 0.0
+	if player.deck.size() <= amount:
+		return -300.0 - (amount - player.deck.size()) * 45.0
+	var draw_count: int = min(amount, 7)
+	var projected_deck: int = player.deck.size() - draw_count
+	var value := draw_count * float(EFFECT_VALUE_WEIGHTS["draw_card"])
+	if refresh:
+		value += 54.0
+	var hand_plan := _hand_size_attack_plan_value(state, actor, deck_key, catalog)
+	if player.hand.size() <= 3:
+		value += 86.0
+	elif player.hand.size() <= 5:
+		value += 34.0
+	elif player.hand.size() >= 8:
+		value -= 70.0 + draw_count * 12.0
+		if hand_plan > 0.0:
+			value += min(85.0, hand_plan * 0.38)
+	elif player.hand.size() >= 6:
+		value -= 25.0
+		if hand_plan > 0.0:
+			value += min(45.0, hand_plan * 0.22)
+	if hand_plan > 0.0:
+		var projected_hand := player.hand.size() + draw_count
+		if projected_hand >= 5:
+			value += min(70.0, hand_plan * 0.25)
+		elif projected_hand >= 4:
+			value += min(35.0, hand_plan * 0.16)
+	value += min(75.0, _deck_outs_quality(state, actor, catalog) * 0.18)
+	if projected_deck <= 2:
+		value -= float(SCORE_WEIGHTS["thin_deck_draw"]) + 165.0 + (3 - projected_deck) * 70.0
+	elif projected_deck <= 5:
+		value -= 58.0 + (6 - projected_deck) * 20.0 + max(0, draw_count - 2) * 54.0
+	elif projected_deck <= 8:
+		value -= 58.0 + (9 - projected_deck) * 18.0 + max(0, draw_count - 3) * 34.0
+	elif projected_deck <= 12 and refresh:
+		value -= 58.0 + (13 - projected_deck) * 12.0
+	if refresh and player.deck.size() <= 15:
+		value -= 46.0 + (16 - player.deck.size()) * 8.0
+	if hand_plan > 0.0 and not refresh and draw_count <= 2 and projected_deck >= 3:
+		value += min(105.0, hand_plan * 0.9)
+	return value
+
+
+func _semantic_search_value(
+	state: GameState,
+	actor: int,
+	params: Dictionary,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	if player.deck.is_empty():
+		return -90.0
+	var filter_type := str(params.get("filter", params.get("filter_type", params.get("card_filter", "any"))))
+	var candidates: Array[String] = catalog.filter_cards(player.deck, filter_type)
+	if candidates.is_empty():
+		candidates.assign(player.deck)
+	var best := -INF
+	for card_id in candidates:
+		best = max(best, _card_keep_value(state, actor, card_id, deck_key, catalog))
+	var value: float = float(EFFECT_VALUE_WEIGHTS["search_base"]) + max(0.0, best) * 0.42
+	if player.bench_count() < 2:
+		value += 45.0
+	if _has_energy_target_with_missing_cost(state, actor, catalog):
+		for card_id in candidates:
+			if catalog.is_energy(card_id):
+				value += 56.0
+				break
+	for card_id in candidates:
+		if catalog.is_pokemon(card_id) and AIDeckProfiles.contains(deck_key, "evolution", card_id):
+			value += 48.0
+			break
+	return value
+
+
+func _semantic_energy_accel_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var best := -70.0
+	for row in state.get_player(actor).get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null:
+			continue
+		var missing := _best_missing_energy(pokemon, catalog)
+		if missing >= 99:
+			continue
+		var damage := _best_pokemon_damage(pokemon, catalog)
+		var candidate := float(EFFECT_VALUE_WEIGHTS["energy_accel_base"])
+		if missing == 0:
+			candidate -= 65.0
+		elif missing == 1:
+			candidate += 150.0 + damage * 0.22
+		else:
+			candidate += min(95.0, damage * 0.16)
+		if str(row["slot"]) == "active":
+			candidate += 32.0
+		if AIDeckProfiles.contains(deck_key, "core", pokemon.card_id):
+			candidate += 70.0
+		best = max(best, candidate)
+	return best
+
+
+func _semantic_healing_value(state: GameState, actor: int, catalog: CardCatalog) -> float:
+	var value := 0.0
+	var opponent_damage := _best_available_damage(state, 1 - actor, catalog)
+	for row in state.get_player(actor).get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null or pokemon.damage_counters <= 0:
+			continue
+		var heal_target_value: float = min(150.0, pokemon.damage_counters * 24.0)
+		if opponent_damage >= pokemon.current_hp(catalog):
+			heal_target_value += 70.0
+		value += heal_target_value
+	return value
+
+
+func _semantic_switch_self_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	if player.active == null or player.bench_count() <= 0:
+		return -100.0
+	var active_value := _promotion_value_for_state(state, actor, player.active, deck_key, catalog)
+	var best_delta := -INF
+	for index in range(player.bench.size()):
+		var pokemon: PokemonState = player.bench[index]
+		if pokemon == null:
+			continue
+		var delta := _promotion_value_for_state(state, actor, pokemon, deck_key, catalog) - active_value
+		if _retreat_has_good_target(state, actor, index, deck_key, catalog):
+			delta += float(EFFECT_VALUE_WEIGHTS["switch_base"])
+		best_delta = max(best_delta, delta)
+	return best_delta if best_delta > -INF / 2.0 else -100.0
+
+
+func _semantic_switch_opponent_value(state: GameState, actor: int, catalog: CardCatalog) -> float:
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null or opponent.bench_count() <= 0:
+		return -100.0
+	var active_priority := _target_priority(opponent.active, catalog)
+	var best_bench_priority := -INF
+	for pokemon in opponent.bench:
+		if pokemon:
+			best_bench_priority = max(best_bench_priority, _target_priority(pokemon, catalog))
+	if best_bench_priority <= -INF / 2.0:
+		return -100.0
+	var value := best_bench_priority - active_priority + float(EFFECT_VALUE_WEIGHTS["switch_base"])
+	if _best_available_damage(state, actor, catalog) >= opponent.active.current_hp(catalog):
+		value -= 120.0
+	return value
+
+
+func _semantic_energy_disruption_value(state: GameState, actor: int, catalog: CardCatalog) -> float:
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null or opponent.active.energy_card_ids.is_empty():
+		return -45.0
+	var before := _best_available_damage(state, 1 - actor, catalog)
+	var value := float(EFFECT_VALUE_WEIGHTS["disruption_base"]) + opponent.active.energy_card_ids.size() * 32.0
+	if state.get_player(actor).active != null and before >= state.get_player(actor).active.current_hp(catalog):
+		value += 78.0
+	return value
+
+
+func _semantic_hand_disruption_value(state: GameState, actor: int) -> float:
+	var opponent := state.get_player(1 - actor)
+	var player := state.get_player(actor)
+	var value: float = float(EFFECT_VALUE_WEIGHTS["disruption_base"]) + min(90.0, opponent.hand.size() * 14.0)
+	if player.prizes.size() > opponent.prizes.size():
+		value += 38.0
+	if opponent.hand.size() <= 1:
+		value -= 55.0
+	return value
+
+
+func _semantic_protection_effect_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	return (
+		float(EFFECT_VALUE_WEIGHTS["protection_base"])
+		+ _active_ko_risk_value(state, actor, deck_key, catalog) * 0.45
+	)
+
+
+func _semantic_status_effect_value(
+	state: GameState,
+	actor: int,
+	effect_type: String,
+	params: Dictionary,
+	catalog: CardCatalog,
+) -> float:
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null:
+		return -30.0
+	var value := float(EFFECT_VALUE_WEIGHTS["status_base"])
+	var status := str(params.get("status", "")).to_upper()
+	if status == "PARALYZED" or effect_type in ["attack_lock_basic", "dazzling_beam", "self_attack_lock"]:
+		value += 72.0
+	elif status == "ASLEEP":
+		value += 34.0
+	if state.get_player(actor).active != null:
+		var opponent_damage := _best_available_damage(state, 1 - actor, catalog)
+		if opponent_damage >= state.get_player(actor).active.current_hp(catalog):
+			value += 86.0
+	if not opponent.active.status_conditions.is_empty() or opponent.active.attack_locked:
+		value -= 35.0
+	return value
+
+
+func _semantic_damage_effect_value(
+	state: GameState,
+	actor: int,
+	effect: Dictionary,
+	catalog: CardCatalog,
+) -> float:
+	var opponent := state.get_player(1 - actor)
+	var damage := _effect_damage_estimate(state, actor, effect, catalog)
+	var value := damage * 1.15
+	var effect_type := str(effect.get("effect_type", ""))
+	if opponent.active != null and damage >= opponent.active.current_hp(catalog):
+		value += 190.0 + catalog.prize_value(opponent.active.card_id) * 120.0
+	elif effect_type in ["bench_damage", "any_pokemon_damage"]:
+		value += _semantic_best_bench_damage_value(state, actor, damage, catalog)
+	if effect_type == "place_counters_and_self_ko" and state.get_player(actor).active != null:
+		value -= 120.0 + catalog.prize_value(state.get_player(actor).active.card_id) * 80.0
+	return value
+
+
+func _semantic_best_bench_damage_value(
+	state: GameState,
+	actor: int,
+	damage: int,
+	catalog: CardCatalog,
+) -> float:
+	var best := 0.0
+	for pokemon in state.get_player(1 - actor).bench:
+		if pokemon == null:
+			continue
+		var target_value := _target_priority(pokemon, catalog) * 0.25
+		if damage >= pokemon.current_hp(catalog):
+			target_value += 150.0 + catalog.prize_value(pokemon.card_id) * 95.0
+		best = max(best, target_value)
+	return best
+
+
+func _semantic_return_to_hand_value(
+	state: GameState,
+	actor: int,
+	source_slot: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var pokemon := state.get_player(actor).get_pokemon(source_slot)
+	if pokemon == null:
+		return 0.0
+	var risk := _active_ko_risk_value(state, actor, deck_key, catalog)
+	var value := risk * 0.35
+	if AIDeckProfiles.contains(deck_key, "core", pokemon.card_id):
+		value += 35.0
+	return value
+
+
+func _hand_size_attack_plan_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	var best := 0.0
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null:
+			continue
+		var card := catalog.get_card(pokemon.card_id)
+		for attack in card.get("attacks", []):
+			var missing := _missing_energy_count(pokemon, attack.get("cost", []), catalog)
+			var readiness := 0.0
+			if missing == 0:
+				readiness = 1.0
+			elif missing == 1:
+				readiness = 0.62
+			elif missing == 2:
+				readiness = 0.32
+			if readiness <= 0.0:
+				continue
+			for effect_value in _flatten_effects(attack.get("effects", [])):
+				var effect: Dictionary = effect_value
+				var params: Dictionary = effect.get("params", {})
+				match str(effect.get("effect_type", "")):
+					"damage_per_hand_size":
+						var per_card: int = int(params.get("per", 0))
+						var projected_damage: int = player.hand.size() * per_card
+						best = max(best, min(190.0, projected_damage * 0.72 * readiness))
+					"discard_hand_conditional_bonus":
+						var threshold: int = int(params.get("threshold", 5))
+						var base_damage: int = int(params.get("base_damage", params.get("base", 0)))
+						var bonus_damage: int = int(params.get("bonus", 0))
+						var gap: int = max(0, threshold - player.hand.size())
+						var threshold_damage: int = base_damage + bonus_damage - gap * 34
+						best = max(best, min(210.0, threshold_damage * 0.52 * readiness))
+	if best <= 0.0:
+		return 0.0
+	if deck_key == "colorless":
+		best += float(SCORE_WEIGHTS["hand_size_plan"]) * 0.35
+	return best
+
+
+func _discard_fuels_damage_plan(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	catalog: CardCatalog,
+) -> bool:
+	if not catalog.is_pokemon(card_id):
+		return false
+	var discarded_card := catalog.get_card(card_id)
+	if not ("Psychic" in discarded_card.get("energy_types", [])):
+		return false
+	var player := state.get_player(actor)
+	var attacker_ids: Array[String] = []
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon != null:
+			attacker_ids.append(pokemon.card_id)
+	for zone_card_id in player.hand + player.deck + player.discard:
+		if catalog.is_pokemon(zone_card_id):
+			attacker_ids.append(zone_card_id)
+	for attacker_id in attacker_ids:
+		var attacker := catalog.get_card(attacker_id)
+		for attack in attacker.get("attacks", []):
+			for effect_value in _flatten_effects(attack.get("effects", [])):
+				var effect: Dictionary = effect_value
+				if str(effect.get("effect_type", "")) == "damage_per_discard_psychic":
+					return true
+	return false
+
+
+func _deck_outs_quality(state: GameState, actor: int, catalog: CardCatalog) -> float:
+	var deck_key := _deck_key_for_actor(state, actor, "")
+	var quality := 0.0
+	for card_id in state.get_player(actor).deck:
+		quality += max(0.0, _card_keep_value(state, actor, card_id, deck_key, catalog))
+	return quality / max(1, state.get_player(actor).deck.size())
 
 
 func _clara_recovery_value(
@@ -2990,6 +4172,245 @@ func _pokemon_strength_features(player: PlayerState, catalog: CardCatalog) -> Pa
 	return result
 
 
+func _strategic_evaluation_delta(
+	state: GameState,
+	perspective: int,
+	catalog: CardCatalog,
+) -> float:
+	return (
+		_player_strategic_score(state, perspective, catalog)
+		- _player_strategic_score(state, 1 - perspective, catalog)
+	)
+
+
+func _player_strategic_score(state: GameState, actor: int, catalog: CardCatalog) -> float:
+	var player := state.get_player(actor)
+	var opponent := state.get_player(1 - actor)
+	var deck_key := _deck_key_for_actor(state, actor, "")
+	var score := 0.0
+	score += _active_prize_threat_value(state, actor, catalog)
+	score += _ready_attackers_value(state, actor, deck_key, catalog)
+	score += _resource_outs_value(state, actor, deck_key, catalog)
+	score += _hand_size_attack_plan_value(state, actor, deck_key, catalog)
+	score += _protection_state_value(player.active, catalog)
+	score += _status_lock_state_value(opponent.active, state, 1 - actor, catalog) * 0.45
+	score -= _active_ko_risk_value(state, actor, deck_key, catalog)
+	score -= _status_lock_state_value(player.active, state, actor, catalog)
+	score -= _deck_pressure_penalty(player)
+	if player.active != null and opponent.active != null:
+		var own_prizes := player.prizes.size()
+		var opponent_prizes := opponent.prizes.size()
+		if own_prizes <= 2 and _best_available_damage(state, actor, catalog) >= opponent.active.current_hp(catalog):
+			score += (3 - own_prizes) * float(SCORE_WEIGHTS["prize_race"])
+		if opponent_prizes <= 2 and _best_available_damage(state, 1 - actor, catalog) >= player.active.current_hp(catalog):
+			score -= (3 - opponent_prizes) * float(SCORE_WEIGHTS["prize_race"])
+	return score
+
+
+func _active_prize_threat_value(state: GameState, actor: int, catalog: CardCatalog) -> float:
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null:
+		return 0.0
+	var ready_damage := _best_available_damage(state, actor, catalog)
+	if ready_damage <= 0:
+		return 0.0
+	var value: float = min(90.0, ready_damage * 0.28)
+	if ready_damage >= opponent.active.current_hp(catalog):
+		value += 170.0 + catalog.prize_value(opponent.active.card_id) * 115.0
+	return value
+
+
+func _ready_attackers_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var value := 0.0
+	for row in state.get_player(actor).get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null:
+			continue
+		var missing := _best_missing_energy(pokemon, catalog)
+		var damage := _best_pokemon_damage(pokemon, catalog)
+		if missing == 0 and damage > 0:
+			value += float(SCORE_WEIGHTS["ready_attacker"]) + min(70.0, damage * 0.22)
+		elif missing == 1 and damage >= AIDeckProfiles.high_impact_damage_floor(deck_key):
+			value += float(SCORE_WEIGHTS["backup_attacker"]) + min(45.0, damage * 0.12)
+	return value
+
+
+func _active_ko_risk_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	if player.active == null:
+		return 420.0
+	var opponent_damage := _best_available_damage(state, 1 - actor, catalog)
+	if opponent_damage <= 0:
+		return 0.0
+	var hp := player.active.current_hp(catalog)
+	if opponent_damage < hp:
+		if opponent_damage >= hp * 0.65:
+			return float(SCORE_WEIGHTS["active_damage_pressure"])
+		return 0.0
+	var risk := float(SCORE_WEIGHTS["active_ko_risk"])
+	risk += catalog.prize_value(player.active.card_id) * 105.0
+	risk += player.active.energy_card_ids.size() * 30.0
+	if AIDeckProfiles.contains(deck_key, "core", player.active.card_id):
+		risk += 70.0
+	return risk
+
+
+func _resource_outs_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	var value := 0.0
+	if _has_energy_target_with_missing_cost(state, actor, catalog):
+		var energy_outs := 0
+		for card_id in player.hand + player.deck:
+			if catalog.is_energy(card_id) and (
+				deck_key.is_empty() or _energy_matches_profile(card_id, deck_key, catalog)
+			):
+				energy_outs += 1
+		value += min(110.0, energy_outs * float(SCORE_WEIGHTS["resource_out"]))
+	var evolution_outs := 0
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null or not pokemon.can_evolve_this_turn:
+			continue
+		for card_id in player.hand + player.deck:
+			if (
+				catalog.is_pokemon(card_id)
+				and AIDeckProfiles.contains(deck_key, "evolution", card_id)
+				and _card_priority(card_id, deck_key, catalog) > 0.0
+			):
+				evolution_outs += 1
+				break
+	value += min(90.0, evolution_outs * 34.0)
+	if _semantic_v2_enabled():
+		value += _core_evolution_line_progress_value(state, actor, deck_key, catalog)
+	return value
+
+
+func _core_evolution_line_progress_value(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	if deck_key.is_empty():
+		return 0.0
+	var player := state.get_player(actor)
+	var total := 0.0
+	for core_value in AIDeckProfiles.get_profile(deck_key).get("core", []):
+		var core_id := str(core_value)
+		if core_id.is_empty() or not catalog.is_pokemon(core_id):
+			continue
+		var parts := _core_evolution_line_parts(core_id, deck_key, catalog)
+		var stage1_ids: Array[String] = []
+		stage1_ids.assign(parts.get("stage1", []))
+		var basic_ids: Array[String] = []
+		basic_ids.assign(parts.get("basic", []))
+		if stage1_ids.is_empty() and basic_ids.is_empty():
+			continue
+		var has_core := _player_has_any_pokemon_id_in_play(player, [core_id])
+		var has_stage1 := _player_has_any_pokemon_id_in_play(player, stage1_ids)
+		var has_basic := _player_has_any_pokemon_id_in_play(player, basic_ids)
+		var core_available := _zone_has_any_card_id(player.hand, [core_id]) or _zone_has_any_card_id(player.deck, [core_id])
+		var stage1_available := _zone_has_any_card_id(player.hand, stage1_ids) or _zone_has_any_card_id(player.deck, stage1_ids)
+		var basic_available := _zone_has_any_card_id(player.hand, basic_ids) or _zone_has_any_card_id(player.deck, basic_ids)
+		var line_value := 0.0
+		if has_core:
+			line_value += 112.0
+		elif has_stage1:
+			line_value += 86.0
+			if core_available:
+				line_value += 56.0
+		elif has_basic:
+			line_value += 62.0
+			if stage1_available:
+				line_value += 48.0
+			if core_available:
+				line_value += 22.0
+		elif basic_available:
+			line_value += 34.0
+			if stage1_available:
+				line_value += 18.0
+		if catalog.is_stage2(core_id):
+			line_value *= 1.18
+		if catalog.prize_value(core_id) >= 2:
+			line_value *= 1.1
+		line_value *= _core_line_focus_multiplier(state, actor, core_id, deck_key, catalog)
+		total += min(165.0, line_value)
+	return min(260.0, total * 0.72 + float(SCORE_WEIGHTS["evolution_line_plan"]) * 0.25)
+
+
+func _zone_has_any_card_id(cards: Array[String], card_ids: Array[String]) -> bool:
+	if cards.is_empty() or card_ids.is_empty():
+		return false
+	for card_id in cards:
+		if card_id in card_ids:
+			return true
+	return false
+
+
+func _status_lock_state_value(
+	pokemon: PokemonState,
+	state: GameState,
+	actor: int,
+	catalog: CardCatalog,
+) -> float:
+	if pokemon == null:
+		return 0.0
+	var value := 0.0
+	if "ASLEEP" in pokemon.status_conditions:
+		value += 35.0
+	if "PARALYZED" in pokemon.status_conditions:
+		value += float(SCORE_WEIGHTS["status_lock"])
+	if pokemon.attack_locked or pokemon.attack_locked_names.has("__all__"):
+		value += float(SCORE_WEIGHTS["status_lock"])
+	if pokemon.dazzled:
+		value += 45.0
+	if value > 0.0:
+		value += min(70.0, _best_available_damage(state, actor, catalog) * 0.18)
+	return value
+
+
+func _protection_state_value(pokemon: PokemonState, catalog: CardCatalog) -> float:
+	if pokemon == null:
+		return 0.0
+	var value := 0.0
+	if pokemon.all_prevented_next_turn:
+		value += float(SCORE_WEIGHTS["protection"]) + pokemon.current_hp(catalog) * 0.18
+	elif pokemon.damage_prevented_next_turn:
+		value += 78.0 + pokemon.current_hp(catalog) * 0.12
+	if pokemon.outgoing_damage_reduction_next_turn > 0:
+		value -= min(80.0, pokemon.outgoing_damage_reduction_next_turn * 1.5)
+	return value
+
+
+func _deck_pressure_penalty(player: PlayerState) -> float:
+	if player.deck.is_empty():
+		return 520.0
+	if player.deck.size() <= 2:
+		return float(SCORE_WEIGHTS["deck_danger"]) + (3 - player.deck.size()) * 65.0
+	if player.deck.size() <= 5:
+		return 70.0 + (6 - player.deck.size()) * 12.0
+	if player.deck.size() <= 8:
+		return 38.0 + (9 - player.deck.size()) * 5.0
+	if player.deck.size() <= 12:
+		return 18.0
+	return 0.0
+
+
 func _evaluate(state: GameState, perspective: int, catalog: CardCatalog) -> float:
 	return clampf(_evaluate_raw(state, perspective, catalog) / 1800.0, -1.0, 1.0)
 
@@ -3000,8 +4421,9 @@ func _evaluate_raw(state: GameState, perspective: int, catalog: CardCatalog) -> 
 	var own := state.get_player(perspective)
 	var opponent := state.get_player(1 - perspective)
 	var native_math: Variant = _cached_native_math()
+	var base_score := 0.0
 	if native_math != null:
-		return float(native_math.call(
+		base_score = float(native_math.call(
 			"evaluate_board_features",
 			float(opponent.prizes.size() - own.prizes.size()),
 			float(own.hand.size() - opponent.hand.size()),
@@ -3009,7 +4431,11 @@ func _evaluate_raw(state: GameState, perspective: int, catalog: CardCatalog) -> 
 			_pokemon_strength_features(own, catalog),
 			_pokemon_strength_features(opponent, catalog),
 		))
-	return _evaluate_raw_gdscript(state, perspective, catalog)
+	else:
+		base_score = _evaluate_raw_gdscript(state, perspective, catalog)
+	if _semantic_v2_enabled():
+		base_score += _strategic_evaluation_delta(state, perspective, catalog)
+	return base_score
 
 
 func _evaluate_raw_gdscript(state: GameState, perspective: int, catalog: CardCatalog) -> float:
