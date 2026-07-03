@@ -66,6 +66,7 @@
           "Psychic"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [],
         "name": "啃咬",
         "text": ""
@@ -78,6 +79,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "幽魂射击",
         "text": ""
@@ -225,6 +227,7 @@
           "Psychic"
         ],
         "damage": 80,
+        "damage_text": "80+",
         "effects": [
           {
             "effect_type": "damage_per_discard_psychic",
@@ -312,16 +315,16 @@
       0.14285714285714285,
       0.2,
       0.3333333333333333,
-      0.0,
+      0.03333333333333333,
       0.2,
-      0.0,
+      0.1,
       0.3333333333333333,
       0.2,
       0.0,
       0.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       0.0,
       0.0,
@@ -356,7 +359,8 @@
         "cost": [
           "Psychic"
         ],
-        "damage": 0,
+        "damage": 10,
+        "damage_text": "10×",
         "effects": [
           {
             "effect_type": "coin_flip_triple",
@@ -527,6 +531,7 @@
           "Colorless"
         ],
         "damage": 80,
+        "damage_text": "80",
         "effects": [],
         "name": "超念力",
         "text": ""
@@ -651,6 +656,7 @@
           "Psychic"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "discard_then_draw",
@@ -700,6 +706,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30+",
         "effects": [
           {
             "effect_type": "damage_per_self_energy",
@@ -850,6 +857,7 @@
           "Colorless"
         ],
         "damage": 100,
+        "damage_text": "100",
         "effects": [],
         "name": "念动弹",
         "text": ""
@@ -965,6 +973,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "滑翔",
         "text": ""
@@ -988,6 +997,7 @@
           "Colorless"
         ],
         "damage": 180,
+        "damage_text": "180",
         "effects": [
           {
             "effect_type": "energy_discard",
@@ -1112,6 +1122,7 @@
           "Psychic"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "精神拳",
         "text": ""
@@ -1134,6 +1145,7 @@
           "Psychic"
         ],
         "damage": 120,
+        "damage_text": "120",
         "effects": [
           {
             "effect_type": "energy_relocate",
@@ -1269,6 +1281,7 @@
           "Psychic"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "energy_attach",
@@ -1301,6 +1314,7 @@
           "Psychic"
         ],
         "damage": 30,
+        "damage_text": "30+",
         "effects": [
           {
             "effect_type": "conditional_damage_bonus",
@@ -1437,6 +1451,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "search",
@@ -1470,6 +1485,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [
           {
             "effect_type": "switch_self",
@@ -3071,6 +3087,7 @@
           "Colorless"
         ],
         "damage": 110,
+        "damage_text": "110",
         "effects": [
           {
             "effect_type": "conditional_status",
@@ -3948,6 +3965,7 @@
           "Water"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "coin_flip",
@@ -4081,6 +4099,7 @@
           "Water"
         ],
         "damage": 40,
+        "damage_text": "40",
         "effects": [
           {
             "effect_type": "switch_self",
@@ -4446,6 +4465,7 @@
         "converted_energy_cost": 0,
         "cost": [],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "draw",
@@ -4466,6 +4486,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "冰之翼",
         "text": ""
@@ -4585,6 +4606,7 @@
           "Colorless"
         ],
         "damage": 40,
+        "damage_text": "40",
         "effects": [
           {
             "effect_type": "attack_lock_basic",
@@ -4613,6 +4635,7 @@
           "Colorless"
         ],
         "damage": 130,
+        "damage_text": "130",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -4740,6 +4763,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "any_pokemon_damage",
@@ -4770,6 +4794,7 @@
           "Water"
         ],
         "damage": 120,
+        "damage_text": "120+",
         "effects": [
           {
             "effect_type": "conditional_damage_bonus",
@@ -4891,6 +4916,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "踢飞",
         "text": ""
@@ -4930,6 +4956,7 @@
           "Colorless"
         ],
         "damage": 10,
+        "damage_text": "10+",
         "effects": [
           {
             "effect_type": "damage_plus_bench",
@@ -5076,6 +5103,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [],
         "name": "高速攻击",
         "text": ""
@@ -5197,6 +5225,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "piercing_marker",
@@ -5280,9 +5309,9 @@
       0.2,
       0.2,
       0.6666666666666666,
-      0.0,
+      0.1,
       0.2,
-      0.0,
+      0.3,
       0.3333333333333333,
       0.2,
       0.0,
@@ -5328,6 +5357,7 @@
           "Water"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "energy_attach",
@@ -5355,7 +5385,8 @@
         "cost": [
           "Water"
         ],
-        "damage": 0,
+        "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "return_to_hand",
@@ -5704,6 +5735,7 @@
           "Darkness"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [
           {
             "effect_type": "bench_damage",
@@ -5751,6 +5783,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",
@@ -5992,6 +6025,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "status",
@@ -6022,6 +6056,7 @@
           "Colorless"
         ],
         "damage": 130,
+        "damage_text": "130",
         "effects": [
           {
             "effect_type": "self_attack_lock",
@@ -6201,6 +6236,7 @@
           "Colorless"
         ],
         "damage": 10,
+        "damage_text": "10+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",
@@ -6322,6 +6358,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -6556,6 +6593,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "apply_outgoing_damage_reduction",
@@ -6602,6 +6640,7 @@
           "Colorless"
         ],
         "damage": 100,
+        "damage_text": "100+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",
@@ -6721,6 +6760,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "踢飞",
         "text": ""
@@ -6734,6 +6774,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [],
         "name": "锐利之牙",
         "text": ""
@@ -6853,6 +6894,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "search",
@@ -6900,6 +6942,7 @@
           "Darkness"
         ],
         "damage": 20,
+        "damage_text": "20+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",
@@ -7017,6 +7060,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "锐利之牙",
         "text": ""
@@ -7054,6 +7098,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",
@@ -7290,6 +7335,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "draw",
@@ -7309,6 +7355,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "甩葱殴打",
         "text": ""
@@ -7435,6 +7482,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "attach_from_discard",
@@ -7465,6 +7513,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30+",
         "effects": [
           {
             "effect_type": "conditional_damage_bonus",
@@ -7704,6 +7753,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "coin_flip_double_ko",
@@ -7729,6 +7779,7 @@
           "Fighting"
         ],
         "damage": 120,
+        "damage_text": "120",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -7899,6 +7950,7 @@
           "Fighting"
         ],
         "damage": 10,
+        "damage_text": "10+",
         "effects": [
           {
             "effect_type": "discard_fighting_energy_damage",
@@ -8027,6 +8079,7 @@
           "Fighting"
         ],
         "damage": 70,
+        "damage_text": "70",
         "effects": [
           {
             "effect_type": "energy_relocate",
@@ -8253,6 +8306,7 @@
           "Fighting"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [],
         "name": "重拳",
         "text": ""
@@ -8273,6 +8327,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -8390,6 +8445,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "高速镰刀",
         "text": ""
@@ -8515,6 +8571,7 @@
           "Colorless"
         ],
         "damage": 120,
+        "damage_text": "120",
         "effects": [
           {
             "effect_type": "prevent_damage",
@@ -8667,6 +8724,7 @@
           "Metal"
         ],
         "damage": 140,
+        "damage_text": "140",
         "effects": [
           {
             "effect_type": "prevent_effects",
@@ -8892,6 +8950,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "draw",
@@ -8920,6 +8979,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "energy_relocate",
@@ -9008,16 +9068,16 @@
       0.5142857142857142,
       0.6,
       0.6666666666666666,
-      0.16666666666666666,
+      0.6666666666666666,
       0.6,
-      0.16666666666666669,
+      0.8333333333333333,
       0.3333333333333333,
       0.4,
       0.0,
       0.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       1.0,
       0.0,
@@ -9045,6 +9105,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [],
         "name": "头突",
         "text": ""
@@ -9082,7 +9143,8 @@
           "Colorless",
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 200,
+        "damage_text": "200-",
         "effects": [
           {
             "effect_type": "damage_self_penalty",
@@ -9202,6 +9264,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "撞击",
         "text": ""
@@ -9450,6 +9513,7 @@
           "Colorless"
         ],
         "damage": 60,
+        "damage_text": "60+",
         "effects": [
           {
             "effect_type": "damage_per_self_damage",
@@ -9578,6 +9642,7 @@
           "Colorless"
         ],
         "damage": 60,
+        "damage_text": "60+",
         "effects": [
           {
             "effect_type": "conditional_damage_heal",
@@ -9660,16 +9725,16 @@
       0.14285714285714285,
       0.2,
       0.3333333333333333,
-      0.0,
+      0.06666666666666667,
       0.2,
-      0.0,
+      0.2,
       0.3333333333333333,
       0.2,
       0.0,
       0.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       0.0,
       0.0,
@@ -9703,7 +9768,8 @@
         "cost": [
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 20,
+        "damage_text": "20×",
         "effects": [
           {
             "effect_type": "coin_flip_until_tails",
@@ -9826,6 +9892,7 @@
           "Water"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "水枪",
         "text": ""
@@ -9849,6 +9916,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "search_any_and_switch",
@@ -9969,6 +10037,7 @@
           "Grass"
         ],
         "damage": 60,
+        "damage_text": "60",
         "effects": [],
         "name": "音速直击",
         "text": ""
@@ -10112,6 +10181,7 @@
           "Water"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "any_pokemon_damage",
@@ -10480,6 +10550,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [],
         "name": "飞叶快刀",
         "text": ""
@@ -10762,16 +10833,16 @@
       0.17142857142857143,
       0.2,
       0.3333333333333333,
-      0.0,
+      0.03333333333333333,
       0.2,
-      0.0,
+      0.1,
       0.3333333333333333,
       0.2,
       0.0,
       0.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       0.0,
       0.0,
@@ -10806,7 +10877,8 @@
         "cost": [
           "Grass"
         ],
-        "damage": 0,
+        "damage": 10,
+        "damage_text": "10",
         "effects": [
           {
             "effect_type": "damage_and_self_heal",
@@ -10891,14 +10963,14 @@
       0.6666666666666666,
       0.5333333333333333,
       0.8,
-      0.4,
+      0.525,
       0.3333333333333333,
       0.4,
       0.0,
       0.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       1.0,
       0.0,
@@ -10944,7 +11016,8 @@
           "Grass",
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 50,
+        "damage_text": "50×",
         "effects": [
           {
             "effect_type": "damage_per_evolved",
@@ -10966,6 +11039,7 @@
           "Colorless"
         ],
         "damage": 160,
+        "damage_text": "160",
         "effects": [],
         "name": "头突",
         "text": ""
@@ -11076,6 +11150,7 @@
           "Grass"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [],
         "name": "咬住",
         "text": ""
@@ -11088,6 +11163,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "鲁莽头击",
         "text": ""
@@ -11208,6 +11284,7 @@
           "Grass"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "conditional_search_extra",
@@ -11258,6 +11335,7 @@
           "Colorless"
         ],
         "damage": 60,
+        "damage_text": "60+",
         "effects": [
           {
             "effect_type": "damage_per_self_energy_type",
@@ -11386,6 +11464,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "draw",
@@ -11406,6 +11485,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "掌击",
         "text": ""
@@ -11480,9 +11560,9 @@
       0.2857142857142857,
       0.2,
       0.6666666666666666,
-      0.0,
+      0.06666666666666667,
       0.6,
-      0.0,
+      0.06666666666666667,
       0.3333333333333333,
       0.2,
       0.0,
@@ -11525,6 +11605,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "draw",
@@ -11564,7 +11645,8 @@
           "Colorless",
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 20,
+        "damage_text": "20×",
         "effects": [
           {
             "effect_type": "damage_per_hand_size",
@@ -11796,6 +11878,7 @@
           "Fire"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "energy_discard",
@@ -11926,6 +12009,7 @@
           "Fire"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "attach_from_discard",
@@ -11957,6 +12041,7 @@
           "Fire"
         ],
         "damage": 50,
+        "damage_text": "50+",
         "effects": [
           {
             "effect_type": "conditional_damage_bonus",
@@ -12359,6 +12444,7 @@
           "Colorless"
         ],
         "damage": 60,
+        "damage_text": "60+",
         "effects": [
           {
             "effect_type": "damage_per_self_energy",
@@ -12588,6 +12674,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "振翅",
         "text": ""
@@ -12609,6 +12696,7 @@
           "Colorless"
         ],
         "damage": 110,
+        "damage_text": "110",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -12695,9 +12783,9 @@
       0.37142857142857144,
       0.6,
       0.6666666666666666,
-      0.0,
+      0.2,
       0.4,
-      0.0,
+      0.3,
       0.3333333333333333,
       0.2,
       0.0,
@@ -12740,6 +12828,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "draw",
@@ -12769,7 +12858,8 @@
           "Colorless",
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 60,
+        "damage_text": "60+",
         "effects": [
           {
             "effect_type": "discard_hand_conditional_bonus",
@@ -12898,6 +12988,7 @@
           "Fire"
         ],
         "damage": 100,
+        "damage_text": "100",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -12979,9 +13070,9 @@
       0.2571428571428571,
       0.4,
       0.6666666666666666,
-      0.0,
+      0.03333333333333333,
       0.4,
-      0.0,
+      0.05,
       0.3333333333333333,
       0.2,
       0.0,
@@ -13024,6 +13115,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "draw",
@@ -13062,7 +13154,8 @@
           "Colorless",
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 10,
+        "damage_text": "10×",
         "effects": [
           {
             "effect_type": "damage_per_hand_size",
@@ -13146,14 +13239,14 @@
       0.6666666666666666,
       0.5333333333333333,
       0.4,
-      0.8,
+      1.2,
       0.3333333333333333,
       0.2,
       0.0,
       0.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       1.0,
       0.0,
@@ -13188,7 +13281,8 @@
         "cost": [
           "Fire"
         ],
-        "damage": 0,
+        "damage": 80,
+        "damage_text": "80×",
         "effects": [
           {
             "effect_type": "mill_and_damage_per_energy",
@@ -13219,6 +13313,7 @@
           "Colorless"
         ],
         "damage": 160,
+        "damage_text": "160",
         "effects": [
           {
             "effect_type": "energy_discard",
@@ -13497,6 +13592,7 @@
           "Colorless"
         ],
         "damage": 120,
+        "damage_text": "120",
         "effects": [
           {
             "effect_type": "draw",
@@ -13879,6 +13975,7 @@
           "Fire"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "火焰",
         "text": ""
@@ -13901,6 +13998,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [
           {
             "effect_type": "energy_discard",
@@ -14252,6 +14350,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "啃咬",
         "text": ""
@@ -14326,9 +14425,9 @@
       0.2,
       0.2,
       0.6666666666666666,
-      0.0,
+      0.2,
       0.4,
-      0.0,
+      0.3,
       0.3333333333333333,
       0.2,
       0.0,
@@ -14347,7 +14446,7 @@
       0.0,
       1.0,
       0.0,
-      1.0,
+      0.0,
       1.0,
       0.0,
       0.0
@@ -14375,6 +14474,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "search",
@@ -14398,14 +14498,6 @@
             "branches": {
               "on_heads": [
                 {
-                  "args": {
-                    "amount": 60,
-                    "target": "opponent_active"
-                  },
-                  "branches": {},
-                  "op": "deal_damage"
-                },
-                {
                   "args": {},
                   "branches": {},
                   "op": "prevent_all"
@@ -14427,19 +14519,13 @@
           "Colorless",
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 60,
+        "damage_text": "60",
         "effects": [
           {
             "effect_type": "coin_flip",
             "params": {
               "on_heads": [
-                {
-                  "effect_type": "damage",
-                  "params": {
-                    "amount": 60,
-                    "target": "opponent_active"
-                  }
-                },
                 {
                   "effect_type": "prevent_all",
                   "params": {}
@@ -14532,16 +14618,16 @@
       0.3142857142857143,
       0.2,
       0.6666666666666666,
-      0.06666666666666667,
-      0.4,
       0.1,
+      0.4,
+      0.25,
       0.3333333333333333,
       0.2,
       0.0,
       0.0,
       0.0,
       0.0,
-      1.0,
+      0.0,
       0.0,
       0.0,
       0.0,
@@ -14568,6 +14654,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "后踢",
         "text": ""
@@ -14608,7 +14695,8 @@
           "Colorless",
           "Colorless"
         ],
-        "damage": 0,
+        "damage": 30,
+        "damage_text": "30×",
         "effects": [
           {
             "effect_type": "damage_per_energy",
@@ -14729,6 +14817,7 @@
           "Colorless"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [],
         "name": "紧贴",
         "text": ""
@@ -14741,6 +14830,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "踢飞",
         "text": ""
@@ -14974,6 +15064,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "discard_then_draw",
@@ -14993,6 +15084,7 @@
           "Colorless"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [],
         "name": "振翅",
         "text": ""
@@ -15108,6 +15200,7 @@
           "Lightning"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [],
         "name": "电球",
         "text": ""
@@ -15235,6 +15328,7 @@
           "Lightning"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "coin_flip",
@@ -15507,6 +15601,7 @@
           "Colorless"
         ],
         "damage": 50,
+        "damage_text": "50",
         "effects": [],
         "name": "电球",
         "text": ""
@@ -15626,6 +15721,7 @@
           "Colorless"
         ],
         "damage": 40,
+        "damage_text": "40",
         "effects": [
           {
             "effect_type": "dazzling_beam",
@@ -15646,6 +15742,7 @@
           "Colorless"
         ],
         "damage": 120,
+        "damage_text": "120",
         "effects": [],
         "name": "电球",
         "text": ""
@@ -15756,6 +15853,7 @@
           "Colorless"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [],
         "name": "后踢",
         "text": ""
@@ -15768,6 +15866,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "电球",
         "text": ""
@@ -15878,6 +15977,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "皮卡拳",
         "text": ""
@@ -15909,6 +16009,7 @@
           "Colorless"
         ],
         "damage": 220,
+        "damage_text": "220",
         "effects": [
           {
             "effect_type": "coin_flip",
@@ -16051,6 +16152,7 @@
           "Lightning"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "energy_attach",
@@ -16083,6 +16185,7 @@
           "Colorless"
         ],
         "damage": 130,
+        "damage_text": "130",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -16421,6 +16524,7 @@
           "Colorless"
         ],
         "damage": 70,
+        "damage_text": "70",
         "effects": [
           {
             "effect_type": "damage_counter_self",
@@ -16671,6 +16775,7 @@
           "Colorless"
         ],
         "damage": 70,
+        "damage_text": "70",
         "effects": [],
         "name": "意念头锤",
         "text": ""
@@ -16794,6 +16899,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [
           {
             "effect_type": "coin_flip",
@@ -16957,6 +17063,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [
           {
             "effect_type": "energy_attach",
@@ -17086,6 +17193,7 @@
           "Metal"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "search",
@@ -17138,6 +17246,7 @@
           "Colorless"
         ],
         "damage": 60,
+        "damage_text": "60+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",
@@ -17261,6 +17370,7 @@
           "Colorless"
         ],
         "damage": 10,
+        "damage_text": "10",
         "effects": [
           {
             "effect_type": "draw",
@@ -17528,6 +17638,7 @@
           "Colorless"
         ],
         "damage": 100,
+        "damage_text": "100",
         "effects": [
           {
             "effect_type": "bench_damage",
@@ -17643,6 +17754,7 @@
           "Colorless"
         ],
         "damage": 20,
+        "damage_text": "20",
         "effects": [],
         "name": "啄",
         "text": ""
@@ -17664,6 +17776,7 @@
           "Colorless"
         ],
         "damage": 120,
+        "damage_text": "120",
         "effects": [
           {
             "effect_type": "self_attack_lock",
@@ -17788,6 +17901,7 @@
           "Colorless"
         ],
         "damage": 0,
+        "damage_text": "",
         "effects": [
           {
             "effect_type": "look_top_attach_energy",
@@ -17811,6 +17925,7 @@
           "Colorless"
         ],
         "damage": 30,
+        "damage_text": "30",
         "effects": [],
         "name": "冲撞",
         "text": ""
@@ -17945,6 +18060,7 @@
           "Metal"
         ],
         "damage": 20,
+        "damage_text": "20+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",
@@ -17968,6 +18084,7 @@
           "Colorless"
         ],
         "damage": 100,
+        "damage_text": "100",
         "effects": [],
         "name": "薄片利刃",
         "text": ""
@@ -18127,6 +18244,7 @@
           "Colorless"
         ],
         "damage": 100,
+        "damage_text": "100+",
         "effects": [
           {
             "effect_type": "attack_damage_formula",

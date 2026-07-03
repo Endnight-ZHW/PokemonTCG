@@ -104,7 +104,10 @@ def draw_attack_menu(gs, surface):
                              gs.font_card_tiny)
             cost_x += 22
 
-        dmg_part = f"伤害:{attack.damage}" if attack.damage > 0 else ""
+        damage_label = getattr(attack, "damage_text", "") or (
+            str(attack.damage) if attack.damage > 0 else ""
+        )
+        dmg_part = f"伤害:{damage_label}" if damage_label else ""
         atk_str = f"{attack.name}  {dmg_part}"
         atk_txt = gs.font_action.render(atk_str, True, UI_TEXT_PRIMARY)
         surface.blit(atk_txt, (cost_x + 10, row1_y + 4))

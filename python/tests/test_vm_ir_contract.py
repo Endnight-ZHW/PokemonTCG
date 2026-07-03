@@ -4741,16 +4741,12 @@ class VmIrContractTests(unittest.TestCase):
         self.assertEqual(state.p2.active.damage_counters, 0)
 
     def test_nested_effect_branches_are_serialized(self):
-        coin_flip = next(
-            effect
-            for effect in _walk_effects(CARD_EFFECTS)
-            if effect.get("effect_type") == "coin_flip"
-        )
+        coin_flip = CARD_EFFECTS["svi-sqwk"]["attacks"]["飞翔"]["effects"][0]
         spec = compile_effect_to_spec(coin_flip).to_dict()
         self.assertEqual(spec["op"], "flip_coin")
         self.assertIn("on_heads", spec["branches"])
         self.assertIn("on_tails", spec["branches"])
-        self.assertEqual(spec["branches"]["on_heads"][0]["op"], "deal_damage")
+        self.assertEqual(spec["branches"]["on_heads"][0]["op"], "prevent_all")
         self.assertEqual(spec["branches"]["on_tails"][0]["op"], "fail_attack")
 
     def test_exported_cards_include_compiled_effects(self):
@@ -4772,7 +4768,7 @@ class VmIrContractTests(unittest.TestCase):
         attack = next(attack for attack in card["attacks"] if attack["effects"])
         self.assertEqual(len(attack["compiled_effects"]), len(attack["effects"]))
         self.assertIn("op", attack["compiled_effects"][0])
-        self.assertEqual(len(contract["compiled_effect_examples"]), 78)
+        self.assertEqual(len(contract["compiled_effect_examples"]), 77)
         self.assertEqual(contract["vm_version"], VM_IR_VERSION)
         self.assertEqual(contract["vm"]["runtime_effect_source"], "compiled_effects")
 

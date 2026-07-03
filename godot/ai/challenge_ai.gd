@@ -3198,6 +3198,9 @@ func _estimated_attack_damage(
 			"damage_and_self_heal",
 			"any_pokemon_damage",
 			"mill_and_damage_per_energy",
+			"coin_flip_triple",
+			"coin_flip_until_tails",
+			"coin_flip_double_ko",
 		]:
 			full_damage = true
 		if effect_type == "attack_damage_formula":

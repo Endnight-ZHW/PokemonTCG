@@ -123,6 +123,7 @@ func declare_attack(
 	var context := {
 		"finish_attack": true,
 		"actor": actor,
+		"attacker_card_id": attacker.card_id,
 		"base_damage": 0 if replace_base else int(attack.get("damage", 0)),
 		"attacking_type": attacking_type,
 	}
@@ -156,6 +157,7 @@ func complete_attack_context(
 			bool(stack.context.get("ignore_defender_effects", false)),
 			events,
 			trigger_commands_to_resolve,
+			str(stack.context.get("attacker_card_id", "")),
 		)
 		var trigger_result := trigger_command_runner.resolve_commands(
 			state,
@@ -234,9 +236,12 @@ func apply_attack_damage(
 	ignore_defender_effects: bool,
 	events: Array[Dictionary],
 	trigger_commands: Array[Dictionary] = [],
+	attacker_card_id: String = "",
 ) -> void:
 	var attacker := state.get_player(actor).active
 	var defender := state.get_player(1 - actor).active
+	if attacker == null and not attacker_card_id.is_empty():
+		attacker = PokemonState.new(attacker_card_id)
 	if attacker == null or defender == null or base_damage <= 0:
 		return
 	if defender.damage_prevented_next_turn and not ignore_defender_effects:

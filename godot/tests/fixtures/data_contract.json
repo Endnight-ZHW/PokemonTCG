@@ -121,14 +121,6 @@
       "branches": {
         "on_heads": [
           {
-            "args": {
-              "amount": 60,
-              "target": "opponent_active"
-            },
-            "branches": {},
-            "op": "deal_damage"
-          },
-          {
             "args": {},
             "branches": {},
             "op": "prevent_all"
@@ -247,14 +239,6 @@
       },
       "branches": {},
       "op": "register_conditional_zero_retreat"
-    },
-    "damage": {
-      "args": {
-        "amount": 60,
-        "target": "opponent_active"
-      },
-      "branches": {},
-      "op": "deal_damage"
     },
     "damage_and_self_heal": {
       "args": {
@@ -825,7 +809,7 @@
   "counts": {
     "cards": 137,
     "decks": 10,
-    "effects": 78
+    "effects": 77
   },
   "deck_sizes": {
     "colorless": 60,
@@ -930,13 +914,6 @@
       "params": {
         "on_heads": [
           {
-            "effect_type": "damage",
-            "params": {
-              "amount": 60,
-              "target": "opponent_active"
-            }
-          },
-          {
             "effect_type": "prevent_all",
             "params": {}
           }
@@ -1034,13 +1011,6 @@
       "effect_type": "conditional_zero_retreat",
       "params": {
         "energy_type": "psychic"
-      }
-    },
-    "damage": {
-      "effect_type": "damage",
-      "params": {
-        "amount": 60,
-        "target": "opponent_active"
       }
     },
     "damage_and_self_heal": {
@@ -1430,7 +1400,6 @@
     "conditional_search_extra",
     "conditional_status",
     "conditional_zero_retreat",
-    "damage",
     "damage_and_self_heal",
     "damage_counter_self",
     "damage_per_discard_psychic",

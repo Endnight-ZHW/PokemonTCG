@@ -1779,13 +1779,6 @@
             "params": {
               "on_heads": [
                 {
-                  "effect_type": "damage",
-                  "params": {
-                    "amount": 60,
-                    "target": "opponent_active"
-                  }
-                },
-                {
                   "effect_type": "prevent_all",
                   "params": {}
                 }

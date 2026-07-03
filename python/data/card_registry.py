@@ -71,11 +71,13 @@ class CardRegistry:
             curated = effects_data.get("attacks", {}).get(atk_name, {})
             cost = atk.get("cost", [])
             attack_effects = _make_effects(curated.get("effects", []))
+            raw_damage = str(atk.get("damage", "0") or "0").strip()
             attacks.append(AttackDef(
                 name=atk_name,
                 cost=cost,
-                damage=cls._parse_damage(atk.get("damage", "0")),
+                damage=cls._parse_damage(raw_damage),
                 text=atk.get("text", ""),
+                damage_text=cls._damage_text(raw_damage),
                 effects=attack_effects,
                 compiled_effects=_compile_effects(attack_effects),
                 converted_energy_cost=atk.get("convertedEnergyCost", len(cost)),
@@ -182,6 +184,12 @@ class CardRegistry:
             return int(d)
         except ValueError:
             return 0
+
+    @staticmethod
+    def _damage_text(damage_str: str) -> str:
+        """Return the printed card damage label, blank for non-damaging attacks."""
+        damage = str(damage_str or "").strip()
+        return "" if damage in ("", "0") else damage
 
     @classmethod
     def get(cls, api_id: str) -> Card | None:

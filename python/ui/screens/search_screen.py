@@ -351,8 +351,11 @@ class SearchScreen(Screen):
             if hasattr(card, 'attacks') and card.attacks:
                 for atk in card.attacks:
                     cost_str = "".join(atk.cost) if atk.cost else "无费用"
-                    dmg = atk.damage if atk.damage else 0
-                    lines.append(f"【{cost_str}】{atk.name}  {dmg}伤害")
+                    damage_label = getattr(atk, "damage_text", "") or (
+                        str(atk.damage) if atk.damage else ""
+                    )
+                    damage_text = f"  {damage_label}伤害" if damage_label else ""
+                    lines.append(f"【{cost_str}】{atk.name}{damage_text}")
                     if hasattr(atk, 'text') and atk.text:
                         lines.append(f"  {atk.text}")
 

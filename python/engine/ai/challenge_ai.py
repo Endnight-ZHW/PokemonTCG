@@ -38,6 +38,7 @@ from engine.effects.runtime_effects import (
     attack_runtime_effects,
     trainer_runtime_effects,
 )
+from engine.effect_runner import effect_replaces_base_damage as _effect_replaces_base_damage
 from engine.rules_validator import (
     can_attach_energy,
     can_declare_attack,
@@ -2382,8 +2383,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if getattr(opponent.active, 'damage_prevented_next_turn', False):
             return 0
         attack = player.active.card.attacks[attack_idx]
-        damage = attack.damage
-        for effect in attack_runtime_effects(attack):
+        attack_effects = attack_runtime_effects(attack)
+        damage = 0 if any(_effect_replaces_base_damage(effect) for effect in attack_effects) else attack.damage
+        for effect in attack_effects:
             compiled_damage = self._compiled_damage_value(state, player_idx, effect)
             if compiled_damage is not None:
                 damage = max(damage, compiled_damage)

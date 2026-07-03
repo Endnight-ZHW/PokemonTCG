@@ -1474,9 +1474,12 @@ func _show_card_detail(card_id: String) -> void:
 			ability.get("name", ""), ability.get("text", "")])
 	for attack_value in card.get("attacks", []):
 		var attack: Dictionary = attack_value
+		var damage_label := str(attack.get("damage_text", ""))
+		if damage_label.is_empty() and int(attack.get("damage", 0)) > 0:
+			damage_label = str(attack.get("damage", 0))
 		rows.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
 			attack.get("name", ""),
-			str(attack.get("damage", 0)),
+			damage_label,
 			attack.get("text", ""),
 		])
 	if not str(card.get("trainer_text", "")).is_empty():
@@ -1600,9 +1603,12 @@ func _card_detail_bbcode(card_id: String, pokemon: PokemonState = null) -> Strin
 		])
 	for attack_value in card.get("attacks", []):
 		var attack: Dictionary = attack_value
+		var damage_label := str(attack.get("damage_text", ""))
+		if damage_label.is_empty() and int(attack.get("damage", 0)) > 0:
+			damage_label = str(attack.get("damage", 0))
 		rows.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
 			str(attack.get("name", "")),
-			str(attack.get("damage", "")),
+			damage_label,
 			str(attack.get("text", "")),
 		])
 	if not str(card.get("trainer_text", "")).is_empty():

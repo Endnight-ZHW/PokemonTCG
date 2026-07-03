@@ -935,7 +935,9 @@ def draw_field_pokemon(gs, surface, x, y, pokemon, is_opponent=False, hovered=Fa
             cost_x += 14
 
         # Attack name + damage
-        dmg_str = str(attack.damage) if attack.damage > 0 else ""
+        dmg_str = getattr(attack, "damage_text", "") or (
+            str(attack.damage) if attack.damage > 0 else ""
+        )
         atk_name = attack.name[:8]
         atk_str = f"{atk_name}  {dmg_str}"
         atk_txt = gs.font_card_body.render(atk_str, True, (0, 0, 0))
@@ -1155,7 +1157,9 @@ def draw_bench_card(gs, surface, x, y, pokemon, hovered=False, selected=False):
     if card.attacks:
         atk = card.attacks[0]
         cost_str = "".join(ENERGY_CN.get(e, e[:1]) for e in atk.cost[:3])
-        dmg_str = str(atk.damage) if atk.damage > 0 else ""
+        dmg_str = getattr(atk, "damage_text", "") or (
+            str(atk.damage) if atk.damage > 0 else ""
+        )
         atk_name = atk.name[:4]
         atk_str = f"{cost_str} {atk_name}{dmg_str}"
         atk_txt = gs.font_card_tiny.render(atk_str, True, (10, 10, 10))

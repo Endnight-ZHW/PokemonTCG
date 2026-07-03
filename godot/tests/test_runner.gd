@@ -93,7 +93,7 @@ func _run_phase_one_tests() -> void:
 			JSON.stringify(profile_keys),
 		],
 	)
-	_check(fixture.get("counts", {}).get("effects", 0) == 78, "Expected 78 effect types")
+	_check(fixture.get("counts", {}).get("effects", 0) == 77, "Expected 77 effect types")
 	_check(
 		int(fixture.get("vm_version", 0)) == VMContract.IR_VERSION,
 		"Fixture VM version must match Godot VMContract",
@@ -109,6 +109,15 @@ func _run_phase_one_tests() -> void:
 	_check(models.get("state_card_slots", 0) == 96, "Deep AI card slot count mismatch")
 	_check(models.get("action_numeric_size", 0) == 178, "Deep AI action size mismatch")
 	_check_release_effects_have_compiled_ir(cards)
+	_check(
+		int(cards["sv2-tatsu"]["attacks"][1].get("damage", 0)) == 30
+		and str(cards["sv2-tatsu"]["attacks"][1].get("damage_text", "")) == "30"
+		and str(cards["sv1-107"]["attacks"][0].get("damage_text", "")) == "10×"
+		and str(cards["svi-gree"]["attacks"][1].get("damage_text", "")) == "60+"
+		and str(cards["svg-ceti"]["attacks"][1].get("damage_text", "")) == "200-"
+		and str(cards["svg2-empo"]["attacks"][0].get("damage_text", "")) == "",
+		"Exported attack damage_text labels are incorrect",
+	)
 
 	for card_id in fixture.get("card_bucket_samples", {}):
 		_check(
@@ -177,21 +186,21 @@ func _run_phase_two_tests() -> void:
 	var catalog := CardCatalog.new()
 	var engine := GameEngine.new(catalog)
 	var effect_types: Array = fixture.get("effect_types", [])
-	_check(effect_types.size() == 78, "Expected 78 exported effect type names")
+	_check(effect_types.size() == 77, "Expected 77 exported effect type names")
 	for effect_type in effect_types:
 		_check(
 			engine.effect_engine.supports_effect_type(str(effect_type)),
 			"Unsupported effect type: %s" % effect_type,
 		)
 	var compiled_examples: Dictionary = fixture.get("compiled_effect_examples", {})
-	_check(compiled_examples.size() == 78, "Expected one compiled example for every effect type")
+	_check(compiled_examples.size() == 77, "Expected one compiled example for every effect type")
 	for effect_type in compiled_examples:
 		_check(
 			engine.effect_engine.supports_command_spec(Dictionary(compiled_examples[effect_type])),
 			"Unsupported compiled effect spec: %s" % effect_type,
 		)
 	var raw_examples: Dictionary = fixture.get("effect_examples", {})
-	_check(raw_examples.size() == 78, "Expected one raw metadata example for every effect type")
+	_check(raw_examples.size() == 77, "Expected one raw metadata example for every effect type")
 	for effect_type in raw_examples:
 		var raw_effect := Dictionary(raw_examples[effect_type])
 		_check(
@@ -5670,7 +5679,7 @@ func _run_compiled_effect_examples(
 	engine: GameEngine,
 ) -> void:
 	var examples: Dictionary = fixture.get("compiled_effect_examples", {})
-	_check(examples.size() == 78, "Expected one compiled example for every effect type")
+	_check(examples.size() == 77, "Expected one compiled example for every effect type")
 	for effect_type in examples:
 		var state := _effect_state()
 		var stack := ResolutionStack.new()
@@ -9514,12 +9523,12 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	)
 	_check(step.success, "Tatsugiri return-to-hand attack failed: %s" % step.message)
 	_check(
-		state.players[1].active.damage_counters == 0
+		state.players[1].active.damage_counters == 3
 		and state.players[0].active == null
 		and "sv2-tatsu" in state.players[0].hand
 		and "sv1-ener-3" in state.players[0].hand
 		and "svl-vitb" in state.players[0].hand,
-		"Tatsugiri return-to-hand dealt damage or failed to return attached cards",
+		"Tatsugiri return-to-hand did not deal 30 damage or failed to return attached cards",
 	)
 	_check(
 		state.winner == 1,

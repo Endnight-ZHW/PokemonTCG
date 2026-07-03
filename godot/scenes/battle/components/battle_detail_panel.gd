@@ -77,9 +77,12 @@ func _card_detail_bbcode(
 		])
 	for attack_value in card.get("attacks", []):
 		var attack: Dictionary = attack_value
+		var damage_label := str(attack.get("damage_text", ""))
+		if damage_label.is_empty() and int(attack.get("damage", 0)) > 0:
+			damage_label = str(attack.get("damage", 0))
 		lines.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
 			attack.get("name", ""),
-			str(attack.get("damage", 0)),
+			damage_label,
 			attack.get("text", ""),
 		])
 	if not str(card.get("trainer_text", "")).is_empty():

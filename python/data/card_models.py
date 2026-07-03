@@ -17,6 +17,7 @@ class AttackDef:
     cost: list[str]           # e.g. ["Fire", "Colorless"]
     damage: int               # Base damage, 0 if non-damaging
     text: str                 # Raw card text for display
+    damage_text: str = ""     # Printed damage label, e.g. "60+", "20×", "200-"
     effects: list[EffectDef] = field(default_factory=list)
     converted_energy_cost: int = 0
     compiled_effects: list[dict] = field(default_factory=list)

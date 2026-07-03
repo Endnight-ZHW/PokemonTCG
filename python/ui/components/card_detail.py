@@ -119,7 +119,10 @@ def _card_detail_lines(card, extra_info=None) -> list[str]:
         if card.attacks:
             for atk in card.attacks[:3]:
                 cost = "".join(ENERGY_CN.get(c, c[:1]) for c in atk.cost)
-                dmg = f" {atk.damage}" if atk.damage else ""
+                damage_label = getattr(atk, "damage_text", "") or (
+                    str(atk.damage) if atk.damage else ""
+                )
+                dmg = f" {damage_label}" if damage_label else ""
                 lines.append(f"[{cost or '无'}] {atk.name}{dmg}")
                 if atk.text:
                     lines.extend(_wrap_text(atk.text, 24)[:2])
@@ -272,7 +275,11 @@ def pokemon_extra_info(gs, pokemon) -> list[str]:
         lines.append("───")
         for atk in pokemon.card.attacks:
             cost_str = "".join(ENERGY_CN.get(c, c[:1]) for c in atk.cost)
-            lines.append(f"招式: [{cost_str}] {atk.name}  伤害:{atk.damage}")
+            damage_label = getattr(atk, "damage_text", "") or (
+                str(atk.damage) if atk.damage else ""
+            )
+            damage_text = f"  伤害:{damage_label}" if damage_label else ""
+            lines.append(f"招式: [{cost_str}] {atk.name}{damage_text}")
             if atk.text:
                 for wrapped in _wrap_text(atk.text, 26):
                     lines.append(f"  {wrapped}")

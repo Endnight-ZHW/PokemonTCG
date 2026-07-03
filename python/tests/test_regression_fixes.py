@@ -958,7 +958,7 @@ class TestCardEffectAccuracy(unittest.TestCase):
         self.assertIsNone(attack_damage_context(state, stack))
         self.assertFalse(hasattr(state, "_attack_damage_context"))
 
-    def test_tatsugiri_return_to_hand_has_no_damage_and_checks_board(self):
+    def test_tatsugiri_return_to_hand_deals_damage_and_checks_board(self):
         state = self._battle_state(active_card_id="sv2-tatsu")
         water = CardRegistry.get("sv1-ener-3")
         tool = CardRegistry.get("svl-vitb")
@@ -972,12 +972,52 @@ class TestCardEffectAccuracy(unittest.TestCase):
         )
 
         self.assertTrue(step.success, step.message)
-        self.assertEqual(state.p2.active.damage_counters, 0)
+        self.assertEqual(state.p2.active.damage_counters, 3)
         self.assertIsNone(state.p1.active)
         self.assertIn(CardRegistry.get("sv2-tatsu"), state.p1.hand)
         self.assertIn(water, state.p1.hand)
         self.assertIn(tool, state.p1.hand)
         self.assertEqual(state.winner, 1)
+
+    def test_squawkabilly_fly_uses_base_damage_once(self):
+        engine = GameEngine()
+        state = self._battle_state(active_card_id="svi-sqwk")
+        state.p1.active.energy_cards = [
+            CardRegistry.get("sv1-ener-2"),
+            CardRegistry.get("sv1-ener-3"),
+        ]
+
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            ScriptedRandomSource([True]),
+            auto_resolve=True,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNone(step.pending_choice)
+        self.assertEqual(state.p2.active.damage_counters, 6)
+        self.assertTrue(state.p1.active.damage_prevented_next_turn)
+        self.assertTrue(state.p1.active.all_prevented_next_turn)
+
+    def test_squawkabilly_fly_tails_fails_without_damage(self):
+        engine = GameEngine()
+        state = self._battle_state(active_card_id="svi-sqwk")
+        state.p1.active.energy_cards = [
+            CardRegistry.get("sv1-ener-2"),
+            CardRegistry.get("sv1-ener-3"),
+        ]
+
+        step = engine.apply_action(
+            state,
+            GameAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 1}, actor=0),
+            ScriptedRandomSource([False]),
+            auto_resolve=True,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNone(step.pending_choice)
+        self.assertEqual(state.p2.active.damage_counters, 0)
+        self.assertFalse(state.p1.active.damage_prevented_next_turn)
+        self.assertFalse(state.p1.active.all_prevented_next_turn)
 
     def test_attack_leave_play_promotes_before_next_turn_draw(self):
         engine = GameEngine()

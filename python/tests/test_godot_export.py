@@ -20,9 +20,9 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(first_contract, second_contract)
             self.assertEqual(first_contract["counts"]["cards"], 137)
             self.assertEqual(first_contract["counts"]["decks"], 10)
-            self.assertEqual(len(first_contract["effect_types"]), 78)
-            self.assertEqual(len(first_contract["effect_examples"]), 78)
-            self.assertEqual(len(first_contract["compiled_effect_examples"]), 78)
+            self.assertEqual(len(first_contract["effect_types"]), 77)
+            self.assertEqual(len(first_contract["effect_examples"]), 77)
+            self.assertEqual(len(first_contract["compiled_effect_examples"]), 77)
             self.assertTrue(all(size == 60 for size in first_contract["deck_sizes"].values()))
             rules = json.loads(
                 (first / "tests" / "fixtures" / "rules_golden.json").read_text(
@@ -51,6 +51,14 @@ class GodotDataExportTests(unittest.TestCase):
             for op in legacy_formula_ops:
                 self.assertNotIn(f'"op": "{op}"', compiled_dump)
             self.assertEqual(len(first_cards["svi-chim"]["ai_semantic_features"]), 53)
+            self.assertEqual(first_cards["sv2-tatsu"]["attacks"][1]["damage"], 30)
+            self.assertEqual(first_cards["sv2-tatsu"]["attacks"][1]["damage_text"], "30")
+            self.assertEqual(first_cards["svi-sqwk"]["attacks"][1]["damage_text"], "60")
+            self.assertEqual(first_cards["sv1-107"]["attacks"][0]["damage_text"], "10×")
+            self.assertEqual(first_cards["svi-gree"]["attacks"][1]["damage_text"], "60+")
+            self.assertEqual(first_cards["svg-ceti"]["attacks"][1]["damage_text"], "200-")
+            self.assertEqual(first_cards["sv2-tatsu"]["attacks"][0]["damage_text"], "")
+            self.assertEqual(first_cards["svg2-empo"]["attacks"][0]["damage_text"], "")
             encoder_fixture = json.loads(
                 (first / "tests" / "fixtures" / "ai_encoder_golden.json").read_text(
                     encoding="utf-8"

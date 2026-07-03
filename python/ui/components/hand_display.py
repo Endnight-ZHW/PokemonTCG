@@ -166,7 +166,9 @@ def draw_hand_card(gs, surface, x, y, card, highlight=False):
                                  gs.font_card_tiny)
                 cost_x += 14
 
-            dmg_str = str(attack.damage) if attack.damage > 0 else ""
+            dmg_str = getattr(attack, "damage_text", "") or (
+                str(attack.damage) if attack.damage > 0 else ""
+            )
             atk_name = attack.name[:6]
             atk_str = f"{atk_name}{dmg_str}"
             atk_txt = gs.font_card_body.render(atk_str, True, (0, 0, 0))
