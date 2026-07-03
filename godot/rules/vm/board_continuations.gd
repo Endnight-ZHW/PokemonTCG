@@ -136,10 +136,30 @@ func continue_place_counters_self_ko(
 		}})
 	var source_player := int(data["source_player"])
 	var source_slot := str(data["source_slot"])
-	var self_target := state.get_player(source_player).get_pokemon(source_slot)
-	if self_target:
-		self_target.damage_counters += max(
-			1, ceili(float(self_target.current_hp(catalog)) / 10.0))
+	var source_state := state.get_player(source_player)
+	if source_state.get_pokemon(source_slot):
+		var discard_start := source_state.discard.size()
+		state.discard_pokemon(source_player, source_slot)
+		var discarded_cards: Array[String] = []
+		for index in range(discard_start, source_state.discard.size()):
+			discarded_cards.append(source_state.discard[index])
+		if not discarded_cards.is_empty():
+			events.append(VMZoneHelpers.discard_event(
+				source_player,
+				source_slot,
+				discarded_cards,
+				discarded_cards.size(),
+			))
+	if (
+		source_slot == "active"
+		and source_state.active == null
+		and source_state.bench_count() > 0
+		and source_player not in state.pending_promotions
+	):
+		state.pending_promotions.append(source_player)
+	elif not source_state.has_any_pokemon_in_play():
+		state.winner = 1 - source_player
+		state.phase = "GAME_OVER"
 	return VMResult.ok()
 
 

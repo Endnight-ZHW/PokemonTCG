@@ -1681,6 +1681,8 @@ func _run_phase_two_tests() -> void:
 	self_ko_state.players[0].bench[0] = PokemonState.new("svi-chim")
 	self_ko_state.players[0].bench[0].placed_this_turn = false
 	self_ko_state.players[0].hand.clear()
+	self_ko_state.players[1].prizes = ["sv1-ener-2"]
+	var self_ko_opponent_hand_before := self_ko_state.players[1].hand.duplicate()
 	var ability_name := str(
 		catalog.get_card("sv2-starm").get("abilities", [])[0].get("name", ""))
 	var self_ko_step := engine.apply_action(
@@ -1711,8 +1713,21 @@ func _run_phase_two_tests() -> void:
 			"Self-KO source remained in the active slot")
 		_check("sv2-starm" in self_ko_state.players[0].discard,
 			"Self-KO source was not discarded")
-		_check(self_ko_state.players[1].prizes.size() == 0,
-			"Opponent did not take a prize for self-KO")
+		_check(
+			self_ko_state.players[1].prizes == ["sv1-ener-2"]
+			and self_ko_state.players[1].hand == self_ko_opponent_hand_before,
+			"Opponent took a prize for Starmie's effect discard")
+		var self_ko_saw_prize_event := false
+		var self_ko_saw_ko_event := false
+		for event in self_ko_result.events:
+			if str(event.get("event_type", "")) == "prize_taken":
+				self_ko_saw_prize_event = true
+			if str(event.get("event_type", "")) == "pokemon_ko":
+				self_ko_saw_ko_event = true
+		_check(not self_ko_saw_prize_event,
+			"Starmie's effect discard emitted a prize_taken event")
+		_check(not self_ko_saw_ko_event,
+			"Starmie's effect discard emitted a pokemon_ko event")
 		_check(0 in self_ko_state.pending_promotions,
 			"Self-KO did not enqueue promotion")
 
@@ -8470,8 +8485,10 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	_check(step.success, "Native place_counters_then_self_ko failed to resume: %s" % step.message)
 	_check(state.players[1].bench[0].damage_counters == 2,
 		"Native place_counters_then_self_ko did not place target counters")
-	_check(state.players[0].active != null and state.players[0].active.damage_counters > 0,
-		"Native place_counters_then_self_ko did not put source into KO state")
+	_check(state.players[0].active == null and "sv2-starm" in state.players[0].discard,
+		"Native place_counters_then_self_ko did not discard source without KO")
+	_check(0 in state.pending_promotions,
+		"Native place_counters_then_self_ko did not enqueue promotion")
 	_check(state.players[0].hand == ["sv1-ener-2"],
 		"Native place_counters_then_self_ko did not resume remaining command")
 
