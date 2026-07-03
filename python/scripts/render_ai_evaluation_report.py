@@ -105,6 +105,22 @@ def _decision_diagnostic_count(payload: dict[str, Any]) -> int:
     return int((diagnostics or {}).get("total") or 0) if isinstance(diagnostics, dict) else 0
 
 
+def _decision_diagnostic_delta(payload: dict[str, Any]) -> int | None:
+    diagnostics = payload.get("decision_diagnostics") or {}
+    if not isinstance(diagnostics, dict):
+        return None
+    by_strategy = diagnostics.get("by_strategy") or {}
+    if not isinstance(by_strategy, dict):
+        return None
+    delta = by_strategy.get("delta") or {}
+    if isinstance(delta, dict) and delta.get("total") is not None:
+        try:
+            return int(delta.get("total") or 0)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def _golden_failure_count(payload: dict[str, Any]) -> int:
     golden = payload.get("golden_scenarios") or {}
     return int((golden or {}).get("failed") or 0) if isinstance(golden, dict) else 0
@@ -123,8 +139,11 @@ def evaluation_verdict(payload: dict[str, Any]) -> str:
     diagnostics = _diagnostic_count(summary)
     if diagnostics > 0:
         return "诊断未通过：存在非法动作、选择失败或规则异常，暂不判断强度。"
-    if _decision_diagnostic_count(payload) > 0:
-        return "诊断未通过：存在决策错因计数，暂不判断强度。"
+    decision_diagnostics = _decision_diagnostic_count(payload)
+    if decision_diagnostics > 0:
+        diagnostic_delta = _decision_diagnostic_delta(payload)
+        if payload.get("self_check") or _strategies_equal(payload) or diagnostic_delta is None or diagnostic_delta > 0:
+            return "诊断未通过：存在决策错因计数，暂不判断强度。"
     if _golden_failure_count(payload) > 0:
         return "诊断未通过：关键局面金样例失败。"
     max_action_rate = _float(

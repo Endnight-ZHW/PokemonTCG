@@ -4,7 +4,7 @@ extends RefCounted
 const STRONGEST_DIFFICULTY := "strongest"
 const HEURISTIC_VARIANT_LEGACY := "legacy"
 const HEURISTIC_VARIANT_SEMANTIC_V2 := "semantic_v2"
-const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_LEGACY
+const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_SEMANTIC_V2
 const DIFFICULTIES := {
 	"strongest": {"simulations": 12000, "seconds": 10.0, "depth": 24},
 	# Compatibility aliases for older saves/tests that still send a difficulty.

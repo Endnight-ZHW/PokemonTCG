@@ -385,6 +385,27 @@ class AIEvaluationReportTests(unittest.TestCase):
             validate_evaluation_gate(payload, gate="equivalence")["errors"],
         )
 
+    def test_strength_gate_uses_strategy_diagnostic_delta(self):
+        payload = _schema2_payload()
+        payload["decision_diagnostics"] = {
+            "total": 6,
+            "labels": {"weak_attack_before_development": 6},
+            "by_strategy": {
+                "A": {"total": 2, "labels": {"weak_attack_before_development": 2}},
+                "B": {"total": 4, "labels": {"weak_attack_before_development": 4}},
+                "delta": {"total": -2, "labels": {"weak_attack_before_development": -2}},
+            },
+        }
+
+        self.assertTrue(validate_evaluation_gate(payload, gate="strength")["valid"])
+        self.assertIn("策略 A 显著领先", evaluation_verdict(payload))
+
+        payload["decision_diagnostics"]["by_strategy"]["delta"]["total"] = 1
+        self.assertIn(
+            "decision_diagnostics_regression",
+            validate_evaluation_gate(payload, gate="strength")["errors"],
+        )
+
     def test_equivalence_gate_rejects_statistical_regressions(self):
         payload = _schema2_payload(
             paired_delta_ci95={"lower": -0.021, "upper": 0.01, "samples": 400},

@@ -2474,8 +2474,11 @@ func _run_ai_strength_regression_tests(
 	eval_state.players[1].hand = ["sv1-ener-3"]
 	eval_state.players[1].deck = ["sv1-ener-3", "sv1-ener-3"]
 	eval_state.players[1].prizes = ["sv1-ener-3", "sv1-ener-3", "sv1-ener-3", "sv1-ener-3"]
+	var native_math_previous_variant := worker._heuristic_variant
+	worker._heuristic_variant = NativeChallengeAI.HEURISTIC_VARIANT_LEGACY
 	var gdscript_eval := worker._evaluate_raw_gdscript(eval_state, 0, catalog)
 	var native_eval := worker._evaluate_raw(eval_state, 0, catalog)
+	worker._heuristic_variant = native_math_previous_variant
 	_check(
 		is_equal_approx(native_eval, gdscript_eval),
 		"ChallengeAIMath native evaluation differs from GDScript fallback",

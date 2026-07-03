@@ -76,6 +76,8 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"profile": false,
 		"disable_ai_cache": false,
 		"disable_native_math": false,
+		"progress": false,
+		"progress_every_pairs": 1,
 		"output": "",
 		"output_dir": "",
 	}
@@ -147,6 +149,12 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--disable-native-math":
 				config["disable_native_math"] = true
 				index += 1
+			"--progress":
+				config["progress"] = true
+				index += 1
+			"--progress-every-pairs":
+				config["progress_every_pairs"] = maxi(1, int(value))
+				index += 2
 			"--output":
 				config["output"] = value
 				index += 2
@@ -268,6 +276,23 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var task_count := maxi(0, int(config.get("task_count", 0)))
 	var task_shard_count := maxi(1, int(config.get("task_shard_count", 1)))
 	var task_shard_index := clampi(int(config.get("task_shard_index", 0)), 0, task_shard_count - 1)
+	var progress_enabled := bool(config.get("progress", false))
+	var progress_every_pairs := maxi(1, int(config.get("progress_every_pairs", 1)))
+	var progress_started_ms := Time.get_ticks_msec()
+	var total_task_pairs := _count_task_pairs(
+		selected_decks,
+		cross_seed_blocks,
+		seed_block_start,
+		seed_block_count,
+		matchup_mode,
+		task_start,
+		task_count,
+		task_shard_index,
+		task_shard_count,
+	)
+	var completed_task_pairs := 0
+	var completed_games := 0
+	var total_games := total_task_pairs * 2
 	var task_candidates := 0
 	var task_pairs_run := 0
 	for selected_deck_index in range(selected_decks.size()):
@@ -329,6 +354,21 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					disable_ai_cache,
 					disable_native_math,
 				))
+				completed_task_pairs += 1
+				completed_games += 2
+				_maybe_emit_progress(
+					progress_enabled,
+					progress_every_pairs,
+					completed_task_pairs,
+					total_task_pairs,
+					completed_games,
+					total_games,
+					task_shard_index,
+					task_shard_count,
+					deck_key,
+					_matchup_key(deck_key, deck_key),
+					progress_started_ms,
+				)
 	if run_cross and cross_seed_blocks > 0:
 		var cross_end := mini(cross_seed_blocks, seed_block_start + seed_block_count)
 		for strategy_a_deck_index in range(selected_decks.size()):
@@ -396,6 +436,21 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						disable_ai_cache,
 						disable_native_math,
 					))
+					completed_task_pairs += 1
+					completed_games += 2
+					_maybe_emit_progress(
+						progress_enabled,
+						progress_every_pairs,
+						completed_task_pairs,
+						total_task_pairs,
+						completed_games,
+						total_games,
+						task_shard_index,
+						task_shard_count,
+						strategy_a_deck,
+						_matchup_key(strategy_a_deck, strategy_b_deck),
+						progress_started_ms,
+					)
 	var summary := _summarize_matches(matches)
 	summary["point_rate_ci95"] = _bootstrap_point_rate_ci(matches, BOOTSTRAP_SEED)
 	var paired := _summarize_pairs(matches)
@@ -436,6 +491,8 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"profile": bool(config.get("profile", false)),
 			"disable_ai_cache": disable_ai_cache,
 			"disable_native_math": disable_native_math,
+			"progress": progress_enabled,
+			"progress_every_pairs": progress_every_pairs,
 		},
 		"strategies": {
 			"A": _public_strategy(strategy_a),
@@ -469,6 +526,79 @@ func _selected_deck_keys(config: Dictionary) -> Array:
 		return DEFAULT_DECK_KEYS.duplicate()
 	selected.sort()
 	return selected
+
+
+func _count_task_pairs(
+	selected_decks: Array,
+	cross_seed_blocks: int,
+	seed_block_start: int,
+	seed_block_count: int,
+	matchup_mode: String,
+	task_start: int,
+	task_count: int,
+	task_shard_index: int,
+	task_shard_count: int,
+) -> int:
+	var run_mirror := matchup_mode in [MATCHUP_MODE_MIRROR, MATCHUP_MODE_BALANCED]
+	var run_cross := matchup_mode in [MATCHUP_MODE_BALANCED, MATCHUP_MODE_MATRIX]
+	var task_candidates := 0
+	var task_pairs := 0
+	if run_mirror:
+		for _deck_key in selected_decks:
+			for _block_offset in range(seed_block_count):
+				var task_index := task_candidates
+				task_candidates += 1
+				if not _task_belongs_to_range(task_index, task_start, task_count):
+					continue
+				if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+					continue
+				task_pairs += 1
+	if run_cross and cross_seed_blocks > 0:
+		var cross_end := mini(cross_seed_blocks, seed_block_start + seed_block_count)
+		for strategy_a_deck in selected_decks:
+			for strategy_b_deck in selected_decks:
+				if str(strategy_b_deck) == str(strategy_a_deck):
+					continue
+				for _block_index in range(seed_block_start, cross_end):
+					var task_index := task_candidates
+					task_candidates += 1
+					if not _task_belongs_to_range(task_index, task_start, task_count):
+						continue
+					if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+						continue
+					task_pairs += 1
+	return task_pairs
+
+
+func _maybe_emit_progress(
+	enabled: bool,
+	progress_every_pairs: int,
+	completed_pairs: int,
+	total_pairs: int,
+	completed_games: int,
+	total_games: int,
+	task_shard_index: int,
+	task_shard_count: int,
+	deck: String,
+	matchup_key: String,
+	started_ms: int,
+) -> void:
+	if not enabled:
+		return
+	if completed_pairs < total_pairs and completed_pairs % maxi(1, progress_every_pairs) != 0:
+		return
+	var payload := {
+		"completed_pairs": completed_pairs,
+		"total_pairs": total_pairs,
+		"completed_games": completed_games,
+		"total_games": total_games,
+		"task_shard_index": task_shard_index,
+		"task_shard_count": task_shard_count,
+		"deck": deck,
+		"matchup_key": matchup_key,
+		"elapsed_ms": Time.get_ticks_msec() - started_ms,
+	}
+	print("AI_EVALUATION_PROGRESS ", JSON.stringify(payload))
 
 
 func _game_seed(base_seed: int, deck_index: int, block_index: int) -> int:

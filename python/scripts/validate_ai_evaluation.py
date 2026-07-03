@@ -113,7 +113,7 @@ def validate_evaluation_gate(
     if normalized_gate in {"nightly-stability", "nightly-strength", "nightly-equivalence"}:
         if _float(summary.get("completion_rate"), 1.0) < 0.95:
             errors.append("completion_rate")
-        if normalized_gate != "nightly-equivalence" and _decision_diagnostic_total(payload) != 0:
+        if normalized_gate == "nightly-stability" and _decision_diagnostic_total(payload) != 0:
             errors.append("decision_diagnostics_nonzero")
         if _golden_failures(payload) != 0:
             errors.append("golden_scenarios_failed")
@@ -142,6 +142,12 @@ def validate_evaluation_gate(
     elif normalized_gate == "nightly-strength":
         if payload.get("self_check") or _strategies_equal(payload):
             errors.append("strength_gate_requires_distinct_strategies")
+        diagnostic_delta = _decision_diagnostic_regression(payload)
+        if diagnostic_delta is None:
+            if _decision_diagnostic_total(payload) != 0:
+                errors.append("decision_diagnostics_nonzero")
+        elif diagnostic_delta > 0:
+            errors.append("decision_diagnostics_regression")
         interval = summary.get("paired_delta_ci95") or {}
         if _float(interval.get("lower") if isinstance(interval, dict) else None) <= 0.0:
             errors.append("paired_delta_ci_not_positive")

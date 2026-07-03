@@ -27,6 +27,9 @@ param(
     [switch]$SkipValidate,
     [switch]$Profile,
     [switch]$DynamicAIBudget,
+    [switch]$CompareLegacyAI,
+    [int]$ProgressEveryPairs = 1,
+    [switch]$NoProgress,
     [switch]$DisableAICache,
     [switch]$DisableNativeMath,
     [string]$OutputDir = ''
@@ -109,6 +112,9 @@ if ($ShardOnly) {
 if ($Workers -lt 1) {
     throw 'Workers must be >= 1.'
 }
+if ($ProgressEveryPairs -lt 1) {
+    throw 'ProgressEveryPairs must be >= 1.'
+}
 if ($SeedBlockStart -lt 0 -or $SeedBlockCount -lt 0) {
     throw 'SeedBlockStart and SeedBlockCount must be >= 0.'
 }
@@ -155,6 +161,16 @@ foreach ($path in $mergeInputPaths) {
         throw "MergeInput file not found: $path"
     }
 }
+if (
+    -not $mergeOnly -and
+    $CompareLegacyAI -and
+    (
+        -not [string]::IsNullOrWhiteSpace($StrategyA) -or
+        -not [string]::IsNullOrWhiteSpace($StrategyB)
+    )
+) {
+    throw 'CompareLegacyAI cannot be combined with explicit StrategyA or StrategyB.'
+}
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -168,7 +184,83 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $jsonPath = Join-Path $OutputDir 'results.json'
 $htmlPath = Join-Path $OutputDir 'report.html'
 
+function New-DynamicAIBudgetConfig {
+    return [ordered]@{
+        enabled = $true
+        min_simulations = 128
+        ambiguous_min_simulations = 512
+        check_interval = 32
+        stable_checks = 3
+        ambiguous_stable_checks = 5
+        min_mean_gap = 0.10
+        ambiguous_mean_gap = 0.14
+        min_best_visits = 32
+        min_best_visit_share = 0.35
+        clear_prior_gap = 0.25
+        max_root_actions_for_clear = 10
+        single_action_simulations = 0
+    }
+}
+
+function New-PresetAIStrategy {
+    param(
+        [string]$Id,
+        [string]$Label,
+        [string]$HeuristicVariant,
+        [bool]$UseDynamicBudget
+    )
+    $strategy = [ordered]@{
+        id = $Id
+        label = $Label
+    }
+    if ($EvalPreset -eq 'Smoke') {
+        $strategy['simulation_budget'] = 1
+        $strategy['seconds'] = 0.01
+        $strategy['max_depth'] = 1
+        $strategy['deterministic'] = $true
+    }
+    elseif ($EvalPreset -eq 'Quick') {
+        $strategy['simulation_budget'] = 64
+        $strategy['seconds'] = 0.05
+        $strategy['max_depth'] = 8
+        $strategy['deterministic'] = $true
+    }
+    else {
+        $strategy['preset'] = 'strongest'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($HeuristicVariant)) {
+        $strategy['heuristic_variant'] = $HeuristicVariant
+    }
+    if ($UseDynamicBudget) {
+        $strategy['dynamic_budget'] = New-DynamicAIBudgetConfig
+    }
+    return $strategy
+}
+
 if (
+    -not $mergeOnly -and
+    [string]::IsNullOrWhiteSpace($StrategyA) -and
+    [string]::IsNullOrWhiteSpace($StrategyB) -and
+    $CompareLegacyAI
+) {
+    $semanticStrategyPath = Join-Path $OutputDir 'strategy_semantic_v2.json'
+    $legacyStrategyPath = Join-Path $OutputDir 'strategy_legacy.json'
+    $semanticStrategy = New-PresetAIStrategy `
+        -Id 'semantic-v2' `
+        -Label 'Semantic v2 Challenge AI' `
+        -HeuristicVariant 'semantic_v2' `
+        -UseDynamicBudget ([bool]$DynamicAIBudget)
+    $legacyStrategy = New-PresetAIStrategy `
+        -Id 'legacy' `
+        -Label 'Legacy Challenge AI' `
+        -HeuristicVariant 'legacy' `
+        -UseDynamicBudget ([bool]$DynamicAIBudget)
+    $semanticStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $semanticStrategyPath -Encoding UTF8
+    $legacyStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $legacyStrategyPath -Encoding UTF8
+    $StrategyA = $semanticStrategyPath
+    $StrategyB = $legacyStrategyPath
+}
+elseif (
     -not $mergeOnly -and
     [string]::IsNullOrWhiteSpace($StrategyA) -and
     [string]::IsNullOrWhiteSpace($StrategyB) -and
@@ -179,21 +271,7 @@ if (
         id = 'dynamic-budget-strongest'
         label = 'Dynamic Budget Strongest'
         preset = 'strongest'
-        dynamic_budget = [ordered]@{
-            enabled = $true
-            min_simulations = 128
-            ambiguous_min_simulations = 512
-            check_interval = 32
-            stable_checks = 3
-            ambiguous_stable_checks = 5
-            min_mean_gap = 0.10
-            ambiguous_mean_gap = 0.14
-            min_best_visits = 32
-            min_best_visit_share = 0.35
-            clear_prior_gap = 0.25
-            max_root_actions_for_clear = 10
-            single_action_simulations = 0
-        }
+        dynamic_budget = New-DynamicAIBudgetConfig
     }
     $presetStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $presetStrategyPath -Encoding UTF8
     $StrategyA = $presetStrategyPath
@@ -256,6 +334,12 @@ if ($DisableAICache) {
 if ($DisableNativeMath) {
     $runnerArgs += @('--disable-native-math')
 }
+if (-not $NoProgress) {
+    $runnerArgs += @(
+        '--progress',
+        '--progress-every-pairs', ([string][Math]::Max(1, $ProgressEveryPairs))
+    )
+}
 if (-not [string]::IsNullOrWhiteSpace($StrategyA)) {
     $runnerArgs += @('--strategy-a', $StrategyA)
 }
@@ -273,7 +357,8 @@ function Test-GodotShardOutput {
         [string]$StdoutPath,
         [string]$StderrPath,
         [string]$JsonPath,
-        [int]$ExitCode
+        [int]$ExitCode,
+        [bool]$ReplayOutput = $true
     )
     $outputLines = @()
     if (Test-Path -LiteralPath $StdoutPath) {
@@ -282,7 +367,9 @@ function Test-GodotShardOutput {
     if (Test-Path -LiteralPath $StderrPath) {
         $outputLines += Get-Content -LiteralPath $StderrPath
     }
-    $outputLines | ForEach-Object { Write-Host $_ }
+    if ($ReplayOutput) {
+        $outputLines | ForEach-Object { Write-Host $_ }
+    }
     $joined = $outputLines -join "`n"
     if ($ExitCode -ne 0) {
         throw "Godot AI evaluation failed with exit code $ExitCode. stdout=$StdoutPath stderr=$StderrPath"
@@ -336,6 +423,156 @@ function New-GodotShardArgs {
     return $args
 }
 
+$script:AIEvalProgressByShard = @{}
+$script:AIEvalProgressLastHostAt = [datetime]::MinValue
+
+function Reset-AIEvaluationProgress {
+    $script:AIEvalProgressByShard = @{}
+    $script:AIEvalProgressLastHostAt = [datetime]::MinValue
+}
+
+function Read-NewLogLines {
+    param(
+        [string]$Path,
+        [ref]$LineCount
+    )
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return @()
+    }
+    $lines = @(Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue)
+    if ($lines.Count -le $LineCount.Value) {
+        return @()
+    }
+    $start = [int]$LineCount.Value
+    $LineCount.Value = $lines.Count
+    return @($lines[$start..($lines.Count - 1)])
+}
+
+function ConvertFrom-AIEvaluationProgressLine {
+    param([string]$Line)
+    if ($Line -notmatch '^AI_EVALUATION_PROGRESS\s+(\{.*\})\s*$') {
+        return $null
+    }
+    try {
+        return ($Matches[1] | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Write-AIEvaluationProgressEvent {
+    param([object]$Progress)
+    if ($null -eq $Progress) {
+        return
+    }
+    $shardKey = [string]$Progress.task_shard_index
+    $script:AIEvalProgressByShard[$shardKey] = $Progress
+
+    $completedPairs = 0
+    $totalPairs = 0
+    $completedGames = 0
+    $totalGames = 0
+    foreach ($item in $script:AIEvalProgressByShard.Values) {
+        $completedPairs += [int]$item.completed_pairs
+        $totalPairs += [int]$item.total_pairs
+        $completedGames += [int]$item.completed_games
+        $totalGames += [int]$item.total_games
+    }
+    $percent = 0
+    if ($totalPairs -gt 0) {
+        $percent = [Math]::Min(100, [Math]::Max(0, [int](100 * $completedPairs / $totalPairs)))
+    }
+    $status = "pairs $completedPairs/$totalPairs, games $completedGames/$totalGames"
+    if (-not [string]::IsNullOrWhiteSpace([string]$Progress.matchup_key)) {
+        $status += ", latest $($Progress.matchup_key)"
+    }
+    Write-Progress -Activity 'AI evaluation' -Status $status -PercentComplete $percent
+
+    $now = Get-Date
+    $isComplete = $totalPairs -gt 0 -and $completedPairs -ge $totalPairs
+    if (($now - $script:AIEvalProgressLastHostAt).TotalSeconds -ge 2 -or $isComplete) {
+        Write-Host "AI evaluation progress: $status"
+        $script:AIEvalProgressLastHostAt = $now
+    }
+}
+
+function Write-AIEvaluationOutputLine {
+    param(
+        [string]$Line,
+        [string]$Prefix,
+        [bool]$EnableProgress
+    )
+    if ([string]::IsNullOrEmpty($Line)) {
+        return
+    }
+    if ($EnableProgress) {
+        $progress = ConvertFrom-AIEvaluationProgressLine -Line $Line
+        if ($null -ne $progress) {
+            Write-AIEvaluationProgressEvent -Progress $progress
+            return
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($Prefix)) {
+        Write-Host $Line
+    }
+    else {
+        Write-Host "[$Prefix] $Line"
+    }
+}
+
+function Watch-GodotShardProcesses {
+    param(
+        [object[]]$Items,
+        [bool]$EnableProgress
+    )
+    foreach ($item in $Items) {
+        $item.StdoutLines = 0
+        $item.StderrLines = 0
+    }
+    while ($true) {
+        $allExited = $true
+        foreach ($item in $Items) {
+            $label = if ($Items.Count -gt 1) { "shard $($item.TaskShardIndex)" } else { '' }
+            $stdoutLines = [int]$item.StdoutLines
+            foreach ($line in Read-NewLogLines -Path $item.Stdout -LineCount ([ref]$stdoutLines)) {
+                Write-AIEvaluationOutputLine -Line $line -Prefix $label -EnableProgress $EnableProgress
+            }
+            $item.StdoutLines = $stdoutLines
+            $stderrLines = [int]$item.StderrLines
+            foreach ($line in Read-NewLogLines -Path $item.Stderr -LineCount ([ref]$stderrLines)) {
+                $stderrLabel = if ([string]::IsNullOrWhiteSpace($label)) { 'stderr' } else { "$label stderr" }
+                Write-AIEvaluationOutputLine -Line $line -Prefix $stderrLabel -EnableProgress $false
+            }
+            $item.StderrLines = $stderrLines
+            if (-not $item.Process.HasExited) {
+                $allExited = $false
+            }
+        }
+        if ($allExited) {
+            break
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    foreach ($item in $Items) {
+        $label = if ($Items.Count -gt 1) { "shard $($item.TaskShardIndex)" } else { '' }
+        $stdoutLines = [int]$item.StdoutLines
+        foreach ($line in Read-NewLogLines -Path $item.Stdout -LineCount ([ref]$stdoutLines)) {
+            Write-AIEvaluationOutputLine -Line $line -Prefix $label -EnableProgress $EnableProgress
+        }
+        $item.StdoutLines = $stdoutLines
+        $stderrLines = [int]$item.StderrLines
+        foreach ($line in Read-NewLogLines -Path $item.Stderr -LineCount ([ref]$stderrLines)) {
+            $stderrLabel = if ([string]::IsNullOrWhiteSpace($label)) { 'stderr' } else { "$label stderr" }
+            Write-AIEvaluationOutputLine -Line $line -Prefix $stderrLabel -EnableProgress $false
+        }
+        $item.StderrLines = $stderrLines
+    }
+    if ($EnableProgress) {
+        Write-Progress -Activity 'AI evaluation' -Completed
+    }
+}
+
 function Invoke-GodotShard {
     param(
         [string[]]$BaseArgs,
@@ -348,7 +585,8 @@ function Invoke-GodotShard {
         [int]$TaskShardCount,
         [string]$StdoutPath,
         [string]$StderrPath,
-        [bool]$SkipGolden
+        [bool]$SkipGolden,
+        [bool]$EnableProgress
     )
     $args = New-GodotShardArgs `
         -BaseArgs $BaseArgs `
@@ -360,6 +598,36 @@ function Invoke-GodotShard {
         -TaskShardIndex $TaskShardIndex `
         -TaskShardCount $TaskShardCount `
         -SkipGolden $SkipGolden
+    if ($EnableProgress) {
+        '' | Set-Content -LiteralPath $StdoutPath -Encoding UTF8
+        '' | Set-Content -LiteralPath $StderrPath -Encoding UTF8
+        $process = Start-Process `
+            -FilePath $godot `
+            -ArgumentList $args `
+            -RedirectStandardOutput $StdoutPath `
+            -RedirectStandardError $StderrPath `
+            -WindowStyle Hidden `
+            -PassThru
+        $item = [pscustomobject]@{
+            Process = $process
+            Json = $ShardJsonPath
+            Stdout = $StdoutPath
+            Stderr = $StderrPath
+            TaskShardIndex = $TaskShardIndex
+            TaskShardCount = $TaskShardCount
+            StdoutLines = 0
+            StderrLines = 0
+        }
+        Watch-GodotShardProcesses -Items @($item) -EnableProgress $true
+        $exitCode = $process.ExitCode
+        Test-GodotShardOutput `
+            -StdoutPath $StdoutPath `
+            -StderrPath $StderrPath `
+            -JsonPath $ShardJsonPath `
+            -ExitCode $exitCode `
+            -ReplayOutput $false
+        return
+    }
     $output = & $godot @args 2>&1
     $output | Set-Content -LiteralPath $StdoutPath -Encoding UTF8
     '' | Set-Content -LiteralPath $StderrPath -Encoding UTF8
@@ -367,7 +635,8 @@ function Invoke-GodotShard {
         -StdoutPath $StdoutPath `
         -StderrPath $StderrPath `
         -JsonPath $ShardJsonPath `
-        -ExitCode $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE })
+        -ExitCode $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }) `
+        -ReplayOutput $true
 }
 
 function Invoke-AIEvaluationMerge {
@@ -409,6 +678,10 @@ else {
     $outerShardCount = if ($ShardCount -gt 0) { $ShardCount } else { 1 }
     $taskShardCount = $outerShardCount * $workerCount
     $taskShardBaseIndex = if ($ShardCount -gt 0) { $ShardIndex * $workerCount } else { 0 }
+    $progressEnabled = -not $NoProgress
+    if ($progressEnabled) {
+        Reset-AIEvaluationProgress
+    }
 
     if ($workerCount -le 1) {
         $taskShardIndex = $taskShardBaseIndex
@@ -423,7 +696,8 @@ else {
             -TaskShardCount $taskShardCount `
             -StdoutPath (Join-Path $OutputDir 'godot.stdout.log') `
             -StderrPath (Join-Path $OutputDir 'godot.stderr.log') `
-            -SkipGolden ($taskShardCount -gt 1 -and $taskShardIndex -ne 0)
+            -SkipGolden ($taskShardCount -gt 1 -and $taskShardIndex -ne 0) `
+            -EnableProgress $progressEnabled
     }
     else {
         $shardsRoot = Join-Path $OutputDir 'shards'
@@ -461,16 +735,24 @@ else {
                 Stderr = $stderrPath
                 TaskShardIndex = $taskShardIndex
                 TaskShardCount = $taskShardCount
+                StdoutLines = 0
+                StderrLines = 0
             }
             $shardJsonPaths += $shardJson
         }
+        if ($progressEnabled) {
+            Watch-GodotShardProcesses -Items $processes -EnableProgress $true
+        }
         foreach ($item in $processes) {
-            $item.Process.WaitForExit()
+            if (-not $item.Process.HasExited) {
+                $item.Process.WaitForExit()
+            }
             Test-GodotShardOutput `
                 -StdoutPath $item.Stdout `
                 -StderrPath $item.Stderr `
                 -JsonPath $item.Json `
-                -ExitCode $item.Process.ExitCode
+                -ExitCode $item.Process.ExitCode `
+                -ReplayOutput (-not $progressEnabled)
         }
         Invoke-AIEvaluationMerge `
             -InputPaths $shardJsonPaths `
