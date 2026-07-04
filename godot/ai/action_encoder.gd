@@ -164,8 +164,9 @@ func encode_choice(
 	numeric.append_array(_one_hot(TARGET_SLOTS.find(str(ref.get("slot", ""))), TARGET_SLOTS.size()))
 	var card_id := str(ref.get("card_id", ""))
 	if card_id.is_empty():
-		var value: Dictionary = option.get("value", {})
-		card_id = str(value.get("card_id", ""))
+		var value: Variant = option.get("value", {})
+		if value is Dictionary:
+			card_id = str(Dictionary(value).get("card_id", ""))
 	numeric.append_array(_semantic(card_id))
 	return {
 		"numeric": _pad_float(numeric, ACTION_NUMERIC_SIZE),

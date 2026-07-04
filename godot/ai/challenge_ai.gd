@@ -2040,6 +2040,9 @@ func _should_override_with_ko(
 		return true
 	var preferred_damage := _estimated_attack_damage(
 		state, actor, int(preferred.params.get("attack_idx", -1)), catalog)
+	var opponent := state.get_player(1 - actor)
+	if opponent.active != null and preferred_damage < opponent.active.current_hp(catalog):
+		return true
 	var ko_damage := _estimated_attack_damage(
 		state, actor, int(ko_attack.params.get("attack_idx", -1)), catalog)
 	return ko_damage > preferred_damage
@@ -2121,7 +2124,14 @@ func _best_productive_nonterminal_action(
 			value += 35.0
 		elif action.action == "ATTACH_ENERGY":
 			value += 30.0
-		if value < 80.0 and delta < 8.0:
+		var semantic_pre_attack_development := (
+			_semantic_v2_enabled()
+			and excluded != null
+			and excluded.action == "DECLARE_ATTACK"
+			and development_value >= 55.0
+			and delta >= -20.0
+		)
+		if value < 80.0 and delta < 8.0 and not semantic_pre_attack_development:
 			continue
 		if value > best_value:
 			best = action

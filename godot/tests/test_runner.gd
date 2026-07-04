@@ -2127,6 +2127,21 @@ func _run_phase_four_foundation_tests() -> void:
 			_deep_equal(encoded, fixture["expected"]["choices"][index]),
 			"AI choice encoder differs at index %d" % index,
 		)
+	var bool_choice_request := ChoiceRequest.new(
+		"bool-choice",
+		"confirm",
+		int(observation["perspective"]),
+		"Confirm optional effect?",
+		[{"id": "yes", "label": "Yes", "value": true}],
+	)
+	var bool_choice_encoded := encoder.encode_choice(
+		observation, bool_choice_request, bool_choice_request.options[0], 0)
+	_check(
+		bool_choice_encoded.has("numeric")
+		and bool_choice_encoded["numeric"].size() == AIActionEncoder.ACTION_NUMERIC_SIZE
+		and int(bool_choice_encoded.get("card_id", -1)) == 0,
+		"AI choice encoder failed boolean option values",
+	)
 
 	var action_numeric: Array[float] = []
 	var action_cards: Array[int] = []
