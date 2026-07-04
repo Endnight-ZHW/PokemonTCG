@@ -98,6 +98,37 @@ static func validate(
 	return {"ok": true, "sequence": sequence}
 
 
+static func validate_payload(message_type: String, payload: Dictionary) -> Dictionary:
+	match message_type:
+		WELCOME:
+			if not _has_integer(payload, "player_idx"):
+				return _invalid("invalid_payload", "欢迎消息缺少玩家编号。")
+			return {"ok": true}
+		DECK_SELECT:
+			if not payload.get("deck_key") is String:
+				return _invalid("invalid_payload", "牌组选择消息缺少牌组。")
+			return {"ok": true}
+		ACTION_SUBMIT:
+			if not payload.get("action") is Dictionary:
+				return _invalid("invalid_payload", "动作提交消息缺少动作对象。")
+			return {"ok": true}
+		CHOICE_SUBMIT:
+			if not payload.get("response") is Dictionary:
+				return _invalid("invalid_payload", "选择提交消息缺少响应对象。")
+			return {"ok": true}
+		STATE_UPDATE:
+			return _validate_state_update_payload(payload)
+		ERROR:
+			if (
+				(payload.has("code") and not payload["code"] is String)
+				or (payload.has("message") and not payload["message"] is String)
+			):
+				return _invalid("invalid_payload", "错误消息字段类型错误。")
+			return {"ok": true}
+		_:
+			return {"ok": true}
+
+
 static func error_payload(code: String, message: String) -> Dictionary:
 	return {"code": code, "message": message}
 
@@ -111,3 +142,25 @@ static func _is_integer_number(value: Variant) -> bool:
 		value is int
 		or (value is float and is_equal_approx(value, float(int(value))))
 	)
+
+
+static func _has_integer(row: Dictionary, field: String) -> bool:
+	return row.has(field) and _is_integer_number(row[field])
+
+
+static func _validate_state_update_payload(payload: Dictionary) -> Dictionary:
+	if not payload.get("state") is Dictionary:
+		return _invalid("invalid_payload", "状态同步消息缺少局面对象。")
+	if payload.has("legal_actions") and not payload["legal_actions"] is Array:
+		return _invalid("invalid_payload", "合法动作列表类型错误。")
+	if payload.has("presentation_events") and not payload["presentation_events"] is Array:
+		return _invalid("invalid_payload", "表现事件列表类型错误。")
+	if payload.has("choice_request") and payload["choice_request"] != null:
+		if not payload["choice_request"] is Dictionary:
+			return _invalid("invalid_payload", "选择请求类型错误。")
+	var state: Dictionary = payload["state"]
+	if not _has_integer(state, "revision"):
+		return _invalid("invalid_payload", "状态同步消息缺少版本号。")
+	if not state.get("your") is Dictionary or not state.get("opponent") is Dictionary:
+		return _invalid("invalid_payload", "状态同步消息缺少玩家视图。")
+	return {"ok": true}

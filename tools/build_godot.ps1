@@ -43,6 +43,58 @@ function Invoke-GodotExport {
     }
 }
 
+function ConvertTo-GodotEscapedString {
+    param([Parameter(Mandatory)] [string]$Value)
+    return $Value.Replace('\', '\\').Replace('"', '\"')
+}
+
+function Set-GodotEditorSetting {
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [Parameter(Mandatory)] [string]$Name,
+        [Parameter(Mandatory)] [string]$Value
+    )
+    $escapedValue = ConvertTo-GodotEscapedString -Value $Value
+    $line = "$Name = `"$escapedValue`""
+    $content = if (Test-Path -LiteralPath $Path) {
+        Get-Content -Raw -LiteralPath $Path
+    } else {
+        "[gd_resource type=`"EditorSettings`" format=3]`r`n`r`n[resource]`r`n"
+    }
+    $pattern = "(?m)^$([regex]::Escape($Name))\s*=.*$"
+    if ($content -match $pattern) {
+        $content = $content -replace $pattern, $line
+    } else {
+        if ($content -notmatch '(?m)^\[resource\]\s*$') {
+            $content += "`r`n[resource]`r`n"
+        }
+        if (-not $content.EndsWith("`n")) {
+            $content += "`r`n"
+        }
+        $content += "$line`r`n"
+    }
+    Set-Content -LiteralPath $Path -Value $content -Encoding UTF8
+}
+
+function Set-GodotAndroidEditorSettings {
+    param(
+        [Parameter(Mandatory)] [string]$ToolsRoot,
+        [Parameter(Mandatory)] [string]$AndroidSdkRoot,
+        [Parameter(Mandatory)] [string]$JavaSdkRoot
+    )
+    $settingsPath = Join-Path $ToolsRoot 'appdata\Godot\editor_settings-4.7.tres'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $settingsPath) | Out-Null
+    Set-GodotEditorSetting `
+        -Path $settingsPath `
+        -Name 'export/android/android_sdk_path' `
+        -Value ([System.IO.Path]::GetFullPath($AndroidSdkRoot))
+    Set-GodotEditorSetting `
+        -Path $settingsPath `
+        -Name 'export/android/java_sdk_path' `
+        -Value ([System.IO.Path]::GetFullPath($JavaSdkRoot))
+    Write-Host "ANDROID_EDITOR_SETTINGS_OK path=$settingsPath"
+}
+
 if ($Target -in @('windows', 'all')) {
     $windowsOutput = if ($Configuration -eq 'release') {
         'dist/release/windows/PokemonTCG.exe'
@@ -64,18 +116,10 @@ if ($Target -in @('android', 'all')) {
     $env:ANDROID_SDK_ROOT = $sdkRoot
     $env:GRADLE_USER_HOME = Join-Path $repoRoot '.tools\gradle-home'
     $env:Path = "$(Join-Path $jdkRoot 'bin');$(Join-Path $sdkRoot 'platform-tools');$env:Path"
-    & $godot `
-        --headless `
-        --editor `
-        --path $projectRoot `
-        --script 'res://tools/configure_android_editor.gd' `
-        -- `
-        $sdkRoot `
-        $jdkRoot
-    $settingsExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    if ($settingsExitCode -ne 0) {
-        throw "Unable to configure Godot Android editor settings (exit $settingsExitCode)"
-    }
+    Set-GodotAndroidEditorSettings `
+        -ToolsRoot (Join-Path $repoRoot '.tools') `
+        -AndroidSdkRoot $sdkRoot `
+        -JavaSdkRoot $jdkRoot
     $androidRoot = Join-Path $projectRoot 'android'
     $androidBuildRoot = Join-Path $androidRoot 'build'
     $buildVersionPath = Join-Path $androidRoot '.build_version'

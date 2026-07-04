@@ -104,6 +104,8 @@ var active_request: ChoiceRequest
 var active_choice_panel: ChoicePanel
 var ui_initialized := false
 var _modal_generation := 0
+var _toast_tween: Tween
+var _toast_generation := 0
 
 
 func _ready() -> void:
@@ -173,6 +175,9 @@ func _process(_delta: float) -> void:
 
 
 func _exit_tree() -> void:
+	if _toast_tween and _toast_tween.is_valid():
+		_toast_tween.kill()
+	_toast_tween = null
 	_stop_ai()
 	_stop_network()
 
@@ -345,10 +350,15 @@ func _poll_network() -> void:
 				if network_status_label:
 					network_status_label.text = "对手已连接，正在同步牌组和对局……"
 			"state":
-				_apply_network_view(
-					event.get("view", {}),
-					int(event.get("player_idx", network_player_idx)),
-				)
+				var view_value: Variant = event.get("view", {})
+				if view_value is Dictionary:
+					_apply_network_view(
+						view_value,
+						int(event.get("player_idx", network_player_idx)),
+					)
+				else:
+					_show_toast("收到的联机局面无效，正在请求重新同步。", true)
+					network_controller.request_resync()
 			"error", "connection_failed", "transport_error":
 				var message := str(event.get(
 					"message",
@@ -366,7 +376,9 @@ func _poll_network() -> void:
 
 
 func _apply_network_view(view: Dictionary, player: int) -> void:
-	if view.is_empty() or not view.get("state") is Dictionary:
+	if view.is_empty() or not _network_view_is_valid(view):
+		_show_toast("收到的联机局面无效，正在请求重新同步。", true)
+		network_controller.request_resync()
 		return
 	var had_game_screen := current_screen == SCREEN_GAME and battle_screen != null
 	var presentation_snapshot := (
@@ -377,9 +389,11 @@ func _apply_network_view(view: Dictionary, player: int) -> void:
 	game_mode = MODE_NETWORK
 	network_player_idx = player
 	current_view_player = player
-	state = StateSerializer.from_player_view(view["state"], player)
+	var state_payload: Dictionary = view["state"]
+	state = StateSerializer.from_player_view(state_payload, player)
 	network_legal_actions.clear()
-	for row in view.get("legal_actions", []):
+	var legal_rows: Array = view.get("legal_actions", [])
+	for row in legal_rows:
 		if row is Dictionary:
 			network_legal_actions.append(GameAction.from_dict(row))
 	network_choice_request = (
@@ -408,6 +422,101 @@ func _apply_network_view(view: Dictionary, player: int) -> void:
 		)
 	):
 		_show_choice_overlay(network_choice_request)
+
+
+func _network_view_is_valid(view: Dictionary) -> bool:
+	if not view.get("state") is Dictionary:
+		return false
+	var state_payload: Dictionary = view["state"]
+	for key in ["your", "opponent"]:
+		if not state_payload.get(key) is Dictionary:
+			return false
+	for key in [
+		"action_log", "pending_promotions", "mulligan_count",
+		"extra_draws", "setup_ready", "public_deck_keys",
+	]:
+		if state_payload.has(key) and not state_payload[key] is Array:
+			return false
+	if (
+		not _network_player_payload_is_valid(state_payload["your"], true)
+		or not _network_player_payload_is_valid(state_payload["opponent"], false)
+	):
+		return false
+	if view.has("legal_actions"):
+		if not view["legal_actions"] is Array:
+			return false
+		for row in view["legal_actions"]:
+			if not row is Dictionary:
+				return false
+	if view.has("presentation_events"):
+		if not view["presentation_events"] is Array:
+			return false
+		for event_value in view["presentation_events"]:
+			if not _network_presentation_event_is_valid(event_value):
+				return false
+	if view.has("choice_request") and view["choice_request"] != null:
+		if not _network_choice_request_is_valid(view["choice_request"]):
+			return false
+	return true
+
+
+func _network_player_payload_is_valid(payload_value: Variant, show_hand: bool) -> bool:
+	if not payload_value is Dictionary:
+		return false
+	var payload: Dictionary = payload_value
+	for key in ["deck", "hand", "discard", "prizes", "bench"]:
+		if payload.has(key) and not payload[key] is Array:
+			return false
+	if show_hand and payload.has("hand") and not payload["hand"] is Array:
+		return false
+	if payload.has("active") and payload["active"] != null:
+		if not _network_pokemon_payload_is_valid(payload["active"]):
+			return false
+	if payload.has("bench"):
+		for pokemon_value in payload["bench"]:
+			if pokemon_value != null and not _network_pokemon_payload_is_valid(pokemon_value):
+				return false
+	return true
+
+
+func _network_pokemon_payload_is_valid(payload_value: Variant) -> bool:
+	if not payload_value is Dictionary:
+		return false
+	var payload: Dictionary = payload_value
+	for key in [
+		"energy_card_ids", "status_conditions", "evolution_stack_ids",
+		"used_abilities", "modifiers",
+	]:
+		if payload.has(key) and not payload[key] is Array:
+			return false
+	if payload.has("attack_locked_names") and not payload["attack_locked_names"] is Dictionary:
+		return false
+	return true
+
+
+func _network_presentation_event_is_valid(event_value: Variant) -> bool:
+	if not event_value is Dictionary:
+		return false
+	var event: Dictionary = event_value
+	for key in ["data", "source", "target"]:
+		if event.has(key) and not event[key] is Dictionary:
+			return false
+	return true
+
+
+func _network_choice_request_is_valid(request_value: Variant) -> bool:
+	if not request_value is Dictionary:
+		return false
+	var request: Dictionary = request_value
+	if request.has("options"):
+		if not request["options"] is Array:
+			return false
+		for option in request["options"]:
+			if not option is Dictionary:
+				return false
+	if request.has("metadata") and not request["metadata"] is Dictionary:
+		return false
+	return true
 
 
 func _stop_network() -> void:
@@ -873,19 +982,23 @@ func _choice_modal_size(has_preview: bool) -> Vector2:
 
 
 func _choice_option_card_id(option: Dictionary) -> String:
-	if option.get("value") is Dictionary:
-		var value: Dictionary = option["value"]
+	var value_variant: Variant = option.get("value")
+	if value_variant is Dictionary:
+		var value: Dictionary = value_variant
 		if not str(value.get("card_id", "")).is_empty():
 			return str(value["card_id"])
-	if option.get("ref") is Dictionary:
-		return str(option["ref"].get("card_id", ""))
+	var ref_variant: Variant = option.get("ref")
+	if ref_variant is Dictionary:
+		return str(Dictionary(ref_variant).get("card_id", ""))
 	return ""
 
 
 func _choice_option_caption(option: Dictionary) -> String:
 	var label_text := str(option.get("label", ""))
-	if option.get("value") is Dictionary:
-		var value_data: Dictionary = option["value"]
+	var value_variant: Variant = option.get("value")
+	var value_data: Dictionary = {}
+	if value_variant is Dictionary:
+		value_data = value_variant
 		var value_slot := str(value_data.get("slot", ""))
 		var base_name := str(value_data.get("base_name", ""))
 		var evolution_name := str(value_data.get("evolution_name", ""))
@@ -893,8 +1006,9 @@ func _choice_option_caption(option: Dictionary) -> String:
 			return "%s · %s → %s" % [_slot_name(value_slot), base_name, evolution_name]
 		if not value_slot.is_empty():
 			return _slot_name(value_slot)
-	if option.get("ref") is Dictionary:
-		var ref: Dictionary = option["ref"]
+	var ref_variant: Variant = option.get("ref")
+	if ref_variant is Dictionary:
+		var ref: Dictionary = ref_variant
 		var ref_slot := str(ref.get("slot", ""))
 		if not ref_slot.is_empty():
 			return _slot_name(ref_slot)
@@ -905,10 +1019,8 @@ func _choice_option_caption(option: Dictionary) -> String:
 			if index >= 0:
 				return "%s %d" % [zone_text, index + 1]
 			return zone_text
-	if option.get("value") is Dictionary:
-		var indexed_value: Dictionary = option["value"]
-		if indexed_value.has("index"):
-			return "#%d" % (int(indexed_value.get("index", -1)) + 1)
+	if value_variant is Dictionary and value_data.has("index"):
+		return "#%d" % (int(value_data.get("index", -1)) + 1)
 	return label_text
 
 
@@ -2022,6 +2134,11 @@ func _stop_ai() -> void:
 func _show_toast(message: String, is_error: bool = false) -> void:
 	if message.strip_edges().is_empty():
 		return
+	_toast_generation += 1
+	var toast_generation := _toast_generation
+	if _toast_tween and _toast_tween.is_valid():
+		_toast_tween.kill()
+	_toast_tween = null
 	toast_label.text = message
 	toast_label.modulate = GameUITheme.COLOR_DANGER if is_error else Color.WHITE
 	toast_label.visible = true
@@ -2029,16 +2146,24 @@ func _show_toast(message: String, is_error: bool = false) -> void:
 		toast_label.modulate.a = 1.0
 		get_tree().create_timer(2.0).timeout.connect(
 			func() -> void:
-				if toast_label and toast_label.text == message:
+				if (
+					toast_generation == _toast_generation
+					and toast_label
+					and toast_label.text == message
+				):
 					toast_label.visible = false
 		)
 		return
 	toast_label.modulate.a = 0.0
-	var tween := create_tween()
-	tween.tween_property(toast_label, "modulate:a", 1.0, 0.12)
-	tween.tween_interval(2.0)
-	tween.tween_property(toast_label, "modulate:a", 0.0, 0.2)
-	tween.tween_callback(func() -> void: toast_label.visible = false)
+	_toast_tween = create_tween()
+	_toast_tween.tween_property(toast_label, "modulate:a", 1.0, 0.12)
+	_toast_tween.tween_interval(2.0)
+	_toast_tween.tween_property(toast_label, "modulate:a", 0.0, 0.2)
+	_toast_tween.tween_callback(func() -> void:
+		if toast_generation == _toast_generation and toast_label:
+			toast_label.visible = false
+		_toast_tween = null
+	)
 
 
 func _show_title_from_game() -> void:

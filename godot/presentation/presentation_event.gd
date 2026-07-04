@@ -23,14 +23,18 @@ static func normalize(
 	fallback_actor: int = -1,
 	event_index: int = 0,
 ) -> Dictionary:
-	var data := Dictionary(raw_event.get("data", {})).duplicate(true)
+	var data := _dictionary_or_empty(raw_event.get("data", {})).duplicate(true)
 	var actor := int(raw_event.get(
 		"actor",
 		data.get("player", data.get("actor", fallback_actor)),
 	))
 	var event_type := str(raw_event.get("event_type", "unknown"))
-	if event_type == "cards_drawn" and data.has("cards") and not data.has("card_ids"):
-		data["card_ids"] = Array(data.get("cards", [])).duplicate()
+	if (
+		event_type == "cards_drawn"
+		and data.get("cards", []) is Array
+		and not data.has("card_ids")
+	):
+		data["card_ids"] = Array(data["cards"]).duplicate()
 	var card_count := 0
 	for field in CARD_LIST_FIELDS:
 		if data.get(field, []) is Array:
@@ -85,9 +89,10 @@ static func normalize_all(
 
 static func for_player(event: Dictionary, player_idx: int) -> Dictionary:
 	var result := event.duplicate(true)
+	var data := _dictionary_or_empty(result.get("data", {}))
 	var owner := int(result.get(
 		"actor",
-		result.get("data", {}).get("player", -1),
+		data.get("player", -1),
 	))
 	var visibility := str(result.get("visibility", PUBLIC))
 	if visibility == PRIVATE and owner != player_idx:
@@ -108,7 +113,7 @@ static func for_player(event: Dictionary, player_idx: int) -> Dictionary:
 
 static func _strip_hidden_card_identity(event: Dictionary) -> void:
 	event["card_id"] = ""
-	var data: Dictionary = event.get("data", {})
+	var data := _dictionary_or_empty(event.get("data", {}))
 	for field in CARD_ID_FIELDS:
 		if data.has(field):
 			data[field] = ""
@@ -172,9 +177,8 @@ static func _apply_endpoint_defaults(
 
 
 static func _has_explicit_endpoint(raw_event: Dictionary, key: String) -> bool:
-	return raw_event.get(key, {}) is Dictionary and not Dictionary(
-		raw_event.get(key, {})
-	).is_empty()
+	var value: Variant = raw_event.get(key, {})
+	return value is Dictionary and not Dictionary(value).is_empty()
 
 
 static func _endpoint(
@@ -207,3 +211,9 @@ static func _endpoint(
 		"slot": slot,
 		"index": index,
 	}
+
+
+static func _dictionary_or_empty(value: Variant) -> Dictionary:
+	if value is Dictionary:
+		return Dictionary(value)
+	return {}

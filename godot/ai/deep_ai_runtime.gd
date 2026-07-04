@@ -25,7 +25,11 @@ func load_for_deck(deck_key: String) -> bool:
 	unload()
 	if not is_available():
 		return false
-	var bridge: Dictionary = manifest.get("compatibility_bridge", {})
+	var bridge_value: Variant = manifest.get("compatibility_bridge", {})
+	if not bridge_value is Dictionary:
+		last_error = "compatibility_bridge_invalid"
+		return false
+	var bridge: Dictionary = bridge_value
 	if (
 		int(bridge.get("version", 0)) != 1
 		or int(bridge.get("python_rules_version", 0)) != 2
@@ -35,7 +39,15 @@ func load_for_deck(deck_key: String) -> bool:
 	):
 		last_error = "compatibility_bridge_mismatch"
 		return false
-	var row: Dictionary = manifest.get("models", {}).get(deck_key, {})
+	var models_value: Variant = manifest.get("models", {})
+	if not models_value is Dictionary:
+		last_error = "model_manifest_invalid"
+		return false
+	var model_value: Variant = Dictionary(models_value).get(deck_key, {})
+	if not model_value is Dictionary:
+		last_error = "model_manifest_missing"
+		return false
+	var row: Dictionary = model_value
 	if row.is_empty():
 		last_error = "model_manifest_missing"
 		return false

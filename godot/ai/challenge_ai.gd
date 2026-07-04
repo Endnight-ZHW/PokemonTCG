@@ -2354,6 +2354,8 @@ func _action_score(
 				score += trainer_development * 0.75
 			else:
 				score -= 360.0
+				if _semantic_v2_enabled():
+					score += max(-260.0, trainer_development * 0.35)
 		"USE_ABILITY", "USE_STADIUM":
 			var development_value := _development_action_value(state, actor, action, deck_key, catalog)
 			if development_value > 0.0:
@@ -2758,14 +2760,19 @@ func _semantic_draw_value(
 	elif player.hand.size() <= 5:
 		value += 34.0
 	elif player.hand.size() >= 8:
-		value -= 70.0 + draw_count * 12.0
-		if hand_plan > 0.0:
+		if refresh:
+			value -= 115.0 + draw_count * 24.0
+		else:
+			value -= 45.0 + draw_count * 8.0
+		if hand_plan > 0.0 and not refresh:
 			value += min(85.0, hand_plan * 0.38)
+		elif hand_plan > 0.0:
+			value += min(70.0, hand_plan * 0.30)
 	elif player.hand.size() >= 6:
 		value -= 25.0
 		if hand_plan > 0.0:
 			value += min(45.0, hand_plan * 0.22)
-	if hand_plan > 0.0:
+	if hand_plan > 0.0 and (player.hand.size() < 8 or not refresh):
 		var projected_hand := player.hand.size() + draw_count
 		if projected_hand >= 5:
 			value += min(70.0, hand_plan * 0.25)

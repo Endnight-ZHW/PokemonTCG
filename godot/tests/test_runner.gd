@@ -3486,6 +3486,20 @@ func _run_phase_five_foundation_tests() -> void:
 		ProtocolV3.validate(oversized).get("code", "") == "message_too_large",
 		"Protocol v3 accepted an oversized payload",
 	)
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.ACTION_SUBMIT,
+			{"action": "not-a-dictionary"},
+		).get("code", "") == "invalid_payload",
+		"Protocol v3 accepted a malformed action payload",
+	)
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE,
+			{"state": "not-a-dictionary"},
+		).get("code", "") == "invalid_payload",
+		"Protocol v3 accepted a malformed state payload",
+	)
 
 	var session := AuthoritativeSession.new("room-1")
 	var started := session.start_match("fire", "water", 20260621, 0)
@@ -3525,6 +3539,15 @@ func _run_phase_five_foundation_tests() -> void:
 		_check(not network_view_ui.modal_layer.visible,
 			"Network %s view opened the local privacy overlay" % view_row["label"])
 		network_view_ui.queue_free()
+	var malformed_view_ui := main_scene.instantiate()
+	root.add_child(malformed_view_ui)
+	malformed_view_ui.initialize_ui()
+	malformed_view_ui._apply_network_view({"state": {"your": "bad", "opponent": {}}}, 0)
+	_check(
+		malformed_view_ui.state == null,
+		"Malformed network view was accepted by the main UI",
+	)
+	malformed_view_ui.queue_free()
 	var legal: Array = host_view["legal_actions"]
 	_check(not legal.is_empty(), "Authoritative session produced no setup action")
 	if not legal.is_empty():
@@ -3577,6 +3600,31 @@ func _run_phase_five_foundation_tests() -> void:
 		and fake_transport.sent_messages[0]["payload"].get("code", "")
 		== "stale_revision",
 		"Host accepted a stale state revision",
+	)
+	var malformed_controller := NetworkMatchController.new()
+	var malformed_transport := FakeNetworkTransport.new()
+	malformed_controller.host = true
+	malformed_controller.player_idx = 0
+	malformed_controller.room_id = "room-malformed"
+	malformed_controller.transport = malformed_transport
+	malformed_controller.session = AuthoritativeSession.new("room-malformed")
+	malformed_controller.session.start_match("fire", "water", 101, 0)
+	var malformed_action := ProtocolV3.envelope(
+		ProtocolV3.ACTION_SUBMIT,
+		"room-malformed",
+		1,
+		1,
+		malformed_controller.session.state.revision,
+		"bad-action",
+		"",
+		{"action": "not-a-dictionary"},
+	)
+	malformed_controller._handle_message(malformed_action)
+	_check(
+		not malformed_transport.sent_messages.is_empty()
+		and malformed_transport.sent_messages[0]["payload"].get("code", "")
+		== "invalid_payload",
+		"Host did not reject a malformed action payload cleanly",
 	)
 	var choice_controller := NetworkMatchController.new()
 	var choice_transport := FakeNetworkTransport.new()

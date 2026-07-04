@@ -237,10 +237,26 @@ func _handle_message(message: Variant) -> void:
 		})
 		return
 	var row: Dictionary = message
-	receive_sequence = int(validation["sequence"])
-	last_receive_msec = Time.get_ticks_msec()
 	var message_type := str(row["message_type"])
 	var payload: Dictionary = row["payload"]
+	receive_sequence = int(validation["sequence"])
+	last_receive_msec = Time.get_ticks_msec()
+	var payload_validation := ProtocolV3.validate_payload(message_type, payload)
+	if not bool(payload_validation.get("ok", false)):
+		var code := str(payload_validation.get("code", "invalid_payload"))
+		var message_text := str(payload_validation.get("message", "消息内容无效。"))
+		if host:
+			_send(ProtocolV3.ERROR, ProtocolV3.error_payload(code, message_text))
+		else:
+			awaiting_update = false
+			if message_type == ProtocolV3.STATE_UPDATE:
+				request_resync()
+		events.append({
+			"type": "error",
+			"code": code,
+			"message": message_text,
+		})
+		return
 	if host:
 		_handle_host_message(row, message_type, payload)
 	else:
@@ -269,7 +285,7 @@ func _handle_host_message(
 		ProtocolV3.ACTION_SUBMIT:
 			if not _revision_matches(row):
 				return
-			var action_data: Dictionary = payload.get("action", {})
+			var action_data: Dictionary = payload["action"]
 			if str(row["action_id"]) != str(action_data.get("action_id", "")):
 				_reject("action_id_mismatch", "动作 ID 不匹配。")
 				return
@@ -281,7 +297,7 @@ func _handle_host_message(
 		ProtocolV3.CHOICE_SUBMIT:
 			if not _revision_matches(row):
 				return
-			var response_data: Dictionary = payload.get("response", {})
+			var response_data: Dictionary = payload["response"]
 			if str(row["request_id"]) != str(response_data.get("request_id", "")):
 				_reject("request_id_mismatch", "选择请求 ID 不匹配。")
 				return
@@ -308,7 +324,8 @@ func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 			_send(ProtocolV3.DECK_SELECT, {"deck_key": local_deck_key})
 			events.append({"type": "connected", "player_idx": player_idx, "room_id": room_id})
 		ProtocolV3.STATE_UPDATE:
-			current_revision = int(payload.get("state", {}).get("revision", -1))
+			var state_payload: Dictionary = payload["state"]
+			current_revision = int(state_payload.get("revision", -1))
 			awaiting_update = false
 			events.append({
 				"type": "state",

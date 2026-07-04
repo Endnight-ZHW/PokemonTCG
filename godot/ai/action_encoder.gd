@@ -152,7 +152,10 @@ func encode_choice(
 ) -> Dictionary:
 	var numeric: Array[float] = []
 	numeric.append_array(_one_hot(_choice_type_index(request.request_type), CHOICE_TYPES.size()))
-	var ref: Dictionary = option.get("ref", {})
+	var ref: Dictionary = {}
+	var ref_value: Variant = option.get("ref", {})
+	if ref_value is Dictionary:
+		ref = ref_value
 	var kind := str(ref.get("kind", ""))
 	numeric.append_array([
 		_norm(index + 1, 64.0),
