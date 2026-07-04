@@ -13,7 +13,7 @@ $windowsRoot = Join-Path $distRoot 'windows'
 $androidRoot = Join-Path $distRoot 'android'
 $stagingRoot = Join-Path $repoRoot '.tools\release-staging'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
-$version = '0.3.1'
+$version = '0.3.2'
 
 function Set-TestSigningEnvironment {
     $signingRoot = Join-Path $repoRoot '.tools\signing'

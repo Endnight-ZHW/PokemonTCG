@@ -761,7 +761,7 @@ Android 调试 APK 可以用 ADB 安装：
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Windows-x86_64-0.3.1.zip` | 可分发 Windows ZIP |
+| `godot/dist/release/PokemonTCG-Windows-x86_64-0.3.2.zip` | 可分发 Windows ZIP |
 | `godot/dist/release/windows/PokemonTCG.exe` | 未压缩 Windows release 可执行文件 |
 | `godot/dist/release/windows/PokemonTCG.pck` | Godot 资源包 |
 | `godot/dist/release/SHA256SUMS.json` | ZIP、EXE、PCK、DLL 和模型校验清单 |
@@ -783,14 +783,14 @@ ONNX Runtime、许可证和 `BUILD_INFO.json`。
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Android-arm64-0.3.1-test.apk` | Android 9+ ARM64 测试签名 APK |
+| `godot/dist/release/PokemonTCG-Android-arm64-0.3.2-test.apk` | Android 9+ ARM64 测试签名 APK |
 | `godot/dist/release/android/PokemonTCG.apk` | Godot 导出的原始 release APK |
 | `godot/dist/release/SHA256SUMS.json` | 发布校验清单 |
 
 安装测试签名 APK：
 
 ```powershell
-.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.3.1-test.apk
+.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.3.2-test.apk
 ```
 
 查看设备是否连接：
@@ -826,7 +826,7 @@ $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = "your-keystore-password"
 正式签名输出文件名：
 
 ```text
-godot/dist/release/PokemonTCG-Android-arm64-0.3.1-production.apk
+godot/dist/release/PokemonTCG-Android-arm64-0.3.2-production.apk
 ```
 
 正式签名注意事项：
@@ -834,7 +834,7 @@ godot/dist/release/PokemonTCG-Android-arm64-0.3.1-production.apk
 - keystore 丢失后，应用商店同包名升级会非常麻烦，必须离线备份。
 - `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 当前同时作为 store password 和 key password 使用。
 - 不要把 keystore 放到 `godot/`、`docs/`、`tools/` 或任何会被提交的目录。
-- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=4`、`versionName=0.3.1`、仅 `arm64-v8a`。
+- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=5`、`versionName=0.3.2`、仅 `arm64-v8a`。
 
 ### 发布后校验
 
@@ -854,15 +854,15 @@ godot/dist/release/PokemonTCG-Android-arm64-0.3.1-production.apk
 - Android APK 包含 8 个 ONNX 模型、`libpokemon_ai` 和 `libonnxruntime.so`。
 - `SHA256SUMS.json` 中每个文件的 SHA-256 与实际文件一致。
 
-`test_release.ps1` 当前固定检查 `PokemonTCG-Android-arm64-0.3.1-test.apk`。如果你只打
+`test_release.ps1` 当前固定检查 `PokemonTCG-Android-arm64-0.3.2-test.apk`。如果你只打
 Windows 包，或刚生成的是 `production` 正式签名 APK，不要直接用它代表最终结论；正式包需要
 对实际产物再做一次手工签名和元数据检查。
 
 手工抽查校验值：
 
 ```powershell
-Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.3.1.zip -Algorithm SHA256
-Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.3.1-test.apk -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.3.2.zip -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.3.2-test.apk -Algorithm SHA256
 Get-Content .\godot\dist\release\SHA256SUMS.json
 ```
 
@@ -872,7 +872,7 @@ Get-Content .\godot\dist\release\SHA256SUMS.json
 .\.tools\android-sdk\build-tools\35.0.0\apksigner.bat verify `
   --verbose `
   --print-certs `
-  .\godot\dist\release\PokemonTCG-Android-arm64-0.3.1-production.apk
+  .\godot\dist\release\PokemonTCG-Android-arm64-0.3.2-production.apk
 ```
 
 如果本地 Build Tools 版本不是 `35.0.0`，以 `.tools/android-sdk/build-tools/` 下实际目录为准。

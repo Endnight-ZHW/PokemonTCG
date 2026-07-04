@@ -3792,7 +3792,7 @@ func _run_phase_five_foundation_tests() -> void:
 
 
 func _run_phase_six_foundation_tests() -> void:
-	_check(AppState.APP_VERSION == "0.3.1", "Stage 6 app version mismatch")
+	_check(AppState.APP_VERSION == "0.3.2", "Stage 6 app version mismatch")
 	var settings: Node = root.get_node("AppSettings")
 	var texture_cache: Node = root.get_node("CardTextureCache")
 	var settings_path := "user://phase6_settings_test.cfg"

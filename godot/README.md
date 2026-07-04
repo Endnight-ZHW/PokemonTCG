@@ -1,6 +1,6 @@
 # Godot 4.7 客户端
 
-这是项目当前的发布版本，版本号为 0.3.1。客户端使用 Godot 4.7
+这是项目当前的发布版本，版本号为 0.3.2。客户端使用 Godot 4.7
 Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 ## 已实现

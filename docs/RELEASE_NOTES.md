@@ -1,4 +1,4 @@
-# PokemonTCG Godot 0.3.1
+# PokemonTCG Godot 0.3.2
 
 ## 系统要求
 
@@ -20,6 +20,14 @@
 - 自动、高、中、低画质档；Windows 目标 60 FPS，Android 低档目标 30 FPS。
 - 音量、静音、演出节奏、画质和卡图缓存设置。
 - Android 后台时取消 AI 搜索；联机对局会安全断开并在恢复时提示。
+
+## 0.3.2 修复
+
+- 加强联机协议 payload 校验，畸形动作、选择和局面同步消息会被拒绝或触发重同步，不再进入规则/UI 反序列化路径。
+- 联机客户端增加 state view、选择请求和表现事件的最小 schema 过滤。
+- Toast 提示动画增加旧 Tween 清理，避免连续提示时旧回调隐藏新消息。
+- Deep AI manifest 和战斗表现事件增加类型防护，损坏资源或异常事件会优雅降级。
+- Android `versionCode` 升至 5，Windows/Android 发布脚本同步为 `0.3.2`。
 
 ## 0.3.1 修复
 
