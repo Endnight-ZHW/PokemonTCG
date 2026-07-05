@@ -9,6 +9,12 @@ const DEEP_DEFAULT_SIMULATIONS := 64
 const DEEP_FALLBACK_SIMULATIONS := 128
 const DEEP_DEFAULT_SECONDS := 2.0
 const DEEP_DEFAULT_DEPTH := 12
+const GAMEPLAY_DEFAULT_SIMULATIONS := 64
+const GAMEPLAY_DEFAULT_SECONDS := 0.75
+const GAMEPLAY_DEFAULT_DEPTH := 8
+const GAMEPLAY_LOW_SIMULATIONS := 1
+const GAMEPLAY_LOW_SECONDS := 0.12
+const GAMEPLAY_LOW_DEPTH := 1
 const DIFFICULTIES := {
 	"strongest": {"simulations": 12000, "seconds": 10.0, "depth": 24},
 	# Compatibility aliases for older saves/tests that still send a difficulty.
@@ -37,6 +43,21 @@ const DYNAMIC_BUDGET_DEFAULTS := {
 	"ambiguous_mean_gap": 0.14,
 	"min_best_visits": 32,
 	"min_best_visit_share": 0.35,
+	"clear_prior_gap": 0.25,
+	"max_root_actions_for_clear": 10,
+	"single_action_simulations": 0,
+}
+const GAMEPLAY_DYNAMIC_BUDGET := {
+	"enabled": true,
+	"min_simulations": 32,
+	"ambiguous_min_simulations": 64,
+	"check_interval": 16,
+	"stable_checks": 2,
+	"ambiguous_stable_checks": 3,
+	"min_mean_gap": 0.10,
+	"ambiguous_mean_gap": 0.14,
+	"min_best_visits": 8,
+	"min_best_visit_share": 0.30,
 	"clear_prior_gap": 0.25,
 	"max_root_actions_for_clear": 10,
 	"single_action_simulations": 0,
@@ -81,6 +102,36 @@ var _core_evolution_line_cache: Dictionary = {}
 
 static func strongest_preset() -> Dictionary:
 	return Dictionary(DIFFICULTIES[STRONGEST_DIFFICULTY]).duplicate(true)
+
+
+static func gameplay_dynamic_budget() -> Dictionary:
+	return GAMEPLAY_DYNAMIC_BUDGET.duplicate(true)
+
+
+static func gameplay_action_budget(
+	state: GameState,
+	actions: Array[GameAction],
+) -> Dictionary:
+	var params := {
+		"simulation_budget": GAMEPLAY_DEFAULT_SIMULATIONS,
+		"seconds": GAMEPLAY_DEFAULT_SECONDS,
+		"max_depth": GAMEPLAY_DEFAULT_DEPTH,
+		"dynamic_budget": gameplay_dynamic_budget(),
+	}
+	if state == null:
+		return params
+	if (
+		actions.size() > 1
+		and (
+			state.phase == "SETUP"
+			or state.phase == "ATTACK"
+			or not state.pending_promotions.is_empty()
+		)
+	):
+		params["simulation_budget"] = GAMEPLAY_LOW_SIMULATIONS
+		params["seconds"] = GAMEPLAY_LOW_SECONDS
+		params["max_depth"] = GAMEPLAY_LOW_DEPTH
+	return params
 
 
 static func diagnostic_labels() -> Array:

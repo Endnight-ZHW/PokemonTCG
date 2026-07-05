@@ -21,6 +21,8 @@ func _initialize() -> void:
 	var worker := NativeChallengeAI.new()
 	var runtime := DeepAIRuntime.new()
 	var summaries: Array[Dictionary] = []
+	for failure in _budget_contract_failures(catalog, engine, worker):
+		failures.append(failure)
 	for mode in ["challenge", "deep"]:
 		var deck_keys := CHALLENGE_DECK_KEYS if mode == "challenge" else DEEP_DECK_KEYS
 		for index in range(deck_keys.size()):
@@ -64,6 +66,129 @@ func _initialize() -> void:
 		for failure in failures:
 			push_error(failure)
 		quit(1)
+
+
+func _budget_contract_failures(
+	catalog: CardCatalog,
+	engine: GameEngine,
+	worker: NativeChallengeAI,
+) -> Array[String]:
+	var errors: Array[String] = []
+	var main_state := GameState.new()
+	main_state.phase = "MAIN"
+	var main_actions: Array[GameAction] = []
+	main_actions.append(GameAction.new("END_TURN", {}, true, 0))
+	main_actions.append(GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0))
+	var main_budget := NativeChallengeAI.gameplay_action_budget(main_state, main_actions)
+	if int(main_budget.get("simulation_budget", -1)) != NativeChallengeAI.GAMEPLAY_DEFAULT_SIMULATIONS:
+		errors.append("gameplay main budget must use responsive simulations")
+	if not is_equal_approx(float(main_budget.get("seconds", -1.0)), NativeChallengeAI.GAMEPLAY_DEFAULT_SECONDS):
+		errors.append("gameplay main budget must use responsive seconds")
+	if int(main_budget.get("max_depth", -1)) != NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH:
+		errors.append("gameplay main budget must use responsive depth")
+	if not bool(Dictionary(main_budget.get("dynamic_budget", {})).get("enabled", false)):
+		errors.append("gameplay main budget must enable dynamic budget")
+
+	var setup_state := GameState.new()
+	setup_state.phase = "SETUP"
+	var setup_actions: Array[GameAction] = []
+	setup_actions.append(GameAction.new("PLAY_BASIC", {}, false, 0))
+	setup_actions.append(GameAction.new("SETUP_DONE", {}, true, 0))
+	var setup_budget := NativeChallengeAI.gameplay_action_budget(setup_state, setup_actions)
+	if int(setup_budget.get("simulation_budget", -1)) != NativeChallengeAI.GAMEPLAY_LOW_SIMULATIONS:
+		errors.append("setup gameplay budget must use low simulations")
+	if int(setup_budget.get("max_depth", -1)) != NativeChallengeAI.GAMEPLAY_LOW_DEPTH:
+		errors.append("setup gameplay budget must use low depth")
+
+	var state := GameState.new()
+	state.public_deck_keys = ["fire", "water"]
+	var rng := PortableRandomSource.new(424242)
+	var setup := engine.setup_game(
+		state,
+		catalog.expand_deck("fire"),
+		catalog.expand_deck("water"),
+		rng,
+	)
+	if not setup.success:
+		errors.append("budget contract setup failed: %s" % setup.message)
+		return errors
+	var actor := _actor(state)
+	var legal := engine.legal_actions(state, actor, true)
+	if legal.is_empty():
+		errors.append("budget contract has no legal action")
+		return errors
+	var single_actions: Array[GameAction] = []
+	single_actions.append(legal[0])
+	var single_rows: Array = []
+	single_rows.append(legal[0].to_dict())
+	var single_budget := NativeChallengeAI.gameplay_action_budget(state, single_actions)
+	var single_decision := worker.decide({
+		"kind": "action",
+		"state": state.snapshot(),
+		"actor": actor,
+		"revision": state.revision,
+		"request_id": "budget-single",
+		"mode": "challenge",
+		"deck_key": str(state.public_deck_keys[actor]),
+		"seed": 424242,
+		"simulation_budget": int(single_budget["simulation_budget"]),
+		"seconds": float(single_budget["seconds"]),
+		"max_depth": int(single_budget["max_depth"]),
+		"dynamic_budget": single_budget["dynamic_budget"],
+		"deterministic": true,
+		"actions": single_rows,
+	}, func() -> bool: return false)
+	if not bool(single_decision.get("success", false)):
+		errors.append("single-action budget decision failed: %s" % single_decision.get("error", "unknown"))
+	elif int(single_decision.get("simulations", -1)) != 0:
+		errors.append("single-action budget decision must return zero simulations")
+	elif str(single_decision.get("budget_stop_reason", "")) != "single_action":
+		errors.append("single-action budget decision must report single_action stop")
+	elif not bool(single_decision.get("dynamic_budget_enabled", false)):
+		errors.append("single-action budget decision must enable dynamic budget")
+	else:
+		var applied_state := state.clone_state()
+		var selected := GameAction.from_dict(single_decision["action"])
+		selected.action_id = "budget-contract:%d" % state.revision
+		var step := engine.apply_action(applied_state, selected, rng)
+		if not step.success:
+			errors.append("single-action budget decision produced illegal action: %s" % step.message)
+
+	var choice_options: Array[Dictionary] = []
+	choice_options.append({"option_id": "a"})
+	choice_options.append({"option_id": "b"})
+	var choice_request := ChoiceRequest.new(
+		"budget-choice",
+		"select",
+		actor,
+		"Budget choice",
+		choice_options,
+		1,
+		1,
+		false,
+		false,
+	)
+	var choice_result := worker.decide({
+		"kind": "choice",
+		"state": state.snapshot(),
+		"choice": choice_request.to_dict(),
+		"actor": actor,
+		"revision": state.revision,
+		"request_id": "budget-choice",
+		"mode": "challenge",
+		"deck_key": str(state.public_deck_keys[actor]),
+		"seed": 434343,
+		"simulation_budget": NativeChallengeAI.GAMEPLAY_DEFAULT_SIMULATIONS,
+		"seconds": NativeChallengeAI.GAMEPLAY_DEFAULT_SECONDS,
+		"max_depth": NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH,
+		"dynamic_budget": NativeChallengeAI.gameplay_dynamic_budget(),
+		"deterministic": true,
+	}, func() -> bool: return false)
+	if not bool(choice_result.get("success", false)):
+		errors.append("choice budget decision failed: %s" % choice_result.get("error", "unknown"))
+	elif int(choice_result.get("simulations", -1)) != 0:
+		errors.append("choice budget decision must return zero simulations")
+	return errors
 
 
 func _play_game(

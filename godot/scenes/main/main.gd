@@ -1861,14 +1861,16 @@ func _schedule_ai_action() -> void:
 		rows.append(action.to_dict())
 	ai_request_sequence += 1
 	active_ai_request_id = "ai:%d:%d" % [state.revision, ai_request_sequence]
-	var preset := NativeChallengeAI.strongest_preset()
-	var simulation_budget := int(preset["simulations"])
-	var seconds := float(preset["seconds"])
-	var max_depth := int(preset["depth"])
+	var gameplay_budget := NativeChallengeAI.gameplay_action_budget(state, actions)
+	var simulation_budget := int(gameplay_budget["simulation_budget"])
+	var seconds := float(gameplay_budget["seconds"])
+	var max_depth := int(gameplay_budget["max_depth"])
+	var dynamic_budget: Variant = gameplay_budget.get("dynamic_budget", {})
 	if game_mode == MODE_DEEP:
 		simulation_budget = NativeChallengeAI.DEEP_DEFAULT_SIMULATIONS
 		seconds = NativeChallengeAI.DEEP_DEFAULT_SECONDS
 		max_depth = NativeChallengeAI.DEEP_DEFAULT_DEPTH
+		dynamic_budget = {}
 	var request := {
 		"kind": "action",
 		"state": state.snapshot(),
@@ -1881,6 +1883,7 @@ func _schedule_ai_action() -> void:
 		"simulation_budget": simulation_budget,
 		"seconds": seconds,
 		"max_depth": max_depth,
+		"dynamic_budget": dynamic_budget,
 		"actions": rows,
 	}
 	ai_thinking = ai_coordinator.start_request(request, ai_inference)
