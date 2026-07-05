@@ -695,6 +695,55 @@ Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本�
 .\tools\export_onnx_models.ps1
 ```
 
+Deep AI 训练和 ONNX 校验优先使用 `DL` Conda 环境，并固定禁用用户目录包：
+
+```powershell
+$env:PYTHONNOUSERSITE = '1'
+conda run -n DL python -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"
+conda run -n DL python -c "import onnx, onnxruntime; print(onnx.__version__, onnxruntime.__version__)"
+```
+
+当前 `alpha_zero_rl` 训练器可以训练任一已导出的卡组；正式 league gate 需要同卡组
+已有 verified checkpoint 作为对手。它从已有 checkpoint warm start，使用神经网络与
+MCTS 自对弈生成 policy target，并用终局结果训练 value；不会加载 distill 数据，
+也不会进入 teacher bootstrap 或 DAgger。长跑示例：
+
+```powershell
+$env:PYTHONNOUSERSITE = '1'
+conda run -n DL python -B .\python\scripts\train_deep_ai.py `
+  --trainer alpha_zero_rl `
+  --deck fire `
+  --games 800 `
+  --device cuda `
+  --league-dir data\ai_league `
+  --league-eval-games 600 `
+  --min-score-rate 0.53 `
+  --min-elo-delta 25 `
+  --progress-jsonl build\ai_training\fire_alpha_zero.jsonl
+```
+
+默认只有自对弈训练使用 MCTS；league eval 评估部署时的 raw model policy。
+需要慢速分析 MCTS 决策时再加 `--league-use-mcts`。
+
+只做 smoke 时把局数压到最小，并输出到 `build/`，不要提交生成的 `.pt` 或 `.onnx`：
+
+```powershell
+$env:PYTHONNOUSERSITE = '1'
+conda run -n DL python -B .\python\scripts\train_deep_ai.py `
+  --trainer alpha_zero_rl `
+  --deck fire `
+  --games 1 `
+  --league-eval-games 0 `
+  --rollout-batch-games 1 `
+  --updates-per-rollout 1 `
+  --mcts-simulations 1 `
+  --max-steps 40 `
+  --device cuda `
+  --output build\ai_training\fire_alpha_zero_smoke.pt
+
+.\tools\export_onnx_models.ps1 -CondaEnv DL -Check
+```
+
 ### 生成开发调试包
 
 调试包适合自己快速验收，不适合作为最终分发包：

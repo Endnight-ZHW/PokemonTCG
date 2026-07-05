@@ -60,9 +60,11 @@ def _write_error_progress(path: str | None, message: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Train optional deep-learning AI via bootstrap + self-play. Each deck trains an independent model."
+        description="Train optional deep-learning AI. alpha_zero_rl is RL-only; teacher_dagger_rl keeps the legacy teacher pipeline."
     )
-    parser.add_argument("--deck", default="all", choices=["all", *DECK_SPECS.keys()])
+    parser.add_argument("--trainer", default="alpha_zero_rl", choices=["alpha_zero_rl", "teacher_dagger_rl"],
+                        help="Training pipeline (default: alpha_zero_rl).")
+    parser.add_argument("--deck", default="fire", choices=["all", *DECK_SPECS.keys()])
     parser.add_argument("--games", type=int, default=800,
                         help="RL fine-tune self-play games per deck (default: 800).")
     parser.add_argument("--seed", type=int, default=17)
@@ -72,10 +74,10 @@ def main() -> int:
     parser.add_argument("--warm-start", action=argparse.BooleanOptionalAction, default=True,
                         help="Initialize from the strongest evaluated checkpoint for the deck (default: enabled).")
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--bootstrap-games", type=int, default=2000,
-                        help="Teacher imitation games per deck (default: 2000).")
-    parser.add_argument("--dagger-games", type=int, default=500,
-                        help="DAgger games where the model acts and teacher labels visited states (default: 500).")
+    parser.add_argument("--bootstrap-games", type=int, default=None,
+                        help="Teacher imitation games per deck (default: 0 for alpha_zero_rl, 2000 for teacher_dagger_rl).")
+    parser.add_argument("--dagger-games", type=int, default=None,
+                        help="DAgger games where the model acts and teacher labels visited states (default: 0 for alpha_zero_rl, 500 for teacher_dagger_rl).")
     parser.add_argument("--bootstrap-epochs", type=int, default=10,
                         help="Epochs over bootstrap examples (default: 10).")
     parser.add_argument("--self-play-epochs", type=int, default=10,
@@ -125,6 +127,16 @@ def main() -> int:
                         help="Epochs over distillation examples before online training (default: 3).")
     parser.add_argument("--distill-val-split", type=float, default=0.1,
                         help="Held-out fraction for distillation progress metadata (default: 0.1).")
+    parser.add_argument("--league-dir", default=os.path.join("data", "ai_league"),
+                        help="Directory containing verified Deep AI league checkpoints (default: data/ai_league).")
+    parser.add_argument("--league-eval-games", type=int, default=600,
+                        help="League evaluation games for alpha_zero_rl candidates (default: 600).")
+    parser.add_argument("--league-use-mcts", action=argparse.BooleanOptionalAction, default=False,
+                        help="Use neural MCTS during alpha_zero_rl league evaluation (default: disabled; self-play still uses MCTS).")
+    parser.add_argument("--min-elo-delta", type=float, default=25.0,
+                        help="Minimum league Elo delta required for alpha_zero_rl acceptance (default: 25).")
+    parser.add_argument("--min-score-rate", type=float, default=0.53,
+                        help="Minimum league score rate required for alpha_zero_rl acceptance (default: 0.53).")
     parser.add_argument("--progress-jsonl", default=None)
     args = parser.parse_args()
     resolved_model = _resolve_cli_path(args.model)
@@ -133,6 +145,7 @@ def main() -> int:
     resolved_distill_datasets = tuple(
         path for path in (_resolve_cli_path(item) for item in (args.distill_dataset or ())) if path
     )
+    resolved_league_dir = _resolve_cli_path(args.league_dir)
 
     if not is_torch_available():
         message = "PyTorch is not installed. Install torch in the DL environment before running deep AI training."
@@ -140,19 +153,36 @@ def main() -> int:
         print(message, file=sys.stderr)
         return 2
 
+    trainer = args.trainer
+    bootstrap_games = (
+        args.bootstrap_games
+        if args.bootstrap_games is not None
+        else (0 if trainer == "alpha_zero_rl" else 2000)
+    )
+    dagger_games = (
+        args.dagger_games
+        if args.dagger_games is not None
+        else (0 if trainer == "alpha_zero_rl" else 500)
+    )
     core_training_requested = any(
         value > 0
         for value in (
             max(0, args.games),
-            max(0, args.bootstrap_games),
-            max(0, args.dagger_games),
+            max(0, bootstrap_games),
+            max(0, dagger_games),
             max(0, args.eval_games),
         )
     )
-    pure_rl_games = args.pure_rl_games if args.pure_rl_games is not None else (400 if core_training_requested else 0)
-    replay_same_deal = args.replay_same_deal if args.replay_same_deal is not None else (50 if core_training_requested else 0)
+    if trainer == "alpha_zero_rl":
+        pure_rl_games = args.pure_rl_games if args.pure_rl_games is not None else 0
+        replay_same_deal = args.replay_same_deal if args.replay_same_deal is not None else 0
+        resolved_distill_datasets = ()
+    else:
+        pure_rl_games = args.pure_rl_games if args.pure_rl_games is not None else (400 if core_training_requested else 0)
+        replay_same_deal = args.replay_same_deal if args.replay_same_deal is not None else (50 if core_training_requested else 0)
 
     config = DeepTrainingConfig(
+        trainer=trainer,
         deck=args.deck,
         games=max(0, args.games),
         seed=args.seed,
@@ -160,8 +190,8 @@ def main() -> int:
         output=resolved_output,
         warm_start=bool(args.warm_start),
         device=args.device,
-        bootstrap_games=max(0, args.bootstrap_games),
-        dagger_games=max(0, args.dagger_games),
+        bootstrap_games=max(0, bootstrap_games),
+        dagger_games=max(0, dagger_games),
         bootstrap_epochs=max(1, args.bootstrap_epochs),
         self_play_epochs=max(1, args.self_play_epochs),
         eval_games=max(0, args.eval_games),
@@ -186,6 +216,11 @@ def main() -> int:
         distill_dataset=resolved_distill_datasets,
         distill_epochs=max(1, args.distill_epochs),
         distill_val_split=max(0.0, min(0.9, args.distill_val_split)),
+        league_dir=resolved_league_dir or os.path.join("data", "ai_league"),
+        league_eval_games=max(0, args.league_eval_games),
+        league_use_mcts=bool(args.league_use_mcts),
+        min_elo_delta=float(args.min_elo_delta),
+        min_score_rate=max(0.0, min(1.0, float(args.min_score_rate))),
         progress_jsonl=resolved_progress,
     )
     payload = run_deep_training(config)

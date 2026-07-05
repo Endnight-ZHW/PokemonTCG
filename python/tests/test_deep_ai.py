@@ -234,6 +234,7 @@ class DeepAITests(unittest.TestCase):
         )
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
         self.assertIn("--rollout-batch-games", help_result.stdout)
+        self.assertIn("--trainer", help_result.stdout)
         self.assertIn("--updates-per-rollout", help_result.stdout)
         self.assertIn("--teacher-search-preset", help_result.stdout)
         self.assertIn("--dagger-games", help_result.stdout)
@@ -247,6 +248,11 @@ class DeepAITests(unittest.TestCase):
         self.assertIn("--distill-dataset", help_result.stdout)
         self.assertIn("--distill-epochs", help_result.stdout)
         self.assertIn("--distill-val-split", help_result.stdout)
+        self.assertIn("--league-dir", help_result.stdout)
+        self.assertIn("--league-eval-games", help_result.stdout)
+        self.assertIn("--league-use-mcts", help_result.stdout)
+        self.assertIn("--min-elo-delta", help_result.stdout)
+        self.assertIn("--min-score-rate", help_result.stdout)
 
         with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "model.pt")
@@ -291,6 +297,43 @@ class DeepAITests(unittest.TestCase):
                     event_types = [json.loads(line)["type"] for line in fh if line.strip()]
                 self.assertIn("run_started", event_types)
                 self.assertIn("run_finished", event_types)
+
+        with temp_dir() as tmpdir:
+            output = os.path.join(tmpdir, "water.pt")
+            progress = os.path.join(tmpdir, "water.jsonl")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/train_deep_ai.py",
+                    "--trainer",
+                    "alpha_zero_rl",
+                    "--deck",
+                    "water",
+                    "--games",
+                    "0",
+                    "--league-eval-games",
+                    "0",
+                    "--no-warm-start",
+                    "--output",
+                    output,
+                    "--progress-jsonl",
+                    progress,
+                ],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                timeout=60,
+            )
+            if importlib.util.find_spec("torch") is None:
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("PyTorch is not installed", result.stderr)
+            else:
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(os.path.exists(output))
+                with open(progress, "r", encoding="utf-8") as fh:
+                    events = [json.loads(line) for line in fh if line.strip()]
+                self.assertEqual(events[0]["trainer"], "alpha_zero_rl")
+                self.assertEqual(events[0]["deck_keys"], ["water"])
 
     def test_training_cli_resolves_repo_relative_paths(self):
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -730,6 +773,7 @@ class DeepAITests(unittest.TestCase):
             with mock.patch.object(dl_training, "_train_deck_pipeline", side_effect=fake_train_deck_pipeline):
                 run_deep_training(
                     DeepTrainingConfig(
+                        trainer="teacher_dagger_rl",
                         deck="fire",
                         games=1,
                         bootstrap_games=2,
@@ -747,6 +791,255 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(events[0]["total_training_games"], 33)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_alpha_zero_training_uses_only_self_play_examples(self):
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.encoder import EncodedAction, EncodedState
+        from engine.ai.dl.model import create_model
+        from engine.ai.dl.training import DeepTrainingConfig, TrainingExample
+
+        example = TrainingExample(
+            EncodedState([0.0] * STATE_NUMERIC_SIZE, [0] * STATE_CARD_SLOTS),
+            [
+                EncodedAction([0.0] * ACTION_NUMERIC_SIZE, 0),
+                EncodedAction([1.0] * ACTION_NUMERIC_SIZE, 1),
+            ],
+            1,
+            source="self_play",
+            return_target=1.0,
+            value_target=0.5,
+            advantage=1.0,
+            policy_target=[0.25, 0.75],
+        )
+        trained_sources = []
+        trained_policy_targets = []
+
+        def fake_collect(*args, **kwargs):
+            self.assertTrue(kwargs["pure_rl"])
+            self.assertTrue(kwargs["use_mcts"])
+            self.assertTrue(kwargs["rule_only"])
+            self.assertFalse(kwargs["teacher_label_model_states"])
+            return [(0, 100.0, [example], [], {"actions": 1, "invalid_actions": 0, "no_target_actions": 0})]
+
+        def fake_train(_model, examples, **_kwargs):
+            trained_sources.extend(ex.source for ex in examples)
+            trained_policy_targets.extend(ex.policy_target for ex in examples)
+            return {
+                "examples": len(examples),
+                "loss": 0.0,
+                "total_loss": 0.0,
+                "policy_loss": 0.0,
+                "value_loss": 0.0,
+                "entropy": 0.0,
+            }
+
+        events = []
+        with mock.patch.object(dl_training, "_collect_bootstrap_examples_parallel") as bootstrap, \
+             mock.patch.object(dl_training, "_teacher_label_state") as teacher_label, \
+             mock.patch.object(dl_training, "_collect_rollout_batch", side_effect=fake_collect), \
+             mock.patch.object(dl_training, "_add_verified_league_snapshots", return_value=[]), \
+             mock.patch.object(dl_training, "_train_examples", side_effect=fake_train):
+            summary, total_done = dl_training._train_deck_alpha_zero_pipeline(
+                create_model(),
+                "fire",
+                17,
+                DeepTrainingConfig(
+                    trainer="alpha_zero_rl",
+                    deck="fire",
+                    games=1,
+                    league_eval_games=0,
+                    bootstrap_games=999,
+                    dagger_games=999,
+                    max_steps=20,
+                    mcts_simulations=1,
+                ),
+                events.append,
+                0,
+                1,
+            )
+
+        bootstrap.assert_not_called()
+        teacher_label.assert_not_called()
+        self.assertEqual(total_done, 1)
+        self.assertEqual(summary["trainer"], "alpha_zero_rl_v1")
+        self.assertEqual(summary["bootstrap"]["examples"], 0)
+        self.assertEqual(summary["dagger"]["examples"], 0)
+        self.assertEqual(trained_sources, ["self_play"])
+        self.assertEqual(trained_policy_targets, [[0.25, 0.75]])
+        self.assertTrue(any(event.get("phase") == "alpha_zero_self_play_batch" for event in events))
+
+    def test_alpha_zero_examples_use_terminal_value_targets(self):
+        from engine.ai.dl.encoder import EncodedAction, EncodedState
+        from engine.ai.dl.training import TrainingExample, _finalize_episode_examples
+
+        example = TrainingExample(
+            EncodedState([0.0] * STATE_NUMERIC_SIZE, [0] * STATE_CARD_SLOTS),
+            [EncodedAction([0.0] * ACTION_NUMERIC_SIZE, 0)],
+            0,
+            source="self_play",
+            reward=0.25,
+            value_target=0.4,
+            return_target=0.4,
+            policy_target=[1.0],
+            phase_tag="alpha_zero",
+        )
+
+        _finalize_episode_examples([example], terminal_reward=-1.0)
+
+        self.assertEqual(example.value_target, -1.0)
+        self.assertEqual(example.return_target, -1.0)
+        self.assertAlmostEqual(example.advantage, -1.4)
+
+    def test_alpha_zero_league_acceptance_and_verified_filter(self):
+        from engine.ai.dl import training as dl_training
+
+        accepted = {
+            "games": 100,
+            "wins": 55,
+            "draws": 0,
+            "invalid_action_rate": 0.0,
+            "no_target_action_rate": 0.0,
+            "rule_exception_rate": 0.0,
+            "decision_timeout_rate": 0.0,
+            "score_rate": 0.55,
+            "elo_delta": dl_training._elo_delta_from_score_rate(0.55),
+        }
+        self.assertTrue(
+            dl_training._accepts_league_result(
+                accepted,
+                min_score_rate=0.53,
+                min_elo_delta=25.0,
+            )
+        )
+        rejected = dict(accepted, invalid_action_rate=0.01)
+        self.assertFalse(
+            dl_training._accepts_league_result(
+                rejected,
+                min_score_rate=0.53,
+                min_elo_delta=25.0,
+            )
+        )
+
+        with temp_dir() as tmpdir:
+            model_path = os.path.join(tmpdir, "fire.pt")
+            with open(model_path, "wb") as fh:
+                fh.write(b"checkpoint")
+            with open(os.path.splitext(model_path)[0] + ".json", "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "deck": "fire",
+                        "accepted": True,
+                        "verified": True,
+                        "rules_version": dl_training.RULES_SCHEMA_VERSION,
+                        "action_version": dl_training.ACTION_SCHEMA_VERSION,
+                        "encoder_version": dl_training.ENCODER_SCHEMA_VERSION,
+                        "summary": {
+                            "fire": {
+                                "eval": {
+                                    "games": 600,
+                                    "invalid_action_rate": 0.0,
+                                    "no_target_action_rate": 0.0,
+                                    "rule_exception_rate": 0.0,
+                                    "decision_timeout_rate": 0.0,
+                                }
+                            }
+                        },
+                    }
+                }, fh)
+            self.assertTrue(dl_training._checkpoint_is_verified_for_league(model_path, "fire"))
+            with open(os.path.splitext(model_path)[0] + ".json", "w", encoding="utf-8") as fh:
+                json.dump({"metadata": {"deck": "fire", "accepted": False, "verified": False}}, fh)
+            self.assertFalse(dl_training._checkpoint_is_verified_for_league(model_path, "fire"))
+
+            no_opponents = dl_training.evaluate_alpha_zero_league(
+                None,
+                "fire",
+                17,
+                dl_training.DeepTrainingConfig(
+                    trainer="alpha_zero_rl",
+                    deck="fire",
+                    games=1,
+                    league_dir=tmpdir,
+                    league_eval_games=1,
+                ),
+                device="cpu",
+                max_steps=20,
+            )
+            self.assertFalse(no_opponents["accepted"])
+            self.assertEqual(no_opponents["rejection_reason"], "no_verified_league_opponents")
+
+        calls = []
+
+        def fake_play(*_args, **kwargs):
+            calls.append(kwargs)
+            return (0, 1.0, [], [], {
+                "actions": 1,
+                "invalid_actions": 0,
+                "no_target_actions": 0,
+                "rule_exceptions": 0,
+                "decision_timeouts": 0,
+            })
+
+        with mock.patch.object(
+            dl_training,
+            "_league_checkpoint_paths",
+            return_value=[("a", "a.pt"), ("b", "b.pt"), ("c", "c.pt")],
+        ), mock.patch.object(
+            dl_training,
+            "load_checkpoint",
+            return_value=(object(), {"metadata": {"trainer": "test"}}),
+        ), mock.patch.object(dl_training, "_play_model_game", side_effect=fake_play):
+            capped = dl_training.evaluate_alpha_zero_league(
+                None,
+                "fire",
+                17,
+                dl_training.DeepTrainingConfig(
+                    trainer="alpha_zero_rl",
+                    deck="fire",
+                    games=1,
+                    league_eval_games=2,
+                ),
+                device="cpu",
+                max_steps=20,
+            )
+        self.assertEqual(capped["games"], 2)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([row["games"] for row in capped["opponents"]], [1, 1, 0])
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_alpha_zero_zero_game_run_writes_sidecar_metadata(self):
+        from engine.ai.dl.training import DeepTrainingConfig, run_deep_training
+
+        with temp_dir() as tmpdir:
+            output = os.path.join(tmpdir, "alpha.pt")
+            payload = run_deep_training(
+                DeepTrainingConfig(
+                    trainer="alpha_zero_rl",
+                    deck="fire",
+                    games=0,
+                    league_eval_games=0,
+                    warm_start=False,
+                    output=output,
+                    device="cpu",
+                    max_steps=20,
+                )
+            )
+
+            self.assertEqual(payload["model_path"], output)
+            with open(os.path.splitext(output)[0] + ".json", "r", encoding="utf-8") as fh:
+                sidecar = json.load(fh)
+            metadata = sidecar["metadata"]
+            self.assertEqual(metadata["trainer"], "alpha_zero_rl_v1")
+            self.assertEqual(metadata["trainer_mode"], "alpha_zero_rl")
+            self.assertEqual(metadata["bootstrap_games"], 0)
+            self.assertEqual(metadata["dagger_games"], 0)
+            self.assertEqual(metadata["acceptance_metric"], "league_elo")
+            self.assertFalse(metadata["teacher_label_model_states"])
+            self.assertEqual(metadata["warm_start_source"], "none")
+            self.assertEqual(metadata["warm_start_path"], "")
+            self.assertFalse(metadata["accepted"])
+            self.assertEqual(metadata["verification_status"], "unverified_no_eval")
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
     def test_deep_training_writes_progress_events_and_sidecar(self):
         from engine.ai.dl.training import DeepTrainingConfig, run_deep_training
 
@@ -755,6 +1048,7 @@ class DeepAITests(unittest.TestCase):
             progress = os.path.join(tmpdir, "progress.jsonl")
             payload = run_deep_training(
                 DeepTrainingConfig(
+                    trainer="teacher_dagger_rl",
                     deck="fire",
                     games=0,
                     bootstrap_games=0,

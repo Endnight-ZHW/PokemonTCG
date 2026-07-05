@@ -9,6 +9,8 @@ dependencies:
   - pip
   - numpy
   - matplotlib
+  - onnx
+  - onnxruntime
   - pytorch
   - pytorch-cuda=11.8
   - pip:

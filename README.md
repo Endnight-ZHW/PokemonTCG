@@ -46,7 +46,8 @@ python .\python\main.py
 ```
 
 需要训练 AI 时安装 `python/requirements-ai.txt`，或使用
-`python/environment.yml` 创建 Conda 环境。更多说明见
+`python/environment.yml` 创建/更新 `DL` Conda 环境；Deep AI 训练和 ONNX 导出命令
+默认通过 `conda run -n DL python -B ...` 执行。更多说明见
 [`python/README.md`](python/README.md)。
 
 ### Relay 服务

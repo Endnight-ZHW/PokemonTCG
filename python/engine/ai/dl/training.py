@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import gc
 import json
+import math
 import os
 import random
 import time
@@ -26,7 +27,7 @@ from engine.ai.dl.encoder import (
     EncodedState,
 )
 from engine.ai.dl.model import TORCH_AVAILABLE, create_model, load_checkpoint, save_checkpoint, torch
-from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION, ChoiceRequest, ChoiceResponse, GameAction
 from engine.random_source import RandomSource
 from engine.ai.dl.opponent_pool import OpponentPool, save_opponent_pool, load_opponent_pool
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
@@ -35,12 +36,17 @@ from engine.ai.dl.replay import ReplayBuffer
 from engine.ai.training import DECK_SPECS, _determine_soft_winner, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
 from engine.effects.runtime_effects import trainer_runtime_effects
+from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.game_state import GameState
 from engine.snapshot import snapshot_state, state_from_snapshot
 from engine.turn_manager import TurnManager
 
 
 DEFAULT_MODEL_DIR = os.path.join("data", "ai_models")
+TRAINER_ALPHA_ZERO = "alpha_zero_rl"
+TRAINER_LEGACY = "teacher_dagger_rl"
+ALPHA_ZERO_METADATA_TRAINER = "alpha_zero_rl_v1"
+LEGACY_METADATA_TRAINER = "teacher_dagger_rl_v4"
 
 
 def _make_grad_scaler(enabled: bool):
@@ -139,6 +145,7 @@ TEACHER_SEARCH_PRESETS = {
 
 @dataclass(frozen=True)
 class DeepTrainingConfig:
+    trainer: str = TRAINER_ALPHA_ZERO
     deck: str = "all"
     games: int = 800
     seed: int = 17
@@ -184,6 +191,11 @@ class DeepTrainingConfig:
     distill_dataset: tuple[str, ...] = ()
     distill_epochs: int = 3
     distill_val_split: float = 0.1
+    league_dir: str = os.path.join("data", "ai_league")
+    league_eval_games: int = 600
+    league_use_mcts: bool = False
+    min_elo_delta: float = 25.0
+    min_score_rate: float = 0.53
 
 
 @dataclass
@@ -245,6 +257,8 @@ class ModelGameTask:
     mcts_chance_nodes: bool = True
     opponent_model_state: dict[str, Any] | None = None
     opponent_model_config: dict[str, Any] | None = None
+    opponent_deck_key: str | None = None
+    rule_only: bool = False
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -273,6 +287,21 @@ def _normalized_workers(workers: int | None) -> int:
         return max(1, int(workers or 1))
     except (TypeError, ValueError):
         return 1
+
+
+def _normalized_trainer(trainer: str | None) -> str:
+    value = str(trainer or TRAINER_ALPHA_ZERO).strip().lower()
+    aliases = {
+        "alpha_zero": TRAINER_ALPHA_ZERO,
+        "alphazero": TRAINER_ALPHA_ZERO,
+        "az": TRAINER_ALPHA_ZERO,
+        "rl": TRAINER_ALPHA_ZERO,
+        "teacher": TRAINER_LEGACY,
+        "legacy": TRAINER_LEGACY,
+        "teacher_dagger": TRAINER_LEGACY,
+        "teacher_dagger_rl_v4": TRAINER_LEGACY,
+    }
+    return aliases.get(value, value)
 
 
 def _deck_keys(deck: str) -> list[str]:
@@ -683,7 +712,15 @@ def _make_teacher(deck_key: str, seed: int, teacher_search_preset: str = "hybrid
     )
 
 
-def _setup_match(deck_key: str, opponent_key: str, seed: int, seat: int, teacher_search_preset: str = "hybrid"):
+def _setup_match(
+    deck_key: str,
+    opponent_key: str,
+    seed: int,
+    seat: int,
+    teacher_search_preset: str = "hybrid",
+    *,
+    rule_only: bool = False,
+):
     rng_state = random.getstate()
     random.seed(seed)
     try:
@@ -699,7 +736,10 @@ def _setup_match(deck_key: str, opponent_key: str, seed: int, seat: int, teacher
         )
         state.public_deck_keys = (deck1_key, deck2_key)
         tm = TurnManager(state)
-        if deck_a_player_idx == 0:
+        if rule_only:
+            ai0 = _RuleOnlySimulationAI(deck1_key, seed + 11)
+            ai1 = _RuleOnlySimulationAI(deck2_key, seed + 29)
+        elif deck_a_player_idx == 0:
             ai0 = _make_teacher(deck_key, seed + 11, teacher_search_preset)
             ai1 = _make_teacher(opponent_key, seed + 29, teacher_search_preset)
         else:
@@ -1653,13 +1693,157 @@ def _finalize_episode_examples(
         gae_advantages.append(last_gae)
 
     gae_advantages.reverse()
-    for idx, gae_adv in zip(sp_indices, gae_advantages):
+    for value_idx, (idx, gae_adv) in enumerate(zip(sp_indices, gae_advantages)):
         ex = examples[idx]
+        if ex.phase_tag == "alpha_zero":
+            ex.value_target = float(terminal_reward)
+            ex.return_target = float(terminal_reward)
+            ex.advantage = float(terminal_reward) - float(sp_values[value_idx])
+            ex.policy_advantage = ex.advantage
+            continue
         ex.advantage = gae_adv
         ex.policy_advantage = gae_adv
         ex.value_target = gae_adv + float(ex.value_target)
         ex.return_target = ex.value_target
     return examples
+
+
+class _RuleOnlySimulationAI:
+    """Minimal rules-engine adapter for RL-only Deep AI training.
+
+    It intentionally avoids ChallengeAI policy weights, action selection, and
+    evaluator logic. The neural model supplies priors/value during MCTS; this
+    class only gives the planner legal actions, rule execution, and a neutral
+    fallback value when the model cannot score a state.
+    """
+
+    def __init__(self, deck_key: str, seed: int = 17):
+        self.deck_key = deck_key
+        self.random = random.Random(seed)
+        self.engine = DEFAULT_GAME_ENGINE
+        self.config = type(
+            "RuleOnlyConfig",
+            (),
+            {"random_seed": int(seed), "deck_key": deck_key},
+        )()
+
+    def legal_actions(self, state, player_idx: int) -> list[GameAction]:
+        return list(self.engine.legal_actions(state, player_idx))
+
+    def choose_action(self, state, player_idx: int) -> GameAction:
+        actions = self.legal_actions(state, player_idx)
+        if not actions:
+            return GameAction(PlayerAction.END_TURN, {}, True, player_idx)
+        ranked = sorted(
+            actions,
+            key=lambda action: (
+                self._quick_action_priority(state, player_idx, action),
+                -len(str(action.signature)),
+            ),
+            reverse=True,
+        )
+        return ranked[0]
+
+    def resolve_pending_action(self, state, request):
+        if isinstance(request, ChoiceRequest):
+            return self._choice_response(request)
+        return None
+
+    def _choice_response(self, *args) -> ChoiceResponse:
+        request = args[-1]
+        if request.can_cancel and not request.options and request.min_select <= 0:
+            return ChoiceResponse(request.request_id, (), True)
+        count = min(len(request.options), max(request.min_select, request.max_select))
+        return ChoiceResponse(
+            request.request_id,
+            tuple(option.option_id for option in request.options[:count]),
+        )
+
+    def _apply_action_for_sim(self, state, player_idx, action):
+        action = action.with_actor(player_idx) if getattr(action, "actor", None) is None else action
+        return self.engine.apply_action(
+            state,
+            action,
+            RandomSource(self.random.randrange(1 << 30)),
+            auto_resolve=True,
+            choice_policy=self._choice_response,
+            auto_finish_attack=True,
+        )
+
+    def _auto_promote_for_sim(self, state):
+        player_idx = int(getattr(state, "pending_promotion_player", -1))
+        if player_idx < 0:
+            return
+        actions = [
+            action for action in self.legal_actions(state, player_idx)
+            if (action.action.name if isinstance(action.action, PlayerAction) else str(action.action)) == "PROMOTE"
+        ]
+        if actions:
+            self._apply_action_for_sim(state, player_idx, actions[0])
+
+    def evaluate_state(self, state, player_idx: int) -> float:
+        if state.winner is not None:
+            return 1_000_000.0 if state.winner == player_idx else -1_000_000.0
+        player = state.get_player(player_idx)
+        opponent = state.get_player(1 - player_idx)
+        prize_delta = len(opponent.prizes) - len(player.prizes)
+        own_hp = self._board_hp(player)
+        opp_hp = self._board_hp(opponent)
+        own_energy = self._board_energy(player)
+        opp_energy = self._board_energy(opponent)
+        opponent_hand = int(getattr(opponent, "hand_count", len(opponent.hand)))
+        return (
+            prize_delta * 220.0
+            + (own_hp - opp_hp) * 0.20
+            + (own_energy - opp_energy) * 25.0
+            + (len(player.hand) - opponent_hand) * 4.0
+            + (len(player.deck) - len(opponent.deck)) * 0.5
+        )
+
+    def _quick_action_priority(self, state, player_idx: int, action: GameAction) -> float:
+        action_name = action.action.name if isinstance(action.action, PlayerAction) else str(action.action)
+        priorities = {
+            "SETUP_DONE": -10.0,
+            PlayerAction.PLAY_BASIC.name: 80.0,
+            PlayerAction.EVOLVE.name: 95.0,
+            PlayerAction.ATTACH_ENERGY.name: 90.0,
+            PlayerAction.PLAY_TRAINER.name: 70.0,
+            PlayerAction.USE_ABILITY.name: 75.0,
+            PlayerAction.USE_STADIUM.name: 50.0,
+            PlayerAction.RETREAT.name: 35.0,
+            PlayerAction.DECLARE_ATTACK.name: 120.0,
+            PlayerAction.END_TURN.name: -25.0,
+        }
+        score = priorities.get(action_name, 0.0)
+        params = dict(getattr(action, "params", {}) or {})
+        if action_name == PlayerAction.PLAY_BASIC.name and params.get("target") == "active":
+            score += 30.0
+        if action_name == PlayerAction.DECLARE_ATTACK.name:
+            player = state.get_player(player_idx)
+            opponent = state.get_player(1 - player_idx)
+            if player.active and opponent.active:
+                attack_idx = params.get("attack_idx")
+                attacks = getattr(player.active.card, "attacks", []) or []
+                if isinstance(attack_idx, int) and 0 <= attack_idx < len(attacks):
+                    damage = _damage_number(getattr(attacks[attack_idx], "damage", 0))
+                    score += min(220.0, damage)
+                    if damage >= opponent.active.current_hp:
+                        score += 300.0
+        return score
+
+    def _board_hp(self, player) -> float:
+        return float(sum(p.current_hp for _slot, p in player.get_all_pokemon() if p))
+
+    def _board_energy(self, player) -> float:
+        return float(sum(len(getattr(p, "energy_cards", []) or []) for _slot, p in player.get_all_pokemon() if p))
+
+
+def _damage_number(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        digits = "".join(ch for ch in str(value) if ch.isdigit())
+        return int(digits) if digits else 0
 
 
 class _ModelOpponentActor:
@@ -1731,12 +1915,14 @@ def _play_model_game(
     mcts_simulations: int = 200,
     mcts_chance_nodes: bool = True,
     curiosity_tracker: Any = None,
+    opponent_deck_key: str | None = None,
+    rule_only: bool = False,
 ) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, Any]]:
     encoder = ActionStateEncoder()
-    opponent_key = _opponent_for(deck_key, seed)
+    opponent_key = opponent_deck_key or _opponent_for(deck_key, seed)
     seat = seed % 2
     state, _, ais, target_player_idx, rng_state = _setup_match(
-        deck_key, opponent_key, seed, seat, teacher_search_preset
+        deck_key, opponent_key, seed, seat, teacher_search_preset, rule_only=rule_only
     )
     # Replace opponent AI with model-based actor when self-play is requested
     opponent_idx = 1 - target_player_idx
@@ -1982,6 +2168,8 @@ def _execute_model_game_task(task: ModelGameTask) -> tuple[int | None, float, li
         use_mcts=bool(task.use_mcts),
         mcts_simulations=max(1, int(task.mcts_simulations or 1)),
         mcts_chance_nodes=bool(task.mcts_chance_nodes),
+        opponent_deck_key=task.opponent_deck_key,
+        rule_only=bool(task.rule_only),
     )
 
 
@@ -2032,6 +2220,8 @@ def _execute_model_game_task_batch(
             use_mcts=bool(task.use_mcts),
             mcts_simulations=max(1, int(task.mcts_simulations or 1)),
             mcts_chance_nodes=bool(task.mcts_chance_nodes),
+            opponent_deck_key=task.opponent_deck_key,
+            rule_only=bool(task.rule_only),
         ))
     return rows
 
@@ -2062,6 +2252,8 @@ def _model_game_tasks(
     use_mcts: bool = False,
     mcts_simulations: int = 0,
     mcts_chance_nodes: bool = True,
+    opponent_deck_key: str | None = None,
+    rule_only: bool = False,
 ) -> list[ModelGameTask]:
     model_state, model_config = _model_payload_for_worker(model)
     tasks = []
@@ -2089,6 +2281,8 @@ def _model_game_tasks(
             mcts_chance_nodes,
             opponent_model_state=opp_state,
             opponent_model_config=opp_config,
+            opponent_deck_key=opponent_deck_key,
+            rule_only=rule_only,
         ))
     return tasks
 
@@ -2387,6 +2581,279 @@ def _verification_metadata(eval_games: int, accepted: bool) -> dict[str, Any]:
     }
 
 
+def _score_rate(result: dict[str, Any] | None) -> float:
+    if not result:
+        return 0.0
+    games = max(1, int(result.get("games") or 0))
+    wins = float(result.get("wins", 0) or 0)
+    draws = float(result.get("draws", 0) or 0)
+    return (wins + draws * 0.5) / games
+
+
+def _elo_delta_from_score_rate(score_rate: float) -> float:
+    bounded = max(0.01, min(0.99, float(score_rate)))
+    return 400.0 * math.log10(bounded / (1.0 - bounded))
+
+
+def _has_bad_eval_actions(result: dict[str, Any] | None) -> bool:
+    if not result:
+        return False
+    return (
+        float(result.get("invalid_action_rate", 0.0) or 0.0) > 0.0
+        or float(result.get("no_target_action_rate", 0.0) or 0.0) > 0.0
+        or float(result.get("rule_exception_rate", 0.0) or 0.0) > 0.0
+        or float(result.get("decision_timeout_rate", 0.0) or 0.0) > 0.0
+    )
+
+
+def _accepts_league_result(
+    result: dict[str, Any],
+    *,
+    min_score_rate: float,
+    min_elo_delta: float,
+) -> bool:
+    if int(result.get("games") or 0) <= 0:
+        return True
+    if _has_bad_eval_actions(result):
+        return False
+    return (
+        float(result.get("score_rate", 0.0) or 0.0) + 1e-12 >= float(min_score_rate)
+        and float(result.get("elo_delta", 0.0) or 0.0) + 1e-12 >= float(min_elo_delta)
+    )
+
+
+def _checkpoint_sidecar_metadata(path: str) -> dict[str, Any]:
+    sidecar = os.path.splitext(path)[0] + ".json"
+    try:
+        with open(sidecar, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    metadata = payload.get("metadata") if isinstance(payload, dict) else {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _checkpoint_is_verified_for_league(path: str, deck_key: str) -> bool:
+    if not path or not os.path.exists(path):
+        return False
+    metadata = _checkpoint_sidecar_metadata(path)
+    if not metadata:
+        return False
+    if str(metadata.get("deck", deck_key)) != deck_key:
+        return False
+    if not bool(metadata.get("accepted")) or not bool(metadata.get("verified")):
+        return False
+    if int(metadata.get("rules_version") or 0) != RULES_SCHEMA_VERSION:
+        return False
+    if int(metadata.get("action_version") or 0) != ACTION_SCHEMA_VERSION:
+        return False
+    if int(metadata.get("encoder_version") or 0) != ENCODER_SCHEMA_VERSION:
+        return False
+    summary = metadata.get("summary")
+    if isinstance(summary, dict):
+        deck_summary = summary.get(deck_key)
+        if isinstance(deck_summary, dict) and _has_bad_eval_actions(deck_summary.get("eval")):
+            return False
+    return True
+
+
+def _league_checkpoint_paths(config: DeepTrainingConfig, deck_key: str) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    previous = config.model or _output_path_for_deck(deck_key)
+    if _checkpoint_is_verified_for_league(previous, deck_key):
+        rows.append(("previous", previous))
+    league_dir = os.fspath(config.league_dir or "")
+    if league_dir and os.path.isdir(league_dir):
+        candidates: list[str] = []
+        deck_dir = os.path.join(league_dir, deck_key)
+        if os.path.isdir(deck_dir):
+            candidates.extend(
+                os.path.join(deck_dir, name)
+                for name in os.listdir(deck_dir)
+                if name.endswith(".pt")
+            )
+        candidates.extend(
+            os.path.join(league_dir, name)
+            for name in os.listdir(league_dir)
+            if name.startswith(f"{deck_key}") and name.endswith(".pt")
+        )
+        seen = {os.path.abspath(path) for _name, path in rows}
+        for path in sorted(candidates):
+            absolute = os.path.abspath(path)
+            if absolute in seen or not _checkpoint_is_verified_for_league(path, deck_key):
+                continue
+            seen.add(absolute)
+            rows.append((f"league:{os.path.basename(path)}", path))
+    return rows
+
+
+def _add_verified_league_snapshots(pool: OpponentPool, config: DeepTrainingConfig, deck_key: str, device: str) -> list[dict[str, Any]]:
+    loaded: list[dict[str, Any]] = []
+    for label, path in _league_checkpoint_paths(config, deck_key):
+        try:
+            opponent, payload = load_checkpoint(path, device)
+            state, model_config = _model_payload_for_worker(opponent)
+            pool.add(state, model_config)
+            loaded.append({
+                "label": label,
+                "path": path,
+                "trainer": (payload.get("metadata") or {}).get("trainer", ""),
+            })
+        except Exception:
+            continue
+    return loaded
+
+
+def _empty_league_result(reason: str, *, accepted: bool = True) -> dict[str, Any]:
+    return {
+        "games": 0,
+        "wins": 0,
+        "losses": 0,
+        "draws": 0,
+        "score_rate": 0.0,
+        "elo_delta": 0.0,
+        "accepted": bool(accepted),
+        "rejection_reason": reason,
+        "opponents": [],
+        "actions": 0,
+        "invalid_actions": 0,
+        "no_target_actions": 0,
+        "rule_exceptions": 0,
+        "decision_timeouts": 0,
+        "decision_seconds": 0.0,
+        "invalid_action_rate": 0.0,
+        "no_target_action_rate": 0.0,
+        "rule_exception_rate": 0.0,
+        "decision_timeout_rate": 0.0,
+        "average_decision_seconds": 0.0,
+    }
+
+
+def evaluate_alpha_zero_league(
+    model,
+    deck_key: str,
+    seed: int,
+    config: DeepTrainingConfig,
+    *,
+    device: str,
+    max_steps: int,
+) -> dict[str, Any]:
+    games = max(0, int(config.league_eval_games))
+    if games <= 0:
+        return _empty_league_result("no_league_eval_games")
+    opponents = _league_checkpoint_paths(config, deck_key)
+    if not opponents:
+        return _empty_league_result("no_verified_league_opponents", accepted=False)
+
+    stats: dict[str, Any] = {
+        "games": 0,
+        "wins": 0,
+        "losses": 0,
+        "draws": 0,
+        "actions": 0,
+        "invalid_actions": 0,
+        "no_target_actions": 0,
+        "rule_exceptions": 0,
+        "decision_timeouts": 0,
+        "decision_seconds": 0.0,
+        "opponents": [],
+    }
+    games_per_opponent = games // len(opponents)
+    extra_games = games % len(opponents)
+    game_counter = 0
+    for opponent_idx, (label, path) in enumerate(opponents):
+        try:
+            opponent_model, payload = load_checkpoint(path, device)
+        except Exception as exc:
+            stats["opponents"].append({
+                "label": label,
+                "path": path,
+                "games": 0,
+                "error": str(exc),
+            })
+            continue
+        target_games = games_per_opponent + (1 if opponent_idx < extra_games else 0)
+        opponent_row = {
+            "label": label,
+            "path": path,
+            "trainer": (payload.get("metadata") or {}).get("trainer", ""),
+            "games": 0,
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+        }
+        for local_idx in range(target_games):
+            winner, _score, _examples, _choices, diagnostics = _play_model_game(
+                model,
+                deck_key,
+                seed + 950_000 + game_counter * 131,
+                device=device,
+                max_steps=max_steps,
+                record=False,
+                teacher_search_preset="hybrid",
+                temperature=0.0,
+                teacher_label_model_states=False,
+                opponent_model=opponent_model,
+                pure_rl=True,
+                use_mcts=bool(config.league_use_mcts),
+                mcts_simulations=max(1, int(config.mcts_simulations)),
+                mcts_chance_nodes=bool(config.mcts_chance_nodes),
+                opponent_deck_key=deck_key,
+                rule_only=True,
+            )
+            game_counter += 1
+            stats["games"] += 1
+            opponent_row["games"] += 1
+            if winner == 0:
+                stats["wins"] += 1
+                opponent_row["wins"] += 1
+            elif winner == 1:
+                stats["losses"] += 1
+                opponent_row["losses"] += 1
+            else:
+                stats["draws"] += 1
+                opponent_row["draws"] += 1
+            diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+            for key in ("actions", "invalid_actions", "no_target_actions", "rule_exceptions", "decision_timeouts"):
+                stats[key] += int(diagnostics.get(key, 0) or 0)
+            stats["decision_seconds"] += float(diagnostics.get("decision_seconds", 0.0) or 0.0)
+        stats["opponents"].append(opponent_row)
+
+    if int(stats["games"]) <= 0:
+        stats["invalid_action_rate"] = 0.0
+        stats["no_target_action_rate"] = 0.0
+        stats["rule_exception_rate"] = 0.0
+        stats["decision_timeout_rate"] = 0.0
+        stats["average_decision_seconds"] = 0.0
+        stats["score_rate"] = 0.0
+        stats["elo_delta"] = 0.0
+        stats["accepted"] = False
+        stats["rejection_reason"] = "no_completed_league_games"
+        return stats
+
+    action_count = max(1, int(stats["actions"]))
+    stats["invalid_action_rate"] = round(float(stats["invalid_actions"]) / action_count, 6)
+    stats["no_target_action_rate"] = round(float(stats["no_target_actions"]) / action_count, 6)
+    stats["rule_exception_rate"] = round(float(stats["rule_exceptions"]) / action_count, 6)
+    stats["decision_timeout_rate"] = round(float(stats["decision_timeouts"]) / action_count, 6)
+    stats["average_decision_seconds"] = round(float(stats["decision_seconds"]) / action_count, 6)
+    stats["score_rate"] = round(_score_rate(stats), 6)
+    stats["elo_delta"] = round(_elo_delta_from_score_rate(stats["score_rate"]), 3)
+    accepted = _accepts_league_result(
+        stats,
+        min_score_rate=float(config.min_score_rate),
+        min_elo_delta=float(config.min_elo_delta),
+    )
+    stats["accepted"] = accepted
+    if _has_bad_eval_actions(stats):
+        stats["rejection_reason"] = "bad_actions"
+    elif not accepted:
+        stats["rejection_reason"] = "league_threshold"
+    else:
+        stats["rejection_reason"] = ""
+    return stats
+
+
 def _sample_teacher_examples(bootstrap: list[TrainingExample], target_size: int, rng: random.Random) -> list[TrainingExample]:
     if not bootstrap or target_size <= 0:
         return []
@@ -2461,6 +2928,12 @@ def _collect_rollout_batch(
     phase_tag: str = "rl",
     opponent_pool: Any = None,
     task_runner: DeepTrainingTaskRunner | None = None,
+    pure_rl: bool = False,
+    use_mcts: bool = False,
+    mcts_simulations: int = 0,
+    mcts_chance_nodes: bool = True,
+    opponent_deck_key: str | None = None,
+    rule_only: bool = False,
 ) -> list[tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]]:
     if not seeds:
         return []
@@ -2485,6 +2958,12 @@ def _collect_rollout_batch(
                 teacher_label_model_states=teacher_label_model_states,
                 phase_tag=phase_tag,
                 opponent_model=opp_model,
+                pure_rl=pure_rl,
+                use_mcts=use_mcts,
+                mcts_simulations=mcts_simulations,
+                mcts_chance_nodes=mcts_chance_nodes,
+                opponent_deck_key=opponent_deck_key,
+                rule_only=rule_only,
             ))
         return results
     tasks = _model_game_tasks(
@@ -2497,12 +2976,285 @@ def _collect_rollout_batch(
             teacher_label_model_states=teacher_label_model_states,
             phase_tag=phase_tag,
             opponent_pool=opponent_pool,
+            pure_rl=pure_rl,
+            use_mcts=use_mcts,
+            mcts_simulations=mcts_simulations,
+            mcts_chance_nodes=mcts_chance_nodes,
+            opponent_deck_key=opponent_deck_key,
+            rule_only=rule_only,
     )
     return (
         task_runner.run_model_game_tasks(tasks)
         if task_runner is not None
         else _run_model_game_tasks(tasks, workers)
     )
+
+
+def _validate_alpha_zero_examples(examples: list[TrainingExample]) -> None:
+    invalid_sources = sorted({
+        str(ex.source)
+        for ex in examples
+        if ex.source not in ("self_play", "league_self_play")
+    })
+    if invalid_sources:
+        raise RuntimeError(
+            "alpha_zero_rl received non-RL training examples: "
+            + ", ".join(invalid_sources)
+        )
+
+
+def _train_deck_alpha_zero_pipeline(
+    model,
+    deck_key: str,
+    deck_seed: int,
+    config: DeepTrainingConfig,
+    emit: Callable[[dict[str, Any]], None],
+    total_done: int,
+    total_training_games: int,
+) -> tuple[dict[str, Any], int]:
+    """Run AlphaZero-style neural-MCTS self-play and league-gated eval."""
+    self_play_games = max(0, int(config.games))
+    max_steps = max(20, int(config.max_steps))
+    rollout_batch_games = max(1, int(config.rollout_batch_games))
+    updates_per_rollout = max(1, int(config.updates_per_rollout))
+    worker_count = _normalized_workers(config.workers)
+    replay_buffer = ReplayBuffer(capacity=max(1, int(config.replay_buffer_size)), seed=deck_seed)
+    replay_ratio = max(0.0, float(config.replay_sample_ratio))
+    task_runner = DeepTrainingTaskRunner(worker_count)
+    task_runner.__enter__()
+    amp_enabled = bool(config.use_amp and str(config.device).startswith("cuda"))
+    parameters_fn = getattr(model, "parameters", None)
+    optimizer = (
+        torch.optim.AdamW(parameters_fn(), lr=config.learning_rate, weight_decay=1e-4)
+        if callable(parameters_fn) else None
+    )
+    grad_scaler = _make_grad_scaler(amp_enabled) if optimizer is not None else None
+    opponent_pool = OpponentPool(max_snapshots=5)
+    loaded_opponents = _add_verified_league_snapshots(opponent_pool, config, deck_key, config.device)
+    current_state, current_config = _model_payload_for_worker(model)
+    opponent_pool.add(current_state, current_config)
+
+    emit({
+        "type": "deck_started",
+        "trainer": ALPHA_ZERO_METADATA_TRAINER,
+        "deck": deck_key,
+        "seed": deck_seed,
+        "target_games": self_play_games,
+        "bootstrap_games": 0,
+        "dagger_games": 0,
+        "league_eval_games": max(0, int(config.league_eval_games)),
+        "league_use_mcts": bool(config.league_use_mcts),
+        "rollout_batch_games": rollout_batch_games,
+        "updates_per_rollout": updates_per_rollout,
+        "mcts_simulations": int(config.mcts_simulations),
+        "opponent_pool_size": len(opponent_pool),
+        "loaded_league_opponents": loaded_opponents,
+        "total_games_played": total_done,
+        "total_training_games": total_training_games,
+    })
+
+    wins = losses = draws = 0
+    score_total = 0.0
+    total_examples = 0
+    train_results: list[dict[str, Any]] = []
+    rng = random.Random(deck_seed)
+
+    for batch_start in range(0, self_play_games, rollout_batch_games):
+        batch_count = min(rollout_batch_games, self_play_games - batch_start)
+        seeds = [
+            deck_seed + 600_000 + (batch_start + idx) * 127
+            for idx in range(batch_count)
+        ]
+        rows = _collect_rollout_batch(
+            model,
+            deck_key,
+            seeds,
+            device=config.device,
+            max_steps=max_steps,
+            workers=worker_count,
+            teacher_search_preset="hybrid",
+            teacher_label_model_states=False,
+            phase_tag="alpha_zero",
+            opponent_pool=opponent_pool,
+            task_runner=task_runner,
+            pure_rl=True,
+            use_mcts=bool(config.use_mcts_training),
+            mcts_simulations=max(1, int(config.mcts_simulations)),
+            mcts_chance_nodes=bool(config.mcts_chance_nodes),
+            opponent_deck_key=deck_key,
+            rule_only=True,
+        )
+        batch_examples: list[TrainingExample] = []
+        for row_idx, (winner, score, examples, _choices, diagnostics) in enumerate(rows):
+            sp_examples = [ex for ex in examples if ex.source == "self_play"]
+            _validate_alpha_zero_examples(sp_examples)
+            batch_examples.extend(sp_examples)
+            score_total += score
+            if winner == 0:
+                wins += 1
+            elif winner == 1:
+                losses += 1
+            else:
+                draws += 1
+            total_done += 1
+            games_played = batch_start + row_idx + 1
+            emit({
+                "type": "self_play_game_finished",
+                "trainer": ALPHA_ZERO_METADATA_TRAINER,
+                "deck": deck_key,
+                "game": games_played,
+                "target_games": self_play_games,
+                "winner": winner,
+                "score": round(float(score), 3),
+                "stats": {"wins": wins, "losses": losses, "draws": draws},
+                "win_rate": round(wins / max(1, games_played), 4),
+                "avg_score": round(score_total / max(1, games_played), 3),
+                "examples": len(sp_examples),
+                "policy_targets": sum(1 for ex in sp_examples if ex.policy_target),
+                "diagnostics": diagnostics,
+                "total_games_played": total_done,
+                "total_training_games": total_training_games,
+            })
+
+        if batch_examples:
+            _validate_alpha_zero_examples(batch_examples)
+            replay_mix = _sample_replay_examples(
+                replay_buffer,
+                len(batch_examples),
+                ratio=replay_ratio,
+                minimum=config.batch_size if replay_buffer.size > 0 else 0,
+            )
+            _validate_alpha_zero_examples(replay_mix)
+            train_rows = replay_mix + batch_examples
+            train_result = _train_examples(
+                model,
+                train_rows,
+                device=config.device,
+                learning_rate=config.learning_rate,
+                epochs=updates_per_rollout,
+                batch_size=config.batch_size,
+                optimizer=optimizer,
+                grad_scaler=grad_scaler,
+                use_amp=amp_enabled,
+            )
+            train_results.append(train_result)
+            total_examples += len(batch_examples)
+            replay_buffer.extend(batch_examples)
+            snapshot_state, snapshot_config = _model_payload_for_worker(model)
+            opponent_pool.add(snapshot_state, snapshot_config)
+            emit({
+                "type": "train_phase_finished",
+                "trainer": ALPHA_ZERO_METADATA_TRAINER,
+                "deck": deck_key,
+                "phase": "alpha_zero_self_play_batch",
+                "batch": (batch_start // rollout_batch_games) + 1,
+                **train_result,
+                "self_play_examples": len(batch_examples),
+                "replay_examples": len(replay_mix),
+                "opponent_pool_size": len(opponent_pool),
+                "total_games_played": total_done,
+                "total_training_games": total_training_games,
+            })
+
+    if self_play_games <= 0:
+        empty_result = _train_examples(
+            model,
+            [],
+            device=config.device,
+            learning_rate=config.learning_rate,
+            epochs=updates_per_rollout,
+            batch_size=config.batch_size,
+            optimizer=optimizer,
+            grad_scaler=grad_scaler,
+            use_amp=amp_enabled,
+        )
+        train_results.append(empty_result)
+        emit({
+            "type": "train_phase_finished",
+            "trainer": ALPHA_ZERO_METADATA_TRAINER,
+            "deck": deck_key,
+            "phase": "alpha_zero_self_play",
+            **empty_result,
+            "total_games_played": total_done,
+            "total_training_games": total_training_games,
+        })
+
+    replay_buffer.clear()
+    opponent_pool.clear()
+    gc.collect()
+    if str(config.device).startswith("cuda"):
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    league_eval_games = max(0, int(config.league_eval_games)) if self_play_games > 0 else 0
+    league_config = replace(config, league_eval_games=league_eval_games)
+    league_result = evaluate_alpha_zero_league(
+        model,
+        deck_key,
+        deck_seed,
+        league_config,
+        device=config.device,
+        max_steps=max_steps,
+    )
+    total_done += int(league_result.get("games") or 0)
+    accepted = bool(league_result.get("accepted", True))
+    train_result = _aggregate_train_results(train_results, total_examples)
+    summary = {
+        "trainer": ALPHA_ZERO_METADATA_TRAINER,
+        "bootstrap": {
+            "examples": 0,
+            "loss": 0.0,
+            "total_loss": 0.0,
+            "policy_loss": 0.0,
+            "value_loss": 0.0,
+            "entropy": 0.0,
+        },
+        "dagger": {
+            "examples": 0,
+            "loss": 0.0,
+            "total_loss": 0.0,
+            "policy_loss": 0.0,
+            "value_loss": 0.0,
+            "entropy": 0.0,
+        },
+        "self_play": train_result,
+        "self_play_stats": {"wins": wins, "losses": losses, "draws": draws},
+        "choice": {"choice_examples": 0, "choice_loss": 0.0},
+        "league": league_result,
+        "eval": league_result,
+        "accepted": accepted,
+        "selected_stage": TRAINER_ALPHA_ZERO,
+        "acceptance_metric": "league_elo",
+        "min_score_rate": float(config.min_score_rate),
+        "min_elo_delta": float(config.min_elo_delta),
+        "teacher_label_model_states": False,
+        "teacher_search_preset": "",
+    }
+    emit({
+        "type": "league_eval_finished",
+        "trainer": ALPHA_ZERO_METADATA_TRAINER,
+        "deck": deck_key,
+        "league": league_result,
+        "accepted": accepted,
+        "total_games_played": total_done,
+        "total_training_games": total_training_games,
+    })
+    emit({
+        "type": "deck_finished",
+        "trainer": ALPHA_ZERO_METADATA_TRAINER,
+        "deck": deck_key,
+        "training_games": self_play_games,
+        "stats": {"wins": wins, "losses": losses, "draws": draws},
+        "eval": league_result,
+        "accepted": accepted,
+        "acceptance_metric": "league_elo",
+        "total_games_played": total_done,
+        "total_training_games": total_training_games,
+    })
+    task_runner.__exit__(None, None, None)
+    return summary, total_done
 
 
 def _train_deck_pipeline(
@@ -3282,7 +4034,7 @@ def _train_deck_pipeline(
             resume_path,
             model,
             {
-                "trainer": "teacher_dagger_rl_v4",
+                "trainer": LEGACY_METADATA_TRAINER,
                 "deck": deck_key,
                 "phase": "pre_eval",
                 "accepted": False,
@@ -3486,8 +4238,11 @@ def run_deep_training(
     _ensure_cards_loaded()
     assert torch is not None
 
+    trainer_mode = _normalized_trainer(config.trainer)
+    if trainer_mode not in (TRAINER_ALPHA_ZERO, TRAINER_LEGACY):
+        raise ValueError(f"Unknown deep AI trainer: {config.trainer}")
     device_info = _torch_device_info(config.device)
-    effective_config = replace(config, device=str(device_info["device"]))
+    effective_config = replace(config, device=str(device_info["device"]), trainer=trainer_mode)
     torch.manual_seed(int(effective_config.seed))
     if bool(device_info["cuda_available"]):
         torch.cuda.manual_seed_all(int(effective_config.seed))
@@ -3512,38 +4267,59 @@ def run_deep_training(
     deck_keys = _deck_keys(effective_config.deck)
     started = time.time()
     train_summary: dict[str, Any] = {}
-    bootstrap_games = max(0, int(effective_config.bootstrap_games))
-    dagger_games = max(0, int(effective_config.dagger_games))
+    bootstrap_games = 0 if trainer_mode == TRAINER_ALPHA_ZERO else max(0, int(effective_config.bootstrap_games))
+    dagger_games = 0 if trainer_mode == TRAINER_ALPHA_ZERO else max(0, int(effective_config.dagger_games))
     self_play_games = max(0, int(effective_config.games))
-    eval_games = max(0, int(effective_config.eval_games))
-    pure_rl_games = max(0, int(effective_config.pure_rl_games))
-    same_deal_trajectories = max(0, int(effective_config.replay_same_deal)) * 3
-    distill_datasets = tuple(effective_config.distill_dataset or ())
-    total_training_games = (
-        bootstrap_games
-        + dagger_games
-        + self_play_games
-        + pure_rl_games
-        + same_deal_trajectories
-        + eval_games
-    ) * len(deck_keys)
+    eval_games = 0 if trainer_mode == TRAINER_ALPHA_ZERO else max(0, int(effective_config.eval_games))
+    pure_rl_games = 0 if trainer_mode == TRAINER_ALPHA_ZERO else max(0, int(effective_config.pure_rl_games))
+    same_deal_trajectories = 0 if trainer_mode == TRAINER_ALPHA_ZERO else max(0, int(effective_config.replay_same_deal)) * 3
+    distill_datasets = () if trainer_mode == TRAINER_ALPHA_ZERO else tuple(effective_config.distill_dataset or ())
+    league_eval_games = (
+        max(0, int(effective_config.league_eval_games))
+        if trainer_mode == TRAINER_ALPHA_ZERO and self_play_games > 0
+        else 0
+    )
+    if trainer_mode == TRAINER_ALPHA_ZERO:
+        total_training_games = (self_play_games + league_eval_games) * len(deck_keys)
+    else:
+        total_training_games = (
+            bootstrap_games
+            + dagger_games
+            + self_play_games
+            + pure_rl_games
+            + same_deal_trajectories
+            + eval_games
+        ) * len(deck_keys)
     total_done = 0
     model_paths: dict[str, str] = {}
     requested_model_paths: dict[str, str] = {}
     accepted: dict[str, bool] = {}
+    warm_start_sources: dict[str, dict[str, str]] = {}
+    metadata_acceptance_metric = "league_elo" if trainer_mode == TRAINER_ALPHA_ZERO else effective_config.acceptance_metric
+    metadata_teacher_search_preset = "" if trainer_mode == TRAINER_ALPHA_ZERO else effective_config.teacher_search_preset
+    metadata_teacher_label_model_states = (
+        False if trainer_mode == TRAINER_ALPHA_ZERO else bool(effective_config.teacher_label_model_states)
+    )
+    metadata_min_win_delta = 0 if trainer_mode == TRAINER_ALPHA_ZERO else int(effective_config.min_win_delta)
 
     try:
         emit({
             "type": "run_started",
-            "trainer": "rl_ai",
+            "trainer": trainer_mode,
+            "trainer_version": ALPHA_ZERO_METADATA_TRAINER if trainer_mode == TRAINER_ALPHA_ZERO else LEGACY_METADATA_TRAINER,
             "deck": effective_config.deck,
             "deck_keys": deck_keys,
             "games_per_deck": self_play_games,
             "bootstrap_games": bootstrap_games,
             "dagger_games": dagger_games,
             "eval_games": eval_games,
+            "league_eval_games": league_eval_games,
+            "league_use_mcts": bool(effective_config.league_use_mcts),
+            "league_dir": effective_config.league_dir,
+            "min_score_rate": float(effective_config.min_score_rate),
+            "min_elo_delta": float(effective_config.min_elo_delta),
             "pure_rl_games": pure_rl_games,
-            "replay_same_deal": int(effective_config.replay_same_deal),
+            "replay_same_deal": 0 if trainer_mode == TRAINER_ALPHA_ZERO else int(effective_config.replay_same_deal),
             "same_deal_trajectories": same_deal_trajectories,
             "workers": int(effective_config.workers),
             "requested_device": device_info["requested_device"],
@@ -3556,11 +4332,11 @@ def run_deep_training(
             "max_steps": max(20, int(effective_config.max_steps)),
             "rollout_batch_games": max(1, int(effective_config.rollout_batch_games)),
             "updates_per_rollout": max(1, int(effective_config.updates_per_rollout)),
-            "teacher_search_preset": effective_config.teacher_search_preset,
+            "teacher_search_preset": metadata_teacher_search_preset,
             "choice_head_enabled": bool(effective_config.choice_head_enabled),
-            "acceptance_metric": effective_config.acceptance_metric,
-            "min_win_delta": int(effective_config.min_win_delta),
-            "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+            "acceptance_metric": metadata_acceptance_metric,
+            "min_win_delta": metadata_min_win_delta,
+            "teacher_label_model_states": metadata_teacher_label_model_states,
             "replay_buffer_size": int(effective_config.replay_buffer_size),
             "replay_sample_ratio": float(effective_config.replay_sample_ratio),
             "distill_dataset": list(distill_datasets),
@@ -3574,33 +4350,61 @@ def run_deep_training(
             output_path = _candidate_output_path(effective_config, deck_key, len(deck_keys) > 1)
             old_model_path = effective_config.model or _output_path_for_deck(deck_key)
             requested_model_paths[deck_key] = output_path
-            old_eval = _load_old_eval(
-                old_model_path,
-                deck_key,
-                deck_seed + 900_000,
-                min(eval_games, 100),
-                device=effective_config.device,
-                max_steps=max(20, int(effective_config.max_steps)),
-                workers=_normalized_workers(effective_config.workers),
-                teacher_search_preset=effective_config.teacher_search_preset,
-            )
+            warm_start_path = effective_config.model
+            warm_start_source = "explicit_model" if warm_start_path else "none"
+            if not warm_start_path and effective_config.warm_start:
+                warm_start_path = _warm_start_path_for_deck(deck_key)
+                warm_start_source = "deck_default" if warm_start_path else "none"
+            if warm_start_path and not os.path.exists(warm_start_path):
+                warm_start_source = "missing"
+            warm_start_sources[deck_key] = {
+                "source": warm_start_source,
+                "path": warm_start_path or "",
+            }
+            old_eval = None
+            if trainer_mode == TRAINER_LEGACY:
+                old_eval = _load_old_eval(
+                    old_model_path,
+                    deck_key,
+                    deck_seed + 900_000,
+                    min(eval_games, 100),
+                    device=effective_config.device,
+                    max_steps=max(20, int(effective_config.max_steps)),
+                    workers=_normalized_workers(effective_config.workers),
+                    teacher_search_preset=effective_config.teacher_search_preset,
+                )
 
             model = _load_or_create_model(effective_config, deck_key)
             model.to(effective_config.device)
 
-            deck_summary, total_done = _train_deck_pipeline(
-                model,
-                deck_key,
-                deck_seed,
-                effective_config,
-                emit,
-                total_done,
-                total_training_games,
-                old_eval=old_eval,
-            )
+            if trainer_mode == TRAINER_ALPHA_ZERO:
+                deck_summary, total_done = _train_deck_alpha_zero_pipeline(
+                    model,
+                    deck_key,
+                    deck_seed,
+                    effective_config,
+                    emit,
+                    total_done,
+                    total_training_games,
+                )
+            else:
+                deck_summary, total_done = _train_deck_pipeline(
+                    model,
+                    deck_key,
+                    deck_seed,
+                    effective_config,
+                    emit,
+                    total_done,
+                    total_training_games,
+                    old_eval=old_eval,
+                )
             train_summary[deck_key] = deck_summary
             deck_accepted = bool(deck_summary.get("accepted", True))
-            metadata_accepted = deck_accepted and eval_games > 0
+            evidence_games = (
+                int((deck_summary.get("league") or {}).get("games") or 0)
+                if trainer_mode == TRAINER_ALPHA_ZERO else eval_games
+            )
+            metadata_accepted = deck_accepted and evidence_games > 0
             accepted[deck_key] = metadata_accepted
 
             save_path = output_path
@@ -3618,8 +4422,13 @@ def run_deep_training(
                 "bootstrap_games": bootstrap_games,
                 "dagger_games": dagger_games,
                 "eval_games": eval_games,
+                "league_eval_games": league_eval_games,
+                "league_use_mcts": bool(effective_config.league_use_mcts),
+                "league_dir": effective_config.league_dir,
+                "min_score_rate": float(effective_config.min_score_rate),
+                "min_elo_delta": float(effective_config.min_elo_delta),
                 "pure_rl_games": pure_rl_games,
-                "replay_same_deal": int(effective_config.replay_same_deal),
+                "replay_same_deal": 0 if trainer_mode == TRAINER_ALPHA_ZERO else int(effective_config.replay_same_deal),
                 "workers": int(effective_config.workers),
                 "requested_device": device_info["requested_device"],
                 "device": effective_config.device,
@@ -3627,7 +4436,11 @@ def run_deep_training(
                 "torch_cuda": device_info["torch_cuda"],
                 "cuda_available": device_info["cuda_available"],
                 "gpu_name": device_info["gpu_name"],
-                "trainer": "teacher_dagger_rl_v4",
+                "trainer": ALPHA_ZERO_METADATA_TRAINER if trainer_mode == TRAINER_ALPHA_ZERO else LEGACY_METADATA_TRAINER,
+                "trainer_mode": trainer_mode,
+                "warm_start": bool(effective_config.warm_start),
+                "warm_start_source": warm_start_source,
+                "warm_start_path": warm_start_path or "",
                 "accepted": metadata_accepted,
                 "training_gate_accepted": deck_accepted,
                 "preserved_existing": preserved_existing,
@@ -3635,17 +4448,17 @@ def run_deep_training(
                 "summary": {deck_key: deck_summary},
                 "rollout_batch_games": effective_config.rollout_batch_games,
                 "updates_per_rollout": effective_config.updates_per_rollout,
-                "teacher_search_preset": effective_config.teacher_search_preset,
+                "teacher_search_preset": metadata_teacher_search_preset,
                 "choice_head_enabled": bool(effective_config.choice_head_enabled),
-                "acceptance_metric": effective_config.acceptance_metric,
-                "min_win_delta": int(effective_config.min_win_delta),
-                "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+                "acceptance_metric": metadata_acceptance_metric,
+                "min_win_delta": metadata_min_win_delta,
+                "teacher_label_model_states": metadata_teacher_label_model_states,
                 "replay_buffer_size": int(effective_config.replay_buffer_size),
                 "replay_sample_ratio": float(effective_config.replay_sample_ratio),
                 "distill_dataset": list(distill_datasets),
                 "distill_epochs": int(effective_config.distill_epochs),
                 "distill_val_split": float(effective_config.distill_val_split),
-                **_verification_metadata(eval_games, metadata_accepted),
+                **_verification_metadata(evidence_games, metadata_accepted),
             }
             save_checkpoint(save_path, model, metadata)
             model_paths[deck_key] = save_path
@@ -3676,8 +4489,13 @@ def run_deep_training(
                 "bootstrap_games": bootstrap_games,
                 "dagger_games": dagger_games,
                 "eval_games": eval_games,
+                "league_eval_games": league_eval_games,
+                "league_use_mcts": bool(effective_config.league_use_mcts),
+                "league_dir": effective_config.league_dir,
+                "min_score_rate": float(effective_config.min_score_rate),
+                "min_elo_delta": float(effective_config.min_elo_delta),
                 "pure_rl_games": pure_rl_games,
-                "replay_same_deal": int(effective_config.replay_same_deal),
+                "replay_same_deal": 0 if trainer_mode == TRAINER_ALPHA_ZERO else int(effective_config.replay_same_deal),
                 "workers": int(effective_config.workers),
                 "requested_device": device_info["requested_device"],
                 "device": effective_config.device,
@@ -3685,25 +4503,31 @@ def run_deep_training(
                 "torch_cuda": device_info["torch_cuda"],
                 "cuda_available": device_info["cuda_available"],
                 "gpu_name": device_info["gpu_name"],
-                "trainer": "teacher_dagger_rl_v4",
+                "trainer": ALPHA_ZERO_METADATA_TRAINER if trainer_mode == TRAINER_ALPHA_ZERO else LEGACY_METADATA_TRAINER,
+                "trainer_mode": trainer_mode,
+                "warm_start_sources": warm_start_sources,
                 "summary": train_summary,
                 "rollout_batch_games": effective_config.rollout_batch_games,
                 "updates_per_rollout": effective_config.updates_per_rollout,
-                "teacher_search_preset": effective_config.teacher_search_preset,
+                "teacher_search_preset": metadata_teacher_search_preset,
                 "choice_head_enabled": bool(effective_config.choice_head_enabled),
-                "acceptance_metric": effective_config.acceptance_metric,
-                "min_win_delta": int(effective_config.min_win_delta),
-                "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
+                "acceptance_metric": metadata_acceptance_metric,
+                "min_win_delta": metadata_min_win_delta,
+                "teacher_label_model_states": metadata_teacher_label_model_states,
                 "replay_buffer_size": int(effective_config.replay_buffer_size),
                 "replay_sample_ratio": float(effective_config.replay_sample_ratio),
                 "distill_dataset": list(distill_datasets),
                 "distill_epochs": int(effective_config.distill_epochs),
                 "distill_val_split": float(effective_config.distill_val_split),
-                **_verification_metadata(eval_games, all(accepted.values()) if accepted else False),
+                **_verification_metadata(
+                    league_eval_games if trainer_mode == TRAINER_ALPHA_ZERO else eval_games,
+                    all(accepted.values()) if accepted else False,
+                ),
             },
         }
         emit({
             "type": "run_finished",
+            "trainer": trainer_mode,
             "model_paths": model_paths,
             "model_count": len(deck_keys),
             "accepted": accepted,
