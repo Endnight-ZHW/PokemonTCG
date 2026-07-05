@@ -18,6 +18,20 @@
       "source_checkpoint": "python/data/ai_models/colorless.pt",
       "verified": true
     },
+    "darkness": {
+      "accepted": false,
+      "action_version": 2,
+      "checkpoint_exists": true,
+      "checkpoint_sha256": "0bd4c82f5e3b75cfb0cb306f9e80a92ddedd37941fd9bd32ac71c878e4431cea",
+      "checkpoint_size": 5482454,
+      "deck_key": "darkness",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/darkness.onnx",
+      "planner_version": 1,
+      "rules_version": 2,
+      "source_checkpoint": "python/data/ai_models/darkness.pt",
+      "verified": false
+    },
     "dragon": {
       "accepted": true,
       "action_version": 2,
@@ -102,6 +116,20 @@
       "source_checkpoint": "python/data/ai_models/psychic.pt",
       "verified": true
     },
+    "steel": {
+      "accepted": false,
+      "action_version": 2,
+      "checkpoint_exists": true,
+      "checkpoint_sha256": "b55273d611f3136cf33ea407a5225c8de62f9d8203e8071a25c4fb80a23646b2",
+      "checkpoint_size": 5480356,
+      "deck_key": "steel",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/steel.onnx",
+      "planner_version": 1,
+      "rules_version": 2,
+      "source_checkpoint": "python/data/ai_models/steel.pt",
+      "verified": false
+    },
     "water": {
       "accepted": true,
       "action_version": 2,
@@ -117,7 +145,7 @@
       "verified": true
     }
   },
-  "search_simulations": 256,
+  "search_simulations": 64,
   "state_card_slots": 96,
   "state_numeric_size": 960
 }

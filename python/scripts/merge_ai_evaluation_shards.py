@@ -107,6 +107,7 @@ def _empty_stats() -> dict[str, Any]:
         "choice_failures": 0,
         "rule_exceptions": 0,
         "time_capped_decisions": 0,
+        "deep_fallbacks": 0,
         "dynamic_budget_stop_reasons": {},
         "max_actions_exhaustions": 0,
     }
@@ -147,6 +148,7 @@ def _merge_match(stats: dict[str, Any], row: dict[str, Any]) -> None:
     stats["choice_failures"] += _int(row.get("choice_failures"))
     stats["rule_exceptions"] += _int(row.get("rule_exceptions"))
     stats["time_capped_decisions"] += _int(row.get("time_capped_decisions"))
+    stats["deep_fallbacks"] += _int(row.get("deep_fallbacks"))
     stop_reasons = row.get("dynamic_budget_stop_reasons") or {}
     if isinstance(stop_reasons, dict):
         target = stats["dynamic_budget_stop_reasons"]
@@ -188,6 +190,7 @@ def _finalize_stats(stats: dict[str, Any]) -> dict[str, Any]:
     result["decision_ms_p50"] = _round(_percentile(list(stats.get("decision_ms_values") or []), 0.50), 3)
     result["decision_ms_p95"] = _round(_percentile(list(stats.get("decision_ms_values") or []), 0.95), 3)
     result["time_capped_decision_rate"] = _round(_float(stats.get("time_capped_decisions")) / decisions, 4)
+    result["deep_fallback_rate"] = _round(_float(stats.get("deep_fallbacks")) / decisions_and_choices, 4)
     stop_reasons = dict(stats.get("dynamic_budget_stop_reasons") or {})
     dynamic_stops = _int(stop_reasons.get("single_action")) + _int(stop_reasons.get("confidence"))
     result["dynamic_budget_stop_reasons"] = stop_reasons

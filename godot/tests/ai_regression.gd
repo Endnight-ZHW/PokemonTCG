@@ -2,7 +2,7 @@ extends SceneTree
 
 const DEEP_DECK_KEYS := [
 	"fire", "water", "psychic", "lightning",
-	"fighting", "colorless", "dragon", "grass",
+	"fighting", "colorless", "dragon", "grass", "darkness", "steel",
 ]
 
 const CHALLENGE_DECK_KEYS := [
@@ -105,6 +105,9 @@ func _play_game(
 					"mode": mode,
 					"deck_key": deck_key,
 					"seed": game_seed + actions_taken * 31,
+					"simulation_budget": 64,
+					"max_depth": 1,
+					"deterministic": true,
 				}, func() -> bool: return false, backend)
 				if not choice_result.get("success", false):
 					return {"success": false, "error": choice_result.get("error", "choice")}

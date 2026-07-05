@@ -44,11 +44,11 @@ class DeepLearningAIConfig:
     choice_confidence_threshold: float = 0.30
     # Shared planner settings; field names are retained for checkpoint/CLI compatibility.
     use_mcts: bool = True
-    mcts_simulations: int = 256
+    mcts_simulations: int = 64
     mcts_c_puct: float = 1.4
     mcts_chance_nodes: bool = False
     mcts_dirichlet_noise: bool = False  # False for inference, True for training
-    max_thinking_time_seconds: float = 8.0
+    max_thinking_time_seconds: float = 2.0
 
 
 def _metadata_eval_summary(metadata: dict[str, Any], deck_key: str) -> dict[str, Any] | None:

@@ -5,6 +5,7 @@ ship without a hard DL dependency.
 """
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from engine.ai.dl.encoder import (
@@ -47,6 +48,17 @@ def safe_torch_load(path: str, map_location: Any = "cpu") -> Any:
         if "weights_only" not in str(exc):
             raise
         return torch.load(path, map_location=map_location)
+    except Exception as exc:
+        message = str(exc)
+        if "Weights only load failed" not in message or "TorchVersion" not in message:
+            raise
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*weights_only=False.*",
+                category=FutureWarning,
+            )
+            return torch.load(path, map_location=map_location, weights_only=False)
 
 
 if TORCH_AVAILABLE:
@@ -72,7 +84,7 @@ if TORCH_AVAILABLE:
             use_slot_embeddings: bool = True,
             state_norm: str = "layer",
             deck_embed_dim: int = 0,
-            num_decks: int = 8,
+            num_decks: int = 10,
         ):
             super().__init__()
             self.state_numeric_size = state_numeric_size
@@ -325,7 +337,7 @@ def load_checkpoint(path: str, device: str = "cpu"):
         config.setdefault("use_slot_embeddings", version >= 9)
         config.setdefault("state_norm", "layer" if version >= 6 else "batch")
         config.setdefault("deck_embed_dim", 0)  # v6 and older: no deck embedding
-        config.setdefault("num_decks", 8)
+        config.setdefault("num_decks", 10)
         model = create_model(**config)
         strict = version >= 5
         model.load_state_dict(payload["model_state"], strict=strict)

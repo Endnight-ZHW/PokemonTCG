@@ -14,12 +14,14 @@ from data.card_registry import CardRegistry
 from data.deck_definitions import (
     ALL_CARD_IDS,
     COLORLESS_DECK,
+    DARKNESS_DECK,
     DRAGON_DECK,
     FIGHTING_DECK,
     FIRE_DECK,
     GRASS_DECK,
     LIGHTNING_DECK,
     PSYCHIC_DECK_NATU,
+    STEEL_DECK,
     WATER_DECK,
     expand_deck,
 )
@@ -49,6 +51,8 @@ DECK_SPECS = {
     "colorless": COLORLESS_DECK,
     "dragon": DRAGON_DECK,
     "grass": GRASS_DECK,
+    "steel": STEEL_DECK,
+    "darkness": DARKNESS_DECK,
 }
 
 TRAINABLE_KEYS = [

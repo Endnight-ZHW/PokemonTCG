@@ -157,6 +157,25 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(len(encoded_action.numeric), ACTION_NUMERIC_SIZE)
         self.assertGreater(encoded_action.card_id, 0)
 
+    def test_encoder_exposes_all_release_deck_profiles(self):
+        encoder = ActionStateEncoder()
+
+        self.assertEqual(
+            encoder.deck_keys,
+            (
+                "fire",
+                "water",
+                "psychic",
+                "lightning",
+                "fighting",
+                "colorless",
+                "dragon",
+                "grass",
+                "steel",
+                "darkness",
+            ),
+        )
+
     def test_encoder_adds_deck_profile_action_context(self):
         state = self._simple_state()
         action = AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": 1, "target": "bench_0"})
@@ -218,12 +237,16 @@ class DeepAITests(unittest.TestCase):
         self.assertIn("--updates-per-rollout", help_result.stdout)
         self.assertIn("--teacher-search-preset", help_result.stdout)
         self.assertIn("--dagger-games", help_result.stdout)
+        self.assertIn("--model", help_result.stdout)
         self.assertIn("--choice-head-enabled", help_result.stdout)
         self.assertIn("--acceptance-metric", help_result.stdout)
         self.assertIn("--min-win-delta", help_result.stdout)
         self.assertIn("--teacher-label-model-states", help_result.stdout)
         self.assertIn("--replay-buffer-size", help_result.stdout)
         self.assertIn("--replay-sample-ratio", help_result.stdout)
+        self.assertIn("--distill-dataset", help_result.stdout)
+        self.assertIn("--distill-epochs", help_result.stdout)
+        self.assertIn("--distill-val-split", help_result.stdout)
 
         with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "model.pt")
@@ -268,6 +291,116 @@ class DeepAITests(unittest.TestCase):
                     event_types = [json.loads(line)["type"] for line in fh if line.strip()]
                 self.assertIn("run_started", event_types)
                 self.assertIn("run_finished", event_types)
+
+    def test_training_cli_resolves_repo_relative_paths(self):
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        with temp_dir() as tmpdir:
+            output = os.path.join(tmpdir, "repo_relative_model.pt")
+            progress = os.path.join(tmpdir, "repo_relative_progress.jsonl")
+            rel_output = os.path.relpath(output, repo_root)
+            rel_progress = os.path.relpath(progress, repo_root)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "python/scripts/train_deep_ai.py",
+                    "--deck",
+                    "fire",
+                    "--games",
+                    "0",
+                    "--bootstrap-games",
+                    "0",
+                    "--dagger-games",
+                    "0",
+                    "--eval-games",
+                    "0",
+                    "--pure-rl-games",
+                    "0",
+                    "--replay-same-deal",
+                    "0",
+                    "--no-warm-start",
+                    "--output",
+                    rel_output,
+                    "--progress-jsonl",
+                    rel_progress,
+                ],
+                cwd=repo_root,
+                text=True,
+                capture_output=True,
+                timeout=60,
+            )
+            if importlib.util.find_spec("torch") is None:
+                self.assertEqual(result.returncode, 2)
+                self.assertTrue(os.path.exists(progress))
+            else:
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(os.path.exists(output))
+                self.assertTrue(os.path.exists(progress))
+                self.assertFalse(
+                    os.path.exists(os.path.join(repo_root, "python", rel_output))
+                )
+
+    def test_distill_jsonl_loader_reads_action_and_choice_examples(self):
+        from engine.ai.dl import training as dl_training
+
+        action_row = {
+            "kind": "action",
+            "deck_key": "fire",
+            "state_numeric": [0.25] * STATE_NUMERIC_SIZE,
+            "state_card_ids": [1] * STATE_CARD_SLOTS,
+            "candidate_action_numeric": [
+                [0.1] * ACTION_NUMERIC_SIZE,
+                [0.9] * ACTION_NUMERIC_SIZE,
+            ],
+            "candidate_action_cards": [3, 7],
+            "target_index": 1,
+            "teacher_score": 0.8,
+            "seed": 1234,
+            "seed_block": 2,
+            "matchup_key": "fire_vs_water",
+        }
+        choice_row = {
+            "kind": "choice",
+            "deck_key": "fire",
+            "request_type": "bench_selection",
+            "state_numeric": [0.5] * STATE_NUMERIC_SIZE,
+            "state_card_ids": [2] * STATE_CARD_SLOTS,
+            "candidate_choice_numeric": [
+                [0.2] * ACTION_NUMERIC_SIZE,
+                [0.8] * ACTION_NUMERIC_SIZE,
+            ],
+            "candidate_choice_cards": [11, 13],
+            "target_index": 0,
+            "seed": 1234,
+            "seed_block": 2,
+            "matchup_key": "fire_vs_water",
+        }
+        other_row = dict(action_row)
+        other_row["deck_key"] = "water"
+
+        with temp_dir() as tmpdir:
+            dataset = os.path.join(tmpdir, "distill.jsonl")
+            with open(dataset, "w", encoding="utf-8") as fh:
+                for row in (action_row, choice_row, other_row):
+                    fh.write(json.dumps(row) + "\n")
+
+            actions, choices, stats = dl_training._load_distill_examples([dataset], "fire")
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].target_index, 1)
+        self.assertEqual(actions[0].source, "distill")
+        self.assertEqual(len(actions[0].actions), 2)
+        self.assertEqual(actions[0].actions[1].card_id, 7)
+        self.assertEqual(actions[0].value_target, 0.8)
+        self.assertEqual(actions[0].split_key, "fire_vs_water:2:1234")
+        self.assertEqual(len(choices), 1)
+        self.assertEqual(choices[0].teacher_target_index, 0)
+        self.assertEqual(choices[0].source, "distill")
+        self.assertEqual(choices[0].request_type, "bench_selection")
+        self.assertEqual(choices[0].split_key, "fire_vs_water:2:1234")
+        self.assertEqual(stats["rows"], 3)
+        self.assertEqual(stats["wrong_deck"], 1)
+        self.assertEqual(stats["action_examples"], 1)
+        self.assertEqual(stats["choice_examples"], 1)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
     def test_train_examples_uses_episode_return_for_self_play_value_loss(self):
@@ -636,7 +769,14 @@ class DeepAITests(unittest.TestCase):
 
             self.assertEqual(payload["model_path"], output)
             self.assertTrue(os.path.exists(output))
-            self.assertTrue(os.path.exists(os.path.splitext(output)[0] + ".json"))
+            sidecar_path = os.path.splitext(output)[0] + ".json"
+            self.assertTrue(os.path.exists(sidecar_path))
+            with open(sidecar_path, "r", encoding="utf-8") as fh:
+                sidecar = json.load(fh)
+            self.assertFalse(sidecar["metadata"]["accepted"])
+            self.assertTrue(sidecar["metadata"]["training_gate_accepted"])
+            self.assertFalse(sidecar["metadata"]["verified"])
+            self.assertEqual(sidecar["metadata"]["verification_status"], "unverified_no_eval")
             with open(progress, "r", encoding="utf-8") as fh:
                 events = [json.loads(line) for line in fh if line.strip()]
             event_types = [event["type"] for event in events]

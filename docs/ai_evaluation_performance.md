@@ -56,6 +56,41 @@ python python\scripts\validate_ai_evaluation.py --input .test_tmp\ai_eval\nightl
 
 该 gate 要求无 invalid action、choice failure、rule exception、golden failure，`time_capped_decision_rate == 0`，按策略诊断计数中候选 A 不比基线 B 更多，并要求 paired delta CI 下界不低于 `-0.02`、每 deck 不低于 `-0.04`、每 matchup 不低于 `-0.08`。如果 gate 失败，只把动态预算作为 opt-in profile 工具保留，不推荐用于全量强度评测。
 
+## Deep AI 蒸馏候选
+
+Deep AI 低延迟候选使用 Godot `NativeChallengeAI strongest` 导出教师样本，再用 Python 训练 action policy 和 choice head。Deep runtime 默认预算为 `simulation_budget=64`、`seconds=2.0`、`max_depth=12`；未通过强度门槛时评估 `simulation_budget=128` 候选，但不要自动替换默认配置。
+`train_deep_ai.py` 的用户输入路径按启动目录解析；下面命令默认从仓库根目录执行。
+
+```powershell
+.\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -MatchupMode Balanced -Workers 8 -SkipValidate -SkipReport -DistillOutput .test_tmp\deep_distill\train.jsonl -OutputDir .test_tmp\ai_eval\distill-teacher
+conda run -n DL python python\scripts\train_deep_ai.py --deck all --device cuda --workers 10 --distill-dataset .test_tmp\deep_distill\train.jsonl --distill-epochs 12 --eval-games 0 --output python\data\ai_models\candidate_default.pt
+.\tools\export_onnx_models.ps1
+```
+
+Deep strategy JSON 可以使用顶层参数或 `"params"` 包装：
+
+```json
+{
+  "id": "deep-64",
+  "label": "Deep AI 64",
+  "mode": "deep",
+  "params": {
+    "simulation_budget": 64,
+    "seconds": 2.0,
+    "max_depth": 12,
+    "deterministic": true
+  }
+}
+```
+
+验收使用实战近似 gate：
+
+```powershell
+.\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -MatchupMode Balanced -Workers 8 -StrategyA .test_tmp\strategies\deep64.json -ValidateGate deep-practical -Profile -OutputDir .test_tmp\ai_eval\deep64-nightly
+```
+
+`deep-practical` 要求 invalid action、choice failure、rule exception、time-capped decision 和 Deep fallback rate 均为 0，`decision_ms_p95 <= 2000ms`，总体 paired delta CI 下界不低于 `-0.04`，单牌组 paired delta 不低于 `-0.08`。如果 `deep-64` 失败，只评估 `deep-128` 作为 fallback candidate；两者都失败时保留训练产物和评测报告，不发布为默认 Deep 配置。
+
 ## A/B Benchmark
 
 使用固定 seed 对比缓存开关。`-DisableAICache` 是 benchmark 开关，不建议用于日常评测。

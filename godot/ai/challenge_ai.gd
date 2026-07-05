@@ -5,6 +5,10 @@ const STRONGEST_DIFFICULTY := "strongest"
 const HEURISTIC_VARIANT_LEGACY := "legacy"
 const HEURISTIC_VARIANT_SEMANTIC_V2 := "semantic_v2"
 const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_SEMANTIC_V2
+const DEEP_DEFAULT_SIMULATIONS := 64
+const DEEP_FALLBACK_SIMULATIONS := 128
+const DEEP_DEFAULT_SECONDS := 2.0
+const DEEP_DEFAULT_DEPTH := 12
 const DIFFICULTIES := {
 	"strongest": {"simulations": 12000, "seconds": 10.0, "depth": 24},
 	# Compatibility aliases for older saves/tests that still send a difficulty.
@@ -246,12 +250,19 @@ func _search_action(
 	var deck_key := _deck_key_for_actor(state, actor, str(request.get("deck_key", "")))
 	var mode := str(request.get("mode", "challenge"))
 	var preset := strongest_preset()
-	var simulation_budget := int(
-		256 if mode == "deep" else request.get("simulation_budget", preset["simulations"])
-	)
+	var simulation_budget := int(request.get(
+		"simulation_budget",
+		DEEP_DEFAULT_SIMULATIONS if mode == "deep" else preset["simulations"],
+	))
 	var budget_requested := simulation_budget
-	var seconds := float(8.0 if mode == "deep" else request.get("seconds", preset["seconds"]))
-	var max_depth := int(request.get("max_depth", preset["depth"]))
+	var seconds := float(request.get(
+		"seconds",
+		DEEP_DEFAULT_SECONDS if mode == "deep" else preset["seconds"],
+	))
+	var max_depth := int(request.get(
+		"max_depth",
+		DEEP_DEFAULT_DEPTH if mode == "deep" else preset["depth"],
+	))
 	var deterministic := bool(request.get("deterministic", false))
 	var deadline := Time.get_ticks_usec() + int(seconds * 1000000.0)
 	var request_seed := int(request.get("seed", 17))

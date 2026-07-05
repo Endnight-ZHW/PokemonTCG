@@ -24,6 +24,8 @@ const MATCHUP_MODE_BALANCED := "Balanced"
 const MATCHUP_MODE_MATRIX := "Matrix"
 
 var _had_error := false
+var _deep_runtime_cache: Dictionary = {}
+var _deep_unavailable: Dictionary = {}
 
 
 func _initialize() -> void:
@@ -76,6 +78,7 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"profile": false,
 		"disable_ai_cache": false,
 		"disable_native_math": false,
+		"distill_output": "",
 		"progress": false,
 		"progress_every_pairs": 1,
 		"output": "",
@@ -149,6 +152,9 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--disable-native-math":
 				config["disable_native_math"] = true
 				index += 1
+			"--distill-output":
+				config["distill_output"] = value
+				index += 2
 			"--progress":
 				config["progress"] = true
 				index += 1
@@ -332,6 +338,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					performance_profile,
 					disable_ai_cache,
 					disable_native_math,
+					str(config.get("distill_output", "")),
 				))
 				matches.append(_play_match(
 					catalog,
@@ -353,6 +360,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					performance_profile,
 					disable_ai_cache,
 					disable_native_math,
+					str(config.get("distill_output", "")),
 				))
 				completed_task_pairs += 1
 				completed_games += 2
@@ -414,6 +422,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						performance_profile,
 						disable_ai_cache,
 						disable_native_math,
+						str(config.get("distill_output", "")),
 					))
 					matches.append(_play_match(
 						catalog,
@@ -435,6 +444,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						performance_profile,
 						disable_ai_cache,
 						disable_native_math,
+						str(config.get("distill_output", "")),
 					))
 					completed_task_pairs += 1
 					completed_games += 2
@@ -621,18 +631,32 @@ func _load_strategy(path: String, fallback_id: String, fallback_label: String) -
 		var parsed: Variant = _read_json(path)
 		if parsed is Dictionary:
 			payload = parsed
+	var param_payload := {}
+	if payload.get("params", {}) is Dictionary:
+		param_payload = Dictionary(payload.get("params", {}))
+	var per_deck_payload: Variant = payload.get(
+		"per_deck_overrides",
+		param_payload.get("per_deck_overrides", {}),
+	)
 	var strategy := {
 		"id": str(payload.get("id", fallback_id)),
 		"label": str(payload.get("label", fallback_label)),
 		"path": path,
+		"mode": str(payload.get("mode", "challenge")),
 		"preset": str(payload.get("preset", NativeChallengeAI.STRONGEST_DIFFICULTY)),
-		"simulation_budget": payload.get("simulation_budget", null),
-		"seconds": payload.get("seconds", null),
-		"max_depth": payload.get("max_depth", null),
-		"deterministic": payload.get("deterministic", null),
-		"heuristic_variant": str(payload.get("heuristic_variant", NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT)),
-		"dynamic_budget": _copy_dynamic_budget(payload.get("dynamic_budget", null)),
-		"per_deck_overrides": Dictionary(payload.get("per_deck_overrides", {})).duplicate(true),
+		"simulation_budget": param_payload.get("simulation_budget", payload.get("simulation_budget", null)),
+		"seconds": param_payload.get("seconds", payload.get("seconds", null)),
+		"max_depth": param_payload.get("max_depth", payload.get("max_depth", null)),
+		"deterministic": param_payload.get("deterministic", payload.get("deterministic", null)),
+		"heuristic_variant": str(param_payload.get(
+			"heuristic_variant",
+			payload.get("heuristic_variant", NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT),
+		)),
+		"dynamic_budget": _copy_dynamic_budget(param_payload.get(
+			"dynamic_budget",
+			payload.get("dynamic_budget", null),
+		)),
+		"per_deck_overrides": Dictionary(per_deck_payload if per_deck_payload is Dictionary else {}).duplicate(true),
 	}
 	return strategy
 
@@ -643,6 +667,7 @@ func _public_strategy(strategy: Dictionary) -> Dictionary:
 		"id": strategy.get("id", ""),
 		"label": strategy.get("label", ""),
 		"path": strategy.get("path", ""),
+		"mode": strategy.get("mode", "challenge"),
 		"preset": strategy.get("preset", NativeChallengeAI.STRONGEST_DIFFICULTY),
 		"simulation_budget": strategy.get("simulation_budget", null),
 		"seconds": strategy.get("seconds", null),
@@ -671,6 +696,10 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 		"heuristic_variant": NativeChallengeAI.DEFAULT_HEURISTIC_VARIANT,
 		"dynamic_budget": {},
 	}
+	if str(strategy.get("mode", "challenge")) == "deep":
+		params["simulation_budget"] = NativeChallengeAI.DEEP_DEFAULT_SIMULATIONS
+		params["seconds"] = NativeChallengeAI.DEEP_DEFAULT_SECONDS
+		params["max_depth"] = NativeChallengeAI.DEEP_DEFAULT_DEPTH
 	_apply_strategy_overrides(params, strategy)
 	var per_deck := Dictionary(strategy.get("per_deck_overrides", {}))
 	if per_deck.get(deck_key) is Dictionary:
@@ -716,6 +745,177 @@ func _copy_dynamic_budget(value: Variant) -> Variant:
 	return {}
 
 
+func _strategy_mode(strategy: Dictionary) -> String:
+	return "deep" if str(strategy.get("mode", "challenge")) == "deep" else "challenge"
+
+
+func _deep_inference_for_deck(deck_key: String) -> Variant:
+	if _deep_unavailable.has(deck_key):
+		return null
+	if _deep_runtime_cache.has(deck_key):
+		var cached: DeepAIRuntime = _deep_runtime_cache[deck_key]
+		return cached.get_backend()
+	var runtime := DeepAIRuntime.new()
+	if not runtime.load_for_deck(deck_key):
+		_deep_unavailable[deck_key] = runtime.last_error
+		return null
+	_deep_runtime_cache[deck_key] = runtime
+	return runtime.get_backend()
+
+
+func _strategy_inference(strategy: Dictionary, deck_key: String) -> Variant:
+	if _strategy_mode(strategy) != "deep":
+		return null
+	return _deep_inference_for_deck(deck_key)
+
+
+func _jsonl_path(path: String) -> String:
+	if path.is_empty():
+		return ""
+	if path.is_absolute_path():
+		return path
+	return ProjectSettings.globalize_path(path)
+
+
+func _append_jsonl(path: String, row: Dictionary) -> void:
+	var resolved := _jsonl_path(path)
+	if resolved.is_empty() or row.is_empty():
+		return
+	var directory := resolved.get_base_dir()
+	if not directory.is_empty():
+		DirAccess.make_dir_recursive_absolute(directory)
+	var file := FileAccess.open(resolved, FileAccess.READ_WRITE)
+	if file == null:
+		file = FileAccess.open(resolved, FileAccess.WRITE)
+	if file == null:
+		push_error("Failed to write distill JSONL: %s" % resolved)
+		return
+	file.seek_end()
+	file.store_line(JSON.stringify(row))
+	file.close()
+
+
+func _add_distill_context(
+	row: Dictionary,
+	seed: int,
+	seed_block: int,
+	seat: int,
+	matchup_key: String,
+	matchup_kind: String,
+	strategy_a_deck: String,
+	strategy_b_deck: String,
+) -> void:
+	if row.is_empty():
+		return
+	row["seed"] = seed
+	row["seed_block"] = seed_block
+	row["seat"] = seat
+	row["matchup_key"] = matchup_key
+	row["matchup_kind"] = matchup_kind
+	row["strategy_a_deck"] = strategy_a_deck
+	row["strategy_b_deck"] = strategy_b_deck
+
+
+func _distill_action_row(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	actions: Array[GameAction],
+	decision: Dictionary,
+	catalog: CardCatalog,
+	strategy: Dictionary,
+) -> Dictionary:
+	if not decision.has("action"):
+		return {}
+	var selected := GameAction.from_dict(decision["action"])
+	var target_index := _find_action_match_index(selected, actions)
+	if target_index < 0:
+		return {}
+	var observation := AIObservationBuilder.build(state, actor)
+	var encoder := AIActionEncoder.new(catalog)
+	var encoded_state := encoder.encode_observation(observation, deck_key)
+	var action_numeric: Array = []
+	var action_cards: Array[int] = []
+	for action in actions:
+		var encoded := encoder.encode_action(observation, action, deck_key)
+		action_numeric.append(encoded["numeric"])
+		action_cards.append(int(encoded["card_id"]))
+	return {
+		"kind": "action",
+		"deck_key": deck_key,
+		"actor": actor,
+		"phase": state.phase,
+		"turn_number": state.turn_number,
+		"revision": state.revision,
+		"strategy_id": str(strategy.get("id", "")),
+		"strategy_mode": _strategy_mode(strategy),
+		"state_numeric": encoded_state["numeric"],
+		"state_card_ids": encoded_state["card_ids"],
+		"candidate_action_numeric": action_numeric,
+		"candidate_action_cards": action_cards,
+		"target_index": target_index,
+		"elapsed_ms": float(decision.get("elapsed_ms", 0.0)),
+		"simulations": int(decision.get("simulations", 0)),
+	}
+
+
+func _distill_choice_row(
+	state: GameState,
+	request: ChoiceRequest,
+	actor: int,
+	deck_key: String,
+	choice_result: Dictionary,
+	catalog: CardCatalog,
+	strategy: Dictionary,
+) -> Dictionary:
+	if request.options.is_empty() or not choice_result.has("choice_response"):
+		return {}
+	var response := ChoiceResponse.from_dict(choice_result["choice_response"])
+	if response.option_ids.is_empty():
+		return {}
+	var target_index := -1
+	for index in range(request.options.size()):
+		if str(request.options[index].get("option_id", "")) == str(response.option_ids[0]):
+			target_index = index
+			break
+	if target_index < 0:
+		return {}
+	var observation := AIObservationBuilder.build(state, actor)
+	var encoder := AIActionEncoder.new(catalog)
+	var encoded_state := encoder.encode_observation(observation, deck_key)
+	var choice_numeric: Array = []
+	var choice_cards: Array[int] = []
+	for index in range(request.options.size()):
+		var encoded := encoder.encode_choice(observation, request, request.options[index], index)
+		choice_numeric.append(encoded["numeric"])
+		choice_cards.append(int(encoded["card_id"]))
+	return {
+		"kind": "choice",
+		"deck_key": deck_key,
+		"actor": actor,
+		"request_type": request.request_type,
+		"phase": state.phase,
+		"turn_number": state.turn_number,
+		"revision": state.revision,
+		"strategy_id": str(strategy.get("id", "")),
+		"strategy_mode": _strategy_mode(strategy),
+		"state_numeric": encoded_state["numeric"],
+		"state_card_ids": encoded_state["card_ids"],
+		"candidate_choice_numeric": choice_numeric,
+		"candidate_choice_cards": choice_cards,
+		"target_index": target_index,
+		"elapsed_ms": float(choice_result.get("elapsed_ms", 0.0)),
+	}
+
+
+func _find_action_match_index(selected: GameAction, actions: Array[GameAction]) -> int:
+	for index in range(actions.size()):
+		var candidate := actions[index]
+		if candidate.action == selected.action and _deep_equal(candidate.params, selected.params):
+			return index
+	return -1
+
+
 func _play_match(
 	catalog: CardCatalog,
 	engine: GameEngine,
@@ -736,6 +936,7 @@ func _play_match(
 	performance_profile: Dictionary,
 	disable_ai_cache: bool,
 	disable_native_math: bool,
+	distill_output: String,
 ) -> Dictionary:
 	var started_ms := Time.get_ticks_msec()
 	var strategy_a_player := 0 if seat == 0 else 1
@@ -775,6 +976,7 @@ func _play_match(
 			setup.message,
 		)
 	state.public_deck_keys = player_decks
+	var matchup_key := _matchup_key(strategy_a_deck, strategy_b_deck)
 
 	var actions_taken := 0
 	var decisions := 0
@@ -787,6 +989,7 @@ func _play_match(
 	}
 	var time_capped_decisions := 0
 	var dynamic_budget_stop_reasons := {}
+	var deep_fallbacks := 0
 	var invalid_actions := 0
 	var choice_failures := 0
 	var rule_exceptions := 0
@@ -804,11 +1007,33 @@ func _play_match(
 				_perf_enabled(performance_profile), disable_ai_cache, disable_native_math)
 			total_decision_ms += float(choice_result.get("elapsed_ms", 0.0))
 			_merge_decision_profile(performance_profile, choice_result.get("profile", {}))
+			if bool(choice_result.get("deep_fallback", false)):
+				deep_fallbacks += 1
 			if not bool(choice_result.get("success", false)):
 				choice_failures += 1
 				terminal_reason = "choice_failed"
 				terminal_message = str(choice_result.get("error", "choice_failed"))
 				break
+			var choice_distill_row := _distill_choice_row(
+				state,
+				pending,
+				choice_actor,
+				choice_deck_key,
+				choice_result,
+				catalog,
+				choice_strategy,
+			)
+			_add_distill_context(
+				choice_distill_row,
+				seed,
+				seed_block,
+				seat,
+				matchup_key,
+				matchup_kind,
+				strategy_a_deck,
+				strategy_b_deck,
+			)
+			_append_jsonl(distill_output, choice_distill_row)
 			var response := ChoiceResponse.from_dict(choice_result["choice_response"])
 			_perf_count(performance_profile, "choices")
 			var choice_apply_started := _perf_start(performance_profile)
@@ -839,6 +1064,8 @@ func _play_match(
 		_perf_add_elapsed(performance_profile, "runner_decide_action_wall_ms", decide_started)
 		_merge_decision_profile(performance_profile, decision.get("profile", {}))
 		total_decision_ms += float(decision.get("elapsed_ms", 0.0))
+		if bool(decision.get("deep_fallback", false)):
+			deep_fallbacks += 1
 		decisions += 1
 		_perf_count(performance_profile, "decisions")
 		var requested_budget := int(_strategy_params(actor_strategy, actor_deck_key).get("simulation_budget", 1))
@@ -856,6 +1083,26 @@ func _play_match(
 			terminal_reason = "decision_failed"
 			terminal_message = str(decision.get("error", "decision_failed"))
 			break
+		var action_distill_row := _distill_action_row(
+			state,
+			actor,
+			actor_deck_key,
+			legal,
+			decision,
+			catalog,
+			actor_strategy,
+		)
+		_add_distill_context(
+			action_distill_row,
+			seed,
+			seed_block,
+			seat,
+			matchup_key,
+			matchup_kind,
+			strategy_a_deck,
+			strategy_b_deck,
+		)
+		_append_jsonl(distill_output, action_distill_row)
 		var action := GameAction.from_dict(decision["action"])
 		var diagnose_started := _perf_start(performance_profile)
 		var diagnostics := worker.diagnose_decision(
@@ -897,7 +1144,6 @@ func _play_match(
 	var score_started := _perf_start(performance_profile)
 	var score := _score_state(state, strategy_a_player, catalog)
 	_perf_add_elapsed(performance_profile, "runner_score_state_ms", score_started)
-	var matchup_key := _matchup_key(strategy_a_deck, strategy_b_deck)
 	var pair_key := _pair_key_for_values(strategy_a_deck, strategy_b_deck, seed_block, seed)
 	return {
 		"deck": strategy_a_deck,
@@ -934,6 +1180,7 @@ func _play_match(
 		"rule_exceptions": rule_exceptions,
 		"time_capped_decisions": time_capped_decisions,
 		"dynamic_budget_stop_reasons": dynamic_budget_stop_reasons,
+		"deep_fallbacks": deep_fallbacks,
 		"max_actions_exhausted": terminal_reason == "max_actions",
 	}
 
@@ -993,6 +1240,7 @@ func _failed_match_row(
 		"rule_exceptions": 1,
 		"time_capped_decisions": 0,
 		"dynamic_budget_stop_reasons": {},
+		"deep_fallbacks": 0,
 		"max_actions_exhausted": false,
 	}
 
@@ -1020,7 +1268,7 @@ func _decide_action(
 		"actor": actor,
 		"revision": state.revision,
 		"request_id": "eval-action:%d:%d" % [state.revision, action_index],
-		"mode": "challenge",
+		"mode": _strategy_mode(strategy),
 		"deck_key": deck_key,
 		"seed": seed + action_index * 7919 + actor * 17,
 		"simulation_budget": int(params["simulation_budget"]),
@@ -1036,7 +1284,7 @@ func _decide_action(
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,
 		"actions": rows,
-	}, Callable(self, "_not_cancelled"), null)
+	}, Callable(self, "_not_cancelled"), _strategy_inference(strategy, deck_key))
 
 
 func _decide_choice(
@@ -1060,7 +1308,7 @@ func _decide_choice(
 		"actor": actor,
 		"revision": state.revision,
 		"request_id": "eval-choice:%d:%d" % [state.revision, choice_index],
-		"mode": "challenge",
+		"mode": _strategy_mode(strategy),
 		"deck_key": deck_key,
 		"seed": seed + choice_index * 104729 + actor * 31,
 		"simulation_budget": int(params["simulation_budget"]),
@@ -1074,7 +1322,7 @@ func _decide_choice(
 		"profile": profile_enabled,
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,
-	}, Callable(self, "_not_cancelled"), null)
+	}, Callable(self, "_not_cancelled"), _strategy_inference(strategy, deck_key))
 
 
 func _not_cancelled() -> bool:
@@ -1293,6 +1541,7 @@ func _empty_stats() -> Dictionary:
 		"rule_exceptions": 0,
 		"time_capped_decisions": 0,
 		"dynamic_budget_stop_reasons": {},
+		"deep_fallbacks": 0,
 		"max_actions_exhaustions": 0,
 	}
 
@@ -1344,6 +1593,7 @@ func _merge_match(stats: Dictionary, row: Dictionary) -> void:
 	stats["choice_failures"] = int(stats["choice_failures"]) + int(row.get("choice_failures", 0))
 	stats["rule_exceptions"] = int(stats["rule_exceptions"]) + int(row.get("rule_exceptions", 0))
 	stats["time_capped_decisions"] = int(stats["time_capped_decisions"]) + int(row.get("time_capped_decisions", 0))
+	stats["deep_fallbacks"] = int(stats["deep_fallbacks"]) + int(row.get("deep_fallbacks", 0))
 	_merge_count_dict(stats["dynamic_budget_stop_reasons"], row.get("dynamic_budget_stop_reasons", {}))
 	if bool(row.get("max_actions_exhausted", false)):
 		stats["max_actions_exhaustions"] = int(stats["max_actions_exhaustions"]) + 1
@@ -1386,6 +1636,7 @@ func _finalize_stats(stats: Dictionary) -> Dictionary:
 	result["decision_ms_p50"] = _round_to(_percentile(decision_values, 0.50), 3)
 	result["decision_ms_p95"] = _round_to(_percentile(decision_values, 0.95), 3)
 	result["time_capped_decision_rate"] = round(float(stats.get("time_capped_decisions", 0)) / float(decisions) * 10000.0) / 10000.0
+	result["deep_fallback_rate"] = round(float(stats.get("deep_fallbacks", 0)) / float(decisions_and_choices) * 10000.0) / 10000.0
 	var stop_reasons := Dictionary(stats.get("dynamic_budget_stop_reasons", {})).duplicate(true)
 	var dynamic_stops := (
 		int(stop_reasons.get("single_action", 0))
@@ -2000,6 +2251,7 @@ func _strategy_fingerprint_summary(
 
 func _strategy_fingerprint(strategy: Dictionary, deck_keys: Array) -> String:
 	var payload := {
+		"mode": str(strategy.get("mode", "challenge")),
 		"default": _strategy_params(strategy, ""),
 		"per_deck": {},
 	}

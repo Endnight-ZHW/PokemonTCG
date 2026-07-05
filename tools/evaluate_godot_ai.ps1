@@ -18,7 +18,7 @@ param(
     [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
     [string]$MatchupMode = '',
     [int]$CrossSeedBlocksPerMatchup = -1,
-    [ValidateSet('', 'stability', 'strength', 'equivalence', 'nightly-equivalence', 'auto')]
+    [ValidateSet('', 'stability', 'strength', 'equivalence', 'nightly-equivalence', 'deep-practical', 'deep', 'auto')]
     [string]$ValidateGate = '',
     [string]$Baseline = '',
     [string[]]$MergeInput = @(),
@@ -32,6 +32,7 @@ param(
     [switch]$NoProgress,
     [switch]$DisableAICache,
     [switch]$DisableNativeMath,
+    [string]$DistillOutput = '',
     [string]$OutputDir = ''
 )
 
@@ -333,6 +334,9 @@ if ($DisableAICache) {
 }
 if ($DisableNativeMath) {
     $runnerArgs += @('--disable-native-math')
+}
+if (-not [string]::IsNullOrWhiteSpace($DistillOutput)) {
+    $runnerArgs += @('--distill-output', (Resolve-RepoPathOrEmpty $DistillOutput))
 }
 if (-not $NoProgress) {
     $runnerArgs += @(

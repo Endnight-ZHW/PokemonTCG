@@ -104,7 +104,12 @@ func _run_phase_one_tests() -> void:
 	)
 	for deck_key in decks:
 		_check(decks[deck_key].get("card_count", 0) == 60, "Deck %s must contain 60 cards" % deck_key)
-	_check(models.get("models", {}).size() == 8, "Expected 8 Deep AI model manifest rows")
+	var model_keys := Dictionary(models.get("models", {})).keys()
+	model_keys.sort()
+	_check(
+		model_keys == deck_keys,
+		"Expected Deep AI model manifest rows for all release decks",
+	)
 	_check(models.get("state_numeric_size", 0) == 960, "Deep AI state size mismatch")
 	_check(models.get("state_card_slots", 0) == 96, "Deep AI card slot count mismatch")
 	_check(models.get("action_numeric_size", 0) == 178, "Deep AI action size mismatch")
@@ -2245,8 +2250,8 @@ func _run_phase_four_foundation_tests() -> void:
 		)
 		_check(deep_result.get("success", false), "Deep AI did not return an action")
 		_check(
-			int(deep_result.get("simulations", 0)) == 256,
-			"Deep AI did not use the fixed 256 simulation budget",
+			int(deep_result.get("simulations", 0)) == int(ai_request["simulation_budget"]),
+			"Deep AI did not use the requested simulation budget",
 		)
 		_check(
 			not deep_result.get("deep_fallback", true),

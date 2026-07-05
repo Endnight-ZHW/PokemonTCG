@@ -43,6 +43,8 @@ def _normalized_gate(payload: dict[str, Any], gate: str) -> str:
         return "nightly-strength"
     if normalized == "equivalence":
         return "nightly-equivalence"
+    if normalized == "deep":
+        return "deep-practical"
     if normalized == "nightly":
         return "nightly-strength"
     if normalized == "auto":
@@ -110,7 +112,12 @@ def validate_evaluation_gate(
     if _float(summary.get("time_capped_decision_rate")) > 0.0:
         errors.append("time_capped_decision_rate")
 
-    if normalized_gate in {"nightly-stability", "nightly-strength", "nightly-equivalence"}:
+    if normalized_gate in {
+        "nightly-stability",
+        "nightly-strength",
+        "nightly-equivalence",
+        "deep-practical",
+    }:
         if _float(summary.get("completion_rate"), 1.0) < 0.95:
             errors.append("completion_rate")
         if normalized_gate == "nightly-stability" and _decision_diagnostic_total(payload) != 0:
@@ -165,6 +172,25 @@ def validate_evaluation_gate(
             candidate_p95 = _float(summary.get("decision_ms_p95"))
             if baseline_p95 > 0.0 and candidate_p95 > baseline_p95 * 1.25:
                 errors.append("decision_ms_p95_regression")
+    elif normalized_gate == "deep-practical":
+        if payload.get("self_check") or _strategies_equal(payload):
+            errors.append("deep_gate_requires_distinct_strategies")
+        diagnostic_delta = _decision_diagnostic_regression(payload)
+        if diagnostic_delta is None:
+            if _decision_diagnostic_total(payload) != 0:
+                errors.append("decision_diagnostics_nonzero")
+        elif diagnostic_delta > 0:
+            errors.append("decision_diagnostics_regression")
+        if _float(summary.get("decision_ms_p95")) > 2000.0:
+            errors.append("decision_ms_p95_latency")
+        if _float(summary.get("deep_fallback_rate")) > 0.0:
+            errors.append("deep_fallback_rate")
+        interval = summary.get("paired_delta_ci95") or {}
+        if _float(interval.get("lower") if isinstance(interval, dict) else None) < -0.04:
+            errors.append("paired_delta_ci_below_practical_floor")
+        for deck_key, stats in per_deck.items():
+            if _float((stats or {}).get("paired_point_delta")) < -0.08:
+                errors.append(f"{deck_key}:paired_delta_below_practical_floor")
     else:
         errors.append("unknown_gate")
 
@@ -177,6 +203,8 @@ def validate_evaluation_gate(
         "probability_a_better": _float(summary.get("probability_a_better")),
         "max_action_exhaustion_rate": max_action_rate,
         "time_capped_decision_rate": _float(summary.get("time_capped_decision_rate")),
+        "decision_ms_p95": _float(summary.get("decision_ms_p95")),
+        "deep_fallback_rate": _float(summary.get("deep_fallback_rate")),
         "completion_rate": _float(summary.get("completion_rate")),
         "decision_diagnostics": _decision_diagnostic_total(payload),
         "decision_diagnostic_delta": _decision_diagnostic_regression(payload),
@@ -196,9 +224,11 @@ def main() -> int:
             "nightly-stability",
             "nightly-strength",
             "nightly-equivalence",
+            "deep-practical",
             "stability",
             "strength",
             "equivalence",
+            "deep",
             "auto",
         ],
         default="nightly-strength",

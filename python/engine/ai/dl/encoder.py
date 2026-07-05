@@ -14,12 +14,14 @@ from typing import Any
 
 from data.deck_definitions import (
     COLORLESS_DECK,
+    DARKNESS_DECK,
     DRAGON_DECK,
     FIGHTING_DECK,
     FIRE_DECK,
     GRASS_DECK,
     LIGHTNING_DECK,
     PSYCHIC_DECK_NATU,
+    STEEL_DECK,
     WATER_DECK,
 )
 from data.card_registry import CardRegistry
@@ -119,6 +121,8 @@ PUBLIC_DECK_SPECS = {
     "colorless": COLORLESS_DECK,
     "dragon": DRAGON_DECK,
     "grass": GRASS_DECK,
+    "steel": STEEL_DECK,
+    "darkness": DARKNESS_DECK,
 }
 
 
@@ -195,7 +199,8 @@ class ActionStateEncoder:
     action_numeric_size = ACTION_NUMERIC_SIZE
     card_bucket_count = CARD_BUCKET_COUNT
     deck_keys: tuple[str, ...] = (
-        "fire", "water", "psychic", "lightning", "fighting", "colorless", "dragon", "grass",
+        "fire", "water", "psychic", "lightning", "fighting",
+        "colorless", "dragon", "grass", "steel", "darkness",
     )
 
     def encode_state(self, state, player_idx: int, deck_key: str | None = None) -> EncodedState:

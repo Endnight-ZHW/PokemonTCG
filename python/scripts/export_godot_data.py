@@ -125,6 +125,8 @@ DEEP_AI_MODEL_DECK_KEYS = (
     "colorless",
     "dragon",
     "grass",
+    "steel",
+    "darkness",
 )
 
 
@@ -298,7 +300,7 @@ def _model_manifest() -> dict[str, Any]:
     return {
         "format_version": 1,
         "inference_format": "onnx-fp32",
-        "search_simulations": 256,
+        "search_simulations": 64,
         "state_numeric_size": STATE_NUMERIC_SIZE,
         "state_card_slots": STATE_CARD_SLOTS,
         "action_numeric_size": ACTION_NUMERIC_SIZE,

@@ -7,11 +7,34 @@ import os
 import sys
 import time
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, PROJECT_ROOT)
+PYTHON_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+REPO_ROOT = os.path.abspath(os.path.join(PYTHON_ROOT, ".."))
+INVOCATION_CWD = os.getcwd()
+sys.path.insert(0, PYTHON_ROOT)
 
 from engine.ai.dl.training import DeepTrainingConfig, is_torch_available, run_deep_training
 from engine.ai.training import DECK_SPECS
+
+
+def _resolve_cli_path(path: str | None) -> str | None:
+    """Resolve user-supplied paths before the script chdirs into python/."""
+    if path is None:
+        return None
+    path = os.path.expandvars(os.path.expanduser(str(path)))
+    if not path:
+        return path
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.abspath(os.path.join(INVOCATION_CWD, path)))
+
+
+def _repo_display_path(path: str | None) -> str | None:
+    if not path:
+        return path
+    try:
+        return os.path.relpath(path, REPO_ROOT)
+    except ValueError:
+        return path
 
 
 def _write_error_progress(path: str | None, message: str) -> None:
@@ -43,6 +66,8 @@ def main() -> int:
     parser.add_argument("--games", type=int, default=800,
                         help="RL fine-tune self-play games per deck (default: 800).")
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--model", default=None,
+                        help="Checkpoint path to warm-start from instead of the per-deck default.")
     parser.add_argument("--output", default=None, help="Output .pt checkpoint path (single-deck; ignored for --deck all).")
     parser.add_argument("--warm-start", action=argparse.BooleanOptionalAction, default=True,
                         help="Initialize from the strongest evaluated checkpoint for the deck (default: enabled).")
@@ -94,12 +119,24 @@ def main() -> int:
                         help="Per-deck replay buffer capacity for deep AI training (default: 50000).")
     parser.add_argument("--replay-sample-ratio", type=float, default=0.5,
                         help="Replay examples sampled per fresh example during updates (default: 0.5).")
+    parser.add_argument("--distill-dataset", action="append", default=[],
+                        help="JSONL teacher dataset exported by Godot. Can be passed multiple times.")
+    parser.add_argument("--distill-epochs", type=int, default=3,
+                        help="Epochs over distillation examples before online training (default: 3).")
+    parser.add_argument("--distill-val-split", type=float, default=0.1,
+                        help="Held-out fraction for distillation progress metadata (default: 0.1).")
     parser.add_argument("--progress-jsonl", default=None)
     args = parser.parse_args()
+    resolved_model = _resolve_cli_path(args.model)
+    resolved_output = _resolve_cli_path(args.output)
+    resolved_progress = _resolve_cli_path(args.progress_jsonl)
+    resolved_distill_datasets = tuple(
+        path for path in (_resolve_cli_path(item) for item in (args.distill_dataset or ())) if path
+    )
 
     if not is_torch_available():
         message = "PyTorch is not installed. Install torch in the DL environment before running deep AI training."
-        _write_error_progress(args.progress_jsonl, message)
+        _write_error_progress(resolved_progress, message)
         print(message, file=sys.stderr)
         return 2
 
@@ -119,7 +156,8 @@ def main() -> int:
         deck=args.deck,
         games=max(0, args.games),
         seed=args.seed,
-        output=args.output,
+        model=resolved_model,
+        output=resolved_output,
         warm_start=bool(args.warm_start),
         device=args.device,
         bootstrap_games=max(0, args.bootstrap_games),
@@ -145,17 +183,20 @@ def main() -> int:
         use_mcts_training=bool(args.use_mcts_training),
         replay_buffer_size=max(1, args.replay_buffer_size),
         replay_sample_ratio=max(0.0, args.replay_sample_ratio),
-        progress_jsonl=args.progress_jsonl,
+        distill_dataset=resolved_distill_datasets,
+        distill_epochs=max(1, args.distill_epochs),
+        distill_val_split=max(0.0, min(0.9, args.distill_val_split)),
+        progress_jsonl=resolved_progress,
     )
     payload = run_deep_training(config)
     if "model_paths" in payload:
         for deck_key, path in payload["model_paths"].items():
-            print(f"[{deck_key}] Wrote {path}")
+            print(f"[{deck_key}] Wrote {_repo_display_path(path)}")
     else:
-        print(f"Wrote {payload.get('model_path', 'unknown')}")
+        print(f"Wrote {_repo_display_path(payload.get('model_path', 'unknown'))}")
     return 0
 
 
 if __name__ == "__main__":
-    os.chdir(PROJECT_ROOT)
+    os.chdir(PYTHON_ROOT)
     raise SystemExit(main())

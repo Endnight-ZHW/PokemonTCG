@@ -19,6 +19,8 @@ from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
     CARD_SEMANTIC_SIZE,
     ENCODER_SCHEMA_VERSION,
+    STATE_CARD_SLOTS,
+    STATE_NUMERIC_SIZE,
     ActionStateEncoder,
     EncodedAction,
     EncodedState,
@@ -179,6 +181,9 @@ class DeepTrainingConfig:
     deck_embed_dim: int = 0  # 0 = disabled, 16 = enabled
     replay_buffer_size: int = 50000
     replay_sample_ratio: float = 0.5
+    distill_dataset: tuple[str, ...] = ()
+    distill_epochs: int = 3
+    distill_val_split: float = 0.1
 
 
 @dataclass
@@ -198,6 +203,7 @@ class TrainingExample:
     model_score: float = 0.0
     phase_tag: str = ""
     policy_target: list[float] | None = None
+    split_key: str = ""
 
 
 @dataclass
@@ -208,6 +214,7 @@ class ChoiceTrainingExample:
     teacher_target_index: int
     source: str = "teacher"
     phase_tag: str = ""
+    split_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -317,6 +324,266 @@ def _find_action_index(actions: list[AIAction], selected: AIAction) -> int | Non
         if action_name == selected_name and (action.params or {}) == (selected.params or {}):
             return idx
     return None
+
+
+def _as_float_list(values: Any) -> list[float] | None:
+    if not isinstance(values, list):
+        return None
+    try:
+        return [float(value) for value in values]
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int_list(values: Any) -> list[int] | None:
+    if not isinstance(values, list):
+        return None
+    try:
+        return [int(value) for value in values]
+    except (TypeError, ValueError):
+        return None
+
+
+def _matrix_rows(values: Any, *, row_size: int, row_count: int | None = None) -> list[list[float]] | None:
+    if not isinstance(values, list):
+        return None
+    if not values:
+        return []
+    if all(isinstance(row, list) for row in values):
+        rows: list[list[float]] = []
+        for row in values:
+            converted = _as_float_list(row)
+            if converted is None:
+                return None
+            rows.append(converted)
+        return rows
+    flat = _as_float_list(values)
+    if flat is None:
+        return None
+    if row_count is None:
+        if len(flat) % row_size != 0:
+            return None
+        row_count = len(flat) // row_size
+    if row_count < 0 or len(flat) < row_count * row_size:
+        return None
+    return [
+        flat[index * row_size:(index + 1) * row_size]
+        for index in range(row_count)
+    ]
+
+
+def _distill_state_from_row(row: dict[str, Any]) -> EncodedState | None:
+    state_payload = row.get("state") if isinstance(row.get("state"), dict) else {}
+    state_dict = dict(state_payload or {})
+    numeric = _as_float_list(row.get("state_numeric", state_dict.get("numeric")))
+    card_ids = _as_int_list(row.get("state_card_ids", state_dict.get("card_ids")))
+    if numeric is None or card_ids is None:
+        return None
+    return EncodedState(
+        _fit_sequence(numeric, STATE_NUMERIC_SIZE, 0.0),
+        _fit_sequence(card_ids, STATE_CARD_SLOTS, 0),
+    )
+
+
+def _distill_candidates_from_row(
+    row: dict[str, Any],
+    *,
+    numeric_keys: tuple[str, ...],
+    card_keys: tuple[str, ...],
+) -> list[EncodedAction] | None:
+    card_values = None
+    for key in card_keys:
+        if key in row:
+            card_values = row.get(key)
+            break
+    card_ids = _as_int_list(card_values)
+    if card_ids is None:
+        return None
+    numeric_values = None
+    for key in numeric_keys:
+        if key in row:
+            numeric_values = row.get(key)
+            break
+    numeric_rows = _matrix_rows(
+        numeric_values,
+        row_size=ACTION_NUMERIC_SIZE,
+        row_count=len(card_ids),
+    )
+    if numeric_rows is None or len(numeric_rows) != len(card_ids):
+        return None
+    return [
+        EncodedAction(
+            _fit_sequence(numeric_rows[index], ACTION_NUMERIC_SIZE, 0.0),
+            int(card_ids[index]),
+        )
+        for index in range(len(card_ids))
+    ]
+
+
+def _distill_target_index(row: dict[str, Any], candidate_count: int) -> int | None:
+    raw = row.get("target_index", row.get("teacher_target_index"))
+    try:
+        index = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if index < 0 or index >= candidate_count:
+        return None
+    return index
+
+
+def _distill_policy_target(row: dict[str, Any], candidate_count: int) -> list[float] | None:
+    values = row.get("policy_target", row.get("action_policy"))
+    target = _as_float_list(values)
+    if target is None or len(target) != candidate_count:
+        return None
+    total = sum(max(0.0, float(value)) for value in target)
+    if total <= 0.0:
+        return None
+    return [max(0.0, float(value)) / total for value in target]
+
+
+def _distill_split_key(row: dict[str, Any]) -> str:
+    seed = row.get("seed")
+    if seed is None:
+        return ""
+    return "%s:%s:%s" % (
+        row.get("matchup_key", ""),
+        row.get("seed_block", ""),
+        seed,
+    )
+
+
+def _distill_action_example(row: dict[str, Any]) -> TrainingExample | None:
+    state = _distill_state_from_row(row)
+    actions = _distill_candidates_from_row(
+        row,
+        numeric_keys=("candidate_action_numeric", "action_numeric", "candidate_numeric"),
+        card_keys=("candidate_action_cards", "action_cards", "candidate_cards"),
+    )
+    if state is None or not actions:
+        return None
+    target_index = _distill_target_index(row, len(actions))
+    if target_index is None:
+        return None
+    teacher_score = float(row.get("teacher_score", 0.0) or 0.0)
+    value_target = float(row.get("value_target", teacher_score) or 0.0)
+    return TrainingExample(
+        state,
+        actions,
+        target_index,
+        source="distill",
+        value_target=value_target,
+        teacher_target_index=target_index,
+        teacher_score=teacher_score,
+        phase_tag="distill",
+        policy_target=_distill_policy_target(row, len(actions)),
+        split_key=_distill_split_key(row),
+    )
+
+
+def _distill_choice_example(row: dict[str, Any]) -> ChoiceTrainingExample | None:
+    state = _distill_state_from_row(row)
+    choices = _distill_candidates_from_row(
+        row,
+        numeric_keys=("candidate_choice_numeric", "choice_numeric", "candidate_numeric"),
+        card_keys=("candidate_choice_cards", "choice_cards", "candidate_cards"),
+    )
+    if state is None or not choices:
+        return None
+    target_index = _distill_target_index(row, len(choices))
+    if target_index is None:
+        return None
+    return ChoiceTrainingExample(
+        state,
+        str(row.get("request_type", "")),
+        choices,
+        target_index,
+        source="distill",
+        phase_tag="distill",
+        split_key=_distill_split_key(row),
+    )
+
+
+def _load_distill_examples(
+    paths: tuple[str, ...],
+    deck_key: str,
+) -> tuple[list[TrainingExample], list[ChoiceTrainingExample], dict[str, int]]:
+    actions: list[TrainingExample] = []
+    choices: list[ChoiceTrainingExample] = []
+    stats = {
+        "files": 0,
+        "rows": 0,
+        "skipped": 0,
+        "wrong_deck": 0,
+        "action_examples": 0,
+        "choice_examples": 0,
+    }
+    for raw_path in paths:
+        path = os.fspath(raw_path)
+        if not path or not os.path.exists(path):
+            stats["skipped"] += 1
+            continue
+        stats["files"] += 1
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                stats["rows"] += 1
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    stats["skipped"] += 1
+                    continue
+                if not isinstance(row, dict):
+                    stats["skipped"] += 1
+                    continue
+                row_deck = str(row.get("deck_key", row.get("deck", "")) or "")
+                if row_deck and row_deck != deck_key:
+                    stats["wrong_deck"] += 1
+                    continue
+                kind = str(row.get("kind", "action"))
+                if kind == "choice":
+                    example = _distill_choice_example(row)
+                    if example is None:
+                        stats["skipped"] += 1
+                    else:
+                        choices.append(example)
+                        stats["choice_examples"] += 1
+                else:
+                    example = _distill_action_example(row)
+                    if example is None:
+                        stats["skipped"] += 1
+                    else:
+                        actions.append(example)
+                        stats["action_examples"] += 1
+    return actions, choices, stats
+
+
+def _split_distill_examples(
+    examples: list[Any],
+    *,
+    val_split: float,
+    seed: int,
+) -> tuple[list[Any], list[Any]]:
+    rows = list(examples)
+    if not rows:
+        return [], []
+    validation_count = int(len(rows) * max(0.0, min(0.9, float(val_split))))
+    if validation_count <= 0:
+        return rows, []
+    groups: dict[str, list[Any]] = {}
+    for index, example in enumerate(rows):
+        split_key = str(getattr(example, "split_key", "") or f"row:{index}")
+        groups.setdefault(split_key, []).append(example)
+    rng = random.Random(seed)
+    keys = list(groups)
+    rng.shuffle(keys)
+    train: list[Any] = []
+    validation: list[Any] = []
+    for key in keys:
+        target = validation if len(validation) < validation_count else train
+        target.extend(groups[key])
+    return train, validation
 
 
 def _card_key(card: Any) -> str:
@@ -2292,11 +2559,98 @@ def _train_deck_pipeline(
         "acceptance_metric": acceptance_metric,
         "min_win_delta": min_win_delta,
         "teacher_label_model_states": bool(config.teacher_label_model_states),
+        "distill_dataset": list(config.distill_dataset),
+        "distill_epochs": int(config.distill_epochs),
+        "distill_val_split": float(config.distill_val_split),
         "total_games_played": total_done,
         "total_training_games": total_training_games,
     })
 
     rng = random.Random(deck_seed)
+    distill_stats: dict[str, Any] = {"action_examples": 0, "choice_examples": 0}
+    distill_result = {
+        "examples": 0,
+        "loss": 0.0,
+        "total_loss": 0.0,
+        "policy_loss": 0.0,
+        "value_loss": 0.0,
+        "entropy": 0.0,
+    }
+    distill_choice_result = {"choice_examples": 0, "choice_loss": 0.0}
+    distill_action_val_count = 0
+    distill_choice_val_count = 0
+    if config.distill_dataset:
+        distill_actions, distill_choices, distill_stats = _load_distill_examples(
+            tuple(config.distill_dataset),
+            deck_key,
+        )
+        train_actions, val_actions = _split_distill_examples(
+            distill_actions,
+            val_split=float(config.distill_val_split),
+            seed=deck_seed + 17,
+        )
+        train_choices, val_choices = _split_distill_examples(
+            distill_choices,
+            val_split=float(config.distill_val_split),
+            seed=deck_seed + 29,
+        )
+        distill_action_val_count = len(val_actions)
+        distill_choice_val_count = len(val_choices)
+        replay_buffer.extend(train_actions)
+        emit({
+            "type": "distill_loaded",
+            "deck": deck_key,
+            **distill_stats,
+            "train_action_examples": len(train_actions),
+            "val_action_examples": distill_action_val_count,
+            "train_choice_examples": len(train_choices),
+            "val_choice_examples": distill_choice_val_count,
+            "total_games_played": total_done,
+            "total_training_games": total_training_games,
+        })
+        if train_actions:
+            distill_result = _train_examples(
+                model,
+                train_actions,
+                device=config.device,
+                learning_rate=config.learning_rate,
+                epochs=max(1, int(config.distill_epochs)),
+                batch_size=config.batch_size,
+                entropy_coef=0.0,
+                optimizer=optimizer,
+                grad_scaler=grad_scaler,
+                use_amp=amp_enabled,
+            )
+            emit({
+                "type": "train_phase_finished",
+                "deck": deck_key,
+                "phase": "distill",
+                **distill_result,
+                "val_examples": distill_action_val_count,
+                "total_games_played": total_done,
+                "total_training_games": total_training_games,
+            })
+        if train_choices:
+            distill_choice_result = _train_choice_examples(
+                model,
+                train_choices,
+                device=config.device,
+                learning_rate=config.learning_rate,
+                epochs=max(1, int(config.distill_epochs)),
+                batch_size=config.batch_size,
+                optimizer=optimizer,
+                grad_scaler=grad_scaler,
+                use_amp=amp_enabled,
+            )
+            emit({
+                "type": "choice_train_phase_finished",
+                "deck": deck_key,
+                "phase": "distill",
+                **distill_choice_result,
+                "val_choice_examples": distill_choice_val_count,
+                "total_games_played": total_done,
+                "total_training_games": total_training_games,
+            })
 
     bootstrap = _collect_bootstrap_examples_parallel(
         deck_key,
@@ -2905,6 +3259,12 @@ def _train_deck_pipeline(
         "train_rows",
         "teacher_mix",
         "replay_mix",
+        "distill_actions",
+        "distill_choices",
+        "train_actions",
+        "val_actions",
+        "train_choices",
+        "val_choices",
     ):
         value = locals().get(name)
         if isinstance(value, list):
@@ -3028,10 +3388,19 @@ def _train_deck_pipeline(
 
     stats = {"wins": wins, "losses": losses, "draws": draws}
     summary = {
+        "distill": {
+            **distill_result,
+            "loaded": distill_stats,
+            "val_examples": distill_action_val_count,
+        },
         "bootstrap": bootstrap_result,
         "baseline_eval": baseline_eval or {"games": 0},
         "dagger": dagger_result,
         "choice": choice_result,
+        "distill_choice": {
+            **distill_choice_result,
+            "val_choice_examples": distill_choice_val_count,
+        },
         "self_play": self_play_result,
         "dagger_stats": {"wins": dagger_wins, "losses": dagger_losses, "draws": dagger_draws},
         "self_play_stats": stats,
@@ -3149,6 +3518,7 @@ def run_deep_training(
     eval_games = max(0, int(effective_config.eval_games))
     pure_rl_games = max(0, int(effective_config.pure_rl_games))
     same_deal_trajectories = max(0, int(effective_config.replay_same_deal)) * 3
+    distill_datasets = tuple(effective_config.distill_dataset or ())
     total_training_games = (
         bootstrap_games
         + dagger_games
@@ -3193,6 +3563,9 @@ def run_deep_training(
             "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
             "replay_buffer_size": int(effective_config.replay_buffer_size),
             "replay_sample_ratio": float(effective_config.replay_sample_ratio),
+            "distill_dataset": list(distill_datasets),
+            "distill_epochs": int(effective_config.distill_epochs),
+            "distill_val_split": float(effective_config.distill_val_split),
             "total_training_games": total_training_games,
         })
 
@@ -3227,7 +3600,8 @@ def run_deep_training(
             )
             train_summary[deck_key] = deck_summary
             deck_accepted = bool(deck_summary.get("accepted", True))
-            accepted[deck_key] = deck_accepted
+            metadata_accepted = deck_accepted and eval_games > 0
+            accepted[deck_key] = metadata_accepted
 
             save_path = output_path
             preserved_existing = os.path.exists(output_path)
@@ -3254,7 +3628,8 @@ def run_deep_training(
                 "cuda_available": device_info["cuda_available"],
                 "gpu_name": device_info["gpu_name"],
                 "trainer": "teacher_dagger_rl_v4",
-                "accepted": deck_accepted,
+                "accepted": metadata_accepted,
+                "training_gate_accepted": deck_accepted,
                 "preserved_existing": preserved_existing,
                 "requested_output_path": output_path,
                 "summary": {deck_key: deck_summary},
@@ -3267,7 +3642,10 @@ def run_deep_training(
                 "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
                 "replay_buffer_size": int(effective_config.replay_buffer_size),
                 "replay_sample_ratio": float(effective_config.replay_sample_ratio),
-                **_verification_metadata(eval_games, deck_accepted),
+                "distill_dataset": list(distill_datasets),
+                "distill_epochs": int(effective_config.distill_epochs),
+                "distill_val_split": float(effective_config.distill_val_split),
+                **_verification_metadata(eval_games, metadata_accepted),
             }
             save_checkpoint(save_path, model, metadata)
             model_paths[deck_key] = save_path
@@ -3318,6 +3696,9 @@ def run_deep_training(
                 "teacher_label_model_states": bool(effective_config.teacher_label_model_states),
                 "replay_buffer_size": int(effective_config.replay_buffer_size),
                 "replay_sample_ratio": float(effective_config.replay_sample_ratio),
+                "distill_dataset": list(distill_datasets),
+                "distill_epochs": int(effective_config.distill_epochs),
+                "distill_val_split": float(effective_config.distill_val_split),
                 **_verification_metadata(eval_games, all(accepted.values()) if accepted else False),
             },
         }

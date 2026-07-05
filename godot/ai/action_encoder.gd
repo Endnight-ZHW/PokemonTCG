@@ -9,6 +9,7 @@ const PHASES := ["SETUP", "DRAW", "MAIN", "ATTACK", "POKEMON_CHECKUP", "GAME_OVE
 const DECK_KEYS := [
 	"fire", "water", "psychic", "lightning",
 	"fighting", "colorless", "dragon", "grass",
+	"steel", "darkness",
 ]
 const ACTION_TYPES := [
 	"NOOP", "SETUP_DONE", "PROMOTE", "PLAY_BASIC", "EVOLVE",

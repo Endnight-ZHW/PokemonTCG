@@ -1,4 +1,4 @@
-"""Export the eight accepted Deep AI checkpoints to deterministic FP32 ONNX."""
+"""Export the release Deep AI checkpoints to deterministic FP32 ONNX."""
 from __future__ import annotations
 
 import argparse
@@ -42,6 +42,8 @@ DECK_KEYS = (
     "colorless",
     "dragon",
     "grass",
+    "steel",
+    "darkness",
 )
 ONNX_OPSET = 17
 ONNX_RUNTIME_VERSION = "1.26.0"
@@ -235,8 +237,8 @@ def export_all(
         "onnx_runtime_version": ONNX_RUNTIME_VERSION,
         "execution_provider": "CPUExecutionProvider",
         "opset": ONNX_OPSET,
-        "search_simulations": 256,
-        "watchdog_seconds": 8.0,
+        "search_simulations": 64,
+        "watchdog_seconds": 2.0,
         "state_numeric_size": STATE_NUMERIC_SIZE,
         "state_card_slots": STATE_CARD_SLOTS,
         "action_numeric_size": ACTION_NUMERIC_SIZE,

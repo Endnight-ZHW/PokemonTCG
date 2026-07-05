@@ -86,9 +86,39 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(manifest["state_numeric_size"], 960)
             self.assertEqual(manifest["state_card_slots"], 96)
             self.assertEqual(manifest["action_numeric_size"], 178)
-            self.assertEqual(manifest["search_simulations"], 256)
-            self.assertEqual(len(manifest["models"]), 8)
-            self.assertTrue(all(row["checkpoint_exists"] for row in manifest["models"].values()))
+            self.assertEqual(manifest["search_simulations"], 64)
+            self.assertEqual(
+                set(manifest["models"]),
+                {
+                    "fire",
+                    "water",
+                    "psychic",
+                    "lightning",
+                    "fighting",
+                    "colorless",
+                    "dragon",
+                    "grass",
+                    "steel",
+                    "darkness",
+                },
+            )
+            existing_release_checkpoints = {
+                key
+                for key, row in manifest["models"].items()
+                if bool(row["checkpoint_exists"])
+            }
+            self.assertTrue(
+                {
+                    "fire",
+                    "water",
+                    "psychic",
+                    "lightning",
+                    "fighting",
+                    "colorless",
+                    "dragon",
+                    "grass",
+                }.issubset(existing_release_checkpoints)
+            )
 
     def test_export_removes_obsolete_card_assets(self):
         with tempfile.TemporaryDirectory() as output_dir:

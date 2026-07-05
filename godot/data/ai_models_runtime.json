@@ -9,7 +9,7 @@
     "python_rules_version": 2,
     "version": 1
   },
-  "elapsed_seconds": 1.806,
+  "elapsed_seconds": 2.236,
   "execution_provider": "CPUExecutionProvider",
   "format_version": 2,
   "inference_format": "onnx-fp32",
@@ -36,6 +36,24 @@
         "action_logits": 1.430511474609375e-06,
         "choice_logits": 8.940696716308594e-08,
         "state_value": 2.0489096641540527e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
+    "darkness": {
+      "action_version": 2,
+      "checkpoint_sha256": "0bd4c82f5e3b75cfb0cb306f9e80a92ddedd37941fd9bd32ac71c878e4431cea",
+      "checkpoint_version": 9,
+      "deck_key": "darkness",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/darkness.onnx",
+      "onnx_sha256": "934280c2e93b477697a987c02028162f670dc348fbfd2f809489329a39713134",
+      "onnx_size": 5508165,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 3.814697265625e-06,
+        "choice_logits": 1.0132789611816406e-06,
+        "state_value": 7.152557373046875e-07
       },
       "planner_version": 1,
       "rules_version": 2
@@ -148,6 +166,24 @@
       "planner_version": 1,
       "rules_version": 2
     },
+    "steel": {
+      "action_version": 2,
+      "checkpoint_sha256": "b55273d611f3136cf33ea407a5225c8de62f9d8203e8071a25c4fb80a23646b2",
+      "checkpoint_version": 9,
+      "deck_key": "steel",
+      "encoder_version": 2,
+      "onnx_path": "res://data/ai_models/steel.onnx",
+      "onnx_sha256": "6db5f809b6f2aae5ed34b1cc2b9ae379b5905b29a8a99adfcdd51691a96d707f",
+      "onnx_size": 5505089,
+      "opset": 17,
+      "parity_max_abs_error": {
+        "action_logits": 1.564621925354004e-07,
+        "choice_logits": 1.1548399925231934e-07,
+        "state_value": 6.705522537231445e-08
+      },
+      "planner_version": 1,
+      "rules_version": 2
+    },
     "water": {
       "action_version": 2,
       "checkpoint_sha256": "91a47dece6666a3fd0582cf9c896648a4ffb4c237c969077b59436c327fc1c1d",
@@ -174,12 +210,12 @@
     "state_value",
     "choice_logits"
   ],
-  "search_simulations": 256,
+  "search_simulations": 64,
   "semantic_feature_sizes": {
     "known_card": 53,
     "missing_card_legacy": 48
   },
   "state_card_slots": 96,
   "state_numeric_size": 960,
-  "watchdog_seconds": 8.0
+  "watchdog_seconds": 2.0
 }
