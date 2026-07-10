@@ -41,11 +41,7 @@ class TitleScreen(Screen):
         self.training_hover = False
         self.training_available = self._training_available()
 
-        remote_btn_y = training_btn_y + btn_h + btn_gap
-        self.remote_button = pygame.Rect(btn_x, remote_btn_y, btn_w, btn_h)
-        self.remote_hover = False
-
-        img_btn_y = remote_btn_y + btn_h + btn_gap
+        img_btn_y = training_btn_y + btn_h + btn_gap
         self.cardimg_button = pygame.Rect(btn_x, img_btn_y, btn_w, btn_h)
         self.cardimg_hover = False
 
@@ -152,7 +148,6 @@ class TitleScreen(Screen):
                 self.training_available
                 and self.training_button.collidepoint(event.pos)
             )
-            self.remote_hover = self.remote_button.collidepoint(event.pos)
             self.cardimg_hover = self.cardimg_button.collidepoint(event.pos)
             self.matchup_hover = self.matchup_toggle.collidepoint(event.pos)
             self.help_hover = self.help_button.collidepoint(event.pos)
@@ -163,8 +158,6 @@ class TitleScreen(Screen):
                 self._start_challenge()
             elif self.training_hover:
                 self._open_ai_training()
-            elif self.remote_hover:
-                self._start_remote_game()
             elif self.cardimg_hover:
                 self._open_card_image_manager()
             elif self.matchup_hover:
@@ -247,11 +240,6 @@ class TitleScreen(Screen):
         from ui.screens.help_screen import HelpScreen
         from ui.transitions import SlideTransition
         self.manager.push_screen(HelpScreen(self.manager), SlideTransition(0.3, "right"))
-
-    def _start_remote_game(self):
-        """Navigate to the remote battle lobby."""
-        from ui.screens.lobby_screen import LobbyScreen
-        self.manager.push_screen(LobbyScreen(self.manager))
 
     def update(self, dt: float):
         self._bg_time += dt
@@ -345,7 +333,7 @@ class TitleScreen(Screen):
         draw_button(surface, start_rect, "开始游戏", self.font_body,
                     hovered=self.start_hover)
 
-        # Remote button (slides second)
+        # Challenge button (slides second)
         challenge_rect = self.challenge_button.move(0, entry_offset // 2)
         draw_button(surface, challenge_rect, "挑战 AI", self.font_body,
                     hovered=self.challenge_hover)
@@ -354,10 +342,6 @@ class TitleScreen(Screen):
         training_label = "AI训练" if self.training_available else "AI训练(源码)"
         draw_button(surface, training_rect, training_label, self.font_body,
                     hovered=self.training_hover and self.training_available)
-
-        remote_rect = self.remote_button.move(0, entry_offset * 2 // 3)
-        draw_button(surface, remote_rect, "远程对战", self.font_body,
-                    hovered=self.remote_hover)
 
         # Card image button (slides third)
         cardimg_rect = self.cardimg_button.move(0, entry_offset)

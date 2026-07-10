@@ -71,6 +71,8 @@ static func _player_from_payload(payload: Dictionary, show_hand: bool) -> Player
 
 static func _hidden_cards(count: int) -> Array[String]:
 	var result: Array[String] = []
-	result.resize(maxi(0, count))
+	# ProtocolV3 rejects out-of-range counts before deserialization. Keep this
+	# defensive cap so direct callers can never allocate from an untrusted count.
+	result.resize(clampi(count, 0, ProtocolV3.MAX_DECK_CARDS))
 	result.fill("")
 	return result

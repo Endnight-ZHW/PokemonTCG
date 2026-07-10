@@ -16,7 +16,7 @@ from engine.action_availability import VMActionAvailability
 from engine.ai.observation import Observation, fair_search_clone
 from engine.ai.planner import AnytimePlanner, HeuristicBackend, PlannerConfig
 from engine.commands.vm_registry import ContinuationRegistry
-from engine.enums import EventType, PlayerAction, TurnPhase
+from engine.enums import EventType, PlayerAction, StatusType, TurnPhase
 from engine.events.game_events import GameEvent
 from engine.choice_manager import VMChoiceManager
 from engine.commands.vm_interpreter import VMInterpreter
@@ -24,10 +24,16 @@ from engine.effect_runner import VMEffectRunner
 from engine.game_engine import GameEngine
 from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.player_state import PokemonInPlay
-from engine.random_source import RandomSource, SamplingRandomSource, ScriptedRandomSource
+from engine.random_source import (
+    PortableRandomSourceV1,
+    RandomSource,
+    SamplingRandomSource,
+    ScriptedRandomSource,
+)
 from engine.settlement import VMSettlementManager
 from engine.snapshot import SnapshotManager, clone_state, snapshot_state
 from engine.transaction_manager import VMTransactionManager
+from engine.turn_manager import TurnManager
 from network.state_serializer import deserialize_game_action, serialize_game_action
 
 
@@ -136,6 +142,231 @@ class GameEngineRefactorTests(unittest.TestCase):
             state.resolution_stack["pending_request"]["prompt"],
             "second choice",
         )
+
+    def test_invalid_actor_fails_closed_at_public_boundaries(self):
+        state = self._main_state()
+        engine = GameEngine()
+        before = snapshot_state(state)
+
+        with self.assertRaises(ValueError):
+            state.get_player(2)
+        self.assertEqual(engine.legal_actions(state, -1), ())
+
+        result = engine.apply_action(
+            state,
+            GameAction("NOOP", actor=2),
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "invalid_actor")
+        self.assertEqual(snapshot_state(state), before)
+
+    def test_pending_choice_blocks_actions_and_rejects_forged_requests(self):
+        state = self._main_state()
+        engine = GameEngine()
+        request = engine.choice_request(
+            state,
+            ActionRequest(
+                "confirm",
+                0,
+                "authoritative request",
+                callback=lambda _choice: ActionResult(True, "resolved"),
+            ),
+        )
+        before = snapshot_state(state)
+
+        blocked = engine.apply_action(state, GameAction("NOOP", actor=0))
+        self.assertFalse(blocked.success)
+        self.assertEqual(blocked.error_code, "pending_choice")
+        self.assertEqual(engine.legal_actions(state, 0), ())
+
+        forged = replace(request, player=1)
+        rejected = engine.apply_choice(
+            state,
+            forged,
+            ChoiceResponse(forged.request_id, ("confirm:yes",)),
+        )
+        self.assertFalse(rejected.success)
+        self.assertEqual(rejected.error_code, "stale_choice")
+
+        invalid_actor = replace(request, player=9)
+        rejected = engine.apply_choice(
+            state,
+            invalid_actor,
+            ChoiceResponse(invalid_actor.request_id, ("confirm:yes",)),
+        )
+        self.assertFalse(rejected.success)
+        self.assertEqual(rejected.error_code, "invalid_actor")
+        self.assertEqual(snapshot_state(state), before)
+
+        no_pending = engine.apply_choice(
+            self._main_state(),
+            request,
+            ChoiceResponse(request.request_id, ("confirm:yes",)),
+        )
+        self.assertFalse(no_pending.success)
+        self.assertEqual(no_pending.error_code, "no_pending_choice")
+
+    def test_choice_policy_exception_rolls_back_whole_action(self):
+        state = self._main_state()
+        engine = GameEngine()
+        rng = ScriptedRandomSource([True, False], seed=41)
+        potion_action = next(
+            action
+            for action in engine.legal_actions(state, 0)
+            if action.action == PlayerAction.PLAY_TRAINER
+            and state.p1.hand[action.params["hand_idx"]].api_id == "svf-potion"
+        )
+        before = snapshot_state(state)
+        before_rng = rng.getstate()
+
+        def broken_policy(policy_state, _request):
+            rng.coin()
+            policy_state.p1.active.damage_counters += 5
+            raise RuntimeError("broken choice policy")
+
+        result = engine.apply_action(
+            state,
+            potion_action,
+            rng,
+            auto_resolve=True,
+            choice_policy=broken_policy,
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "choice_policy_exception")
+        self.assertIn("broken choice policy", result.message)
+        self.assertEqual(snapshot_state(state), before)
+        self.assertEqual(rng.getstate(), before_rng)
+
+    def test_choice_exception_restores_scripted_coin_cursor(self):
+        state = self._main_state()
+        engine = GameEngine()
+        rng = ScriptedRandomSource([True, False], seed=43)
+
+        def broken_callback(_choice):
+            self.assertTrue(state.random_source.coin())
+            state.p1.active.damage_counters += 3
+            raise RuntimeError("broken choice callback")
+
+        request = engine.choice_request(
+            state,
+            ActionRequest("confirm", 0, "confirm", callback=broken_callback),
+        )
+        before = snapshot_state(state)
+        before_rng = rng.getstate()
+
+        result = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, ("confirm:yes",)),
+            rng,
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "choice_exception")
+        self.assertEqual(snapshot_state(state), before)
+        self.assertEqual(rng.getstate(), before_rng)
+        self.assertTrue(rng.coin())
+
+    def test_turn_markers_expire_at_their_authoritative_boundaries(self):
+        state = self._main_state()
+        state.phase = TurnPhase.POKEMON_CHECKUP
+        state.p1.active.dazzled = True
+        state.p1.was_ko_by_attack = True
+        state.p2.active.damage_prevented_next_turn = True
+        state.p2.active.all_prevented_next_turn = True
+        state.p2.was_ko_by_attack = True
+        rng = RandomSource(47)
+
+        with rng.bind_state(state):
+            TurnManager(state).advance_phase()
+
+        self.assertEqual(state.active_player_idx, 1)
+        self.assertFalse(state.p1.active.dazzled)
+        self.assertFalse(state.p1.was_ko_by_attack)
+        self.assertFalse(state.p2.active.damage_prevented_next_turn)
+        self.assertFalse(state.p2.active.all_prevented_next_turn)
+        self.assertTrue(state.p2.was_ko_by_attack)
+
+        with rng.bind_state(state):
+            result = TurnManager(state).perform_action(PlayerAction.END_TURN, 1)
+        self.assertTrue(result.success, result.log_message)
+        self.assertFalse(state.p2.was_ko_by_attack)
+
+    def test_confused_and_dazzled_failed_attacks_still_finish_turn(self):
+        for marker in ("confused", "dazzled"):
+            with self.subTest(marker=marker):
+                state = self._main_state()
+                if marker == "confused":
+                    state.p1.active.status_conditions.add(StatusType.CONFUSED)
+                else:
+                    state.p1.active.dazzled = True
+
+                result = GameEngine().apply_action(
+                    state,
+                    GameAction(
+                        PlayerAction.DECLARE_ATTACK,
+                        {"attack_idx": 0},
+                        actor=0,
+                    ),
+                    ScriptedRandomSource([False]),
+                )
+
+                self.assertTrue(result.success, result.message)
+                self.assertTrue(result.action_result.attack_failed)
+                self.assertEqual(state.active_player_idx, 1)
+                self.assertEqual(state.turn_number, 4)
+                self.assertEqual(state.phase, TurnPhase.MAIN)
+                self.assertEqual(len(state.p2.hand), 1)
+
+    def test_confusion_self_ko_finishes_turn_after_promotion(self):
+        state = self._main_state()
+        state.p1.active.damage_counters = 3
+        state.p1.active.status_conditions.add(StatusType.CONFUSED)
+
+        attack = GameEngine().apply_action(
+            state,
+            GameAction(
+                PlayerAction.DECLARE_ATTACK,
+                {"attack_idx": 0},
+                actor=0,
+            ),
+            ScriptedRandomSource([False]),
+        )
+
+        self.assertTrue(attack.success, attack.message)
+        self.assertIsNone(state.p1.active)
+        self.assertEqual(state.pending_promotions, [0])
+        self.assertEqual(state.phase, TurnPhase.ATTACK)
+
+        promotion = GameEngine().apply_action(
+            state,
+            GameAction("PROMOTE", {"bench_idx": 0}, actor=0),
+        )
+
+        self.assertTrue(promotion.success, promotion.message)
+        self.assertEqual(state.active_player_idx, 1)
+        self.assertEqual(state.phase, TurnPhase.MAIN)
+        self.assertEqual(state.pending_promotions, [])
+
+    def test_snapshot_preserves_debug_and_hidden_view_state(self):
+        state = self._main_state()
+        state.mulligan_count = (2, 1)
+        state.extra_draws = (1, 3)
+        state.action_log = ["before snapshot"]
+        state.is_network_view = True
+        state.p2._hand_hidden = True
+        state.p2._hand_count = 7
+
+        restored = clone_state(state)
+
+        self.assertEqual(restored.mulligan_count, (2, 1))
+        self.assertEqual(restored.extra_draws, (1, 3))
+        self.assertEqual(restored.action_log, ["before snapshot"])
+        self.assertTrue(restored.is_network_view)
+        self.assertTrue(restored.p2._hand_hidden)
+        self.assertEqual(restored.p2.hand_count, 7)
 
     def test_choice_request_boundary_lives_in_choice_manager(self):
         engine = GameEngine()
@@ -1517,6 +1748,25 @@ class GameEngineRefactorTests(unittest.TestCase):
         heads = sum(sampled.coin() for _ in range(2000))
         self.assertGreater(heads, 900)
         self.assertLess(heads, 1100)
+
+        portable = PortableRandomSourceV1(20260620)
+        self.assertEqual(
+            [portable.next_u32() for _ in range(8)],
+            [
+                524962086,
+                2612715569,
+                807984655,
+                1456231579,
+                1471417396,
+                275645069,
+                3620116690,
+                2672266556,
+            ],
+        )
+        saved = portable.get_state()
+        next_value = portable.next_u32()
+        portable.set_state(saved)
+        self.assertEqual(portable.next_u32(), next_value)
 
     def test_game_action_network_round_trip_preserves_stable_refs(self):
         action = GameAction(

@@ -34,6 +34,11 @@ private:
     bool choice_head_enabled_ = false;
 
     Dictionary fail(const String &message);
+    static String validate_output_tensor(
+        const Ort::Value &value,
+        size_t expected_count,
+        const char *output_name
+    );
     static PackedFloat32Array tensor_to_array(const Ort::Value &value);
 
 protected:

@@ -219,7 +219,11 @@ func apply_choice(
 	stack.pending_request = null
 	var events: Array[Dictionary] = []
 	var outcome := VMResult.ok("操作已取消。")
-	if not response.cancelled:
+	# A zero-minimum choice means "choose up to N". Cancelling it selects
+	# zero targets but must still run the continuation (for example Cobalion
+	# still shuffles the deck). Trainer cancellation is restored earlier by
+	# VMChoiceSettlement when an action checkpoint exists.
+	if not response.cancelled or request.min_select == 0:
 		outcome = execute_continuation(
 			state,
 			stack,

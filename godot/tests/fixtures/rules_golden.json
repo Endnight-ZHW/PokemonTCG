@@ -29,6 +29,7 @@
       "expected": {
         "active_player_idx": 1,
         "apply_type_matchups": false,
+        "choice_sequence": 0,
         "extra_draws": [
           0,
           0
@@ -170,10 +171,12 @@
           "",
           ""
         ],
+        "revision": 3,
         "stadium_card_id": "",
         "turn_number": 3,
         "winner": -1
       },
+      "expected_rng_state": 700,
       "initial_state": {
         "action_log": [],
         "active_player_idx": 0,
@@ -318,7 +321,8 @@
         "stadium_card_id": "",
         "turn_number": 2,
         "winner": -1
-      }
+      },
+      "portable_seed": 700
     },
     "double_turbo_retreat": {
       "actions": [
@@ -336,6 +340,7 @@
       "expected": {
         "active_player_idx": 0,
         "apply_type_matchups": false,
+        "choice_sequence": 0,
         "extra_draws": [
           0,
           0
@@ -476,10 +481,12 @@
           "",
           ""
         ],
+        "revision": 1,
         "stadium_card_id": "",
         "turn_number": 3,
         "winner": -1
       },
+      "expected_rng_state": 700,
       "initial_state": {
         "action_log": [],
         "active_player_idx": 0,
@@ -640,7 +647,8 @@
         "stadium_card_id": "",
         "turn_number": 3,
         "winner": -1
-      }
+      },
+      "portable_seed": 700
     },
     "evolution_preserves_attachments": {
       "actions": [
@@ -656,6 +664,7 @@
       "expected": {
         "active_player_idx": 0,
         "apply_type_matchups": false,
+        "choice_sequence": 0,
         "extra_draws": [
           0,
           0
@@ -779,10 +788,12 @@
           "",
           ""
         ],
+        "revision": 1,
         "stadium_card_id": "",
         "turn_number": 3,
         "winner": -1
       },
+      "expected_rng_state": 700,
       "initial_state": {
         "action_log": [],
         "active_player_idx": 0,
@@ -926,7 +937,8 @@
         "stadium_card_id": "",
         "turn_number": 3,
         "winner": -1
-      }
+      },
+      "portable_seed": 700
     },
     "pending_attack_choice_cancel": {
       "actions": [
@@ -946,6 +958,7 @@
       "expected": {
         "active_player_idx": 1,
         "apply_type_matchups": false,
+        "choice_sequence": 1,
         "extra_draws": [
           0,
           0
@@ -1103,10 +1116,12 @@
           "",
           ""
         ],
+        "revision": 2,
         "stadium_card_id": "",
         "turn_number": 4,
         "winner": -1
       },
+      "expected_rng_state": 178770039,
       "initial_state": {
         "action_log": [],
         "active_player_idx": 0,
@@ -1288,6 +1303,7 @@
         "expected": {
           "active_player_idx": 0,
           "apply_type_matchups": false,
+          "choice_sequence": 1,
           "extra_draws": [
             0,
             0
@@ -1444,6 +1460,7 @@
             "",
             ""
           ],
+          "revision": 1,
           "stadium_card_id": "",
           "turn_number": 3,
           "winner": -1
@@ -1478,7 +1495,8 @@
           ],
           "pending_request_type": "distribute_energy"
         }
-      }
+      },
+      "portable_seed": 700
     },
     "pending_attack_choice_continuation": {
       "actions": [
@@ -1500,6 +1518,7 @@
       "expected": {
         "active_player_idx": 1,
         "apply_type_matchups": false,
+        "choice_sequence": 1,
         "extra_draws": [
           0,
           0
@@ -1658,10 +1677,12 @@
           "",
           ""
         ],
+        "revision": 2,
         "stadium_card_id": "",
         "turn_number": 4,
         "winner": -1
       },
+      "expected_rng_state": 700,
       "initial_state": {
         "action_log": [],
         "active_player_idx": 0,
@@ -1843,6 +1864,7 @@
         "expected": {
           "active_player_idx": 0,
           "apply_type_matchups": false,
+          "choice_sequence": 1,
           "extra_draws": [
             0,
             0
@@ -1999,6 +2021,7 @@
             "",
             ""
           ],
+          "revision": 1,
           "stadium_card_id": "",
           "turn_number": 3,
           "winner": -1
@@ -2033,8 +2056,10 @@
           ],
           "pending_request_type": "distribute_energy"
         }
-      }
+      },
+      "portable_seed": 700
     }
   },
-  "fixture_version": 1
+  "fixture_version": 2,
+  "rng_algorithm": "xorshift32-v1"
 }

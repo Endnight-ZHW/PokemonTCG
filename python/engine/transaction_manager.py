@@ -105,6 +105,13 @@ class VMTransactionManager:
         stack["sequence"] = int(getattr(state, "choice_sequence", stack.get("sequence", 0)) or 0)
         state.resolution_stack = stack
 
+    def pending_choice_payload(self, state: GameState) -> dict[str, Any] | None:
+        pending = self.resolution_stack_payload(state).get("pending_request")
+        return pending if isinstance(pending, dict) else None
+
+    def has_pending_choice(self, state: GameState) -> bool:
+        return self.pending_choice_payload(state) is not None
+
     def clear_pending_choice_stack(self, state: GameState) -> None:
         stack = self.resolution_stack_payload(state)
         stack["frames"] = []

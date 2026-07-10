@@ -134,10 +134,24 @@ func initialize_ui() -> void:
 	_initialized = true
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bind_scene_nodes()
+	if not AppSettings.changed.is_connected(_apply_runtime_settings):
+		AppSettings.changed.connect(_apply_runtime_settings)
+	_apply_runtime_settings()
 	resized.connect(_layout_board)
 	call_deferred("_layout_board")
 	if not AppSettings.reduced_motion:
 		animation_player.play("enter")
+
+
+func _apply_runtime_settings() -> void:
+	if not _initialized:
+		return
+	var profile := AppSettings.resolved_quality_profile()
+	if playmat:
+		playmat.quality_profile = profile
+	if effects:
+		effects.quality_profile = profile
+	_refresh_ai_thinking_indicator()
 
 
 func _resolve_scene_nodes() -> void:

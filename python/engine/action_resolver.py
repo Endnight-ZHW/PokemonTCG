@@ -437,7 +437,7 @@ class ActionResolver:
                        f"掷出反面。攻击失败，自身放置3个伤害指示物。")
                 self.state._log(msg)
                 ko_results = self._check_kos()
-                result = ActionResult(True, msg)
+                result = ActionResult(True, msg, attack_failed=True)
                 if ko_results:
                     result.pokemon_ko.extend(ko_results)
                 return result
@@ -451,7 +451,7 @@ class ActionResolver:
             if coin == "tails":
                 msg = f"{attacker.card.name}的招式失败！（炫目光束效果）"
                 self.state._log(msg)
-                return ActionResult(True, msg)
+                return ActionResult(True, msg, attack_failed=True)
 
         msg = f"{player.name}的{attacker.card.name}使用了{attack.name}！"
         self.state._log(msg)

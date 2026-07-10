@@ -1021,6 +1021,8 @@ class DeepAITests(unittest.TestCase):
         self.assertIn("insufficient_point_rate", row["errors"])
         self.assertIn("max_step_exhaustion_rate", row["errors"])
         self.assertIn("choice_head_untrained", row["errors"])
+        self.assertIn("missing_checkpoint_sha256", row["errors"])
+        self.assertIn("invalid_checkpoint", row["errors"])
 
     @unittest.skipIf(importlib.util.find_spec("onnx") is None, "ONNX is not installed")
     @unittest.skipIf(importlib.util.find_spec("onnxruntime") is None, "ONNX Runtime is not installed")
@@ -1326,14 +1328,18 @@ class DeepAITests(unittest.TestCase):
                     }
                 }, fh)
 
-            row = validate_model(
-                "fire",
-                model_dir=model_dir,
-                min_games=600,
-                min_point_rate=0.50,
-                min_delta_point_rate=0.0,
-                max_step_exhaustion_rate=0.05,
-            )
+            with mock.patch(
+                "scripts.validate_ai_models._checkpoint_identity_errors",
+                return_value=[],
+            ):
+                row = validate_model(
+                    "fire",
+                    model_dir=model_dir,
+                    min_games=600,
+                    min_point_rate=0.50,
+                    min_delta_point_rate=0.0,
+                    max_step_exhaustion_rate=0.05,
+                )
 
             self.assertTrue(row["valid"], row["errors"])
             self.assertGreaterEqual(row["delta_point_rate"], 0.0)
@@ -1411,14 +1417,18 @@ class DeepAITests(unittest.TestCase):
                     }
                 }, fh)
 
-            row = validate_model(
-                "steel",
-                model_dir=model_dir,
-                min_games=600,
-                min_point_rate=0.50,
-                min_delta_point_rate=0.0,
-                max_step_exhaustion_rate=0.05,
-            )
+            with mock.patch(
+                "scripts.validate_ai_models._checkpoint_identity_errors",
+                return_value=[],
+            ):
+                row = validate_model(
+                    "steel",
+                    model_dir=model_dir,
+                    min_games=600,
+                    min_point_rate=0.50,
+                    min_delta_point_rate=0.0,
+                    max_step_exhaustion_rate=0.05,
+                )
             self.assertTrue(row["valid"], row["errors"])
             self.assertAlmostEqual(row["allowed_max_step_exhaustion_rate"], 0.151667)
             self.assertLess(row["delta_max_step_exhaustion_rate"], 0.0)
@@ -1905,12 +1915,13 @@ class DeepAITests(unittest.TestCase):
             self.assertFalse(dl_training._checkpoint_is_verified_for_league(model_path, "fire"))
 
             no_opponents = dl_training.evaluate_alpha_zero_league(
-                None,
+                object(),
                 "fire",
                 17,
                 dl_training.DeepTrainingConfig(
                     trainer="alpha_zero_rl",
                     deck="fire",
+                    model=os.path.join(tmpdir, "missing.pt"),
                     games=1,
                     league_dir=tmpdir,
                     league_eval_games=1,
@@ -1943,7 +1954,7 @@ class DeepAITests(unittest.TestCase):
             return_value=(object(), {"metadata": {"trainer": "test"}}),
         ), mock.patch.object(dl_training, "_play_model_game", side_effect=fake_play):
             capped = dl_training.evaluate_alpha_zero_league(
-                None,
+                object(),
                 "fire",
                 17,
                 dl_training.DeepTrainingConfig(
@@ -2094,10 +2105,14 @@ class DeepAITests(unittest.TestCase):
                     "choice_head_enabled": True,
                 }, total_done
 
+            def fake_save_checkpoint(path, _model, _metadata):
+                with open(path, "wb") as fh:
+                    fh.write(b"checkpoint")
+
             with mock.patch.object(dl_training, "_load_or_create_model", return_value=DummyModel()), \
                  mock.patch.object(dl_training, "_load_old_eval", side_effect=fake_old_eval), \
                  mock.patch.object(dl_training, "_train_deck_pipeline", side_effect=fake_train_deck_pipeline), \
-                 mock.patch.object(dl_training, "save_checkpoint"):
+                 mock.patch.object(dl_training, "save_checkpoint", side_effect=fake_save_checkpoint):
                 payload = run_deep_training(
                     DeepTrainingConfig(
                         trainer="teacher_dagger_rl",

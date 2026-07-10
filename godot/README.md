@@ -6,10 +6,11 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 ## 已实现
 
 - 本地双人、Challenge AI 和 Deep AI。
-- 8 套预组卡组和 8 个离线 FP32 ONNX 模型。
+- 10 套预组卡组和 10 个离线 FP32 ONNX 模型。
 - ENet LAN 与 WebSocket Relay 协议 v3 联机。
 - 原生 GDScript 规则引擎和 C++ GDExtension ONNX Runtime 推理。
 - 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
+- LAN 与 Relay 均允许双方选择同一牌组，牌库和隐藏信息仍按玩家隔离。
 
 ## 打开工程
 
@@ -67,4 +68,5 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 .\tools\export_onnx_models.ps1
 ```
 
-详细状态和外部验收项见 [`../docs/GODOT_MIGRATION_REPORT.md`](../docs/GODOT_MIGRATION_REPORT.md)。
+版本、schema、发布牌组和模型集合以 [`../release_manifest.json`](../release_manifest.json)
+为唯一来源；当前发布状态见 [`../docs/RELEASE_NOTES.md`](../docs/RELEASE_NOTES.md)。

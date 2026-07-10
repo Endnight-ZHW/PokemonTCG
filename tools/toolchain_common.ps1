@@ -6,6 +6,23 @@ function Get-ToolchainLock {
     return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
 }
 
+function Get-ReleaseManifest {
+    param([Parameter(Mandatory)] [string]$RepoRoot)
+    $path = Join-Path $RepoRoot 'release_manifest.json'
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "Release manifest is missing: $path"
+    }
+    $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    $decks = @($manifest.release_decks)
+    if ($decks.Count -eq 0 -or $decks.Count -ne [int]$manifest.model_count) {
+        throw 'Release manifest model_count does not match release_decks.'
+    }
+    if (@($decks | Sort-Object -Unique).Count -ne $decks.Count) {
+        throw 'Release manifest contains duplicate release deck keys.'
+    }
+    return $manifest
+}
+
 function Assert-PathUnderRoot {
     param(
         [Parameter(Mandatory)] [string]$Root,

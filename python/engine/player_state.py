@@ -364,20 +364,16 @@ class PlayerState:
         self.stadium_played_this_turn = False
         self.stadium_used_this_turn = False
         self.healed_this_turn = False
-        self.was_ko_by_attack = False  # Reset KO tracking for conditional effects
 
         # Mark all Pokemon as not placed this turn
-        if self.active:
-            self.active.placed_this_turn = False
-        for pokemon in self.bench:
-            if pokemon:
-                pokemon.placed_this_turn = False
-
-        # Reset evolution flags
-        if self.active:
-            self.active.can_evolve_this_turn = True
-            self.active.used_abilities.clear()
-        for pokemon in self.bench:
-            if pokemon:
-                pokemon.can_evolve_this_turn = True
-                pokemon.used_abilities.clear()
+        for _slot, pokemon in self.get_all_pokemon():
+            if pokemon is None:
+                continue
+            pokemon.placed_this_turn = False
+            pokemon.can_evolve_this_turn = True
+            pokemon.used_abilities.clear()
+            # These effects protect this Pokemon during the opponent's next
+            # turn. If they were not consumed, they expire when its controller
+            # starts a new turn.
+            pokemon.damage_prevented_next_turn = False
+            pokemon.all_prevented_next_turn = False

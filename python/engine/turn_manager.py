@@ -86,11 +86,15 @@ class TurnManager:
         for _, poke in outgoing.get_all_pokemon():
             if poke:
                 poke.outgoing_damage_reduction_next_turn = 0
+                poke.dazzled = False
                 poke.attack_locked = False
                 expired = [n for n, t in poke.attack_locked_names.items()
                            if self.state.turn_number >= t + 2]
                 for name in expired:
                     del poke.attack_locked_names[name]
+        # A KO caused during the opponent's attack remains available throughout
+        # this player's response turn, then expires as that turn ends.
+        outgoing.was_ko_by_attack = False
 
         # Switch active player for next turn
         self.state.active_player_idx = 1 - self.state.active_player_idx
@@ -117,6 +121,7 @@ class TurnManager:
         player_idx: int,
         *,
         finish_attack_in_stack: bool = False,
+        bump_revision: bool = True,
         **params,
     ) -> ActionResult:
         """Validate and execute a player action."""
@@ -138,7 +143,7 @@ class TurnManager:
             finish_attack_in_stack=finish_attack_in_stack,
             **params,
         )
-        if result.success:
+        if result.success and bump_revision:
             self.state.revision = getattr(self.state, "revision", 0) + 1
 
         # After attack, stay in ATTACK phase until player clicks End Turn.

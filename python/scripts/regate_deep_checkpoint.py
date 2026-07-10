@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import os
 import sys
@@ -10,6 +11,14 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 PYTHON_ROOT = Path(__file__).resolve().parents[1]
@@ -172,7 +181,11 @@ def regate(
         save_checkpoint(str(staged_model), model, metadata)
         staged_sidecar.write_text(
             json.dumps(
-                {"model_path": str(output), "metadata": metadata},
+                {
+                    "checkpoint_sha256": _sha256(staged_model),
+                    "model_path": str(output),
+                    "metadata": metadata,
+                },
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=True,

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <vector>
 
 #include <godot_cpp/classes/file_access.hpp>
@@ -51,6 +52,11 @@ Dictionary OnnxInference::fail(const String &message) {
 
 bool OnnxInference::load_model(const String &path, const Dictionary &manifest) {
     std::lock_guard<std::mutex> lock(mutex_);
+    // A failed replacement must not leave the previous model available. That
+    // would let callers unknowingly continue inference with stale weights.
+    session_.reset();
+    model_bytes_.clear();
+    loaded_path_ = "";
     last_error_ = "";
     last_duration_ms_ = 0.0;
     choice_head_enabled_ = false;
@@ -123,6 +129,32 @@ bool OnnxInference::is_loaded() const {
 bool OnnxInference::supports_choice_head() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return session_ != nullptr && choice_head_enabled_;
+}
+
+String OnnxInference::validate_output_tensor(
+    const Ort::Value &value,
+    size_t expected_count,
+    const char *output_name
+) {
+    const String name(output_name);
+    if (!value.IsTensor()) {
+        return String("model_output_not_tensor:") + name;
+    }
+    const auto info = value.GetTensorTypeAndShapeInfo();
+    if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        return String("model_output_type_mismatch:") + name;
+    }
+    const size_t count = info.GetElementCount();
+    if (count != expected_count) {
+        return String("model_output_size_mismatch:") + name;
+    }
+    const float *data = value.GetTensorData<float>();
+    for (size_t index = 0; index < count; ++index) {
+        if (!std::isfinite(data[index])) {
+            return String("non_finite_model_output:") + name;
+        }
+    }
+    return "";
 }
 
 PackedFloat32Array OnnxInference::tensor_to_array(const Ort::Value &value) {
@@ -245,6 +277,24 @@ Dictionary OnnxInference::infer(
         last_duration_ms_ = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - started
         ).count();
+        if (outputs.size() != output_names.size()) {
+            return fail("model_output_count_mismatch");
+        }
+        const std::array<size_t, 3> expected_output_counts{
+            static_cast<size_t>(action_count),
+            1,
+            static_cast<size_t>(choice_count),
+        };
+        for (size_t index = 0; index < outputs.size(); ++index) {
+            const String validation_error = validate_output_tensor(
+                outputs[index],
+                expected_output_counts[index],
+                output_names[index]
+            );
+            if (!validation_error.is_empty()) {
+                return fail(validation_error);
+            }
+        }
         Dictionary result;
         result["success"] = true;
         result["action_logits"] = tensor_to_array(outputs[0]);

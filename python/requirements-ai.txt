@@ -1,2 +1,2 @@
-matplotlib
-torch
+matplotlib==3.9.4
+torch==2.4.1

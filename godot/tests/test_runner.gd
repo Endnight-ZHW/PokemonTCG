@@ -2174,10 +2174,18 @@ func _run_phase_four_foundation_tests() -> void:
 				"Deep AI accepted an incompatible Python encoder manifest",
 			)
 		else:
-			for deck_key in [
-				"fire", "water", "psychic", "lightning",
-				"fighting", "colorless", "dragon", "grass",
-			]:
+			var release_manifest := _read_json("res://data/release_manifest.json")
+			var release_decks: Array[String] = []
+			release_decks.assign(release_manifest.get("release_decks", []))
+			var runtime_models: Dictionary = runtime.manifest.get("models", {})
+			_check(
+				release_decks.size() == int(release_manifest.get("model_count", 0))
+				and runtime_models.size() == release_decks.size(),
+				"Release and ONNX runtime manifests disagree on the model count",
+			)
+			for deck_key in release_decks:
+				_check(runtime_models.has(deck_key), (
+					"ONNX runtime manifest is missing release deck %s" % deck_key))
 				_check(runtime.load_for_deck(deck_key), (
 					"Unable to load %s ONNX model: %s" % [deck_key, runtime.last_error]))
 				var backend: Variant = runtime.get_backend()
@@ -2203,21 +2211,61 @@ func _run_phase_four_foundation_tests() -> void:
 					inference.get("choice_logits", []).size() == request.options.size(),
 					"Native ONNX choice output size mismatch",
 				)
+				var outputs_are_finite := is_finite(float(inference.get("value", NAN)))
+				for output_name in ["action_logits", "choice_logits"]:
+					for output_value in inference.get(output_name, []):
+						outputs_are_finite = (
+							outputs_are_finite and is_finite(float(output_value)))
+				_check(
+					outputs_are_finite,
+					"Native ONNX inference returned NaN or Inf for %s" % deck_key,
+				)
+				if deck_key == release_decks[0]:
+					var poisoned_state := PackedFloat32Array(
+						fixture["expected"]["state_numeric"])
+					poisoned_state[0] = NAN
+					var rejected_output: Dictionary = backend.call(
+						"infer",
+						poisoned_state,
+						PackedInt64Array(fixture["expected"]["state_cards"]),
+						PackedFloat32Array(action_numeric),
+						PackedInt64Array(action_cards),
+						PackedFloat32Array(choice_numeric),
+						PackedInt64Array(choice_cards),
+					)
+					_check(
+						not rejected_output.get("success", false)
+						and str(rejected_output.get("error", "")).begins_with(
+							"non_finite_model_output:"),
+						"Native ONNX inference silently accepted a non-finite model output",
+					)
 				_check(
 					str(backend.call("get_execution_provider")) == "CPUExecutionProvider",
 					"Native ONNX provider mismatch",
 				)
-			runtime.unload()
+				runtime.unload()
 		var invalid_backend: Variant = ClassDB.instantiate("OnnxInference")
+		var fire_model: Dictionary = Dictionary(
+			Dictionary(runtime.manifest.get("models", {})).get("fire", {}))
+		var replacement_manifest := {
+			"opset": int(runtime.manifest.get("opset", 0)),
+			"state_numeric_size": int(runtime.manifest.get("state_numeric_size", 0)),
+			"state_card_slots": int(runtime.manifest.get("state_card_slots", 0)),
+			"action_numeric_size": int(runtime.manifest.get("action_numeric_size", 0)),
+			"choice_head_enabled": bool(fire_model.get("choice_head_enabled", false)),
+			"onnx_sha256": str(fire_model.get("onnx_sha256", "")),
+		}
 		_check(
-			not invalid_backend.call("load_model", "res://data/ai_models/water.onnx", {
-				"opset": 17,
-				"state_numeric_size": 960,
-				"state_card_slots": 96,
-				"action_numeric_size": 178,
-				"onnx_sha256": "invalid",
-			}),
-			"Native ONNX loader accepted an invalid SHA-256",
+			invalid_backend.call(
+				"load_model", str(fire_model.get("onnx_path", "")), replacement_manifest),
+			"Native ONNX replacement test could not load its initial model",
+		)
+		replacement_manifest["onnx_sha256"] = "invalid"
+		_check(
+			not invalid_backend.call(
+				"load_model", str(fire_model.get("onnx_path", "")), replacement_manifest)
+			and not invalid_backend.call("is_loaded"),
+			"Failed native ONNX replacement left a stale model loaded",
 		)
 
 	var state := _battle_state()
@@ -3538,10 +3586,89 @@ func _run_phase_five_foundation_tests() -> void:
 	)
 
 	var session := AuthoritativeSession.new("room-1")
-	var started := session.start_match("fire", "water", 20260621, 0)
+	var started := session.start_match("fire", "fire", 20260621, 0)
 	_check(started.success, "Authoritative network session did not start")
+	_check(
+		session.state.public_deck_keys == ["fire", "fire"],
+		"Authoritative session rejected or rewrote equal deck selections",
+	)
+	_check(
+		session.state.players[0].deck != session.state.players[1].deck,
+		"Equal deck selections did not receive independent shuffles",
+	)
 	var host_view := session.view_for(0)
 	var client_view := session.view_for(1)
+	_check(
+		ProtocolV3.validate_payload(ProtocolV3.STATE_UPDATE, host_view).get("ok", false)
+		and ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, client_view).get("ok", false),
+		"Protocol v3 rejected an authoritative state view",
+	)
+	var excessive_deck_count: Dictionary = host_view.duplicate(true)
+	excessive_deck_count["state"]["opponent"]["deck_count"] = 61
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, excessive_deck_count).get("code", "")
+		== "invalid_payload",
+		"Protocol v3 accepted a deck count above 60",
+	)
+	var excessive_hand: Dictionary = host_view.duplicate(true)
+	var oversized_hand: Array[String] = []
+	oversized_hand.resize(61)
+	oversized_hand.fill("sv-test")
+	excessive_hand["state"]["your"]["hand"] = oversized_hand
+	excessive_hand["state"]["your"]["hand_count"] = 61
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, excessive_hand).get("code", "")
+		== "invalid_payload",
+		"Protocol v3 accepted more than 60 cards in hand",
+	)
+	var excessive_discard: Dictionary = host_view.duplicate(true)
+	var oversized_discard: Array[String] = []
+	oversized_discard.resize(61)
+	oversized_discard.fill("sv-test")
+	excessive_discard["state"]["opponent"]["discard"] = oversized_discard
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, excessive_discard).get("code", "")
+		== "invalid_payload",
+		"Protocol v3 accepted more than 60 discarded cards",
+	)
+	var excessive_prize_count: Dictionary = host_view.duplicate(true)
+	excessive_prize_count["state"]["opponent"]["prize_count"] = 7
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, excessive_prize_count).get("code", "")
+		== "invalid_payload",
+		"Protocol v3 accepted a prize count above 6",
+	)
+	var excessive_bench: Dictionary = host_view.duplicate(true)
+	excessive_bench["state"]["opponent"]["bench"].append(null)
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, excessive_bench).get("code", "")
+		== "invalid_payload",
+		"Protocol v3 accepted more than five Bench slots",
+	)
+	var malformed_nested_state: Dictionary = host_view.duplicate(true)
+	malformed_nested_state["state"]["your"]["active"] = {
+		"card_id": "sv-test",
+		"damage_counters": 0,
+		"energy_card_ids": {"not": "an array"},
+	}
+	_check(
+		ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, malformed_nested_state).get("code", "")
+		== "invalid_payload",
+		"Protocol v3 accepted a malformed nested Pokemon payload",
+	)
+	var clamped_view_state := StateSerializer.from_player_view(
+		excessive_deck_count["state"], 0)
+	_check(
+		clamped_view_state.players[1].deck.size() == ProtocolV3.MAX_DECK_CARDS,
+		"State deserialization allocated an unbounded hidden deck",
+	)
 	_check(
 		not host_view["state"]["your"].has("deck")
 		and not host_view["state"]["your"].has("prizes"),
@@ -3604,6 +3731,130 @@ func _run_phase_five_foundation_tests() -> void:
 			"Authoritative session accepted an action for another player",
 		)
 
+	var lobby_controller := NetworkMatchController.new()
+	var lobby_transport := FakeNetworkTransport.new()
+	lobby_controller.host = true
+	lobby_controller.player_idx = 0
+	lobby_controller.connected = true
+	lobby_controller.room_id = "room-same-deck"
+	lobby_controller.local_deck_key = "fire"
+	lobby_controller.seed = 20260621
+	lobby_controller.transport = lobby_transport
+	lobby_controller.session = AuthoritativeSession.new("room-same-deck")
+	lobby_controller.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
+	var same_deck_select := ProtocolV3.envelope(
+		ProtocolV3.DECK_SELECT,
+		"room-same-deck",
+		1,
+		1,
+		-1,
+		"",
+		"",
+		{
+			"deck_key": "fire",
+			"rules_version": AppState.RULES_SCHEMA_VERSION,
+			"action_version": AppState.ACTION_SCHEMA_VERSION,
+		},
+	)
+	lobby_controller._handle_message(same_deck_select)
+	var first_match_state := lobby_controller.session.state
+	var first_match_revision := first_match_state.revision
+	_check(
+		lobby_controller.connection_phase
+		== NetworkMatchController.ConnectionPhase.PLAYING
+		and first_match_state.public_deck_keys == ["fire", "fire"],
+		"Same-deck lobby selection did not start a match",
+	)
+	var repeated_deck_select: Dictionary = same_deck_select.duplicate(true)
+	repeated_deck_select["sequence"] = 2
+	lobby_controller._handle_message(repeated_deck_select)
+	_check(
+		lobby_controller.session.state == first_match_state
+		and lobby_controller.session.state.revision == first_match_revision,
+		"Repeated deck selection reset the active match",
+	)
+	_check(
+		not lobby_transport.sent_messages.is_empty()
+		and lobby_transport.sent_messages[-1]["payload"].get("code", "")
+		== "invalid_phase",
+		"Repeated deck selection was not rejected explicitly",
+	)
+	var schema_controller := NetworkMatchController.new()
+	var schema_transport := FakeNetworkTransport.new()
+	schema_controller.host = true
+	schema_controller.player_idx = 0
+	schema_controller.room_id = "room-schema"
+	schema_controller.local_deck_key = "fire"
+	schema_controller.seed = 17
+	schema_controller.transport = schema_transport
+	schema_controller.session = AuthoritativeSession.new("room-schema")
+	schema_controller.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
+	schema_controller._handle_message(ProtocolV3.envelope(
+		ProtocolV3.DECK_SELECT,
+		"room-schema",
+		1,
+		1,
+		-1,
+		"",
+		"",
+		{
+			"deck_key": "fire",
+			"rules_version": AppState.RULES_SCHEMA_VERSION + 1,
+			"action_version": AppState.ACTION_SCHEMA_VERSION,
+		},
+	))
+	_check(
+		schema_controller.session.state == null
+		and not schema_transport.sent_messages.is_empty()
+		and schema_transport.sent_messages[-1]["payload"].get("code", "")
+		== "schema_mismatch",
+		"Host accepted an incompatible rules schema",
+	)
+	var revision_controller := NetworkMatchController.new()
+	var revision_transport := FakeNetworkTransport.new()
+	revision_controller.host = false
+	revision_controller.player_idx = 1
+	revision_controller.room_id = "room-revision"
+	revision_controller.transport = revision_transport
+	revision_controller.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
+	var mismatched_state_revision := ProtocolV3.envelope(
+		ProtocolV3.STATE_UPDATE,
+		"room-revision",
+		0,
+		1,
+		int(client_view["state"]["revision"]) + 1,
+		"",
+		"",
+		client_view,
+	)
+	revision_controller._handle_message(mismatched_state_revision)
+	var revision_events := revision_controller._drain_events()
+	_check(
+		revision_controller.current_revision == -1
+		and revision_events.any(func(event: Dictionary) -> bool:
+			return event.get("code", "") == "revision_mismatch"),
+		"Client accepted a state update with mismatched revisions",
+	)
+
+	var failed_send_controller := NetworkMatchController.new()
+	var failed_send_transport := FakeNetworkTransport.new()
+	failed_send_transport.send_succeeds = false
+	failed_send_controller.host = true
+	failed_send_controller.room_id = "room-send"
+	failed_send_controller.transport = failed_send_transport
+	_check(
+		not failed_send_controller._send(ProtocolV3.PING)
+		and failed_send_controller.send_sequence == 0,
+		"Failed send consumed an outgoing sequence number",
+	)
+	failed_send_transport.send_succeeds = true
+	_check(
+		failed_send_controller._send(ProtocolV3.PING)
+		and failed_send_controller.send_sequence == 1
+		and failed_send_transport.sent_messages[-1]["sequence"] == 1,
+		"Successful retry did not reuse the unconsumed sequence number",
+	)
+
 	var attack_controller := NetworkMatchController.new()
 	var fake_transport := FakeNetworkTransport.new()
 	attack_controller.host = true
@@ -3612,6 +3863,7 @@ func _run_phase_five_foundation_tests() -> void:
 	attack_controller.transport = fake_transport
 	attack_controller.session = AuthoritativeSession.new("room-attack")
 	attack_controller.session.start_match("fire", "water", 99, 0)
+	attack_controller.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
 	var stale_message := ProtocolV3.envelope(
 		ProtocolV3.ACTION_SUBMIT,
 		"room-attack",
@@ -3670,6 +3922,7 @@ func _run_phase_five_foundation_tests() -> void:
 	choice_controller.transport = choice_transport
 	choice_controller.session = AuthoritativeSession.new("room-choice")
 	choice_controller.session.start_match("fire", "water", 100, 0)
+	choice_controller.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
 	var stack := ResolutionStack.new()
 	stack.pending_request = ChoiceRequest.new(
 		"choice:expected",
@@ -9447,10 +9700,11 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	_set_energy_cards(state.players[0].active, ["sv1-ener-8", "sv1-ener-8"])
 	state.players[0].bench[0] = PokemonState.new("svm-zacian")
 	state.players[0].deck = ["sv1-ener-8", "sv1-ener-8"]
+	var optional_cancel_rng := PortableRandomSource.new(61101)
 	step = engine.apply_action(
 		state,
 		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
-		PortableRandomSource.new(61101),
+		optional_cancel_rng,
 	)
 	_check(
 		step.success and step.pending_choice != null and step.pending_choice.can_cancel,
@@ -9472,7 +9726,7 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 			state,
 			cancel_request,
 			ChoiceResponse.new(cancel_request.request_id, [], true),
-			PortableRandomSource.new(61102),
+			optional_cancel_rng,
 		)
 	_check(step.success, "Cobalion optional attack cancellation failed: %s" % step.message)
 	_check(
@@ -9487,6 +9741,10 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		and state.players[0].deck == ["sv1-ener-8", "sv1-ener-8"]
 		and state.players[0].bench[0].energy_card_ids.is_empty(),
 		"Cobalion optional attack cancellation did not skip attachment and finish attack turn",
+	)
+	_check(
+		optional_cancel_rng.get_state() != 61101,
+		"Cobalion optional zero-target choice skipped its required deck shuffle",
 	)
 
 	state = _battle_state()
@@ -9751,6 +10009,7 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 	for case_name in cases:
 		var row: Dictionary = cases[case_name]
 		var state := GameState.from_dict(row["initial_state"])
+		var rng := PortableRandomSource.new(int(row.get("portable_seed", 700)))
 		var action_index := 0
 		var last_result: StepResult = null
 		for action_value in row.get("actions", []):
@@ -9763,7 +10022,7 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 					false,
 					int(action_row.get("actor", -1)),
 				),
-				PortableRandomSource.new(700 + action_index),
+				rng,
 			)
 			last_result = result
 			_check(
@@ -9859,7 +10118,7 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 				state,
 				last_result.pending_choice,
 				ChoiceResponse.from_dict(response_data),
-				PortableRandomSource.new(800 + action_index),
+				rng,
 			)
 			_check(
 				choice_step.success,
@@ -9871,6 +10130,14 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 				case_name,
 				JSON.stringify(row["expected"]),
 				JSON.stringify(_rule_summary(state)),
+			],
+		)
+		_check(
+			rng.get_state() == int(row.get("expected_rng_state", -1)),
+			"Python/Godot RNG state mismatch for %s: expected=%d actual=%d" % [
+				case_name,
+				int(row.get("expected_rng_state", -1)),
+				rng.get_state(),
 			],
 		)
 
@@ -10369,8 +10636,6 @@ func _rule_summary(state: GameState) -> Dictionary:
 	payload.erase("resolution_stack")
 	payload.erase("setup_ready")
 	payload.erase("processed_action_ids")
-	payload.erase("revision")
-	payload.erase("choice_sequence")
 	return payload
 
 

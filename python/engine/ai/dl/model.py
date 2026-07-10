@@ -178,10 +178,15 @@ if TORCH_AVAILABLE:
                 padding_mask = ~card_mask
                 # MultiheadAttention returns NaNs when every token in a row is
                 # masked. Keep one zero token visible for empty synthetic states.
-                safe_padding_mask = padding_mask.clone()
-                empty_rows = safe_padding_mask.all(dim=1)
-                if empty_rows.any():
-                    safe_padding_mask[empty_rows, 0] = False
+                # Keep this entirely tensor-driven so ONNX records the empty-row
+                # branch instead of freezing the tracing example's Python bool.
+                empty_rows = padding_mask.all(dim=1, keepdim=True)
+                slot_indices = torch.arange(
+                    padding_mask.shape[1],
+                    device=padding_mask.device,
+                ).unsqueeze(0)
+                first_slot = slot_indices == 0
+                safe_padding_mask = padding_mask & ~(empty_rows & first_slot)
                 attn_out, _ = self.card_attn(
                     state_embeds,
                     state_embeds,

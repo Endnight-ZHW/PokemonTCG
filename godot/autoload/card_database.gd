@@ -8,12 +8,14 @@ const DECKS_PATH := "res://data/decks.json"
 const EFFECTS_PATH := "res://data/effects.json"
 const BUCKETS_PATH := "res://data/card_buckets.json"
 const MODELS_PATH := "res://data/ai_models.json"
+const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
 
 var cards: Dictionary = {}
 var decks: Dictionary = {}
 var effects: Dictionary = {}
 var card_buckets: Dictionary = {}
 var ai_models: Dictionary = {}
+var release_manifest: Dictionary = {}
 var is_loaded := false
 
 
@@ -22,14 +24,17 @@ func _ready() -> void:
 
 
 func load_all() -> bool:
+	var catalog := CardCatalog.new()
 	var datasets := {
-		"cards": CARDS_PATH,
-		"decks": DECKS_PATH,
 		"effects": EFFECTS_PATH,
 		"card_buckets": BUCKETS_PATH,
 		"ai_models": MODELS_PATH,
+		"release_manifest": RELEASE_MANIFEST_PATH,
 	}
-	var loaded_values: Dictionary = {}
+	var loaded_values: Dictionary = {
+		"cards": catalog.cards,
+		"decks": catalog.decks,
+	}
 	for key in datasets:
 		var result := _read_json(datasets[key])
 		if not result["ok"]:
@@ -42,6 +47,7 @@ func load_all() -> bool:
 	effects = loaded_values["effects"]
 	card_buckets = loaded_values["card_buckets"]
 	ai_models = loaded_values["ai_models"]
+	release_manifest = loaded_values["release_manifest"]
 	is_loaded = true
 	loaded.emit()
 	return true

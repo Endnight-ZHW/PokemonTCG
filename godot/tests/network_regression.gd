@@ -31,12 +31,13 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 	var client := NetworkMatchController.new()
 	var port := 20000 + int(Time.get_ticks_msec() % 1000)
 	var error := OK
+	var deck_key := "fire" if transport_kind == "lan" else "steel"
 	if transport_kind == "lan":
-		error = host.host_lan(port, "fire", 20260621)
+		error = host.host_lan(port, deck_key, 20260621)
 		if error == OK:
-			error = client.join_lan("127.0.0.1", port, "water")
+			error = client.join_lan("127.0.0.1", port, deck_key)
 	else:
-		error = host.host_relay(relay_url, "fire", 20260621)
+		error = host.host_relay(relay_url, deck_key, 20260621)
 		if error == OK:
 			var room_id := ""
 			for _poll in range(10000):
@@ -54,7 +55,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 			if room_id.is_empty():
 				host.close()
 				return _failed(transport_kind, "relay room was not created")
-			error = client.join_relay(relay_url, room_id, "water")
+			error = client.join_relay(relay_url, room_id, deck_key)
 	if error != OK:
 		host.close()
 		client.close()
@@ -65,6 +66,8 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 	var choices := 0
 	var loops := 0
 	var last_revision := -1
+	var same_deck_verified := false
+	var action_counts := {}
 	while actions < ACTION_GUARD and loops < 120000:
 		loops += 1
 		var submitted := false
@@ -74,6 +77,22 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 				host.close()
 				client.close()
 				return _failed(transport_kind, processed["error"])
+			if event.get("type", "") == "state" and not same_deck_verified:
+				var state_view: Dictionary = event.get("view", {}).get("state", {})
+				if state_view.get("public_deck_keys", []) != [deck_key, deck_key]:
+					host.close()
+					client.close()
+					return _failed(transport_kind, "equal deck keys were not preserved")
+				if (
+					host.session == null
+					or host.session.state == null
+					or host.session.state.players[0].deck
+					== host.session.state.players[1].deck
+				):
+					host.close()
+					client.close()
+					return _failed(transport_kind, "equal decks were not shuffled independently")
+				same_deck_verified = true
 		for event in client.poll():
 			var processed := _capture_event(event, latest_views, 1)
 			if processed.has("error"):
@@ -88,6 +107,10 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 			var state_payload: Dictionary = view.get("state", {})
 			var winner := int(state_payload.get("winner", -1))
 			if winner >= 0:
+				if not same_deck_verified:
+					host.close()
+					client.close()
+					return _failed(transport_kind, "same-deck contract was not verified")
 				var summary := {
 					"success": true,
 					"transport": transport_kind,
@@ -96,6 +119,8 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 					"actions": actions,
 					"choices": choices,
 					"revision": int(state_payload.get("revision", 0)),
+					"deck_key": deck_key,
+					"same_deck": true,
 				}
 				host.close()
 				client.close()
@@ -119,6 +144,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 				var action := _automatic_action(candidates)
 				if controller.submit_action(action):
 					actions += 1
+					action_counts[action.action] = int(action_counts.get(action.action, 0)) + 1
 					submitted = true
 					last_revision = revision
 					break
@@ -127,7 +153,11 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 	client.close()
 	return _failed(
 		transport_kind,
-		"game guard exceeded actions=%d loops=%d" % [actions, loops],
+		"game guard exceeded actions=%d loops=%d counts=%s" % [
+			actions,
+			loops,
+			JSON.stringify(action_counts),
+		],
 	)
 
 
@@ -158,9 +188,9 @@ func _capture_event(
 
 func _automatic_action(actions: Array[GameAction]) -> GameAction:
 	var priority := [
-		"PROMOTE", "PLAY_BASIC", "EVOLVE", "ATTACH_ENERGY", "PLAY_TRAINER",
-		"USE_ABILITY", "USE_STADIUM", "RETREAT", "DECLARE_ATTACK",
-		"SETUP_DONE", "END_TURN",
+		"PROMOTE", "PLAY_BASIC", "EVOLVE", "ATTACH_ENERGY", "DECLARE_ATTACK",
+		"PLAY_TRAINER", "SETUP_DONE", "END_TURN", "USE_ABILITY",
+		"USE_STADIUM", "RETREAT",
 	]
 	for action_name in priority:
 		for action in actions:

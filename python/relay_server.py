@@ -10,17 +10,11 @@
 import json
 import logging
 import random
+import re
 import threading
 import time
 
 import websockets.sync.server
-from network.message_protocol import (
-    MSG_ERROR,
-    MSG_OPPONENT_DISCONNECTED,
-    PROTOCOL_VERSION,
-    is_protocol_compatible,
-    is_protocol_message,
-)
 
 logger = logging.getLogger("relay")
 
@@ -28,8 +22,12 @@ ROOM_WAIT_TIMEOUT = 120
 ROOM_TTL = 60 * 60
 RELAY_RECV_TIMEOUT = 30
 MAX_MESSAGE_BYTES = 262_144
+MAX_CONTROL_MESSAGE_BYTES = 1024
 MAX_MESSAGES_PER_SECOND = 60
 PROTOCOL_V3 = 3
+MSG_ERROR = "error"
+MSG_OPPONENT_DISCONNECTED = "opponent_disconnected"
+ROOM_CODE_PATTERN = re.compile(r"^[0-9]{4}$")
 V3_MESSAGE_TYPES = {
     "welcome",
     "deck_select",
@@ -53,66 +51,157 @@ def _send_error(websocket, message: str):
     websocket.send(json.dumps({
         "type": MSG_ERROR,
         "message": message,
-        "expected_version": PROTOCOL_VERSION,
+        "expected_version": PROTOCOL_V3,
     }, ensure_ascii=False))
 
 
-def _wire_protocol_version(message: dict) -> int | None:
-    if "protocol_version" in message:
-        return message.get("protocol_version")
-    if is_protocol_message(message):
-        return message.get("version")
-    return None
-
-
 def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bool, str]:
-    version = _wire_protocol_version(message)
-    if version == PROTOCOL_VERSION:
-        if is_protocol_compatible(message):
-            return True, ""
-        return False, "协议版本不兼容。"
-    if version != PROTOCOL_V3:
+    required_fields = {
+        "protocol_version", "message_type", "room_id", "sender", "sequence",
+        "state_revision", "action_id", "request_id", "payload",
+    }
+    if not required_fields.issubset(message):
+        return False, "协议 v3 消息缺少必要字段。"
+    if message.get("protocol_version") != PROTOCOL_V3:
         return False, "协议版本不兼容，请双方更新到协议 v3。"
-    if message.get("room_id") != room_id:
+    if not isinstance(message.get("room_id"), str) or message.get("room_id") != room_id:
         return False, "消息房间号不匹配。"
     if message.get("sender") != sender:
         return False, "消息发送方与连接身份不匹配。"
-    if message.get("message_type") not in V3_MESSAGE_TYPES:
+    if not isinstance(message.get("message_type"), str) or (
+        message["message_type"] not in V3_MESSAGE_TYPES
+    ):
         return False, "未知协议 v3 消息类型。"
     if not isinstance(message.get("payload"), dict):
         return False, "协议 v3 payload 必须是对象。"
+    if (
+        not _is_wire_integer(message.get("sequence"))
+        or message["sequence"] <= 0
+        or not _is_wire_integer(message.get("state_revision"))
+        or message["state_revision"] < -1
+    ):
+        return False, "协议 v3 序号或局面版本无效。"
+    if not isinstance(message.get("action_id"), str) or not isinstance(
+        message.get("request_id"), str
+    ):
+        return False, "协议 v3 标识符必须是字符串。"
+    if len(message["action_id"].encode("utf-8")) > 128 or len(
+        message["request_id"].encode("utf-8")
+    ) > 128:
+        return False, "协议 v3 标识符过长。"
     return True, ""
+
+
+def _is_wire_integer(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _parse_control_message(raw) -> tuple[dict | None, str]:
+    """Validate the one-shot relay handshake before touching the room table."""
+    if not isinstance(raw, str):
+        return None, "只接受 UTF-8 JSON 文本控制消息。"
+    if len(raw.encode("utf-8")) > MAX_CONTROL_MESSAGE_BYTES:
+        return None, "控制消息超过大小限制。"
+    try:
+        message = json.loads(raw)
+    except json.JSONDecodeError:
+        return None, "收到无效JSON控制消息。"
+    if not isinstance(message, dict):
+        return None, "控制消息必须是对象。"
+    message_type = message.get("type")
+    if message_type == "create_room":
+        if set(message) != {"type"}:
+            return None, "创建房间控制消息包含未知字段。"
+        return message, ""
+    if message_type == "join_room":
+        room_id = message.get("room_id")
+        if set(message) != {"type", "room_id"} or not isinstance(room_id, str):
+            return None, "加入房间控制消息字段无效。"
+        if not ROOM_CODE_PATTERN.fullmatch(room_id):
+            return None, "房间号格式无效。"
+        return message, ""
+    return None, f"未知命令: {message_type}"
+
+
+class _RateLimiter:
+    def __init__(self, limit: int = MAX_MESSAGES_PER_SECOND):
+        self.limit = limit
+        self.window_started = time.monotonic()
+        self.count = 0
+
+    def allow(self) -> bool:
+        now = time.monotonic()
+        if now - self.window_started >= 1.0:
+            self.window_started = now
+            self.count = 0
+        self.count += 1
+        return self.count <= self.limit
 
 
 def cleanup_expired_rooms():
     """Remove rooms that have waited too long without a completed match."""
-    now = time.time()
-    expired: list[str] = []
     with rooms_lock:
-        for code, room in rooms.items():
-            if now - room.get("created_at", now) > ROOM_TTL:
-                expired.append(code)
-        for code in expired:
-            room = rooms.pop(code, None)
-            if room:
-                room["p2_joined"].set()
+        expired = _cleanup_expired_rooms_locked(time.time())
     for code in expired:
         logger.info("房间 %s 已过期并清理", code)
 
 
-def generate_room_code() -> str:
-    """生成未使用的4位数字房间号."""
-    cleanup_expired_rooms()
-    with rooms_lock:
-        existing = set(rooms.keys())
+def _cleanup_expired_rooms_locked(now: float) -> list[str]:
+    expired = [
+        code
+        for code, room in rooms.items()
+        if now - room.get("created_at", now) > ROOM_TTL
+    ]
+    for code in expired:
+        room = rooms.pop(code, None)
+        if room:
+            room["p2_joined"].set()
+    return expired
+
+
+def _generate_room_code_locked() -> str:
     for _ in range(100):
         code = str(random.randint(1000, 9999))
-        if code not in existing:
+        if code not in rooms:
             return code
     for code in [str(i).zfill(4) for i in range(1000, 10000)]:
-        if code not in existing:
+        if code not in rooms:
             return code
     raise RuntimeError("No available room codes")
+
+
+def generate_room_code() -> str:
+    """Generate an available code. Room creation itself uses `_create_room`."""
+    with rooms_lock:
+        _cleanup_expired_rooms_locked(time.time())
+        return _generate_room_code_locked()
+
+
+def _create_room(websocket) -> str:
+    """Allocate and publish a room in one critical section."""
+    with rooms_lock:
+        _cleanup_expired_rooms_locked(time.time())
+        code = _generate_room_code_locked()
+        rooms[code] = {
+            "p1": websocket,
+            "p2": None,
+            "created_at": time.time(),
+            "p2_joined": threading.Event(),
+        }
+        return code
+
+
+def _join_room(websocket, code: str) -> tuple[dict | None, str]:
+    """Claim the guest slot atomically and return a stable room reference."""
+    with rooms_lock:
+        _cleanup_expired_rooms_locked(time.time())
+        room = rooms.get(code)
+        if room is None:
+            return None, "房间不存在"
+        if room["p2"] is not None:
+            return None, "房间已满"
+        room["p2"] = websocket
+        return room, ""
 
 
 def handle_client(websocket):
@@ -123,21 +212,22 @@ def handle_client(websocket):
     my_room: str | None = None
     my_role: str | None = None
     paired: bool = False
+    rate_limiter = _RateLimiter()
 
     try:
         # 阶段1: 等待控制命令
         raw = websocket.recv(timeout=RELAY_RECV_TIMEOUT)
-        msg = json.loads(raw)
+        if not rate_limiter.allow():
+            _send_error(websocket, "发送频率过高。")
+            return
+        msg, control_error = _parse_control_message(raw)
+        if msg is None:
+            _send_error(websocket, control_error)
+            return
         msg_type = msg.get("type", "")
 
         if msg_type == "create_room":
-            code = generate_room_code()
-            with rooms_lock:
-                rooms[code] = {
-                    "p1": websocket, "p2": None,
-                    "created_at": time.time(),
-                    "p2_joined": threading.Event(),
-                }
+            code = _create_room(websocket)
             my_room = code
             my_role = "p1"
             websocket.send(json.dumps({
@@ -146,24 +236,12 @@ def handle_client(websocket):
             logger.info("房间 %s 已创建 (房主: %s:%s)", code, *remote)
 
         elif msg_type == "join_room":
-            cleanup_expired_rooms()
-            code = str(msg.get("room_id", ""))
-            with rooms_lock:
-                room = rooms.get(code)
+            code = msg["room_id"]
+            room, join_error = _join_room(websocket, code)
             if room is None:
-                websocket.send(json.dumps({
-                    "type": "error", "message": "房间不存在",
-                }, ensure_ascii=False))
-                logger.warning("%s:%s 尝试加入不存在的房间 %s", *remote, code)
+                _send_error(websocket, join_error)
+                logger.warning("%s:%s 加入房间 %s 失败: %s", *remote, code, join_error)
                 return
-            if room["p2"] is not None:
-                websocket.send(json.dumps({
-                    "type": "error", "message": "房间已满",
-                }, ensure_ascii=False))
-                logger.warning("%s:%s 尝试加入已满的房间 %s", *remote, code)
-                return
-            with rooms_lock:
-                room["p2"] = websocket
             my_room = code
             my_role = "p2"
             websocket.send(json.dumps({
@@ -180,9 +258,7 @@ def handle_client(websocket):
             paired = True
 
         else:
-            websocket.send(json.dumps({
-                "type": "error", "message": f"未知命令: {msg_type}",
-            }, ensure_ascii=False))
+            _send_error(websocket, f"未知命令: {msg_type}")
             return
 
         # 阶段2: 等待对手（仅房主需要）
@@ -191,24 +267,27 @@ def handle_client(websocket):
                 room = rooms.get(my_room)
             if room:
                 if not room["p2_joined"].wait(timeout=ROOM_WAIT_TIMEOUT):
-                    websocket.send(json.dumps({
-                        "type": "error", "message": "等待对手超时",
-                    }, ensure_ascii=False))
+                    _send_error(websocket, "等待对手超时")
                     logger.info("房间 %s 等待超时，清理", my_room)
                     return
-                paired = True
+                with rooms_lock:
+                    current_room = rooms.get(my_room)
+                    paired = current_room is room and room.get("p2") is not None
+                if not paired:
+                    return
 
         # 阶段3: 转发 — 双向透明转发游戏消息
         opponent_role = "p2" if my_role == "p1" else "p1"
         expected_sender = 0 if my_role == "p1" else 1
-        rate_window_started = time.monotonic()
-        rate_count = 0
         while True:
             try:
                 raw = websocket.recv(timeout=RELAY_RECV_TIMEOUT)
             except TimeoutError:
                 continue
 
+            if not rate_limiter.allow():
+                _send_error(websocket, "发送频率过高。")
+                continue
             if not isinstance(raw, str):
                 _send_error(websocket, "只接受 UTF-8 JSON 文本消息。")
                 continue
@@ -216,19 +295,13 @@ def handle_client(websocket):
                 _send_error(websocket, "消息超过大小限制。")
                 continue
 
-            now = time.monotonic()
-            if now - rate_window_started >= 1.0:
-                rate_window_started = now
-                rate_count = 0
-            rate_count += 1
-            if rate_count > MAX_MESSAGES_PER_SECOND:
-                _send_error(websocket, "发送频率过高。")
-                continue
-
             try:
                 forwarded = json.loads(raw)
             except json.JSONDecodeError:
                 _send_error(websocket, "收到无效JSON。")
+                continue
+            if not isinstance(forwarded, dict):
+                _send_error(websocket, "协议 v3 消息必须是对象。")
                 continue
 
             valid, validation_error = _valid_forward_message(
@@ -261,27 +334,35 @@ def handle_client(websocket):
         logger.exception("%s:%s 未预期的错误", *remote)
     finally:
         logger.info("断开连接: %s:%s (房间: %s)", *remote, my_room or "N/A")
+        opponent = None
+        removed = False
         with rooms_lock:
-            if my_room and my_room in rooms:
-                room = rooms[my_room]
+            room = rooms.get(my_room) if my_room else None
+            if room is not None and room.get(my_role) is websocket:
                 room["p2_joined"].set()
                 opponent = room.get("p2" if my_role == "p1" else "p1")
-                if opponent:
-                    try:
-                        opponent.send(json.dumps({
-                            "type": MSG_OPPONENT_DISCONNECTED,
-                        }, ensure_ascii=False))
-                    except Exception:
-                        pass
                 del rooms[my_room]
-                logger.info("房间 %s 已移除", my_room)
+                removed = True
+        if opponent:
+            try:
+                opponent.send(json.dumps({
+                    "type": MSG_OPPONENT_DISCONNECTED,
+                }, ensure_ascii=False))
+            except Exception:
+                pass
+        if removed:
+            logger.info("房间 %s 已移除", my_room)
 
 
 def main(host: str, port: int):
     """启动中继服务器."""
     logger.info("中继服务器启动中: %s:%s", host, port)
     with websockets.sync.server.serve(
-        handle_client, host, port,
+        handle_client,
+        host,
+        port,
+        max_size=MAX_MESSAGE_BYTES,
+        max_queue=16,
     ) as server:
         logger.info("中继服务器已启动: %s:%s (等待客户端连接...)", host, port)
         try:

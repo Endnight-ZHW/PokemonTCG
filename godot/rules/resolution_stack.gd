@@ -73,6 +73,7 @@ func pop_frame() -> Dictionary:
 
 
 func next_request_id(state: GameState, player_idx: int, request_type: String) -> String:
+	sequence = maxi(sequence, state.choice_sequence)
 	var request_id := "choice:%d:%d:%s:%d" % [
 		state.revision,
 		player_idx,
@@ -80,6 +81,7 @@ func next_request_id(state: GameState, player_idx: int, request_type: String) ->
 		sequence,
 	]
 	sequence += 1
+	state.choice_sequence = sequence
 	return request_id
 
 

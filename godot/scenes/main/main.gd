@@ -153,13 +153,68 @@ func _run_phase_six_export_smoke() -> void:
 	var license_ok := FileAccess.file_exists("res://third_party/onnxruntime/LICENSE")
 	CardTextureCache.clear()
 	var cache_ok := int(CardTextureCache.stats().get("entries", -1)) == 0
-	if not settings_ok or not license_ok or not cache_ok:
+	var release_decks: Array[String] = []
+	release_decks.assign(CardDatabase.release_manifest.get("release_decks", []))
+	var model_count_ok := (
+		release_decks.size()
+		== int(CardDatabase.release_manifest.get("model_count", -1))
+	)
+	var inference_ok := model_count_ok and not release_decks.is_empty()
+	var state_numeric := PackedFloat32Array()
+	state_numeric.resize(int(deep_runtime.manifest.get("state_numeric_size", 0)))
+	var state_cards := PackedInt64Array()
+	state_cards.resize(int(deep_runtime.manifest.get("state_card_slots", 0)))
+	var action_numeric := PackedFloat32Array()
+	action_numeric.resize(int(deep_runtime.manifest.get("action_numeric_size", 0)))
+	var action_cards := PackedInt64Array([0])
+	var choice_numeric := PackedFloat32Array()
+	choice_numeric.resize(int(deep_runtime.manifest.get("action_numeric_size", 0)))
+	var choice_cards := PackedInt64Array([0])
+	if (
+		state_numeric.is_empty()
+		or state_cards.is_empty()
+		or action_numeric.is_empty()
+		or choice_numeric.is_empty()
+	):
+		inference_ok = false
+	for deck_key in release_decks:
+		if not inference_ok or not deep_runtime.load_for_deck(deck_key):
+			inference_ok = false
+			break
+		var backend: Variant = deep_runtime.get_backend()
+		if backend == null:
+			inference_ok = false
+			break
+		var result: Dictionary = backend.call(
+			"infer",
+			state_numeric,
+			state_cards,
+			action_numeric,
+			action_cards,
+			choice_numeric,
+			choice_cards,
+		)
+		var finite := is_finite(float(result.get("value", NAN)))
+		for output_name in ["action_logits", "choice_logits"]:
+			for value in result.get(output_name, []):
+				finite = finite and is_finite(float(value))
+		if (
+			not bool(result.get("success", false))
+			or result.get("action_logits", []).size() != 1
+			or result.get("choice_logits", []).size() != 1
+			or not finite
+		):
+			inference_ok = false
+			break
+		deep_runtime.unload()
+	deep_runtime.unload()
+	if not settings_ok or not license_ok or not cache_ok or not inference_ok:
 		push_error("PHASE6_EXPORT_RELEASE_FAILED")
 		get_tree().quit(4)
 		return
 	print(
-		"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 licenses=1"
-		% AppState.APP_VERSION
+		"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 licenses=1 models=%d"
+		% [AppState.APP_VERSION, release_decks.size()]
 	)
 	get_tree().quit()
 
@@ -425,39 +480,10 @@ func _apply_network_view(view: Dictionary, player: int) -> void:
 
 
 func _network_view_is_valid(view: Dictionary) -> bool:
-	if not view.get("state") is Dictionary:
-		return false
-	var state_payload: Dictionary = view["state"]
-	for key in ["your", "opponent"]:
-		if not state_payload.get(key) is Dictionary:
-			return false
-	for key in [
-		"action_log", "pending_promotions", "mulligan_count",
-		"extra_draws", "setup_ready", "public_deck_keys",
-	]:
-		if state_payload.has(key) and not state_payload[key] is Array:
-			return false
-	if (
-		not _network_player_payload_is_valid(state_payload["your"], true)
-		or not _network_player_payload_is_valid(state_payload["opponent"], false)
-	):
-		return false
-	if view.has("legal_actions"):
-		if not view["legal_actions"] is Array:
-			return false
-		for row in view["legal_actions"]:
-			if not row is Dictionary:
-				return false
-	if view.has("presentation_events"):
-		if not view["presentation_events"] is Array:
-			return false
-		for event_value in view["presentation_events"]:
-			if not _network_presentation_event_is_valid(event_value):
-				return false
-	if view.has("choice_request") and view["choice_request"] != null:
-		if not _network_choice_request_is_valid(view["choice_request"]):
-			return false
-	return true
+	return bool(ProtocolV3.validate_payload(
+		ProtocolV3.STATE_UPDATE,
+		view,
+	).get("ok", false))
 
 
 func _network_player_payload_is_valid(payload_value: Variant, show_hand: bool) -> bool:

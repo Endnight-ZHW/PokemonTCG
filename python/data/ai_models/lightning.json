@@ -1,4 +1,5 @@
 {
+  "checkpoint_sha256": "2031cbb34f289b7937b514fb1180829ab97301016551a88c3fb65e17b0a15681",
   "metadata": {
     "acceptance_metric": "points",
     "accepted": true,

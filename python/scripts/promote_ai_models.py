@@ -82,11 +82,12 @@ def promote(source: Path, destination: Path) -> dict[str, str]:
             shutil.copy2(source_model, prepared_model)
             payload = json.loads(source_sidecar.read_text(encoding="utf-8"))
             payload["model_path"] = os.path.join("data", "ai_models", f"{deck_key}.pt")
+            source_hash = _sha256(source_model)
+            payload["checkpoint_sha256"] = source_hash
             prepared_sidecar.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            source_hash = _sha256(source_model)
             if _sha256(prepared_model) != source_hash:
                 raise OSError(f"Checkpoint copy verification failed: {deck_key}")
             checksums[deck_key] = source_hash

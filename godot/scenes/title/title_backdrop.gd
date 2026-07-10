@@ -14,9 +14,11 @@ var elapsed := 0.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_process(true)
 	_build_cards()
 	resized.connect(_layout_cards)
+	if not AppSettings.changed.is_connected(_apply_runtime_settings):
+		AppSettings.changed.connect(_apply_runtime_settings)
+	_apply_runtime_settings()
 	call_deferred("_layout_cards")
 
 
@@ -29,6 +31,13 @@ func _process(delta: float) -> void:
 	for index in range(card_backs.size()):
 		var back := card_backs[index]
 		back.rotation += delta * (0.018 if index % 2 == 0 else -0.014)
+	queue_redraw()
+
+
+func _apply_runtime_settings() -> void:
+	set_process(not AppSettings.reduced_motion)
+	if AppSettings.reduced_motion:
+		elapsed = 0.0
 	queue_redraw()
 
 
@@ -108,4 +117,3 @@ func _layout_cards() -> void:
 		card_backs[index].size = Vector2(78, 110)
 		card_backs[index].position = back_positions[index]
 		card_backs[index].pivot_offset = Vector2(39, 55)
-

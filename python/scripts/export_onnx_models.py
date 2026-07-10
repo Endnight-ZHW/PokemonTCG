@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import sys
 import tempfile
 import time
@@ -13,6 +14,9 @@ from typing import Any
 
 PYTHON_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PYTHON_ROOT.parent
+RELEASE_MANIFEST = json.loads(
+    (REPO_ROOT / "release_manifest.json").read_text(encoding="utf-8")
+)
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
@@ -34,20 +38,11 @@ from engine.ai.dl.model import CHECKPOINT_VERSION, load_checkpoint
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 
-DECK_KEYS = (
-    "fire",
-    "water",
-    "psychic",
-    "lightning",
-    "fighting",
-    "colorless",
-    "dragon",
-    "grass",
-    "steel",
-    "darkness",
-)
-ONNX_OPSET = 17
-ONNX_RUNTIME_VERSION = "1.26.0"
+DECK_KEYS = tuple(str(key) for key in RELEASE_MANIFEST["release_decks"])
+if len(DECK_KEYS) != int(RELEASE_MANIFEST["model_count"]) or len(set(DECK_KEYS)) != len(DECK_KEYS):
+    raise RuntimeError("release_manifest.json has an invalid release model set")
+ONNX_OPSET = int(RELEASE_MANIFEST["onnx"]["opset"])
+ONNX_RUNTIME_VERSION = str(RELEASE_MANIFEST["onnx"]["runtime_version"])
 COMPATIBILITY_BRIDGE_VERSION = 1
 INPUT_NAMES = (
     "state_numeric",
@@ -58,6 +53,29 @@ INPUT_NAMES = (
     "choice_cards",
 )
 OUTPUT_NAMES = ("action_logits", "state_value", "choice_logits")
+
+
+def _assert_export_environment() -> None:
+    """Fail before export when the reproducible toolchain is not active."""
+    lock = json.loads(
+        (REPO_ROOT / "tools" / "toolchain.lock.json").read_text(encoding="utf-8")
+    )["python"]
+    actual = {
+        "version": platform.python_version(),
+        "numpy": np.__version__,
+        "torch": torch.__version__.split("+", 1)[0],
+        "onnx": onnx.__version__,
+        "onnxruntime": ort.__version__,
+    }
+    mismatches = [
+        f"{name}={actual[name]} (expected {lock[name]})"
+        for name in actual
+        if str(actual[name]) != str(lock[name])
+    ]
+    if mismatches:
+        raise RuntimeError(
+            "ONNX export requires the locked environment: " + "; ".join(mismatches)
+        )
 
 
 class ExportModel(nn.Module):
@@ -97,7 +115,13 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _inputs(seed: int, action_count: int, choice_count: int) -> tuple[torch.Tensor, ...]:
+def _inputs(
+    seed: int,
+    action_count: int,
+    choice_count: int,
+    *,
+    empty_state_cards: bool = False,
+) -> tuple[torch.Tensor, ...]:
     generator = torch.Generator(device="cpu")
     generator.manual_seed(seed)
     state_numeric = torch.randn((1, STATE_NUMERIC_SIZE), generator=generator)
@@ -109,6 +133,8 @@ def _inputs(seed: int, action_count: int, choice_count: int) -> tuple[torch.Tens
         dtype=torch.int64,
     )
     state_cards[0, -8:] = 0
+    if empty_state_cards:
+        state_cards.zero_()
     action_numeric = torch.randn(
         (1, action_count, ACTION_NUMERIC_SIZE),
         generator=generator,
@@ -184,8 +210,14 @@ def _verify_one(
 ) -> dict[str, float]:
     session = ort.InferenceSession(str(output), providers=["CPUExecutionProvider"])
     maxima = {name: 0.0 for name in OUTPUT_NAMES}
-    for index, (actions, choices) in enumerate(((1, 1), (3, 5), (17, 11))):
-        tensors = _inputs(7701 + index, actions, choices)
+    scenarios = ((1, 1, False), (3, 5, False), (17, 11, False), (1, 1, True))
+    for index, (actions, choices, empty_state_cards) in enumerate(scenarios):
+        tensors = _inputs(
+            7701 + index,
+            actions,
+            choices,
+            empty_state_cards=empty_state_cards,
+        )
         with torch.no_grad():
             expected = wrapper(*tensors)
         actual = session.run(
@@ -196,8 +228,12 @@ def _verify_one(
             },
         )
         for name, left, right in zip(OUTPUT_NAMES, expected, actual):
+            left_array = left.detach().cpu().numpy()
+            right_array = np.asarray(right)
+            if not np.isfinite(left_array).all() or not np.isfinite(right_array).all():
+                raise RuntimeError(f"{output.name} {name} produced non-finite output")
             difference = float(
-                np.max(np.abs(left.detach().cpu().numpy() - np.asarray(right)))
+                np.max(np.abs(left_array - right_array))
             )
             maxima[name] = max(maxima[name], difference)
             if difference > tolerance:
@@ -315,8 +351,8 @@ def export_all(
             "onnx_runtime_version": ONNX_RUNTIME_VERSION,
             "execution_provider": "CPUExecutionProvider",
             "opset": ONNX_OPSET,
-            "search_simulations": 64,
-            "watchdog_seconds": 2.0,
+            "search_simulations": int(RELEASE_MANIFEST["onnx"]["search_simulations"]),
+            "watchdog_seconds": float(RELEASE_MANIFEST["onnx"]["watchdog_seconds"]),
             "state_numeric_size": STATE_NUMERIC_SIZE,
             "state_card_slots": STATE_CARD_SLOTS,
             "action_numeric_size": ACTION_NUMERIC_SIZE,
@@ -411,6 +447,10 @@ def main() -> int:
     parser.add_argument("--tolerance", type=float, default=1e-4)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    try:
+        _assert_export_environment()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from None
     if args.check:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

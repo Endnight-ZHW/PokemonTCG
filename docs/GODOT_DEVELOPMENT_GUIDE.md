@@ -658,7 +658,7 @@ Windows 与 Android 调试构建：
 - 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
 - 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
 
-本项目发布版包含 Godot 客户端、ONNX Runtime 原生库和 8 个离线 Deep AI 模型；不会打包
+本项目发布版包含 Godot 客户端、ONNX Runtime 原生库和 10 个离线 Deep AI 模型；不会打包
 Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
 
 ### 第一次发布前准备
@@ -695,7 +695,9 @@ Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本�
 .\tools\export_onnx_models.ps1
 ```
 
-Deep AI 训练和 ONNX 校验优先使用 `DL` Conda 环境，并固定禁用用户目录包：
+Deep AI GPU 训练使用精确锁定的 `DL` Conda 环境；发布 ONNX 的导出/校验则使用
+`python/environment-export.yml` 或 `tools/setup_ai_toolchain.ps1` 创建的 CPU 环境。
+两种环境都固定禁用用户目录包：
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
@@ -741,7 +743,7 @@ conda run -n DL python -B .\python\scripts\train_deep_ai.py `
   --device cuda `
   --output build\ai_training\fire_alpha_zero_smoke.pt
 
-.\tools\export_onnx_models.ps1 -CondaEnv DL -Check
+.\tools\export_onnx_models.ps1 -Check
 ```
 
 ### 生成开发调试包
@@ -900,12 +902,12 @@ godot/dist/release/PokemonTCG-Android-arm64-0.3.2-production.apk
 - Windows ZIP 不包含 Python、PyTorch、测试、工具目录或 console exe。
 - Android APK 包名、版本号、SDK、ABI 正确。
 - Android APK 签名可验证。
-- Android APK 包含 8 个 ONNX 模型、`libpokemon_ai` 和 `libonnxruntime.so`。
+- Android APK 包含 manifest 指定的全部 10 个 ONNX 模型、`libpokemon_ai` 和 `libonnxruntime.so`。
 - `SHA256SUMS.json` 中每个文件的 SHA-256 与实际文件一致。
 
-`test_release.ps1` 当前固定检查 `PokemonTCG-Android-arm64-0.3.2-test.apk`。如果你只打
-Windows 包，或刚生成的是 `production` 正式签名 APK，不要直接用它代表最终结论；正式包需要
-对实际产物再做一次手工签名和元数据检查。
+`test_release.ps1` 从 `release_manifest.json` 读取版本和 Android versionCode，默认检查
+`test` 签名 APK。若生成的是 `production` 正式签名 APK，仍需对实际产物再做一次签名和
+元数据检查。
 
 手工抽查校验值：
 
@@ -933,7 +935,7 @@ APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CH
 
 - 冷启动、横屏、安全区、返回键和设置保存。
 - 本地双人、Challenge AI、Deep AI 离线对局。
-- 8 套 Deep AI 模型至少完成加载冒烟，最好完成一局。
+- 10 套 Deep AI 模型都必须完成真实 load+infer 冒烟，且不得出现 NaN/Inf 或静默 fallback。
 - 标题和战斗音乐各保持前台至少 3 分钟，确认没有音频崩溃。
 - 抽牌、攻击、击倒、奖品、胜利演出在目标设备帧率可接受。
 - 切后台、锁屏、恢复、断网、网络切换和覆盖安装。

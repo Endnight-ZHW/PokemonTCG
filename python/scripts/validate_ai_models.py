@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -23,6 +24,7 @@ from engine.ai.dl.release_gate import (
     point_rate,
 )
 from engine.ai.dl.encoder import ENCODER_SCHEMA_VERSION
+from engine.ai.dl.model import CHECKPOINT_VERSION, load_checkpoint
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.ai.training import DECK_SPECS
 
@@ -46,6 +48,53 @@ def _challenge_baseline_row(metadata: dict[str, Any], deck_key: str) -> dict[str
     return row.get("challenge_baseline_eval") or row.get("release_baseline_eval") or {}
 
 
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _checkpoint_identity_errors(
+    model_path: str,
+    sidecar_payload: dict[str, Any],
+    metadata: dict[str, Any],
+    deck_key: str,
+) -> list[str]:
+    """Verify that the PT file and sidecar describe the same release artifact."""
+    errors: list[str] = []
+    try:
+        actual_hash = _sha256(model_path)
+    except OSError:
+        return ["invalid_checkpoint"]
+    expected_hash = str(sidecar_payload.get("checkpoint_sha256") or "").lower()
+    if not expected_hash:
+        errors.append("missing_checkpoint_sha256")
+    elif expected_hash != actual_hash:
+        errors.append("checkpoint_sha256_mismatch")
+    try:
+        model, checkpoint = load_checkpoint(model_path, "cpu")
+        del model
+        if int(checkpoint.get("version") or 0) != CHECKPOINT_VERSION:
+            errors.append("checkpoint_version_mismatch")
+        schema = dict(checkpoint.get("schema") or {})
+        if int(schema.get("rules_version") or 0) != RULES_SCHEMA_VERSION:
+            errors.append("embedded_rules_schema_mismatch")
+        if int(schema.get("action_version") or 0) != ACTION_SCHEMA_VERSION:
+            errors.append("embedded_action_schema_mismatch")
+        if int(schema.get("encoder_version") or 0) != ENCODER_SCHEMA_VERSION:
+            errors.append("embedded_encoder_schema_mismatch")
+        embedded_metadata = dict(checkpoint.get("metadata") or {})
+        if embedded_metadata != metadata:
+            errors.append("checkpoint_sidecar_metadata_mismatch")
+        if str(embedded_metadata.get("deck") or "") != deck_key:
+            errors.append("embedded_deck_mismatch")
+    except Exception:
+        errors.append("invalid_checkpoint")
+    return errors
+
+
 def validate_model(
     deck_key: str,
     *,
@@ -59,14 +108,25 @@ def validate_model(
     sidecar_path = os.path.join(model_dir, f"{deck_key}.json")
     errors: list[str] = []
     metadata: dict[str, Any] = {}
+    sidecar_payload: dict[str, Any] = {}
     if not os.path.isfile(model_path) or os.path.getsize(model_path) <= 0:
         errors.append("missing_model")
     try:
         with open(sidecar_path, "r", encoding="utf-8") as fh:
-            payload = json.load(fh)
-        metadata = dict(payload.get("metadata") or {})
+            sidecar_payload = json.load(fh)
+        metadata = dict(sidecar_payload.get("metadata") or {})
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         errors.append("missing_or_invalid_sidecar")
+
+    if os.path.isfile(model_path) and os.path.getsize(model_path) > 0:
+        errors.extend(
+            _checkpoint_identity_errors(
+                model_path,
+                sidecar_payload,
+                metadata,
+                deck_key,
+            )
+        )
 
     eval_row = _eval_row(metadata, deck_key)
     games = int(eval_row.get("games") or metadata.get("eval_games") or 0)

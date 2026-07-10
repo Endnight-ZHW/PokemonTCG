@@ -43,6 +43,10 @@ class GameEngine:
         *,
         validate_effects: bool = True,
     ) -> tuple[GameAction, ...]:
+        if not self._is_valid_actor(actor):
+            return ()
+        if self.transaction_manager.has_pending_choice(state):
+            return ()
         raw = self.availability.enumerate_actions(state, actor)
         if not validate_effects:
             return tuple(raw)
@@ -54,6 +58,9 @@ class GameEngine:
                 PlayerAction.USE_ABILITY,
                 PlayerAction.USE_STADIUM,
             }:
+                validated.append(action)
+                continue
+            if self.availability.can_skip_effect_simulation(state, actor, action):
                 validated.append(action)
                 continue
             simulation = clone_state(state)
@@ -80,6 +87,20 @@ class GameEngine:
     ) -> StepResult:
         rng = rng or RandomSource()
         actor = state.active_player_idx if action.actor is None else action.actor
+        if not self._is_valid_actor(actor):
+            return StepResult(
+                False,
+                "玩家索引无效。",
+                error_code="invalid_actor",
+                winner=state.winner,
+            )
+        if self.transaction_manager.has_pending_choice(state):
+            return StepResult(
+                False,
+                "必须先完成当前选择。",
+                error_code="pending_choice",
+                winner=state.winner,
+            )
         reference_error = self.availability.validate_action_references(state, action)
         if reference_error:
             return StepResult(
@@ -95,7 +116,16 @@ class GameEngine:
             return StepResult(True, "setup done", ActionResult(True, "setup done"), winner=state.winner)
         if action.action == "PROMOTE":
             checkpoint = self.transaction_manager.capture_transaction(state, rng)
-            step = self.settlement_manager.apply_promotion(state, actor, action, rng)
+            try:
+                step = self.settlement_manager.apply_promotion(state, actor, action, rng)
+            except Exception as exc:
+                self.transaction_manager.rollback_transaction(state, rng, checkpoint)
+                return StepResult(
+                    False,
+                    str(exc),
+                    error_code="promotion_exception",
+                    winner=state.winner,
+                )
             if not step.success:
                 return self.transaction_manager.rollback_failed_step(state, rng, checkpoint, step)
             return step
@@ -113,47 +143,81 @@ class GameEngine:
                     ),
                     **dict(action.params),
                 )
+            step = self.settlement_manager.step_from_action_result(
+                state,
+                result,
+                events=self.settlement_manager.events_since(state, event_offset),
+            )
+            if (
+                auto_finish_attack
+                and action.action == PlayerAction.DECLARE_ATTACK
+                and step.pending_choice is not None
+            ):
+                step.pending_choice.metadata["finish_attack_actor"] = actor
+            if step.pending_choice is not None:
+                self.transaction_manager.persist_pending_choice(state, step.pending_choice)
+                if (
+                    step.pending_choice.can_cancel
+                    and action.action == PlayerAction.PLAY_TRAINER
+                ):
+                    self.transaction_manager.store_cancel_checkpoint(state, checkpoint)
+            if auto_resolve:
+                try:
+                    step = self._resolve_all_choices(state, step, rng, choice_policy)
+                except Exception as exc:
+                    self.transaction_manager.rollback_transaction(state, rng, checkpoint)
+                    return StepResult(
+                        False,
+                        str(exc),
+                        error_code="choice_policy_exception",
+                        winner=state.winner,
+                    )
+
+            if action.action not in {PlayerAction.DECLARE_ATTACK, PlayerAction.END_TURN}:
+                step = self.settlement_manager.resolve_non_attack_knockouts(state, step)
+
+            if (
+                auto_finish_attack
+                and step.success
+                and action.action == PlayerAction.DECLARE_ATTACK
+                and bool(getattr(result, "attack_failed", False))
+                and state.winner is None
+                and state.phase == TurnPhase.ATTACK
+                and step.pending_choice is None
+            ):
+                if state.pending_promotion_player >= 0:
+                    set_finish_attack_after_promotions(state, actor)
+                else:
+                    step = self.settlement_manager.merge_steps(
+                        step,
+                        self.settlement_manager.resolve_attack_turn_frame(
+                            state,
+                            actor,
+                            rng,
+                        ),
+                    )
+
+            if (
+                auto_finish_attack
+                and step.success
+                and action.action == PlayerAction.DECLARE_ATTACK
+                and state.winner is None
+                and state.phase == TurnPhase.ATTACK
+                and state.pending_promotion_player >= 0
+                and step.pending_choice is None
+            ):
+                set_finish_attack_after_promotions(state, actor)
+
+            step.winner = state.winner
+            step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
         except Exception as exc:
             self.transaction_manager.rollback_transaction(state, rng, checkpoint)
-            return StepResult(False, str(exc), error_code="action_exception", winner=state.winner)
-
-        step = self.settlement_manager.step_from_action_result(
-            state,
-            result,
-            events=self.settlement_manager.events_since(state, event_offset),
-        )
-        if (
-            auto_finish_attack
-            and action.action == PlayerAction.DECLARE_ATTACK
-            and step.pending_choice is not None
-        ):
-            step.pending_choice.metadata["finish_attack_actor"] = actor
-        if step.pending_choice is not None:
-            self.transaction_manager.persist_pending_choice(state, step.pending_choice)
-            if (
-                step.pending_choice.can_cancel
-                and action.action == PlayerAction.PLAY_TRAINER
-            ):
-                self.transaction_manager.store_cancel_checkpoint(state, checkpoint)
-        if auto_resolve:
-            step = self._resolve_all_choices(state, step, rng, choice_policy)
-
-        if action.action not in {PlayerAction.DECLARE_ATTACK, PlayerAction.END_TURN}:
-            step = self.settlement_manager.resolve_non_attack_knockouts(state, step)
-
-        if (
-            auto_finish_attack
-            and step.success
-            and action.action == PlayerAction.DECLARE_ATTACK
-            and state.winner is None
-            and state.phase == TurnPhase.ATTACK
-            and state.pending_promotion_player >= 0
-            and step.pending_choice is None
-        ):
-            set_finish_attack_after_promotions(state, actor)
-
-        step.winner = state.winner
-        step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
+            return StepResult(
+                False,
+                str(exc),
+                error_code="action_exception",
+                winner=state.winner,
+            )
         if not step.success:
             return self.transaction_manager.rollback_failed_step(state, rng, checkpoint, step)
         return step
@@ -166,12 +230,60 @@ class GameEngine:
         rng: RandomSource | None = None,
     ) -> StepResult:
         rng = rng or RandomSource()
+        if not isinstance(request, ChoiceRequest):
+            return StepResult(
+                False,
+                "选择请求格式无效。",
+                error_code="invalid_choice_request",
+                winner=state.winner,
+            )
+        if not isinstance(response, ChoiceResponse):
+            return StepResult(
+                False,
+                "选择响应格式无效。",
+                error_code="invalid_choice_response",
+                winner=state.winner,
+            )
+        if not self._is_valid_actor(request.player):
+            return StepResult(
+                False,
+                "玩家索引无效。",
+                error_code="invalid_actor",
+                winner=state.winner,
+            )
+        authoritative = self.transaction_manager.pending_choice_payload(state)
+        if authoritative is None:
+            return StepResult(
+                False,
+                "当前没有待处理的选择。",
+                error_code="no_pending_choice",
+                winner=state.winner,
+            )
         if response.request_id != request.request_id:
             return StepResult(False, "选择请求已过期。", error_code="stale_choice")
-        if int(request.metadata.get("revision", getattr(state, "revision", 0))) != int(
-            getattr(state, "revision", 0)
-        ):
+        if str(authoritative.get("request_id", "")) != request.request_id:
             return StepResult(False, "局面已变化，选择请求已过期。", error_code="stale_choice")
+        authoritative_metadata = authoritative.get("metadata", {})
+        authoritative_revision = (
+            authoritative_metadata.get("revision", -1)
+            if isinstance(authoritative_metadata, dict)
+            else -1
+        )
+        try:
+            revision_matches = int(authoritative_revision) == int(
+                getattr(state, "revision", 0)
+            )
+        except (TypeError, ValueError):
+            revision_matches = False
+        if not revision_matches:
+            return StepResult(False, "局面已变化，选择请求已过期。", error_code="stale_choice")
+        if self.transaction_manager.choice_request_to_dict(request) != authoritative:
+            return StepResult(
+                False,
+                "选择请求与当前待处理请求不一致。",
+                error_code="stale_choice",
+                winner=state.winner,
+            )
         choice_cancelled = False
         if response.cancelled:
             if not request.can_cancel:
@@ -213,49 +325,52 @@ class GameEngine:
             payload = self.choice_manager.legacy_choice_payload(legacy, selected, response)
             with rng.bind_state(state):
                 callback_result = legacy.callback(payload) if legacy.callback else None
+
+            self.choice_manager.consume_pending_card(state, legacy)
+            state.revision = getattr(state, "revision", 0) + 1
+            if isinstance(callback_result, ActionRequest):
+                result = ActionResult(True, pending_action=callback_result)
+            elif isinstance(callback_result, ActionResult):
+                result = callback_result
+            else:
+                result = ActionResult(True, "")
+            step = self.settlement_manager.step_from_action_result(
+                state,
+                result,
+                events=self.settlement_manager.events_since(state, event_offset),
+            )
+            attack_actor = request.metadata.get("finish_attack_actor")
+            if step.pending_choice is not None:
+                if attack_actor in (0, 1):
+                    step.pending_choice.metadata["finish_attack_actor"] = int(attack_actor)
+                self.transaction_manager.persist_pending_choice(state, step.pending_choice)
+            elif (
+                step.success
+                and attack_actor in (0, 1)
+                and state.winner is None
+                and state.phase == TurnPhase.ATTACK
+                and state.pending_promotion_player >= 0
+            ):
+                self.transaction_manager.clear_pending_choice_stack(state)
+                set_finish_attack_after_promotions(state, int(attack_actor))
+            elif step.pending_choice is None:
+                self.transaction_manager.clear_pending_choice_stack(state)
+                if attack_actor not in (0, 1):
+                    step = self.settlement_manager.resolve_non_attack_knockouts(state, step)
+            step.winner = state.winner
+            step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
         except Exception as exc:
             self.transaction_manager.rollback_transaction(state, rng, checkpoint)
             return StepResult(False, str(exc), error_code="choice_exception", winner=state.winner)
-
-        self.choice_manager.consume_pending_card(state, legacy)
-        state.revision = getattr(state, "revision", 0) + 1
-        if isinstance(callback_result, ActionRequest):
-            result = ActionResult(True, pending_action=callback_result)
-        elif isinstance(callback_result, ActionResult):
-            result = callback_result
-        else:
-            result = ActionResult(True, "")
-        step = self.settlement_manager.step_from_action_result(
-            state,
-            result,
-            events=self.settlement_manager.events_since(state, event_offset),
-        )
-        attack_actor = request.metadata.get("finish_attack_actor")
-        if step.pending_choice is not None:
-            if attack_actor in (0, 1):
-                step.pending_choice.metadata["finish_attack_actor"] = int(attack_actor)
-            self.transaction_manager.persist_pending_choice(state, step.pending_choice)
-        elif (
-            step.success
-            and attack_actor in (0, 1)
-            and state.winner is None
-            and state.phase == TurnPhase.ATTACK
-            and state.pending_promotion_player >= 0
-        ):
-            self.transaction_manager.clear_pending_choice_stack(state)
-            set_finish_attack_after_promotions(state, int(attack_actor))
-        elif step.pending_choice is None:
-            self.transaction_manager.clear_pending_choice_stack(state)
-            if attack_actor not in (0, 1):
-                step = self.settlement_manager.resolve_non_attack_knockouts(state, step)
-        step.winner = state.winner
-        step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
         if not step.success:
             return self.transaction_manager.rollback_failed_step(state, rng, checkpoint, step)
         return step
 
     def choice_request(self, state: GameState, request: ActionRequest) -> ChoiceRequest:
-        return self.choice_manager.choice_request(state, request)
+        structured = self.choice_manager.choice_request(state, request)
+        if not self.transaction_manager.has_pending_choice(state):
+            self.transaction_manager.persist_pending_choice(state, structured)
+        return structured
 
     def choice_response_from_legacy(
         self,
@@ -294,5 +409,9 @@ class GameEngine:
             aggregate.error_code = "choice_loop"
             aggregate.message = "选择链超过安全上限。"
         return aggregate
+
+    @staticmethod
+    def _is_valid_actor(actor) -> bool:
+        return type(actor) is int and actor in (0, 1)
 
 DEFAULT_GAME_ENGINE = GameEngine()

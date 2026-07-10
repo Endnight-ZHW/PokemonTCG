@@ -4,6 +4,11 @@ extends RefCounted
 const CARDS_PATH := "res://data/cards.json"
 const DECKS_PATH := "res://data/decks.json"
 
+static var _shared_cards: Dictionary = {}
+static var _shared_decks: Dictionary = {}
+static var _shared_loaded := false
+static var _shared_load_count := 0
+
 var cards: Dictionary = {}
 var decks: Dictionary = {}
 var _expanded_deck_cache: Dictionary = {}
@@ -13,9 +18,16 @@ var _provides_energy_cache: Dictionary = {}
 var _prize_value_cache: Dictionary = {}
 
 
-func _init() -> void:
-	cards = _read_json(CARDS_PATH)
-	decks = _read_json(DECKS_PATH)
+func _init(isolated: bool = false) -> void:
+	_ensure_shared_data()
+	if isolated:
+		cards = _shared_cards.duplicate(true)
+		decks = _shared_decks.duplicate(true)
+	else:
+		# Runtime catalogs are read-only views over one parsed data set. Tests that
+		# inject synthetic cards can request an isolated catalog explicitly.
+		cards = _shared_cards
+		decks = _shared_decks
 
 
 func get_card(card_id: String) -> Dictionary:
@@ -165,7 +177,20 @@ func _card_has_subtype(card_id: String, subtype: String) -> bool:
 	return subtype in _card_subtypes_cache[card_id]
 
 
-func _read_json(path: String) -> Dictionary:
+static func shared_load_count() -> int:
+	return _shared_load_count
+
+
+static func _ensure_shared_data() -> void:
+	if _shared_loaded:
+		return
+	_shared_cards = _read_json(CARDS_PATH)
+	_shared_decks = _read_json(DECKS_PATH)
+	_shared_loaded = true
+	_shared_load_count += 1
+
+
+static func _read_json(path: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		push_error("Unable to open %s" % path)

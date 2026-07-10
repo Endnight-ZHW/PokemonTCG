@@ -3,13 +3,62 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.export_godot_data import export
+from scripts.export_godot_data import (
+    _image_hashes,
+    _parse_image_mapping,
+    _validate_image_mapping,
+    export,
+)
 
 
 class GodotDataExportTests(unittest.TestCase):
+    def test_image_mapping_rejects_missing_duplicate_source_and_escape(self):
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            _parse_image_mapping(
+                '{"card-1":"data/images/a.webp","card-1":"data/images/b.webp"}'
+            )
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir)
+            images = root / "data" / "images"
+            images.mkdir(parents=True)
+            (images / "one.webp").write_bytes(b"one")
+            with self.assertRaisesRegex(ValueError, "Missing card image mappings"):
+                _validate_image_mapping({}, python_root=root, card_ids=["card-1"])
+            with self.assertRaisesRegex(FileNotFoundError, "Missing card image source"):
+                _validate_image_mapping(
+                    {"card-1": "data/images/missing.webp"},
+                    python_root=root,
+                    card_ids=["card-1"],
+                )
+            (root / "outside.webp").write_bytes(b"outside")
+            with self.assertRaisesRegex(ValueError, "escapes data/images"):
+                _validate_image_mapping(
+                    {"card-1": "outside.webp"},
+                    python_root=root,
+                    card_ids=["card-1"],
+                )
+
+    def test_exported_image_hashes_change_with_source_bytes(self):
+        from scripts import export_godot_data
+
+        with tempfile.TemporaryDirectory() as root_dir:
+            root = Path(root_dir)
+            image = root / "data" / "images" / "one.webp"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"one")
+            mapping = {"card-1": "data/images/one.webp"}
+            with mock.patch.object(export_godot_data, "PYTHON_ROOT", root), mock.patch.object(
+                export_godot_data, "ALL_CARD_IDS", ["card-1"]
+            ):
+                first = _image_hashes(mapping)
+                image.write_bytes(b"two")
+                second = _image_hashes(mapping)
+            self.assertNotEqual(first["card-1"], second["card-1"])
+
     def test_export_is_complete_and_deterministic(self):
         with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
             first = Path(first_dir)
@@ -29,7 +78,12 @@ class GodotDataExportTests(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
+            self.assertEqual(rules["fixture_version"], 2)
+            self.assertEqual(rules["rng_algorithm"], "xorshift32-v1")
             self.assertEqual(len(rules["cases"]), 5)
+            self.assertTrue(
+                all("expected_rng_state" in row for row in rules["cases"].values())
+            )
             self.assertTrue(
                 rules["cases"]["pending_attack_choice_cancel"]["choice_response"]["cancelled"]
             )

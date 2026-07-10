@@ -32,6 +32,13 @@ func continue_energy_attach_target(
 	events: Array[Dictionary],
 ) -> Dictionary:
 	if selected.is_empty():
+		if str(data.get("source_zone", "")) == "deck":
+			var player_idx := int(data["player_idx"])
+			rng.shuffle(state.get_player(player_idx).deck)
+			events.append({
+				"event_type": "deck_shuffled",
+				"data": {"player": player_idx},
+			})
 		return VMResult.ok("未选择附能目标。")
 	return energy_commands.attach_cards(
 		state,

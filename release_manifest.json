@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "product_name": "PokemonTCG",
+  "version": "0.3.2",
+  "android_version_code": 5,
+  "godot_version": "4.7.stable",
+  "schemas": {
+    "protocol": 3,
+    "godot_rules": 3,
+    "godot_actions": 3,
+    "python_rules": 2,
+    "python_actions": 2,
+    "encoder": 3,
+    "checkpoint": 10,
+    "planner": 1,
+    "vm_ir": 1,
+    "rng": 1
+  },
+  "rng": {
+    "algorithm": "xorshift32",
+    "fallback_seed": 1831565813
+  },
+  "release_decks": [
+    "fire",
+    "water",
+    "psychic",
+    "lightning",
+    "fighting",
+    "colorless",
+    "dragon",
+    "grass",
+    "steel",
+    "darkness"
+  ],
+  "model_count": 10,
+  "onnx": {
+    "opset": 17,
+    "runtime_version": "1.26.0",
+    "search_simulations": 64,
+    "watchdog_seconds": 2.0
+  }
+}

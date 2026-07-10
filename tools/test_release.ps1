@@ -6,13 +6,16 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Join-Path $repoRoot 'godot'
 $distRoot = Join-Path $projectRoot 'dist\release'
 $windowsRoot = Join-Path $distRoot 'windows'
-$zipPath = Join-Path $distRoot 'PokemonTCG-Windows-x86_64-0.3.2.zip'
-$apkPath = Join-Path $distRoot 'PokemonTCG-Android-arm64-0.3.2-test.apk'
 $manifestPath = Join-Path $distRoot 'SHA256SUMS.json'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
+$release = Get-ReleaseManifest -RepoRoot $repoRoot
+$version = [string]$release.version
+$releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
+$zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
+$apkPath = Join-Path $distRoot "PokemonTCG-Android-arm64-$version-test.apk"
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 $apksigner = Join-Path $sdkRoot "build-tools\$buildToolsVersion\apksigner.bat"
@@ -48,6 +51,7 @@ try {
         '/libpokemon_ai.windows.template_release.x86_64.dll',
         '/onnxruntime.dll',
         '/RELEASE_NOTES.md',
+        '/RELEASE_MANIFEST.json',
         '/BUILD_INFO.json',
         '/ONNXRUNTIME_LICENSE.txt',
         '/THIRD_PARTY_NOTICES.txt'
@@ -73,7 +77,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 $badgingText = $badging -join "`n"
 foreach ($expected in @(
-    "package: name='com.pokemontcg.game' versionCode='5' versionName='0.3.2'",
+    "package: name='com.pokemontcg.game' versionCode='$([int]$release.android_version_code)' versionName='$version'",
     "sdkVersion:'28'",
     "targetSdkVersion:'35'",
     "native-code: 'arm64-v8a'"
@@ -87,10 +91,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Android release APK signature verification failed.'
 }
 $apkEntries = & $jar tf $apkPath
-foreach ($deckKey in @(
-    'fire', 'water', 'psychic', 'lightning',
-    'fighting', 'colorless', 'dragon', 'grass'
-)) {
+foreach ($deckKey in $releaseDecks) {
     if ("assets/data/ai_models/$deckKey.onnx" -notin $apkEntries) {
         throw "Android release APK is missing $deckKey.onnx."
     }
@@ -103,7 +104,16 @@ foreach ($nativeEntry in @(
         throw "Android release APK is missing $nativeEntry."
     }
 }
-Write-Host 'ANDROID_RELEASE_APK_OK signing=test models=8 abi=arm64-v8a'
+$actualApkModels = @(
+    $apkEntries |
+        Where-Object { $_ -match '^assets/data/ai_models/[^/]+\.onnx$' } |
+        ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
+        Sort-Object
+)
+if (Compare-Object @($releaseDecks | Sort-Object) $actualApkModels) {
+    throw 'Android release APK ONNX set does not exactly match release_manifest.json.'
+}
+Write-Host "ANDROID_RELEASE_APK_OK signing=test models=$($releaseDecks.Count) abi=arm64-v8a"
 
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
 foreach ($row in $manifest) {

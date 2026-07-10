@@ -5,7 +5,11 @@ from itertools import combinations
 
 from engine.actions import AttachmentRef, CardRef, GameAction, PokemonRef
 from engine.enums import PlayerAction, TurnPhase
-from engine.effects.availability import effect_params, effects_have_legal_target
+from engine.effects.availability import (
+    effect_params,
+    effect_type,
+    effects_have_legal_target,
+)
 from engine.effects.runtime_effects import (
     strict_ability_runtime_effects as ability_runtime_effects,
     strict_trainer_runtime_effects as trainer_runtime_effects,
@@ -28,6 +32,115 @@ from engine.rules_validator import (
 
 class VMActionAvailability:
     """Owns legal public action enumeration and reference freshness checks."""
+
+    # ``enumerate_actions`` already applies the resource/target checks for
+    # these single-effect release cards. Their VM handlers either complete
+    # immediately or create a validated choice request, so replaying the
+    # entire action on a cloned state cannot reject them. Branching effects,
+    # multi-effect sequences, and non-registry cards deliberately fall back
+    # to the authoritative simulation in ``GameEngine.legal_actions``.
+    STATICALLY_VALIDATED_EFFECT_TYPES = frozenset({
+        "ability_discard_revive",
+        "arven",
+        "attach_from_discard",
+        "aura_damage_boost",
+        "aura_damage_reduction",
+        "clara",
+        "conditional_hp_boost",
+        "conditional_zero_retreat",
+        "discard_then_draw",
+        "draw",
+        "draw_and_attach_energy",
+        "draw_until_more",
+        "energy_relocate",
+        "hand_to_bottom_draw",
+        "heal",
+        "heal_all",
+        "judge",
+        "look_top_deck",
+        "place_counters_and_self_ko",
+        "potion_heal",
+        "reactive_thorns",
+        "search",
+        "shuffle_draw",
+        "shuffle_from_discard",
+        "switch_self",
+        "tool",
+        "tool_exp_share",
+        "trekking_shoes",
+        "zinnia_resolve",
+    })
+
+    def can_skip_effect_simulation(
+        self,
+        state: GameState,
+        actor: int,
+        action: GameAction,
+    ) -> bool:
+        """Return whether enumeration fully proved this effect action legal.
+
+        This is intentionally conservative. It only recognizes canonical
+        release cards with zero or one top-level effect whose preconditions
+        are already checked by ``enumerate_actions``. Everything extensible
+        or order-sensitive retains the previous clone-and-execute behavior.
+        """
+        owner_and_effects = self._effect_owner_and_effects(state, actor, action)
+        if owner_and_effects is None:
+            return False
+        owner, effects = owner_and_effects
+        if not self._is_registered_card(owner):
+            return False
+        if not effects:
+            return True
+        if len(effects) != 1:
+            return False
+        return effect_type(effects[0]) in self.STATICALLY_VALIDATED_EFFECT_TYPES
+
+    @staticmethod
+    def _is_registered_card(card) -> bool:
+        if card is None:
+            return False
+        from data.card_registry import CardRegistry
+
+        card_id = str(getattr(card, "api_id", "") or "")
+        return bool(card_id) and CardRegistry.get(card_id) is card
+
+    @staticmethod
+    def _effect_owner_and_effects(
+        state: GameState,
+        actor: int,
+        action: GameAction,
+    ):
+        player = state.get_player(actor)
+        if action.action == PlayerAction.PLAY_TRAINER:
+            hand_idx = action.params.get("hand_idx")
+            if type(hand_idx) is not int or not (0 <= hand_idx < len(player.hand)):
+                return None
+            card = player.hand[hand_idx]
+            return card, trainer_runtime_effects(card)
+        if action.action == PlayerAction.USE_ABILITY:
+            slot = str(action.params.get("slot", "") or "")
+            ability_name = str(action.params.get("ability_name", "") or "")
+            pokemon = player.get_pokemon(slot)
+            if pokemon is None:
+                return None
+            ability = next(
+                (
+                    candidate
+                    for candidate in pokemon.card.abilities
+                    if candidate.name.lower() == ability_name.lower()
+                ),
+                None,
+            )
+            if ability is None:
+                return None
+            return pokemon.card, ability_runtime_effects(ability)
+        if action.action == PlayerAction.USE_STADIUM:
+            stadium = state.stadium_card
+            if stadium is None:
+                return None
+            return stadium, trainer_runtime_effects(stadium)
+        return None
 
     def enumerate_actions(self, state: GameState, actor: int) -> list[GameAction]:
         if state.pending_promotion_player >= 0:

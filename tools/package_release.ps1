@@ -13,7 +13,51 @@ $windowsRoot = Join-Path $distRoot 'windows'
 $androidRoot = Join-Path $distRoot 'android'
 $stagingRoot = Join-Path $repoRoot '.tools\release-staging'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
-$version = '0.3.2'
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$release = Get-ReleaseManifest -RepoRoot $repoRoot
+$version = [string]$release.version
+$releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
+
+$releaseInputs = @(
+    (Join-Path $repoRoot 'docs\RELEASE_NOTES.md'),
+    (Join-Path $repoRoot 'release_manifest.json'),
+    (Join-Path $projectRoot 'data\release_manifest.json'),
+    (Join-Path $projectRoot 'data\cards.json'),
+    (Join-Path $projectRoot 'data\decks.json'),
+    (Join-Path $projectRoot 'data\effects.json'),
+    (Join-Path $projectRoot 'data\card_images.json'),
+    (Join-Path $projectRoot 'data\card_image_hashes.json'),
+    (Join-Path $projectRoot 'data\ai_models.json'),
+    (Join-Path $projectRoot 'data\ai_models_runtime.json'),
+    (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE'),
+    (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt')
+)
+$releaseInputs += @($releaseDecks | ForEach-Object {
+    Join-Path $projectRoot "data\ai_models\$_.onnx"
+})
+foreach ($required in $releaseInputs) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+        throw "Missing release input: $required"
+    }
+}
+$pythonExe = Join-Path $repoRoot '.tools\python311\python.exe'
+if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
+    throw 'Pinned Python export environment is missing. Run tools/setup_ai_toolchain.ps1 first.'
+}
+$env:PYTHONNOUSERSITE = '1'
+& $pythonExe -B (Join-Path $repoRoot 'python\scripts\export_godot_data.py') `
+    --check --skip-images
+if ($LASTEXITCODE -ne 0) {
+    throw 'Godot generated data preflight failed.'
+}
+& $pythonExe -B (Join-Path $repoRoot 'python\scripts\validate_ai_models.py')
+if ($LASTEXITCODE -ne 0) {
+    throw 'Release checkpoint identity or evaluation gate failed.'
+}
+& $pythonExe -B (Join-Path $repoRoot 'python\scripts\export_onnx_models.py') --check
+if ($LASTEXITCODE -ne 0) {
+    throw 'Release ONNX parity preflight failed.'
+}
 
 function Set-TestSigningEnvironment {
     $signingRoot = Join-Path $repoRoot '.tools\signing'
@@ -129,6 +173,8 @@ foreach ($name in @(
     Copy-Item -LiteralPath (Join-Path $windowsRoot $name) -Destination $packageRoot
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\RELEASE_NOTES.md') -Destination $packageRoot
+Copy-Item -LiteralPath (Join-Path $repoRoot 'release_manifest.json') `
+    -Destination (Join-Path $packageRoot 'RELEASE_MANIFEST.json')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE') `
     -Destination (Join-Path $packageRoot 'ONNXRUNTIME_LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt') `
@@ -137,12 +183,13 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPar
 $buildInfo = [ordered]@{
     version = $version
     created_utc = [DateTime]::UtcNow.ToString('o')
-    godot = '4.7.stable'
-    protocol = 3
-    rules_schema = 3
-    action_schema = 3
-    onnx_runtime = '1.26.0'
-    onnx_models = 8
+    godot = [string]$release.godot_version
+    protocol = [int]$release.schemas.protocol
+    rules_schema = [int]$release.schemas.godot_rules
+    action_schema = [int]$release.schemas.godot_actions
+    rng_schema = [int]$release.schemas.rng
+    onnx_runtime = [string]$release.onnx.runtime_version
+    onnx_models = $releaseDecks.Count
     windows_arch = 'x86_64'
     android_arch = if ($AndroidSigning -eq 'none') { $null } else { 'arm64-v8a' }
     android_signing = $AndroidSigning
@@ -183,9 +230,20 @@ $manifestRows = foreach ($path in $releaseFiles) {
         sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
     }
 }
-foreach ($model in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'data\ai_models') -Filter '*.onnx') {
+$modelRoot = Join-Path $projectRoot 'data\ai_models'
+$actualModelKeys = @(
+    Get-ChildItem -LiteralPath $modelRoot -Filter '*.onnx' -File |
+        ForEach-Object { $_.BaseName } |
+        Sort-Object
+)
+$expectedModelKeys = @($releaseDecks | Sort-Object)
+if (Compare-Object $expectedModelKeys $actualModelKeys) {
+    throw "Release ONNX set does not exactly match release_manifest.json."
+}
+foreach ($deckKey in $releaseDecks) {
+    $model = Get-Item -LiteralPath (Join-Path $modelRoot "$deckKey.onnx")
     $manifestRows += [ordered]@{
-        file = "models/$($model.Name)"
+        file = "models/$deckKey.onnx"
         size = $model.Length
         sha256 = (Get-FileHash -LiteralPath $model.FullName -Algorithm SHA256).Hash
     }

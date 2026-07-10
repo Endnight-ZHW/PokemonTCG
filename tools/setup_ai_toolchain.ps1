@@ -30,10 +30,18 @@ if (-not (Test-Path -LiteralPath $pythonExe)) {
     }
 }
 
+$actualPython = (& $pythonExe -c 'import platform; print(platform.python_version())').Trim()
+if ($LASTEXITCODE -ne 0 -or $actualPython -ne [string]$lock.python.version) {
+    throw "Pinned Python $($lock.python.version) is required; found '$actualPython'. Re-run with -Force."
+}
+
 & $pythonExe -m pip install --disable-pip-version-check --upgrade `
     "numpy==$($lock.python.numpy)" `
     "scons==$($lock.python.scons)" `
     "websockets==$($lock.python.websockets)" `
+    "pygame==$($lock.python.pygame)" `
+    "requests==$($lock.python.requests)" `
+    "pillow==$($lock.python.pillow)" `
     "onnx==$($lock.python.onnx)" `
     "onnxruntime==$($lock.python.onnxruntime)"
 if ($LASTEXITCODE -ne 0) {

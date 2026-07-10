@@ -370,6 +370,7 @@ class FinalizeAttackTurn:
         result = TurnManager(ctx.state).perform_action(
             PlayerAction.END_TURN,
             player_idx=self.actor,
+            bump_revision=False,
         )
         return CommandResult(
             success=result.success,

@@ -1,0 +1,12 @@
+name: PokemonTCG-ONNX-Export
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11.15
+  - pip
+  - numpy=1.26.4
+  - onnx=1.22.0
+  - onnxruntime=1.26.0
+  - pytorch=2.4.1

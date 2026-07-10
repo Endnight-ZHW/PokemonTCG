@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import gc
+import hashlib
 import json
 import math
 import os
@@ -12,6 +13,14 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, replace
 from typing import Any, Callable
+
+
+def _checkpoint_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, expand_deck
@@ -3218,6 +3227,8 @@ def evaluate_alpha_zero_league(
     games = max(0, int(config.league_eval_games))
     if games <= 0:
         return _empty_league_result("no_league_eval_games")
+    if model is None:
+        return _empty_league_result("missing_candidate_model")
     opponents = _league_checkpoint_paths(config, deck_key)
     if not opponents:
         return _empty_league_result("no_verified_league_opponents", accepted=False)
@@ -5097,8 +5108,17 @@ def run_deep_training(
             model_paths[deck_key] = save_path
             sidecar = os.path.splitext(save_path)[0] + ".json"
             with open(sidecar, "w", encoding="utf-8") as fh:
-                json.dump({"model_path": save_path, "metadata": metadata},
-                          fh, ensure_ascii=False, indent=2, sort_keys=True)
+                json.dump(
+                    {
+                        "checkpoint_sha256": _checkpoint_sha256(save_path),
+                        "model_path": save_path,
+                        "metadata": metadata,
+                    },
+                    fh,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
             resume_path = os.path.join(DEFAULT_MODEL_DIR, f"resume_{deck_key}.pt")
             if (
                 bootstrap_games

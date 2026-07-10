@@ -34,6 +34,8 @@ class PlayerSnapshot:
     healed: bool = False
     vstar_used: bool = False
     was_ko_by_attack: bool = False
+    hand_count: int = 0
+    hand_hidden: bool = False
 
 
 @dataclass
@@ -84,6 +86,10 @@ class GameSnapshot:
         }
     )
     event_stream: list[dict] = field(default_factory=list)
+    mulligan_count: tuple[int, int] = (0, 0)
+    extra_draws: tuple[int, int] = (0, 0)
+    action_log: list[str] = field(default_factory=list)
+    is_network_view: bool = False
 
 
 class SnapshotManager:
@@ -174,6 +180,10 @@ def snapshot_state(state: GameState) -> GameSnapshot:
             )
         ),
         event_stream=_snapshot_event_stream(state),
+        mulligan_count=tuple(getattr(state, "mulligan_count", (0, 0))),
+        extra_draws=tuple(getattr(state, "extra_draws", (0, 0))),
+        action_log=list(getattr(state, "action_log", ())),
+        is_network_view=bool(getattr(state, "is_network_view", False)),
     )
 
 
@@ -193,6 +203,10 @@ def restore_state(state: GameState, snap: GameSnapshot):
     state.public_deck_keys = tuple(
         getattr(snap, "public_deck_keys", (None, None))
     )
+    state.mulligan_count = tuple(getattr(snap, "mulligan_count", (0, 0)))
+    state.extra_draws = tuple(getattr(snap, "extra_draws", (0, 0)))
+    state.action_log = list(getattr(snap, "action_log", ()))
+    state.is_network_view = bool(getattr(snap, "is_network_view", False))
     state.resolution_stack = copy.deepcopy(
         getattr(
             snap,
@@ -263,6 +277,10 @@ def snapshot_to_dict(snap: GameSnapshot) -> dict:
         "public_deck_keys": list(snap.public_deck_keys),
         "resolution_stack": copy.deepcopy(snap.resolution_stack),
         "event_stream": copy.deepcopy(snap.event_stream),
+        "mulligan_count": list(snap.mulligan_count),
+        "extra_draws": list(snap.extra_draws),
+        "action_log": list(snap.action_log),
+        "is_network_view": bool(snap.is_network_view),
     }
 
 
@@ -290,6 +308,10 @@ def snapshot_from_dict(data: dict) -> GameSnapshot:
             )
         ),
         event_stream=copy.deepcopy(data.get("event_stream", [])),
+        mulligan_count=tuple(data.get("mulligan_count", [0, 0])),
+        extra_draws=tuple(data.get("extra_draws", [0, 0])),
+        action_log=[str(item) for item in data.get("action_log", [])],
+        is_network_view=bool(data.get("is_network_view", False)),
     )
 
 
@@ -340,6 +362,8 @@ def _player_snapshot_to_dict(snap: PlayerSnapshot) -> dict:
         "healed": bool(snap.healed),
         "vstar_used": bool(snap.vstar_used),
         "was_ko_by_attack": bool(snap.was_ko_by_attack),
+        "hand_count": int(snap.hand_count),
+        "hand_hidden": bool(snap.hand_hidden),
     }
 
 
@@ -370,6 +394,8 @@ def _player_snapshot_from_dict(data: dict) -> PlayerSnapshot:
         healed=bool(data.get("healed", False)),
         vstar_used=bool(data.get("vstar_used", False)),
         was_ko_by_attack=bool(data.get("was_ko_by_attack", False)),
+        hand_count=int(data.get("hand_count", len(data.get("hand_ids", [])))),
+        hand_hidden=bool(data.get("hand_hidden", False)),
     )
 
 
@@ -451,6 +477,8 @@ def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
         healed=player.healed_this_turn,
         vstar_used=player.vstar_power_used,
         was_ko_by_attack=player.was_ko_by_attack,
+        hand_count=int(getattr(player, "_hand_count", len(player.hand))),
+        hand_hidden=bool(getattr(player, "_hand_hidden", False)),
     )
 
 
@@ -470,6 +498,8 @@ def _restore_player(player: PlayerState, snap: PlayerSnapshot):
     player.healed_this_turn = snap.healed
     player.vstar_power_used = snap.vstar_used
     player.was_ko_by_attack = snap.was_ko_by_attack
+    player._hand_count = int(getattr(snap, "hand_count", len(player.hand)))
+    player._hand_hidden = bool(getattr(snap, "hand_hidden", False))
 
 
 def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:

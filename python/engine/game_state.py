@@ -117,7 +117,11 @@ class GameState:
         return self.pending_promotions.pop(0) if self.pending_promotions else -1
 
     def get_player(self, idx: int) -> PlayerState:
-        return self.p1 if idx == 0 else self.p2
+        if idx == 0:
+            return self.p1
+        if idx == 1:
+            return self.p2
+        raise ValueError(f"Invalid player index: {idx!r}")
 
     def is_first_turn(self) -> bool:
         return self.turn_number == 1

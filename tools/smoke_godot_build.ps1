@@ -13,6 +13,8 @@ $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $adb = Join-Path $sdkRoot 'platform-tools\adb.exe'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
+$release = Get-ReleaseManifest -RepoRoot $repoRoot
+$releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
@@ -84,21 +86,23 @@ if (
 }
 Write-Host 'WINDOWS_NETWORK_OK protocol=3 transports=enet,websocket'
 
+$releaseSmoke = & $windowsConsole -- --phase6-release-smoke 2>&1
+$releaseSmokeText = $releaseSmoke -join "`n"
+if (
+    $LASTEXITCODE -ne 0 -or
+    -not $releaseSmokeText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
+    -not $releaseSmokeText.Contains("models=$($releaseDecks.Count)")
+) {
+    throw "Exported Windows release model smoke test failed.`n$releaseSmokeText"
+}
+Write-Host "WINDOWS_RELEASE_MODELS_OK models=$($releaseDecks.Count) finite=1"
+
 $jar = Join-Path $jdkRoot 'bin\jar.exe'
 $apkEntries = & $jar tf $androidApk
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to list Android APK contents.'
 }
-foreach ($deckKey in @(
-    'fire',
-    'water',
-    'psychic',
-    'lightning',
-    'fighting',
-    'colorless',
-    'dragon',
-    'grass'
-)) {
+foreach ($deckKey in $releaseDecks) {
     if ("assets/data/ai_models/$deckKey.onnx" -notin $apkEntries) {
         throw "Android APK is missing the $deckKey ONNX model."
     }
@@ -111,7 +115,16 @@ foreach ($nativeEntry in @(
         throw "Android APK is missing native library: $nativeEntry"
     }
 }
-Write-Host 'ANDROID_AI_ASSETS_OK models=8 abi=arm64-v8a'
+$actualApkModels = @(
+    $apkEntries |
+        Where-Object { $_ -match '^assets/data/ai_models/[^/]+\.onnx$' } |
+        ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
+        Sort-Object
+)
+if (Compare-Object @($releaseDecks | Sort-Object) $actualApkModels) {
+    throw 'Android APK ONNX set does not exactly match release_manifest.json.'
+}
+Write-Host "ANDROID_AI_ASSETS_OK models=$($releaseDecks.Count) abi=arm64-v8a"
 
 $deviceRows = & $adb devices
 $connected = @(

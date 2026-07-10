@@ -1,20 +1,23 @@
 # PokemonTCG
 
-宝可梦集换式卡牌对战项目，同时保留当前 Godot 4.7 客户端和旧版
-Python/Pygame 开发环境。
+宝可梦集换式卡牌对战项目。Godot 4.7 是唯一发布客户端；Python 是本地
+调试、规则验证、AI 训练评估以及卡牌/卡图导入工具链。
 
 ## 版本选择
 
 | 目录 | 定位 | 状态 |
 |---|---|---|
 | [`godot/`](godot/) | 当前发布客户端 | Godot 4.7，版本 0.3.2 |
-| [`python/`](python/) | 旧版客户端、规则对照、AI 训练与数据导出 | 继续用于开发和迁移验证 |
-| [`tools/`](tools/) | Godot 工具链、测试、构建和发布脚本 | 两个版本共享 |
+| [`python/`](python/) | Pygame 本地调试、规则对照、AI 训练与数据/卡图导出 | 开发工具，不发布、不提供客户端联机 |
+| [`tools/`](tools/) | 测试、模型导出、Godot 构建和发布脚本 | 由根目录 manifest 驱动 |
 | [`docs/`](docs/) | 规则、开发手册、发布说明和 AI rollout | 项目文档 |
 
 Godot 版本已经具备本地双人、Challenge AI、Deep AI、ENet LAN 和
-WebSocket Relay。Python/Pygame 版本不再作为发布版运行时，但仍是规则对照、
-模型训练和 Godot 数据生成的权威开发环境。
+WebSocket Relay。联机双方可选择相同或不同牌组；每名玩家拥有独立的牌库、
+手牌和洗牌随机流。
+
+发布版本、协议/规则/RNG schema、Android versionCode、10 套发布牌组及模型数
+统一记录在 [`release_manifest.json`](release_manifest.json)。
 
 ## 快速开始
 
@@ -38,22 +41,22 @@ WebSocket Relay。Python/Pygame 版本不再作为发布版运行时，但仍是
 
 更多命令见 [`godot/README.md`](godot/README.md)。
 
-### Python/Pygame 旧版本
+### Python 本地调试与训练工具链
 
 ```powershell
 python -m pip install -r .\python\requirements.txt
 python .\python\main.py
 ```
 
-需要训练 AI 时安装 `python/requirements-ai.txt`，或使用
-`python/environment.yml` 创建/更新 `DL` Conda 环境；Deep AI 训练和 ONNX 导出命令
-默认通过 `conda run -n DL python -B ...` 执行。更多说明见
+Pygame 只启动本地 `DebugMatchSession`，不包含 Lobby 或客户端网络状态。
+GPU 训练使用精确锁定的 `python/environment.yml`；发布 ONNX 使用
+`python/environment-export.yml` 或 `tools/setup_ai_toolchain.ps1` 创建的 CPU 环境。
+更多说明见
 [`python/README.md`](python/README.md)。
 
 ### Relay 服务
 
-Godot 客户端使用协议 v3；旧 Pygame 联机客户端使用旧协议，两者不能直接互联。
-共享 Relay 服务支持两种协议入口：
+Relay 仅验证并转发 Godot protocol v3 消息，不承载 Python 客户端协议：
 
 ```powershell
 .\.tools\python311\python.exe .\python\relay_server.py --host 0.0.0.0 --port 8766
@@ -62,16 +65,16 @@ Godot 客户端使用协议 v3；旧 Pygame 联机客户端使用旧协议，两
 ## 验证
 
 ```powershell
-# Python
-Set-Location .\python
-..\.tools\python311\python.exe -B -m unittest discover -q
-Set-Location ..
+# 每次提交
+.\tools\test_fast.ps1
 
-# Godot 数据与运行时
-.\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
-.\tools\test_godot.ps1
-.\tools\test_godot_ai.ps1
-.\tools\test_godot_network.ps1
+# 完整 Python + Godot core/network + ONNX parity
+.\tools\test_standard.ps1
+
+# 发布前
+.\tools\test_godot_ai.ps1 -RequireDeepRuntime
+.\tools\smoke_godot_build.ps1
+.\tools\test_release.ps1
 ```
 
 ## 文档

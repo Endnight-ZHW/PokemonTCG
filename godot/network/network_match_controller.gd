@@ -1,6 +1,13 @@
 class_name NetworkMatchController
 extends RefCounted
 
+enum ConnectionPhase {
+	CONNECTING,
+	LOBBY,
+	PLAYING,
+	CLOSED,
+}
+
 var transport: NetTransport
 var session: AuthoritativeSession
 var host := false
@@ -13,6 +20,8 @@ var receive_sequence := 0
 var current_revision := -1
 var awaiting_update := false
 var connected := false
+var connection_phase: ConnectionPhase = ConnectionPhase.CLOSED
+var deck_selection_sent := false
 var last_receive_msec := 0
 var last_send_msec := 0
 const HEARTBEAT_INTERVAL_MSEC := 15000
@@ -33,6 +42,7 @@ func host_lan(port: int, deck_key: String, match_seed: int = -1) -> Error:
 	if error == OK:
 		transport = enet
 		session = AuthoritativeSession.new(room_id)
+		connection_phase = ConnectionPhase.CONNECTING
 	return error
 
 
@@ -45,6 +55,7 @@ func join_lan(address: String, port: int, deck_key: String) -> Error:
 	var error := enet.start_client(address, port)
 	if error == OK:
 		transport = enet
+		connection_phase = ConnectionPhase.CONNECTING
 	return error
 
 
@@ -58,6 +69,7 @@ func host_relay(relay_url: String, deck_key: String, match_seed: int = -1) -> Er
 	var error := relay.start_host(relay_url)
 	if error == OK:
 		transport = relay
+		connection_phase = ConnectionPhase.CONNECTING
 	return error
 
 
@@ -71,6 +83,7 @@ func join_relay(relay_url: String, target_room: String, deck_key: String) -> Err
 	var error := relay.start_client(relay_url, target_room)
 	if error == OK:
 		transport = relay
+		connection_phase = ConnectionPhase.CONNECTING
 	return error
 
 
@@ -85,7 +98,10 @@ func poll() -> Array[Dictionary]:
 					session = AuthoritativeSession.new(room_id)
 				events.append(event)
 			"connected":
+				if connection_phase != ConnectionPhase.CONNECTING:
+					continue
 				connected = true
+				connection_phase = ConnectionPhase.LOBBY
 				last_receive_msec = Time.get_ticks_msec()
 				last_send_msec = last_receive_msec
 				if room_id.is_empty():
@@ -103,14 +119,22 @@ func poll() -> Array[Dictionary]:
 					events.append({"type": "transport_connected", "room_id": room_id})
 			"message":
 				_handle_message(event.get("message", {}))
-			"disconnected", "connection_failed", "transport_error":
+			"disconnected", "connection_failed":
 				connected = false
+				connection_phase = ConnectionPhase.CLOSED
 				events.append(event)
+			"transport_error":
+				connected = false
+				connection_phase = ConnectionPhase.CLOSED
+				transport.close()
+				events.append(event)
+				events.append({"type": "disconnected", "reason": "transport_error"})
 	var now := Time.get_ticks_msec()
 	if connected and now - last_send_msec >= HEARTBEAT_INTERVAL_MSEC:
 		_send(ProtocolV3.PING, {}, get_revision())
 	if connected and now - last_receive_msec >= CONNECTION_TIMEOUT_MSEC:
 		connected = false
+		connection_phase = ConnectionPhase.CLOSED
 		events.append({"type": "disconnected", "reason": "timeout"})
 	return _drain_events()
 
@@ -120,7 +144,7 @@ func needs_poll() -> bool:
 
 
 func submit_action(action: GameAction) -> bool:
-	if player_idx < 0:
+	if player_idx < 0 or connection_phase != ConnectionPhase.PLAYING:
 		return false
 	if not host and awaiting_update:
 		return false
@@ -149,7 +173,7 @@ func submit_action(action: GameAction) -> bool:
 
 
 func submit_choice(response: ChoiceResponse) -> bool:
-	if player_idx < 0:
+	if player_idx < 0 or connection_phase != ConnectionPhase.PLAYING:
 		return false
 	if not host and awaiting_update:
 		return false
@@ -172,6 +196,8 @@ func submit_choice(response: ChoiceResponse) -> bool:
 
 
 func surrender() -> void:
+	if connection_phase != ConnectionPhase.PLAYING:
+		return
 	if host:
 		if session != null:
 			var step := session.surrender(0)
@@ -181,7 +207,7 @@ func surrender() -> void:
 
 
 func request_resync() -> void:
-	if not host:
+	if not host and connection_phase == ConnectionPhase.PLAYING:
 		_send(ProtocolV3.RESYNC_REQUEST, {}, get_revision())
 
 
@@ -206,6 +232,8 @@ func close() -> void:
 	current_revision = -1
 	awaiting_update = false
 	connected = false
+	connection_phase = ConnectionPhase.CLOSED
+	deck_selection_sent = false
 	last_receive_msec = 0
 	last_send_msec = 0
 	events.clear()
@@ -257,6 +285,20 @@ func _handle_message(message: Variant) -> void:
 			"message": message_text,
 		})
 		return
+	if (
+		message_type == ProtocolV3.STATE_UPDATE
+		and int(row["state_revision"])
+		!= int(Dictionary(payload["state"]).get("revision", -1))
+	):
+		awaiting_update = false
+		events.append({
+			"type": "error",
+			"code": "revision_mismatch",
+			"message": "状态消息的局面版本不一致。",
+		})
+		if not host:
+			request_resync()
+		return
 	if host:
 		_handle_host_message(row, message_type, payload)
 	else:
@@ -270,6 +312,17 @@ func _handle_host_message(
 ) -> void:
 	match message_type:
 		ProtocolV3.DECK_SELECT:
+			if connection_phase != ConnectionPhase.LOBBY:
+				_reject("invalid_phase", "牌组只能在大厅阶段选择。")
+				return
+			if (
+				int(payload.get("rules_version", -1))
+				!= AppState.RULES_SCHEMA_VERSION
+				or int(payload.get("action_version", -1))
+				!= AppState.ACTION_SCHEMA_VERSION
+			):
+				_reject("schema_mismatch", "规则或动作版本不兼容。")
+				return
 			var deck_key := str(payload.get("deck_key", ""))
 			if not CardCatalog.new().decks.has(deck_key):
 				_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
@@ -281,8 +334,11 @@ func _handle_host_message(
 				_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
 					result.error_code, result.message))
 				return
+			connection_phase = ConnectionPhase.PLAYING
 			_broadcast_state(result.events)
 		ProtocolV3.ACTION_SUBMIT:
+			if not _remote_message_allowed_while_playing():
+				return
 			if not _revision_matches(row):
 				return
 			var action_data: Dictionary = payload["action"]
@@ -295,6 +351,8 @@ func _handle_host_message(
 				return
 			_broadcast_state(step.events)
 		ProtocolV3.CHOICE_SUBMIT:
+			if not _remote_message_allowed_while_playing():
+				return
 			if not _revision_matches(row):
 				return
 			var response_data: Dictionary = payload["response"]
@@ -307,8 +365,11 @@ func _handle_host_message(
 				return
 			_broadcast_state(step.events)
 		ProtocolV3.RESYNC_REQUEST:
-			_send_state_to_client()
+			if _remote_message_allowed_while_playing():
+				_send_state_to_client()
 		ProtocolV3.SURRENDER:
+			if not _remote_message_allowed_while_playing():
+				return
 			var step := session.surrender(1)
 			_broadcast_state(step.events)
 		ProtocolV3.PING:
@@ -320,13 +381,64 @@ func _handle_host_message(
 func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 	match message_type:
 		ProtocolV3.WELCOME:
+			if (
+				connection_phase != ConnectionPhase.LOBBY
+				or deck_selection_sent
+			):
+				events.append({
+					"type": "error",
+					"code": "invalid_phase",
+					"message": "欢迎消息只能处理一次。",
+				})
+				return
+			if (
+				int(payload.get("rules_version", -1))
+				!= AppState.RULES_SCHEMA_VERSION
+				or int(payload.get("action_version", -1))
+				!= AppState.ACTION_SCHEMA_VERSION
+			):
+				connected = false
+				connection_phase = ConnectionPhase.CLOSED
+				if transport != null:
+					transport.close()
+				events.append({
+					"type": "error",
+					"code": "schema_mismatch",
+					"message": "规则或动作版本不兼容。",
+				})
+				events.append({"type": "disconnected", "reason": "schema_mismatch"})
+				return
 			player_idx = int(payload.get("player_idx", 1))
-			_send(ProtocolV3.DECK_SELECT, {"deck_key": local_deck_key})
+			deck_selection_sent = _send(
+				ProtocolV3.DECK_SELECT,
+				{
+					"deck_key": local_deck_key,
+					"rules_version": AppState.RULES_SCHEMA_VERSION,
+					"action_version": AppState.ACTION_SCHEMA_VERSION,
+				},
+			)
+			if not deck_selection_sent:
+				events.append({
+					"type": "transport_error",
+					"code": "deck_select_send_failed",
+				})
+				return
 			events.append({"type": "connected", "player_idx": player_idx, "room_id": room_id})
 		ProtocolV3.STATE_UPDATE:
+			if connection_phase not in [
+				ConnectionPhase.LOBBY,
+				ConnectionPhase.PLAYING,
+			]:
+				events.append({
+					"type": "error",
+					"code": "invalid_phase",
+					"message": "当前阶段不能接收局面同步。",
+				})
+				return
 			var state_payload: Dictionary = payload["state"]
 			current_revision = int(state_payload.get("revision", -1))
 			awaiting_update = false
+			connection_phase = ConnectionPhase.PLAYING
 			events.append({
 				"type": "state",
 				"view": payload,
@@ -372,6 +484,13 @@ func _revision_matches(row: Dictionary) -> bool:
 	return true
 
 
+func _remote_message_allowed_while_playing() -> bool:
+	if connection_phase == ConnectionPhase.PLAYING:
+		return true
+	_reject("invalid_phase", "对局尚未开始或已经结束。")
+	return false
+
+
 func _broadcast_state(presentation_events: Array = []) -> void:
 	if session == null or session.state == null:
 		return
@@ -406,18 +525,19 @@ func _send(
 ) -> bool:
 	if transport == null or not transport.connected_state():
 		return false
-	send_sequence += 1
+	var next_sequence := send_sequence + 1
 	var sent := transport.send(ProtocolV3.envelope(
 		message_type,
 		room_id,
 		0 if host else 1,
-		send_sequence,
+		next_sequence,
 		state_revision,
 		action_id,
 		request_id,
 		payload,
 	))
 	if sent:
+		send_sequence = next_sequence
 		last_send_msec = Time.get_ticks_msec()
 	return sent
 

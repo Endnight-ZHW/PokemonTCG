@@ -1,10 +1,10 @@
-# Python/Pygame 版本与迁移工具
+# Python 本地调试与训练工具链
 
-该目录包含旧版 Pygame 客户端、Python 规则引擎、AI 训练代码、测试和
-Godot 数据导出工具。它继续作为迁移对照和开发环境，但不会进入 Godot
-Windows/Android 发布包。
+该目录包含 Pygame 本地调试界面、Python 规则参考实现、AI 训练评估、测试、
+Godot 数据/卡图导入和 protocol v3 Relay 服务端。Python 不作为发布客户端，
+不提供 Lobby 或客户端联机，也不会进入 Godot Windows/Android 发布包。
 
-## 运行旧客户端
+## 运行本地调试界面
 
 从仓库根目录执行：
 
@@ -20,7 +20,9 @@ Set-Location .\python
 python main.py
 ```
 
-## AI 训练环境
+界面通过 `DebugMatchSession` 直接调用本地规则引擎，仅支持本地双人和 AI 调试。
+
+## AI 训练与导出环境
 
 ```powershell
 conda env create -f .\python\environment.yml
@@ -29,7 +31,15 @@ $env:PYTHONNOUSERSITE = '1'
 conda run -n DL python -B .\python\scripts\train_deep_ai.py --help
 ```
 
-仅使用 pip 时：
+`environment.yml` 是 GPU 训练锁文件；发布 ONNX 使用独立的 CPU 锁定环境：
+
+```powershell
+conda env create -f .\python\environment-export.yml
+# 或创建仓库内 .tools/python311
+.\tools\setup_ai_toolchain.ps1
+```
+
+仅运行 Pygame/规则测试时：
 
 ```powershell
 python -m pip install -r .\python\requirements.txt
@@ -169,12 +179,13 @@ Set-Location .\python
 
 导出目标固定为仓库中的 `godot/`。
 
-## 旧版打包与 Relay
+## Relay 服务端
 
 ```powershell
-Set-Location .\python
-python build_exe.py
-python relay_server.py --host 0.0.0.0 --port 8766
+.\.tools\python311\python.exe .\python\relay_server.py --host 0.0.0.0 --port 8766
 ```
+
+Relay 仅接受 Godot protocol v3 控制消息和游戏帧；旧 Python v2 客户端协议及
+PyInstaller 发布入口不再维护。
 
 游戏规则文档位于 [`../docs/RULES.md`](../docs/RULES.md)。

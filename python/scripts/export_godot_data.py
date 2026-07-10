@@ -5,6 +5,7 @@ import argparse
 import dataclasses
 import hashlib
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -58,9 +59,10 @@ from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import GameEngine
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
-from engine.random_source import ScriptedRandomSource
+from engine.random_source import PortableRandomSourceV1
 
 DEFAULT_OUTPUT = REPO_ROOT / "godot"
+RELEASE_MANIFEST_PATH = REPO_ROOT / "release_manifest.json"
 CARD_ASSET_EXTS = {".webp", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff"}
 
 DECKS = {
@@ -116,18 +118,23 @@ DECKS = {
     },
 }
 
-DEEP_AI_MODEL_DECK_KEYS = (
-    "fire",
-    "water",
-    "psychic",
-    "lightning",
-    "fighting",
-    "colorless",
-    "dragon",
-    "grass",
-    "steel",
-    "darkness",
-)
+
+def _release_manifest() -> dict[str, Any]:
+    payload = json.loads(RELEASE_MANIFEST_PATH.read_text(encoding="utf-8"))
+    release_decks = payload.get("release_decks")
+    if not isinstance(release_decks, list) or not all(
+        isinstance(key, str) and key for key in release_decks
+    ):
+        raise RuntimeError("release_manifest.json has an invalid release_decks list")
+    if len(release_decks) != len(set(release_decks)):
+        raise RuntimeError("release_manifest.json contains duplicate release deck keys")
+    if int(payload.get("model_count") or 0) != len(release_decks):
+        raise RuntimeError("release_manifest.json model_count does not match release_decks")
+    if set(release_decks) != set(DECKS):
+        raise RuntimeError("release_manifest.json release_decks do not match Python deck data")
+    return payload
+
+DEEP_AI_MODEL_DECK_KEYS = tuple(_release_manifest()["release_decks"])
 
 
 def _json_value(value: Any) -> Any:
@@ -163,7 +170,62 @@ def _sha256(path: Path) -> str:
 
 def _load_image_mapping() -> dict[str, str]:
     mapping_path = PYTHON_ROOT / "data" / "card_image_mapping.json"
-    return json.loads(mapping_path.read_text(encoding="utf-8"))
+    mapping = _parse_image_mapping(mapping_path.read_text(encoding="utf-8"))
+    return _validate_image_mapping(mapping)
+
+
+def _parse_image_mapping(text: str) -> dict[str, str]:
+    pairs = json.loads(text, object_pairs_hook=lambda rows: rows)
+    if not isinstance(pairs, list):
+        raise ValueError("Card image mapping must be a JSON object")
+    duplicate_ids: set[str] = set()
+    mapping: dict[str, str] = {}
+    for key, value in pairs:
+        card_id = str(key)
+        if card_id in mapping:
+            duplicate_ids.add(card_id)
+        mapping[card_id] = value
+    if duplicate_ids:
+        raise ValueError(
+            "Duplicate card image mapping IDs: " + ", ".join(sorted(duplicate_ids))
+        )
+    return mapping
+
+
+def _validate_image_mapping(
+    mapping: dict[str, str],
+    *,
+    python_root: Path = PYTHON_ROOT,
+    card_ids: list[str] | tuple[str, ...] = ALL_CARD_IDS,
+) -> dict[str, str]:
+    release_ids = list(card_ids)
+    if len(release_ids) != len(set(release_ids)):
+        raise ValueError("Release deck data contains duplicate card IDs")
+    missing = sorted(set(release_ids) - set(mapping))
+    if missing:
+        raise ValueError("Missing card image mappings: " + ", ".join(missing))
+    images_root = (python_root / "data" / "images").resolve()
+    normalized: dict[str, str] = {}
+    for card_id in sorted(set(release_ids)):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", card_id):
+            raise ValueError(f"Unsafe card ID for export target: {card_id!r}")
+        source_value = mapping.get(card_id)
+        if not isinstance(source_value, str) or not source_value.strip():
+            raise ValueError(f"Invalid card image mapping for {card_id}")
+        relative = Path(source_value.replace("\\", "/"))
+        source = (python_root / relative).resolve()
+        try:
+            source.relative_to(images_root)
+        except ValueError:
+            raise ValueError(
+                f"Card image source escapes data/images for {card_id}: {source_value}"
+            ) from None
+        if not source.is_file():
+            raise FileNotFoundError(f"Missing card image source for {card_id}: {source}")
+        if source.suffix.lower() not in CARD_ASSET_EXTS:
+            raise ValueError(f"Unsupported card image extension for {card_id}: {source.suffix}")
+        normalized[card_id] = source.relative_to(python_root.resolve()).as_posix()
+    return normalized
 
 
 def _image_paths(mapping: dict[str, str]) -> dict[str, str]:
@@ -180,6 +242,15 @@ def _image_paths(mapping: dict[str, str]) -> dict[str, str]:
     return exported
 
 
+def _image_hashes(mapping: dict[str, str]) -> dict[str, str]:
+    release_ids = set(ALL_CARD_IDS)
+    return {
+        card_id: _sha256(PYTHON_ROOT / Path(source_value))
+        for card_id, source_value in sorted(mapping.items())
+        if card_id in release_ids
+    }
+
+
 def _export_images(output: Path, mapping: dict[str, str]) -> dict[str, str]:
     target_root = output / "assets" / "cards"
     target_root.mkdir(parents=True, exist_ok=True)
@@ -189,6 +260,8 @@ def _export_images(output: Path, mapping: dict[str, str]) -> dict[str, str]:
         source = PYTHON_ROOT / Path(source_value.replace("\\", "/"))
         target = target_root / Path(target_path).name
         shutil.copy2(source, target)
+        if _sha256(source) != _sha256(target):
+            raise OSError(f"Card image copy checksum mismatch: {card_id}")
 
     card_back = PYTHON_ROOT / "data" / "images" / "卡背.webp"
     if card_back.is_file():
@@ -656,8 +729,6 @@ def _state_summary(state: GameState) -> dict[str, Any]:
     payload.pop("resolution_stack", None)
     payload.pop("setup_ready", None)
     payload.pop("processed_action_ids", None)
-    payload.pop("revision", None)
-    payload.pop("choice_sequence", None)
     return payload
 
 
@@ -682,6 +753,8 @@ def _cobalion_attack_choice_case(
     *,
     cancel_choice: bool,
 ) -> dict[str, Any]:
+    portable_seed = 700
+    rng = PortableRandomSourceV1(portable_seed)
     state = _base_golden_state()
     state.turn_number = 3
     state.first_player_idx = 0
@@ -702,7 +775,7 @@ def _cobalion_attack_choice_case(
     step = engine.apply_action(
         state,
         GameAction(PlayerAction.DECLARE_ATTACK, actions[0]["params"], actor=0),
-        ScriptedRandomSource(seed=20),
+        rng,
         auto_resolve=False,
     )
     if not step.success or step.pending_choice is None:
@@ -723,11 +796,12 @@ def _cobalion_attack_choice_case(
         state,
         step.pending_choice,
         response,
-        ScriptedRandomSource(seed=21 if not cancel_choice else 22),
+        rng,
     )
     if not result.success:
         raise RuntimeError(f"Golden pending attack choice failed: {result.message}")
     return {
+        "portable_seed": portable_seed,
         "initial_state": initial,
         "actions": actions,
         "pending_after_action": {
@@ -777,6 +851,7 @@ def _cobalion_attack_choice_case(
             "cancelled": response.cancelled,
         },
         "expected": _state_summary(state),
+        "expected_rng_state": rng.get_state(),
     }
 
 
@@ -792,19 +867,23 @@ def _golden_action_cases() -> dict[str, Any]:
         {"action": "ATTACH_ENERGY", "params": {"hand_idx": 0, "target_slot": "active"}, "actor": 0},
         {"action": "DECLARE_ATTACK", "params": {"attack_idx": 0}, "actor": 0},
     ]
+    portable_seed = 700
+    rng = PortableRandomSourceV1(portable_seed)
     for row in actions:
         result = engine.apply_action(
             state,
             GameAction(PlayerAction[row["action"]], row["params"], actor=row["actor"]),
-            ScriptedRandomSource([True, True], seed=17),
+            rng,
             auto_resolve=True,
         )
         if not result.success:
             raise RuntimeError(f"Golden action failed: {row}: {result.message}")
     cases["basic_attach_attack"] = {
+        "portable_seed": portable_seed,
         "initial_state": initial,
         "actions": actions,
         "expected": _state_summary(state),
+        "expected_rng_state": rng.get_state(),
     }
 
     state = _base_golden_state()
@@ -818,17 +897,21 @@ def _golden_action_cases() -> dict[str, Any]:
         "params": {"bench_idx": 0, "energy_indices": [0]},
         "actor": 0,
     }]
+    portable_seed = 700
+    rng = PortableRandomSourceV1(portable_seed)
     result = engine.apply_action(
         state,
         GameAction(PlayerAction.RETREAT, actions[0]["params"], actor=0),
-        ScriptedRandomSource(seed=18),
+        rng,
     )
     if not result.success:
         raise RuntimeError(f"Golden retreat failed: {result.message}")
     cases["double_turbo_retreat"] = {
+        "portable_seed": portable_seed,
         "initial_state": initial,
         "actions": actions,
         "expected": _state_summary(state),
+        "expected_rng_state": rng.get_state(),
     }
 
     state = _base_golden_state()
@@ -842,17 +925,21 @@ def _golden_action_cases() -> dict[str, Any]:
         "params": {"hand_idx": 0, "slot": "active"},
         "actor": 0,
     }]
+    portable_seed = 700
+    rng = PortableRandomSourceV1(portable_seed)
     result = engine.apply_action(
         state,
         GameAction(PlayerAction.EVOLVE, actions[0]["params"], actor=0),
-        ScriptedRandomSource(seed=19),
+        rng,
     )
     if not result.success:
         raise RuntimeError(f"Golden evolution failed: {result.message}")
     cases["evolution_preserves_attachments"] = {
+        "portable_seed": portable_seed,
         "initial_state": initial,
         "actions": actions,
         "expected": _state_summary(state),
+        "expected_rng_state": rng.get_state(),
     }
 
     cases["pending_attack_choice_continuation"] = _cobalion_attack_choice_case(
@@ -863,7 +950,7 @@ def _golden_action_cases() -> dict[str, Any]:
         engine,
         cancel_choice=True,
     )
-    return {"fixture_version": 1, "cases": cases}
+    return {"fixture_version": 2, "rng_algorithm": "xorshift32-v1", "cases": cases}
 
 
 def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
@@ -873,6 +960,7 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
         if copy_images
         else _image_paths(image_mapping)
     )
+    image_hashes = _image_hashes(image_mapping)
     cards = _card_payload(image_paths)
     decks = _deck_payload()
 
@@ -881,11 +969,13 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     _write_json(data_root / "effects.json", _json_value(CARD_EFFECTS))
     _write_json(data_root / "decks.json", decks)
     _write_json(data_root / "card_images.json", image_paths)
+    _write_json(data_root / "card_image_hashes.json", image_hashes)
     _write_json(
         data_root / "card_buckets.json",
         {card_id: cards[card_id]["card_bucket"] for card_id in sorted(cards)},
     )
     _write_json(data_root / "ai_models.json", _model_manifest())
+    _write_json(data_root / "release_manifest.json", _release_manifest())
     golden = _golden_contract(cards, decks)
     _write_json(output / "tests" / "fixtures" / "data_contract.json", golden)
     _write_json(
@@ -915,8 +1005,10 @@ def main() -> None:
                 Path("data/effects.json"),
                 Path("data/decks.json"),
                 Path("data/card_images.json"),
+                Path("data/card_image_hashes.json"),
                 Path("data/card_buckets.json"),
                 Path("data/ai_models.json"),
+                Path("data/release_manifest.json"),
                 Path("tests/fixtures/data_contract.json"),
                 Path("tests/fixtures/rules_golden.json"),
             ]

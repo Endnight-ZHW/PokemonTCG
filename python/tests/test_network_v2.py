@@ -1,4 +1,5 @@
 """Protocol v2 and multiplayer transport tests."""
+import json
 import os
 import socket
 import sys
@@ -184,7 +185,7 @@ class ProtocolV2Tests(unittest.TestCase):
             client.stop()
             host.stop()
 
-    def test_relay_transport_forwards_v2_messages(self):
+    def test_relay_rejects_protocol_v2_messages(self):
         from relay_server import handle_client, rooms, rooms_lock
 
         port = _free_port()
@@ -194,23 +195,27 @@ class ProtocolV2Tests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
 
-        host = NetworkManager()
-        client = NetworkManager()
+        host = websockets.sync.client.connect(f"ws://127.0.0.1:{port}")
+        client = websockets.sync.client.connect(f"ws://127.0.0.1:{port}")
         try:
-            host.connect_to_relay("127.0.0.1", port, is_host=True)
-            room_msg = _drain_until(host, "room_created")
-            client.connect_to_relay(
-                "127.0.0.1", port, is_host=False, room_code=room_msg["room_id"]
-            )
-            _wait_for(lambda: host.is_connected and client.is_connected)
+            host.send('{"type":"create_room"}')
+            room = json.loads(host.recv(timeout=2))["room_id"]
+            client.send(json.dumps({"type": "join_room", "room_id": room}))
+            self.assertEqual(json.loads(client.recv(timeout=2))["type"], "room_joined")
+            self.assertEqual(json.loads(host.recv(timeout=2))["type"], "opponent_joined")
+            self.assertEqual(json.loads(client.recv(timeout=2))["type"], "opponent_joined")
 
-            client.send({"type": "relay_probe", "payload": 2})
-            received = _drain_until(host, "relay_probe")
-            self.assertEqual(received["version"], PROTOCOL_VERSION)
-            self.assertEqual(received["payload"], 2)
+            client.send(json.dumps(envelope_message({
+                "type": "relay_probe",
+                "payload": 2,
+            }, 1)))
+            rejected = json.loads(client.recv(timeout=2))
+            self.assertEqual(rejected["type"], "error")
+            self.assertEqual(rejected["expected_version"], 3)
+            self.assertIn("v3", rejected["message"])
         finally:
-            client.stop()
-            host.stop()
+            client.close()
+            host.close()
             server.shutdown()
             thread.join(timeout=2.0)
             with rooms_lock:
@@ -279,6 +284,73 @@ class ProtocolV2Tests(unittest.TestCase):
             thread.join(timeout=2.0)
             with rooms_lock:
                 rooms.clear()
+
+
+class RelayV3BoundaryTests(unittest.TestCase):
+    def tearDown(self):
+        from relay_server import rooms, rooms_lock
+
+        with rooms_lock:
+            rooms.clear()
+
+    def test_control_handshake_is_strict_and_bounded(self):
+        from relay_server import (
+            MAX_CONTROL_MESSAGE_BYTES,
+            _parse_control_message,
+        )
+
+        message, error = _parse_control_message('{"type":"create_room"}')
+        self.assertEqual(message, {"type": "create_room"})
+        self.assertEqual(error, "")
+
+        message, error = _parse_control_message(json.dumps({
+            "type": "join_room",
+            "room_id": "../../etc",
+        }))
+        self.assertIsNone(message)
+        self.assertIn("格式", error)
+
+        message, error = _parse_control_message(
+            "x" * (MAX_CONTROL_MESSAGE_BYTES + 1)
+        )
+        self.assertIsNone(message)
+        self.assertIn("大小", error)
+
+        message, error = _parse_control_message(b"binary")
+        self.assertIsNone(message)
+        self.assertIn("文本", error)
+
+    def test_room_guest_slot_is_claimed_atomically(self):
+        from relay_server import _create_room, _join_room, rooms
+
+        host = object()
+        guests = [object(), object()]
+        room_id = _create_room(host)
+        barrier = threading.Barrier(3)
+        results = []
+
+        def join(guest):
+            barrier.wait()
+            results.append(_join_room(guest, room_id))
+
+        threads = [threading.Thread(target=join, args=(guest,)) for guest in guests]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(timeout=2)
+
+        self.assertEqual(sum(room is not None for room, _ in results), 1)
+        self.assertEqual(sum(error == "房间已满" for _, error in results), 1)
+        self.assertIn(rooms[room_id]["p2"], guests)
+
+    def test_rate_limiter_counts_control_and_game_messages(self):
+        from relay_server import _RateLimiter
+
+        limiter = _RateLimiter(limit=2)
+        self.assertTrue(limiter.allow())
+        self.assertTrue(limiter.allow())
+        self.assertFalse(limiter.allow())
 
 
 if __name__ == "__main__":

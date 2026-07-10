@@ -20,15 +20,16 @@ var elapsed := 0.0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	set_process(true)
 	_resolve_nodes()
 	_ensure_connections()
+	if not AppSettings.changed.is_connected(_apply_runtime_settings):
+		AppSettings.changed.connect(_apply_runtime_settings)
 	victory_panel.resized.connect(_center_panel_pivot)
 	_center_panel_pivot()
 	_refresh()
 	if not AppSettings.reduced_motion:
 		animation_player.play("enter")
-	_spawn_confetti()
+	_apply_runtime_settings()
 
 
 func configure(
@@ -86,6 +87,21 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+func _apply_runtime_settings() -> void:
+	if AppSettings.reduced_motion:
+		particles.clear()
+		set_process(false)
+		if animation_player:
+			animation_player.stop()
+	else:
+		var desired_count := _confetti_count()
+		if particles.size() != desired_count:
+			particles.clear()
+			_spawn_confetti()
+		set_process(true)
+	queue_redraw()
+
+
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color("#09111f"))
 	var strips := 32
@@ -134,7 +150,7 @@ func _spawn_confetti() -> void:
 		DesignTokens.GREEN,
 		DesignTokens.PURPLE,
 	]
-	var count := 34 if AppSettings.resolved_quality_profile() == "low" else 70
+	var count := _confetti_count()
 	for _index in range(count):
 		particles.append({
 			"position": Vector2(randf_range(0, maxf(1, size.x)), randf_range(-size.y, 0)),
@@ -144,3 +160,7 @@ func _spawn_confetti() -> void:
 			"rotation": randf_range(0, TAU),
 			"spin": randf_range(-3.0, 3.0),
 		})
+
+
+func _confetti_count() -> int:
+	return 34 if AppSettings.resolved_quality_profile() == "low" else 70

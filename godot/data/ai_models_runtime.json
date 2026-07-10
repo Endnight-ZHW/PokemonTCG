@@ -9,7 +9,7 @@
     "python_rules_version": 2,
     "version": 1
   },
-  "elapsed_seconds": 2.566,
+  "elapsed_seconds": 2.375,
   "execution_provider": "CPUExecutionProvider",
   "format_version": 2,
   "inference_format": "onnx-fp32",
@@ -30,13 +30,13 @@
       "deck_key": "colorless",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/colorless.onnx",
-      "onnx_sha256": "9873b2e8e6cc4baaf3f54c43959f54075a101d9e5c8ea57dc4149629b098aa0e",
-      "onnx_size": 5507951,
+      "onnx_sha256": "a4245b4707af87d7eb2c606c34f55d597cc0d0eaff249ca74b5dfb34d6944935",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 7.62939453125e-06,
+        "action_logits": 5.7220458984375e-06,
         "choice_logits": 1.9073486328125e-05,
-        "state_value": 6.05359673500061e-09
+        "state_value": 8.381903171539307e-09
       },
       "planner_version": 1,
       "rules_version": 2
@@ -49,13 +49,13 @@
       "deck_key": "darkness",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/darkness.onnx",
-      "onnx_sha256": "8728bf4d839d67b7edf610720ce7f77ed839ac9211c643daa50de6155e1c9660",
-      "onnx_size": 5507951,
+      "onnx_sha256": "cc41de6bf2f0e3b9b52fbb7b88375902a7ec308b15331c91e859fb1c68cc51b5",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 9.5367431640625e-06,
+        "action_logits": 7.62939453125e-06,
         "choice_logits": 1.52587890625e-05,
-        "state_value": 7.450580596923828e-09
+        "state_value": 1.1175870895385742e-08
       },
       "planner_version": 1,
       "rules_version": 2
@@ -68,13 +68,13 @@
       "deck_key": "dragon",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/dragon.onnx",
-      "onnx_sha256": "edd442b44fc652498cdea2eaa15b653a1aa9696bc18e102162fa8576a4ee8ddb",
-      "onnx_size": 5507951,
+      "onnx_sha256": "46bd0a6194ee8fe6ff36f39c97f6547f3b639ce6994f406a8a03a2fa1c92de26",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 9.5367431640625e-06,
+        "action_logits": 8.58306884765625e-06,
         "choice_logits": 3.814697265625e-06,
-        "state_value": 8.381903171539307e-09
+        "state_value": 7.450580596923828e-09
       },
       "planner_version": 1,
       "rules_version": 2
@@ -87,13 +87,13 @@
       "deck_key": "fighting",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/fighting.onnx",
-      "onnx_sha256": "776498ef9ae1b1d2743982e8e928f7ac88ecfd06ca5a56209df0e45baa49be97",
-      "onnx_size": 5507951,
+      "onnx_sha256": "39119941ba5eb3b8a02f6ac130e1fa3bb70095dce600c305ed9931aaeee771b7",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 2.384185791015625e-05,
-        "choice_logits": 6.705522537231445e-08,
-        "state_value": 5.587935447692871e-09
+        "action_logits": 2.47955322265625e-05,
+        "choice_logits": 5.960464477539063e-08,
+        "state_value": 6.05359673500061e-09
       },
       "planner_version": 1,
       "rules_version": 2
@@ -106,13 +106,13 @@
       "deck_key": "fire",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/fire.onnx",
-      "onnx_sha256": "3c5fe3bf290ed8fc974ae5e107e607878dc3c69b49af7b48fa4c69b03a066405",
-      "onnx_size": 5507951,
+      "onnx_sha256": "6431c1e6ec02cb49b4bc4a72c27397f4bb403096b3c839bc87dc1f61b6ebd708",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 1.9073486328125e-05,
-        "choice_logits": 8.940696716308594e-08,
-        "state_value": 1.1641532182693481e-08
+        "action_logits": 2.09808349609375e-05,
+        "choice_logits": 5.587935447692871e-08,
+        "state_value": 1.6763806343078613e-08
       },
       "planner_version": 1,
       "rules_version": 2
@@ -125,13 +125,13 @@
       "deck_key": "grass",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/grass.onnx",
-      "onnx_sha256": "7cd4a979b409b0c7acaec8d5296e2ee6b8b22fac8961e4fe3daa6eb562c9b8c4",
-      "onnx_size": 5507951,
+      "onnx_sha256": "ca591fe9ce9d4f1bc60fbf0f9062cd76049777ceab27f1a91956a2cd3e3f90a8",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 1.9073486328125e-05,
-        "choice_logits": 1.0803341865539551e-07,
-        "state_value": 1.6763806343078613e-08
+        "action_logits": 1.52587890625e-05,
+        "choice_logits": 1.2293457984924316e-07,
+        "state_value": 1.3969838619232178e-08
       },
       "planner_version": 1,
       "rules_version": 2
@@ -144,13 +144,13 @@
       "deck_key": "lightning",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/lightning.onnx",
-      "onnx_sha256": "ea7858ca7480bd5fa8d44af6d78c6e17166190c3395b78adfa3260239bdbc9de",
-      "onnx_size": 5507951,
+      "onnx_sha256": "a8b19e0803656eb39ef498682e21d07a6dc8aa366bf405f5d8d38a23d9fed912",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 5.7220458984375e-06,
+        "action_logits": 7.62939453125e-06,
         "choice_logits": 1.9073486328125e-05,
-        "state_value": 6.752088665962219e-09
+        "state_value": 7.916241884231567e-09
       },
       "planner_version": 1,
       "rules_version": 2
@@ -163,13 +163,13 @@
       "deck_key": "psychic",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/psychic.onnx",
-      "onnx_sha256": "692bc16eae6351fa35d82674bbed695b5707169c76d8680f17de4ba2b21ab689",
-      "onnx_size": 5507951,
+      "onnx_sha256": "80d6f2aef359b99804528c2140789038f6c8a872591168a84f32874b5310e424",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
         "action_logits": 1.52587890625e-05,
-        "choice_logits": 6.705522537231445e-08,
-        "state_value": 1.4901161193847656e-08
+        "choice_logits": 7.078051567077637e-08,
+        "state_value": 2.1420419216156006e-08
       },
       "planner_version": 1,
       "rules_version": 2
@@ -182,13 +182,13 @@
       "deck_key": "steel",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/steel.onnx",
-      "onnx_sha256": "a2fe8e1b8a8e679a6d974c7d42174ecfd37a943b07ebac849cc1b63faeff49c4",
-      "onnx_size": 5507951,
+      "onnx_sha256": "4affcdc6e83dd60558a267629f1967ccadf5945b60c13a6ed1a43ef9c70f0e9a",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 9.5367431640625e-06,
-        "choice_logits": 4.76837158203125e-06,
-        "state_value": 7.450580596923828e-09
+        "action_logits": 7.62939453125e-06,
+        "choice_logits": 5.7220458984375e-06,
+        "state_value": 9.313225746154785e-09
       },
       "planner_version": 1,
       "rules_version": 2
@@ -201,13 +201,13 @@
       "deck_key": "water",
       "encoder_version": 3,
       "onnx_path": "res://data/ai_models/water.onnx",
-      "onnx_sha256": "a0ad4bc9a221c392d5f96125bad82ad00db3a4a4f32ca6107ed8c1ce3f35e777",
-      "onnx_size": 5507951,
+      "onnx_sha256": "7a4a9e693e6ff508def2a8c91ac834c40a3831fba59b38099fe79f7f68d814d4",
+      "onnx_size": 5510145,
       "opset": 17,
       "parity_max_abs_error": {
         "action_logits": 1.1444091796875e-05,
-        "choice_logits": 7.82310962677002e-08,
-        "state_value": 1.0710209608078003e-08
+        "choice_logits": 9.685754776000977e-08,
+        "state_value": 6.51925802230835e-09
       },
       "planner_version": 1,
       "rules_version": 2

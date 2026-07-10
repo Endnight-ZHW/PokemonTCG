@@ -53,11 +53,9 @@ class GameApp:
         self.running = True
         self.screen_manager = ScreenManager()
         self.screen_manager._app = self  # For screens to access GameApp
+        self.debug_session = None
         self.game_state = None
         self.turn_manager = None
-        self.network_manager = None
-        self.is_remote_host = False
-        self.is_remote_client = False
         self.apply_type_matchups = False
 
         self.screen_manager.push_screen(TitleScreen(self.screen_manager))
@@ -141,48 +139,16 @@ class GameApp:
         sys.exit()
 
     def start_game(self, deck1_cards: list[str], deck2_cards: list[str]):
-        """Initialize game state and start a new match."""
-        from engine.game_state import GameState
-        from engine.turn_manager import TurnManager
+        """Initialize a local-only debugging match."""
+        from ui.debug_match_session import DebugMatchSession
         from ui.screens.game_screen import GameScreen
 
-        self.game_state = GameState()
-        self.game_state.apply_type_matchups = self.apply_type_matchups
-        self.game_state.setup_game(deck1_cards, deck2_cards)
-        self.turn_manager = TurnManager(self.game_state)
+        self.debug_session = DebugMatchSession.create(
+            deck1_cards,
+            deck2_cards,
+            apply_type_matchups=self.apply_type_matchups,
+        )
+        self.game_state = self.debug_session.state
+        self.turn_manager = self.debug_session.turn_manager
         game_screen = GameScreen(self.screen_manager, self.game_state, self.turn_manager)
         self.screen_manager.push_screen(game_screen)
-
-    def start_remote_host(self, port: int):
-        """Start hosting a remote game."""
-        from network.network_manager import NetworkManager
-        self.network_manager = NetworkManager()
-        self.network_manager.start_host(port)
-        self.is_remote_host = True
-        self.is_remote_client = False
-
-    def start_remote_client(self, host: str, port: int):
-        """Connect to a remote host."""
-        from network.network_manager import NetworkManager
-        self.network_manager = NetworkManager()
-        self.network_manager.connect_to_host(host, port)
-        self.is_remote_host = False
-        self.is_remote_client = True
-
-    def start_relay_host(self, server_host: str, server_port: int):
-        """通过中继服务器创建房间（房主角色）."""
-        from network.network_manager import NetworkManager
-        self.network_manager = NetworkManager()
-        self.network_manager.connect_to_relay(server_host, server_port, is_host=True)
-        self.is_remote_host = True
-        self.is_remote_client = False
-
-    def start_relay_client(self, server_host: str, server_port: int, room_code: str):
-        """通过中继服务器加入房间（挑战者角色）."""
-        from network.network_manager import NetworkManager
-        self.network_manager = NetworkManager()
-        self.network_manager.connect_to_relay(
-            server_host, server_port, is_host=False, room_code=room_code
-        )
-        self.is_remote_host = False
-        self.is_remote_client = True
