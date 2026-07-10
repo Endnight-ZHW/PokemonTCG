@@ -1107,6 +1107,7 @@ class AITrainingScreen(Screen):
                 self.rl_eval_results[deck]["baseline_eval"] = event.get("baseline_eval")
                 self.rl_eval_results[deck]["accepted"] = bool(event.get("accepted", True))
                 self.rl_eval_results[deck]["delta_wins"] = event.get("delta_wins")
+                self.rl_eval_results[deck]["delta_win_rate"] = event.get("delta_win_rate")
                 self.rl_eval_results[deck]["delta_point_rate"] = event.get("delta_point_rate")
             self.total_games_played = int(event.get("total_games_played") or self.total_games_played)
             self.total_training_games = int(event.get("total_training_games") or self.total_training_games)
@@ -1119,6 +1120,7 @@ class AITrainingScreen(Screen):
                     "baseline_eval": event.get("baseline_eval"),
                     "accepted": bool(event.get("accepted", True)),
                     "delta_wins": event.get("delta_wins"),
+                    "delta_win_rate": event.get("delta_win_rate"),
                     "delta_point_rate": event.get("delta_point_rate"),
                     "training_games": event.get("training_games", 0),
                 }
@@ -1346,9 +1348,9 @@ class AITrainingScreen(Screen):
                 lines.append(
                     f"Baseline/Candidate wins: {baseline.get('wins', 0)} -> {eval_result.get('wins', 0)}"
                 )
-            if eval_result.get("delta_wins") is not None:
+            if eval_result.get("delta_point_rate") is not None:
                 lines.append(
-                    f"Delta wins: {eval_result.get('delta_wins')} | accepted: {bool(eval_result.get('accepted', True))}"
+                    f"Delta point rate: {float(eval_result.get('delta_point_rate') or 0.0):+.1%} | accepted: {bool(eval_result.get('accepted', True))}"
                 )
         y = rect.y
         for line in lines:
@@ -1372,9 +1374,9 @@ class AITrainingScreen(Screen):
             loss = event.get("total_loss", event.get("loss", 0.0))
             return f"{deck} {event.get('phase', 'train')} loss {float(loss or 0.0):.4f} ex {event.get('examples', 0)}"
         if etype == "eval_finished":
-            delta = event.get("delta_wins")
+            delta = event.get("delta_point_rate")
             accepted = bool(event.get("accepted", True))
-            suffix = f" delta wins {delta} accepted {accepted}" if delta is not None else ""
+            suffix = f" delta points {float(delta):+.1%} accepted {accepted}" if delta is not None else ""
             return f"{deck} eval win {float(event.get('win_rate') or 0.0):.0%}{suffix}"
         if etype == "generation_finished":
             return (

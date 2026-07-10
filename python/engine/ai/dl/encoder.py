@@ -51,8 +51,8 @@ CARD_BUCKET_COUNT = 4096
 STATE_NUMERIC_SIZE = 960  # +32 for tactical situation features (v8)
 STATE_CARD_SLOTS = 96
 ACTION_NUMERIC_SIZE = 178  # +16 for action feasibility/context features (v8)
-CARD_SEMANTIC_SIZE = 48
-ENCODER_SCHEMA_VERSION = 2
+CARD_SEMANTIC_SIZE = 53
+ENCODER_SCHEMA_VERSION = 3
 
 ACTION_TYPES = [
     "NOOP",
@@ -1026,7 +1026,7 @@ class ActionStateEncoder:
         Complements the blake2b-hash card_bucket embedding with explicit
         card-type, stats, and effect-keyword signals so the model can
         generalise across functionally similar cards.
-        Returns CARD_SEMANTIC_SIZE floats (48).
+        Returns CARD_SEMANTIC_SIZE floats (53).
         """
         if card is None:
             return [0.0] * CARD_SEMANTIC_SIZE
@@ -1112,7 +1112,7 @@ class ActionStateEncoder:
         features.extend(numerical)
         features.extend(flags)
         features.extend(effect_flags)
-        return features
+        return _pad(features, CARD_SEMANTIC_SIZE)
 
     def _action_tactical_features(self, state, player_idx: int, action, card) -> list[float]:
         player = state.get_player(player_idx)

@@ -5,11 +5,11 @@
     "godot_action_version": 3,
     "godot_rules_version": 3,
     "python_action_version": 2,
-    "python_encoder_version": 2,
+    "python_encoder_version": 3,
     "python_rules_version": 2,
     "version": 1
   },
-  "elapsed_seconds": 2.692,
+  "elapsed_seconds": 2.566,
   "execution_provider": "CPUExecutionProvider",
   "format_version": 2,
   "inference_format": "onnx-fp32",
@@ -24,180 +24,190 @@
   "models": {
     "colorless": {
       "action_version": 2,
-      "checkpoint_sha256": "047427930d6cbd275c79982c32b293386142706de695495123b415426fc93a36",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "dc285218ebd79b69182e57cf590e7a1d2cfbf919ec9dd1b87b25d0785380a13b",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "colorless",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/colorless.onnx",
-      "onnx_sha256": "acd0b8287b9b98468b7ee3926fbda02cdc60e8909f06f660b65e080a80fde435",
+      "onnx_sha256": "9873b2e8e6cc4baaf3f54c43959f54075a101d9e5c8ea57dc4149629b098aa0e",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 1.430511474609375e-06,
-        "choice_logits": 7.450580596923828e-08,
-        "state_value": 2.2351741790771484e-08
+        "action_logits": 7.62939453125e-06,
+        "choice_logits": 1.9073486328125e-05,
+        "state_value": 6.05359673500061e-09
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "darkness": {
       "action_version": 2,
-      "checkpoint_sha256": "dbb909ab1a40d9eb784beb90c302313fc2da6729a91a14f4c2ba796401f169ec",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "9f3fed9f69b4f6fcedd474e1e5e83f89f35b31b6c58356d23db2ef68d54806d3",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "darkness",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/darkness.onnx",
-      "onnx_sha256": "fa0f76758267b3175962cb63e58b23074184fdac9a05750e9b0e246892433632",
+      "onnx_sha256": "8728bf4d839d67b7edf610720ce7f77ed839ac9211c643daa50de6155e1c9660",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 5.7220458984375e-06,
-        "choice_logits": 7.82310962677002e-08,
-        "state_value": 5.960464477539063e-08
+        "action_logits": 9.5367431640625e-06,
+        "choice_logits": 1.52587890625e-05,
+        "state_value": 7.450580596923828e-09
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "dragon": {
       "action_version": 2,
-      "checkpoint_sha256": "66fa370891440b4cd4099474f305ecacb35fc5e332677049b618deb169189dba",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "52b2db71e684d6955152e20ff7e4deea13130b9c8781e14e1646ac299c15d3b2",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "dragon",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/dragon.onnx",
-      "onnx_sha256": "f193343f33f76b60a0696bfdf0511f8993659baf792f470e2a8ba16ae281dbd7",
+      "onnx_sha256": "edd442b44fc652498cdea2eaa15b653a1aa9696bc18e102162fa8576a4ee8ddb",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 1.430511474609375e-06,
-        "choice_logits": 7.450580596923828e-08,
-        "state_value": 5.21540641784668e-08
+        "action_logits": 9.5367431640625e-06,
+        "choice_logits": 3.814697265625e-06,
+        "state_value": 8.381903171539307e-09
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "fighting": {
       "action_version": 2,
-      "checkpoint_sha256": "04d4302630fedadd165eb0d73856ff7a5a386805639d44831d1d55d7fcf66f93",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "257962c6fba11e29460046e0c24efa1dc5eafaebc6e951e2c5836919cd3afcce",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "fighting",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/fighting.onnx",
-      "onnx_sha256": "9c1ec05d8fb0fee14ab519a4a3b55a3bf5a9bf6e10a47154909eb05a4c3264a8",
+      "onnx_sha256": "776498ef9ae1b1d2743982e8e928f7ac88ecfd06ca5a56209df0e45baa49be97",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 9.5367431640625e-07,
-        "choice_logits": 8.568167686462402e-08,
-        "state_value": 5.960464477539063e-08
+        "action_logits": 2.384185791015625e-05,
+        "choice_logits": 6.705522537231445e-08,
+        "state_value": 5.587935447692871e-09
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "fire": {
       "action_version": 2,
-      "checkpoint_sha256": "352fd02535aa7b84c00d8a88c31fc030ae5fd1a92daf2915e961a2acda540942",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "4610e0dd4144da070622c18fce5820668f7145394764e28508de7734e2971e50",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "fire",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/fire.onnx",
-      "onnx_sha256": "3dac1aa2cfe61bcecfff02602b988006d4801647e44c1e9ffdd5fc5158f99cf5",
+      "onnx_sha256": "3c5fe3bf290ed8fc974ae5e107e607878dc3c69b49af7b48fa4c69b03a066405",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 2.384185791015625e-06,
-        "choice_logits": 7.078051567077637e-08,
-        "state_value": 2.9802322387695312e-08
+        "action_logits": 1.9073486328125e-05,
+        "choice_logits": 8.940696716308594e-08,
+        "state_value": 1.1641532182693481e-08
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "grass": {
       "action_version": 2,
-      "checkpoint_sha256": "b7798db7c457490551b1baeb9063deabf43aabba51a799ad5b6a8c38309a6a9d",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "397e4f3fcd5d1c27c80ff5b963045a15a48bda2e22702193b8082c8dccecb95c",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "grass",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/grass.onnx",
-      "onnx_sha256": "64f7e445cdf935ea79d6957371a1f970c5dc1e97eac23628f4ea4b4bf37ed143",
+      "onnx_sha256": "7cd4a979b409b0c7acaec8d5296e2ee6b8b22fac8961e4fe3daa6eb562c9b8c4",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 1.9073486328125e-06,
-        "choice_logits": 5.960464477539063e-08,
-        "state_value": 3.3527612686157227e-08
+        "action_logits": 1.9073486328125e-05,
+        "choice_logits": 1.0803341865539551e-07,
+        "state_value": 1.6763806343078613e-08
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "lightning": {
       "action_version": 2,
-      "checkpoint_sha256": "5e9099a45b794d61c48042465f9e33bd83976f90ccec3cd13a8515889c5b7f88",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "2031cbb34f289b7937b514fb1180829ab97301016551a88c3fb65e17b0a15681",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "lightning",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/lightning.onnx",
-      "onnx_sha256": "ec0fbe9030abcc28bc7eec563c7cb1927fdf1ff20e7910f22f0e92886bd22ff9",
+      "onnx_sha256": "ea7858ca7480bd5fa8d44af6d78c6e17166190c3395b78adfa3260239bdbc9de",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 2.384185791015625e-06,
-        "choice_logits": 1.0058283805847168e-07,
-        "state_value": 4.470348358154297e-08
+        "action_logits": 5.7220458984375e-06,
+        "choice_logits": 1.9073486328125e-05,
+        "state_value": 6.752088665962219e-09
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "psychic": {
       "action_version": 2,
-      "checkpoint_sha256": "fec0c20bd2b7ac5bc470b5e29dbefe617e47f6ab519683b79724bc57ed3ac892",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "a0588507222ab9473b25315ba0c3b892573efcf19b7f18da4623f4dcc43acb30",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "psychic",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/psychic.onnx",
-      "onnx_sha256": "b982c486d60e5d1bd0e640ef6bad06356e3a40fbe87da6be87f2b0ea8cb284c3",
+      "onnx_sha256": "692bc16eae6351fa35d82674bbed695b5707169c76d8680f17de4ba2b21ab689",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 1.430511474609375e-06,
-        "choice_logits": 7.450580596923828e-08,
-        "state_value": 1.30385160446167e-08
+        "action_logits": 1.52587890625e-05,
+        "choice_logits": 6.705522537231445e-08,
+        "state_value": 1.4901161193847656e-08
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "steel": {
       "action_version": 2,
-      "checkpoint_sha256": "14a786968b0b36f033a21dd89387fbd9d9ea8c6a08a1012499de619f71b26111",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "8d88cbd302f6d3a1f8131d14d0a3a1d2b90d13761abab965adba5148234386c0",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "steel",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/steel.onnx",
-      "onnx_sha256": "52982a554af5969ba309931d84e50ad2606fe22afeff2dfd172ca99c16564e1a",
+      "onnx_sha256": "a2fe8e1b8a8e679a6d974c7d42174ecfd37a943b07ebac849cc1b63faeff49c4",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 3.814697265625e-06,
-        "choice_logits": 8.195638656616211e-08,
-        "state_value": 1.4901161193847656e-08
+        "action_logits": 9.5367431640625e-06,
+        "choice_logits": 4.76837158203125e-06,
+        "state_value": 7.450580596923828e-09
       },
       "planner_version": 1,
       "rules_version": 2
     },
     "water": {
       "action_version": 2,
-      "checkpoint_sha256": "91a47dece6666a3fd0582cf9c896648a4ffb4c237c969077b59436c327fc1c1d",
-      "checkpoint_version": 9,
+      "checkpoint_sha256": "cf76708c4aa1a44b263e5190458141ad523224fad4d3fff8aee36c0f798b924c",
+      "checkpoint_version": 10,
+      "choice_head_enabled": true,
       "deck_key": "water",
-      "encoder_version": 2,
+      "encoder_version": 3,
       "onnx_path": "res://data/ai_models/water.onnx",
-      "onnx_sha256": "dc6ea2525d6cac923c636021d1798864152833d2ddd5b38fe8e3479f631ddd4d",
+      "onnx_sha256": "a0ad4bc9a221c392d5f96125bad82ad00db3a4a4f32ca6107ed8c1ce3f35e777",
       "onnx_size": 5507951,
       "opset": 17,
       "parity_max_abs_error": {
-        "action_logits": 1.6689300537109375e-06,
-        "choice_logits": 6.332993507385254e-08,
-        "state_value": 5.960464477539063e-08
+        "action_logits": 1.1444091796875e-05,
+        "choice_logits": 7.82310962677002e-08,
+        "state_value": 1.0710209608078003e-08
       },
       "planner_version": 1,
       "rules_version": 2
@@ -213,7 +223,7 @@
   "search_simulations": 64,
   "semantic_feature_sizes": {
     "known_card": 53,
-    "missing_card_legacy": 48
+    "missing_card": 53
   },
   "state_card_slots": 96,
   "state_numeric_size": 960,

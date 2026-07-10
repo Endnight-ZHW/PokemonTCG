@@ -149,11 +149,33 @@ class MCTSGuidedSearch:
             deadline=deadline,
         )
         if deterministic:
-            return actions[result.best_action_idx]
+            return self._postprocess_preferred_action(
+                state,
+                player_idx,
+                actions[result.best_action_idx],
+                actions,
+            )
         roll = random.random()
         cumulative = 0.0
+        selected = actions[result.best_action_idx]
         for idx, probability in sorted(result.action_probs.items()):
             cumulative += probability
             if roll <= cumulative:
-                return actions[idx]
-        return actions[result.best_action_idx]
+                selected = actions[idx]
+                break
+        return self._postprocess_preferred_action(
+            state,
+            player_idx,
+            selected,
+            actions,
+        )
+
+    def _postprocess_preferred_action(self, state, player_idx: int, preferred, actions):
+        postprocess = getattr(self.legal_ai, "_validated_or_fallback_action", None)
+        if not callable(postprocess):
+            return preferred
+        try:
+            selected = postprocess(state, player_idx, preferred, actions)
+            return selected if selected is not None else preferred
+        except Exception:
+            return preferred

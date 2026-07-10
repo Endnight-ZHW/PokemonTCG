@@ -4,7 +4,7 @@ extends RefCounted
 const STATE_NUMERIC_SIZE := 960
 const STATE_CARD_SLOTS := 96
 const ACTION_NUMERIC_SIZE := 178
-const MISSING_CARD_SEMANTIC_SIZE := 48
+const CARD_SEMANTIC_SIZE := 53
 const PHASES := ["SETUP", "DRAW", "MAIN", "ATTACK", "POKEMON_CHECKUP", "GAME_OVER"]
 const DECK_KEYS := [
 	"fire", "water", "psychic", "lightning",
@@ -179,15 +179,11 @@ func encode_choice(
 
 
 func _semantic(card_id: String) -> Array[float]:
-	if card_id.is_empty():
-		var missing: Array[float] = []
-		missing.resize(MISSING_CARD_SEMANTIC_SIZE)
-		missing.fill(0.0)
-		return missing
 	var values: Array[float] = []
-	for value in catalog.get_card(card_id).get("ai_semantic_features", []):
-		values.append(float(value))
-	return values
+	if not card_id.is_empty():
+		for value in catalog.get_card(card_id).get("ai_semantic_features", []):
+			values.append(float(value))
+	return _pad_float(values, CARD_SEMANTIC_SIZE)
 
 
 func _bucket(card_id: String) -> int:

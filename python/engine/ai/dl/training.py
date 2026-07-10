@@ -18,6 +18,7 @@ from data.deck_definitions import ALL_CARD_IDS, expand_deck
 from engine.ai.challenge_ai import AIAction, AIConfig, create_challenge_ai
 from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
+    ACTION_TYPES,
     CARD_SEMANTIC_SIZE,
     ENCODER_SCHEMA_VERSION,
     STATE_CARD_SLOTS,
@@ -27,6 +28,15 @@ from engine.ai.dl.encoder import (
     EncodedState,
 )
 from engine.ai.dl.model import TORCH_AVAILABLE, create_model, load_checkpoint, save_checkpoint, torch
+from engine.ai.dl.release_gate import (
+    DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
+    DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+    DEFAULT_MIN_ACCEPTED_POINT_RATE,
+    has_strength_and_reliability_floor,
+    max_step_exhaustion_rate as release_max_step_exhaustion_rate,
+    paired_delta_point_rate as release_paired_delta_point_rate,
+    point_rate as release_point_rate,
+)
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION, ChoiceRequest, ChoiceResponse, GameAction
 from engine.random_source import RandomSource
 from engine.ai.dl.opponent_pool import OpponentPool, save_opponent_pool, load_opponent_pool
@@ -47,6 +57,19 @@ TRAINER_ALPHA_ZERO = "alpha_zero_rl"
 TRAINER_LEGACY = "teacher_dagger_rl"
 ALPHA_ZERO_METADATA_TRAINER = "alpha_zero_rl_v1"
 LEGACY_METADATA_TRAINER = "teacher_dagger_rl_v4"
+PRODUCTION_MCTS_DECISION_SECONDS = 2.0
+RL_EXAMPLE_SOURCES = {"self_play", "league_self_play"}
+SUPERVISED_ACTION_TYPE_WEIGHTS = {
+    PlayerAction.PLAY_TRAINER.name: 1.35,
+    PlayerAction.ATTACH_ENERGY.name: 1.30,
+    PlayerAction.PLAY_BASIC.name: 1.30,
+    PlayerAction.EVOLVE.name: 1.15,
+    PlayerAction.USE_ABILITY.name: 1.15,
+    PlayerAction.USE_STADIUM.name: 1.10,
+    PlayerAction.RETREAT.name: 1.10,
+    PlayerAction.DECLARE_ATTACK.name: 0.95,
+    PlayerAction.END_TURN.name: 0.90,
+}
 
 
 def _make_grad_scaler(enabled: bool):
@@ -145,37 +168,38 @@ TEACHER_SEARCH_PRESETS = {
 
 @dataclass(frozen=True)
 class DeepTrainingConfig:
-    trainer: str = TRAINER_ALPHA_ZERO
+    trainer: str = TRAINER_LEGACY
     deck: str = "all"
-    games: int = 800
+    games: int = 0
     seed: int = 17
     model: str | None = None
     warm_start: bool = True
     output: str | None = None
     device: str = "cpu"
-    bootstrap_games: int = 2000
-    dagger_games: int = 500
-    bootstrap_epochs: int = 10
+    bootstrap_games: int = 1000
+    dagger_games: int = 1000
+    bootstrap_epochs: int = 20
     self_play_epochs: int = 10
     eval_games: int = 600
     workers: int = 1
-    max_steps: int = 250
+    max_steps: int = 160
     learning_rate: float = 5e-4
     batch_size: int = 256
     use_amp: bool = True
     progress_jsonl: str | None = None
     rollout_batch_games: int = 16
     updates_per_rollout: int = 2
-    teacher_search_preset: str = "hybrid"
+    teacher_search_preset: str = "quality"
     choice_head_enabled: bool = True
     acceptance_metric: str = "points"
     min_win_delta: int = 0
     teacher_label_model_states: bool = True
     # Pure RL and shared-planner settings (legacy mcts_* field names retained).
     pure_rl_games: int = 0
-    mcts_simulations: int = 200
+    mcts_simulations: int = 64
     mcts_chance_nodes: bool = False
     use_mcts_training: bool = True
+    eval_use_mcts: bool = True
     teacher_warmup_ratio: float = 0.6
     # --- New: Curiosity exploration ---
     curiosity_beta: float = 0.05
@@ -196,6 +220,12 @@ class DeepTrainingConfig:
     league_use_mcts: bool = False
     min_elo_delta: float = 25.0
     min_score_rate: float = 0.53
+    min_point_rate: float = DEFAULT_MIN_ACCEPTED_POINT_RATE
+    min_delta_point_rate: float = DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE
+    max_step_exhaustion_rate: float = DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE
+    challenge_baseline_eval: dict[str, Any] | None = None
+    challenge_baseline_source: str | None = None
+    recovered_choice_examples: int = 0
 
 
 @dataclass
@@ -227,6 +257,29 @@ class ChoiceTrainingExample:
     source: str = "teacher"
     phase_tag: str = ""
     split_key: str = ""
+
+
+def _is_rl_example(ex: TrainingExample) -> bool:
+    return str(ex.source) in RL_EXAMPLE_SOURCES
+
+
+def _target_action_type(ex: TrainingExample) -> str:
+    if ex.target_index < 0 or ex.target_index >= len(ex.actions):
+        return ""
+    numeric = list(ex.actions[ex.target_index].numeric or [])
+    width = len(ACTION_TYPES)
+    if len(numeric) < width:
+        return ""
+    best_idx = max(range(width), key=lambda idx: float(numeric[idx]))
+    if float(numeric[best_idx]) <= 0.0:
+        return ""
+    return str(ACTION_TYPES[best_idx])
+
+
+def _supervised_example_weight(ex: TrainingExample) -> float:
+    if _is_rl_example(ex):
+        return 1.0
+    return float(SUPERVISED_ACTION_TYPE_WEIGHTS.get(_target_action_type(ex), 1.0))
 
 
 @dataclass(frozen=True)
@@ -290,7 +343,7 @@ def _normalized_workers(workers: int | None) -> int:
 
 
 def _normalized_trainer(trainer: str | None) -> str:
-    value = str(trainer or TRAINER_ALPHA_ZERO).strip().lower()
+    value = str(trainer or TRAINER_LEGACY).strip().lower()
     aliases = {
         "alpha_zero": TRAINER_ALPHA_ZERO,
         "alphazero": TRAINER_ALPHA_ZERO,
@@ -353,6 +406,17 @@ def _find_action_index(actions: list[AIAction], selected: AIAction) -> int | Non
         if action_name == selected_name and (action.params or {}) == (selected.params or {}):
             return idx
     return None
+
+
+def _postprocess_preferred_action(legal_ai: Any, state, player_idx: int, preferred: AIAction, actions: list[AIAction]) -> AIAction:
+    postprocess = getattr(legal_ai, "_validated_or_fallback_action", None)
+    if not callable(postprocess):
+        return preferred
+    try:
+        selected = postprocess(state, player_idx, preferred, actions)
+        return selected if selected is not None else preferred
+    except Exception:
+        return preferred
 
 
 def _as_float_list(values: Any) -> list[float] | None:
@@ -1180,9 +1244,19 @@ def _forward_choice_batch(model, examples: list[ChoiceTrainingExample], device: 
 
 
 def _value_target_for(ex: TrainingExample) -> float:
-    if ex.source == "self_play":
+    if _is_rl_example(ex):
         return float(ex.return_target)
     return float(ex.value_target)
+
+
+def _has_value_target_for(ex: TrainingExample) -> bool:
+    if _is_rl_example(ex):
+        return True
+    if ex.source in {"teacher", "dagger"} and ex.teacher_target_index is not None:
+        return True
+    if abs(float(ex.teacher_score or 0.0)) > 1e-12:
+        return True
+    return abs(float(ex.value_target or 0.0)) > 1e-12
 
 
 def _advantage_for(ex: TrainingExample) -> float | None:
@@ -1194,7 +1268,7 @@ def _advantage_for(ex: TrainingExample) -> float | None:
 
 
 def _normalize_advantages(examples: list[TrainingExample]) -> None:
-    values = [_advantage_for(ex) for ex in examples if ex.source == "self_play" and _advantage_for(ex) is not None]
+    values = [_advantage_for(ex) for ex in examples if _is_rl_example(ex) and _advantage_for(ex) is not None]
     values = [float(v) for v in values if v is not None]
     if not values:
         return
@@ -1202,7 +1276,7 @@ def _normalize_advantages(examples: list[TrainingExample]) -> None:
     variance = sum((v - mean) ** 2 for v in values) / max(1, len(values))
     std = max(1e-6, variance ** 0.5)
     for ex in examples:
-        if ex.source == "self_play" and _advantage_for(ex) is not None:
+        if _is_rl_example(ex) and _advantage_for(ex) is not None:
             normalized = max(-3.0, min(3.0, (_advantage_for(ex) - mean) / std))
             ex.advantage = normalized
             ex.policy_advantage = normalized
@@ -1271,7 +1345,7 @@ def _train_examples(
                     continue
 
                 batch_len = len(batch)
-                sp_indices = [i for i, ex in enumerate(batch) if ex.source == "self_play"]
+                value_indices = [i for i, ex in enumerate(batch) if _has_value_target_for(ex)]
                 log_probs = F.log_softmax(logits.float(), dim=-1)
                 probs = torch.softmax(logits.float(), dim=-1)
                 entropy_per_ex = -(probs * log_probs).sum(dim=-1)
@@ -1286,7 +1360,12 @@ def _train_examples(
                         valid[i] = False
 
                 selected_lp = log_probs[torch.arange(batch_len, device=device), target_idx]
-                is_rl = torch.tensor([ex.source == "self_play" for ex in batch], device=device)
+                is_rl = torch.tensor([_is_rl_example(ex) for ex in batch], device=device)
+                example_weights = torch.tensor(
+                    [_supervised_example_weight(ex) for ex in batch],
+                    dtype=torch.float32,
+                    device=device,
+                )
                 has_adv = torch.tensor(
                     [_advantage_for(ex) is not None for ex in batch], device=device,
                 )
@@ -1318,13 +1397,16 @@ def _train_examples(
                 has_policy_target = torch.tensor(has_policy_target_rows, device=device)
 
                 loss_per_ex = torch.zeros(batch_len, device=device)
+                loss_weights = torch.zeros(batch_len, device=device)
 
                 # Preserve the full planner search signal rather than reducing it
                 # to the one action sampled from the visit distribution.
                 search_distill = valid & has_policy_target
                 if search_distill.any():
                     distill_loss = -(policy_targets * log_probs).sum(dim=-1)
-                    loss_per_ex = loss_per_ex + distill_loss * search_distill.float()
+                    distill_weights = torch.where(is_rl, torch.ones_like(example_weights), example_weights)
+                    loss_per_ex = loss_per_ex + distill_loss * search_distill.float() * distill_weights
+                    loss_weights = loss_weights + search_distill.float() * distill_weights
 
                 ppo = valid & is_rl & has_adv & has_old_lp & ~has_policy_target
                 if ppo.any():
@@ -1332,26 +1414,30 @@ def _train_examples(
                     clipped_ratio = torch.clamp(ratio, 1.0 - ppo_clip, 1.0 + ppo_clip)
                     ppo_loss = -torch.minimum(ratio * advs, clipped_ratio * advs)
                     loss_per_ex = loss_per_ex + ppo_loss * ppo.float()
+                    loss_weights = loss_weights + ppo.float()
 
                 pg = valid & is_rl & has_adv & ~has_old_lp & ~has_policy_target
                 if pg.any():
                     loss_per_ex = loss_per_ex + (-selected_lp * advs) * pg.float()
+                    loss_weights = loss_weights + pg.float()
 
                 sl = valid & ~is_rl & ~has_policy_target
                 if sl.any():
-                    loss_per_ex = loss_per_ex + (-selected_lp) * sl.float()
+                    loss_per_ex = loss_per_ex + (-selected_lp) * sl.float() * example_weights
+                    loss_weights = loss_weights + sl.float() * example_weights
 
                 divisor = max(1, int(valid.sum().item()))
-                policy_loss = loss_per_ex.sum() / divisor
+                policy_divisor = loss_weights.sum().clamp_min(1.0)
+                policy_loss = loss_per_ex.sum() / policy_divisor
                 entropy = (entropy_per_ex * valid.float()).sum() / divisor
-                if sp_indices:
-                    sp_value = value[sp_indices].float()
-                    sp_targets = torch.tensor(
-                        [float(_value_target_for(ex)) for i, ex in enumerate(batch) if i in sp_indices],
+                if value_indices:
+                    predicted_values = value[value_indices].float()
+                    value_targets = torch.tensor(
+                        [float(_value_target_for(ex)) for i, ex in enumerate(batch) if i in value_indices],
                         dtype=torch.float32,
                         device=device,
                     )
-                    value_loss = F.mse_loss(sp_value, sp_targets)
+                    value_loss = F.mse_loss(predicted_values, value_targets)
                 else:
                     value_loss = torch.tensor(0.0, device=device)
                 loss = policy_loss + 0.5 * value_loss - entropy_coef * entropy
@@ -1517,6 +1603,16 @@ def _select_model_action(
                 (idx for idx, action in enumerate(actions) if action.action == PlayerAction.END_TURN),
                 target_index,
             )
+        selected_action = _postprocess_preferred_action(
+            legal_ai,
+            state,
+            player_idx,
+            actions[target_index],
+            actions,
+        )
+        corrected_index = _find_action_index(actions, selected_action)
+        if corrected_index is not None:
+            target_index = int(corrected_index)
         log_probs = torch.log(probs.clamp_min(1e-7)).clamp(min=-10.0)
         predicted_value = float(value[0].detach().cpu().item())
         behavior_log_prob = float(log_probs[target_index].detach().cpu().item())
@@ -2032,6 +2128,10 @@ def _play_model_game(
                         player_idx,
                         deck_key,
                         actions=actions,
+                        deadline=(
+                            decision_started + PRODUCTION_MCTS_DECISION_SECONDS
+                            if temperature <= 0.05 else None
+                        ),
                     )
                     if temperature <= 0.05:
                         candidate_indices = sorted(
@@ -2063,22 +2163,38 @@ def _play_model_game(
                         ):
                             action_idx = candidate_idx
                             break
-                    action = actions[action_idx]
+                    original_action_idx = int(action_idx)
+                    action = _postprocess_preferred_action(
+                        target_ai,
+                        state,
+                        player_idx,
+                        actions[action_idx],
+                        actions,
+                    )
+                    corrected_idx = _find_action_index(actions, action)
+                    if corrected_idx is not None:
+                        action_idx = int(corrected_idx)
                     encoded_state = encoder.encode_state(state, player_idx, deck_key)
                     encoded_actions = [encoder.encode_action(state, player_idx, a) for a in actions]
                     if actions:
                         with torch.no_grad():
                             logits, value = _forward_example(model, TrainingExample(encoded_state, encoded_actions, 0, source="self_play"), device)
                             predicted_value = float(value[0].detach().cpu().item())
+                        policy_target = [
+                            float(search_result.action_probs.get(idx, 0.0))
+                            for idx in range(len(actions))
+                        ]
+                        if corrected_idx is not None and int(corrected_idx) != original_action_idx:
+                            policy_target = [
+                                1.0 if idx == int(corrected_idx) else 0.0
+                                for idx in range(len(actions))
+                            ]
                         example = TrainingExample(
                             encoded_state, encoded_actions, action_idx,
                             source="self_play",
                             value_target=predicted_value,
                             phase_tag=phase_tag,
-                            policy_target=[
-                                float(search_result.action_probs.get(idx, 0.0))
-                                for idx in range(len(actions))
-                            ],
+                            policy_target=policy_target,
                         )
                 else:
                     action, example = _select_model_action(
@@ -2143,6 +2259,97 @@ def _play_model_game(
     finally:
         if original_choice_resolver is not None:
             target_ai._resolve_pending_for_sim = original_choice_resolver
+        _restore_rng(rng_state)
+
+
+def _play_challenge_baseline_game(
+    deck_key: str,
+    seed: int,
+    *,
+    max_steps: int,
+    teacher_search_preset: str,
+) -> tuple[int | None, float, list[TrainingExample], list[ChoiceTrainingExample], dict[str, Any]]:
+    """Play ChallengeAI as the target deck against the same rotating ChallengeAI opponents."""
+    _ensure_cards_loaded()
+    opponent_key = _opponent_for(deck_key, seed)
+    seat = seed % 2
+    state, _, ais, target_player_idx, rng_state = _setup_match(
+        deck_key,
+        opponent_key,
+        seed,
+        seat,
+        teacher_search_preset,
+    )
+    diagnostics: dict[str, Any] = {
+        "actions": 0,
+        "invalid_actions": 0,
+        "no_target_actions": 0,
+        "rule_exceptions": 0,
+        "decision_timeouts": 0,
+        "decision_seconds": 0.0,
+        "max_step_exhaustions": 0,
+        "seat": seat,
+    }
+    try:
+        failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
+        prev_player_idx: int | None = None
+        for _ in range(max_steps):
+            if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
+                break
+            if state.pending_promotion_player >= 0:
+                ais[state.pending_promotion_player]._auto_promote_for_sim(state)
+                continue
+            if state.phase == TurnPhase.DRAW:
+                TurnManager(state).advance_phase()
+                continue
+            if state.phase not in (TurnPhase.SETUP, TurnPhase.MAIN, TurnPhase.ATTACK):
+                TurnManager(state).advance_phase()
+                continue
+
+            player_idx = state.active_player_idx if state.phase != TurnPhase.SETUP else target_player_idx
+            if prev_player_idx is not None and player_idx != prev_player_idx:
+                failed_signatures[player_idx].clear()
+            prev_player_idx = player_idx
+            ai = ais[player_idx]
+            decision_started = time.perf_counter()
+            action = ai.choose_action(state, player_idx)
+            if player_idx == target_player_idx:
+                diagnostics["actions"] += 1
+                decision_elapsed = time.perf_counter() - decision_started
+                diagnostics["decision_seconds"] += decision_elapsed
+                if decision_elapsed > 8.0:
+                    diagnostics["decision_timeouts"] += 1
+                if _action_has_no_available_target(ai, state, player_idx, action):
+                    diagnostics["no_target_actions"] += 1
+            try:
+                result = ai._apply_action_for_sim(state, player_idx, action)
+            except Exception:
+                result = None
+                if player_idx == target_player_idx:
+                    diagnostics["rule_exceptions"] += 1
+            signature = _action_signature(action)
+            invalid = result is None or not result.success
+            if player_idx == target_player_idx and invalid:
+                diagnostics["invalid_actions"] += 1
+            if invalid:
+                failed_signatures[player_idx].add(signature)
+                if len(failed_signatures[player_idx]) >= 2:
+                    force_end_turn(state, player_idx)
+                    failed_signatures[player_idx].clear()
+            else:
+                failed_signatures[player_idx].clear()
+
+        if state.winner is not None:
+            logical_winner = 0 if state.winner == target_player_idx else 1
+            score = terminal_training_score(state, target_player_idx)
+        else:
+            diagnostics["max_step_exhaustions"] = 1
+            soft_winner = _determine_soft_winner(state)
+            state.winner = soft_winner
+            logical_winner = 0 if soft_winner == target_player_idx else 1
+            score = terminal_training_score(state, target_player_idx)
+        return logical_winner, score, [], [], diagnostics
+    finally:
         _restore_rng(rng_state)
 
 
@@ -2298,11 +2505,16 @@ def evaluate_model(
     workers: int = 1,
     teacher_search_preset: str = "hybrid",
     task_runner: DeepTrainingTaskRunner | None = None,
+    use_mcts: bool = False,
+    mcts_simulations: int = 64,
+    mcts_chance_nodes: bool = False,
 ) -> dict[str, Any]:
     stats = {
         "wins": 0,
         "losses": 0,
         "draws": 0,
+        "point_rate": 0.0,
+        "game_points": [],
         "avg_score": 0.0,
         "games": max(0, int(games)),
         "actions": 0,
@@ -2339,6 +2551,9 @@ def evaluate_model(
                 teacher_search_preset=teacher_search_preset,
                 temperature=0.0,
                 teacher_label_model_states=False,
+                use_mcts=bool(use_mcts),
+                mcts_simulations=max(1, int(mcts_simulations)),
+                mcts_chance_nodes=bool(mcts_chance_nodes),
             )
             for game_seed in seeds
         ]
@@ -2353,6 +2568,9 @@ def evaluate_model(
                 temperature=0.0,
                 teacher_label_model_states=False,
                 phase_tag="eval",
+                use_mcts=bool(use_mcts),
+                mcts_simulations=max(1, int(mcts_simulations)),
+                mcts_chance_nodes=bool(mcts_chance_nodes),
         )
         rows = (
             task_runner.run_model_game_tasks(tasks)
@@ -2362,6 +2580,7 @@ def evaluate_model(
     for row in rows:
         winner, score = row[0], row[1]
         diagnostics = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
+        stats["game_points"].append(_result_point(winner))
         seat = int(diagnostics.get("seat", 0))
         seat_games[seat] = seat_games.get(seat, 0) + 1
         score_total += score
@@ -2380,6 +2599,114 @@ def evaluate_model(
         stats["decision_seconds"] += float(diagnostics.get("decision_seconds", 0.0))
         stats["max_step_exhaustions"] += int(diagnostics.get("max_step_exhaustions", 0))
     stats["avg_score"] = round(score_total / max(1, games), 3)
+    stats["point_rate"] = round(_point_rate(stats), 6)
+    action_count = max(1, int(stats["actions"]))
+    stats["invalid_action_rate"] = round(float(stats["invalid_actions"]) / action_count, 6)
+    stats["no_target_action_rate"] = round(float(stats["no_target_actions"]) / action_count, 6)
+    stats["rule_exception_rate"] = round(float(stats["rule_exceptions"]) / action_count, 6)
+    stats["decision_timeout_rate"] = round(float(stats["decision_timeouts"]) / action_count, 6)
+    stats["average_decision_seconds"] = round(float(stats["decision_seconds"]) / action_count, 6)
+    stats["max_step_exhaustion_rate"] = round(
+        float(stats["max_step_exhaustions"]) / max(1, games),
+        6,
+    )
+    stats["seat_win_rates"] = {
+        str(seat): round(seat_wins.get(seat, 0) / max(1, seat_games.get(seat, 0)), 6)
+        for seat in (0, 1)
+    }
+    stats["seat_win_rate_gap"] = round(
+        abs(stats["seat_win_rates"]["0"] - stats["seat_win_rates"]["1"]),
+        6,
+    )
+    return stats
+
+
+def evaluate_challenge_baseline(
+    deck_key: str,
+    seed: int,
+    games: int,
+    *,
+    max_steps: int = 120,
+    workers: int = 1,
+    teacher_search_preset: str = "hybrid",
+) -> dict[str, Any]:
+    stats = {
+        "wins": 0,
+        "losses": 0,
+        "draws": 0,
+        "point_rate": 0.0,
+        "game_points": [],
+        "avg_score": 0.0,
+        "games": max(0, int(games)),
+        "actions": 0,
+        "invalid_actions": 0,
+        "no_target_actions": 0,
+        "rule_exceptions": 0,
+        "decision_timeouts": 0,
+        "decision_seconds": 0.0,
+        "max_step_exhaustions": 0,
+        "invalid_action_rate": 0.0,
+        "no_target_action_rate": 0.0,
+        "rule_exception_rate": 0.0,
+        "decision_timeout_rate": 0.0,
+        "average_decision_seconds": 0.0,
+        "max_step_exhaustion_rate": 0.0,
+        "seat_win_rates": {"0": 0.0, "1": 0.0},
+        "seat_win_rate_gap": 0.0,
+    }
+    if games <= 0:
+        return stats
+    score_total = 0.0
+    seat_wins = {0: 0, 1: 0}
+    seat_games = {0: 0, 1: 0}
+    seeds = [seed + idx * 97 for idx in range(games)]
+    worker_count = _normalized_workers(workers)
+    if worker_count <= 1:
+        rows = [
+            _play_challenge_baseline_game(
+                deck_key,
+                game_seed,
+                max_steps=max_steps,
+                teacher_search_preset=teacher_search_preset,
+            )
+            for game_seed in seeds
+        ]
+    else:
+        with ProcessPoolExecutor(max_workers=worker_count) as pool:
+            futures = [
+                pool.submit(
+                    _play_challenge_baseline_game,
+                    deck_key,
+                    game_seed,
+                    max_steps=max_steps,
+                    teacher_search_preset=teacher_search_preset,
+                )
+                for game_seed in seeds
+            ]
+            rows = [future.result() for future in futures]
+    for row in rows:
+        winner, score = row[0], row[1]
+        diagnostics = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
+        stats["game_points"].append(_result_point(winner))
+        seat = int(diagnostics.get("seat", 0))
+        seat_games[seat] = seat_games.get(seat, 0) + 1
+        score_total += score
+        if winner == 0:
+            stats["wins"] += 1
+            seat_wins[seat] = seat_wins.get(seat, 0) + 1
+        elif winner == 1:
+            stats["losses"] += 1
+        else:
+            stats["draws"] += 1
+        stats["actions"] += int(diagnostics.get("actions", 0))
+        stats["invalid_actions"] += int(diagnostics.get("invalid_actions", 0))
+        stats["no_target_actions"] += int(diagnostics.get("no_target_actions", 0))
+        stats["rule_exceptions"] += int(diagnostics.get("rule_exceptions", 0))
+        stats["decision_timeouts"] += int(diagnostics.get("decision_timeouts", 0))
+        stats["decision_seconds"] += float(diagnostics.get("decision_seconds", 0.0))
+        stats["max_step_exhaustions"] += int(diagnostics.get("max_step_exhaustions", 0))
+    stats["avg_score"] = round(score_total / max(1, games), 3)
+    stats["point_rate"] = round(_point_rate(stats), 6)
     action_count = max(1, int(stats["actions"]))
     stats["invalid_action_rate"] = round(float(stats["invalid_actions"]) / action_count, 6)
     stats["no_target_action_rate"] = round(float(stats["no_target_actions"]) / action_count, 6)
@@ -2408,6 +2735,8 @@ def _checkpoint_training_rank(path: str, deck_key: str) -> tuple[int, int, float
         with open(sidecar, "r", encoding="utf-8") as fh:
             payload = json.load(fh)
         metadata = payload.get("metadata") or {}
+        if int(metadata.get("encoder_version") or 0) != ENCODER_SCHEMA_VERSION:
+            return (0, 0, -1.0, -1e30)
         row = (metadata.get("summary") or {}).get(deck_key) or {}
         eval_row = row.get("eval") or {}
         games = int(eval_row.get("games") or metadata.get("eval_games") or 0)
@@ -2430,7 +2759,8 @@ def _warm_start_path_for_deck(deck_key: str) -> str | None:
     existing = [path for path in candidates if os.path.exists(path)]
     if not existing:
         return None
-    return max(existing, key=lambda path: _checkpoint_training_rank(path, deck_key))
+    best = max(existing, key=lambda path: _checkpoint_training_rank(path, deck_key))
+    return best if _checkpoint_training_rank(best, deck_key)[2] >= 0.0 else None
 
 
 def _load_or_create_model(config: DeepTrainingConfig, deck_key: str | None = None):
@@ -2440,7 +2770,12 @@ def _load_or_create_model(config: DeepTrainingConfig, deck_key: str | None = Non
         model_path = _warm_start_path_for_deck(deck_key)
     if model_path and os.path.exists(model_path):
         model, payload = load_checkpoint(model_path, config.device)
-        if int(payload.get("version") or 0) >= 3:
+        schema = dict(payload.get("schema") or payload.get("metadata") or {})
+        if int(schema.get("encoder_version") or 0) != ENCODER_SCHEMA_VERSION:
+            model = None
+        if model is None:
+            pass
+        elif int(payload.get("version") or 0) >= 3:
             if not bool(getattr(model, "use_slot_embeddings", False)):
                 upgraded_config = dict(payload.get("model_config") or {})
                 upgraded_config["use_slot_embeddings"] = True
@@ -2473,25 +2808,113 @@ def _score_points(result: dict[str, Any] | None) -> tuple[int, float]:
     wins = int(result.get("wins", 0))
     losses = int(result.get("losses", 0))
     draws = int(result.get("draws", 0))
-    return wins - losses, wins + draws * 0.25
+    return wins - losses, wins + draws * 0.5
+
+
+def _choice_training_examples_from_deck_summary(deck_summary: Any) -> int:
+    if not isinstance(deck_summary, dict):
+        return 0
+    choice_examples = int((deck_summary.get("choice") or {}).get("choice_examples") or 0)
+    choice_examples += int((deck_summary.get("distill_choice") or {}).get("choice_examples") or 0)
+    choice_examples += int(deck_summary.get("loaded_choice_examples") or 0)
+    return max(0, choice_examples)
+
+
+def _choice_training_examples_from_metadata(metadata: dict[str, Any], deck_key: str) -> int:
+    summary = metadata.get("summary")
+    if not isinstance(summary, dict):
+        return 0
+    deck_summary = summary.get(deck_key)
+    if not isinstance(deck_summary, dict) and len(summary) == 1:
+        only_summary = next(iter(summary.values()))
+        deck_summary = only_summary if isinstance(only_summary, dict) else None
+    return _choice_training_examples_from_deck_summary(deck_summary)
+
+
+def _checkpoint_choice_training_examples(path: str | None, deck_key: str) -> int:
+    if not path:
+        return 0
+    sidecar = os.path.splitext(path)[0] + ".json"
+    try:
+        with open(sidecar, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        metadata = payload.get("metadata") if isinstance(payload, dict) else {}
+        if not isinstance(metadata, dict):
+            return 0
+        if (
+            int(metadata.get("rules_version") or 0) != RULES_SCHEMA_VERSION
+            or int(metadata.get("action_version") or 0) != ACTION_SCHEMA_VERSION
+            or int(metadata.get("encoder_version") or 0) != ENCODER_SCHEMA_VERSION
+        ):
+            return 0
+        return _choice_training_examples_from_metadata(metadata, deck_key)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return 0
+
+
+def _result_point(winner: int | None) -> float:
+    if winner == 0:
+        return 1.0
+    if winner == 1:
+        return 0.0
+    return 0.5
 
 
 def _point_rate(result: dict[str, Any] | None) -> float:
-    if not result:
-        return 0.0
-    games = max(1, int(result.get("games") or 0))
-    _, points = _score_points(result)
-    return float(points) / games
+    return release_point_rate(result)
+
+
+def _paired_delta_point_rate(eval_result: dict[str, Any], baseline: dict[str, Any] | None) -> float | None:
+    return release_paired_delta_point_rate(eval_result, baseline)
 
 
 def _evaluation_delta(eval_result: dict[str, Any], baseline: dict[str, Any] | None) -> dict[str, Any]:
     if not baseline or int(baseline.get("games") or 0) <= 0:
-        return {"delta_wins": None, "delta_point_rate": None, "delta_avg_score": None}
+        return {
+            "delta_wins": None,
+            "delta_win_rate": None,
+            "delta_point_rate": None,
+            "paired_delta_point_rate": None,
+            "delta_avg_score": None,
+        }
+    candidate_games = max(1, int(eval_result.get("games") or 0))
+    baseline_games = max(1, int(baseline.get("games") or 0))
     return {
         "delta_wins": int(eval_result.get("wins", 0)) - int(baseline.get("wins", 0)),
+        "delta_win_rate": round(
+            float(eval_result.get("wins", 0) or 0) / candidate_games
+            - float(baseline.get("wins", 0) or 0) / baseline_games,
+            4,
+        ),
         "delta_point_rate": round(_point_rate(eval_result) - _point_rate(baseline), 4),
+        "paired_delta_point_rate": (
+            round(paired_delta, 4)
+            if (paired_delta := _paired_delta_point_rate(eval_result, baseline)) is not None
+            else None
+        ),
         "delta_avg_score": round(float(eval_result.get("avg_score", 0.0)) - float(baseline.get("avg_score", 0.0)), 3),
     }
+
+
+def _max_step_exhaustion_rate(result: dict[str, Any] | None) -> float:
+    return release_max_step_exhaustion_rate(result)
+
+
+def _has_strength_floor(
+    result: dict[str, Any] | None,
+    *,
+    min_point_rate: float,
+    paired_baseline: dict[str, Any] | None = None,
+    min_delta_point_rate: float = DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+    max_step_exhaustion_rate: float,
+) -> bool:
+    return has_strength_and_reliability_floor(
+        result,
+        min_point_rate=min_point_rate,
+        paired_baseline=paired_baseline,
+        min_delta_point_rate=min_delta_point_rate,
+        max_step_exhaustion_rate_limit=max_step_exhaustion_rate,
+    )
 
 
 def _accepts_candidate(
@@ -2501,9 +2924,12 @@ def _accepts_candidate(
     *,
     acceptance_metric: str = "wins",
     min_win_delta: int = 1,
+    min_point_rate: float = DEFAULT_MIN_ACCEPTED_POINT_RATE,
+    min_delta_point_rate: float = DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+    max_step_exhaustion_rate: float = DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
 ) -> bool:
     if int(eval_result.get("games") or 0) <= 0:
-        return True
+        return False
     if float(eval_result.get("invalid_action_rate", 0.0) or 0.0) > 0.0:
         return False
     if float(eval_result.get("no_target_action_rate", 0.0) or 0.0) > 0.0:
@@ -2512,12 +2938,36 @@ def _accepts_candidate(
         return False
     if float(eval_result.get("decision_timeout_rate", 0.0) or 0.0) > 0.0:
         return False
+    if not _has_strength_floor(
+        eval_result,
+        min_point_rate=min_point_rate,
+        paired_baseline=baseline_eval,
+        min_delta_point_rate=min_delta_point_rate,
+        max_step_exhaustion_rate=max_step_exhaustion_rate,
+    ):
+        return False
     metric = acceptance_metric if acceptance_metric in ("wins", "points", "score") else "wins"
+    # A paired Challenge evaluation is the production release gate for the
+    # default points policy.  Do not compare points a second time: that used to
+    # silently tighten the shared -1% practical non-inferiority floor back to
+    # exact parity.  Explicit legacy ``wins``/``score`` policies remain
+    # available as stricter opt-in criteria.
+    if (
+        metric == "points"
+        and baseline_eval
+        and int(baseline_eval.get("games") or 0) > 0
+    ):
+        return True
     if metric == "wins":
         required_delta = max(0, int(min_win_delta))
         candidate_games = max(1, int(eval_result.get("games") or 0))
         candidate_rate = float(eval_result.get("wins", 0)) / candidate_games
-        for baseline in (baseline_eval, old_eval):
+        comparison_baselines = (
+            (baseline_eval,)
+            if baseline_eval and int(baseline_eval.get("games") or 0) > 0
+            else (old_eval,)
+        )
+        for baseline in comparison_baselines:
             if not baseline or int(baseline.get("games") or 0) <= 0:
                 continue
             baseline_games = max(1, int(baseline.get("games") or 0))
@@ -2528,7 +2978,12 @@ def _accepts_candidate(
         return True
     if metric == "score":
         candidate_score = float(eval_result.get("avg_score", 0.0))
-        for baseline in (baseline_eval, old_eval):
+        comparison_baselines = (
+            (baseline_eval,)
+            if baseline_eval and int(baseline_eval.get("games") or 0) > 0
+            else (old_eval,)
+        )
+        for baseline in comparison_baselines:
             if not baseline or int(baseline.get("games") or 0) <= 0:
                 continue
             if candidate_score <= float(baseline.get("avg_score", 0.0)):
@@ -2537,7 +2992,12 @@ def _accepts_candidate(
 
     _, candidate_rate = _score_points(eval_result)
     candidate_rate /= max(1, int(eval_result.get("games") or 0))
-    for baseline in (baseline_eval, old_eval):
+    comparison_baselines = (
+        (baseline_eval,)
+        if baseline_eval and int(baseline_eval.get("games") or 0) > 0
+        else (old_eval,)
+    )
+    for baseline in comparison_baselines:
         if not baseline or int(baseline.get("games") or 0) <= 0:
             continue
         _, baseline_rate = _score_points(baseline)
@@ -2611,10 +3071,13 @@ def _accepts_league_result(
     *,
     min_score_rate: float,
     min_elo_delta: float,
+    max_step_exhaustion_rate: float = DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
 ) -> bool:
     if int(result.get("games") or 0) <= 0:
-        return True
+        return False
     if _has_bad_eval_actions(result):
+        return False
+    if _max_step_exhaustion_rate(result) > float(max_step_exhaustion_rate) + 1e-12:
         return False
     return (
         float(result.get("score_rate", 0.0) or 0.0) + 1e-12 >= float(min_score_rate)
@@ -2652,8 +3115,22 @@ def _checkpoint_is_verified_for_league(path: str, deck_key: str) -> bool:
     summary = metadata.get("summary")
     if isinstance(summary, dict):
         deck_summary = summary.get(deck_key)
-        if isinstance(deck_summary, dict) and _has_bad_eval_actions(deck_summary.get("eval")):
-            return False
+        if isinstance(deck_summary, dict):
+            eval_row = deck_summary.get("eval")
+            release_baseline = (
+                deck_summary.get("challenge_baseline_eval")
+                or deck_summary.get("release_baseline_eval")
+            )
+            if _has_bad_eval_actions(eval_row):
+                return False
+            if not _has_strength_floor(
+                eval_row,
+                min_point_rate=DEFAULT_MIN_ACCEPTED_POINT_RATE,
+                paired_baseline=release_baseline if isinstance(release_baseline, dict) else None,
+                min_delta_point_rate=DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+                max_step_exhaustion_rate=DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
+            ):
+                return False
     return True
 
 
@@ -2704,7 +3181,7 @@ def _add_verified_league_snapshots(pool: OpponentPool, config: DeepTrainingConfi
     return loaded
 
 
-def _empty_league_result(reason: str, *, accepted: bool = True) -> dict[str, Any]:
+def _empty_league_result(reason: str, *, accepted: bool = False) -> dict[str, Any]:
     return {
         "games": 0,
         "wins": 0,
@@ -2843,10 +3320,13 @@ def evaluate_alpha_zero_league(
         stats,
         min_score_rate=float(config.min_score_rate),
         min_elo_delta=float(config.min_elo_delta),
+        max_step_exhaustion_rate=float(config.max_step_exhaustion_rate),
     )
     stats["accepted"] = accepted
     if _has_bad_eval_actions(stats):
         stats["rejection_reason"] = "bad_actions"
+    elif _max_step_exhaustion_rate(stats) > float(config.max_step_exhaustion_rate) + 1e-12:
+        stats["rejection_reason"] = "max_step_exhaustion"
     elif not accepted:
         stats["rejection_reason"] = "league_threshold"
     else:
@@ -3044,6 +3524,9 @@ def _train_deck_alpha_zero_pipeline(
         "dagger_games": 0,
         "league_eval_games": max(0, int(config.league_eval_games)),
         "league_use_mcts": bool(config.league_use_mcts),
+        "min_score_rate": float(config.min_score_rate),
+        "min_elo_delta": float(config.min_elo_delta),
+        "max_step_exhaustion_rate": float(config.max_step_exhaustion_rate),
         "rollout_batch_games": rollout_batch_games,
         "updates_per_rollout": updates_per_rollout,
         "mcts_simulations": int(config.mcts_simulations),
@@ -3229,6 +3712,7 @@ def _train_deck_alpha_zero_pipeline(
         "acceptance_metric": "league_elo",
         "min_score_rate": float(config.min_score_rate),
         "min_elo_delta": float(config.min_elo_delta),
+        "max_step_exhaustion_rate": float(config.max_step_exhaustion_rate),
         "teacher_label_model_states": False,
         "teacher_search_preset": "",
     }
@@ -3307,9 +3791,14 @@ def _train_deck_pipeline(
         "rollout_batch_games": rollout_batch_games,
         "updates_per_rollout": updates_per_rollout,
         "teacher_search_preset": teacher_search_preset,
+        "eval_use_mcts": bool(config.eval_use_mcts),
+        "mcts_simulations": int(config.mcts_simulations),
         "choice_head_enabled": bool(config.choice_head_enabled),
         "acceptance_metric": acceptance_metric,
         "min_win_delta": min_win_delta,
+        "min_point_rate": float(config.min_point_rate),
+        "min_delta_point_rate": float(config.min_delta_point_rate),
+        "max_step_exhaustion_rate": float(config.max_step_exhaustion_rate),
         "teacher_label_model_states": bool(config.teacher_label_model_states),
         "distill_dataset": list(config.distill_dataset),
         "distill_epochs": int(config.distill_epochs),
@@ -3462,6 +3951,9 @@ def _train_deck_pipeline(
             workers=worker_count,
             teacher_search_preset=teacher_search_preset,
             task_runner=task_runner,
+            use_mcts=bool(config.eval_use_mcts),
+            mcts_simulations=int(config.mcts_simulations),
+            mcts_chance_nodes=bool(config.mcts_chance_nodes),
         )
         emit({
             "type": "baseline_eval_finished",
@@ -4029,7 +4521,17 @@ def _train_deck_pipeline(
             pass
 
     resume_path = os.path.join(DEFAULT_MODEL_DIR, f"resume_{deck_key}.pt")
-    if callable(getattr(model, "state_dict", None)):
+    has_training_work = bool(config.distill_dataset) or any(
+        int(value) > 0
+        for value in (
+            config.bootstrap_games,
+            config.dagger_games,
+            config.games,
+            config.pure_rl_games,
+            config.replay_same_deal,
+        )
+    )
+    if has_training_work and callable(getattr(model, "state_dict", None)):
         save_checkpoint(
             resume_path,
             model,
@@ -4040,6 +4542,8 @@ def _train_deck_pipeline(
                 "accepted": False,
                 "verified": False,
                 "total_games_played": total_done,
+                "choice_head_enabled": bool(getattr(model, "choice_head_enabled", False)),
+                "summary": {deck_key: {"choice": choice_result}},
             },
         )
         emit({
@@ -4047,6 +4551,54 @@ def _train_deck_pipeline(
             "deck": deck_key,
             "phase": "pre_eval",
             "model_path": resume_path,
+            "total_games_played": total_done,
+            "total_training_games": total_training_games,
+        })
+
+    challenge_baseline_eval = None
+    cached_challenge_baseline = config.challenge_baseline_eval
+    if eval_games > 0 and cached_challenge_baseline is not None:
+        challenge_baseline_eval = copy.deepcopy(cached_challenge_baseline)
+        if int(challenge_baseline_eval.get("games") or 0) != eval_games:
+            raise ValueError("Cached Challenge baseline game count does not match eval_games")
+        cached_points = challenge_baseline_eval.get("game_points")
+        if not isinstance(cached_points, list) or len(cached_points) != eval_games:
+            raise ValueError("Cached Challenge baseline lacks complete ordered game_points")
+        emit({
+            "type": "challenge_baseline_eval_reused",
+            "deck": deck_key,
+            "training_seed": deck_seed,
+            "eval_seed": eval_seed,
+            "eval": challenge_baseline_eval,
+            "source": config.challenge_baseline_source or "direct_config",
+            "win_rate": round(
+                float(challenge_baseline_eval.get("wins", 0)) / max(1, eval_games),
+                4,
+            ),
+            "point_rate": round(_point_rate(challenge_baseline_eval), 4),
+            "total_games_played": total_done,
+            "total_training_games": total_training_games,
+        })
+    elif eval_games > 0:
+        challenge_baseline_eval = evaluate_challenge_baseline(
+            deck_key,
+            eval_seed,
+            eval_games,
+            max_steps=max_steps,
+            workers=worker_count,
+            teacher_search_preset=teacher_search_preset,
+        )
+        emit({
+            "type": "challenge_baseline_eval_finished",
+            "deck": deck_key,
+            "training_seed": deck_seed,
+            "eval_seed": eval_seed,
+            "eval": challenge_baseline_eval,
+            "win_rate": round(
+                float(challenge_baseline_eval.get("wins", 0)) / max(1, eval_games),
+                4,
+            ),
+            "point_rate": round(_point_rate(challenge_baseline_eval), 4),
             "total_games_played": total_done,
             "total_training_games": total_training_games,
         })
@@ -4060,19 +4612,26 @@ def _train_deck_pipeline(
         max_steps=max_steps,
         workers=worker_count,
         teacher_search_preset=teacher_search_preset,
+        use_mcts=bool(config.eval_use_mcts),
+        mcts_simulations=int(config.mcts_simulations),
+        mcts_chance_nodes=bool(config.mcts_chance_nodes),
     )
     total_done += eval_games
     eval_win_rate = 0.0
     if eval_games > 0:
         eval_win_rate = round(float(eval_result.get("wins", 0)) / max(1, eval_games), 4)
-    baseline_delta = _evaluation_delta(eval_result, baseline_eval)
+    baseline_delta = _evaluation_delta(eval_result, challenge_baseline_eval)
+    training_delta = _evaluation_delta(eval_result, baseline_eval)
     old_delta = _evaluation_delta(eval_result, old_eval)
     accepted = _accepts_candidate(
         eval_result,
-        baseline_eval,
+        challenge_baseline_eval,
         old_eval,
         acceptance_metric=acceptance_metric,
         min_win_delta=min_win_delta,
+        min_point_rate=float(config.min_point_rate),
+        min_delta_point_rate=float(config.min_delta_point_rate),
+        max_step_exhaustion_rate=float(config.max_step_exhaustion_rate),
     )
     selected_stage = "final"
     if (
@@ -4091,14 +4650,20 @@ def _train_deck_pipeline(
             max_steps=max_steps,
             workers=worker_count,
             teacher_search_preset=teacher_search_preset,
+            use_mcts=bool(config.eval_use_mcts),
+            mcts_simulations=int(config.mcts_simulations),
+            mcts_chance_nodes=bool(config.mcts_chance_nodes),
         )
         total_done += eval_games
         bootstrap_accepted = _accepts_candidate(
             bootstrap_final_eval,
-            None,
+            challenge_baseline_eval,
             old_eval,
             acceptance_metric=acceptance_metric,
             min_win_delta=min_win_delta,
+            min_point_rate=float(config.min_point_rate),
+            min_delta_point_rate=float(config.min_delta_point_rate),
+            max_step_exhaustion_rate=float(config.max_step_exhaustion_rate),
         )
         emit({
             "type": "fallback_eval_finished",
@@ -4117,20 +4682,32 @@ def _train_deck_pipeline(
                 float(eval_result.get("wins", 0)) / max(1, eval_games),
                 4,
             )
-            baseline_delta = _evaluation_delta(eval_result, baseline_eval)
+            baseline_delta = _evaluation_delta(eval_result, challenge_baseline_eval)
+            training_delta = _evaluation_delta(eval_result, baseline_eval)
             old_delta = _evaluation_delta(eval_result, old_eval)
     emit({
         "type": "eval_finished",
         "deck": deck_key,
         "eval": eval_result,
         "baseline_eval": baseline_eval,
+        "challenge_baseline_eval": challenge_baseline_eval,
         "old_eval": old_eval,
         "accepted": accepted,
         "selected_stage": selected_stage,
         "acceptance_metric": acceptance_metric,
         "min_win_delta": min_win_delta,
+        "min_point_rate": float(config.min_point_rate),
+        "min_delta_point_rate": float(config.min_delta_point_rate),
+        "max_step_exhaustion_rate": float(config.max_step_exhaustion_rate),
+        "eval_use_mcts": bool(config.eval_use_mcts),
+        "mcts_simulations": int(config.mcts_simulations),
         **baseline_delta,
+        "training_delta_wins": training_delta.get("delta_wins"),
+        "training_delta_win_rate": training_delta.get("delta_win_rate"),
+        "training_delta_point_rate": training_delta.get("delta_point_rate"),
+        "training_delta_avg_score": training_delta.get("delta_avg_score"),
         "old_delta_wins": old_delta.get("delta_wins"),
+        "old_delta_win_rate": old_delta.get("delta_win_rate"),
         "old_delta_point_rate": old_delta.get("delta_point_rate"),
         "old_delta_avg_score": old_delta.get("delta_avg_score"),
         "win_rate": eval_win_rate,
@@ -4147,6 +4724,8 @@ def _train_deck_pipeline(
         },
         "bootstrap": bootstrap_result,
         "baseline_eval": baseline_eval or {"games": 0},
+        "challenge_baseline_eval": challenge_baseline_eval or {"games": 0},
+        "challenge_baseline_source": config.challenge_baseline_source or "fresh_evaluation",
         "dagger": dagger_result,
         "choice": choice_result,
         "distill_choice": {
@@ -4163,7 +4742,14 @@ def _train_deck_pipeline(
         "selected_stage": selected_stage,
         "acceptance_metric": acceptance_metric,
         "min_win_delta": min_win_delta,
+        "min_delta_point_rate": float(config.min_delta_point_rate),
+        "eval_use_mcts": bool(config.eval_use_mcts),
+        "mcts_simulations": int(config.mcts_simulations),
         **baseline_delta,
+        "training_delta_wins": training_delta.get("delta_wins"),
+        "training_delta_win_rate": training_delta.get("delta_win_rate"),
+        "training_delta_point_rate": training_delta.get("delta_point_rate"),
+        "training_delta_avg_score": training_delta.get("delta_avg_score"),
         "rollout_batch_games": rollout_batch_games,
         "updates_per_rollout": updates_per_rollout,
         "teacher_search_preset": teacher_search_preset,
@@ -4177,9 +4763,11 @@ def _train_deck_pipeline(
         "stats": stats,
         "eval": eval_result,
         "baseline_eval": baseline_eval,
+        "challenge_baseline_eval": challenge_baseline_eval,
         "accepted": accepted,
         "acceptance_metric": acceptance_metric,
         "delta_wins": baseline_delta.get("delta_wins"),
+        "delta_win_rate": baseline_delta.get("delta_win_rate"),
         "delta_point_rate": baseline_delta.get("delta_point_rate"),
         "total_games_played": total_done,
         "total_training_games": total_training_games,
@@ -4203,6 +4791,9 @@ def _load_old_eval(
     max_steps: int,
     workers: int,
     teacher_search_preset: str,
+    use_mcts: bool = False,
+    mcts_simulations: int = 64,
+    mcts_chance_nodes: bool = False,
 ) -> dict[str, Any] | None:
     if eval_games <= 0 or not output_path or not os.path.exists(output_path):
         return None
@@ -4226,6 +4817,9 @@ def _load_old_eval(
         max_steps=max_steps,
         workers=workers,
         teacher_search_preset=teacher_search_preset,
+        use_mcts=bool(use_mcts),
+        mcts_simulations=max(1, int(mcts_simulations)),
+        mcts_chance_nodes=bool(mcts_chance_nodes),
     )
 
 
@@ -4265,6 +4859,8 @@ def run_deep_training(
             writer.flush()
 
     deck_keys = _deck_keys(effective_config.deck)
+    if effective_config.challenge_baseline_eval is not None and len(deck_keys) != 1:
+        raise ValueError("A cached Challenge baseline can only be reused for a single deck")
     started = time.time()
     train_summary: dict[str, Any] = {}
     bootstrap_games = 0 if trainer_mode == TRAINER_ALPHA_ZERO else max(0, int(effective_config.bootstrap_games))
@@ -4309,6 +4905,7 @@ def run_deep_training(
             "trainer_version": ALPHA_ZERO_METADATA_TRAINER if trainer_mode == TRAINER_ALPHA_ZERO else LEGACY_METADATA_TRAINER,
             "deck": effective_config.deck,
             "deck_keys": deck_keys,
+            "seed": int(effective_config.seed),
             "games_per_deck": self_play_games,
             "bootstrap_games": bootstrap_games,
             "dagger_games": dagger_games,
@@ -4318,6 +4915,13 @@ def run_deep_training(
             "league_dir": effective_config.league_dir,
             "min_score_rate": float(effective_config.min_score_rate),
             "min_elo_delta": float(effective_config.min_elo_delta),
+            "min_point_rate": float(effective_config.min_point_rate),
+            "min_delta_point_rate": float(effective_config.min_delta_point_rate),
+            "max_step_exhaustion_rate": float(effective_config.max_step_exhaustion_rate),
+            "challenge_baseline_source": effective_config.challenge_baseline_source or "",
+            "recovered_choice_examples": max(0, int(effective_config.recovered_choice_examples)),
+            "eval_use_mcts": bool(effective_config.eval_use_mcts),
+            "mcts_simulations": int(effective_config.mcts_simulations),
             "pure_rl_games": pure_rl_games,
             "replay_same_deal": 0 if trainer_mode == TRAINER_ALPHA_ZERO else int(effective_config.replay_same_deal),
             "same_deal_trajectories": same_deal_trajectories,
@@ -4348,7 +4952,7 @@ def run_deep_training(
         for offset, deck_key in enumerate(deck_keys):
             deck_seed = effective_config.seed + offset * 1009
             output_path = _candidate_output_path(effective_config, deck_key, len(deck_keys) > 1)
-            old_model_path = effective_config.model or _output_path_for_deck(deck_key)
+            old_model_path = _output_path_for_deck(deck_key)
             requested_model_paths[deck_key] = output_path
             warm_start_path = effective_config.model
             warm_start_source = "explicit_model" if warm_start_path else "none"
@@ -4361,8 +4965,12 @@ def run_deep_training(
                 "source": warm_start_source,
                 "path": warm_start_path or "",
             }
+            loaded_choice_examples = max(
+                _checkpoint_choice_training_examples(warm_start_path, deck_key),
+                max(0, int(effective_config.recovered_choice_examples)),
+            )
             old_eval = None
-            if trainer_mode == TRAINER_LEGACY:
+            if trainer_mode == TRAINER_LEGACY and effective_config.challenge_baseline_eval is None:
                 old_eval = _load_old_eval(
                     old_model_path,
                     deck_key,
@@ -4372,6 +4980,9 @@ def run_deep_training(
                     max_steps=max(20, int(effective_config.max_steps)),
                     workers=_normalized_workers(effective_config.workers),
                     teacher_search_preset=effective_config.teacher_search_preset,
+                    use_mcts=bool(effective_config.eval_use_mcts),
+                    mcts_simulations=int(effective_config.mcts_simulations),
+                    mcts_chance_nodes=bool(effective_config.mcts_chance_nodes),
                 )
 
             model = _load_or_create_model(effective_config, deck_key)
@@ -4398,6 +5009,21 @@ def run_deep_training(
                     total_training_games,
                     old_eval=old_eval,
                 )
+            trained_choice_examples = int((deck_summary.get("choice") or {}).get("choice_examples") or 0)
+            trained_choice_examples += int((deck_summary.get("distill_choice") or {}).get("choice_examples") or 0)
+            if trained_choice_examples <= 0 and loaded_choice_examples > 0:
+                deck_summary["loaded_choice_examples"] = int(loaded_choice_examples)
+                trained_choice_examples = int(loaded_choice_examples)
+            if trained_choice_examples <= 0 and bool(getattr(model, "choice_head_enabled", False)):
+                model.choice_head_enabled = False
+                deck_summary["choice_head_enabled"] = False
+                emit({
+                    "type": "choice_head_disabled",
+                    "deck": deck_key,
+                    "reason": "no_choice_training_examples",
+                    "total_games_played": total_done,
+                    "total_training_games": total_training_games,
+                })
             train_summary[deck_key] = deck_summary
             deck_accepted = bool(deck_summary.get("accepted", True))
             evidence_games = (
@@ -4427,6 +5053,13 @@ def run_deep_training(
                 "league_dir": effective_config.league_dir,
                 "min_score_rate": float(effective_config.min_score_rate),
                 "min_elo_delta": float(effective_config.min_elo_delta),
+                "min_point_rate": float(effective_config.min_point_rate),
+                "min_delta_point_rate": float(effective_config.min_delta_point_rate),
+                "max_step_exhaustion_rate": float(effective_config.max_step_exhaustion_rate),
+                "challenge_baseline_source": effective_config.challenge_baseline_source or "fresh_evaluation",
+                "recovered_choice_examples": max(0, int(effective_config.recovered_choice_examples)),
+                "eval_use_mcts": bool(effective_config.eval_use_mcts),
+                "mcts_simulations": int(effective_config.mcts_simulations),
                 "pure_rl_games": pure_rl_games,
                 "replay_same_deal": 0 if trainer_mode == TRAINER_ALPHA_ZERO else int(effective_config.replay_same_deal),
                 "workers": int(effective_config.workers),
@@ -4449,7 +5082,7 @@ def run_deep_training(
                 "rollout_batch_games": effective_config.rollout_batch_games,
                 "updates_per_rollout": effective_config.updates_per_rollout,
                 "teacher_search_preset": metadata_teacher_search_preset,
-                "choice_head_enabled": bool(effective_config.choice_head_enabled),
+                "choice_head_enabled": bool(getattr(model, "choice_head_enabled", False)),
                 "acceptance_metric": metadata_acceptance_metric,
                 "min_win_delta": metadata_min_win_delta,
                 "teacher_label_model_states": metadata_teacher_label_model_states,
@@ -4467,11 +5100,19 @@ def run_deep_training(
                 json.dump({"model_path": save_path, "metadata": metadata},
                           fh, ensure_ascii=False, indent=2, sort_keys=True)
             resume_path = os.path.join(DEFAULT_MODEL_DIR, f"resume_{deck_key}.pt")
-            try:
-                if os.path.exists(resume_path):
-                    os.remove(resume_path)
-            except OSError:
-                pass
+            if (
+                bootstrap_games
+                + dagger_games
+                + self_play_games
+                + pure_rl_games
+                + same_deal_trajectories > 0
+                or bool(distill_datasets)
+            ):
+                try:
+                    if os.path.exists(resume_path):
+                        os.remove(resume_path)
+                except OSError:
+                    pass
 
         payload = {
             "model_paths": model_paths,
@@ -4494,6 +5135,11 @@ def run_deep_training(
                 "league_dir": effective_config.league_dir,
                 "min_score_rate": float(effective_config.min_score_rate),
                 "min_elo_delta": float(effective_config.min_elo_delta),
+                "min_point_rate": float(effective_config.min_point_rate),
+                "min_delta_point_rate": float(effective_config.min_delta_point_rate),
+                "max_step_exhaustion_rate": float(effective_config.max_step_exhaustion_rate),
+                "eval_use_mcts": bool(effective_config.eval_use_mcts),
+                "mcts_simulations": int(effective_config.mcts_simulations),
                 "pure_rl_games": pure_rl_games,
                 "replay_same_deal": 0 if trainer_mode == TRAINER_ALPHA_ZERO else int(effective_config.replay_same_deal),
                 "workers": int(effective_config.workers),

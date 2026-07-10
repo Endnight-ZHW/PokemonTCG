@@ -63,7 +63,7 @@ foreach ($platform in $targets) {
             if (-not (Test-Path -LiteralPath $ndkRoot)) {
                 throw 'Android NDK 28.1 is missing.'
             }
-            $common += @("android_api_level=28", "ANDROID_NDK_ROOT=$ndkRoot")
+            $common += 'android_api_level=28'
             $common += "ANDROID_HOME=$sdkRoot"
             $env:ANDROID_HOME = $sdkRoot
             $env:ANDROID_SDK_ROOT = $sdkRoot

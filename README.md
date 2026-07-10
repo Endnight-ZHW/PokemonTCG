@@ -10,7 +10,7 @@ Python/Pygame 开发环境。
 | [`godot/`](godot/) | 当前发布客户端 | Godot 4.7，版本 0.3.2 |
 | [`python/`](python/) | 旧版客户端、规则对照、AI 训练与数据导出 | 继续用于开发和迁移验证 |
 | [`tools/`](tools/) | Godot 工具链、测试、构建和发布脚本 | 两个版本共享 |
-| [`docs/`](docs/) | 规则、迁移报告、发布说明和验收清单 | 项目文档 |
+| [`docs/`](docs/) | 规则、开发手册、发布说明和 AI rollout | 项目文档 |
 
 Godot 版本已经具备本地双人、Challenge AI、Deep AI、ENet LAN 和
 WebSocket Relay。Python/Pygame 版本不再作为发布版运行时，但仍是规则对照、
@@ -76,11 +76,9 @@ Set-Location ..
 
 ## 文档
 
-- [迁移实施报告](docs/GODOT_MIGRATION_REPORT.md)
 - [发布说明](docs/RELEASE_NOTES.md)
-- [Android 真机验收](docs/ANDROID_TEST_CHECKLIST.md)
-- [视觉升级基线](docs/VISUAL_UPGRADE_BASELINE.md)
 - [Godot 4.7 新手开发手册](docs/GODOT_DEVELOPMENT_GUIDE.md)
+- [Deep AI v10/v3 发布进度](docs/deep_ai_v10_rollout.md)
 - [游戏规则](docs/RULES.md)
 
 卡牌名称、规则和图片仅供学习交流。游戏规则基于宝可梦集换式卡牌游戏官方规则。

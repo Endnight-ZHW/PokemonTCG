@@ -390,7 +390,7 @@ def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int,
 
 def finish_setup(state: GameState, tm: TurnManager, ais: list[Any]) -> None:
     for player_idx, ai in enumerate(ais):
-        for _ in range(10):
+        for _ in range(100):
             if tm.needs_mulligan(player_idx):
                 state.do_mulligan(player_idx)
             else:

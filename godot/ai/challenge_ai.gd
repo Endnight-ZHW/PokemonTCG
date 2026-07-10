@@ -9,6 +9,9 @@ const DEEP_DEFAULT_SIMULATIONS := 64
 const DEEP_FALLBACK_SIMULATIONS := 128
 const DEEP_DEFAULT_SECONDS := 2.0
 const DEEP_DEFAULT_DEPTH := 12
+const DEEP_NEURAL_PRIOR_BLEND := 0.15
+const DEEP_NEURAL_PRIOR_MIN_TOP_PROB := 0.45
+const DEEP_HEURISTIC_CLEAR_PRIOR_GAP := 0.12
 const GAMEPLAY_DEFAULT_SIMULATIONS := 64
 const GAMEPLAY_DEFAULT_SECONDS := 0.75
 const GAMEPLAY_DEFAULT_DEPTH := 8
@@ -343,7 +346,10 @@ func _search_action(
 		var neural := _neural_action_priors(state, actor, actions, deck_key, catalog, inference)
 		_profile_add_elapsed(profile, "neural_priors_ms", neural_started)
 		if bool(neural.get("success", false)):
-			priors.assign(neural["priors"])
+			var heuristic_started := _profile_start(profile)
+			var heuristic_priors := _heuristic_priors(state, actor, actions, deck_key, catalog, profile)
+			_profile_add_elapsed(profile, "heuristic_priors_ms", heuristic_started)
+			priors = _guarded_neural_priors(neural["priors"], heuristic_priors)
 		else:
 			deep_error = str(neural.get("error", "inference_failed"))
 	elif mode == "deep":
@@ -615,14 +621,17 @@ func _choose_request(
 ) -> Dictionary:
 	var response: ChoiceResponse
 	var deep_error := ""
-	if mode == "deep" and inference == null:
-		deep_error = "runtime_unavailable"
-	elif inference != null and not request.options.is_empty():
-		var neural := _neural_choice(state, request, actor, deck_key, catalog, inference)
-		if bool(neural.get("success", false)):
-			response = neural["response"]
-		else:
-			deep_error = str(neural.get("error", "choice_inference_failed"))
+	if mode == "deep":
+		if inference == null:
+			deep_error = "runtime_unavailable"
+		elif not inference.has_method("supports_choice_head") or not bool(inference.call("supports_choice_head")):
+			deep_error = "choice_head_disabled"
+		elif not request.options.is_empty():
+			var neural := _neural_choice(state, request, actor, deck_key, catalog, inference)
+			if bool(neural.get("success", false)):
+				response = neural["response"]
+			else:
+				deep_error = str(neural.get("error", "choice_inference_failed"))
 	if response == null:
 		response = _heuristic_choice(
 			state,
@@ -4798,6 +4807,70 @@ func _neural_choice(
 			_ranked_choice_option_ids(request, ranked, count),
 		),
 	}
+
+
+func _normalize_priors(priors: Array) -> Array[float]:
+	var values: Array[float] = []
+	var total := 0.0
+	for value in priors:
+		var prior: float = max(0.0, float(value))
+		values.append(prior)
+		total += prior
+	if values.is_empty():
+		return values
+	if total <= 0.000001:
+		var uniform: float = 1.0 / float(values.size())
+		for index in range(values.size()):
+			values[index] = uniform
+		return values
+	for index in range(values.size()):
+		values[index] /= total
+	return values
+
+
+func _top_prior_info(priors: Array[float]) -> Dictionary:
+	if priors.is_empty():
+		return {"index": -1, "top": 0.0, "second": 0.0}
+	var best_index := 0
+	var best_value := -INF
+	var second_value := -INF
+	for index in range(priors.size()):
+		var value := float(priors[index])
+		if value > best_value:
+			second_value = best_value
+			best_value = value
+			best_index = index
+		elif value > second_value:
+			second_value = value
+	if second_value <= -INF / 2.0:
+		second_value = 0.0
+	return {"index": best_index, "top": best_value, "second": second_value}
+
+
+func _guarded_neural_priors(neural_values: Array, heuristic_values: Array) -> Array[float]:
+	var heuristic := _normalize_priors(heuristic_values)
+	if neural_values.size() != heuristic.size() or heuristic.is_empty():
+		return heuristic
+	var neural := _normalize_priors(neural_values)
+	if neural.size() != heuristic.size():
+		return heuristic
+	var neural_info := _top_prior_info(neural)
+	var heuristic_info := _top_prior_info(heuristic)
+	if float(neural_info["top"]) < DEEP_NEURAL_PRIOR_MIN_TOP_PROB:
+		return heuristic
+	var heuristic_gap := float(heuristic_info["top"]) - float(heuristic_info["second"])
+	if (
+		int(neural_info["index"]) != int(heuristic_info["index"])
+		and heuristic_gap >= DEEP_HEURISTIC_CLEAR_PRIOR_GAP
+	):
+		return heuristic
+	var blend := DEEP_NEURAL_PRIOR_BLEND
+	if int(neural_info["index"]) != int(heuristic_info["index"]):
+		blend *= 0.5
+	var mixed: Array[float] = []
+	for index in range(heuristic.size()):
+		mixed.append((1.0 - blend) * heuristic[index] + blend * neural[index])
+	return _normalize_priors(mixed)
 
 
 func _softmax(logits: Array) -> Array[float]:

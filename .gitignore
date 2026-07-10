@@ -44,6 +44,7 @@ python/data/*.log
 # Training artifacts (exclude large generated files)
 python/data/ai_models/*.rejected.*
 python/data/ai_models/candidate_*
+python/data/ai_models/resume_*.pt
 python/data/*_progress.jsonl
 python/data/smoke_progress.jsonl
 python/data/ai_training_checkpoints/

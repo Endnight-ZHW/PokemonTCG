@@ -20,10 +20,26 @@ func _initialize() -> void:
 	var engine := GameEngine.new(catalog)
 	var worker := NativeChallengeAI.new()
 	var runtime := DeepAIRuntime.new()
+	var runtime_manifest_encoder := int(
+		Dictionary(runtime.manifest.get("compatibility_bridge", {})).get("python_encoder_version", 0)
+	)
+	var deep_runtime_current := (
+		runtime_manifest_encoder == int(DeepAIRuntime.EXPECTED_PYTHON_ENCODER_VERSION)
+	)
 	var summaries: Array[Dictionary] = []
 	for failure in _budget_contract_failures(catalog, engine, worker):
 		failures.append(failure)
 	for mode in ["challenge", "deep"]:
+		if mode == "deep" and not deep_runtime_current:
+			summaries.append({
+				"success": true,
+				"mode": "deep",
+				"skipped": true,
+				"reason": "python_encoder_version_mismatch",
+				"manifest_encoder_version": runtime_manifest_encoder,
+				"expected_encoder_version": DeepAIRuntime.EXPECTED_PYTHON_ENCODER_VERSION,
+			})
+			continue
 		var deck_keys := CHALLENGE_DECK_KEYS if mode == "challenge" else DEEP_DECK_KEYS
 		for index in range(deck_keys.size()):
 			var deck_key := str(deck_keys[index])

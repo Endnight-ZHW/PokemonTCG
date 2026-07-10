@@ -14,6 +14,13 @@ from engine.ai.dl.encoder import ENCODER_SCHEMA_VERSION
 from engine.ai.observation import Observation
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.ai.dl.model import TORCH_AVAILABLE, load_checkpoint, torch
+from engine.ai.dl.release_gate import (
+    DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
+    DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+    DEFAULT_MIN_ACCEPTED_EVAL_GAMES,
+    DEFAULT_MIN_ACCEPTED_POINT_RATE,
+    has_strength_and_reliability_floor,
+)
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 from engine.enums import PlayerAction, TurnPhase
 from engine.snapshot import snapshot_state, state_from_snapshot
@@ -23,9 +30,6 @@ _logger = get_logger(__name__)
 
 
 DEFAULT_MODEL_DIR = os.path.join("data", "ai_models")
-DEFAULT_MIN_ACCEPTED_EVAL_GAMES = 600
-
-
 def _fit_sequence(values: list, size: int, pad):
     if len(values) >= size:
         return values[:size]
@@ -65,6 +69,20 @@ def _metadata_eval_summary(metadata: dict[str, Any], deck_key: str) -> dict[str,
     return None
 
 
+def _metadata_challenge_baseline_summary(metadata: dict[str, Any], deck_key: str) -> dict[str, Any] | None:
+    summary = metadata.get("summary")
+    if isinstance(summary, dict):
+        deck_summary = summary.get(deck_key)
+        if not isinstance(deck_summary, dict) and len(summary) == 1:
+            only_summary = next(iter(summary.values()))
+            deck_summary = only_summary if isinstance(only_summary, dict) else None
+        if isinstance(deck_summary, dict):
+            baseline = deck_summary.get("challenge_baseline_eval") or deck_summary.get("release_baseline_eval")
+            if isinstance(baseline, dict):
+                return baseline
+    return None
+
+
 def _metadata_eval_games(metadata: dict[str, Any], deck_key: str) -> int:
     eval_summary = _metadata_eval_summary(metadata, deck_key)
     if eval_summary is not None:
@@ -99,6 +117,43 @@ def _metadata_eval_has_no_bad_actions(metadata: dict[str, Any], deck_key: str) -
     return False
 
 
+def _metadata_eval_meets_strength_floor(
+    metadata: dict[str, Any],
+    deck_key: str,
+    *,
+    min_point_rate: float,
+    min_delta_point_rate: float,
+    max_step_exhaustion_rate: float,
+) -> bool:
+    eval_summary = _metadata_eval_summary(metadata, deck_key)
+    if eval_summary is None:
+        return False
+    baseline = _metadata_challenge_baseline_summary(metadata, deck_key)
+    return has_strength_and_reliability_floor(
+        eval_summary,
+        min_point_rate=min_point_rate,
+        paired_baseline=baseline,
+        min_delta_point_rate=min_delta_point_rate,
+        max_step_exhaustion_rate_limit=max_step_exhaustion_rate,
+    )
+
+
+def _metadata_choice_head_is_safe(metadata: dict[str, Any], deck_key: str) -> bool:
+    if not bool(metadata.get("choice_head_enabled")):
+        return True
+    summary = metadata.get("summary")
+    deck_summary = summary.get(deck_key) if isinstance(summary, dict) else None
+    if not isinstance(deck_summary, dict) and isinstance(summary, dict) and len(summary) == 1:
+        only_summary = next(iter(summary.values()))
+        deck_summary = only_summary if isinstance(only_summary, dict) else None
+    if not isinstance(deck_summary, dict):
+        return False
+    choice_examples = int((deck_summary.get("choice") or {}).get("choice_examples") or 0)
+    choice_examples += int((deck_summary.get("distill_choice") or {}).get("choice_examples") or 0)
+    choice_examples += int(deck_summary.get("loaded_choice_examples") or 0)
+    return choice_examples > 0
+
+
 def _schema_is_current(metadata: dict[str, Any]) -> bool:
     return (
         int(metadata.get("rules_version") or 0) == RULES_SCHEMA_VERSION
@@ -113,6 +168,9 @@ def is_deep_model_accepted(
     deck_key: str | None,
     model_dir: str = DEFAULT_MODEL_DIR,
     min_eval_games: int = DEFAULT_MIN_ACCEPTED_EVAL_GAMES,
+    min_point_rate: float = DEFAULT_MIN_ACCEPTED_POINT_RATE,
+    min_delta_point_rate: float = DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+    max_step_exhaustion_rate: float = DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
 ) -> bool:
     """Return True only for deployed, verified, accepted Deep AI checkpoints."""
     if not deck_key:
@@ -142,6 +200,14 @@ def is_deep_model_accepted(
         and verified
         and has_enough_eval
         and _metadata_eval_has_no_bad_actions(metadata, deck_key)
+        and _metadata_eval_meets_strength_floor(
+            metadata,
+            deck_key,
+            min_point_rate=min_point_rate,
+            min_delta_point_rate=min_delta_point_rate,
+            max_step_exhaustion_rate=max_step_exhaustion_rate,
+        )
+        and _metadata_choice_head_is_safe(metadata, deck_key)
         and _schema_is_current(metadata)
     )
 
@@ -266,6 +332,14 @@ class DeepLearningAI:
                 ).detach().cpu().tolist()
         for idx in ranked:
             if self._action_executes_on_clone(state, player_idx, actions[idx]):
+                selected = self._postprocess_preferred_action(
+                    state,
+                    player_idx,
+                    actions[idx],
+                    actions,
+                )
+                if self._action_executes_on_clone(state, player_idx, selected):
+                    return selected
                 return actions[idx]
         return self._fallback_action(state, player_idx)
 
@@ -298,9 +372,26 @@ class DeepLearningAI:
             )
         finally:
             self._active_searcher = None
+        selected = self._postprocess_preferred_action(state, player_idx, selected, actions)
         if self._action_executes_on_clone(state, player_idx, selected):
             return selected
         return self._choose_with_model(state, player_idx, actions)
+
+    def _postprocess_preferred_action(
+        self,
+        state,
+        player_idx: int,
+        preferred: AIAction,
+        actions: list[AIAction],
+    ) -> AIAction:
+        postprocess = getattr(self.fallback, "_validated_or_fallback_action", None)
+        if not callable(postprocess):
+            return preferred
+        try:
+            selected = postprocess(state, player_idx, preferred, actions)
+            return selected if selected is not None else preferred
+        except Exception:
+            return preferred
 
     def _action_executes_on_clone(self, state, player_idx: int, action: AIAction) -> bool:
         if action.action not in {

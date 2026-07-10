@@ -3,9 +3,17 @@
 import os
 from SCons.Script import ARGUMENTS, Default, Glob, SConscript
 
-godot_cpp_dir = os.path.abspath(ARGUMENTS.get("godot_cpp_dir", "godot-cpp"))
-ort_root = os.path.abspath(ARGUMENTS.get("ort_root", "onnxruntime"))
-project_root = os.path.abspath(ARGUMENTS.get("project_root", "../.."))
+
+def _consume_path_argument(name, default):
+    # These arguments belong to this extension, not godot-cpp's nested
+    # SConstruct. Remove them before delegation so SCons does not report them
+    # as unknown variables after they have already been consumed here.
+    return os.path.abspath(ARGUMENTS.pop(name, default))
+
+
+godot_cpp_dir = _consume_path_argument("godot_cpp_dir", "godot-cpp")
+ort_root = _consume_path_argument("ort_root", "onnxruntime")
+project_root = _consume_path_argument("project_root", "../..")
 
 env = SConscript(os.path.join(godot_cpp_dir, "SConstruct"))
 env.Append(CPPPATH=[

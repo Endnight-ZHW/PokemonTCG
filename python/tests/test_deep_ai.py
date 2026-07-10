@@ -26,7 +26,13 @@ from engine.ai import (
     create_ai_controller,
 )
 from engine.ai.challenge_ai import AIAction, create_challenge_ai
-from engine.ai.dl.encoder import ACTION_NUMERIC_SIZE, STATE_CARD_SLOTS, STATE_NUMERIC_SIZE, ActionStateEncoder
+from engine.ai.dl.encoder import (
+    ACTION_NUMERIC_SIZE,
+    CARD_SEMANTIC_SIZE,
+    STATE_CARD_SLOTS,
+    STATE_NUMERIC_SIZE,
+    ActionStateEncoder,
+)
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
@@ -106,6 +112,37 @@ class DeepAITests(unittest.TestCase):
         self.assertLessEqual(config.temperature, 0.35)
         self.assertLessEqual(config.choice_confidence_threshold, 0.30)
 
+    def test_neural_backend_uses_heuristic_leaf_value(self):
+        from engine.ai.planner import HeuristicBackend, NeuralBackend
+
+        fallback = HeuristicBackend(
+            priority=lambda _state, _actor, _action: 0.0,
+            evaluator=lambda _state, _perspective: 250000.0,
+        )
+        backend = NeuralBackend(None, None, "cpu", fallback, "fire")
+
+        self.assertEqual(backend.value(object(), 0), 0.25)
+
+    def test_neural_prior_guard_preserves_clear_heuristic_choice(self):
+        from engine.ai.planner import _guarded_neural_priors, _softmax
+
+        priors = _softmax([500.0, 420.0])
+        self.assertAlmostEqual(priors[0], 0.731058, places=5)
+        guarded = _guarded_neural_priors(
+            [0.80, 0.10, 0.10],
+            [0.70, 0.20, 0.10],
+        )
+        self.assertGreater(guarded[0], 0.70)
+        self.assertAlmostEqual(sum(guarded), 1.0, places=6)
+
+        heuristic = [0.70, 0.20, 0.10]
+        guarded = _guarded_neural_priors(
+            [0.05, 0.85, 0.10],
+            heuristic,
+        )
+        for actual, expected in zip(guarded, heuristic):
+            self.assertAlmostEqual(actual, expected, places=12)
+
     def test_dl_ai_uses_mcts_when_model_is_available(self):
         state = self._simple_state()
         ai = DeepLearningAI("fire", DeepLearningAIConfig())
@@ -129,7 +166,7 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(metadata["verification_status"], "unverified_no_eval")
         self.assertEqual(metadata["rules_version"], 2)
         self.assertEqual(metadata["action_version"], 2)
-        self.assertEqual(metadata["encoder_version"], 2)
+        self.assertEqual(metadata["encoder_version"], 3)
 
     def test_encoder_outputs_stable_shapes_and_handles_new_card_id(self):
         state = self._simple_state()
@@ -156,6 +193,46 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(len(encoded_state.card_ids), STATE_CARD_SLOTS)
         self.assertEqual(len(encoded_action.numeric), ACTION_NUMERIC_SIZE)
         self.assertGreater(encoded_action.card_id, 0)
+
+    def test_encoder_semantic_width_is_stable_for_known_and_missing_cards(self):
+        from engine.ai.observation import Observation
+
+        encoder = ActionStateEncoder()
+        known = CardRegistry.get("sv2-delib")
+
+        self.assertEqual(len(encoder._card_semantic_features(known)), CARD_SEMANTIC_SIZE)
+        self.assertEqual(len(encoder._card_semantic_features(None)), CARD_SEMANTIC_SIZE)
+        self.assertEqual(CARD_SEMANTIC_SIZE, 53)
+
+        observation = Observation(
+            perspective=0,
+            turn_number=1,
+            phase="MAIN",
+            active_player=0,
+            winner=None,
+            own_hand=(),
+            own_discard=(),
+            own_deck_count=0,
+            own_prize_count=0,
+            opponent_hand_count=0,
+            opponent_discard=(),
+            opponent_deck_count=0,
+            opponent_prize_count=0,
+            board=(
+                (0, "active", "", 0, (), (), ""),
+                (0, "bench_0", "sv2-delib", 0, (), (), ""),
+            ),
+            stadium_id="",
+            public_deck_keys=("water", "fire"),
+            apply_type_matchups=False,
+        )
+        encoded = encoder.encode_observation(observation, "water")
+        known_start = len(TurnPhase) + 13 + len(encoder.deck_keys)
+        known_start += 7 + CARD_SEMANTIC_SIZE + 7
+        self.assertEqual(
+            encoded.numeric[known_start:known_start + CARD_SEMANTIC_SIZE],
+            encoder._card_semantic_features(known),
+        )
 
     def test_encoder_exposes_all_release_deck_profiles(self):
         encoder = ActionStateEncoder()
@@ -253,6 +330,8 @@ class DeepAITests(unittest.TestCase):
         self.assertIn("--league-use-mcts", help_result.stdout)
         self.assertIn("--min-elo-delta", help_result.stdout)
         self.assertIn("--min-score-rate", help_result.stdout)
+        self.assertIn("--min-point-rate", help_result.stdout)
+        self.assertIn("--max-step-exhaustion-rate", help_result.stdout)
 
         with temp_dir() as tmpdir:
             output = os.path.join(tmpdir, "model.pt")
@@ -291,7 +370,7 @@ class DeepAITests(unittest.TestCase):
                 self.assertEqual(events[-1]["type"], "error")
             else:
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue(os.path.exists(output))
+                self.assertTrue(os.path.exists(os.path.splitext(output)[0] + ".rejected.pt"))
                 self.assertTrue(os.path.exists(progress))
                 with open(progress, "r", encoding="utf-8") as fh:
                     event_types = [json.loads(line)["type"] for line in fh if line.strip()]
@@ -329,7 +408,7 @@ class DeepAITests(unittest.TestCase):
                 self.assertIn("PyTorch is not installed", result.stderr)
             else:
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue(os.path.exists(output))
+                self.assertTrue(os.path.exists(os.path.splitext(output)[0] + ".rejected.pt"))
                 with open(progress, "r", encoding="utf-8") as fh:
                     events = [json.loads(line) for line in fh if line.strip()]
                 self.assertEqual(events[0]["trainer"], "alpha_zero_rl")
@@ -376,7 +455,7 @@ class DeepAITests(unittest.TestCase):
                 self.assertTrue(os.path.exists(progress))
             else:
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue(os.path.exists(output))
+                self.assertTrue(os.path.exists(os.path.splitext(output)[0] + ".rejected.pt"))
                 self.assertTrue(os.path.exists(progress))
                 self.assertFalse(
                     os.path.exists(os.path.join(repo_root, "python", rel_output))
@@ -504,6 +583,118 @@ class DeepAITests(unittest.TestCase):
             )
 
         self.assertEqual(captured_targets, [0.75])
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_train_examples_uses_teacher_value_targets_for_dagger(self):
+        from engine.ai.dl.encoder import EncodedAction, EncodedState
+        from engine.ai.dl.model import torch
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.training import TrainingExample
+
+        assert torch is not None
+
+        class TinyModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.tensor(0.1))
+                self.state_numeric_size = STATE_NUMERIC_SIZE
+                self.state_card_slots = STATE_CARD_SLOTS
+                self.action_numeric_size = ACTION_NUMERIC_SIZE
+
+        model = TinyModel()
+        example = TrainingExample(
+            EncodedState([0.0] * STATE_NUMERIC_SIZE, [0] * STATE_CARD_SLOTS),
+            [
+                EncodedAction([0.0] * ACTION_NUMERIC_SIZE, 0),
+                EncodedAction([1.0] * ACTION_NUMERIC_SIZE, 1),
+            ],
+            0,
+            source="dagger",
+            value_target=0.42,
+            return_target=-0.75,
+            teacher_target_index=0,
+        )
+        captured_targets = []
+
+        def fake_forward_batch(model_arg, examples, device):
+            batch = len(examples)
+            logits = torch.stack([model_arg.weight, -model_arg.weight]).repeat(batch, 1)
+            value = model_arg.weight.repeat(batch)
+            mask = torch.ones(batch, 2, dtype=torch.bool)
+            return logits, value, mask
+
+        import torch.nn.functional as F
+
+        original_mse_loss = F.mse_loss
+
+        def capture_mse_loss(input_tensor, target_tensor, *args, **kwargs):
+            captured_targets.extend(target_tensor.detach().cpu().tolist())
+            return original_mse_loss(input_tensor, target_tensor, *args, **kwargs)
+
+        with mock.patch.object(dl_training, "_forward_batch", fake_forward_batch), \
+             mock.patch("torch.nn.functional.mse_loss", side_effect=capture_mse_loss):
+            dl_training._train_examples(
+                model,
+                [example],
+                device="cpu",
+                learning_rate=1e-3,
+                epochs=1,
+                batch_size=1,
+            )
+
+        self.assertEqual(len(captured_targets), 1)
+        self.assertAlmostEqual(captured_targets[0], 0.42, places=6)
+
+    def test_supervised_example_weight_prioritizes_development_actions_only(self):
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.encoder import ACTION_TYPES, EncodedAction, EncodedState
+        from engine.ai.dl.training import TrainingExample
+
+        def action(action_name: str) -> EncodedAction:
+            numeric = [0.0] * ACTION_NUMERIC_SIZE
+            numeric[ACTION_TYPES.index(action_name)] = 1.0
+            return EncodedAction(numeric, 0)
+
+        state = EncodedState([0.0] * STATE_NUMERIC_SIZE, [0] * STATE_CARD_SLOTS)
+        trainer = TrainingExample(
+            state,
+            [action(PlayerAction.PLAY_TRAINER.name)],
+            0,
+            source="dagger",
+        )
+        attack = TrainingExample(
+            state,
+            [action(PlayerAction.DECLARE_ATTACK.name)],
+            0,
+            source="dagger",
+        )
+        self_play = TrainingExample(
+            state,
+            [action(PlayerAction.PLAY_TRAINER.name)],
+            0,
+            source="self_play",
+        )
+
+        self.assertGreater(dl_training._supervised_example_weight(trainer), 1.0)
+        self.assertLess(dl_training._supervised_example_weight(attack), 1.0)
+        self.assertEqual(dl_training._supervised_example_weight(self_play), 1.0)
+
+    def test_deep_model_selection_uses_challenge_postprocessor(self):
+        from engine.ai.dl.training import _postprocess_preferred_action
+
+        attack = AIAction(PlayerAction.DECLARE_ATTACK, {"attack_idx": 0})
+        trainer = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
+        calls = []
+
+        class FakeAI:
+            def _validated_or_fallback_action(self, state, player_idx, preferred, actions):
+                calls.append((player_idx, preferred, actions))
+                return trainer
+
+        selected = _postprocess_preferred_action(FakeAI(), object(), 1, attack, [attack, trainer])
+
+        self.assertIs(selected, trainer)
+        self.assertEqual(calls, [(1, attack, [attack, trainer])])
 
     def test_same_deal_replay_examples_are_trained_and_counted(self):
         from engine.ai.dl import training as dl_training
@@ -696,10 +887,736 @@ class DeepAITests(unittest.TestCase):
                         "encoder_version": 2,
                         "planner_version": 1,
                         "seed": 17,
-                        "summary": {"fire": {"eval": {"games": 600, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0}}},
+                        "summary": {"fire": {"eval": {"games": 600, "wins": 600, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0}}},
+                    }
+                }, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "planner_version": 1,
+                        "seed": 17,
+                        "choice_head_enabled": True,
+                        "summary": {"fire": {
+                            "choice": {"choice_examples": 0},
+                            "loaded_choice_examples": 12,
+                            "eval": {"games": 600, "wins": 300, "draws": 0, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0},
+                        }},
                     }
                 }, fh)
             self.assertTrue(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "planner_version": 1,
+                        "seed": 17,
+                        "summary": {"fire": {"eval": {"games": 600, "wins": 299, "draws": 0, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0}}},
+                    }
+                }, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "planner_version": 1,
+                        "seed": 17,
+                        "choice_head_enabled": True,
+                        "summary": {"fire": {
+                            "choice": {"choice_examples": 0},
+                            "eval": {"games": 600, "wins": 300, "draws": 0, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0},
+                        }},
+                    }
+                }, fh)
+            self.assertFalse(is_deep_model_accepted("fire", model_dir=model_dir))
+
+            with open(sidecar_path, "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "planner_version": 1,
+                        "seed": 17,
+                        "summary": {"fire": {"eval": {
+                            "games": 600,
+                            "wins": 300,
+                            "draws": 0,
+                            "invalid_action_rate": 0.0,
+                            "no_target_action_rate": 0.0,
+                            "max_step_exhaustion_rate": 0.05,
+                        }}},
+                    }
+                }, fh)
+            self.assertTrue(is_deep_model_accepted("fire", model_dir=model_dir))
+
+    def test_validate_ai_models_rejects_low_strength_and_untrained_choice_head(self):
+        from scripts.validate_ai_models import validate_model
+
+        with temp_dir() as tmpdir:
+            model_dir = os.path.join(tmpdir, "models")
+            os.makedirs(model_dir)
+            with open(os.path.join(model_dir, "fire.pt"), "wb") as fh:
+                fh.write(b"model")
+            with open(os.path.join(model_dir, "fire.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "planner_version": 1,
+                        "seed": 17,
+                        "choice_head_enabled": True,
+                        "summary": {"fire": {
+                            "choice": {"choice_examples": 0},
+                            "eval": {
+                                "games": 600,
+                                "wins": 126,
+                                "losses": 474,
+                                "draws": 0,
+                                "invalid_action_rate": 0.0,
+                                "no_target_action_rate": 0.0,
+                                "rule_exception_rate": 0.0,
+                                "decision_timeout_rate": 0.0,
+                                "max_step_exhaustion_rate": 0.073333,
+                            },
+                        }},
+                    }
+                }, fh)
+
+            row = validate_model(
+                "fire",
+                model_dir=model_dir,
+                min_games=600,
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+
+        self.assertFalse(row["valid"])
+        self.assertIn("insufficient_point_rate", row["errors"])
+        self.assertIn("max_step_exhaustion_rate", row["errors"])
+        self.assertIn("choice_head_untrained", row["errors"])
+
+    @unittest.skipIf(importlib.util.find_spec("onnx") is None, "ONNX is not installed")
+    @unittest.skipIf(importlib.util.find_spec("onnxruntime") is None, "ONNX Runtime is not installed")
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_onnx_export_preflights_missing_release_checkpoints(self):
+        from pathlib import Path
+        from scripts.export_onnx_models import DECK_KEYS, export_all
+
+        with temp_dir() as tmpdir:
+            checkpoint_root = Path(tmpdir) / "models"
+            output_root = Path(tmpdir) / "onnx"
+            checkpoint_root.mkdir()
+            for deck_key in DECK_KEYS:
+                if deck_key != "steel":
+                    (checkpoint_root / f"{deck_key}.pt").write_bytes(b"placeholder")
+
+            with self.assertRaisesRegex(FileNotFoundError, "steel.pt"):
+                export_all(output_root, checkpoint_root=checkpoint_root)
+
+            self.assertFalse(output_root.exists())
+
+    @unittest.skipIf(importlib.util.find_spec("onnx") is None, "ONNX is not installed")
+    @unittest.skipIf(importlib.util.find_spec("onnxruntime") is None, "ONNX Runtime is not installed")
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_onnx_export_preflight_rejects_old_checkpoint_schema_before_writes(self):
+        from pathlib import Path
+        from scripts import export_onnx_models
+
+        def fake_load(path, _device):
+            deck_key = Path(path).stem
+            return object(), {
+                "version": export_onnx_models.CHECKPOINT_VERSION - 1,
+                "schema": {
+                    "rules_version": export_onnx_models.RULES_SCHEMA_VERSION,
+                    "action_version": export_onnx_models.ACTION_SCHEMA_VERSION,
+                    "encoder_version": export_onnx_models.ENCODER_SCHEMA_VERSION,
+                },
+                "metadata": {
+                    "deck": deck_key,
+                    "accepted": True,
+                    "verified": True,
+                    "planner_version": export_onnx_models.PLANNER_SCHEMA_VERSION,
+                },
+            }
+
+        with mock.patch.object(export_onnx_models, "load_checkpoint", side_effect=fake_load):
+            with self.assertRaisesRegex(ValueError, "checkpoint_version"):
+                export_onnx_models._preflight_release_checkpoints(Path("models"))
+
+    @unittest.skipIf(importlib.util.find_spec("onnx") is None, "ONNX is not installed")
+    @unittest.skipIf(importlib.util.find_spec("onnxruntime") is None, "ONNX Runtime is not installed")
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_model_promotion_prepares_complete_set_and_normalizes_sidecars(self):
+        from pathlib import Path
+        from scripts import promote_ai_models
+
+        with temp_dir() as tmpdir:
+            source = Path(tmpdir) / "staged"
+            destination = Path(tmpdir) / "release"
+            source.mkdir()
+            for deck_key in ("fire", "water"):
+                (source / f"{deck_key}.pt").write_bytes(f"model-{deck_key}".encode())
+                (source / f"{deck_key}.json").write_text(
+                    json.dumps({
+                        "model_path": str(source / f"{deck_key}.pt"),
+                        "metadata": {"deck": deck_key, "accepted": True, "verified": True},
+                    }),
+                    encoding="utf-8",
+                )
+
+            with (
+                mock.patch.object(promote_ai_models, "DECK_KEYS", ("fire", "water")),
+                mock.patch.object(promote_ai_models, "_validate_staged"),
+            ):
+                checksums = promote_ai_models.promote(source, destination)
+
+            self.assertEqual(set(checksums), {"fire", "water"})
+            for deck_key in ("fire", "water"):
+                self.assertEqual(
+                    (destination / f"{deck_key}.pt").read_bytes(),
+                    f"model-{deck_key}".encode(),
+                )
+                sidecar = json.loads(
+                    (destination / f"{deck_key}.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(
+                    sidecar["model_path"],
+                    os.path.join("data", "ai_models", f"{deck_key}.pt"),
+                )
+
+    @unittest.skipIf(importlib.util.find_spec("onnx") is None, "ONNX is not installed")
+    @unittest.skipIf(importlib.util.find_spec("onnxruntime") is None, "ONNX Runtime is not installed")
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_model_promotion_restores_previous_release_when_final_validation_fails(self):
+        from pathlib import Path
+        from scripts import promote_ai_models
+
+        with temp_dir() as tmpdir:
+            source = Path(tmpdir) / "staged"
+            destination = Path(tmpdir) / "release"
+            source.mkdir()
+            destination.mkdir()
+            for deck_key in ("fire", "water"):
+                (source / f"{deck_key}.pt").write_bytes(f"new-{deck_key}".encode())
+                (source / f"{deck_key}.json").write_text(
+                    json.dumps({"metadata": {"deck": deck_key}}),
+                    encoding="utf-8",
+                )
+                (destination / f"{deck_key}.pt").write_bytes(f"old-{deck_key}".encode())
+                (destination / f"{deck_key}.json").write_text(
+                    json.dumps({"metadata": {"deck": deck_key, "release": "old"}}),
+                    encoding="utf-8",
+                )
+
+            def validate(path):
+                if Path(path).resolve() == destination.resolve():
+                    raise ValueError("simulated final validation failure")
+
+            with (
+                mock.patch.object(promote_ai_models, "DECK_KEYS", ("fire", "water")),
+                mock.patch.object(promote_ai_models, "_validate_staged", side_effect=validate),
+            ):
+                with self.assertRaisesRegex(ValueError, "simulated final validation failure"):
+                    promote_ai_models.promote(source, destination)
+
+            for deck_key in ("fire", "water"):
+                self.assertEqual(
+                    (destination / f"{deck_key}.pt").read_bytes(),
+                    f"old-{deck_key}".encode(),
+                )
+                restored = json.loads(
+                    (destination / f"{deck_key}.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(restored["metadata"]["release"], "old")
+
+    @unittest.skipIf(importlib.util.find_spec("onnx") is None, "ONNX is not installed")
+    @unittest.skipIf(importlib.util.find_spec("onnxruntime") is None, "ONNX Runtime is not installed")
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_onnx_export_failure_leaves_live_runtime_bundle_unchanged(self):
+        from pathlib import Path
+        from scripts import export_onnx_models
+
+        with temp_dir() as tmpdir:
+            root = Path(tmpdir)
+            checkpoints = root / "checkpoints"
+            output_root = root / "data" / "ai_models"
+            checkpoints.mkdir()
+            output_root.mkdir(parents=True)
+            for deck_key in ("fire", "water"):
+                (checkpoints / f"{deck_key}.pt").write_bytes(f"checkpoint-{deck_key}".encode())
+                (output_root / f"{deck_key}.onnx").write_bytes(f"old-{deck_key}".encode())
+            manifest_path = output_root.parent / "ai_models_runtime.json"
+            manifest_path.write_text('{"release":"old"}\n', encoding="utf-8")
+
+            def fake_export(checkpoint, output, **_kwargs):
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(f"new-{checkpoint.stem}".encode())
+                return {
+                    "version": export_onnx_models.CHECKPOINT_VERSION,
+                    "schema": {
+                        "rules_version": export_onnx_models.RULES_SCHEMA_VERSION,
+                        "action_version": export_onnx_models.ACTION_SCHEMA_VERSION,
+                        "encoder_version": export_onnx_models.ENCODER_SCHEMA_VERSION,
+                    },
+                    "model_config": {"choice_head_enabled": True},
+                }, object()
+
+            def fake_verify(_wrapper, output, **_kwargs):
+                if output.stem == "water":
+                    raise RuntimeError("simulated parity failure")
+                return {name: 0.0 for name in export_onnx_models.OUTPUT_NAMES}
+
+            loaded = {deck_key: (object(), {}) for deck_key in ("fire", "water")}
+            with (
+                mock.patch.object(export_onnx_models, "DECK_KEYS", ("fire", "water")),
+                mock.patch.object(export_onnx_models, "_preflight_release_checkpoints", return_value=loaded),
+                mock.patch.object(export_onnx_models, "_export_one", side_effect=fake_export),
+                mock.patch.object(export_onnx_models, "_verify_one", side_effect=fake_verify),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "simulated parity failure"):
+                    export_onnx_models.export_all(output_root, checkpoint_root=checkpoints)
+
+            for deck_key in ("fire", "water"):
+                self.assertEqual(
+                    (output_root / f"{deck_key}.onnx").read_bytes(),
+                    f"old-{deck_key}".encode(),
+                )
+            self.assertEqual(
+                json.loads(manifest_path.read_text(encoding="utf-8")),
+                {"release": "old"},
+            )
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_regate_validates_staged_checkpoint_before_replacing_named_output(self):
+        from pathlib import Path
+        from scripts import regate_deep_checkpoint
+
+        metadata = {
+            "deck": "steel",
+            "summary": {"steel": {"eval": {"games": 600}}},
+        }
+        payload = {"metadata": metadata}
+        with temp_dir() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "steel.rejected.pt"
+            source.write_bytes(b"source")
+            source.with_suffix(".json").write_text(
+                json.dumps({"metadata": metadata}),
+                encoding="utf-8",
+            )
+            output = root / "release-candidate.pt"
+            output.write_bytes(b"old-output")
+            output.with_suffix(".json").write_text('{"release":"old"}', encoding="utf-8")
+
+            def fake_save(path, _model, _metadata):
+                Path(path).write_bytes(b"regated-output")
+
+            def fake_validate(deck_key, *, model_dir, **_kwargs):
+                staged = Path(model_dir)
+                self.assertNotEqual(staged.resolve(), root.resolve())
+                self.assertTrue((staged / f"{deck_key}.pt").is_file())
+                self.assertTrue((staged / f"{deck_key}.json").is_file())
+                return {"deck": deck_key, "valid": True, "errors": [], "model_path": "staged"}
+
+            with (
+                mock.patch.object(regate_deep_checkpoint, "load_checkpoint", return_value=(object(), payload)),
+                mock.patch.object(regate_deep_checkpoint, "save_checkpoint", side_effect=fake_save),
+                mock.patch.object(regate_deep_checkpoint, "_verify_evidence"),
+                mock.patch.object(regate_deep_checkpoint, "validate_model", side_effect=fake_validate),
+            ):
+                result = regate_deep_checkpoint.regate(source, output, deck_key="steel")
+
+            self.assertEqual(output.read_bytes(), b"regated-output")
+            self.assertEqual(result["model_path"], str(output.resolve()))
+            sidecar = json.loads(output.with_suffix(".json").read_text(encoding="utf-8"))
+            self.assertEqual(sidecar["model_path"], str(output.resolve()))
+
+    def test_release_gate_uses_paired_challenge_baseline_when_available(self):
+        from engine.ai.dl.controller import is_deep_model_accepted
+        from engine.ai.dl.training import _accepts_candidate
+        from scripts.validate_ai_models import validate_model
+
+        weak_baseline = {"games": 600, "wins": 180, "losses": 420, "draws": 0, "avg_score": -200.0}
+        candidate = {
+            "games": 600,
+            "wins": 190,
+            "losses": 410,
+            "draws": 0,
+            "avg_score": -150.0,
+            "invalid_action_rate": 0.0,
+            "no_target_action_rate": 0.0,
+            "rule_exception_rate": 0.0,
+            "decision_timeout_rate": 0.0,
+            "max_step_exhaustion_rate": 0.0,
+        }
+        self.assertTrue(
+            _accepts_candidate(
+                candidate,
+                weak_baseline,
+                None,
+                acceptance_metric="points",
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+        )
+        stronger_old_model = dict(candidate, wins=240, losses=360, avg_score=50.0)
+        self.assertTrue(
+            _accepts_candidate(
+                candidate,
+                weak_baseline,
+                stronger_old_model,
+                acceptance_metric="points",
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+        )
+
+        with temp_dir() as tmpdir:
+            model_dir = os.path.join(tmpdir, "models")
+            os.makedirs(model_dir)
+            with open(os.path.join(model_dir, "fire.pt"), "wb") as fh:
+                fh.write(b"model")
+            with open(os.path.join(model_dir, "fire.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "planner_version": 1,
+                        "seed": 17,
+                        "choice_head_enabled": True,
+                        "summary": {"fire": {
+                            "challenge_baseline_eval": weak_baseline,
+                            "choice": {"choice_examples": 0},
+                            "loaded_choice_examples": 12,
+                            "eval": candidate,
+                        }},
+                    }
+                }, fh)
+
+            row = validate_model(
+                "fire",
+                model_dir=model_dir,
+                min_games=600,
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+
+            self.assertTrue(row["valid"], row["errors"])
+            self.assertGreaterEqual(row["delta_point_rate"], 0.0)
+            self.assertTrue(is_deep_model_accepted("fire", model_dir=model_dir))
+
+    def test_release_gate_pairs_long_game_reliability_with_challenge_baseline(self):
+        from engine.ai.dl.controller import is_deep_model_accepted
+        from engine.ai.dl.training import _accepts_candidate
+        from scripts.validate_ai_models import validate_model
+
+        baseline = {
+            "games": 600,
+            "wins": 323,
+            "losses": 277,
+            "draws": 0,
+            "max_step_exhaustion_rate": 0.151667,
+        }
+        improved = {
+            "games": 600,
+            "wins": 326,
+            "losses": 274,
+            "draws": 0,
+            "invalid_action_rate": 0.0,
+            "no_target_action_rate": 0.0,
+            "rule_exception_rate": 0.0,
+            "decision_timeout_rate": 0.0,
+            "max_step_exhaustion_rate": 0.123333,
+        }
+        regressed = dict(improved, max_step_exhaustion_rate=0.16)
+        self.assertTrue(
+            _accepts_candidate(
+                improved,
+                baseline,
+                None,
+                acceptance_metric="points",
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+        )
+        self.assertFalse(
+            _accepts_candidate(
+                regressed,
+                baseline,
+                None,
+                acceptance_metric="points",
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+        )
+
+        with temp_dir() as tmpdir:
+            model_dir = os.path.join(tmpdir, "models")
+            os.makedirs(model_dir)
+            with open(os.path.join(model_dir, "steel.pt"), "wb") as fh:
+                fh.write(b"model")
+            with open(os.path.join(model_dir, "steel.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "accepted": True,
+                        "verified": True,
+                        "eval_games": 600,
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "planner_version": 1,
+                        "seed": 17,
+                        "choice_head_enabled": True,
+                        "summary": {"steel": {
+                            "challenge_baseline_eval": baseline,
+                            "loaded_choice_examples": 100,
+                            "eval": improved,
+                        }},
+                    }
+                }, fh)
+
+            row = validate_model(
+                "steel",
+                model_dir=model_dir,
+                min_games=600,
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+            self.assertTrue(row["valid"], row["errors"])
+            self.assertAlmostEqual(row["allowed_max_step_exhaustion_rate"], 0.151667)
+            self.assertLess(row["delta_max_step_exhaustion_rate"], 0.0)
+            self.assertTrue(is_deep_model_accepted("steel", model_dir=model_dir))
+
+    def test_reused_challenge_baseline_progress_validates_run_identity(self):
+        from scripts.train_deep_ai import _load_challenge_baseline_progress
+
+        baseline = {
+            "games": 2,
+            "wins": 1,
+            "losses": 1,
+            "draws": 0,
+            "game_points": [1.0, 0.0],
+        }
+        events = [
+            {
+                "type": "run_started",
+                "deck": "steel",
+                "seed": 29,
+                "eval_games": 2,
+                "max_steps": 160,
+                "teacher_search_preset": "quality",
+            },
+            {
+                "type": "dagger_game_finished",
+                "deck": "steel",
+                "choice_examples": 7,
+            },
+            {
+                "type": "challenge_baseline_eval_finished",
+                "deck": "steel",
+                "training_seed": 29,
+                "eval_seed": 900029,
+                "eval": baseline,
+            },
+        ]
+        with temp_dir() as tmpdir:
+            progress_path = os.path.join(tmpdir, "steel.jsonl")
+            with open(progress_path, "w", encoding="utf-8") as fh:
+                for event in events:
+                    fh.write(json.dumps(event) + "\n")
+            loaded, recovered_choice_examples = _load_challenge_baseline_progress(
+                progress_path,
+                deck_key="steel",
+                training_seed=29,
+                asserted_source_seed=None,
+                eval_games=2,
+                max_steps=160,
+                teacher_search_preset="quality",
+            )
+            self.assertEqual(loaded, baseline)
+            self.assertEqual(recovered_choice_examples, 7)
+            with self.assertRaisesRegex(ValueError, "seed mismatch"):
+                _load_challenge_baseline_progress(
+                    progress_path,
+                    deck_key="steel",
+                    training_seed=17,
+                    asserted_source_seed=None,
+                    eval_games=2,
+                    max_steps=160,
+                    teacher_search_preset="quality",
+                )
+
+    def test_validate_models_cli_path_is_relative_to_invocation_directory(self):
+        from scripts import validate_ai_models
+
+        with temp_dir() as tmpdir:
+            with mock.patch.object(validate_ai_models, "INVOCATION_CWD", tmpdir):
+                resolved = validate_ai_models._resolve_cli_path(os.path.join("build", "models"))
+
+        self.assertEqual(
+            resolved,
+            os.path.abspath(os.path.join(tmpdir, "build", "models")),
+        )
+
+    def test_release_gate_rejects_paired_challenge_baseline_regression(self):
+        from engine.ai.dl.training import _accepts_candidate
+
+        baseline = {"games": 600, "wins": 180, "losses": 420, "draws": 0, "avg_score": -200.0}
+        regressed = {
+            "games": 600,
+            "wins": 170,
+            "losses": 430,
+            "draws": 0,
+            "avg_score": -180.0,
+            "invalid_action_rate": 0.0,
+            "no_target_action_rate": 0.0,
+            "rule_exception_rate": 0.0,
+            "decision_timeout_rate": 0.0,
+            "max_step_exhaustion_rate": 0.0,
+        }
+        self.assertFalse(
+            _accepts_candidate(
+                regressed,
+                baseline,
+                None,
+                acceptance_metric="points",
+                min_point_rate=0.50,
+                min_delta_point_rate=0.0,
+                max_step_exhaustion_rate=0.05,
+            )
+        )
+
+    def test_release_gate_uses_one_percent_paired_noninferiority_floor(self):
+        from engine.ai.dl.release_gate import (
+            DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+            has_strength_and_reliability_floor,
+        )
+        from engine.ai.dl.training import _accepts_candidate
+
+        baseline = {
+            "games": 600,
+            "wins": 332,
+            "losses": 268,
+            "draws": 0,
+            "max_step_exhaustion_rate": 0.118333,
+        }
+        boundary = {
+            "games": 600,
+            "wins": 326,
+            "losses": 274,
+            "draws": 0,
+            "max_step_exhaustion_rate": 0.105,
+        }
+        below = dict(boundary, wins=325, losses=275)
+        self.assertEqual(DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE, -0.01)
+        self.assertTrue(
+            has_strength_and_reliability_floor(
+                boundary,
+                min_point_rate=0.50,
+                paired_baseline=baseline,
+                min_delta_point_rate=DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+            )
+        )
+        self.assertTrue(
+            _accepts_candidate(
+                boundary,
+                baseline,
+                None,
+                acceptance_metric="points",
+                min_point_rate=0.50,
+                min_delta_point_rate=DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+                max_step_exhaustion_rate=0.05,
+            )
+        )
+        self.assertFalse(
+            has_strength_and_reliability_floor(
+                below,
+                min_point_rate=0.50,
+                paired_baseline=baseline,
+                min_delta_point_rate=DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
+            )
+        )
+
+    def test_eval_stats_record_paired_game_points(self):
+        from engine.ai.dl import training
+
+        with mock.patch.object(
+            training,
+            "_play_model_game",
+            side_effect=[
+                (0, 10.0, [], [], {"actions": 1}),
+                (1, -5.0, [], [], {"actions": 1}),
+                (None, 0.0, [], [], {"actions": 1}),
+            ],
+        ):
+            result = training.evaluate_model(
+                object(),
+                "fire",
+                17,
+                3,
+                device="cpu",
+                workers=1,
+            )
+
+        self.assertEqual(result["game_points"], [1.0, 0.0, 0.5])
+        self.assertEqual(result["point_rate"], 0.5)
+
+        with mock.patch.object(
+            training,
+            "_play_challenge_baseline_game",
+            side_effect=[
+                (1, -1.0, [], [], {"actions": 1}),
+                (1, -2.0, [], [], {"actions": 1}),
+                (1, -3.0, [], [], {"actions": 1}),
+            ],
+        ):
+            baseline = training.evaluate_challenge_baseline(
+                "fire",
+                17,
+                3,
+                workers=1,
+            )
+
+        self.assertEqual(baseline["game_points"], [0.0, 0.0, 0.0])
+        delta = training._evaluation_delta(result, baseline)
+        self.assertEqual(delta["paired_delta_point_rate"], 0.5)
 
     def test_challenge_deck_screen_defaults_to_deep_when_accepted_model_available(self):
         import pygame
@@ -936,11 +1853,48 @@ class DeepAITests(unittest.TestCase):
                             "fire": {
                                 "eval": {
                                     "games": 600,
+                                    "wins": 300,
+                                    "losses": 300,
+                                    "draws": 0,
                                     "invalid_action_rate": 0.0,
                                     "no_target_action_rate": 0.0,
                                     "rule_exception_rate": 0.0,
                                     "decision_timeout_rate": 0.0,
+                                    "max_step_exhaustion_rate": 0.05,
                                 }
+                            }
+                        },
+                    }
+                }, fh)
+            self.assertTrue(dl_training._checkpoint_is_verified_for_league(model_path, "fire"))
+            with open(os.path.splitext(model_path)[0] + ".json", "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "deck": "fire",
+                        "accepted": True,
+                        "verified": True,
+                        "rules_version": dl_training.RULES_SCHEMA_VERSION,
+                        "action_version": dl_training.ACTION_SCHEMA_VERSION,
+                        "encoder_version": dl_training.ENCODER_SCHEMA_VERSION,
+                        "summary": {
+                            "fire": {
+                                "challenge_baseline_eval": {
+                                    "games": 600,
+                                    "wins": 180,
+                                    "losses": 420,
+                                    "draws": 0,
+                                },
+                                "eval": {
+                                    "games": 600,
+                                    "wins": 190,
+                                    "losses": 410,
+                                    "draws": 0,
+                                    "invalid_action_rate": 0.0,
+                                    "no_target_action_rate": 0.0,
+                                    "rule_exception_rate": 0.0,
+                                    "decision_timeout_rate": 0.0,
+                                    "max_step_exhaustion_rate": 0.05,
+                                },
                             }
                         },
                     }
@@ -1024,8 +1978,9 @@ class DeepAITests(unittest.TestCase):
                 )
             )
 
-            self.assertEqual(payload["model_path"], output)
-            with open(os.path.splitext(output)[0] + ".json", "r", encoding="utf-8") as fh:
+            rejected_output = os.path.splitext(output)[0] + ".rejected.pt"
+            self.assertEqual(payload["model_path"], rejected_output)
+            with open(os.path.splitext(rejected_output)[0] + ".json", "r", encoding="utf-8") as fh:
                 sidecar = json.load(fh)
             metadata = sidecar["metadata"]
             self.assertEqual(metadata["trainer"], "alpha_zero_rl_v1")
@@ -1061,14 +2016,15 @@ class DeepAITests(unittest.TestCase):
                 )
             )
 
-            self.assertEqual(payload["model_path"], output)
-            self.assertTrue(os.path.exists(output))
-            sidecar_path = os.path.splitext(output)[0] + ".json"
+            rejected_output = os.path.splitext(output)[0] + ".rejected.pt"
+            self.assertEqual(payload["model_path"], rejected_output)
+            self.assertTrue(os.path.exists(rejected_output))
+            sidecar_path = os.path.splitext(rejected_output)[0] + ".json"
             self.assertTrue(os.path.exists(sidecar_path))
             with open(sidecar_path, "r", encoding="utf-8") as fh:
                 sidecar = json.load(fh)
             self.assertFalse(sidecar["metadata"]["accepted"])
-            self.assertTrue(sidecar["metadata"]["training_gate_accepted"])
+            self.assertFalse(sidecar["metadata"]["training_gate_accepted"])
             self.assertFalse(sidecar["metadata"]["verified"])
             self.assertEqual(sidecar["metadata"]["verification_status"], "unverified_no_eval")
             with open(progress, "r", encoding="utf-8") as fh:
@@ -1086,6 +2042,84 @@ class DeepAITests(unittest.TestCase):
             self.assertIn("value_loss", train_event)
             self.assertIn("total_loss", train_event)
             self.assertIn("examples", train_event)
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_explicit_model_reval_does_not_self_gate_or_drop_choice_head(self):
+        from engine.ai.dl import training as dl_training
+        from engine.ai.dl.training import DeepTrainingConfig, run_deep_training
+
+        class DummyModel:
+            choice_head_enabled = True
+
+            def to(self, _device):
+                return self
+
+        with temp_dir() as tmpdir:
+            explicit_model = os.path.join(tmpdir, "source.pt")
+            output = os.path.join(tmpdir, "reval.pt")
+            with open(explicit_model, "wb") as fh:
+                fh.write(b"checkpoint")
+            with open(os.path.splitext(explicit_model)[0] + ".json", "w", encoding="utf-8") as fh:
+                json.dump({
+                    "metadata": {
+                        "rules_version": 2,
+                        "action_version": 2,
+                        "encoder_version": 3,
+                        "summary": {
+                            "fire": {
+                                "choice": {"choice_examples": 12},
+                                "distill_choice": {"choice_examples": 0},
+                            }
+                        },
+                    }
+                }, fh)
+
+            old_eval_paths = []
+
+            def fake_old_eval(path, *_args, **_kwargs):
+                old_eval_paths.append(path)
+                self.assertNotEqual(
+                    os.path.normcase(os.path.abspath(path)),
+                    os.path.normcase(os.path.abspath(explicit_model)),
+                )
+                return None
+
+            def fake_train_deck_pipeline(_model, _deck_key, _deck_seed, _config, _emit, total_done, _total_training_games, old_eval=None):
+                self.assertIsNone(old_eval)
+                return {
+                    "accepted": True,
+                    "eval": {"games": 1, "wins": 1, "losses": 0, "draws": 0},
+                    "choice": {"choice_examples": 0, "choice_loss": 0.0},
+                    "distill_choice": {"choice_examples": 0, "choice_loss": 0.0},
+                    "choice_head_enabled": True,
+                }, total_done
+
+            with mock.patch.object(dl_training, "_load_or_create_model", return_value=DummyModel()), \
+                 mock.patch.object(dl_training, "_load_old_eval", side_effect=fake_old_eval), \
+                 mock.patch.object(dl_training, "_train_deck_pipeline", side_effect=fake_train_deck_pipeline), \
+                 mock.patch.object(dl_training, "save_checkpoint"):
+                payload = run_deep_training(
+                    DeepTrainingConfig(
+                        trainer="teacher_dagger_rl",
+                        deck="fire",
+                        model=explicit_model,
+                        output=output,
+                        games=0,
+                        bootstrap_games=0,
+                        dagger_games=0,
+                        eval_games=1,
+                        device="cpu",
+                        max_steps=20,
+                    )
+                )
+
+            self.assertEqual(payload["model_path"], output)
+            self.assertEqual(old_eval_paths, [os.path.join("data", "ai_models", "fire.pt")])
+            with open(os.path.splitext(output)[0] + ".json", "r", encoding="utf-8") as fh:
+                metadata = json.load(fh)["metadata"]
+            deck_summary = metadata["summary"]["fire"]
+            self.assertTrue(metadata["choice_head_enabled"])
+            self.assertEqual(deck_summary["loaded_choice_examples"], 12)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
     def test_deep_training_accepts_single_example_batch(self):
@@ -1139,8 +2173,8 @@ class DeepAITests(unittest.TestCase):
     def test_candidate_same_wins_more_draws_is_rejected_by_default_gate(self):
         from engine.ai.dl.training import _accepts_candidate
 
-        baseline = {"wins": 25, "losses": 64, "draws": 11, "avg_score": -394720.374, "games": 100}
-        candidate = {"wins": 25, "losses": 59, "draws": 16, "avg_score": -344311.383, "games": 100}
+        baseline = {"wins": 50, "losses": 40, "draws": 10, "avg_score": -394720.374, "games": 100}
+        candidate = {"wins": 50, "losses": 35, "draws": 15, "avg_score": -344311.383, "games": 100}
         self.assertFalse(
             _accepts_candidate(
                 candidate,
@@ -1150,7 +2184,7 @@ class DeepAITests(unittest.TestCase):
                 min_win_delta=1,
             )
         )
-        improved = dict(candidate, wins=26, losses=58)
+        improved = dict(candidate, wins=51, losses=34)
         self.assertTrue(
             _accepts_candidate(
                 improved,
@@ -1165,20 +2199,20 @@ class DeepAITests(unittest.TestCase):
         from engine.ai.dl.training import _accepts_candidate
 
         baseline = {
-            "wins": 40,
-            "losses": 60,
+            "wins": 50,
+            "losses": 50,
             "draws": 0,
             "avg_score": -100.0,
             "games": 100,
         }
         regressed = {
-            "wins": 180,
-            "losses": 420,
+            "wins": 290,
+            "losses": 310,
             "draws": 0,
             "avg_score": -80.0,
             "games": 600,
         }
-        improved = dict(regressed, wins=270, losses=330)
+        improved = dict(regressed, wins=310, losses=290)
 
         self.assertFalse(
             _accepts_candidate(
@@ -1633,11 +2667,53 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(ai.model_metadata.get("planner_version"), 1)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
-    def test_v9_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
+    def test_dl_ai_rejects_legacy_encoder_checkpoint(self):
+        from engine.ai.dl.model import create_model, save_checkpoint, safe_torch_load, torch
+
+        with temp_dir() as tmpdir:
+            path = os.path.join(tmpdir, "legacy_v9_encoder_v2.pt")
+            model = create_model(choice_head_enabled=True)
+            save_checkpoint(
+                path,
+                model,
+                {
+                    "planner_version": 1,
+                    "seed": 17,
+                    "trainer": "legacy-test",
+                    "torch_version": torch.__version__,
+                },
+            )
+            payload = safe_torch_load(path, map_location="cpu")
+            payload["version"] = 9
+            payload["schema"]["encoder_version"] = 2
+            payload["metadata"]["encoder_version"] = 2
+            torch.save(payload, path)
+
+            ai = DeepLearningAI(
+                "fire",
+                DeepLearningAIConfig(
+                    model_path=path,
+                    device="cpu",
+                    use_mcts=False,
+                    fallback_config=AIConfig(
+                        thinking_time_seconds=0.01,
+                        deterministic_search=False,
+                        max_sequence_depth=0,
+                        max_turn_actions=8,
+                        search_algorithm="beam",
+                    ),
+                ),
+            )
+
+        self.assertFalse(ai.model_available)
+        self.assertEqual(ai.model_metadata.get("encoder_version"), 2)
+
+    @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+    def test_v10_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
         from engine.ai.dl.model import checkpoint_payload, create_model, load_checkpoint, save_checkpoint, torch
 
         with temp_dir() as tmpdir:
-            path = os.path.join(tmpdir, "model_v9.pt")
+            path = os.path.join(tmpdir, "model_v10.pt")
             model = create_model(choice_head_enabled=True)
             save_checkpoint(path, model, {"trainer": "test"})
             restored, payload = load_checkpoint(path, "cpu")
@@ -1655,7 +2731,7 @@ class DeepAITests(unittest.TestCase):
             torch.save(legacy_payload, legacy_path)
             legacy_restored, legacy_loaded = load_checkpoint(legacy_path, "cpu")
 
-        self.assertEqual(payload.get("version"), 9)
+        self.assertEqual(payload.get("version"), 10)
         self.assertTrue(payload.get("model_config", {}).get("choice_head_enabled"))
         self.assertEqual(payload.get("model_config", {}).get("state_norm"), "layer")
         self.assertEqual(payload.get("model_config", {}).get("state_numeric_size"), STATE_NUMERIC_SIZE)

@@ -31,6 +31,7 @@ private:
     String loaded_path_;
     String last_error_;
     double last_duration_ms_ = 0.0;
+    bool choice_head_enabled_ = false;
 
     Dictionary fail(const String &message);
     static PackedFloat32Array tensor_to_array(const Ort::Value &value);
@@ -45,6 +46,7 @@ public:
     bool load_model(const String &path, const Dictionary &manifest);
     void unload_model();
     bool is_loaded() const;
+    bool supports_choice_head() const;
     Dictionary infer(
         const PackedFloat32Array &state_numeric,
         const PackedInt64Array &state_cards,

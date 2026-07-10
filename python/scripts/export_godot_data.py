@@ -283,6 +283,12 @@ def _model_manifest() -> dict[str, Any]:
         if sidecar.is_file():
             raw = json.loads(sidecar.read_text(encoding="utf-8"))
             metadata = dict(raw.get("metadata") or {})
+        schema_current = (
+            int(metadata.get("rules_version") or 0) == RULES_SCHEMA_VERSION
+            and int(metadata.get("action_version") or 0) == ACTION_SCHEMA_VERSION
+            and int(metadata.get("encoder_version") or 0) == ENCODER_SCHEMA_VERSION
+            and int(metadata.get("planner_version") or 0) == PLANNER_SCHEMA_VERSION
+        )
         models[deck_key] = {
             "deck_key": deck_key,
             "source_checkpoint": f"python/data/ai_models/{deck_key}.pt",
@@ -290,8 +296,8 @@ def _model_manifest() -> dict[str, Any]:
             "checkpoint_exists": checkpoint.is_file(),
             "checkpoint_size": checkpoint.stat().st_size if checkpoint.is_file() else 0,
             "checkpoint_sha256": _sha256(checkpoint) if checkpoint.is_file() else "",
-            "accepted": bool(metadata.get("accepted")),
-            "verified": bool(metadata.get("verified")),
+            "accepted": bool(metadata.get("accepted")) and schema_current,
+            "verified": bool(metadata.get("verified")) and schema_current,
             "rules_version": int(metadata.get("rules_version") or 0),
             "action_version": int(metadata.get("action_version") or 0),
             "encoder_version": int(metadata.get("encoder_version") or 0),

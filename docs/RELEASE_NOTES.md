@@ -1,5 +1,17 @@
 # PokemonTCG Godot 0.3.2
 
+## Deep AI v10/v3 更新
+
+- Deep AI checkpoint 升级到 v10、encoder 升级到 v3，统一 53 维卡牌语义特征。
+- 10 套发布牌组均使用同牌组、同对手、同 seed、同先后手的 600 局 Challenge
+  配对基线；强度与长局可靠性均按配对门禁验证。
+- Python 与 Godot 统一使用 guarded neural prior、heuristic leaf value、MCTS64 和
+  2 秒单次决策 watchdog。
+- ONNX 导出会在写文件前预检完整 10 模型的 v10/v3 schema、accepted/verified
+  metadata，并验证 FP32 推理误差不超过 `1e-4`。
+- 原生 ONNX bridge 支持 choice-head capability；发布测试禁止跳过 Deep runtime
+  用例，旧 encoder manifest 会继续安全回退到 Challenge AI。
+
 ## 系统要求
 
 - Windows 10/11 x86_64。
@@ -10,7 +22,7 @@
 ## 已实现
 
 - 本地双人、Challenge AI、Deep AI。
-- 8 套发布牌组与 8 个 FP32 ONNX 模型。
+- 10 套发布牌组与 10 个 FP32 ONNX 模型。
 - Windows/Android 原生 ONNX Runtime CPU 推理。
 - ENet LAN 与 WebSocket Relay 房主权威联机。
 - 现代实体牌桌战斗界面，完整显示卡图、战斗区、备战区、牌库、弃牌区、奖品区、竞技场和手牌。
@@ -49,4 +61,4 @@
 
 ## 完整性
 
-发布目录中的 `SHA256SUMS.json` 记录 Windows ZIP、Android APK、PCK、原生库和 8 个 ONNX 模型的 SHA-256。
+发布目录中的 `SHA256SUMS.json` 记录 Windows ZIP、Android APK、PCK、原生库和 10 个 ONNX 模型的 SHA-256。

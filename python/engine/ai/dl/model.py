@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - no torch in normal game runtime.
 
 
 TORCH_AVAILABLE = torch is not None
-CHECKPOINT_VERSION = 9  # +slot-aware masked card attention
+CHECKPOINT_VERSION = 10  # encoder v3 semantic-width contract
 
 
 def safe_torch_load(path: str, map_location: Any = "cpu") -> Any:

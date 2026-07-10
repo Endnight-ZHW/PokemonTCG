@@ -2160,41 +2160,54 @@ func _run_phase_four_foundation_tests() -> void:
 		choice_cards.append(int(row["card_id"]))
 	var runtime := DeepAIRuntime.new()
 	_check(runtime.is_available(), "ONNX Runtime GDExtension is unavailable")
+	var runtime_manifest_encoder := int(
+		Dictionary(runtime.manifest.get("compatibility_bridge", {})).get("python_encoder_version", 0)
+	)
+	var runtime_manifest_current := (
+		runtime_manifest_encoder == int(runtime.EXPECTED_PYTHON_ENCODER_VERSION)
+	)
 	if runtime.is_available():
-		for deck_key in [
-			"fire", "water", "psychic", "lightning",
-			"fighting", "colorless", "dragon", "grass",
-		]:
-			_check(runtime.load_for_deck(deck_key), (
-				"Unable to load %s ONNX model: %s" % [deck_key, runtime.last_error]))
-			var backend: Variant = runtime.get_backend()
-			if backend == null:
-				continue
-			var inference: Dictionary = backend.call(
-				"infer",
-				PackedFloat32Array(fixture["expected"]["state_numeric"]),
-				PackedInt64Array(fixture["expected"]["state_cards"]),
-				PackedFloat32Array(action_numeric),
-				PackedInt64Array(action_cards),
-				PackedFloat32Array(choice_numeric),
-				PackedInt64Array(choice_cards),
-			)
-			_check(inference.get("success", false), (
-				"Native ONNX inference failed for %s: %s" % [
-					deck_key, inference.get("error", "")]))
+		if not runtime_manifest_current:
 			_check(
-				inference.get("action_logits", []).size() == fixture["actions"].size(),
-				"Native ONNX action output size mismatch",
+				not runtime.load_for_deck("fire")
+				and runtime.last_error == "compatibility_bridge_mismatch",
+				"Deep AI accepted an incompatible Python encoder manifest",
 			)
-			_check(
-				inference.get("choice_logits", []).size() == request.options.size(),
-				"Native ONNX choice output size mismatch",
-			)
-			_check(
-				str(backend.call("get_execution_provider")) == "CPUExecutionProvider",
-				"Native ONNX provider mismatch",
-			)
-		runtime.unload()
+		else:
+			for deck_key in [
+				"fire", "water", "psychic", "lightning",
+				"fighting", "colorless", "dragon", "grass",
+			]:
+				_check(runtime.load_for_deck(deck_key), (
+					"Unable to load %s ONNX model: %s" % [deck_key, runtime.last_error]))
+				var backend: Variant = runtime.get_backend()
+				if backend == null:
+					continue
+				var inference: Dictionary = backend.call(
+					"infer",
+					PackedFloat32Array(fixture["expected"]["state_numeric"]),
+					PackedInt64Array(fixture["expected"]["state_cards"]),
+					PackedFloat32Array(action_numeric),
+					PackedInt64Array(action_cards),
+					PackedFloat32Array(choice_numeric),
+					PackedInt64Array(choice_cards),
+				)
+				_check(inference.get("success", false), (
+					"Native ONNX inference failed for %s: %s" % [
+						deck_key, inference.get("error", "")]))
+				_check(
+					inference.get("action_logits", []).size() == fixture["actions"].size(),
+					"Native ONNX action output size mismatch",
+				)
+				_check(
+					inference.get("choice_logits", []).size() == request.options.size(),
+					"Native ONNX choice output size mismatch",
+				)
+				_check(
+					str(backend.call("get_execution_provider")) == "CPUExecutionProvider",
+					"Native ONNX provider mismatch",
+				)
+			runtime.unload()
 		var invalid_backend: Variant = ClassDB.instantiate("OnnxInference")
 		_check(
 			not invalid_backend.call("load_model", "res://data/ai_models/water.onnx", {
@@ -2239,7 +2252,7 @@ func _run_phase_four_foundation_tests() -> void:
 		first.get("action", {}) == second.get("action", {}),
 		"Challenge AI fixed-seed decision is not reproducible",
 	)
-	if runtime.is_available() and runtime.load_for_deck("psychic"):
+	if runtime.is_available() and runtime_manifest_current and runtime.load_for_deck("psychic"):
 		var deep_request: Dictionary = ai_request.duplicate(true)
 		deep_request["mode"] = "deep"
 		deep_request["max_depth"] = 1
@@ -3234,6 +3247,24 @@ func _run_ai_strength_regression_tests(
 	_check(
 		worker._select_ucb(ucb_visits, ucb_totals, ucb_priors, 0) == 1,
 		"AI UCB did not explore the highest-prior unvisited action first",
+	)
+	var guarded_agree := worker._guarded_neural_priors(
+		[0.80, 0.10, 0.10],
+		[0.70, 0.20, 0.10],
+	)
+	_check(
+		guarded_agree.size() == 3 and guarded_agree[0] > 0.70,
+		"Deep prior guard did not allow a confident neural nudge that agrees with heuristics",
+	)
+	var guarded_disagree := worker._guarded_neural_priors(
+		[0.05, 0.85, 0.10],
+		[0.70, 0.20, 0.10],
+	)
+	_check(
+		guarded_disagree.size() == 3
+		and is_equal_approx(guarded_disagree[0], 0.70)
+		and is_equal_approx(guarded_disagree[1], 0.20),
+		"Deep prior guard did not preserve a clear heuristic action",
 	)
 
 	var cresselia_state := GameState.new()

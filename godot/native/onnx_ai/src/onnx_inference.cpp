@@ -21,6 +21,7 @@ void OnnxInference::_bind_methods() {
     ClassDB::bind_method(D_METHOD("load_model", "path", "manifest"), &OnnxInference::load_model);
     ClassDB::bind_method(D_METHOD("unload_model"), &OnnxInference::unload_model);
     ClassDB::bind_method(D_METHOD("is_loaded"), &OnnxInference::is_loaded);
+    ClassDB::bind_method(D_METHOD("supports_choice_head"), &OnnxInference::supports_choice_head);
     ClassDB::bind_method(
         D_METHOD(
             "infer",
@@ -52,6 +53,7 @@ bool OnnxInference::load_model(const String &path, const Dictionary &manifest) {
     std::lock_guard<std::mutex> lock(mutex_);
     last_error_ = "";
     last_duration_ms_ = 0.0;
+    choice_head_enabled_ = false;
     try {
         if (int64_t(manifest.get("opset", 0)) != 17) {
             last_error_ = "unsupported_opset";
@@ -88,6 +90,7 @@ bool OnnxInference::load_model(const String &path, const Dictionary &manifest) {
             session_options_
         );
         loaded_path_ = path;
+        choice_head_enabled_ = bool(manifest.get("choice_head_enabled", false));
         return true;
     } catch (const Ort::Exception &error) {
         session_.reset();
@@ -109,11 +112,17 @@ void OnnxInference::unload_model() {
     loaded_path_ = "";
     last_error_ = "";
     last_duration_ms_ = 0.0;
+    choice_head_enabled_ = false;
 }
 
 bool OnnxInference::is_loaded() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return session_ != nullptr;
+}
+
+bool OnnxInference::supports_choice_head() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return session_ != nullptr && choice_head_enabled_;
 }
 
 PackedFloat32Array OnnxInference::tensor_to_array(const Ort::Value &value) {

@@ -1470,7 +1470,7 @@
     ]
   },
   "schema": {
-    "encoder_version": 2,
+    "encoder_version": 3,
     "godot_action_version": 3,
     "godot_rules_version": 3,
     "planner_version": 1,

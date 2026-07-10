@@ -14,6 +14,10 @@ from engine.random_source import SamplingRandomSource
 
 
 PLANNER_SCHEMA_VERSION = 1
+HEURISTIC_PRIOR_TEMPERATURE = 80.0
+NEURAL_PRIOR_BLEND = 0.15
+NEURAL_PRIOR_MIN_TOP_PROB = 0.45
+HEURISTIC_PRIOR_CLEAR_GAP = 0.12
 
 
 class PolicyBackend(Protocol):
@@ -108,10 +112,11 @@ class NeuralBackend(HeuristicBackend):
     def priors(self, state, actor: int, actions: list[GameAction]) -> list[float]:
         if self.search_perspective is not None and actor != self.search_perspective:
             return self.fallback.priors(state, actor, actions)
+        heuristic_priors = self.fallback.priors(state, actor, actions)
         try:
             from engine.ai.dl.model import TORCH_AVAILABLE, torch
             if not TORCH_AVAILABLE or torch is None or self.model is None:
-                return self.fallback.priors(state, actor, actions)
+                return heuristic_priors
             observation = Observation.from_state(state, actor)
             encoded_state = self.encoder.encode_observation(observation, self.deck_key)
             encoded_actions = [
@@ -151,24 +156,17 @@ class NeuralBackend(HeuristicBackend):
                 self._value_cache[observation.information_key] = float(
                     model_value.reshape(-1)[0].detach().cpu().item()
                 )
-                return torch.softmax(logits[0], dim=0).detach().cpu().tolist()
+                neural_priors = torch.softmax(logits[0], dim=0).detach().cpu().tolist()
+                return _guarded_neural_priors(neural_priors, heuristic_priors)
         except Exception:
-            return self.fallback.priors(state, actor, actions)
+            return heuristic_priors
 
     def value(self, state, perspective: int) -> float:
-        observation = Observation.from_state(state, perspective)
-        cached = self._value_cache.get(observation.information_key)
-        if cached is not None:
-            return max(-1.0, min(1.0, cached))
-        self.priors(
-            state,
-            perspective,
-            [GameAction(PlayerAction.END_TURN, {}, True, perspective)],
-        )
-        cached = self._value_cache.get(observation.information_key)
-        if cached is None:
-            return self.fallback.value(state, perspective)
-        return max(-1.0, min(1.0, cached))
+        # Godot's production Deep AI uses neural priors inside the shared
+        # planner but keeps the mature heuristic evaluator for leaf values.
+        # Mirror that path here; the learned value head is still trained for
+        # future use, but is not yet strong enough to gate release models.
+        return self.fallback.value(state, perspective)
 
 
 class AnytimePlanner:
@@ -367,9 +365,67 @@ def _softmax(scores: list[float]) -> list[float]:
     if not scores:
         return []
     maximum = max(scores)
-    values = [math.exp(max(-60.0, min(60.0, score - maximum))) for score in scores]
+    scale = max(1e-6, float(HEURISTIC_PRIOR_TEMPERATURE))
+    values = [math.exp(max(-60.0, min(60.0, (score - maximum) / scale))) for score in scores]
     total = sum(values) or 1.0
     return [value / total for value in values]
+
+
+def _normalize_priors(priors: list[float]) -> list[float]:
+    if not priors:
+        return []
+    values = [
+        max(0.0, float(value))
+        if math.isfinite(float(value)) else 0.0
+        for value in priors
+    ]
+    total = sum(values)
+    if total <= 1e-12:
+        return [1.0 / len(values)] * len(values)
+    return [value / total for value in values]
+
+
+def _top_two(priors: list[float]) -> tuple[int, float, float]:
+    if not priors:
+        return -1, 0.0, 0.0
+    top_idx = max(range(len(priors)), key=lambda idx: priors[idx])
+    top = float(priors[top_idx])
+    second = max(
+        (float(value) for idx, value in enumerate(priors) if idx != top_idx),
+        default=0.0,
+    )
+    return top_idx, top, second
+
+
+def _guarded_neural_priors(
+    neural_priors: list[float],
+    heuristic_priors: list[float],
+    *,
+    blend: float = NEURAL_PRIOR_BLEND,
+    min_top_prob: float = NEURAL_PRIOR_MIN_TOP_PROB,
+    clear_gap: float = HEURISTIC_PRIOR_CLEAR_GAP,
+) -> list[float]:
+    """Use neural priors only as a guarded nudge over the mature heuristic prior."""
+    heuristic = _normalize_priors(list(heuristic_priors))
+    if len(neural_priors) != len(heuristic) or not heuristic:
+        return heuristic
+    neural = _normalize_priors(list(neural_priors))
+    if len(neural) != len(heuristic):
+        return heuristic
+    neural_top, neural_peak, _ = _top_two(neural)
+    heuristic_top, heuristic_peak, heuristic_second = _top_two(heuristic)
+    if neural_peak < float(min_top_prob):
+        return heuristic
+    heuristic_gap = heuristic_peak - heuristic_second
+    if neural_top != heuristic_top and heuristic_gap >= float(clear_gap):
+        return heuristic
+    effective_blend = max(0.0, min(1.0, float(blend)))
+    if neural_top != heuristic_top:
+        effective_blend *= 0.5
+    return _normalize_priors([
+        (1.0 - effective_blend) * heuristic[idx] + effective_blend * neural[idx]
+        for idx in range(len(heuristic))
+    ])
 
 
 def _map_legacy_choice(request: ChoiceRequest, choice) -> ChoiceResponse | None:
