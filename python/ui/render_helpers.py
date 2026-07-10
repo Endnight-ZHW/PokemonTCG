@@ -180,7 +180,7 @@ def draw_gradient_button(surface: pygame.Surface, rect: pygame.Rect,
                          highlight: bool = True):
     """Draw a button with vertical gradient fill and border.
 
-    Shared by TitleScreen, EndScreen, and LobbyScreen.
+    Shared by title, end, and other utility screens.
     """
     if hovered:
         tc, bc = hover_top_color, hover_bot_color

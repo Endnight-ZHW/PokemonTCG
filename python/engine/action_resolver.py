@@ -339,22 +339,15 @@ class ActionResolver:
             self.state.stadium_card = card
             player.stadium_played_this_turn = True
 
-        # Only discard supporter/item if no pending action (e.g. search prompts).
-        # If there IS a pending action, the card is consumed when the action completes.
-        if not result.pending_action:
-            if card.is_trainer_supporter:
-                player.supporter_played_this_turn = True
-                player.discard.append(card)
-            elif card.is_trainer_item:
-                player.discard.append(card)
-        else:
-            # Card is consumed during the pending action — mark supporter usage now
-            # to prevent reuse, but keep the card until the pending action completes
-            if card.is_trainer_supporter:
-                player.supporter_played_this_turn = True
-            # Defer discard until pending action completes. Store card reference
-            # so it can be returned to hand on cancel.
-            result.pending_action.pending_card = card
+        # The card moves to discard as part of PLAY_TRAINER itself, before a
+        # follow-up selection is resolved.  A cancellable request still keeps
+        # the action checkpoint, so cancelling restores the entire pre-action
+        # state instead of exposing a different paused state than Godot.
+        if card.is_trainer_supporter:
+            player.supporter_played_this_turn = True
+            player.discard.append(card)
+        elif card.is_trainer_item:
+            player.discard.append(card)
 
         return result
 

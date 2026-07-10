@@ -3,23 +3,25 @@ param(
     [ValidateSet('windows', 'android', 'all')]
     [string]$Target = 'all',
     [ValidateSet('debug', 'release')]
-    [string]$Configuration = 'debug'
+    [string]$Configuration = 'debug',
+    [bool]$IncludeAndroidRuntimeSmoke = $true
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Join-Path $repoRoot 'godot'
-$godot = Join-Path $repoRoot '.tools\godot-4.7\Godot_v4.7-stable_win64_console.exe'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'
 $downloadsRoot = Join-Path $repoRoot '.tools\downloads'
 
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
+$godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot
+$godot = $godotPaths.Console
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
 
 if (-not (Test-Path -LiteralPath $godot)) {
-    throw 'Godot 4.7 is not installed. Run tools/setup_godot_toolchain.ps1 first.'
+    throw "Godot $($lock.godot.version) is not installed. Run tools/setup_godot_toolchain.ps1 first."
 }
 
 function Invoke-GodotExport {
@@ -82,7 +84,7 @@ function Set-GodotAndroidEditorSettings {
         [Parameter(Mandatory)] [string]$AndroidSdkRoot,
         [Parameter(Mandatory)] [string]$JavaSdkRoot
     )
-    $settingsPath = Join-Path $ToolsRoot 'appdata\Godot\editor_settings-4.7.tres'
+    $settingsPath = $godotPaths.EditorSettings
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $settingsPath) | Out-Null
     Set-GodotEditorSetting `
         -Path $settingsPath `
@@ -133,7 +135,7 @@ if ($Target -in @('android', 'all')) {
         $installedBuildVersion -ne $lock.godot.full_config
     )
     if ($needsTemplate) {
-        $templateArchive = Join-Path $env:APPDATA 'Godot\export_templates\4.7.stable\android_source.zip'
+        $templateArchive = Join-Path $godotPaths.TemplateRoot 'android_source.zip'
         if (-not (Test-Path -LiteralPath $templateArchive)) {
             throw 'Godot Android source template is missing. Re-run tools/setup_godot_toolchain.ps1.'
         }
@@ -185,4 +187,14 @@ if ($Target -in @('android', 'all')) {
     Invoke-GodotExport `
         -Preset 'Android ARM64' `
         -Output $androidOutput
+    if ($IncludeAndroidRuntimeSmoke) {
+        $androidSmokeOutput = if ($Configuration -eq 'release') {
+            'dist/release/android/PokemonTCG-smoke.apk'
+        } else {
+            'dist/android/PokemonTCG-smoke.apk'
+        }
+        Invoke-GodotExport `
+            -Preset 'Android ARM64 Release Smoke' `
+            -Output $androidSmokeOutput
+    }
 }

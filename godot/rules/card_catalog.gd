@@ -8,9 +8,11 @@ static var _shared_cards: Dictionary = {}
 static var _shared_decks: Dictionary = {}
 static var _shared_loaded := false
 static var _shared_load_count := 0
+static var _shared_repository: CardCatalog
 
 var cards: Dictionary = {}
 var decks: Dictionary = {}
+var _read_only_repository := false
 var _expanded_deck_cache: Dictionary = {}
 var _card_supertype_cache: Dictionary = {}
 var _card_subtypes_cache: Dictionary = {}
@@ -18,16 +20,43 @@ var _provides_energy_cache: Dictionary = {}
 var _prize_value_cache: Dictionary = {}
 
 
-func _init(isolated: bool = false) -> void:
+func _init(isolated: bool = false, read_only: bool = false) -> void:
 	_ensure_shared_data()
 	if isolated:
 		cards = _shared_cards.duplicate(true)
 		decks = _shared_decks.duplicate(true)
 	else:
-		# Runtime catalogs are read-only views over one parsed data set. Tests that
-		# inject synthetic cards can request an isolated catalog explicitly.
+		# Legacy constructors retain one parsed data set. Tests that inject synthetic
+		# cards should request an isolated catalog explicitly.
 		cards = _shared_cards
 		decks = _shared_decks
+	if read_only:
+		if not isolated:
+			cards = cards.duplicate(true)
+			decks = decks.duplicate(true)
+		_prepare_read_only_repository()
+
+
+static func shared() -> CardCatalog:
+	"""Return the one deeply read-only catalog used by release runtime paths."""
+	if _shared_repository == null:
+		# Keep the legacy constructor compatible for tests that mutate synthetic
+		# fixtures. The runtime repository owns one isolated, immutable snapshot.
+		_shared_repository = CardCatalog.new(true, true)
+	return _shared_repository
+
+
+func is_read_only_repository() -> bool:
+	return (
+		_read_only_repository
+		and cards.is_read_only()
+		and decks.is_read_only()
+		and _expanded_deck_cache.is_read_only()
+		and _card_supertype_cache.is_read_only()
+		and _card_subtypes_cache.is_read_only()
+		and _provides_energy_cache.is_read_only()
+		and _prize_value_cache.is_read_only()
+	)
 
 
 func get_card(card_id: String) -> Dictionary:
@@ -49,7 +78,8 @@ func expand_deck(deck_key: String) -> Array[String]:
 	for row in deck.get("cards", []):
 		for _index in range(int(row.get("count", 0))):
 			result.append(str(row.get("card_id", "")))
-	_expanded_deck_cache[deck_key] = result.duplicate()
+	if not _read_only_repository:
+		_expanded_deck_cache[deck_key] = result.duplicate()
 	return result
 
 
@@ -110,14 +140,19 @@ func provides_energy(card_id: String) -> Array[String]:
 	if not _provides_energy_cache.has(card_id):
 		var cached: Array[String] = []
 		cached.assign(get_card(card_id).get("provides_energy", []))
+		if _read_only_repository:
+			return cached
 		_provides_energy_cache[card_id] = cached
-	result.assign(_provides_energy_cache[card_id])
+	result.assign(_provides_energy_cache.get(card_id, []))
 	return result
 
 
 func prize_value(card_id: String) -> int:
 	if not _prize_value_cache.has(card_id):
-		_prize_value_cache[card_id] = int(get_card(card_id).get("prize_value", 1))
+		var value := int(get_card(card_id).get("prize_value", 1))
+		if _read_only_repository:
+			return value
+		_prize_value_cache[card_id] = value
 	return int(_prize_value_cache[card_id])
 
 
@@ -165,7 +200,10 @@ func filter_cards(card_ids: Array[String], filter_type: String, filter_name: Str
 
 func _card_supertype(card_id: String) -> String:
 	if not _card_supertype_cache.has(card_id):
-		_card_supertype_cache[card_id] = str(get_card(card_id).get("supertype", ""))
+		var value := str(get_card(card_id).get("supertype", ""))
+		if _read_only_repository:
+			return value
+		_card_supertype_cache[card_id] = value
 	return str(_card_supertype_cache[card_id])
 
 
@@ -173,12 +211,51 @@ func _card_has_subtype(card_id: String, subtype: String) -> bool:
 	if not _card_subtypes_cache.has(card_id):
 		var cached: Array[String] = []
 		cached.assign(get_card(card_id).get("subtypes", []))
+		if _read_only_repository:
+			return subtype in cached
 		_card_subtypes_cache[card_id] = cached
 	return subtype in _card_subtypes_cache[card_id]
 
 
 static func shared_load_count() -> int:
 	return _shared_load_count
+
+
+func _prepare_read_only_repository() -> void:
+	# Fill every derived lookup before publishing the repository to worker
+	# threads. Once frozen, known and unknown reads never mutate shared state.
+	for deck_key_value in decks:
+		expand_deck(str(deck_key_value))
+	for card_id_value in cards:
+		var card_id := str(card_id_value)
+		_card_supertype(card_id)
+		_card_has_subtype(card_id, "")
+		provides_energy(card_id)
+		prize_value(card_id)
+	for value in [
+		cards,
+		decks,
+		_expanded_deck_cache,
+		_card_supertype_cache,
+		_card_subtypes_cache,
+		_provides_energy_cache,
+		_prize_value_cache,
+	]:
+		_deep_make_read_only(value)
+	_read_only_repository = true
+
+
+static func _deep_make_read_only(value: Variant) -> void:
+	if value is Dictionary:
+		var dictionary: Dictionary = value
+		for nested_value in dictionary.values():
+			_deep_make_read_only(nested_value)
+		dictionary.make_read_only()
+	elif value is Array:
+		var array: Array = value
+		for nested_value in array:
+			_deep_make_read_only(nested_value)
+		array.make_read_only()
 
 
 static func _ensure_shared_data() -> void:

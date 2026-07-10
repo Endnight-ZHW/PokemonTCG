@@ -86,21 +86,27 @@ static func validate(
 	if not message is Dictionary:
 		return _invalid("invalid_message", "消息必须是对象。")
 	var row: Dictionary = message
+	if not _json_tree_is_serializable(row):
+		return _invalid("invalid_message", "消息包含无法序列化的内容。")
 	if JSON.stringify(row).to_utf8_buffer().size() > MAX_MESSAGE_BYTES:
 		return _invalid("message_too_large", "消息超过大小限制。")
 	if not _json_tree_is_bounded(row):
 		return _invalid("invalid_message", "消息包含过深或过大的嵌套内容。")
-	if int(row.get("protocol_version", -1)) != VERSION:
-		return _invalid("protocol_mismatch", "联机协议版本不兼容。")
-	var message_type := str(row.get("message_type", ""))
-	if message_type not in MESSAGE_TYPES:
-		return _invalid("unknown_message_type", "未知消息类型。")
 	for field in [
-		"room_id", "sender", "sequence", "state_revision",
-		"action_id", "request_id", "payload",
+		"protocol_version", "message_type", "room_id", "sender", "sequence",
+		"state_revision", "action_id", "request_id", "payload",
 	]:
 		if not row.has(field):
 			return _invalid("missing_field", "消息缺少字段：%s" % field)
+	if not _is_integer_number(row["protocol_version"]):
+		return _invalid("invalid_field_type", "协议版本字段类型错误。")
+	if int(row.get("protocol_version", -1)) != VERSION:
+		return _invalid("protocol_mismatch", "联机协议版本不兼容。")
+	if not row["message_type"] is String:
+		return _invalid("invalid_field_type", "消息类型字段类型错误。")
+	var message_type: String = row["message_type"]
+	if message_type not in MESSAGE_TYPES:
+		return _invalid("unknown_message_type", "未知消息类型。")
 	if not row["room_id"] is String or not row["payload"] is Dictionary:
 		return _invalid("invalid_field_type", "消息字段类型错误。")
 	if (
@@ -109,10 +115,6 @@ static func validate(
 		or not _bounded_string(row["request_id"], MAX_IDENTIFIER_BYTES)
 	):
 		return _invalid("invalid_field_value", "消息标识符过长。")
-	if int(row["sender"]) not in [0, 1]:
-		return _invalid("invalid_field_value", "消息发送方编号无效。")
-	if int(row["sequence"]) <= 0 or int(row["state_revision"]) < -1:
-		return _invalid("invalid_field_value", "消息序号或局面版本无效。")
 	if (
 		not _is_integer_number(row["sender"])
 		or not _is_integer_number(row["sequence"])
@@ -121,6 +123,15 @@ static func validate(
 		or not row["request_id"] is String
 	):
 		return _invalid("invalid_field_type", "消息字段类型错误。")
+	if int(row["sender"]) not in [0, 1]:
+		return _invalid("invalid_field_value", "消息发送方编号无效。")
+	if (
+		int(row["sequence"]) <= 0
+		or int(row["sequence"]) > 2147483647
+		or int(row["state_revision"]) < -1
+		or int(row["state_revision"]) > 2147483647
+	):
+		return _invalid("invalid_field_value", "消息序号或局面版本无效。")
 	if not expected_room.is_empty() and str(row["room_id"]) != expected_room:
 		return _invalid("wrong_room", "消息房间号不匹配。")
 	if expected_sender >= 0 and int(row["sender"]) != expected_sender:
@@ -190,9 +201,14 @@ static func _invalid(code: String, message: String) -> Dictionary:
 
 
 static func _is_integer_number(value: Variant) -> bool:
+	if value is int:
+		return true
 	return (
-		value is int
-		or (value is float and is_equal_approx(value, float(int(value))))
+		value is float
+		and is_finite(value)
+		and value >= -2147483648.0
+		and value <= 2147483647.0
+		and value == floorf(value)
 	)
 
 
@@ -250,6 +266,10 @@ static func _validate_state_payload(state: Dictionary) -> Dictionary:
 		or not _bounded_int(state, "winner", -1, 1)
 	):
 		return _invalid("invalid_payload", "局面基础字段无效。")
+	var terminal_phase := str(state["phase"]) == "GAME_OVER"
+	var has_winner := int(state["winner"]) >= 0
+	if terminal_phase != has_winner:
+		return _invalid("invalid_payload", "终局阶段与胜者字段不一致。")
 	if (
 		not _bounded_string(state.get("stadium_card_id", ""), MAX_IDENTIFIER_BYTES)
 		or not state.get("apply_type_matchups", false) is bool
@@ -378,11 +398,41 @@ static func _validate_action(value: Variant, require_action_id: bool) -> Diction
 		return _invalid("invalid_payload", "动作缺少唯一 ID。")
 	if not _json_tree_is_bounded(action["params"]):
 		return _invalid("invalid_payload", "动作参数无效。")
+	if not _validate_action_params(action["params"]):
+		return _invalid("invalid_payload", "动作参数字段类型无效。")
 	for ref_field in ["source", "target"]:
 		var ref_value: Variant = action.get(ref_field)
 		if ref_value != null and not _validate_entity_ref(ref_value):
 			return _invalid("invalid_payload", "动作实体引用无效。")
 	return {"ok": true}
+
+
+static func _validate_action_params(params: Dictionary) -> bool:
+	for field_and_maximum in [
+		["hand_idx", MAX_DECK_CARDS - 1],
+		["bench_idx", MAX_BENCH_SIZE - 1],
+		["attack_idx", 31],
+	]:
+		var field := str(field_and_maximum[0])
+		if params.has(field) and not _bounded_int(
+			params, field, 0, int(field_and_maximum[1])
+		):
+			return false
+	for field in ["slot", "target", "target_slot", "ability_name"]:
+		if params.has(field) and not _bounded_string(params[field], MAX_IDENTIFIER_BYTES):
+			return false
+	if params.has("energy_indices"):
+		var indices: Variant = params["energy_indices"]
+		if not indices is Array or Array(indices).size() > MAX_DECK_CARDS:
+			return false
+		for index_value in indices:
+			if (
+				not _is_integer_number(index_value)
+				or int(index_value) < 0
+				or int(index_value) >= MAX_DECK_CARDS
+			):
+				return false
+	return true
 
 
 static func _validate_entity_ref(value: Variant) -> bool:
@@ -435,6 +485,8 @@ static func _validate_choice_request(value: Variant) -> Dictionary:
 		return _invalid("invalid_payload", "选择请求字段无效。")
 	if int(request["min_select"]) > int(request["max_select"]):
 		return _invalid("invalid_payload", "选择数量范围无效。")
+	if not _validate_choice_metadata(request.get("metadata", {})):
+		return _invalid("invalid_payload", "选择请求 metadata 字段无效。")
 	var options: Array = request["options"]
 	if options.size() > MAX_CHOICE_OPTIONS:
 		return _invalid("invalid_payload", "选择项数量超过限制。")
@@ -449,7 +501,63 @@ static func _validate_choice_request(value: Variant) -> Dictionary:
 			or not _json_tree_is_bounded(option)
 		):
 			return _invalid("invalid_payload", "选择项字段无效。")
+		if option.has("ref") and option["ref"] != null:
+			if not _validate_entity_ref(option["ref"]):
+				return _invalid("invalid_payload", "选择项实体引用无效。")
+		if option.has("value") and not _validate_choice_option_value(option["value"]):
+			return _invalid("invalid_payload", "选择项 value 字段无效。")
 	return {"ok": true}
+
+
+static func _validate_choice_metadata(metadata: Dictionary) -> bool:
+	if metadata.has("revision") and not _bounded_int(
+		metadata, "revision", 0, 2147483647
+	):
+		return false
+	if metadata.has("max_per_target") and not _bounded_int(
+		metadata, "max_per_target", 0, 2147483647
+	):
+		return false
+	if metadata.has("top_card_id") and not _bounded_string(
+		metadata["top_card_id"], MAX_IDENTIFIER_BYTES
+	):
+		return false
+	if metadata.has("revealed_card_ids") and not _bounded_string_array(
+		metadata["revealed_card_ids"], MAX_DECK_CARDS, MAX_IDENTIFIER_BYTES
+	):
+		return false
+	if metadata.has("predetermined_flips"):
+		var flips: Variant = metadata["predetermined_flips"]
+		if not flips is Array or Array(flips).size() > MAX_CHOICE_OPTIONS:
+			return false
+		for flip in flips:
+			if not flip is bool:
+				return false
+	return true
+
+
+static func _validate_choice_option_value(value: Variant) -> bool:
+	if not value is Dictionary:
+		return (
+			value == null
+			or value is bool
+			or value is int
+			or (value is float and is_finite(value))
+			or value is String
+		)
+	var row: Dictionary = value
+	if row.has("index") and not _bounded_int(row, "index", -1, MAX_DECK_CARDS):
+		return false
+	for field in ["player", "target_player"]:
+		if row.has(field) and not _bounded_int(row, field, -1, 1):
+			return false
+	for field in ["slot", "card_id", "attachment_type"]:
+		if row.has(field) and not _bounded_string(row[field], MAX_IDENTIFIER_BYTES):
+			return false
+	for field in ["base_name", "evolution_name"]:
+		if row.has(field) and not _bounded_string(row[field], MAX_TEXT_BYTES):
+			return false
+	return true
 
 
 static func _validate_presentation_event(value: Variant) -> bool:
@@ -462,6 +570,7 @@ static func _validate_presentation_event(value: Variant) -> bool:
 		or not _bounded_int(event, "revision", 0, 2147483647)
 		or not _bounded_int(event, "actor", -1, 1)
 		or not _bounded_string(event.get("card_id", ""), MAX_IDENTIFIER_BYTES)
+		or not _bounded_int(event, "amount", 0, 2147483647)
 		or not _bounded_string(event.get("visibility", "public"), 16)
 		or str(event.get("visibility", "public")) not in ["public", "owner", "private"]
 		or not event.get("data", {}) is Dictionary
@@ -469,7 +578,67 @@ static func _validate_presentation_event(value: Variant) -> bool:
 		or not event.get("target", {}) is Dictionary
 	):
 		return false
-	return _json_tree_is_bounded(event)
+	return (
+		_validate_presentation_endpoint(event["source"])
+		and _validate_presentation_endpoint(event["target"])
+		and _validate_presentation_data(event["data"])
+		and _json_tree_is_bounded(event)
+	)
+
+
+static func _validate_presentation_endpoint(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	var endpoint: Dictionary = value
+	if not _bounded_int(endpoint, "player", -1, 1):
+		return false
+	for field in ["zone", "slot"]:
+		if endpoint.has(field) and not _bounded_string(
+			endpoint[field], MAX_IDENTIFIER_BYTES
+		):
+			return false
+	if endpoint.has("index") and not _bounded_int(
+		endpoint, "index", -1, MAX_DECK_CARDS
+	):
+		return false
+	return true
+
+
+static func _validate_presentation_data(data: Dictionary) -> bool:
+	for field in ["player", "actor", "source_player", "target_player", "winner"]:
+		if data.has(field) and not _bounded_int(data, field, -1, 1):
+			return false
+	for field_and_bounds in [
+		["bench_idx", -1, MAX_BENCH_SIZE - 1],
+		["source_index", -1, MAX_DECK_CARDS],
+		["count", 0, MAX_DECK_CARDS],
+		["amount", 0, 2147483647],
+		["turn", 0, 2147483647],
+	]:
+		var field := str(field_and_bounds[0])
+		if data.has(field) and not _bounded_int(
+			data, field, int(field_and_bounds[1]), int(field_and_bounds[2])
+		):
+			return false
+	for field in [
+		"slot", "source_slot", "target_slot", "source_zone", "target_zone",
+		"card_id", "source_card_id", "target_card_id", "status",
+	]:
+		if data.has(field) and not _bounded_string(data[field], MAX_TEXT_BYTES):
+			return false
+	for field in ["card_ids", "cards", "selected_card_ids"]:
+		if data.has(field) and not _bounded_string_array(
+			data[field], MAX_DECK_CARDS, MAX_IDENTIFIER_BYTES
+		):
+			return false
+	if data.has("results"):
+		var results: Variant = data["results"]
+		if not results is Array or Array(results).size() > MAX_CHOICE_OPTIONS:
+			return false
+		for result in results:
+			if not result is bool:
+				return false
+	return true
 
 
 static func _bounded_string(value: Variant, max_bytes: int) -> bool:
@@ -549,8 +718,10 @@ static func _bounded_player_index_array(value: Variant, max_items: int) -> bool:
 static func _json_tree_is_bounded(value: Variant, depth: int = 0) -> bool:
 	if depth > MAX_JSON_DEPTH:
 		return false
-	if value == null or value is bool or value is int or value is float:
+	if value == null or value is bool or value is int:
 		return true
+	if value is float:
+		return is_finite(value)
 	if value is String:
 		return _bounded_string(value, MAX_TEXT_BYTES * 4)
 	if value is Array:
@@ -569,6 +740,30 @@ static func _json_tree_is_bounded(value: Variant, depth: int = 0) -> bool:
 			if (
 				not _bounded_string(key_value, MAX_IDENTIFIER_BYTES)
 				or not _json_tree_is_bounded(row[key_value], depth + 1)
+			):
+				return false
+		return true
+	return false
+
+
+static func _json_tree_is_serializable(value: Variant, depth: int = 0) -> bool:
+	if depth > MAX_JSON_DEPTH:
+		return false
+	if value == null or value is bool or value is int or value is String:
+		return true
+	if value is float:
+		return is_finite(value)
+	if value is Array:
+		for item in value:
+			if not _json_tree_is_serializable(item, depth + 1):
+				return false
+		return true
+	if value is Dictionary:
+		var row: Dictionary = value
+		for key_value in row:
+			if (
+				not key_value is String
+				or not _json_tree_is_serializable(row[key_value], depth + 1)
 			):
 				return false
 		return true

@@ -18,6 +18,7 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
 from card_data.effects import CARD_EFFECTS
+from data.card_models import Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import (
     ALL_CARD_IDS,
@@ -53,13 +54,19 @@ from engine.ai.dl.encoder import (
     card_bucket,
 )
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
-from engine.commands.dsl_compiler import compile_effect_to_spec, compile_effects_to_payload
+from engine.commands.dsl_compiler import (
+    DEFAULT_COMMAND_REGISTRY,
+    compile_effect_to_spec,
+    compile_effects_to_payload,
+)
+from engine.commands.ir import OP_BY_EFFECT_TYPE, SUPPORTED_EFFECT_TYPES
 from engine.commands.vm_contract import VM_IR_VERSION
-from engine.enums import PlayerAction, TurnPhase
+from engine.enums import PlayerAction, StatusType, TurnPhase
 from engine.game_engine import GameEngine
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
 from engine.random_source import PortableRandomSourceV1
+from engine.snapshot import canonical_state_payload
 
 DEFAULT_OUTPUT = REPO_ROOT / "godot"
 RELEASE_MANIFEST_PATH = REPO_ROOT / "release_manifest.json"
@@ -175,9 +182,10 @@ def _load_image_mapping() -> dict[str, str]:
 
 
 def _parse_image_mapping(text: str) -> dict[str, str]:
-    pairs = json.loads(text, object_pairs_hook=lambda rows: rows)
-    if not isinstance(pairs, list):
+    shape = json.loads(text)
+    if not isinstance(shape, dict):
         raise ValueError("Card image mapping must be a JSON object")
+    pairs = json.loads(text, object_pairs_hook=lambda rows: rows)
     duplicate_ids: set[str] = set()
     mapping: dict[str, str] = {}
     for key, value in pairs:
@@ -264,13 +272,62 @@ def _export_images(output: Path, mapping: dict[str, str]) -> dict[str, str]:
             raise OSError(f"Card image copy checksum mismatch: {card_id}")
 
     card_back = PYTHON_ROOT / "data" / "images" / "卡背.webp"
-    if card_back.is_file():
-        shutil.copy2(card_back, target_root / "card_back.webp")
+    if not card_back.is_file():
+        raise FileNotFoundError(f"Missing card back image source: {card_back}")
+    target_card_back = target_root / "card_back.webp"
+    shutil.copy2(card_back, target_card_back)
+    if _sha256(card_back) != _sha256(target_card_back):
+        raise OSError("Card back image copy checksum mismatch")
     _remove_obsolete_card_assets(
         target_root,
         {Path(path).name for path in exported.values()} | {"card_back.webp"},
     )
     return exported
+
+
+def _exported_image_errors(output: Path, mapping: dict[str, str]) -> list[str]:
+    """Return stale/missing generated card assets without mutating the output."""
+    target_root = output / "assets" / "cards"
+    exported = _image_paths(mapping)
+    expected_names = {Path(path).name for path in exported.values()}
+    errors: list[str] = []
+    for card_id, target_path in exported.items():
+        source = PYTHON_ROOT / Path(mapping[card_id].replace("\\", "/"))
+        target = target_root / Path(target_path).name
+        if not target.is_file():
+            errors.append(f"missing:{target.name}")
+        elif _sha256(source) != _sha256(target):
+            errors.append(f"hash:{target.name}")
+
+    card_back = PYTHON_ROOT / "data" / "images" / "卡背.webp"
+    target_card_back = target_root / "card_back.webp"
+    expected_names.add(target_card_back.name)
+    if not card_back.is_file():
+        errors.append("source:card_back.webp")
+    elif not target_card_back.is_file():
+        errors.append("missing:card_back.webp")
+    elif _sha256(card_back) != _sha256(target_card_back):
+        errors.append("hash:card_back.webp")
+
+    if target_root.is_dir():
+        actual_names = {
+            path.name
+            for path in target_root.iterdir()
+            if path.is_file() and path.suffix.lower() in CARD_ASSET_EXTS
+        }
+        errors.extend(f"obsolete:{name}" for name in sorted(actual_names - expected_names))
+        expected_imports = {f"{name}.import" for name in expected_names}
+        actual_imports = {
+            path.name
+            for path in target_root.iterdir()
+            if path.is_file()
+            and path.suffix.lower() == ".import"
+            and Path(path.name[:-len(".import")]).suffix.lower() in CARD_ASSET_EXTS
+        }
+        errors.extend(
+            f"obsolete:{name}" for name in sorted(actual_imports - expected_imports)
+        )
+    return errors
 
 
 def _remove_obsolete_card_assets(target_root: Path, expected_names: set[str]) -> None:
@@ -436,6 +493,7 @@ def _effect_examples(value: Any, found: dict[str, dict[str, Any]] | None = None)
 
 
 def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, Any]:
+    release_schemas = _release_manifest()["schemas"]
     effect_types = sorted(_effect_types(CARD_EFFECTS))
     effect_examples = {
         key: value for key, value in sorted(_effect_examples(CARD_EFFECTS).items())
@@ -452,9 +510,9 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
         "schema": {
             "python_rules_version": RULES_SCHEMA_VERSION,
             "python_action_version": ACTION_SCHEMA_VERSION,
-            "godot_rules_version": 3,
-            "godot_action_version": 3,
-            "protocol_version": 3,
+            "godot_rules_version": int(release_schemas["godot_rules"]),
+            "godot_action_version": int(release_schemas["godot_actions"]),
+            "protocol_version": int(release_schemas["protocol"]),
             "encoder_version": ENCODER_SCHEMA_VERSION,
             "planner_version": PLANNER_SCHEMA_VERSION,
         },
@@ -642,84 +700,81 @@ def _ai_encoder_fixture() -> dict[str, Any]:
     }
 
 
-def _pokemon_payload(pokemon) -> dict[str, Any] | None:
-    if pokemon is None:
+def _godot_pokemon_payload(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
+    if snapshot is None:
         return None
     return {
-        "card_id": pokemon.card.api_id,
-        "damage_counters": pokemon.damage_counters,
-        "energy_card_ids": [card.api_id for card in pokemon.energy_cards],
-        "attached_tool_id": pokemon.attached_tool.api_id if pokemon.attached_tool else "",
-        "status_conditions": sorted(status.name for status in pokemon.status_conditions),
-        "evolution_stack_ids": [card.api_id for card in pokemon.evolution_stack],
-        "can_evolve_this_turn": pokemon.can_evolve_this_turn,
-        "placed_this_turn": pokemon.placed_this_turn,
-        "used_abilities": sorted(pokemon.used_abilities),
-        "damage_prevented_next_turn": pokemon.damage_prevented_next_turn,
-        "all_prevented_next_turn": pokemon.all_prevented_next_turn,
-        "outgoing_damage_reduction_next_turn": pokemon.outgoing_damage_reduction_next_turn,
-        "attack_locked": pokemon.attack_locked,
-        "attack_locked_names": dict(pokemon.attack_locked_names),
-        "dazzled": pokemon.dazzled,
-        "paralyzed_since_turn": pokemon.paralyzed_since_turn,
+        "card_id": str(snapshot.get("card_id", "")),
+        "damage_counters": int(snapshot.get("damage_counters", 0)),
+        "energy_card_ids": list(snapshot.get("energy_card_ids", [])),
+        "attached_tool_id": str(snapshot.get("attached_tool_id") or ""),
+        "status_conditions": sorted(snapshot.get("status_conditions", [])),
+        "evolution_stack_ids": list(snapshot.get("evolution_stack_ids", [])),
+        "can_evolve_this_turn": bool(snapshot.get("can_evolve_this_turn", True)),
+        "placed_this_turn": bool(snapshot.get("placed_this_turn", True)),
+        "used_abilities": sorted(snapshot.get("used_abilities", [])),
+        "damage_prevented_next_turn": bool(snapshot.get("damage_prevented", False)),
+        "all_prevented_next_turn": bool(snapshot.get("all_prevented", False)),
+        "outgoing_damage_reduction_next_turn": int(
+            snapshot.get("outgoing_damage_reduction", 0)
+        ),
+        "attack_locked": bool(snapshot.get("attack_locked", False)),
+        "attack_locked_names": dict(snapshot.get("attack_locked_names", {})),
+        "dazzled": bool(snapshot.get("dazzled", False)),
+        "paralyzed_since_turn": int(snapshot.get("paralyzed_since_turn", 0)),
     }
 
 
-def _player_payload(player) -> dict[str, Any]:
+def _godot_player_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
-        "name": player.name,
-        "deck": [card.api_id for card in player.deck],
-        "hand": [card.api_id for card in player.hand],
-        "discard": [card.api_id for card in player.discard],
-        "prizes": [card.api_id for card in player.prizes],
-        "active": _pokemon_payload(player.active),
-        "bench": [_pokemon_payload(pokemon) for pokemon in player.bench],
-        "supporter_played_this_turn": player.supporter_played_this_turn,
-        "energy_attached_this_turn": player.energy_attached_this_turn,
-        "retreated_this_turn": player.retreated_this_turn,
-        "stadium_played_this_turn": player.stadium_played_this_turn,
-        "stadium_used_this_turn": player.stadium_used_this_turn,
-        "healed_this_turn": player.healed_this_turn,
-        "vstar_power_used": player.vstar_power_used,
-        "was_ko_by_attack": player.was_ko_by_attack,
+        "name": str(snapshot.get("name", "")),
+        "deck": list(snapshot.get("deck_ids", [])),
+        "hand": list(snapshot.get("hand_ids", [])),
+        "discard": list(snapshot.get("discard_ids", [])),
+        "prizes": list(snapshot.get("prize_ids", [])),
+        "active": _godot_pokemon_payload(snapshot.get("active")),
+        "bench": [
+            _godot_pokemon_payload(pokemon)
+            for pokemon in snapshot.get("bench", [])
+        ],
+        "supporter_played_this_turn": bool(snapshot.get("supporter_played", False)),
+        "energy_attached_this_turn": bool(snapshot.get("energy_attached", False)),
+        "retreated_this_turn": bool(snapshot.get("retreated", False)),
+        "stadium_played_this_turn": bool(snapshot.get("stadium_played", False)),
+        "stadium_used_this_turn": bool(snapshot.get("stadium_used", False)),
+        "healed_this_turn": bool(snapshot.get("healed", False)),
+        "vstar_power_used": bool(snapshot.get("vstar_used", False)),
+        "was_ko_by_attack": bool(snapshot.get("was_ko_by_attack", False)),
     }
 
 
 def _state_payload(state: GameState) -> dict[str, Any]:
-    stadium = getattr(state, "stadium_card", None)
+    snapshot = canonical_state_payload(state)
     return {
-        "players": [_player_payload(state.p1), _player_payload(state.p2)],
-        "active_player_idx": state.active_player_idx,
-        "phase": state.phase.name,
-        "turn_number": state.turn_number,
-        "first_player_idx": state.first_player_idx,
-        "stadium_card_id": stadium.api_id if stadium else "",
-        "winner": -1 if state.winner is None else state.winner,
-        "revision": int(getattr(state, "revision", 0)),
-        "choice_sequence": int(getattr(state, "choice_sequence", 0)),
+        "players": [
+            _godot_player_payload(snapshot["p1"]),
+            _godot_player_payload(snapshot["p2"]),
+        ],
+        "active_player_idx": int(snapshot["active_player_idx"]),
+        "phase": str(snapshot["phase"]),
+        "turn_number": int(snapshot["turn_number"]),
+        "first_player_idx": int(snapshot["first_player_idx"]),
+        "stadium_card_id": str(snapshot.get("stadium_card_id") or ""),
+        "winner": -1 if snapshot.get("winner") is None else int(snapshot["winner"]),
+        "revision": int(snapshot.get("revision", 0)),
+        "choice_sequence": int(snapshot.get("choice_sequence", 0)),
         "public_deck_keys": [
             str(value or "")
-            for value in getattr(state, "public_deck_keys", ("", ""))
+            for value in snapshot.get("public_deck_keys", ("", ""))
         ],
-        "apply_type_matchups": bool(getattr(state, "apply_type_matchups", False)),
+        "apply_type_matchups": bool(snapshot.get("apply_type_matchups", False)),
         "action_log": [],
-        "mulligan_count": list(getattr(state, "mulligan_count", (0, 0))),
-        "extra_draws": list(getattr(state, "extra_draws", (0, 0))),
+        "mulligan_count": list(snapshot.get("mulligan_count", (0, 0))),
+        "extra_draws": list(snapshot.get("extra_draws", (0, 0))),
         "setup_ready": [False, False],
-        "pending_promotions": list(getattr(state, "pending_promotions", [])),
+        "pending_promotions": list(snapshot.get("pending_promotions", [])),
         "processed_action_ids": [],
-        "resolution_stack": _json_value(
-            getattr(
-                state,
-                "resolution_stack",
-                {
-                    "frames": [],
-                    "pending_request": None,
-                    "sequence": 0,
-                    "context": {},
-                },
-            )
-        ),
+        "resolution_stack": _json_value(snapshot.get("resolution_stack", {})),
     }
 
 
@@ -730,6 +785,403 @@ def _state_summary(state: GameState) -> dict[str, Any]:
     payload.pop("setup_ready", None)
     payload.pop("processed_action_ids", None)
     return payload
+
+
+_PENDING_KIND_ALIASES = {
+    "search_deck": "search_move",
+    "select_heal_target": "select_heal_target",
+}
+
+_CONTINUATION_KIND_ALIASES = {
+    "search_cards": "search_move",
+    "choose_heal_damage": "heal_target",
+}
+
+
+def _canonical_continuation_kind(value: Any) -> str:
+    kind = str(value or "")
+    return _CONTINUATION_KIND_ALIASES.get(kind, kind)
+
+
+def _canonical_pending_option(option: dict[str, Any]) -> dict[str, Any]:
+    ref = option.get("ref")
+    if isinstance(ref, dict) and ref.get("kind"):
+        kind = str(ref.get("kind", ""))
+        result = {
+            "kind": kind,
+            "player": int(ref.get("player", -1)),
+            "card_id": str(ref.get("card_id", "")),
+        }
+        if kind == "card":
+            result["zone"] = str(ref.get("zone", ""))
+        else:
+            result["slot"] = str(ref.get("slot", ""))
+        if kind == "attachment":
+            result["attachment_type"] = str(ref.get("attachment_type", ""))
+            result["index"] = int(ref.get("index", -1))
+        return result
+
+    value = option.get("value")
+    if isinstance(value, dict):
+        result = {
+            "kind": "value",
+            "card_id": str(value.get("card_id", "")),
+            "slot": str(value.get("slot", "")),
+        }
+        return result
+    return {"kind": "id", "option_id": str(option.get("option_id", ""))}
+
+
+def _canonical_pending_request(request: dict[str, Any]) -> dict[str, Any]:
+    metadata = request.get("metadata", {})
+    continuation = metadata.get("continuation", {})
+    continuation_kind = _canonical_continuation_kind(
+        continuation.get("kind", "") if isinstance(continuation, dict) else ""
+    )
+    request_type = str(request.get("request_type", ""))
+    if continuation_kind == "search_move":
+        request_type = "search_move"
+    elif continuation_kind == "heal_target":
+        request_type = "select_heal_target"
+    else:
+        request_type = _PENDING_KIND_ALIASES.get(request_type, request_type)
+    canonical_metadata: dict[str, Any] = {
+        "continuation_kind": continuation_kind,
+    }
+    if metadata.get("finish_attack_actor") is not None:
+        canonical_metadata["finish_attack_actor"] = int(
+            metadata.get("finish_attack_actor")
+        )
+    return {
+        "request_type": request_type,
+        "player": int(request.get("player", -1)),
+        "min_select": int(request.get("min_select", 0)),
+        "max_select": int(request.get("max_select", 0)),
+        "allow_duplicates": bool(request.get("allow_duplicates", False)),
+        "can_cancel": bool(request.get("can_cancel", False)),
+        "options": [
+            _canonical_pending_option(option)
+            for option in request.get("options", [])
+            if isinstance(option, dict)
+        ],
+        "metadata": canonical_metadata,
+    }
+
+
+def _pending_trace(state: GameState) -> dict[str, Any]:
+    stack = _json_value(getattr(state, "resolution_stack", {}) or {})
+    request = stack.get("pending_request") or {}
+    if not request:
+        return {}
+    result = _canonical_pending_request(request)
+    result.update({
+        "frame_kinds": [
+            str(frame.get("kind", "")) for frame in stack.get("frames", [])
+        ],
+        "continuation_operations": [
+            _canonical_continuation_kind(frame.get("operation", ""))
+            for frame in stack.get("frames", [])
+            if frame.get("kind") == "continuation"
+        ],
+    })
+    return result
+
+
+def _pokemon_energy_count(player: dict[str, Any]) -> int:
+    pokemon = [player.get("active")] + list(player.get("bench", []))
+    return sum(
+        len(row.get("energy_card_ids", []))
+        for row in pokemon
+        if isinstance(row, dict)
+    )
+
+
+def _active_damage(player: dict[str, Any]) -> int:
+    active = player.get("active")
+    return int(active.get("damage_counters", 0)) if isinstance(active, dict) else 0
+
+
+def _pokemon_by_slot(player: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    active = player.get("active")
+    if isinstance(active, dict):
+        rows["active"] = active
+    for index, pokemon in enumerate(player.get("bench", [])):
+        if isinstance(pokemon, dict):
+            rows[f"bench_{index}"] = pokemon
+    return rows
+
+
+def _healed_target_count(before: dict[str, Any], after: dict[str, Any]) -> int:
+    before_rows = _pokemon_by_slot(before)
+    after_rows = _pokemon_by_slot(after)
+    return sum(
+        int(after_rows[slot].get("damage_counters", 0))
+        < int(before_row.get("damage_counters", 0))
+        for slot, before_row in before_rows.items()
+        if slot in after_rows
+        and before_row.get("card_id") == after_rows[slot].get("card_id")
+    )
+
+
+def _new_status_count(before: dict[str, Any], after: dict[str, Any]) -> int:
+    before_rows = _pokemon_by_slot(before)
+    after_rows = _pokemon_by_slot(after)
+    return sum(
+        len(set(after_rows[slot].get("status_conditions", [])))
+        - len(set(before_row.get("status_conditions", [])))
+        for slot, before_row in before_rows.items()
+        if slot in after_rows
+        and before_row.get("card_id") == after_rows[slot].get("card_id")
+    )
+
+
+def _turn_transition_event_types(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> list[str]:
+    if int(before.get("turn_number", 0)) == int(after.get("turn_number", 0)):
+        return []
+    events = ["turn_end", "checkup"]
+    incoming = int(after.get("active_player_idx", 0))
+    before_player = before["players"][incoming]
+    after_player = after["players"][incoming]
+    if (
+        len(after_player.get("deck", [])) < len(before_player.get("deck", []))
+        and len(after_player.get("hand", [])) > len(before_player.get("hand", []))
+    ):
+        events.append("cards_drawn")
+    events.append("turn_start")
+    return events
+
+
+def _canonical_transaction_event_types(
+    before: dict[str, Any],
+    state: GameState,
+    operation: dict[str, Any],
+) -> list[str]:
+    """Normalize observable Python state transitions to the shared event vocabulary.
+
+    Python's debug runtime still has a sparse UI event stream. Differential traces
+    therefore derive this contract from the authoritative before/after state and
+    operation, while retaining the raw StepResult event list separately.
+    """
+    after = _state_payload(state)
+    before_players = before["players"]
+    after_players = after["players"]
+    actor = int(operation.get("actor", before.get("active_player_idx", 0)))
+    kind = str(operation.get("kind", "action"))
+    action_name = str(operation.get("action", ""))
+    events: list[str] = []
+
+    if kind == "choice":
+        if str(operation.get("request_type", "")) == "search_deck" and any(
+            len(after_players[player_index].get("deck", []))
+            < len(before_players[player_index].get("deck", []))
+            for player_index in (0, 1)
+        ):
+            events.extend(["deck_shuffled", "cards_selected"])
+        if any(
+            _pokemon_energy_count(after_players[index])
+            > _pokemon_energy_count(before_players[index])
+            for index in (0, 1)
+        ):
+            events.append("energy_attached")
+        if str(operation.get("request_type", "")) == "distribute_energy":
+            events.append("deck_shuffled")
+        opponent = 1 - actor
+        if (
+            _active_damage(after_players[opponent])
+            > _active_damage(before_players[opponent])
+            or (
+                before_players[opponent].get("active") is not None
+                and after_players[opponent].get("active") is None
+            )
+        ):
+            events.append("damage_dealt")
+        for _index in range(sum(
+            _healed_target_count(before_players[player_index], after_players[player_index])
+            for player_index in (0, 1)
+        )):
+            events.append("healed")
+        for _index in range(sum(
+            _new_status_count(before_players[player_index], after_players[player_index])
+            for player_index in (0, 1)
+        )):
+            events.append("status_applied")
+    elif action_name == "PLAY_BASIC":
+        events.append("pokemon_played")
+    elif action_name == "EVOLVE":
+        events.append("pokemon_evolved")
+    elif action_name == "ATTACH_ENERGY":
+        events.append("energy_attached")
+    elif action_name == "RETREAT":
+        events.append("retreat")
+    elif action_name == "PROMOTE":
+        events.append("promoted")
+    elif action_name == "PLAY_TRAINER":
+        hand_idx = int(operation.get("params", {}).get("hand_idx", -1))
+        before_hand = before_players[actor].get("hand", [])
+        card_id = before_hand[hand_idx] if 0 <= hand_idx < len(before_hand) else ""
+        card = CardRegistry.get(card_id)
+        if card is not None and card.is_trainer_tool:
+            events.append("tool_attached")
+        elif card is not None and card.is_trainer_stadium:
+            events.append("stadium_changed")
+        else:
+            events.append("trainer_played")
+        compiled_ops = {
+            str(effect.get("op", ""))
+            for effect in getattr(card, "compiled_trainer_effects", [])
+            if isinstance(effect, dict)
+        } if card is not None else set()
+        if "shuffle_then_draw_cards" in compiled_ops:
+            events.append("deck_shuffled")
+    elif action_name == "DECLARE_ATTACK":
+        events.append("attack_declared")
+        before_active = before_players[actor].get("active") or {}
+        after_active = after_players[actor].get("active") or {}
+        confused_failure = (
+            "CONFUSED" in before_active.get("status_conditions", [])
+            and int(after_active.get("damage_counters", 0))
+            > int(before_active.get("damage_counters", 0))
+        )
+        if confused_failure:
+            events.append("confusion_failed")
+        else:
+            for _index in range(sum(
+                _healed_target_count(
+                    before_players[player_index], after_players[player_index]
+                )
+                for player_index in (0, 1)
+            )):
+                events.append("healed")
+            for _index in range(sum(
+                _new_status_count(
+                    before_players[player_index], after_players[player_index]
+                )
+                for player_index in (0, 1)
+            )):
+                events.append("status_applied")
+            opponent = 1 - actor
+            if (
+                _active_damage(after_players[opponent])
+                > _active_damage(before_players[opponent])
+                or (
+                    before_players[opponent].get("active") is not None
+                    and after_players[opponent].get("active") is None
+                )
+            ):
+                events.append("damage_dealt")
+
+    if kind == "action" and action_name not in {"DECLARE_ATTACK"}:
+        for _index in range(sum(
+            _healed_target_count(before_players[player_index], after_players[player_index])
+            for player_index in (0, 1)
+        )):
+            events.append("healed")
+        for _index in range(sum(
+            _new_status_count(before_players[player_index], after_players[player_index])
+            for player_index in (0, 1)
+        )):
+            events.append("status_applied")
+        damage_increased = any(
+            _active_damage(after_players[player_index])
+            > _active_damage(before_players[player_index])
+            for player_index in (0, 1)
+        )
+        if damage_increased:
+            events.append("damage_dealt")
+
+    for player_index in (0, 1):
+        if len(after_players[player_index].get("prizes", [])) < len(
+            before_players[player_index].get("prizes", [])
+        ):
+            events.append("prize_taken")
+    for player_index in (0, 1):
+        if (
+            before_players[player_index].get("active") is not None
+            and after_players[player_index].get("active") is None
+            and len(after_players[player_index].get("discard", []))
+            > len(before_players[player_index].get("discard", []))
+        ):
+            events.append("pokemon_ko")
+
+    if int(before.get("turn_number", 0)) == int(after.get("turn_number", 0)):
+        for player_index in (0, 1):
+            if (
+                len(after_players[player_index].get("deck", []))
+                < len(before_players[player_index].get("deck", []))
+                and len(after_players[player_index].get("hand", []))
+                > len(before_players[player_index].get("hand", []))
+            ):
+                events.append("cards_drawn")
+                break
+    events.extend(_turn_transition_event_types(before, after))
+    return events
+
+
+def _trace_step(
+    state: GameState,
+    rng: PortableRandomSourceV1,
+    result,
+    *,
+    kind: str,
+    index: int,
+    before: dict[str, Any],
+    operation: dict[str, Any],
+) -> dict[str, Any]:
+    """Capture the cross-runtime contract after one public API transaction."""
+    return {
+        "kind": kind,
+        "index": index,
+        "expected": _state_summary(state),
+        "pending": _pending_trace(state),
+        "event_types": _canonical_transaction_event_types(before, state, operation),
+        "python_step_event_types": [
+            str(event.get("event_type", "")) for event in result.events
+        ],
+        "rng_state": rng.get_state(),
+    }
+
+
+def _resolve_action_name(action_name: str) -> PlayerAction | str:
+    return PlayerAction.__members__.get(action_name, action_name)
+
+
+def _run_golden_actions(
+    engine: GameEngine,
+    state: GameState,
+    actions: list[dict[str, Any]],
+    *,
+    portable_seed: int,
+) -> tuple[list[dict[str, Any]], PortableRandomSourceV1]:
+    rng = PortableRandomSourceV1(portable_seed)
+    trace: list[dict[str, Any]] = []
+    for index, row in enumerate(actions):
+        before = _state_payload(state)
+        result = engine.apply_action(
+            state,
+            GameAction(
+                _resolve_action_name(str(row["action"])),
+                dict(row.get("params", {})),
+                actor=int(row.get("actor", -1)),
+            ),
+            rng,
+            auto_resolve=False,
+        )
+        if not result.success:
+            raise RuntimeError(f"Golden action failed: {row}: {result.message}")
+        trace.append(_trace_step(
+            state,
+            rng,
+            result,
+            kind="action",
+            index=index,
+            before=before,
+            operation={"kind": "action", **row},
+        ))
+    return trace, rng
 
 
 def _base_golden_state() -> GameState:
@@ -748,13 +1200,148 @@ def _base_golden_state() -> GameState:
     return state
 
 
+def _pending_choice_case(
+    engine: GameEngine,
+    state: GameState,
+    actions: list[dict[str, Any]],
+    *,
+    selected_option_ids: tuple[str, ...] = (),
+    cancel_choice: bool = False,
+    portable_seed: int = 700,
+) -> dict[str, Any]:
+    """Execute one public-action sequence followed by exactly one choice.
+
+    This keeps pending-choice fixtures on the same public APIs used by clients:
+    both the paused transaction and the resumed transaction are captured, and
+    the response is validated against the authoritative request before export.
+    """
+    rng = PortableRandomSourceV1(portable_seed)
+    initial = _state_payload(state)
+    trace: list[dict[str, Any]] = []
+    step = None
+    for action_index, action_row in enumerate(actions):
+        before_action = _state_payload(state)
+        step = engine.apply_action(
+            state,
+            GameAction(
+                _resolve_action_name(str(action_row["action"])),
+                dict(action_row.get("params", {})),
+                actor=int(action_row.get("actor", -1)),
+            ),
+            rng,
+            auto_resolve=False,
+        )
+        if not step.success:
+            raise RuntimeError(
+                f"Golden pending action failed: {action_row}: {step.message}"
+            )
+        trace.append(_trace_step(
+            state,
+            rng,
+            step,
+            kind="action",
+            index=action_index,
+            before=before_action,
+            operation={"kind": "action", **action_row},
+        ))
+        if step.pending_choice is not None and action_index != len(actions) - 1:
+            raise RuntimeError("Only the final action may pause in a golden choice case")
+
+    if step is None:
+        raise RuntimeError("Golden pending choice case requires at least one action")
+    if not step.success or step.pending_choice is None:
+        raise RuntimeError(f"Golden pending attack did not pause: {step.message}")
+    pending_summary = _state_summary(state)
+    pending_stack = _json_value(state.resolution_stack)
+    pending_request = pending_stack.get("pending_request") or {}
+    if cancel_choice:
+        response = ChoiceResponse(step.pending_choice.request_id, (), cancelled=True)
+    else:
+        authoritative_ids = {
+            option.option_id for option in step.pending_choice.options
+        }
+        unknown_ids = set(selected_option_ids) - authoritative_ids
+        if unknown_ids:
+            raise RuntimeError(
+                f"Golden choice selected unknown options: {sorted(unknown_ids)}"
+            )
+        response = ChoiceResponse(
+            step.pending_choice.request_id,
+            selected_option_ids,
+        )
+    selected_option_semantics = [
+        _canonical_pending_option(option)
+        for option in pending_request.get("options", [])
+        if option.get("option_id") in response.option_ids
+    ]
+    before_choice = _state_payload(state)
+    result = engine.apply_choice(
+        state,
+        step.pending_choice,
+        response,
+        rng,
+    )
+    if not result.success:
+        raise RuntimeError(f"Golden pending attack choice failed: {result.message}")
+    trace.append(_trace_step(
+        state,
+        rng,
+        result,
+        kind="choice",
+        index=0,
+        before=before_choice,
+        operation={
+            "kind": "choice",
+            "actor": step.pending_choice.player,
+            "request_type": step.pending_choice.request_type,
+        },
+    ))
+    return {
+        "portable_seed": portable_seed,
+        "initial_state": initial,
+        "actions": actions,
+        "pending_after_action": {
+            "expected": pending_summary,
+            "request": _canonical_pending_request(pending_request),
+            "stack": {
+                "frame_kinds": [
+                    frame.get("kind", "")
+                    for frame in pending_stack.get("frames", [])
+                ],
+                "continuation_operations": [
+                    _canonical_continuation_kind(frame.get("operation", ""))
+                    for frame in pending_stack.get("frames", [])
+                    if frame.get("kind") == "continuation"
+                ],
+                "continuation_data_kinds": [
+                    _canonical_continuation_kind(
+                        (frame.get("data") or {}).get("kind", "")
+                    )
+                    for frame in pending_stack.get("frames", [])
+                    if frame.get("kind") == "continuation"
+                ],
+                "pending_request_type": _canonical_pending_request(
+                    pending_request
+                ).get("request_type", ""),
+            },
+        },
+        "choice_response": {
+            "request_id": response.request_id,
+            "option_ids": list(response.option_ids),
+            "selected_options": selected_option_semantics,
+            "cancelled": response.cancelled,
+        },
+        "trace": trace,
+        "expected": _state_summary(state),
+        "expected_rng_state": rng.get_state(),
+    }
+
+
 def _cobalion_attack_choice_case(
     engine: GameEngine,
     *,
     cancel_choice: bool,
 ) -> dict[str, Any]:
-    portable_seed = 700
-    rng = PortableRandomSourceV1(portable_seed)
     state = _base_golden_state()
     state.turn_number = 3
     state.first_player_idx = 0
@@ -766,181 +1353,78 @@ def _cobalion_attack_choice_case(
     state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svm-zacian"), placed_this_turn=False)
     state.p1.bench[1] = PokemonInPlay(CardRegistry.get("svm-zamazenta"), placed_this_turn=False)
     state.p1.deck = [CardRegistry.get("sv1-ener-8"), CardRegistry.get("sv1-ener-8")]
-    initial = _state_payload(state)
-    actions = [{
-        "action": "DECLARE_ATTACK",
-        "params": {"attack_idx": 0},
-        "actor": 0,
-    }]
-    step = engine.apply_action(
+    return _pending_choice_case(
+        engine,
         state,
-        GameAction(PlayerAction.DECLARE_ATTACK, actions[0]["params"], actor=0),
-        rng,
-        auto_resolve=False,
+        [{
+            "action": "DECLARE_ATTACK",
+            "params": {"attack_idx": 0},
+            "actor": 0,
+        }],
+        selected_option_ids=("pokemon:0:bench_1:svm-zamazenta",),
+        cancel_choice=cancel_choice,
     )
-    if not step.success or step.pending_choice is None:
-        raise RuntimeError(f"Golden pending attack did not pause: {step.message}")
-    pending_summary = _state_summary(state)
-    pending_stack = _json_value(state.resolution_stack)
-    pending_request = pending_stack.get("pending_request") or {}
-    if cancel_choice:
-        response = ChoiceResponse(step.pending_choice.request_id, (), cancelled=True)
-    else:
-        bench_1 = next(
-            option
-            for option in step.pending_choice.options
-            if isinstance(option.value, dict) and option.value.get("slot") == "bench_1"
-        )
-        response = ChoiceResponse(step.pending_choice.request_id, (bench_1.option_id,))
-    result = engine.apply_choice(
-        state,
-        step.pending_choice,
-        response,
-        rng,
-    )
-    if not result.success:
-        raise RuntimeError(f"Golden pending attack choice failed: {result.message}")
-    return {
-        "portable_seed": portable_seed,
-        "initial_state": initial,
-        "actions": actions,
-        "pending_after_action": {
-            "expected": pending_summary,
-            "request": {
-                "request_id": pending_request.get("request_id", ""),
-                "request_type": pending_request.get("request_type", ""),
-                "player": pending_request.get("player", 0),
-                "min_select": pending_request.get("min_select", 0),
-                "max_select": pending_request.get("max_select", 0),
-                "allow_duplicates": pending_request.get("allow_duplicates", False),
-                "can_cancel": pending_request.get("can_cancel", False),
-                "option_ids": [
-                    option.get("option_id", "")
-                    for option in pending_request.get("options", [])
-                ],
-                "metadata": {
-                    "finish_attack_actor": pending_request.get("metadata", {}).get(
-                        "finish_attack_actor"
-                    ),
-                    "continuation_kind": pending_request.get("metadata", {})
-                    .get("continuation", {})
-                    .get("kind", ""),
-                },
-            },
-            "stack": {
-                "frame_kinds": [
-                    frame.get("kind", "")
-                    for frame in pending_stack.get("frames", [])
-                ],
-                "continuation_operations": [
-                    frame.get("operation", "")
-                    for frame in pending_stack.get("frames", [])
-                    if frame.get("kind") == "continuation"
-                ],
-                "continuation_data_kinds": [
-                    (frame.get("data") or {}).get("kind", "")
-                    for frame in pending_stack.get("frames", [])
-                    if frame.get("kind") == "continuation"
-                ],
-                "pending_request_type": pending_request.get("request_type", ""),
-            },
-        },
-        "choice_response": {
-            "request_id": response.request_id,
-            "option_ids": list(response.option_ids),
-            "cancelled": response.cancelled,
-        },
-        "expected": _state_summary(state),
-        "expected_rng_state": rng.get_state(),
-    }
 
 
 def _golden_action_cases() -> dict[str, Any]:
     cases: dict[str, Any] = {}
     engine = GameEngine()
 
+    def add_case(
+        name: str,
+        state: GameState,
+        actions: list[dict[str, Any]],
+        *,
+        portable_seed: int = 700,
+    ) -> None:
+        initial = _state_payload(state)
+        trace, rng = _run_golden_actions(
+            engine,
+            state,
+            actions,
+            portable_seed=portable_seed,
+        )
+        cases[name] = {
+            "portable_seed": portable_seed,
+            "initial_state": initial,
+            "actions": actions,
+            "trace": trace,
+            "expected": _state_summary(state),
+            "expected_rng_state": rng.get_state(),
+        }
+
     state = _base_golden_state()
     state.p1.hand = [CardRegistry.get("svi-chim"), CardRegistry.get("sv1-ener-5")]
-    initial = _state_payload(state)
     actions = [
         {"action": "PLAY_BASIC", "params": {"hand_idx": 0, "target": "bench_0"}, "actor": 0},
         {"action": "ATTACH_ENERGY", "params": {"hand_idx": 0, "target_slot": "active"}, "actor": 0},
         {"action": "DECLARE_ATTACK", "params": {"attack_idx": 0}, "actor": 0},
     ]
-    portable_seed = 700
-    rng = PortableRandomSourceV1(portable_seed)
-    for row in actions:
-        result = engine.apply_action(
-            state,
-            GameAction(PlayerAction[row["action"]], row["params"], actor=row["actor"]),
-            rng,
-            auto_resolve=True,
-        )
-        if not result.success:
-            raise RuntimeError(f"Golden action failed: {row}: {result.message}")
-    cases["basic_attach_attack"] = {
-        "portable_seed": portable_seed,
-        "initial_state": initial,
-        "actions": actions,
-        "expected": _state_summary(state),
-        "expected_rng_state": rng.get_state(),
-    }
+    add_case("basic_attach_attack", state, actions)
 
     state = _base_golden_state()
     state.turn_number = 3
     state.first_player_idx = 0
     state.p1.active.energy_cards = [CardRegistry.get("svi-dtur")]
     state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svi-chim"), placed_this_turn=False)
-    initial = _state_payload(state)
     actions = [{
         "action": "RETREAT",
         "params": {"bench_idx": 0, "energy_indices": [0]},
         "actor": 0,
     }]
-    portable_seed = 700
-    rng = PortableRandomSourceV1(portable_seed)
-    result = engine.apply_action(
-        state,
-        GameAction(PlayerAction.RETREAT, actions[0]["params"], actor=0),
-        rng,
-    )
-    if not result.success:
-        raise RuntimeError(f"Golden retreat failed: {result.message}")
-    cases["double_turbo_retreat"] = {
-        "portable_seed": portable_seed,
-        "initial_state": initial,
-        "actions": actions,
-        "expected": _state_summary(state),
-        "expected_rng_state": rng.get_state(),
-    }
+    add_case("double_turbo_retreat", state, actions)
 
     state = _base_golden_state()
     state.turn_number = 3
     state.first_player_idx = 0
     state.p1.active = PokemonInPlay(CardRegistry.get("svf-rio"), placed_this_turn=False)
     state.p1.hand = [CardRegistry.get("svf-luca")]
-    initial = _state_payload(state)
     actions = [{
         "action": "EVOLVE",
         "params": {"hand_idx": 0, "slot": "active"},
         "actor": 0,
     }]
-    portable_seed = 700
-    rng = PortableRandomSourceV1(portable_seed)
-    result = engine.apply_action(
-        state,
-        GameAction(PlayerAction.EVOLVE, actions[0]["params"], actor=0),
-        rng,
-    )
-    if not result.success:
-        raise RuntimeError(f"Golden evolution failed: {result.message}")
-    cases["evolution_preserves_attachments"] = {
-        "portable_seed": portable_seed,
-        "initial_state": initial,
-        "actions": actions,
-        "expected": _state_summary(state),
-        "expected_rng_state": rng.get_state(),
-    }
+    add_case("evolution_preserves_attachments", state, actions)
 
     cases["pending_attack_choice_continuation"] = _cobalion_attack_choice_case(
         engine,
@@ -950,7 +1434,557 @@ def _golden_action_cases() -> dict[str, Any]:
         engine,
         cancel_choice=True,
     )
-    return {"fixture_version": 2, "rng_algorithm": "xorshift32-v1", "cases": cases}
+
+    state = _base_golden_state()
+    state.p1.hand = [CardRegistry.get("sv1-180")]
+    add_case("supporter_draw", state, [{
+        "action": "PLAY_TRAINER",
+        "params": {"hand_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.p1.hand = [CardRegistry.get("svl-vitb")]
+    add_case("tool_attachment", state, [{
+        "action": "PLAY_TRAINER",
+        "params": {"hand_idx": 0, "target_slot": "active"},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(
+        CardRegistry.get("svd-dodrio"), placed_this_turn=False
+    )
+    add_case("ability_damage_draw", state, [{
+        "action": "USE_ABILITY",
+        "params": {"slot": "active", "ability_name": "暴走抽取"},
+        "actor": 0,
+    }])
+
+    fixture_stadium = Card(
+        api_id="fixture-activatable-stadium",
+        name="Fixture Activatable Stadium",
+        supertype="Trainer",
+        subtypes=["Stadium"],
+        compiled_trainer_effects=[{
+            "op": "draw_cards",
+            "args": {"amount": 1, "stadium_type": "activatable"},
+            "branches": {},
+        }],
+    )
+    state = _base_golden_state()
+    state.stadium_card = fixture_stadium
+    add_case("activatable_stadium", state, [{
+        "action": "USE_STADIUM",
+        "params": {},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    add_case("end_turn", state, [{
+        "action": "END_TURN",
+        "params": {},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"), placed_this_turn=False)
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-2")]
+    state.p1.active.status_conditions.add(StatusType.CONFUSED)
+    add_case("confused_attack_tails", state, [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }], portable_seed=700)
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"), placed_this_turn=False)
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-2")]
+    state.p2.active.damage_counters = 4
+    state.p2.bench[0] = PokemonInPlay(
+        CardRegistry.get("sv1-104"), placed_this_turn=False
+    )
+    add_case("ko_then_promote", state, [
+        {"action": "DECLARE_ATTACK", "params": {"attack_idx": 0}, "actor": 0},
+        {"action": "PROMOTE", "params": {"bench_idx": 0}, "actor": 1},
+    ])
+
+    state = _base_golden_state()
+    state.p1.active.damage_counters = 6
+    state.p1.hand = [CardRegistry.get("svg-chef")]
+    add_case("heal_supporter", state, [{
+        "action": "PLAY_TRAINER",
+        "params": {"hand_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.p1.hand = [
+        CardRegistry.get("sv2-young"),
+        CardRegistry.get("svi-chim"),
+        CardRegistry.get("sv1-ener-2"),
+    ]
+    state.p1.deck = [
+        CardRegistry.get("sv1-ener-1"),
+        CardRegistry.get("sv1-ener-2"),
+        CardRegistry.get("sv1-ener-3"),
+        CardRegistry.get("sv1-ener-4"),
+        CardRegistry.get("sv1-ener-5"),
+        CardRegistry.get("sv1-ener-6"),
+    ]
+    add_case("shuffle_draw_supporter", state, [{
+        "action": "PLAY_TRAINER",
+        "params": {"hand_idx": 0},
+        "actor": 0,
+    }], portable_seed=1337)
+
+    state = _base_golden_state()
+    state.p1.active = PokemonInPlay(
+        CardRegistry.get("svg-alt"), damage_counters=3, placed_this_turn=False
+    )
+    state.p1.bench[0] = PokemonInPlay(
+        CardRegistry.get("svi-chim"), damage_counters=2, placed_this_turn=False
+    )
+    add_case("heal_all_ability", state, [{
+        "action": "USE_ABILITY",
+        "params": {"slot": "active", "ability_name": "哼唱治愈"},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(
+        CardRegistry.get("svg2-shro"), damage_counters=2, placed_this_turn=False
+    )
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-1")]
+    state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"), placed_this_turn=False)
+    add_case("damage_then_self_heal_attack", state, [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(
+        CardRegistry.get("svd-dodrio"), damage_counters=1, placed_this_turn=False
+    )
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-5")]
+    state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"), placed_this_turn=False)
+    add_case("formula_damage_attack", state, [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(CardRegistry.get("svf-terr"), placed_this_turn=False)
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-6")] * 3
+    state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"), placed_this_turn=False)
+    add_case("prevent_damage_and_lock_attack", state, [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.was_ko_by_attack = True
+    state.p1.active = PokemonInPlay(CardRegistry.get("sv1-49"), placed_this_turn=False)
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-3")] * 3
+    state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"), placed_this_turn=False)
+    add_case("conditional_status_attack", state, [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.healed_this_turn = True
+    state.p1.active = PokemonInPlay(CardRegistry.get("svg-milt"), placed_this_turn=False)
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-5")] * 2
+    state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"), placed_this_turn=False)
+    add_case("conditional_damage_heal_attack", state, [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(CardRegistry.get("svg-alt"), placed_this_turn=False)
+    state.p1.active.energy_cards = [
+        CardRegistry.get("sv1-ener-3"),
+        CardRegistry.get("sv1-ener-8"),
+    ]
+    state.p2.active = PokemonInPlay(CardRegistry.get("sv2-grex"), placed_this_turn=False)
+    add_case("prevent_effects_attack", state, [{
+        "action": "DECLARE_ATTACK",
+        "params": {"attack_idx": 0},
+        "actor": 0,
+    }])
+
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 0
+    state.p1.active = PokemonInPlay(CardRegistry.get("sv1-114"), placed_this_turn=False)
+    state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-5")]
+    state.p1.deck = [
+        CardRegistry.get("sv1-ener-5"),
+        CardRegistry.get("sv1-ener-4"),
+        CardRegistry.get("svi-chim"),
+        CardRegistry.get("sv1-ener-2"),
+    ]
+    cases["search_energy_attack"] = _pending_choice_case(
+        engine,
+        state,
+        [{"action": "DECLARE_ATTACK", "params": {"attack_idx": 0}, "actor": 0}],
+        selected_option_ids=(
+            "card:0:deck:0:sv1-ener-5",
+            "card:0:deck:1:sv1-ener-4",
+        ),
+        portable_seed=2027,
+    )
+
+    state = _base_golden_state()
+    state.p1.active.damage_counters = 2
+    state.p1.bench[0] = PokemonInPlay(
+        CardRegistry.get("svi-chim"), damage_counters=1, placed_this_turn=False
+    )
+    state.p1.hand = [CardRegistry.get("svf-potion")]
+    cases["potion_heal_choice"] = _pending_choice_case(
+        engine,
+        state,
+        [{"action": "PLAY_TRAINER", "params": {"hand_idx": 0}, "actor": 0}],
+        selected_option_ids=("pokemon:0:bench_0:svi-chim",),
+    )
+
+    return {
+        "fixture_version": 3,
+        "rng_algorithm": "xorshift32-v1",
+        "event_contract": {
+            "name": "canonical-state-transition-events-v1",
+            "python_expected_source": "before_after_state_and_operation",
+            "python_raw_step_events_retained_as": "python_step_event_types",
+            "godot_actual_source": "StepResult.events",
+        },
+        "pending_contract": {
+            "name": "canonical-pending-semantics-v1",
+            "compares": [
+                "request_family",
+                "selection_bounds",
+                "entity_references",
+                "continuation_family",
+            ],
+            "ignores": ["runtime_specific_request_id", "runtime_specific_option_id"],
+        },
+        "test_cards": {
+            fixture_stadium.api_id: {
+                "api_id": fixture_stadium.api_id,
+                "name": fixture_stadium.name,
+                "supertype": fixture_stadium.supertype,
+                "subtypes": fixture_stadium.subtypes,
+                "trainer_effects": [],
+                "compiled_trainer_effects": fixture_stadium.compiled_trainer_effects,
+            },
+        },
+        "cases": cases,
+    }
+
+
+_RUNTIME_ONLY_VM_OPS = {
+    "deal_damage_per_discard_psychic": "compatibility_formula_op",
+    "deal_damage_per_energy": "compatibility_formula_op",
+    "deal_damage_per_evolved": "compatibility_formula_op",
+    "deal_damage_per_hand_size": "compatibility_formula_op",
+    "deal_damage_per_self_damage": "compatibility_formula_op",
+    "deal_damage_per_self_energy": "compatibility_formula_op",
+    "deal_damage_per_self_energy_type": "compatibility_formula_op",
+    "deal_damage_plus_bench": "compatibility_formula_op",
+    "deal_damage_with_self_penalty": "compatibility_formula_op",
+    "set_attack_damage_formula": "compatibility_formula_op",
+    "trigger_draw_cards": "trigger_op",
+    "trigger_move_basic_energy": "trigger_op",
+    "trigger_place_damage_counters": "trigger_op",
+    "trigger_switch_with_active": "trigger_op",
+}
+
+
+_TRACE_SEMANTICS: dict[str, dict[str, list[str]]] = {
+    "basic_attach_attack": {
+        "effect_types": ["energy_discard"],
+        "vm_ops": ["discard_energy"],
+        "features": ["basic_placement", "manual_energy_attachment", "base_attack"],
+    },
+    "double_turbo_retreat": {
+        "effect_types": [],
+        "vm_ops": [],
+        "features": ["special_energy_retreat", "retreat"],
+    },
+    "evolution_preserves_attachments": {
+        "effect_types": [],
+        "vm_ops": [],
+        "features": ["evolution"],
+    },
+    "pending_attack_choice_continuation": {
+        "effect_types": ["energy_attach"],
+        "vm_ops": ["attach_energy"],
+        "features": ["pending_choice", "continuation_selected"],
+    },
+    "pending_attack_choice_cancel": {
+        "effect_types": ["energy_attach"],
+        "vm_ops": ["attach_energy"],
+        "features": ["pending_choice", "continuation_cancelled", "deck_shuffle"],
+    },
+    "supporter_draw": {
+        "effect_types": ["draw"],
+        "vm_ops": ["draw_cards"],
+        "features": ["supporter"],
+    },
+    "tool_attachment": {
+        "effect_types": [],
+        "vm_ops": [],
+        "features": ["tool_attachment"],
+    },
+    "ability_damage_draw": {
+        "effect_types": ["damage_counter_self", "draw"],
+        "vm_ops": ["place_damage_counters", "draw_cards"],
+        "features": ["ability"],
+    },
+    "activatable_stadium": {
+        "effect_types": [],
+        "vm_ops": ["draw_cards"],
+        "features": ["synthetic_stadium_fixture", "stadium_activation"],
+    },
+    "end_turn": {
+        "effect_types": [],
+        "vm_ops": [],
+        "features": ["end_turn", "next_turn_draw"],
+    },
+    "confused_attack_tails": {
+        "effect_types": [],
+        "vm_ops": [],
+        "features": ["portable_coin_flip", "confused_attack_failure", "attack_turn_finish"],
+    },
+    "ko_then_promote": {
+        "effect_types": ["energy_discard"],
+        "vm_ops": ["discard_energy"],
+        "features": ["knockout", "prize", "promotion", "attack_turn_finish"],
+    },
+    "heal_supporter": {
+        "effect_types": ["heal"],
+        "vm_ops": ["heal_damage"],
+        "features": ["supporter", "direct_heal"],
+    },
+    "shuffle_draw_supporter": {
+        "effect_types": ["shuffle_draw"],
+        "vm_ops": ["shuffle_then_draw_cards"],
+        "features": ["supporter", "portable_deck_shuffle", "draw_after_shuffle"],
+    },
+    "heal_all_ability": {
+        "effect_types": ["heal_all"],
+        "vm_ops": ["heal_all"],
+        "features": ["ability", "multi_pokemon_heal"],
+    },
+    "damage_then_self_heal_attack": {
+        "effect_types": ["damage_and_self_heal"],
+        "vm_ops": ["deal_damage_then_heal"],
+        "features": ["attack_effect_damage", "self_heal", "attack_turn_finish"],
+    },
+    "formula_damage_attack": {
+        "effect_types": ["attack_damage_formula"],
+        "vm_ops": ["deal_damage"],
+        "features": ["formula_ast", "self_damage_counter_formula", "attack_turn_finish"],
+    },
+    "prevent_damage_and_lock_attack": {
+        "effect_types": ["prevent_damage", "self_attack_lock"],
+        "vm_ops": ["prevent_damage", "apply_self_attack_lock"],
+        "features": ["damage_prevention_marker", "self_attack_lock_marker"],
+    },
+    "conditional_status_attack": {
+        "effect_types": ["conditional_status"],
+        "vm_ops": ["conditional_status"],
+        "features": ["ko_by_attack_condition", "status_application"],
+    },
+    "conditional_damage_heal_attack": {
+        "effect_types": ["conditional_damage_heal"],
+        "vm_ops": ["conditional_damage_then_heal"],
+        "features": ["healed_this_turn_condition", "conditional_damage"],
+    },
+    "prevent_effects_attack": {
+        "effect_types": ["prevent_effects"],
+        "vm_ops": ["prevent_effects"],
+        "features": ["effect_prevention_marker", "attack_turn_finish"],
+    },
+    "search_energy_attack": {
+        "effect_types": ["search"],
+        "vm_ops": ["search_cards"],
+        "features": ["pending_choice", "deck_search", "deck_shuffle"],
+    },
+    "potion_heal_choice": {
+        "effect_types": ["potion_heal"],
+        "vm_ops": ["choose_heal_damage"],
+        "features": ["pending_choice", "bench_target", "item_heal"],
+    },
+}
+
+
+def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
+    """Build a strict mapping inventory without overstating semantic coverage."""
+    release_effects = set(_effect_types(CARD_EFFECTS))
+    registered_effects = set(SUPPORTED_EFFECT_TYPES)
+    effect_examples = _effect_examples(CARD_EFFECTS)
+    effect_to_op = dict(OP_BY_EFFECT_TYPE)
+    effect_to_op.update({
+        effect_type: compile_effect_to_spec(example).op
+        for effect_type, example in effect_examples.items()
+    })
+    registered_ops = set(DEFAULT_COMMAND_REGISTRY.supported_ops)
+    produced_ops = set(effect_to_op.values())
+    runtime_only_ops = registered_ops - produced_ops
+    cases = dict(golden_actions.get("cases", {}))
+
+    if release_effects - registered_effects:
+        raise RuntimeError(
+            f"Release effects missing registrations: {sorted(release_effects - registered_effects)}"
+        )
+    if set(effect_to_op) != registered_effects:
+        raise RuntimeError("Every registered effect must have exactly one VM op mapping")
+    if produced_ops - registered_ops:
+        raise RuntimeError(
+            f"Effect mappings target unregistered VM ops: {sorted(produced_ops - registered_ops)}"
+        )
+    if runtime_only_ops != set(_RUNTIME_ONLY_VM_OPS):
+        raise RuntimeError(
+            "Every registered VM op not produced by an effect mapping must have an "
+            f"explicit classification; missing={sorted(runtime_only_ops - set(_RUNTIME_ONLY_VM_OPS))} "
+            f"stale={sorted(set(_RUNTIME_ONLY_VM_OPS) - runtime_only_ops)}"
+        )
+    if set(_TRACE_SEMANTICS) != set(cases):
+        raise RuntimeError(
+            f"Trace semantics inventory differs from generated cases: "
+            f"missing={sorted(set(cases) - set(_TRACE_SEMANTICS))} "
+            f"stale={sorted(set(_TRACE_SEMANTICS) - set(cases))}"
+        )
+
+    action_to_cases: dict[str, list[str]] = {action.name: [] for action in PlayerAction}
+    for case_name, row in cases.items():
+        for action in row.get("actions", []):
+            action_name = str(action.get("action", ""))
+            if action_name in action_to_cases and case_name not in action_to_cases[action_name]:
+                action_to_cases[action_name].append(case_name)
+    untraced_actions = [name for name, mapped in action_to_cases.items() if not mapped]
+    if untraced_actions:
+        raise RuntimeError(f"Public PlayerAction values lack a trace: {untraced_actions}")
+
+    vm_op_mappings: dict[str, dict[str, Any]] = {}
+    for op in sorted(registered_ops):
+        effect_sources = sorted(
+            effect_type
+            for effect_type, mapped_op in effect_to_op.items()
+            if mapped_op == op
+        )
+        vm_op_mappings[op] = {
+            "effect_types": effect_sources,
+            "classification": (
+                "effect_compiler" if effect_sources else _RUNTIME_ONLY_VM_OPS[op]
+            ),
+        }
+
+    semantic_effects = sorted({
+        effect_type
+        for row in _TRACE_SEMANTICS.values()
+        for effect_type in row["effect_types"]
+    })
+    semantic_ops = sorted({
+        op for row in _TRACE_SEMANTICS.values() for op in row["vm_ops"]
+    })
+    if not set(semantic_effects).issubset(release_effects):
+        raise RuntimeError("Semantic trace effect labels must be release effect types")
+    if not set(semantic_ops).issubset(registered_ops):
+        raise RuntimeError("Semantic trace VM op labels must be registered VM ops")
+
+    step_count = sum(len(row.get("trace", [])) for row in cases.values())
+    return {
+        "coverage_version": 2,
+        "mapping_inventory": {
+            "release_effect_types": sorted(release_effects),
+            "registered_effect_types": sorted(registered_effects),
+            "non_release_registered_effect_types": sorted(
+                registered_effects - release_effects
+            ),
+            "effect_to_vm_op": {
+                key: effect_to_op[key] for key in sorted(effect_to_op)
+            },
+            "registered_vm_ops": sorted(registered_ops),
+            "vm_op_mappings": vm_op_mappings,
+            "public_player_actions": sorted(action_to_cases),
+            "action_to_trace_cases": action_to_cases,
+        },
+        "semantic_trace_inventory": {
+            "case_count": len(cases),
+            "transaction_step_count": step_count,
+            "case_semantics": _TRACE_SEMANTICS,
+            "release_effect_types_executed": semantic_effects,
+            "registered_vm_ops_executed": semantic_ops,
+            "release_effect_types_not_executed": sorted(
+                release_effects - set(semantic_effects)
+            ),
+            "registered_vm_ops_not_executed": sorted(
+                registered_ops - set(semantic_ops)
+            ),
+            "known_cross_runtime_semantic_gaps": [{
+                "family": "coin",
+                "effect_types": [
+                    "coin_flip",
+                    "coin_flip_double_ko",
+                    "coin_flip_energy_discard",
+                    "coin_flip_triple",
+                    "coin_flip_until_tails",
+                ],
+                "vm_ops": [
+                    "flip_coin",
+                    "flip_coin_repeat_damage",
+                    "flip_coin_then_discard_energy",
+                    "flip_coin_then_ko",
+                    "flip_until_tails",
+                ],
+                "reason": (
+                    "Godot consumes portable RNG before exposing a zero-option result "
+                    "request; Python still exposes heads/tails as selectable options."
+                ),
+            }],
+            "explicitly_not_claimed": [
+                "all_release_effect_semantics",
+                "all_registered_vm_op_semantics",
+            ],
+        },
+        "counts": {
+            "release_effect_types": len(release_effects),
+            "registered_effect_types": len(registered_effects),
+            "mapped_registered_effect_types": len(effect_to_op),
+            "registered_vm_ops": len(registered_ops),
+            "mapped_registered_vm_ops": len(vm_op_mappings),
+            "public_player_actions": len(action_to_cases),
+            "traced_public_player_actions": sum(bool(rows) for rows in action_to_cases.values()),
+            "semantic_release_effect_types": len(semantic_effects),
+            "semantic_registered_vm_ops": len(semantic_ops),
+        },
+    }
 
 
 def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
@@ -982,9 +2016,14 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
         output / "tests" / "fixtures" / "ai_encoder_golden.json",
         _ai_encoder_fixture(),
     )
+    golden_actions = _golden_action_cases()
     _write_json(
         output / "tests" / "fixtures" / "rules_golden.json",
-        _golden_action_cases(),
+        golden_actions,
+    )
+    _write_json(
+        output / "tests" / "fixtures" / "rules_coverage.json",
+        _rules_coverage(golden_actions),
     )
     return golden
 
@@ -1010,7 +2049,9 @@ def main() -> None:
                 Path("data/ai_models.json"),
                 Path("data/release_manifest.json"),
                 Path("tests/fixtures/data_contract.json"),
+                Path("tests/fixtures/ai_encoder_golden.json"),
                 Path("tests/fixtures/rules_golden.json"),
+                Path("tests/fixtures/rules_coverage.json"),
             ]
             stale = [
                 str(path)
@@ -1022,6 +2063,13 @@ def main() -> None:
                 raise SystemExit(
                     "Godot generated data is stale: "
                     + ", ".join(stale)
+                    + ". Run python/scripts/export_godot_data.py."
+                )
+            image_errors = _exported_image_errors(output, _load_image_mapping())
+            if image_errors:
+                raise SystemExit(
+                    "Godot card images are stale: "
+                    + ", ".join(image_errors)
                     + ". Run python/scripts/export_godot_data.py."
                 )
         print("Godot generated data is current.")

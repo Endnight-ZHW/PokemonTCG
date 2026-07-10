@@ -34,7 +34,7 @@ class ActionRequest:
     target_info: list = field(default_factory=list)  # For distribute_energy: list of {slot, name, bench_idx}
     max_per_target: int = 99  # For paired mode: max energy per target
     source_name: str = ""  # For distribute_energy: source Pokemon name
-    request_id: str = ""  # Network choice request correlation id
+    request_id: str = ""  # Stable serialized choice request correlation ID
     can_cancel: bool = False
     continuation: dict[str, Any] = field(default_factory=dict)
 
@@ -68,9 +68,10 @@ class GameState:
         self.winner: Optional[int] = None
         self.revision: int = 0
         self.choice_sequence: int = 0
-        # Deck identities are public only when the surrounding game mode
-        # explicitly exposes them (challenge/training). Search may use these
-        # keys as priors, but must never inspect hidden-zone card identities.
+        # Deck identities are public when the surrounding game mode explicitly
+        # records both selections (local debug, challenge, or training). Search
+        # may use these keys as priors, but must never inspect hidden-zone card
+        # identities.
         self.public_deck_keys: tuple[str | None, str | None] = (None, None)
         self.apply_type_matchups: bool = False
         self.action_log: list[str] = []
@@ -83,9 +84,12 @@ class GameState:
             "sequence": 0,
             "context": {},
         }
+        # Ephemeral compatibility bridge for old callback-only requests.  It
+        # is intentionally excluded from snapshots; VM continuations rebuild
+        # from ``resolution_stack`` instead.
+        self._pending_choice_runtime = None
         self._ko_from_attack: bool = False  # Flag set when a KO is from attack damage
         self._mulligan_bonus_given: set[int] = set()
-        self.is_network_view: bool = False
         self.random_source = None
         self.event_stream: GameEventStream = GameEventStream()
         from engine.effects.event_bus import EventBus
@@ -117,6 +121,8 @@ class GameState:
         return self.pending_promotions.pop(0) if self.pending_promotions else -1
 
     def get_player(self, idx: int) -> PlayerState:
+        if type(idx) is not int:
+            raise ValueError(f"Invalid player index: {idx!r}")
         if idx == 0:
             return self.p1
         if idx == 1:

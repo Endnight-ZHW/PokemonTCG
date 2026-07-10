@@ -16,7 +16,6 @@ from data.card_models import Card, WeakRes
 from engine.commands.damage_pipeline import resolve_damage
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
-from network.state_serializer import deserialize_game_state, serialize_game_state
 from ui.screens.deck_select import DeckSelectScreen
 
 
@@ -59,17 +58,6 @@ class TypeMatchupRuleTests(unittest.TestCase):
         self.assertEqual(weak_damage, 100)
         self.assertEqual(resist_damage, 20)
 
-    def test_game_state_serialization_preserves_matchup_rule(self):
-        state = GameState()
-        state.apply_type_matchups = True
-
-        restored = deserialize_game_state(
-            serialize_game_state(state, for_player_idx=0),
-            for_player_idx=0,
-        )
-
-        self.assertTrue(restored.apply_type_matchups)
-
     def test_challenge_deck_select_forces_matchups_off(self):
         class FakeManager:
             def __init__(self):
@@ -84,6 +72,7 @@ class TypeMatchupRuleTests(unittest.TestCase):
 
             def __init__(self):
                 self.apply_type_matchups = None
+                self.public_deck_keys = (None, None)
                 FakeGameState.instances.append(self)
 
             def setup_game(self, deck1, deck2):
@@ -102,13 +91,63 @@ class TypeMatchupRuleTests(unittest.TestCase):
         available_decks = {"fire": [("a", 1)], "water": [("b", 1)]}
         screen = DeckSelectScreen(FakeManager(), available_decks, mode="challenge")
 
-        with patch("engine.game_state.GameState", FakeGameState), \
-             patch("engine.turn_manager.TurnManager", FakeTurnManager), \
+        with patch("ui.debug_match_session.GameState", FakeGameState), \
+             patch("ui.debug_match_session.TurnManager", FakeTurnManager), \
              patch("ui.screens.game_screen.GameScreen", FakeGameScreen), \
              patch("data.deck_definitions.expand_deck", lambda deck: [deck[0][0]]):
             screen._start_battle()
 
         self.assertFalse(FakeGameState.instances[-1].apply_type_matchups)
+        self.assertEqual(FakeGameState.instances[-1].public_deck_keys, ("fire", "water"))
+
+    def test_local_deck_select_records_both_public_deck_keys(self):
+        class FakeManager:
+            def __init__(self):
+                self._app = SimpleNamespace(apply_type_matchups=False)
+                self.replaced = None
+
+            def replace_top(self, screen):
+                self.replaced = screen
+
+        class FakeGameState:
+            instances = []
+
+            def __init__(self):
+                self.apply_type_matchups = None
+                self.public_deck_keys = (None, None)
+                FakeGameState.instances.append(self)
+
+            def setup_game(self, deck1, deck2):
+                self.deck1 = deck1
+                self.deck2 = deck2
+
+        class FakeTurnManager:
+            def __init__(self, state):
+                self.state = state
+
+        class FakeGameScreen:
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+
+        manager = FakeManager()
+        screen = DeckSelectScreen(
+            manager,
+            {"fire": [("a", 1)], "water": [("b", 1)]},
+        )
+        # Same-deck selection remains legal and must preserve both positions.
+        screen.p2_idx = 0
+
+        with patch("ui.debug_match_session.GameState", FakeGameState), \
+             patch("ui.debug_match_session.TurnManager", FakeTurnManager), \
+             patch("ui.screens.game_screen.GameScreen", FakeGameScreen), \
+             patch("data.deck_definitions.expand_deck", lambda deck: [deck[0][0]]):
+            screen._start_battle()
+
+        state = FakeGameState.instances[-1]
+        self.assertEqual(state.public_deck_keys, ("fire", "fire"))
+        self.assertEqual(state.deck1, ["a"])
+        self.assertEqual(state.deck2, ["a"])
 
 
 if __name__ == "__main__":

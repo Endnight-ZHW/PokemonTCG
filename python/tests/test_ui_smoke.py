@@ -31,11 +31,6 @@ from engine.rules_validator import (
     can_play_supporter,
 )
 from engine.turn_manager import TurnManager
-from network.state_serializer import (
-    serialize_action_request,
-    serialize_game_state,
-    deserialize_game_state,
-)
 from ui.screen_manager import ScreenManager
 from ui.components import board_renderer, hand_display
 from ui.components.game_layout import SLOT_OPP_ACTIVE, SLOT_PLAYER_ACTIVE
@@ -50,7 +45,6 @@ from ui.screens.card_image_screen import (
 from ui.screens.energy_distribution_screen import EnergyDistributionScreen
 from ui.screens.game_screen import GameScreen
 from ui.screens.help_screen import HelpScreen
-from ui.screens.lobby_screen import LobbyScreen, LobbyState
 from ui.screens.pass_screen import PassScreen
 from ui.screens.search_screen import SearchScreen
 from ui.screens.title_screen import TitleScreen
@@ -132,23 +126,6 @@ class UiSmokeTests(unittest.TestCase):
             CardRegistry.get("svi-jete"),
         ])
         pokemon.attached_tool = CardRegistry.get("svl-vitb")
-
-    class _FakeNetwork:
-        def __init__(self):
-            self.sent = []
-            self.is_connected = True
-            self.is_stale = False
-            self.last_error = None
-            self.stopped = False
-
-        def send(self, message):
-            self.sent.append(message)
-
-        def poll(self, max_messages=None):
-            return []
-
-        def stop(self):
-            self.stopped = True
 
     def test_screens_draw_one_frame(self):
         state, tm = self._game()
@@ -1368,7 +1345,8 @@ class UiSmokeTests(unittest.TestCase):
         state.p2.deck = [base]
         state.p1.prizes = [base] * 6
         state.p2.prizes = [base] * 6
-        screen = GameScreen(self._manager(), state, TurnManager(state))
+        manager = self._manager()
+        screen = GameScreen(manager, state, TurnManager(state))
 
         screen._execute_action("ENTER_ATTACK", 0)
         screen._show_attack_menu(0)
@@ -1380,54 +1358,8 @@ class UiSmokeTests(unittest.TestCase):
         self.assertFalse(screen._attack_menu_open)
         self.assertGreater(screen._pending_turn_end, 0)
 
-    def test_remote_attack_ends_turn_atomically(self):
-        base = CardRegistry.get("sv2-delib")
-        attacker = Card(
-            api_id="test-remote-attacker",
-            name="Remote Attacker",
-            supertype=base.supertype,
-            subtypes=["Basic"],
-            hp=100,
-            energy_types=["Colorless"],
-            attacks=[AttackDef("Tap", [], 0, "")],
-        )
-        defender = Card(
-            api_id="test-remote-defender",
-            name="Remote Defender",
-            supertype=base.supertype,
-            subtypes=["Basic"],
-            hp=100,
-            energy_types=["Colorless"],
-        )
-        state = GameState()
-        state.phase = TurnPhase.MAIN
-        state.first_player_idx = 0
-        state.active_player_idx = 1
-        state.turn_number = 4
-        state.p1.active = PokemonInPlay(defender)
-        state.p2.active = PokemonInPlay(attacker)
-        state.p1.deck = [base]
-        state.p2.deck = [base]
-        state.p1.prizes = [base] * 6
-        state.p2.prizes = [base] * 6
-        network = self._FakeNetwork()
-        screen = GameScreen(
-            self._manager(), state, TurnManager(state),
-            network_manager=network, my_player_idx=0,
-        )
-
-        screen._process_network_message({
-            "type": "action",
-            "action": "DECLARE_ATTACK",
-            "params": {"attack_idx": 0, "player_idx": 1},
-        })
-
-        self.assertEqual(state.active_player_idx, 0)
-        self.assertEqual(state.phase, TurnPhase.MAIN)
-        self.assertFalse(screen._waiting_remote)
-        self.assertTrue(self._phase_button(screen, PlayerAction.END_TURN)["enabled"])
-        self.assertTrue(network.sent)
-        self.assertFalse(any(msg.get("action") == "END_TURN" for msg in network.sent))
+        screen.update(1.0)
+        self.assertIsInstance(manager.top, PassScreen)
 
     def test_professor_research_animates_discard_then_draw_once(self):
         state = GameState()
@@ -1454,165 +1386,6 @@ class UiSmokeTests(unittest.TestCase):
         self.assertEqual(screen._last_hand_counts[0], len(state.p1.hand))
         self.assertEqual(screen._last_discard_counts[0], len(state.p1.discard))
         self.assertGreaterEqual(len(screen.card_fly.active), 3)
-
-    def test_remote_state_update_opens_confirm_and_sends_choice_response(self):
-        state, _ = self._game()
-        manager = self._manager()
-        fake_network = self._FakeNetwork()
-        client_state = deserialize_game_state(
-            serialize_game_state(state, for_player_idx=1),
-            for_player_idx=1,
-        )
-        screen = GameScreen(
-            manager, None, None,
-            network_manager=fake_network,
-            my_player_idx=1,
-            initial_state=client_state,
-        )
-
-        pending = ActionRequest(
-            "confirm", 1, "是否替换战斗宝可梦？",
-            request_id="req-confirm-1",
-        )
-        screen._process_network_message({
-            "type": "state_update",
-            "seq": 1,
-            "state": serialize_game_state(state, for_player_idx=1),
-            "pending_action": serialize_action_request(pending),
-        })
-
-        self.assertIsNotNone(screen._confirm_dialog)
-        screen._confirm_dialog["on_confirm"]()
-        self.assertEqual(fake_network.sent[-1]["type"], "choice_response")
-        self.assertEqual(fake_network.sent[-1]["request_id"], "req-confirm-1")
-        self.assertTrue(fake_network.sent[-1]["confirmed"])
-
-    def test_lobby_enter_and_escape_work_when_input_is_focused(self):
-        screen = LobbyScreen(self._manager())
-        screen._transition_to(LobbyState.LAN_CLIENT)
-        screen._ip_input.text = "127.0.0.1"
-        screen._ip_input.focus()
-
-        calls = []
-        screen._do_connect = lambda: calls.append("connect")
-        screen.handle_event(pygame.event.Event(
-            pygame.KEYDOWN, {"key": pygame.K_RETURN, "mod": 0}
-        ))
-        self.assertEqual(calls, ["connect"])
-
-        screen._ip_input.focus()
-        screen.handle_event(pygame.event.Event(
-            pygame.KEYDOWN, {"key": pygame.K_ESCAPE, "mod": 0}
-        ))
-        self.assertEqual(screen._state, LobbyState.MODE_SELECT)
-
-    def test_lobby_back_click_does_not_depend_on_hover_state(self):
-        screen = LobbyScreen(self._manager())
-        screen._transition_to(LobbyState.LAN_CLIENT)
-
-        screen.handle_event(pygame.event.Event(
-            pygame.MOUSEBUTTONDOWN,
-            {"button": 1, "pos": screen.back_btn.center},
-        ))
-        self.assertEqual(screen._state, LobbyState.MODE_SELECT)
-
-    def test_lobby_hover_uses_virtual_mouse_position(self):
-        screen = LobbyScreen(self._manager())
-        cold = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)).convert()
-        hot = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT)).convert()
-
-        with patch("pygame.mouse.get_pos", return_value=(-9999, -9999)):
-            screen._mouse_pos = (-9999, -9999)
-            screen.draw(cold)
-            create_rect = next(
-                ctrl["rect"] for ctrl in screen._controls
-                if ctrl["name"] == "lan_create"
-            )
-            sample_pos = (create_rect.x + 12, create_rect.y + 12)
-
-            screen._mouse_pos = create_rect.center
-            screen.draw(hot)
-
-        self.assertNotEqual(cold.get_at(sample_pos), hot.get_at(sample_pos))
-
-    def test_lobby_cancel_connecting_stops_network(self):
-        manager = self._manager()
-        network = self._FakeNetwork()
-        network.is_connected = False
-        app = type("App", (), {
-            "network_manager": network,
-            "is_remote_host": True,
-            "is_remote_client": False,
-        })()
-        manager._app = app
-        screen = LobbyScreen(manager)
-        screen._nm = network
-        screen._state = LobbyState.CONNECTING
-        screen._connect_origin_state = LobbyState.LAN_HOST
-        screen._connection_started = True
-
-        screen.handle_event(pygame.event.Event(
-            pygame.KEYDOWN, {"key": pygame.K_ESCAPE, "mod": 0}
-        ))
-        self.assertTrue(network.stopped)
-        self.assertIsNone(app.network_manager)
-        self.assertEqual(screen._state, LobbyState.LAN_HOST)
-        self.assertFalse(screen._connection_started)
-
-    def test_lobby_lan_host_uses_editable_port(self):
-        manager = self._manager()
-
-        app = type("App", (), {
-            "network_manager": None,
-            "started": None,
-            "start_remote_host": lambda self, port: setattr(self, "started", ("host", port)),
-        })()
-        manager._app = app
-        screen = LobbyScreen(manager)
-        screen._transition_to(LobbyState.LAN_HOST)
-        screen._host_port_input.text = "19001"
-
-        screen._do_connect()
-
-        self.assertEqual(app.started, ("host", 19001))
-        self.assertTrue(screen._connection_started)
-        self.assertIn("19001", screen.status_text)
-
-    def test_lobby_relay_uses_editable_port(self):
-        manager = self._manager()
-
-        class FakeApp:
-            network_manager = None
-            started = None
-
-            def start_relay_client(self, host, port, room_code):
-                self.started = ("client", host, port, room_code)
-
-            def start_relay_host(self, host, port):
-                self.started = ("host", host, port)
-
-        app = FakeApp()
-        manager._app = app
-        screen = LobbyScreen(manager)
-        screen._transition_to(LobbyState.RELAY_CLIENT)
-        screen._relay_host_input.text = "relay.example.test"
-        screen._relay_port_input.text = "9999"
-        screen._room_code_input.text = "4321"
-
-        screen._do_relay_connect()
-
-        self.assertEqual(app.started, ("client", "relay.example.test", 9999, "4321"))
-        self.assertTrue(screen._connection_started)
-
-    def test_lobby_rejects_invalid_port_inputs(self):
-        screen = LobbyScreen(self._manager())
-        screen._transition_to(LobbyState.LAN_HOST)
-        screen._host_port_input.text = "70000"
-
-        screen._do_connect()
-
-        self.assertFalse(screen._connection_started)
-        self.assertIn("监听端口无效", screen.error_text)
 
 
 if __name__ == "__main__":

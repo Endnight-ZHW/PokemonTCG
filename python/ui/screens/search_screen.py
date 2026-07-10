@@ -197,7 +197,7 @@ class SearchScreen(Screen):
                     danger=not is_readonly)
 
     def _draw_mini_card(self, surface, x, y, card, selected=False, hover=False):
-        # Resolve string card IDs from network deserialization first
+        # Resolve string card IDs from serialized tooling requests first.
         if isinstance(card, str):
             from data.card_registry import CardRegistry
             resolved = CardRegistry.get(card)

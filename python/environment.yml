@@ -1,20 +1,12 @@
 name: DL
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
-  - defaults
 dependencies:
   - python=3.11.15
   - pip
-  - numpy=1.26.4
-  - matplotlib
-  - onnx=1.22.0
-  - onnxruntime=1.26.0
-  - pytorch=2.4.1
-  - pytorch-cuda=11.8
   - pip:
-      - pygame==2.6.1
-      - requests==2.32.3
-      - Pillow==11.3.0
-      - websockets==16.0
+      # conda-env resolves this path relative to environment.yml.
+      - -r requirements-ai-gpu.lock.txt
+variables:
+  # Prevent unrelated packages from %APPDATA%\Python leaking into training.
+  PYTHONNOUSERSITE: "1"

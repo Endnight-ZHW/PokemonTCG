@@ -2,6 +2,8 @@
 import math
 import random
 import os
+import json
+from pathlib import Path
 import pygame
 import sys
 from utils.logger import get_logger
@@ -181,7 +183,7 @@ class TitleScreen(Screen):
     def _load_available_decks(self):
         from data.deck_definitions import (FIRE_DECK, WATER_DECK, PSYCHIC_DECK_NATU,
                                             LIGHTNING_DECK, FIGHTING_DECK, COLORLESS_DECK,
-                                            DRAGON_DECK, GRASS_DECK, DARKNESS_DECK,
+                                            DRAGON_DECK, GRASS_DECK, STEEL_DECK, DARKNESS_DECK,
                                             ALL_CARD_IDS)
         from data.card_registry import CardRegistry
 
@@ -192,7 +194,7 @@ class TitleScreen(Screen):
                 logger.error("card loading error: %s", e)
                 CardRegistry.initialize(ALL_CARD_IDS)
 
-        available_decks = {
+        deck_definitions = {
             "fire": FIRE_DECK,
             "water": WATER_DECK,
             "psychic": PSYCHIC_DECK_NATU,
@@ -201,10 +203,22 @@ class TitleScreen(Screen):
             "colorless": COLORLESS_DECK,
             "dragon": DRAGON_DECK,
             "grass": GRASS_DECK,
+            "steel": STEEL_DECK,
             "darkness": DARKNESS_DECK,
         }
-
-        return available_decks
+        manifest_path = Path(__file__).resolve().parents[3] / "release_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        release_decks = manifest.get("release_decks")
+        if (
+            not isinstance(release_decks, list)
+            or not release_decks
+            or not all(isinstance(key, str) and key for key in release_decks)
+            or len(release_decks) != len(set(release_decks))
+            or int(manifest.get("model_count") or 0) != len(release_decks)
+            or set(release_decks) != set(deck_definitions)
+        ):
+            raise RuntimeError("release_manifest.json has an invalid release deck set")
+        return {key: deck_definitions[key] for key in release_decks}
 
     def _start_game(self):
         available_decks = self._load_available_decks()

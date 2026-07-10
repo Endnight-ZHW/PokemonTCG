@@ -8,6 +8,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.export_godot_data import (
+    _export_images,
+    _exported_image_errors,
     _image_hashes,
     _parse_image_mapping,
     _validate_image_mapping,
@@ -17,6 +19,10 @@ from scripts.export_godot_data import (
 
 class GodotDataExportTests(unittest.TestCase):
     def test_image_mapping_rejects_missing_duplicate_source_and_escape(self):
+        with self.assertRaisesRegex(ValueError, "JSON object"):
+            _parse_image_mapping(
+                '[["card-1", "data/images/a.webp"]]'
+            )
         with self.assertRaisesRegex(ValueError, "Duplicate"):
             _parse_image_mapping(
                 '{"card-1":"data/images/a.webp","card-1":"data/images/b.webp"}'
@@ -41,6 +47,12 @@ class GodotDataExportTests(unittest.TestCase):
                     python_root=root,
                     card_ids=["card-1"],
                 )
+            with self.assertRaisesRegex(ValueError, "Unsafe card ID"):
+                _validate_image_mapping(
+                    {"../outside": "data/images/one.webp"},
+                    python_root=root,
+                    card_ids=["../outside"],
+                )
 
     def test_exported_image_hashes_change_with_source_bytes(self):
         from scripts import export_godot_data
@@ -58,6 +70,35 @@ class GodotDataExportTests(unittest.TestCase):
                 image.write_bytes(b"two")
                 second = _image_hashes(mapping)
             self.assertNotEqual(first["card-1"], second["card-1"])
+
+    def test_exported_image_check_detects_stale_target_and_missing_card_back(self):
+        from scripts import export_godot_data
+
+        with tempfile.TemporaryDirectory() as root_dir, tempfile.TemporaryDirectory() as output_dir:
+            root = Path(root_dir)
+            output = Path(output_dir)
+            images = root / "data" / "images"
+            images.mkdir(parents=True)
+            (images / "one.webp").write_bytes(b"one")
+            card_back = images / "卡背.webp"
+            card_back.write_bytes(b"back")
+            mapping = {"card-1": "data/images/one.webp"}
+            with mock.patch.object(export_godot_data, "PYTHON_ROOT", root), mock.patch.object(
+                export_godot_data, "ALL_CARD_IDS", ["card-1"]
+            ):
+                _export_images(output, mapping)
+                self.assertEqual(_exported_image_errors(output, mapping), [])
+                (output / "assets" / "cards" / "card-1.webp").write_bytes(b"stale")
+                self.assertIn("hash:card-1.webp", _exported_image_errors(output, mapping))
+                stale_import = output / "assets" / "cards" / "old-card.webp.import"
+                stale_import.write_text("stale", encoding="utf-8")
+                self.assertIn(
+                    "obsolete:old-card.webp.import",
+                    _exported_image_errors(output, mapping),
+                )
+                card_back.unlink()
+                with self.assertRaisesRegex(FileNotFoundError, "card back"):
+                    _export_images(output, mapping)
 
     def test_export_is_complete_and_deterministic(self):
         with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
@@ -78,14 +119,116 @@ class GodotDataExportTests(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
-            self.assertEqual(rules["fixture_version"], 2)
+            self.assertEqual(rules["fixture_version"], 3)
             self.assertEqual(rules["rng_algorithm"], "xorshift32-v1")
-            self.assertEqual(len(rules["cases"]), 5)
+            self.assertEqual(
+                rules["event_contract"]["name"],
+                "canonical-state-transition-events-v1",
+            )
+            self.assertEqual(
+                rules["pending_contract"]["name"],
+                "canonical-pending-semantics-v1",
+            )
+            self.assertEqual(len(rules["cases"]), 23)
             self.assertTrue(
                 all("expected_rng_state" in row for row in rules["cases"].values())
             )
             self.assertTrue(
+                all(row.get("trace") for row in rules["cases"].values())
+            )
+            self.assertTrue(
                 rules["cases"]["pending_attack_choice_cancel"]["choice_response"]["cancelled"]
+            )
+            coverage = json.loads(
+                (first / "tests" / "fixtures" / "rules_coverage.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(coverage["coverage_version"], 2)
+            self.assertEqual(
+                coverage["counts"],
+                {
+                    "release_effect_types": 77,
+                    "registered_effect_types": 78,
+                    "mapped_registered_effect_types": 78,
+                    "registered_vm_ops": 80,
+                    "mapped_registered_vm_ops": 80,
+                    "public_player_actions": 9,
+                    "traced_public_player_actions": 9,
+                    "semantic_release_effect_types": 16,
+                    "semantic_registered_vm_ops": 16,
+                },
+            )
+            semantic_inventory = coverage["semantic_trace_inventory"]
+            self.assertEqual(semantic_inventory["case_count"], 23)
+            self.assertEqual(semantic_inventory["transaction_step_count"], 30)
+            self.assertEqual(
+                len(semantic_inventory["release_effect_types_not_executed"]),
+                61,
+            )
+            self.assertEqual(
+                len(semantic_inventory["registered_vm_ops_not_executed"]),
+                64,
+            )
+            self.assertEqual(
+                semantic_inventory["known_cross_runtime_semantic_gaps"][0]["family"],
+                "coin",
+            )
+            self.assertEqual(
+                semantic_inventory["release_effect_types_executed"],
+                [
+                    "attack_damage_formula",
+                    "conditional_damage_heal",
+                    "conditional_status",
+                    "damage_and_self_heal",
+                    "damage_counter_self",
+                    "draw",
+                    "energy_attach",
+                    "energy_discard",
+                    "heal",
+                    "heal_all",
+                    "potion_heal",
+                    "prevent_damage",
+                    "prevent_effects",
+                    "search",
+                    "self_attack_lock",
+                    "shuffle_draw",
+                ],
+            )
+            self.assertEqual(
+                set(coverage["mapping_inventory"]["action_to_trace_cases"]),
+                {
+                    "PLAY_BASIC",
+                    "EVOLVE",
+                    "ATTACH_ENERGY",
+                    "PLAY_TRAINER",
+                    "USE_ABILITY",
+                    "USE_STADIUM",
+                    "RETREAT",
+                    "DECLARE_ATTACK",
+                    "END_TURN",
+                },
+            )
+            self.assertEqual(
+                coverage["semantic_trace_inventory"]["explicitly_not_claimed"],
+                [
+                    "all_release_effect_semantics",
+                    "all_registered_vm_op_semantics",
+                ],
+            )
+            potion_case = rules["cases"]["potion_heal_choice"]
+            self.assertEqual(
+                potion_case["trace"][0]["expected"]["players"][0]["discard"],
+                ["svf-potion"],
+            )
+            self.assertEqual(
+                potion_case["pending_after_action"]["request"]["request_type"],
+                "select_heal_target",
+            )
+            self.assertEqual(
+                rules["cases"]["search_energy_attack"]["pending_after_action"]
+                ["request"]["request_type"],
+                "search_move",
             )
 
             first_cards = json.loads((first / "data" / "cards.json").read_text(encoding="utf-8"))

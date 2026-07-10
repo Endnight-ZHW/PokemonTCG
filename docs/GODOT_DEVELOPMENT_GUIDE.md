@@ -115,6 +115,10 @@ flowchart TD
 并把 `CardCatalog`、`GameState` 或 context 传给面板。这样既能在 Godot 中单独编辑面板，
 又不会在 `.tscn` 中写死实时对局数据。
 
+发布运行时统一使用 `CardDatabase.catalog`（与 `CardCatalog.shared()` 是同一只读实例）。
+新 UI 组件应接受 catalog 注入，默认回退到 `CardCatalog.shared()`；只有需要写入合成卡牌的
+测试夹具才使用可变的 `CardCatalog.new(true)`，不要修改运行时仓库。
+
 `main.tscn` 根节点下还有 `Controllers`，里面放着 `ScreenRouter`、`MatchSession`、
 `AIMatchDriver`、`NetworkSessionDriver` 和 `ModalHost`。它们是主流程职责的可见入口；
 当前仍由 `Main` 保留兼容门面，后续扩展时优先把对应职责放到这些控制器。

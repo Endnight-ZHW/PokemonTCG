@@ -35,6 +35,28 @@ class MalformedPokemonKoTriggerCommands:
 		commands.append({"command_specs": [42]})
 
 
+class RuntimeVersionMismatchBackend:
+	extends RefCounted
+
+	var loaded := false
+
+	func load_model(_path: String, _manifest: Dictionary) -> bool:
+		loaded = true
+		return true
+
+	func unload_model() -> void:
+		loaded = false
+
+	func is_loaded() -> bool:
+		return loaded
+
+	func get_runtime_version() -> String:
+		return "0.0.0-test"
+
+	func get_last_error() -> String:
+		return ""
+
+
 func _initialize() -> void:
 	_run_phase_zero_tests()
 	_run_phase_one_tests()
@@ -190,6 +212,7 @@ func _run_phase_two_tests() -> void:
 	var fixture := _read_json("res://tests/fixtures/data_contract.json")
 	var catalog := CardCatalog.new()
 	var engine := GameEngine.new(catalog)
+	_run_rules_coverage_inventory(fixture, engine)
 	var effect_types: Array = fixture.get("effect_types", [])
 	_check(effect_types.size() == 77, "Expected 77 exported effect type names")
 	for effect_type in effect_types:
@@ -2160,13 +2183,43 @@ func _run_phase_four_foundation_tests() -> void:
 		choice_cards.append(int(row["card_id"]))
 	var runtime := DeepAIRuntime.new()
 	_check(runtime.is_available(), "ONNX Runtime GDExtension is unavailable")
+	var release_schemas: Dictionary = runtime.release_manifest.get("schemas", {})
+	var release_onnx: Dictionary = runtime.release_manifest.get("onnx", {})
+	_check(
+		runtime.expected_python_rules_version
+		== int(release_schemas.get("python_rules", 0))
+		and runtime.expected_python_action_version
+		== int(release_schemas.get("python_actions", 0))
+		and runtime.expected_python_encoder_version
+		== int(release_schemas.get("encoder", 0))
+		and runtime.expected_onnx_opset == int(release_onnx.get("opset", 0))
+		and runtime.expected_onnx_runtime_version
+		== str(release_onnx.get("runtime_version", "")),
+		"Deep AI release expectations do not come from the release manifest",
+	)
 	var runtime_manifest_encoder := int(
 		Dictionary(runtime.manifest.get("compatibility_bridge", {})).get("python_encoder_version", 0)
 	)
 	var runtime_manifest_current := (
-		runtime_manifest_encoder == int(runtime.EXPECTED_PYTHON_ENCODER_VERSION)
+		runtime_manifest_encoder == runtime.expected_python_encoder_version
 	)
 	if runtime.is_available():
+		var mismatched_native_runtime := DeepAIRuntime.new()
+		mismatched_native_runtime.backend = RuntimeVersionMismatchBackend.new()
+		_check(
+			not mismatched_native_runtime.load_for_deck("fire")
+			and mismatched_native_runtime.last_error
+			== "onnx_runtime_version_mismatch",
+			"Deep AI accepted a native ONNX Runtime outside the release contract",
+		)
+		var original_opset := int(runtime.manifest.get("opset", 0))
+		runtime.manifest["opset"] = runtime.expected_onnx_opset + 1
+		_check(
+			not runtime.load_for_deck("fire")
+			and runtime.last_error == "runtime_release_manifest_mismatch",
+			"Deep AI accepted an ONNX runtime manifest outside the release contract",
+		)
+		runtime.manifest["opset"] = original_opset
 		if not runtime_manifest_current:
 			_check(
 				not runtime.load_for_deck("fire")
@@ -3731,6 +3784,30 @@ func _run_phase_five_foundation_tests() -> void:
 			"Authoritative session accepted an action for another player",
 		)
 
+	var invalid_local_deck_controller := NetworkMatchController.new()
+	_check(
+		invalid_local_deck_controller.host_lan(0, "__missing_deck")
+		== ERR_INVALID_PARAMETER
+		and invalid_local_deck_controller.join_lan(
+			"127.0.0.1", 0, "__missing_deck") == ERR_INVALID_PARAMETER
+		and invalid_local_deck_controller.host_relay(
+			"ws://127.0.0.1", "__missing_deck") == ERR_INVALID_PARAMETER
+		and invalid_local_deck_controller.join_relay(
+			"ws://127.0.0.1", "0000", "__missing_deck") == ERR_INVALID_PARAMETER
+		and invalid_local_deck_controller.connection_phase
+		== NetworkMatchController.ConnectionPhase.CLOSED,
+		"Network controller accepted an unknown local deck key",
+	)
+	var invalid_session := AuthoritativeSession.new("invalid-deck-session")
+	var invalid_session_start := invalid_session.start_match(
+		"fire", "__missing_deck", 1)
+	_check(
+		not invalid_session_start.success
+		and invalid_session_start.error_code == "invalid_deck"
+		and invalid_session.state == null,
+		"Authoritative session mutated state for an unknown deck key",
+	)
+
 	var lobby_controller := NetworkMatchController.new()
 	var lobby_transport := FakeNetworkTransport.new()
 	lobby_controller.host = true
@@ -4081,7 +4158,41 @@ func _run_phase_five_foundation_tests() -> void:
 
 
 func _run_phase_six_foundation_tests() -> void:
-	_check(AppState.APP_VERSION == "0.3.2", "Stage 6 app version mismatch")
+	var release_manifest := _read_json("res://data/release_manifest.json")
+	var app_state: Node = root.get_node("AppState")
+	_check(
+		str(app_state.get("APP_VERSION")) == str(release_manifest.get("version", "")),
+		"Stage 6 app version does not match the release manifest",
+	)
+	var smoke_runner := ExportSmokeRunner.new()
+	var smoke_runtime := DeepAIRuntime.new()
+	var no_smoke := smoke_runner.run_if_requested(PackedStringArray(), smoke_runtime)
+	_check(
+		not bool(no_smoke.get("handled", true)),
+		"Export smoke runner handled a normal application launch",
+	)
+	var network_smoke := smoke_runner.run_if_requested(
+		PackedStringArray([ExportSmokeRunner.PHASE_FIVE_FLAG]),
+		smoke_runtime,
+	)
+	_check(
+		bool(network_smoke.get("handled", false))
+		and bool(network_smoke.get("success", false))
+		and int(network_smoke.get("exit_code", -1)) == 0
+		and str(network_smoke.get("message", "")).begins_with(
+			"PHASE5_EXPORT_NETWORK_OK"
+		),
+		"Export smoke runner did not preserve the phase 5 protocol contract",
+	)
+	var main_source := _read_text("res://scenes/main/main.gd")
+	var smoke_source := _read_text("res://scenes/main/export_smoke_runner.gd")
+	_check(
+		main_source.find("ExportSmokeRunner.new().run_if_requested") >= 0
+		and main_source.find("func _run_phase_six_export_smoke") >= 0
+		and main_source.find("PHASE6_EXPORT_RELEASE_OK") == -1
+		and smoke_source.find("func _run_phase_six") >= 0,
+		"Main scene smoke API must delegate implementation to ExportSmokeRunner",
+	)
 	var settings: Node = root.get_node("AppSettings")
 	var texture_cache: Node = root.get_node("CardTextureCache")
 	var settings_path := "user://phase6_settings_test.cfg"
@@ -4168,6 +4279,8 @@ func _run_phase_six_foundation_tests() -> void:
 
 
 func _run_visual_upgrade_tests() -> void:
+	for layout_failure in BattleTableLayoutContract.run():
+		failures.append(layout_failure)
 	var seeded_state_a := UIPreviewStateFactory.battle_state(77)
 	var seeded_state_b := UIPreviewStateFactory.battle_state(77)
 	_check(
@@ -4189,6 +4302,7 @@ func _run_visual_upgrade_tests() -> void:
 		"res://ui/dialogs/pause_panel.tscn",
 		"res://presentation/presentation_event.gd",
 		"res://presentation/presentation_director.gd",
+		"res://scenes/battle/components/battle_table_layout.gd",
 		"res://scenes/title/title_page.tscn",
 		"res://scenes/decks/deck_select_page.tscn",
 		"res://scenes/network/network_lobby_page.tscn",
@@ -10002,15 +10116,293 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	)
 
 
-func _run_python_golden_actions(engine: GameEngine) -> void:
+func _run_rules_coverage_inventory(
+	data_fixture: Dictionary,
+	engine: GameEngine,
+) -> void:
+	var coverage := _read_json("res://tests/fixtures/rules_coverage.json")
+	var mapping: Dictionary = coverage.get("mapping_inventory", {})
+	var counts: Dictionary = coverage.get("counts", {})
+	_check(
+		int(coverage.get("coverage_version", 0)) == 2
+		and int(counts.get("release_effect_types", 0)) == 77
+		and int(counts.get("registered_effect_types", 0)) == 78
+		and int(counts.get("mapped_registered_effect_types", 0)) == 78
+		and int(counts.get("registered_vm_ops", 0)) == 80
+		and int(counts.get("mapped_registered_vm_ops", 0)) == 80
+		and int(counts.get("public_player_actions", 0)) == 9
+		and int(counts.get("traced_public_player_actions", 0)) == 9
+		and int(counts.get("semantic_release_effect_types", 0)) == 16
+		and int(counts.get("semantic_registered_vm_ops", 0)) == 16,
+		"Rules coverage inventory counts are stale",
+	)
+	var semantic_inventory: Dictionary = coverage.get("semantic_trace_inventory", {})
+	_check(
+		int(semantic_inventory.get("case_count", 0)) == 23
+		and int(semantic_inventory.get("transaction_step_count", 0)) == 30
+		and Array(semantic_inventory.get("explicitly_not_claimed", [])).has(
+			"all_release_effect_semantics")
+		and Array(semantic_inventory.get("explicitly_not_claimed", [])).has(
+			"all_registered_vm_op_semantics"),
+		"Semantic trace inventory counts or non-coverage disclaimer are stale",
+	)
+	var semantic_gaps: Array = semantic_inventory.get(
+		"known_cross_runtime_semantic_gaps", [])
+	_check(
+		Array(semantic_inventory.get("release_effect_types_not_executed", [])).size() == 61
+		and Array(semantic_inventory.get("registered_vm_ops_not_executed", [])).size() == 64
+		and semantic_gaps.size() == 1
+		and str(Dictionary(semantic_gaps[0]).get("family", "")) == "coin",
+		"Semantic trace gap inventory is stale or overstates executed coverage",
+	)
+
+	var release_effects: Array = data_fixture.get("effect_types", []).duplicate()
+	release_effects.sort()
+	var inventory_release_effects: Array = mapping.get("release_effect_types", []).duplicate()
+	inventory_release_effects.sort()
+	_check(
+		_deep_equal(release_effects, inventory_release_effects),
+		"Rules coverage inventory does not enumerate every release effect",
+	)
+	var registered_effects: Array = VMContract.SUPPORTED_EFFECT_TYPES.duplicate()
+	registered_effects.sort()
+	var inventory_registered_effects: Array = mapping.get(
+		"registered_effect_types", []).duplicate()
+	inventory_registered_effects.sort()
+	_check(
+		_deep_equal(registered_effects, inventory_registered_effects),
+		"Python/Godot registered effect inventories differ",
+	)
+	var effect_to_op: Dictionary = mapping.get("effect_to_vm_op", {})
+	var effect_mapping_keys: Array = effect_to_op.keys()
+	effect_mapping_keys.sort()
+	_check(
+		_deep_equal(effect_mapping_keys, registered_effects),
+		"A registered effect lacks an explicit effect-to-VM-op mapping",
+	)
+	var compiled_examples: Dictionary = data_fixture.get("compiled_effect_examples", {})
+	for effect_type in release_effects:
+		_check(
+			compiled_examples.has(effect_type)
+			and str(compiled_examples[effect_type].get("op", ""))
+			== str(effect_to_op.get(effect_type, "")),
+			"Compiled release effect mapping is stale: %s" % effect_type,
+		)
+
+	var native_ops: Array = engine.effect_engine.native_command_ops()
+	native_ops.sort()
+	var inventory_ops: Array = mapping.get("registered_vm_ops", []).duplicate()
+	inventory_ops.sort()
+	var mapped_ops: Array = Dictionary(mapping.get("vm_op_mappings", {})).keys()
+	mapped_ops.sort()
+	_check(
+		_deep_equal(native_ops, inventory_ops)
+		and _deep_equal(native_ops, mapped_ops),
+		"A registered VM op lacks an explicit coverage classification",
+	)
+	for op in native_ops:
+		_check(
+			engine.effect_engine.supports_command_handler(str(op)),
+			"Coverage inventory includes a VM op without an executable handler: %s" % op,
+		)
+
+	var action_to_cases: Dictionary = mapping.get("action_to_trace_cases", {})
+	var expected_actions: Array = [
+		"ATTACH_ENERGY",
+		"DECLARE_ATTACK",
+		"END_TURN",
+		"EVOLVE",
+		"PLAY_BASIC",
+		"PLAY_TRAINER",
+		"RETREAT",
+		"USE_ABILITY",
+		"USE_STADIUM",
+	]
+	var inventory_actions: Array = action_to_cases.keys()
+	inventory_actions.sort()
+	_check(
+		_deep_equal(inventory_actions, expected_actions),
+		"Public PlayerAction coverage inventory is incomplete",
+	)
+	for action_name in expected_actions:
+		_check(
+			engine.action_dispatcher.supports_action(str(action_name))
+			and not Array(action_to_cases.get(action_name, [])).is_empty(),
+			"Public PlayerAction lacks a semantic trace: %s" % action_name,
+		)
+
+
+func _canonical_golden_continuation_kind(value: Variant) -> String:
+	var kind := str(value)
+	return {
+		"search_cards": "search_move",
+		"choose_heal_damage": "heal_target",
+	}.get(kind, kind)
+
+
+func _canonical_golden_pending_option(option: Dictionary, player: int) -> Dictionary:
+	var ref: Dictionary = Dictionary(option.get("ref", {}))
+	if not ref.is_empty() and not str(ref.get("kind", "")).is_empty():
+		var kind := str(ref.get("kind", ""))
+		var result := {
+			"kind": kind,
+			"player": int(ref.get("player", -1)),
+			"card_id": str(ref.get("card_id", "")),
+		}
+		if kind == "card":
+			result["zone"] = str(ref.get("zone", ""))
+		else:
+			result["slot"] = str(ref.get("slot", ""))
+		if kind == "attachment":
+			result["attachment_type"] = str(ref.get("attachment_type", ""))
+			result["index"] = int(ref.get("index", -1))
+		return result
+	var value: Dictionary = Dictionary(option.get("value", {}))
+	if not str(value.get("slot", "")).is_empty():
+		return {
+			"kind": "pokemon",
+			"player": player,
+			"card_id": str(value.get("card_id", "")),
+			"slot": str(value.get("slot", "")),
+		}
+	return {"kind": "id", "option_id": str(option.get("option_id", ""))}
+
+
+func _canonical_golden_pending_request(
+	request: ChoiceRequest,
+	continuation_kind_override: String = "",
+) -> Dictionary:
+	var continuation: Dictionary = Dictionary(request.metadata.get("continuation", {}))
+	var continuation_kind := _canonical_golden_continuation_kind(
+		continuation.get("kind", continuation_kind_override))
+	if continuation_kind.is_empty():
+		continuation_kind = _canonical_golden_continuation_kind(
+			continuation_kind_override)
+	var request_type := request.request_type
+	if continuation_kind == "search_move":
+		request_type = "search_move"
+	elif continuation_kind == "heal_target":
+		request_type = "select_heal_target"
+	elif request_type == "search_deck":
+		request_type = "search_move"
+	var options: Array = []
+	for option in request.options:
+		options.append(_canonical_golden_pending_option(option, request.player))
+	var metadata := {"continuation_kind": continuation_kind}
+	if request.metadata.get("finish_attack_actor") != null:
+		metadata["finish_attack_actor"] = int(request.metadata.get("finish_attack_actor"))
+	return {
+		"request_type": request_type,
+		"player": request.player,
+		"min_select": request.min_select,
+		"max_select": request.max_select,
+		"allow_duplicates": request.allow_duplicates,
+		"can_cancel": request.can_cancel,
+		"options": options,
+		"metadata": metadata,
+	}
+
+
+func _golden_pending_trace(state: GameState) -> Dictionary:
+	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	if stack.pending_request == null:
+		return {}
+	var frame_kinds: Array = []
+	var continuation_operations: Array = []
+	for frame in stack.frames:
+		frame_kinds.append(str(frame.get("kind", "")))
+		if str(frame.get("kind", "")) == "continuation":
+			continuation_operations.append(
+				_canonical_golden_continuation_kind(frame.get("operation", "")))
+	var continuation_kind := ""
+	if not continuation_operations.is_empty():
+		continuation_kind = str(continuation_operations[-1])
+	var result := _canonical_golden_pending_request(
+		stack.pending_request, continuation_kind)
+	result["frame_kinds"] = frame_kinds
+	result["continuation_operations"] = continuation_operations
+	return result
+
+
+func _golden_event_types(step: StepResult) -> Array:
+	var result: Array = []
+	for event in step.events:
+		result.append(str(event.get("event_type", "")))
+	return result
+
+
+func _check_golden_trace_step(
+	case_name: String,
+	trace_row: Dictionary,
+	state: GameState,
+	rng: PortableRandomSource,
+	step: StepResult,
+) -> void:
+	_check(
+		_deep_equal(_rule_summary(state), trace_row.get("expected", {})),
+		"Python/Godot per-step state mismatch for %s[%s:%d]\nexpected=%s\nactual=%s" % [
+			case_name,
+			str(trace_row.get("kind", "")),
+			int(trace_row.get("index", -1)),
+			JSON.stringify(trace_row.get("expected", {})),
+			JSON.stringify(_rule_summary(state)),
+		],
+	)
+	_check(
+		_deep_equal(_golden_pending_trace(state), trace_row.get("pending", {})),
+		"Python/Godot per-step pending state mismatch for %s[%s:%d]: expected=%s actual=%s" % [
+			case_name,
+			str(trace_row.get("kind", "")),
+			int(trace_row.get("index", -1)),
+			JSON.stringify(trace_row.get("pending", {})),
+			JSON.stringify(_golden_pending_trace(state)),
+		],
+	)
+	_check(
+		_deep_equal(_golden_event_types(step), trace_row.get("event_types", [])),
+		"Python/Godot per-step event mismatch for %s[%s:%d]: expected=%s actual=%s" % [
+			case_name,
+			str(trace_row.get("kind", "")),
+			int(trace_row.get("index", -1)),
+			JSON.stringify(trace_row.get("event_types", [])),
+			JSON.stringify(_golden_event_types(step)),
+		],
+	)
+	_check(
+		rng.get_state() == int(trace_row.get("rng_state", -1)),
+		"Python/Godot per-step RNG mismatch for %s[%s:%d]: expected=%d actual=%d" % [
+			case_name,
+			str(trace_row.get("kind", "")),
+			int(trace_row.get("index", -1)),
+			int(trace_row.get("rng_state", -1)),
+			rng.get_state(),
+		],
+	)
+
+
+func _run_python_golden_actions(_engine: GameEngine) -> void:
 	var fixture := _read_json("res://tests/fixtures/rules_golden.json")
+	var golden_catalog := CardCatalog.new(true)
+	for card_id in Dictionary(fixture.get("test_cards", {})):
+		golden_catalog.cards[card_id] = fixture["test_cards"][card_id]
+	var engine := GameEngine.new(golden_catalog)
 	var cases: Dictionary = fixture.get("cases", {})
-	_check(cases.size() == 5, "Expected five Python golden action cases")
+	_check(
+		int(fixture.get("fixture_version", 0)) == 3
+		and str(fixture.get("event_contract", {}).get("name", ""))
+		== "canonical-state-transition-events-v1"
+		and str(fixture.get("pending_contract", {}).get("name", ""))
+		== "canonical-pending-semantics-v1"
+		and cases.size() == 23,
+		"Expected twenty-three Python golden action cases at fixture v3",
+	)
 	for case_name in cases:
 		var row: Dictionary = cases[case_name]
 		var state := GameState.from_dict(row["initial_state"])
 		var rng := PortableRandomSource.new(int(row.get("portable_seed", 700)))
 		var action_index := 0
+		var trace_index := 0
+		var trace: Array = row.get("trace", [])
 		var last_result: StepResult = null
 		for action_value in row.get("actions", []):
 			var action_row: Dictionary = action_value
@@ -10030,6 +10422,16 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 				"Golden action %s[%d] failed: %s" % [
 					case_name, action_index, result.message],
 			)
+			if trace_index < trace.size():
+				var action_trace: Dictionary = trace[trace_index]
+				_check(
+					str(action_trace.get("kind", "")) == "action"
+					and int(action_trace.get("index", -1)) == action_index,
+					"Golden trace/action ordering differs for %s[%d]" % [
+						case_name, action_index],
+				)
+				_check_golden_trace_step(case_name, action_trace, state, rng, result)
+			trace_index += 1
 			action_index += 1
 		var pending_after: Dictionary = row.get("pending_after_action", {})
 		if not pending_after.is_empty():
@@ -10047,46 +10449,34 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 			var expected_request: Dictionary = pending_after.get("request", {})
 			_check(stack.pending_request != null,
 				"Golden action %s did not serialize pending request" % case_name)
-			if stack.pending_request != null:
-				_check(
-					stack.pending_request.request_type == str(expected_request.get("request_type", ""))\
-					and stack.pending_request.player == int(expected_request.get("player", -1))\
-					and stack.pending_request.min_select == int(expected_request.get("min_select", -1))\
-					and stack.pending_request.max_select == int(expected_request.get("max_select", -1))\
-					and stack.pending_request.allow_duplicates == bool(expected_request.get("allow_duplicates", false))\
-					and stack.pending_request.can_cancel == bool(expected_request.get("can_cancel", false)),
-					"Golden pending request fields differ for %s" % case_name,
-				)
-				var actual_option_ids: Array = []
-				for option in stack.pending_request.options:
-					actual_option_ids.append(str(option.get("option_id", "")))
-				_check(
-					_deep_equal(actual_option_ids, expected_request.get("option_ids", [])),
-					"Golden pending request options differ for %s" % case_name,
-				)
-				var expected_metadata: Dictionary = Dictionary(expected_request.get("metadata", {}))
-				if not expected_metadata.is_empty():
-					var actual_metadata: Dictionary = stack.pending_request.metadata
-					var actual_continuation: Dictionary = {}
-					if actual_metadata.get("continuation", {}) is Dictionary:
-						actual_continuation = Dictionary(actual_metadata.get("continuation", {}))
-					_check(
-						int(actual_metadata.get("finish_attack_actor", -1))\
-						== int(expected_metadata.get("finish_attack_actor", -1))\
-						and str(actual_continuation.get("kind", ""))\
-						== str(expected_metadata.get("continuation_kind", "")),
-						"Golden pending request metadata differs for %s" % case_name,
-					)
 			var frame_kinds: Array = []
 			var continuation_operations: Array = []
 			var continuation_data_kinds: Array = []
 			for frame in stack.frames:
 				frame_kinds.append(str(frame.get("kind", "")))
 				if str(frame.get("kind", "")) == "continuation":
-					continuation_operations.append(str(frame.get("operation", "")))
+					continuation_operations.append(
+						_canonical_golden_continuation_kind(frame.get("operation", "")))
 					var continuation_data: Dictionary = Dictionary(frame.get("data", {}))
-					continuation_data_kinds.append(str(continuation_data.get("kind", "")))
+					continuation_data_kinds.append(
+						_canonical_golden_continuation_kind(
+							continuation_data.get("kind", "")))
 			var expected_stack: Dictionary = pending_after.get("stack", {})
+			var actual_request: Dictionary = {}
+			if stack.pending_request != null:
+				var request_continuation_kind := ""
+				if not continuation_operations.is_empty():
+					request_continuation_kind = str(continuation_operations[-1])
+				actual_request = _canonical_golden_pending_request(
+					stack.pending_request, request_continuation_kind)
+			_check(
+				_deep_equal(actual_request, expected_request),
+				"Golden canonical pending request differs for %s: expected=%s actual=%s" % [
+					case_name,
+					JSON.stringify(expected_request),
+					JSON.stringify(actual_request),
+				],
+			)
 			_check(
 				_deep_equal(frame_kinds, expected_stack.get("frame_kinds", [])),
 				"Golden pending stack frames differ for %s" % case_name,
@@ -10102,12 +10492,31 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 				)
 				and (
 					stack.pending_request == null
-					or stack.pending_request.request_type
+					or str(actual_request.get("request_type", ""))
 					== str(expected_stack.get("pending_request_type", ""))
 				),
 				"Golden pending stack continuation data differs for %s" % case_name,
 			)
 			var response_data: Dictionary = row.get("choice_response", {}).duplicate(true)
+			var selected_semantics: Array = response_data.get("selected_options", [])
+			if not selected_semantics.is_empty() and last_result.pending_choice != null:
+				var mapped_option_ids: Array[String] = []
+				var used_option_ids: Array[String] = []
+				for selected_semantic_value in selected_semantics:
+					var selected_semantic: Dictionary = Dictionary(selected_semantic_value)
+					for option in last_result.pending_choice.options:
+						var option_id := str(option.get("option_id", ""))
+						if option_id in used_option_ids:
+							continue
+						if _deep_equal(
+							_canonical_golden_pending_option(
+								option, last_result.pending_choice.player),
+							selected_semantic,
+						):
+							mapped_option_ids.append(option_id)
+							used_option_ids.append(option_id)
+							break
+				response_data["option_ids"] = mapped_option_ids
 			if str(case_name) == "pending_attack_choice_cancel":
 				_check(
 					bool(response_data.get("cancelled", false)),
@@ -10124,6 +10533,20 @@ func _run_python_golden_actions(engine: GameEngine) -> void:
 				choice_step.success,
 				"Golden choice %s failed: %s" % [case_name, choice_step.message],
 			)
+			if trace_index < trace.size():
+				var choice_trace: Dictionary = trace[trace_index]
+				_check(
+					str(choice_trace.get("kind", "")) == "choice",
+					"Golden trace/choice ordering differs for %s" % case_name,
+				)
+				_check_golden_trace_step(
+					case_name, choice_trace, state, rng, choice_step)
+			trace_index += 1
+		_check(
+			trace_index == trace.size(),
+			"Golden trace step count differs for %s: expected=%d actual=%d" % [
+				case_name, trace.size(), trace_index],
+		)
 		_check(
 			_deep_equal(_rule_summary(state), row["expected"]),
 			"Python/Godot rule mismatch for %s\nexpected=%s\nactual=%s" % [

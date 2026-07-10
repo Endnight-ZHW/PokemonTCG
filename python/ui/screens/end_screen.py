@@ -16,14 +16,11 @@ class EndScreen(Screen):
     """游戏结束画面."""
 
     def __init__(self, manager: ScreenManager, winner_idx: int,
-                 win_reason: str, prizes_taken: tuple[int, int],
-                 network_manager=None, is_remote: bool = False):
+                 win_reason: str, prizes_taken: tuple[int, int]):
         super().__init__(manager)
         self.winner_idx = winner_idx
         self.win_reason = win_reason
         self.prizes_taken = prizes_taken
-        self.network_manager = network_manager
-        self.is_remote = is_remote
         self.font_title = get_font("title_xl")
         self.font_body = get_font("subtitle")
         self.font_small = get_font("body_md")
@@ -81,14 +78,10 @@ class EndScreen(Screen):
                 self._quit_to_title()
 
     def _rematch(self):
-        if self.network_manager:
-            self.network_manager.stop()
         from ui.screens.title_screen import TitleScreen
         self.manager.clear_to(TitleScreen(self.manager))
 
     def _quit_to_title(self):
-        if self.network_manager:
-            self.network_manager.stop()
         from ui.screens.title_screen import TitleScreen
         self.manager.clear_to(TitleScreen(self.manager))
 

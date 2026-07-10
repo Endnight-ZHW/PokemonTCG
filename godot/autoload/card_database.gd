@@ -17,6 +17,7 @@ var card_buckets: Dictionary = {}
 var ai_models: Dictionary = {}
 var release_manifest: Dictionary = {}
 var is_loaded := false
+var catalog: CardCatalog = CardCatalog.shared()
 
 
 func _ready() -> void:
@@ -24,7 +25,6 @@ func _ready() -> void:
 
 
 func load_all() -> bool:
-	var catalog := CardCatalog.new()
 	var datasets := {
 		"effects": EFFECTS_PATH,
 		"card_buckets": BUCKETS_PATH,

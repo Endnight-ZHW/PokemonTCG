@@ -7,11 +7,11 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Join-Path $repoRoot 'godot'
 $pythonRoot = Join-Path $repoRoot 'python'
-$godot = Join-Path $repoRoot '.tools\godot-4.7\Godot_v4.7-stable_win64_console.exe'
 $python = Join-Path $repoRoot '.tools\python311\python.exe'
 $tempRoot = Join-Path $repoRoot '.test_tmp\godot-network'
 
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$godot = (Get-GodotToolchainPaths -RepoRoot $repoRoot).Console
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 

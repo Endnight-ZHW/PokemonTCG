@@ -6,12 +6,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot '.tools'
-$godot = Join-Path $toolsRoot 'godot-4.7\Godot_v4.7-stable_win64_console.exe'
 
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$lock = Get-ToolchainLock -RepoRoot $repoRoot
+$godot = (Get-GodotToolchainPaths -RepoRoot $repoRoot).Console
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 if (-not (Test-Path -LiteralPath $godot)) {
-    throw 'Godot 4.7 is not installed.'
+    throw "Godot $($lock.godot.version) is not installed."
 }
 
 function Invoke-GodotCapture {

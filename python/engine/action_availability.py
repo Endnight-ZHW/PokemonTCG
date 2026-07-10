@@ -358,19 +358,27 @@ class VMActionAvailability:
             if ref is None:
                 continue
             if isinstance(ref, CardRef):
-                if ref.player not in (0, 1):
+                if type(ref.player) is not int or ref.player not in (0, 1):
                     return "卡牌引用的玩家无效。"
+                if (
+                    not isinstance(ref.zone, str)
+                    or not isinstance(ref.card_id, str)
+                    or type(ref.index) is not int
+                ):
+                    return "卡牌引用格式无效。"
                 zone = getattr(state.get_player(ref.player), ref.zone, None)
                 if not isinstance(zone, list):
-                    continue
+                    return "卡牌引用的区域无效。"
                 if not (0 <= ref.index < len(zone)):
                     return "卡牌引用已失效。"
                 card = zone[ref.index]
                 if ref.card_id and getattr(card, "api_id", "") != ref.card_id:
                     return "卡牌引用与当前局面不一致。"
             elif isinstance(ref, PokemonRef):
-                if ref.player not in (0, 1):
+                if type(ref.player) is not int or ref.player not in (0, 1):
                     return "宝可梦引用的玩家无效。"
+                if not isinstance(ref.slot, str) or not isinstance(ref.card_id, str):
+                    return "宝可梦引用格式无效。"
                 pokemon = state.get_player(ref.player).get_pokemon(ref.slot)
                 # Empty setup destinations intentionally have no current card.
                 if pokemon is None:
@@ -380,8 +388,15 @@ class VMActionAvailability:
                 if ref.card_id and pokemon.card.api_id != ref.card_id:
                     return "宝可梦引用与当前局面不一致。"
             elif isinstance(ref, AttachmentRef):
-                if ref.player not in (0, 1):
+                if type(ref.player) is not int or ref.player not in (0, 1):
                     return "附着卡引用的玩家无效。"
+                if (
+                    not isinstance(ref.slot, str)
+                    or not isinstance(ref.attachment_type, str)
+                    or not isinstance(ref.card_id, str)
+                    or type(ref.index) is not int
+                ):
+                    return "附着卡引用格式无效。"
                 pokemon = state.get_player(ref.player).get_pokemon(ref.slot)
                 if pokemon is None:
                     return "附着卡所属宝可梦已不存在。"
@@ -394,4 +409,6 @@ class VMActionAvailability:
                     return "附着卡引用已失效。"
                 if ref.card_id and attachments[ref.index].api_id != ref.card_id:
                     return "附着卡引用与当前局面不一致。"
+            else:
+                return "动作引用类型无效。"
         return ""

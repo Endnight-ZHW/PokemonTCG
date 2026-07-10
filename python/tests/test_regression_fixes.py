@@ -1359,17 +1359,14 @@ class TestSnapshotAndResources(unittest.TestCase):
         self.assertEqual(missing, [])
 
 
-# ── 8. USE_STADIUM Remote Dispatch (P1) ──────────────────────────────────
+# ── 8. USE_STADIUM Dispatch ──────────────────────────────────────────────
 
 class TestUseStadiumDispatch(unittest.TestCase):
 
     def test_action_resolver_has_use_stadium(self):
         """USE_STADIUM must be a valid PlayerAction and handled by resolver."""
         self.assertIn(PlayerAction.USE_STADIUM, PlayerAction.__members__.values())
-        # Verify it's in the action name map
-        from network.message_protocol import ACTION_TO_STRING
-        self.assertIn(PlayerAction.USE_STADIUM, ACTION_TO_STRING)
-        self.assertEqual(ACTION_TO_STRING[PlayerAction.USE_STADIUM], "USE_STADIUM")
+        self.assertEqual(PlayerAction.USE_STADIUM.name, "USE_STADIUM")
 
     def test_use_stadium_on_valid_stadium(self):
         """Test that USE_STADIUM action resolves correctly when stadium is in play."""

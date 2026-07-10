@@ -368,8 +368,12 @@ def export_all(
                 "python_rules_version": RULES_SCHEMA_VERSION,
                 "python_action_version": ACTION_SCHEMA_VERSION,
                 "python_encoder_version": ENCODER_SCHEMA_VERSION,
-                "godot_rules_version": 3,
-                "godot_action_version": 3,
+                "godot_rules_version": int(
+                    RELEASE_MANIFEST["schemas"]["godot_rules"]
+                ),
+                "godot_action_version": int(
+                    RELEASE_MANIFEST["schemas"]["godot_actions"]
+                ),
             },
             "models": model_rows,
             "elapsed_seconds": round(time.perf_counter() - started, 3),

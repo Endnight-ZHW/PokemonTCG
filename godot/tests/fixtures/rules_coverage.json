@@ -1,0 +1,1321 @@
+{
+  "counts": {
+    "mapped_registered_effect_types": 78,
+    "mapped_registered_vm_ops": 80,
+    "public_player_actions": 9,
+    "registered_effect_types": 78,
+    "registered_vm_ops": 80,
+    "release_effect_types": 77,
+    "semantic_registered_vm_ops": 16,
+    "semantic_release_effect_types": 16,
+    "traced_public_player_actions": 9
+  },
+  "coverage_version": 2,
+  "mapping_inventory": {
+    "action_to_trace_cases": {
+      "ATTACH_ENERGY": [
+        "basic_attach_attack"
+      ],
+      "DECLARE_ATTACK": [
+        "basic_attach_attack",
+        "pending_attack_choice_continuation",
+        "pending_attack_choice_cancel",
+        "confused_attack_tails",
+        "ko_then_promote",
+        "damage_then_self_heal_attack",
+        "formula_damage_attack",
+        "prevent_damage_and_lock_attack",
+        "conditional_status_attack",
+        "conditional_damage_heal_attack",
+        "prevent_effects_attack",
+        "search_energy_attack"
+      ],
+      "END_TURN": [
+        "end_turn"
+      ],
+      "EVOLVE": [
+        "evolution_preserves_attachments"
+      ],
+      "PLAY_BASIC": [
+        "basic_attach_attack"
+      ],
+      "PLAY_TRAINER": [
+        "supporter_draw",
+        "tool_attachment",
+        "heal_supporter",
+        "shuffle_draw_supporter",
+        "potion_heal_choice"
+      ],
+      "RETREAT": [
+        "double_turbo_retreat"
+      ],
+      "USE_ABILITY": [
+        "ability_damage_draw",
+        "heal_all_ability"
+      ],
+      "USE_STADIUM": [
+        "activatable_stadium"
+      ]
+    },
+    "effect_to_vm_op": {
+      "ability_discard_revive": "discard_then_revive",
+      "any_pokemon_damage": "choose_damage_target",
+      "apply_outgoing_damage_reduction": "apply_outgoing_damage_reduction",
+      "arven": "search_item_and_tool",
+      "attach_from_discard": "attach_energy_from_discard",
+      "attack_damage_formula": "deal_damage",
+      "attack_fail": "fail_attack",
+      "attack_lock_basic": "apply_attack_lock_basic",
+      "aura_damage_boost": "register_aura_damage_boost",
+      "aura_damage_reduction": "register_aura_damage_reduction",
+      "bench_damage": "deal_bench_damage",
+      "clara": "recover_clara",
+      "coin_flip": "flip_coin",
+      "coin_flip_double_ko": "flip_coin_then_ko",
+      "coin_flip_energy_discard": "flip_coin_then_discard_energy",
+      "coin_flip_triple": "flip_coin_repeat_damage",
+      "coin_flip_until_tails": "flip_until_tails",
+      "conditional": "conditional",
+      "conditional_damage_bonus": "conditional_damage",
+      "conditional_damage_heal": "conditional_damage_then_heal",
+      "conditional_hp_boost": "register_conditional_hp_boost",
+      "conditional_search_extra": "conditional_search",
+      "conditional_status": "conditional_status",
+      "conditional_zero_retreat": "register_conditional_zero_retreat",
+      "damage": "deal_damage",
+      "damage_and_self_heal": "deal_damage_then_heal",
+      "damage_counter_self": "place_damage_counters",
+      "damage_per_discard_psychic": "deal_damage",
+      "damage_per_energy": "deal_damage",
+      "damage_per_evolved": "deal_damage",
+      "damage_per_hand_size": "deal_damage",
+      "damage_per_self_damage": "deal_damage",
+      "damage_per_self_energy": "deal_damage",
+      "damage_per_self_energy_type": "deal_damage",
+      "damage_plus_bench": "deal_damage",
+      "damage_self_penalty": "deal_damage",
+      "dazzling_beam": "apply_dazzling_beam",
+      "discard": "discard_cards",
+      "discard_draw": "discard_then_draw_cards",
+      "discard_fighting_energy_damage": "discard_energy_then_damage",
+      "discard_hand_conditional_bonus": "discard_hand_then_damage",
+      "discard_then_draw": "discard_then_draw_cards",
+      "draw": "draw_cards",
+      "draw_and_attach_energy": "draw_and_attach_energy",
+      "draw_until": "draw_until",
+      "draw_until_more": "draw_until_more_than_opponent",
+      "energy_attach": "attach_energy",
+      "energy_discard": "discard_energy",
+      "energy_relocate": "relocate_energy",
+      "evolve_skip_stage": "evolve_skip_stage",
+      "hand_to_bottom_draw": "hand_to_bottom_then_draw",
+      "heal": "heal_damage",
+      "heal_all": "heal_all",
+      "houb": "hand_to_bottom_draw_until",
+      "judge": "judge",
+      "look_top_attach_energy": "look_top_attach_energy",
+      "look_top_deck": "look_top_deck",
+      "mill_and_damage_per_energy": "mill_then_damage",
+      "piercing_marker": "set_attack_flags",
+      "place_counters_and_self_ko": "place_counters_then_self_ko",
+      "potion_heal": "choose_heal_damage",
+      "prevent_all": "prevent_all",
+      "prevent_damage": "prevent_damage",
+      "prevent_effects": "prevent_effects",
+      "reactive_thorns": "register_reactive_thorns",
+      "return_to_hand": "return_to_hand",
+      "search": "search_cards",
+      "search_any_and_switch": "search_any_and_switch",
+      "self_attack_lock": "apply_self_attack_lock",
+      "shuffle_draw": "shuffle_then_draw_cards",
+      "shuffle_from_discard": "shuffle_from_discard_to_deck",
+      "status": "apply_status",
+      "switch_opponent": "switch_pokemon",
+      "switch_self": "switch_pokemon",
+      "tool": "register_tool_modifier",
+      "tool_exp_share": "register_tool_exp_share",
+      "trekking_shoes": "trekking_shoes",
+      "zinnia_resolve": "zinnia_resolve"
+    },
+    "non_release_registered_effect_types": [
+      "damage"
+    ],
+    "public_player_actions": [
+      "ATTACH_ENERGY",
+      "DECLARE_ATTACK",
+      "END_TURN",
+      "EVOLVE",
+      "PLAY_BASIC",
+      "PLAY_TRAINER",
+      "RETREAT",
+      "USE_ABILITY",
+      "USE_STADIUM"
+    ],
+    "registered_effect_types": [
+      "ability_discard_revive",
+      "any_pokemon_damage",
+      "apply_outgoing_damage_reduction",
+      "arven",
+      "attach_from_discard",
+      "attack_damage_formula",
+      "attack_fail",
+      "attack_lock_basic",
+      "aura_damage_boost",
+      "aura_damage_reduction",
+      "bench_damage",
+      "clara",
+      "coin_flip",
+      "coin_flip_double_ko",
+      "coin_flip_energy_discard",
+      "coin_flip_triple",
+      "coin_flip_until_tails",
+      "conditional",
+      "conditional_damage_bonus",
+      "conditional_damage_heal",
+      "conditional_hp_boost",
+      "conditional_search_extra",
+      "conditional_status",
+      "conditional_zero_retreat",
+      "damage",
+      "damage_and_self_heal",
+      "damage_counter_self",
+      "damage_per_discard_psychic",
+      "damage_per_energy",
+      "damage_per_evolved",
+      "damage_per_hand_size",
+      "damage_per_self_damage",
+      "damage_per_self_energy",
+      "damage_per_self_energy_type",
+      "damage_plus_bench",
+      "damage_self_penalty",
+      "dazzling_beam",
+      "discard",
+      "discard_draw",
+      "discard_fighting_energy_damage",
+      "discard_hand_conditional_bonus",
+      "discard_then_draw",
+      "draw",
+      "draw_and_attach_energy",
+      "draw_until",
+      "draw_until_more",
+      "energy_attach",
+      "energy_discard",
+      "energy_relocate",
+      "evolve_skip_stage",
+      "hand_to_bottom_draw",
+      "heal",
+      "heal_all",
+      "houb",
+      "judge",
+      "look_top_attach_energy",
+      "look_top_deck",
+      "mill_and_damage_per_energy",
+      "piercing_marker",
+      "place_counters_and_self_ko",
+      "potion_heal",
+      "prevent_all",
+      "prevent_damage",
+      "prevent_effects",
+      "reactive_thorns",
+      "return_to_hand",
+      "search",
+      "search_any_and_switch",
+      "self_attack_lock",
+      "shuffle_draw",
+      "shuffle_from_discard",
+      "status",
+      "switch_opponent",
+      "switch_self",
+      "tool",
+      "tool_exp_share",
+      "trekking_shoes",
+      "zinnia_resolve"
+    ],
+    "registered_vm_ops": [
+      "apply_attack_lock_basic",
+      "apply_dazzling_beam",
+      "apply_outgoing_damage_reduction",
+      "apply_self_attack_lock",
+      "apply_status",
+      "attach_energy",
+      "attach_energy_from_discard",
+      "choose_damage_target",
+      "choose_heal_damage",
+      "conditional",
+      "conditional_damage",
+      "conditional_damage_then_heal",
+      "conditional_search",
+      "conditional_status",
+      "deal_bench_damage",
+      "deal_damage",
+      "deal_damage_per_discard_psychic",
+      "deal_damage_per_energy",
+      "deal_damage_per_evolved",
+      "deal_damage_per_hand_size",
+      "deal_damage_per_self_damage",
+      "deal_damage_per_self_energy",
+      "deal_damage_per_self_energy_type",
+      "deal_damage_plus_bench",
+      "deal_damage_then_heal",
+      "deal_damage_with_self_penalty",
+      "discard_cards",
+      "discard_energy",
+      "discard_energy_then_damage",
+      "discard_hand_then_damage",
+      "discard_then_draw_cards",
+      "discard_then_revive",
+      "draw_and_attach_energy",
+      "draw_cards",
+      "draw_until",
+      "draw_until_more_than_opponent",
+      "evolve_skip_stage",
+      "fail_attack",
+      "flip_coin",
+      "flip_coin_repeat_damage",
+      "flip_coin_then_discard_energy",
+      "flip_coin_then_ko",
+      "flip_until_tails",
+      "hand_to_bottom_draw_until",
+      "hand_to_bottom_then_draw",
+      "heal_all",
+      "heal_damage",
+      "judge",
+      "look_top_attach_energy",
+      "look_top_deck",
+      "mill_then_damage",
+      "place_counters_then_self_ko",
+      "place_damage_counters",
+      "prevent_all",
+      "prevent_damage",
+      "prevent_effects",
+      "recover_clara",
+      "register_aura_damage_boost",
+      "register_aura_damage_reduction",
+      "register_conditional_hp_boost",
+      "register_conditional_zero_retreat",
+      "register_reactive_thorns",
+      "register_tool_exp_share",
+      "register_tool_modifier",
+      "relocate_energy",
+      "return_to_hand",
+      "search_any_and_switch",
+      "search_cards",
+      "search_item_and_tool",
+      "set_attack_damage_formula",
+      "set_attack_flags",
+      "shuffle_from_discard_to_deck",
+      "shuffle_then_draw_cards",
+      "switch_pokemon",
+      "trekking_shoes",
+      "trigger_draw_cards",
+      "trigger_move_basic_energy",
+      "trigger_place_damage_counters",
+      "trigger_switch_with_active",
+      "zinnia_resolve"
+    ],
+    "release_effect_types": [
+      "ability_discard_revive",
+      "any_pokemon_damage",
+      "apply_outgoing_damage_reduction",
+      "arven",
+      "attach_from_discard",
+      "attack_damage_formula",
+      "attack_fail",
+      "attack_lock_basic",
+      "aura_damage_boost",
+      "aura_damage_reduction",
+      "bench_damage",
+      "clara",
+      "coin_flip",
+      "coin_flip_double_ko",
+      "coin_flip_energy_discard",
+      "coin_flip_triple",
+      "coin_flip_until_tails",
+      "conditional",
+      "conditional_damage_bonus",
+      "conditional_damage_heal",
+      "conditional_hp_boost",
+      "conditional_search_extra",
+      "conditional_status",
+      "conditional_zero_retreat",
+      "damage_and_self_heal",
+      "damage_counter_self",
+      "damage_per_discard_psychic",
+      "damage_per_energy",
+      "damage_per_evolved",
+      "damage_per_hand_size",
+      "damage_per_self_damage",
+      "damage_per_self_energy",
+      "damage_per_self_energy_type",
+      "damage_plus_bench",
+      "damage_self_penalty",
+      "dazzling_beam",
+      "discard",
+      "discard_draw",
+      "discard_fighting_energy_damage",
+      "discard_hand_conditional_bonus",
+      "discard_then_draw",
+      "draw",
+      "draw_and_attach_energy",
+      "draw_until",
+      "draw_until_more",
+      "energy_attach",
+      "energy_discard",
+      "energy_relocate",
+      "evolve_skip_stage",
+      "hand_to_bottom_draw",
+      "heal",
+      "heal_all",
+      "houb",
+      "judge",
+      "look_top_attach_energy",
+      "look_top_deck",
+      "mill_and_damage_per_energy",
+      "piercing_marker",
+      "place_counters_and_self_ko",
+      "potion_heal",
+      "prevent_all",
+      "prevent_damage",
+      "prevent_effects",
+      "reactive_thorns",
+      "return_to_hand",
+      "search",
+      "search_any_and_switch",
+      "self_attack_lock",
+      "shuffle_draw",
+      "shuffle_from_discard",
+      "status",
+      "switch_opponent",
+      "switch_self",
+      "tool",
+      "tool_exp_share",
+      "trekking_shoes",
+      "zinnia_resolve"
+    ],
+    "vm_op_mappings": {
+      "apply_attack_lock_basic": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "attack_lock_basic"
+        ]
+      },
+      "apply_dazzling_beam": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "dazzling_beam"
+        ]
+      },
+      "apply_outgoing_damage_reduction": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "apply_outgoing_damage_reduction"
+        ]
+      },
+      "apply_self_attack_lock": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "self_attack_lock"
+        ]
+      },
+      "apply_status": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "status"
+        ]
+      },
+      "attach_energy": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "energy_attach"
+        ]
+      },
+      "attach_energy_from_discard": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "attach_from_discard"
+        ]
+      },
+      "choose_damage_target": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "any_pokemon_damage"
+        ]
+      },
+      "choose_heal_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "potion_heal"
+        ]
+      },
+      "conditional": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "conditional"
+        ]
+      },
+      "conditional_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "conditional_damage_bonus"
+        ]
+      },
+      "conditional_damage_then_heal": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "conditional_damage_heal"
+        ]
+      },
+      "conditional_search": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "conditional_search_extra"
+        ]
+      },
+      "conditional_status": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "conditional_status"
+        ]
+      },
+      "deal_bench_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "bench_damage"
+        ]
+      },
+      "deal_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "attack_damage_formula",
+          "damage",
+          "damage_per_discard_psychic",
+          "damage_per_energy",
+          "damage_per_evolved",
+          "damage_per_hand_size",
+          "damage_per_self_damage",
+          "damage_per_self_energy",
+          "damage_per_self_energy_type",
+          "damage_plus_bench",
+          "damage_self_penalty"
+        ]
+      },
+      "deal_damage_per_discard_psychic": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_per_energy": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_per_evolved": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_per_hand_size": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_per_self_damage": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_per_self_energy": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_per_self_energy_type": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_plus_bench": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "deal_damage_then_heal": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "damage_and_self_heal"
+        ]
+      },
+      "deal_damage_with_self_penalty": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "discard_cards": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "discard"
+        ]
+      },
+      "discard_energy": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "energy_discard"
+        ]
+      },
+      "discard_energy_then_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "discard_fighting_energy_damage"
+        ]
+      },
+      "discard_hand_then_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "discard_hand_conditional_bonus"
+        ]
+      },
+      "discard_then_draw_cards": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "discard_draw",
+          "discard_then_draw"
+        ]
+      },
+      "discard_then_revive": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "ability_discard_revive"
+        ]
+      },
+      "draw_and_attach_energy": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "draw_and_attach_energy"
+        ]
+      },
+      "draw_cards": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "draw"
+        ]
+      },
+      "draw_until": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "draw_until"
+        ]
+      },
+      "draw_until_more_than_opponent": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "draw_until_more"
+        ]
+      },
+      "evolve_skip_stage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "evolve_skip_stage"
+        ]
+      },
+      "fail_attack": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "attack_fail"
+        ]
+      },
+      "flip_coin": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "coin_flip"
+        ]
+      },
+      "flip_coin_repeat_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "coin_flip_triple"
+        ]
+      },
+      "flip_coin_then_discard_energy": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "coin_flip_energy_discard"
+        ]
+      },
+      "flip_coin_then_ko": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "coin_flip_double_ko"
+        ]
+      },
+      "flip_until_tails": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "coin_flip_until_tails"
+        ]
+      },
+      "hand_to_bottom_draw_until": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "houb"
+        ]
+      },
+      "hand_to_bottom_then_draw": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "hand_to_bottom_draw"
+        ]
+      },
+      "heal_all": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "heal_all"
+        ]
+      },
+      "heal_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "heal"
+        ]
+      },
+      "judge": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "judge"
+        ]
+      },
+      "look_top_attach_energy": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "look_top_attach_energy"
+        ]
+      },
+      "look_top_deck": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "look_top_deck"
+        ]
+      },
+      "mill_then_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "mill_and_damage_per_energy"
+        ]
+      },
+      "place_counters_then_self_ko": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "place_counters_and_self_ko"
+        ]
+      },
+      "place_damage_counters": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "damage_counter_self"
+        ]
+      },
+      "prevent_all": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "prevent_all"
+        ]
+      },
+      "prevent_damage": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "prevent_damage"
+        ]
+      },
+      "prevent_effects": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "prevent_effects"
+        ]
+      },
+      "recover_clara": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "clara"
+        ]
+      },
+      "register_aura_damage_boost": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "aura_damage_boost"
+        ]
+      },
+      "register_aura_damage_reduction": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "aura_damage_reduction"
+        ]
+      },
+      "register_conditional_hp_boost": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "conditional_hp_boost"
+        ]
+      },
+      "register_conditional_zero_retreat": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "conditional_zero_retreat"
+        ]
+      },
+      "register_reactive_thorns": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "reactive_thorns"
+        ]
+      },
+      "register_tool_exp_share": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "tool_exp_share"
+        ]
+      },
+      "register_tool_modifier": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "tool"
+        ]
+      },
+      "relocate_energy": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "energy_relocate"
+        ]
+      },
+      "return_to_hand": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "return_to_hand"
+        ]
+      },
+      "search_any_and_switch": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "search_any_and_switch"
+        ]
+      },
+      "search_cards": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "search"
+        ]
+      },
+      "search_item_and_tool": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "arven"
+        ]
+      },
+      "set_attack_damage_formula": {
+        "classification": "compatibility_formula_op",
+        "effect_types": []
+      },
+      "set_attack_flags": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "piercing_marker"
+        ]
+      },
+      "shuffle_from_discard_to_deck": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "shuffle_from_discard"
+        ]
+      },
+      "shuffle_then_draw_cards": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "shuffle_draw"
+        ]
+      },
+      "switch_pokemon": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "switch_opponent",
+          "switch_self"
+        ]
+      },
+      "trekking_shoes": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "trekking_shoes"
+        ]
+      },
+      "trigger_draw_cards": {
+        "classification": "trigger_op",
+        "effect_types": []
+      },
+      "trigger_move_basic_energy": {
+        "classification": "trigger_op",
+        "effect_types": []
+      },
+      "trigger_place_damage_counters": {
+        "classification": "trigger_op",
+        "effect_types": []
+      },
+      "trigger_switch_with_active": {
+        "classification": "trigger_op",
+        "effect_types": []
+      },
+      "zinnia_resolve": {
+        "classification": "effect_compiler",
+        "effect_types": [
+          "zinnia_resolve"
+        ]
+      }
+    }
+  },
+  "semantic_trace_inventory": {
+    "case_count": 23,
+    "case_semantics": {
+      "ability_damage_draw": {
+        "effect_types": [
+          "damage_counter_self",
+          "draw"
+        ],
+        "features": [
+          "ability"
+        ],
+        "vm_ops": [
+          "place_damage_counters",
+          "draw_cards"
+        ]
+      },
+      "activatable_stadium": {
+        "effect_types": [],
+        "features": [
+          "synthetic_stadium_fixture",
+          "stadium_activation"
+        ],
+        "vm_ops": [
+          "draw_cards"
+        ]
+      },
+      "basic_attach_attack": {
+        "effect_types": [
+          "energy_discard"
+        ],
+        "features": [
+          "basic_placement",
+          "manual_energy_attachment",
+          "base_attack"
+        ],
+        "vm_ops": [
+          "discard_energy"
+        ]
+      },
+      "conditional_damage_heal_attack": {
+        "effect_types": [
+          "conditional_damage_heal"
+        ],
+        "features": [
+          "healed_this_turn_condition",
+          "conditional_damage"
+        ],
+        "vm_ops": [
+          "conditional_damage_then_heal"
+        ]
+      },
+      "conditional_status_attack": {
+        "effect_types": [
+          "conditional_status"
+        ],
+        "features": [
+          "ko_by_attack_condition",
+          "status_application"
+        ],
+        "vm_ops": [
+          "conditional_status"
+        ]
+      },
+      "confused_attack_tails": {
+        "effect_types": [],
+        "features": [
+          "portable_coin_flip",
+          "confused_attack_failure",
+          "attack_turn_finish"
+        ],
+        "vm_ops": []
+      },
+      "damage_then_self_heal_attack": {
+        "effect_types": [
+          "damage_and_self_heal"
+        ],
+        "features": [
+          "attack_effect_damage",
+          "self_heal",
+          "attack_turn_finish"
+        ],
+        "vm_ops": [
+          "deal_damage_then_heal"
+        ]
+      },
+      "double_turbo_retreat": {
+        "effect_types": [],
+        "features": [
+          "special_energy_retreat",
+          "retreat"
+        ],
+        "vm_ops": []
+      },
+      "end_turn": {
+        "effect_types": [],
+        "features": [
+          "end_turn",
+          "next_turn_draw"
+        ],
+        "vm_ops": []
+      },
+      "evolution_preserves_attachments": {
+        "effect_types": [],
+        "features": [
+          "evolution"
+        ],
+        "vm_ops": []
+      },
+      "formula_damage_attack": {
+        "effect_types": [
+          "attack_damage_formula"
+        ],
+        "features": [
+          "formula_ast",
+          "self_damage_counter_formula",
+          "attack_turn_finish"
+        ],
+        "vm_ops": [
+          "deal_damage"
+        ]
+      },
+      "heal_all_ability": {
+        "effect_types": [
+          "heal_all"
+        ],
+        "features": [
+          "ability",
+          "multi_pokemon_heal"
+        ],
+        "vm_ops": [
+          "heal_all"
+        ]
+      },
+      "heal_supporter": {
+        "effect_types": [
+          "heal"
+        ],
+        "features": [
+          "supporter",
+          "direct_heal"
+        ],
+        "vm_ops": [
+          "heal_damage"
+        ]
+      },
+      "ko_then_promote": {
+        "effect_types": [
+          "energy_discard"
+        ],
+        "features": [
+          "knockout",
+          "prize",
+          "promotion",
+          "attack_turn_finish"
+        ],
+        "vm_ops": [
+          "discard_energy"
+        ]
+      },
+      "pending_attack_choice_cancel": {
+        "effect_types": [
+          "energy_attach"
+        ],
+        "features": [
+          "pending_choice",
+          "continuation_cancelled",
+          "deck_shuffle"
+        ],
+        "vm_ops": [
+          "attach_energy"
+        ]
+      },
+      "pending_attack_choice_continuation": {
+        "effect_types": [
+          "energy_attach"
+        ],
+        "features": [
+          "pending_choice",
+          "continuation_selected"
+        ],
+        "vm_ops": [
+          "attach_energy"
+        ]
+      },
+      "potion_heal_choice": {
+        "effect_types": [
+          "potion_heal"
+        ],
+        "features": [
+          "pending_choice",
+          "bench_target",
+          "item_heal"
+        ],
+        "vm_ops": [
+          "choose_heal_damage"
+        ]
+      },
+      "prevent_damage_and_lock_attack": {
+        "effect_types": [
+          "prevent_damage",
+          "self_attack_lock"
+        ],
+        "features": [
+          "damage_prevention_marker",
+          "self_attack_lock_marker"
+        ],
+        "vm_ops": [
+          "prevent_damage",
+          "apply_self_attack_lock"
+        ]
+      },
+      "prevent_effects_attack": {
+        "effect_types": [
+          "prevent_effects"
+        ],
+        "features": [
+          "effect_prevention_marker",
+          "attack_turn_finish"
+        ],
+        "vm_ops": [
+          "prevent_effects"
+        ]
+      },
+      "search_energy_attack": {
+        "effect_types": [
+          "search"
+        ],
+        "features": [
+          "pending_choice",
+          "deck_search",
+          "deck_shuffle"
+        ],
+        "vm_ops": [
+          "search_cards"
+        ]
+      },
+      "shuffle_draw_supporter": {
+        "effect_types": [
+          "shuffle_draw"
+        ],
+        "features": [
+          "supporter",
+          "portable_deck_shuffle",
+          "draw_after_shuffle"
+        ],
+        "vm_ops": [
+          "shuffle_then_draw_cards"
+        ]
+      },
+      "supporter_draw": {
+        "effect_types": [
+          "draw"
+        ],
+        "features": [
+          "supporter"
+        ],
+        "vm_ops": [
+          "draw_cards"
+        ]
+      },
+      "tool_attachment": {
+        "effect_types": [],
+        "features": [
+          "tool_attachment"
+        ],
+        "vm_ops": []
+      }
+    },
+    "explicitly_not_claimed": [
+      "all_release_effect_semantics",
+      "all_registered_vm_op_semantics"
+    ],
+    "known_cross_runtime_semantic_gaps": [
+      {
+        "effect_types": [
+          "coin_flip",
+          "coin_flip_double_ko",
+          "coin_flip_energy_discard",
+          "coin_flip_triple",
+          "coin_flip_until_tails"
+        ],
+        "family": "coin",
+        "reason": "Godot consumes portable RNG before exposing a zero-option result request; Python still exposes heads/tails as selectable options.",
+        "vm_ops": [
+          "flip_coin",
+          "flip_coin_repeat_damage",
+          "flip_coin_then_discard_energy",
+          "flip_coin_then_ko",
+          "flip_until_tails"
+        ]
+      }
+    ],
+    "registered_vm_ops_executed": [
+      "apply_self_attack_lock",
+      "attach_energy",
+      "choose_heal_damage",
+      "conditional_damage_then_heal",
+      "conditional_status",
+      "deal_damage",
+      "deal_damage_then_heal",
+      "discard_energy",
+      "draw_cards",
+      "heal_all",
+      "heal_damage",
+      "place_damage_counters",
+      "prevent_damage",
+      "prevent_effects",
+      "search_cards",
+      "shuffle_then_draw_cards"
+    ],
+    "registered_vm_ops_not_executed": [
+      "apply_attack_lock_basic",
+      "apply_dazzling_beam",
+      "apply_outgoing_damage_reduction",
+      "apply_status",
+      "attach_energy_from_discard",
+      "choose_damage_target",
+      "conditional",
+      "conditional_damage",
+      "conditional_search",
+      "deal_bench_damage",
+      "deal_damage_per_discard_psychic",
+      "deal_damage_per_energy",
+      "deal_damage_per_evolved",
+      "deal_damage_per_hand_size",
+      "deal_damage_per_self_damage",
+      "deal_damage_per_self_energy",
+      "deal_damage_per_self_energy_type",
+      "deal_damage_plus_bench",
+      "deal_damage_with_self_penalty",
+      "discard_cards",
+      "discard_energy_then_damage",
+      "discard_hand_then_damage",
+      "discard_then_draw_cards",
+      "discard_then_revive",
+      "draw_and_attach_energy",
+      "draw_until",
+      "draw_until_more_than_opponent",
+      "evolve_skip_stage",
+      "fail_attack",
+      "flip_coin",
+      "flip_coin_repeat_damage",
+      "flip_coin_then_discard_energy",
+      "flip_coin_then_ko",
+      "flip_until_tails",
+      "hand_to_bottom_draw_until",
+      "hand_to_bottom_then_draw",
+      "judge",
+      "look_top_attach_energy",
+      "look_top_deck",
+      "mill_then_damage",
+      "place_counters_then_self_ko",
+      "prevent_all",
+      "recover_clara",
+      "register_aura_damage_boost",
+      "register_aura_damage_reduction",
+      "register_conditional_hp_boost",
+      "register_conditional_zero_retreat",
+      "register_reactive_thorns",
+      "register_tool_exp_share",
+      "register_tool_modifier",
+      "relocate_energy",
+      "return_to_hand",
+      "search_any_and_switch",
+      "search_item_and_tool",
+      "set_attack_damage_formula",
+      "set_attack_flags",
+      "shuffle_from_discard_to_deck",
+      "switch_pokemon",
+      "trekking_shoes",
+      "trigger_draw_cards",
+      "trigger_move_basic_energy",
+      "trigger_place_damage_counters",
+      "trigger_switch_with_active",
+      "zinnia_resolve"
+    ],
+    "release_effect_types_executed": [
+      "attack_damage_formula",
+      "conditional_damage_heal",
+      "conditional_status",
+      "damage_and_self_heal",
+      "damage_counter_self",
+      "draw",
+      "energy_attach",
+      "energy_discard",
+      "heal",
+      "heal_all",
+      "potion_heal",
+      "prevent_damage",
+      "prevent_effects",
+      "search",
+      "self_attack_lock",
+      "shuffle_draw"
+    ],
+    "release_effect_types_not_executed": [
+      "ability_discard_revive",
+      "any_pokemon_damage",
+      "apply_outgoing_damage_reduction",
+      "arven",
+      "attach_from_discard",
+      "attack_fail",
+      "attack_lock_basic",
+      "aura_damage_boost",
+      "aura_damage_reduction",
+      "bench_damage",
+      "clara",
+      "coin_flip",
+      "coin_flip_double_ko",
+      "coin_flip_energy_discard",
+      "coin_flip_triple",
+      "coin_flip_until_tails",
+      "conditional",
+      "conditional_damage_bonus",
+      "conditional_hp_boost",
+      "conditional_search_extra",
+      "conditional_zero_retreat",
+      "damage_per_discard_psychic",
+      "damage_per_energy",
+      "damage_per_evolved",
+      "damage_per_hand_size",
+      "damage_per_self_damage",
+      "damage_per_self_energy",
+      "damage_per_self_energy_type",
+      "damage_plus_bench",
+      "damage_self_penalty",
+      "dazzling_beam",
+      "discard",
+      "discard_draw",
+      "discard_fighting_energy_damage",
+      "discard_hand_conditional_bonus",
+      "discard_then_draw",
+      "draw_and_attach_energy",
+      "draw_until",
+      "draw_until_more",
+      "energy_relocate",
+      "evolve_skip_stage",
+      "hand_to_bottom_draw",
+      "houb",
+      "judge",
+      "look_top_attach_energy",
+      "look_top_deck",
+      "mill_and_damage_per_energy",
+      "piercing_marker",
+      "place_counters_and_self_ko",
+      "prevent_all",
+      "reactive_thorns",
+      "return_to_hand",
+      "search_any_and_switch",
+      "shuffle_from_discard",
+      "status",
+      "switch_opponent",
+      "switch_self",
+      "tool",
+      "tool_exp_share",
+      "trekking_shoes",
+      "zinnia_resolve"
+    ],
+    "transaction_step_count": 30
+  }
+}

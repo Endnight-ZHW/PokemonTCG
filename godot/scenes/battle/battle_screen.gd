@@ -25,7 +25,7 @@ var state_ref: GameState:
 	set(value):
 		if table:
 			table.state_ref = value
-var catalog := CardCatalog.new()
+var catalog: CardCatalog = CardCatalog.shared()
 var view_player := 0
 var selected_entity_key := ""
 var action_rows: Array[Dictionary] = []

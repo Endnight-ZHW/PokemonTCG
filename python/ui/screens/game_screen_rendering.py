@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pygame
 
-from config import SCREEN_WIDTH, SCREEN_HEIGHT
+from config import SCREEN_WIDTH
 from engine.enums import TurnPhase
 from ui.components.action_menu import draw_ability_menu, draw_action_buttons, draw_attack_menu
 from ui.components.board_renderer import (
@@ -45,7 +45,6 @@ class GameScreenRenderingMixin:
         self._draw_player_deck(surface)
         self._draw_player_discard(surface)
         self._draw_divider(surface)
-        self._draw_connection_status(surface)
         self._draw_quit_buttons(surface)
         self._draw_stadium(surface)
         self._draw_setup_status(surface)
@@ -57,12 +56,6 @@ class GameScreenRenderingMixin:
 
         self.card_fly.draw(surface)
         self.particles.draw(surface)
-
-        if self._remote_update_fade > 0:
-            alpha = int(self._remote_update_fade / 0.15 * 80)
-            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, alpha))
-            surface.blit(overlay, (0, 0))
 
         self.coin_flip.draw(surface, self.font_info)
 

@@ -125,9 +125,6 @@ class TurnManager:
         **params,
     ) -> ActionResult:
         """Validate and execute a player action."""
-        if getattr(self.state, "is_network_view", False):
-            return ActionResult(False, "客户端视图状态不能执行规则动作。")
-
         # During non-setup phases, only the active player may act
         if self.state.phase != TurnPhase.SETUP:
             if player_idx != self.state.active_player_idx:

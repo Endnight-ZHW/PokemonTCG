@@ -16,6 +16,26 @@ WebSocket Relay。Python 仅用于本地调试、规则验证、训练评估以�
   收紧 payload/状态边界、发送 sequence 和 Relay 房间并发处理。
 - LAN 与 Relay 明确允许双方选择相同牌组；双方状态、牌库洗牌和隐藏信息仍相互隔离。
 - reduced-motion 与画质设置会立即作用于标题、胜利演出和牌桌表现层。
+- Python 旧 v2 客户端、Lobby 和网络 UI 分支已物理删除；本地 Pygame 通过
+  `DebugMatchSession` 调试，并可选择 manifest 中全部 10 套牌组。
+- Pending continuation 已可序列化，JSON snapshot、AI clone 和事务回滚不再依赖
+  不可恢复的内存 callback；未知 continuation 会安全拒绝。
+- Python→Godot fixture v3 覆盖全部 9 个公开动作，并用 coverage manifest 对新增
+  effect/VM op fail-closed；当前为 23 个场景、30 个事务、16/77 effect 与 16/80 op，
+  未覆盖项及 coin 语义差异均显式记录。
+- GPU `DL` 环境固定为 Python 3.11.15、NumPy 1.26.4、Torch 2.4.1+cu118，新增
+  全依赖锁和 10 模型 CUDA load+infer 验收脚本。
+- Snapshot、事务、AI clone 与 golden exporter 统一从 versioned canonical state 产生；
+  Pygame 输入路由、Deep AI 评估统计及 Godot 牌桌布局已拆为独立可测试模块。
+- `CardCatalog.shared()` 成为发布运行时的单一深只读仓库；全部派生缓存预热冻结，
+  UI、引擎、AI 和网络会话支持显式注入，并通过多线程只读合同。
+- Relay v3 控制握手限制为 1 KiB、同来源 60 次/秒；并发建房、客位竞争、超大帧和
+  跨连接限流均有定向回归。
+- PT、sidecar、ONNX 与 runtime manifest 使用持久 journal/backup 的统一提升事务；
+  中断可恢复，真正 commit 前强制 Windows 导出推理与原生 ARM64 设备推理。
+- Android 发布与专用 smoke APK 会逐哈希比较 17 个原生/模型/manifest 输入；
+  x86 模拟器的 ARM 转译不会计为 ARM64 通过。Nightly 已覆盖完整标准回归、原生重建、
+  Windows/Android 构建、打包与发布校验。
 
 ## 发布合同
 
@@ -32,3 +52,5 @@ WebSocket Relay。Python 仅用于本地调试、规则验证、训练评估以�
 - 不支持 Python 客户端联机或 Python 可执行发布包。
 - 不支持旧 protocol v2 客户端、房主迁移、公网竞技反作弊和模型量化。
 - Android 正式商店签名与目标真机矩阵仍需在发布环境中执行。
+- 本轮不重新训练或改写模型权重；Python 模型 schema 保持 v2。当前本机只有 x86_64
+  转译模拟器，因此原生 ARM64 的严格门禁已实现，但仍需连接合格设备实际执行。

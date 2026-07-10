@@ -27,7 +27,7 @@ const MODE_NETWORK := "network"
 const MODAL_SHADE_ALPHA := 0.86
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
 
-var catalog := CardCatalog.new()
+var catalog: CardCatalog = CardDatabase.catalog
 var engine := GameEngine.new(catalog)
 var state: GameState
 var rng := PortableRandomSource.new(1)
@@ -47,7 +47,7 @@ var active_ai_request_id := ""
 var ai_coordinator := AICoordinator.new()
 var ai_inference: Variant
 var deep_runtime := DeepAIRuntime.new()
-var network_controller := NetworkMatchController.new()
+var network_controller := NetworkMatchController.new(catalog)
 var network_legal_actions: Array[GameAction] = []
 var network_choice_request: ChoiceRequest
 var network_kind := "lan"
@@ -111,112 +111,52 @@ var _toast_generation := 0
 func _ready() -> void:
 	set_process(false)
 	initialize_ui()
-	if "--phase4-ai-smoke" in OS.get_cmdline_user_args():
+	if ExportSmokeRunner.PHASE_FOUR_FLAG in OS.get_cmdline_user_args():
 		_run_phase_four_export_smoke()
-	elif "--phase5-network-smoke" in OS.get_cmdline_user_args():
+	elif ExportSmokeRunner.PHASE_FIVE_FLAG in OS.get_cmdline_user_args():
 		_run_phase_five_export_smoke()
-	elif "--phase6-release-smoke" in OS.get_cmdline_user_args():
+	elif ExportSmokeRunner.PHASE_SIX_FLAG in OS.get_cmdline_user_args():
 		_run_phase_six_export_smoke()
 
 
 func _run_phase_four_export_smoke() -> void:
-	var loaded := deep_runtime.load_for_deck("fire")
-	if not loaded:
-		push_error("PHASE4_EXPORT_AI_FAILED %s" % deep_runtime.last_error)
-		get_tree().quit(2)
-		return
-	var backend: Variant = deep_runtime.get_backend()
-	print(
-		"PHASE4_EXPORT_AI_OK provider=%s runtime=%s"
-		% [
-			backend.call("get_execution_provider"),
-			backend.call("get_runtime_version"),
-		]
-	)
-	deep_runtime.unload()
-	get_tree().quit()
+	_run_export_smoke(ExportSmokeRunner.PHASE_FOUR_FLAG)
 
 
 func _run_phase_five_export_smoke() -> void:
-	var probe := ProtocolV3.envelope(ProtocolV3.PING, "smoke", 0, 1)
-	var validation := ProtocolV3.validate(probe, "smoke", 0, 0)
-	if not bool(validation.get("ok", false)):
-		push_error("PHASE5_EXPORT_NETWORK_FAILED")
-		get_tree().quit(3)
-		return
-	print("PHASE5_EXPORT_NETWORK_OK protocol=3 transports=enet,websocket")
-	get_tree().quit()
+	_run_export_smoke(ExportSmokeRunner.PHASE_FIVE_FLAG)
 
 
 func _run_phase_six_export_smoke() -> void:
-	var settings_ok := AppSettings.card_cache_size >= 8
-	var license_ok := FileAccess.file_exists("res://third_party/onnxruntime/LICENSE")
-	CardTextureCache.clear()
-	var cache_ok := int(CardTextureCache.stats().get("entries", -1)) == 0
-	var release_decks: Array[String] = []
-	release_decks.assign(CardDatabase.release_manifest.get("release_decks", []))
-	var model_count_ok := (
-		release_decks.size()
-		== int(CardDatabase.release_manifest.get("model_count", -1))
+	_run_export_smoke(ExportSmokeRunner.PHASE_SIX_FLAG)
+
+
+func _run_export_smoke(flag: String) -> void:
+	var smoke_result := ExportSmokeRunner.new().run_if_requested(
+		PackedStringArray([flag]),
+		deep_runtime,
+		_export_smoke_services(),
 	)
-	var inference_ok := model_count_ok and not release_decks.is_empty()
-	var state_numeric := PackedFloat32Array()
-	state_numeric.resize(int(deep_runtime.manifest.get("state_numeric_size", 0)))
-	var state_cards := PackedInt64Array()
-	state_cards.resize(int(deep_runtime.manifest.get("state_card_slots", 0)))
-	var action_numeric := PackedFloat32Array()
-	action_numeric.resize(int(deep_runtime.manifest.get("action_numeric_size", 0)))
-	var action_cards := PackedInt64Array([0])
-	var choice_numeric := PackedFloat32Array()
-	choice_numeric.resize(int(deep_runtime.manifest.get("action_numeric_size", 0)))
-	var choice_cards := PackedInt64Array([0])
-	if (
-		state_numeric.is_empty()
-		or state_cards.is_empty()
-		or action_numeric.is_empty()
-		or choice_numeric.is_empty()
-	):
-		inference_ok = false
-	for deck_key in release_decks:
-		if not inference_ok or not deep_runtime.load_for_deck(deck_key):
-			inference_ok = false
-			break
-		var backend: Variant = deep_runtime.get_backend()
-		if backend == null:
-			inference_ok = false
-			break
-		var result: Dictionary = backend.call(
-			"infer",
-			state_numeric,
-			state_cards,
-			action_numeric,
-			action_cards,
-			choice_numeric,
-			choice_cards,
-		)
-		var finite := is_finite(float(result.get("value", NAN)))
-		for output_name in ["action_logits", "choice_logits"]:
-			for value in result.get(output_name, []):
-				finite = finite and is_finite(float(value))
-		if (
-			not bool(result.get("success", false))
-			or result.get("action_logits", []).size() != 1
-			or result.get("choice_logits", []).size() != 1
-			or not finite
-		):
-			inference_ok = false
-			break
-		deep_runtime.unload()
-	deep_runtime.unload()
-	if not settings_ok or not license_ok or not cache_ok or not inference_ok:
-		push_error("PHASE6_EXPORT_RELEASE_FAILED")
-		get_tree().quit(4)
-		return
-	print(
-		"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 licenses=1 models=%d"
-		% [AppState.APP_VERSION, release_decks.size()]
-	)
-	get_tree().quit()
+	if bool(smoke_result.get("handled", false)):
+		_finish_export_smoke(smoke_result)
+
+
+func _export_smoke_services() -> Dictionary:
+	return {
+		"app_version": AppState.APP_VERSION,
+		"card_cache_size": AppSettings.card_cache_size,
+		"release_manifest": CardDatabase.release_manifest,
+		"texture_cache": CardTextureCache,
+	}
+
+
+func _finish_export_smoke(result: Dictionary) -> void:
+	var message := str(result.get("message", "EXPORT_SMOKE_FAILED"))
+	if bool(result.get("success", false)):
+		print(message)
+	else:
+		push_error(message)
+	get_tree().quit(int(result.get("exit_code", 1)))
 
 
 func _process(_delta: float) -> void:
@@ -484,65 +424,6 @@ func _network_view_is_valid(view: Dictionary) -> bool:
 		ProtocolV3.STATE_UPDATE,
 		view,
 	).get("ok", false))
-
-
-func _network_player_payload_is_valid(payload_value: Variant, show_hand: bool) -> bool:
-	if not payload_value is Dictionary:
-		return false
-	var payload: Dictionary = payload_value
-	for key in ["deck", "hand", "discard", "prizes", "bench"]:
-		if payload.has(key) and not payload[key] is Array:
-			return false
-	if show_hand and payload.has("hand") and not payload["hand"] is Array:
-		return false
-	if payload.has("active") and payload["active"] != null:
-		if not _network_pokemon_payload_is_valid(payload["active"]):
-			return false
-	if payload.has("bench"):
-		for pokemon_value in payload["bench"]:
-			if pokemon_value != null and not _network_pokemon_payload_is_valid(pokemon_value):
-				return false
-	return true
-
-
-func _network_pokemon_payload_is_valid(payload_value: Variant) -> bool:
-	if not payload_value is Dictionary:
-		return false
-	var payload: Dictionary = payload_value
-	for key in [
-		"energy_card_ids", "status_conditions", "evolution_stack_ids",
-		"used_abilities", "modifiers",
-	]:
-		if payload.has(key) and not payload[key] is Array:
-			return false
-	if payload.has("attack_locked_names") and not payload["attack_locked_names"] is Dictionary:
-		return false
-	return true
-
-
-func _network_presentation_event_is_valid(event_value: Variant) -> bool:
-	if not event_value is Dictionary:
-		return false
-	var event: Dictionary = event_value
-	for key in ["data", "source", "target"]:
-		if event.has(key) and not event[key] is Dictionary:
-			return false
-	return true
-
-
-func _network_choice_request_is_valid(request_value: Variant) -> bool:
-	if not request_value is Dictionary:
-		return false
-	var request: Dictionary = request_value
-	if request.has("options"):
-		if not request["options"] is Array:
-			return false
-		for option in request["options"]:
-			if not option is Dictionary:
-				return false
-	if request.has("metadata") and not request["metadata"] is Dictionary:
-		return false
-	return true
 
 
 func _stop_network() -> void:

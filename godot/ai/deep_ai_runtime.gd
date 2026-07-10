@@ -2,16 +2,31 @@ class_name DeepAIRuntime
 extends RefCounted
 
 const MANIFEST_PATH := "res://data/ai_models_runtime.json"
-const EXPECTED_PYTHON_ENCODER_VERSION := 3
+const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
 
 var manifest: Dictionary = {}
+var release_manifest: Dictionary = {}
 var backend: Variant
 var last_error := ""
 var loaded_deck := ""
+var expected_python_rules_version := 0
+var expected_python_action_version := 0
+var expected_python_encoder_version := 0
+var expected_onnx_opset := 0
+var expected_onnx_runtime_version := ""
 
 
 func _init() -> void:
-	manifest = _read_json(MANIFEST_PATH)
+	release_manifest = _read_json(RELEASE_MANIFEST_PATH, "release_manifest")
+	if not release_manifest.is_empty():
+		var schemas: Dictionary = release_manifest.get("schemas", {})
+		var onnx: Dictionary = release_manifest.get("onnx", {})
+		expected_python_rules_version = int(schemas.get("python_rules", 0))
+		expected_python_action_version = int(schemas.get("python_actions", 0))
+		expected_python_encoder_version = int(schemas.get("encoder", 0))
+		expected_onnx_opset = int(onnx.get("opset", 0))
+		expected_onnx_runtime_version = str(onnx.get("runtime_version", ""))
+	manifest = _read_json(MANIFEST_PATH, "runtime_manifest")
 	if ClassDB.class_exists("OnnxInference"):
 		backend = ClassDB.instantiate("OnnxInference")
 	else:
@@ -19,12 +34,23 @@ func _init() -> void:
 
 
 func is_available() -> bool:
-	return backend != null and not manifest.is_empty()
+	return (
+		backend != null
+		and not manifest.is_empty()
+		and not release_manifest.is_empty()
+	)
 
 
 func load_for_deck(deck_key: String) -> bool:
 	unload()
 	if not is_available():
+		return false
+	if (
+		int(manifest.get("opset", 0)) != expected_onnx_opset
+		or str(manifest.get("onnx_runtime_version", ""))
+		!= expected_onnx_runtime_version
+	):
+		last_error = "runtime_release_manifest_mismatch"
 		return false
 	var bridge_value: Variant = manifest.get("compatibility_bridge", {})
 	if not bridge_value is Dictionary:
@@ -33,9 +59,10 @@ func load_for_deck(deck_key: String) -> bool:
 	var bridge: Dictionary = bridge_value
 	if (
 		int(bridge.get("version", 0)) != 1
-		or int(bridge.get("python_rules_version", 0)) != 2
-		or int(bridge.get("python_action_version", 0)) != 2
-		or int(bridge.get("python_encoder_version", 0)) != EXPECTED_PYTHON_ENCODER_VERSION
+		or int(bridge.get("python_rules_version", 0)) != expected_python_rules_version
+		or int(bridge.get("python_action_version", 0)) != expected_python_action_version
+		or int(bridge.get("python_encoder_version", 0))
+		!= expected_python_encoder_version
 		or int(bridge.get("godot_rules_version", 0)) != AppState.RULES_SCHEMA_VERSION
 		or int(bridge.get("godot_action_version", 0)) != AppState.ACTION_SCHEMA_VERSION
 	):
@@ -53,7 +80,7 @@ func load_for_deck(deck_key: String) -> bool:
 	if row.is_empty():
 		last_error = "model_manifest_missing"
 		return false
-	if int(row.get("encoder_version", 0)) != EXPECTED_PYTHON_ENCODER_VERSION:
+	if int(row.get("encoder_version", 0)) != expected_python_encoder_version:
 		last_error = "model_encoder_version_mismatch"
 		return false
 	var model_manifest := {
@@ -67,6 +94,10 @@ func load_for_deck(deck_key: String) -> bool:
 	var path := str(row.get("onnx_path", ""))
 	if not backend.call("load_model", path, model_manifest):
 		last_error = str(backend.call("get_last_error"))
+		return false
+	if str(backend.call("get_runtime_version")) != expected_onnx_runtime_version:
+		backend.call("unload_model")
+		last_error = "onnx_runtime_version_mismatch"
 		return false
 	loaded_deck = deck_key
 	last_error = ""
@@ -83,13 +114,13 @@ func get_backend() -> Variant:
 	return backend if backend != null and backend.call("is_loaded") else null
 
 
-func _read_json(path: String) -> Dictionary:
+func _read_json(path: String, error_prefix: String) -> Dictionary:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		last_error = "runtime_manifest_missing"
+		last_error = error_prefix + "_missing"
 		return {}
 	var parsed: Variant = JSON.parse_string(file.get_as_text())
 	if parsed is Dictionary:
 		return parsed
-	last_error = "runtime_manifest_invalid"
+	last_error = error_prefix + "_invalid"
 	return {}

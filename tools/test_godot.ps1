@@ -4,13 +4,15 @@ param()
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot '.tools'
-$godot = Join-Path $repoRoot '.tools\godot-4.7\Godot_v4.7-stable_win64_console.exe'
 
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$lock = Get-ToolchainLock -RepoRoot $repoRoot
+$godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot
+$godot = $godotPaths.Console
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 
 if (-not (Test-Path -LiteralPath $godot)) {
-    throw 'Godot 4.7 is not installed. Run tools/setup_godot_toolchain.ps1 first.'
+    throw "Godot $($lock.godot.version) is not installed. Run tools/setup_godot_toolchain.ps1 first."
 }
 
 function Clear-StaleGodotImportArtifacts {
@@ -28,7 +30,7 @@ function Clear-StaleGodotImportArtifacts {
     }
     if (Test-Path -LiteralPath $editorRoot) {
         Get-ChildItem -LiteralPath $editorRoot -Force -File |
-            Where-Object { $_.Name -like 'editor_settings-4.7.tres*.tmp' } |
+            Where-Object { $_.Name -like "editor_settings-$($godotPaths.Series).tres*.tmp" } |
             Remove-Item -Force
     }
 }
@@ -81,4 +83,42 @@ if ($joinedOutput -match $fatalGodotErrorPattern) {
 }
 if ($joinedOutput -notmatch 'GODOT_TESTS_OK') {
     throw 'Godot test success marker was not emitted.'
+}
+
+$catalogContractOutput = Invoke-GodotCapture -ArgumentList @(
+    '--headless',
+    '--path', (Join-Path $repoRoot 'godot'),
+    '--script', 'res://tests/card_catalog_contract.gd'
+)
+$catalogContractOutput | ForEach-Object { Write-Host $_ }
+
+$catalogContractExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+if ($catalogContractExitCode -ne 0) {
+    throw "Card catalog contract failed with exit code $catalogContractExitCode"
+}
+$joinedCatalogContractOutput = $catalogContractOutput -join "`n"
+if ($joinedCatalogContractOutput -match $fatalGodotErrorPattern) {
+    throw 'Godot emitted script/runtime errors during the card catalog contract.'
+}
+if ($joinedCatalogContractOutput -notmatch 'CARD_CATALOG_CONTRACT_OK') {
+    throw 'Card catalog contract success marker was not emitted.'
+}
+
+$networkContractOutput = Invoke-GodotCapture -ArgumentList @(
+    '--headless',
+    '--path', (Join-Path $repoRoot 'godot'),
+    '--script', 'res://tests/network_protocol_contract.gd'
+)
+$networkContractOutput | ForEach-Object { Write-Host $_ }
+
+$networkContractExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+if ($networkContractExitCode -ne 0) {
+    throw "Network protocol contract failed with exit code $networkContractExitCode"
+}
+$joinedNetworkContractOutput = $networkContractOutput -join "`n"
+if ($joinedNetworkContractOutput -match $fatalGodotErrorPattern) {
+    throw 'Godot emitted script/runtime errors during the network protocol contract.'
+}
+if ($joinedNetworkContractOutput -notmatch 'NETWORK_PROTOCOL_CONTRACT_OK') {
+    throw 'Network protocol contract success marker was not emitted.'
 }

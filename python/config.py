@@ -79,11 +79,3 @@ GAME_SPEED_OPTIONS = [0.5, 1.0, 2.0]
 # ── Sound ──────────────────────────────────────────────────────
 SFX_ENABLED = True
 SFX_VOLUME = 0.5
-
-# ── Network ────────────────────────────────────────────────────
-NETWORK_PORT = 8765
-NETWORK_TIMEOUT = 60  # seconds before disconnect considered dead (heartbeat keeps alive)
-
-# ── Relay server ───────────────────────────────────────────────
-RELAY_SERVER_HOST = "52.78.231.177"
-RELAY_SERVER_PORT = 8766               # 与游戏端口 8765 区分

@@ -127,7 +127,10 @@ if (-not $SkipBuild) {
         throw 'Release native AI build failed.'
     }
     $target = if ($AndroidSigning -eq 'none') { 'windows' } else { 'all' }
-    & (Join-Path $PSScriptRoot 'build_godot.ps1') -Target $target -Configuration release
+    & (Join-Path $PSScriptRoot 'build_godot.ps1') `
+        -Target $target `
+        -Configuration release `
+        -IncludeAndroidRuntimeSmoke:($AndroidSigning -ne 'none')
     if ($LASTEXITCODE -ne 0) {
         throw 'Godot release export failed.'
     }
@@ -145,9 +148,19 @@ $releaseSmokeProcess = Start-Process `
     -FilePath $windowsExe `
     -ArgumentList @('--', '--phase6-release-smoke') `
     -PassThru `
-    -Wait `
     -WindowStyle Hidden
-$releaseSmokeExitCode = $releaseSmokeProcess.ExitCode
+try {
+    if (-not $releaseSmokeProcess.WaitForExit(180000)) {
+        throw 'Windows release smoke timed out after 180 seconds.'
+    }
+    $releaseSmokeExitCode = $releaseSmokeProcess.ExitCode
+}
+finally {
+    if (-not $releaseSmokeProcess.HasExited) {
+        Stop-Process -Id $releaseSmokeProcess.Id -Force
+        $releaseSmokeProcess.WaitForExit()
+    }
+}
 if ($releaseSmokeExitCode -ne 0) {
     throw "Windows release smoke failed with exit code $releaseSmokeExitCode."
 }

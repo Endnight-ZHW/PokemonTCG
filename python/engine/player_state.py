@@ -125,19 +125,13 @@ class PlayerState:
         # Track if a Pokemon was KO'd by attack damage last turn (for 愤怒冷冻 etc.)
         self.was_ko_by_attack: bool = False
 
-        # Remote-play: actual hand count when hand contents are hidden
-        self._hand_count: int = 0
-        self._hand_hidden: bool = False
-
         # Shuffle animation callback
         self.on_shuffle: callable = None
         self.random_source = None
 
     @property
     def hand_count(self) -> int:
-        """Number of cards in hand. Uses _hand_count when hand is hidden (remote play)."""
-        if self._hand_hidden:
-            return self._hand_count
+        """Number of cards currently in hand."""
         return len(self.hand)
 
     # ---- Zone operations ----

@@ -39,8 +39,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot '.tools'
-$godot = Join-Path $toolsRoot 'godot-4.7\Godot_v4.7-stable_win64_console.exe'
 $python = Join-Path $toolsRoot 'python311\python.exe'
+
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$godot = (Get-GodotToolchainPaths -RepoRoot $repoRoot).Console
 
 function Resolve-RepoPathOrEmpty {
     param([string]$Path)
@@ -132,7 +134,6 @@ if ($ShardCount -gt 0 -and ($ShardIndex -lt 0 -or $ShardIndex -ge $ShardCount)) 
     throw "ShardIndex must be in [0, $($ShardCount - 1)]."
 }
 
-. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 
 $mergeInputPaths = @(Resolve-RepoPathList $MergeInput)

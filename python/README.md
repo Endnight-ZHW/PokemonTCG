@@ -28,10 +28,12 @@ python main.py
 conda env create -f .\python\environment.yml
 conda env update -n DL -f .\python\environment.yml
 $env:PYTHONNOUSERSITE = '1'
+conda run -n DL python -B .\python\scripts\verify_dl_environment.py
 conda run -n DL python -B .\python\scripts\train_deep_ai.py --help
 ```
 
-`environment.yml` 是 GPU 训练锁文件；发布 ONNX 使用独立的 CPU 锁定环境：
+`environment.yml` 通过 `requirements-ai-gpu.lock.txt` 安装精确的 CUDA 11.8 训练依赖，
+并禁用用户 site-packages 污染。发布 ONNX 使用独立的 CPU 锁定环境：
 
 ```powershell
 conda env create -f .\python\environment-export.yml
@@ -185,7 +187,8 @@ Set-Location .\python
 .\.tools\python311\python.exe .\python\relay_server.py --host 0.0.0.0 --port 8766
 ```
 
-Relay 仅接受 Godot protocol v3 控制消息和游戏帧；旧 Python v2 客户端协议及
-PyInstaller 发布入口不再维护。
+Relay 仅接受 Godot protocol v3 控制消息和游戏帧。旧 Python v2 客户端、Lobby、
+客户端状态同步代码和 PyInstaller 发布入口均已移除。
+控制握手上限为 1 KiB，同一来源最多 60 次/秒；房间发布和客位认领均在单一锁区内完成。
 
 游戏规则文档位于 [`../docs/RULES.md`](../docs/RULES.md)。

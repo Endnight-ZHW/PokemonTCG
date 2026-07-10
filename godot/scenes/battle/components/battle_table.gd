@@ -58,7 +58,7 @@ const SHUFFLE_CARD_LIMITS := {
 @export var motion_arc_stagger_height := 8.0
 @export var motion_stagger_delay := 0.045
 var state_ref: GameState
-var catalog := CardCatalog.new()
+var catalog: CardCatalog = CardCatalog.shared()
 var view_player := 0
 var selected_entity_key := ""
 var action_rows: Array[Dictionary] = []
@@ -1014,76 +1014,17 @@ func _layout_board() -> void:
 
 
 func _board_layout_metrics(width: float, height: float) -> Dictionary:
-	var layout_scale := clampf(minf(width / 1500.0, height / 840.0), 0.76, 1.08)
-	var battle_card_boost := 1.32
-	var active_size := active_card_size * layout_scale * battle_card_boost
-	var bench_size := bench_card_size * layout_scale * battle_card_boost
-	var zone_visual_size := zone_size * layout_scale
-	var own_hand_size := hand_card_size * layout_scale
-	var hidden_hand_size := opponent_hand_card_size * layout_scale * 0.76
-	var side_margin := maxf(14.0, table_side_margin * layout_scale)
-	var top_margin := maxf(10.0, table_top_margin * layout_scale)
-	var bottom_margin := maxf(8.0, table_bottom_margin * layout_scale)
-	var zone_gap := 12.0 * layout_scale
-	var left_zone_x := side_margin
-	var side_zone_x := width - zone_visual_size.x - side_margin
-	var field_left := left_zone_x + zone_visual_size.x + 36.0 * layout_scale
-	var field_right := side_zone_x - 36.0 * layout_scale
-	if field_right <= field_left + 360.0 * layout_scale:
-		field_left = side_margin
-		field_right = width - side_margin
-	var table_width := maxf(300.0, field_right - field_left)
-	var center_x := (field_left + field_right) * 0.5
-	var top_hand_height := hidden_hand_size.y + 20.0 * layout_scale
-	var opponent_hand_width := clampf(
-		table_width * 0.38,
-		270.0 * layout_scale,
-		minf(table_width, 500.0 * layout_scale),
-	)
-	var own_hand_height := own_hand_size.y + 22.0 * layout_scale
-	var own_hand_peek := clampf(own_hand_height * 0.72, 118.0 * layout_scale, own_hand_height)
-	var own_hand_y := height - own_hand_peek - bottom_margin - hand_bottom_padding * layout_scale
-	var hand_width := clampf(
-		table_width * 0.64,
-		520.0 * layout_scale,
-		minf(table_width, 850.0 * layout_scale),
-	)
-	var hidden_hand_visible_height := maxf(24.0, hidden_hand_size.y * 0.32)
-	top_hand_height = hidden_hand_visible_height + 10.0 * layout_scale
-	var opponent_hand_y := top_margin - hidden_hand_size.y * 0.72
-	var opponent_info_y := top_margin + hidden_hand_visible_height + 3.0
-	var own_info_y := own_hand_y - 28.0
-	return {
-		"width": width,
-		"height": height,
-		"layout_scale": layout_scale,
-		"active_size": active_size,
-		"bench_size": bench_size,
-		"zone_size": zone_visual_size,
-		"own_hand_size": own_hand_size,
-		"hidden_hand_size": hidden_hand_size,
-		"side_margin": side_margin,
-		"top_margin": top_margin,
-		"bottom_margin": bottom_margin,
-		"zone_gap": zone_gap,
-		"left_zone_x": left_zone_x,
-		"side_zone_x": side_zone_x,
-		"field_left": field_left,
-		"field_right": field_right,
-		"table_width": table_width,
-		"center_x": center_x,
-		"top_hand_height": top_hand_height,
-		"opponent_hand_y": opponent_hand_y,
-		"opponent_hand_visible_height": hidden_hand_visible_height,
-		"opponent_hand_width": opponent_hand_width,
-		"own_hand_height": own_hand_height,
-		"own_hand_y": own_hand_y,
-		"hand_width": hand_width,
-		"opponent_info_y": opponent_info_y,
-		"own_info_y": own_info_y,
-		"arena_top": opponent_info_y + 8.0,
-		"arena_bottom": own_hand_y - 6.0,
-	}
+	return BattleTableLayout.board_metrics(width, height, {
+		"active_card_size": active_card_size,
+		"bench_card_size": bench_card_size,
+		"zone_size": zone_size,
+		"hand_card_size": hand_card_size,
+		"opponent_hand_card_size": opponent_hand_card_size,
+		"table_side_margin": table_side_margin,
+		"table_top_margin": table_top_margin,
+		"table_bottom_margin": table_bottom_margin,
+		"hand_bottom_padding": hand_bottom_padding,
+	})
 
 
 func _layout_player_hands(metrics: Dictionary) -> void:
@@ -1123,78 +1064,17 @@ func _layout_player_hands(metrics: Dictionary) -> void:
 
 
 func _layout_field_slots(metrics: Dictionary) -> void:
-	var active_size: Vector2 = metrics["active_size"]
-	var bench_size: Vector2 = metrics["bench_size"]
-	var layout_scale := float(metrics["layout_scale"])
-	var table_width := float(metrics["table_width"])
-	var center_x := float(metrics["center_x"])
-	var arena_top := float(metrics["arena_top"])
-	var arena_bottom := float(metrics["arena_bottom"])
-	var arena_height := maxf(1.0, arena_bottom - arena_top)
-	var active_gap := 30.0 * layout_scale
-	var active_clearance := 20.0 * layout_scale
-	var bench_edge_gap := 10.0 * layout_scale
-	var required_field_height := (
-		active_size.y * 2.0
-		+ bench_size.y * 2.0
-		+ active_gap
-		+ active_clearance * 2.0
-		+ bench_edge_gap * 2.0
-	)
-	var battle_scale := minf(
-		1.0,
-		arena_height / maxf(1.0, required_field_height),
-	)
-	if battle_scale < 1.0:
-		active_size *= battle_scale
-		bench_size *= battle_scale
-		active_gap *= battle_scale
-		active_clearance *= battle_scale
-		bench_edge_gap *= battle_scale
-	var arena_middle := (arena_top + arena_bottom) * 0.5
-	var bench_gap := clampf(
-		bench_spacing * layout_scale * battle_scale + table_width * 0.018,
-		bench_spacing * layout_scale * battle_scale,
-		30.0 * layout_scale,
-	)
-	var bench_total := bench_size.x * 5.0 + bench_gap * 4.0
-	var bench_x := center_x - bench_total * 0.5
-	var opponent_active_y := arena_middle - active_gap * 0.5 - active_size.y
-	var own_active_y := arena_middle + active_gap * 0.5
-	var top_bench_y := opponent_active_y - bench_size.y - active_clearance
-	var bottom_bench_y := own_active_y + active_size.y + active_clearance
-	if top_bench_y < arena_top + bench_edge_gap:
-		var shift_down := arena_top + bench_edge_gap - top_bench_y
-		top_bench_y += shift_down
-		opponent_active_y += shift_down * 0.42
-	if bottom_bench_y + bench_size.y > arena_bottom - bench_edge_gap:
-		var shift_up := bottom_bench_y + bench_size.y - (arena_bottom - bench_edge_gap)
-		bottom_bench_y -= shift_up
-		own_active_y -= shift_up * 0.42
-	var opponent_bench_rects: Array[Rect2] = []
-	var own_bench_rects: Array[Rect2] = []
+	var plan := BattleTableLayout.field_plan(metrics, bench_spacing)
+	var active_size: Vector2 = plan["active_size"]
+	var bench_size: Vector2 = plan["bench_size"]
+	var opponent_bench_centers: Array[Vector2] = plan["opponent_bench_centers"]
+	var own_bench_centers: Array[Vector2] = plan["own_bench_centers"]
+	var opponent_bench_rects: Array[Rect2] = plan["opponent_bench_rects"]
+	var own_bench_rects: Array[Rect2] = plan["own_bench_rects"]
 	for index in range(5):
-		var opponent_center := Vector2(
-			bench_x + index * (bench_size.x + bench_gap) + bench_size.x * 0.5,
-			top_bench_y + bench_size.y * 0.5,
-		)
-		var own_center := Vector2(
-			bench_x + index * (bench_size.x + bench_gap) + bench_size.x * 0.5,
-			bottom_bench_y + bench_size.y * 0.5,
-		)
-		opponent_bench_rects.append(_perspective_card_rect(
-			opponent_center,
-			bench_size,
-			metrics,
-		).get("rect", Rect2()))
-		own_bench_rects.append(_perspective_card_rect(
-			own_center,
-			bench_size,
-			metrics,
-		).get("rect", Rect2()))
 		_place_perspective_card(
 			opponent_bench[index],
-			opponent_center,
+			opponent_bench_centers[index],
 			bench_size,
 			metrics,
 			-2.4 + float(index - 2) * 0.22,
@@ -1202,30 +1082,15 @@ func _layout_field_slots(metrics: Dictionary) -> void:
 		)
 		_place_perspective_card(
 			own_bench[index],
-			own_center,
+			own_bench_centers[index],
 			bench_size,
 			metrics,
 			2.4 + float(index - 2) * 0.22,
 			20 + index,
 		)
-	var opponent_active_center := Vector2(
-		center_x,
-		opponent_active_y + active_size.y * 0.5,
-	)
-	var own_active_center := Vector2(center_x, own_active_y + active_size.y * 0.5)
-	var opponent_active_rect: Rect2 = _perspective_card_rect(
-		opponent_active_center,
-		active_size,
-		metrics,
-	).get("rect", Rect2())
-	var own_active_rect: Rect2 = _perspective_card_rect(
-		own_active_center,
-		active_size,
-		metrics,
-	).get("rect", Rect2())
 	_place_perspective_card(
 		opponent_active,
-		opponent_active_center,
+		plan["opponent_active_center"],
 		active_size,
 		metrics,
 		-1.2,
@@ -1233,7 +1098,7 @@ func _layout_field_slots(metrics: Dictionary) -> void:
 	)
 	_place_perspective_card(
 		own_active,
-		own_active_center,
+		plan["own_active_center"],
 		active_size,
 		metrics,
 		1.2,
@@ -1242,72 +1107,26 @@ func _layout_field_slots(metrics: Dictionary) -> void:
 	_update_playmat_field_guides(
 		opponent_bench_rects,
 		own_bench_rects,
-		opponent_active_rect,
-		own_active_rect,
+		plan["opponent_active_rect"],
+		plan["own_active_rect"],
 		metrics,
 	)
 
 
 func _layout_table_zones(metrics: Dictionary) -> void:
-	var layout_scale := float(metrics["layout_scale"])
-	var top_margin := float(metrics["top_margin"])
-	var left_zone_x := float(metrics["left_zone_x"])
-	var side_zone_x := float(metrics["side_zone_x"])
-	var zone_visual_size: Vector2 = metrics["zone_size"]
-	var zone_gap := float(metrics["zone_gap"])
-	var own_hand_y := float(metrics["own_hand_y"])
-	var arena_middle := (float(metrics["arena_top"]) + float(metrics["arena_bottom"])) * 0.5
-	var top_zone_y := top_margin + 18.0 * layout_scale
-	var own_zone_y := own_hand_y - zone_visual_size.y - 12.0 * layout_scale
-	var own_zone_shift_down := 110.0 * layout_scale
-	own_zone_y = minf(
-		own_zone_y + own_zone_shift_down,
-		float(metrics["height"]) - zone_visual_size.y - float(metrics["bottom_margin"]),
-	)
-	var opponent_discard_y := top_zone_y + zone_visual_size.y + zone_gap
-	var own_discard_y := own_zone_y - zone_visual_size.y - zone_gap
-	_place_perspective_zone(
+	var plan := BattleTableLayout.zone_plan(metrics)
+	var positions: Dictionary = plan["positions"]
+	var zone_visual_size: Vector2 = plan["size"]
+	for key in [
 		"opponent_prizes",
-		Vector2(left_zone_x, top_zone_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
 		"opponent_deck",
-		Vector2(side_zone_x, top_zone_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
 		"opponent_discard",
-		Vector2(side_zone_x, opponent_discard_y),
-		zone_visual_size,
-		metrics,
-	)
-	var stadium_y := arena_middle - zone_visual_size.y * 0.5
-	var stadium_min_y := opponent_discard_y + zone_visual_size.y + zone_gap
-	var stadium_max_y := own_discard_y - zone_visual_size.y - zone_gap
-	if stadium_max_y > stadium_min_y:
-		stadium_y = clampf(stadium_y, stadium_min_y, stadium_max_y)
-	_place_perspective_zone("stadium", Vector2(left_zone_x, stadium_y), zone_visual_size, metrics)
-	_place_perspective_zone(
+		"stadium",
 		"own_discard",
-		Vector2(side_zone_x, own_discard_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
 		"own_deck",
-		Vector2(side_zone_x, own_zone_y),
-		zone_visual_size,
-		metrics,
-	)
-	_place_perspective_zone(
 		"own_prizes",
-		Vector2(left_zone_x, own_zone_y),
-		zone_visual_size,
-		metrics,
-	)
+	]:
+		_place_perspective_zone(key, positions[key], zone_visual_size, metrics)
 
 
 func _place_perspective_card(
@@ -1336,19 +1155,7 @@ func _perspective_card_rect(
 	base_size: Vector2,
 	metrics: Dictionary,
 ) -> Dictionary:
-	var depth := _perspective_depth(center.y, metrics)
-	var scale := lerpf(0.86, 1.08, depth)
-	var size_value := base_size * scale
-	var center_x := float(metrics["center_x"])
-	var spread := lerpf(0.96, 1.035, depth)
-	var projected_center := Vector2(
-		center_x + (center.x - center_x) * spread,
-		center.y,
-	)
-	return {
-		"depth": depth,
-		"rect": Rect2(projected_center - size_value * 0.5, size_value),
-	}
+	return BattleTableLayout.perspective_card_rect(center, base_size, metrics)
 
 
 func _update_playmat_field_guides(
@@ -1395,12 +1202,7 @@ func _update_playmat_field_guides(
 
 
 func _union_rects(rects: Array[Rect2]) -> Rect2:
-	if rects.is_empty():
-		return Rect2()
-	var result := rects[0]
-	for index in range(1, rects.size()):
-		result = result.merge(rects[index])
-	return result
+	return BattleTableLayout.union_rects(rects)
 
 
 func _place_perspective_zone(
@@ -1427,12 +1229,7 @@ func _place_perspective_zone(
 
 
 func _perspective_depth(y: float, metrics: Dictionary) -> float:
-	return clampf(
-		(y - float(metrics["arena_top"]))
-		/ maxf(1.0, float(metrics["arena_bottom"]) - float(metrics["arena_top"])),
-		0.0,
-		1.0,
-	)
+	return BattleTableLayout.perspective_depth(y, metrics)
 
 
 func _layout_overlay_drawers() -> void:
@@ -1474,39 +1271,17 @@ func _detail_drawer_rect(
 	drawer_width: float,
 	default_height: float,
 ) -> Rect2:
-	var margin := 14.0
-	var gap := 18.0
-	var detail_gap := 26.0
-	var minimum_height := 120.0
 	var discard_rect := _control_rect_in_table(zones.get("opponent_discard") as Control)
 	var own_discard_rect := _control_rect_in_table(zones.get("own_discard") as Control)
 	var own_deck_rect := _control_rect_in_table(zones.get("own_deck") as Control)
-	var right_edge := (
-		discard_rect.end.x if discard_rect.size != Vector2.ZERO else board_rect.end.x - margin
+	return BattleTableLayout.detail_drawer_rect(
+		board_rect,
+		drawer_width,
+		default_height,
+		discard_rect,
+		own_discard_rect,
+		own_deck_rect,
 	)
-	var x_value := clampf(
-		right_edge - drawer_width,
-		board_rect.position.x + margin,
-		board_rect.end.x - drawer_width - margin,
-	)
-	var preferred_y := (
-		discard_rect.end.y + detail_gap
-		if discard_rect.size != Vector2.ZERO
-		else board_rect.position.y + margin
-	)
-	var lower_zone_top := board_rect.end.y - margin
-	if own_discard_rect.size != Vector2.ZERO:
-		lower_zone_top = minf(lower_zone_top, own_discard_rect.position.y - gap)
-	if own_deck_rect.size != Vector2.ZERO:
-		lower_zone_top = minf(lower_zone_top, own_deck_rect.position.y - gap)
-	var max_height := maxf(minimum_height, lower_zone_top - preferred_y)
-	var height_value := minf(default_height, max_height)
-	var y_value := clampf(
-		preferred_y,
-		board_rect.position.y + margin,
-		maxf(board_rect.position.y + margin, lower_zone_top - height_value),
-	)
-	return Rect2(Vector2(x_value, y_value), Vector2(drawer_width, height_value))
 
 
 func _control_rect_in_table(control: Control) -> Rect2:
@@ -1522,38 +1297,25 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 	for view in hand_views:
 		if view.visible:
 			visible_count += 1
-	var available := maxf(220.0, hand_scroll.size.x)
-	var spacing := card_size.x
-	if visible_count > 1:
-		spacing = clampf(
-			(available - card_size.x) / float(visible_count - 1),
-			hand_minimum_spacing,
-			card_size.x + 6.0,
-		)
-	var content_width := (
-		card_size.x
-		if visible_count <= 1
-		else card_size.x + spacing * float(visible_count - 1)
+	var plan := BattleTableLayout.own_hand_plan(
+		visible_count,
+		hand_scroll.size.x,
+		card_size,
+		hand_minimum_spacing,
+		hand_rotation_degrees,
 	)
-	hand_surface.custom_minimum_size.x = maxf(available, content_width)
-	var start_x := maxf(0.0, (hand_surface.custom_minimum_size.x - content_width) * 0.5)
+	hand_surface.custom_minimum_size.x = float(plan["surface_width"])
+	var items: Array[Dictionary] = plan["items"]
 	var visible_index := 0
 	for view in hand_views:
 		if not view.visible:
 			continue
+		var item: Dictionary = items[visible_index]
 		view.custom_minimum_size = card_size
 		view.size = card_size
-		view.position = Vector2(start_x + visible_index * spacing, 14)
-		var normalized := (
-			0.0
-			if visible_count <= 1
-			else float(visible_index) / float(visible_count - 1) - 0.5
-		)
-		view.rotation_degrees = normalized * minf(
-			hand_rotation_degrees,
-			float(visible_count) * 0.55,
-		)
-		view.z_index = 70 + visible_index
+		view.position = item["position"]
+		view.rotation_degrees = float(item["rotation_degrees"])
+		view.z_index = int(item["z_index"])
 		view.set_table_depth(0.96, true)
 		view.remember_base_position()
 		view.set_selected(selected_entity_key == "hand:%d" % view.hand_index)
@@ -1567,40 +1329,24 @@ func _layout_opponent_hand(card_size: Vector2 = Vector2(70, 98)) -> void:
 	for view in opponent_hand_views:
 		if view.visible:
 			visible_count += 1
-	var available := maxf(180.0, opponent_hand_surface.size.x)
-	var spacing := card_size.x * 0.42
-	if visible_count > 1:
-		spacing = clampf(
-			(available - card_size.x) / float(visible_count - 1),
-			opponent_hand_minimum_spacing,
-			card_size.x * 0.58,
-		)
-	var content_width := (
-		card_size.x
-		if visible_count <= 1
-		else card_size.x + spacing * float(visible_count - 1)
+	var plan := BattleTableLayout.opponent_hand_plan(
+		visible_count,
+		opponent_hand_surface.size.x,
+		card_size,
+		opponent_hand_minimum_spacing,
+		opponent_hand_rotation_degrees,
 	)
-	var start_x := maxf(0.0, (available - content_width) * 0.5)
+	var items: Array[Dictionary] = plan["items"]
 	var visible_index := 0
 	for view in opponent_hand_views:
 		if not view.visible:
 			continue
+		var item: Dictionary = items[visible_index]
 		view.custom_minimum_size = card_size
 		view.size = card_size
-		var normalized := (
-			0.0
-			if visible_count <= 1
-			else float(visible_index) / float(visible_count - 1) - 0.5
-		)
-		view.position = Vector2(
-			start_x + visible_index * spacing,
-			-4.0 + absf(normalized) * 5.0,
-		)
-		view.rotation_degrees = -normalized * minf(
-			opponent_hand_rotation_degrees,
-			float(visible_count) * 0.55,
-		)
-		view.z_index = 5 + visible_index
+		view.position = item["position"]
+		view.rotation_degrees = float(item["rotation_degrees"])
+		view.z_index = int(item["z_index"])
 		view.set_table_depth(0.18, false)
 		view.remember_base_position()
 		visible_index += 1

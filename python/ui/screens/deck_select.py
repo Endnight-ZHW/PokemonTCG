@@ -1,6 +1,4 @@
 """卡组选择画面 - 双方各选自己的卡组."""
-import os
-
 import pygame
 from ui.screen_manager import Screen, ScreenManager
 from ui.colors import (
@@ -88,6 +86,15 @@ DECK_OPTIONS = [
         "difficulty": "中等 — 需要规划进化链与能量管理",
     },
     {
+        "name": "钢系卡组 — 苍响·藏玛然特",
+        "color": (130, 150, 165),
+        "type_icon": "⚙",
+        "strategy": "苍响按备战宝可梦数量提高伤害，藏玛然特以金属之盾减伤后用报仇反击。青铜钟负责转移钢能量，拖拖蚓强化耐久。",
+        "ace": "苍响 — 战斗军团 / 薄片利刃；藏玛然特 — 金属之盾 / 报仇",
+        "support": "青铜钟(能量转移)、帝牙卢卡(时之逆流)、勾帕路翁(正义法则)、拖拖蚓(耐久强化)",
+        "difficulty": "中等 — 需要规划备战区规模与钢能量转移",
+    },
+    {
         "name": "恶系卡组 — 獒教父ex",
         "color": (70, 70, 90),
         "type_icon": "🌑",
@@ -98,16 +105,30 @@ DECK_OPTIONS = [
     },
 ]
 
+# Descriptions are UI content, while the release manifest owns ordering. Keep
+# the association explicit so a manifest reorder cannot display one deck's
+# description while starting another deck.
+DECK_OPTION_KEYS = (
+    "fire", "water", "psychic", "lightning", "fighting",
+    "colorless", "dragon", "grass", "steel", "darkness",
+)
+if len(DECK_OPTION_KEYS) != len(DECK_OPTIONS):
+    raise RuntimeError("deck option metadata is incomplete")
+DECK_OPTIONS_BY_KEY = dict(zip(DECK_OPTION_KEYS, DECK_OPTIONS, strict=True))
+
 
 class DeckSelectScreen(Screen):
     """卡组选择——双方各选择自己的卡组后开始对战."""
 
     def __init__(self, manager: ScreenManager, available_decks: dict[str, list[tuple]],
-                 is_remote: bool = False, network_manager=None,
-                 my_player_idx: int = 0, mode: str = "local"):
+                 mode: str = "local"):
         super().__init__(manager)
         self.available_decks = available_decks  # {deck_key: deck_spec}
         self.deck_keys = list(available_decks.keys())
+        unknown_decks = [key for key in self.deck_keys if key not in DECK_OPTIONS_BY_KEY]
+        if unknown_decks:
+            raise ValueError(f"Missing deck UI metadata: {unknown_decks}")
+        self.deck_options = [DECK_OPTIONS_BY_KEY[key] for key in self.deck_keys]
         self.font_title = get_font("title_sm")
         self.font_body = get_font("body_md")
         self.font_small = get_font("smaller")
@@ -124,16 +145,6 @@ class DeckSelectScreen(Screen):
         self.ai_search_buttons: list[dict] = []
         self.ai_config_panel_rect: pygame.Rect | None = None
         self.challenge_detail_panel_rect: pygame.Rect | None = None
-
-        # Remote mode fields
-        self.is_remote = is_remote
-        self.network_manager = network_manager
-        self._my_player_idx = my_player_idx
-        self._opponent_deck_idx: int | None = None
-        self._opponent_deck_key: str | None = None
-        self._remote_deck_sent: bool = False
-        self._remote_game_started: bool = False
-        self._remote_status: str = ""
 
         # Start button
         btn_w, btn_h = 280, 55
@@ -185,33 +196,38 @@ class DeckSelectScreen(Screen):
         self.ai_kind = "deep_learning" if is_deep_model_accepted(deck_key) else "challenge"
 
     def _start_battle(self):
-        from engine.game_state import GameState
-        from engine.turn_manager import TurnManager
+        from ui.debug_match_session import DebugMatchSession
         from ui.screens.game_screen import GameScreen
         from data.deck_definitions import expand_deck
-
-        if self.is_remote:
-            self._start_remote_battle()
-            return
 
         deck_key1 = self.deck_keys[self.p1_idx]
         deck_key2 = self.deck_keys[self.p2_idx]
         p1_deck = expand_deck(self.available_decks[deck_key1])
         p2_deck = expand_deck(self.available_decks[deck_key2])
 
-        game_state = GameState()
         app = getattr(self.manager, "_app", None)
-        game_state.apply_type_matchups = (
-            False if self.is_challenge else bool(getattr(app, "apply_type_matchups", False))
+        session = DebugMatchSession.create(
+            p1_deck,
+            p2_deck,
+            apply_type_matchups=(
+                False
+                if self.is_challenge
+                else bool(getattr(app, "apply_type_matchups", False))
+            ),
         )
-        game_state.setup_game(p1_deck, p2_deck)
-        if self.is_challenge:
-            game_state.public_deck_keys = (deck_key1, deck_key2)
-        turn_manager = TurnManager(game_state)
+        game_state = session.state
+        # Deck identity is public in every local debugging mode.  Keep it on
+        # the canonical state so snapshots, AI observations, and restores do
+        # not lose which independently selected decks produced the match.
+        game_state.public_deck_keys = (deck_key1, deck_key2)
+        if app is not None:
+            app.debug_session = session
+            app.game_state = session.state
+            app.turn_manager = session.turn_manager
         game_screen = GameScreen(
             self.manager,
             game_state,
-            turn_manager,
+            session.turn_manager,
             challenge_mode=self.is_challenge,
             human_player_idx=0,
             ai_player_idx=1,
@@ -221,115 +237,8 @@ class DeckSelectScreen(Screen):
         )
         self.manager.replace_top(game_screen)
 
-    def _start_remote_battle(self):
-        """Start or coordinate remote battle based on role."""
-        from engine.game_state import GameState
-        from engine.turn_manager import TurnManager
-        from ui.screens.game_screen import GameScreen
-        from data.deck_definitions import expand_deck
-        from network.state_serializer import serialize_game_state
-
-        my_key = self.deck_keys[self.p1_idx]  # Remote uses single selection
-        my_deck_ids = expand_deck(self.available_decks[my_key])
-
-        if self._my_player_idx == 0:
-            # Host: wait for client deck, then create game
-            opp_key = self._opponent_deck_key
-            if not opp_key:
-                self._remote_status = "等待对手选择卡组..."
-                return
-            opp_deck_ids = expand_deck(self.available_decks[opp_key])
-
-            game_state = GameState()
-            app = getattr(self.manager, "_app", None)
-            game_state.apply_type_matchups = bool(getattr(app, "apply_type_matchups", False))
-            game_state.setup_game(my_deck_ids, opp_deck_ids)
-            turn_manager = TurnManager(game_state)
-
-            # Send game starting with opponent deck info
-            self.network_manager.send({
-                "type": "game_starting",
-                "opponent_deck_key": my_key,
-            })
-
-            # Send initial state from CLIENT's perspective (player 1)
-            state_data = serialize_game_state(game_state, for_player_idx=1)
-            self.network_manager.send({
-                "type": "state_update",
-                "state": state_data,
-            })
-
-            game_screen = GameScreen(
-                self.manager, game_state, turn_manager,
-                network_manager=self.network_manager,
-                my_player_idx=0,
-            )
-            self.manager.replace_top(game_screen)
-        else:
-            # Client: send deck selection to host
-            if not self._remote_deck_sent:
-                self.network_manager.send({
-                    "type": "deck_selected",
-                    "deck_key": my_key,
-                })
-                self._remote_deck_sent = True
-                self._remote_status = "已选择卡组，等待对手确认..."
-
-    def update(self, dt: float):
-        if not self.is_remote or not self.network_manager:
-            return
-
-        for msg in self.network_manager.poll():
-            msg_type = msg.get("type", "")
-
-            if msg_type == "deck_selected":
-                # Host receives client's deck selection
-                self._opponent_deck_key = msg["deck_key"]
-                # Find the index for this deck key
-                for i, key in enumerate(self.deck_keys):
-                    if key == self._opponent_deck_key:
-                        self._opponent_deck_idx = i
-                        break
-                self._remote_status = f"对手已选择卡组！点击「开始对战」开始游戏。"
-
-            elif msg_type == "game_starting":
-                # Client receives game start signal
-                self._opponent_deck_key = msg.get("opponent_deck_key", "")
-                for i, key in enumerate(self.deck_keys):
-                    if key == self._opponent_deck_key:
-                        self._opponent_deck_idx = i
-                        break
-                self._remote_game_started = True
-                self._remote_status = "对手已确认，准备进入对战..."
-
-            elif msg_type == "state_update":
-                # Client receives initial game state
-                if not self._remote_game_started:
-                    continue
-                from network.state_serializer import deserialize_game_state
-                from ui.screens.game_screen import GameScreen
-
-                client_state = deserialize_game_state(
-                    msg["state"], for_player_idx=self._my_player_idx
-                )
-                game_screen = GameScreen(
-                    self.manager, None, None,
-                    network_manager=self.network_manager,
-                    my_player_idx=self._my_player_idx,
-                    initial_state=client_state,
-                )
-                self.manager.replace_top(game_screen)
-
-            elif msg_type in ("opponent_disconnected", "connection_failed"):
-                self._remote_status = "连接断开，请返回标题画面。"
-                self.is_remote = False
-
     def draw(self, surface: pygame.Surface):
         surface.fill((13, 16, 27))
-
-        if self.is_remote:
-            self._draw_remote(surface)
-            return
 
         if self.is_challenge:
             title_txt = self.font_title.render("挑战模式：选择卡组", True, UI_TEXT_PRIMARY)
@@ -371,52 +280,6 @@ class DeckSelectScreen(Screen):
         draw_button(surface, self.start_button, "开始对战", self.font_body,
                     hovered=self.start_hover, attack=True)
 
-    def _draw_remote(self, surface):
-        """Draw remote mode deck selection (single player)."""
-        my_color = PLAYER1_COLOR if self._my_player_idx == 0 else PLAYER2_COLOR
-        label = f"玩家{self._my_player_idx + 1}" if self._my_player_idx == 0 else "你"
-
-        title_txt = self.font_title.render("选择你的卡组", True, UI_HIGHLIGHT)
-        title_rect = title_txt.get_rect(center=(SCREEN_WIDTH // 2, 30))
-        surface.blit(title_txt, title_rect)
-
-        # Show role
-        role_txt = self.font_body.render(
-            f"{label} - {'房主' if self._my_player_idx == 0 else '挑战者'}",
-            True, my_color
-        )
-        surface.blit(role_txt, role_txt.get_rect(center=(SCREEN_WIDTH // 2, 70)))
-
-        # Single selection (centered)
-        self._draw_player_selection(surface, "你的卡组", self.p1_idx, self.p1_buttons,
-                                     100, my_color, "center")
-
-        # Show opponent selection if known
-        if self._opponent_deck_idx is not None:
-            opp_color = PLAYER2_COLOR if self._my_player_idx == 0 else PLAYER1_COLOR
-            opp_deck = DECK_OPTIONS[self._opponent_deck_idx]
-            opp_txt = self.font_body.render(
-                f"对手卡组: {opp_deck['name']}",
-                True, opp_color
-            )
-            opp_rect = opp_txt.get_rect(center=(SCREEN_WIDTH // 2, 500))
-            surface.blit(opp_txt, opp_rect)
-
-        # Status text
-        if self._remote_status:
-            status_txt = self.font_body.render(self._remote_status, True, UI_HIGHLIGHT)
-            status_rect = status_txt.get_rect(center=(SCREEN_WIDTH // 2, 540))
-            surface.blit(status_txt, status_rect)
-
-        # Start button (only for host after client deck received, or client before sending)
-        can_start = (
-            self._my_player_idx == 0 or  # Host can always click (triggers wait / start)
-            (self._my_player_idx == 1 and not self._remote_deck_sent)
-        )
-        if can_start:
-            draw_button(surface, self.start_button, "开始对战", self.font_body,
-                        hovered=self.start_hover, attack=True)
-
     def _draw_player_selection(self, surface, label, selected_idx, buttons_list,
                                  y_start, player_color, side):
         label_txt = self.font_body.render(label, True, player_color)
@@ -434,7 +297,7 @@ class DeckSelectScreen(Screen):
             start_x = (SCREEN_WIDTH - panel_w) // 2
             label_x = start_x
 
-        num_decks = len(DECK_OPTIONS)
+        num_decks = len(self.deck_options)
         btn_h = 36 if num_decks <= 8 else 32
         gap = 6 if num_decks <= 8 else 4
         panel_h = 54 + num_decks * (btn_h + gap)
@@ -444,7 +307,7 @@ class DeckSelectScreen(Screen):
 
         buttons_list.clear()
         btn_w = panel_w
-        for i, deck in enumerate(DECK_OPTIONS):
+        for i, deck in enumerate(self.deck_options):
             btn_x = start_x
             btn_y = y_start + 36 + i * (btn_h + gap)
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
@@ -525,7 +388,7 @@ class DeckSelectScreen(Screen):
         ]
         y = inner.y + 4
         for idx, color, label in blocks:
-            deck = DECK_OPTIONS[idx]
+            deck = self.deck_options[idx]
             header_rect = pygame.Rect(inner.x, y, inner.w, 28)
             pygame.draw.rect(surface, (28, 34, 52), header_rect, border_radius=6)
             pygame.draw.rect(surface, color, header_rect, 1, border_radius=6)
@@ -567,7 +430,7 @@ class DeckSelectScreen(Screen):
         ]
         y = inner.y + 4
         for idx, color, label in blocks:
-            deck = DECK_OPTIONS[idx]
+            deck = self.deck_options[idx]
             header_rect = pygame.Rect(inner.x, y, inner.w, 28)
             pygame.draw.rect(surface, (28, 34, 52), header_rect, border_radius=6)
             pygame.draw.rect(surface, color, header_rect, 1, border_radius=6)

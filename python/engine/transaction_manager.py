@@ -13,7 +13,7 @@ from engine.actions import (
     StepResult,
 )
 from engine.enums import TurnPhase
-from engine.game_state import GameState
+from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.random_source import RandomSource
 from engine.snapshot import (
     rebuild_state_event_bus,
@@ -39,7 +39,17 @@ class VMTransactionManager:
             ),
             "rng_state": rng.getstate(),
             "action_log": list(getattr(state, "action_log", ())),
-            "events": list(getattr(getattr(state, "event_stream", None), "_events", ())),
+            # Existing event payloads are mutable dictionaries.  A shallow
+            # list copy would let a failed callback mutate the checkpoint
+            # itself and leak that mutation through rollback.
+            "events": copy.deepcopy(
+                list(getattr(getattr(state, "event_stream", None), "_events", ()))
+            ),
+            # Kept only for rollback within the current process.  This object
+            # is never included in GameSnapshot or any wire/file payload.
+            "pending_choice_runtime": VMTransactionManager._clone_pending_runtime(
+                getattr(state, "_pending_choice_runtime", None)
+            ),
         }
 
     @staticmethod
@@ -53,13 +63,28 @@ class VMTransactionManager:
             state.__dict__.clear()
             state.__dict__.update(copy.deepcopy(state_clone.__dict__))
         else:
-            restore_state(state, checkpoint["state"])
+            restore_state(state, checkpoint["state"], rebuild_event_bus=False)
         rebuild_state_event_bus(state)
         rng.setstate(checkpoint["rng_state"])
         state.action_log = list(checkpoint.get("action_log", ()))
         event_stream = getattr(state, "event_stream", None)
         if event_stream is not None and hasattr(event_stream, "_events"):
-            event_stream._events = list(checkpoint.get("events", ()))
+            event_stream._events = copy.deepcopy(list(checkpoint.get("events", ())))
+        runtime = checkpoint.get("pending_choice_runtime")
+        metadata = getattr(runtime, "metadata", {})
+        continuation = (
+            metadata.get("continuation", {})
+            if isinstance(metadata, dict)
+            else {}
+        )
+        # A failed VM callback may already have consumed commands from its
+        # captured in-memory stack.  Drop that closure and rebuild from the
+        # checkpoint's serialized resume frames on the next attempt.
+        state._pending_choice_runtime = (
+            None
+            if isinstance(continuation, dict) and continuation.get("kind")
+            else VMTransactionManager._clone_pending_runtime(runtime)
+        )
 
     def rollback_failed_step(
         self,
@@ -71,6 +96,9 @@ class VMTransactionManager:
         self.rollback_transaction(state, rng, checkpoint)
         step.pending_choice = None
         step.events = ()
+        # Do not expose cards, damage, KOs, or other aggregates produced by a
+        # transaction that did not commit.  Keep only the public failure text.
+        step.action_result = ActionResult(False, step.message)
         step.winner = state.winner
         step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
         return step
@@ -80,10 +108,18 @@ class VMTransactionManager:
         stack = getattr(state, "resolution_stack", None)
         if not isinstance(stack, dict):
             stack = {}
+        raw_sequence = stack.get("sequence", getattr(state, "choice_sequence", 0))
+        try:
+            sequence = int(raw_sequence or 0)
+        except (TypeError, ValueError, OverflowError):
+            try:
+                sequence = int(getattr(state, "choice_sequence", 0) or 0)
+            except (TypeError, ValueError, OverflowError):
+                sequence = 0
         return {
             "frames": copy.deepcopy(stack.get("frames", [])),
             "pending_request": copy.deepcopy(stack.get("pending_request")),
-            "sequence": int(stack.get("sequence", getattr(state, "choice_sequence", 0)) or 0),
+            "sequence": sequence,
             "context": copy.deepcopy(stack.get("context", {})),
         }
 
@@ -91,8 +127,8 @@ class VMTransactionManager:
         stack = self.resolution_stack_payload(state)
         frames: list[dict[str, Any]] = []
         attack_actor = request.metadata.get("finish_attack_actor")
-        if attack_actor in (0, 1):
-            frames.append({"kind": "finalize_attack", "actor": int(attack_actor)})
+        if type(attack_actor) is int and attack_actor in (0, 1):
+            frames.append({"kind": "finalize_attack", "actor": attack_actor})
         continuation = request.metadata.get("continuation")
         if isinstance(continuation, dict) and continuation.get("kind"):
             frames.append({
@@ -104,6 +140,7 @@ class VMTransactionManager:
         stack["pending_request"] = self.choice_request_to_dict(request)
         stack["sequence"] = int(getattr(state, "choice_sequence", stack.get("sequence", 0)) or 0)
         state.resolution_stack = stack
+        state._pending_choice_runtime = request
 
     def pending_choice_payload(self, state: GameState) -> dict[str, Any] | None:
         pending = self.resolution_stack_payload(state).get("pending_request")
@@ -122,6 +159,7 @@ class VMTransactionManager:
             context.pop("cancel_action_checkpoint", None)
         stack["context"] = context
         state.resolution_stack = stack
+        state._pending_choice_runtime = None
 
     def store_cancel_checkpoint(
         self,
@@ -160,7 +198,7 @@ class VMTransactionManager:
             return False
         snapshot = snapshot_from_dict(snapshot_payload)
         restored_revision = int(getattr(snapshot, "revision", 0)) + 1
-        restore_state(state, snapshot)
+        restore_state(state, snapshot, rebuild_event_bus=False)
         rebuild_state_event_bus(state)
         state.revision = restored_revision
         state.action_log = list(checkpoint.get("action_log", ()))
@@ -276,6 +314,55 @@ class VMTransactionManager:
         if isinstance(value, tuple):
             return tuple(cls.tuple_from_json_safe(item) for item in value)
         return value
+
+    @classmethod
+    def _clone_pending_runtime(cls, runtime):
+        """Copy mutable request metadata without cloning shared Card records.
+
+        Callback functions intentionally remain the same live callable.  VM
+        requests with serializable continuations are discarded on rollback
+        and rebuilt from state; this clone protects legacy callback-only
+        requests from poisoning their own retry metadata.
+        """
+        if not isinstance(runtime, ChoiceRequest):
+            return runtime
+        cloned = copy.copy(runtime)
+        cloned.metadata = copy.deepcopy(runtime.metadata)
+        cloned.options = tuple(
+            ChoiceOption(
+                option.option_id,
+                option.label,
+                option.ref,
+                cls._clone_runtime_value(option.value),
+            )
+            for option in runtime.options
+        )
+        legacy = runtime.legacy_request
+        if isinstance(legacy, ActionRequest):
+            legacy_clone = copy.copy(legacy)
+            legacy_clone.card_list = list(legacy.card_list)
+            legacy_clone.bench_indices = list(legacy.bench_indices)
+            legacy_clone.target_info = cls._clone_runtime_value(legacy.target_info)
+            legacy_clone.continuation = copy.deepcopy(legacy.continuation)
+            cloned.legacy_request = legacy_clone
+        return cloned
+
+    @classmethod
+    def _clone_runtime_value(cls, value):
+        if hasattr(value, "api_id"):
+            return value
+        if isinstance(value, dict):
+            return {
+                key: cls._clone_runtime_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [cls._clone_runtime_value(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(cls._clone_runtime_value(item) for item in value)
+        if isinstance(value, set):
+            return {cls._clone_runtime_value(item) for item in value}
+        return copy.deepcopy(value)
 
     @staticmethod
     def _snapshot_has_unregistered_cards(state_snapshot) -> bool:

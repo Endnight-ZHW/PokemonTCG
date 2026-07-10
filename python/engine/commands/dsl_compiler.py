@@ -66,7 +66,10 @@ def compile_effect(effect_def, **overrides) -> ICommand:
 
     factory = _primitives_registry.get(etype)
     if factory is not None:
-        return factory(params, **overrides)
+        command = factory(params, **overrides)
+        from engine.commands.continuation_state import tag_legacy_effect
+
+        return tag_legacy_effect(command, etype, params)
 
     raise ValueError(f"No native command registered for effect_type={etype!r}")
 
@@ -97,7 +100,13 @@ def compile_command_spec(spec) -> ICommand:
 
     if not DEFAULT_COMMAND_REGISTRY.supports_op(op):
         raise ValueError(f"No native ICommand registered for VM op={op!r}")
-    return DEFAULT_COMMAND_REGISTRY.build(op, args, branches)
+    command = DEFAULT_COMMAND_REGISTRY.build(op, args, branches)
+    from engine.commands.continuation_state import tag_command_spec
+
+    return tag_command_spec(
+        command,
+        {"op": op, "args": args, "branches": branches},
+    )
 
 
 __all__ = [

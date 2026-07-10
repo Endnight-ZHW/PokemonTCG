@@ -30,19 +30,27 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$outputRootPath = Join-Path $repoRoot $OutputRoot
+$buildRoot = Join-Path $repoRoot 'build'
+$outputRootPath = if ([IO.Path]::IsPathRooted($OutputRoot)) {
+    [IO.Path]::GetFullPath($OutputRoot)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
+}
 $modelRoot = Join-Path $outputRootPath 'models'
+$releaseStagingRoot = Join-Path $outputRootPath 'release_staging'
+$runtimeStageRoot = Join-Path $releaseStagingRoot 'godot\data\ai_models'
+$promotionTransactionRoot = Join-Path $outputRootPath 'promotion_transaction'
 $condaExe = (Get-Command conda.exe -ErrorAction Stop).Source
+. (Join-Path $PSScriptRoot 'toolchain_common.ps1')
+$release = Get-ReleaseManifest -RepoRoot $repoRoot
+Assert-PathUnderRoot -Root $buildRoot -Path $outputRootPath
 New-Item -ItemType Directory -Force -Path $modelRoot | Out-Null
 
 if ($Promote -and (-not $ExportOnnx -or -not $RunGodotTests)) {
     throw '-Promote requires both -ExportOnnx and -RunGodotTests so release artifacts are checked before promotion.'
 }
 
-$releaseDecks = @(
-    'fire', 'water', 'psychic', 'lightning', 'fighting',
-    'colorless', 'dragon', 'grass', 'steel', 'darkness'
-)
+$releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
 $requestedDecks = @()
 foreach ($deck in $Decks) {
     if ($deck -eq 'all') {
@@ -60,7 +68,10 @@ if ($requestedDecks.Count -eq 0) {
 }
 
 function Test-AcceptedV10Model {
-    param([string]$SidecarPath)
+    param(
+        [string]$SidecarPath,
+        [string]$DeckKey
+    )
     if (-not (Test-Path -LiteralPath $SidecarPath)) {
         return $false
     }
@@ -70,7 +81,11 @@ function Test-AcceptedV10Model {
         return (
             $metadata.accepted -eq $true -and
             $metadata.verified -eq $true -and
-            [int]$metadata.encoder_version -eq 3
+            [string]$metadata.deck -ceq $DeckKey -and
+            [int]$metadata.rules_version -eq [int]$release.schemas.python_rules -and
+            [int]$metadata.action_version -eq [int]$release.schemas.python_actions -and
+            [int]$metadata.encoder_version -eq [int]$release.schemas.encoder -and
+            [int]$metadata.planner_version -eq [int]$release.schemas.planner
         )
     } catch {
         return $false
@@ -170,7 +185,7 @@ if ($ValidateOnly) {
         $sidecarPath = Join-Path $modelRoot "$deck.json"
         $progressPath = Join-Path $outputRootPath "$deck.jsonl"
         $consolePath = Join-Path $outputRootPath "$deck.console.log"
-        if (-not $Force -and (Test-AcceptedV10Model -SidecarPath $sidecarPath)) {
+        if (-not $Force -and (Test-AcceptedV10Model -SidecarPath $sidecarPath -DeckKey $deck)) {
             Write-Host "[$deck] accepted v10/v3 model already exists; skipping."
             continue
         }
@@ -222,11 +237,12 @@ if ($ExportOnnx) {
     if (-not $hasAllStagedModels) {
         throw 'ONNX export requires staged checkpoints for all release decks.'
     }
-    Write-Host 'Exporting ONNX runtime artifacts from staged v10/v3 checkpoints.'
+    Write-Host "Exporting ONNX runtime artifacts to $runtimeStageRoot"
     Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
         'run', '-n', $CondaEnv,
         'python', '-B', '.\python\scripts\export_onnx_models.py',
-        '--checkpoint-root', $modelRoot
+        '--checkpoint-root', $modelRoot,
+        '--output-root', $runtimeStageRoot
     )
     $exitCode = $script:LastNativeExitCode
     if ($exitCode -ne 0) {
@@ -234,63 +250,132 @@ if ($ExportOnnx) {
     }
 }
 
-if ($RunGodotTests) {
-    Write-Host 'Building native ONNX bridge for Windows and Android.'
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build_native_ai.ps1') `
-        -Target all -Configuration all
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Native ONNX bridge build failed.'
-    }
-    Write-Host 'Running Godot tests.'
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test_godot.ps1')
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Godot tests failed.'
-    }
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test_godot_ai.ps1') `
-        -RequireDeepRuntime
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Godot AI regression failed.'
-    }
-}
+$promotionPending = $false
+try {
+    if ($ExportOnnx -and $RunGodotTests) {
+        # A previous shell/process interruption may have left a fully journaled
+        # pending install.  Always restore the last committed release first.
+        Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
+            'run', '-n', $CondaEnv,
+            'python', '-B', '.\python\scripts\promote_ai_models.py',
+            '--rollback', '--transaction-root', $promotionTransactionRoot
+        )
+        $exitCode = $script:LastNativeExitCode
+        if ($exitCode -ne 0) {
+            throw 'Unable to recover the previous Deep AI promotion transaction.'
+        }
 
-if ($Promote) {
-    Write-Host 'Promoting verified staged checkpoints to python/data/ai_models.'
-    Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
-        'run', '-n', $CondaEnv,
-        'python', '-B', '.\python\scripts\promote_ai_models.py',
-        '--source', $modelRoot
-    )
-    $exitCode = $script:LastNativeExitCode
-    if ($exitCode -ne 0) {
-        throw 'Deep AI checkpoint promotion failed.'
-    }
-
-    Write-Host 'Refreshing Godot model metadata after promotion.'
-    Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
-        'run', '-n', $CondaEnv,
-        'python', '-B', '.\python\scripts\export_godot_data.py',
-        '--skip-images'
-    )
-    $exitCode = $script:LastNativeExitCode
-    if ($exitCode -ne 0) {
-        throw 'Godot data refresh failed after Deep AI promotion.'
+        Write-Host 'Installing the verified PT/sidecar/ONNX/runtime bundle as one pending validation transaction.'
+        $promotionPending = $true
+        Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
+            'run', '-n', $CondaEnv,
+            'python', '-B', '.\python\scripts\promote_ai_models.py',
+            '--source', $modelRoot,
+            '--runtime-source', $runtimeStageRoot,
+            '--transaction-root', $promotionTransactionRoot,
+            '--defer-commit'
+        )
+        $exitCode = $script:LastNativeExitCode
+        if ($exitCode -ne 0) {
+            throw 'Combined Deep AI release promotion failed.'
+        }
     }
 
-    Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
-        'run', '-n', $CondaEnv,
-        'python', '-B', '.\python\scripts\export_godot_data.py',
-        '--check', '--skip-images'
-    )
-    $exitCode = $script:LastNativeExitCode
-    if ($exitCode -ne 0) {
-        throw 'Godot generated data is stale after Deep AI promotion.'
+    if ($RunGodotTests) {
+        Write-Host 'Building native ONNX bridge for Windows and Android.'
+        & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build_native_ai.ps1') `
+            -Target all -Configuration all
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Native ONNX bridge build failed.'
+        }
+        if ($promotionPending) {
+            Write-Host 'Running Godot tests against the recoverable pending release.'
+        } else {
+            Write-Host 'Running Godot tests against the current committed release.'
+        }
+        & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test_godot.ps1')
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Godot tests failed.'
+        }
+        & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test_godot_ai.ps1') `
+            -RequireDeepRuntime
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Godot AI regression failed.'
+        }
+        if ($promotionPending) {
+            Write-Host 'Exporting Windows/Android debug builds from the pending release.'
+            & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build_godot.ps1') `
+                -Target all -Configuration debug
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Godot Windows/Android pending release export failed.'
+            }
+            & (Join-Path $PSScriptRoot 'smoke_godot_build.ps1') `
+                -RequireAndroidDevice:$Promote
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Exported pending release smoke failed.'
+            }
+        }
     }
 
-    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test_godot_ai.ps1') `
-        -RequireDeepRuntime
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Godot AI regression failed after Deep AI promotion.'
+    if ($Promote) {
+        Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
+            'run', '-n', $CondaEnv,
+            'python', '-B', '.\python\scripts\promote_ai_models.py',
+            '--commit', '--transaction-root', $promotionTransactionRoot
+        )
+        $exitCode = $script:LastNativeExitCode
+        if ($exitCode -ne 0) {
+            throw 'Unable to commit the verified Deep AI promotion transaction.'
+        }
+        $promotionPending = $false
+
+        Write-Host 'Refreshing Godot model metadata after promotion.'
+        Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
+            'run', '-n', $CondaEnv,
+            'python', '-B', '.\python\scripts\export_godot_data.py',
+            '--skip-images'
+        )
+        $exitCode = $script:LastNativeExitCode
+        if ($exitCode -ne 0) {
+            throw 'Godot data refresh failed after Deep AI promotion.'
+        }
+
+        Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
+            'run', '-n', $CondaEnv,
+            'python', '-B', '.\python\scripts\export_godot_data.py',
+            '--check', '--skip-images'
+        )
+        $exitCode = $script:LastNativeExitCode
+        if ($exitCode -ne 0) {
+            throw 'Godot generated data is stale after Deep AI promotion.'
+        }
+    } elseif ($promotionPending) {
+        Write-Host 'Validation-only run passed; restoring the current committed release.'
+        Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
+            'run', '-n', $CondaEnv,
+            'python', '-B', '.\python\scripts\promote_ai_models.py',
+            '--rollback', '--transaction-root', $promotionTransactionRoot
+        )
+        $exitCode = $script:LastNativeExitCode
+        if ($exitCode -ne 0) {
+            throw 'Unable to restore the committed release after staged validation.'
+        }
+        $promotionPending = $false
     }
+} catch {
+    $originalError = $_
+    if ($promotionPending) {
+        Write-Warning 'Rolling back the pending Deep AI release transaction.'
+        Invoke-NativeCommand -FilePath $condaExe -ArgumentList @(
+            'run', '-n', $CondaEnv,
+            'python', '-B', '.\python\scripts\promote_ai_models.py',
+            '--rollback', '--transaction-root', $promotionTransactionRoot
+        )
+        if ($script:LastNativeExitCode -ne 0) {
+            throw "Deep AI validation failed and automatic rollback also failed. Original error: $originalError"
+        }
+    }
+    throw $originalError
 }
 
 Write-Host 'Deep AI v10/v3 pipeline finished.'

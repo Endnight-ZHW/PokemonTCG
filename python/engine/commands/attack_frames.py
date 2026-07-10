@@ -57,7 +57,7 @@ def set_finish_attack_after_promotions(state: GameState, actor: int) -> None:
 
 def finish_attack_after_promotions_actor(state: GameState) -> int | None:
     value = _resolution_stack_context(state).get(FINISH_ATTACK_AFTER_PROMOTIONS_KEY)
-    if value in (0, 1):
+    if type(value) is int and value in (0, 1):
         return int(value)
     return None
 

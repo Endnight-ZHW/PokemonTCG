@@ -18,7 +18,7 @@ var choice_settlement: VMChoiceSettlement
 
 
 func _init(p_catalog: CardCatalog = null) -> void:
-	catalog = p_catalog if p_catalog else CardCatalog.new()
+	catalog = p_catalog if p_catalog else CardCatalog.shared()
 	validator = RulesValidator.new(catalog)
 	effect_engine = EffectEngine.new(catalog)
 	knockout_settlement = VMKnockoutSettlement.new(

@@ -1,16 +1,18 @@
 class_name AuthoritativeSession
 extends RefCounted
 
-var catalog := CardCatalog.new()
-var engine := GameEngine.new(catalog)
+var catalog: CardCatalog
+var engine: GameEngine
 var state: GameState
 var rng := PortableRandomSource.new(1)
 var room_id := ""
 var deck_keys: Array[String] = ["", ""]
 
 
-func _init(p_room_id: String = "") -> void:
+func _init(p_room_id: String = "", p_catalog: CardCatalog = null) -> void:
 	room_id = p_room_id
+	catalog = p_catalog if p_catalog != null else CardCatalog.shared()
+	engine = GameEngine.new(catalog)
 
 
 func start_match(
@@ -19,6 +21,16 @@ func start_match(
 	seed: int,
 	forced_first: int = -1,
 ) -> StepResult:
+	if not catalog.decks.has(host_deck) or not catalog.decks.has(client_deck):
+		return StepResult.new(
+			false,
+			"未知牌组。",
+			null,
+			[],
+			-1,
+			false,
+			"invalid_deck",
+		)
 	deck_keys = [host_deck, client_deck]
 	state = GameState.new()
 	state.public_deck_keys = deck_keys.duplicate()
@@ -62,6 +74,16 @@ func submit_choice(player_idx: int, response_data: Dictionary) -> StepResult:
 func surrender(player_idx: int) -> StepResult:
 	if state == null or player_idx not in [0, 1]:
 		return StepResult.new(false, "无法投降。", null, [], -1, false, "invalid_actor")
+	if state.phase == "GAME_OVER" or state.winner >= 0:
+		return StepResult.new(
+			false,
+			"对局已经结束。",
+			null,
+			[],
+			state.winner,
+			true,
+			"game_over",
+		)
 	state.revision += 1
 	state.winner = 1 - player_idx
 	state.phase = "GAME_OVER"

@@ -57,6 +57,16 @@ class VMChoiceManager:
             "target_player": request.target_player,
             "distribute_mode": request.distribute_mode,
             "max_per_target": request.max_per_target,
+            "source_name": request.source_name,
+            "bench_indices": [int(index) for index in request.bench_indices],
+            "target_info": self._json_safe(request.target_info),
+            "card_list_ids": [
+                str(getattr(card, "api_id", card) or "")
+                for card in request.card_list
+            ],
+            "pending_card_id": str(
+                getattr(request.pending_card, "api_id", "") or ""
+            ),
             "flip_count": request.flip_count,
             "until_tails": request.until_tails,
             "revision": getattr(state, "revision", 0),
@@ -403,3 +413,17 @@ class VMChoiceManager:
         if request.target_player == "opponent" or request.request_type == "select_opponent_bench":
             return 1 - owner
         return owner
+
+    @classmethod
+    def _json_safe(cls, value):
+        if hasattr(value, "api_id"):
+            return str(getattr(value, "api_id", "") or "")
+        if isinstance(value, dict):
+            return {str(key): cls._json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._json_safe(item) for item in value]
+        if isinstance(value, set):
+            return sorted(cls._json_safe(item) for item in value)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)

@@ -30,10 +30,12 @@ class GameScreenAnimationMixin:
         if self.challenge_mode:
             is_opponent_view = player_idx == self.ai_player_idx
         else:
-            is_opponent_view = (
-                player_idx == (1 - self.my_player_idx) if (self._is_remote_host or self._is_remote_client)
-                else player_idx != (self.setup_player_idx if self.state.phase == TurnPhase.SETUP else self.state.active_player_idx)
+            display_idx = (
+                self.setup_player_idx
+                if self.state.phase == TurnPhase.SETUP
+                else self.state.active_player_idx
             )
+            is_opponent_view = player_idx != display_idx
         if slot == "active":
             rect = self._opp_active_rect() if is_opponent_view else self._player_active_rect()
             if rect:
@@ -334,12 +336,6 @@ class GameScreenAnimationMixin:
         if not self.state:
             return
 
-        if self._remote_update_just_arrived:
-            self._remote_update_just_arrived = False
-            return
-
-        is_remote = self._is_remote_host or self._is_remote_client
-
         for pi in [0, 1]:
             player = self.state.get_player(pi)
             if player is None:
@@ -376,11 +372,6 @@ class GameScreenAnimationMixin:
                     drawn = min(deck_delta, hc)
                 if discard_delta > 0 and (hand_delta < 0 or drawn > 0 or action_source):
                     discarded = discard_delta
-
-            if is_remote and pi != self.my_player_idx:
-                drawn = 0
-                discarded = 0
-                milled = 0
 
             if discarded and drawn:
                 src_x = PLAY_AREA_W // 2

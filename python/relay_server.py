@@ -13,6 +13,7 @@ import random
 import re
 import threading
 import time
+from collections import deque
 
 import websockets.sync.server
 
@@ -24,7 +25,10 @@ RELAY_RECV_TIMEOUT = 30
 MAX_MESSAGE_BYTES = 262_144
 MAX_CONTROL_MESSAGE_BYTES = 1024
 MAX_MESSAGES_PER_SECOND = 60
+MAX_CONTROL_HANDSHAKES_PER_SECOND = 60
+RATE_LIMIT_WINDOW_SECONDS = 1.0
 PROTOCOL_V3 = 3
+MAX_WIRE_INTEGER = 2_147_483_647
 MSG_ERROR = "error"
 MSG_OPPONENT_DISCONNECTED = "opponent_disconnected"
 ROOM_CODE_PATTERN = re.compile(r"^[0-9]{4}$")
@@ -55,6 +59,34 @@ def _send_error(websocket, message: str):
     }, ensure_ascii=False))
 
 
+def _reject_json_constant(value: str):
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _strict_json_object(rows: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in rows:
+        if key in result:
+            raise ValueError(f"duplicate JSON field: {key}")
+        result[key] = value
+    return result
+
+
+def _load_json_object(raw: str, *, object_error: str) -> tuple[dict | None, str]:
+    """Parse strict JSON and require an object at the wire boundary."""
+    try:
+        message = json.loads(
+            raw,
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_strict_json_object,
+        )
+    except (json.JSONDecodeError, ValueError, RecursionError):
+        return None, "收到无效JSON。"
+    if not isinstance(message, dict):
+        return None, object_error
+    return message, ""
+
+
 def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bool, str]:
     required_fields = {
         "protocol_version", "message_type", "room_id", "sender", "sequence",
@@ -66,7 +98,7 @@ def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bo
         return False, "协议版本不兼容，请双方更新到协议 v3。"
     if not isinstance(message.get("room_id"), str) or message.get("room_id") != room_id:
         return False, "消息房间号不匹配。"
-    if message.get("sender") != sender:
+    if not _is_wire_integer(message.get("sender")) or message.get("sender") != sender:
         return False, "消息发送方与连接身份不匹配。"
     if not isinstance(message.get("message_type"), str) or (
         message["message_type"] not in V3_MESSAGE_TYPES
@@ -77,18 +109,25 @@ def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bo
     if (
         not _is_wire_integer(message.get("sequence"))
         or message["sequence"] <= 0
+        or message["sequence"] > MAX_WIRE_INTEGER
         or not _is_wire_integer(message.get("state_revision"))
         or message["state_revision"] < -1
+        or message["state_revision"] > MAX_WIRE_INTEGER
     ):
         return False, "协议 v3 序号或局面版本无效。"
     if not isinstance(message.get("action_id"), str) or not isinstance(
         message.get("request_id"), str
     ):
         return False, "协议 v3 标识符必须是字符串。"
-    if len(message["action_id"].encode("utf-8")) > 128 or len(
-        message["request_id"].encode("utf-8")
-    ) > 128:
-        return False, "协议 v3 标识符过长。"
+    action_id_size = _utf8_size(message["action_id"])
+    request_id_size = _utf8_size(message["request_id"])
+    if (
+        action_id_size < 0
+        or request_id_size < 0
+        or action_id_size > 128
+        or request_id_size > 128
+    ):
+        return False, "协议 v3 标识符编码无效或过长。"
     return True, ""
 
 
@@ -96,18 +135,30 @@ def _is_wire_integer(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _utf8_size(value: str) -> int:
+    try:
+        return len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        return -1
+
+
 def _parse_control_message(raw) -> tuple[dict | None, str]:
     """Validate the one-shot relay handshake before touching the room table."""
     if not isinstance(raw, str):
         return None, "只接受 UTF-8 JSON 文本控制消息。"
-    if len(raw.encode("utf-8")) > MAX_CONTROL_MESSAGE_BYTES:
+    raw_size = _utf8_size(raw)
+    if raw_size < 0:
+        return None, "只接受 UTF-8 JSON 文本控制消息。"
+    if raw_size > MAX_CONTROL_MESSAGE_BYTES:
         return None, "控制消息超过大小限制。"
-    try:
-        message = json.loads(raw)
-    except json.JSONDecodeError:
-        return None, "收到无效JSON控制消息。"
-    if not isinstance(message, dict):
-        return None, "控制消息必须是对象。"
+    message, parse_error = _load_json_object(
+        raw,
+        object_error="控制消息必须是对象。",
+    )
+    if message is None:
+        if parse_error == "收到无效JSON。":
+            return None, "收到无效JSON控制消息。"
+        return None, parse_error
     message_type = message.get("type")
     if message_type == "create_room":
         if set(message) != {"type"}:
@@ -138,6 +189,60 @@ class _RateLimiter:
         return self.count <= self.limit
 
 
+class _KeyedRateLimiter:
+    """Thread-safe rolling-window limiter shared by connections from one source."""
+
+    def __init__(
+        self,
+        limit: int = MAX_CONTROL_HANDSHAKES_PER_SECOND,
+        window_seconds: float = RATE_LIMIT_WINDOW_SECONDS,
+        clock=time.monotonic,
+    ):
+        if limit <= 0:
+            raise ValueError("rate limit must be positive")
+        if window_seconds <= 0:
+            raise ValueError("rate limit window must be positive")
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self._clock = clock
+        self._events: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+        self._last_cleanup = self._clock()
+
+    @staticmethod
+    def _discard_expired(events: deque[float], cutoff: float) -> None:
+        while events and events[0] <= cutoff:
+            events.popleft()
+
+    def allow(self, key: str) -> bool:
+        now = self._clock()
+        cutoff = now - self.window_seconds
+        with self._lock:
+            if now - self._last_cleanup >= self.window_seconds:
+                for existing_key, existing_events in tuple(self._events.items()):
+                    self._discard_expired(existing_events, cutoff)
+                    if not existing_events:
+                        del self._events[existing_key]
+                self._last_cleanup = now
+
+            events = self._events.setdefault(key, deque())
+            self._discard_expired(events, cutoff)
+            if len(events) >= self.limit:
+                return False
+            events.append(now)
+            return True
+
+
+def _remote_rate_key(remote) -> str:
+    """Group reconnects by host while keeping malformed addresses isolated."""
+    if isinstance(remote, (tuple, list)) and remote:
+        return str(remote[0])
+    return str(remote) if remote is not None else "<unknown>"
+
+
+_control_handshake_limiter = _KeyedRateLimiter()
+
+
 def cleanup_expired_rooms():
     """Remove rooms that have waited too long without a completed match."""
     with rooms_lock:
@@ -150,7 +255,8 @@ def _cleanup_expired_rooms_locked(now: float) -> list[str]:
     expired = [
         code
         for code, room in rooms.items()
-        if now - room.get("created_at", now) > ROOM_TTL
+        if room.get("p2") is None
+        and now - room.get("created_at", now) > ROOM_TTL
     ]
     for code in expired:
         room = rooms.pop(code, None)
@@ -207,7 +313,11 @@ def _join_room(websocket, code: str) -> tuple[dict | None, str]:
 def handle_client(websocket):
     """处理单个 WebSocket 连接（在独立线程中运行）."""
     remote = websocket.remote_address
-    logger.info("新连接: %s:%s", *remote)
+    # ``remote_address`` is a 2-tuple for IPv4, commonly a 4-tuple for IPv6,
+    # and may be ``None`` for test/custom transports.  Treat it as an opaque
+    # value so logging itself can never abort the connection handler.
+    remote_label = str(remote)
+    logger.info("新连接: %s", remote_label)
 
     my_room: str | None = None
     my_role: str | None = None
@@ -216,6 +326,9 @@ def handle_client(websocket):
 
     try:
         # 阶段1: 等待控制命令
+        if not _control_handshake_limiter.allow(_remote_rate_key(remote)):
+            _send_error(websocket, "控制握手频率过高。")
+            return
         raw = websocket.recv(timeout=RELAY_RECV_TIMEOUT)
         if not rate_limiter.allow():
             _send_error(websocket, "发送频率过高。")
@@ -233,21 +346,21 @@ def handle_client(websocket):
             websocket.send(json.dumps({
                 "type": "room_created", "room_id": code,
             }, ensure_ascii=False))
-            logger.info("房间 %s 已创建 (房主: %s:%s)", code, *remote)
+            logger.info("房间 %s 已创建 (房主: %s)", code, remote_label)
 
         elif msg_type == "join_room":
             code = msg["room_id"]
             room, join_error = _join_room(websocket, code)
             if room is None:
                 _send_error(websocket, join_error)
-                logger.warning("%s:%s 加入房间 %s 失败: %s", *remote, code, join_error)
+                logger.warning("%s 加入房间 %s 失败: %s", remote_label, code, join_error)
                 return
             my_room = code
             my_role = "p2"
             websocket.send(json.dumps({
                 "type": "room_joined", "room_id": code,
             }, ensure_ascii=False))
-            logger.info("%s:%s 加入了房间 %s", *remote, code)
+            logger.info("%s 加入了房间 %s", remote_label, code)
 
             # 通知双方对手已加入
             p1 = room["p1"]
@@ -291,17 +404,20 @@ def handle_client(websocket):
             if not isinstance(raw, str):
                 _send_error(websocket, "只接受 UTF-8 JSON 文本消息。")
                 continue
-            if len(raw.encode("utf-8")) > MAX_MESSAGE_BYTES:
+            raw_size = _utf8_size(raw)
+            if raw_size < 0:
+                _send_error(websocket, "只接受 UTF-8 JSON 文本消息。")
+                continue
+            if raw_size > MAX_MESSAGE_BYTES:
                 _send_error(websocket, "消息超过大小限制。")
                 continue
 
-            try:
-                forwarded = json.loads(raw)
-            except json.JSONDecodeError:
-                _send_error(websocket, "收到无效JSON。")
-                continue
-            if not isinstance(forwarded, dict):
-                _send_error(websocket, "协议 v3 消息必须是对象。")
+            forwarded, parse_error = _load_json_object(
+                raw,
+                object_error="协议 v3 消息必须是对象。",
+            )
+            if forwarded is None:
+                _send_error(websocket, parse_error)
                 continue
 
             valid, validation_error = _valid_forward_message(
@@ -329,11 +445,11 @@ def handle_client(websocket):
     except websockets.exceptions.ConnectionClosed:
         pass
     except json.JSONDecodeError:
-        logger.warning("%s:%s 收到无效JSON", *remote)
+        logger.warning("%s 收到无效JSON", remote_label)
     except Exception:
-        logger.exception("%s:%s 未预期的错误", *remote)
+        logger.exception("%s 未预期的错误", remote_label)
     finally:
-        logger.info("断开连接: %s:%s (房间: %s)", *remote, my_room or "N/A")
+        logger.info("断开连接: %s (房间: %s)", remote_label, my_room or "N/A")
         opponent = None
         removed = False
         with rooms_lock:

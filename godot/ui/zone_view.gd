@@ -15,7 +15,7 @@ var is_hidden_zone := false
 var target_player := -1
 var target_slot := ""
 var inspect_context: Dictionary = {}
-var catalog := CardCatalog.new()
+var catalog: CardCatalog = CardCatalog.shared()
 var stack_visual_mode := ""
 var stack_visual_max_count := 0
 var stack_visual_direction := "up"
@@ -43,6 +43,12 @@ func _ready() -> void:
 	_ensure_fallback_card_back()
 	_refresh()
 	set_action(_pending_action_row)
+
+
+func set_catalog(value: CardCatalog) -> void:
+	catalog = value if value != null else CardCatalog.shared()
+	if is_node_ready():
+		_refresh()
 
 
 func configure(

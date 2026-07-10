@@ -103,6 +103,22 @@ class VMInterpreter:
         if req is None or getattr(req, "_resolution_stack_wrapped", False):
             return req
 
+        continuation = getattr(req, "continuation", None)
+        if isinstance(continuation, dict) and continuation.get("kind"):
+            # This small, JSON-safe descriptor is enough to bind a restored
+            # continuation to the same actor/source context.  The live request
+            # still retains the full command stack until a snapshot boundary.
+            if "_resume" not in continuation:
+                from engine.commands.continuation_state import (
+                    serialize_resolution_stack,
+                )
+
+                continuation["_resume"] = serialize_resolution_stack(
+                    stack,
+                    player_idx,
+                    source_slot,
+                )
+
         original_callback = req.callback
         setattr(req, "_resolution_stack_wrapped", True)
         setattr(req, "_resolution_stack_had_callback", original_callback is not None)

@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from data.card_models import AbilityDef, Card, EffectDef
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS
-from engine.actions import ChoiceResponse, GameAction, PokemonRef, StepResult
+from engine.action_codec import deserialize_game_action, serialize_game_action
+from engine.actions import CardRef, ChoiceResponse, GameAction, PokemonRef, StepResult
 from engine.action_availability import VMActionAvailability
 from engine.ai.observation import Observation, fair_search_clone
 from engine.ai.planner import AnytimePlanner, HeuristicBackend, PlannerConfig
@@ -34,7 +35,6 @@ from engine.settlement import VMSettlementManager
 from engine.snapshot import SnapshotManager, clone_state, snapshot_state
 from engine.transaction_manager import VMTransactionManager
 from engine.turn_manager import TurnManager
-from network.state_serializer import deserialize_game_action, serialize_game_action
 
 
 class GameEngineRefactorTests(unittest.TestCase):
@@ -150,6 +150,8 @@ class GameEngineRefactorTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             state.get_player(2)
+        with self.assertRaises(ValueError):
+            state.get_player(True)
         self.assertEqual(engine.legal_actions(state, -1), ())
 
         result = engine.apply_action(
@@ -350,23 +352,17 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertEqual(state.phase, TurnPhase.MAIN)
         self.assertEqual(state.pending_promotions, [])
 
-    def test_snapshot_preserves_debug_and_hidden_view_state(self):
+    def test_snapshot_preserves_debug_state(self):
         state = self._main_state()
         state.mulligan_count = (2, 1)
         state.extra_draws = (1, 3)
         state.action_log = ["before snapshot"]
-        state.is_network_view = True
-        state.p2._hand_hidden = True
-        state.p2._hand_count = 7
 
         restored = clone_state(state)
 
         self.assertEqual(restored.mulligan_count, (2, 1))
         self.assertEqual(restored.extra_draws, (1, 3))
         self.assertEqual(restored.action_log, ["before snapshot"])
-        self.assertTrue(restored.is_network_view)
-        self.assertTrue(restored.p2._hand_hidden)
-        self.assertEqual(restored.p2.hand_count, 7)
 
     def test_choice_request_boundary_lives_in_choice_manager(self):
         engine = GameEngine()
@@ -654,6 +650,224 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertFalse(missing.success)
         self.assertEqual(missing.error_code, "choice_count")
 
+    def test_energy_distribution_rejects_per_target_limit_bypass(self):
+        state = self._main_state()
+        engine = GameEngine()
+        callback_payloads = []
+        structured = engine.choice_request(
+            state,
+            ActionRequest(
+                "distribute_energy",
+                0,
+                "distribute",
+                min_select=2,
+                max_select=2,
+                card_list=[state.p1.deck[0], state.p1.deck[1]],
+                target_info=[
+                    {"slot": "active", "name": "active"},
+                    {"slot": "bench_0", "name": "bench"},
+                ],
+                max_per_target=1,
+                callback=lambda payload: callback_payloads.append(payload),
+            ),
+        )
+        active_option = next(
+            option
+            for option in structured.options
+            if option.value.get("slot") == "active"
+        )
+
+        result = engine.apply_choice(
+            state,
+            structured,
+            ChoiceResponse(
+                structured.request_id,
+                (active_option.option_id, active_option.option_id),
+            ),
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "choice_target_limit")
+        self.assertEqual(callback_payloads, [])
+        self.assertIsNotNone(state.resolution_stack["pending_request"])
+
+    def test_malformed_public_requests_fail_without_raising(self):
+        state = self._main_state()
+        engine = GameEngine()
+
+        invalid_action = engine.apply_action(state, None)
+        self.assertFalse(invalid_action.success)
+        self.assertEqual(invalid_action.error_code, "invalid_action")
+
+        invalid_ref = engine.apply_action(
+            state,
+            GameAction(PlayerAction.END_TURN, actor=0, source=object()),
+        )
+        self.assertFalse(invalid_ref.success)
+        self.assertEqual(invalid_ref.error_code, "stale_action_reference")
+
+        bool_ref = engine.apply_action(
+            state,
+            GameAction(
+                PlayerAction.END_TURN,
+                actor=0,
+                source=CardRef(True, "hand", 0, ""),
+            ),
+        )
+        self.assertFalse(bool_ref.success)
+        self.assertEqual(bool_ref.error_code, "stale_action_reference")
+
+        encoded = serialize_game_action(
+            GameAction(
+                PlayerAction.END_TURN,
+                actor=0,
+                source=CardRef(0, "hand", 0, ""),
+            )
+        )
+        encoded["source"]["player"] = True
+        with self.assertRaisesRegex(ValueError, "player is invalid"):
+            deserialize_game_action(encoded)
+
+        request = engine.choice_request(
+            state,
+            ActionRequest("confirm", 0, "confirm", callback=lambda _choice: None),
+        )
+        malformed_ref_request = replace(
+            request,
+            options=(replace(request.options[0], ref=PokemonRef(True, "active", "")),),
+        )
+        malformed_ref = engine.apply_choice(
+            state,
+            malformed_ref_request,
+            ChoiceResponse(malformed_ref_request.request_id, ("confirm:yes",)),
+        )
+        self.assertFalse(malformed_ref.success)
+        self.assertEqual(malformed_ref.error_code, "invalid_choice_request")
+
+        malformed = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, None),
+        )
+        self.assertFalse(malformed.success)
+        self.assertEqual(malformed.error_code, "invalid_choice_response")
+        self.assertIsNotNone(state.resolution_stack["pending_request"])
+
+        state.resolution_stack["sequence"] = {"not": "numeric"}
+        blocked = engine.apply_action(
+            state,
+            GameAction(PlayerAction.END_TURN, actor=0),
+        )
+        self.assertFalse(blocked.success)
+        self.assertEqual(blocked.error_code, "pending_choice")
+
+    def test_corrupt_cancel_checkpoint_rolls_back_and_returns_failure(self):
+        state = self._main_state()
+        engine = GameEngine()
+        rng = RandomSource(18)
+        request = engine.choice_request(
+            state,
+            ActionRequest(
+                "confirm",
+                0,
+                "cancel",
+                min_select=0,
+                can_cancel=True,
+            ),
+        )
+        state.resolution_stack["context"] = {
+            "cancel_action_checkpoint": {
+                "state": {"schema_version": 999},
+            },
+        }
+        before = snapshot_state(state)
+        before_rng = rng.getstate()
+
+        result = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (), cancelled=True),
+            rng,
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "choice_exception")
+        self.assertEqual(snapshot_state(state), before)
+        self.assertEqual(rng.getstate(), before_rng)
+
+    def test_state_owned_choice_structure_fails_closed(self):
+        def negative_min(request):
+            request.min_select = -1
+
+        def inverted_bounds(request):
+            request.max_select = request.min_select - 1
+
+        def non_bool_duplicates(request):
+            request.allow_duplicates = 1
+
+        def non_bool_cancel(request):
+            request.can_cancel = 1
+
+        def empty_option_id(request):
+            request.options = (
+                replace(request.options[0], option_id=""),
+                request.options[1],
+            )
+
+        def non_string_option_id(request):
+            request.options = (
+                replace(request.options[0], option_id=7),
+                request.options[1],
+            )
+
+        def duplicate_option_id(request):
+            request.options = (request.options[0], request.options[0])
+
+        def non_string_option_label(request):
+            request.options = (
+                replace(request.options[0], label={"bad": "label"}),
+                request.options[1],
+            )
+
+        corruptions = {
+            "negative min": negative_min,
+            "max below min": inverted_bounds,
+            "non-bool allow_duplicates": non_bool_duplicates,
+            "non-bool can_cancel": non_bool_cancel,
+            "empty option id": empty_option_id,
+            "non-string option id": non_string_option_id,
+            "duplicate option id": duplicate_option_id,
+            "non-string option label": non_string_option_label,
+        }
+        for label, corrupt in corruptions.items():
+            with self.subTest(label=label):
+                state = self._main_state()
+                engine = GameEngine()
+                callback_payloads = []
+                request = engine.choice_request(
+                    state,
+                    ActionRequest(
+                        "confirm",
+                        0,
+                        "confirm",
+                        callback=lambda payload: callback_payloads.append(payload),
+                    ),
+                )
+                corrupt(request)
+                engine.transaction_manager.persist_pending_choice(state, request)
+                before = snapshot_state(state)
+
+                result = engine.apply_choice(
+                    state,
+                    request,
+                    ChoiceResponse(request.request_id, ()),
+                )
+
+                self.assertFalse(result.success)
+                self.assertEqual(result.error_code, "invalid_choice_request")
+                self.assertEqual(callback_payloads, [])
+                self.assertEqual(snapshot_state(state), before)
+
     def test_failed_choice_rolls_back_state_events_and_rng(self):
         state = self._main_state()
         engine = GameEngine()
@@ -695,6 +909,45 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertEqual(list(state.event_stream._events), before_events)
         self.assertEqual(result.events, ())
         self.assertIsNone(result.pending_choice)
+
+    def test_failed_choice_restores_nested_events_runtime_and_result_payload(self):
+        state = self._main_state()
+        engine = GameEngine()
+        state.event_stream.push(GameEvent("existing", {"nested": {"value": 1}}))
+        holder = {}
+
+        def fail_after_mutation(_choice):
+            state.event_stream._events[0].data["nested"]["value"] = 99
+            holder["request"].metadata["poisoned"] = True
+            return ActionResult(
+                False,
+                "choice failed",
+                damage_dealt=90,
+                cards_drawn=[state.p1.deck[-1]],
+                pokemon_ko=["p1_active"],
+            )
+
+        request = engine.choice_request(
+            state,
+            ActionRequest("confirm", 0, "confirm", callback=fail_after_mutation),
+        )
+        holder["request"] = request
+        before = snapshot_state(state)
+
+        result = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, ("confirm:yes",)),
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(snapshot_state(state), before)
+        self.assertEqual(state.event_stream._events[0].data["nested"]["value"], 1)
+        self.assertEqual(result.action_result.cards_drawn, [])
+        self.assertEqual(result.action_result.damage_dealt, 0)
+        self.assertEqual(result.action_result.pokemon_ko, [])
+        retry = engine.pending_choice_request(state)
+        self.assertNotIn("poisoned", retry.metadata)
 
     def test_successful_choice_commits_rng_and_state(self):
         state = self._main_state()
@@ -1580,6 +1833,19 @@ class GameEngineRefactorTests(unittest.TestCase):
             cloned.resolution_stack["context"],
         )
 
+    def test_attack_promotion_finish_marker_rejects_bool_actor(self):
+        from engine.commands.attack_frames import (
+            FINISH_ATTACK_AFTER_PROMOTIONS_KEY,
+            finish_attack_after_promotions_actor,
+        )
+
+        state = self._main_state()
+        state.resolution_stack["context"] = {
+            FINISH_ATTACK_AFTER_PROMOTIONS_KEY: True,
+        }
+
+        self.assertIsNone(finish_attack_after_promotions_actor(state))
+
     def test_observation_and_registry_ignore_hidden_identity_swaps(self):
         state = self._main_state()
         state.public_deck_keys = ("fire", "water")
@@ -1677,6 +1943,31 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertTrue(manager.redo(state))
         self.assertEqual(snapshot_state(state), redo_snapshot)
 
+    def test_snapshot_manager_rebinds_modifiers_to_restored_pokemon(self):
+        state = self._main_state()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-ente"))
+        manager = SnapshotManager()
+        manager.capture(state)
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+
+        self.assertTrue(manager.undo(state))
+        results = state.event_bus.emit(
+            EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+            attacker=state.p2.active,
+            defender=state.p1.active,
+            ignore_defender_effects=False,
+        )
+        self.assertTrue(any(result.get("delta") == -20 for result in results))
+
+        self.assertTrue(manager.redo(state))
+        results = state.event_bus.emit(
+            EventType.DAMAGE_ABOUT_TO_BE_DEALT,
+            attacker=state.p2.active,
+            defender=state.p1.active,
+            ignore_defender_effects=False,
+        )
+        self.assertEqual(results, [])
+
     def test_anytime_planner_does_not_mutate_real_state(self):
         state = self._main_state()
         state.public_deck_keys = ("water", "fire")
@@ -1768,7 +2059,7 @@ class GameEngineRefactorTests(unittest.TestCase):
         portable.set_state(saved)
         self.assertEqual(portable.next_u32(), next_value)
 
-    def test_game_action_network_round_trip_preserves_stable_refs(self):
+    def test_game_action_canonical_round_trip_preserves_stable_refs(self):
         action = GameAction(
             PlayerAction.ATTACH_ENERGY,
             {"hand_idx": 2, "target_slot": "bench_1"},

@@ -8,16 +8,17 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot '.tools'
 $downloads = Join-Path $toolsRoot 'downloads'
-$godotRoot = Join-Path $toolsRoot 'godot-4.7'
-$godotExe = Join-Path $godotRoot 'Godot_v4.7-stable_win64.exe'
-$godotConsole = Join-Path $godotRoot 'Godot_v4.7-stable_win64_console.exe'
 
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
+$godotPaths = Get-GodotToolchainPaths -RepoRoot $repoRoot
+$godotRoot = $godotPaths.Root
+$godotExe = $godotPaths.Editor
+$godotConsole = $godotPaths.Console
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 New-Item -ItemType Directory -Force -Path $downloads, $godotRoot | Out-Null
 
-$godotZip = Join-Path $downloads 'Godot_v4.7-stable_win64.exe.zip'
+$godotZip = Join-Path $downloads "Godot_v$($lock.godot.version)_win64.exe.zip"
 Get-VerifiedDownload -Uri $lock.godot.editor_url -Destination $godotZip `
     -Sha256 $lock.godot.editor_sha256 -Force:$Force
 
@@ -25,11 +26,13 @@ if ($Force -or -not (Test-Path -LiteralPath $godotExe)) {
     Expand-Archive -LiteralPath $godotZip -DestinationPath $godotRoot -Force
 }
 
-$templateArchive = Join-Path $downloads 'Godot_v4.7-stable_export_templates.tpz'
+$templateArchive = Join-Path $downloads (
+    "Godot_v$($lock.godot.version)_export_templates.tpz"
+)
 Get-VerifiedDownload -Uri $lock.godot.templates_url -Destination $templateArchive `
     -Sha256 $lock.godot.templates_sha256 -Force:$Force
 
-$templateRoot = Join-Path $env:APPDATA 'Godot\export_templates\4.7.stable'
+$templateRoot = $godotPaths.TemplateRoot
 if ($Force -or -not (Test-Path -LiteralPath (Join-Path $templateRoot 'version.txt'))) {
     $templateTemp = Join-Path $toolsRoot 'template-extract'
     Assert-PathUnderRoot -Root $toolsRoot -Path $templateTemp

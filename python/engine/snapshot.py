@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     from data.card_models import Card
 
 
+SNAPSHOT_SCHEMA_VERSION = 1
+
+
 @dataclass
 class PlayerSnapshot:
     """Serializable snapshot of a single player's state."""
@@ -34,8 +37,6 @@ class PlayerSnapshot:
     healed: bool = False
     vstar_used: bool = False
     was_ko_by_attack: bool = False
-    hand_count: int = 0
-    hand_hidden: bool = False
 
 
 @dataclass
@@ -89,7 +90,6 @@ class GameSnapshot:
     mulligan_count: tuple[int, int] = (0, 0)
     extra_draws: tuple[int, int] = (0, 0)
     action_log: list[str] = field(default_factory=list)
-    is_network_view: bool = False
 
 
 class SnapshotManager:
@@ -162,7 +162,7 @@ def snapshot_state(state: GameState) -> GameSnapshot:
         stadium_card_id=state.stadium_card.api_id if state.stadium_card else None,
         winner=state.winner,
         apply_type_matchups=getattr(state, "apply_type_matchups", False),
-        mulligan_bonus_given=list(state._mulligan_bonus_given),
+        mulligan_bonus_given=sorted(state._mulligan_bonus_given),
         pending_promotions=list(state.pending_promotions),
         revision=getattr(state, "revision", 0),
         choice_sequence=getattr(state, "choice_sequence", 0),
@@ -183,11 +183,15 @@ def snapshot_state(state: GameState) -> GameSnapshot:
         mulligan_count=tuple(getattr(state, "mulligan_count", (0, 0))),
         extra_draws=tuple(getattr(state, "extra_draws", (0, 0))),
         action_log=list(getattr(state, "action_log", ())),
-        is_network_view=bool(getattr(state, "is_network_view", False)),
     )
 
 
-def restore_state(state: GameState, snap: GameSnapshot):
+def restore_state(
+    state: GameState,
+    snap: GameSnapshot,
+    *,
+    rebuild_event_bus: bool = True,
+):
     """Restore game state from a snapshot."""
     from engine.enums import TurnPhase
 
@@ -206,7 +210,6 @@ def restore_state(state: GameState, snap: GameSnapshot):
     state.mulligan_count = tuple(getattr(snap, "mulligan_count", (0, 0)))
     state.extra_draws = tuple(getattr(snap, "extra_draws", (0, 0)))
     state.action_log = list(getattr(snap, "action_log", ()))
-    state.is_network_view = bool(getattr(snap, "is_network_view", False))
     state.resolution_stack = copy.deepcopy(
         getattr(
             snap,
@@ -219,6 +222,9 @@ def restore_state(state: GameState, snap: GameSnapshot):
             },
         )
     )
+    # Never retain a callback that closes over the state from before restore.
+    # Serializable VM continuations are rebuilt on demand by GameEngine.
+    state._pending_choice_runtime = None
     _restore_event_stream(state, getattr(snap, "event_stream", []))
     state._ko_from_attack = False
     state._mulligan_bonus_given = set(snap.mulligan_bonus_given)
@@ -227,6 +233,8 @@ def restore_state(state: GameState, snap: GameSnapshot):
     _restore_player(state.p2, snap.p2)
 
     state.stadium_card = _lookup_card(snap.stadium_card_id) if snap.stadium_card_id else None
+    if rebuild_event_bus:
+        rebuild_state_event_bus(state)
 
 
 def clone_state(state: GameState, *, rebuild_event_bus: bool = True) -> GameState:
@@ -235,13 +243,14 @@ def clone_state(state: GameState, *, rebuild_event_bus: bool = True) -> GameStat
 
     clone = GameState()
     try:
-        restore_state(clone, snapshot_state(state))
+        restore_state(clone, snapshot_state(state), rebuild_event_bus=False)
         clone.action_log = list(state.action_log)
     except KeyError:
         # Tests, editors, and generated scenarios may contain cards that are
         # intentionally not registered globally. A deep copy keeps those
         # snapshots local instead of mutating CardRegistry with placeholders.
         clone = copy.deepcopy(state)
+        clone._pending_choice_runtime = None
     if rebuild_event_bus:
         rebuild_state_event_bus(clone)
     return clone
@@ -252,7 +261,7 @@ def state_from_snapshot(snap: GameSnapshot, *, rebuild_event_bus: bool = True) -
     from engine.game_state import GameState
 
     state = GameState()
-    restore_state(state, snap)
+    restore_state(state, snap, rebuild_event_bus=False)
     if rebuild_event_bus:
         rebuild_state_event_bus(state)
     return state
@@ -261,6 +270,7 @@ def state_from_snapshot(snap: GameSnapshot, *, rebuild_event_bus: bool = True) -
 def snapshot_to_dict(snap: GameSnapshot) -> dict:
     """Convert a GameSnapshot to a JSON-compatible dictionary."""
     return {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "turn_number": int(snap.turn_number),
         "phase": str(snap.phase),
         "active_player_idx": int(snap.active_player_idx),
@@ -280,12 +290,20 @@ def snapshot_to_dict(snap: GameSnapshot) -> dict:
         "mulligan_count": list(snap.mulligan_count),
         "extra_draws": list(snap.extra_draws),
         "action_log": list(snap.action_log),
-        "is_network_view": bool(snap.is_network_view),
     }
 
 
 def snapshot_from_dict(data: dict) -> GameSnapshot:
     """Rebuild a GameSnapshot from snapshot_to_dict output."""
+    if not isinstance(data, dict):
+        raise ValueError("Snapshot payload must be an object")
+    schema_version = data.get("schema_version", 0)
+    if type(schema_version) is not int:
+        raise ValueError("Snapshot schema_version is invalid")
+    # Version 0 is the pre-schema JSON shape and remains readable. Future
+    # versions require an explicit migration instead of partial interpretation.
+    if schema_version not in (0, SNAPSHOT_SCHEMA_VERSION):
+        raise ValueError(f"Unsupported snapshot schema version: {schema_version}")
     return GameSnapshot(
         turn_number=int(data.get("turn_number", 0)),
         phase=str(data.get("phase", "SETUP")),
@@ -311,7 +329,19 @@ def snapshot_from_dict(data: dict) -> GameSnapshot:
         mulligan_count=tuple(data.get("mulligan_count", [0, 0])),
         extra_draws=tuple(data.get("extra_draws", [0, 0])),
         action_log=[str(item) for item in data.get("action_log", [])],
-        is_network_view=bool(data.get("is_network_view", False)),
+    )
+
+
+def canonical_state_payload(state: GameState) -> dict:
+    """Return the single JSON state shape used by persistence and rollback."""
+    return snapshot_to_dict(snapshot_state(state))
+
+
+def state_from_payload(payload: dict, *, rebuild_event_bus: bool = True) -> GameState:
+    """Restore a GameState from :func:`canonical_state_payload`."""
+    return state_from_snapshot(
+        snapshot_from_dict(payload),
+        rebuild_event_bus=rebuild_event_bus,
     )
 
 
@@ -362,8 +392,6 @@ def _player_snapshot_to_dict(snap: PlayerSnapshot) -> dict:
         "healed": bool(snap.healed),
         "vstar_used": bool(snap.vstar_used),
         "was_ko_by_attack": bool(snap.was_ko_by_attack),
-        "hand_count": int(snap.hand_count),
-        "hand_hidden": bool(snap.hand_hidden),
     }
 
 
@@ -394,8 +422,6 @@ def _player_snapshot_from_dict(data: dict) -> PlayerSnapshot:
         healed=bool(data.get("healed", False)),
         vstar_used=bool(data.get("vstar_used", False)),
         was_ko_by_attack=bool(data.get("was_ko_by_attack", False)),
-        hand_count=int(data.get("hand_count", len(data.get("hand_ids", [])))),
-        hand_hidden=bool(data.get("hand_hidden", False)),
     )
 
 
@@ -477,8 +503,6 @@ def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
         healed=player.healed_this_turn,
         vstar_used=player.vstar_power_used,
         was_ko_by_attack=player.was_ko_by_attack,
-        hand_count=int(getattr(player, "_hand_count", len(player.hand))),
-        hand_hidden=bool(getattr(player, "_hand_hidden", False)),
     )
 
 
@@ -498,8 +522,6 @@ def _restore_player(player: PlayerState, snap: PlayerSnapshot):
     player.healed_this_turn = snap.healed
     player.vstar_power_used = snap.vstar_used
     player.was_ko_by_attack = snap.was_ko_by_attack
-    player._hand_count = int(getattr(snap, "hand_count", len(player.hand)))
-    player._hand_hidden = bool(getattr(snap, "hand_hidden", False))
 
 
 def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
@@ -508,7 +530,7 @@ def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
         damage_counters=p.damage_counters,
         energy_card_ids=[c.api_id for c in p.energy_cards],
         attached_tool_id=p.attached_tool.api_id if p.attached_tool else None,
-        status_conditions=[s.name for s in p.status_conditions],
+        status_conditions=sorted(status.name for status in p.status_conditions),
         evolution_stack_ids=[c.api_id for c in p.evolution_stack],
         can_evolve_this_turn=p.can_evolve_this_turn,
         placed_this_turn=p.placed_this_turn,

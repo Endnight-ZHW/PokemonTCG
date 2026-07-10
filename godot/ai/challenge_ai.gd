@@ -157,7 +157,7 @@ func _semantic_v2_enabled() -> bool:
 
 func _cached_catalog() -> CardCatalog:
 	if _catalog_cache == null:
-		_catalog_cache = CardCatalog.new()
+		_catalog_cache = CardCatalog.shared()
 	return _catalog_cache
 
 
@@ -239,7 +239,7 @@ func decide(
 		request.get("heuristic_variant", DEFAULT_HEURISTIC_VARIANT)))
 	var context_started := _profile_start(profile)
 	var disable_cache := bool(request.get("disable_cache", false))
-	var catalog := CardCatalog.new() if disable_cache else _cached_catalog()
+	var catalog := CardCatalog.new(true) if disable_cache else _cached_catalog()
 	var engine := GameEngine.new(catalog) if disable_cache else _cached_engine(catalog)
 	var state := GameState.from_dict(request["state"])
 	var actor := int(request["actor"])

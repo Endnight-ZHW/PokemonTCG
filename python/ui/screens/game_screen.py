@@ -45,8 +45,8 @@ from ui.components.game_layout import *
 from ui.components.action_menu import build_action_buttons
 from ui.screens.game_screen_ai import GameScreenAIMixin
 from ui.screens.game_screen_animation import GameScreenAnimationMixin
+from ui.screens.game_screen_input import GameScreenInputMixin
 from ui.screens.game_screen_layout import GameScreenLayoutMixin
-from ui.screens.game_screen_network import GameScreenNetworkMixin
 from ui.screens.game_screen_rendering import GameScreenRenderingMixin
 from ui.ui_theme import draw_text_fit
 
@@ -87,19 +87,17 @@ def _wrap_text(text: str, chars_per_line: int) -> list[str]:
 
 
 class GameScreen(
+    GameScreenInputMixin,
     GameScreenAIMixin,
     GameScreenAnimationMixin,
     GameScreenLayoutMixin,
-    GameScreenNetworkMixin,
     GameScreenRenderingMixin,
     Screen,
 ):
     """Main game board screen."""
 
-    def __init__(self, manager: ScreenManager, game_state: GameState | None,
-                 turn_manager: TurnManager | None,
-                 network_manager=None, my_player_idx: int | None = None,
-                 initial_state: GameState | None = None,
+    def __init__(self, manager: ScreenManager, game_state: GameState,
+                 turn_manager: TurnManager,
                  challenge_mode: bool = False,
                  human_player_idx: int = 0,
                  ai_player_idx: int = 1,
@@ -108,10 +106,10 @@ class GameScreen(
                  ai_search_algorithm: str = "hybrid",
                  ai_controller: ChallengeAI | None = None):
         super().__init__(manager)
-        self.state = game_state if game_state is not None else initial_state
+        if game_state is None or turn_manager is None:
+            raise ValueError("GameScreen requires a local GameState and TurnManager")
+        self.state = game_state
         self.tm = turn_manager
-        self.network_manager = network_manager
-        self.my_player_idx = my_player_idx
         self.challenge_mode = challenge_mode
         self.game_engine = DEFAULT_GAME_ENGINE
         self.human_player_idx = human_player_idx
@@ -145,18 +143,8 @@ class GameScreen(
         self._ai_shutdown = False
         self.setup_player_idx: int = 0
         self.setup_pass_done: dict[int, bool] = {0: False, 1: False}
-        self._is_remote_host = network_manager is not None and turn_manager is not None
-        self._is_remote_client = network_manager is not None and turn_manager is None
-        self._waiting_remote: bool = False  # Host waiting for remote player action
-        self._pending_remote_action = None  # ActionRequest pending from remote player (for resolution)
-        self._pending_bench_select_client: bool = False
-        self._bench_target_handler_is_client: bool = False
-        self._remote_update_just_arrived: bool = False  # Suppress _detect_state_changes for 1 frame
         self._suppress_action_particles: bool = False  # Suppress duplicate particles from result payloads
         self._suppress_result_draw_anim: bool = False
-        self._resolving_remote_pending: bool = False  # Client resolving a remote pending action
-        self._last_state_update_seq: int = 0
-        self._remote_request_counter: int = 0
 
         self.font_info = get_font("info")
         self.font_body = get_font("small")
@@ -249,8 +237,7 @@ class GameScreen(
         self._last_hand_counts: dict[int, int] = {}
         self._last_discard_counts: dict[int, int] = {}
         self._last_deck_counts: dict[int, int] = {}
-        self._last_field_state: dict = {}  # For detecting field changes across remote state updates
-        self._remote_update_fade: float = 0.0
+        self._last_field_state: dict = {}
 
         # Hand card lift animation (smooth transition)
         self._card_lift_offset: dict[int, float] = {}
@@ -316,8 +303,6 @@ class GameScreen(
     def _should_animate_hand_for_player(self, player_idx: int) -> bool:
         if self.challenge_mode and player_idx == self.ai_player_idx:
             return False
-        if (self._is_remote_client or self._is_remote_host) and player_idx != self.my_player_idx:
-            return False
         return True
 
     def _hidden_hand_indices_for(self, player_idx: int) -> set[int]:
@@ -356,8 +341,7 @@ class GameScreen(
         self._sync_tracking_counts()
         self._setup_shuffle_callbacks()
         if self.state.phase == TurnPhase.SETUP and not self._setup_initialized:
-            if not self._is_remote_client:
-                self._init_setup()
+            self._init_setup()
 
     def on_exit(self):
         # ScreenManager calls on_exit both when this screen is covered and when
@@ -419,12 +403,7 @@ class GameScreen(
             if self.challenge_mode:
                 is_self = (pi == self.human_player_idx)
             else:
-                is_self = (
-                    (self._is_remote_host and pi == self.my_player_idx) or
-                    (self._is_remote_client and pi == self.my_player_idx) or
-                    (not self._is_remote_host and not self._is_remote_client and
-                     pi == self.state.active_player_idx)
-                )
+                is_self = pi == self.state.active_player_idx
             # Active Pokemon evolution: same slot, different card
             if (prev["active_id"] and cur["active_id"] and
                     prev["active_id"] != cur["active_id"]):
@@ -497,147 +476,7 @@ class GameScreen(
 
     # ── Event Handling ──────────────────────────────────────────
 
-    def handle_event(self, event: pygame.event.Event):
-        if self.state.phase == TurnPhase.GAME_OVER:
-            self._show_end_screen()
-            return
-
-        # Coin flip animation
-        if self.coin_flip.active:
-            if self.coin_flip.handle_event(event):
-                return
-
-        # Confirm dialog
-        if self._confirm_dialog is not None:
-            self._handle_confirm_dialog_event(event)
-            return
-
-        # Block input while post-attack animations are playing
-        if self._pending_turn_end > 0:
-            return
-
-        # Block input while card fly animation is playing (action deferred)
-        if self._animating_action:
-            return
-
-        # Remote mode: block input when it's not this player's turn
-        if self._is_remote_client or self._is_remote_host:
-            if self._should_block_remote_input():
-                # Only allow scroll wheel for log
-                if event.type == pygame.MOUSEWHEEL:
-                    log_x = SCREEN_WIDTH - LOG_W - 8
-                    if log_x <= event.pos[0] <= log_x + LOG_W:
-                        self._log_scroll_offset = max(0, self._log_scroll_offset - event.y)
-                return
-
-        if self._should_block_challenge_input():
-            if event.type == pygame.MOUSEWHEEL:
-                mx, _ = pygame.mouse.get_pos()
-                log_x = SCREEN_WIDTH - LOG_W - 8
-                if log_x <= mx <= log_x + LOG_W:
-                    self._log_scroll_offset = max(0, self._log_scroll_offset - event.y)
-            return
-
-        if self._attack_menu_open:
-            if event.type == pygame.MOUSEMOTION:
-                self._attack_menu_hover = self._get_attack_menu_hover(event.pos)
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self._handle_attack_menu_click(event.pos)
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self._attack_menu_open = False
-            return
-
-        if self._ability_menu_open:
-            if event.type == pygame.MOUSEMOTION:
-                self._ability_menu_hover = self._get_ability_menu_hover(event.pos)
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self._handle_ability_menu_click(event.pos)
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self._ability_menu_open = False
-            return
-
-        player_idx = (
-            self.setup_player_idx
-            if self.state.phase == TurnPhase.SETUP
-            else self.state.active_player_idx
-        )
-
-        if event.type == pygame.MOUSEMOTION:
-            self._update_hover(event.pos, player_idx)
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            self._handle_click(event.pos, player_idx)
-        elif event.type == pygame.MOUSEWHEEL:
-            # Scroll action log
-            log_x = SCREEN_WIDTH - LOG_W - 8
-            if log_x <= event.pos[0] <= log_x + LOG_W:
-                self._log_scroll_offset = max(0, self._log_scroll_offset - event.y)
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                if self._attack_menu_open:
-                    self._attack_menu_open = False
-                elif self._ability_menu_open:
-                    self._ability_menu_open = False
-                elif self.selected_hand_idx is not None or self.selected_action is not None:
-                    self._clear_selection()
-                else:
-                    self._confirm_quit_game()
-            elif event.key == pygame.K_e:
-                # End turn
-                if self.state.phase == TurnPhase.MAIN:
-                    self._execute_action(PlayerAction.END_TURN, player_idx)
-            elif event.key == pygame.K_a:
-                if self.state.phase == TurnPhase.MAIN and self.selected_action is None:
-                    self._execute_action("ENTER_ATTACK", player_idx)
-                elif self.state.phase == TurnPhase.ATTACK and not self._has_attacked:
-                    self._show_attack_menu(player_idx)
-            elif event.key == pygame.K_r:
-                # Retreat mode
-                if self.state.phase == TurnPhase.MAIN:
-                    self._execute_action(PlayerAction.RETREAT, player_idx)
-            elif event.key == pygame.K_SPACE:
-                # Confirm / close menu
-                if self._attack_menu_open:
-                    self._handle_attack_menu_click(pygame.mouse.get_pos())
-                elif self._ability_menu_open:
-                    self._handle_ability_menu_click(pygame.mouse.get_pos())
-            elif event.key == pygame.K_z and (pygame.key.get_mods() & pygame.KMOD_CTRL):
-                # Undo last action
-                self._do_undo()
-            elif event.key == pygame.K_1:
-                self._select_hand_key(0)
-            elif event.key == pygame.K_2:
-                self._select_hand_key(1)
-            elif event.key == pygame.K_3:
-                self._select_hand_key(2)
-            elif event.key == pygame.K_4:
-                self._select_hand_key(3)
-            elif event.key == pygame.K_5:
-                self._select_hand_key(4)
-            elif event.key == pygame.K_6:
-                self._select_hand_key(5)
-            elif event.key == pygame.K_7:
-                self._select_hand_key(6)
-            elif event.key == pygame.K_8:
-                self._select_hand_key(7)
-            elif event.key == pygame.K_9:
-                self._select_hand_key(8)
-            elif event.key == pygame.K_q and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
-                self._confirm_quit_game()
-            elif event.key == pygame.K_F1:
-                self._show_shortcuts = not self._show_shortcuts
-                self.floating_text.show(
-                    f"快捷键提示: {'开' if self._show_shortcuts else '关'}",
-                    400, SCREEN_HEIGHT - 60, color=UI_SUCCESS)
-            elif event.key == pygame.K_TAB:
-                self._speed_idx = (self._speed_idx + 1) % len(GAME_SPEED_OPTIONS)
-                self._speed_value = GAME_SPEED_OPTIONS[self._speed_idx]
-                self.floating_text.show(
-                    f"游戏速度: {self._speed_value}x",
-                    400, SCREEN_HEIGHT - 60, color=UI_HIGHLIGHT)
-            elif event.key == pygame.K_c and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
-                # Test coin flip animation (3 flips demo)
-                self._start_coin_flip(flip_count=3, on_result=lambda results: self.state._log(
-                    f"硬币结果: {sum(1 for r in results if r)}正面, {sum(1 for r in results if not r)}反面"))
+    # Implemented by GameScreenInputMixin.
 
     # ---- Context card action menu ----
 
@@ -1197,17 +1036,9 @@ class GameScreen(
                     selected_targets = list(self._selected_bench_targets)
                     self._selecting_bench_targets = None
                     self._selected_bench_targets = []
-                    if self._bench_target_handler_is_client:
-                        self._resolving_remote_pending = False
-                        self._send_choice_response({
-                            "request_id": getattr(req, "request_id", ""),
-                            "selected_bench_targets": selected_targets,
-                        })
-                        self._bench_target_handler_is_client = False
-                    else:
-                        self._dispatch_choice_result(
-                            self._resolve_structured_pending(req, selected_targets)
-                        )
+                    self._dispatch_choice_result(
+                        self._resolve_structured_pending(req, selected_targets)
+                    )
             return
 
         if self._pending_tool_card is not None:
@@ -1394,53 +1225,6 @@ class GameScreen(
         if self.selected_hand_idx >= len(player.hand):
             return
 
-        if self._is_remote_client:
-            if zone == "active":
-                target = "active"
-            elif isinstance(zone, str) and zone.startswith("bench_"):
-                bench_idx = int(zone.split("_")[1])
-                if player.bench[bench_idx] is not None:
-                    self.state._log("该备战区已有宝可梦。")
-                    self._clear_selection()
-                    return
-                target = zone
-            else:
-                empty = player.find_empty_bench_slot()
-                if empty is None:
-                    self.state._log("备战区已满（最多5只）。")
-                    self._clear_selection()
-                    return
-                target = f"bench_{empty}"
-
-            # Send to host immediately, play fly animation in parallel
-            self._send_client_action("PLAY_BASIC", {
-                "hand_idx": self.selected_hand_idx,
-                "target": target,
-                "player_idx": player_idx,
-            })
-
-            self._animating_action = True
-            self._animating_hand_idx = self.selected_hand_idx
-            self._animating_hand_idx_player = player_idx
-
-            def on_anim_done():
-                self._animating_action = False
-                self._animating_hand_idx = None
-                self._sync_tracking_counts()
-                self._refresh_interaction_controls()
-
-            rect = (self._player_active_rect() if target == "active"
-                    else self._player_bench_rect(int(target.split("_")[1])))
-            if rect:
-                card_name = player.hand[self.selected_hand_idx].name if self.selected_hand_idx < len(player.hand) else None
-                self._fly_card_from_hand(rect.x + rect.w // 2, rect.y + rect.h // 2,
-                                         card_name, on_complete=on_anim_done)
-            else:
-                on_anim_done()
-
-            self._clear_selection()
-            return
-
         if zone == "active":
             if player.active is not None:
                 self.state._log("战斗区已有宝可梦，请先将其移到备战区或完成准备。")
@@ -1479,8 +1263,6 @@ class GameScreen(
             self._animating_hand_idx = None
             self._sync_tracking_counts()
             self._refresh_interaction_controls()
-            if self._is_remote_host:
-                self._broadcast_state()
 
         # Fly animation from hand to target
         rect = (self._player_active_rect() if captured_target == "active"
@@ -1498,12 +1280,6 @@ class GameScreen(
             self.state._log("请先放置一只基础宝可梦到战斗区！")
             return
 
-        if self._is_remote_client:
-            self._send_client_action("SETUP_DONE", {"player_idx": player_idx})
-            self._clear_selection()
-            self.selected_action = None
-            return
-
         self.setup_pass_done[player_idx] = True
         self.state._log(f"玩家{player_idx + 1}准备好了。")
 
@@ -1512,9 +1288,6 @@ class GameScreen(
             if result.success:
                 self.state._log(result.log_message)
                 self._refresh_interaction_controls()
-                if self._is_remote_host:
-                    self._waiting_remote = (self.state.active_player_idx != self.my_player_idx)
-                    self._broadcast_state()
         else:
             other = 1 - player_idx
             self.setup_player_idx = other
@@ -1523,19 +1296,13 @@ class GameScreen(
             if self.challenge_mode:
                 self._ai_thinking_timer = self._ai_action_delay
                 return
-            if self._is_remote_host:
-                # Remote player's turn during setup - broadcast state and wait
-                self._broadcast_state()
-                self._waiting_remote = True
-                self.state._log(f"等待玩家{other + 1}放置基础宝可梦...")
-            else:
-                from ui.screens.pass_screen import PassScreen
-                pass_screen = PassScreen(
-                    self.manager, other,
-                    on_continue=lambda: self.manager.pop_screen(SlideTransition(0.35, "right")),
-                    game_state=self.state, turn_number=0
-                )
-                self.manager.push_screen(pass_screen)
+            from ui.screens.pass_screen import PassScreen
+            pass_screen = PassScreen(
+                self.manager, other,
+                on_continue=lambda: self.manager.pop_screen(SlideTransition(0.35, "right")),
+                game_state=self.state, turn_number=0
+            )
+            self.manager.push_screen(pass_screen)
 
     def _handle_bench_click(self, player_idx, bench_idx):
         if self._awaiting_promotion:
@@ -1623,56 +1390,6 @@ class GameScreen(
             self.state._log("主要阶段不能从手牌将基础宝可梦放到战斗区。")
             self._clear_selection()
             return
-        if self._is_remote_client:
-            captured_hand_idx = self.selected_hand_idx
-
-            # Find a valid target (same fallback logic as local path)
-            player = self.state.get_player(player_idx)
-            if target == "active":
-                if player.active is not None:
-                    empty = player.find_empty_bench_slot()
-                    if empty is not None:
-                        target = f"bench_{empty}"
-            elif target.startswith("bench_"):
-                bench_idx = int(target.split("_")[1])
-                if player.bench[bench_idx] is not None:
-                    empty = player.find_empty_bench_slot()
-                    if empty is not None:
-                        target = f"bench_{empty}"
-            else:
-                if player.active is None:
-                    target = "active"
-                else:
-                    empty = player.find_empty_bench_slot()
-                    if empty is not None:
-                        target = f"bench_{empty}"
-            # Send to host immediately, play fly animation in parallel
-            self._send_client_action("PLAY_BASIC", {
-                "hand_idx": self.selected_hand_idx,
-                "target": target,
-                "player_idx": player_idx,
-            })
-
-            self._animating_action = True
-            self._animating_hand_idx = self.selected_hand_idx
-            self._animating_hand_idx_player = player_idx
-
-            def on_anim_done():
-                self._animating_action = False
-                self._animating_hand_idx = None
-                self._sync_tracking_counts()
-
-            rect = (self._player_active_rect() if target == "active"
-                    else self._player_bench_rect(int(target.split("_")[1])))
-            if rect:
-                card_name = player.hand[self.selected_hand_idx].name if self.selected_hand_idx < len(player.hand) else None
-                self._fly_card_from_hand(rect.x + rect.w // 2, rect.y + rect.h // 2,
-                                         card_name, on_complete=on_anim_done)
-            else:
-                on_anim_done()
-
-            self._clear_selection()
-            return
         player = self.state.get_player(player_idx)
         # Respect the target parameter if it specifies a valid slot
         if target == "active":
@@ -1729,38 +1446,6 @@ class GameScreen(
     def _evolve_pokemon(self, player_idx, slot="active"):
         if self.selected_hand_idx is None:
             return
-        if self._is_remote_client:
-            player = self.state.get_player(player_idx)
-
-            # Send to host immediately, play fly animation in parallel
-            self._send_client_action("EVOLVE", {
-                "hand_idx": self.selected_hand_idx,
-                "slot": slot,
-                "player_idx": player_idx,
-            })
-
-            self._animating_action = True
-            self._animating_hand_idx = self.selected_hand_idx
-            self._animating_hand_idx_player = player_idx
-
-            def on_anim_done():
-                self._animating_action = False
-                self._animating_hand_idx = None
-                self._sync_tracking_counts()
-                self._build_action_buttons()
-
-            rect = (self._player_active_rect() if slot == "active"
-                    else self._player_bench_rect(int(slot.split("_")[1])))
-            if rect:
-                card_name = player.hand[self.selected_hand_idx].name if self.selected_hand_idx < len(player.hand) else None
-                self._fly_card_from_hand(rect.x + rect.w // 2, rect.y + rect.h // 2,
-                                         card_name, on_complete=on_anim_done)
-            else:
-                on_anim_done()
-
-            self._clear_selection()
-            return
-
         captured_hand_idx = self.selected_hand_idx
         captured_slot = slot
         captured_player_idx = player_idx
@@ -1805,38 +1490,6 @@ class GameScreen(
     def _attach_energy(self, player_idx, target="active"):
         if self.selected_hand_idx is None:
             return
-        if self._is_remote_client:
-            player = self.state.get_player(player_idx)
-
-            # Send to host immediately, play fly animation in parallel
-            self._send_client_action("ATTACH_ENERGY", {
-                "hand_idx": self.selected_hand_idx,
-                "target_slot": target,
-                "player_idx": player_idx,
-            })
-
-            self._animating_action = True
-            self._animating_hand_idx = self.selected_hand_idx
-            self._animating_hand_idx_player = player_idx
-
-            def on_anim_done():
-                self._animating_action = False
-                self._animating_hand_idx = None
-                self._sync_tracking_counts()
-                self._build_action_buttons()
-
-            rect = (self._player_active_rect() if target == "active"
-                    else self._player_bench_rect(int(target.split("_")[1])))
-            if rect:
-                card_name = player.hand[self.selected_hand_idx].name if self.selected_hand_idx < len(player.hand) else None
-                self._fly_card_from_hand(rect.x + rect.w // 2, rect.y + rect.h // 2,
-                                         card_name, on_complete=on_anim_done)
-            else:
-                on_anim_done()
-
-            self._clear_selection()
-            return
-
         captured_hand_idx = self.selected_hand_idx
         captured_target = target
         captured_player_idx = player_idx
@@ -1870,39 +1523,6 @@ class GameScreen(
     def _play_trainer(self, player_idx):
         if self.selected_hand_idx is None:
             return
-        if self._is_remote_client:
-            captured_hand_idx = self.selected_hand_idx
-            captured_player_idx = player_idx
-            player = self.state.get_player(captured_player_idx)
-
-            self._animating_action = True
-            self._animating_hand_idx = self.selected_hand_idx
-            self._animating_hand_idx_player = captured_player_idx
-
-            # Send to host immediately, play fly animation in parallel
-            self._send_client_action("PLAY_TRAINER", {
-                "hand_idx": self.selected_hand_idx,
-                "player_idx": player_idx,
-            })
-
-            def on_anim_done():
-                self._animating_action = False
-                self._animating_hand_idx = None
-                self._sync_tracking_counts()
-
-            # Fly card from hand to center (generic play animation).
-            # Record the target position as discard animation source so the
-            # card visually flies from "played" position → discard pile.
-            target_x = PLAY_AREA_W // 2
-            target_y = HAND_Y + CARD_HEIGHT // 2
-            card_name = player.hand[self.selected_hand_idx].name if self.selected_hand_idx < len(player.hand) else None
-            card_obj = player.hand[self.selected_hand_idx] if self.selected_hand_idx < len(player.hand) else None
-            self._set_last_action_context(captured_player_idx, (target_x, target_y), card_name, card_obj)
-            self._fly_card_from_hand(target_x, target_y, card_name, on_complete=on_anim_done)
-
-            self._clear_selection()
-            return
-
         captured_hand_idx = self.selected_hand_idx
         captured_player_idx = player_idx
         player = self.state.get_player(captured_player_idx)
@@ -1980,36 +1600,6 @@ class GameScreen(
 
     def _do_play_trainer_tool(self, player_idx, hand_idx, target_slot):
         """Play a tool card with explicit target_slot."""
-        if self._is_remote_client:
-            player = self.state.get_player(player_idx)
-
-            # Send to host immediately, play fly animation in parallel
-            self._send_client_action("PLAY_TRAINER", {
-                "hand_idx": hand_idx,
-                "target_slot": target_slot,
-                "player_idx": player_idx,
-            })
-
-            self._animating_action = True
-            self._animating_hand_idx = hand_idx
-            self._animating_hand_idx_player = player_idx
-
-            def on_anim_done():
-                self._animating_action = False
-                self._animating_hand_idx = None
-                self._sync_tracking_counts()
-
-            target_x = PLAY_AREA_W // 2
-            target_y = HAND_Y + CARD_HEIGHT // 2
-            # Record play position and card info as discard animation source so
-            # the card flies from the "played" position to the discard pile.
-            card_name = player.hand[hand_idx].name if hand_idx < len(player.hand) else None
-            card_obj = player.hand[hand_idx] if hand_idx < len(player.hand) else None
-            self._set_last_action_context(player_idx, (target_x, target_y), card_name, card_obj)
-            self._fly_card_from_hand(target_x, target_y, card_name, on_complete=on_anim_done)
-
-            self._clear_selection()
-            return
         result = self.tm.perform_action(
             PlayerAction.PLAY_TRAINER, player_idx=player_idx,
             hand_idx=hand_idx, target_slot=target_slot,
@@ -2018,13 +1608,6 @@ class GameScreen(
         self._clear_selection()
 
     def _retreat_to_bench(self, player_idx, bench_idx):
-        if self._is_remote_client:
-            self._send_client_action("RETREAT", {
-                "bench_idx": bench_idx,
-                "player_idx": player_idx,
-            })
-            self._clear_selection()
-            return
         result = self.tm.perform_action(
             PlayerAction.RETREAT, player_idx=player_idx,
             bench_idx=bench_idx,
@@ -2146,23 +1729,8 @@ class GameScreen(
             return
 
         if len(abilities) == 1:
-            if self._is_remote_client:
-                self._send_client_action("USE_ABILITY", {
-                    "slot": slot,
-                    "ability_name": abilities[0].name,
-                    "player_idx": player_idx,
-                })
-                self._clear_selection()
-                return
             self._do_use_ability(player_idx, slot, abilities[0].name)
         else:
-            if self._is_remote_client:
-                self._ability_menu_open = True
-                self._ability_menu_abilities = abilities
-                self._ability_menu_hover = None
-                self._ability_menu_slot = slot
-                self._ability_menu_player_idx = player_idx
-                return
             self._ability_menu_open = True
             self._ability_menu_abilities = abilities
             self._ability_menu_hover = None
@@ -2207,14 +1775,6 @@ class GameScreen(
         if self._ability_menu_hover is not None:
             ab = self._ability_menu_abilities[self._ability_menu_hover]
             self._ability_menu_open = False
-            if self._is_remote_client:
-                self._send_client_action("USE_ABILITY", {
-                    "slot": self._ability_menu_slot,
-                    "ability_name": ab.name,
-                    "player_idx": self._ability_menu_player_idx,
-                })
-                self._clear_selection()
-                return
             self._do_use_ability(
                 self._ability_menu_player_idx,
                 self._ability_menu_slot,
@@ -2225,9 +1785,6 @@ class GameScreen(
 
     def _activate_stadium(self, player_idx):
         """Activate the stadium card's per-turn effect."""
-        if self._is_remote_client:
-            self._send_client_action("USE_STADIUM", {"player_idx": player_idx})
-            return
         result = self.tm.perform_action(
             PlayerAction.USE_STADIUM, player_idx=player_idx,
         )
@@ -2413,30 +1970,18 @@ class GameScreen(
         self._turn_ending = True
         self._end_turn_warned = False
         self._confirm_dialog = None
-        if self._is_remote_client:
-            self._waiting_remote = True  # Block input until the authoritative state arrives
-            self._send_client_action("END_TURN", {"player_idx": self.state.active_player_idx})
-            self._clear_selection()
-            return
         was_attack = self.state.phase == TurnPhase.ATTACK
         result = self.tm.perform_action(
             PlayerAction.END_TURN, player_idx=self.state.active_player_idx,
         )
         self._show_result(result)
         if result.success:
-            if self._is_remote_host:
-                pass  # _show_result already broadcasts internally
             # After attack, delay turn switch so KO/prize animations play
             if was_attack:
                 self._pending_turn_end = 0.3
-            # For local hot-seat: push PassScreen immediately to hide opponent's hand
-            is_local = (
-                not self._is_remote_host
-                and not self._is_remote_client
-                and not self.challenge_mode
-            )
-            if is_local:
+            if not self.challenge_mode:
                 self._handle_turn_end()
+                self._pending_turn_end = 0
             elif self._pending_turn_end <= 0:
                 self._handle_turn_end()
         self._clear_selection()
@@ -2457,14 +2002,6 @@ class GameScreen(
         if self._attack_menu_hover is not None and self._attack_menu_hover < len(self._attack_menu_attacks):
             player_idx = self.state.active_player_idx
             i, attack = self._attack_menu_attacks[self._attack_menu_hover]
-            if self._is_remote_client:
-                self._send_client_action("DECLARE_ATTACK", {
-                    "attack_idx": i,
-                    "player_idx": player_idx,
-                })
-                self._attack_menu_open = False
-                self._clear_selection()
-                return
             step = self.game_engine.apply_action(
                 self.state,
                 GameAction(
@@ -2485,9 +2022,6 @@ class GameScreen(
                     self._pending_turn_end = max(self._pending_turn_end, 0.3)
                 self._build_action_buttons()
                 self._clear_selection()
-            if self._is_remote_host:
-                # _show_result already broadcasts internally with attacker_player_idx
-                pass
         else:
             self._attack_menu_open = False
 
@@ -2499,26 +2033,6 @@ class GameScreen(
             return
 
         next_player = self.state.active_player_idx
-
-        if self._is_remote_host:
-            if self.state.pending_promotion_player >= 0:
-                self._check_promotion_needed()
-                if self.state.pending_promotion_player >= 0:
-                    return
-            # If the next player is remote, wait
-            if next_player == self.my_player_idx:
-                # Local player's turn — clear waiting state
-                self._waiting_remote = False
-                self._build_action_buttons()
-            else:
-                self._waiting_remote = True
-                self._build_action_buttons()
-                self.state._log(f"等待玩家{next_player + 1}操作...")
-            return
-
-        if self._is_remote_client:
-            # Client doesn't manage turn end - the authoritative state handles it
-            return
 
         if self.challenge_mode:
             if self.state.pending_promotion_player >= 0:
@@ -2572,23 +2086,13 @@ class GameScreen(
         prizes1 = 6 - len(self.state.p1.prizes)
         prizes2 = 6 - len(self.state.p2.prizes)
 
-        if self._is_remote_host:
-            self.network_manager.send({
-                "type": "game_over",
-                "winner": winner,
-                "reason": reason,
-                "prizes_taken": (prizes1, prizes2),
-            })
-
         end_screen = EndScreen(
             self.manager, winner, reason, (prizes1, prizes2),
-            network_manager=self.network_manager,
-            is_remote=self._is_remote_host or self._is_remote_client,
         )
         self.manager.replace_top(end_screen, FadeTransition(0.6))
 
     def _execute_action(self, action, player_idx):
-        # Setup-phase UI actions — handle before remote client guard
+        # Setup-phase UI actions
         if action == "PLACE_ACTIVE":
             self.selected_action = "PLACE_ACTIVE"
             self.state._log("请从手牌选择一只基础宝可梦放到战斗区。")
@@ -2605,28 +2109,10 @@ class GameScreen(
             self._show_attack_menu(player_idx)
             self._build_action_buttons()
             self._clear_selection()
-            if self._is_remote_host:
-                self._broadcast_state()
-            return
-
-        # Actions that need local UI before sending to host
-        if self._is_remote_client and action not in (
-            PlayerAction.DECLARE_ATTACK,
-            PlayerAction.USE_ABILITY,
-            PlayerAction.RETREAT,
-            PlayerAction.ATTACH_ENERGY,
-            PlayerAction.EVOLVE,
-            PlayerAction.PLAY_TRAINER,
-            PlayerAction.PLAY_BASIC,
-        ):
-            self._send_action_to_host(action, player_idx)
             return
 
         if action == PlayerAction.USE_STADIUM:
-            if self._is_remote_client:
-                self._send_action_to_host(action, player_idx)
-            else:
-                self._activate_stadium(player_idx)
+            self._activate_stadium(player_idx)
             return
 
         if action == PlayerAction.END_TURN:
@@ -2648,42 +2134,6 @@ class GameScreen(
             self.state._log("请点击备战区的宝可梦以进行撤退。")
             self.selected_action = PlayerAction.RETREAT
 
-    def _send_action_to_host(self, action, player_idx):
-        """Client mode: serialize action and send to host."""
-        from network.message_protocol import ACTION_TO_STRING
-
-        # Guard against rapid End Turn — only one END_TURN may be in flight
-        if action == PlayerAction.END_TURN:
-            if self._turn_ending:
-                return
-            self._turn_ending = True
-            self._waiting_remote = True
-
-        params = {}
-        if self.selected_hand_idx is not None:
-            params["hand_idx"] = self.selected_hand_idx
-        if isinstance(action, str):
-            action_str = action
-        else:
-            action_str = ACTION_TO_STRING.get(action, str(action))
-        params["player_idx"] = player_idx
-
-        self._send_client_action(action_str, params)
-
-        # For actions that need more context (target, slot, etc.)
-        if action_str == "SETUP_DONE":
-            self.selected_action = None
-            self.selected_hand_idx = None
-        elif action_str == "ATTACH_ENERGY":
-            self.state._log("请从手牌选择一张能量卡，然后点击目标宝可梦。")
-        elif action_str == "EVOLVE":
-            self.state._log("请从手牌选择一张进化卡，然后点击要进化的宝可梦。")
-        elif action_str == "PLAY_TRAINER":
-            self.state._log("请从手牌选择一张训练家卡使用。")
-        elif action_str == "RETREAT":
-            self.state._log("请点击备战区的宝可梦以进行撤退。")
-            self.selected_action = PlayerAction.RETREAT
-
     def _show_result(self, result: "ActionResult", attacker_player_idx: int | None = None,
                      action=None) -> None:
         suppress_draw_anim = self._suppress_result_draw_anim
@@ -2694,13 +2144,9 @@ class GameScreen(
             if self.challenge_mode and self._is_ai_pending_request(result.pending_action):
                 self._queue_ai_pending_action(result.pending_action)
                 result.pending_action = None
-            # If the current active player is remote, defer to client
-            elif self._is_remote_host and self.state.active_player_idx != self.my_player_idx:
-                self._pending_remote_action = result.pending_action
-                # Will be broadcast by _broadcast_result at end of this method
             else:
                 self._handle_pending_action(result.pending_action)
-                result.pending_action = None  # Handled locally, don't broadcast
+                result.pending_action = None
         else:
             # Determine animation slot keys based on who performed the action
             if self.challenge_mode:
@@ -2709,8 +2155,10 @@ class GameScreen(
                     or attacker_player_idx == self.human_player_idx
                 )
             else:
-                is_self_attacker = (attacker_player_idx is None or
-                                    attacker_player_idx == self.my_player_idx)
+                is_self_attacker = (
+                    attacker_player_idx is None
+                    or attacker_player_idx == self.state.active_player_idx
+                )
             if is_self_attacker:
                 damage_slot = SLOT_OPP_ACTIVE  # Opponent takes damage
                 shake_slot = SLOT_PLAYER_ACTIVE  # We attacked
@@ -2766,12 +2214,6 @@ class GameScreen(
                 self._save_undo("place_bench", self.state.active_player_idx,
                                 target="last_bench")
 
-        # Broadcast state to remote player after every action in host mode
-        if self._is_remote_host and result.success:
-            self._broadcast_update(
-                result, action=action, attacker_player_idx=attacker_player_idx
-            )
-
         if result.success and (
             self.state.winner is not None
             or self.state.phase == TurnPhase.GAME_OVER
@@ -2804,8 +2246,10 @@ class GameScreen(
             return  # Already waiting for user to pick a bench Pokemon
         player_idx = self.state.pending_promotion_player
         if player_idx < 0:
-            player_idx = self.my_player_idx if (self._is_remote_host or self._is_remote_client) else (
-                self.setup_player_idx if self.state.phase == TurnPhase.SETUP else self.state.active_player_idx
+            player_idx = (
+                self.setup_player_idx
+                if self.state.phase == TurnPhase.SETUP
+                else self.state.active_player_idx
             )
         # In challenge mode, KO promotion must resolve immediately after the
         # attack, even though the affected player is usually not the active
@@ -2823,8 +2267,6 @@ class GameScreen(
                 self.state._log(f"{player.name}将{player.active.card.name}提升至战斗区。")
                 self._awaiting_promotion = False
                 self._finish_promotion_flow()
-                if self._is_remote_host:
-                    self._broadcast_state()
                 return
             elif len(bench_pokes) > 1:
                 if self.challenge_mode and player_idx == self.ai_player_idx:
@@ -2847,32 +2289,6 @@ class GameScreen(
                     self._build_action_buttons()
                     self._ai_thinking_timer = self._ai_action_delay
                     return
-                if self._is_remote_host and player_idx != self.my_player_idx:
-                    def on_remote_promote(bench_idx):
-                        if bench_idx is None:
-                            return None
-                        remote_player = self.state.get_player(player_idx)
-                        if 0 <= bench_idx < len(remote_player.bench) and remote_player.bench[bench_idx]:
-                            remote_player.promote_from_bench(bench_idx)
-                            self.state._log(
-                                f"{remote_player.name}将{remote_player.active.card.name}提升至战斗区。"
-                            )
-                            self._finish_promotion_flow()
-                        return None
-
-                    req = ActionRequest(
-                        request_type="select_bench",
-                        player=player_idx,
-                        prompt="请选择要提升至战斗区的宝可梦。",
-                        min_select=1,
-                        max_select=1,
-                        bench_indices=[i for i, _ in bench_pokes],
-                        callback=on_remote_promote,
-                    )
-                    self._pending_remote_action = req
-                    self._waiting_remote = True
-                    self._broadcast_update(pending_action=req)
-                    return
                 self._awaiting_promotion = True
                 self.state._log("请点击备战区宝可梦，选择要提升至战斗区的宝可梦。")
                 return
@@ -2881,13 +2297,6 @@ class GameScreen(
         action_req = self._pending_bench_select
         self._pending_bench_select = None
         if action_req is None:
-            return
-        if getattr(self, '_pending_bench_select_client', False):
-            self._pending_bench_select_client = False
-            self._send_choice_response({
-                "request_id": getattr(action_req, "request_id", ""),
-                "selected_bench_slot": bench_idx,
-            })
             return
         if action_req.request_type == "select_own_bench_energy":
             call_result = self._resolve_structured_pending(action_req, bench_idx)
@@ -2910,8 +2319,6 @@ class GameScreen(
         self._dispatch_choice_result(call_result)
         if call_result is not None and getattr(call_result, "success", True):
             self.state._log(f"{player.name}的战斗宝可梦被替换了。")
-        if self._is_remote_host:
-            self._broadcast_state()
 
     def _do_bench_promotion(self, player_idx, bench_idx):
         player = self.state.get_player(player_idx)
@@ -2927,8 +2334,6 @@ class GameScreen(
         self._awaiting_promotion = False
         self._clear_selection()
         self._finish_promotion_flow()
-        if self._is_remote_host:
-            self._broadcast_state()
 
     def _show_energy_distribution(self, action_req):
         """Open the energy distribution screen."""
@@ -3008,11 +2413,6 @@ class GameScreen(
             self._handle_ai_pending_action(action_req)
             return
 
-        # In client mode, intercept and send results back to host
-        if self._is_remote_client:
-            self._handle_pending_action_client(action_req)
-            return
-
         if action_req.request_type in ("search_deck", "select_hand_to_discard"):
             from ui.screens.search_screen import SearchScreen
             def wrapped_callback(selected_cards):
@@ -3063,8 +2463,7 @@ class GameScreen(
                             source_slot=src_slot, discard_idx=len(player.discard) - 1,
                         )
                     if (call_result is not None
-                            and getattr(call_result, "success", False)
-                            and not self._is_remote_host):
+                            and getattr(call_result, "success", False)):
                         self._show_result(call_result)
                 elif call_result is not None and getattr(call_result, "success", False):
                     player = self.state.get_player(action_req.player)
@@ -3087,29 +2486,7 @@ class GameScreen(
                             draw_start_idx=max(0, len(player.hand) - len(drawn_cards)),
                         )
                         self._sync_tracking_counts()
-                    if not self._is_remote_host:
-                        self._show_result(call_result)
-                # Broadcast updated state after resolving pending action
-                if self._is_remote_host:
-                    if isinstance(call_result, ActionRequest):
-                        # Chained pending action (e.g. Ultra Ball: discard → search).
-                        # Wrap its callback so the host broadcasts after the chain completes,
-                        # then return it so _confirm_selection reuses this screen via
-                        # _reinit_with_request (instead of pushing a new screen that
-                        # _confirm_selection would then accidentally pop).
-                        raw_cb = call_result.callback
-                        def chain_broadcast_wrapper(selected):
-                            cb_result = raw_cb(selected) if raw_cb else None
-                            if cb_result is not None:
-                                self._show_result(cb_result)
-                            else:
-                                self._broadcast_state()
-                            return cb_result
-                        call_result.callback = chain_broadcast_wrapper
-                    elif call_result is not None:
-                        self._show_result(call_result)
-                    else:
-                        self._broadcast_state()
+                    self._show_result(call_result)
                 return call_result
             def on_cancel():
                 if self._pending_trainer_card:
@@ -3147,15 +2524,6 @@ class GameScreen(
                     src_y = source[1] if source else HAND_Y + CARD_HEIGHT // 2
                     self._clear_last_action_context()
                     self._animate_discard(action_req.player, src_x, src_y, card.name, card)
-                    # Broadcast updated state
-                    if self._is_remote_host:
-                        from engine.game_state import ActionRequest as AR
-                        if isinstance(call_result, AR):
-                            self._handle_pending_action(call_result)
-                        elif call_result is not None:
-                            self._show_result(call_result)
-                        else:
-                            self._broadcast_state()
                 action_req.callback = bench_cb_with_discard
             self._handle_bench_select_prompt(action_req)
         elif action_req.request_type == "coin_flip":
@@ -3214,156 +2582,6 @@ class GameScreen(
         else:
             self.state._log(f"待处理: {action_req.prompt}")
 
-    def _handle_pending_action_client(self, action_req):
-        """Client mode: intercept pending action and send results to host."""
-        if action_req.request_type in ("search_deck", "select_hand_to_discard"):
-            from ui.screens.search_screen import SearchScreen
-            def on_complete(cards):
-                # Get indices of selected cards in the full card_list
-                card_ids = [getattr(c, 'api_id', c) if hasattr(c, 'api_id') else c for c in cards]
-                indices = []
-                for cid in card_ids:
-                    for i, item in enumerate(action_req.card_list):
-                        item_id = item.api_id if hasattr(item, 'api_id') else item
-                        if item_id == cid or str(item_id) == str(cid):
-                            indices.append(i)
-                            break
-                self._resolving_remote_pending = False
-                self._send_choice_response({
-                    "request_id": getattr(action_req, "request_id", ""),
-                    "selected_indices": indices,
-                })
-            def on_cancel_client():
-                self._resolving_remote_pending = False
-                self._send_choice_response({
-                    "request_id": getattr(action_req, "request_id", ""),
-                    "cancelled": True,
-                })
-            search_screen = SearchScreen(
-                self.manager, action_req,
-                on_complete=on_complete,
-                chain_handler=self._handle_pending_action_client,
-                on_cancel=on_cancel_client,
-            )
-            self.manager.push_screen(search_screen)
-        elif action_req.request_type in ("select_bench", "select_opponent_bench", "select_own_bench_energy"):
-            # For bench selection, use local handling but send result back
-            self._handle_bench_select_prompt_client(action_req)
-        elif action_req.request_type == "coin_flip":
-            # Use predetermined results from host if available (server authority)
-            predetermined = getattr(action_req, 'predetermined_flips', None)
-            def on_flip_done(results):
-                self._resolving_remote_pending = False
-                self._send_choice_response({
-                    "request_id": getattr(action_req, "request_id", ""),
-                    "coin_results": results,
-                })
-            self._start_coin_flip(
-                flip_count=getattr(action_req, 'flip_count', 1),
-                on_result=on_flip_done,
-                until_tails=getattr(action_req, 'until_tails', False),
-                predetermined=predetermined,
-            )
-        elif action_req.request_type == "select_bench_targets":
-            self._selecting_bench_targets = action_req
-            self._selected_bench_targets = []
-            self.state._log(action_req.prompt)
-            # Override the bench target selection handler to send to network
-            self._bench_target_handler_is_client = True
-        elif action_req.request_type == "confirm":
-            def _confirm_yes_client():
-                self._confirm_dialog = None
-                self._resolving_remote_pending = False
-                self._send_choice_response({
-                    "request_id": getattr(action_req, "request_id", ""),
-                    "confirmed": True,
-                })
-
-            def _confirm_no_client():
-                self._confirm_dialog = None
-                self._resolving_remote_pending = False
-                self._send_choice_response({
-                    "request_id": getattr(action_req, "request_id", ""),
-                    "confirmed": False,
-                })
-
-            self._confirm_dialog = {
-                "title": "确认",
-                "message": action_req.prompt,
-                "confirm_label": "是",
-                "cancel_label": "否",
-                "on_confirm": _confirm_yes_client,
-                "on_cancel": _confirm_no_client,
-            }
-        elif action_req.request_type == "distribute_energy":
-            from ui.screens.energy_distribution_screen import EnergyDistributionScreen
-
-            def on_distribution_complete(assignments):
-                self._resolving_remote_pending = False
-                self._send_choice_response({
-                    "request_id": getattr(action_req, "request_id", ""),
-                    "assignments": assignments,
-                })
-
-            def on_distribution_cancel():
-                self._resolving_remote_pending = False
-                self._send_choice_response({
-                    "request_id": getattr(action_req, "request_id", ""),
-                    "cancelled": True,
-                })
-
-            screen = EnergyDistributionScreen(
-                self.manager, {
-                    "energy_cards": action_req.card_list,
-                    "targets": getattr(action_req, 'target_info', []),
-                    "mode": getattr(action_req, 'distribute_mode', 'distribute'),
-                    "max_per_target": getattr(action_req, 'max_per_target', 99),
-                    "source_name": getattr(action_req, 'source_name', ''),
-                },
-                on_distribution_complete,
-                on_cancel=on_distribution_cancel,
-            )
-            self.manager.push_screen(screen)
-        else:
-            self.state._log(f"待处理: {action_req.prompt}")
-
-    def _handle_bench_select_prompt_client(self, action_req):
-        """Client mode bench selection: choose locally, send result to host."""
-        if action_req.request_type == "select_opponent_bench":
-            player = self.state.get_opponent()
-            is_opponent = True
-        elif getattr(action_req, 'target_player', '') == "opponent":
-            player = self.state.get_opponent()
-            is_opponent = True
-        elif getattr(action_req, 'player', -1) >= 0:
-            player = self.state.get_player(action_req.player)
-            is_opponent = action_req.player != self.my_player_idx
-        else:
-            player = self.state.get_active_player()
-            is_opponent = False
-        bench_with_pokemon = [
-            i for i, p in enumerate(player.bench) if p is not None
-        ]
-        if not bench_with_pokemon:
-            self.state._log("备战区没有宝可梦可选。")
-            return
-        if len(bench_with_pokemon) == 1:
-            self._resolving_remote_pending = False
-            self._send_choice_response({
-                "request_id": getattr(action_req, "request_id", ""),
-                "selected_bench_slot": bench_with_pokemon[0],
-            })
-        else:
-            # Store for click handling
-            self._animating_action = False
-            self._animating_hand_idx = None
-            self._pending_bench_select = action_req
-            self._pending_bench_select_client = True
-            if action_req.request_type == "select_bench":
-                self.state._log("请点击自己的备战区宝可梦进行替换。")
-            else:
-                self.state._log("请点击对手的备战区宝可梦进行替换。")
-
     def _handle_bench_select_prompt(self, action_req):
         if action_req.request_type == "select_opponent_bench":
             player = self.state.get_opponent()
@@ -3405,18 +2623,6 @@ class GameScreen(
         # Apply game speed multiplier
         sdt = dt * self._speed_value
 
-        # Network polling
-        if self.network_manager:
-            for msg in self.network_manager.poll(max_messages=32):
-                self._process_network_message(msg)
-            if self.network_manager.is_connected and self.network_manager.is_stale:
-                if not hasattr(self, '_stale_warn_timer'):
-                    self._stale_warn_timer = 0.0
-                self._stale_warn_timer += dt
-                if self._stale_warn_timer > 5.0:
-                    self._stale_warn_timer = 0.0
-                    self.state._log("警告: 对手连接超时，可能已断开。")
-
         self.anim_mgr.update(sdt)
         self.damage_flash.update(sdt)
         self.ko_fade.update(sdt)
@@ -3430,29 +2636,13 @@ class GameScreen(
         self.coin_flip.update(sdt)
         self.shuffle_anim.update(sdt)
 
-        # Waiting indicator (online play)
-        if self.network_manager:
-            if self._is_remote_client and self._should_block_remote_input():
-                self.waiting_indicator.show("等待对手操作...")
-            elif self._is_remote_client and self._resolving_remote_pending:
-                self.waiting_indicator.show("等待对手确认...")
-            elif self._is_remote_host and self._should_block_remote_input():
-                self.waiting_indicator.show("等待对手操作...")
-            elif self._waiting_remote:
-                self.waiting_indicator.show("等待对手操作...")
-            else:
-                self.waiting_indicator.hide()
-        elif self._is_ai_turn_context():
+        if self._is_ai_turn_context():
             algo_label = "信息集 PUCT"
             ai_label = self._ai_runtime_label()
             self.waiting_indicator.show(f"{ai_label} 思考中 ({algo_label})...")
         else:
             self.waiting_indicator.hide()
         self.waiting_indicator.update(sdt)
-
-        # State sync fade decay (use sdt for speed multiplier consistency)
-        if self._remote_update_fade > 0:
-            self._remote_update_fade = max(0, self._remote_update_fade - sdt)
 
         # Detect state changes for discard/mill animations
         self._detect_state_changes()
@@ -3471,8 +2661,7 @@ class GameScreen(
             self._pending_turn_end -= sdt
             if self._pending_turn_end <= 0:
                 self._pending_turn_end = 0
-                if self._is_remote_host or self._is_remote_client or self.challenge_mode:
-                    self._handle_turn_end()
+                self._handle_turn_end()
 
         if self.challenge_mode:
             self._update_challenge_ai(sdt)
@@ -3535,35 +2724,6 @@ class GameScreen(
         """Save undo state for the last action."""
         self._undo_state = {"action": action, "player_idx": player_idx, **kwargs}
 
-    # ── Connection Status ────────────────────────────────────────
-
-    def _draw_connection_status(self, surface):
-        """Draw connection status indicator for online play."""
-        if not self.network_manager:
-            return
-
-        dot_x = self.layout.divider.right - 136
-        dot_y = self.layout.divider.centery
-
-        if not self.network_manager.is_connected:
-            color = (220, 60, 60)
-            label = "断开"
-        elif self.network_manager.is_stale:
-            color = (220, 200, 60)
-            label = "延迟"
-        else:
-            color = (80, 220, 80)
-            label = "已连接"
-
-        # Small glow behind dot
-        glow_surf = pygame.Surface((14, 14), pygame.SRCALPHA)
-        pygame.draw.circle(glow_surf, (*color, 30), (7, 7), 6)
-        surface.blit(glow_surf, (dot_x - 7, dot_y - 7))
-        pygame.draw.circle(surface, color, (dot_x, dot_y), 4)
-
-        label_txt = self.font_card_tiny.render(label, True, color)
-        surface.blit(label_txt, (dot_x + 10, dot_y - 6))
-
     def _draw_quit_buttons(self, surface):
         """Draw the quit-to-menu and concede buttons in the divider bar."""
         # Concede button
@@ -3595,8 +2755,6 @@ class GameScreen(
     def _confirm_quit_game(self):
         """Show confirmation dialog before quitting to title."""
         def do_quit():
-            if self.network_manager:
-                self.network_manager.stop()
             self._confirm_dialog = None
             self._quit_game()
 
@@ -3613,26 +2771,11 @@ class GameScreen(
         """Show confirmation dialog before conceding."""
         def do_concede():
             self._confirm_dialog = None
-            if self._is_remote_host or self._is_remote_client:
-                conceder = self.my_player_idx
-            elif self.state.phase == TurnPhase.SETUP:
+            if self.state.phase == TurnPhase.SETUP:
                 conceder = self.setup_player_idx
             else:
                 conceder = self.state.active_player_idx
             self.state.winner = 1 - conceder
-
-            # Client: notify host before showing end screen locally
-            if self._is_remote_client:
-                self.network_manager.send({
-                    "type": "game_over",
-                    "winner": self.state.winner,
-                    "reason": "对手认输",
-                    "prizes_taken": (
-                        6 - len(self.state.p1.prizes),
-                        6 - len(self.state.p2.prizes),
-                    ),
-                })
-
             self._show_end_screen(custom_reason="对手认输")
 
         self._confirm_dialog = {

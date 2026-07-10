@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$RequireAndroidDevice,
+    [switch]$AllowAndroidCleanInstall
+)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -16,6 +19,7 @@ $version = [string]$release.version
 $releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
 $apkPath = Join-Path $distRoot "PokemonTCG-Android-arm64-$version-test.apk"
+$smokeApkPath = Join-Path $projectRoot 'dist\release\android\PokemonTCG-smoke.apk'
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 $apksigner = Join-Path $sdkRoot "build-tools\$buildToolsVersion\apksigner.bat"
@@ -34,10 +38,21 @@ $smoke = Start-Process `
     -FilePath $windowsExe `
     -ArgumentList @('--', '--phase6-release-smoke') `
     -PassThru `
-    -Wait `
     -WindowStyle Hidden
-if ($smoke.ExitCode -ne 0) {
-    throw "Windows release smoke failed with exit code $($smoke.ExitCode)."
+try {
+    if (-not $smoke.WaitForExit(180000)) {
+        throw 'Windows release smoke timed out after 180 seconds.'
+    }
+    $smokeExitCode = $smoke.ExitCode
+}
+finally {
+    if (-not $smoke.HasExited) {
+        Stop-Process -Id $smoke.Id -Force
+        $smoke.WaitForExit()
+    }
+}
+if ($smokeExitCode -ne 0) {
+    throw "Windows release smoke failed with exit code $smokeExitCode."
 }
 Write-Host 'WINDOWS_RELEASE_RUNTIME_OK'
 
@@ -115,14 +130,56 @@ if (Compare-Object @($releaseDecks | Sort-Object) $actualApkModels) {
 }
 Write-Host "ANDROID_RELEASE_APK_OK signing=test models=$($releaseDecks.Count) abi=arm64-v8a"
 
-$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+& (Join-Path $PSScriptRoot 'test_android_runtime.ps1') `
+    -ApkPath $apkPath `
+    -SmokeApkPath $smokeApkPath `
+    -ExpectedModels $releaseDecks.Count `
+    -RequireDevice:$RequireAndroidDevice `
+    -AllowCleanInstall:$AllowAndroidCleanInstall
+if ($LASTEXITCODE -ne 0) {
+    throw 'Android release runtime smoke failed.'
+}
+
+$manifestPayload = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+# Windows PowerShell 5.1 preserves a top-level JSON array as one pipeline
+# object inside @(...); assigning first and then expanding normalizes PS 5/7.
+$manifest = @($manifestPayload)
+$releaseTargets = @{
+    ([IO.Path]::GetFileName($zipPath)) = $zipPath
+    'PokemonTCG.exe' = $windowsExe
+    'PokemonTCG.pck' = (Join-Path $windowsRoot 'PokemonTCG.pck')
+    'libpokemon_ai.windows.template_release.x86_64.dll' = (
+        Join-Path $windowsRoot 'libpokemon_ai.windows.template_release.x86_64.dll'
+    )
+    'onnxruntime.dll' = (Join-Path $windowsRoot 'onnxruntime.dll')
+    ([IO.Path]::GetFileName($apkPath)) = $apkPath
+}
+$expectedManifestFiles = @($releaseTargets.Keys) + @(
+    $releaseDecks | ForEach-Object { "models/$_.onnx" }
+)
+$actualManifestFiles = @($manifest | ForEach-Object { [string]$_.file })
+$uniqueManifestFiles = @($actualManifestFiles | Sort-Object -Unique)
+$manifestFileDifferences = @(
+    Compare-Object `
+        @($expectedManifestFiles | Sort-Object) `
+        @($actualManifestFiles | Sort-Object)
+)
+Write-Host (
+    "RELEASE_CHECKSUM_SET expected=$($expectedManifestFiles.Count) " +
+    "actual=$($actualManifestFiles.Count) unique=$($uniqueManifestFiles.Count) " +
+    "differences=$($manifestFileDifferences.Count)"
+)
+if (
+    $uniqueManifestFiles.Count -ne $actualManifestFiles.Count -or
+    $manifestFileDifferences.Count -ne 0
+) {
+    throw 'Checksum manifest file set is missing, duplicated, or unexpected.'
+}
 foreach ($row in $manifest) {
     $path = if ($row.file.StartsWith('models/')) {
         Join-Path $projectRoot ('data\ai_models\' + [IO.Path]::GetFileName($row.file))
     } else {
-        Get-ChildItem -LiteralPath $distRoot -Recurse -File |
-            Where-Object Name -eq $row.file |
-            Select-Object -First 1 -ExpandProperty FullName
+        $releaseTargets[[string]$row.file]
     }
     if (-not $path -or -not (Test-Path -LiteralPath $path)) {
         throw "Checksum manifest target is missing: $($row.file)"

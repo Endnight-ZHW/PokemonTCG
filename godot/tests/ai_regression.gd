@@ -1,14 +1,6 @@
 extends SceneTree
 
-const DEEP_DECK_KEYS := [
-	"fire", "water", "psychic", "lightning",
-	"fighting", "colorless", "dragon", "grass", "darkness", "steel",
-]
-
-const CHALLENGE_DECK_KEYS := [
-	"fire", "water", "psychic", "lightning",
-	"fighting", "colorless", "dragon", "grass", "darkness", "steel",
-]
+const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
 
 var failures: Array[String] = []
 
@@ -16,6 +8,13 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	var suite_started := Time.get_ticks_msec()
 	var memory_before := OS.get_static_memory_usage()
+	var release_decks_result := _load_release_deck_keys()
+	if not bool(release_decks_result.get("ok", false)):
+		push_error(str(release_decks_result.get("error", "Invalid release manifest")))
+		quit(1)
+		return
+	var deck_keys: Array[String] = []
+	deck_keys.assign(release_decks_result["value"])
 	var catalog := CardCatalog.new()
 	var engine := GameEngine.new(catalog)
 	var worker := NativeChallengeAI.new()
@@ -24,7 +23,7 @@ func _initialize() -> void:
 		Dictionary(runtime.manifest.get("compatibility_bridge", {})).get("python_encoder_version", 0)
 	)
 	var deep_runtime_current := (
-		runtime_manifest_encoder == int(DeepAIRuntime.EXPECTED_PYTHON_ENCODER_VERSION)
+		runtime_manifest_encoder == runtime.expected_python_encoder_version
 	)
 	var summaries: Array[Dictionary] = []
 	for failure in _budget_contract_failures(catalog, engine, worker):
@@ -37,10 +36,9 @@ func _initialize() -> void:
 				"skipped": true,
 				"reason": "python_encoder_version_mismatch",
 				"manifest_encoder_version": runtime_manifest_encoder,
-				"expected_encoder_version": DeepAIRuntime.EXPECTED_PYTHON_ENCODER_VERSION,
+				"expected_encoder_version": runtime.expected_python_encoder_version,
 			})
 			continue
-		var deck_keys := CHALLENGE_DECK_KEYS if mode == "challenge" else DEEP_DECK_KEYS
 		for index in range(deck_keys.size()):
 			var deck_key := str(deck_keys[index])
 			var opponent_key := str(deck_keys[(index + 1) % deck_keys.size()])
@@ -82,6 +80,32 @@ func _initialize() -> void:
 		for failure in failures:
 			push_error(failure)
 		quit(1)
+
+
+func _load_release_deck_keys() -> Dictionary:
+	var file := FileAccess.open(RELEASE_MANIFEST_PATH, FileAccess.READ)
+	if file == null:
+		return {"ok": false, "error": "Unable to open %s" % RELEASE_MANIFEST_PATH}
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	if not parsed is Dictionary:
+		return {"ok": false, "error": "Invalid JSON in %s" % RELEASE_MANIFEST_PATH}
+	var manifest: Dictionary = parsed
+	var release_decks_value: Variant = manifest.get("release_decks", null)
+	if not release_decks_value is Array:
+		return {"ok": false, "error": "Release manifest has no release_decks array"}
+	var deck_keys: Array[String] = []
+	for value in release_decks_value:
+		if typeof(value) != TYPE_STRING or str(value).is_empty():
+			return {"ok": false, "error": "Release manifest has an invalid deck key"}
+		var deck_key := str(value)
+		if deck_key in deck_keys:
+			return {"ok": false, "error": "Release manifest has duplicate deck keys"}
+		deck_keys.append(deck_key)
+	if deck_keys.is_empty():
+		return {"ok": false, "error": "Release manifest has no release decks"}
+	if deck_keys.size() != int(manifest.get("model_count", -1)):
+		return {"ok": false, "error": "Release manifest model_count does not match release_decks"}
+	return {"ok": true, "value": deck_keys}
 
 
 func _budget_contract_failures(

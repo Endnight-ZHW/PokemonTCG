@@ -1,4 +1,4 @@
-"""Serializable action and choice contracts shared by rules, AI, UI, and network."""
+"""Serializable action and choice contracts shared by rules, AI, UI, and tooling."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -54,7 +54,13 @@ EntityRef = CardRef | PokemonRef | AttachmentRef
 
 
 def resolve_pokemon_ref(state, ref: PokemonRef):
-    if not isinstance(ref, PokemonRef) or ref.player not in (0, 1):
+    if (
+        not isinstance(ref, PokemonRef)
+        or type(ref.player) is not int
+        or ref.player not in (0, 1)
+        or not isinstance(ref.slot, str)
+        or not isinstance(ref.card_id, str)
+    ):
         return None
     pokemon = state.get_player(ref.player).get_pokemon(ref.slot)
     if pokemon is None:

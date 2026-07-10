@@ -4,9 +4,13 @@ from __future__ import annotations
 from typing import Callable
 
 from engine.actions import (
+    AttachmentRef,
+    CardRef,
+    ChoiceOption,
     ChoiceRequest,
     ChoiceResponse,
     GameAction,
+    PokemonRef,
     StepResult,
 )
 from engine.action_availability import VMActionAvailability
@@ -15,6 +19,10 @@ from engine.choice_manager import VMChoiceManager
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.random_source import RandomSource
+from engine.pending_continuation import (
+    PendingContinuationError,
+    rebuild_choice_request,
+)
 from engine.settlement import VMSettlementManager
 from engine.snapshot import clone_state
 from engine.transaction_manager import VMTransactionManager
@@ -86,6 +94,17 @@ class GameEngine:
         auto_finish_attack: bool = True,
     ) -> StepResult:
         rng = rng or RandomSource()
+        if (
+            not isinstance(action, GameAction)
+            or not isinstance(action.params, dict)
+            or not isinstance(action.action, (PlayerAction, str))
+        ):
+            return StepResult(
+                False,
+                "动作格式无效。",
+                error_code="invalid_action",
+                winner=state.winner,
+            )
         actor = state.active_player_idx if action.actor is None else action.actor
         if not self._is_valid_actor(actor):
             return StepResult(
@@ -237,7 +256,27 @@ class GameEngine:
                 error_code="invalid_choice_request",
                 winner=state.winner,
             )
+        request_structure_error = self._choice_request_structure_error(request)
+        if request_structure_error:
+            return StepResult(
+                False,
+                request_structure_error,
+                error_code="invalid_choice_request",
+                winner=state.winner,
+            )
         if not isinstance(response, ChoiceResponse):
+            return StepResult(
+                False,
+                "选择响应格式无效。",
+                error_code="invalid_choice_response",
+                winner=state.winner,
+            )
+        if (
+            not isinstance(response.request_id, str)
+            or not isinstance(response.option_ids, (tuple, list))
+            or not all(isinstance(option_id, str) for option_id in response.option_ids)
+            or type(response.cancelled) is not bool
+        ):
             return StepResult(
                 False,
                 "选择响应格式无效。",
@@ -269,36 +308,76 @@ class GameEngine:
             if isinstance(authoritative_metadata, dict)
             else -1
         )
-        try:
-            revision_matches = int(authoritative_revision) == int(
-                getattr(state, "revision", 0)
-            )
-        except (TypeError, ValueError):
-            revision_matches = False
+        state_revision = getattr(state, "revision", 0)
+        revision_matches = (
+            type(authoritative_revision) is int
+            and type(state_revision) is int
+            and authoritative_revision == state_revision
+        )
         if not revision_matches:
             return StepResult(False, "局面已变化，选择请求已过期。", error_code="stale_choice")
-        if self.transaction_manager.choice_request_to_dict(request) != authoritative:
+        try:
+            request_payload = self.transaction_manager.choice_request_to_dict(request)
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            return StepResult(
+                False,
+                "选择请求格式无效。",
+                error_code="invalid_choice_request",
+                winner=state.winner,
+            )
+        if request_payload != authoritative:
             return StepResult(
                 False,
                 "选择请求与当前待处理请求不一致。",
                 error_code="stale_choice",
                 winner=state.winner,
             )
+        try:
+            # Resolve exclusively from state-owned data.  The caller's
+            # ``legacy_request`` is intentionally ignored so an otherwise
+            # identical public request cannot substitute an arbitrary
+            # callback.  Live requests retain their command stack; restored
+            # snapshots rebuild the callback from continuation kind+payload.
+            request = self.pending_choice_request(state)
+        except PendingContinuationError as exc:
+            return StepResult(
+                False,
+                str(exc),
+                error_code=exc.error_code,
+                winner=state.winner,
+            )
+        if request is None:
+            return StepResult(
+                False,
+                "当前没有可恢复的待处理选择。",
+                error_code="no_pending_choice",
+                winner=state.winner,
+            )
         choice_cancelled = False
         if response.cancelled:
             if not request.can_cancel:
                 return StepResult(False, "该选择不可取消。", error_code="choice_not_cancellable")
-            if self.transaction_manager.restore_cancel_checkpoint(state, rng, request):
-                return StepResult(True, "操作已取消。", winner=state.winner)
-            if (
-                request.legacy_request is not None
-                and request.legacy_request.pending_card is not None
-            ):
-                self.choice_manager.cancel_pending_card(state, request.legacy_request)
-                state.revision = getattr(state, "revision", 0) + 1
-                self.transaction_manager.clear_pending_choice_stack(state)
-                return StepResult(True, "选择已取消。", winner=state.winner)
-            choice_cancelled = True
+            cancel_guard = self.transaction_manager.capture_transaction(state, rng)
+            try:
+                if self.transaction_manager.restore_cancel_checkpoint(state, rng, request):
+                    return StepResult(True, "操作已取消。", winner=state.winner)
+                if (
+                    request.legacy_request is not None
+                    and request.legacy_request.pending_card is not None
+                ):
+                    self.choice_manager.cancel_pending_card(state, request.legacy_request)
+                    state.revision = getattr(state, "revision", 0) + 1
+                    self.transaction_manager.clear_pending_choice_stack(state)
+                    return StepResult(True, "选择已取消。", winner=state.winner)
+                choice_cancelled = True
+            except Exception as exc:
+                self.transaction_manager.rollback_transaction(state, rng, cancel_guard)
+                return StepResult(
+                    False,
+                    str(exc),
+                    error_code="choice_exception",
+                    winner=state.winner,
+                )
 
         option_map = {option.option_id: option for option in request.options}
         selected = []
@@ -314,6 +393,14 @@ class GameEngine:
             and not (request.min_select <= len(selected) <= request.max_select)
         ):
             return StepResult(False, "选择数量不符合要求。", error_code="choice_count")
+        target_limit_error = self._choice_target_limit_error(request, selected)
+        if target_limit_error:
+            return StepResult(
+                False,
+                target_limit_error,
+                error_code="choice_target_limit",
+                winner=state.winner,
+            )
 
         legacy = request.legacy_request
         if legacy is None:
@@ -372,6 +459,65 @@ class GameEngine:
             self.transaction_manager.persist_pending_choice(state, structured)
         return structured
 
+    def pending_choice_request(self, state: GameState) -> ChoiceRequest | None:
+        """Return the state-authoritative pending choice, rebuilding if needed."""
+        payload = self.transaction_manager.pending_choice_payload(state)
+        if payload is None:
+            return None
+
+        metadata = payload.get("metadata", {})
+        if isinstance(metadata, dict) and "finish_attack_actor" in metadata:
+            finish_actor = metadata.get("finish_attack_actor")
+            if type(finish_actor) is not int or finish_actor not in (0, 1):
+                raise PendingContinuationError(
+                    "待处理攻击选择的玩家无效。",
+                    error_code="invalid_pending_choice",
+                )
+        continuation = metadata.get("continuation", {}) if isinstance(metadata, dict) else {}
+        kind = (
+            str(continuation.get("kind", "") or "")
+            if isinstance(continuation, dict)
+            else ""
+        )
+        if kind:
+            # Validate even when a live request exists; unknown serialized
+            # kinds must never fall through to a caller-provided callback.
+            from engine.commands.resolution_stack import ResolutionStack
+
+            try:
+                supported = ResolutionStack(state).continuation_registry.supports(kind)
+            except Exception as exc:
+                raise PendingContinuationError(
+                    f"无法验证 VM continuation：{exc}",
+                    error_code="invalid_continuation",
+                ) from exc
+            if not supported:
+                raise PendingContinuationError(
+                    f"Unknown VM continuation: {kind}",
+                    error_code="unknown_continuation",
+                )
+
+        runtime = getattr(state, "_pending_choice_runtime", None)
+        if isinstance(runtime, ChoiceRequest):
+            try:
+                if (
+                    not self._choice_request_structure_error(runtime)
+                    and self.transaction_manager.choice_request_to_dict(runtime) == payload
+                ):
+                    return runtime
+            except (TypeError, ValueError, AttributeError, OverflowError):
+                # A damaged ephemeral request must not escape validation or
+                # override the serialized state-owned request.
+                pass
+
+        rebuilt = rebuild_choice_request(state, payload)
+        if not kind:
+            raise PendingContinuationError(
+                "待处理选择缺少可序列化 continuation。",
+                error_code="missing_continuation",
+            )
+        return rebuilt
+
     def choice_response_from_legacy(
         self,
         request: ChoiceRequest,
@@ -409,6 +555,103 @@ class GameEngine:
             aggregate.error_code = "choice_loop"
             aggregate.message = "选择链超过安全上限。"
         return aggregate
+
+    @staticmethod
+    def _choice_target_limit_error(
+        request: ChoiceRequest,
+        selected: list[ChoiceOption],
+    ) -> str:
+        if (
+            request.request_type != "distribute_energy"
+            or request.metadata.get("distribute_mode") == "source_select"
+            or not selected
+        ):
+            return ""
+        try:
+            max_per_target = int(request.metadata.get("max_per_target", 99))
+        except (TypeError, ValueError, OverflowError):
+            return "分配目标上限无效。"
+        counts: dict[str, int] = {}
+        for option in selected:
+            value = option.value
+            slot = (
+                str(value.get("slot", "") or "")
+                if isinstance(value, dict)
+                else str(getattr(option.ref, "slot", "") or "")
+            )
+            if not slot:
+                return "分配目标无效。"
+            counts[slot] = counts.get(slot, 0) + 1
+        effective_count = sum(
+            min(count, max(0, max_per_target))
+            for count in counts.values()
+        )
+        if effective_count < request.min_select:
+            return "有效分配数量不足，重复目标超过单目标上限。"
+        return ""
+
+    @staticmethod
+    def _choice_request_structure_error(request: ChoiceRequest) -> str:
+        if (
+            not isinstance(request.request_id, str)
+            or not request.request_id
+            or not isinstance(request.request_type, str)
+            or not request.request_type
+            or not isinstance(request.prompt, str)
+            or not isinstance(request.options, (tuple, list))
+            or not all(isinstance(option, ChoiceOption) for option in request.options)
+            or not isinstance(request.metadata, dict)
+            or type(request.min_select) is not int
+            or type(request.max_select) is not int
+            or request.min_select < 0
+            or request.max_select < request.min_select
+            or type(request.allow_duplicates) is not bool
+            or type(request.can_cancel) is not bool
+        ):
+            return "选择请求格式无效。"
+        option_ids = [option.option_id for option in request.options]
+        if any(not isinstance(option_id, str) or not option_id for option_id in option_ids):
+            return "选择请求包含无效选项标识。"
+        if any(not isinstance(option.label, str) for option in request.options):
+            return "选择请求包含无效选项标签。"
+        if len(set(option_ids)) != len(option_ids):
+            return "选择请求包含重复选项标识。"
+        if any(
+            not GameEngine._is_well_formed_entity_ref(option.ref)
+            for option in request.options
+        ):
+            return "选择请求包含无效实体引用。"
+        return ""
+
+    @staticmethod
+    def _is_well_formed_entity_ref(ref) -> bool:
+        if ref is None:
+            return True
+        if isinstance(ref, CardRef):
+            return (
+                type(ref.player) is int
+                and ref.player in (0, 1)
+                and isinstance(ref.zone, str)
+                and type(ref.index) is int
+                and isinstance(ref.card_id, str)
+            )
+        if isinstance(ref, PokemonRef):
+            return (
+                type(ref.player) is int
+                and ref.player in (0, 1)
+                and isinstance(ref.slot, str)
+                and isinstance(ref.card_id, str)
+            )
+        if isinstance(ref, AttachmentRef):
+            return (
+                type(ref.player) is int
+                and ref.player in (0, 1)
+                and isinstance(ref.slot, str)
+                and isinstance(ref.attachment_type, str)
+                and type(ref.index) is int
+                and isinstance(ref.card_id, str)
+            )
+        return False
 
     @staticmethod
     def _is_valid_actor(actor) -> bool:

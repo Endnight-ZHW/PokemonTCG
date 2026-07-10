@@ -29,6 +29,7 @@
   "python": {
     "version": "3.11.15",
     "torch": "2.4.1",
+    "cuda": "11.8",
     "numpy": "1.26.4",
     "onnx": "1.22.0",
     "onnxruntime": "1.26.0",

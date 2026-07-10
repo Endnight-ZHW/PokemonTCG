@@ -15,14 +15,12 @@ class PassScreen(Screen):
     """回合间全屏遮罩，隐藏棋盘防止对手偷看."""
 
     def __init__(self, manager: ScreenManager, next_player: int,
-                 on_continue: callable, game_state=None, turn_number: int = 0,
-                 network_manager=None):
+                 on_continue: callable, game_state=None, turn_number: int = 0):
         super().__init__(manager)
         self.next_player = next_player
         self.on_continue = on_continue
         self.game_state = game_state
         self.turn_number = turn_number
-        self.network_manager = network_manager
         self.font_title = get_font("title_md")
         self.font_body = get_font("body_lg")
         self.font_small = get_font("body_sm")
@@ -70,12 +68,8 @@ class PassScreen(Screen):
         player_name = f"玩家{self.next_player + 1}"
         player_color_text = PLAYER1_COLOR if self.next_player == 0 else PLAYER2_COLOR
 
-        if self.network_manager:
-            turn_str = f"等待玩家{self.next_player + 1}操作..."
-            title_txt = self.font_title.render(turn_str, True, player_color_text)
-        else:
-            turn_str = f"第{self.turn_number}回合 — {player_name}的回合开始"
-            title_txt = self.font_title.render(turn_str, True, player_color_text)
+        turn_str = f"第{self.turn_number}回合 — {player_name}的回合开始"
+        title_txt = self.font_title.render(turn_str, True, player_color_text)
         title_rect = title_txt.get_rect(center=(SCREEN_WIDTH // 2, panel_rect.y + 78))
         surface.blit(title_txt, title_rect)
 
@@ -98,19 +92,12 @@ class PassScreen(Screen):
         surface.blit(icon_surf, (SCREEN_WIDTH // 2 - icon_size // 2, icon_y))
         surface.blit(num_txt, num_txt.get_rect(center=(SCREEN_WIDTH // 2, icon_y + icon_size // 2)))
 
-        if self.network_manager:
-            prompt_text = "请耐心等待..."
-        else:
-            prompt_text = "点击屏幕或按空格键开始"
+        prompt_text = "点击屏幕或按空格键开始"
         prompt_rect = pygame.Rect(SCREEN_WIDTH // 2 - 180, panel_rect.y + 245, 360, 42)
         draw_button(surface, prompt_rect, prompt_text, self.font_body,
-                    hovered=not self.network_manager,
-                    enabled=not self.network_manager)
+                    hovered=True, enabled=True)
 
-        if self.network_manager:
-            reminder_text = "两名玩家在不同设备上对战，无需移开视线"
-        else:
-            reminder_text = "对手操作时请移开视线，避免看到对方的棋盘信息"
+        reminder_text = "对手操作时请移开视线，避免看到对方的棋盘信息"
         reminder = self.font_small.render(reminder_text, True, UI_TEXT_SECONDARY)
         reminder_rect = reminder.get_rect(
             center=(SCREEN_WIDTH // 2, panel_rect.bottom - 62)

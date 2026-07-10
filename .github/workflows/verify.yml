@@ -60,14 +60,35 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [fast, onnx-parity]
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchains
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: '3.11.15'
+          auto-activate-base: false
+
+      - name: Install pinned toolchains
         shell: pwsh
-        run: .\tools\setup_godot_toolchain.ps1
+        run: |
+          .\tools\setup_godot_toolchain.ps1
+          .\tools\setup_ai_toolchain.ps1
+          .\tools\setup_android_toolchain.ps1
+          .\tools\setup_native_ai_deps.ps1
+
+      - name: Run full rules, Godot, network, and ONNX verification
+        shell: pwsh
+        run: .\tools\test_standard.ps1 -Python .\.tools\python311\python.exe
+
+      - name: Rebuild native runtimes and package test-signed release
+        shell: pwsh
+        run: .\tools\package_release.ps1 -AndroidSigning test
 
       - name: Run native Deep AI regression
         shell: pwsh
         run: .\tools\test_godot_ai.ps1 -RequireDeepRuntime
+
+      - name: Verify Windows and Android release artifacts
+        shell: pwsh
+        run: .\tools\test_release.ps1

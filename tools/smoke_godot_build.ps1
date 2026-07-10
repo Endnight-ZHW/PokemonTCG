@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [int]$WindowsSeconds = 3
+    [int]$WindowsSeconds = 3,
+    [switch]$RequireAndroidDevice,
+    [switch]$AllowAndroidCleanInstall
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,13 +10,14 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $windowsExe = Join-Path $repoRoot 'godot\dist\windows\PokemonTCG.exe'
 $windowsConsole = Join-Path $repoRoot 'godot\dist\windows\PokemonTCG.console.exe'
 $androidApk = Join-Path $repoRoot 'godot\dist\android\PokemonTCG.apk'
+$androidSmokeApk = Join-Path $repoRoot 'godot\dist\android\PokemonTCG-smoke.apk'
 $sdkRoot = Join-Path $repoRoot '.tools\android-sdk'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
-$adb = Join-Path $sdkRoot 'platform-tools\adb.exe'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
 $releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
+$expectedOnnxRuntime = [string]$release.onnx.runtime_version
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
@@ -70,11 +73,11 @@ if (
     $LASTEXITCODE -ne 0 -or
     -not $aiSmokeText.Contains('PHASE4_EXPORT_AI_OK') -or
     -not $aiSmokeText.Contains('provider=CPUExecutionProvider') -or
-    -not $aiSmokeText.Contains('runtime=1.26.0')
+    -not $aiSmokeText.Contains("runtime=$expectedOnnxRuntime")
 ) {
     throw "Exported Windows Deep AI smoke test failed.`n$aiSmokeText"
 }
-Write-Host 'WINDOWS_DEEP_AI_OK provider=CPUExecutionProvider runtime=1.26.0'
+Write-Host "WINDOWS_DEEP_AI_OK provider=CPUExecutionProvider runtime=$expectedOnnxRuntime"
 
 $networkSmoke = & $windowsConsole -- --phase5-network-smoke 2>&1
 $networkSmokeText = $networkSmoke -join "`n"
@@ -126,26 +129,12 @@ if (Compare-Object @($releaseDecks | Sort-Object) $actualApkModels) {
 }
 Write-Host "ANDROID_AI_ASSETS_OK models=$($releaseDecks.Count) abi=arm64-v8a"
 
-$deviceRows = & $adb devices
-$connected = @(
-    $deviceRows |
-        Select-Object -Skip 1 |
-        Where-Object { $_ -match "\tdevice(\s|$)" }
-)
-if ($connected.Count -eq 0) {
-    Write-Host 'ANDROID_DEVICE_SKIPPED no connected ADB device'
-    exit 0
-}
-
-& $adb install -r $androidApk
+& (Join-Path $PSScriptRoot 'test_android_runtime.ps1') `
+    -ApkPath $androidApk `
+    -SmokeApkPath $androidSmokeApk `
+    -ExpectedModels $releaseDecks.Count `
+    -RequireDevice:$RequireAndroidDevice `
+    -AllowCleanInstall:$AllowAndroidCleanInstall
 if ($LASTEXITCODE -ne 0) {
-    throw 'Unable to install Android APK on the connected device.'
+    throw 'Android runtime smoke failed.'
 }
-& $adb shell am force-stop com.pokemontcg.game
-& $adb shell monkey -p com.pokemontcg.game 1 | Out-Host
-Start-Sleep -Seconds 3
-$pidValue = (& $adb shell pidof com.pokemontcg.game).Trim()
-if (-not $pidValue) {
-    throw 'Android app did not stay running after launch.'
-}
-Write-Host "ANDROID_STARTUP_OK pid=$pidValue"

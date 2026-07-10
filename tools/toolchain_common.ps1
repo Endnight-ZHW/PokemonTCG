@@ -6,6 +6,27 @@ function Get-ToolchainLock {
     return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
 }
 
+function Get-GodotToolchainPaths {
+    param([Parameter(Mandatory)] [string]$RepoRoot)
+    $lock = Get-ToolchainLock -RepoRoot $RepoRoot
+    $toolsRoot = Join-Path $RepoRoot '.tools'
+    $version = [string]$lock.godot.version
+    $series = ($version -split '-')[0]
+    $godotRoot = Join-Path $toolsRoot "godot-$series"
+    return [pscustomobject]@{
+        Series = $series
+        Root = $godotRoot
+        Editor = Join-Path $godotRoot "Godot_v$($version)_win64.exe"
+        Console = Join-Path $godotRoot "Godot_v$($version)_win64_console.exe"
+        EditorSettings = Join-Path `
+            $toolsRoot `
+            "appdata\Godot\editor_settings-$series.tres"
+        TemplateRoot = Join-Path `
+            $toolsRoot `
+            "appdata\Godot\export_templates\$($lock.godot.full_config)"
+    }
+}
+
 function Get-ReleaseManifest {
     param([Parameter(Mandatory)] [string]$RepoRoot)
     $path = Join-Path $RepoRoot 'release_manifest.json'

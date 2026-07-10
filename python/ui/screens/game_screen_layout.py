@@ -12,10 +12,6 @@ class GameScreenLayoutMixin:
         """Get the player whose hand/board should be displayed at bottom."""
         if self.challenge_mode:
             return self.state.get_player(self.human_player_idx)
-        if self._is_remote_host:
-            return self.state.get_player(self.my_player_idx)
-        if self._is_remote_client:
-            return self.state.get_player(self.my_player_idx)
         if self.state.phase == TurnPhase.SETUP:
             return self.state.get_player(self.setup_player_idx)
         return self.state.get_active_player()
@@ -24,8 +20,6 @@ class GameScreenLayoutMixin:
         """Get the opponent for UI rendering."""
         if self.challenge_mode:
             return self.state.get_player(self.ai_player_idx)
-        if self._is_remote_host or self._is_remote_client:
-            return self.state.get_player(1 - self.my_player_idx)
         if self.state.phase == TurnPhase.SETUP:
             other_idx = 1 - self.setup_player_idx
             return self.state.get_player(other_idx)
@@ -34,8 +28,6 @@ class GameScreenLayoutMixin:
     def _get_display_player_idx(self) -> int:
         if self.challenge_mode:
             return self.human_player_idx
-        if self._is_remote_host or self._is_remote_client:
-            return self.my_player_idx
         if self.state.phase == TurnPhase.SETUP:
             return self.setup_player_idx
         return self.state.active_player_idx

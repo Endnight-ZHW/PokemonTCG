@@ -10,6 +10,7 @@ enum ConnectionPhase {
 
 var transport: NetTransport
 var session: AuthoritativeSession
+var catalog: CardCatalog
 var host := false
 var player_idx := -1
 var room_id := ""
@@ -30,64 +31,90 @@ var seed := -1
 var events: Array[Dictionary] = []
 
 
+func _init(p_catalog: CardCatalog = null) -> void:
+	catalog = p_catalog if p_catalog != null else CardCatalog.shared()
+
+
 func host_lan(port: int, deck_key: String, match_seed: int = -1) -> Error:
 	close()
+	if not catalog.decks.has(deck_key):
+		return ERR_INVALID_PARAMETER
 	host = true
 	player_idx = 0
 	local_deck_key = deck_key
 	seed = _resolved_match_seed(match_seed)
 	room_id = "lan-%08x" % (Time.get_unix_time_from_system() as int)
-	var enet := EnetTransport.new()
+	var enet := _new_enet_transport()
 	var error := enet.start_host(port)
 	if error == OK:
 		transport = enet
-		session = AuthoritativeSession.new(room_id)
+		session = AuthoritativeSession.new(room_id, catalog)
 		connection_phase = ConnectionPhase.CONNECTING
+	else:
+		enet.close()
+		close()
 	return error
 
 
 func join_lan(address: String, port: int, deck_key: String) -> Error:
 	close()
+	if not catalog.decks.has(deck_key):
+		return ERR_INVALID_PARAMETER
 	host = false
 	player_idx = 1
 	local_deck_key = deck_key
-	var enet := EnetTransport.new()
+	var enet := _new_enet_transport()
 	var error := enet.start_client(address, port)
 	if error == OK:
 		transport = enet
 		connection_phase = ConnectionPhase.CONNECTING
+	else:
+		enet.close()
+		close()
 	return error
 
 
 func host_relay(relay_url: String, deck_key: String, match_seed: int = -1) -> Error:
 	close()
+	if not catalog.decks.has(deck_key):
+		return ERR_INVALID_PARAMETER
 	host = true
 	player_idx = 0
 	local_deck_key = deck_key
 	seed = _resolved_match_seed(match_seed)
-	var relay := WebSocketRelayTransport.new()
+	var relay := _new_relay_transport()
 	var error := relay.start_host(relay_url)
 	if error == OK:
 		transport = relay
 		connection_phase = ConnectionPhase.CONNECTING
+	else:
+		relay.close()
+		close()
 	return error
 
 
 func join_relay(relay_url: String, target_room: String, deck_key: String) -> Error:
 	close()
+	if not catalog.decks.has(deck_key):
+		return ERR_INVALID_PARAMETER
 	host = false
 	player_idx = 1
 	local_deck_key = deck_key
 	room_id = target_room
-	var relay := WebSocketRelayTransport.new()
+	var relay := _new_relay_transport()
 	var error := relay.start_client(relay_url, target_room)
 	if error == OK:
 		transport = relay
 		connection_phase = ConnectionPhase.CONNECTING
+	else:
+		relay.close()
+		close()
 	return error
 
 
 func poll() -> Array[Dictionary]:
+	if connection_phase == ConnectionPhase.CLOSED:
+		return _drain_events()
 	if transport == null:
 		return _drain_events()
 	for event in transport.poll():
@@ -95,7 +122,7 @@ func poll() -> Array[Dictionary]:
 			"room_created":
 				room_id = str(event.get("room_id", ""))
 				if host:
-					session = AuthoritativeSession.new(room_id)
+					session = AuthoritativeSession.new(room_id, catalog)
 				events.append(event)
 			"connected":
 				if connection_phase != ConnectionPhase.CONNECTING:
@@ -108,7 +135,7 @@ func poll() -> Array[Dictionary]:
 					room_id = transport.get_room_id()
 				if host:
 					if session == null:
-						session = AuthoritativeSession.new(room_id)
+						session = AuthoritativeSession.new(room_id, catalog)
 					_send(ProtocolV3.WELCOME, {
 						"player_idx": 1,
 						"rules_version": AppState.RULES_SCHEMA_VERSION,
@@ -122,25 +149,38 @@ func poll() -> Array[Dictionary]:
 			"disconnected", "connection_failed":
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
+				_discard_transport()
 				events.append(event)
 			"transport_error":
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
-				transport.close()
+				_discard_transport()
 				events.append(event)
 				events.append({"type": "disconnected", "reason": "transport_error"})
 	var now := Time.get_ticks_msec()
-	if connected and now - last_send_msec >= HEARTBEAT_INTERVAL_MSEC:
+	if (
+		connected
+		and connection_phase != ConnectionPhase.CLOSED
+		and now - last_send_msec >= HEARTBEAT_INTERVAL_MSEC
+	):
 		_send(ProtocolV3.PING, {}, get_revision())
-	if connected and now - last_receive_msec >= CONNECTION_TIMEOUT_MSEC:
+	if (
+		connected
+		and connection_phase != ConnectionPhase.CLOSED
+		and now - last_receive_msec >= CONNECTION_TIMEOUT_MSEC
+	):
 		connected = false
 		connection_phase = ConnectionPhase.CLOSED
+		_discard_transport()
 		events.append({"type": "disconnected", "reason": "timeout"})
 	return _drain_events()
 
 
 func needs_poll() -> bool:
-	return transport != null or not events.is_empty()
+	return (
+		not events.is_empty()
+		or (transport != null and connection_phase != ConnectionPhase.CLOSED)
+	)
 
 
 func submit_action(action: GameAction) -> bool:
@@ -201,6 +241,13 @@ func surrender() -> void:
 	if host:
 		if session != null:
 			var step := session.surrender(0)
+			if not step.success:
+				events.append({
+					"type": "error",
+					"code": step.error_code,
+					"message": step.message,
+				})
+				return
 			_broadcast_state(step.events)
 	else:
 		_send(ProtocolV3.SURRENDER, {}, get_revision())
@@ -324,7 +371,7 @@ func _handle_host_message(
 				_reject("schema_mismatch", "规则或动作版本不兼容。")
 				return
 			var deck_key := str(payload.get("deck_key", ""))
-			if not CardCatalog.new().decks.has(deck_key):
+			if not catalog.decks.has(deck_key):
 				_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
 					"invalid_deck", "未知牌组。"))
 				return
@@ -371,6 +418,9 @@ func _handle_host_message(
 			if not _remote_message_allowed_while_playing():
 				return
 			var step := session.surrender(1)
+			if not step.success:
+				_reject(step.error_code, step.message)
+				return
 			_broadcast_state(step.events)
 		ProtocolV3.PING:
 			_send(ProtocolV3.PONG)
@@ -399,8 +449,7 @@ func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 			):
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
-				if transport != null:
-					transport.close()
+				_discard_transport()
 				events.append({
 					"type": "error",
 					"code": "schema_mismatch",
@@ -438,7 +487,11 @@ func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 			var state_payload: Dictionary = payload["state"]
 			current_revision = int(state_payload.get("revision", -1))
 			awaiting_update = false
-			connection_phase = ConnectionPhase.PLAYING
+			connection_phase = (
+				ConnectionPhase.CLOSED
+				if str(state_payload.get("phase", "")) == "GAME_OVER"
+				else ConnectionPhase.PLAYING
+			)
 			events.append({
 				"type": "state",
 				"view": payload,
@@ -500,6 +553,9 @@ func _broadcast_state(presentation_events: Array = []) -> void:
 		"player_idx": 0,
 	})
 	_send_state_to_client(presentation_events)
+	if session.state.phase == "GAME_OVER" or session.state.winner >= 0:
+		awaiting_update = false
+		connection_phase = ConnectionPhase.CLOSED
 
 
 func _send_state_to_client(presentation_events: Array = []) -> void:
@@ -546,6 +602,21 @@ func _drain_events() -> Array[Dictionary]:
 	var result := events.duplicate(true)
 	events.clear()
 	return result
+
+
+func _discard_transport() -> void:
+	var current_transport := transport
+	transport = null
+	if current_transport != null:
+		current_transport.close()
+
+
+func _new_enet_transport() -> EnetTransport:
+	return EnetTransport.new()
+
+
+func _new_relay_transport() -> WebSocketRelayTransport:
+	return WebSocketRelayTransport.new()
 
 
 func _resolved_match_seed(match_seed: int) -> int:
