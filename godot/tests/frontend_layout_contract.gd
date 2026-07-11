@@ -10,6 +10,17 @@ const EPSILON := 1.5
 const TITLE_TIER_WIDE := 0
 const TITLE_TIER_COMPACT_LANDSCAPE := 1
 const TITLE_TIER_DENSE := 2
+const TITLE_ENERGY_TYPES: Array[String] = [
+	"Grass", "Fire", "Water", "Lightning",
+	"Psychic", "Fighting", "Darkness", "Metal",
+]
+const ENERGY_ICON_CATALOG := preload("res://ui/energy_icon_catalog.gd")
+const DISABLED_UI_ACTIONS: Array[StringName] = [
+	&"ui_accept", &"ui_select", &"ui_cancel",
+	&"ui_focus_next", &"ui_focus_prev",
+	&"ui_left", &"ui_right", &"ui_up", &"ui_down",
+	&"ui_page_up", &"ui_page_down", &"ui_home", &"ui_end",
+]
 const VIEWPORT_CASES: Array[Vector2i] = [
 	Vector2i(1280, 720),
 	Vector2i(1600, 900),
@@ -87,8 +98,8 @@ func _check_main_shell_contract() -> void:
 	var main := main_scene.instantiate()
 	root.add_child(main)
 	await _settle_layout(3)
-	_check(main.modal_scroll.follow_focus,
-		"Main modal scroll must follow keyboard focus")
+	_check(not main.modal_scroll.follow_focus,
+		"Main modal scroll must not follow disabled keyboard navigation")
 	_check(
 		main.modal_host_controller._resolved_size(
 			Vector2(900, 760), Vector2(1000, 700), true
@@ -101,7 +112,7 @@ func _check_main_shell_contract() -> void:
 		) == Vector2(720, 620),
 		"Compact battle modal size semantics changed with frontend fill behavior",
 	)
-	await _check_pointer_focus_visibility(main)
+	await _check_pointer_only_input_contract(main)
 	main.show_deck_select("challenge")
 	await _settle_layout(4)
 	var routed_deck_page := (
@@ -109,16 +120,17 @@ func _check_main_shell_contract() -> void:
 		if main.screen_host.get_child_count() > 0
 		else null
 	)
-	var routed_deck_focus := root.gui_get_focus_owner()
 	_check(
-		routed_deck_page != null
-		and routed_deck_focus != null
-		and routed_deck_page.is_ancestor_of(routed_deck_focus)
-		and routed_deck_focus.is_visible_in_tree(),
-		"Entering DeckSelect by keyboard/controller must establish visible focus",
+		routed_deck_page != null and root.gui_get_focus_owner() == null,
+		"Entering DeckSelect must not establish automatic GUI focus",
 	)
+	_check_pointer_only_controls(routed_deck_page, "main-routed-decks")
 	main.show_title()
 	await _settle_layout(3)
+	_check(
+		root.gui_get_focus_owner() == null,
+		"Returning to title must not restore automatic GUI focus",
+	)
 	var scaled_insets: Vector4 = main._safe_insets_to_canvas(
 		Vector2i(1920, 0),
 		Vector2i(2400, 1080),
@@ -159,10 +171,12 @@ func _check_main_shell_contract() -> void:
 	_check(
 		first_category != null
 		and last_category != null
-		and first_category.get_node_or_null(first_category.focus_neighbor_left)
-		== last_category,
-		"Modal focus trap must preserve Help category directional navigation",
+		and first_category.focus_mode == Control.FOCUS_NONE
+		and last_category.focus_mode == Control.FOCUS_NONE
+		and root.gui_get_focus_owner() == null,
+		"Help modal category controls must remain pointer/touch only",
 	)
+	_check_pointer_only_controls(main.modal_layer, "help-modal")
 	_check(main.modal_panel.theme != null,
 		"Frontend modal did not apply the isolated frontend theme")
 	main._close_modal()
@@ -174,26 +188,16 @@ func _check_main_shell_contract() -> void:
 	var deck_buttons: Array[Node] = main.modal_body.find_children(
 		"*", "Button", true, false
 	)
-	var history_target: Button
-	for node in deck_buttons:
-		var candidate := node as Button
-		if candidate and not str(candidate.get_meta("deck_focus_key", "")).is_empty():
-			history_target = candidate
+	var history_target := deck_buttons[0] as Button if not deck_buttons.is_empty() else null
 	_check(history_target != null,
-		"Deck-detail modal exposes no focusable card for history checks")
+		"Deck-detail modal exposes no card action for history checks")
 	if history_target:
 		main.modal_scroll.scroll_vertical = int(
 			main.modal_scroll.get_v_scroll_bar().max_value
 		)
 		await _settle_layout(2)
 		var saved_scroll: int = int(main.modal_scroll.scroll_vertical)
-		var focus_key := str(history_target.get_meta("deck_focus_key", ""))
-		var key_parts := focus_key.split("|", false, 1)
-		history_target.grab_focus()
-		main._show_deck_card_inspector({
-			"card_id": str(key_parts[1]),
-			"location": str(key_parts[0]),
-		}, "fire")
+		history_target.pressed.emit()
 		await _settle_layout(3)
 		_check(
 			main.modal_host_controller.active_spec.stack_behavior
@@ -202,12 +206,10 @@ func _check_main_shell_contract() -> void:
 		)
 		main._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
 		await _settle_layout(5)
-		var restored_focus := root.gui_get_focus_owner()
 		_check(
 			abs(main.modal_scroll.scroll_vertical - saved_scroll) <= 2
-			and restored_focus != null
-			and str(restored_focus.get_meta("deck_focus_key", "")) == focus_key,
-			"Deck-detail modal history did not restore scroll position and card focus",
+			and root.gui_get_focus_owner() == null,
+			"Deck-detail modal history did not restore scroll without GUI focus",
 		)
 	main._close_modal()
 	main._finish_modal_close(main._modal_generation)
@@ -215,54 +217,33 @@ func _check_main_shell_contract() -> void:
 	await _settle_layout(2)
 
 
-func _check_pointer_focus_visibility(main: Control) -> void:
-	var focus_controller := root.get_node_or_null("FrontendFocus")
-	_check(focus_controller != null, "Frontend focus-visibility controller is unavailable")
-	if focus_controller == null:
-		return
-	var help_button := main.find_child("HelpButton", true, false) as Button
-	_check(help_button != null, "Title Help button is unavailable for focus-visible checks")
-	if help_button == null:
-		return
-	help_button.grab_focus()
-	var pointer_event := InputEventMouseButton.new()
-	pointer_event.button_index = MOUSE_BUTTON_LEFT
-	pointer_event.pressed = true
-	focus_controller.call("_input", pointer_event)
-	await _settle_layout(2)
+func _check_pointer_only_input_contract(main: Control) -> void:
 	_check(
-		root.gui_get_focus_owner() == help_button
-		and not bool(focus_controller.call("is_focus_visible"))
-		and help_button.has_theme_stylebox_override(&"focus")
-		and help_button.get_theme_stylebox(&"focus") is StyleBoxEmpty,
-		"Pointer activation must hide button focus chrome without discarding focus",
+		root.get_node_or_null("FrontendFocus") == null,
+		"Legacy keyboard/controller focus autoload must not be present",
 	)
-	help_button.pressed.emit()
-	await _settle_layout(3)
-	main.call("_close_modal")
-	main.call("_finish_modal_close", main.get("_modal_generation"))
-	await _settle_layout(3)
-	_check(
-		root.gui_get_focus_owner() == help_button
-		and not bool(focus_controller.call("is_focus_visible")),
-		"Pointer-opened modal restored a persistent focus highlight to its trigger",
-	)
-	var mouse_motion := InputEventMouseMotion.new()
-	focus_controller.call("_input", mouse_motion)
-	_check(
-		not bool(focus_controller.call("is_focus_visible")),
-		"Mouse motion alone must not hide or reveal navigation focus",
-	)
+	for action in DISABLED_UI_ACTIONS:
+		_check(
+			InputMap.has_action(action)
+			and InputMap.action_get_events(action).is_empty(),
+			"Built-in navigation action must have no bindings: %s" % action,
+		)
+	_check_pointer_only_controls(main, "main-startup")
+	var initial_screen: int = int(main.get("current_screen"))
 	var keyboard_event := InputEventKey.new()
-	keyboard_event.keycode = KEY_DOWN
+	keyboard_event.keycode = KEY_ENTER
 	keyboard_event.pressed = true
-	focus_controller.call("_input", keyboard_event)
+	Input.parse_input_event(keyboard_event)
+	var joypad_event := InputEventJoypadButton.new()
+	joypad_event.button_index = JOY_BUTTON_A
+	joypad_event.pressed = true
+	Input.parse_input_event(joypad_event)
 	await _settle_layout(2)
 	_check(
-		root.gui_get_focus_owner() == help_button
-		and bool(focus_controller.call("is_focus_visible"))
-		and not help_button.has_theme_stylebox_override(&"focus"),
-		"Keyboard input must restore visible focus without changing the focus owner",
+		int(main.get("current_screen")) == initial_screen
+		and root.gui_get_focus_owner() == null
+		and not main.modal_layer.visible,
+		"Keyboard/controller input must not focus, activate, or reroute the UI",
 	)
 
 
@@ -348,11 +329,11 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 		and role_badge.text == "房主 · 创建",
 		"LAN overview presentation is stale or incomplete",
 	)
-	var decorative_focus: Array[Control] = []
-	_collect_focus_targets(intro_panel, decorative_focus)
+	var decorative_targets: Array[Control] = []
+	_collect_pointer_targets(intro_panel, decorative_targets)
 	_check(
-		decorative_focus.is_empty() and intro_panel.mouse_filter == Control.MOUSE_FILTER_IGNORE,
-		"Decorative network overview must not enter the focus or pointer path",
+		decorative_targets.is_empty() and intro_panel.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+		"Decorative network overview must not enter the pointer path",
 	)
 	var role_option := page.get_node("%NetworkRoleOption") as OptionButton
 	role_option.select(1)
@@ -487,10 +468,12 @@ func _check_deck_tile_visual_contract(catalog: CardCatalog) -> void:
 		and not (third.get_node("%AssignmentBadge") as PanelContainer).visible,
 		"Deck tile pressed and assignment states are no longer independent",
 	)
-	second.grab_focus()
 	_check(
-		root.gui_get_focus_owner() == second and first.is_pressed(),
-		"Moving focus to another deck changed the selected deck",
+		first.focus_mode == Control.FOCUS_NONE
+		and second.focus_mode == Control.FOCUS_NONE
+		and root.gui_get_focus_owner() == null
+		and first.is_pressed(),
+		"Deck tiles must keep selection without exposing GUI focus",
 	)
 	var shared_keys: Array[String] = [first.deck_key, first.deck_key]
 	first.set_assignment_state(0, shared_keys, "玩家 2")
@@ -516,16 +499,20 @@ func _check_same_instance_resize(catalog: CardCatalog) -> void:
 	host.add_child(deck)
 	deck.configure(catalog, "challenge")
 	await _settle_layout(4)
-	deck.details_button.grab_focus()
+	var deck_selection := [
+		deck.selected_deck_key(0),
+		deck.selected_deck_key(1),
+	]
 	host.size = Vector2(1024, 768)
 	await _settle_layout(4)
-	var deck_focus := root.gui_get_focus_owner()
 	_check(
-		deck_focus != null
-		and deck.is_ancestor_of(deck_focus)
-		and deck_focus.is_visible_in_tree(),
-		"Deck same-instance wide→compact resize lost keyboard focus",
+		bool(deck.get("_compact"))
+		and deck.selected_deck_key(0) == deck_selection[0]
+		and deck.selected_deck_key(1) == deck_selection[1]
+		and root.gui_get_focus_owner() == null,
+		"Deck same-instance wide→compact resize changed selection or created focus",
 	)
+	_check_pointer_only_controls(deck, "deck-same-instance-compact")
 	host.size = Vector2(1600, 900)
 	await _settle_layout(3)
 	deck.queue_free()
@@ -536,16 +523,15 @@ func _check_same_instance_resize(catalog: CardCatalog) -> void:
 	host.add_child(network)
 	network.configure(catalog, "relay", "wss://relay.example.test")
 	await _settle_layout(4)
-	network.deck_option.grab_focus()
 	host.size = Vector2(1024, 768)
 	await _settle_layout(4)
-	var network_focus := root.gui_get_focus_owner()
 	_check(
-		network_focus != null
-		and network.is_ancestor_of(network_focus)
-		and network_focus.is_visible_in_tree(),
-		"Network same-instance wide→compact resize lost keyboard focus",
+		bool(network.get("_compact"))
+		and network.kind_option.is_visible_in_tree()
+		and root.gui_get_focus_owner() == null,
+		"Network same-instance wide→compact resize changed step or created focus",
 	)
+	_check_pointer_only_controls(network, "network-same-instance-compact")
 	host.queue_free()
 	await _settle_layout(2)
 
@@ -575,6 +561,7 @@ func _check_workbench_compact() -> void:
 			"NetworkButton", "FooterRow",
 		], "workbench-title-preview")
 		_check_no_horizontal_scroll(title, "workbench-title-preview")
+	_check_pointer_only_controls(workbench, "workbench")
 	workbench.queue_free()
 	await _settle_layout(2)
 
@@ -609,6 +596,7 @@ func _check_battle_canvas_resize() -> void:
 		and resized_center_x > first_center_x + 100.0,
 		"Battle slots did not recenter after same-instance 1600→2000 resize",
 	)
+	_check_no_navigation_controls(battle, "battle-live-resize")
 	battle.queue_free()
 	await _settle_layout(2)
 
@@ -636,7 +624,7 @@ func _check_title(viewport_size: Vector2i) -> void:
 	var label := _case_label("title", viewport_size)
 	_check_full_page(page, mounted.safe_host, label)
 	_check_named_inside(page, _simulated_safe_rect(mounted.safe_host), [
-		"PageFrame", "TitleStack", "CardStage", "LocalTwoPlayerButton",
+		"PageFrame", "TitleStack", "TypeOrbs", "CardStage", "LocalTwoPlayerButton",
 		"AIButton", "NetworkButton", "FooterRow", "SettingsButton", "HelpButton",
 	], label)
 	_check_named_non_overlapping(page, [
@@ -667,6 +655,14 @@ func _check_title(viewport_size: Vector2i) -> void:
 		int(page.get("_layout_tier")) == expected_tier,
 		"%s: title responsive tier does not match the documented breakpoints" % label,
 	)
+	_check_title_energy_badges(page, label, expected_tier)
+	var modes_wrapper := page.find_child("ModesGlass", true, false) as Control
+	_check(
+		modes_wrapper is MarginContainer and not (modes_wrapper is PanelContainer),
+		"%s: title mode buttons must not be enclosed by a visible panel frame" % label,
+	)
+	if viewport_size == Vector2i(1600, 900):
+		_check_title_showcase_rotation(page, label)
 	var expected_button_height := (
 		116.0
 		if expected_tier == TITLE_TIER_WIDE
@@ -678,39 +674,160 @@ func _check_title(viewport_size: Vector2i) -> void:
 		var mode_button := page.find_child(node_name, true, false) as Button
 		_check(
 			mode_button != null
+			and mode_button.focus_mode == Control.FOCUS_NONE
 			and is_equal_approx(
 				mode_button.custom_minimum_size.y,
 				expected_button_height,
 			),
-			"%s: %s does not use the tier's documented height" % [label, node_name],
+			"%s: %s has the wrong height or still accepts navigation focus"
+			% [label, node_name],
 		)
 		if mode_button:
 			var foreground: Color = mode_button.get("foreground_color")
+			var subtitle: Color = mode_button.get("subtitle_color")
 			var fill: Color = mode_button.get("fill_color")
 			var accent: Color = mode_button.get("accent_color")
-			var hover_fill := fill.lightened(0.05)
+			var hover_fill := fill.lightened(0.065)
 			_check(
 				_contrast_ratio(foreground, fill) >= 4.5
-				and _contrast_ratio(foreground, hover_fill) >= 4.5,
-				"%s: %s normal/hover text contrast must be at least 4.5:1"
+				and _contrast_ratio(foreground, hover_fill) >= 4.5
+				and _contrast_ratio(subtitle, fill) >= 4.5
+				and _contrast_ratio(subtitle, hover_fill) >= 4.5,
+				"%s: %s title/subtitle contrast must be at least 4.5:1"
 				% [label, node_name],
-			)
-			var dark_focus := Color("#071b3c")
-			var inner_focus := (
-				Color.WHITE
-				if foreground.get_luminance() >= 0.5
-				else dark_focus.lightened(0.12)
 			)
 			_check(
-				_contrast_ratio(dark_focus, accent) >= 3.0
-				and _contrast_ratio(inner_focus, hover_fill) >= 3.0,
-				"%s: %s focus rings must contrast with accent and hover fill"
+				_relative_luminance(fill) <= 0.04,
+				"%s: %s must keep the midnight dark-surface treatment"
 				% [label, node_name],
 			)
-	_check_focus_targets(page, label, _simulated_safe_rect(mounted.safe_host))
+			_check(
+				_contrast_ratio(accent, fill) >= 3.0
+				and _contrast_ratio(Color.WHITE, hover_fill) >= 3.0,
+				"%s: %s accent and hover treatment must remain distinguishable"
+				% [label, node_name],
+			)
+	_check_pointer_only_controls(page, label, _simulated_safe_rect(mounted.safe_host))
 	_check_no_horizontal_scroll(page, label)
 	_unmount(mounted)
 	await _settle_layout(2)
+
+
+func _check_title_energy_badges(
+	page: Control,
+	label: String,
+	expected_tier: int,
+) -> void:
+	var grid := page.find_child("TypeOrbs", true, false) as GridContainer
+	var expected_columns := 4 if expected_tier == TITLE_TIER_DENSE else 8
+	var expected_size := (
+		28.0
+		if expected_tier == TITLE_TIER_WIDE
+		else 24.0
+		if expected_tier == TITLE_TIER_COMPACT_LANDSCAPE
+		else 20.0
+	)
+	_check(grid != null, "%s: energy badge grid is missing" % label)
+	if grid == null:
+		return
+	_check(
+		grid.columns == expected_columns and grid.get_child_count() == 8,
+		"%s: energy badges must use 8 columns or a dense 4x2 grid" % label,
+	)
+	for index in range(TITLE_ENERGY_TYPES.size()):
+		var energy_type := TITLE_ENERGY_TYPES[index]
+		var badge := page.find_child("%sEnergyBadge" % energy_type, true, false) as PanelContainer
+		var icon := page.find_child("%sEnergyIcon" % energy_type, true, false) as TextureRect
+		_check(
+			badge != null and icon != null,
+			"%s: missing %s basic-energy badge" % [label, energy_type],
+		)
+		if badge == null or icon == null:
+			continue
+		_check(
+			str(badge.get_meta("energy_type", "")) == energy_type
+			and grid.get_child(index) == badge,
+			"%s: %s energy badge order/type metadata changed" % [label, energy_type],
+		)
+		_check(
+			badge.custom_minimum_size.is_equal_approx(Vector2.ONE * expected_size),
+			"%s: %s energy badge has the wrong responsive size" % [label, energy_type],
+		)
+		_check(
+			icon.custom_minimum_size.is_equal_approx(Vector2.ONE * expected_size)
+			and badge.get_theme_stylebox(&"panel") is StyleBoxEmpty,
+			"%s: %s energy icon must not have a dark backing ring"
+			% [label, energy_type],
+		)
+		_check(
+			badge.focus_mode == Control.FOCUS_NONE
+			and badge.mouse_filter == Control.MOUSE_FILTER_IGNORE
+			and icon.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+			"%s: decorative energy badge must not enter pointer/focus navigation"
+			% label,
+		)
+		var expected_path := ENERGY_ICON_CATALOG.path_for(energy_type)
+		_check(
+			icon.texture != null and icon.texture.resource_path == expected_path,
+			"%s: %s energy badge must load through EnergyIconCatalog"
+			% [label, energy_type],
+		)
+
+
+func _check_title_showcase_rotation(page: Control, label: String) -> void:
+	var catalog := CardCatalog.shared()
+	var pool: Array = page.get("_showcase_card_pool")
+	var before: Array = page.get("_showcase_card_ids").duplicate()
+	_check(pool.size() >= 3, "%s: Pokémon showcase rotation pool is empty" % label)
+	for card_id_value in pool:
+		var card_id := str(card_id_value)
+		var image_path := str(catalog.get_card(card_id).get("image_path", ""))
+		_check(
+			catalog.is_pokemon(card_id)
+			and not image_path.is_empty()
+			and ResourceLoader.exists(image_path, "Texture2D"),
+			"%s: showcase pool contains a non-Pokémon or missing texture: %s"
+			% [label, card_id],
+		)
+	var rotated := bool(page.call("_rotate_showcase_card", 0))
+	var after: Array = page.get("_showcase_card_ids").duplicate()
+	var unique_after := {}
+	for card_id_value in after:
+		unique_after[str(card_id_value)] = true
+	var cards: Array = page.get("cards")
+	var shadows: Array = page.get("card_shadows")
+	var rotated_path := (
+		str(catalog.get_card(str(after[0])).get("image_path", ""))
+		if not after.is_empty()
+		else ""
+	)
+	var rotated_texture := (
+		(cards[0] as TextureRect).texture
+		if not cards.is_empty()
+		else null
+	)
+	_check(
+		rotated
+		and after.size() == 3
+		and str(after[0]) != str(before[0])
+		and unique_after.size() == 3,
+		"%s: showcase rotation must replace one slot without duplicates" % label,
+	)
+	_check(
+		cards.size() == 3
+		and shadows.size() == 3
+		and rotated_texture != null
+		and rotated_texture == (shadows[0] as TextureRect).texture
+		and rotated_texture.resource_path == rotated_path,
+		"%s: showcase card and shadow must share the catalog texture" % label,
+	)
+	var mode_button_source := FileAccess.get_file_as_string(
+		"res://ui/frontend/title_mode_button.gd"
+	)
+	_check(
+		not "Vector2(size.y * 0.29, 8)" in mode_button_source,
+		"Title mode buttons must not restore the long top decoration line",
+	)
 
 
 func _check_decks(viewport_size: Vector2i, catalog: CardCatalog) -> void:
@@ -722,13 +839,13 @@ func _check_decks(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	page.call("configure", catalog, "challenge")
 	await _settle_layout(4)
 	_check(
-		(page.get_node("%GalleryScroll") as ScrollContainer).follow_focus,
-		"Deck gallery must scroll to keep keyboard focus visible",
+		not (page.get_node("%GalleryScroll") as ScrollContainer).follow_focus,
+		"Deck gallery must not follow disabled keyboard navigation",
 	)
 	if viewport_size == Vector2i(1600, 900):
 		_check_deck_public_api(page, catalog)
 	elif viewport_size == Vector2i(1024, 768):
-		await _check_deck_compact_focus(page)
+		await _check_deck_compact_pointer_flow(page)
 	var label := _case_label("decks", viewport_size)
 	_check_full_page(page, mounted.safe_host, label)
 	_check_named_inside(page, _simulated_safe_rect(mounted.safe_host), [
@@ -739,19 +856,18 @@ func _check_decks(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		"TopBar", "SlotPanel", "MasterDetail", "ActionBar",
 	], label)
 	_check_named_non_overlapping(page, ["GalleryPanel", "DetailPanel"], label)
-	_check_focus_targets(page, label, _simulated_safe_rect(mounted.safe_host))
+	_check_pointer_only_controls(page, label, _simulated_safe_rect(mounted.safe_host))
 	_check_no_horizontal_scroll(page, label)
 	_unmount(mounted)
 	await _settle_layout(2)
 
 
-func _check_deck_compact_focus(page: Control) -> void:
+func _check_deck_compact_pointer_flow(page: Control) -> void:
 	var gallery_grid := page.get_node("%GalleryGrid") as GridContainer
-	_check(gallery_grid.get_child_count() > 0, "Deck compact focus test requires a tile")
+	_check(gallery_grid.get_child_count() > 0, "Deck compact pointer test requires a tile")
 	if gallery_grid.get_child_count() == 0:
 		return
 	var tile := gallery_grid.get_child(0) as Button
-	tile.grab_focus()
 	tile.pressed.emit()
 	await _settle_layout()
 	var back_button := page.get_node("%BackToGalleryButton") as Button
@@ -760,14 +876,16 @@ func _check_deck_compact_focus(page: Control) -> void:
 		"Deck compact detail must expose a 48px return target",
 	)
 	_check(
-		page.get_viewport().gui_get_focus_owner() == back_button,
-		"Deck compact detail must move focus away from the hidden gallery tile",
+		page.get_viewport().gui_get_focus_owner() == null,
+		"Deck compact detail must not create GUI focus",
 	)
 	back_button.pressed.emit()
 	await _settle_layout()
 	_check(
-		page.get_viewport().gui_get_focus_owner() == tile,
-		"Deck compact gallery return must restore focus to the selected tile",
+		tile.is_visible_in_tree()
+		and tile.is_pressed()
+		and page.get_viewport().gui_get_focus_owner() == null,
+		"Deck compact gallery return must restore selection without focus",
 	)
 	tile.pressed.emit()
 	await _settle_layout()
@@ -777,8 +895,9 @@ func _check_deck_compact_focus(page: Control) -> void:
 	)
 	await _settle_layout()
 	_check(
-		page.get_viewport().gui_get_focus_owner() == tile,
-		"Deck compact system back must restore the selected gallery tile",
+		tile.is_visible_in_tree()
+		and page.get_viewport().gui_get_focus_owner() == null,
+		"Deck compact system back must restore the gallery without focus",
 	)
 
 
@@ -815,11 +934,9 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		and str(ai_mode_option.get_item_metadata(1)) == "deep",
 		"DeckSelect AIModeOption metadata changed",
 	)
-	var details_button := page.get_node("%DetailsButton") as Button
 	var gallery_scroll := page.get_node("%GalleryScroll") as ScrollContainer
 	var detail_title := page.get_node("%DetailTitle") as Label
 	gallery_scroll.scroll_vertical = 37
-	details_button.grab_focus()
 	var preserved_state := {
 		"first": page.call("selected_deck_key", 0),
 		"second": page.call("selected_deck_key", 1),
@@ -827,7 +944,6 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		"first_player": first_player_option.selected,
 		"scroll": gallery_scroll.scroll_vertical,
 		"detail": detail_title.text,
-		"focus": page.get_viewport().gui_get_focus_owner(),
 	}
 	ai_mode_option.select(1)
 	ai_mode_option.item_selected.emit(1)
@@ -839,8 +955,8 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		and first_player_option.selected == preserved_state["first_player"]
 		and gallery_scroll.scroll_vertical == preserved_state["scroll"]
 		and detail_title.text == preserved_state["detail"]
-		and page.get_viewport().gui_get_focus_owner() == preserved_state["focus"],
-		"DeckSelect AI switch reset deck, slot, turn, scroll, detail, or focus state",
+		and page.get_viewport().gui_get_focus_owner() == null,
+		"DeckSelect AI switch reset deck, slot, turn, scroll, detail, or created focus",
 	)
 	_deck_start_payload.clear()
 	var callback := Callable(self, "_on_deck_start_requested")
@@ -903,7 +1019,7 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		"%s: returning to IDLE must unlock the network form" % _case_label("network", viewport_size),
 	)
 	if viewport_size == Vector2i(1024, 768):
-		await _check_network_compact_focus(page)
+		await _check_network_compact_pointer_flow(page)
 	await _settle_layout()
 	var label := _case_label("network-%s" % kind, viewport_size)
 	_check_full_page(page, mounted.safe_host, label)
@@ -913,13 +1029,13 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	_check_named_non_overlapping(page, [
 		"TopBar", "Steps", "Body", "StatusPanel", "NetworkConnectButton",
 	], label)
-	_check_focus_targets(page, label, _simulated_safe_rect(mounted.safe_host))
+	_check_pointer_only_controls(page, label, _simulated_safe_rect(mounted.safe_host))
 	_check_no_horizontal_scroll(page, label)
 	_unmount(mounted)
 	await _settle_layout(2)
 
 
-func _check_network_compact_focus(page: Control) -> void:
+func _check_network_compact_pointer_flow(page: Control) -> void:
 	var step_bar := page.get_node("%CompactStepBar") as HBoxContainer
 	var next_button := page.get_node("%CompactNextButton") as Button
 	var kind_option := page.get_node("%NetworkKindOption") as OptionButton
@@ -935,22 +1051,25 @@ func _check_network_compact_focus(page: Control) -> void:
 	await _settle_layout()
 	_check(
 		address_input.is_visible_in_tree()
-		and page.get_viewport().gui_get_focus_owner() == address_input,
-		"Network compact flow must advance and focus connection information",
+		and address_input.focus_mode == Control.FOCUS_CLICK
+		and page.get_viewport().gui_get_focus_owner() == null,
+		"Network compact flow must expose click-only connection information",
 	)
 	next_button.pressed.emit()
 	await _settle_layout()
 	_check(
 		deck_option.is_visible_in_tree()
-		and page.get_viewport().gui_get_focus_owner() == deck_option,
-		"Network compact flow must advance and focus deck selection",
+		and deck_option.focus_mode == Control.FOCUS_NONE
+		and page.get_viewport().gui_get_focus_owner() == null,
+		"Network compact flow must expose pointer-only deck selection",
 	)
 	page.call("set_connection_state", 3, "等待测试玩家", "ROOM42")
 	await _settle_layout()
 	_check(
 		copy_button.is_visible_in_tree()
-		and page.get_viewport().gui_get_focus_owner() == copy_button,
-		"Network waiting state must repair focus to the room-code copy action",
+		and copy_button.focus_mode == Control.FOCUS_NONE
+		and page.get_viewport().gui_get_focus_owner() == null,
+		"Network waiting state must expose a pointer-only room-code copy action",
 	)
 	page.call("set_connection_state", 0)
 	await _settle_layout()
@@ -961,8 +1080,8 @@ func _check_network_compact_focus(page: Control) -> void:
 	await _settle_layout()
 	_check(
 		address_input.is_visible_in_tree()
-		and page.get_viewport().gui_get_focus_owner() == address_input,
-		"Network compact back did not restore the connection-information step",
+		and page.get_viewport().gui_get_focus_owner() == null,
+		"Network compact back did not restore the unfocused connection-information step",
 	)
 
 
@@ -998,7 +1117,7 @@ func _check_scrolling_panel(viewport_size: Vector2i, page_key: String) -> void:
 	var label := _case_label(page_key, viewport_size)
 	var safe_rect: Rect2 = _simulated_safe_rect(mounted.safe_host)
 	_check_horizontal_inside(page, safe_rect, label)
-	_check_focus_targets(page, label)
+	_check_pointer_only_controls(page, label)
 	_check_no_horizontal_scroll(page, label)
 	var scroll := mounted.scroll as ScrollContainer
 	_check(scroll != null, "%s: scrolling host is missing" % label)
@@ -1032,14 +1151,14 @@ func _check_deck_detail(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	var label := _case_label("deck-detail", viewport_size)
 	var safe_rect: Rect2 = _simulated_safe_rect(mounted.safe_host)
 	_check_horizontal_inside(page, safe_rect, label)
-	_check_focus_targets(page, label)
+	_check_pointer_only_controls(page, label)
 	_check_no_horizontal_scroll(page, label)
 	var core_grid := page.get_node("%CoreGrid") as GridContainer
 	_check(core_grid.get_child_count() > 0, "%s: core card grid is empty" % label)
 	for wrapper in core_grid.get_children():
 		_check(
 			wrapper is Button and wrapper.get_child_count() == 1,
-			"%s: core card must be a dedicated focusable preview" % label,
+			"%s: core card must be a dedicated clickable preview" % label,
 		)
 		if wrapper.get_child_count() != 1 or not (wrapper.get_child(0) is CenterContainer):
 			continue
@@ -1081,7 +1200,7 @@ func _check_victory(viewport_size: Vector2i) -> void:
 	], label)
 	_check_named_non_overlapping(page, ["CardStage", "MatchPanel"], label)
 	_check_named_non_overlapping(page, ["RematchButton", "TitleButton"], label)
-	_check_focus_targets(page, label, _simulated_safe_rect(mounted.safe_host))
+	_check_pointer_only_controls(page, label, _simulated_safe_rect(mounted.safe_host))
 	_check_no_horizontal_scroll(page, label)
 	_unmount(mounted)
 	await _settle_layout(2)
@@ -1109,7 +1228,8 @@ func _mount(
 		scroll.name = "VerticalModalBody"
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-		scroll.follow_focus = true
+		scroll.focus_mode = Control.FOCUS_NONE
+		scroll.follow_focus = false
 		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		safe_host.add_child(scroll)
@@ -1203,20 +1323,54 @@ func _check_named_non_overlapping(owner: Node, names: Array, label: String) -> v
 			_check_pair_not_overlapping(controls[first_index], controls[second_index], label)
 
 
-func _check_focus_targets(
+func _check_pointer_only_controls(
 	owner: Node,
 	label: String,
 	bounds: Rect2 = Rect2(),
 ) -> void:
+	_check(owner != null, "%s: pointer-only surface is unavailable" % label)
+	if owner == null:
+		return
 	var targets: Array[Control] = []
-	_collect_focus_targets(owner, targets)
-	_check(not targets.is_empty(), "%s: page exposes no keyboard focus target" % label)
+	var invalid_navigation: Array[Control] = []
+	_collect_pointer_targets(owner, targets)
+	_collect_invalid_navigation_controls(owner, invalid_navigation)
+	_check(not targets.is_empty(), "%s: page exposes no pointer/touch target" % label)
+	for control in invalid_navigation:
+		_check(
+			false,
+			"%s: control still accepts keyboard/controller focus: %s" % [
+				label, control.get_path(),
+			],
+		)
+	_check(
+		owner.get_viewport().gui_get_focus_owner() == null,
+		"%s: page unexpectedly owns GUI focus" % label,
+	)
 	for target in targets:
+		var valid_mode := (
+			target.focus_mode in [Control.FOCUS_NONE, Control.FOCUS_CLICK]
+			if target is LineEdit
+			else target.focus_mode == Control.FOCUS_NONE
+		)
+		_check(
+			valid_mode,
+			"%s: pointer target %s still accepts keyboard/controller focus" % [
+				label, target.get_path(),
+			],
+		)
+		if target is OptionButton:
+			_check(
+				not (target as OptionButton).get_popup().allow_search,
+				"%s: option menu still accepts keyboard type-to-search: %s" % [
+					label, target.get_path(),
+				],
+			)
 		var rect := target.get_global_rect()
 		_check(
 			rect.size.x + EPSILON >= MIN_TARGET_SIZE
 			and rect.size.y + EPSILON >= MIN_TARGET_SIZE,
-			"%s: focus target %s is smaller than 48x48 (%s)" % [
+			"%s: pointer target %s is smaller than 48x48 (%s)" % [
 				label, target.get_path(), rect.size,
 			],
 		)
@@ -1224,7 +1378,7 @@ func _check_focus_targets(
 			if not _has_scroll_ancestor(target, owner):
 				_check(
 					_rect_inside(rect, bounds),
-					"%s: focus target %s escaped safe bounds (%s)" % [
+					"%s: pointer target %s escaped safe bounds (%s)" % [
 						label, target.get_path(), rect,
 					],
 				)
@@ -1233,17 +1387,43 @@ func _check_focus_targets(
 			_check_pair_not_overlapping(targets[first_index], targets[second_index], label)
 
 
-func _collect_focus_targets(node: Node, output: Array[Control]) -> void:
+func _check_no_navigation_controls(owner: Node, label: String) -> void:
+	var invalid_navigation: Array[Control] = []
+	_collect_invalid_navigation_controls(owner, invalid_navigation)
+	for control in invalid_navigation:
+		_check(
+			false,
+			"%s: control still accepts keyboard/controller focus: %s" % [
+				label, control.get_path(),
+			],
+		)
+
+
+func _collect_pointer_targets(node: Node, output: Array[Control]) -> void:
 	if node is Control:
 		var control := node as Control
 		if control != node.get_tree().root and (
-			control.focus_mode == Control.FOCUS_ALL
+			(control is BaseButton or control is Slider or control is LineEdit or control is CardView)
 			and control.is_visible_in_tree()
 			and control.mouse_filter != Control.MOUSE_FILTER_IGNORE
 		):
 			output.append(control)
 	for child in node.get_children():
-		_collect_focus_targets(child, output)
+		_collect_pointer_targets(child, output)
+
+
+func _collect_invalid_navigation_controls(node: Node, output: Array[Control]) -> void:
+	if node is Control:
+		var control := node as Control
+		var valid_mode := (
+			control.focus_mode in [Control.FOCUS_NONE, Control.FOCUS_CLICK]
+			if control is LineEdit
+			else control.focus_mode == Control.FOCUS_NONE
+		)
+		if not valid_mode:
+			output.append(control)
+	for child in node.get_children():
+		_collect_invalid_navigation_controls(child, output)
 
 
 func _has_scroll_ancestor(control: Control, boundary: Node) -> bool:
@@ -1352,16 +1532,16 @@ func _check_theme_contract() -> void:
 		theme.has_stylebox(&"normal", &"FrontPrimaryButton")
 		and theme.has_stylebox(&"hover", &"FrontPrimaryButton")
 		and theme.has_stylebox(&"pressed", &"FrontPrimaryButton")
-		and theme.has_stylebox(&"focus", &"FrontPrimaryButton"),
-		"Primary button variation must define normal, hover, pressed and focus states",
+		and theme.has_stylebox(&"disabled", &"FrontPrimaryButton"),
+		"Primary button variation must define pointer and disabled states",
 	)
 	_check(
 		theme.has_stylebox(&"normal", &"DeckGalleryTileButton")
 		and theme.has_stylebox(&"hover", &"DeckGalleryTileButton")
 		and theme.has_stylebox(&"pressed", &"DeckGalleryTileButton")
 		and theme.has_stylebox(&"hover_pressed", &"DeckGalleryTileButton")
-		and theme.has_stylebox(&"focus", &"DeckGalleryTileButton"),
-		"Deck-gallery tile variation must define every interaction state",
+		and theme.has_stylebox(&"disabled", &"DeckGalleryTileButton"),
+		"Deck-gallery tile variation must define every pointer interaction state",
 	)
 	_check(
 		theme.get_constant(&"v_separation", &"PopupMenu") >= 24,
@@ -1370,7 +1550,7 @@ func _check_theme_contract() -> void:
 	_check(
 		theme.get_icon(&"grabber", &"HSlider")
 		!= theme.get_icon(&"grabber_highlight", &"HSlider"),
-		"Frontend sliders need a visible hover/focus grabber state",
+		"Frontend sliders need a visible hover grabber state",
 	)
 	_check(
 		_font_weight(theme.default_font) >= 600.0,
@@ -1395,7 +1575,6 @@ func _check_frontend_contrast(theme: Theme) -> void:
 	var primary := theme.get_stylebox(&"normal", &"FrontPrimaryButton") as StyleBoxFlat
 	var primary_hover := theme.get_stylebox(&"hover", &"FrontPrimaryButton") as StyleBoxFlat
 	var primary_pressed := theme.get_stylebox(&"pressed", &"FrontPrimaryButton") as StyleBoxFlat
-	var primary_focus := theme.get_stylebox(&"focus", &"FrontPrimaryButton") as StyleBoxFlat
 	var status := theme.get_stylebox(&"panel", &"FrontStatusPanel") as StyleBoxFlat
 	var input := theme.get_stylebox(&"normal", &"LineEdit") as StyleBoxFlat
 	var scroll_track := theme.get_stylebox(&"scroll", &"VScrollBar") as StyleBoxFlat
@@ -1403,8 +1582,8 @@ func _check_frontend_contrast(theme: Theme) -> void:
 	_check(raised != null, "Raised frontend panel style is unavailable for contrast checks")
 	_check(primary != null, "Primary frontend button style is unavailable for contrast checks")
 	_check(
-		primary_hover != null and primary_pressed != null and primary_focus != null,
-		"Primary frontend interaction styles are unavailable for contrast checks",
+		primary_hover != null and primary_pressed != null,
+		"Primary frontend pointer styles are unavailable for contrast checks",
 	)
 	_check(status != null, "Status frontend panel style is unavailable for contrast checks")
 	_check(input != null, "Frontend input style is unavailable for contrast checks")
@@ -1415,7 +1594,6 @@ func _check_frontend_contrast(theme: Theme) -> void:
 		or primary == null
 		or primary_hover == null
 		or primary_pressed == null
-		or primary_focus == null
 		or status == null
 		or input == null
 		or scroll_track == null
@@ -1441,21 +1619,6 @@ func _check_frontend_contrast(theme: Theme) -> void:
 		"Gold primary state contrast must be at least 3:1 (actual %.2f:1)" % [
 			_contrast_ratio(primary.bg_color, raised.bg_color),
 		],
-	)
-	for row in [
-		["normal", primary],
-		["hover", primary_hover],
-		["pressed", primary_pressed],
-	]:
-		var state_name := str(row[0])
-		var state_style := row[1] as StyleBoxFlat
-		_check(
-			_contrast_ratio(primary_focus.border_color, state_style.bg_color) >= 3.0,
-			"Primary %s focus boundary contrast must be at least 3:1" % state_name,
-		)
-	_check(
-		_contrast_ratio(primary_focus.shadow_color, raised.bg_color) >= 3.0,
-		"Primary focus outer glow must remain visible against the page panel",
 	)
 	_check(
 		_contrast_ratio(status.border_color, status.bg_color) >= 3.0,

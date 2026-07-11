@@ -31,7 +31,10 @@ func _render_previews() -> void:
 	var ui := packed.instantiate()
 	root.add_child(ui)
 	ui.initialize_ui()
-	await _settle_frontend()
+	Input.warp_mouse(Vector2(4, 4))
+	# Give fonts, card textures and the procedural gradient one extra upload pass
+	# before the first GPU readback. Later captures reuse these resources.
+	await _settle_frontend(8)
 	if not _capture("title.png"):
 		_finish(1)
 		return
@@ -40,7 +43,41 @@ func _render_previews() -> void:
 	if not _capture("title-1280x720.png"):
 		_finish(1)
 		return
+	var title_ai_button := ui.find_child("AIButton", true, false) as Button
+	if title_ai_button != null:
+		var hover_position := title_ai_button.get_global_rect().get_center()
+		Input.warp_mouse(hover_position)
+		var hover_event := InputEventMouseMotion.new()
+		hover_event.position = hover_position
+		hover_event.global_position = hover_position
+		Input.parse_input_event(hover_event)
+	await _settle_frontend(2)
+	if not _capture("title-hover.png"):
+		_finish(1)
+		return
+	Input.warp_mouse(Vector2(4, 4))
+	var reset_hover_event := InputEventMouseMotion.new()
+	reset_hover_event.position = Vector2(4, 4)
+	reset_hover_event.global_position = Vector2(4, 4)
+	Input.parse_input_event(reset_hover_event)
+	var title_page := ui.find_child("TitlePage", true, false)
+	var showcase_rng: Variant = (
+		title_page.get("_showcase_rng")
+		if title_page != null
+		else null
+	)
+	if showcase_rng != null and showcase_rng.has_method("set_state"):
+		showcase_rng.call("set_state", 5)
+	if title_page != null:
+		for slot in range(3):
+			title_page.call("_rotate_showcase_card", slot)
+	await _settle_frontend(2)
+	if not _capture("title-rotated.png"):
+		_finish(1)
+		return
 	root.size = Vector2i(1600, 900)
+	ui.show_title()
+	await _settle_frontend(2)
 	_set_preview_quality("low")
 	await _settle_frontend(3)
 	if not _capture("title-low-reduced.png"):
@@ -119,6 +156,18 @@ func _render_previews() -> void:
 	if not _capture("title-compact.png"):
 		_finish(1)
 		return
+	var previous_content_scale_size := root.content_scale_size
+	root.content_scale_size = Vector2i(720, 1280)
+	root.size = Vector2i(720, 1280)
+	await _settle_frontend(3)
+	ui.show_title()
+	await _settle_frontend()
+	if not _capture("title-portrait.png"):
+		_finish(1)
+		return
+	root.content_scale_size = previous_content_scale_size
+	root.size = Vector2i(1024, 768)
+	await _settle_frontend(3)
 	ui.show_deck_select("challenge")
 	await _settle_frontend()
 	if not _capture("decks-compact.png"):

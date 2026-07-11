@@ -118,7 +118,7 @@ custom_minimum_size = Vector2(104, 146)
 layout_mode = 3
 anchors_preset = 0
 mouse_filter = 0
-focus_mode = 2
+focus_mode = 0
 editor_description = "可复用卡牌组件。Frame、信息栏和高亮可以在此场景中编辑；运行时卡图和数值由 CardView.configure() 注入。"
 script = ExtResource("1_card")
 

@@ -2,13 +2,15 @@ class_name TitlePage
 extends Control
 
 const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
+const EnergyIconCatalog = preload("res://ui/energy_icon_catalog.gd")
+const RANDOM_SOURCE := preload("res://core/random_source.gd")
 
 signal mode_selected(mode: String)
 signal network_selected(kind: String)
 signal settings_requested
 signal help_requested
 
-const MAX_CONTENT_WIDTH := 1500.0
+const MAX_CONTENT_WIDTH := 1440.0
 const WIDE_MIN_WIDTH := 1180.0
 const WIDE_MIN_HEIGHT := 650.0
 const WIDE_MIN_ASPECT := 1.5
@@ -16,6 +18,23 @@ const COMPACT_MIN_WIDTH := 900.0
 const COMPACT_MIN_HEIGHT := 600.0
 const COMPACT_MIN_ASPECT := 1.15
 const CARD_ASPECT := 419.0 / 300.0
+const SHOWCASE_ROTATION_MIN_SECONDS := 5.5
+const SHOWCASE_ROTATION_VARIANCE_SECONDS := 2.5
+const INITIAL_SHOWCASE_CARD_IDS: Array[String] = [
+	"svg2-tort",
+	"sv2-grex",
+	"svi-ente",
+]
+const ENERGY_TYPES: Array[String] = [
+	"Grass",
+	"Fire",
+	"Water",
+	"Lightning",
+	"Psychic",
+	"Fighting",
+	"Darkness",
+	"Metal",
+]
 
 enum LayoutTier {
 	WIDE,
@@ -37,6 +56,14 @@ var _elapsed := 0.0
 var _parallax := Vector2.ZERO
 var _card_base_positions: Array[Vector2] = []
 var _card_base_rotations: Array[float] = []
+var _showcase_card_pool: Array[String] = []
+var _showcase_card_ids: Array[String] = []
+var _showcase_rng: PortableRandomSource
+var _showcase_rotation_elapsed := 0.0
+var _showcase_rotation_delay := SHOWCASE_ROTATION_MIN_SECONDS
+var _showcase_rotation_cursor := 0
+var _showcase_swap_tweens: Dictionary = {}
+var _updating_modes_panel_layout := false
 
 @onready var embedded_backdrop: Control = %EmbeddedBackdrop
 @onready var safe_content: MarginContainer = %SafeContent
@@ -48,10 +75,12 @@ var _card_base_rotations: Array[float] = []
 @onready var title_label: Label = %TitleLabel
 @onready var brand_subtitle_label: Label = %BrandSubtitle
 @onready var type_orbs_center: CenterContainer = %TypeOrbsCenter
+@onready var type_orbs: GridContainer = %TypeOrbs
 @onready var body_grid: GridContainer = %BodyGrid
 @onready var hero_panel: Control = %HeroPanel
 @onready var card_stage: Control = %CardStage
 @onready var modes_panel: MarginContainer = %ModesPanel
+@onready var modes_glass: MarginContainer = %ModesGlass
 @onready var mode_stack: VBoxContainer = %ModeStack
 @onready var footer_row: HBoxContainer = %FooterRow
 @onready var version_label: Label = %VersionLabel
@@ -62,6 +91,26 @@ var _card_base_rotations: Array[float] = []
 	%WaterCardShadow,
 	%FireCardShadow,
 ]
+@onready var energy_badges: Array[PanelContainer] = [
+	%GrassEnergyBadge,
+	%FireEnergyBadge,
+	%WaterEnergyBadge,
+	%LightningEnergyBadge,
+	%PsychicEnergyBadge,
+	%FightingEnergyBadge,
+	%DarknessEnergyBadge,
+	%MetalEnergyBadge,
+]
+@onready var energy_icons: Array[TextureRect] = [
+	%GrassEnergyIcon,
+	%FireEnergyIcon,
+	%WaterEnergyIcon,
+	%LightningEnergyIcon,
+	%PsychicEnergyIcon,
+	%FightingEnergyIcon,
+	%DarknessEnergyIcon,
+	%MetalEnergyIcon,
+]
 
 
 func _ready() -> void:
@@ -71,12 +120,15 @@ func _ready() -> void:
 	brand_subtitle_label.text = brand_subtitle
 	version_label.text = _version_text
 	embedded_backdrop.visible = _embedded_backdrop_enabled
+	_configure_energy_badges()
+	_configure_showcase_cards()
 	_connect_actions()
-	_setup_focus_navigation()
 	if not resized.is_connected(_apply_responsive_layout):
 		resized.connect(_apply_responsive_layout)
 	if not card_stage.resized.is_connected(_layout_cards):
 		card_stage.resized.connect(_layout_cards)
+	if not modes_panel.resized.is_connected(_update_modes_panel_margins):
+		modes_panel.resized.connect(_update_modes_panel_margins)
 	var settings := _settings_node()
 	if settings != null and settings.has_signal("changed"):
 		var callback := Callable(self, "_on_runtime_settings_changed")
@@ -85,13 +137,35 @@ func _ready() -> void:
 	_apply_responsive_layout()
 	_refresh_motion_state()
 	call_deferred("_start_entrance")
-	%LocalTwoPlayerButton.call_deferred("grab_focus")
+
+
+func _configure_energy_badges() -> void:
+	for index in range(ENERGY_TYPES.size()):
+		var energy_type := ENERGY_TYPES[index]
+		energy_badges[index].set_meta("energy_type", energy_type)
+		energy_badges[index].focus_mode = Control.FOCUS_NONE
+		energy_icons[index].texture = EnergyIconCatalog.texture_for(energy_type)
+		energy_icons[index].mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func _configure_showcase_cards() -> void:
+	_showcase_rng = RANDOM_SOURCE.new(RANDOM_SOURCE.fresh_seed())
+	_showcase_card_ids.assign(INITIAL_SHOWCASE_CARD_IDS)
+	var catalog := CardCatalog.shared()
+	for card_id_value in catalog.cards.keys():
+		var card_id := str(card_id_value)
+		if not catalog.is_pokemon(card_id):
+			continue
+		var image_path := str(catalog.get_card(card_id).get("image_path", ""))
+		if not image_path.is_empty() and ResourceLoader.exists(image_path, "Texture2D"):
+			_showcase_card_pool.append(card_id)
+	_showcase_card_pool.sort()
+	_schedule_next_showcase_rotation()
 
 
 func configure(version_text: String) -> void:
 	_version_text = version_text
 	_connect_actions()
-	_setup_focus_navigation()
 	var label := get_node_or_null(
 		"SafeContent/PageFrame/FooterRow/VersionLabel"
 	) as Label
@@ -108,6 +182,11 @@ func set_embedded_backdrop_visible(enabled: bool) -> void:
 
 func _process(delta: float) -> void:
 	_elapsed += delta
+	_showcase_rotation_elapsed += delta
+	if _showcase_rotation_elapsed >= _showcase_rotation_delay:
+		_showcase_rotation_elapsed = 0.0
+		_schedule_next_showcase_rotation()
+		_rotate_showcase_card()
 	var pointer := get_viewport().get_mouse_position()
 	var target := Vector2(
 		clampf(pointer.x / maxf(size.x, 1.0) - 0.5, -0.5, 0.5),
@@ -130,48 +209,6 @@ func _connect_actions() -> void:
 		var callback := row[1] as Callable
 		if not button.pressed.is_connected(callback):
 			button.pressed.connect(callback)
-
-
-func _setup_focus_navigation() -> void:
-	var local := %LocalTwoPlayerButton as Button
-	var ai := %AIButton as Button
-	var network := %NetworkButton as Button
-	var settings := %SettingsButton as Button
-	var help := %HelpButton as Button
-	_set_focus_neighbor(local, "top", help)
-	_set_focus_neighbor(local, "bottom", ai)
-	_set_focus_neighbor(ai, "top", local)
-	_set_focus_neighbor(ai, "bottom", network)
-	_set_focus_neighbor(network, "top", ai)
-	_set_focus_neighbor(network, "bottom", settings)
-	_set_focus_neighbor(settings, "top", network)
-	_set_focus_neighbor(settings, "bottom", local)
-	_set_focus_neighbor(settings, "left", help)
-	_set_focus_neighbor(settings, "right", help)
-	_set_focus_neighbor(help, "top", network)
-	_set_focus_neighbor(help, "bottom", local)
-	_set_focus_neighbor(help, "left", settings)
-	_set_focus_neighbor(help, "right", settings)
-	var tab_order: Array[Button] = [local, ai, network, settings, help]
-	for index in range(tab_order.size()):
-		var button := tab_order[index]
-		button.focus_next = button.get_path_to(tab_order[(index + 1) % tab_order.size()])
-		button.focus_previous = button.get_path_to(
-			tab_order[posmod(index - 1, tab_order.size())]
-		)
-
-
-func _set_focus_neighbor(source: Control, direction: String, target: Control) -> void:
-	var path := source.get_path_to(target)
-	match direction:
-		"left":
-			source.focus_neighbor_left = path
-		"right":
-			source.focus_neighbor_right = path
-		"top":
-			source.focus_neighbor_top = path
-		"bottom":
-			source.focus_neighbor_bottom = path
 
 
 func _apply_responsive_layout() -> void:
@@ -207,24 +244,35 @@ func _apply_responsive_layout() -> void:
 	hero_panel.visible = not dense
 	hero_panel.custom_minimum_size.x = 430 if _layout_tier == LayoutTier.WIDE else 320 if not dense else 0
 	modes_panel.custom_minimum_size.x = 470 if _layout_tier == LayoutTier.WIDE else 420 if not dense else 0
-	modes_panel.add_theme_constant_override("margin_left", 12 if _layout_tier == LayoutTier.WIDE else 6)
-	modes_panel.add_theme_constant_override("margin_right", 12 if _layout_tier == LayoutTier.WIDE else 6)
 	modes_panel.add_theme_constant_override(
 		"margin_top",
-		12 if _layout_tier == LayoutTier.WIDE else 4,
+		18 if _layout_tier == LayoutTier.WIDE else 10 if not dense else 8,
 	)
-	modes_panel.add_theme_constant_override("margin_bottom", 12 if _layout_tier == LayoutTier.WIDE else 4)
+	modes_panel.add_theme_constant_override(
+		"margin_bottom",
+		18 if _layout_tier == LayoutTier.WIDE else 10 if not dense else 8,
+	)
 
-	var title_size := 78 if _layout_tier == LayoutTier.WIDE else 54 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 44
-	var header_height := 182 if _layout_tier == LayoutTier.WIDE else 124 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 122
-	var title_stack_height := 104 if _layout_tier == LayoutTier.WIDE else 70 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 64
+	var title_size := 70 if _layout_tier == LayoutTier.WIDE else 52 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 42
+	var header_height := 176 if _layout_tier == LayoutTier.WIDE else 122 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 142
+	var title_stack_height := 92 if _layout_tier == LayoutTier.WIDE else 66 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 58
 	header_panel.custom_minimum_size.y = header_height
 	title_stack.custom_minimum_size.y = title_stack_height
 	title_label.add_theme_font_size_override("font_size", title_size)
 	title_shadow.add_theme_font_size_override("font_size", title_size)
-	title_shadow.add_theme_constant_override("outline_size", 13 if _layout_tier == LayoutTier.WIDE else 10 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 8)
+	title_shadow.add_theme_constant_override("outline_size", 8 if _layout_tier == LayoutTier.WIDE else 7 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 6)
 	brand_subtitle_label.add_theme_font_size_override("font_size", 18 if _layout_tier == LayoutTier.WIDE else 16 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 14)
-	type_orbs_center.visible = not dense
+	type_orbs_center.visible = true
+	type_orbs.columns = 4 if dense else 8
+	type_orbs.add_theme_constant_override(
+		"h_separation",
+		10 if _layout_tier == LayoutTier.WIDE else 8,
+	)
+	type_orbs.add_theme_constant_override("v_separation", 4)
+	var energy_badge_size := 28 if _layout_tier == LayoutTier.WIDE else 24 if not dense else 20
+	for index in range(energy_badges.size()):
+		energy_badges[index].custom_minimum_size = Vector2.ONE * energy_badge_size
+		energy_icons[index].custom_minimum_size = Vector2.ONE * energy_badge_size
 
 	var button_height := 116 if _layout_tier == LayoutTier.WIDE else 96 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 84
 	mode_stack.add_theme_constant_override("separation", 18 if _layout_tier == LayoutTier.WIDE else 12 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 10)
@@ -235,15 +283,36 @@ func _apply_responsive_layout() -> void:
 	%SettingsButton.custom_minimum_size = Vector2(116 if not dense else 96, 48)
 	%HelpButton.custom_minimum_size = Vector2(136 if not dense else 116, 48)
 	page_frame.add_theme_constant_override("separation", 10 if _layout_tier == LayoutTier.WIDE else 8 if _layout_tier == LayoutTier.COMPACT_LANDSCAPE else 5)
+	call_deferred("_update_modes_panel_margins")
 	call_deferred("_layout_cards")
 	call_deferred("_center_section_pivots")
 	_refresh_motion_state()
 
 
+func _update_modes_panel_margins() -> void:
+	if not is_node_ready() or _updating_modes_panel_layout:
+		return
+	_updating_modes_panel_layout = true
+	var dense := _layout_tier == LayoutTier.DENSE
+	var base_margin := 18.0 if _layout_tier == LayoutTier.WIDE else 10.0 if not dense else 8.0
+	var content_cap := 680.0 if _layout_tier == LayoutTier.WIDE else 560.0 if not dense else 620.0
+	var horizontal_margin := maxi(
+		int(base_margin),
+		int(ceil(maxf(0.0, modes_panel.size.x - content_cap) * 0.5)),
+	)
+	modes_panel.add_theme_constant_override("margin_left", horizontal_margin)
+	modes_panel.add_theme_constant_override("margin_right", horizontal_margin)
+	modes_glass.custom_minimum_size.x = maxf(
+		1.0,
+		minf(content_cap, modes_panel.size.x - float(horizontal_margin * 2)),
+	)
+	_updating_modes_panel_layout = false
+
+
 func _layout_cards() -> void:
 	if not is_node_ready() or not hero_panel.visible or card_stage.size.x <= 0.0 or card_stage.size.y <= 0.0:
 		return
-	var widths := [220.0, 240.0, 260.0] if _layout_tier == LayoutTier.WIDE else [150.0, 168.0, 184.0]
+	var widths := [208.0, 228.0, 248.0] if _layout_tier == LayoutTier.WIDE else [146.0, 162.0, 178.0]
 	var rotations := [-0.175, -0.052, 0.122]
 	var center := card_stage.size * Vector2(
 		0.49,
@@ -288,12 +357,136 @@ func _apply_card_motion() -> void:
 		card_shadows[index].rotation = cards[index].rotation
 
 
+func _schedule_next_showcase_rotation() -> void:
+	if _showcase_rng == null:
+		_showcase_rotation_delay = SHOWCASE_ROTATION_MIN_SECONDS
+		return
+	_showcase_rotation_delay = (
+		SHOWCASE_ROTATION_MIN_SECONDS
+		+ _showcase_rng.random_float() * SHOWCASE_ROTATION_VARIANCE_SECONDS
+	)
+
+
+func _rotate_showcase_card(slot_override: int = -1) -> bool:
+	if _showcase_card_pool.is_empty() or cards.is_empty():
+		return false
+	var slot := (
+		clampi(slot_override, 0, cards.size() - 1)
+		if slot_override >= 0
+		else _showcase_rotation_cursor % cards.size()
+	)
+	_showcase_rotation_cursor = (slot + 1) % cards.size()
+	var candidates: Array[String] = []
+	for card_id in _showcase_card_pool:
+		if card_id not in _showcase_card_ids:
+			candidates.append(card_id)
+	if candidates.is_empty():
+		return false
+	var next_card_id := str(_showcase_rng.choice(candidates))
+	var card_data := CardCatalog.shared().get_card(next_card_id)
+	var texture := _showcase_texture(str(card_data.get("image_path", "")))
+	if texture == null:
+		return false
+	_swap_showcase_texture(slot, next_card_id, texture)
+	return true
+
+
+func _swap_showcase_texture(
+	slot: int,
+	card_id: String,
+	texture: Texture2D,
+) -> void:
+	_stop_showcase_swap_tween(slot)
+	if not _motion_enabled or not FRONTEND_MOTION.decorative_motion_enabled():
+		_set_showcase_texture(slot, card_id, texture)
+		return
+	var tween := create_tween()
+	_showcase_swap_tweens[slot] = tween
+	tween.finished.connect(func() -> void:
+		_showcase_swap_tweens.erase(slot)
+	)
+	tween.tween_property(
+		cards[slot],
+		"modulate:a",
+		0.0,
+		FRONTEND_MOTION.duration(0.16),
+	).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.parallel().tween_property(
+		card_shadows[slot],
+		"modulate:a",
+		0.0,
+		FRONTEND_MOTION.duration(0.16),
+	)
+	tween.tween_callback(_set_showcase_texture.bind(slot, card_id, texture))
+	tween.tween_property(
+		cards[slot],
+		"modulate:a",
+		1.0,
+		FRONTEND_MOTION.duration(0.24),
+	).set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(
+		card_shadows[slot],
+		"modulate:a",
+		1.0,
+		FRONTEND_MOTION.duration(0.24),
+	)
+
+
+func _set_showcase_texture(
+	slot: int,
+	card_id: String,
+	texture: Texture2D,
+) -> void:
+	if slot < 0 or slot >= cards.size():
+		return
+	_showcase_card_ids[slot] = card_id
+	cards[slot].texture = texture
+	card_shadows[slot].texture = texture
+	cards[slot].modulate.a = 1.0
+	card_shadows[slot].modulate.a = 1.0
+
+
+func _showcase_texture(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	var tree := Engine.get_main_loop() as SceneTree
+	var cache := (
+		tree.root.get_node_or_null("CardTextureCache")
+		if tree and tree.root
+		else null
+	)
+	if cache and cache.has_method("get_texture"):
+		return cache.call("get_texture", path) as Texture2D
+	return (
+		ResourceLoader.load(path, "Texture2D") as Texture2D
+		if ResourceLoader.exists(path, "Texture2D")
+		else null
+	)
+
+
+func _stop_showcase_swap_tween(slot: int) -> void:
+	var tween := _showcase_swap_tweens.get(slot) as Tween
+	if tween != null and tween.is_valid():
+		tween.kill()
+	_showcase_swap_tweens.erase(slot)
+	if slot >= 0 and slot < cards.size():
+		cards[slot].modulate.a = 1.0
+		card_shadows[slot].modulate.a = 1.0
+
+
+func _stop_all_showcase_swap_tweens() -> void:
+	for slot_value in _showcase_swap_tweens.keys():
+		_stop_showcase_swap_tween(int(slot_value))
+
+
 func _refresh_motion_state() -> void:
 	if not is_node_ready():
 		return
 	_motion_enabled = hero_panel.visible and FRONTEND_MOTION.decorative_motion_enabled()
 	set_process(_motion_enabled)
 	if not _motion_enabled:
+		_showcase_rotation_elapsed = 0.0
+		_stop_all_showcase_swap_tweens()
 		_elapsed = 0.0
 		_parallax = Vector2.ZERO
 		_apply_card_motion()

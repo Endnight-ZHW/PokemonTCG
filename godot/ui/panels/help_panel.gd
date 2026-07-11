@@ -71,7 +71,7 @@ const CATEGORIES := [
 				"title": "本地双人",
 				"rows": [
 					"回合交接时会先遮挡手牌，请将设备交给下一位玩家后再确认。",
-					"返回键会打开对局菜单，而不会直接丢失当前对局。",
+					"系统返回手势会打开对局菜单，而不会直接丢失当前对局。",
 				],
 			},
 			{
@@ -105,10 +105,6 @@ func configure() -> void:
 	_resolve_nodes()
 	_bind_categories()
 	show_category(0)
-
-
-func initial_focus_control() -> Control:
-	return category_buttons[0] if not category_buttons.is_empty() else null
 
 
 func show_category(index: int) -> void:
@@ -147,12 +143,6 @@ func _bind_categories() -> void:
 		var callback := show_category.bind(index)
 		if not button.pressed.is_connected(callback):
 			button.pressed.connect(callback)
-		button.focus_neighbor_left = button.get_path_to(
-			category_buttons[posmod(index - 1, category_buttons.size())]
-		)
-		button.focus_neighbor_right = button.get_path_to(
-			category_buttons[(index + 1) % category_buttons.size()]
-		)
 
 
 func _label(text_value: String, variation: String) -> Label:

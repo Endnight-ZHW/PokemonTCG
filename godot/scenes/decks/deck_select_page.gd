@@ -93,7 +93,6 @@ func configure(p_catalog: CardCatalog, p_mode: String) -> void:
 	_refresh_all()
 	_configured = true
 	call_deferred("_apply_responsive_layout")
-	call_deferred("_repair_focus_after_layout")
 	call_deferred("_play_enter_animation")
 
 
@@ -106,6 +105,8 @@ func _resolve_nodes() -> void:
 		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/FirstPlayerOption"
 	) as OptionButton
 	first_player_option.accessibility_name = "先后手设置"
+	for option in [ai_mode_option, first_player_option]:
+		option.get_popup().allow_search = false
 	mode_description = get_node("ContentMargin/PageContent/ModeDescription") as Label
 	content_margin = get_node("ContentMargin") as MarginContainer
 	page_content = get_node("ContentMargin/PageContent") as VBoxContainer
@@ -314,7 +315,7 @@ func _refresh_mode_copy() -> void:
 
 func _refresh_ai_slot_copy() -> void:
 	# Mode switching is intentionally copy-only: it must not rebuild the gallery,
-	# recreate detail cards, or reset deck/turn/focus/scroll state.
+	# recreate detail cards, or reset deck/turn/scroll state.
 	_refresh_slot_buttons()
 	_refresh_tiles()
 	if first_player_option.item_count >= 3:
@@ -334,7 +335,6 @@ func _on_deck_tile_pressed(deck_key: String) -> void:
 		_gallery_scroll_position = gallery_scroll.scroll_vertical
 		_compact_detail_visible = true
 		_apply_master_detail_visibility()
-		back_to_gallery_button.grab_focus.call_deferred()
 
 
 func _set_active_player(player_idx: int) -> void:
@@ -492,8 +492,6 @@ func _emit_start_requested() -> void:
 func _apply_responsive_layout() -> void:
 	if size.x <= 0.0 or size.y <= 0.0:
 		return
-	var focus_owner := get_viewport().gui_get_focus_owner() if is_inside_tree() else null
-	var owned_focus_before := focus_owner != null and is_ancestor_of(focus_owner)
 	var was_compact := _compact
 	var aspect := size.x / maxf(1.0, size.y)
 	_compact = not (size.x >= WIDE_MIN_WIDTH and aspect >= WIDE_MIN_ASPECT)
@@ -549,8 +547,6 @@ func _apply_responsive_layout() -> void:
 	)
 	_apply_master_detail_visibility()
 	_refresh_detail_columns()
-	if owned_focus_before:
-		call_deferred("_repair_focus_after_layout")
 
 
 func _apply_master_detail_visibility() -> void:
@@ -567,33 +563,11 @@ func _apply_master_detail_visibility() -> void:
 func _show_compact_gallery() -> void:
 	_compact_detail_visible = false
 	_apply_master_detail_visibility()
-	call_deferred("_restore_gallery_scroll_and_focus")
+	call_deferred("_restore_gallery_scroll")
 
 
-func _restore_gallery_scroll_and_focus() -> void:
+func _restore_gallery_scroll() -> void:
 	gallery_scroll.scroll_vertical = int(_gallery_scroll_position)
-	var selected_key := selected_deck_key(_active_player_idx)
-	var tile := _tiles.get(selected_key) as DeckGalleryTile
-	if tile and tile.is_visible_in_tree():
-		tile.grab_focus()
-
-
-func _repair_focus_after_layout() -> void:
-	if not is_inside_tree():
-		return
-	var owner := get_viewport().gui_get_focus_owner()
-	if owner and is_ancestor_of(owner) and owner.is_visible_in_tree():
-		return
-	if _compact_detail_visible and back_to_gallery_button.is_visible_in_tree():
-		back_to_gallery_button.grab_focus()
-		return
-	var selected_tile := _tiles.get(
-		selected_deck_key(_active_player_idx)
-	) as DeckGalleryTile
-	if selected_tile and selected_tile.is_visible_in_tree():
-		selected_tile.grab_focus()
-	elif player_one_slot_button.is_visible_in_tree():
-		player_one_slot_button.grab_focus()
 
 
 func _refresh_detail_columns() -> void:

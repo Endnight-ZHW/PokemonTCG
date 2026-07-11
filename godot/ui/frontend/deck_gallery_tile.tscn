@@ -6,7 +6,7 @@
 custom_minimum_size = Vector2(244, 136)
 layout_mode = 2
 mouse_default_cursor_shape = 2
-focus_mode = 2
+focus_mode = 0
 theme_type_variation = &"DeckGalleryTileButton"
 toggle_mode = true
 text = ""

@@ -37,6 +37,7 @@ custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 
 [node name="Scroll" type="ScrollContainer" parent="Layout/Sidebar"]
+focus_mode = 0
 layout_mode = 2
 
 [node name="Buttons" type="VBoxContainer" parent="Layout/Sidebar/Scroll"]
@@ -57,66 +58,79 @@ text = "选择页面，或在战斗预览中触发表现事件。"
 autowrap_mode = 2
 
 [node name="TitlePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "标题页"
 metadata/preview = "title"
 
 [node name="DeckPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "牌组选择"
 metadata/preview = "decks"
 
 [node name="NetworkPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "网络大厅"
 metadata/preview = "network"
 
 [node name="SettingsPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "设置"
 metadata/preview = "settings"
 
 [node name="ChoicePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "复杂选择"
 metadata/preview = "choice"
 
 [node name="EnergyChoicePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "能量分配选择"
 metadata/preview = "energy_choice"
 
 [node name="BattlePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "战斗场景"
 metadata/preview = "battle"
 
 [node name="AIThinkingPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "AI 思考"
 metadata/preview = "ai_thinking"
 
 [node name="VictoryPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "胜利页"
 metadata/preview = "victory"
 
 [node name="HelpPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "帮助面板"
 metadata/preview = "help"
 
 [node name="InspectorPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "卡牌检查器"
 metadata/preview = "inspector"
 
 [node name="ZonePreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "区域查看"
 metadata/preview = "zone"
 
 [node name="DeckDetailsPreview" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "牌组详情"
 metadata/preview = "deck_detail"
@@ -130,36 +144,43 @@ theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
 text = "表现事件"
 
 [node name="DrawEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "抽牌"
 metadata/event = "draw"
 
 [node name="EnergyAttachEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "附能"
 metadata/event = "attach_energy"
 
 [node name="EvolveEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "进化"
 metadata/event = "evolve"
 
 [node name="AttackEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "攻击蓄力"
 metadata/event = "attack"
 
 [node name="DamageEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "伤害"
 metadata/event = "damage"
 
 [node name="KOEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "击倒"
 metadata/event = "ko"
 
 [node name="VictoryEvent" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+focus_mode = 0
 layout_mode = 2
 text = "胜利"
 metadata/event = "victory"

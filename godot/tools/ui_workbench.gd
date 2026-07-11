@@ -92,6 +92,7 @@ func _bind_toolbar() -> void:
 		var button := get_node(
 			"Layout/Sidebar/Scroll/Buttons/" + button_name
 		) as Button
+		button.custom_minimum_size.y = 48.0
 		var key := str(button.get_meta("preview"))
 		button.pressed.connect(show_preview.bind(key))
 	for button_name in [
@@ -106,6 +107,7 @@ func _bind_toolbar() -> void:
 		var button := get_node(
 			"Layout/Sidebar/Scroll/Buttons/" + button_name
 		) as Button
+		button.custom_minimum_size.y = 48.0
 		var key := str(button.get_meta("event"))
 		button.pressed.connect(trigger_presentation.bind(key))
 
@@ -157,6 +159,7 @@ func _show_choice() -> void:
 		panel.card_grid.add_child(card)
 	for text in ["选择第一项", "选择第二项", "取消并返回"]:
 		var button := Button.new()
+		button.focus_mode = Control.FOCUS_NONE
 		button.custom_minimum_size.y = 48
 		button.text = text
 		panel.option_list.add_child(button)
@@ -178,6 +181,7 @@ func _show_energy_choice() -> void:
 		energy_grid.add_child(_card_thumb(card_id, false))
 	for card_id in ["svi-hrot", "svi-chim", "svi-ente"]:
 		var button := Button.new()
+		button.focus_mode = Control.FOCUS_NONE
 		button.custom_minimum_size.y = 48
 		button.text = catalog.card_name(card_id)
 		panel.option_list.add_child(button)
@@ -348,7 +352,7 @@ func _centered_panel(min_size: Vector2, frontend_surface: bool = false) -> Conta
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	scroll.follow_focus = true
+	scroll.follow_focus = false
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	panel.add_child(scroll)

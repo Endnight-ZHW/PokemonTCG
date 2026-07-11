@@ -70,6 +70,7 @@ func _ensure_connections() -> void:
 func _action_button(row: Dictionary) -> Button:
 	var action: GameAction = row.get("action")
 	var button := Button.new()
+	button.focus_mode = Control.FOCUS_NONE
 	button.text = str(row.get("label", action.action if action else "动作"))
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.custom_minimum_size.y = action_button_height

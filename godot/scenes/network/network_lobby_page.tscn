@@ -51,6 +51,7 @@ layout_mode = 2
 theme_override_constants/separation = 16
 
 [node name="BackButton" type="Button" parent="PageMargin/Center/Page/TopBar"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(126, 52)
 layout_mode = 2
@@ -120,6 +121,7 @@ layout_mode = 2
 theme_override_constants/separation = 10
 
 [node name="CompactPreviousButton" type="Button" parent="PageMargin/Center/Page/CompactStepBar"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(112, 48)
 layout_mode = 2
@@ -136,6 +138,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="CompactNextButton" type="Button" parent="PageMargin/Center/Page/CompactStepBar"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(112, 48)
 layout_mode = 2
@@ -397,6 +400,7 @@ theme_type_variation = &"FrontSectionLabel"
 text = "联机方式"
 
 [node name="NetworkKindOption" type="OptionButton" parent="PageMargin/Center/Page/Body/FormPanel/FormMargin/Form"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
@@ -409,6 +413,7 @@ theme_type_variation = &"FrontSectionLabel"
 text = "你的身份"
 
 [node name="NetworkRoleOption" type="OptionButton" parent="PageMargin/Center/Page/Body/FormPanel/FormMargin/Form"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
@@ -424,6 +429,7 @@ theme_type_variation = &"FrontSectionLabel"
 text = "主机地址"
 
 [node name="NetworkAddressInput" type="LineEdit" parent="PageMargin/Center/Page/Body/FormPanel/FormMargin/Form/AddressRow"]
+focus_mode = 1
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
@@ -449,6 +455,7 @@ theme_type_variation = &"FrontSectionLabel"
 text = "端口"
 
 [node name="NetworkPortInput" type="LineEdit" parent="PageMargin/Center/Page/Body/FormPanel/FormMargin/Form/PortRow"]
+focus_mode = 1
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
@@ -475,6 +482,7 @@ theme_type_variation = &"FrontSectionLabel"
 text = "房间码"
 
 [node name="NetworkRoomInput" type="LineEdit" parent="PageMargin/Center/Page/Body/FormPanel/FormMargin/Form/RoomCodeRow"]
+focus_mode = 1
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
@@ -495,6 +503,7 @@ theme_type_variation = &"FrontSectionLabel"
 text = "参战牌组"
 
 [node name="NetworkDeckOption" type="OptionButton" parent="PageMargin/Center/Page/Body/FormPanel/FormMargin/Form"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
@@ -535,6 +544,7 @@ text_overrun_behavior = 3
 max_lines_visible = 3
 
 [node name="RoomCodeDisplay" type="LineEdit" parent="PageMargin/Center/Page/StatusPanel/StatusMargin/StatusContent"]
+focus_mode = 0
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(180, 48)
@@ -543,6 +553,7 @@ editable = false
 selecting_enabled = true
 
 [node name="CopyRoomButton" type="Button" parent="PageMargin/Center/Page/StatusPanel/StatusMargin/StatusContent"]
+focus_mode = 0
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(112, 48)
@@ -551,6 +562,7 @@ theme_type_variation = &"FrontSecondaryButton"
 text = "复制房间码"
 
 [node name="NetworkConnectButton" type="Button" parent="PageMargin/Center/Page"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 58)
 layout_mode = 2

@@ -7,6 +7,7 @@ extends Button
 
 const TITLE_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres")
 const BODY_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres")
+const ARROW_RIGHT := preload("res://assets/ui/icons/arrow_right.svg")
 
 @export var title_text := "对战入口":
 	set(value):
@@ -20,31 +21,34 @@ const BODY_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres
 	set(value):
 		mode_icon = value
 		queue_redraw()
-@export var accent_color := Color("#55b8ff"):
+@export var accent_color := Color("#62d7ff"):
 	set(value):
 		accent_color = value
 		queue_redraw()
-@export var fill_color := Color("#246fce"):
+@export var fill_color := Color("#101c2d"):
 	set(value):
 		fill_color = value
 		queue_redraw()
-@export var foreground_color := Color.WHITE:
+@export var foreground_color := Color("#f4f7ff"):
 	set(value):
 		foreground_color = value
+		queue_redraw()
+@export var subtitle_color := Color("#afc0d8"):
+	set(value):
+		subtitle_color = value
 		queue_redraw()
 
 
 func _ready() -> void:
 	flat = true
 	text = ""
-	focus_mode = Control.FOCUS_ALL
+	focus_mode = Control.FOCUS_NONE
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var empty_style := StyleBoxEmpty.new()
-	for style_name in [&"normal", &"hover", &"pressed", &"hover_pressed", &"disabled", &"focus"]:
+	for style_name in [&"normal", &"hover", &"pressed", &"hover_pressed", &"disabled"]:
 		add_theme_stylebox_override(style_name, empty_style)
 	for signal_name in [
-		&"mouse_entered", &"mouse_exited", &"focus_entered", &"focus_exited",
-		&"button_down", &"button_up",
+		&"mouse_entered", &"mouse_exited", &"button_down", &"button_up",
 	]:
 		var callback := Callable(self, "queue_redraw")
 		if not is_connected(signal_name, callback):
@@ -63,63 +67,41 @@ func _draw() -> void:
 	var state_fill := fill_color
 	var state_accent := accent_color
 	if disabled_state:
-		state_fill = state_fill.lerp(Color("#70819a"), 0.62)
-		state_accent = state_accent.lerp(Color("#aab5c4"), 0.68)
+		state_fill = state_fill.lerp(Color("#111a27"), 0.52)
+		state_accent = state_accent.lerp(Color("#657083"), 0.72)
 	elif pressed_state:
-		state_fill = state_fill.darkened(0.18)
-		state_accent = state_accent.lightened(0.04)
+		state_fill = state_fill.darkened(0.12)
+		state_accent = state_accent.lightened(0.06)
 	elif hover_state:
-		state_fill = state_fill.lightened(0.05)
-		state_accent = state_accent.lightened(0.14)
+		state_fill = state_fill.lightened(0.065)
+		state_accent = state_accent.lightened(0.12)
 
-	var shadow_points := _banner_points(Rect2(Vector2(0, 7), size - Vector2(0, 8)))
-	draw_colored_polygon(shadow_points, Color(0.025, 0.09, 0.22, 0.34))
+	var shadow_points := _banner_points(Rect2(Vector2(0, 8), size - Vector2(0, 9)))
+	var shadow_color := Color(0.0, 0.015, 0.045, 0.55 if not disabled_state else 0.28)
+	draw_colored_polygon(shadow_points, shadow_color)
 	var outer_points := _banner_points(Rect2(Vector2.ZERO, size - Vector2(0, 3)))
-	draw_colored_polygon(outer_points, state_accent)
+	var border_color := state_accent
+	border_color.a = 1.0 if hover_state or pressed_state else 0.72
+	if disabled_state:
+		border_color.a = 0.36
+	draw_colored_polygon(outer_points, border_color)
 	var inset := 4.0
 	var inner_rect := Rect2(Vector2(inset, inset), size - Vector2(inset * 2.0, inset * 2.0 + 3.0))
 	var inner_points := _banner_points(inner_rect)
 	draw_colored_polygon(inner_points, state_fill)
-
-	var highlight := state_accent
-	highlight.a = 0.34 if not disabled_state else 0.14
-	draw_line(
-		Vector2(size.y * 0.29, 8),
-		Vector2(size.x - size.y * 0.29, 8),
-		highlight,
-		2.0,
-		true,
-	)
+	if hover_state and not disabled_state:
+		var glow := state_accent
+		glow.a = 0.07
+		draw_colored_polygon(inner_points, glow)
 
 	var icon_zone := minf(102.0, size.y * 0.88)
 	var divider_x := icon_zone
-	var divider := foreground_color
-	divider.a = 0.28 if not disabled_state else 0.14
+	var divider := state_accent
+	divider.a = 0.30 if not disabled_state else 0.13
 	draw_line(Vector2(divider_x, 14), Vector2(divider_x, size.y - 17), divider, 2.0, true)
-	_draw_icon(icon_zone, disabled_state)
+	_draw_icon(icon_zone, state_accent, disabled_state)
 	_draw_copy(icon_zone, disabled_state)
-
-	if has_focus() and _focus_indicator_visible() and not disabled_state:
-		var dark_focus := Color("#071b3c")
-		var focus_points := outer_points.duplicate()
-		focus_points.append(focus_points[0])
-		draw_polyline(focus_points, dark_focus, 4.0, true)
-		var focus_inner := inner_points.duplicate()
-		focus_inner.append(focus_inner[0])
-		var inner_focus := dark_focus.lightened(0.12)
-		if foreground_color.get_luminance() >= 0.5:
-			inner_focus = Color.WHITE
-		draw_polyline(focus_inner, inner_focus, 2.0, true)
-
-
-func _focus_indicator_visible() -> bool:
-	if Engine.is_editor_hint() or not is_inside_tree():
-		return true
-	var focus_controller := get_node_or_null("/root/FrontendFocus")
-	if focus_controller and focus_controller.has_method("is_focus_visible"):
-		return bool(focus_controller.call("is_focus_visible"))
-	return true
-
+	_draw_chevron(state_accent, disabled_state)
 
 func _banner_points(rect: Rect2) -> PackedVector2Array:
 	var notch := minf(rect.size.y * 0.28, 30.0)
@@ -133,7 +115,7 @@ func _banner_points(rect: Rect2) -> PackedVector2Array:
 	])
 
 
-func _draw_icon(icon_zone: float, disabled_state: bool) -> void:
+func _draw_icon(icon_zone: float, state_accent: Color, disabled_state: bool) -> void:
 	if mode_icon == null:
 		return
 	var icon_size := clampf(size.y * 0.39, 30.0, 48.0)
@@ -141,15 +123,15 @@ func _draw_icon(icon_zone: float, disabled_state: bool) -> void:
 		Vector2(icon_zone * 0.5 - icon_size * 0.5, size.y * 0.5 - icon_size * 0.5 - 1.0),
 		Vector2.ONE * icon_size,
 	)
-	var color := foreground_color
-	color.a = 0.52 if disabled_state else 1.0
+	var color := state_accent
+	color.a = 0.42 if disabled_state else 1.0
 	draw_texture_rect(mode_icon, rect, false, color)
 
 
 func _draw_copy(icon_zone: float, disabled_state: bool) -> void:
-	var color := foreground_color
-	color.a = 0.54 if disabled_state else 1.0
-	var available_width := maxf(80.0, size.x - icon_zone - 42.0)
+	var title_color := foreground_color
+	title_color.a = 0.42 if disabled_state else 1.0
+	var available_width := maxf(80.0, size.x - icon_zone - 82.0)
 	var title_size := clampi(int(round(size.y * 0.26)), 22, 31)
 	var subtitle_size := clampi(int(round(size.y * 0.145)), 13, 17)
 	var copy_left := icon_zone + 25.0
@@ -161,10 +143,10 @@ func _draw_copy(icon_zone: float, disabled_state: bool) -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		available_width,
 		title_size,
-		color,
+		title_color,
 	)
-	var muted := color
-	muted.a = 0.62 if disabled_state else 1.0
+	var muted := subtitle_color
+	muted.a = 0.38 if disabled_state else 1.0
 	draw_string(
 		BODY_FONT,
 		Vector2(copy_left, title_y + subtitle_size + 12.0),
@@ -174,3 +156,15 @@ func _draw_copy(icon_zone: float, disabled_state: bool) -> void:
 		subtitle_size,
 		muted,
 	)
+
+
+func _draw_chevron(state_accent: Color, disabled_state: bool) -> void:
+	var chevron_size := clampf(size.y * 0.20, 18.0, 24.0)
+	var right_padding := maxf(27.0, size.y * 0.25)
+	var rect := Rect2(
+		Vector2(size.x - right_padding - chevron_size, size.y * 0.5 - chevron_size * 0.5 - 1.0),
+		Vector2.ONE * chevron_size,
+	)
+	var color := state_accent
+	color.a = 0.35 if disabled_state else 0.92
+	draw_texture_rect(ARROW_RIGHT, rect, false, color)

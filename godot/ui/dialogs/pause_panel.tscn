@@ -13,6 +13,7 @@ text = "返回标题会结束当前对局。"
 autowrap_mode = 2
 
 [node name="HelpButton" type="Button" parent="."]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2

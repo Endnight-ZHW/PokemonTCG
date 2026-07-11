@@ -3,6 +3,8 @@
 宝可梦集换式卡牌对战项目。Godot 4.7 是唯一发布客户端；Python 是本地
 调试、规则验证、AI 训练评估以及卡牌/卡图导入工具链。
 
+![Godot 4.7“午夜竞技场”开始界面](docs/images/godot-guide/title-midnight-arena.png)
+
 ## 版本选择
 
 | 目录 | 定位 | 状态 |
@@ -14,7 +16,8 @@
 
 Godot 版本已经具备本地双人、Challenge AI、Deep AI、ENet LAN 和
 WebSocket Relay。联机双方可选择相同或不同牌组；每名玩家拥有独立的牌库、
-手牌和洗牌随机流。
+手牌和洗牌随机流。前台采用鼠标与触控导航；网络文本框点击后仍可输入文字，
+Android 系统返回按钮或手势继续有效。
 
 发布版本、协议/规则/RNG schema、Android versionCode、10 套发布牌组及模型数
 统一记录在 [`release_manifest.json`](release_manifest.json)。

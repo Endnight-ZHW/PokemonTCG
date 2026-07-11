@@ -1408,8 +1408,6 @@ func _show_help(resume_ai_on_close: bool = false) -> void:
 	var panel := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	modal_body.add_child(panel)
 	panel.configure()
-	if modal_host_controller:
-		modal_host_controller.focus_initial(panel.initial_focus_control())
 	modal_confirm.pressed.connect(func() -> void:
 		_close_modal()
 		if resume_ai_on_close:
@@ -1475,7 +1473,6 @@ func _show_zone_inspector(context: Dictionary) -> void:
 func _show_deck_details(
 	deck_key: String,
 	restore_scroll: int = -1,
-	restore_focus_key: String = "",
 ) -> void:
 	_play_click()
 	var deck := catalog.get_deck(deck_key)
@@ -1494,30 +1491,24 @@ func _show_deck_details(
 	panel.configure(catalog, deck_key)
 	panel.card_requested.connect(_show_deck_card_inspector.bind(deck_key))
 	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
-	if restore_scroll >= 0 or not restore_focus_key.is_empty():
+	if restore_scroll >= 0:
 		_restore_deck_detail_modal_state(
 			_modal_generation,
 			restore_scroll,
-			restore_focus_key,
 		)
 
 
 func _show_deck_card_inspector(context: Dictionary, deck_key: String) -> void:
 	var scroll_position := modal_scroll.scroll_vertical if modal_scroll else 0
-	var focus_key := "%s|%s" % [
-		str(context.get("location", "")),
-		str(context.get("card_id", "")),
-	]
 	_show_card_inspector(
 		context,
-		_show_deck_details.bind(deck_key, scroll_position, focus_key),
+		_show_deck_details.bind(deck_key, scroll_position),
 	)
 
 
 func _restore_deck_detail_modal_state(
 	generation: int,
 	scroll_position: int,
-	focus_key: String,
 ) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -1525,13 +1516,6 @@ func _restore_deck_detail_modal_state(
 		return
 	if modal_scroll and scroll_position >= 0:
 		modal_scroll.scroll_vertical = scroll_position
-	if focus_key.is_empty():
-		return
-	for node in modal_body.find_children("*", "Button", true, false):
-		var button := node as Button
-		if button and str(button.get_meta("deck_focus_key", "")) == focus_key:
-			button.grab_focus()
-			return
 
 
 func _show_settings() -> void:
@@ -1546,8 +1530,6 @@ func _show_settings() -> void:
 	var panel := SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	modal_body.add_child(panel)
 	panel.configure()
-	if modal_host_controller:
-		modal_host_controller.focus_initial(panel.initial_focus_control())
 	panel.save_requested.connect(_save_settings_values)
 	# Keep the save action connected while the modal remains open so a transient
 	# filesystem failure can be corrected and retried without reopening Settings.
@@ -1647,6 +1629,10 @@ func _open_modal(
 ) -> void:
 	if battle_screen:
 		battle_screen.hide_card_detail()
+	var viewport := get_viewport()
+	var text_owner := viewport.gui_get_focus_owner() if viewport else null
+	if text_owner is LineEdit:
+		(text_owner as LineEdit).release_focus()
 	_modal_back_action = Callable()
 	var resolved_spec := spec
 	if resolved_spec == null:
@@ -1686,8 +1672,6 @@ func _open_modal(
 	)
 	modal_layer.visible = true
 	modal_layer.move_to_front()
-	if modal_host_controller:
-		modal_host_controller.focus_initial(resolved_spec.initial_focus)
 	if not FrontendMotion.decorative_motion_enabled():
 		shell_animations.stop()
 		shell_animations.speed_scale = 1.0
@@ -1746,7 +1730,7 @@ func _finish_modal_close(generation: int) -> void:
 		shell_animations.speed_scale = 1.0
 	if modal_host_controller:
 		modal_host_controller.reset_surface()
-		modal_host_controller.restore_focus()
+		modal_host_controller.finish()
 
 
 func _select_hand_card(index: int, card_id: String) -> void:
@@ -2651,7 +2635,7 @@ func _button(text_value: String, height: float) -> Button:
 	var result := Button.new()
 	result.text = text_value
 	result.custom_minimum_size.y = height
-	result.focus_mode = Control.FOCUS_ALL
+	result.focus_mode = Control.FOCUS_NONE
 	return result
 
 

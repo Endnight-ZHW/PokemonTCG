@@ -115,7 +115,7 @@ var _texture_cache: Node
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	focus_mode = Control.FOCUS_ALL
+	focus_mode = Control.FOCUS_NONE
 	_resolve_scene_nodes()
 	_ensure_overlay_nodes()
 	resized.connect(_on_resized)
@@ -210,6 +210,7 @@ func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
 			continue
 		var button := Button.new()
 		button.text = str(row.get("label", action.action))
+		button.focus_mode = Control.FOCUS_NONE
 		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		button.custom_minimum_size.y = 48
 		button.add_theme_font_size_override("font_size", 11)

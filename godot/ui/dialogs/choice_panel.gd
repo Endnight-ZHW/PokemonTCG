@@ -112,7 +112,6 @@ func add_card_option(
 	card_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	card_view.configure(card_id, null, false, -1, player, "", true)
 	card_view.tooltip_text = caption_text if not caption_text.is_empty() else card_id
-	card_view.focus_entered.connect(_preview_card.bind(card_id))
 	card_view.detail_requested.connect(func(_card_id: String) -> void:
 		_preview_card(card_id)
 	)
@@ -182,7 +181,7 @@ func add_text_option(option_id: String, label_text: String) -> Button:
 	var button := Button.new()
 	button.text = label_text
 	button.custom_minimum_size.y = DesignTokens.TOUCH_MIN
-	button.focus_mode = Control.FOCUS_ALL
+	button.focus_mode = Control.FOCUS_NONE
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.set_meta("option_id", option_id)
 	button.set_meta("base_text", label_text)
@@ -239,7 +238,6 @@ func _add_preview_cards(
 		card.custom_minimum_size = ENERGY_CARD_SIZE
 		card.configure(card_id, null, false, -1, -1, "", true)
 		card.tooltip_text = _card_name(card_id)
-		card.focus_entered.connect(_preview_card.bind(preview_card_id))
 		card.detail_requested.connect(func(_card_id: String) -> void:
 			_preview_card(preview_card_id)
 		)

@@ -4364,6 +4364,7 @@ func _run_phase_six_foundation_tests() -> void:
 
 
 func _run_visual_upgrade_tests() -> void:
+	_check_pointer_only_input_contract()
 	for layout_failure in BattleTableLayoutContract.run():
 		failures.append(layout_failure)
 	var seeded_state_a := UIPreviewStateFactory.battle_state(77)
@@ -4475,6 +4476,7 @@ func _run_visual_upgrade_tests() -> void:
 	var main_scene := load("res://scenes/main/main.tscn") as PackedScene
 	var main_preview := main_scene.instantiate()
 	root.add_child(main_preview)
+	_check_pointer_only_focus_tree(main_preview, "Main title/modal shell")
 	var shell_animations := main_preview.find_child(
 		"ShellAnimations", true, false
 	) as AnimationPlayer
@@ -4563,6 +4565,7 @@ func _run_visual_upgrade_tests() -> void:
 	var title_page := title_scene.instantiate()
 	root.add_child(title_page)
 	title_page.configure("Signal Test")
+	_check_pointer_only_focus_tree(title_page, "Title page")
 	var title_modes: Array[String] = []
 	var title_network_kinds: Array[String] = []
 	var title_signals := {}
@@ -4591,25 +4594,20 @@ func _run_visual_upgrade_tests() -> void:
 		"Title page settings signal was not emitted")
 	_check(bool(title_signals.get("help", false)),
 		"Title page help signal was not emitted")
-	var title_tab_order: Array[Button] = []
+	var title_pointer_buttons: Array[Button] = []
 	for button_name in [
 		"LocalTwoPlayerButton", "AIButton", "NetworkButton",
 		"SettingsButton", "HelpButton",
 	]:
-		title_tab_order.append(
+		title_pointer_buttons.append(
 			title_page.find_child(button_name, true, false) as Button
 		)
-	for index in range(title_tab_order.size()):
-		var button := title_tab_order[index]
-		var next_button := title_tab_order[(index + 1) % title_tab_order.size()]
-		var previous_button := title_tab_order[
-			posmod(index - 1, title_tab_order.size())
-		]
+	for button in title_pointer_buttons:
 		_check(
-			button.get_node_or_null(button.focus_next) == next_button
-			and button.get_node_or_null(button.focus_previous) == previous_button,
-			"Title Tab order skipped or reordered an entry: %s next=%s previous=%s"
-			% [button.name, button.focus_next, button.focus_previous],
+			button != null and button.focus_mode == Control.FOCUS_NONE,
+			"Title control must be pointer/touch-only: %s" % (
+				button.name if button != null else "missing button"
+			),
 		)
 	for legacy_name in [
 		"ChallengeAIButton", "DeepAIButton", "LANButton", "RelayButton", "OnlineCard",
@@ -4626,6 +4624,7 @@ func _run_visual_upgrade_tests() -> void:
 	var deck_page := deck_scene.instantiate()
 	root.add_child(deck_page)
 	deck_page.configure(page_catalog, "challenge")
+	_check_pointer_only_focus_tree(deck_page, "Deck selection page")
 	var ai_mode_option := deck_page.find_child(
 		"AIModeOption", true, false
 	) as OptionButton
@@ -4714,6 +4713,21 @@ func _run_visual_upgrade_tests() -> void:
 	var network_page := network_scene.instantiate()
 	root.add_child(network_page)
 	network_page.configure(page_catalog, "lan", "wss://relay.example.test")
+	_check_pointer_only_focus_tree(network_page, "Network lobby page")
+	for editable_input: LineEdit in [
+		network_page.address_input,
+		network_page.port_input,
+		network_page.room_input,
+	]:
+		_check(
+			editable_input.focus_mode == Control.FOCUS_CLICK,
+			"Network text input must require pointer/touch focus: %s"
+			% editable_input.name,
+		)
+	_check(
+		network_page.room_code_display.focus_mode == Control.FOCUS_NONE,
+		"Read-only network room code must not enter keyboard/controller focus",
+	)
 	network_page._compact = false
 	network_page._apply_compact_step_visibility()
 	var kind_option := network_page.find_child(
@@ -4899,6 +4913,7 @@ func _run_visual_upgrade_tests() -> void:
 	var settings_panel := settings_scene.instantiate()
 	root.add_child(settings_panel)
 	settings_panel.configure()
+	_check_pointer_only_focus_tree(settings_panel, "Settings panel")
 	settings_panel.master_volume_slider.value = 0.45
 	settings_panel.muted_toggle.button_pressed = true
 	var settings_signal := {}
@@ -4937,8 +4952,13 @@ func _run_visual_upgrade_tests() -> void:
 	var modal_ui := main_scene.instantiate()
 	root.add_child(modal_ui)
 	modal_ui.initialize_ui()
-	_check(modal_ui.modal_scroll.follow_focus,
-		"Main modal scroll does not follow keyboard focus")
+	_check(
+		not modal_ui.modal_scroll.follow_focus
+		and modal_ui.modal_confirm.focus_mode == Control.FOCUS_NONE
+		and modal_ui.modal_cancel.focus_mode == Control.FOCUS_NONE,
+		"Main modal shell must be pointer/touch-only",
+	)
+	_check_pointer_only_focus_tree(modal_ui, "Main modal shell")
 	_check(modal_ui.toast_label.theme_type_variation == &"FrontToastLabel"
 		and modal_ui.toast_label.get_theme_constant("outline_size") <= 2,
 		"Toast typography is not using the readable frontend status style")
@@ -4991,6 +5011,7 @@ func _run_visual_upgrade_tests() -> void:
 	modal_ui._show_help()
 	_check(modal_ui.modal_layer.visible,
 		"Help modal did not open from the main shell")
+	_check_pointer_only_focus_tree(modal_ui.modal_layer, "Help modal")
 	_check(is_equal_approx(float(modal_ui.modal_shade.color.a), 0.72),
 		"Title help modal did not use the default translucent shade")
 	var help_labels: Array[Node] = modal_ui.modal_body.find_children(
@@ -5034,6 +5055,7 @@ func _run_visual_upgrade_tests() -> void:
 		true,
 	)
 	modal_ui.show_choice(distribute_request)
+	_check_pointer_only_focus_tree(modal_ui.modal_layer, "Battle choice modal")
 	modal_ui._toggle_choice("pokemon:0:active:sv1-104")
 	modal_ui._toggle_choice("pokemon:0:active:sv1-104")
 	_check(modal_ui.selected_choice_ids == [
@@ -5059,6 +5081,7 @@ func _run_visual_upgrade_tests() -> void:
 	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
 	privacy_ui._refresh_game()
 	privacy_ui.battle_screen.show_card_detail("sv1-104")
+	_check_pointer_only_focus_tree(privacy_ui.battle_screen, "Battle screen")
 	_check(privacy_ui.battle_screen.detail_panel.visible,
 		"Battle card detail did not open for the close control test")
 	_check(privacy_ui.battle_screen.detail_close_button != null
@@ -5068,9 +5091,9 @@ func _run_visual_upgrade_tests() -> void:
 		privacy_ui.battle_screen.detail_close_button.custom_minimum_size.x >= 48.0
 		and privacy_ui.battle_screen.detail_close_button.custom_minimum_size.y >= 48.0
 		and privacy_ui.battle_screen.detail_close_button.focus_mode
-			== Control.FOCUS_ALL
+			== Control.FOCUS_NONE
 		and not privacy_ui.battle_screen.detail_close_button.accessibility_name.is_empty(),
-		"Battle card detail close control is not a 48 px keyboard-accessible target",
+		"Battle card detail close control is not a 48 px pointer/touch target",
 	)
 	privacy_ui.battle_screen.detail_close_button.pressed.emit()
 	_check(not privacy_ui.battle_screen.detail_panel.visible,
@@ -11866,6 +11889,62 @@ func _is_repeatable_ability_action(
 		if str(ability.get("name", "")) == ability_name:
 			return str(ability.get("trigger", "")) == "repeatable"
 	return false
+
+
+func _check_pointer_only_input_contract() -> void:
+	_check(
+		not ProjectSettings.has_setting("autoload/FrontendFocus")
+		and root.get_node_or_null("FrontendFocus") == null,
+		"FrontendFocus autoload must be absent in pointer/touch-only mode",
+	)
+	var navigation_actions: Array[StringName] = [
+		&"ui_accept",
+		&"ui_select",
+		&"ui_cancel",
+		&"ui_focus_next",
+		&"ui_focus_prev",
+		&"ui_left",
+		&"ui_right",
+		&"ui_up",
+		&"ui_down",
+		&"ui_page_up",
+		&"ui_page_down",
+		&"ui_home",
+		&"ui_end",
+	]
+	for action in navigation_actions:
+		_check(
+			InputMap.has_action(action)
+			and InputMap.action_get_events(action).is_empty(),
+			"Pointer/touch-only navigation action still has input events: %s"
+			% action,
+		)
+
+
+func _check_pointer_only_focus_tree(node: Node, context: String) -> void:
+	if node is Control:
+		var control := node as Control
+		var valid_focus_mode := control.focus_mode == Control.FOCUS_NONE
+		if control is LineEdit:
+			valid_focus_mode = control.focus_mode in [
+				Control.FOCUS_NONE,
+				Control.FOCUS_CLICK,
+			]
+		elif control is RichTextLabel:
+			valid_focus_mode = control.focus_mode in [
+				Control.FOCUS_NONE,
+				Control.FOCUS_ACCESSIBILITY,
+			]
+		_check(
+			valid_focus_mode,
+			"%s exposes keyboard/controller focus: %s (%s)" % [
+				context,
+				str(control.get_path()) if control.is_inside_tree() else str(control.name),
+				control.focus_mode,
+			],
+		)
+	for child in node.get_children():
+		_check_pointer_only_focus_tree(child, context)
 
 
 func _read_json(path: String) -> Dictionary:

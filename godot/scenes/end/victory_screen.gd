@@ -54,7 +54,6 @@ func _ready() -> void:
 	_apply_responsive_layout()
 	_refresh()
 	call_deferred("_start_entrance")
-	rematch_button.call_deferred("grab_focus")
 
 
 func configure(
@@ -87,10 +86,6 @@ func _connect_actions() -> void:
 		rematch.pressed.connect(rematch_requested.emit)
 	if not back_to_title.pressed.is_connected(title_requested.emit):
 		back_to_title.pressed.connect(title_requested.emit)
-	rematch.focus_neighbor_right = rematch.get_path_to(back_to_title)
-	rematch.focus_next = rematch.get_path_to(back_to_title)
-	back_to_title.focus_neighbor_left = back_to_title.get_path_to(rematch)
-	back_to_title.focus_previous = back_to_title.get_path_to(rematch)
 
 
 func _refresh() -> void:

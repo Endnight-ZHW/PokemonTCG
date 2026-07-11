@@ -322,6 +322,7 @@ offset_right = 114.0
 offset_bottom = 414.0
 
 [node name="HandScroll" type="ScrollContainer" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+focus_mode = 0
 unique_name_in_owner = true
 offset_left = 126.0
 offset_top = 536.0

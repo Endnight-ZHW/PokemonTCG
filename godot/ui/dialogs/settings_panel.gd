@@ -52,10 +52,6 @@ func reset_form_to_defaults() -> void:
 	})
 
 
-func initial_focus_control() -> Control:
-	return master_volume_slider
-
-
 func values() -> Dictionary:
 	var animation_mode := str(
 		animation_mode_option.get_item_metadata(animation_mode_option.selected)
@@ -90,6 +86,8 @@ func _resolve_nodes() -> void:
 	animation_mode_option = %AnimationModeOption
 	quality_profile_option = %QualityProfileOption
 	card_cache_option = %CardCacheOption
+	for option in [animation_mode_option, quality_profile_option, card_cache_option]:
+		option.get_popup().allow_search = false
 	master_volume_value = %MasterVolumeValue
 	music_volume_value = %MusicVolumeValue
 	sfx_volume_value = %SFXVolumeValue

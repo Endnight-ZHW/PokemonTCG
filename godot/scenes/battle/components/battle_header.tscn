@@ -26,6 +26,7 @@ editor_description = "战斗顶部栏。可编辑菜单按钮、标题和回合�
 script = ExtResource("1_header")
 
 [node name="MenuButton" type="Button" parent="."]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(104, 48)
 layout_mode = 2

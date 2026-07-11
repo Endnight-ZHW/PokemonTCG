@@ -107,11 +107,10 @@ func _add_core_card(card_id: String) -> void:
 	var button := Button.new()
 	button.custom_minimum_size = Vector2(112, 148)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.focus_mode = Control.FOCUS_ALL
+	button.focus_mode = Control.FOCUS_NONE
 	button.theme_type_variation = &"FrontGhostButton"
 	button.tooltip_text = catalog.card_name(card_id)
 	button.accessibility_name = "查看卡牌：%s" % catalog.card_name(card_id)
-	button.set_meta("deck_focus_key", "核心卡牌|%s" % card_id)
 	button.pressed.connect(_on_core_card_pressed.bind(card_id))
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -169,7 +168,7 @@ func _add_category(supertype: String, rows: Array, total_count: int) -> void:
 		var item := Button.new()
 		item.custom_minimum_size = Vector2(0, 58)
 		item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		item.focus_mode = Control.FOCUS_ALL
+		item.focus_mode = Control.FOCUS_NONE
 		item.theme_type_variation = &"FrontGhostButton"
 		item.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		item.clip_text = true
@@ -184,10 +183,6 @@ func _add_category(supertype: String, rows: Array, total_count: int) -> void:
 			int(row.get("count", 0)),
 			str(row.get("name", card_id)),
 		]
-		item.set_meta(
-			"deck_focus_key",
-			"%s|%s" % [str(CATEGORY_LABELS.get(supertype, supertype)), card_id],
-		)
 		item.pressed.connect(_on_list_card_pressed.bind(card_id, supertype))
 		grid.add_child(item)
 	categories.add_child(panel)

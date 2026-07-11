@@ -45,6 +45,7 @@
 第一次建议在 FileSystem 中双击 `res://tools/ui_workbench.tscn`，再按 `F6`。
 这是安全预览工作台，不会保存设置、创建网络房间或修改正式对局。
 
+<!-- 这张图只用于说明 Workbench 结构；当前“午夜竞技场”正式效果见第 4 节。 -->
 ![UI Workbench 固定种子预览](images/godot-guide/ui-workbench.png)
 
 Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量分配、帮助、卡牌检查器、
@@ -52,7 +53,7 @@ Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量�
 击倒和胜利演出。它使用固定种子的预览状态，不读取正式存档，也不会连接网络。预览宿主
 比 1600×900 主窗口窄，可快速发现标题页 Compact landscape / Dense 以及其他前台 compact
 布局问题；但设置、帮助等面板在 Workbench 中是直接装入预览容器的，仍要按 `F5` 验证
-全屏标题背景、`ModalSpec` 的主题切换、遮罩、焦点恢复与安全区。
+全屏标题背景、`ModalSpec` 的主题切换、遮罩、鼠标/触控操作与安全区。
 
 ### 常见文件和路径
 
@@ -100,7 +101,7 @@ flowchart TD
 | 目的 | 场景或文件 |
 |---|---|
 | 应用背景、标题全屏背景、安全区、弹窗和加载层 | `scenes/main/main.tscn` |
-| 标题字标、展示卡扇与三个主入口 | `scenes/title/title_page.tscn` |
+| 标题字标、八种基本能量、轮换展示卡与三个主入口 | `scenes/title/title_page.tscn` |
 | 牌组选择与 Challenge/Deep 选择 | `scenes/decks/deck_select_page.tscn` |
 | 网络大厅与 LAN/Relay 选择 | `scenes/network/network_lobby_page.tscn` |
 | 战斗界面兼容门面 | `scenes/battle/battle_screen.tscn` |
@@ -142,13 +143,17 @@ flowchart TD
 前台 Theme 使用语义 variation，而不是逐按钮复制覆盖。例如主操作、次操作和危险操作
 分别使用 `FrontPrimaryButton`、`FrontSecondaryButton`、`FrontDangerButton`；模式卡、
 分区面板和状态面板也有对应 variation。新增控件时先复用现有 variation，确实需要新的
-交互语义时再扩展 Theme，并同时补齐 normal、hover、pressed、focus 和 disabled 状态。
-标题页的蓝、金、紫斜切入口使用标题专用 `TitleModeButton` 绘制组件；不要为了首页效果修改共享的
-`FrontModeTileButton`。金色入口使用深蓝文字，其余使用白字，focus 只绘制清晰外框，
-不要让默认焦点看起来像已经选中。`FrontendFocus` 自动加载节点提供类似 CSS
-`:focus-visible` 的输入模态：鼠标左键或触控只隐藏 `BaseButton` 的焦点外观，不释放真实焦点；
-键盘或手柄再次输入时立即恢复焦点环。不要用 `FOCUS_NONE` 绕过该机制，否则会破坏方向导航、
-弹窗焦点恢复和无障碍访问。
+交互语义时再扩展 Theme，并同时补齐 normal、hover、pressed 和 disabled 状态。
+
+标题页的青、金、紫斜切入口使用标题专用 `TitleModeButton` 绘制组件；不要为了首页效果修改共享的
+`FrontModeTileButton`。三种入口都使用深蓝填充、白色标题和冷灰蓝副标题，属性色只用于边线、图标、
+分隔线和箭头。`ModesGlass` 只是控制宽度与留白的 `MarginContainer`，不能改回包住三个入口的可见面板；
+按钮内部也不要恢复顶部的长装饰线。
+
+运行时 UI 采用鼠标与触控专用交互：桌面使用左键点击，移动端使用轻触；hover 只作为鼠标经过反馈，
+pressed 同时服务点击和触摸。不要为普通按钮新增按键/控制器快捷操作、默认选中、高亮环或方向循环。
+网络地址、端口和房间码等文本框仍需在点击或轻触后进入编辑状态并唤起移动端软键盘。Android 的
+系统返回手势/返回键属于平台导航，必须继续由 `Main._notification()` 处理，不能随普通快捷操作一起删除。
 
 前台资源位置：
 
@@ -174,33 +179,41 @@ TTF，也不要用描边模拟字重；原始字体的默认轴值可能不是 R
 取样卡图和格式约定见 `assets/ui/energy/README.md`。夜光能量按 `svg2-lume` 卡 ID 精确映射，
 不要把通用 `Rainbow` 类型直接映射为夜光能量。
 
-标题页使用独立的明亮竞技场背景：程序绘制浅蓝天空、云团、同心徽记、放射光和底部竞技台，
-边缘只复用现有卡背。`Main` 在通用 `Background` 与 `SafeArea` 之间放置
+标题页的 `TypeOrbs` 只使用八种基本能量，顺序固定为草、火、水、雷、超、斗、恶、钢；不加入无色与
+夜光能量。图标保持素材自身的透明边缘，外层 `EnergyBadge` 使用空样式，不能增加黑色底圈、描边或
+可点击状态。Wide / Compact 为单排八枚，Dense 为每排四枚的两排布局。
+
+标题页使用独立的“午夜竞技场”深色背景：程序绘制 `#07101D → #0D1B30 → #030812` 深海军蓝渐变、
+青蓝舞台光、少量金色辉光、星点、低透明宝可球同心徽记和底部竞技场环；徽记周围的八段低透明刻度
+按基本能量顺序取色。边缘只复用现有卡背并降低存在感，不再使用浅蓝天空、白云或明亮日间背景。
+`Main` 在通用 `Background` 与 `SafeArea` 之间放置
 `TitleFullBleedBackdrop`，页面本身保留 `EmbeddedBackdrop` 供 `F6` / Workbench 预览；路由离开
 标题页时必须隐藏前者。静态背景只在尺寸、画质或设置变化时重绘，不要增加逐帧全屏绘制或
 高成本模糊 Shader。
 
 其他前台继续复用 `res://ui/frontend/frontend_backdrop.tscn`。牌组、联机等任务型页面使用的
 `neutral` 变体不显示装饰卡扇；卡牌装饰只保留给有明确语义的 `title` / `victory` 变体，避免与
-表单和牌组内容竞争。背景与标题页展示卡动效都必须响应画质和减少动画设置：High/medium 可使用
-轻微漂浮与鼠标视差，low 或 reduced motion 应完全静止并停止对应 `_process()`。页面入场统一
-只改变透明度和缩放，Container 子节点的位置仍交给布局系统。
+表单和牌组内容竞争。标题页的三个展示槽从 `CardCatalog.shared()` 中具备有效图片的宝可梦卡池轮换，
+每隔约 5.5～8 秒依次替换一张，避免三槽重复，并让卡面与阴影共用同一纹理。背景与展示卡动效都必须
+响应画质和减少动画设置：High/medium 可使用淡入淡出、轻微漂浮与鼠标视差；low、reduced motion
+或隐藏 Hero 的 Dense 布局应停止轮换与对应 `_process()`，显示稳定静态状态。页面入场统一只改变
+透明度和缩放，Container 子节点的位置仍交给布局系统。
 
 项目基准仍是 1600×900、`canvas_items`、`expand`，不要为了适配单个页面改全局 stretch。
 前台布局使用安全区内的可用尺寸，而不是物理窗口尺寸。标题页有三档：宽度至少 1180、
 高度至少 650 且纵横比至少 1.5 时为 Wide；宽度至少 900 且高度至少 600 时为 Compact
 landscape，同时要求纵横比至少 1.15；其余为 Dense。Wide / Compact 保留左右两栏，Dense 隐藏展示卡扇并把三个入口
-居中单列，标题内容最大宽度为 1500。牌组、网络等页面仍保留各自的 wide/compact 主从重排，
+居中单列，标题内容最大宽度为 1440。牌组、网络等页面仍保留各自的 wide/compact 主从重排，
 不应把大屏页面整体等比缩小。`Main._apply_safe_area()` 会把平台安全区同步到页面、弹窗、
 加载层和提示层；只有背景与边缘卡背允许越过安全区，新增全屏层也要接入这条路径。
 
 通用弹窗通过 `res://ui/frontend/modal_spec.gd` 描述 `preferred_size`、前台/战斗 surface、
-遮罩透明度、可取消性、初始焦点和堆栈行为。调用 `ModalSpec.frontend(...)` 时 `ModalHost` 临时应用前台 Theme，
+遮罩透明度、可取消性和堆栈行为。调用 `ModalSpec.frontend(...)` 时 `ModalHost` 临时应用前台 Theme，
 关闭后恢复继承主题；战斗选择、隐私和暂停弹窗使用 `ModalSpec.battle(...)`，继续保持原有
 遮罩与不可取消语义。compact 下前台 Modal 会占满安全内容区，战斗 Modal 仍保持自己的首选
 尺寸。Modal 正文共用一个纵向 ScrollContainer，横向滚动被禁用，页脚按钮位于滚动区外；
-面板不要再嵌套整页滚动。前台“牌组详情 → 卡牌检查器”通过 `Main` 的返回动作恢复详情滚动和
-卡牌焦点，面板本身不要私自创建第二个 ModalLayer。
+面板不要再嵌套整页滚动。前台“牌组详情 → 卡牌检查器”通过 `Main` 的返回动作恢复详情滚动位置和
+上下文，面板本身不要私自创建第二个 ModalLayer。
 
 节点上的 `editor_description` 会在 Inspector 中解释用途。标有“不要删除”的节点
 是运行时和自动测试的稳定契约，可以移动或调样式，但不要随意改名。
@@ -269,17 +282,23 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 
 先做一个最小闭环：打开场景、选节点、改 Inspector、运行当前场景、再从 Workbench 验证。
 
+![午夜竞技场标题页（1600×900）](images/godot-guide/title-midnight-arena.png)
+
+![午夜竞技场 Dense 标题页（720×1280）](images/godot-guide/title-midnight-arena-dense.png)
+
 1. 打开 `res://scenes/title/title_page.tscn`。
 2. 在 Scene 树中搜索 `TitleLabel`，选择顶部字标。
 3. 在 Inspector 修改 Text、字体大小或描边；副标 `PTCG` 与主标题保持为两个独立 Label。
-4. 展开 `HeroPanel/CardStage`，观察草 / 水 / 火三张展示卡的尺寸、旋转和重叠。
-5. 展开 `ModesPanel/ModeStack`，选择 `LocalTwoPlayerButton`、`AIButton` 或 `NetworkButton`，修改
+4. 展开 `TypeOrbsCenter/TypeOrbs`，确认八枚基本能量没有黑色底圈，Dense 时自动排成 4×2。
+5. 展开 `HeroPanel/CardStage`，观察三个展示槽的尺寸、旋转和重叠；运行时卡面会从宝可梦卡池轮换。
+6. 展开 `ModesPanel/ModeStack`，选择 `LocalTwoPlayerButton`、`AIButton` 或 `NetworkButton`，修改
    `custom_minimum_size.y`，观察三个斜切主入口的高度变化。
-6. 选择 `FooterRow`，修改 `SettingsButton` / `HelpButton` 间距，并确认 `VersionLabel` 仍在右侧。
-7. 按 `Ctrl+S` 保存场景。
-8. 按 `F6` 查看带 `EmbeddedBackdrop` 的独立标题页。
-9. 再运行 `ui_workbench.tscn`，检查标题页在 Compact landscape / Dense 宿主中的效果。
-10. 最后按 `F5`，确认 `TitleFullBleedBackdrop` 覆盖整个窗口、`EmbeddedBackdrop` 已隐藏且四周
+7. 确认 `ModesGlass` 没有可见面板外框，三个入口内部也没有顶部的长装饰线。
+8. 选择 `FooterRow`，修改 `SettingsButton` / `HelpButton` 间距，并确认 `VersionLabel` 仍在右侧。
+9. 按 `Ctrl+S` 保存场景。
+10. 按 `F6` 查看带 `EmbeddedBackdrop` 的独立标题页，并用鼠标点击或触摸轻点检查入口。
+11. 再运行 `ui_workbench.tscn`，检查标题页在 Compact landscape / Dense 宿主中的效果。
+12. 最后按 `F5`，确认 `TitleFullBleedBackdrop` 覆盖整个窗口、`EmbeddedBackdrop` 已隐藏且四周
     没有深色边框。
 
 如果希望让文字成为脚本可配置参数，选择根节点 `TitlePage`，查看
@@ -299,9 +318,10 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 | 想改什么 | 选中节点 | 推荐改法 |
 |---|---|---|
 | 主字标与 `PTCG` 副标 | `TitleLabel`、对应副标 Label | Text、Noto 700、描边与字号；不要烘焙进背景 |
-| 明亮竞技场背景 | `TitleFullBleedBackdrop`、`EmbeddedBackdrop` | 程序绘制参数；两份背景显示状态由路由切换，不要同时叠加 |
-| 草 / 水 / 火展示卡扇 | `HeroPanel/CardStage` | 最小尺寸、旋转和重叠；卡牌只展示，不接收输入 |
-| 三个主入口 | `ModesPanel/ModeStack` 下的 `LocalTwoPlayerButton`、`AIButton`、`NetworkButton` | `TitleModeButton` 配色、最小高度和入口间距 |
+| 午夜竞技场背景 | `TitleFullBleedBackdrop`、`EmbeddedBackdrop` | 深海军蓝渐变、舞台光、徽记、能量刻度和竞技场环；两份背景不要同时叠加 |
+| 八种基本能量 | `TypeOrbsCenter/TypeOrbs` | 使用 `EnergyIconCatalog`；保持素材透明边缘，不增加黑色底圈或交互 |
+| 三个轮换展示槽 | `HeroPanel/CardStage` | 最小尺寸、旋转、重叠与阴影；卡牌只展示，由脚本定时轮换 |
+| 三个主入口 | `ModesPanel/ModeStack` 下的 `LocalTwoPlayerButton`、`AIButton`、`NetworkButton` | `TitleModeButton` 配色、最小高度和入口间距；不增加模式总外框或顶部装饰线 |
 | 设置 / 帮助 / 版本号 | `FooterRow` 下的 `SettingsButton`、`HelpButton`、`VersionLabel` | separation、文字、最小尺寸与动态版本号 |
 | Wide / Compact / Dense | `title_page.gd::_apply_responsive_layout()` | 修改断点、字号和卡宽时同步更新布局 contract |
 
@@ -628,7 +648,7 @@ Main -> GameEngine.apply_action/apply_choice()
 标题页只显示一个“挑战 AI”入口，并以 `challenge` 作为进入牌组页的默认模式。AI 类型由
 牌组选择页的 `AIModeOption` 决定，两个 item 的 metadata 固定为 `challenge` 和 `deep`；
 `configure(..., "challenge"|"deep")` 用于预选。切换类型只更新标题、说明和 AI 槽位文案，
-必须保留双方牌组、当前槽位、先后手、滚动位置、详情状态与焦点。最终仍通过
+必须保留双方牌组、当前槽位、先后手、滚动位置与详情状态。最终仍通过
 `start_requested(mode, deck1, deck2, forced_first)` 把具体模式交给 `Main`，不要在 UI 内启动 AI。
 
 联机采用房主权威：
@@ -658,8 +678,8 @@ IDLE -> VALIDATING -> CONNECTING -> WAITING -> CONNECTED
 `IDLE` / `ERROR` 切换，连接、等待或已连接时必须锁定选项。
 
 wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon`、`KindLabel`、`KindCode`、
-三条 Feature 和 `IntroTip` 必须随 LAN / Relay 及房主 / 挑战者身份同步更新。该区域不进入
-焦点链，compact 下整体隐藏。中文说明使用 `AUTOWRAP_WORD_SMART` 并限制可见行数；不要恢复
+三条 Feature 和 `IntroTip` 必须随 LAN / Relay 及房主 / 挑战者身份同步更新。该区域不接收
+鼠标或触摸事件，compact 下整体隐藏。中文说明使用 `AUTOWRAP_WORD_SMART` 并限制可见行数；不要恢复
 “大图标 + 居中长句”的海报式布局，也不要让说明文字越过 `IntroPanel` 进入右侧表单。
 
 切换 LAN / Relay 时保留身份、牌组和两种方式各自的地址草稿，但要清除房间码、字段校验错误、
@@ -755,7 +775,7 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 720×1280 / 800×1280 竖屏兜底、
 窄 Workbench 宿主和模拟四边 48px 安全区下检查关键控件边界、重叠、横向滚动与最小命中区。
 标题页会覆盖 Wide、Compact landscape、Dense 三档，并验证主入口、本地/AI/联机后续路径、
-焦点循环和至少 48px 的命中区；其他前台页面仍验证各自的 wide/compact 切换。测试还覆盖
+鼠标/触控交互和至少 48px 的命中区；其他前台页面仍验证各自的 wide/compact 切换。测试还覆盖
 弹窗历史恢复、Theme 隔离、关键对比度、AI 类型切换状态保留，以及 LAN/Relay 切换时的字段
 锁定和 transport 清理。布局 contract 是结构回归，仍需配合截图观察视觉层级、长文案与卡图构图。
 
@@ -781,13 +801,15 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 
 截图输出到 `build/ui-preview/`，包括 1280×720 标题基线、Wide / Compact landscape / Dense
 标题、牌组和网络页，网络等待/错误、设置顶部/底部、帮助、详情、加载、Toast、隐私交接、
-16:9/20:9 战斗、复杂选择、战斗动画、胜利页和 Workbench。标题截图还要确认没有深色边框、
-大块空白或重复背景，三入口层级清晰。截图用于检查遮挡、溢出和布局，不能代替 Android
-横屏安全区与真机帧率测试。
+16:9/20:9 战斗、复杂选择、战斗动画、胜利页和 Workbench。标题截图还要确认午夜背景没有意外边框、
+大块空白或重复层，八枚能量没有黑色底圈，三入口没有总外框或顶部装饰线，并用
+`title-rotated.png` 检查展示卡确实完成替换。截图用于检查遮挡、溢出和布局，不能代替 Android
+横屏安全区、触控与真机帧率测试。
 
 本手册使用的稳定图片位于 `docs/images/godot-guide/`。修改场景结构或动画面板后，
 应重新生成运行时截图，并在 Godot 4.7 编辑器中更新对应界面截图；不要直接引用
-会被清理的 `build/ui-preview/` 文件。
+会被清理的 `build/ui-preview/` 文件。当前标题页正式基线为
+`title-midnight-arena.png` 与 `title-midnight-arena-dense.png`。
 
 Windows 与 Android 调试构建：
 
@@ -1085,7 +1107,7 @@ Get-Content .\godot\dist\release\SHA256SUMS.json
 APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CHECKLIST.md` 做一轮真机验收，
 其中最重要的是：
 
-- 冷启动、横屏、安全区、返回键和设置保存。
+- 冷启动、横屏、安全区、系统返回手势/返回键和设置保存。
 - 本地双人、Challenge AI、Deep AI 离线对局。
 - 10 套 Deep AI 模型都必须完成真实 load+infer 冒烟，且不得出现 NaN/Inf 或静默 fallback。
 - 标题和战斗音乐各保持前台至少 3 分钟，确认没有音频崩溃。
@@ -1154,17 +1176,21 @@ Godot UI 修改先判断节点属于哪一种布局：
 1. 打开 `res://scenes/title/title_page.tscn`。
 2. 选择 `HeaderPanel`，调整“宝可梦卡牌对战”与 `PTCG` 双层字标；文字继续使用 Noto 700，
    不要烘焙进背景图。
-3. 选择 `HeroPanel/CardStage`，修改草 / 水 / 火展示卡的尺寸和重叠。三张卡不可交互，也不要
-   在背景层再复制一组。
-4. 选择 `ModesPanel/ModeStack`，修改三个纵向入口的间距。
-5. 选择 `LocalTwoPlayerButton`、`AIButton` 或 `NetworkButton`，修改 `custom_minimum_size.y` 或
+3. 选择 `TypeOrbsCenter/TypeOrbs`，调整八种基本能量的间距和响应式尺寸。图标必须继续通过
+   `EnergyIconCatalog` 加载，外层不能增加黑色底圈，也不能加入无色或夜光能量。
+4. 选择 `HeroPanel/CardStage`，修改三个展示槽的尺寸和重叠。卡牌不可交互，也不要在背景层
+   再复制一组；实际卡面由 `title_page.gd` 从有效宝可梦卡池定时轮换。
+5. 选择 `ModesPanel/ModeStack`，修改三个纵向入口的间距；`ModesGlass` 只能负责留白，不能显示
+   包住三种模式的外框。
+6. 选择 `LocalTwoPlayerButton`、`AIButton` 或 `NetworkButton`，修改 `custom_minimum_size.y` 或
    `TitleModeButton` 的标题专用斜切样式。首页不要重新加入 Deep、LAN、Relay 独立按钮。
-6. 选择 `FooterRow`，调整 `SettingsButton`、`HelpButton` 和右侧 `VersionLabel`；版本文字由
+   保留正常、hover、pressed、disabled 反馈，不要恢复按钮顶部的长装饰线或任何默认高亮。
+7. 选择 `FooterRow`，调整 `SettingsButton`、`HelpButton` 和右侧 `VersionLabel`；版本文字由
    `configure(version_text)` 动态注入，不要在场景中写死发布版本。
-7. Wide、Compact landscape、Dense 的字号、卡宽、按钮高度、Hero 显隐和外边距由
+8. Wide、Compact landscape、Dense 的字号、卡宽、按钮高度、Hero 显隐和外边距由
    `title_page.gd::_apply_responsive_layout()` 决定；不要只在 `.tscn` 写死宽度覆盖它。
-8. 按 `F6` 预览 `EmbeddedBackdrop`；再用 Workbench 看 Compact / Dense，最后按 `F5` 确认
-   `TitleFullBleedBackdrop` 全屏且内嵌副本已关闭。
+9. 按 `F6` 预览 `EmbeddedBackdrop`；再用 Workbench 看 Compact / Dense，最后按 `F5` 确认
+   `TitleFullBleedBackdrop` 全屏且内嵌副本已关闭。用左键和触摸分别检查主入口与底栏按钮。
 
 如果你只是改按钮文字，可以直接改 Button 的 Text。但如果按钮文字由脚本覆盖，运行时会以脚本为准；
 这时要搜索对应脚本，例如 `title_page.gd`。
@@ -1175,7 +1201,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 2. 选择 `SlotPanel/Slots`，调整玩家 1 与玩家 2（或 AI）的槽位切换按钮。
 3. 选择 `MasterDetail/GalleryPanel`，调整单一牌组画廊；tile 场景位于
    `res://ui/frontend/deck_gallery_tile.tscn`。tile 根节点使用专用 `DeckGalleryTileButton`
-   variation：普通、hover、pressed 与 focus 负责交互状态；能量属性色只用于 `EnergyBadge`
+   variation：普通、hover、pressed 与 disabled 负责交互状态；能量属性色只用于 `EnergyBadge`
    和卡图细边框，不要恢复每张 tile 顶部的全宽彩色横线。`AssignmentBadge` 只表示已分配槽位，
    pressed 仍只表示当前正在配置的槽位所选牌组，两种状态不能合并。
 4. 选择 `MasterDetail/DetailPanel`，调整选中牌组的摘要和最多四张核心卡。
@@ -1263,9 +1289,10 @@ Godot UI 修改先判断节点属于哪一种布局：
 4. 打开 `res://ui/dialogs/privacy_panel.tscn` 修改本地热座隐私交接提示。
 5. 设置是前台 surface；暂停、选择和隐私是战斗 surface。不要因为共用外壳就给后者套前台 Theme。
 6. 这些面板大多是 `VBoxContainer` 根节点，优先改 `custom_minimum_size`、separation 和子节点最小高度。
-7. 通用弹窗外壳在 `res://scenes/main/main.tscn` 的 `ModalLayer`，尺寸、遮罩、可取消性和初始焦点
-   由调用处的 `ModalSpec.frontend(...)` / `ModalSpec.battle(...)` 决定。
-8. 内容改完后先在 Workbench 切换“设置”“选择”“能量分配”，再按 `F5` 检查真实弹窗 Theme 与返回键。
+7. 通用弹窗外壳在 `res://scenes/main/main.tscn` 的 `ModalLayer`，尺寸、遮罩与可取消性由调用处的
+   `ModalSpec.frontend(...)` / `ModalSpec.battle(...)` 决定。
+8. 内容改完后先在 Workbench 切换“设置”“选择”“能量分配”，再按 `F5` 检查真实弹窗 Theme、
+   鼠标/触控按钮和移动端系统返回手势/返回键。
 
 弹窗按钮的“确认”“取消”“关闭”通常由 `Main` 的通用 ModalLayer 管理。面板内容负责显示字段，
 不要在面板场景里直接写保存设置、提交选择或关闭对局的规则。
@@ -1288,7 +1315,8 @@ Godot UI 修改先判断节点属于哪一种布局：
    `res://ui/frontend/front_end_theme.tres`；战斗 HUD 与战斗弹窗使用 `res://ui/game_theme.tres`。
 2. 在 Inspector 中选择 Button、Label、PanelContainer、OptionButton 等类型，再选择或修改对应
    Theme Type Variation。
-3. 修改字体大小、颜色、StyleBox、圆角、边框或默认间距，并补齐 hover、pressed、focus、disabled。
+3. 修改字体大小、颜色、StyleBox、圆角、边框或默认间距，并补齐 hover、pressed、disabled；
+   LineEdit 还要保留点击或轻触后的清晰编辑态。
 4. 保存后运行 Workbench，切换同一 surface 的多个页面确认影响范围。
 5. 修改前台 Theme 后运行 `test_godot.ps1` 的隔离检查，并人工打开一次战斗预览，确认 HUD 未变化。
 6. 如果只想改单个控件，优先选用已有语义 variation；仍无法表达时再做局部 Theme Override。

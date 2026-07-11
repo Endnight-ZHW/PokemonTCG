@@ -250,10 +250,11 @@ text = "弹窗标题"
 horizontal_alignment = 1
 
 [node name="Scroll" type="ScrollContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content" unique_id=359460659]
+focus_mode = 0
 custom_minimum_size = Vector2(0, 420)
 layout_mode = 2
 size_flags_vertical = 3
-follow_focus = true
+follow_focus = false
 horizontal_scroll_mode = 0
 
 [node name="ModalBody" type="VBoxContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content/Scroll" unique_id=911316083]
@@ -265,6 +266,7 @@ size_flags_horizontal = 3
 layout_mode = 2
 
 [node name="ModalCancel" type="Button" parent="ModalLayer/Center/ModalPanel/Margin/Content/Buttons" unique_id=449841188]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2
@@ -272,6 +274,7 @@ size_flags_horizontal = 3
 text = "取消"
 
 [node name="ModalConfirm" type="Button" parent="ModalLayer/Center/ModalPanel/Margin/Content/Buttons" unique_id=1700667779]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 54)
 layout_mode = 2

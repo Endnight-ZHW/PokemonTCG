@@ -1469,7 +1469,7 @@ func _ensure_detail_close_button() -> void:
 	detail_close_button.tooltip_text = "关闭卡牌详情"
 	detail_close_button.accessibility_name = "关闭卡牌详情"
 	detail_close_button.custom_minimum_size = Vector2(48.0, 48.0)
-	detail_close_button.focus_mode = Control.FOCUS_ALL
+	detail_close_button.focus_mode = Control.FOCUS_NONE
 	detail_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	detail_close_button.visible = false
 	detail_close_button.z_index = 36

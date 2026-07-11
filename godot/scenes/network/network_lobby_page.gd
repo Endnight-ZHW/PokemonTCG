@@ -99,7 +99,6 @@ func _ready() -> void:
 	status_label.set("accessibility_live", 1)
 	resized.connect(_apply_responsive_layout)
 	_apply_responsive_layout()
-	call_deferred("_focus_initial_control")
 
 
 func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> void:
@@ -179,6 +178,8 @@ func _resolve_nodes() -> void:
 	room_error = room_row.get_node("RoomError") as Label
 	deck_option = form.get_node("NetworkDeckOption") as OptionButton
 	deck_label = form.get_node("DeckLabel") as Label
+	for option in [kind_option, role_option, deck_option]:
+		option.get_popup().allow_search = false
 	status_panel = page.get_node("StatusPanel") as PanelContainer
 	var status_content := status_panel.get_node("StatusMargin/StatusContent") as HBoxContainer
 	status_dot = status_content.get_node("StatusDot") as Label
@@ -319,7 +320,6 @@ func refresh_fields(_selected: int) -> void:
 	_refresh_intro_role_copy()
 	_clear_validation()
 	_apply_compact_step_visibility()
-	_rebuild_focus_neighbors()
 
 
 func _refresh_intro_role_copy() -> void:
@@ -426,19 +426,6 @@ func set_connection_state(
 		}.get(state, "处理中…"))
 	elif not locked:
 		connect_button.text = "创建房间" if selected_role() == "host" else "加入房间"
-	_rebuild_focus_neighbors()
-	_repair_focus_after_state_change()
-	if (
-		state == ConnectionState.ERROR
-		and previous_state in [
-			ConnectionState.VALIDATING,
-			ConnectionState.CONNECTING,
-			ConnectionState.WAITING,
-			ConnectionState.CONNECTED,
-		]
-		and connect_button.is_visible_in_tree()
-	):
-		connect_button.grab_focus.call_deferred()
 
 
 func _clear_room_code() -> void:
@@ -502,12 +489,11 @@ func _validate_form() -> bool:
 	if first_invalid:
 		if _compact:
 			if first_invalid == role_option:
-				_set_compact_step(0, false)
+				_set_compact_step(0)
 			elif first_invalid == deck_option:
-				_set_compact_step(2, false)
+				_set_compact_step(2)
 			else:
-				_set_compact_step(1, false)
-		first_invalid.grab_focus.call_deferred()
+				_set_compact_step(1)
 	return first_invalid == null
 
 
@@ -530,8 +516,6 @@ func _copy_room_code() -> void:
 func _apply_responsive_layout() -> void:
 	if not is_node_ready() or page == null:
 		return
-	var focus_owner := get_viewport().gui_get_focus_owner() if is_inside_tree() else null
-	var owned_focus_before := focus_owner != null and is_ancestor_of(focus_owner)
 	_compact = (
 		size.y < 840.0
 		or size.x < COMPACT_WIDTH
@@ -551,9 +535,6 @@ func _apply_responsive_layout() -> void:
 	for side in ["left", "right"]:
 		page_margin.add_theme_constant_override("margin_" + side, margin)
 	_apply_compact_step_visibility()
-	_rebuild_focus_neighbors()
-	if owned_focus_before:
-		call_deferred("_repair_focus_after_layout")
 
 
 func handle_back() -> bool:
@@ -575,19 +556,9 @@ func _show_next_compact_step() -> void:
 	_set_compact_step(_compact_step + 1)
 
 
-func _set_compact_step(value: int, focus_step: bool = true) -> void:
+func _set_compact_step(value: int) -> void:
 	_compact_step = clampi(value, 0, 2)
 	_apply_compact_step_visibility()
-	_rebuild_focus_neighbors()
-	if not focus_step:
-		return
-	var target: Control = kind_option
-	if _compact_step == 1:
-		target = address_input
-	elif _compact_step == 2:
-		target = deck_option
-	if target and target.is_visible_in_tree():
-		target.grab_focus.call_deferred()
 
 
 func _apply_compact_step_visibility() -> void:
@@ -616,88 +587,6 @@ func _apply_compact_step_visibility() -> void:
 	][_compact_step]
 	compact_previous_button.visible = _compact_step > 0
 	compact_next_button.visible = _compact_step < 2
-
-
-func _focus_initial_control() -> void:
-	if kind_option and kind_option.visible and not kind_option.disabled:
-		kind_option.grab_focus()
-
-
-func _rebuild_focus_neighbors() -> void:
-	var controls: Array[Control] = [back_button]
-	if (
-		compact_step_bar.visible
-		and compact_previous_button.visible
-		and not compact_previous_button.disabled
-	):
-		controls.append(compact_previous_button)
-	if kind_option.visible and not kind_option.disabled:
-		controls.append(kind_option)
-	if role_option.visible and not role_option.disabled:
-		controls.append(role_option)
-	if address_input.visible and address_input.get_parent().visible and address_input.editable:
-		controls.append(address_input)
-	if port_row.visible and port_input.editable:
-		controls.append(port_input)
-	if room_row.visible and room_input.editable:
-		controls.append(room_input)
-	if deck_option.visible and not deck_option.disabled:
-		controls.append(deck_option)
-	if (
-		compact_step_bar.visible
-		and compact_next_button.visible
-		and not compact_next_button.disabled
-	):
-		controls.append(compact_next_button)
-	if connect_button.visible and not connect_button.disabled:
-		controls.append(connect_button)
-	if room_code_display.visible:
-		controls.append(room_code_display)
-	if copy_room_button.visible:
-		controls.append(copy_room_button)
-	if controls.is_empty():
-		return
-	for index in range(controls.size()):
-		var control := controls[index]
-		control.focus_neighbor_top = control.get_path_to(controls[posmod(index - 1, controls.size())])
-		control.focus_neighbor_bottom = control.get_path_to(controls[(index + 1) % controls.size()])
-		control.focus_next = control.focus_neighbor_bottom
-		control.focus_previous = control.focus_neighbor_top
-
-
-func _repair_focus_after_state_change() -> void:
-	if not is_inside_tree():
-		return
-	var owner := get_viewport().gui_get_focus_owner()
-	if owner == null or not is_ancestor_of(owner):
-		return
-	var usable := owner.is_visible_in_tree()
-	if owner is BaseButton:
-		usable = usable and not (owner as BaseButton).disabled
-	elif owner is LineEdit and owner != room_code_display:
-		usable = usable and (owner as LineEdit).editable
-	if usable:
-		return
-	var target: Control = copy_room_button if copy_room_button.visible else back_button
-	target.grab_focus.call_deferred()
-
-
-func _repair_focus_after_layout() -> void:
-	if not is_inside_tree():
-		return
-	var owner := get_viewport().gui_get_focus_owner()
-	if owner and is_ancestor_of(owner) and owner.is_visible_in_tree():
-		return
-	var target: Control = back_button
-	if _compact:
-		if _compact_step == 0 and kind_option.is_visible_in_tree():
-			target = kind_option
-		elif _compact_step == 1 and address_input.is_visible_in_tree():
-			target = address_input
-		elif _compact_step == 2 and deck_option.is_visible_in_tree():
-			target = deck_option
-	if target:
-		target.grab_focus()
 
 
 func _play_enter_motion() -> void:

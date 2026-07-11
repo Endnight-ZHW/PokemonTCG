@@ -109,6 +109,7 @@ horizontal_alignment = 1
 autowrap_mode = 2
 
 [node name="PhaseAdvanceButton" type="Button" parent="PhasePanel/Content"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
@@ -118,6 +119,7 @@ text = "进入下一阶段"
 autowrap_mode = 2
 
 [node name="AllActionsButton" type="Button" parent="PhasePanel/Content"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2

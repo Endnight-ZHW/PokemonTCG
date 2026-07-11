@@ -16,19 +16,14 @@ var surface := Surface.FRONTEND
 var opaque_shade := false
 var shade_alpha := 0.72
 var cancellable := true
-var initial_focus: Control
 var stack_behavior := StackBehavior.REPLACE
 
 
-static func frontend(
-	size: Vector2 = Vector2(820, 680),
-	focus: Control = null,
-) -> ModalSpec:
+static func frontend(size: Vector2 = Vector2(820, 680)) -> ModalSpec:
 	var spec := ModalSpec.new()
 	spec.preferred_size = size
 	spec.surface = Surface.FRONTEND
 	spec.shade_alpha = 0.72
-	spec.initial_focus = focus
 	return spec
 
 

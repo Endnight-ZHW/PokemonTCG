@@ -4,7 +4,7 @@
 [ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
 [ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3_backdrop"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/trophy.svg" id="4_trophy"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/gamepad.svg" id="5_gamepad"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/play.svg" id="5_play"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/deck.svg" id="6_deck"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/refresh.svg" id="7_refresh"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_left.svg" id="8_arrow_left"]
@@ -248,7 +248,7 @@ theme_override_constants/separation = 12
 [node name="ModeIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow"]
 custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
-texture = ExtResource("5_gamepad")
+texture = ExtResource("5_play")
 expand_mode = 1
 stretch_mode = 5
 
@@ -337,6 +337,7 @@ theme_override_constants/separation = 14
 alignment = 1
 
 [node name="RematchButton" type="Button" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/Buttons"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(248, 56)
 layout_mode = 2
@@ -346,6 +347,7 @@ text = "再次选择牌组"
 icon = ExtResource("6_deck")
 
 [node name="TitleButton" type="Button" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/Buttons"]
+focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(218, 56)
 layout_mode = 2
@@ -359,7 +361,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
 theme_override_font_sizes/font_size = 14
-text = "Enter 确认主操作 · Tab 切换焦点"
+text = "点击或轻触按钮继续"
 horizontal_alignment = 1
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
