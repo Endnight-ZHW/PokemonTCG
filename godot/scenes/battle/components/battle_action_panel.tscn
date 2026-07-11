@@ -50,7 +50,7 @@ text = "全部动作"
 
 [node name="AllActionsToggle" type="Button" parent="Margin/Content/Heading"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 text = "收起"
 

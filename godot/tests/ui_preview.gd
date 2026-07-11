@@ -35,6 +35,19 @@ func _render_previews() -> void:
 	if not _capture("title.png"):
 		_finish(1)
 		return
+	root.size = Vector2i(1280, 720)
+	await _settle_frontend(3)
+	if not _capture("title-1280x720.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	_set_preview_quality("low")
+	await _settle_frontend(3)
+	if not _capture("title-low-reduced.png"):
+		_finish(1)
+		return
+	_set_preview_quality("high")
+	await _settle_frontend(3)
 	ui._show_help()
 	await _settle_frontend()
 	if not _capture("help.png"):
@@ -42,6 +55,12 @@ func _render_previews() -> void:
 		return
 	ui._close_modal()
 	await _settle_frontend(2)
+
+	ui.show_network_setup("lan")
+	await _settle_frontend()
+	if not _capture("network-lan.png"):
+		_finish(1)
+		return
 
 	ui.show_network_setup("relay")
 	await _settle_frontend()
@@ -188,7 +207,7 @@ func _render_previews() -> void:
 	demo.players[0].active = PokemonState.new("svi-hrot")
 	demo.players[0].active.placed_this_turn = false
 	demo.players[0].active.energy_card_ids.assign([
-		"sv1-ener-2", "sv1-ener-2", "svi-mirc",
+		"sv1-ener-2", "sv1-ener-2", "svi-mirc", "svg2-lume",
 	])
 	demo.players[0].active.damage_counters = 2
 	demo.players[0].active.attached_tool_id = "sv1-202"
@@ -555,11 +574,27 @@ func _enable_deterministic_preview_mode() -> bool:
 		true,
 		int(_settings_snapshot.card_cache_size),
 		"reduced",
-		str(_settings_snapshot.quality_profile),
+		"high",
 		float(_settings_snapshot.music_volume),
 		float(_settings_snapshot.sfx_volume),
 	)
 	return true
+
+
+func _set_preview_quality(profile: String) -> void:
+	if _settings_node == null:
+		return
+	_settings_node.call(
+		"update",
+		float(_settings_node.get("master_volume")),
+		bool(_settings_node.get("muted")),
+		true,
+		int(_settings_node.get("card_cache_size")),
+		"reduced",
+		profile,
+		float(_settings_node.get("music_volume")),
+		float(_settings_node.get("sfx_volume")),
+	)
 
 
 func _restore_preview_settings() -> void:

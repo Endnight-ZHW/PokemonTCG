@@ -394,8 +394,8 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                         from engine.commands.trigger_commands import trigger_draw_cards_spec
 
                         return {
-                            "source": "奇迹能量",
-                            "command_specs": [trigger_draw_cards_spec(player_idx, 1, "奇迹能量")],
+                            "source": "幸运能量",
+                            "command_specs": [trigger_draw_cards_spec(player_idx, 1, "幸运能量")],
                         }
             return None
         _register_mbf_hook(

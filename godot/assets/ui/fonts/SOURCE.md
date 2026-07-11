@@ -11,5 +11,9 @@ variable TrueType font from the official Noto CJK Sans 2.004 release.
 - License: SIL Open Font License 1.1; see `OFL.txt` in this directory.
 
 The project exposes the variable `wght` axis through Regular (400), Medium
-(500), and Bold (700) `FontVariation` resources. The TTF build is used instead
-of the CFF2 OTF build for reliable rendering on Windows.
+(500), Semibold (600), and Bold (700) `FontVariation` resources. Compact UI
+body text and HUD labels use Semibold, controls and headings use Bold, while
+long-form rich text remains Medium. The TTF build is used instead of the CFF2
+OTF build for reliable rendering on Windows. Godot stores the axis with the
+integer OpenType tag `0x77676874` (`2003265652`); using a string `"wght"` key
+does not select the axis and falls back to this font's Thin 100 default.

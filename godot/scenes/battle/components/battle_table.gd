@@ -137,7 +137,10 @@ func initialize_ui() -> void:
 	if not AppSettings.changed.is_connected(_apply_runtime_settings):
 		AppSettings.changed.connect(_apply_runtime_settings)
 	_apply_runtime_settings()
-	resized.connect(_layout_board)
+	if not resized.is_connected(_layout_board):
+		resized.connect(_layout_board)
+	if board_canvas != null and not board_canvas.resized.is_connected(_layout_board):
+		board_canvas.resized.connect(_layout_board)
 	call_deferred("_layout_board")
 	if not AppSettings.reduced_motion:
 		animation_player.play("enter")
@@ -1260,10 +1263,10 @@ func _layout_overlay_drawers() -> void:
 		)
 		var close_width := detail_panel.size.x if detail_panel else drawer_width
 		detail_close_button.position = Vector2(
-			close_anchor.x + close_width - 34.0,
+			close_anchor.x + close_width - 54.0,
 			close_anchor.y + 6.0,
 		)
-		detail_close_button.size = Vector2(28.0, 28.0)
+		detail_close_button.size = Vector2(48.0, 48.0)
 
 
 func _detail_drawer_rect(
@@ -1462,13 +1465,15 @@ func _ensure_detail_close_button() -> void:
 		return
 	detail_close_button = Button.new()
 	detail_close_button.name = "DetailCloseButton"
-	detail_close_button.text = "X"
+	detail_close_button.text = "×"
 	detail_close_button.tooltip_text = "关闭卡牌详情"
-	detail_close_button.focus_mode = Control.FOCUS_NONE
+	detail_close_button.accessibility_name = "关闭卡牌详情"
+	detail_close_button.custom_minimum_size = Vector2(48.0, 48.0)
+	detail_close_button.focus_mode = Control.FOCUS_ALL
 	detail_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	detail_close_button.visible = false
 	detail_close_button.z_index = 36
-	detail_close_button.add_theme_font_size_override("font_size", 14)
+	detail_close_button.add_theme_font_size_override("font_size", 18)
 	detail_close_button.add_theme_color_override("font_color", DesignTokens.TEXT)
 	detail_close_button.add_theme_stylebox_override(
 		"normal",

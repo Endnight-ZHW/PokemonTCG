@@ -6,6 +6,7 @@ var floating_texts: Array[Dictionary] = []
 var quality_profile := "high"
 const MAX_PARTICLES := 220
 const MAX_FLOATING_TEXTS := 18
+const FLOATING_TEXT_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres")
 
 
 func _ready() -> void:
@@ -104,7 +105,7 @@ func _draw() -> void:
 		var alpha := clampf(float(row["life"]) / float(row["total"]), 0.0, 1.0)
 		var color: Color = row["color"]
 		color.a = alpha
-		var font := ThemeDB.fallback_font
+		var font := FLOATING_TEXT_FONT
 		var text := str(row["text"])
 		var position_value: Vector2 = row["position"]
 		var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x

@@ -1,62 +1,101 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=21 format=3]
 
 [ext_resource type="Script" path="res://scenes/title/title_page.gd" id="1_page"]
 [ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
-[ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3_backdrop"]
-[ext_resource type="Texture2D" path="res://assets/app_icon.svg" id="4_app_icon"]
+[ext_resource type="PackedScene" path="res://ui/frontend/title_backdrop.tscn" id="3_backdrop"]
+[ext_resource type="Script" path="res://ui/frontend/title_mode_button.gd" id="4_mode_button"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/users.svg" id="5_users"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/robot.svg" id="6_robot"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/sparkles.svg" id="7_sparkles"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/globe.svg" id="8_globe"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/lan.svg" id="9_lan"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/network.svg" id="10_network"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/settings.svg" id="11_settings"]
-[ext_resource type="Texture2D" path="res://assets/ui/icons/help.svg" id="12_help"]
-[ext_resource type="Texture2D" path="res://assets/cards/svl-pikaex.webp" id="13_card_pika"]
-[ext_resource type="Texture2D" path="res://assets/cards/svg-alt.webp" id="14_card_alt"]
-[ext_resource type="Texture2D" path="res://assets/cards/svi-maus.webp" id="15_card_maus"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/network.svg" id="7_network"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/settings.svg" id="8_settings"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/help.svg" id="9_help"]
+[ext_resource type="Texture2D" path="res://assets/cards/svg2-tort.webp" id="10_grass"]
+[ext_resource type="Texture2D" path="res://assets/cards/sv2-grex.webp" id="11_water"]
+[ext_resource type="Texture2D" path="res://assets/cards/svi-ente.webp" id="12_fire"]
 
-[sub_resource type="Animation" id="Animation_reset"]
-resource_name = "RESET"
-length = 0.001
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("SafeContent/PageFrame:modulate")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
-tracks/1/type = "value"
-tracks/1/imported = false
-tracks/1/enabled = true
-tracks/1/path = NodePath("SafeContent/PageFrame:scale")
-tracks/1/interp = 1
-tracks/1/loop_wrap = true
-tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Vector2(1, 1)]}
+[sub_resource type="StyleBoxFlat" id="OrbGrass"]
+bg_color = Color(0.333, 0.725, 0.416, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0.08, 0.31, 0.18, 0.32)
+shadow_size = 4
 
-[sub_resource type="Animation" id="Animation_enter"]
-resource_name = "enter"
-length = 0.28
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("SafeContent/PageFrame:modulate")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {"times": PackedFloat32Array(0, 0.28), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
-tracks/1/type = "value"
-tracks/1/imported = false
-tracks/1/enabled = true
-tracks/1/path = NodePath("SafeContent/PageFrame:scale")
-tracks/1/interp = 1
-tracks/1/loop_wrap = true
-tracks/1/keys = {"times": PackedFloat32Array(0, 0.28), "transitions": PackedFloat32Array(0.72, 1), "update": 0, "values": [Vector2(0.985, 0.985), Vector2(1, 1)]}
+[sub_resource type="StyleBoxFlat" id="OrbFire"]
+bg_color = Color(0.937, 0.396, 0.278, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0.42, 0.12, 0.06, 0.32)
+shadow_size = 4
 
-[sub_resource type="AnimationLibrary" id="AnimationLibrary_title"]
-_data = {
-&"RESET": SubResource("Animation_reset"),
-&"enter": SubResource("Animation_enter")
-}
+[sub_resource type="StyleBoxFlat" id="OrbWater"]
+bg_color = Color(0.282, 0.655, 0.91, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0.05, 0.24, 0.46, 0.32)
+shadow_size = 4
+
+[sub_resource type="StyleBoxFlat" id="OrbLightning"]
+bg_color = Color(0.941, 0.812, 0.302, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0.40, 0.29, 0.03, 0.30)
+shadow_size = 4
+
+[sub_resource type="StyleBoxFlat" id="OrbPsychic"]
+bg_color = Color(0.71, 0.416, 0.765, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0.29, 0.08, 0.39, 0.30)
+shadow_size = 4
+
+[sub_resource type="StyleBoxFlat" id="OrbMetal"]
+bg_color = Color(0.682, 0.718, 0.761, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0.14, 0.20, 0.28, 0.30)
+shadow_size = 4
 
 [node name="TitlePage" type="Control"]
 layout_mode = 3
@@ -66,17 +105,17 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("2_theme")
-editor_description = "前台标题与模式选择页面。宽屏使用 Hero + 2×2 模式卡，窄宿主自动压缩为品牌条 + 2×2。"
+editor_description = "明亮竞技场式标题页。首页仅保留本地、AI、联机三入口，具体 AI/网络类型在下一页选择。"
 script = ExtResource("1_page")
 
-[node name="FrontendBackdrop" parent="." instance=ExtResource("3_backdrop")]
+[node name="EmbeddedBackdrop" parent="." instance=ExtResource("3_backdrop")]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-variant = "title"
 
 [node name="SafeContent" type="MarginContainer" parent="."]
 unique_name_in_owner = true
@@ -86,358 +125,315 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 28
-theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 28
-theme_override_constants/margin_bottom = 24
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 10
 
 [node name="PageFrame" type="VBoxContainer" parent="SafeContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 18
+theme_override_constants/separation = 10
 
-[node name="HeaderPanel" type="PanelContainer" parent="SafeContent/PageFrame"]
+[node name="HeaderPanel" type="Control" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 64)
+custom_minimum_size = Vector2(0, 182)
 layout_mode = 2
-theme_type_variation = &"FrontSectionPanel"
-
-[node name="HeaderMargin" type="MarginContainer" parent="SafeContent/PageFrame/HeaderPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 7
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 7
-
-[node name="HeaderRow" type="HBoxContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin"]
-layout_mode = 2
-theme_override_constants/separation = 12
-alignment = 1
-
-[node name="BrandIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
-custom_minimum_size = Vector2(38, 38)
-layout_mode = 2
-texture = ExtResource("4_app_icon")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="BrandCopy" type="VBoxContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
-layout_mode = 2
-theme_override_constants/separation = 0
-alignment = 1
-
-[node name="BrandName" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow/BrandCopy"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "POKÉMON TCG TABLE"
-
-[node name="HeaderTag" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow/BrandCopy"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
-text = "MODERN TABLETOP EDITION"
-
-[node name="HeaderSpacer" type="Control" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
-layout_mode = 2
-size_flags_horizontal = 3
 mouse_filter = 2
 
-[node name="VersionLabel" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
+[node name="HeaderContent" type="VBoxContainer" parent="SafeContent/PageFrame/HeaderPanel"]
 unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 3
+alignment = 1
+
+[node name="TitleStack" type="Control" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 104)
 layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
-text = "Client 0.0.0 · Rules v0 · Protocol v0"
+mouse_filter = 2
+
+[node name="TitleShadow" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TitleStack"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 7.0
+offset_bottom = 7.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"TitleLogoLabel"
+theme_override_colors/font_color = Color(0.055, 0.173, 0.388, 1)
+theme_override_colors/font_outline_color = Color(0.027, 0.102, 0.271, 0.96)
+theme_override_constants/outline_size = 13
+theme_override_font_sizes/font_size = 78
+text = "宝可梦卡牌对战"
+horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="SettingsButton" type="Button" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
+[node name="TitleLabel" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TitleStack"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(112, 48)
-layout_mode = 2
-theme_type_variation = &"FrontGhostButton"
-tooltip_text = "调整音频、动效、辅助功能和画质"
-text = "设置"
-icon = ExtResource("11_settings")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"TitleLogoLabel"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0.36, 0.78, 1, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 78
+text = "宝可梦卡牌对战"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="HelpButton" type="Button" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
+[node name="BrandSubtitle" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(122, 48)
 layout_mode = 2
-theme_type_variation = &"FrontGhostButton"
-tooltip_text = "查看规则、回合流程和联机帮助"
-text = "玩法帮助"
-icon = ExtResource("12_help")
+mouse_filter = 2
+theme_type_variation = &"TitleSubtitleLabel"
+theme_override_font_sizes/font_size = 18
+text = "P T C G  ·  TABLETOP EDITION"
+horizontal_alignment = 1
+
+[node name="TypeOrbsCenter" type="CenterContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+
+[node name="TypeOrbs" type="HBoxContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="GrassOrb" type="Panel" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("OrbGrass")
+
+[node name="FireOrb" type="Panel" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("OrbFire")
+
+[node name="WaterOrb" type="Panel" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("OrbWater")
+
+[node name="LightningOrb" type="Panel" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("OrbLightning")
+
+[node name="PsychicOrb" type="Panel" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("OrbPsychic")
+
+[node name="MetalOrb" type="Panel" parent="SafeContent/PageFrame/HeaderPanel/HeaderContent/TypeOrbsCenter/TypeOrbs"]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("OrbMetal")
 
 [node name="BodyGrid" type="GridContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/h_separation = 24
-theme_override_constants/v_separation = 24
+theme_override_constants/h_separation = 34
+theme_override_constants/v_separation = 12
 columns = 2
 
-[node name="HeroPanel" type="PanelContainer" parent="SafeContent/PageFrame/BodyGrid"]
+[node name="HeroPanel" type="Control" parent="SafeContent/PageFrame/BodyGrid"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(430, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_type_variation = &"FrontRaisedPanel"
+size_flags_stretch_ratio = 0.46
+mouse_filter = 2
 
-[node name="HeroMargin" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
+[node name="CardStage" type="Control" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/margin_left = 32
-theme_override_constants/margin_top = 28
-theme_override_constants/margin_right = 32
-theme_override_constants/margin_bottom = 28
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="HeroContent" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin"]
+[node name="GrassCardShadow" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 12
-alignment = 1
+layout_mode = 0
+texture_filter = 4
+mouse_filter = 2
+self_modulate = Color(0.025, 0.09, 0.20, 0.42)
+texture = ExtResource("10_grass")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="HeroEyebrow" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+[node name="WaterCardShadow" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 15
-text = "BUILD YOUR DECK · TAKE THE TABLE"
+layout_mode = 0
+texture_filter = 4
+mouse_filter = 2
+self_modulate = Color(0.025, 0.09, 0.20, 0.42)
+texture = ExtResource("11_water")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="TitleLabel" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+[node name="FireCardShadow" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontHeadingLabel"
-theme_override_font_sizes/font_size = 54
-text = "宝可梦卡牌对战"
-autowrap_mode = 2
+layout_mode = 0
+texture_filter = 4
+mouse_filter = 2
+self_modulate = Color(0.025, 0.09, 0.20, 0.42)
+texture = ExtResource("12_fire")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="HeroSubtitle" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+[node name="GrassCard" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "真实卡图 · 原生规则 · 离线 AI · 跨平台联机"
-autowrap_mode = 2
+layout_mode = 0
+texture_filter = 4
+mouse_filter = 2
+texture = ExtResource("10_grass")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="HeroDescription" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+[node name="WaterCard" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 16
-text = "从第一张起手牌开始，在现代实体牌桌上完成每一次抽牌、进化与攻击。"
-autowrap_mode = 2
+layout_mode = 0
+texture_filter = 4
+mouse_filter = 2
+texture = ExtResource("11_water")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="FeatureRow" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+[node name="FireCard" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/CardStage"]
+unique_name_in_owner = true
+layout_mode = 0
+texture_filter = 4
+mouse_filter = 2
+texture = ExtResource("12_fire")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ModesPanel" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(470, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.54
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="ModeStack" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 18
-
-[node name="RulesFeature" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/FeatureRow"]
-layout_mode = 2
-theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 14
-text = "◆ 原生规则"
-
-[node name="OfflineFeature" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/FeatureRow"]
-layout_mode = 2
-theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 14
-text = "◆ 离线可玩"
-
-[node name="CrossFeature" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/FeatureRow"]
-layout_mode = 2
-theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 14
-text = "◆ 跨平台"
-
-[node name="HeroSpacer" type="Control" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
-custom_minimum_size = Vector2(0, 8)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="HeroMosaic" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 12
 alignment = 1
 
-[node name="FeatureCardLeft" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/HeroMosaic"]
-custom_minimum_size = Vector2(112, 158)
-layout_mode = 2
-texture = ExtResource("14_card_alt")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FeatureCardCenter" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/HeroMosaic"]
-custom_minimum_size = Vector2(132, 186)
-layout_mode = 2
-texture = ExtResource("13_card_pika")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="FeatureCardRight" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/HeroMosaic"]
-custom_minimum_size = Vector2(112, 158)
-layout_mode = 2
-texture = ExtResource("15_card_maus")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="ModesPanel" type="PanelContainer" parent="SafeContent/PageFrame/BodyGrid"]
+[node name="LocalTwoPlayerButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 116)
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_type_variation = &"FrontRaisedPanel"
+focus_mode = 2
+accessibility_name = "本地对战，同屏交接，完整规则"
+script = ExtResource("4_mode_button")
+title_text = "本地对战"
+subtitle_text = "同屏交接 · 完整规则"
+mode_icon = ExtResource("5_users")
+accent_color = Color(0.55, 0.83, 1, 1)
+fill_color = Color(0.075, 0.31, 0.66, 1)
+foreground_color = Color(1, 1, 1, 1)
 
-[node name="ModesMargin" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
+[node name="AIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 22
-theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 22
-
-[node name="ModesContent" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="ModesHeading" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent"]
-layout_mode = 2
-theme_type_variation = &"FrontHeadingLabel"
-theme_override_font_sizes/font_size = 28
-text = "选择对战方式"
-
-[node name="ModesSubheading" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 15
-text = "四种入口共享同一套规则引擎，随时换一种方式上桌。"
-
-[node name="ModeGrid" type="GridContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/h_separation = 16
-theme_override_constants/v_separation = 16
-columns = 2
-
-[node name="LocalTwoPlayerButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 176)
+custom_minimum_size = Vector2(0, 116)
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_type_variation = &"FrontModeTileButton"
-tooltip_text = "同一设备上由两位玩家轮流操作"
-text = "本地双人\n同屏交接 · 完整规则"
-icon = ExtResource("5_users")
-alignment = 0
-icon_alignment = 0
+focus_mode = 2
+accessibility_name = "挑战 AI，可选择稳健策略或深度搜索"
+script = ExtResource("4_mode_button")
+title_text = "挑战 AI"
+subtitle_text = "稳健策略或深度搜索"
+mode_icon = ExtResource("6_robot")
+accent_color = Color(1, 0.88, 0.48, 1)
+fill_color = Color(0.90, 0.68, 0.15, 1)
+foreground_color = Color(0.04, 0.13, 0.29, 1)
 
-[node name="ChallengeAIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
+[node name="NetworkButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModeStack"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 176)
+custom_minimum_size = Vector2(0, 116)
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_type_variation = &"FrontModeTileButton"
-tooltip_text = "与稳健的 Challenge AI 对战"
-text = "Challenge AI\n稳健策略 · 适合热身"
-icon = ExtResource("6_robot")
-alignment = 0
-icon_alignment = 0
+focus_mode = 2
+accessibility_name = "联机对战，可选择 LAN 或 Relay"
+script = ExtResource("4_mode_button")
+title_text = "联机对战"
+subtitle_text = "LAN 或 Relay 联机"
+mode_icon = ExtResource("7_network")
+accent_color = Color(0.84, 0.65, 1, 1)
+fill_color = Color(0.41, 0.18, 0.69, 1)
+foreground_color = Color(1, 1, 1, 1)
 
-[node name="DeepAIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
+[node name="FooterRow" type="HBoxContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 176)
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="SettingsButton" type="Button" parent="SafeContent/PageFrame/FooterRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(116, 48)
+layout_mode = 2
+theme_type_variation = &"TitleUtilityButton"
+tooltip_text = "调整音频、动效、辅助功能和画质"
+text = "设置"
+icon = ExtResource("8_settings")
+
+[node name="HelpButton" type="Button" parent="SafeContent/PageFrame/FooterRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(136, 48)
+layout_mode = 2
+theme_type_variation = &"TitleUtilityButton"
+tooltip_text = "查看规则、回合流程和联机帮助"
+text = "玩法帮助"
+icon = ExtResource("9_help")
+
+[node name="FooterSpacer" type="Control" parent="SafeContent/PageFrame/FooterRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_type_variation = &"FrontModeTileButton"
-tooltip_text = "挑战使用深度搜索的高强度 AI"
-text = "Deep AI\n深度搜索 · 迎接挑战"
-icon = ExtResource("7_sparkles")
-alignment = 0
-icon_alignment = 0
-
-[node name="OnlineCard" type="PanelContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 176)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_type_variation = &"FrontSectionPanel"
-
-[node name="OnlineMargin" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/margin_left = 16
-theme_override_constants/margin_top = 13
-theme_override_constants/margin_right = 16
-theme_override_constants/margin_bottom = 13
-
-[node name="OnlineContent" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="OnlineHeader" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
-layout_mode = 2
-theme_override_constants/separation = 9
-
-[node name="OnlineIcon" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/OnlineHeader"]
-custom_minimum_size = Vector2(24, 24)
-layout_mode = 2
-texture = ExtResource("8_globe")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="OnlineTitle" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/OnlineHeader"]
-layout_mode = 2
-theme_type_variation = &"FrontSectionLabel"
-theme_override_font_sizes/font_size = 19
-text = "联机对战"
-
-[node name="OnlineDescription" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"FrontMutedLabel"
-theme_override_font_sizes/font_size = 14
-text = "同网络直连，或通过 Relay 跨网络开房。"
-autowrap_mode = 2
-
-[node name="NetworkSpacer" type="Control" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
-layout_mode = 2
-size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="NetworkRow" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="LANButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/NetworkRow"]
+[node name="VersionLabel" type="Label" parent="SafeContent/PageFrame/FooterRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 50)
+custom_minimum_size = Vector2(112, 48)
 layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"FrontSecondaryButton"
-tooltip_text = "在同一局域网中建立或加入对局"
-text = "LAN"
-icon = ExtResource("9_lan")
-
-[node name="RelayButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/NetworkRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 50)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"FrontPrimaryButton"
-tooltip_text = "通过 Relay 房间码跨网络联机"
-text = "Relay"
-icon = ExtResource("10_network")
-
-[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
-unique_name_in_owner = true
-libraries = {
-&"": SubResource("AnimationLibrary_title")
-}
+mouse_filter = 2
+theme_type_variation = &"TitleFooterLabel"
+text = "v0.0.0"
+horizontal_alignment = 2
+vertical_alignment = 1

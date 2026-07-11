@@ -15,10 +15,14 @@ const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
 const MAX_CONTENT_WIDTH := 1480.0
 const WIDE_MIN_WIDTH := 1360.0
 const WIDE_MIN_ASPECT := 1.5
+const MODE_LOCAL := "local"
+const MODE_CHALLENGE := "challenge"
+const MODE_DEEP := "deep"
 
 var catalog: CardCatalog
-var mode := "local"
+var mode := MODE_LOCAL
 
+@onready var ai_mode_option: OptionButton = %AIModeOption
 @onready var first_player_option: OptionButton = %FirstPlayerOption
 @onready var mode_description: Label = %ModeDescription
 
@@ -44,7 +48,9 @@ var mode := "local"
 @onready var detail_counts: Label = %DetailCounts
 @onready var detail_card_grid: GridContainer = %DetailCardGrid
 @onready var details_button: Button = %DetailsButton
-@onready var ai_settings: HBoxContainer = %AISettings
+@onready var action_content: BoxContainer = %ActionContent
+@onready var ai_settings: GridContainer = %AISettings
+@onready var ai_mode_label: Label = %AIModeLabel
 @onready var start_button: Button = %StartButton
 @onready var action_summary: Label = %ActionSummary
 @onready var action_margin: MarginContainer = %ActionMargin
@@ -70,23 +76,12 @@ func configure(p_catalog: CardCatalog, p_mode: String) -> void:
 	_resolve_nodes()
 	_ensure_connections()
 	catalog = p_catalog
-	mode = p_mode
+	mode = p_mode if p_mode in [MODE_LOCAL, MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
 	_deck_keys = DeckVisualCatalog.ordered_deck_keys(catalog)
 	_active_player_idx = 0
 	_compact_detail_visible = false
-	heading.text = (
-		"选择本地双人牌组"
-		if mode == "local"
-		else "选择 Challenge AI 牌组"
-		if mode == "challenge"
-		else "选择 Deep AI 牌组"
-	)
-	mode_description.text = (
-		"为两个玩家分别挑选牌组。允许双方使用同一套牌；交接回合时会自动保护手牌隐私。"
-		if mode == "local"
-		else "玩家固定为玩家 1，AI 为玩家 2。双方都只通过公开规则接口行动。"
-	)
-	player_two_slot_button.accessibility_name = "玩家 2 牌组" if mode == "local" else "AI 牌组"
+	_populate_ai_mode_options()
+	_refresh_mode_copy()
 	_populate_gallery()
 	_populate_first_player_options()
 	_selected_keys = [
@@ -98,10 +93,15 @@ func configure(p_catalog: CardCatalog, p_mode: String) -> void:
 	_refresh_all()
 	_configured = true
 	call_deferred("_apply_responsive_layout")
+	call_deferred("_repair_focus_after_layout")
 	call_deferred("_play_enter_animation")
 
 
 func _resolve_nodes() -> void:
+	ai_mode_option = get_node(
+		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/AIModeOption"
+	) as OptionButton
+	ai_mode_option.accessibility_name = "AI 类型"
 	first_player_option = get_node(
 		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/FirstPlayerOption"
 	) as OptionButton
@@ -139,10 +139,10 @@ func _resolve_nodes() -> void:
 		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailNav/DetailAssignment"
 	) as Label
 	detail_accent = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailAccent"
+		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow/DetailAccent"
 	) as ColorRect
 	detail_title = get_node(
-		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitle"
+		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow/DetailTitle"
 	) as Label
 	detail_tagline = get_node(
 		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTagline"
@@ -159,9 +159,15 @@ func _resolve_nodes() -> void:
 	details_button = get_node(
 		"ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailsButton"
 	) as Button
+	action_content = get_node(
+		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"
+	) as BoxContainer
 	ai_settings = get_node(
 		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"
-	) as HBoxContainer
+	) as GridContainer
+	ai_mode_label = get_node(
+		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/AIModeLabel"
+	) as Label
 	start_button = get_node(
 		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/StartButton"
 	) as Button
@@ -191,6 +197,8 @@ func _ensure_connections() -> void:
 		details_button.pressed.connect(_emit_active_deck_details)
 	if not start_button.pressed.is_connected(_emit_start_requested):
 		start_button.pressed.connect(_emit_start_requested)
+	if not ai_mode_option.item_selected.is_connected(_on_ai_mode_selected):
+		ai_mode_option.item_selected.connect(_on_ai_mode_selected)
 	if not resized.is_connected(_apply_responsive_layout):
 		resized.connect(_apply_responsive_layout)
 	if not detail_panel.resized.is_connected(_refresh_detail_columns):
@@ -251,10 +259,72 @@ func _populate_gallery() -> void:
 
 func _populate_first_player_options() -> void:
 	first_player_option.clear()
-	for row in [["先后手随机", -1], ["玩家 1 先攻", 0], ["AI 先攻", 1]]:
+	for row in [
+		["先后手随机", -1],
+		["玩家 1 先攻", 0],
+		["%s 先攻" % _second_slot_name(), 1],
+	]:
 		first_player_option.add_item(str(row[0]))
 		first_player_option.set_item_metadata(first_player_option.item_count - 1, row[1])
 	first_player_option.select(0)
+
+
+func _populate_ai_mode_options() -> void:
+	ai_mode_option.clear()
+	for row in [["Challenge AI", MODE_CHALLENGE], ["Deep AI", MODE_DEEP]]:
+		ai_mode_option.add_item(str(row[0]))
+		ai_mode_option.set_item_metadata(ai_mode_option.item_count - 1, row[1])
+	var target_mode := mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
+	for index in ai_mode_option.item_count:
+		if str(ai_mode_option.get_item_metadata(index)) == target_mode:
+			ai_mode_option.select(index)
+			break
+
+
+func _on_ai_mode_selected(index: int) -> void:
+	if index < 0 or index >= ai_mode_option.item_count:
+		return
+	var selected_mode := str(ai_mode_option.get_item_metadata(index))
+	if selected_mode not in [MODE_CHALLENGE, MODE_DEEP] or selected_mode == mode:
+		return
+	mode = selected_mode
+	_refresh_mode_copy()
+	_refresh_ai_slot_copy()
+
+
+func _refresh_mode_copy() -> void:
+	match mode:
+		MODE_LOCAL:
+			heading.text = "选择本地双人牌组"
+			mode_description.text = (
+				"为两个玩家分别挑选牌组。允许双方使用同一套牌；交接回合时会自动保护手牌隐私。"
+			)
+		MODE_DEEP:
+			heading.text = "选择 Deep AI 牌组"
+			mode_description.text = (
+				"Deep AI 会在开局时加载本地模型；模型不可用时会自动回退 Challenge AI。"
+			)
+		_:
+			heading.text = "选择 Challenge AI 牌组"
+			mode_description.text = (
+				"玩家固定为玩家 1，Challenge AI 为玩家 2；双方都只通过公开规则接口行动。"
+			)
+	player_two_slot_button.accessibility_name = "%s 牌组" % _second_slot_name()
+
+
+func _refresh_ai_slot_copy() -> void:
+	# Mode switching is intentionally copy-only: it must not rebuild the gallery,
+	# recreate detail cards, or reset deck/turn/focus/scroll state.
+	_refresh_slot_buttons()
+	_refresh_tiles()
+	if first_player_option.item_count >= 3:
+		first_player_option.set_item_text(2, "%s 先攻" % _second_slot_name())
+	var deck_key := selected_deck_key(_active_player_idx)
+	var deck := catalog.get_deck(deck_key) if catalog else {}
+	if not deck.is_empty():
+		detail_assignment.text = "正在配置 · %s" % (
+			"玩家 1" if _active_player_idx == 0 else _second_slot_name()
+		)
 
 
 func _on_deck_tile_pressed(deck_key: String) -> void:
@@ -382,7 +452,7 @@ func _refresh_start_state() -> void:
 		and not catalog.get_deck(_selected_keys[1]).is_empty()
 	)
 	start_button.disabled = not ready
-	ai_settings.visible = mode != "local"
+	ai_settings.visible = mode != MODE_LOCAL
 	action_summary.text = (
 		"%s  对战  %s" % [
 			_deck_display_name(_selected_keys[0]),
@@ -407,7 +477,7 @@ func _emit_start_requested() -> void:
 	if start_button.disabled:
 		return
 	var forced_first := -1
-	if mode != "local" and first_player_option.item_count > 0:
+	if mode != MODE_LOCAL and first_player_option.item_count > 0:
 		forced_first = int(first_player_option.get_item_metadata(
 			first_player_option.selected
 		))
@@ -454,8 +524,19 @@ func _apply_responsive_layout() -> void:
 		action_margin.add_theme_constant_override(
 			"margin_" + side, 4 if short_landscape else 10
 		)
-	start_button.custom_minimum_size.y = 50 if short_landscape else 54
-	first_player_option.custom_minimum_size.y = 48 if short_landscape else 50
+	start_button.custom_minimum_size = Vector2(192, 50 if short_landscape else 54)
+	var dense_action_layout := _compact and size.x < 680.0
+	action_content.vertical = dense_action_layout
+	ai_mode_label.visible = dense_action_layout
+	ai_settings.columns = 2 if dense_action_layout else 3
+	ai_mode_option.custom_minimum_size = Vector2(
+		180 if dense_action_layout else 150,
+		48 if short_landscape else 50,
+	)
+	first_player_option.custom_minimum_size = Vector2(
+		180,
+		48 if short_landscape else 50,
+	)
 	heading.add_theme_font_size_override("font_size", 26 if _compact else 32)
 	mode_description.max_lines_visible = 2 if _compact else -1
 	action_summary.visible = not _compact or size.x >= 900.0
@@ -535,7 +616,13 @@ func _deck_display_name(deck_key: String) -> String:
 
 
 func _second_slot_name() -> String:
-	return "玩家 2" if mode == "local" else "AI"
+	match mode:
+		MODE_LOCAL:
+			return "玩家 2"
+		MODE_DEEP:
+			return "Deep AI"
+		_:
+			return "Challenge AI"
 
 
 func _energy_display_name(energy_type: String) -> String:

@@ -229,7 +229,10 @@ func _layout_decorations() -> void:
 	if not is_node_ready() or size.x <= 0.0 or size.y <= 0.0:
 		return
 	var compact := size.x < 1100.0 or size.x / maxf(size.y, 1.0) < 1.35
-	var show_cards := variant != VARIANT_NEUTRAL or not compact
+	# Neutral is used behind task-focused secondary pages. Decorative cards here
+	# compete with their forms and deck content, so reserve the fan for semantic
+	# title/victory variants only.
+	var show_cards := variant != VARIANT_NEUTRAL
 	card_fan.visible = show_cards
 	if not show_cards:
 		return

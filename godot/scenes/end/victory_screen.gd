@@ -238,7 +238,7 @@ func _start_entrance() -> void:
 		return
 	_entrance_started = true
 	_center_panel_pivot()
-	if FRONTEND_MOTION.is_reduced():
+	if not FRONTEND_MOTION.decorative_motion_enabled():
 		_show_final_motion_state()
 		return
 	var animation: Animation = (
@@ -253,7 +253,7 @@ func _start_entrance() -> void:
 
 
 func _on_runtime_settings_changed() -> void:
-	if AppSettings.reduced_motion:
+	if not FRONTEND_MOTION.decorative_motion_enabled():
 		_show_final_motion_state()
 
 

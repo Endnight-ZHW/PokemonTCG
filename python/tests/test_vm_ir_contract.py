@@ -3807,7 +3807,7 @@ class VmIrContractTests(unittest.TestCase):
         self.assertEqual(trigger_specs[0]["op"], "trigger_draw_cards")
         self.assertEqual(
             trigger_specs[0]["args"],
-            {"player": 1, "amount": 1, "source": "奇迹能量"},
+            {"player": 1, "amount": 1, "source": "幸运能量"},
         )
         trigger_result = execute_trigger_commands(state, trigger_specs)
         self.assertTrue(trigger_result.success)

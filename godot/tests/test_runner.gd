@@ -1891,13 +1891,41 @@ func _run_phase_three_tests() -> void:
 	root.add_child(ui)
 	ui.initialize_ui()
 	_check(ui.current_screen == "title", "UI did not open on title screen")
-	_check(ui.find_child("ModesPanel", true, false) != null, "Title mode panel is missing")
-	var local_button := ui.find_child("LocalTwoPlayerButton", true, false) as Button
-	_check(local_button != null, "Local two-player entry is missing")
-	if local_button:
-		_check(local_button.custom_minimum_size.y >= 48, "Touch target is below 48 px")
+	var title_full_bleed_backdrop := ui.find_child(
+		"TitleFullBleedBackdrop", true, false
+	) as Control
+	var embedded_backdrop := ui.find_child("EmbeddedBackdrop", true, false) as Control
+	_check(
+		title_full_bleed_backdrop != null
+		and title_full_bleed_backdrop.visible
+		and embedded_backdrop != null
+		and not embedded_backdrop.visible,
+		"Main title route did not use the full-bleed backdrop exclusively",
+	)
+	for button_name in [
+		"LocalTwoPlayerButton", "AIButton", "NetworkButton",
+		"SettingsButton", "HelpButton",
+	]:
+		var title_button := ui.find_child(button_name, true, false) as Button
+		_check(title_button != null, "Title entry is missing: %s" % button_name)
+		if title_button:
+			_check(
+				title_button.custom_minimum_size.y >= 48,
+				"Title touch target is below 48 px: %s" % button_name,
+			)
+	for legacy_name in [
+		"ChallengeAIButton", "DeepAIButton", "LANButton", "RelayButton", "OnlineCard",
+	]:
+		_check(
+			ui.find_child(legacy_name, true, false) == null,
+			"Legacy title entry is still present: %s" % legacy_name,
+		)
 	ui.show_deck_select()
 	_check(ui.current_screen == "decks", "Deck selection screen did not open")
+	_check(
+		title_full_bleed_backdrop != null and not title_full_bleed_backdrop.visible,
+		"Full-bleed title backdrop remained visible outside the title route",
+	)
 	var deck_page := ui.screen_host.get_child(0) as DeckSelectPage
 	_check(deck_page != null, "Deck selection page is missing")
 	if deck_page:
@@ -1953,6 +1981,16 @@ func _run_phase_three_tests() -> void:
 		_check(
 			ui.current_screen == "title",
 			"Victory screen did not return to the title page",
+		)
+		var restored_embedded_backdrop := ui.find_child(
+			"EmbeddedBackdrop", true, false
+		) as Control
+		_check(
+			title_full_bleed_backdrop != null
+			and title_full_bleed_backdrop.visible
+			and restored_embedded_backdrop != null
+			and not restored_embedded_backdrop.visible,
+			"Returning to the title route did not restore exclusive full-bleed backdrop use",
 		)
 	ui.queue_free()
 
@@ -2453,13 +2491,24 @@ func _run_phase_four_foundation_tests() -> void:
 	var ai_ui := packed.instantiate()
 	root.add_child(ai_ui)
 	ai_ui.initialize_ui()
-	var challenge_button := ai_ui.find_child("ChallengeAIButton", true, false) as Button
-	var deep_button := ai_ui.find_child("DeepAIButton", true, false) as Button
-	_check(challenge_button != null and not challenge_button.disabled,
-		"Challenge AI menu entry is unavailable")
-	_check(deep_button != null and not deep_button.disabled,
-		"Deep AI menu entry is unavailable")
+	var ai_button := ai_ui.find_child("AIButton", true, false) as Button
+	_check(ai_button != null and not ai_button.disabled,
+		"AI title entry is unavailable")
+	_check(
+		ai_ui.find_child("ChallengeAIButton", true, false) == null
+		and ai_ui.find_child("DeepAIButton", true, false) == null,
+		"AI variants were not moved out of the title page",
+	)
 	ai_ui.show_deck_select("challenge")
+	var ai_mode_option := ai_ui.find_child("AIModeOption", true, false) as OptionButton
+	_check(ai_mode_option != null, "AI mode selector is unavailable on the deck page")
+	if ai_mode_option:
+		_check(
+			ai_mode_option.item_count == 2
+			and str(ai_mode_option.get_item_metadata(0)) == "challenge"
+			and str(ai_mode_option.get_item_metadata(1)) == "deep",
+			"AI mode selector metadata does not expose Challenge and Deep",
+		)
 	_check(
 		ai_ui.find_child("AIDifficultyOption", true, false) == null,
 		"AI difficulty selector was still visible",
@@ -4158,16 +4207,28 @@ func _run_phase_five_foundation_tests() -> void:
 	var network_ui := packed.instantiate()
 	root.add_child(network_ui)
 	network_ui.initialize_ui()
-	var lan_button := network_ui.find_child("LANButton", true, false) as Button
-	var relay_button := network_ui.find_child("RelayButton", true, false) as Button
-	_check(lan_button != null and not lan_button.disabled,
-		"LAN menu entry is unavailable")
-	_check(relay_button != null and not relay_button.disabled,
-		"Relay menu entry is unavailable")
+	var network_button := network_ui.find_child("NetworkButton", true, false) as Button
+	_check(network_button != null and not network_button.disabled,
+		"Network title entry is unavailable")
+	_check(
+		network_ui.find_child("LANButton", true, false) == null
+		and network_ui.find_child("RelayButton", true, false) == null,
+		"Network transports were not moved out of the title page",
+	)
 	network_ui.show_network_setup("lan")
 	_check(
 		network_ui.find_child("NetworkConnectButton", true, false) != null,
 		"LAN lobby controls were not created",
+	)
+	var network_kind_option := network_ui.find_child(
+		"NetworkKindOption", true, false
+	) as OptionButton
+	_check(
+		network_kind_option != null
+		and network_kind_option.item_count == 2
+		and str(network_kind_option.get_item_metadata(0)) == "lan"
+		and str(network_kind_option.get_item_metadata(1)) == "relay",
+		"Network lobby does not expose LAN and Relay transport metadata",
 	)
 	network_ui.show_network_setup("relay")
 	_check(
@@ -4190,6 +4251,10 @@ func _run_phase_six_foundation_tests() -> void:
 	_check(
 		not bool(no_smoke.get("handled", true)),
 		"Export smoke runner handled a normal application launch",
+	)
+	_check(
+		smoke_runner._load_release_ui_resources(),
+		"Export smoke runner could not load the release title/font/energy resources",
 	)
 	var network_smoke := smoke_runner.run_if_requested(
 		PackedStringArray([ExportSmokeRunner.PHASE_FIVE_FLAG]),
@@ -4313,6 +4378,7 @@ func _run_visual_upgrade_tests() -> void:
 	)
 	for path in [
 		"res://ui/design_tokens.gd",
+		"res://ui/energy_icon_catalog.gd",
 		"res://ui/game_theme.tres",
 		"res://ui/card_view.tscn",
 		"res://ui/zone_view.tscn",
@@ -4331,6 +4397,80 @@ func _run_visual_upgrade_tests() -> void:
 		"res://tools/ui_workbench.tscn",
 	]:
 		_check(FileAccess.file_exists(path), "Visual upgrade asset is missing: %s" % path)
+	var expected_energy_icon_paths := {
+		"Grass": "res://assets/ui/energy/grass.png",
+		"Fire": "res://assets/ui/energy/fire.png",
+		"Water": "res://assets/ui/energy/water.png",
+		"Lightning": "res://assets/ui/energy/lightning.png",
+		"Psychic": "res://assets/ui/energy/psychic.png",
+		"Fighting": "res://assets/ui/energy/fighting.png",
+		"Darkness": "res://assets/ui/energy/darkness.png",
+		"Metal": "res://assets/ui/energy/metal.png",
+		"Colorless": "res://assets/ui/energy/colorless.png",
+	}
+	var expected_energy_source_ids := {
+		"Grass": "sv1-ener-1",
+		"Fire": "sv1-ener-2",
+		"Water": "sv1-ener-3",
+		"Lightning": "sv1-ener-4",
+		"Psychic": "sv1-ener-5",
+		"Fighting": "sv1-ener-6",
+		"Darkness": "sv1-ener-7",
+		"Metal": "sv1-ener-8",
+		"Colorless": "svi-mirc",
+	}
+	var normalized_energy_icon_paths: Array[String] = []
+	for energy_type in expected_energy_icon_paths:
+		var icon_path := EnergyIconCatalog.path_for(energy_type)
+		normalized_energy_icon_paths.append(icon_path)
+		_check(
+			icon_path == expected_energy_icon_paths[energy_type]
+			and FileAccess.file_exists(icon_path),
+			"Energy icon mapping is missing or incorrect: %s" % energy_type,
+		)
+		_check(
+			EnergyIconCatalog.texture_for(energy_type) != null,
+			"Energy icon texture failed to load: %s" % energy_type,
+		)
+		_check(
+			EnergyIconCatalog.source_card_id_for(energy_type)
+			== expected_energy_source_ids[energy_type],
+			"Energy icon source-card mapping is incorrect: %s" % energy_type,
+		)
+	var luminous_path := "res://assets/ui/energy/luminous.png"
+	normalized_energy_icon_paths.append(luminous_path)
+	_check(
+		EnergyIconCatalog.path_for_card_id("svg2-lume") == luminous_path
+		and FileAccess.file_exists(luminous_path)
+		and EnergyIconCatalog.texture_for_card_id("svg2-lume") != null,
+		"Luminous Energy icon mapping is missing or failed to load",
+	)
+	for icon_path in normalized_energy_icon_paths:
+		var icon_image := Image.load_from_file(ProjectSettings.globalize_path(icon_path))
+		_check(
+			icon_image != null
+			and icon_image.get_size() == Vector2i(256, 256)
+			and icon_image.get_pixel(0, 0).a == 0.0
+			and icon_image.get_pixel(128, 128).a > 0.95,
+			"Energy icon is not a normalized transparent 256px asset: %s" % icon_path,
+		)
+		var import_source := _read_text("%s.import" % icon_path)
+		_check(
+			import_source.find("compress/mode=0") >= 0
+			and import_source.find("mipmaps/generate=true") >= 0
+			and import_source.find("process/fix_alpha_border=true") >= 0,
+			"Energy icon import must be Lossless with mipmaps and alpha-border repair: %s"
+			% icon_path,
+		)
+	_check(
+		EnergyIconCatalog.texture_for_card_id("svi-dtur") == null,
+		"An unsupported special-energy card unexpectedly exposed an icon",
+	)
+	for unsupported_type in ["Dragon", "Rainbow", "Special", "Unknown"]:
+		_check(
+			EnergyIconCatalog.texture_for(unsupported_type) == null,
+			"Unsupported energy type unexpectedly exposed an icon: %s" % unsupported_type,
+		)
 
 	var main_scene := load("res://scenes/main/main.tscn") as PackedScene
 	var main_preview := main_scene.instantiate()
@@ -4344,19 +4484,31 @@ func _run_visual_upgrade_tests() -> void:
 		and shell_animations.has_animation("modal_close"),
 		"Main shell does not expose editable modal open and close animations",
 	)
+	_check(
+		main_preview._network_connection_fields_valid("lan", "host", "", "")
+		and not main_preview._network_connection_fields_valid("lan", "client", "", "")
+		and main_preview._network_connection_fields_valid(
+			"relay", "host", "wss://relay.example.test", ""
+		)
+		and not main_preview._network_connection_fields_valid(
+			"relay", "client", "wss://relay.example.test", ""
+		),
+		"Main network validation mishandled LAN-host or Relay address requirements",
+	)
 	main_preview.free()
 
 	var page_contracts := {
 		"res://scenes/title/title_page.tscn": [
-			"LocalTwoPlayerButton", "ChallengeAIButton", "SettingsButton",
-			"HelpButton",
+			"LocalTwoPlayerButton", "AIButton", "NetworkButton",
+			"SettingsButton", "HelpButton",
 		],
 		"res://scenes/decks/deck_select_page.tscn": [
 			"PlayerOneSlotButton", "PlayerTwoSlotButton", "GalleryGrid",
-			"DetailsButton", "StartButton",
+			"AIModeOption", "DetailsButton", "StartButton",
 		],
 		"res://scenes/network/network_lobby_page.tscn": [
-			"NetworkRoleOption", "NetworkAddressInput", "NetworkConnectButton",
+			"NetworkKindOption", "NetworkRoleOption", "NetworkAddressInput",
+			"NetworkConnectButton",
 		],
 		"res://ui/dialogs/settings_panel.tscn": [
 			"MasterVolumeSlider", "AnimationModeOption", "CardCacheOption",
@@ -4377,16 +4529,48 @@ func _run_visual_upgrade_tests() -> void:
 		page.queue_free()
 
 	var page_catalog := CardCatalog.new()
+	var motion_settings: Node = root.get_node("AppSettings")
+	var motion_previous_animation_mode := str(motion_settings.get("animation_mode"))
+	var motion_previous_quality_profile := str(motion_settings.get("quality_profile"))
+	motion_settings.call(
+		"update",
+		float(motion_settings.get("master_volume")),
+		bool(motion_settings.get("muted")),
+		false,
+		int(motion_settings.get("card_cache_size")),
+		"standard",
+		"low",
+		float(motion_settings.get("music_volume")),
+		float(motion_settings.get("sfx_volume")),
+	)
+	var frontend_motion := load("res://ui/frontend/frontend_motion.gd")
+	_check(
+		is_zero_approx(float(frontend_motion.duration(0.24))),
+		"Low quality did not disable frontend transition motion",
+	)
+	motion_settings.call(
+		"update",
+		float(motion_settings.get("master_volume")),
+		bool(motion_settings.get("muted")),
+		motion_previous_animation_mode == "reduced",
+		int(motion_settings.get("card_cache_size")),
+		motion_previous_animation_mode,
+		motion_previous_quality_profile,
+		float(motion_settings.get("music_volume")),
+		float(motion_settings.get("sfx_volume")),
+	)
 	var title_scene := load("res://scenes/title/title_page.tscn") as PackedScene
 	var title_page := title_scene.instantiate()
 	root.add_child(title_page)
 	title_page.configure("Signal Test")
+	var title_modes: Array[String] = []
+	var title_network_kinds: Array[String] = []
 	var title_signals := {}
 	title_page.mode_selected.connect(
-		func(mode: String) -> void: title_signals["mode"] = mode
+		func(mode: String) -> void: title_modes.append(mode)
 	)
 	title_page.network_selected.connect(
-		func(kind: String) -> void: title_signals["network"] = kind
+		func(kind: String) -> void: title_network_kinds.append(kind)
 	)
 	title_page.settings_requested.connect(
 		func() -> void: title_signals["settings"] = true
@@ -4395,17 +4579,45 @@ func _run_visual_upgrade_tests() -> void:
 		func() -> void: title_signals["help"] = true
 	)
 	(title_page.find_child("LocalTwoPlayerButton", true, false) as Button).pressed.emit()
-	(title_page.find_child("LANButton", true, false) as Button).pressed.emit()
+	(title_page.find_child("AIButton", true, false) as Button).pressed.emit()
+	(title_page.find_child("NetworkButton", true, false) as Button).pressed.emit()
 	(title_page.find_child("SettingsButton", true, false) as Button).pressed.emit()
 	(title_page.find_child("HelpButton", true, false) as Button).pressed.emit()
-	_check(title_signals.get("mode", "") == "local",
-		"Title page mode signal did not carry the selected mode")
-	_check(title_signals.get("network", "") == "lan",
-		"Title page network signal did not carry the transport kind")
+	_check(title_modes == ["local", "challenge"],
+		"Title page did not emit local and default Challenge modes")
+	_check(title_network_kinds == ["lan"],
+		"Title page network signal did not default to LAN")
 	_check(bool(title_signals.get("settings", false)),
 		"Title page settings signal was not emitted")
 	_check(bool(title_signals.get("help", false)),
 		"Title page help signal was not emitted")
+	var title_tab_order: Array[Button] = []
+	for button_name in [
+		"LocalTwoPlayerButton", "AIButton", "NetworkButton",
+		"SettingsButton", "HelpButton",
+	]:
+		title_tab_order.append(
+			title_page.find_child(button_name, true, false) as Button
+		)
+	for index in range(title_tab_order.size()):
+		var button := title_tab_order[index]
+		var next_button := title_tab_order[(index + 1) % title_tab_order.size()]
+		var previous_button := title_tab_order[
+			posmod(index - 1, title_tab_order.size())
+		]
+		_check(
+			button.get_node_or_null(button.focus_next) == next_button
+			and button.get_node_or_null(button.focus_previous) == previous_button,
+			"Title Tab order skipped or reordered an entry: %s next=%s previous=%s"
+			% [button.name, button.focus_next, button.focus_previous],
+		)
+	for legacy_name in [
+		"ChallengeAIButton", "DeepAIButton", "LANButton", "RelayButton", "OnlineCard",
+	]:
+		_check(
+			title_page.find_child(legacy_name, true, false) == null,
+			"Title page retained legacy node %s" % legacy_name,
+		)
 	title_page.queue_free()
 
 	var deck_scene := load(
@@ -4414,6 +4626,55 @@ func _run_visual_upgrade_tests() -> void:
 	var deck_page := deck_scene.instantiate()
 	root.add_child(deck_page)
 	deck_page.configure(page_catalog, "challenge")
+	var ai_mode_option := deck_page.find_child(
+		"AIModeOption", true, false
+	) as OptionButton
+	_check(ai_mode_option != null, "Deck page AI mode selector is missing")
+	var deep_index := -1
+	if ai_mode_option:
+		_check(
+			ai_mode_option.item_count == 2
+			and str(ai_mode_option.get_item_metadata(0)) == "challenge"
+			and str(ai_mode_option.get_item_metadata(1)) == "deep",
+			"Deck page AI mode metadata changed",
+		)
+		_check(
+			str(ai_mode_option.get_item_metadata(ai_mode_option.selected)) == "challenge",
+			"Challenge configure did not preselect Challenge AI",
+		)
+		for index in range(ai_mode_option.item_count):
+			if str(ai_mode_option.get_item_metadata(index)) == "deep":
+				deep_index = index
+				break
+	var deck_keys: Array = page_catalog.decks.keys()
+	deck_keys.sort()
+	if deck_keys.size() >= 2:
+		deck_page.select_deck(0, str(deck_keys[-1]))
+		deck_page.select_deck(1, str(deck_keys[-2]))
+	deck_page.player_two_slot_button.pressed.emit()
+	deck_page.first_player_option.select(2)
+	deck_page.gallery_scroll.scroll_vertical = 37
+	var preserved_deck_state := {
+		"first": deck_page.selected_deck_key(0),
+		"second": deck_page.selected_deck_key(1),
+		"active": deck_page._active_player_idx,
+		"first_player": deck_page.first_player_option.selected,
+		"scroll": deck_page.gallery_scroll.scroll_vertical,
+		"detail": deck_page.detail_title.text,
+	}
+	if ai_mode_option and deep_index >= 0:
+		ai_mode_option.select(deep_index)
+		ai_mode_option.item_selected.emit(deep_index)
+	_check(deck_page.mode == "deep", "Deck page did not switch to Deep AI")
+	_check(
+		deck_page.selected_deck_key(0) == preserved_deck_state["first"]
+		and deck_page.selected_deck_key(1) == preserved_deck_state["second"]
+		and deck_page._active_player_idx == preserved_deck_state["active"]
+		and deck_page.first_player_option.selected == preserved_deck_state["first_player"]
+		and deck_page.gallery_scroll.scroll_vertical == preserved_deck_state["scroll"]
+		and deck_page.detail_title.text == preserved_deck_state["detail"],
+		"Switching AI type reset deck selection, turn, detail, or scroll state",
+	)
 	var deck_signal := {}
 	deck_page.start_requested.connect(func(
 		mode: String,
@@ -4433,8 +4694,8 @@ func _run_visual_upgrade_tests() -> void:
 	)
 	(deck_page.find_child("StartButton", true, false) as Button).pressed.emit()
 	(deck_page.find_child("DetailsButton", true, false) as Button).pressed.emit()
-	_check(deck_signal.get("mode", "") == "challenge",
-		"Deck page start signal did not carry the game mode")
+	_check(deck_signal.get("mode", "") == "deep",
+		"Deck page start signal did not carry the selected Deep AI mode")
 	_check(not str(deck_signal.get("first", "")).is_empty(),
 		"Deck page start signal omitted the first deck")
 	_check(not str(deck_signal.get("second", "")).is_empty(),
@@ -4452,9 +4713,115 @@ func _run_visual_upgrade_tests() -> void:
 	) as PackedScene
 	var network_page := network_scene.instantiate()
 	root.add_child(network_page)
-	network_page.configure(page_catalog, "relay", "wss://relay.example.test")
+	network_page.configure(page_catalog, "lan", "wss://relay.example.test")
+	network_page._compact = false
+	network_page._apply_compact_step_visibility()
+	var kind_option := network_page.find_child(
+		"NetworkKindOption", true, false
+	) as OptionButton
+	_check(kind_option != null, "Network kind selector is missing")
+	var lan_index := -1
+	var relay_index := -1
+	if kind_option:
+		for index in range(kind_option.item_count):
+			var metadata := str(kind_option.get_item_metadata(index))
+			if metadata == "lan":
+				lan_index = index
+			elif metadata == "relay":
+				relay_index = index
+		_check(
+			kind_option.item_count == 2 and lan_index >= 0 and relay_index >= 0,
+			"Network kind metadata does not expose LAN and Relay",
+		)
+		_check(
+			str(kind_option.get_item_metadata(kind_option.selected)) == "lan",
+			"LAN configure did not preselect LAN",
+		)
+	var changed_kinds: Array[String] = []
+	network_page.kind_changed.connect(
+		func(kind: String) -> void: changed_kinds.append(kind)
+	)
 	network_page.role_option.select(1)
 	network_page.refresh_fields(1)
+	if network_page.deck_option.item_count > 1:
+		network_page.deck_option.select(1)
+	var preserved_role: int = network_page.role_option.selected
+	var preserved_deck: int = network_page.deck_option.selected
+	network_page.address_input.text = "192.168.1.44"
+	network_page.address_input.text_changed.emit(network_page.address_input.text)
+	network_page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.WAITING,
+		"旧 LAN 房间等待中",
+		"OLDLAN",
+	)
+	_check(
+		kind_option != null and kind_option.disabled,
+		"Network kind selector was not locked while waiting",
+	)
+	if kind_option and relay_index >= 0:
+		kind_option.select(relay_index)
+		kind_option.item_selected.emit(relay_index)
+	_check(
+		kind_option != null
+		and network_page.kind == "lan"
+		and str(kind_option.get_item_metadata(kind_option.selected)) == "lan"
+		and changed_kinds.is_empty(),
+		"Locked network kind selector changed transport",
+	)
+	network_page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.ERROR,
+		"旧 LAN 连接错误",
+	)
+	network_page.address_error.visible = true
+	if kind_option and relay_index >= 0:
+		kind_option.select(relay_index)
+		kind_option.item_selected.emit(relay_index)
+	_check(changed_kinds == ["relay"] and network_page.kind == "relay",
+		"Network kind change did not emit Relay")
+	_check(
+		network_page.connection_state == NetworkLobbyPage.ConnectionState.IDLE
+		and network_page.role_option.selected == preserved_role
+		and network_page.deck_option.selected == preserved_deck
+		and network_page.room_input.text.is_empty()
+		and network_page._current_room_code.is_empty()
+		and not network_page.room_code_display.visible
+		and not network_page.address_error.visible
+		and not network_page.status_label.text.contains("旧 LAN"),
+		"Switching to Relay did not preserve selections or clear stale lobby state",
+	)
+	_check(
+		not network_page.port_row.visible and network_page.room_row.visible,
+		"Relay client fields did not hide the LAN port and show the room code",
+	)
+	network_page.address_input.text = "wss://relay.custom.test"
+	network_page.address_input.text_changed.emit(network_page.address_input.text)
+	network_page.room_input.text = "STALE42"
+	network_page.room_error.visible = true
+	network_page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.ERROR,
+		"旧 Relay 连接错误",
+	)
+	if kind_option and lan_index >= 0:
+		kind_option.select(lan_index)
+		kind_option.item_selected.emit(lan_index)
+	_check(changed_kinds == ["relay", "lan"] and network_page.kind == "lan",
+		"Network kind change did not emit LAN")
+	_check(
+		network_page.address_input.text == "192.168.1.44"
+		and network_page.role_option.selected == preserved_role
+		and network_page.deck_option.selected == preserved_deck
+		and network_page.room_input.text.is_empty()
+		and not network_page.room_error.visible
+		and network_page.port_row.visible and not network_page.room_row.visible,
+		"Switching to LAN did not restore its draft or update transport fields",
+	)
+	if kind_option and relay_index >= 0:
+		kind_option.select(relay_index)
+		kind_option.item_selected.emit(relay_index)
+	_check(
+		network_page.address_input.text == "wss://relay.custom.test",
+		"Switching back to Relay did not restore the Relay address draft",
+	)
 	network_page.room_input.text = "ROOM42"
 	var network_signal := {}
 	network_page.connect_requested.connect(func(
@@ -4483,6 +4850,9 @@ func _run_visual_upgrade_tests() -> void:
 		"Network page signal did not carry the selected role")
 	_check(network_signal.get("room", "") == "ROOM42",
 		"Network page signal did not carry the room code")
+	_check(network_signal.get("address", "") == "wss://relay.custom.test"
+		and int(network_signal.get("port", 0)) > 0,
+		"Network page signal changed the address/port payload shape")
 	_check(not str(network_signal.get("deck", "")).is_empty(),
 		"Network page signal omitted the selected deck")
 	network_page.set_connection_state(
@@ -4502,6 +4872,25 @@ func _run_visual_upgrade_tests() -> void:
 	_check(not network_page.address_input.accessibility_name.is_empty()
 		and not network_page.deck_option.accessibility_name.is_empty(),
 		"Network form controls are missing accessible names")
+	network_page.set_connection_state(NetworkLobbyPage.ConnectionState.IDLE)
+	if kind_option and lan_index >= 0:
+		kind_option.select(lan_index)
+		kind_option.item_selected.emit(lan_index)
+	network_page.role_option.select(0)
+	network_page.refresh_fields(0)
+	network_page.address_input.text = ""
+	network_page.address_input.text_changed.emit("")
+	network_signal.clear()
+	(network_page.find_child(
+		"NetworkConnectButton", true, false
+	) as Button).pressed.emit()
+	_check(
+		network_signal.get("kind", "") == "lan"
+		and network_signal.get("role", "") == "host"
+		and network_signal.get("address", "sentinel") == ""
+		and not network_page.address_input.editable,
+		"LAN host was blocked by its hidden, unused address field",
+	)
 	network_page.queue_free()
 
 	var settings_scene := load(
@@ -4675,6 +5064,14 @@ func _run_visual_upgrade_tests() -> void:
 	_check(privacy_ui.battle_screen.detail_close_button != null
 		and privacy_ui.battle_screen.detail_close_button.visible,
 		"Battle card detail close button was not shown")
+	_check(
+		privacy_ui.battle_screen.detail_close_button.custom_minimum_size.x >= 48.0
+		and privacy_ui.battle_screen.detail_close_button.custom_minimum_size.y >= 48.0
+		and privacy_ui.battle_screen.detail_close_button.focus_mode
+			== Control.FOCUS_ALL
+		and not privacy_ui.battle_screen.detail_close_button.accessibility_name.is_empty(),
+		"Battle card detail close control is not a 48 px keyboard-accessible target",
+	)
 	privacy_ui.battle_screen.detail_close_button.pressed.emit()
 	_check(not privacy_ui.battle_screen.detail_panel.visible,
 		"Battle card detail close button did not hide the detail panel")
@@ -4793,7 +5190,7 @@ func _run_visual_upgrade_tests() -> void:
 			"sv1-104", "sv1-ener-5", "sv1-151", "sv1-189",
 		]
 		state.players[0].active.energy_card_ids.assign([
-			"sv1-ener-5", "sv1-ener-5", "svi-mirc",
+			"sv1-ener-5", "sv1-ener-5", "svi-mirc", "svg2-lume",
 		])
 		state.players[0].active.attached_tool_id = "sv1-202"
 		state.players[0].active.damage_counters = 2
@@ -4897,9 +5294,118 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		_check(
 			active_energy != null and active_energy.visible
-			and active_energy.get_child_count() >= 2,
+			and active_energy.get_child_count() >= 3,
 			"Active Pokemon energy row did not render grouped energy badges",
 		)
+		var textured_energy_badges := 0
+		var has_grouped_count_badge := false
+		var has_luminous_energy_badge := false
+		if active_energy:
+			for badge_value in active_energy.get_children():
+				var badge := badge_value as Control
+				if badge == null:
+					continue
+				var icon := badge.find_child("Icon", true, false) as TextureRect
+				if icon and icon.texture:
+					textured_energy_badges += 1
+				if badge.tooltip_text.begins_with("夜光能量"):
+					has_luminous_energy_badge = icon != null and icon.texture != null
+				var count_badge := badge.find_child(
+					"CountBadge", true, false
+				) as Label
+				if count_badge and count_badge.text == "2":
+					has_grouped_count_badge = true
+		_check(
+			textured_energy_badges >= 3
+			and has_grouped_count_badge
+			and has_luminous_energy_badge,
+			"Attached energies did not render icons with a grouped count badge",
+		)
+		var fallback_energy_badge: Control = battle.own_active._new_energy_badge(
+			"Special", 2
+		)
+		_check(
+			fallback_energy_badge.find_child("Icon", true, false) == null
+			and fallback_energy_badge.find_child(
+				"FallbackLabel", true, false
+			) != null,
+			"Energy badge without an icon did not retain the text fallback",
+		)
+		fallback_energy_badge.free()
+		var card_scene := load("res://ui/card_view.tscn") as PackedScene
+		_check(card_scene != null, "CardView scene failed to load for energy overflow test")
+		if card_scene:
+			var narrow_card := card_scene.instantiate() as CardView
+			root.add_child(narrow_card)
+			narrow_card.set_catalog(engine.catalog)
+			narrow_card.size = Vector2(104.0, 146.0)
+			var overflow_pokemon := PokemonState.new("sv1-104")
+			overflow_pokemon.energy_card_ids.assign([
+				"sv1-ener-1",
+				"sv1-ener-2",
+				"sv1-ener-3",
+				"sv1-ener-4",
+				"sv1-ener-5",
+				"sv1-ener-6",
+				"svg2-lume",
+			])
+			narrow_card.configure("sv1-104", overflow_pokemon)
+			var overflow_energy_row := narrow_card.find_child(
+				"EnergyRow", true, false
+			) as HBoxContainer
+			var overflow_badge := narrow_card.find_child(
+				"EnergyOverflowBadge", true, false
+			) as Control
+			var occupied_width := 0.0
+			var badges_receive_hover := overflow_energy_row != null
+			if overflow_energy_row:
+				for badge_value in overflow_energy_row.get_children():
+					var badge := badge_value as Control
+					if badge == null:
+						continue
+					occupied_width += badge.custom_minimum_size.x
+					badges_receive_hover = (
+						badges_receive_hover
+						and badge.mouse_filter != Control.MOUSE_FILTER_IGNORE
+					)
+				occupied_width += 2.0 * float(maxi(
+					0, overflow_energy_row.get_child_count() - 1
+				))
+			_check(
+				overflow_energy_row != null
+				and overflow_energy_row.mouse_filter != Control.MOUSE_FILTER_IGNORE
+				and overflow_energy_row.get_child_count() <= 4
+				and overflow_badge != null
+				and overflow_badge.tooltip_text.contains("另有")
+				and occupied_width <= narrow_card.size.x - 10.0 + 0.01
+				and badges_receive_hover,
+				"Narrow CardView energy badges overflowed or could not receive tooltips",
+			)
+			_check(
+				narrow_card.tooltip_text.contains("附加能量")
+				and narrow_card.tooltip_text.contains("草能量")
+				and narrow_card.tooltip_text.contains("夜光能量")
+				and narrow_card.accessibility_description == narrow_card.tooltip_text,
+				"CardView did not expose the complete attached-energy summary",
+			)
+			narrow_card.set_actions([{
+				"action": GameAction.new("TEST_ACTION"),
+				"label": "测试动作",
+			}])
+			var card_action_button := narrow_card.action_buttons.get_child(0) as Button
+			_check(
+				card_action_button != null
+				and card_action_button.custom_minimum_size.y >= 48.0,
+				"CardView action control is below the 48 px touch target",
+			)
+			narrow_card.configure("", null, true)
+			_check(
+				narrow_card.tooltip_text.is_empty()
+				and narrow_card.accessibility_description.is_empty()
+				and not overflow_energy_row.visible,
+				"Reused hidden CardView leaked its previous attached-energy summary",
+			)
+			narrow_card.queue_free()
 		_check(
 			active_tool != null and active_tool.visible,
 			"Active Pokemon tool badge was not rendered",
@@ -4985,6 +5491,13 @@ func _run_visual_upgrade_tests() -> void:
 			battle.all_actions_button != null and not battle.all_actions_button.disabled,
 			"Battle screen is missing the all-actions HUD button",
 		)
+		_check(
+			battle.all_actions_button != null
+			and battle.all_actions_button.custom_minimum_size.y >= 48.0
+			and battle.all_actions_toggle != null
+			and battle.all_actions_toggle.custom_minimum_size.y >= 48.0,
+			"Battle action drawer controls are below the 48 px touch target",
+		)
 		if battle.all_actions_button:
 			battle.all_actions_button.pressed.emit()
 		_check(
@@ -4995,6 +5508,14 @@ func _run_visual_upgrade_tests() -> void:
 			battle.action_list != null and battle.action_list.get_child_count() > 0,
 			"All-actions fallback drawer did not render legal actions",
 		)
+		if battle.action_list:
+			for action_control_value in battle.action_list.get_children():
+				var action_control := action_control_value as Button
+				_check(
+					action_control != null
+					and action_control.custom_minimum_size.y >= 48.0,
+					"All-actions drawer rendered an action below the 48 px touch target",
+				)
 		if battle.all_actions_toggle:
 			battle.all_actions_toggle.pressed.emit()
 		_check(

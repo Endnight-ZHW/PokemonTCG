@@ -2,8 +2,11 @@ class_name NetworkLobbyPage
 extends Control
 
 const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
+const LAN_OVERVIEW_ICON := preload("res://assets/ui/icons/lan.svg")
+const RELAY_OVERVIEW_ICON := preload("res://assets/ui/icons/globe.svg")
 
 signal back_requested
+signal kind_changed(kind: String)
 signal connect_requested(
 	kind: String,
 	role: String,
@@ -25,16 +28,24 @@ enum ConnectionState {
 const COMPACT_ASPECT := 1.5
 const COMPACT_WIDTH := 1360.0
 const FRONT_ERROR := Color("#ff9aa4")
+const LAN_ACCENT := Color("#50c8ff")
+const RELAY_ACCENT := Color("#bd8cff")
 
 var kind := "lan"
 var connection_state := ConnectionState.IDLE
 var _current_room_code := ""
 var _compact := false
 var _compact_step := 0
+var _address_drafts: Dictionary = {
+	"lan": "127.0.0.1",
+	"relay": "",
+}
+var _updating_kind_ui := false
 
 @onready var page: VBoxContainer = %Page
 @onready var back_button: Button = %BackButton
 @onready var intro_panel: PanelContainer = %IntroPanel
+@onready var form_panel: PanelContainer = %FormPanel
 @onready var steps: HBoxContainer = %Steps
 @onready var compact_step_bar: HBoxContainer = %CompactStepBar
 @onready var compact_step_label: Label = %CompactStepLabel
@@ -44,6 +55,23 @@ var _compact_step := 0
 @onready var subtitle: Label = %Subtitle
 @onready var kind_label: Label = %KindLabel
 @onready var kind_description: Label = %KindDescription
+@onready var intro_accent: ColorRect = %IntroAccent
+@onready var intro_icon: TextureRect = %IntroIcon
+@onready var kind_code: Label = %KindCode
+@onready var role_badge_label: Label = %RoleBadgeLabel
+@onready var intro_tip: Label = %IntroTip
+@onready var intro_feature_icons: Array[TextureRect] = [
+	%FeatureOneIcon,
+	%FeatureTwoIcon,
+	%FeatureThreeIcon,
+]
+@onready var intro_feature_labels: Array[Label] = [
+	%FeatureOne,
+	%FeatureTwo,
+	%FeatureThree,
+]
+@onready var kind_control_label: Label = %NetworkKindLabel
+@onready var kind_option: OptionButton = %NetworkKindOption
 @onready var role_option: OptionButton = %NetworkRoleOption
 @onready var role_label: Label = %RoleLabel
 @onready var address_label: Label = %AddressLabel
@@ -78,27 +106,13 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 	_resolve_nodes()
 	_ensure_connections()
 	_clear_room_code()
+	room_input.clear()
 	kind = p_kind if p_kind in ["lan", "relay"] else "lan"
-	var relay := kind == "relay"
-	heading.text = "WebSocket Relay 联机" if relay else "局域网联机"
-	subtitle.text = (
-		"通过房间码跨网络连接另一名玩家"
-		if relay
-		else "连接同一局域网内的 Windows 或 Android 设备"
-	)
-	kind_label.text = "RELAY" if relay else "LAN"
-	kind_description.text = (
-		"通过 Relay 服务创建房间并分享房间码。规则仍由房主运行，卡牌隐藏信息按玩家隔离。"
-		if relay
-		else "适合同一局域网内的两台设备。房主运行权威规则，挑战者只提交动作和选择。"
-	)
-	address_label.text = "Relay URL" if relay else "主机地址"
-	address_input.accessibility_name = "Relay URL" if relay else "主机地址"
-	address_input.virtual_keyboard_type = (
-		LineEdit.KEYBOARD_TYPE_URL if relay else LineEdit.KEYBOARD_TYPE_DEFAULT
-	)
-	address_input.text = relay_url if relay else "127.0.0.1"
-	port_row.visible = not relay
+	_address_drafts = {
+		"lan": "127.0.0.1",
+		"relay": relay_url,
+	}
+	_populate_kind_options()
 	role_option.clear()
 	role_option.add_item("创建房间（房主）")
 	role_option.set_item_metadata(0, "host")
@@ -115,6 +129,7 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 			deck.get("energy_type", ""),
 		])
 		deck_option.set_item_metadata(deck_option.item_count - 1, key)
+	_apply_kind_presentation()
 	refresh_fields(0)
 	set_connection_state(ConnectionState.IDLE)
 	_play_enter_motion()
@@ -131,14 +146,31 @@ func _resolve_nodes() -> void:
 	compact_next_button = compact_step_bar.get_node("CompactNextButton") as Button
 	heading = page.get_node("TopBar/TitleGroup/Heading") as Label
 	subtitle = page.get_node("TopBar/TitleGroup/Subtitle") as Label
-	kind_label = intro_panel.get_node("IntroMargin/Intro/KindLabel") as Label
-	kind_description = intro_panel.get_node("IntroMargin/Intro/KindDescription") as Label
+	kind_label = get_node("%KindLabel") as Label
+	kind_description = get_node("%KindDescription") as Label
+	intro_accent = get_node("%IntroAccent") as ColorRect
+	intro_icon = get_node("%IntroIcon") as TextureRect
+	kind_code = get_node("%KindCode") as Label
+	role_badge_label = get_node("%RoleBadgeLabel") as Label
+	intro_tip = get_node("%IntroTip") as Label
+	intro_feature_icons = [
+		get_node("%FeatureOneIcon") as TextureRect,
+		get_node("%FeatureTwoIcon") as TextureRect,
+		get_node("%FeatureThreeIcon") as TextureRect,
+	]
+	intro_feature_labels = [
+		get_node("%FeatureOne") as Label,
+		get_node("%FeatureTwo") as Label,
+		get_node("%FeatureThree") as Label,
+	]
 	var form := page.get_node("Body/FormPanel/FormMargin/Form") as VBoxContainer
 	role_label = form.get_node("RoleLabel") as Label
 	role_option = form.get_node("NetworkRoleOption") as OptionButton
 	address_label = form.get_node("AddressRow/AddressLabel") as Label
 	address_input = form.get_node("AddressRow/NetworkAddressInput") as LineEdit
 	address_error = form.get_node("AddressRow/AddressError") as Label
+	kind_control_label = form.get_node("NetworkKindLabel") as Label
+	kind_option = form.get_node("NetworkKindOption") as OptionButton
 	port_row = form.get_node("PortRow") as VBoxContainer
 	port_input = port_row.get_node("NetworkPortInput") as LineEdit
 	port_error = port_row.get_node("PortError") as Label
@@ -154,6 +186,7 @@ func _resolve_nodes() -> void:
 	room_code_display = status_content.get_node("RoomCodeDisplay") as LineEdit
 	copy_room_button = status_content.get_node("CopyRoomButton") as Button
 	connect_button = page.get_node("NetworkConnectButton") as Button
+	kind_option.accessibility_name = "联机方式"
 	role_option.accessibility_name = "联机身份"
 	address_input.accessibility_name = "连接地址"
 	port_input.accessibility_name = "局域网端口"
@@ -170,12 +203,109 @@ func _ensure_connections() -> void:
 		connect_button.pressed.connect(_emit_connect_requested)
 	if not role_option.item_selected.is_connected(refresh_fields):
 		role_option.item_selected.connect(refresh_fields)
+	if not kind_option.item_selected.is_connected(_on_kind_selected):
+		kind_option.item_selected.connect(_on_kind_selected)
+	if not address_input.text_changed.is_connected(_on_address_text_changed):
+		address_input.text_changed.connect(_on_address_text_changed)
 	if not copy_room_button.pressed.is_connected(_copy_room_code):
 		copy_room_button.pressed.connect(_copy_room_code)
 	if not compact_previous_button.pressed.is_connected(_show_previous_compact_step):
 		compact_previous_button.pressed.connect(_show_previous_compact_step)
 	if not compact_next_button.pressed.is_connected(_show_next_compact_step):
 		compact_next_button.pressed.connect(_show_next_compact_step)
+
+
+func _populate_kind_options() -> void:
+	kind_option.clear()
+	kind_option.add_item("局域网 LAN")
+	kind_option.set_item_metadata(0, "lan")
+	kind_option.add_item("远程 Relay")
+	kind_option.set_item_metadata(1, "relay")
+	_select_kind_option(kind)
+
+
+func _select_kind_option(value: String) -> void:
+	for index in range(kind_option.item_count):
+		if str(kind_option.get_item_metadata(index)) == value:
+			kind_option.select(index)
+			return
+
+
+func _apply_kind_presentation() -> void:
+	var relay := kind == "relay"
+	var accent := RELAY_ACCENT if relay else LAN_ACCENT
+	_updating_kind_ui = true
+	_select_kind_option(kind)
+	heading.text = "远程 Relay 联机" if relay else "局域网联机"
+	subtitle.text = (
+		"通过房间码跨网络连接另一名玩家"
+		if relay
+		else "连接同一局域网内的 Windows 或 Android 设备"
+	)
+	kind_label.text = "远程中继" if relay else "局域网直连"
+	kind_code.text = "RELAY · REMOTE SESSION" if relay else "LAN · LOCAL NETWORK"
+	kind_description.text = (
+		"通过 Relay 服务跨网络建立房间；双方仍使用同一套权威规则与隐藏信息隔离。"
+		if relay
+		else "两台设备处于同一网络时，直接建立低延迟对局。对局判定始终由房主负责。"
+	)
+	intro_accent.color = accent
+	intro_icon.texture = RELAY_OVERVIEW_ICON if relay else LAN_OVERVIEW_ICON
+	intro_icon.modulate = accent
+	kind_code.add_theme_color_override("font_color", accent)
+	role_badge_label.add_theme_color_override("font_color", accent)
+	var feature_copy := (
+		PackedStringArray(["支持跨网络连接", "使用房间码快速加入", "房主继续权威判定"])
+		if relay
+		else PackedStringArray(["同一 Wi-Fi / 有线网络", "低延迟设备直连", "隐藏信息按玩家隔离"])
+	)
+	for index in range(intro_feature_labels.size()):
+		intro_feature_labels[index].text = feature_copy[index]
+		intro_feature_icons[index].modulate = accent
+	address_label.text = "Relay URL" if relay else "主机地址"
+	address_input.accessibility_name = "Relay URL" if relay else "主机地址"
+	address_input.placeholder_text = (
+		"例如 wss://relay.example.com"
+		if relay
+		else "例如 192.168.1.10"
+	)
+	address_input.virtual_keyboard_type = (
+		LineEdit.KEYBOARD_TYPE_URL if relay else LineEdit.KEYBOARD_TYPE_DEFAULT
+	)
+	address_input.text = str(_address_drafts.get(kind, ""))
+	_updating_kind_ui = false
+	port_row.visible = not relay
+	_refresh_intro_role_copy()
+
+
+func _on_kind_selected(index: int) -> void:
+	if index < 0 or index >= kind_option.item_count:
+		_select_kind_option(kind)
+		return
+	var selected_kind := str(kind_option.get_item_metadata(index))
+	if selected_kind == kind:
+		return
+	if (
+		selected_kind not in ["lan", "relay"]
+		or connection_state not in [ConnectionState.IDLE, ConnectionState.ERROR]
+	):
+		_select_kind_option(kind)
+		return
+	_address_drafts[kind] = address_input.text
+	kind = selected_kind
+	room_input.clear()
+	_clear_room_code()
+	_clear_validation()
+	_apply_kind_presentation()
+	refresh_fields(role_option.selected)
+	set_connection_state(ConnectionState.IDLE)
+	kind_changed.emit(kind)
+
+
+func _on_address_text_changed(value: String) -> void:
+	if _updating_kind_ui or kind not in ["lan", "relay"]:
+		return
+	_address_drafts[kind] = value
 
 
 func refresh_fields(_selected: int) -> void:
@@ -186,9 +316,29 @@ func refresh_fields(_selected: int) -> void:
 	address_input.editable = not (kind == "lan" and role == "host")
 	room_row.visible = kind == "relay" and role == "client"
 	connect_button.text = "创建房间" if role == "host" else "加入房间"
+	_refresh_intro_role_copy()
 	_clear_validation()
 	_apply_compact_step_visibility()
 	_rebuild_focus_neighbors()
+
+
+func _refresh_intro_role_copy() -> void:
+	if role_badge_label == null or intro_tip == null or role_option.item_count == 0:
+		return
+	var host := selected_role() == "host"
+	role_badge_label.text = "房主 · 创建" if host else "挑战者 · 加入"
+	if kind == "relay":
+		intro_tip.text = (
+			"创建后复制房间码，并分享给远端挑战者。"
+			if host
+			else "输入房主分享的房间码，即可加入远程对局。"
+		)
+	else:
+		intro_tip.text = (
+			"创建后，将本机局域网地址与端口告诉挑战者。"
+			if host
+			else "向房主确认局域网地址与端口，再选择加入房间。"
+		)
 
 
 func selected_role() -> String:
@@ -225,6 +375,7 @@ func set_connection_state(
 		ConnectionState.WAITING,
 		ConnectionState.CONNECTED,
 	]
+	kind_option.disabled = locked
 	role_option.disabled = locked
 	address_input.editable = not locked and not (kind == "lan" and selected_role() == "host")
 	port_input.editable = not locked
@@ -318,7 +469,9 @@ func _validate_form() -> bool:
 	_clear_validation()
 	var first_invalid: Control
 	var address := address_input.text.strip_edges()
-	if address.is_empty() or (kind == "relay" and not (
+	var role := selected_role()
+	var address_required := kind == "relay" or role == "client"
+	if (address_required and address.is_empty()) or (kind == "relay" and not (
 		address.begins_with("ws://") or address.begins_with("wss://")
 	)):
 		address_error.text = (
@@ -338,7 +491,7 @@ func _validate_form() -> bool:
 			port_input.accessibility_description = port_error.text
 			if first_invalid == null:
 				first_invalid = port_input
-	if kind == "relay" and selected_role() == "client" and room_input.text.strip_edges().is_empty():
+	if kind == "relay" and role == "client" and room_input.text.strip_edges().is_empty():
 		room_error.visible = true
 		room_input.accessibility_description = room_error.text
 		if first_invalid == null:
@@ -379,8 +532,13 @@ func _apply_responsive_layout() -> void:
 		return
 	var focus_owner := get_viewport().gui_get_focus_owner() if is_inside_tree() else null
 	var owned_focus_before := focus_owner != null and is_ancestor_of(focus_owner)
-	_compact = size.x < COMPACT_WIDTH or size.x / maxf(size.y, 1.0) < COMPACT_ASPECT
+	_compact = (
+		size.y < 840.0
+		or size.x < COMPACT_WIDTH
+		or size.x / maxf(size.y, 1.0) < COMPACT_ASPECT
+	)
 	intro_panel.visible = not _compact
+	form_panel.custom_minimum_size.y = 0.0 if _compact else 580.0
 	steps.visible = not _compact
 	compact_step_bar.visible = _compact
 	page.custom_minimum_size.x = (
@@ -423,7 +581,7 @@ func _set_compact_step(value: int, focus_step: bool = true) -> void:
 	_rebuild_focus_neighbors()
 	if not focus_step:
 		return
-	var target: Control = role_option
+	var target: Control = kind_option
 	if _compact_step == 1:
 		target = address_input
 	elif _compact_step == 2:
@@ -435,6 +593,8 @@ func _set_compact_step(value: int, focus_step: bool = true) -> void:
 func _apply_compact_step_visibility() -> void:
 	if role_label == null:
 		return
+	kind_control_label.visible = not _compact or _compact_step == 0
+	kind_option.visible = not _compact or _compact_step == 0
 	role_label.visible = not _compact or _compact_step == 0
 	role_option.visible = not _compact or _compact_step == 0
 	address_input.get_parent().visible = not _compact or _compact_step == 1
@@ -450,7 +610,7 @@ func _apply_compact_step_visibility() -> void:
 	if not _compact:
 		return
 	compact_step_label.text = [
-		"01 / 03  选择身份",
+		"01 / 03  联机方式与身份",
 		"02 / 03  连接信息",
 		"03 / 03  选择牌组",
 	][_compact_step]
@@ -459,8 +619,8 @@ func _apply_compact_step_visibility() -> void:
 
 
 func _focus_initial_control() -> void:
-	if role_option and role_option.visible and not role_option.disabled:
-		role_option.grab_focus()
+	if kind_option and kind_option.visible and not kind_option.disabled:
+		kind_option.grab_focus()
 
 
 func _rebuild_focus_neighbors() -> void:
@@ -471,6 +631,8 @@ func _rebuild_focus_neighbors() -> void:
 		and not compact_previous_button.disabled
 	):
 		controls.append(compact_previous_button)
+	if kind_option.visible and not kind_option.disabled:
+		controls.append(kind_option)
 	if role_option.visible and not role_option.disabled:
 		controls.append(role_option)
 	if address_input.visible and address_input.get_parent().visible and address_input.editable:
@@ -528,8 +690,8 @@ func _repair_focus_after_layout() -> void:
 		return
 	var target: Control = back_button
 	if _compact:
-		if _compact_step == 0 and role_option.is_visible_in_tree():
-			target = role_option
+		if _compact_step == 0 and kind_option.is_visible_in_tree():
+			target = kind_option
 		elif _compact_step == 1 and address_input.is_visible_in_tree():
 			target = address_input
 		elif _compact_step == 2 and deck_option.is_visible_in_tree():

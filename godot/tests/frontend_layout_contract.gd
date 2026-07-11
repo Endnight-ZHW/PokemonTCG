@@ -1,15 +1,24 @@
 extends SceneTree
 
 const FRONT_THEME_PATH := "res://ui/frontend/front_end_theme.tres"
+const GAME_THEME_PATH := "res://ui/game_theme.tres"
 const FRONT_FONT_PATH := "res://assets/ui/fonts/NotoSansCJKsc-VF.ttf"
+const FONT_WEIGHT_TAG := 0x77676874
 const SAFE_INSET := 48
 const MIN_TARGET_SIZE := 48.0
 const EPSILON := 1.5
+const TITLE_TIER_WIDE := 0
+const TITLE_TIER_COMPACT_LANDSCAPE := 1
+const TITLE_TIER_DENSE := 2
 const VIEWPORT_CASES: Array[Vector2i] = [
 	Vector2i(1280, 720),
 	Vector2i(1600, 900),
 	Vector2i(1024, 768),
 	Vector2i(2000, 900),
+]
+const TITLE_PORTRAIT_CASES: Array[Vector2i] = [
+	Vector2i(720, 1280),
+	Vector2i(800, 1280),
 ]
 
 const PAGE_SCENES := {
@@ -45,14 +54,22 @@ func _run_contract() -> void:
 	_check_battle_theme_isolation()
 	var catalog := CardCatalog.shared()
 	await _check_main_shell_contract()
+	await _check_shared_backdrop_contract()
+	await _check_network_intro_contract(catalog)
+	await _check_deck_tile_visual_contract(catalog)
 	await _check_same_instance_resize(catalog)
+	await _check_battle_canvas_resize()
 	await _check_workbench_compact()
 	for viewport_size in VIEWPORT_CASES:
 		await _check_viewport(viewport_size, catalog)
+	for viewport_size in TITLE_PORTRAIT_CASES:
+		root.size = viewport_size
+		await process_frame
+		await _check_title(viewport_size)
 	_restore_settings()
 	if failures.is_empty():
 		print("FRONTEND_LAYOUT_CONTRACT_OK sizes=%d safe_inset=%d" % [
-			VIEWPORT_CASES.size(),
+			VIEWPORT_CASES.size() + TITLE_PORTRAIT_CASES.size(),
 			SAFE_INSET,
 		])
 		quit(0)
@@ -84,6 +101,24 @@ func _check_main_shell_contract() -> void:
 		) == Vector2(720, 620),
 		"Compact battle modal size semantics changed with frontend fill behavior",
 	)
+	await _check_pointer_focus_visibility(main)
+	main.show_deck_select("challenge")
+	await _settle_layout(4)
+	var routed_deck_page := (
+		main.screen_host.get_child(0) as DeckSelectPage
+		if main.screen_host.get_child_count() > 0
+		else null
+	)
+	var routed_deck_focus := root.gui_get_focus_owner()
+	_check(
+		routed_deck_page != null
+		and routed_deck_focus != null
+		and routed_deck_page.is_ancestor_of(routed_deck_focus)
+		and routed_deck_focus.is_visible_in_tree(),
+		"Entering DeckSelect by keyboard/controller must establish visible focus",
+	)
+	main.show_title()
+	await _settle_layout(3)
 	var scaled_insets: Vector4 = main._safe_insets_to_canvas(
 		Vector2i(1920, 0),
 		Vector2i(2400, 1080),
@@ -180,6 +215,296 @@ func _check_main_shell_contract() -> void:
 	await _settle_layout(2)
 
 
+func _check_pointer_focus_visibility(main: Control) -> void:
+	var focus_controller := root.get_node_or_null("FrontendFocus")
+	_check(focus_controller != null, "Frontend focus-visibility controller is unavailable")
+	if focus_controller == null:
+		return
+	var help_button := main.find_child("HelpButton", true, false) as Button
+	_check(help_button != null, "Title Help button is unavailable for focus-visible checks")
+	if help_button == null:
+		return
+	help_button.grab_focus()
+	var pointer_event := InputEventMouseButton.new()
+	pointer_event.button_index = MOUSE_BUTTON_LEFT
+	pointer_event.pressed = true
+	focus_controller.call("_input", pointer_event)
+	await _settle_layout(2)
+	_check(
+		root.gui_get_focus_owner() == help_button
+		and not bool(focus_controller.call("is_focus_visible"))
+		and help_button.has_theme_stylebox_override(&"focus")
+		and help_button.get_theme_stylebox(&"focus") is StyleBoxEmpty,
+		"Pointer activation must hide button focus chrome without discarding focus",
+	)
+	help_button.pressed.emit()
+	await _settle_layout(3)
+	main.call("_close_modal")
+	main.call("_finish_modal_close", main.get("_modal_generation"))
+	await _settle_layout(3)
+	_check(
+		root.gui_get_focus_owner() == help_button
+		and not bool(focus_controller.call("is_focus_visible")),
+		"Pointer-opened modal restored a persistent focus highlight to its trigger",
+	)
+	var mouse_motion := InputEventMouseMotion.new()
+	focus_controller.call("_input", mouse_motion)
+	_check(
+		not bool(focus_controller.call("is_focus_visible")),
+		"Mouse motion alone must not hide or reveal navigation focus",
+	)
+	var keyboard_event := InputEventKey.new()
+	keyboard_event.keycode = KEY_DOWN
+	keyboard_event.pressed = true
+	focus_controller.call("_input", keyboard_event)
+	await _settle_layout(2)
+	_check(
+		root.gui_get_focus_owner() == help_button
+		and bool(focus_controller.call("is_focus_visible"))
+		and not help_button.has_theme_stylebox_override(&"focus"),
+		"Keyboard input must restore visible focus without changing the focus owner",
+	)
+
+
+func _check_shared_backdrop_contract() -> void:
+	root.size = Vector2i(1600, 900)
+	var backdrop_scene := load("res://ui/frontend/frontend_backdrop.tscn") as PackedScene
+	_check(backdrop_scene != null, "Shared frontend backdrop scene is unavailable")
+	if backdrop_scene == null:
+		return
+	var backdrop := backdrop_scene.instantiate() as Control
+	root.add_child(backdrop)
+	backdrop.call("configure", "neutral")
+	await _settle_layout(3)
+	var card_fan := backdrop.get_node("%CardFan") as Control
+	_check(
+		card_fan != null and not card_fan.visible,
+		"Neutral secondary-page backdrop must not show decorative cards",
+	)
+	backdrop.call("configure", "victory")
+	await _settle_layout(2)
+	_check(
+		card_fan != null and card_fan.visible,
+		"Victory backdrop lost its intentional celebration card fan",
+	)
+	backdrop.queue_free()
+	await _settle_layout(2)
+
+
+func _check_network_intro_contract(catalog: CardCatalog) -> void:
+	root.size = Vector2i(1600, 900)
+	var packed := load(PAGE_SCENES.network) as PackedScene
+	_check(packed != null, "Network lobby scene is unavailable for intro-card checks")
+	if packed == null:
+		return
+	var page := packed.instantiate() as Control
+	root.add_child(page)
+	page.call("configure", catalog, "lan", "wss://relay.example.test")
+	await _settle_layout(4)
+	var intro_panel := page.get_node("%IntroPanel") as PanelContainer
+	var form_panel := page.find_child("FormPanel", true, false) as PanelContainer
+	var body := page.find_child("Body", true, false) as HBoxContainer
+	var top_bar := page.find_child("TopBar", true, false) as HBoxContainer
+	var page_frame := page.get_node("%Page") as VBoxContainer
+	var lan_page_top := top_bar.global_position.y
+	var description := page.get_node("%KindDescription") as Label
+	var tip := page.get_node("%IntroTip") as Label
+	var kind_label := page.get_node("%KindLabel") as Label
+	var kind_code := page.get_node("%KindCode") as Label
+	var intro_icon := page.get_node("%IntroIcon") as TextureRect
+	var role_badge := page.get_node("%RoleBadgeLabel") as Label
+	_check(
+		intro_panel.visible and not bool(page.get("_compact")),
+		"1600x900 network lobby must expose the wide connection overview",
+	)
+	_check(
+		_rect_inside(intro_panel.get_global_rect(), body.get_global_rect())
+		and _rect_inside(form_panel.get_global_rect(), body.get_global_rect()),
+		"Network overview or form escaped the wide Body container",
+	)
+	_check_pair_not_overlapping(intro_panel, form_panel, "network-intro-wide")
+	_check(
+		form_panel.size.x >= 620.0,
+		"Network overview consumed too much width from the connection form",
+	)
+	_check_named_inside(page, intro_panel.get_global_rect(), [
+		"IntroAccent", "IntroHeader", "KindDescription", "OverviewHeader",
+		"FeatureList", "IntroTipPanel",
+	], "network-intro-wide")
+	_check(
+		description.autowrap_mode == TextServer.AUTOWRAP_WORD_SMART
+		and description.get_line_count() >= 2
+		and description.get_visible_line_count() == description.get_line_count(),
+		"LAN overview description does not wrap fully inside the left card",
+	)
+	_check(
+		tip.get_visible_line_count() == tip.get_line_count(),
+		"LAN overview role hint is clipped",
+	)
+	_check(
+		kind_label.text == "局域网直连"
+		and kind_code.text.begins_with("LAN")
+		and intro_icon.texture.resource_path.ends_with("lan.svg")
+		and role_badge.text == "房主 · 创建",
+		"LAN overview presentation is stale or incomplete",
+	)
+	var decorative_focus: Array[Control] = []
+	_collect_focus_targets(intro_panel, decorative_focus)
+	_check(
+		decorative_focus.is_empty() and intro_panel.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+		"Decorative network overview must not enter the focus or pointer path",
+	)
+	var role_option := page.get_node("%NetworkRoleOption") as OptionButton
+	role_option.select(1)
+	page.call("refresh_fields", 1)
+	_check(
+		role_badge.text == "挑战者 · 加入" and tip.text.contains("局域网地址"),
+		"LAN overview did not follow the selected client role",
+	)
+	var kind_option := page.get_node("%NetworkKindOption") as OptionButton
+	kind_option.select(1)
+	kind_option.item_selected.emit(1)
+	await _settle_layout(3)
+	_check(
+		kind_label.text == "远程中继"
+		and kind_code.text.begins_with("RELAY")
+		and intro_icon.texture.resource_path.ends_with("globe.svg")
+		and (page.get_node("%FeatureOne") as Label).text.contains("跨网络")
+		and tip.text.contains("房间码"),
+		"Relay overview did not update its icon, facts, or role hint",
+	)
+	role_option.select(0)
+	page.call("refresh_fields", 0)
+	await _settle_layout(3)
+	_check(
+		absf(top_bar.global_position.y - lan_page_top) <= 2.0
+		and _rect_inside(page_frame.get_global_rect(), Rect2(Vector2.ZERO, root.size)),
+		"LAN/Relay role changes shifted or clipped the wide network page "
+		+ "(lan_y=%.1f relay_host_y=%.1f page=%s root=%s)" % [
+			lan_page_top,
+			top_bar.global_position.y,
+			page_frame.get_global_rect(),
+			root.size,
+		],
+	)
+	page.queue_free()
+	await _settle_layout(2)
+
+
+func _check_deck_tile_visual_contract(catalog: CardCatalog) -> void:
+	root.size = Vector2i(1600, 900)
+	var packed := load(PAGE_SCENES.decks) as PackedScene
+	_check(packed != null, "Deck-select scene is unavailable for tile visual checks")
+	if packed == null:
+		return
+	var page := packed.instantiate() as Control
+	root.add_child(page)
+	page.call("configure", catalog, "local")
+	await _settle_layout(4)
+	var gallery_grid := page.get_node("%GalleryGrid") as GridContainer
+	var gallery_scroll := page.get_node("%GalleryScroll") as ScrollContainer
+	_check(gallery_grid.get_child_count() >= 3, "Deck gallery exposes too few tiles for state checks")
+	if gallery_grid.get_child_count() < 3:
+		page.queue_free()
+		await _settle_layout(2)
+		return
+	var first := gallery_grid.get_child(0) as DeckGalleryTile
+	var second := gallery_grid.get_child(1) as DeckGalleryTile
+	var third := gallery_grid.get_child(2) as DeckGalleryTile
+	_check(
+		first.theme_type_variation == &"DeckGalleryTileButton"
+		and first.find_child("Accent", true, false) == null,
+		"Deck tile still uses the shared mode style or legacy full-width Accent",
+	)
+	for node_name in [
+		"Artwork", "ArtworkFrame", "DeckName", "EnergyBadge", "EnergyIcon", "EnergyLabel",
+		"CardCountLabel", "TaglineLabel", "AssignmentBadge", "AssignmentLabel",
+	]:
+		_check(
+			first.find_child(node_name, true, false) != null,
+			"Deck tile is missing visual node %s" % node_name,
+		)
+	var count_label := first.get_node("%CardCountLabel") as Label
+	var energy_badge := first.get_node("%EnergyBadge") as PanelContainer
+	var energy_icon := first.get_node("%EnergyIcon") as TextureRect
+	var energy_label := first.get_node("%EnergyLabel") as Label
+	var assignment_badge := first.get_node("%AssignmentBadge") as PanelContainer
+	var assignment_label := first.get_node("%AssignmentLabel") as Label
+	_check(
+		count_label.visible
+		and count_label.text.contains("60 张")
+		and count_label.size.x >= 48.0
+		and energy_badge.size.x >= 64.0
+		and first.accessibility_name.contains("60 张"),
+		"Deck tile lost its visible or accessible card count/type badge",
+	)
+	_check(
+		energy_icon.visible
+		and energy_icon.texture != null
+		and energy_icon.custom_minimum_size.x >= 20.0
+		and energy_icon.custom_minimum_size.x <= 22.0
+		and energy_label.visible
+		and not energy_label.text.is_empty()
+		and energy_badge.accessibility_name.contains("牌组属性"),
+		"Supported deck energy badge lost its compact icon or accessible text",
+	)
+	first.call("_configure_energy_badge", "Dragon")
+	_check(
+		not energy_icon.visible
+		and energy_icon.texture == null
+		and (first.get_node("%EnergyLabel") as Label).text == "龙属性"
+		and energy_badge.accessibility_name.contains("龙属性"),
+		"Unsupported deck energy type must fall back to text without a Colorless icon",
+	)
+	first.call("_configure_energy_badge", "Grass")
+	for node in first.find_children("*", "ColorRect", true, false):
+		var strip := node as ColorRect
+		_check(
+			not (strip.size.y <= 8.0 and strip.size.x >= first.size.x * 0.8),
+			"Deck tile reintroduced a full-width colored strip",
+		)
+	for node in first.find_children("*", "Control", true, false):
+		var child := node as Control
+		_check(
+			child.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+			"Deck tile child intercepts pointer input: %s" % child.get_path(),
+		)
+	var scroll_rect := gallery_scroll.get_global_rect()
+	for tile_value in gallery_grid.get_children():
+		var tile := tile_value as Control
+		var tile_rect := tile.get_global_rect()
+		_check(
+			tile_rect.position.x >= scroll_rect.position.x - EPSILON
+			and tile_rect.end.x <= scroll_rect.end.x + EPSILON,
+			"Deck tile exceeds the gallery's horizontal viewport: %s" % tile.get_path(),
+		)
+	_check(
+		first.is_pressed()
+		and assignment_badge.visible
+		and assignment_label.text == "P1"
+		and not second.is_pressed()
+		and (second.get_node("%AssignmentLabel") as Label).text == "P2"
+		and not (third.get_node("%AssignmentBadge") as PanelContainer).visible,
+		"Deck tile pressed and assignment states are no longer independent",
+	)
+	second.grab_focus()
+	_check(
+		root.gui_get_focus_owner() == second and first.is_pressed(),
+		"Moving focus to another deck changed the selected deck",
+	)
+	var shared_keys: Array[String] = [first.deck_key, first.deck_key]
+	first.set_assignment_state(0, shared_keys, "玩家 2")
+	_check(
+		first.is_pressed()
+		and assignment_label.text == "P1 · P2"
+		and first.accessibility_description.contains("玩家 1")
+		and first.accessibility_description.contains("玩家 2"),
+		"Deck tile cannot represent one deck assigned to both players",
+	)
+	page.queue_free()
+	await _settle_layout(2)
+
+
 func _check_same_instance_resize(catalog: CardCatalog) -> void:
 	var host := Control.new()
 	host.name = "ResponsiveResizeHost"
@@ -243,14 +568,48 @@ func _check_workbench_compact() -> void:
 		if preview_host.get_child_count() > 0
 		else null
 	)
-	_check(title != null and not bool(title.get("_is_wide")),
-		"Workbench narrow preview did not activate the compact title layout")
+	_check(title != null, "Workbench narrow preview did not mount the title page")
 	if title:
 		_check_named_inside(title, preview_host.get_global_rect(), [
-			"HeaderPanel", "HeroPanel", "ModesPanel", "LocalTwoPlayerButton",
-		], "workbench-title-compact")
-		_check_no_horizontal_scroll(title, "workbench-title-compact")
+			"TitleStack", "CardStage", "LocalTwoPlayerButton", "AIButton",
+			"NetworkButton", "FooterRow",
+		], "workbench-title-preview")
+		_check_no_horizontal_scroll(title, "workbench-title-preview")
 	workbench.queue_free()
+	await _settle_layout(2)
+
+
+func _check_battle_canvas_resize() -> void:
+	root.size = Vector2i(1600, 900)
+	var battle_scene := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	_check(battle_scene != null, "Battle screen is unavailable for live resize checks")
+	if battle_scene == null:
+		return
+	var battle := battle_scene.instantiate()
+	root.add_child(battle)
+	battle.initialize_ui()
+	await _settle_layout(4)
+	var canvas := battle.board_canvas as Control
+	var own_active := battle.own_active as Control
+	_check(
+		canvas != null
+		and canvas.resized.is_connected(Callable(battle.table, "_layout_board")),
+		"BattleTable must listen to its resolved BoardCanvas size",
+	)
+	var first_center_x := own_active.position.x + own_active.size.x * 0.5
+	root.size = Vector2i(2000, 900)
+	await _settle_layout(5)
+	var metrics: Dictionary = battle.table._board_layout_metrics(
+		canvas.size.x,
+		canvas.size.y,
+	)
+	var resized_center_x := own_active.position.x + own_active.size.x * 0.5
+	_check(
+		absf(resized_center_x - float(metrics["center_x"])) <= 2.0
+		and resized_center_x > first_center_x + 100.0,
+		"Battle slots did not recenter after same-instance 1600→2000 resize",
+	)
+	battle.queue_free()
 	await _settle_layout(2)
 
 
@@ -277,12 +636,77 @@ func _check_title(viewport_size: Vector2i) -> void:
 	var label := _case_label("title", viewport_size)
 	_check_full_page(page, mounted.safe_host, label)
 	_check_named_inside(page, _simulated_safe_rect(mounted.safe_host), [
-		"PageFrame", "HeaderPanel", "BodyGrid", "HeroPanel", "ModesPanel",
+		"PageFrame", "TitleStack", "CardStage", "LocalTwoPlayerButton",
+		"AIButton", "NetworkButton", "FooterRow", "SettingsButton", "HelpButton",
 	], label)
-	_check_named_non_overlapping(page, ["HeaderPanel", "BodyGrid"], label)
 	_check_named_non_overlapping(page, [
-		"LocalTwoPlayerButton", "ChallengeAIButton", "DeepAIButton", "OnlineCard",
+		"LocalTwoPlayerButton", "AIButton", "NetworkButton",
+		"SettingsButton", "HelpButton",
 	], label)
+	for legacy_name in [
+		"ChallengeAIButton", "DeepAIButton", "LANButton", "RelayButton", "OnlineCard",
+	]:
+		_check(
+			page.find_child(legacy_name, true, false) == null,
+			"%s: legacy title control remains: %s" % [label, legacy_name],
+		)
+	var expected_tier := TITLE_TIER_DENSE
+	if (
+		page.size.x >= 1180.0
+		and page.size.y >= 650.0
+		and page.size.x / maxf(page.size.y, 1.0) >= 1.5
+	):
+		expected_tier = TITLE_TIER_WIDE
+	elif (
+		page.size.x >= 900.0
+		and page.size.y >= 600.0
+		and page.size.x / maxf(page.size.y, 1.0) >= 1.15
+	):
+		expected_tier = TITLE_TIER_COMPACT_LANDSCAPE
+	_check(
+		int(page.get("_layout_tier")) == expected_tier,
+		"%s: title responsive tier does not match the documented breakpoints" % label,
+	)
+	var expected_button_height := (
+		116.0
+		if expected_tier == TITLE_TIER_WIDE
+		else 96.0
+		if expected_tier == TITLE_TIER_COMPACT_LANDSCAPE
+		else 84.0
+	)
+	for node_name in ["LocalTwoPlayerButton", "AIButton", "NetworkButton"]:
+		var mode_button := page.find_child(node_name, true, false) as Button
+		_check(
+			mode_button != null
+			and is_equal_approx(
+				mode_button.custom_minimum_size.y,
+				expected_button_height,
+			),
+			"%s: %s does not use the tier's documented height" % [label, node_name],
+		)
+		if mode_button:
+			var foreground: Color = mode_button.get("foreground_color")
+			var fill: Color = mode_button.get("fill_color")
+			var accent: Color = mode_button.get("accent_color")
+			var hover_fill := fill.lightened(0.05)
+			_check(
+				_contrast_ratio(foreground, fill) >= 4.5
+				and _contrast_ratio(foreground, hover_fill) >= 4.5,
+				"%s: %s normal/hover text contrast must be at least 4.5:1"
+				% [label, node_name],
+			)
+			var dark_focus := Color("#071b3c")
+			var inner_focus := (
+				Color.WHITE
+				if foreground.get_luminance() >= 0.5
+				else dark_focus.lightened(0.12)
+			)
+			_check(
+				_contrast_ratio(dark_focus, accent) >= 3.0
+				and _contrast_ratio(inner_focus, hover_fill) >= 3.0,
+				"%s: %s focus rings must contrast with accent and hover fill"
+				% [label, node_name],
+			)
 	_check_focus_targets(page, label, _simulated_safe_rect(mounted.safe_host))
 	_check_no_horizontal_scroll(page, label)
 	_unmount(mounted)
@@ -384,6 +808,40 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 	)
 	var first_player_option := page.get_node("%FirstPlayerOption") as OptionButton
 	first_player_option.select(2)
+	var ai_mode_option := page.get_node("%AIModeOption") as OptionButton
+	_check(
+		ai_mode_option.item_count == 2
+		and str(ai_mode_option.get_item_metadata(0)) == "challenge"
+		and str(ai_mode_option.get_item_metadata(1)) == "deep",
+		"DeckSelect AIModeOption metadata changed",
+	)
+	var details_button := page.get_node("%DetailsButton") as Button
+	var gallery_scroll := page.get_node("%GalleryScroll") as ScrollContainer
+	var detail_title := page.get_node("%DetailTitle") as Label
+	gallery_scroll.scroll_vertical = 37
+	details_button.grab_focus()
+	var preserved_state := {
+		"first": page.call("selected_deck_key", 0),
+		"second": page.call("selected_deck_key", 1),
+		"active": page.get("_active_player_idx"),
+		"first_player": first_player_option.selected,
+		"scroll": gallery_scroll.scroll_vertical,
+		"detail": detail_title.text,
+		"focus": page.get_viewport().gui_get_focus_owner(),
+	}
+	ai_mode_option.select(1)
+	ai_mode_option.item_selected.emit(1)
+	_check(
+		str(page.get("mode")) == "deep"
+		and page.call("selected_deck_key", 0) == preserved_state["first"]
+		and page.call("selected_deck_key", 1) == preserved_state["second"]
+		and page.get("_active_player_idx") == preserved_state["active"]
+		and first_player_option.selected == preserved_state["first_player"]
+		and gallery_scroll.scroll_vertical == preserved_state["scroll"]
+		and detail_title.text == preserved_state["detail"]
+		and page.get_viewport().gui_get_focus_owner() == preserved_state["focus"],
+		"DeckSelect AI switch reset deck, slot, turn, scroll, detail, or focus state",
+	)
 	_deck_start_payload.clear()
 	var callback := Callable(self, "_on_deck_start_requested")
 	if not page.is_connected("start_requested", callback):
@@ -391,7 +849,7 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 	var start_button := page.get_node("%StartButton") as Button
 	start_button.pressed.emit()
 	_check(
-		_deck_start_payload == ["challenge", deck_key, deck_key, 1],
+		_deck_start_payload == ["deep", deck_key, deck_key, 1],
 		"DeckSelect.start_requested argument order/forced_first changed: %s" % [
 			_deck_start_payload,
 		],
@@ -421,7 +879,7 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	var kind := "lan" if viewport_size.x in [1280, 2000] else "relay"
 	page.call("configure", catalog, kind, "wss://relay.example.test/a/very/long/path")
 	for control_name in [
-		"NetworkRoleOption", "NetworkAddressInput", "NetworkPortInput",
+		"NetworkKindOption", "NetworkRoleOption", "NetworkAddressInput", "NetworkPortInput",
 		"NetworkRoomInput", "NetworkDeckOption",
 	]:
 		var form_control := page.find_child(control_name, true, false) as Control
@@ -464,11 +922,15 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 func _check_network_compact_focus(page: Control) -> void:
 	var step_bar := page.get_node("%CompactStepBar") as HBoxContainer
 	var next_button := page.get_node("%CompactNextButton") as Button
+	var kind_option := page.get_node("%NetworkKindOption") as OptionButton
 	var role_option := page.get_node("%NetworkRoleOption") as OptionButton
 	var address_input := page.get_node("%NetworkAddressInput") as LineEdit
 	var deck_option := page.get_node("%NetworkDeckOption") as OptionButton
 	var copy_button := page.get_node("%CopyRoomButton") as Button
-	_check(step_bar.visible and role_option.visible, "Network compact flow must start at identity")
+	_check(
+		step_bar.visible and kind_option.visible and role_option.visible,
+		"Network compact flow must start at network kind and identity",
+	)
 	next_button.pressed.emit()
 	await _settle_layout()
 	_check(
@@ -798,13 +1260,30 @@ func _find_control(owner: Node, node_name: String) -> Control:
 
 
 func _check_pair_not_overlapping(first: Control, second: Control, label: String) -> void:
-	var overlap := first.get_global_rect().intersection(second.get_global_rect())
+	# Scroll children keep their full global rect even when most of the control is
+	# clipped by the viewport. Compare the actually visible portions so a tile
+	# below the fold is not reported as overlapping a fixed action bar.
+	var overlap := _visible_control_rect(first).intersection(_visible_control_rect(second))
 	_check(
 		overlap.size.x <= EPSILON or overlap.size.y <= EPSILON,
 		"%s: controls overlap: %s and %s (%s)" % [
 			label, first.get_path(), second.get_path(), overlap,
 		],
 	)
+
+
+func _visible_control_rect(control: Control) -> Rect2:
+	var rect := control.get_global_rect()
+	var ancestor := control.get_parent()
+	while ancestor:
+		if ancestor is ScrollContainer:
+			rect = rect.intersection((ancestor as Control).get_global_rect())
+		elif ancestor is Control and (ancestor as Control).clip_contents:
+			rect = rect.intersection((ancestor as Control).get_global_rect())
+		if not rect.has_area():
+			return Rect2()
+		ancestor = ancestor.get_parent()
+	return rect
 
 
 func _check_no_horizontal_scroll(owner: Node, label: String) -> void:
@@ -858,6 +1337,8 @@ func _check_theme_contract() -> void:
 		"FrontStatusPanel": "PanelContainer",
 		"FrontHeadingLabel": "Label",
 		"FrontMutedLabel": "Label",
+		"DeckGalleryTileButton": "Button",
+		"TitleLogoLabel": "Label",
 	}
 	for variation in expected_variations:
 		_check(
@@ -875,6 +1356,14 @@ func _check_theme_contract() -> void:
 		"Primary button variation must define normal, hover, pressed and focus states",
 	)
 	_check(
+		theme.has_stylebox(&"normal", &"DeckGalleryTileButton")
+		and theme.has_stylebox(&"hover", &"DeckGalleryTileButton")
+		and theme.has_stylebox(&"pressed", &"DeckGalleryTileButton")
+		and theme.has_stylebox(&"hover_pressed", &"DeckGalleryTileButton")
+		and theme.has_stylebox(&"focus", &"DeckGalleryTileButton"),
+		"Deck-gallery tile variation must define every interaction state",
+	)
+	_check(
 		theme.get_constant(&"v_separation", &"PopupMenu") >= 24,
 		"Frontend PopupMenu rows must reserve touch-friendly vertical spacing",
 	)
@@ -883,18 +1372,40 @@ func _check_theme_contract() -> void:
 		!= theme.get_icon(&"grabber_highlight", &"HSlider"),
 		"Frontend sliders need a visible hover/focus grabber state",
 	)
+	_check(
+		_font_weight(theme.default_font) >= 600.0,
+		"Frontend compact body text must use Noto Semibold 600 or heavier",
+	)
+	_check(
+		theme.has_font(&"font", &"Button")
+		and _font_weight(theme.get_font(&"font", &"Button")) >= 700.0,
+		"Frontend controls must use Noto Bold 700",
+	)
+	for heading_type in [&"FrontHeadingLabel", &"FrontSectionLabel", &"TitleLogoLabel"]:
+		_check(
+			theme.has_font(&"font", heading_type)
+			and _font_weight(theme.get_font(&"font", heading_type)) >= 700.0,
+			"Frontend heading weight must remain Bold 700: %s" % heading_type,
+		)
 	_check_frontend_contrast(theme)
 
 
 func _check_frontend_contrast(theme: Theme) -> void:
 	var raised := theme.get_stylebox(&"panel", &"FrontRaisedPanel") as StyleBoxFlat
 	var primary := theme.get_stylebox(&"normal", &"FrontPrimaryButton") as StyleBoxFlat
+	var primary_hover := theme.get_stylebox(&"hover", &"FrontPrimaryButton") as StyleBoxFlat
+	var primary_pressed := theme.get_stylebox(&"pressed", &"FrontPrimaryButton") as StyleBoxFlat
+	var primary_focus := theme.get_stylebox(&"focus", &"FrontPrimaryButton") as StyleBoxFlat
 	var status := theme.get_stylebox(&"panel", &"FrontStatusPanel") as StyleBoxFlat
 	var input := theme.get_stylebox(&"normal", &"LineEdit") as StyleBoxFlat
 	var scroll_track := theme.get_stylebox(&"scroll", &"VScrollBar") as StyleBoxFlat
 	var scroll_grabber := theme.get_stylebox(&"grabber", &"VScrollBar") as StyleBoxFlat
 	_check(raised != null, "Raised frontend panel style is unavailable for contrast checks")
 	_check(primary != null, "Primary frontend button style is unavailable for contrast checks")
+	_check(
+		primary_hover != null and primary_pressed != null and primary_focus != null,
+		"Primary frontend interaction styles are unavailable for contrast checks",
+	)
 	_check(status != null, "Status frontend panel style is unavailable for contrast checks")
 	_check(input != null, "Frontend input style is unavailable for contrast checks")
 	_check(scroll_track != null and scroll_grabber != null,
@@ -902,6 +1413,9 @@ func _check_frontend_contrast(theme: Theme) -> void:
 	if (
 		raised == null
 		or primary == null
+		or primary_hover == null
+		or primary_pressed == null
+		or primary_focus == null
 		or status == null
 		or input == null
 		or scroll_track == null
@@ -927,6 +1441,21 @@ func _check_frontend_contrast(theme: Theme) -> void:
 		"Gold primary state contrast must be at least 3:1 (actual %.2f:1)" % [
 			_contrast_ratio(primary.bg_color, raised.bg_color),
 		],
+	)
+	for row in [
+		["normal", primary],
+		["hover", primary_hover],
+		["pressed", primary_pressed],
+	]:
+		var state_name := str(row[0])
+		var state_style := row[1] as StyleBoxFlat
+		_check(
+			_contrast_ratio(primary_focus.border_color, state_style.bg_color) >= 3.0,
+			"Primary %s focus boundary contrast must be at least 3:1" % state_name,
+		)
+	_check(
+		_contrast_ratio(primary_focus.shadow_color, raised.bg_color) >= 3.0,
+		"Primary focus outer glow must remain visible against the page panel",
 	)
 	_check(
 		_contrast_ratio(status.border_color, status.bg_color) >= 3.0,
@@ -980,6 +1509,7 @@ func _check_frontend_font_coverage() -> void:
 	var font_rows := [
 		["res://assets/ui/fonts/noto_sans_cjk_sc_regular.tres", 400.0],
 		["res://assets/ui/fonts/noto_sans_cjk_sc_medium.tres", 500.0],
+		["res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres", 600.0],
 		["res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres", 700.0],
 	]
 	for row in font_rows:
@@ -987,11 +1517,45 @@ func _check_frontend_font_coverage() -> void:
 		_check(
 			variation != null
 			and is_equal_approx(
-				float(variation.variation_opentype.get("wght", -1.0)),
+				float(variation.variation_opentype.get(FONT_WEIGHT_TAG, -1.0)),
 				float(row[1]),
 			),
 			"Frontend FontVariation has the wrong weight: %s" % row[0],
 		)
+	var game_theme := load(GAME_THEME_PATH) as Theme
+	_check(game_theme != null, "Game theme must load for font-weight checks")
+	if game_theme:
+		_check(
+			_font_weight(game_theme.default_font) >= 600.0,
+			"Game body/HUD text must use Noto Semibold 600 or heavier",
+		)
+		for control_type in [&"Button", &"CheckButton", &"OptionButton", &"PopupMenu"]:
+			_check(
+				game_theme.has_font(&"font", control_type)
+				and _font_weight(game_theme.get_font(&"font", control_type)) >= 700.0,
+				"Game control text must use Noto Bold 700: %s" % control_type,
+			)
+	var generated_theme := GameUITheme.create()
+	_check(
+		_font_weight(generated_theme.default_font) >= 600.0
+		and _font_weight(generated_theme.get_font(&"font", &"Button")) >= 700.0,
+		"GameUITheme factory must preserve the static body/control weight hierarchy",
+	)
+	var title_source := FileAccess.get_file_as_string(
+		"res://scenes/title/title_page.tscn"
+	)
+	_check(
+		title_source.count("theme_type_variation = &\"TitleLogoLabel\"") == 2,
+		"Both title-logo layers must opt into the Bold title font variation",
+	)
+	var effect_source := FileAccess.get_file_as_string(
+		"res://scenes/battle/effect_layer.gd"
+	)
+	_check(
+		not "ThemeDB.fallback_font" in effect_source
+		and "noto_sans_cjk_sc_bold.tres" in effect_source,
+		"Battle floating text must use the project Bold font instead of ThemeDB fallback",
+	)
 	var sources: Array[String] = []
 	for directory in ["res://scenes", "res://ui"]:
 		for path in _files_recursive(directory):
@@ -1021,6 +1585,12 @@ func _check_frontend_font_coverage() -> void:
 			", ".join(missing.slice(0, mini(12, missing.size()))),
 		],
 	)
+
+
+func _font_weight(font: Font) -> float:
+	if font is FontVariation:
+		return float((font as FontVariation).variation_opentype.get(FONT_WEIGHT_TAG, -1.0))
+	return -1.0
 
 
 func _contrast_ratio(first: Color, second: Color) -> float:

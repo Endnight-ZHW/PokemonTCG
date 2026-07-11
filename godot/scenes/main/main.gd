@@ -56,6 +56,7 @@ var network_player_idx := -1
 
 var safe_margin: MarginContainer
 var screen_host: Control
+var title_full_bleed_backdrop: Control
 var toast_label: Label
 var sound_player: AudioStreamPlayer
 var audio_director: AudioDirector
@@ -185,6 +186,7 @@ func initialize_ui() -> void:
 func _build_shell() -> void:
 	safe_margin = get_node("SafeArea") as MarginContainer
 	screen_host = get_node("SafeArea/ScreenHost") as Control
+	title_full_bleed_backdrop = get_node_or_null("TitleFullBleedBackdrop") as Control
 	toast_label = get_node("Toast") as Label
 	toast_label.theme = FRONTEND_THEME
 	toast_label.theme_type_variation = &"FrontToastLabel"
@@ -244,11 +246,10 @@ func _show_title() -> void:
 	if audio_director:
 		audio_director.play_music("title")
 	var page := _mount_screen(TITLE_SCENE) as TitlePage
-	page.configure("Client %s · Rules v%d · Protocol v%d" % [
-		AppState.APP_VERSION,
-		AppState.RULES_SCHEMA_VERSION,
-		AppState.PROTOCOL_VERSION,
-	])
+	if title_full_bleed_backdrop:
+		title_full_bleed_backdrop.visible = true
+	page.set_embedded_backdrop_visible(false)
+	page.configure("v%s" % AppState.APP_VERSION)
 	page.mode_selected.connect(_show_deck_select)
 	page.network_selected.connect(_show_network_setup)
 	page.settings_requested.connect(_show_settings)
@@ -278,14 +279,22 @@ func show_choice(request: ChoiceRequest) -> void:
 func _show_network_setup(kind: String) -> void:
 	_play_click()
 	_stop_network()
-	network_kind = kind
+	network_kind = kind if kind in ["lan", "relay"] else "lan"
 	game_mode = MODE_NETWORK
 	current_screen = SCREEN_NETWORK
 	var page := _mount_screen(NETWORK_LOBBY_SCENE) as NetworkLobbyPage
 	current_network_page = page
-	page.configure(catalog, kind, AppSettings.relay_url)
+	page.configure(catalog, network_kind, AppSettings.relay_url)
 	page.back_requested.connect(_show_title)
+	page.kind_changed.connect(_on_network_kind_changed)
 	page.connect_requested.connect(_on_network_connect_requested)
+
+
+func _on_network_kind_changed(kind: String) -> void:
+	if kind not in ["lan", "relay"]:
+		return
+	_stop_network()
+	network_kind = kind
 
 func _on_network_connect_requested(
 	kind: String,
@@ -311,13 +320,11 @@ func _on_network_connect_requested(
 		return
 	var normalized_address := address.strip_edges()
 	var normalized_room_code := room_code.strip_edges()
-	if (
-		normalized_address.is_empty()
-		or (kind == "relay" and not (
-			normalized_address.begins_with("ws://")
-			or normalized_address.begins_with("wss://")
-		))
-		or (kind == "relay" and role == "client" and normalized_room_code.is_empty())
+	if not _network_connection_fields_valid(
+		kind,
+		role,
+		normalized_address,
+		normalized_room_code,
 	):
 		_set_network_page_state(
 			NetworkLobbyPage.ConnectionState.ERROR,
@@ -362,6 +369,33 @@ func _on_network_connect_requested(
 		"等待挑战者连接……" if role == "host" else "正在连接房主……",
 	)
 	_refresh_process_state()
+
+
+func _network_connection_fields_valid(
+	kind: String,
+	role: String,
+	address: String,
+	room_code: String,
+) -> bool:
+	if kind not in ["lan", "relay"] or role not in ["host", "client"]:
+		return false
+	var normalized_address := address.strip_edges()
+	var address_required := kind == "relay" or role == "client"
+	if address_required and normalized_address.is_empty():
+		return false
+	if (
+		kind == "relay"
+		and not (
+			normalized_address.begins_with("ws://")
+			or normalized_address.begins_with("wss://")
+		)
+	):
+		return false
+	return not (
+		kind == "relay"
+		and role == "client"
+		and room_code.strip_edges().is_empty()
+	)
 
 
 func _poll_network() -> void:
@@ -1654,7 +1688,7 @@ func _open_modal(
 	modal_layer.move_to_front()
 	if modal_host_controller:
 		modal_host_controller.focus_initial(resolved_spec.initial_focus)
-	if AppSettings.reduced_motion:
+	if not FrontendMotion.decorative_motion_enabled():
 		shell_animations.stop()
 		shell_animations.speed_scale = 1.0
 		modal_panel.modulate.a = 1.0
@@ -1678,7 +1712,7 @@ func _close_modal() -> void:
 		return
 	if (
 		not is_inside_tree()
-		or AppSettings.reduced_motion
+		or not FrontendMotion.decorative_motion_enabled()
 		or shell_animations == null
 	):
 		_finish_modal_close(close_generation)
@@ -2333,7 +2367,7 @@ func _show_toast(message: String, is_error: bool = false) -> void:
 	else:
 		toast_label.remove_theme_color_override("font_color")
 	toast_label.visible = true
-	if AppSettings.reduced_motion:
+	if not FrontendMotion.decorative_motion_enabled():
 		toast_label.modulate.a = 1.0
 		get_tree().create_timer(2.0).timeout.connect(
 			func() -> void:
@@ -2363,6 +2397,8 @@ func _show_title_from_game() -> void:
 
 func _clear_screen() -> void:
 	current_network_page = null
+	if title_full_bleed_backdrop:
+		title_full_bleed_backdrop.visible = false
 	if screen_router:
 		screen_router.clear_screen()
 		return
@@ -2373,6 +2409,8 @@ func _clear_screen() -> void:
 
 func _mount_screen(scene: PackedScene) -> Node:
 	current_network_page = null
+	if title_full_bleed_backdrop:
+		title_full_bleed_backdrop.visible = false
 	if screen_router:
 		return screen_router.mount(scene)
 	_clear_screen()

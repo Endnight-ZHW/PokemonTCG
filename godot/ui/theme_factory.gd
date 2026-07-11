@@ -9,11 +9,23 @@ const COLOR_ACCENT_BLUE := Color("#45a6ff")
 const COLOR_TEXT := Color("#f2f6ff")
 const COLOR_MUTED := Color("#9cacc5")
 const COLOR_DANGER := Color("#ef6a72")
+const BODY_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres")
+const CONTROL_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres")
+const LONG_FORM_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_medium.tres")
 
 
 static func create() -> Theme:
 	var result := Theme.new()
+	result.default_font = BODY_FONT
 	result.default_font_size = 18
+	result.set_font("font", "Label", BODY_FONT)
+	result.set_font("font", "Button", CONTROL_FONT)
+	result.set_font("font", "CheckButton", CONTROL_FONT)
+	result.set_font("font", "OptionButton", CONTROL_FONT)
+	result.set_font("font", "LineEdit", BODY_FONT)
+	result.set_font("font", "PopupMenu", CONTROL_FONT)
+	result.set_font("normal_font", "RichTextLabel", LONG_FORM_FONT)
+	result.set_font("font", "TooltipLabel", BODY_FONT)
 	result.set_color("font_color", "Label", COLOR_TEXT)
 	result.set_color("font_color", "Button", COLOR_TEXT)
 	result.set_color("font_hover_color", "Button", Color.WHITE)

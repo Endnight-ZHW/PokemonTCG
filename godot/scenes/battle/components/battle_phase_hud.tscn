@@ -119,7 +119,7 @@ autowrap_mode = 2
 
 [node name="AllActionsButton" type="Button" parent="PhasePanel/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 theme_override_font_sizes/font_size = 13
 text = "全部动作"

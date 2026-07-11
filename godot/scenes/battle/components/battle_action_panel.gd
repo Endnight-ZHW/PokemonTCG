@@ -4,7 +4,7 @@ extends PanelContainer
 signal action_requested(action: GameAction)
 signal collapse_requested
 
-@export var action_button_height := 43.0
+@export var action_button_height := 48.0
 
 @onready var action_list: VBoxContainer = %ActionList
 @onready var all_actions_scroll: ScrollContainer = %AllActionsScroll

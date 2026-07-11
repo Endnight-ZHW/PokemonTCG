@@ -6,6 +6,7 @@
 [node name="HelpPanel" type="VBoxContainer"]
 custom_minimum_size = Vector2(0, 0)
 layout_mode = 2
+size_flags_vertical = 3
 theme = ExtResource("2_theme")
 theme_override_constants/separation = 16
 editor_description = "分类式规则与操作帮助。正文由外层通用弹窗统一纵向滚动。"
@@ -59,6 +60,7 @@ text = "本地与联机"
 
 [node name="ContentPanel" type="PanelContainer" parent="."]
 layout_mode = 2
+size_flags_vertical = 3
 theme_type_variation = &"FrontSectionPanel"
 
 [node name="Margin" type="MarginContainer" parent="ContentPanel"]

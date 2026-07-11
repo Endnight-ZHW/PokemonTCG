@@ -207,16 +207,21 @@ text = "正在配置 · 玩家 1"
 horizontal_alignment = 2
 vertical_alignment = 1
 
-[node name="DetailAccent" type="ColorRect" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailTitleRow" type="HBoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DetailAccent" type="ColorRect" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 4)
+custom_minimum_size = Vector2(5, 32)
 layout_mode = 2
 mouse_filter = 2
 color = Color(0.384, 0.843, 1, 1)
 
-[node name="DetailTitle" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+[node name="DetailTitle" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailTitleRow"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 theme_type_variation = &"FrontHeadingLabel"
 theme_override_font_sizes/font_size = 28
 text = "牌组名称"
@@ -227,7 +232,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FrontMutedLabel"
 text = "牌组节奏说明"
-autowrap_mode = 2
+autowrap_mode = 3
 max_lines_visible = 2
 
 [node name="DetailMeta" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
@@ -279,7 +284,8 @@ theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 12
 theme_override_constants/margin_bottom = 10
 
-[node name="ActionContent" type="HBoxContainer" parent="ContentMargin/PageContent/ActionBar/ActionMargin"]
+[node name="ActionContent" type="BoxContainer" parent="ContentMargin/PageContent/ActionBar/ActionMargin"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 14
 
@@ -292,11 +298,27 @@ text = "牌组 1  对战  牌组 2"
 vertical_alignment = 1
 text_overrun_behavior = 3
 
-[node name="AISettings" type="HBoxContainer" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
+[node name="AISettings" type="GridContainer" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 3
+
+[node name="AIModeLabel" type="Label" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "AI 类型"
+vertical_alignment = 1
+
+[node name="AIModeOption" type="OptionButton" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 50)
+layout_mode = 2
+focus_mode = 2
 
 [node name="FirstPlayerLabel" type="Label" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
 layout_mode = 2
@@ -306,13 +328,13 @@ vertical_alignment = 1
 
 [node name="FirstPlayerOption" type="OptionButton" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(210, 50)
+custom_minimum_size = Vector2(180, 50)
 layout_mode = 2
 focus_mode = 2
 
 [node name="StartButton" type="Button" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(224, 54)
+custom_minimum_size = Vector2(192, 54)
 layout_mode = 2
 focus_mode = 2
 theme_type_variation = &"FrontPrimaryButton"

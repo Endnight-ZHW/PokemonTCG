@@ -114,7 +114,7 @@ func _show_title() -> void:
 	preview_caption.text = "标题页 · 可编辑文字、按钮和进入动画"
 	var page := TITLE_SCENE.instantiate() as TitlePage
 	preview_host.add_child(page)
-	page.configure("Workbench Preview · Rules v3 · Protocol v3")
+	page.configure("v%s" % AppState.APP_VERSION)
 
 
 func _show_decks() -> void:

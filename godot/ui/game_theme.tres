@@ -1,4 +1,8 @@
-[gd_resource type="Theme" format=3 uid="uid://dukxt6xci8qas"]
+[gd_resource type="Theme" load_steps=11 format=3 uid="uid://dukxt6xci8qas"]
+
+[ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_medium.tres" id="1_medium"]
+[ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres" id="2_semibold"]
+[ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres" id="3_bold"]
 
 [sub_resource type="StyleBoxFlat" id="ButtonDisabled"]
 content_margin_left = 16.0
@@ -109,29 +113,38 @@ corner_radius_bottom_right = 16
 corner_radius_bottom_left = 16
 
 [resource]
+default_font = ExtResource("2_semibold")
 default_font_size = 18
 Button/colors/font_color = Color(0.949, 0.965, 1, 1)
 Button/colors/font_disabled_color = Color(0.4, 0.455, 0.541, 1)
 Button/colors/font_hover_color = Color(1, 1, 1, 1)
 Button/colors/font_pressed_color = Color(0.035, 0.067, 0.122, 1)
+Button/fonts/font = ExtResource("3_bold")
 Button/styles/disabled = SubResource("ButtonDisabled")
 Button/styles/focus = SubResource("Focus")
 Button/styles/hover = SubResource("ButtonHover")
 Button/styles/normal = SubResource("ButtonNormal")
 Button/styles/pressed = SubResource("ButtonPressed")
 CheckButton/colors/font_color = Color(0.949, 0.965, 1, 1)
+CheckButton/fonts/font = ExtResource("3_bold")
 HBoxContainer/constants/separation = 12
 Label/colors/font_color = Color(0.949, 0.965, 1, 1)
 Label/colors/font_outline_color = Color(0, 0, 0, 0.55)
 Label/constants/outline_size = 2
+Label/fonts/font = ExtResource("2_semibold")
+LineEdit/fonts/font = ExtResource("2_semibold")
 LineEdit/styles/focus = SubResource("ButtonHover")
 LineEdit/styles/normal = SubResource("Input")
 OptionButton/colors/font_color = Color(0.949, 0.965, 1, 1)
+OptionButton/fonts/font = ExtResource("3_bold")
 OptionButton/styles/focus = SubResource("Focus")
 OptionButton/styles/hover = SubResource("ButtonHover")
 OptionButton/styles/normal = SubResource("Input")
 OptionButton/styles/pressed = SubResource("ButtonPressed")
 Panel/styles/panel = SubResource("Panel")
 PanelContainer/styles/panel = SubResource("Panel")
+PopupMenu/fonts/font = ExtResource("3_bold")
 RichTextLabel/colors/default_color = Color(0.949, 0.965, 1, 1)
+RichTextLabel/fonts/normal_font = ExtResource("1_medium")
+TooltipLabel/fonts/font = ExtResource("2_semibold")
 VBoxContainer/constants/separation = 12

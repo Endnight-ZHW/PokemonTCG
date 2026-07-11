@@ -33,6 +33,8 @@ static func decorative_motion_enabled() -> bool:
 
 
 static func duration(base_duration: float = 0.24) -> float:
+	if is_low_quality():
+		return 0.0
 	match animation_mode():
 		"cinematic":
 			return base_duration

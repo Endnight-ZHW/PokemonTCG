@@ -13,6 +13,7 @@ signal action_requested(action: GameAction)
 
 const LONG_PRESS_MSEC := 350
 const DRAG_THRESHOLD := 14.0
+const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 
 @export_category("Card Layout")
 @export var selected_lift := 12.0
@@ -37,6 +38,26 @@ const ENERGY_LABELS := {
 	"Rainbow": "R",
 	"Special": "SP",
 }
+
+const ENERGY_DISPLAY_NAMES := {
+	"Grass": "草能量",
+	"Fire": "火能量",
+	"Water": "水能量",
+	"Lightning": "雷能量",
+	"Psychic": "超能能量",
+	"Fighting": "斗能量",
+	"Darkness": "恶能量",
+	"Metal": "钢能量",
+	"Dragon": "龙能量",
+	"Colorless": "无色能量",
+	"Rainbow": "彩虹能量",
+	"Special": "特殊能量",
+}
+
+const MAXIMUM_ENERGY_BADGES := 4
+const MINIMUM_ENERGY_BADGE_SIZE := 18.0
+const DEFAULT_ENERGY_BADGE_SIZE := 24.0
+const ENERGY_BADGE_SEPARATION := 2.0
 
 var card_id := ""
 var hand_index := -1
@@ -190,7 +211,7 @@ func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
 		var button := Button.new()
 		button.text = str(row.get("label", action.action))
 		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		button.custom_minimum_size.y = 30
+		button.custom_minimum_size.y = 48
 		button.add_theme_font_size_override("font_size", 11)
 		button.add_theme_stylebox_override(
 			"normal",
@@ -205,7 +226,7 @@ func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
 		button.pressed.connect(action_requested.emit.bind(action))
 		action_buttons.add_child(button)
 		shown += 1
-	var overlay_height := 8.0 + float(shown) * 33.0
+	var overlay_height := 8.0 + float(shown) * 51.0
 	if not target_hint.is_empty():
 		overlay_height += 27.0
 	action_overlay.offset_top = -maxf(40.0, overlay_height)
@@ -484,6 +505,8 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 func _on_resized() -> void:
 	pivot_offset = size * 0.5
 	_layout_battle_overlay()
+	if energy_row != null and energy_row.visible and pokemon != null:
+		_refresh_energy_badges()
 	_apply_depth_visuals()
 
 
@@ -641,8 +664,8 @@ func _ensure_overlay_nodes() -> void:
 
 	energy_row = HBoxContainer.new()
 	energy_row.name = "EnergyRow"
-	energy_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	energy_row.add_theme_constant_override("separation", 2)
+	energy_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	energy_row.add_theme_constant_override("separation", int(ENERGY_BADGE_SEPARATION))
 	energy_row.z_index = 8
 	add_child(energy_row)
 
@@ -699,6 +722,7 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 	top_gloss.visible = not empty
 	if not show_overlay:
 		_clear_energy_badges()
+		_set_energy_summary([])
 		return
 	var maximum := _pokemon_max_hp(card, pokemon)
 	var current := pokemon.current_hp(catalog) if catalog else maximum - (
@@ -758,33 +782,206 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 func _refresh_energy_badges() -> void:
 	_clear_energy_badges()
 	if pokemon == null:
+		_set_energy_summary([])
 		return
 	var grouped := _attached_energy_groups()
-	for row_value in grouped:
+	_set_energy_summary(grouped)
+	if grouped.is_empty():
+		return
+	var available_width := maxf(0.0, size.x - 10.0)
+	var capacity := clampi(
+		int(floor(
+			(available_width + ENERGY_BADGE_SEPARATION)
+			/ (MINIMUM_ENERGY_BADGE_SIZE + ENERGY_BADGE_SEPARATION)
+		)),
+		1,
+		MAXIMUM_ENERGY_BADGES,
+	)
+	var has_overflow := grouped.size() > capacity
+	var visible_group_count := capacity - 1 if has_overflow else grouped.size()
+	var slot_count := capacity if has_overflow else visible_group_count
+	var badge_size := minf(
+		DEFAULT_ENERGY_BADGE_SIZE,
+		floor(
+			(available_width - ENERGY_BADGE_SEPARATION * float(maxi(0, slot_count - 1)))
+			/ float(maxi(1, slot_count))
+		),
+	)
+	badge_size = maxf(MINIMUM_ENERGY_BADGE_SIZE, badge_size)
+	for index in range(visible_group_count):
+		var row_value: Variant = grouped[index]
 		var row: Dictionary = row_value
 		var energy_type := str(row.get("type", "Colorless"))
 		var count := int(row.get("count", 1))
-		var badge := Label.new()
-		badge.name = "EnergyBadge"
-		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		badge.custom_minimum_size = Vector2(24, 24)
-		badge.text = _energy_label(energy_type, count)
-		badge.tooltip_text = "%s energy x%d" % [energy_type, count]
-		badge.add_theme_font_size_override("font_size", 11)
-		badge.add_theme_color_override("font_color", _energy_font_color(energy_type))
-		badge.add_theme_stylebox_override(
+		energy_row.add_child(_new_energy_badge(
+			energy_type,
+			count,
+			str(row.get("icon_card_id", "")),
+			str(row.get("display_name", "")),
+			badge_size,
+		))
+	if has_overflow:
+		var overflow_count := 0
+		for index in range(visible_group_count, grouped.size()):
+			overflow_count += int((grouped[index] as Dictionary).get("count", 1))
+		energy_row.add_child(_new_energy_overflow_badge(overflow_count, badge_size))
+
+
+func _new_energy_badge(
+	energy_type: String,
+	count: int,
+	icon_card_id := "",
+	display_name := "",
+	badge_size := DEFAULT_ENERGY_BADGE_SIZE,
+) -> Control:
+	var badge := Control.new()
+	badge.name = "EnergyBadge"
+	badge.mouse_filter = Control.MOUSE_FILTER_PASS
+	badge.custom_minimum_size = Vector2(badge_size, badge_size)
+	var accessible_name := (
+		display_name
+		if not display_name.is_empty()
+		else str(ENERGY_DISPLAY_NAMES.get(energy_type, energy_type))
+	)
+	badge.tooltip_text = "%s x%d" % [accessible_name, count]
+	badge.accessibility_name = badge.tooltip_text
+
+	var plate := Panel.new()
+	plate.name = "Plate"
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	plate.add_theme_stylebox_override(
+		"panel",
+		DesignTokens.panel_style(
+			Color(0.025, 0.055, 0.09, 0.92),
+			12,
+			_energy_color(energy_type).lightened(0.28),
+			1,
+			0,
+		),
+	)
+	badge.add_child(plate)
+
+	var texture: Texture2D = (
+		ENERGY_ICONS.texture_for_card_id(icon_card_id)
+		if not icon_card_id.is_empty()
+		else ENERGY_ICONS.texture_for(energy_type)
+	)
+	if texture == null:
+		var fallback := Label.new()
+		fallback.name = "FallbackLabel"
+		fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		fallback.text = _energy_label(energy_type, count)
+		fallback.add_theme_font_size_override("font_size", 10)
+		fallback.add_theme_color_override("font_color", DesignTokens.TEXT)
+		fallback.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.72))
+		fallback.add_theme_constant_override("outline_size", 2)
+		badge.add_child(fallback)
+		return badge
+
+	var icon := TextureRect.new()
+	icon.name = "Icon"
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	icon.offset_left = 2.0
+	icon.offset_top = 2.0
+	icon.offset_right = -2.0
+	icon.offset_bottom = -2.0
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture = texture
+	badge.add_child(icon)
+
+	if count > 1:
+		var count_badge := Label.new()
+		count_badge.name = "CountBadge"
+		count_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		count_badge.anchor_left = 1.0
+		count_badge.anchor_top = 1.0
+		count_badge.anchor_right = 1.0
+		count_badge.anchor_bottom = 1.0
+		count_badge.offset_left = -14.0
+		count_badge.offset_top = -14.0
+		count_badge.offset_right = 1.0
+		count_badge.offset_bottom = 1.0
+		count_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		count_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		count_badge.text = str(count)
+		count_badge.add_theme_font_size_override("font_size", 9)
+		count_badge.add_theme_color_override("font_color", Color.WHITE)
+		count_badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				_energy_color(energy_type),
-				12,
-				Color(1, 1, 1, 0.70),
+				Color(0.02, 0.04, 0.075, 0.98),
+				7,
+				Color(1, 1, 1, 0.82),
 				1,
 				0,
 			),
 		)
-		energy_row.add_child(badge)
+		badge.add_child(count_badge)
+	return badge
+
+
+func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
+	var badge := Control.new()
+	badge.name = "EnergyOverflowBadge"
+	badge.mouse_filter = Control.MOUSE_FILTER_PASS
+	badge.custom_minimum_size = Vector2(badge_size, badge_size)
+	badge.tooltip_text = "另有 %d 张附加能量" % count
+	badge.accessibility_name = badge.tooltip_text
+
+	var plate := Panel.new()
+	plate.name = "Plate"
+	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	plate.add_theme_stylebox_override(
+		"panel",
+		DesignTokens.panel_style(
+			Color(0.025, 0.055, 0.09, 0.94),
+			12,
+			DesignTokens.GOLD.lightened(0.12),
+			1,
+			0,
+		),
+	)
+	badge.add_child(plate)
+
+	var label := Label.new()
+	label.name = "OverflowLabel"
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.text = "+%d" % count
+	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_color_override("font_color", Color.WHITE)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.72))
+	label.add_theme_constant_override("outline_size", 2)
+	badge.add_child(label)
+	return badge
+
+
+func _set_energy_summary(grouped: Array[Dictionary]) -> void:
+	if is_hidden_card or empty or pokemon == null or grouped.is_empty():
+		tooltip_text = ""
+		accessibility_description = ""
+		return
+	var parts: Array[String] = []
+	for row in grouped:
+		var display_name := str(row.get("display_name", ""))
+		if display_name.is_empty():
+			display_name = str(ENERGY_DISPLAY_NAMES.get(
+				str(row.get("type", "Colorless")),
+				str(row.get("type", "Colorless")),
+			))
+		parts.append("%s ×%d" % [display_name, int(row.get("count", 1))])
+	var summary := "附加能量：%s" % "、".join(parts)
+	tooltip_text = summary
+	accessibility_description = summary
 
 
 func _clear_energy_badges() -> void:
@@ -803,17 +1000,39 @@ func _attached_energy_groups() -> Array[Dictionary]:
 		var energy_type := "Special" if "Special" in card.get("subtypes", []) else "Colorless"
 		if not provided.is_empty():
 			energy_type = str(provided[0])
-		if not counts.has(energy_type):
-			counts[energy_type] = 0
-		counts[energy_type] += 1
+		var icon_card_id := (
+			energy_id
+			if not ENERGY_ICONS.path_for_card_id(energy_id).is_empty()
+			else ""
+		)
+		var group_key := (
+			"card:%s" % icon_card_id
+			if not icon_card_id.is_empty()
+			else "type:%s" % energy_type
+		)
+		if not counts.has(group_key):
+			counts[group_key] = {
+				"type": energy_type,
+				"count": 0,
+				"icon_card_id": icon_card_id,
+				"display_name": (
+					str(card.get("name", energy_type))
+					if not icon_card_id.is_empty()
+					else ""
+				),
+			}
+		counts[group_key]["count"] = int(counts[group_key].get("count", 0)) + 1
 	var result: Array[Dictionary] = []
-	for energy_type in counts.keys():
-		result.append({
-			"type": str(energy_type),
-			"count": int(counts[energy_type]),
-		})
+	for group_key in counts:
+		result.append(counts[group_key] as Dictionary)
 	result.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
-		return str(left.get("type", "")) < str(right.get("type", ""))
+		var left_key := "%s:%s" % [
+			str(left.get("type", "")), str(left.get("icon_card_id", "")),
+		]
+		var right_key := "%s:%s" % [
+			str(right.get("type", "")), str(right.get("icon_card_id", "")),
+		]
+		return left_key < right_key
 	)
 	return result
 
@@ -829,12 +1048,6 @@ func _energy_color(energy_type: String) -> Color:
 	if energy_type == "Special":
 		return Color("#7a87a8")
 	return DesignTokens.type_color(energy_type)
-
-
-func _energy_font_color(energy_type: String) -> Color:
-	return DesignTokens.BG_DEEP if energy_type in [
-		"Grass", "Fire", "Water", "Lightning", "Fighting", "Colorless", "Rainbow",
-	] else DesignTokens.TEXT
 
 
 func _pokemon_max_hp(card: Dictionary, pokemon_value: PokemonState) -> int:

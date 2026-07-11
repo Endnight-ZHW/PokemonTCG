@@ -21,7 +21,7 @@ TEMPLATES = {'sv1-ener-1': {'name': '草能量', 'supertype': 'Energy', 'subtype
               'subtypes': ['Special'],
               'rules': ['只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。',
                         '在自己的回合，当从反面朝上的自己的奖赏卡中拿取了这张卡牌时，在加入手牌前，可将这张卡牌附着于自己的宝可梦身上。']},
- 'svi-mirc': {'name': '奇迹能量',
+ 'svi-mirc': {'name': '幸运能量',
               'supertype': 'Energy',
               'subtypes': ['Special'],
               'rules': ['只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。', '身上附有这张卡牌的宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，从自己的牌库上方抽取1张卡牌。']},

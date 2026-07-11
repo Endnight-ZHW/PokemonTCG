@@ -49,6 +49,7 @@ func _run_phase_five() -> Dictionary:
 func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictionary:
 	var settings_ok := int(services.get("card_cache_size", 0)) >= 8
 	var license_ok := FileAccess.file_exists("res://third_party/onnxruntime/LICENSE")
+	var release_ui_resources_ok := _load_release_ui_resources()
 	var texture_cache: Variant = services.get("texture_cache")
 	var cache_ok := texture_cache != null
 	if cache_ok:
@@ -110,12 +111,41 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 			break
 		deep_runtime.unload()
 	deep_runtime.unload()
-	if not settings_ok or not license_ok or not cache_ok or not inference_ok:
+	if (
+		not settings_ok
+		or not license_ok
+		or not release_ui_resources_ok
+		or not cache_ok
+		or not inference_ok
+	):
 		return _failure(4, "PHASE6_EXPORT_RELEASE_FAILED")
 	return _success(
-		"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 licenses=1 models=%d"
+		(
+			"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
+			+ "licenses=1 ui_resources=1 models=%d"
+		)
 		% [str(services.get("app_version", "")), release_decks.size()]
 	)
+
+
+func _load_release_ui_resources() -> bool:
+	var semibold_font := ResourceLoader.load(
+		"res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres",
+		"Font",
+	) as Font
+	var title_scene := ResourceLoader.load(
+		"res://scenes/title/title_page.tscn",
+		"PackedScene",
+	) as PackedScene
+	if semibold_font == null or title_scene == null:
+		return false
+	for energy_type in EnergyIconCatalog.ICON_PATHS:
+		if EnergyIconCatalog.texture_for(str(energy_type)) == null:
+			return false
+	for card_id in EnergyIconCatalog.SPECIAL_ICON_PATHS:
+		if EnergyIconCatalog.texture_for_card_id(str(card_id)) == null:
+			return false
+	return true
 
 
 func _success(message: String) -> Dictionary:

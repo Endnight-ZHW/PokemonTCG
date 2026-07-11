@@ -179,6 +179,7 @@ vertical_alignment = 1
 
 [node name="PreviewHost" type="Control" parent="Layout/PreviewColumn"]
 unique_name_in_owner = true
+clip_contents = true
 layout_mode = 2
 size_flags_vertical = 3
 editor_description = "预览页面挂载点。运行时只存在一个预览页面。"

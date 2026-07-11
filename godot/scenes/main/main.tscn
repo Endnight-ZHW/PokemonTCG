@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://brdau26vlkdm3" path="res://scenes/main/modal_host.gd" id="8_modal_host"]
 [ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="9_front_theme"]
 [ext_resource type="Texture2D" path="res://assets/app_icon.svg" id="10_app_mark"]
+[ext_resource type="PackedScene" path="res://ui/frontend/title_backdrop.tscn" id="11_title_backdrop"]
 
 [sub_resource type="StyleBoxFlat" id="Style_toast"]
 bg_color = Color(0.106, 0.18, 0.286, 1)
@@ -131,6 +132,16 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 color = Color(0.035, 0.067, 0.122, 1)
+
+[node name="TitleFullBleedBackdrop" parent="." instance=ExtResource("11_title_backdrop")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="SafeArea" type="MarginContainer" parent="." unique_id=611622708]
 unique_name_in_owner = true

@@ -1,8 +1,8 @@
-[gd_resource type="Theme" load_steps=53 format=3]
+[gd_resource type="Theme" load_steps=57 format=3]
 
-[ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_regular.tres" id="1_regular"]
 [ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_medium.tres" id="2_medium"]
 [ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres" id="3_bold"]
+[ext_resource type="Font" path="res://assets/ui/fonts/noto_sans_cjk_sc_semibold.tres" id="14_semibold"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_down.svg" id="4_down"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_left.svg" id="5_left"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_right.svg" id="6_right"]
@@ -31,6 +31,24 @@ expand_margin_left = 2.0
 expand_margin_top = 2.0
 expand_margin_right = 2.0
 expand_margin_bottom = 2.0
+
+[sub_resource type="StyleBoxFlat" id="PrimaryFocus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.027, 0.106, 0.235, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+expand_margin_left = 2.0
+expand_margin_top = 2.0
+expand_margin_right = 2.0
+expand_margin_bottom = 2.0
+shadow_color = Color(0.56, 0.9, 1, 0.9)
+shadow_size = 4
 
 [sub_resource type="StyleBoxFlat" id="ButtonNormal"]
 content_margin_left = 18.0
@@ -304,6 +322,46 @@ corner_radius_top_right = 18
 corner_radius_bottom_right = 18
 corner_radius_bottom_left = 18
 
+[sub_resource type="StyleBoxFlat" id="DeckTileNormal"]
+bg_color = Color(0.039, 0.086, 0.153, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.157, 0.302, 0.439, 0.9)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="DeckTileHover"]
+bg_color = Color(0.055, 0.145, 0.247, 0.99)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.298, 0.667, 0.941, 0.9)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+shadow_color = Color(0.086, 0.49, 0.82, 0.14)
+shadow_size = 6
+
+[sub_resource type="StyleBoxFlat" id="DeckTilePressed"]
+bg_color = Color(0.063, 0.227, 0.365, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.384, 0.792, 1, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+shadow_color = Color(0.11, 0.55, 0.9, 0.18)
+shadow_size = 7
+
 [sub_resource type="StyleBoxFlat" id="CategoryNormal"]
 content_margin_left = 17.0
 content_margin_top = 10.0
@@ -572,7 +630,7 @@ shadow_offset = Vector2(0, 4)
 
 [resource]
 default_base_scale = 1.0
-default_font = ExtResource("1_regular")
+default_font = ExtResource("14_semibold")
 default_font_size = 18
 Button/colors/font_color = Color(0.965, 0.976, 1, 1)
 Button/colors/font_disabled_color = Color(0.455, 0.518, 0.624, 1)
@@ -588,7 +646,7 @@ Button/colors/icon_normal_color = Color(0.827, 0.882, 0.965, 1)
 Button/colors/icon_pressed_color = Color(1, 1, 1, 1)
 Button/constants/h_separation = 10
 Button/font_sizes/font_size = 18
-Button/fonts/font = ExtResource("2_medium")
+Button/fonts/font = ExtResource("3_bold")
 Button/styles/disabled = SubResource("ButtonDisabled")
 Button/styles/focus = SubResource("Focus")
 Button/styles/hover = SubResource("ButtonHover")
@@ -611,6 +669,7 @@ CheckBox/icons/checked = ExtResource("8_checked")
 CheckBox/icons/checked_disabled = ExtResource("8_checked")
 CheckBox/icons/unchecked = ExtResource("9_unchecked")
 CheckBox/icons/unchecked_disabled = ExtResource("9_unchecked")
+CheckBox/fonts/font = ExtResource("3_bold")
 CheckBox/styles/focus = SubResource("Focus")
 CheckButton/colors/font_color = Color(0.941, 0.961, 1, 1)
 CheckButton/colors/font_disabled_color = Color(0.455, 0.518, 0.624, 1)
@@ -629,6 +688,7 @@ CheckButton/icons/checked = ExtResource("10_toggle_on")
 CheckButton/icons/checked_disabled = ExtResource("10_toggle_on")
 CheckButton/icons/unchecked = ExtResource("11_toggle_off")
 CheckButton/icons/unchecked_disabled = ExtResource("11_toggle_off")
+CheckButton/fonts/font = ExtResource("3_bold")
 CheckButton/styles/focus = SubResource("Focus")
 HScrollBar/icons/decrement = ExtResource("5_left")
 HScrollBar/icons/decrement_highlight = ExtResource("5_left")
@@ -662,6 +722,7 @@ LineEdit/colors/font_uneditable_color = Color(0.525, 0.592, 0.698, 1)
 LineEdit/colors/selection_color = Color(0.118, 0.478, 0.769, 0.78)
 LineEdit/constants/minimum_character_width = 4
 LineEdit/constants/outline_size = 0
+LineEdit/fonts/font = ExtResource("14_semibold")
 LineEdit/styles/focus = SubResource("InputFocus")
 LineEdit/styles/normal = SubResource("InputNormal")
 LineEdit/styles/read_only = SubResource("InputReadOnly")
@@ -684,6 +745,7 @@ OptionButton/colors/icon_pressed_color = Color(1, 1, 1, 1)
 OptionButton/constants/arrow_margin = 8
 OptionButton/constants/h_separation = 12
 OptionButton/icons/arrow = ExtResource("4_down")
+OptionButton/fonts/font = ExtResource("3_bold")
 OptionButton/styles/disabled = SubResource("ButtonDisabled")
 OptionButton/styles/focus = SubResource("Focus")
 OptionButton/styles/hover = SubResource("ButtonHover")
@@ -707,6 +769,7 @@ PopupMenu/icons/checked = ExtResource("8_checked")
 PopupMenu/icons/submenu = ExtResource("6_right")
 PopupMenu/icons/submenu_mirrored = ExtResource("5_left")
 PopupMenu/icons/unchecked = ExtResource("9_unchecked")
+PopupMenu/fonts/font = ExtResource("3_bold")
 PopupMenu/styles/hover = SubResource("PopupHover")
 PopupMenu/styles/labeled_separator_left = SubResource("HSeparator")
 PopupMenu/styles/labeled_separator_right = SubResource("HSeparator")
@@ -719,10 +782,12 @@ RichTextLabel/colors/font_shadow_color = Color(0, 0, 0, 0)
 RichTextLabel/colors/selection_color = Color(0.118, 0.478, 0.769, 0.78)
 RichTextLabel/constants/line_separation = 5
 RichTextLabel/constants/outline_size = 0
+RichTextLabel/fonts/normal_font = ExtResource("2_medium")
 RichTextLabel/styles/focus = SubResource("Focus")
 RichTextLabel/styles/normal = SubResource("Empty")
 TooltipLabel/colors/font_color = Color(0.965, 0.976, 1, 1)
 TooltipLabel/font_sizes/font_size = 15
+TooltipLabel/fonts/font = ExtResource("14_semibold")
 TooltipPanel/styles/panel = SubResource("TooltipPanel")
 VScrollBar/icons/decrement = ExtResource("7_up")
 VScrollBar/icons/decrement_highlight = ExtResource("7_up")
@@ -758,7 +823,7 @@ FrontPrimaryButton/colors/icon_hover_color = Color(0.024, 0.047, 0.082, 1)
 FrontPrimaryButton/colors/icon_normal_color = Color(0.035, 0.067, 0.114, 1)
 FrontPrimaryButton/colors/icon_pressed_color = Color(0.024, 0.047, 0.082, 1)
 FrontPrimaryButton/styles/disabled = SubResource("ButtonDisabled")
-FrontPrimaryButton/styles/focus = SubResource("Focus")
+FrontPrimaryButton/styles/focus = SubResource("PrimaryFocus")
 FrontPrimaryButton/styles/hover = SubResource("PrimaryHover")
 FrontPrimaryButton/styles/normal = SubResource("PrimaryNormal")
 FrontPrimaryButton/styles/pressed = SubResource("PrimaryPressed")
@@ -783,6 +848,13 @@ FrontModeTileButton/fonts/font = ExtResource("3_bold")
 FrontModeTileButton/styles/hover = SubResource("ModeHover")
 FrontModeTileButton/styles/normal = SubResource("ModeNormal")
 FrontModeTileButton/styles/pressed = SubResource("ModePressed")
+DeckGalleryTileButton/base_type = &"Button"
+DeckGalleryTileButton/styles/disabled = SubResource("ButtonDisabled")
+DeckGalleryTileButton/styles/focus = SubResource("Focus")
+DeckGalleryTileButton/styles/hover = SubResource("DeckTileHover")
+DeckGalleryTileButton/styles/hover_pressed = SubResource("DeckTilePressed")
+DeckGalleryTileButton/styles/normal = SubResource("DeckTileNormal")
+DeckGalleryTileButton/styles/pressed = SubResource("DeckTilePressed")
 FrontCategoryButton/base_type = &"Button"
 FrontCategoryButton/font_sizes/font_size = 16
 FrontCategoryButton/styles/hover = SubResource("GhostHover")
@@ -807,12 +879,13 @@ FrontSectionLabel/fonts/font = ExtResource("3_bold")
 FrontMutedLabel/base_type = &"Label"
 FrontMutedLabel/colors/font_color = Color(0.69, 0.765, 0.855, 1)
 FrontMutedLabel/font_sizes/font_size = 16
+FrontMutedLabel/fonts/font = ExtResource("14_semibold")
 FrontToastLabel/base_type = &"Label"
 FrontToastLabel/colors/font_color = Color(0.965, 0.976, 1, 1)
 FrontToastLabel/colors/font_outline_color = Color(0.012, 0.027, 0.051, 0.95)
 FrontToastLabel/constants/outline_size = 2
 FrontToastLabel/font_sizes/font_size = 18
-FrontToastLabel/fonts/font = ExtResource("2_medium")
+FrontToastLabel/fonts/font = ExtResource("14_semibold")
 FrontModalTitle/base_type = &"Label"
 FrontModalTitle/colors/font_color = Color(0.984, 0.812, 0.329, 1)
 FrontModalTitle/font_sizes/font_size = 28
@@ -832,3 +905,20 @@ SectionLabel/base_type = &"FrontSectionLabel"
 MutedLabel/base_type = &"FrontMutedLabel"
 ToastLabel/base_type = &"FrontToastLabel"
 ModalTitle/base_type = &"FrontModalTitle"
+TitleLogoLabel/base_type = &"Label"
+TitleLogoLabel/fonts/font = ExtResource("3_bold")
+TitleSubtitleLabel/base_type = &"Label"
+TitleSubtitleLabel/colors/font_color = Color(0.055, 0.20, 0.42, 1)
+TitleSubtitleLabel/colors/font_outline_color = Color(0.94, 0.985, 1, 0.88)
+TitleSubtitleLabel/constants/outline_size = 2
+TitleSubtitleLabel/fonts/font = ExtResource("14_semibold")
+TitleFooterLabel/base_type = &"Label"
+TitleFooterLabel/colors/font_color = Color(0.965, 0.985, 1, 1)
+TitleFooterLabel/colors/font_outline_color = Color(0.035, 0.12, 0.29, 0.95)
+TitleFooterLabel/constants/outline_size = 2
+TitleFooterLabel/fonts/font = ExtResource("3_bold")
+TitleFooterLabel/font_sizes/font_size = 16
+TitleUtilityButton/base_type = &"FrontGhostButton"
+TitleUtilityButton/colors/font_color = Color(0.965, 0.985, 1, 1)
+TitleUtilityButton/colors/font_hover_color = Color(1, 1, 1, 1)
+TitleUtilityButton/colors/icon_normal_color = Color(0.90, 0.96, 1, 1)
