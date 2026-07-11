@@ -1,10 +1,74 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/panels/help_panel.gd" id="1_help"]
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
 
 [node name="HelpPanel" type="VBoxContainer"]
-custom_minimum_size = Vector2(700, 560)
+custom_minimum_size = Vector2(0, 0)
+layout_mode = 2
+theme = ExtResource("2_theme")
+theme_override_constants/separation = 16
+editor_description = "分类式规则与操作帮助。正文由外层通用弹窗统一纵向滚动。"
+script = ExtResource("1_help")
+
+[node name="Intro" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "选择一个主题快速了解对战流程。所有说明都遵守当前版本的原生规则与隐藏信息约束。"
+autowrap_mode = 2
+
+[node name="CategoryBar" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="QuickStartCategory" type="Button" parent="CategoryBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontCategoryButton"
+toggle_mode = true
+text = "快速开始"
+
+[node name="TurnCategory" type="Button" parent="CategoryBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontCategoryButton"
+toggle_mode = true
+text = "回合流程"
+
+[node name="BoardCategory" type="Button" parent="CategoryBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontCategoryButton"
+toggle_mode = true
+text = "卡牌与区域"
+
+[node name="NetworkCategory" type="Button" parent="CategoryBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontCategoryButton"
+toggle_mode = true
+text = "本地与联机"
+
+[node name="ContentPanel" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_type_variation = &"FrontSectionPanel"
+
+[node name="Margin" type="MarginContainer" parent="ContentPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="ContentBody" type="VBoxContainer" parent="ContentPanel/Margin"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 12
-editor_description = "规则与操作帮助内容。标题和按钮由 Main 的通用弹窗外壳提供；正文在此场景和脚本中维护。"
-script = ExtResource("1_help")

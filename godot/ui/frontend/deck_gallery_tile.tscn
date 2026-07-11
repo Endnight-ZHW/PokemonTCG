@@ -1,0 +1,100 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/frontend/deck_gallery_tile.gd" id="1_tile"]
+
+[node name="DeckGalleryTile" type="Button"]
+custom_minimum_size = Vector2(244, 136)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+focus_mode = 2
+theme_type_variation = &"FrontModeTileButton"
+toggle_mode = true
+text = ""
+script = ExtResource("1_tile")
+
+[node name="Accent" type="ColorRect" parent="."]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 4.0
+grow_horizontal = 2
+color = Color(0.384, 0.843, 1, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 13.0
+offset_right = -12.0
+offset_bottom = -11.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Content" type="HBoxContainer" parent="Margin"]
+mouse_filter = 2
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ArtworkFrame" type="PanelContainer" parent="Margin/Content"]
+custom_minimum_size = Vector2(80, 110)
+mouse_filter = 2
+layout_mode = 2
+theme_type_variation = &"FrontCardFrame"
+
+[node name="Artwork" type="TextureRect" parent="Margin/Content/ArtworkFrame"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Info" type="VBoxContainer" parent="Margin/Content"]
+mouse_filter = 2
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="AssignmentLabel" type="Label" parent="Margin/Content/Info"]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 2
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 15
+text = "玩家 1"
+text_overrun_behavior = 3
+
+[node name="DeckName" type="Label" parent="Margin/Content/Info"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 19
+text = "牌组名称"
+text_overrun_behavior = 3
+
+[node name="EnergyLabel" type="Label" parent="Margin/Content/Info"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 15
+text = "属性 · 60 张"
+text_overrun_behavior = 3
+
+[node name="TaglineLabel" type="Label" parent="Margin/Content/Info"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 2
+size_flags_vertical = 3
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 15
+text = "牌组节奏说明"
+vertical_alignment = 2
+autowrap_mode = 2
+max_lines_visible = 2

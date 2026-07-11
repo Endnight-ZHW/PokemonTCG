@@ -1,23 +1,65 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/dialogs/settings_panel.gd" id="1_panel"]
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
 
 [node name="SettingsPanel" type="VBoxContainer"]
-theme_override_constants/separation = 12
-editor_description = "设置弹窗内容。所有字段都可以在编辑器中重排；读写仍由 AppSettings 和 Main 控制。"
+custom_minimum_size = Vector2(0, 0)
+theme = ExtResource("2_theme")
+theme_override_constants/separation = 14
+editor_description = "分区设置内容。恢复默认只修改表单，保存后才写入 AppSettings。"
 script = ExtResource("1_panel")
 
-[node name="MasterVolumeRow" type="HBoxContainer" parent="."]
+[node name="IntroRow" type="HBoxContainer" parent="."]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="Label" type="Label" parent="MasterVolumeRow"]
-custom_minimum_size = Vector2(150, 0)
+[node name="Intro" type="Label" parent="IntroRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontMutedLabel"
+text = "所有设置保存在应用私有目录，可随时恢复默认值。"
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="ResetDefaultsButton" type="Button" parent="IntroRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 48)
+layout_mode = 2
+theme_type_variation = &"FrontGhostButton"
+text = "恢复默认值"
+
+[node name="AudioSection" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_type_variation = &"FrontSectionPanel"
+
+[node name="Margin" type="MarginContainer" parent="AudioSection"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="Content" type="VBoxContainer" parent="AudioSection/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="Heading" type="Label" parent="AudioSection/Margin/Content"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+text = "音频"
+
+[node name="MasterVolumeRow" type="HBoxContainer" parent="AudioSection/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="AudioSection/Margin/Content/MasterVolumeRow"]
+custom_minimum_size = Vector2(118, 0)
 layout_mode = 2
 text = "总音量"
 vertical_alignment = 1
 
-[node name="MasterVolumeSlider" type="HSlider" parent="MasterVolumeRow"]
+[node name="MasterVolumeSlider" type="HSlider" parent="AudioSection/Margin/Content/MasterVolumeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
@@ -26,17 +68,26 @@ max_value = 1.0
 step = 0.05
 value = 0.8
 
-[node name="MusicVolumeRow" type="HBoxContainer" parent="."]
+[node name="MasterVolumeValue" type="Label" parent="AudioSection/Margin/Content/MasterVolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 0)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_type_variation = &"FrontMutedLabel"
+text = "80%"
+horizontal_alignment = 2
+vertical_alignment = 1
 
-[node name="Label" type="Label" parent="MusicVolumeRow"]
-custom_minimum_size = Vector2(150, 0)
+[node name="MusicVolumeRow" type="HBoxContainer" parent="AudioSection/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="AudioSection/Margin/Content/MusicVolumeRow"]
+custom_minimum_size = Vector2(118, 0)
 layout_mode = 2
 text = "音乐"
 vertical_alignment = 1
 
-[node name="MusicVolumeSlider" type="HSlider" parent="MusicVolumeRow"]
+[node name="MusicVolumeSlider" type="HSlider" parent="AudioSection/Margin/Content/MusicVolumeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
@@ -45,17 +96,26 @@ max_value = 1.0
 step = 0.05
 value = 0.55
 
-[node name="SFXVolumeRow" type="HBoxContainer" parent="."]
+[node name="MusicVolumeValue" type="Label" parent="AudioSection/Margin/Content/MusicVolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 0)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_type_variation = &"FrontMutedLabel"
+text = "55%"
+horizontal_alignment = 2
+vertical_alignment = 1
 
-[node name="Label" type="Label" parent="SFXVolumeRow"]
-custom_minimum_size = Vector2(150, 0)
+[node name="SFXVolumeRow" type="HBoxContainer" parent="AudioSection/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="AudioSection/Margin/Content/SFXVolumeRow"]
+custom_minimum_size = Vector2(118, 0)
 layout_mode = 2
 text = "音效"
 vertical_alignment = 1
 
-[node name="SFXVolumeSlider" type="HSlider" parent="SFXVolumeRow"]
+[node name="SFXVolumeSlider" type="HSlider" parent="AudioSection/Margin/Content/SFXVolumeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
@@ -64,69 +124,117 @@ max_value = 1.0
 step = 0.05
 value = 0.8
 
-[node name="MutedToggle" type="CheckButton" parent="."]
+[node name="SFXVolumeValue" type="Label" parent="AudioSection/Margin/Content/SFXVolumeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 0)
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "80%"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="MutedToggle" type="CheckButton" parent="AudioSection/Margin/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
-text = "静音"
+text = "静音全部声音"
 
-[node name="ReducedMotionToggle" type="CheckButton" parent="."]
+[node name="MotionSection" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_type_variation = &"FrontSectionPanel"
+
+[node name="Margin" type="MarginContainer" parent="MotionSection"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="Content" type="VBoxContainer" parent="MotionSection/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="Heading" type="Label" parent="MotionSection/Margin/Content"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+text = "动效与辅助功能"
+
+[node name="ReducedMotionToggle" type="CheckButton" parent="MotionSection/Margin/Content"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
-text = "减少界面动画"
+text = "减少界面动画和循环背景"
 
-[node name="AnimationModeRow" type="HBoxContainer" parent="."]
+[node name="AnimationModeRow" type="HBoxContainer" parent="MotionSection/Margin/Content"]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 14
 
-[node name="Label" type="Label" parent="AnimationModeRow"]
+[node name="Label" type="Label" parent="MotionSection/Margin/Content/AnimationModeRow"]
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 text = "演出节奏"
 vertical_alignment = 1
 
-[node name="AnimationModeOption" type="OptionButton" parent="AnimationModeRow"]
+[node name="AnimationModeOption" type="OptionButton" parent="MotionSection/Margin/Content/AnimationModeRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="QualityProfileRow" type="HBoxContainer" parent="."]
+[node name="PerformanceSection" type="PanelContainer" parent="."]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_type_variation = &"FrontSectionPanel"
 
-[node name="Label" type="Label" parent="QualityProfileRow"]
+[node name="Margin" type="MarginContainer" parent="PerformanceSection"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="Content" type="VBoxContainer" parent="PerformanceSection/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="Heading" type="Label" parent="PerformanceSection/Margin/Content"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+text = "画质与性能"
+
+[node name="QualityProfileRow" type="HBoxContainer" parent="PerformanceSection/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Label" type="Label" parent="PerformanceSection/Margin/Content/QualityProfileRow"]
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 text = "画质档位"
 vertical_alignment = 1
 
-[node name="QualityProfileOption" type="OptionButton" parent="QualityProfileRow"]
+[node name="QualityProfileOption" type="OptionButton" parent="PerformanceSection/Margin/Content/QualityProfileRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="CardCacheRow" type="HBoxContainer" parent="."]
+[node name="CardCacheRow" type="HBoxContainer" parent="PerformanceSection/Margin/Content"]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 14
 
-[node name="Label" type="Label" parent="CardCacheRow"]
+[node name="Label" type="Label" parent="PerformanceSection/Margin/Content/CardCacheRow"]
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 text = "卡图缓存"
 vertical_alignment = 1
 
-[node name="CardCacheOption" type="OptionButton" parent="CardCacheRow"]
+[node name="CardCacheOption" type="OptionButton" parent="PerformanceSection/Margin/Content/CardCacheRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Hint" type="Label" parent="."]
+[node name="Hint" type="Label" parent="PerformanceSection/Margin/Content"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-theme_override_font_sizes/font_size = 16
-text = "设置保存在应用私有目录；内存不足时会自动清空卡图缓存。"
+theme_type_variation = &"FrontMutedLabel"
+text = "移动端自动档默认使用稳定的 30 FPS 配置；内存不足时会自动释放卡图缓存。"
 autowrap_mode = 2

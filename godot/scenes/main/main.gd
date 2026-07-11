@@ -14,6 +14,7 @@ const HELP_PANEL_SCENE := preload("res://ui/panels/help_panel.tscn")
 const CARD_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/card_inspector_panel.tscn")
 const ZONE_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/zone_inspector_panel.tscn")
 const DECK_DETAIL_PANEL_SCENE := preload("res://ui/panels/deck_detail_panel.tscn")
+const FRONTEND_THEME := preload("res://ui/frontend/front_end_theme.tres")
 
 const SCREEN_TITLE := "title"
 const SCREEN_DECKS := "decks"
@@ -24,7 +25,7 @@ const MODE_LOCAL := "local"
 const MODE_CHALLENGE := "challenge"
 const MODE_DEEP := "deep"
 const MODE_NETWORK := "network"
-const MODAL_SHADE_ALPHA := 0.86
+const MODAL_SHADE_ALPHA := 0.72
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
 
 var catalog: CardCatalog = CardDatabase.catalog
@@ -66,25 +67,7 @@ var shell_animations: AnimationPlayer
 var lifecycle_network_interrupted := false
 var screen_router: ScreenRouter
 var modal_host_controller: ModalHost
-
-var deck_one_option: OptionButton
-var deck_two_option: OptionButton
-var mode_description: Label
-var first_player_option: OptionButton
-var network_role_option: OptionButton
-var network_address_input: LineEdit
-var network_port_input: LineEdit
-var network_room_input: LineEdit
-var network_deck_option: OptionButton
-var network_status_label: Label
-var settings_volume_slider: HSlider
-var settings_muted_toggle: CheckButton
-var settings_motion_toggle: CheckButton
-var settings_cache_option: OptionButton
-var settings_animation_option: OptionButton
-var settings_quality_option: OptionButton
-var settings_music_slider: HSlider
-var settings_sfx_slider: HSlider
+var current_network_page: NetworkLobbyPage
 
 var action_list: VBoxContainer
 var log_label: RichTextLabel
@@ -98,25 +81,32 @@ var modal_shade: ColorRect
 var modal_panel: PanelContainer
 var modal_title: Label
 var modal_body: VBoxContainer
+var modal_scroll: ScrollContainer
 var modal_confirm: Button
 var modal_cancel: Button
 var active_request: ChoiceRequest
 var active_choice_panel: ChoicePanel
 var ui_initialized := false
 var _modal_generation := 0
+var _modal_back_action := Callable()
 var _toast_tween: Tween
 var _toast_generation := 0
+var _deep_start_generation := 0
 
 
 func _ready() -> void:
 	set_process(false)
-	initialize_ui()
-	if ExportSmokeRunner.PHASE_FOUR_FLAG in OS.get_cmdline_user_args():
+	var user_args := OS.get_cmdline_user_args()
+	if ExportSmokeRunner.PHASE_FOUR_FLAG in user_args:
 		_run_phase_four_export_smoke()
-	elif ExportSmokeRunner.PHASE_FIVE_FLAG in OS.get_cmdline_user_args():
+		return
+	elif ExportSmokeRunner.PHASE_FIVE_FLAG in user_args:
 		_run_phase_five_export_smoke()
-	elif ExportSmokeRunner.PHASE_SIX_FLAG in OS.get_cmdline_user_args():
+		return
+	elif ExportSmokeRunner.PHASE_SIX_FLAG in user_args:
 		_run_phase_six_export_smoke()
+		return
+	initialize_ui()
 
 
 func _run_phase_four_export_smoke() -> void:
@@ -196,6 +186,9 @@ func _build_shell() -> void:
 	safe_margin = get_node("SafeArea") as MarginContainer
 	screen_host = get_node("SafeArea/ScreenHost") as Control
 	toast_label = get_node("Toast") as Label
+	toast_label.theme = FRONTEND_THEME
+	toast_label.theme_type_variation = &"FrontToastLabel"
+	toast_label.set("accessibility_live", 1)
 	sound_player = get_node("UISound") as AudioStreamPlayer
 	audio_director = get_node("AudioDirector") as AudioDirector
 	modal_layer = get_node("ModalLayer") as Control
@@ -207,6 +200,10 @@ func _build_shell() -> void:
 	modal_body = get_node(
 		"ModalLayer/Center/ModalPanel/Margin/Content/Scroll/ModalBody"
 	) as VBoxContainer
+	modal_scroll = get_node(
+		"ModalLayer/Center/ModalPanel/Margin/Content/Scroll"
+	) as ScrollContainer
+	modal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	modal_cancel = get_node(
 		"ModalLayer/Center/ModalPanel/Margin/Content/Buttons/ModalCancel"
 	) as Button
@@ -215,8 +212,10 @@ func _build_shell() -> void:
 	) as Button
 	loading_layer = get_node("LoadingLayer") as Control
 	loading_label = get_node(
-		"LoadingLayer/Center/Panel/Margin/LoadingLabel"
+		"LoadingLayer/Center/Panel/Margin/Content/LoadingLabel"
 	) as Label
+	loading_label.accessibility_name = "加载状态"
+	loading_label.set("accessibility_live", 1)
 	shell_animations = get_node("ShellAnimations") as AnimationPlayer
 	screen_router = get_node_or_null("Controllers/ScreenRouter") as ScreenRouter
 	modal_host_controller = get_node_or_null("Controllers/ModalHost") as ModalHost
@@ -228,6 +227,7 @@ func _build_shell() -> void:
 			modal_body,
 			modal_confirm,
 			modal_cancel,
+			modal_panel,
 		)
 	modal_layer.z_index = 200
 	loading_layer.z_index = 210
@@ -243,9 +243,7 @@ func _show_title() -> void:
 	battle_screen = null
 	if audio_director:
 		audio_director.play_music("title")
-	_clear_screen()
-	var page := TITLE_SCENE.instantiate() as TitlePage
-	screen_host.add_child(page)
+	var page := _mount_screen(TITLE_SCENE) as TitlePage
 	page.configure("Client %s · Rules v%d · Protocol v%d" % [
 		AppState.APP_VERSION,
 		AppState.RULES_SCHEMA_VERSION,
@@ -283,18 +281,11 @@ func _show_network_setup(kind: String) -> void:
 	network_kind = kind
 	game_mode = MODE_NETWORK
 	current_screen = SCREEN_NETWORK
-	_clear_screen()
-	var page := NETWORK_LOBBY_SCENE.instantiate() as NetworkLobbyPage
-	screen_host.add_child(page)
+	var page := _mount_screen(NETWORK_LOBBY_SCENE) as NetworkLobbyPage
+	current_network_page = page
 	page.configure(catalog, kind, AppSettings.relay_url)
 	page.back_requested.connect(_show_title)
 	page.connect_requested.connect(_on_network_connect_requested)
-	network_role_option = page.role_option
-	network_address_input = page.address_input
-	network_port_input = page.port_input
-	network_room_input = page.room_input
-	network_deck_option = page.deck_option
-	network_status_label = page.status_label
 
 func _on_network_connect_requested(
 	kind: String,
@@ -304,29 +295,71 @@ func _on_network_connect_requested(
 	room_code: String,
 	deck_key: String,
 ) -> void:
+	if (
+		current_screen != SCREEN_NETWORK
+		or current_network_page == null
+		or not is_instance_valid(current_network_page)
+		or kind not in ["lan", "relay"]
+		or kind != current_network_page.kind
+		or role not in ["host", "client"]
+		or catalog.get_deck(deck_key).is_empty()
+	):
+		_set_network_page_state(
+			NetworkLobbyPage.ConnectionState.ERROR,
+			"连接参数无效，请重新检查身份与牌组。",
+		)
+		return
+	var normalized_address := address.strip_edges()
+	var normalized_room_code := room_code.strip_edges()
+	if (
+		normalized_address.is_empty()
+		or (kind == "relay" and not (
+			normalized_address.begins_with("ws://")
+			or normalized_address.begins_with("wss://")
+		))
+		or (kind == "relay" and role == "client" and normalized_room_code.is_empty())
+	):
+		_set_network_page_state(
+			NetworkLobbyPage.ConnectionState.ERROR,
+			"连接地址或房间码无效。",
+		)
+		return
 	network_kind = kind
 	var error := ERR_INVALID_PARAMETER
 	if kind == "lan":
 		if port <= 0 or port > 65535:
-			network_status_label.text = "端口无效。"
+			_set_network_page_state(
+				NetworkLobbyPage.ConnectionState.ERROR,
+				"端口无效。",
+			)
 			return
 		if role == "host":
 			error = network_controller.host_lan(port, deck_key)
 		else:
-			error = network_controller.join_lan(address, port, deck_key)
+			error = network_controller.join_lan(normalized_address, port, deck_key)
 	else:
-		AppSettings.set_relay_url(address)
+		AppSettings.set_relay_url(normalized_address)
 		if role == "host":
-			error = network_controller.host_relay(address, deck_key)
+			error = network_controller.host_relay(normalized_address, deck_key)
 		else:
-			error = network_controller.join_relay(address, room_code, deck_key)
+			error = network_controller.join_relay(
+				normalized_address,
+				normalized_room_code,
+				deck_key,
+			)
 	if error != OK:
-		network_status_label.text = "无法启动连接：%s" % error_string(error)
+		_set_network_page_state(
+			NetworkLobbyPage.ConnectionState.ERROR,
+			"无法启动连接：%s" % error_string(error),
+		)
 		return
-	network_status_label.text = (
-		"等待挑战者连接……"
-		if role == "host"
-		else "正在连接房主……"
+	_set_network_page_state(
+		(
+			NetworkLobbyPage.ConnectionState.WAITING
+			if role == "host"
+			else NetworkLobbyPage.ConnectionState.CONNECTING
+		),
+		"等待挑战者连接……" if role == "host" else "正在连接房主……",
 	)
 	_refresh_process_state()
 
@@ -335,15 +368,17 @@ func _poll_network() -> void:
 	for event in network_controller.poll():
 		match str(event.get("type", "")):
 			"room_created":
-				if network_status_label:
-					network_status_label.text = (
-						"房间码：%s\n等待挑战者加入……"
-						% event.get("room_id", "")
-					)
+				_set_network_page_state(
+					NetworkLobbyPage.ConnectionState.WAITING,
+					"分享房间码，等待挑战者加入。",
+					str(event.get("room_id", "")),
+				)
 			"connected":
 				network_player_idx = int(event.get("player_idx", network_player_idx))
-				if network_status_label:
-					network_status_label.text = "对手已连接，正在同步牌组和对局……"
+				_set_network_page_state(
+					NetworkLobbyPage.ConnectionState.CONNECTED,
+					"对手已连接，正在同步牌组和对局……",
+				)
 			"state":
 				var view_value: Variant = event.get("view", {})
 				if view_value is Dictionary:
@@ -355,19 +390,69 @@ func _poll_network() -> void:
 					_show_toast("收到的联机局面无效，正在请求重新同步。", true)
 					network_controller.request_resync()
 			"error", "connection_failed", "transport_error":
+				var event_type := str(event.get("type", ""))
 				var message := str(event.get(
 					"message",
 					event.get("code", "网络连接失败。"),
 				))
-				if network_status_label:
-					network_status_label.text = message
+				_set_network_page_state(
+					NetworkLobbyPage.ConnectionState.ERROR,
+					message,
+				)
 				_show_toast(message, true)
+				if event_type == "error" and current_screen == SCREEN_GAME:
+					network_controller.request_resync()
+				# These transport events are terminal. Clear the controller now so the
+				# lobby can immediately start a clean retry; protocol-level "error"
+				# events may still be recoverable and keep their existing session.
+				if event_type in ["connection_failed", "transport_error"]:
+					_stop_network()
 			"disconnected":
-				_show_toast("对手已断开连接，对局结束。", true)
-				_stop_network()
-				if current_screen == SCREEN_GAME:
-					state = null
-					_show_title()
+				_handle_network_disconnected(str(event.get("reason", "")))
+
+
+func _handle_network_disconnected(reason: String = "") -> void:
+	var was_lobby := current_screen == SCREEN_NETWORK
+	var was_game := current_screen == SCREEN_GAME
+	var lobby_already_showing_error := (
+		was_lobby
+		and current_network_page != null
+		and is_instance_valid(current_network_page)
+		and current_network_page.connection_state
+		== NetworkLobbyPage.ConnectionState.ERROR
+	)
+	_stop_network()
+	if was_lobby:
+		# A transport error or schema error may already have supplied a more
+		# useful message immediately before the synthetic disconnect event.
+		if lobby_already_showing_error:
+			return
+		var message := (
+			"连接超时，请检查网络后重新尝试。"
+			if reason == "timeout"
+			else "连接已断开，请检查网络后重新尝试。"
+		)
+		_set_network_page_state(NetworkLobbyPage.ConnectionState.ERROR, message)
+		_show_toast(message, true)
+	elif was_game:
+		_show_toast("对手已断开连接，对局结束。", true)
+		state = null
+		_show_title()
+
+
+func _set_network_page_state(
+	state_value: NetworkLobbyPage.ConnectionState,
+	message: String = "",
+	room_code: String = "",
+) -> void:
+	if (
+		current_screen != SCREEN_NETWORK
+		or current_network_page == null
+		or not is_instance_valid(current_network_page)
+		or not current_network_page.is_inside_tree()
+	):
+		return
+	current_network_page.set_connection_state(state_value, message, room_code)
 
 
 func _apply_network_view(view: Dictionary, player: int) -> void:
@@ -438,17 +523,11 @@ func _show_deck_select(mode: String = MODE_LOCAL) -> void:
 	_play_click()
 	game_mode = mode
 	current_screen = SCREEN_DECKS
-	_clear_screen()
-	var page := DECK_SELECT_SCENE.instantiate() as DeckSelectPage
-	screen_host.add_child(page)
+	var page := _mount_screen(DECK_SELECT_SCENE) as DeckSelectPage
 	page.configure(catalog, game_mode)
 	page.back_requested.connect(_show_title)
 	page.deck_details_requested.connect(_show_deck_details)
 	page.start_requested.connect(_on_match_start_requested)
-	deck_one_option = page.deck_one_option
-	deck_two_option = page.deck_two_option
-	mode_description = page.mode_description
-	first_player_option = page.first_player_option
 
 func _on_match_start_requested(
 	mode: String,
@@ -480,8 +559,26 @@ func _start_deep_match_with_loading(
 	opponent_key: String,
 	forced_first: int,
 ) -> void:
+	_deep_start_generation += 1
+	var request_generation := _deep_start_generation
+	var source_page := (
+		screen_host.get_child(0)
+		if screen_host and screen_host.get_child_count() > 0
+		else null
+	)
 	_show_loading("正在校验并加载 Deep AI 模型…")
 	await get_tree().process_frame
+	if (
+		request_generation != _deep_start_generation
+		or current_screen != SCREEN_DECKS
+		or game_mode != MODE_DEEP
+		or source_page == null
+		or not is_instance_valid(source_page)
+		or source_page.get_parent() != screen_host
+	):
+		if request_generation == _deep_start_generation:
+			_hide_loading()
+		return
 	start_ai_match_for_test(
 		MODE_DEEP,
 		human_key,
@@ -831,9 +928,13 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 		if not _choice_option_card_id(option).is_empty():
 			has_card_preview = true
 			break
-	_open_modal(request.prompt, "确认选择", "取消" if request.can_cancel else "")
-	if has_card_preview:
-		modal_panel.custom_minimum_size = _choice_modal_size(true)
+	_open_modal(
+		request.prompt,
+		"确认选择",
+		"取消" if request.can_cancel else "",
+		false,
+		ModalSpec.battle(_choice_modal_size(has_card_preview)),
+	)
 	modal_title.text = _choice_title(request)
 	var metadata_text := _choice_metadata_text(request)
 	var panel := CHOICE_PANEL_SCENE.instantiate() as ChoicePanel
@@ -963,8 +1064,13 @@ func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
 
 func _show_retreat_confirmation(action: GameAction) -> void:
 	_play_click()
-	_open_modal("确认撤退", "确认撤退", "取消")
-	modal_panel.custom_minimum_size = Vector2(640, 420)
+	_open_modal(
+		"确认撤退",
+		"确认撤退",
+		"取消",
+		false,
+		ModalSpec.battle(Vector2(640, 420)),
+	)
 	var lines := _retreat_confirmation_lines(action)
 	var body := Label.new()
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1113,6 +1219,8 @@ func _confirm_choice() -> void:
 			ChoiceResponse.new(request.request_id, confirmed_ids)
 		):
 			_show_toast("选择未发送或被房主拒绝。", true)
+			return
+		_show_toast("选择已提交，等待房主同步。")
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
@@ -1163,6 +1271,8 @@ func _cancel_choice() -> void:
 			ChoiceResponse.new(request.request_id, [], true)
 		):
 			_show_toast("取消请求未发送。", true)
+			return
+		_show_toast("取消请求已提交，等待房主同步。")
 		return
 	var result := engine.apply_choice(
 		state,
@@ -1184,7 +1294,15 @@ func _step_pending_choice(result: StepResult) -> ChoiceRequest:
 
 
 func _show_pass_overlay(player_idx: int, heading: String, body: String) -> void:
-	_open_modal(heading, "显示玩家 %d 手牌" % (player_idx + 1), "", true)
+	var privacy_spec := ModalSpec.battle(Vector2(720, 620), true)
+	privacy_spec.cancellable = false
+	_open_modal(
+		heading,
+		"显示玩家 %d 手牌" % (player_idx + 1),
+		"",
+		true,
+		privacy_spec,
+	)
 	var privacy := PRIVACY_PANEL_SCENE.instantiate() as PrivacyPanel
 	modal_body.add_child(privacy)
 	privacy.configure(body)
@@ -1225,19 +1343,39 @@ func _show_pause_overlay() -> void:
 		_play_click()
 		_close_modal()
 		if game_mode == MODE_NETWORK:
-			network_controller.surrender()
-		state = null
-		_show_title()
+			_surrender_network_and_show_title()
+		else:
+			state = null
+			_show_title()
 	, CONNECT_ONE_SHOT)
+
+
+func _surrender_network_and_show_title() -> void:
+	network_controller.surrender()
+	# Give ENet/WebSocket two process turns to flush the surrender/final state
+	# before the title route closes the transport.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if game_mode != MODE_NETWORK or current_screen not in [SCREEN_GAME, SCREEN_END]:
+		return
+	state = null
+	_show_title()
 
 
 func _show_help(resume_ai_on_close: bool = false) -> void:
 	_play_click()
-	_open_modal("规则与操作帮助", "关闭", "", current_screen == SCREEN_GAME)
-	modal_panel.custom_minimum_size = Vector2(760, 680)
+	_open_modal(
+		"规则与操作帮助",
+		"关闭",
+		"",
+		current_screen == SCREEN_GAME,
+		ModalSpec.frontend(Vector2(900, 700)),
+	)
 	var panel := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	modal_body.add_child(panel)
 	panel.configure()
+	if modal_host_controller:
+		modal_host_controller.focus_initial(panel.initial_focus_control())
 	modal_confirm.pressed.connect(func() -> void:
 		_close_modal()
 		if resume_ai_on_close:
@@ -1245,20 +1383,34 @@ func _show_help(resume_ai_on_close: bool = false) -> void:
 	, CONNECT_ONE_SHOT)
 
 
-func _show_card_inspector(context: Dictionary) -> void:
+func _show_card_inspector(
+	context: Dictionary,
+	return_action: Callable = Callable(),
+) -> void:
 	var card_id := str(context.get("card_id", ""))
 	if card_id.is_empty():
 		return
 	_play_click()
 	var card := catalog.get_card(card_id)
 	var title := str(card.get("name", card_id))
-	_open_modal(title, "关闭", "", current_screen == SCREEN_GAME)
-	modal_panel.custom_minimum_size = Vector2(860, 700)
+	var card_spec := (
+		ModalSpec.battle(Vector2(860, 700), current_screen == SCREEN_GAME)
+		if current_screen == SCREEN_GAME
+		else ModalSpec.frontend(Vector2(860, 700))
+	)
+	if return_action.is_valid():
+		card_spec.stack_behavior = ModalSpec.StackBehavior.RESTORE_PARENT
+	_open_modal(title, "关闭", "", current_screen == SCREEN_GAME, card_spec)
 	var panel := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
 	modal_body.add_child(panel)
 	panel.configure(catalog, context)
-	panel.card_requested.connect(_show_card_inspector)
-	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
+	panel.card_requested.connect(_show_card_inspector.bind(return_action))
+	_modal_back_action = return_action
+	if return_action.is_valid():
+		modal_confirm.text = "返回牌组详情"
+		modal_confirm.pressed.connect(return_action, CONNECT_ONE_SHOT)
+	else:
+		modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
 func _show_zone_inspector(context: Dictionary) -> void:
@@ -1267,8 +1419,18 @@ func _show_zone_inspector(context: Dictionary) -> void:
 		_player_name_for_context(int(context.get("player", -1))),
 		str(context.get("title", context.get("zone", "区域"))),
 	]
-	_open_modal(title.strip_edges(), "关闭", "", current_screen == SCREEN_GAME)
-	modal_panel.custom_minimum_size = Vector2(820, 680)
+	var zone_spec := (
+		ModalSpec.battle(Vector2(820, 680), current_screen == SCREEN_GAME)
+		if current_screen == SCREEN_GAME
+		else ModalSpec.frontend(Vector2(820, 680))
+	)
+	_open_modal(
+		title.strip_edges(),
+		"关闭",
+		"",
+		current_screen == SCREEN_GAME,
+		zone_spec,
+	)
 	var panel := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
 	modal_body.add_child(panel)
 	panel.configure(catalog, context)
@@ -1276,37 +1438,86 @@ func _show_zone_inspector(context: Dictionary) -> void:
 	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
-func _show_deck_details(deck_key: String) -> void:
+func _show_deck_details(
+	deck_key: String,
+	restore_scroll: int = -1,
+	restore_focus_key: String = "",
+) -> void:
 	_play_click()
 	var deck := catalog.get_deck(deck_key)
 	if deck.is_empty():
 		_show_toast("找不到牌组：%s" % deck_key, true)
 		return
-	_open_modal(str(deck.get("name", deck_key)), "关闭", "")
-	modal_panel.custom_minimum_size = Vector2(880, 700)
+	_open_modal(
+		"牌组详情",
+		"关闭",
+		"",
+		false,
+		ModalSpec.frontend(Vector2(980, 720)),
+	)
 	var panel := DECK_DETAIL_PANEL_SCENE.instantiate() as DeckDetailPanel
 	modal_body.add_child(panel)
 	panel.configure(catalog, deck_key)
-	panel.card_requested.connect(_show_card_inspector)
+	panel.card_requested.connect(_show_deck_card_inspector.bind(deck_key))
 	modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
+	if restore_scroll >= 0 or not restore_focus_key.is_empty():
+		_restore_deck_detail_modal_state(
+			_modal_generation,
+			restore_scroll,
+			restore_focus_key,
+		)
+
+
+func _show_deck_card_inspector(context: Dictionary, deck_key: String) -> void:
+	var scroll_position := modal_scroll.scroll_vertical if modal_scroll else 0
+	var focus_key := "%s|%s" % [
+		str(context.get("location", "")),
+		str(context.get("card_id", "")),
+	]
+	_show_card_inspector(
+		context,
+		_show_deck_details.bind(deck_key, scroll_position, focus_key),
+	)
+
+
+func _restore_deck_detail_modal_state(
+	generation: int,
+	scroll_position: int,
+	focus_key: String,
+) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if generation != _modal_generation or not modal_layer.visible:
+		return
+	if modal_scroll and scroll_position >= 0:
+		modal_scroll.scroll_vertical = scroll_position
+	if focus_key.is_empty():
+		return
+	for node in modal_body.find_children("*", "Button", true, false):
+		var button := node as Button
+		if button and str(button.get_meta("deck_focus_key", "")) == focus_key:
+			button.grab_focus()
+			return
 
 
 func _show_settings() -> void:
 	_play_click()
-	_open_modal("设置", "保存", "取消", current_screen == SCREEN_GAME)
+	_open_modal(
+		"设置",
+		"保存设置",
+		"取消",
+		current_screen == SCREEN_GAME,
+		ModalSpec.frontend(Vector2(900, 760)),
+	)
 	var panel := SETTINGS_PANEL_SCENE.instantiate() as SettingsPanel
 	modal_body.add_child(panel)
 	panel.configure()
-	settings_volume_slider = panel.master_volume_slider
-	settings_music_slider = panel.music_volume_slider
-	settings_sfx_slider = panel.sfx_volume_slider
-	settings_muted_toggle = panel.muted_toggle
-	settings_motion_toggle = panel.reduced_motion_toggle
-	settings_animation_option = panel.animation_mode_option
-	settings_quality_option = panel.quality_profile_option
-	settings_cache_option = panel.card_cache_option
+	if modal_host_controller:
+		modal_host_controller.focus_initial(panel.initial_focus_control())
 	panel.save_requested.connect(_save_settings_values)
-	modal_confirm.pressed.connect(panel.request_save, CONNECT_ONE_SHOT)
+	# Keep the save action connected while the modal remains open so a transient
+	# filesystem failure can be corrected and retried without reopening Settings.
+	modal_confirm.pressed.connect(panel.request_save)
 	modal_cancel.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
 
 
@@ -1337,21 +1548,39 @@ func _show_end_screen() -> void:
 	current_screen = SCREEN_END
 	if modal_layer.visible:
 		_close_modal()
-	_clear_screen()
 	battle_screen = null
-	var victory := VICTORY_SCENE.instantiate() as VictoryScreen
+	var victory := _mount_screen(VICTORY_SCENE) as VictoryScreen
 	var winner_player := state.get_player(state.winner)
 	var winner_card_id := winner_player.active.card_id if winner_player.active else ""
+	var winner_deck_key: String = str(
+		state.public_deck_keys[state.winner]
+		if state.winner >= 0 and state.winner < state.public_deck_keys.size()
+		else ""
+	)
+	var winner_deck := catalog.get_deck(winner_deck_key)
+	var mode_label: String = str({
+		MODE_LOCAL: "本地双人",
+		MODE_CHALLENGE: "Challenge AI",
+		MODE_DEEP: "Deep AI",
+		MODE_NETWORK: "Relay 联机" if network_kind == "relay" else "LAN 联机",
+	}.get(game_mode, "自定义对局"))
 	victory.configure(
 		state.winner,
 		state.turn_number,
 		winner_player.name,
 		winner_card_id,
+		{
+			"mode": game_mode,
+			"mode_label": mode_label,
+			"winner_deck": winner_deck_key,
+			"winner_deck_name": winner_deck.get("name", winner_deck_key),
+			"winner_card_name": catalog.card_name(winner_card_id),
+		},
 	)
 	victory.rematch_requested.connect(func() -> void:
 		state = null
 		if game_mode == MODE_NETWORK:
-			_show_title()
+			_show_network_setup(network_kind)
 		else:
 			_show_deck_select(game_mode)
 	)
@@ -1359,7 +1588,6 @@ func _show_end_screen() -> void:
 		state = null
 		_show_title()
 	)
-	screen_host.add_child(victory)
 	if audio_director:
 		audio_director.play_music("victory")
 	_play_success()
@@ -1381,9 +1609,19 @@ func _open_modal(
 	confirm_text: String,
 	cancel_text: String,
 	opaque_shade: bool = false,
+	spec: ModalSpec = null,
 ) -> void:
 	if battle_screen:
 		battle_screen.hide_card_detail()
+	_modal_back_action = Callable()
+	var resolved_spec := spec
+	if resolved_spec == null:
+		resolved_spec = (
+			ModalSpec.battle(Vector2(720, 620), opaque_shade)
+			if current_screen == SCREEN_GAME
+			else ModalSpec.frontend(Vector2(820, 680))
+		)
+	resolved_spec.opaque_shade = opaque_shade or resolved_spec.opaque_shade
 	_modal_generation += 1
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
@@ -1391,21 +1629,39 @@ func _open_modal(
 		modal_host_controller.clear_body()
 	else:
 		_free_children_immediate(modal_body)
-	modal_panel.custom_minimum_size = Vector2(720, 620)
+	if modal_host_controller:
+		modal_host_controller.begin(
+			resolved_spec,
+			_safe_content_size(),
+		)
+	else:
+		modal_panel.custom_minimum_size = resolved_spec.preferred_size
 	modal_title.text = title_text
+	var frontend_modal := resolved_spec.surface == ModalSpec.Surface.FRONTEND
+	modal_title.theme_type_variation = &"FrontModalTitle" if frontend_modal else &""
 	modal_confirm.text = confirm_text
 	modal_confirm.disabled = false
+	modal_confirm.theme_type_variation = &"FrontPrimaryButton" if frontend_modal else &""
 	modal_cancel.text = cancel_text
-	modal_cancel.visible = not cancel_text.is_empty()
+	modal_cancel.visible = resolved_spec.cancellable and not cancel_text.is_empty()
+	modal_cancel.theme_type_variation = &"FrontSecondaryButton" if frontend_modal else &""
 	modal_shade.color.a = (
-		MODAL_SHADE_OPAQUE_ALPHA if opaque_shade else MODAL_SHADE_ALPHA
+		MODAL_SHADE_OPAQUE_ALPHA
+		if resolved_spec.opaque_shade
+		else clampf(resolved_spec.shade_alpha, 0.0, 1.0)
 	)
 	modal_layer.visible = true
 	modal_layer.move_to_front()
+	if modal_host_controller:
+		modal_host_controller.focus_initial(resolved_spec.initial_focus)
 	if AppSettings.reduced_motion:
+		shell_animations.stop()
+		shell_animations.speed_scale = 1.0
 		modal_panel.modulate.a = 1.0
 		modal_panel.scale = Vector2.ONE
 		return
+	var open_duration := FrontendMotion.duration(0.16)
+	shell_animations.speed_scale = 0.16 / maxf(open_duration, 0.001)
 	shell_animations.play("modal_open")
 
 
@@ -1416,6 +1672,7 @@ func _close_modal() -> void:
 	active_choice_panel = null
 	selected_choice_ids.clear()
 	option_buttons.clear()
+	_modal_back_action = Callable()
 	if not modal_layer.visible:
 		_finish_modal_close(close_generation)
 		return
@@ -1430,8 +1687,10 @@ func _close_modal() -> void:
 	if close_animation == null:
 		_finish_modal_close(close_generation)
 		return
+	var close_duration := FrontendMotion.duration(close_animation.length)
+	shell_animations.speed_scale = close_animation.length / maxf(close_duration, 0.001)
 	shell_animations.play("modal_close")
-	_finish_modal_close_after_delay(close_generation, close_animation.length)
+	_finish_modal_close_after_delay(close_generation, close_duration)
 
 
 func _finish_modal_close_after_delay(generation: int, delay: float) -> void:
@@ -1448,6 +1707,12 @@ func _finish_modal_close(generation: int) -> void:
 	modal_shade.color.a = MODAL_SHADE_ALPHA
 	modal_panel.modulate = Color.WHITE
 	modal_panel.scale = Vector2.ONE
+	if shell_animations:
+		shell_animations.stop()
+		shell_animations.speed_scale = 1.0
+	if modal_host_controller:
+		modal_host_controller.reset_surface()
+		modal_host_controller.restore_focus()
 
 
 func _select_hand_card(index: int, card_id: String) -> void:
@@ -2052,12 +2317,21 @@ func _show_toast(message: String, is_error: bool = false) -> void:
 	if message.strip_edges().is_empty():
 		return
 	_toast_generation += 1
+	toast_label.theme = FRONTEND_THEME if current_screen != SCREEN_GAME else null
+	toast_label.theme_type_variation = (
+		&"FrontToastLabel" if current_screen != SCREEN_GAME else &""
+	)
+	toast_label.set("accessibility_live", 2 if is_error else 1)
 	var toast_generation := _toast_generation
 	if _toast_tween and _toast_tween.is_valid():
 		_toast_tween.kill()
 	_toast_tween = null
 	toast_label.text = message
-	toast_label.modulate = GameUITheme.COLOR_DANGER if is_error else Color.WHITE
+	toast_label.modulate = Color.WHITE
+	if is_error:
+		toast_label.add_theme_color_override("font_color", Color("#ff9aa4"))
+	else:
+		toast_label.remove_theme_color_override("font_color")
 	toast_label.visible = true
 	if AppSettings.reduced_motion:
 		toast_label.modulate.a = 1.0
@@ -2088,12 +2362,23 @@ func _show_title_from_game() -> void:
 	_show_title()
 
 func _clear_screen() -> void:
+	current_network_page = null
 	if screen_router:
 		screen_router.clear_screen()
 		return
 	for child in screen_host.get_children():
 		screen_host.remove_child(child)
 		child.queue_free()
+
+
+func _mount_screen(scene: PackedScene) -> Node:
+	current_network_page = null
+	if screen_router:
+		return screen_router.mount(scene)
+	_clear_screen()
+	var page := scene.instantiate()
+	screen_host.add_child(page)
+	return page
 
 func _play_click() -> void:
 	if audio_director:
@@ -2123,6 +2408,59 @@ func _apply_runtime_settings() -> void:
 	Engine.max_fps = AppSettings.target_fps()
 
 
+func _safe_insets_to_canvas(
+	window_position: Vector2i,
+	window_size: Vector2i,
+	safe_rect: Rect2i,
+	logical_size: Vector2,
+) -> Vector4:
+	if (
+		window_size.x <= 0
+		or window_size.y <= 0
+		or safe_rect.size.x <= 0
+		or safe_rect.size.y <= 0
+		or logical_size.x <= 0.0
+		or logical_size.y <= 0.0
+	):
+		return Vector4.ZERO
+	var window_rect := Rect2i(window_position, window_size)
+	var visible_safe_rect := window_rect.intersection(safe_rect)
+	if visible_safe_rect.size.x <= 0 or visible_safe_rect.size.y <= 0:
+		return Vector4.ZERO
+	var canvas_per_pixel := Vector2(
+		logical_size.x / float(window_size.x),
+		logical_size.y / float(window_size.y),
+	)
+	return Vector4(
+		maxf(0.0, float(visible_safe_rect.position.x - window_position.x))
+			* canvas_per_pixel.x,
+		maxf(0.0, float(visible_safe_rect.position.y - window_position.y))
+			* canvas_per_pixel.y,
+		maxf(0.0, float(window_rect.end.x - visible_safe_rect.end.x))
+			* canvas_per_pixel.x,
+		maxf(0.0, float(window_rect.end.y - visible_safe_rect.end.y))
+			* canvas_per_pixel.y,
+	)
+
+
+func _safe_content_size() -> Vector2:
+	var full_size := size
+	if safe_margin and safe_margin.size.x > 0.0 and safe_margin.size.y > 0.0:
+		full_size = safe_margin.size
+	if full_size.x <= 0.0 or full_size.y <= 0.0:
+		full_size = get_viewport_rect().size if is_inside_tree() else Vector2(1280, 720)
+	if safe_margin == null:
+		return full_size
+	return Vector2(
+		maxf(1.0, full_size.x
+			- safe_margin.get_theme_constant("margin_left")
+			- safe_margin.get_theme_constant("margin_right")),
+		maxf(1.0, full_size.y
+			- safe_margin.get_theme_constant("margin_top")
+			- safe_margin.get_theme_constant("margin_bottom")),
+	)
+
+
 func _apply_safe_area() -> void:
 	if safe_margin == null:
 		return
@@ -2138,16 +2476,46 @@ func _apply_safe_area() -> void:
 		safe_margin.add_theme_constant_override("margin_bottom", bottom)
 		return
 	var window_size := window.size
+	var logical_size := size
+	if logical_size.x <= 0.0 or logical_size.y <= 0.0:
+		logical_size = get_viewport_rect().size
 	var safe_rect := DisplayServer.get_display_safe_area()
-	if safe_rect.size.x > 0 and safe_rect.size.y > 0 and window_size.x > 0 and window_size.y > 0:
-		left = max(left, safe_rect.position.x)
-		top = max(top, safe_rect.position.y)
-		right = max(right, window_size.x - safe_rect.end.x)
-		bottom = max(bottom, window_size.y - safe_rect.end.y)
+	var safe_insets := _safe_insets_to_canvas(
+		window.position,
+		window_size,
+		safe_rect,
+		logical_size,
+	)
+	left = maxi(left, ceili(safe_insets.x))
+	top = maxi(top, ceili(safe_insets.y))
+	right = maxi(right, ceili(safe_insets.z))
+	bottom = maxi(bottom, ceili(safe_insets.w))
 	safe_margin.add_theme_constant_override("margin_left", left)
 	safe_margin.add_theme_constant_override("margin_top", top)
 	safe_margin.add_theme_constant_override("margin_right", right)
 	safe_margin.add_theme_constant_override("margin_bottom", bottom)
+	for path in ["ModalLayer/Center", "LoadingLayer/Center"]:
+		var safe_center := get_node_or_null(path) as Control
+		if safe_center:
+			safe_center.offset_left = left
+			safe_center.offset_top = top
+			safe_center.offset_right = -right
+			safe_center.offset_bottom = -bottom
+	if toast_label:
+		var available_width := maxf(320.0, logical_size.x - left - right)
+		var toast_width := minf(760.0, available_width - 32.0)
+		var side_offset := maxf(16.0, (logical_size.x - toast_width) * 0.5)
+		toast_label.offset_left = side_offset
+		toast_label.offset_right = -side_offset
+		toast_label.offset_top = top + 12
+		toast_label.offset_bottom = top + 72
+	if (
+		modal_host_controller
+		and modal_layer
+		and modal_layer.visible
+		and modal_host_controller.active_spec
+	):
+		modal_host_controller.update_available_size(_safe_content_size())
 
 
 func _notification(what: int) -> void:
@@ -2159,9 +2527,11 @@ func _notification(what: int) -> void:
 			ai_coordinator.cancel_and_wait()
 			ai_thinking = false
 			_refresh_process_state()
-		elif game_mode == MODE_NETWORK and (
-			current_screen == SCREEN_NETWORK or current_screen == SCREEN_GAME
-		):
+		elif game_mode == MODE_NETWORK and current_screen in [
+			SCREEN_NETWORK,
+			SCREEN_GAME,
+			SCREEN_END,
+		]:
 			lifecycle_network_interrupted = true
 			_stop_network()
 			state = null
@@ -2179,10 +2549,24 @@ func _notification(what: int) -> void:
 		_apply_safe_area()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if modal_layer and modal_layer.visible:
-			if active_request and active_request.can_cancel:
-				_cancel_choice()
+			if active_request:
+				if active_request.can_cancel:
+					_cancel_choice()
+				return
+			elif (
+				modal_host_controller
+				and modal_host_controller.active_spec
+				and not modal_host_controller.active_spec.cancellable
+			):
+				return
+			elif _modal_back_action.is_valid():
+				var return_action := _modal_back_action
+				_modal_back_action = Callable()
+				return_action.call()
 			elif current_screen == SCREEN_GAME:
 				_close_modal()
+				if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
+					_maybe_start_ai()
 			else:
 				_close_modal()
 			return
@@ -2190,9 +2574,20 @@ func _notification(what: int) -> void:
 			SCREEN_TITLE:
 				get_tree().quit()
 			SCREEN_DECKS:
-				_show_title()
+				var deck_page := (
+					screen_host.get_child(0) as DeckSelectPage
+					if screen_host and screen_host.get_child_count() > 0
+					else null
+				)
+				if deck_page == null or not deck_page.handle_back():
+					_show_title()
 			SCREEN_NETWORK:
-				_show_title()
+				if (
+					current_network_page == null
+					or not is_instance_valid(current_network_page)
+					or not current_network_page.handle_back()
+				):
+					_show_title()
 			SCREEN_GAME:
 				_show_pause_overlay()
 			SCREEN_END:

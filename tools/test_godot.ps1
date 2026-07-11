@@ -47,7 +47,7 @@ function Invoke-GodotCapture {
 }
 
 $ignoredGodotErrorPattern = 'Failed to read the root certificate store\.'
-$fatalGodotErrorPattern = "(?m)^(SCRIPT ERROR|ERROR): (?!$ignoredGodotErrorPattern)"
+$fatalGodotErrorPattern = "(?m)^(SCRIPT ERROR|ERROR|WARNING): (?!$ignoredGodotErrorPattern)"
 
 Clear-StaleGodotImportArtifacts
 $importOutput = Invoke-GodotCapture -ArgumentList @(
@@ -121,4 +121,23 @@ if ($joinedNetworkContractOutput -match $fatalGodotErrorPattern) {
 }
 if ($joinedNetworkContractOutput -notmatch 'NETWORK_PROTOCOL_CONTRACT_OK') {
     throw 'Network protocol contract success marker was not emitted.'
+}
+
+$frontendLayoutOutput = Invoke-GodotCapture -ArgumentList @(
+    '--headless',
+    '--path', (Join-Path $repoRoot 'godot'),
+    '--script', 'res://tests/frontend_layout_contract.gd'
+)
+$frontendLayoutOutput | ForEach-Object { Write-Host $_ }
+
+$frontendLayoutExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+if ($frontendLayoutExitCode -ne 0) {
+    throw "Frontend layout contract failed with exit code $frontendLayoutExitCode"
+}
+$joinedFrontendLayoutOutput = $frontendLayoutOutput -join "`n"
+if ($joinedFrontendLayoutOutput -match $fatalGodotErrorPattern) {
+    throw 'Godot emitted script/runtime errors during the frontend layout contract.'
+}
+if ($joinedFrontendLayoutOutput -notmatch 'FRONTEND_LAYOUT_CONTRACT_OK') {
+    throw 'Frontend layout contract success marker was not emitted.'
 }

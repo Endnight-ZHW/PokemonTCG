@@ -47,7 +47,9 @@
 
 Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量分配、帮助、卡牌检查器、
 区域查看、牌组详情、战斗和胜利页面；右侧按钮可以单独触发抽牌、进化、攻击、伤害、
-击倒和胜利演出。它使用固定种子的预览状态，不读取正式存档，也不会连接网络。
+击倒和胜利演出。它使用固定种子的预览状态，不读取正式存档，也不会连接网络。预览宿主
+比 1600×900 主窗口窄，可快速发现前台 compact 布局问题；但设置、帮助等面板在 Workbench
+中是直接装入预览容器的，仍要按 `F5` 验证 `ModalSpec` 的主题切换、遮罩、焦点恢复与安全区。
 
 ### 常见文件和路径
 
@@ -57,12 +59,12 @@ Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量�
 | `godot/scenes/title/title_page.tscn` | Windows 仓库路径 | VS Code、PowerShell、Git diff |
 | `.tscn` | 场景文件，保存节点树和可视化属性 | 修改页面、组件、弹窗、动画节点 |
 | `.gd` | GDScript 脚本 | 修改信号、导出参数、布局计算和游戏逻辑 |
-| `.tres` | Godot 资源文件 | 修改全局主题、StyleBox、字体样式等资源 |
+| `.tres` | Godot 资源文件 | 修改主题、StyleBox、字体变体等资源 |
 | `.import` | Godot 自动生成的导入记录 | 不手工编辑，资源重新导入时会变化 |
 
 脚本中常见的 `%NodeName` 表示“唯一节点名”引用。它依赖场景树中某个节点启用了
 `Unique Name in Owner`，所以这类节点可以移动和调样式，但不要随意改名或取消唯一标记。
-普通节点路径如 `"Layout/RightCenter/TitlePanel"` 则依赖父子层级；移动节点前要搜索脚本中是否引用了这条路径。
+普通节点路径如 `"SafeContent/PageFrame/HeaderPanel"` 则依赖父子层级；移动节点前要搜索脚本中是否引用了这条路径。
 
 ## 2. 工程地图
 
@@ -105,13 +107,16 @@ flowchart TD
 | 牌库、弃牌和奖品区 | `ui/zone_view.tscn` |
 | 设置、选择、隐私与暂停弹窗 | `ui/dialogs/` |
 | 帮助、卡牌检查器、区域查看和牌组详情 | `ui/panels/` |
-| 全局可编辑主题 | `ui/game_theme.tres` |
+| 前台专用主题 | `ui/frontend/front_end_theme.tres` |
+| 战斗与兼容基础主题 | `ui/game_theme.tres` |
 | 语义颜色和运行时样式 | `ui/design_tokens.gd` |
+| 前台背景、动效和弹窗规格 | `ui/frontend/` |
+| 前台字体与原创线性图标 | `assets/ui/fonts/`、`assets/ui/icons/` |
 | 安全预览 | `tools/ui_workbench.tscn` |
 
 帮助、卡牌检查器、弃牌/隐藏区域查看和牌组详情现在位于 `ui/panels/`。入口仍在
 可编辑页面中，例如标题页的 `HelpButton`、暂停面板的 `HelpButton`、牌组选择页的
-`DeckOneDetailsButton` / `DeckTwoDetailsButton`；`Main` 只负责打开通用 `ModalLayer`
+`DetailsButton`；`Main` 只负责打开通用 `ModalLayer`
 并把 `CardCatalog`、`GameState` 或 context 传给面板。这样既能在 Godot 中单独编辑面板，
 又不会在 `.tscn` 中写死实时对局数据。
 
@@ -122,6 +127,47 @@ flowchart TD
 `main.tscn` 根节点下还有 `Controllers`，里面放着 `ScreenRouter`、`MatchSession`、
 `AIMatchDriver`、`NetworkSessionDriver` 和 `ModalHost`。它们是主流程职责的可见入口；
 当前仍由 `Main` 保留兼容门面，后续扩展时优先把对应职责放到这些控制器。
+
+### 前台视觉框架与兼容边界
+
+标题、牌组、网络、设置、帮助、牌组详情和胜利页使用
+`res://ui/frontend/front_end_theme.tres`。这个 Theme 只挂在前台页面根节点，或由
+`ModalHost` 在打开前台弹窗时临时应用；`res://ui/game_theme.tres` 继续服务战斗界面和
+兼容控件。不要把 `front_end_theme.tres` 设置到 `Main`、`BattleScreen` 或牌桌根节点，
+否则会让本次明确隔离的战斗 HUD 继承前台样式。
+
+前台 Theme 使用语义 variation，而不是逐按钮复制覆盖。例如主操作、次操作和危险操作
+分别使用 `FrontPrimaryButton`、`FrontSecondaryButton`、`FrontDangerButton`；模式卡、
+分区面板和状态面板也有对应 variation。新增控件时先复用现有 variation，确实需要新的
+交互语义时再扩展 Theme，并同时补齐 normal、hover、pressed、focus 和 disabled 状态。
+
+前台资源位置：
+
+| 资源 | 路径 | 说明 |
+|---|---|---|
+| 中文字体 | `assets/ui/fonts/NotoSansCJKsc-VF.ttf` | Noto Sans CJK SC 2.004 完整可变 TTF |
+| 字重变体 | `assets/ui/fonts/noto_sans_cjk_sc_*.tres` | Regular 400、Medium 500、Bold 700 |
+| 字体来源与授权 | `assets/ui/fonts/SOURCE.md`、`assets/ui/fonts/OFL.txt` | 包含上游、SHA-256 与 SIL OFL 1.1 |
+| 前台图标 | `assets/ui/icons/` | 项目原创 24×24 圆角描边 SVG；用户操作中应与可见文字并列 |
+
+`res://ui/frontend/frontend_backdrop.tscn` 提供 `title`、`neutral`、`victory` 三种
+`FrontendBackdrop` 背景。它根据画质和减少动画设置削减卡图装饰与漂浮效果；不要在页面里
+再叠加高成本模糊 Shader。页面入场统一只改变透明度和缩放，Container 子节点的位置应始终
+交给布局系统。
+
+项目基准仍是 1600×900、`canvas_items`、`expand`，不要为了适配单个页面改全局 stretch。
+前台布局使用安全区内的可用尺寸，而不是物理窗口尺寸：安全区宽度至少 1360 且纵横比至少
+1.5 时为 wide，否则为 compact landscape；内容最大宽度为 1480。compact 会重排、隐藏
+次要装饰或在画廊/详情间切换，不应把 wide 页面整体等比缩小。`Main._apply_safe_area()` 会把
+平台安全区同步到页面、弹窗、加载层和提示层；新增全屏层时也要接入这条路径。
+
+通用弹窗通过 `res://ui/frontend/modal_spec.gd` 描述 `preferred_size`、前台/战斗 surface、
+遮罩透明度、可取消性、初始焦点和堆栈行为。调用 `ModalSpec.frontend(...)` 时 `ModalHost` 临时应用前台 Theme，
+关闭后恢复继承主题；战斗选择、隐私和暂停弹窗使用 `ModalSpec.battle(...)`，继续保持原有
+遮罩与不可取消语义。compact 下前台 Modal 会占满安全内容区，战斗 Modal 仍保持自己的首选
+尺寸。Modal 正文共用一个纵向 ScrollContainer，横向滚动被禁用，页脚按钮位于滚动区外；
+面板不要再嵌套整页滚动。前台“牌组详情 → 卡牌检查器”通过 `Main` 的返回动作恢复详情滚动和
+卡牌焦点，面板本身不要私自创建第二个 ModalLayer。
 
 节点上的 `editor_description` 会在 Inspector 中解释用途。标有“不要删除”的节点
 是运行时和自动测试的稳定契约，可以移动或调样式，但不要随意改名。
@@ -148,7 +194,8 @@ flowchart TD
 - 想改“看起来是什么样”：优先打开 `.tscn`，在 Scene、Viewport 和 Inspector 中编辑。
 - 想改“这个页面收到什么数据”：看同名 `.gd` 的 `configure(...)`。
 - 想改“用户点击后通知谁”：看同名 `.gd` 的 `signal` 和 `_ensure_connections()`。
-- 想改“所有按钮、面板的默认风格”：打开 `res://ui/game_theme.tres`。
+- 想改“前台按钮、面板的默认风格”：打开 `res://ui/frontend/front_end_theme.tres`。
+- 想改“战斗与兼容控件的默认风格”：打开 `res://ui/game_theme.tres`。
 - 想改“实时规则结果”：不要从场景开始，先看 `GameEngine`、`EffectEngine` 和 Python 权威数据。
 
 ### Container 与锚点
@@ -190,14 +237,14 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 先做一个最小闭环：打开场景、选节点、改 Inspector、运行当前场景、再从 Workbench 验证。
 
 1. 打开 `res://scenes/title/title_page.tscn`。
-2. 在 Scene 树中选择 `TitleLabel`。
+2. 在 Scene 树中展开 `SafeContent/PageFrame/BodyGrid/HeroPanel`，选择 `TitleLabel`。
 3. 在 Inspector 修改 Text、字体大小或颜色。
-4. 选择 `Layout/RightCenter/TitlePanel`，修改 `custom_minimum_size` 或 StyleBox。
-5. 选择 `Layout/RightCenter/TitlePanel/Margin/Content`，修改 separation，让按钮之间更松或更紧。
+4. 选择 `ModesPanel`，修改 `custom_minimum_size` 或 Theme Type Variation。
+5. 选择 `ModesContent/ModeGrid`，修改 separation，让模式卡之间更松或更紧。
 6. 选择 `LocalTwoPlayerButton`，修改 `custom_minimum_size.y`，观察按钮高度变化。
 7. 按 `Ctrl+S` 保存场景。
 8. 按 `F6` 查看当前标题页。
-9. 再运行 `ui_workbench.tscn`，检查标题页在预览框中的效果。
+9. 再运行 `ui_workbench.tscn`，检查标题页在较窄预览宿主中的 compact 效果。
 
 如果希望让文字成为脚本可配置参数，选择根节点 `TitlePage`，查看
 `Editable Copy` 分组。它来自：
@@ -216,11 +263,11 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 | 想改什么 | 选中节点 | 推荐改法 |
 |---|---|---|
 | 大标题 | `TitleLabel` | Inspector 的 Text、Label Settings 或 Theme Overrides |
-| 右侧面板宽度 | `TitlePanel` | `custom_minimum_size.x` |
-| 面板内边距 | `TitlePanel/Margin` | margin 常量 |
+| wide 品牌区 | `HeroPanel`、`HeroMargin` | 最小尺寸、margin 与 `title_page.gd` 响应式参数 |
+| 模式卡区 | `ModesPanel`、`ModeGrid` | Theme variation、列数与 separation |
 | 主模式按钮高度 | `LocalTwoPlayerButton`、`ChallengeAIButton`、`DeepAIButton` | `custom_minimum_size.y` |
 | LAN / Relay 并排按钮间距 | `NetworkRow` | separation |
-| 设置 / 帮助按钮 | `UtilityRow`、`SettingsButton`、`HelpButton` | separation、文字、最小尺寸 |
+| 设置 / 帮助按钮 | `HeaderRow`、`SettingsButton`、`HelpButton` | separation、文字、最小尺寸 |
 
 如果 Inspector 里找不到某个属性，可以用顶部搜索框输入 `custom`、`separation`、
 `margin` 或 `font`。Godot 的属性很多，搜索比一层层展开更稳。
@@ -365,7 +412,8 @@ Main.update_view()    -> 页面重新显示状态
 
 | 目标 | 改哪里 | 稳定边界 |
 |---|---|---|
-| 调整文字大小、颜色、间距、面板外观 | `.tscn`、Inspector、`game_theme.tres` | 不改变信号和规则 |
+| 调整前台文字、间距、面板外观 | `.tscn`、Inspector、`front_end_theme.tres` | 不改变信号和规则，也不影响战斗 Theme |
+| 调整战斗控件默认外观 | 战斗 `.tscn`、Inspector、`game_theme.tres` | 不把前台 variation 引入 `BattleScreen` |
 | 调整可配置尺寸或动画速度 | 场景根节点的 `@export` 参数 | 参数可被 Inspector 保存 |
 | 调整运行时布局算法 | 对应 `.gd` 的 `_layout_*`、`_place_*` 函数 | 改完要看多种窗口比例 |
 | 新增用户交互 | 页面 `.tscn` 新增控件，页面 `.gd` 新增或连接 `signal`，`Main` 处理 | 页面只报告意图，不改规则状态 |
@@ -380,6 +428,19 @@ Main.update_view()    -> 页面重新显示状态
 - 对局状态只通过 `GameEngine.apply_action()` 或 `GameEngine.apply_choice()` 修改。
 - 可视化动画只消费 `PresentationEvent` 和表现事件，不得直接修改 `GameState`。
 
+牌组页仍用 `configure(catalog, mode)` 输入数据，并用
+`start_requested(mode, first_deck_key, second_deck_key, forced_first_player)` 输出开始意图。
+页面内部已不再用两个可见 `OptionButton` 作为状态来源；`Main` 和测试只能使用以下公开接口：
+
+```gdscript
+page.deck_count()
+page.selected_deck_key(0)
+page.select_deck(1, "water")
+```
+
+玩家索引为 0 或 1，`select_deck(...)` 返回是否成功；两个槽位允许选择同一套牌。不要读取
+隐藏的 `DeckOneOption` / `DeckTwoOption` 兼容节点，它们只用于迁移旧调用方。
+
 ## 7. AnimationPlayer 与 Tween
 
 使用 AnimationPlayer 的场景：
@@ -393,6 +454,10 @@ Main.update_view()    -> 页面重新显示状态
 在底部切换到 Animation 面板，选择 `enter`、`modal_open`、`modal_close`、
 `selected_pulse` 或 `target_pulse`，即可移动关键帧、修改时长和缓动。`RESET`
 动画保存编辑器和运行时的默认值，不要轻易删除。
+
+前台页面还有 `res://ui/frontend/frontend_motion.gd` 作为统一动效策略。它读取
+`AppSettings.animation_mode` 和画质档位，页面入场只允许动画 `modulate:a` 与 `scale`；
+不要给 Container 管理的子节点写 `position` 轨道，否则 wide/compact 切换时会和布局互相覆盖。
 
 固定动画的新手工作流：
 
@@ -427,19 +492,21 @@ Main.update_view()    -> 页面重新显示状态
 
 | 想改的效果 | 推荐位置 | 原因 |
 |---|---|---|
-| 标题页淡入 | `title_page.tscn` 的 `AnimationPlayer / enter` | 固定页面入场 |
-| 牌组页淡入 | `deck_select_page.tscn` 的 `AnimationPlayer / enter` | 固定页面入场 |
-| 弹窗打开和关闭 | `main.tscn` 的 `ShellAnimations` | 通用弹窗外壳 |
+| 标题与胜利页淡入 | 对应场景的 `AnimationPlayer / enter` | 只写透明度与缩放，并检查 animation mode |
+| 牌组、网络等前台入场 | `frontend_motion.gd` 或页面内遵循同一策略的 Tween | 统一 reduced/low-quality 行为 |
+| 弹窗打开和关闭 | `main.tscn` 的 ModalLayer 与 `ModalHost` | 前台/战斗规格共享外壳但隔离 Theme |
 | 卡牌选中呼吸 | `card_view.tscn` 的 `selected_pulse` | 复用组件固定状态 |
 | 合法目标闪烁 | `card_view.tscn` 的 `target_pulse` | 复用组件固定状态 |
 | 抽牌飞向手牌 | `battle_screen.gd` 的 `_on_card_motion_requested()` 和导出参数 | 起点终点来自实时对局 |
 | 攻击、击倒、奖品飞牌 | `PresentationDirector` + `BattleTable` | 事件和目标位置运行时才知道 |
 
-减少动画模式下不要强制播放时间轴。代码应检查：
+减少动画模式下不要强制播放时间轴。前台优先使用共享策略：
 
 ```gdscript
-if not AppSettings.reduced_motion:
-    animation_player.play("enter")
+if FrontendMotion.is_reduced():
+    FrontendMotion.settle(page)
+else:
+    FrontendMotion.play_enter(page)
 ```
 
 ## 8. 一次点击如何进入规则引擎
@@ -536,6 +603,19 @@ flowchart LR
 客户端不能提交伤害、抽牌结果、随机数或完整状态。UI 改造不得绕过
 `NetworkMatchController.submit_action()` 和 `submit_choice()`。
 
+网络大厅的视觉状态由 `NetworkLobbyPage.ConnectionState` 表达：
+
+```text
+IDLE -> VALIDATING -> CONNECTING -> WAITING -> CONNECTED
+                                     \-----> ERROR
+```
+
+状态区、字段锁定和 Relay 房间码统一通过
+`set_connection_state(state, message, room_code)` 更新；`connect_requested` 信号的参数和
+房主权威校验保持不变。页面先做字段级提示，`Main` 仍必须做第二层权威校验。离开网络路由后
+`Main` 会清空页面引用，因此异步回调更新 UI 前必须同时确认当前路由和实例仍有效，不能缓存
+控件节点后跨页面写入。
+
 ## 11. 新增卡牌或效果
 
 `godot/data/*.json` 是生成文件，不要直接修改。权威数据仍在 Python 工程。
@@ -618,6 +698,11 @@ flowchart LR
 .\tools\test_godot.ps1
 ```
 
+该入口包含前台布局 contract，会在 1280×720、1600×900、1024×768、2000×900、
+窄 Workbench 宿主和模拟四边 48px 安全区下检查关键控件边界、重叠、横向滚动与最小命中区。
+它还覆盖同一页面跨 wide/compact 阈值后的焦点修复、弹窗历史恢复、Theme 隔离和关键对比度。
+布局 contract 是结构回归，仍需配合截图观察视觉层级、长文案与卡图构图。
+
 涉及 AI、规则或网络时执行：
 
 ```powershell
@@ -633,9 +718,14 @@ flowchart LR
   --script res://tests/ui_preview.gd
 ```
 
-截图输出到 `build/ui-preview/`，包括标题、网络、设置、选牌、隐私交接、16:9、
-20:9、复杂选择、战斗动画、胜利页和 Workbench。截图用于检查遮挡、溢出和布局，
-不能代替 Android 真机帧率测试。
+`ui_preview.gd` 在截图期间临时固定为 reduced motion，并在页面切换后等待布局帧完成，
+避免入场 Tween 造成标题或弹窗只截到半透明中间态；结束时会恢复原设置。新增前台截图也必须
+走同一段 settle 流程，不要用“多等一个不确定的秒数”掩盖竞态。
+
+截图输出到 `build/ui-preview/`，包括 wide/compact 标题、牌组和网络页，网络等待/错误、
+设置顶部/底部、帮助、详情、加载、Toast、隐私交接、16:9/20:9 战斗、复杂选择、
+战斗动画、胜利页和 Workbench。截图用于检查遮挡、溢出和布局，不能代替 Android
+真机帧率测试。
 
 本手册使用的稳定图片位于 `docs/images/godot-guide/`。修改场景结构或动画面板后，
 应重新生成运行时截图，并在 Godot 4.7 编辑器中更新对应界面截图；不要直接引用
@@ -968,8 +1058,8 @@ APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CH
 按顺序完成以下练习：
 
 1. 修改标题文字和按钮高度。
-2. 调整牌组选择页的两栏间距。
-3. 修改 `game_theme.tres` 的按钮圆角。
+2. 调整牌组选择页的画廊/详情间距，并在 Workbench 检查 compact 切换。
+3. 修改 `front_end_theme.tres` 中一个语义按钮 variation 的圆角。
 4. 在 `CardView` Inspector 中调整选中抬升高度。
 5. 编辑标题页 `enter` 动画。
 6. 给 TitlePage 增加一个只发信号的新按钮。
@@ -999,34 +1089,40 @@ Godot UI 修改先判断节点属于哪一种布局：
 2. 在 Scene 树中选择容器节点，先看 Inspector 的 `custom_minimum_size`、margin 和 separation。
 3. 如果拖动位置没有效果，说明它在 Container 下，应修改父容器参数。
 4. 如果运行时位置和编辑器不同，搜索对应脚本中的布局函数，例如 `_layout_board()`。
-5. 改完运行 `tools/test_godot.ps1`；涉及战斗画面再运行 UI 截图脚本。
+5. 改完运行 `tools/test_godot.ps1`；涉及前台/弹窗或战斗画面时再运行 UI 截图脚本。
 
 ### 配方：修改标题页按钮和面板
 
 1. 打开 `res://scenes/title/title_page.tscn`。
-2. 选择 `TitlePanel`，修改 `custom_minimum_size.x`，控制右侧面板宽度。
-3. 选择 `TitlePanel/Margin`，修改 margin，让内容离面板边缘更远或更近。
-4. 选择 `Content`，修改 separation，让标题、分割线和按钮之间的间距变化。
+2. 选择 `HeaderPanel`，调整品牌条和设置/帮助辅助按钮。
+3. 选择 `HeroPanel/HeroMargin`，修改 wide 模式品牌内容的内边距。
+4. 选择 `ModesPanel/ModesMargin/ModesContent/ModeGrid`，修改 2×2 模式卡的间距。
 5. 选择 `LocalTwoPlayerButton`、`ChallengeAIButton` 或 `DeepAIButton`，修改 `custom_minimum_size.y`。
-6. 选择 `NetworkRow` 或 `UtilityRow`，修改 separation，控制并排按钮间距。
-7. 按 `F6` 预览标题页；再用 Workbench 看标题页在安全预览框中的效果。
+6. 选择 `OnlineCard/OnlineContent/NetworkRow`，调整 LAN 与 Relay 两个明确入口。
+7. wide/compact 的列数、Hero 显隐和外边距由 `title_page.gd::_apply_responsive_layout()` 决定；
+   不要只在 `.tscn` 写死宽度覆盖它。
+8. 按 `F6` 预览 wide 标题页；再用 Workbench 看 compact 效果。
 
 如果你只是改按钮文字，可以直接改 Button 的 Text。但如果按钮文字由脚本覆盖，运行时会以脚本为准；
 这时要搜索对应脚本，例如 `title_page.gd`。
 
-### 配方：修改牌组选择页两栏布局
+### 配方：修改牌组画廊与详情布局
 
 1. 打开 `res://scenes/decks/deck_select_page.tscn`。
-2. 选择 `MainPanel`，修改整体面板最小尺寸。
-3. 选择 `MainPanel/Margin`，修改内边距。
-4. 选择 `Content`，修改纵向 separation。
-5. 选择 `Columns`，修改两栏之间的 separation。
-6. 选择 `DeckOnePanel` 或 `DeckTwoPanel`，修改每栏的最小宽度或 StyleBox。
-7. 选择 `DeckOneDetailsButton` 或 `DeckTwoDetailsButton`，修改按钮文字、高度或样式。
-8. 按 `F6` 预览；再从标题页用 `F5` 进入一次，确认页面跳转和数据填充正常。
+2. 选择 `SlotPanel/Slots`，调整玩家 1 与玩家 2（或 AI）的槽位切换按钮。
+3. 选择 `MasterDetail/GalleryPanel`，调整单一牌组画廊；tile 场景位于
+   `res://ui/frontend/deck_gallery_tile.tscn`。
+4. 选择 `MasterDetail/DetailPanel`，调整选中牌组的摘要和最多四张核心卡。
+5. 选择 `ActionBar`，调整独立底部 CTA 与 AI 先手选项，不要把它放入画廊滚动区。
+6. wide 模式使用画廊/详情主从布局；compact 在全幅画廊与详情之间切换并恢复滚动位置。
+   切换逻辑在 `deck_select_page.gd::_apply_responsive_layout()`。
+7. 按 `F6` 预览；再从标题页用 `F5` 分别进入本地和 AI 模式，验证两个槽位、同牌组选择、
+   先手参数和 `start_requested` 参数顺序。
 
-`DeckOneOption`、`DeckTwoOption` 和卡组预览内容会由 `DeckSelectPage.configure(...)`
-读取 `CardCatalog` 后填充。可以调整它们的外观和尺寸，但不要在 `.tscn` 中写死卡组列表。
+十套发布牌组的代表卡配置位于 `res://ui/frontend/deck_visual_catalog.gd`。新增发布牌组时优先
+在这里显式配置；缺失时才走稳定回退算法。不要在 `.tscn` 写死卡组列表，也不要读取隐藏的
+`DeckOneOption` / `DeckTwoOption`；脚本和测试使用 `selected_deck_key()`、`select_deck()` 和
+`deck_count()`。
 
 ### 配方：修改战斗界面 HUD、卡位和手牌
 
@@ -1085,42 +1181,48 @@ Godot UI 修改先判断节点属于哪一种布局：
 2. 打开 `res://ui/dialogs/pause_panel.tscn` 修改暂停内容。
 3. 打开 `res://ui/dialogs/choice_panel.tscn` 修改复杂选择内容。
 4. 打开 `res://ui/dialogs/privacy_panel.tscn` 修改本地热座隐私交接提示。
-5. 这些面板大多是 `VBoxContainer` 根节点，优先改 `custom_minimum_size`、separation 和子节点最小高度。
-6. 通用弹窗外壳在 `res://scenes/main/main.tscn` 的 `ModalLayer`，这里控制遮罩、弹窗框和按钮区。
-7. 内容改完后在 Workbench 切换“设置”“选择”“能量分配”等预览页。
+5. 设置是前台 surface；暂停、选择和隐私是战斗 surface。不要因为共用外壳就给后者套前台 Theme。
+6. 这些面板大多是 `VBoxContainer` 根节点，优先改 `custom_minimum_size`、separation 和子节点最小高度。
+7. 通用弹窗外壳在 `res://scenes/main/main.tscn` 的 `ModalLayer`，尺寸、遮罩、可取消性和初始焦点
+   由调用处的 `ModalSpec.frontend(...)` / `ModalSpec.battle(...)` 决定。
+8. 内容改完后先在 Workbench 切换“设置”“选择”“能量分配”，再按 `F5` 检查真实弹窗 Theme 与返回键。
 
 弹窗按钮的“确认”“取消”“关闭”通常由 `Main` 的通用 ModalLayer 管理。面板内容负责显示字段，
 不要在面板场景里直接写保存设置、提交选择或关闭对局的规则。
 
 ### 配方：修改帮助、检查器和查看面板
 
-1. 打开 `res://ui/panels/help_panel.tscn` 修改帮助正文结构。
+1. 打开 `res://ui/panels/help_panel.tscn` 修改快速开始、回合流程、卡牌与区域、联机四类内容。
 2. 打开 `res://ui/panels/card_inspector_panel.tscn` 修改卡牌检查器的大图、卡文和附属卡布局。
 3. 打开 `res://ui/panels/zone_inspector_panel.tscn` 修改弃牌/牌库/奖品/竞技场查看布局。
 4. 打开 `res://ui/panels/deck_detail_panel.tscn` 修改牌组详情统计、核心卡和完整列表布局。
-5. `Main` 负责打开通用 `ModalLayer`、设置标题和关闭按钮；面板只接收 context 并显示内容。
+5. `Main` 负责按 `ModalSpec` 打开通用 `ModalLayer`、设置标题和关闭按钮；面板只接收 context 并显示内容。
 6. 修改后在 Workbench 切换“帮助”“卡牌检查器”“区域查看”“牌组详情”四个预览页。
 
 隐藏区域的规则不要在面板里绕过。`zone_inspector_panel.tscn` 对 `hidden=true` 的区域只展示数量和卡背；
 如果要显示真实卡牌，必须确认它来自公开区域或当前玩家允许查看的私有区域。
 
-### 配方：修改全局主题
+### 配方：修改前台或战斗主题
 
-1. 打开 `res://ui/game_theme.tres`。
-2. 在 Inspector 中选择 Button、Label、PanelContainer、OptionButton 等类型。
-3. 修改字体大小、颜色、StyleBox、圆角、边框或默认间距。
-4. 保存后运行 Workbench，切换多个页面确认影响范围。
-5. 如果只想改单个控件，不要改全局 Theme；选中该控件，在 Theme Overrides 中改局部覆盖。
+1. 先判断目标属于前台还是战斗：标题、牌组、网络、设置、帮助、详情和胜利使用
+   `res://ui/frontend/front_end_theme.tres`；战斗 HUD 与战斗弹窗使用 `res://ui/game_theme.tres`。
+2. 在 Inspector 中选择 Button、Label、PanelContainer、OptionButton 等类型，再选择或修改对应
+   Theme Type Variation。
+3. 修改字体大小、颜色、StyleBox、圆角、边框或默认间距，并补齐 hover、pressed、focus、disabled。
+4. 保存后运行 Workbench，切换同一 surface 的多个页面确认影响范围。
+5. 修改前台 Theme 后运行 `test_godot.ps1` 的隔离检查，并人工打开一次战斗预览，确认 HUD 未变化。
+6. 如果只想改单个控件，优先选用已有语义 variation；仍无法表达时再做局部 Theme Override。
 
-全局主题会影响全项目。同一个 Button 样式可能同时出现在标题页、牌组页、设置弹窗、战斗 HUD 和胜利页。
-做大范围主题修改时，至少检查标题、牌组、设置、战斗和胜利五个预览。
+这里没有一个同时控制整个项目的“全局 Theme”。前台主题挂载在页面根节点，并由 `ModalHost`
+临时应用到前台弹窗；关闭后会恢复继承主题。不要把前台 Theme 提升到 `Main` 根节点来追求省事。
 
 ### 配方：判断主题覆盖写在哪里
 
 | 目标 | 推荐位置 |
 |---|---|
-| 所有按钮统一圆角、字体和颜色 | `res://ui/game_theme.tres` |
-| 只有标题页主按钮变大 | `title_page.tscn` 中对应 Button 的 Theme Overrides 或最小尺寸 |
+| 所有前台主操作统一圆角、字体和颜色 | `front_end_theme.tres` 的 `FrontPrimaryButton` variation |
+| 所有战斗控件统一默认外观 | `res://ui/game_theme.tres` |
+| 只有标题页主按钮变大 | `title_page.tscn` 中对应 Button 的最小尺寸或既有 variation |
 | 只有战斗 HUD 日志变小 | `battle_log_panel.tscn` 中 `LogLabel` 或父容器 |
 | 只有卡牌组件高亮更明显 | `card_view.tscn` 的 `TargetGlow`、`SelectionRing` 和动画 |
 | 运行时按画质或设置切换 | 脚本和 `AppSettings`，不要只靠 Theme |
@@ -1218,14 +1320,15 @@ Windows 任务栏或启动器中被裁切。不要手工编辑 `.import` 文件�
 ### 第一步：在标题页复制一个按钮
 
 1. 打开 `res://scenes/title/title_page.tscn`。
-2. 在 Scene 树中找到 `UtilityRow`，里面已有 `SettingsButton` 和 `HelpButton`。
+2. 在 Scene 树中找到 `HeaderRow`，里面已有 `SettingsButton` 和 `HelpButton`。
 3. 右键 `HelpButton`，选择 Duplicate，得到一个新按钮。
 4. 把新按钮重命名为 `BeginnerTipButton`。
 5. 在 Inspector 中把 Text 改成 `新手提示`。
 6. 右键该节点，启用 `Access as Unique Name` / `Unique Name in Owner`，这样脚本可以用 `%BeginnerTipButton` 找到它。
 7. 保存场景。
 
-如果新按钮挤不下，先选 `UtilityRow` 调 separation 或最小宽度，不要急着写脚本。
+如果新按钮挤不下，先选 `HeaderRow` 调 separation 或最小宽度，并在 Workbench 检查 compact
+品牌条；不要急着写脚本。用户操作图标应与 `新手提示` 文字并列，可复用 `assets/ui/icons/info.svg`。
 
 ### 第二步：让标题页发出信号
 
@@ -1235,7 +1338,7 @@ Windows 任务栏或启动器中被裁切。不要手工编辑 `.import` 文件�
 signal beginner_tip_requested
 ```
 
-在 `_ensure_connections()` 的 `bindings` 数组里加入一行：
+在 `_connect_actions()` 的 `bindings` 数组里加入一行：
 
 ```gdscript
 [%BeginnerTipButton, beginner_tip_requested.emit],
@@ -1256,8 +1359,13 @@ page.beginner_tip_requested.connect(_show_beginner_tip)
 ```gdscript
 func _show_beginner_tip() -> void:
     _play_click()
-    _open_modal("新手提示", "关闭", "")
-    modal_panel.custom_minimum_size = Vector2(620, 420)
+    _open_modal(
+        "新手提示",
+        "关闭",
+        "",
+        false,
+        ModalSpec.frontend(Vector2(620, 420)),
+    )
     modal_body.add_child(_modal_label(
         "先从 Workbench 预览页面，再回到具体场景修改布局。改 UI 后运行 Godot 测试。",
         16,
@@ -1409,7 +1517,7 @@ MY_FIRE_DECK = [
 .\tools\test_godot.ps1
 ```
 
-- 涉及战斗布局或动画时再运行 UI 截图脚本：
+- 涉及前台布局、弹窗、战斗布局或动画时运行固定 reduced-motion UI 截图脚本：
 
 ```powershell
 .\.tools\godot-4.7\Godot_v4.7-stable_win64.exe `

@@ -2,6 +2,10 @@ extends SceneTree
 
 const OUTPUT_ROOT := "res://../build/ui-preview"
 
+var _settings_node: Node
+var _settings_snapshot: Dictionary = {}
+var _finished := false
+
 
 func _initialize() -> void:
 	root.size = Vector2i(1600, 900)
@@ -9,66 +13,151 @@ func _initialize() -> void:
 
 
 func _render_previews() -> void:
+	# The project uses a 1280×720 desktop override. Re-apply the requested
+	# capture size after the initial window setup so every baseline is emitted
+	# at the same physical resolution.
+	root.size = Vector2i(1600, 900)
+	await _settle_frontend(2)
+	if not _enable_deterministic_preview_mode():
+		push_error("AppSettings autoload is unavailable")
+		_finish(1)
+		return
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT_ROOT))
 	var packed := load("res://scenes/main/main.tscn") as PackedScene
 	if packed == null:
 		push_error("Unable to load main UI scene")
-		quit(1)
+		_finish(1)
 		return
 	var ui := packed.instantiate()
 	root.add_child(ui)
 	ui.initialize_ui()
-	await process_frame
-	await create_timer(0.25).timeout
+	await _settle_frontend()
 	if not _capture("title.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._show_help()
-	await process_frame
-	await create_timer(0.2).timeout
+	await _settle_frontend()
 	if not _capture("help.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._close_modal()
+	await _settle_frontend(2)
 
 	ui.show_network_setup("relay")
-	await process_frame
-	await create_timer(0.2).timeout
+	await _settle_frontend()
 	if not _capture("network.png"):
-		quit(1)
+		_finish(1)
+		return
+	ui.current_network_page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.WAITING,
+		"房间已创建，等待挑战者加入。",
+		"ROOM42",
+	)
+	await _settle_frontend()
+	if not _capture("network-waiting.png"):
+		_finish(1)
+		return
+	ui.current_network_page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.ERROR,
+		"连接中断：无法联系 Relay 服务，请检查网络地址后重新尝试。",
+	)
+	await _settle_frontend()
+	if not _capture("network-error.png"):
+		_finish(1)
 		return
 
 	ui.show_title()
 	ui.show_settings()
-	await process_frame
-	await create_timer(0.2).timeout
+	await _settle_frontend()
 	if not _capture("settings.png"):
-		quit(1)
+		_finish(1)
+		return
+	ui.modal_scroll.scroll_vertical = int(ui.modal_scroll.get_v_scroll_bar().max_value)
+	await _settle_frontend()
+	if not _capture("settings-bottom.png"):
+		_finish(1)
 		return
 	ui._close_modal()
+	await _settle_frontend(2)
 
 	ui.show_deck_select()
-	await process_frame
-	await create_timer(0.25).timeout
+	await _settle_frontend()
 	if not _capture("decks.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._show_deck_details("fire")
-	await process_frame
-	await create_timer(0.2).timeout
+	await _settle_frontend()
 	if not _capture("deck-detail.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._close_modal()
+	await _settle_frontend(2)
+
+	root.size = Vector2i(1024, 768)
+	await _settle_frontend(3)
+	ui.show_title()
+	await _settle_frontend()
+	if not _capture("title-compact.png"):
+		_finish(1)
+		return
+	ui.show_deck_select("challenge")
+	await _settle_frontend()
+	if not _capture("decks-compact.png"):
+		_finish(1)
+		return
+	ui.show_network_setup("relay")
+	ui.current_network_page.role_option.select(1)
+	ui.current_network_page.refresh_fields(1)
+	await _settle_frontend()
+	if not _capture("network-compact.png"):
+		_finish(1)
+		return
+	ui.show_title()
+	ui.show_settings()
+	await _settle_frontend()
+	if not _capture("settings-compact.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _settle_frontend(2)
+	ui._show_help()
+	await _settle_frontend()
+	if not _capture("help-compact.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _settle_frontend(2)
+	ui.show_deck_select("challenge")
+	ui._show_deck_details("fire")
+	await _settle_frontend()
+	if not _capture("deck-detail-compact.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _settle_frontend(2)
+	root.size = Vector2i(1600, 900)
+	await _settle_frontend(3)
+	ui.show_title()
+	ui._show_loading("正在准备牌桌与卡图…")
+	await _settle_frontend()
+	if not _capture("loading.png"):
+		_finish(1)
+		return
+	ui._hide_loading()
+	ui._show_toast("牌组已就绪，可以开始对战。")
+	await _settle_frontend()
+	if not _capture("toast.png"):
+		_finish(1)
+		return
 
 	if not ui.start_local_match_for_test("fire", "water"):
 		push_error("Unable to start preview match")
-		quit(1)
+		_finish(1)
 		return
 	await process_frame
 	await create_timer(0.25).timeout
 	if not _capture("privacy.png"):
-		quit(1)
+		_finish(1)
 		return
 
 	ui._close_modal()
@@ -76,13 +165,13 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.25).timeout
 	if not _capture("game.png"):
-		quit(1)
+		_finish(1)
 		return
 	root.size = Vector2i(2000, 900)
 	await process_frame
 	await create_timer(0.1).timeout
 	if not _capture("game-20x9.png"):
-		quit(1)
+		_finish(1)
 		return
 	root.size = Vector2i(1600, 900)
 	await process_frame
@@ -95,6 +184,7 @@ func _render_previews() -> void:
 	demo.stadium_card_id = "sv1-171"
 	demo.players[0].name = "玩家 1"
 	demo.players[1].name = "玩家 2"
+	demo.public_deck_keys = ["fire", "water"]
 	demo.players[0].active = PokemonState.new("svi-hrot")
 	demo.players[0].active.placed_this_turn = false
 	demo.players[0].active.energy_card_ids.assign([
@@ -134,7 +224,7 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.2).timeout
 	if not _capture("battle-populated.png"):
-		quit(1)
+		_finish(1)
 		return
 	demo.active_player_idx = 1
 	demo.players[1].name = "Challenge AI"
@@ -144,7 +234,7 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.25).timeout
 	if not _capture("ai-thinking.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.ai_thinking = false
 	ui.game_mode = "local"
@@ -159,7 +249,7 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.2).timeout
 	if not _capture("card-inspector.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._close_modal()
 	ui._show_zone_inspector({
@@ -173,7 +263,7 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.2).timeout
 	if not _capture("zone-inspector.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._close_modal()
 	await process_frame
@@ -183,7 +273,7 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.12).timeout
 	if not _capture("card-actions.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.selected_entity_key = ""
 	ui._refresh_game()
@@ -203,7 +293,7 @@ func _render_previews() -> void:
 	}], demo.revision + 10, 0)
 	await create_timer(0.24).timeout
 	if not _capture("draw.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
 	ui.battle_screen.play_presentation([{
@@ -220,7 +310,7 @@ func _render_previews() -> void:
 	}], demo.revision + 11, 0)
 	await create_timer(0.26).timeout
 	if not _capture("discard.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
 	ui.battle_screen.play_presentation([{
@@ -232,7 +322,7 @@ func _render_previews() -> void:
 	}], demo.revision + 111, 0)
 	await create_timer(0.24).timeout
 	if not _capture("shuffle.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
 
@@ -258,7 +348,7 @@ func _render_previews() -> void:
 	}], demo.revision + 12, 0, energy_snapshot)
 	await create_timer(0.24).timeout
 	if not _capture("energy-attach.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
 
@@ -290,7 +380,7 @@ func _render_previews() -> void:
 	}], demo.revision + 13, 0, evolve_snapshot)
 	await create_timer(0.34).timeout
 	if not _capture("evolve.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
 	demo.players[0].active.card_id = old_active_card_id
@@ -327,7 +417,7 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.25).timeout
 	if not _capture("choice.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._close_modal()
 
@@ -371,7 +461,7 @@ func _render_previews() -> void:
 		energy_preview_card.activated.emit("svi-jete", -1, -1, "")
 	await create_timer(0.25).timeout
 	if not _capture("choice-energy.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui._close_modal()
 
@@ -394,11 +484,11 @@ func _render_previews() -> void:
 	], demo.revision, 0)
 	await create_timer(0.18).timeout
 	if not _capture("attack.png"):
-		quit(1)
+		_finish(1)
 		return
 	await create_timer(0.72).timeout
 	if not _capture("impact.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
 	ui.battle_screen.play_presentation([{
@@ -411,16 +501,15 @@ func _render_previews() -> void:
 	}], demo.revision + 1, 0)
 	await create_timer(0.18).timeout
 	if not _capture("ko.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
 	demo.winner = 0
 	demo.phase = "GAME_OVER"
 	ui._show_end_screen()
-	await process_frame
-	await create_timer(0.5).timeout
+	await _settle_frontend()
 	if not _capture("end.png"):
-		quit(1)
+		_finish(1)
 		return
 	ui.queue_free()
 	await process_frame
@@ -428,13 +517,73 @@ func _render_previews() -> void:
 	var workbench_scene := load("res://tools/ui_workbench.tscn") as PackedScene
 	var workbench := workbench_scene.instantiate()
 	root.add_child(workbench)
+	workbench.call_deferred("show_preview", "title")
 	await process_frame
 	await create_timer(0.2).timeout
 	if not _capture("workbench.png"):
-		quit(1)
+		_finish(1)
 		return
 	print("UI_PREVIEWS_OK")
-	quit(0)
+	_finish(0)
+
+
+func _settle_frontend(frame_count: int = 3) -> void:
+	# Explicit frame waits make container layout deterministic even when the
+	# renderer is faster than the former timer-based preview cadence.
+	for _frame in range(maxi(frame_count, 2)):
+		await process_frame
+
+
+func _enable_deterministic_preview_mode() -> bool:
+	_settings_node = root.get_node_or_null("AppSettings")
+	if _settings_node == null:
+		return false
+	_settings_snapshot = {
+		"master_volume": _settings_node.get("master_volume"),
+		"music_volume": _settings_node.get("music_volume"),
+		"sfx_volume": _settings_node.get("sfx_volume"),
+		"muted": _settings_node.get("muted"),
+		"reduced_motion": _settings_node.get("reduced_motion"),
+		"card_cache_size": _settings_node.get("card_cache_size"),
+		"animation_mode": _settings_node.get("animation_mode"),
+		"quality_profile": _settings_node.get("quality_profile"),
+	}
+	_settings_node.call(
+		"update",
+		float(_settings_snapshot.master_volume),
+		bool(_settings_snapshot.muted),
+		true,
+		int(_settings_snapshot.card_cache_size),
+		"reduced",
+		str(_settings_snapshot.quality_profile),
+		float(_settings_snapshot.music_volume),
+		float(_settings_snapshot.sfx_volume),
+	)
+	return true
+
+
+func _restore_preview_settings() -> void:
+	if _settings_node == null or _settings_snapshot.is_empty():
+		return
+	_settings_node.call(
+		"update",
+		float(_settings_snapshot.master_volume),
+		bool(_settings_snapshot.muted),
+		bool(_settings_snapshot.reduced_motion),
+		int(_settings_snapshot.card_cache_size),
+		str(_settings_snapshot.animation_mode),
+		str(_settings_snapshot.quality_profile),
+		float(_settings_snapshot.music_volume),
+		float(_settings_snapshot.sfx_volume),
+	)
+
+
+func _finish(exit_code: int) -> void:
+	if _finished:
+		return
+	_finished = true
+	_restore_preview_settings()
+	quit(exit_code)
 
 
 func _capture(filename: String) -> bool:

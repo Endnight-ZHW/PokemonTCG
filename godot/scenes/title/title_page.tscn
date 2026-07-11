@@ -1,55 +1,56 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://scenes/title/title_page.gd" id="1_page"]
-[ext_resource type="Script" path="res://scenes/title/title_backdrop.gd" id="2_backdrop"]
-
-[sub_resource type="StyleBoxFlat" id="Style_panel"]
-bg_color = Color(0.035, 0.065, 0.11, 0.94)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.25, 0.58, 0.85, 0.55)
-corner_radius_top_left = 22
-corner_radius_top_right = 22
-corner_radius_bottom_right = 22
-corner_radius_bottom_left = 22
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3_backdrop"]
+[ext_resource type="Texture2D" path="res://assets/app_icon.svg" id="4_app_icon"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/users.svg" id="5_users"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/robot.svg" id="6_robot"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/sparkles.svg" id="7_sparkles"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/globe.svg" id="8_globe"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/lan.svg" id="9_lan"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/network.svg" id="10_network"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/settings.svg" id="11_settings"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/help.svg" id="12_help"]
+[ext_resource type="Texture2D" path="res://assets/cards/svl-pikaex.webp" id="13_card_pika"]
+[ext_resource type="Texture2D" path="res://assets/cards/svg-alt.webp" id="14_card_alt"]
+[ext_resource type="Texture2D" path="res://assets/cards/svi-maus.webp" id="15_card_maus"]
 
 [sub_resource type="Animation" id="Animation_reset"]
 resource_name = "RESET"
-length = 0.0
+length = 0.001
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
-tracks/0/path = NodePath("Layout/RightCenter/TitlePanel:modulate")
+tracks/0/path = NodePath("SafeContent/PageFrame:modulate")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
 tracks/1/type = "value"
 tracks/1/imported = false
 tracks/1/enabled = true
-tracks/1/path = NodePath("Layout/RightCenter/TitlePanel:position")
+tracks/1/path = NodePath("SafeContent/PageFrame:scale")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
-tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Vector2(0, 0)]}
+tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Vector2(1, 1)]}
 
 [sub_resource type="Animation" id="Animation_enter"]
 resource_name = "enter"
-length = 0.24
+length = 0.28
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
-tracks/0/path = NodePath("Layout/RightCenter/TitlePanel:modulate")
+tracks/0/path = NodePath("SafeContent/PageFrame:modulate")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
-tracks/0/keys = {"times": PackedFloat32Array(0, 0.24), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
+tracks/0/keys = {"times": PackedFloat32Array(0, 0.28), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
 tracks/1/type = "value"
 tracks/1/imported = false
 tracks/1/enabled = true
-tracks/1/path = NodePath("Layout/RightCenter/TitlePanel:position")
+tracks/1/path = NodePath("SafeContent/PageFrame:scale")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
-tracks/1/keys = {"times": PackedFloat32Array(0, 0.24), "transitions": PackedFloat32Array(0.6, 1), "update": 0, "values": [Vector2(0, 18), Vector2(0, 0)]}
+tracks/1/keys = {"times": PackedFloat32Array(0, 0.28), "transitions": PackedFloat32Array(0.72, 1), "update": 0, "values": [Vector2(0.985, 0.985), Vector2(1, 1)]}
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_title"]
 _data = {
@@ -64,177 +65,376 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-editor_description = "标题与模式选择页面。文字、按钮排列和面板尺寸都可以直接在此场景中修改。"
+theme = ExtResource("2_theme")
+editor_description = "前台标题与模式选择页面。宽屏使用 Hero + 2×2 模式卡，窄宿主自动压缩为品牌条 + 2×2。"
 script = ExtResource("1_page")
 
-[node name="TitleBackdrop" type="Control" parent="."]
-mouse_filter = 2
+[node name="FrontendBackdrop" parent="." instance=ExtResource("3_backdrop")]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("2_backdrop")
+variant = "title"
 
-[node name="Layout" type="HBoxContainer" parent="."]
+[node name="SafeContent" type="MarginContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 36
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 24
 
-[node name="HeroMargin" type="MarginContainer" parent="Layout"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/margin_left = 46
-theme_override_constants/margin_top = 44
-theme_override_constants/margin_right = 46
-theme_override_constants/margin_bottom = 44
-
-[node name="Hero" type="VBoxContainer" parent="Layout/HeroMargin"]
-layout_mode = 2
-theme_override_constants/separation = 10
-alignment = 2
-
-[node name="Eyebrow" type="Label" parent="Layout/HeroMargin/Hero"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
-theme_override_font_sizes/font_size = 17
-text = "MODERN TABLETOP EDITION"
-
-[node name="TitleLabel" type="Label" parent="Layout/HeroMargin/Hero"]
+[node name="PageFrame" type="VBoxContainer" parent="SafeContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 58
-text = "宝可梦卡牌对战"
+theme_override_constants/separation = 18
 
-[node name="HeroSubtitle" type="Label" parent="Layout/HeroMargin/Hero"]
+[node name="HeaderPanel" type="PanelContainer" parent="SafeContent/PageFrame"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "真实卡图 · 原生规则 · 离线 AI · 跨平台联机"
+theme_type_variation = &"FrontSectionPanel"
 
-[node name="Description" type="Label" parent="Layout/HeroMargin/Hero"]
+[node name="HeaderMargin" type="MarginContainer" parent="SafeContent/PageFrame/HeaderPanel"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
-theme_override_font_sizes/font_size = 17
-text = "在现代实体牌桌上完成每一次抽牌、进化与攻击。"
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 7
 
-[node name="HeroSpace" type="Control" parent="Layout/HeroMargin/Hero"]
-custom_minimum_size = Vector2(0, 92)
+[node name="HeaderRow" type="HBoxContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin"]
 layout_mode = 2
-
-[node name="RightCenter" type="CenterContainer" parent="Layout"]
-custom_minimum_size = Vector2(620, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="TitlePanel" type="PanelContainer" parent="Layout/RightCenter"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(560, 650)
-layout_mode = 2
-theme_override_styles/panel = SubResource("Style_panel")
-
-[node name="Margin" type="MarginContainer" parent="Layout/RightCenter/TitlePanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 42
-theme_override_constants/margin_top = 38
-theme_override_constants/margin_right = 42
-theme_override_constants/margin_bottom = 38
-
-[node name="Content" type="VBoxContainer" parent="Layout/RightCenter/TitlePanel/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 15
+theme_override_constants/separation = 12
 alignment = 1
 
-[node name="Platform" type="Label" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
+[node name="BrandIcon" type="TextureRect" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
+custom_minimum_size = Vector2(38, 38)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
-theme_override_font_sizes/font_size = 15
-text = "GODOT 4.7 · WINDOWS / ANDROID"
-horizontal_alignment = 1
+texture = ExtResource("4_app_icon")
+expand_mode = 1
+stretch_mode = 5
 
-[node name="Heading" type="Label" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
+[node name="BrandCopy" type="VBoxContainer" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 32
-text = "选择对战方式"
-horizontal_alignment = 1
+theme_override_constants/separation = 0
+alignment = 1
 
-[node name="Subheading" type="Label" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
+[node name="BrandName" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow/BrandCopy"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
-theme_override_font_sizes/font_size = 16
-text = "所有模式共享同一套原生规则引擎"
-horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
+text = "POKÉMON TCG TABLE"
 
-[node name="Divider" type="HSeparator" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
-layout_mode = 2
-
-[node name="LocalTwoPlayerButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
+[node name="HeaderTag" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow/BrandCopy"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 62)
 layout_mode = 2
-text = "本地双人对战"
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "MODERN TABLETOP EDITION"
 
-[node name="ChallengeAIButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-text = "Challenge AI"
-
-[node name="DeepAIButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-text = "Deep AI"
-
-[node name="NetworkRow" type="HBoxContainer" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
-layout_mode = 2
-theme_override_constants/separation = 14
-
-[node name="LANButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content/NetworkRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
+[node name="HeaderSpacer" type="Control" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "局域网联机"
+mouse_filter = 2
 
-[node name="RelayButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content/NetworkRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Relay 联机"
-
-[node name="UtilityRow" type="HBoxContainer" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
-layout_mode = 2
-theme_override_constants/separation = 14
-
-[node name="SettingsButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content/UtilityRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
-layout_mode = 2
-size_flags_horizontal = 3
-text = "设置与画质"
-
-[node name="HelpButton" type="Button" parent="Layout/RightCenter/TitlePanel/Margin/Content/UtilityRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
-layout_mode = 2
-size_flags_horizontal = 3
-text = "帮助"
-
-[node name="VersionLabel" type="Label" parent="Layout/RightCenter/TitlePanel/Margin/Content"]
+[node name="VersionLabel" type="Label" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-theme_override_font_sizes/font_size = 15
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
 text = "Client 0.0.0 · Rules v0 · Protocol v0"
-horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SettingsButton" type="Button" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 48)
+layout_mode = 2
+theme_type_variation = &"FrontGhostButton"
+tooltip_text = "调整音频、动效、辅助功能和画质"
+text = "设置"
+icon = ExtResource("11_settings")
+
+[node name="HelpButton" type="Button" parent="SafeContent/PageFrame/HeaderPanel/HeaderMargin/HeaderRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(122, 48)
+layout_mode = 2
+theme_type_variation = &"FrontGhostButton"
+tooltip_text = "查看规则、回合流程和联机帮助"
+text = "玩法帮助"
+icon = ExtResource("12_help")
+
+[node name="BodyGrid" type="GridContainer" parent="SafeContent/PageFrame"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 24
+columns = 2
+
+[node name="HeroPanel" type="PanelContainer" parent="SafeContent/PageFrame/BodyGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"FrontRaisedPanel"
+
+[node name="HeroMargin" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 28
+
+[node name="HeroContent" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="HeroEyebrow" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 15
+text = "BUILD YOUR DECK · TAKE THE TABLE"
+
+[node name="TitleLabel" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontHeadingLabel"
+theme_override_font_sizes/font_size = 54
+text = "宝可梦卡牌对战"
+autowrap_mode = 2
+
+[node name="HeroSubtitle" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "真实卡图 · 原生规则 · 离线 AI · 跨平台联机"
+autowrap_mode = 2
+
+[node name="HeroDescription" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 16
+text = "从第一张起手牌开始，在现代实体牌桌上完成每一次抽牌、进化与攻击。"
+autowrap_mode = 2
+
+[node name="FeatureRow" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="RulesFeature" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/FeatureRow"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 14
+text = "◆ 原生规则"
+
+[node name="OfflineFeature" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/FeatureRow"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 14
+text = "◆ 离线可玩"
+
+[node name="CrossFeature" type="Label" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/FeatureRow"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 14
+text = "◆ 跨平台"
+
+[node name="HeroSpacer" type="Control" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="HeroMosaic" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="FeatureCardLeft" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/HeroMosaic"]
+custom_minimum_size = Vector2(112, 158)
+layout_mode = 2
+texture = ExtResource("14_card_alt")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="FeatureCardCenter" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/HeroMosaic"]
+custom_minimum_size = Vector2(132, 186)
+layout_mode = 2
+texture = ExtResource("13_card_pika")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="FeatureCardRight" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/HeroPanel/HeroMargin/HeroContent/HeroMosaic"]
+custom_minimum_size = Vector2(112, 158)
+layout_mode = 2
+texture = ExtResource("15_card_maus")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ModesPanel" type="PanelContainer" parent="SafeContent/PageFrame/BodyGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"FrontRaisedPanel"
+
+[node name="ModesMargin" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 22
+
+[node name="ModesContent" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ModesHeading" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent"]
+layout_mode = 2
+theme_type_variation = &"FrontHeadingLabel"
+theme_override_font_sizes/font_size = 28
+text = "选择对战方式"
+
+[node name="ModesSubheading" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 15
+text = "四种入口共享同一套规则引擎，随时换一种方式上桌。"
+
+[node name="ModeGrid" type="GridContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
+columns = 2
+
+[node name="LocalTwoPlayerButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 176)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"FrontModeTileButton"
+tooltip_text = "同一设备上由两位玩家轮流操作"
+text = "本地双人\n同屏交接 · 完整规则"
+icon = ExtResource("5_users")
+alignment = 0
+icon_alignment = 0
+
+[node name="ChallengeAIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 176)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"FrontModeTileButton"
+tooltip_text = "与稳健的 Challenge AI 对战"
+text = "Challenge AI\n稳健策略 · 适合热身"
+icon = ExtResource("6_robot")
+alignment = 0
+icon_alignment = 0
+
+[node name="DeepAIButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 176)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"FrontModeTileButton"
+tooltip_text = "挑战使用深度搜索的高强度 AI"
+text = "Deep AI\n深度搜索 · 迎接挑战"
+icon = ExtResource("7_sparkles")
+alignment = 0
+icon_alignment = 0
+
+[node name="OnlineCard" type="PanelContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 176)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"FrontSectionPanel"
+
+[node name="OnlineMargin" type="MarginContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 13
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 13
+
+[node name="OnlineContent" type="VBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="OnlineHeader" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="OnlineIcon" type="TextureRect" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/OnlineHeader"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("8_globe")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="OnlineTitle" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/OnlineHeader"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 19
+text = "联机对战"
+
+[node name="OnlineDescription" type="Label" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "同网络直连，或通过 Relay 跨网络开房。"
+autowrap_mode = 2
+
+[node name="NetworkSpacer" type="Control" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="NetworkRow" type="HBoxContainer" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LANButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/NetworkRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontSecondaryButton"
+tooltip_text = "在同一局域网中建立或加入对局"
+text = "LAN"
+icon = ExtResource("9_lan")
+
+[node name="RelayButton" type="Button" parent="SafeContent/PageFrame/BodyGrid/ModesPanel/ModesMargin/ModesContent/ModeGrid/OnlineCard/OnlineMargin/OnlineContent/NetworkRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontPrimaryButton"
+tooltip_text = "通过 Relay 房间码跨网络联机"
+text = "Relay"
+icon = ExtResource("10_network")
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
 unique_name_in_owner = true

@@ -5,6 +5,8 @@
 [ext_resource type="Script" uid="uid://cscu1kyecnig5" path="res://ui/audio_director.gd" id="3_audio"]
 [ext_resource type="Script" uid="uid://b0jydjvp4f3oc" path="res://scenes/main/screen_router.gd" id="4_router"]
 [ext_resource type="Script" uid="uid://brdau26vlkdm3" path="res://scenes/main/modal_host.gd" id="8_modal_host"]
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="9_front_theme"]
+[ext_resource type="Texture2D" path="res://assets/app_icon.svg" id="10_app_mark"]
 
 [sub_resource type="StyleBoxFlat" id="Style_toast"]
 bg_color = Color(0.106, 0.18, 0.286, 1)
@@ -237,9 +239,11 @@ text = "弹窗标题"
 horizontal_alignment = 1
 
 [node name="Scroll" type="ScrollContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content" unique_id=359460659]
-custom_minimum_size = Vector2(640, 440)
+custom_minimum_size = Vector2(0, 420)
 layout_mode = 2
 size_flags_vertical = 3
+follow_focus = true
+horizontal_scroll_mode = 0
 
 [node name="ModalBody" type="VBoxContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content/Scroll" unique_id=911316083]
 unique_name_in_owner = true
@@ -272,6 +276,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("9_front_theme")
 
 [node name="Shade" type="ColorRect" parent="LoadingLayer" unique_id=1429988067]
 layout_mode = 1
@@ -291,8 +296,9 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="Panel" type="PanelContainer" parent="LoadingLayer/Center" unique_id=744554214]
-custom_minimum_size = Vector2(560, 180)
+custom_minimum_size = Vector2(600, 250)
 layout_mode = 2
+theme_type_variation = &"FrontRaisedPanel"
 
 [node name="Margin" type="MarginContainer" parent="LoadingLayer/Center/Panel" unique_id=1790086198]
 layout_mode = 2
@@ -301,13 +307,32 @@ theme_override_constants/margin_top = 24
 theme_override_constants/margin_right = 30
 theme_override_constants/margin_bottom = 24
 
-[node name="LoadingLabel" type="Label" parent="LoadingLayer/Center/Panel/Margin" unique_id=2048623833]
+[node name="Content" type="VBoxContainer" parent="LoadingLayer/Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="BrandMark" type="TextureRect" parent="LoadingLayer/Center/Panel/Margin/Content"]
+custom_minimum_size = Vector2(78, 78)
+layout_mode = 2
+texture = ExtResource("10_app_mark")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="LoadingLabel" type="Label" parent="LoadingLayer/Center/Panel/Margin/Content" unique_id=2048623833]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 23
+theme_type_variation = &"FrontHeadingLabel"
 text = "正在加载…"
 horizontal_alignment = 1
 vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Hint" type="Label" parent="LoadingLayer/Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "正在准备离线模型与对局资源，请稍候。"
+horizontal_alignment = 1
 autowrap_mode = 2
 
 [node name="ShellAnimations" type="AnimationPlayer" parent="." unique_id=1381382845]

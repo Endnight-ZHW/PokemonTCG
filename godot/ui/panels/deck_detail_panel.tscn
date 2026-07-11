@@ -3,8 +3,79 @@
 [ext_resource type="Script" path="res://ui/panels/deck_detail_panel.gd" id="1_deck"]
 
 [node name="DeckDetailPanel" type="VBoxContainer"]
-custom_minimum_size = Vector2(820, 620)
 layout_mode = 2
-theme_override_constants/separation = 10
-editor_description = "牌组详情内容。接收 deck_key 后展示构成统计、核心宝可梦和完整列表。"
+size_flags_horizontal = 3
+theme_override_constants/separation = 14
+editor_description = "前台牌组详情。核心卡片与按类型分组的完整构成均随可用宽度换行，不产生横向滚动。"
 script = ExtResource("1_deck")
+
+[node name="HeaderPanel" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_type_variation = &"FrontRaisedPanel"
+
+[node name="HeaderMargin" type="MarginContainer" parent="HeaderPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="HeaderContent" type="VBoxContainer" parent="HeaderPanel/HeaderMargin"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="DeckAccent" type="ColorRect" parent="HeaderPanel/HeaderMargin/HeaderContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.384, 0.843, 1, 1)
+
+[node name="DeckName" type="Label" parent="HeaderPanel/HeaderMargin/HeaderContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontHeadingLabel"
+theme_override_font_sizes/font_size = 27
+text = "牌组名称"
+autowrap_mode = 2
+
+[node name="DeckMeta" type="Label" parent="HeaderPanel/HeaderMargin/HeaderContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "deck-key · 属性 · 共 60 张"
+autowrap_mode = 2
+
+[node name="DeckSummary" type="Label" parent="HeaderPanel/HeaderMargin/HeaderContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 16
+text = "宝可梦 0　 训练家 0　 能量 0"
+autowrap_mode = 2
+
+[node name="CoreTitle" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 20
+text = "核心卡牌"
+
+[node name="CoreGrid" type="GridContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
+columns = 1
+
+[node name="CompositionTitle" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 20
+text = "完整构成"
+
+[node name="Categories" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10

@@ -1,66 +1,8 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scenes/decks/deck_select_page.gd" id="1_page"]
-
-[sub_resource type="StyleBoxFlat" id="Style_blue"]
-bg_color = Color(0.09, 0.149, 0.239, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.271, 0.651, 1, 1)
-corner_radius_top_left = 14
-corner_radius_top_right = 14
-corner_radius_bottom_right = 14
-corner_radius_bottom_left = 14
-content_margin_left = 16.0
-content_margin_top = 12.0
-content_margin_right = 16.0
-content_margin_bottom = 12.0
-
-[sub_resource type="StyleBoxFlat" id="Style_gold"]
-bg_color = Color(0.09, 0.149, 0.239, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.957, 0.784, 0.29, 1)
-corner_radius_top_left = 14
-corner_radius_top_right = 14
-corner_radius_bottom_right = 14
-corner_radius_bottom_left = 14
-content_margin_left = 16.0
-content_margin_top = 12.0
-content_margin_right = 16.0
-content_margin_bottom = 12.0
-
-[sub_resource type="Animation" id="Animation_reset"]
-resource_name = "RESET"
-length = 0.0
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Root/Center/MainPanel:modulate")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
-
-[sub_resource type="Animation" id="Animation_enter"]
-resource_name = "enter"
-length = 0.2
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Root/Center/MainPanel:modulate")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {"times": PackedFloat32Array(0, 0.2), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
-
-[sub_resource type="AnimationLibrary" id="AnimationLibrary_decks"]
-_data = {
-&"RESET": SubResource("Animation_reset"),
-&"enter": SubResource("Animation_enter")
-}
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3_backdrop"]
 
 [node name="DeckSelectScreen" type="Control"]
 layout_mode = 3
@@ -69,188 +11,309 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-editor_description = "牌组选择页面。两个牌组栏、AI 设置和开始按钮均可在编辑器中调整。卡图预览由运行时数据填充。"
+theme = ExtResource("2_theme")
+editor_description = "前台牌组选择页。单一画廊为两个玩家槽位分配牌组，并在右侧展示当前牌组摘要。"
 script = ExtResource("1_page")
 
-[node name="Root" type="VBoxContainer" parent="."]
+[node name="Backdrop" parent="." instance=ExtResource("3_backdrop")]
+layout_mode = 1
+variant = "neutral"
+
+[node name="ContentMargin" type="MarginContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 18
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 18
 
-[node name="TopBar" type="HBoxContainer" parent="Root"]
-custom_minimum_size = Vector2(0, 58)
-layout_mode = 2
-
-[node name="BackButton" type="Button" parent="Root/TopBar"]
+[node name="PageContent" type="VBoxContainer" parent="ContentMargin"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(130, 48)
 layout_mode = 2
-text = "返回"
+theme_override_constants/separation = 12
 
-[node name="Heading" type="Label" parent="Root/TopBar"]
+[node name="TopBar" type="HBoxContainer" parent="ContentMargin/PageContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BackButton" type="Button" parent="ContentMargin/PageContent/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(118, 48)
+layout_mode = 2
+focus_mode = 2
+theme_type_variation = &"FrontGhostButton"
+text = "←  返回"
+
+[node name="Heading" type="Label" parent="ContentMargin/PageContent/TopBar"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 28
+theme_type_variation = &"FrontHeadingLabel"
+theme_override_font_sizes/font_size = 32
 text = "选择本地双人牌组"
 horizontal_alignment = 1
 vertical_alignment = 1
+text_overrun_behavior = 3
 
-[node name="Spacer" type="Control" parent="Root/TopBar"]
-custom_minimum_size = Vector2(130, 0)
+[node name="TopSpacer" type="Control" parent="ContentMargin/PageContent/TopBar"]
+custom_minimum_size = Vector2(118, 0)
 layout_mode = 2
+mouse_filter = 2
 
-[node name="Center" type="CenterContainer" parent="Root"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="MainPanel" type="PanelContainer" parent="Root/Center"]
-custom_minimum_size = Vector2(1080, 560)
-layout_mode = 2
-
-[node name="Margin" type="MarginContainer" parent="Root/Center/MainPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 38
-theme_override_constants/margin_top = 32
-theme_override_constants/margin_right = 38
-theme_override_constants/margin_bottom = 32
-
-[node name="Content" type="VBoxContainer" parent="Root/Center/MainPanel/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 22
-
-[node name="ModeDescription" type="Label" parent="Root/Center/MainPanel/Margin/Content"]
+[node name="ModeDescription" type="Label" parent="ContentMargin/PageContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-text = "热座模式说明"
+theme_type_variation = &"FrontMutedLabel"
+text = "为两个玩家分别挑选牌组。"
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="Columns" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content"]
+[node name="SlotPanel" type="PanelContainer" parent="ContentMargin/PageContent"]
 layout_mode = 2
-theme_override_constants/separation = 28
+theme_type_variation = &"FrontSectionPanel"
 
-[node name="DeckOnePanel" type="PanelContainer" parent="Root/Center/MainPanel/Margin/Content/Columns"]
+[node name="SlotMargin" type="MarginContainer" parent="ContentMargin/PageContent/SlotPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 10
+
+[node name="Slots" type="HBoxContainer" parent="ContentMargin/PageContent/SlotPanel/SlotMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SlotHint" type="Label" parent="ContentMargin/PageContent/SlotPanel/SlotMargin/Slots"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(172, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_styles/panel = SubResource("Style_blue")
+theme_type_variation = &"FrontMutedLabel"
+text = "正在为 玩家 1 选择牌组"
+vertical_alignment = 1
+autowrap_mode = 2
 
-[node name="Margin" type="MarginContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 24
-
-[node name="Content" type="VBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin"]
-layout_mode = 2
-
-[node name="Title" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.271, 0.651, 1, 1)
-theme_override_font_sizes/font_size = 28
-text = "玩家 1"
-horizontal_alignment = 1
-
-[node name="DeckOneOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+[node name="PlayerOneSlotButton" type="Button" parent="ContentMargin/PageContent/SlotPanel/SlotMargin/Slots"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(360, 58)
+custom_minimum_size = Vector2(220, 58)
 layout_mode = 2
+focus_mode = 2
+theme_type_variation = &"FrontCategoryButton"
+toggle_mode = true
+button_pressed = true
+text = "玩家 1\n尚未选择"
 
-[node name="DeckOnePreview" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+[node name="PlayerTwoSlotButton" type="Button" parent="ContentMargin/PageContent/SlotPanel/SlotMargin/Slots"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 108)
+custom_minimum_size = Vector2(220, 58)
 layout_mode = 2
-theme_override_constants/separation = 8
-alignment = 1
+focus_mode = 2
+theme_type_variation = &"FrontCategoryButton"
+toggle_mode = true
+text = "玩家 2\n尚未选择"
 
-[node name="Info" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-theme_override_font_sizes/font_size = 16
-text = "60 张 · 发布牌组 · 离线可用"
-horizontal_alignment = 1
-
-[node name="DeckOneDetailsButton" type="Button" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckOnePanel/Margin/Content"]
+[node name="MasterDetail" type="HBoxContainer" parent="ContentMargin/PageContent"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 46)
 layout_mode = 2
-text = "查看牌组详情"
+size_flags_vertical = 3
+theme_override_constants/separation = 24
 
-[node name="DeckTwoPanel" type="PanelContainer" parent="Root/Center/MainPanel/Margin/Content/Columns"]
+[node name="GalleryPanel" type="PanelContainer" parent="ContentMargin/PageContent/MasterDetail"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_styles/panel = SubResource("Style_gold")
+size_flags_vertical = 3
+size_flags_stretch_ratio = 1.35
+theme_type_variation = &"FrontSectionPanel"
 
-[node name="Margin" type="MarginContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel"]
+[node name="GalleryMargin" type="MarginContainer" parent="ContentMargin/PageContent/MasterDetail/GalleryPanel"]
 layout_mode = 2
-theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 24
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
 
-[node name="Content" type="VBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin"]
+[node name="GalleryContent" type="VBoxContainer" parent="ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin"]
 layout_mode = 2
+theme_override_constants/separation = 10
 
-[node name="DeckTwoTitle" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+[node name="GalleryHeading" type="Label" parent="ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin/GalleryContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 28
-text = "玩家 2"
-horizontal_alignment = 1
+theme_type_variation = &"FrontSectionLabel"
+text = "全部牌组 · 选择后分配给当前槽位"
 
-[node name="DeckTwoOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+[node name="GalleryScroll" type="ScrollContainer" parent="ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin/GalleryContent"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(360, 58)
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+follow_focus = true
+horizontal_scroll_mode = 0
 
-[node name="DeckTwoPreview" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+[node name="GalleryGrid" type="GridContainer" parent="ContentMargin/PageContent/MasterDetail/GalleryPanel/GalleryMargin/GalleryContent/GalleryScroll"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 108)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="DetailPanel" type="PanelContainer" parent="ContentMargin/PageContent/MasterDetail"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.9
+theme_type_variation = &"FrontRaisedPanel"
+
+[node name="DetailMargin" type="MarginContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 18
+
+[node name="DetailContent" type="VBoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin"]
 layout_mode = 2
 theme_override_constants/separation = 8
-alignment = 1
 
-[node name="Info" type="Label" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+[node name="DetailNav" type="HBoxContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
-theme_override_font_sizes/font_size = 16
-text = "60 张 · 发布牌组 · 离线可用"
-horizontal_alignment = 1
+theme_override_constants/separation = 10
 
-[node name="DeckTwoDetailsButton" type="Button" parent="Root/Center/MainPanel/Margin/Content/Columns/DeckTwoPanel/Margin/Content"]
+[node name="BackToGalleryButton" type="Button" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailNav"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 46)
+visible = false
+custom_minimum_size = Vector2(150, 48)
 layout_mode = 2
-text = "查看牌组详情"
+theme_type_variation = &"FrontGhostButton"
+text = "← 返回牌组画廊"
 
-[node name="AISettings" type="HBoxContainer" parent="Root/Center/MainPanel/Margin/Content"]
+[node name="DetailAssignment" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent/DetailNav"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontMutedLabel"
+text = "正在配置 · 玩家 1"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="DetailAccent" type="ColorRect" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.384, 0.843, 1, 1)
+
+[node name="DetailTitle" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontHeadingLabel"
+theme_override_font_sizes/font_size = 28
+text = "牌组名称"
+text_overrun_behavior = 3
+
+[node name="DetailTagline" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "牌组节奏说明"
+autowrap_mode = 2
+max_lines_visible = 2
+
+[node name="DetailMeta" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 16
+text = "属性 · 60 张 · 发布牌组"
+
+[node name="DetailCounts" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "Pokémon 0　 Trainer 0　 Energy 0"
+autowrap_mode = 2
+
+[node name="CoreLabel" type="Label" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 17
+text = "核心卡牌"
+
+[node name="DetailCardGrid" type="GridContainer" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 4
+
+[node name="DetailsButton" type="Button" parent="ContentMargin/PageContent/MasterDetail/DetailPanel/DetailMargin/DetailContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+focus_mode = 2
+theme_type_variation = &"FrontSecondaryButton"
+text = "查看完整牌组构成"
+
+[node name="ActionBar" type="PanelContainer" parent="ContentMargin/PageContent"]
+layout_mode = 2
+theme_type_variation = &"FrontRaisedPanel"
+
+[node name="ActionMargin" type="MarginContainer" parent="ContentMargin/PageContent/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
+
+[node name="ActionContent" type="HBoxContainer" parent="ContentMargin/PageContent/ActionBar/ActionMargin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="ActionSummary" type="Label" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontMutedLabel"
+text = "牌组 1  对战  牌组 2"
+vertical_alignment = 1
+text_overrun_behavior = 3
+
+[node name="AISettings" type="HBoxContainer" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_constants/separation = 20
-alignment = 1
+theme_override_constants/separation = 8
 
-[node name="FirstPlayerOption" type="OptionButton" parent="Root/Center/MainPanel/Margin/Content/AISettings"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(300, 54)
+[node name="FirstPlayerLabel" type="Label" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
 layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+text = "先后手"
+vertical_alignment = 1
 
-[node name="StartButton" type="Button" parent="Root/Center/MainPanel/Margin/Content"]
+[node name="FirstPlayerOption" type="OptionButton" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 68)
+custom_minimum_size = Vector2(210, 50)
 layout_mode = 2
-text = "开始对战"
+focus_mode = 2
 
-[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+[node name="StartButton" type="Button" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
 unique_name_in_owner = true
-libraries = {
-&"": SubResource("AnimationLibrary_decks")
-}
+custom_minimum_size = Vector2(224, 54)
+layout_mode = 2
+focus_mode = 2
+theme_type_variation = &"FrontPrimaryButton"
+text = "开始对战  →"

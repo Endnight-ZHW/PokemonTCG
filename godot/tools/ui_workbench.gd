@@ -12,6 +12,7 @@ const HELP_PANEL_SCENE := preload("res://ui/panels/help_panel.tscn")
 const CARD_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/card_inspector_panel.tscn")
 const ZONE_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/zone_inspector_panel.tscn")
 const DECK_DETAIL_PANEL_SCENE := preload("res://ui/panels/deck_detail_panel.tscn")
+const FRONTEND_THEME := preload("res://ui/frontend/front_end_theme.tres")
 
 var catalog := CardCatalog.new()
 var current_battle: BattleScreen
@@ -131,13 +132,8 @@ func _show_network() -> void:
 
 
 func _show_settings() -> void:
-	preview_caption.text = "设置面板 · Inspector 可调的静态表单"
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	preview_host.add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(700, 650)
-	center.add_child(panel)
+	preview_caption.text = "设置面板 · 前台主题、分区表单与实时数值"
+	var panel := _centered_panel(Vector2(700, 650), true)
 	var settings := SETTINGS_SCENE.instantiate() as SettingsPanel
 	panel.add_child(settings)
 	settings.configure()
@@ -188,8 +184,8 @@ func _show_energy_choice() -> void:
 
 
 func _show_help() -> void:
-	preview_caption.text = "帮助面板 · 标题和暂停菜单共用的只读内容"
-	var panel := _centered_panel(Vector2(760, 620))
+	preview_caption.text = "帮助面板 · 四类导航与单一纵向滚动区"
+	var panel := _centered_panel(Vector2(860, 650), true)
 	var content := HELP_PANEL_SCENE.instantiate() as HelpPanel
 	panel.add_child(content)
 	content.configure()
@@ -222,8 +218,8 @@ func _show_zone() -> void:
 
 
 func _show_deck_detail() -> void:
-	preview_caption.text = "牌组详情 · 60 张构成与核心宝可梦"
-	var panel := _centered_panel(Vector2(860, 650))
+	preview_caption.text = "牌组详情 · 核心卡与 Pokémon/Trainer/Energy 分组"
+	var panel := _centered_panel(Vector2(900, 680), true)
 	var content := DECK_DETAIL_PANEL_SCENE.instantiate() as DeckDetailPanel
 	panel.add_child(content)
 	content.configure(catalog, "fire")
@@ -264,9 +260,13 @@ func _show_ai_thinking() -> void:
 
 
 func _show_victory() -> void:
-	preview_caption.text = "胜利页 · 彩带与 AnimationPlayer 入场"
+	preview_caption.text = "胜利页 · 模式、牌组与代表卡摘要"
 	var victory := VICTORY_SCENE.instantiate() as VictoryScreen
-	victory.configure(0, 12, "预览玩家", "svi-hrot")
+	victory.configure(0, 12, "预览玩家", "svi-hrot", {
+		"mode_label": "Challenge AI",
+		"winner_deck_name": "烈焰猴",
+		"winner_card_name": catalog.card_name("svi-hrot"),
+	})
 	preview_host.add_child(victory)
 
 
@@ -330,14 +330,33 @@ func _presentation_event(kind: String) -> Dictionary:
 	return base
 
 
-func _centered_panel(min_size: Vector2) -> PanelContainer:
+func _centered_panel(min_size: Vector2, frontend_surface: bool = false) -> Container:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	preview_host.add_child(center)
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = min_size
+	var available := preview_host.size
+	if available.x <= 0.0 or available.y <= 0.0:
+		available = Vector2(1280, 720)
+	panel.custom_minimum_size = Vector2(
+		minf(min_size.x, maxf(320.0, available.x - 32.0)),
+		minf(min_size.y, maxf(320.0, available.y - 32.0)),
+	)
+	if frontend_surface:
+		panel.theme = FRONTEND_THEME
 	center.add_child(panel)
-	return panel
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroll.follow_focus = true
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(scroll)
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 12)
+	scroll.add_child(content)
+	return content
 
 
 func _label(text_value: String, font_size: int, color: Color) -> Label:

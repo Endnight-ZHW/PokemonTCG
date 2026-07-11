@@ -1,54 +1,50 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scenes/end/victory_screen.gd" id="1_victory"]
-
-[sub_resource type="StyleBoxFlat" id="Style_panel"]
-bg_color = Color(0.04, 0.065, 0.1, 0.93)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.957, 0.784, 0.29, 1)
-corner_radius_top_left = 24
-corner_radius_top_right = 24
-corner_radius_bottom_right = 24
-corner_radius_bottom_left = 24
+[ext_resource type="Theme" path="res://ui/frontend/front_end_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://ui/frontend/frontend_backdrop.tscn" id="3_backdrop"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/trophy.svg" id="4_trophy"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/gamepad.svg" id="5_gamepad"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/deck.svg" id="6_deck"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/refresh.svg" id="7_refresh"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_left.svg" id="8_arrow_left"]
+[ext_resource type="Texture2D" path="res://assets/app_icon.svg" id="9_app_icon"]
 
 [sub_resource type="Animation" id="Animation_reset"]
 resource_name = "RESET"
-length = 0.0
+length = 0.001
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
-tracks/0/path = NodePath("Center/VictoryPanel:modulate")
+tracks/0/path = NodePath("SafeContent/Center/VictoryPanel:modulate")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
 tracks/1/type = "value"
 tracks/1/imported = false
 tracks/1/enabled = true
-tracks/1/path = NodePath("Center/VictoryPanel:scale")
+tracks/1/path = NodePath("SafeContent/Center/VictoryPanel:scale")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
 tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Vector2(1, 1)]}
 
 [sub_resource type="Animation" id="Animation_enter"]
 resource_name = "enter"
-length = 0.45
+length = 0.38
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
-tracks/0/path = NodePath("Center/VictoryPanel:modulate")
+tracks/0/path = NodePath("SafeContent/Center/VictoryPanel:modulate")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
-tracks/0/keys = {"times": PackedFloat32Array(0, 0.45), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
+tracks/0/keys = {"times": PackedFloat32Array(0, 0.38), "transitions": PackedFloat32Array(1, 1), "update": 0, "values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]}
 tracks/1/type = "value"
 tracks/1/imported = false
 tracks/1/enabled = true
-tracks/1/path = NodePath("Center/VictoryPanel:scale")
+tracks/1/path = NodePath("SafeContent/Center/VictoryPanel:scale")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
-tracks/1/keys = {"times": PackedFloat32Array(0, 0.45), "transitions": PackedFloat32Array(0.5, 1), "update": 0, "values": [Vector2(0.92, 0.92), Vector2(1, 1)]}
+tracks/1/keys = {"times": PackedFloat32Array(0, 0.38), "transitions": PackedFloat32Array(0.62, 1), "update": 0, "values": [Vector2(0.94, 0.94), Vector2(1, 1)]}
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_victory"]
 _data = {
@@ -64,10 +60,135 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
-editor_description = "结算页面。中央面板、文字、卡图和按钮都能在编辑器中调整；背景与彩带由脚本绘制。"
+theme = ExtResource("2_theme")
+editor_description = "前台胜利结算页。展示胜者、代表卡、回合数及可选模式/牌组上下文。"
 script = ExtResource("1_victory")
 
-[node name="Center" type="CenterContainer" parent="."]
+[node name="FrontendBackdrop" parent="." instance=ExtResource("3_backdrop")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+variant = "victory"
+
+[node name="SafeContent" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 240
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 240
+theme_override_constants/margin_bottom = 24
+
+[node name="Center" type="CenterContainer" parent="SafeContent"]
+layout_mode = 2
+
+[node name="VictoryPanel" type="PanelContainer" parent="SafeContent/Center"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1120, 0)
+layout_mode = 2
+theme_type_variation = &"FrontRaisedPanel"
+
+[node name="PanelMargin" type="MarginContainer" parent="SafeContent/Center/VictoryPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 34
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 34
+theme_override_constants/margin_bottom = 28
+
+[node name="Content" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="CelebrationHeader" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 9
+alignment = 1
+
+[node name="TrophyIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/CelebrationHeader"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("4_trophy")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Eyebrow" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/CelebrationHeader"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 15
+text = "MATCH COMPLETE · 对局结算"
+vertical_alignment = 1
+
+[node name="WinnerLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontHeadingLabel"
+theme_override_font_sizes/font_size = 46
+text = "玩家 1，胜利！"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ResultSubtitle" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "PLAYER 1 · MATCH COMPLETE"
+horizontal_alignment = 1
+
+[node name="HeaderDivider" type="HSeparator" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+layout_mode = 2
+
+[node name="ResultGrid" type="GridContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 22
+theme_override_constants/v_separation = 22
+columns = 2
+
+[node name="CardStage" type="PanelContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 304)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FrontSectionPanel"
+
+[node name="CardStageContent" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="CardFrameCenter" type="CenterContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CardFrame" type="Control" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent/CardFrameCenter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(172, 242)
+layout_mode = 2
+
+[node name="CardImage" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent/CardFrameCenter/CardFrame"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CardPlaceholder" type="CenterContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent/CardFrameCenter/CardFrame"]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -75,74 +196,171 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VictoryPanel" type="PanelContainer" parent="Center"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(820, 560)
+[node name="PlaceholderIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent/CardFrameCenter/CardFrame/CardPlaceholder"]
+custom_minimum_size = Vector2(72, 72)
 layout_mode = 2
-theme_override_styles/panel = SubResource("Style_panel")
-
-[node name="Margin" type="MarginContainer" parent="Center/VictoryPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 46
-theme_override_constants/margin_top = 38
-theme_override_constants/margin_right = 46
-theme_override_constants/margin_bottom = 38
-
-[node name="Content" type="VBoxContainer" parent="Center/VictoryPanel/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 16
-alignment = 1
-
-[node name="Eyebrow" type="Label" parent="Center/VictoryPanel/Margin/Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
-theme_override_font_sizes/font_size = 16
-text = "MATCH COMPLETE"
-horizontal_alignment = 1
-
-[node name="WinnerLabel" type="Label" parent="Center/VictoryPanel/Margin/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 48
-text = "玩家 1 获胜！"
-horizontal_alignment = 1
-
-[node name="Showcase" type="HBoxContainer" parent="Center/VictoryPanel/Margin/Content"]
-layout_mode = 2
-alignment = 1
-
-[node name="CardImage" type="TextureRect" parent="Center/VictoryPanel/Margin/Content/Showcase"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(145, 204)
-layout_mode = 2
+modulate = Color(1, 1, 1, 0.42)
+texture = ExtResource("9_app_icon")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="SummaryLabel" type="Label" parent="Center/VictoryPanel/Margin/Content"]
+[node name="CardNameLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/CardStage/CardStageContent"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
-theme_override_font_sizes/font_size = 20
-text = "历经 0 回合，胜利已经写入牌桌。"
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 16
+text = "胜利主轴卡"
 horizontal_alignment = 1
+text_overrun_behavior = 3
 
-[node name="Buttons" type="HBoxContainer" parent="Center/VictoryPanel/Margin/Content"]
+[node name="MatchPanel" type="PanelContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid"]
 layout_mode = 2
-theme_override_constants/separation = 18
+size_flags_horizontal = 3
+theme_type_variation = &"FrontSectionPanel"
+
+[node name="MatchContent" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MatchHeading" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+layout_mode = 2
+theme_type_variation = &"FrontSectionLabel"
+theme_override_font_sizes/font_size = 20
+text = "本局摘要"
+
+[node name="SummaryLabel" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 15
+text = "玩家 1 在第 0 回合锁定胜局。代表卡与本局信息已经为你整理完毕。"
+autowrap_mode = 2
+
+[node name="StatsDivider" type="HSeparator" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+layout_mode = 2
+
+[node name="ModeRow" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ModeIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("5_gamepad")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ModeCopy" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="ModeCaption" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow/ModeCopy"]
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "对战模式"
+
+[node name="ModeValue" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/ModeRow/ModeCopy"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "自定义对局"
+
+[node name="DeckRow" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="DeckIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/DeckRow"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("6_deck")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DeckCopy" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/DeckRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="DeckCaption" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/DeckRow/DeckCopy"]
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "获胜牌组"
+
+[node name="DeckValue" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/DeckRow/DeckCopy"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "本局未记录"
+text_overrun_behavior = 3
+
+[node name="TurnRow" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TurnIcon" type="TextureRect" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/TurnRow"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("7_refresh")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TurnCopy" type="VBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/TurnRow"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="TurnCaption" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/TurnRow/TurnCopy"]
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "总回合数"
+
+[node name="TurnValue" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/ResultGrid/MatchPanel/MatchContent/TurnRow/TurnCopy"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "0 回合"
+
+[node name="ButtonsDivider" type="HSeparator" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+layout_mode = 2
+
+[node name="Buttons" type="HBoxContainer" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 14
 alignment = 1
 
-[node name="RematchButton" type="Button" parent="Center/VictoryPanel/Margin/Content/Buttons"]
+[node name="RematchButton" type="Button" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/Buttons"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(245, 58)
+custom_minimum_size = Vector2(248, 56)
 layout_mode = 2
+theme_type_variation = &"FrontPrimaryButton"
+tooltip_text = "保留当前模式并重新选择双方牌组"
 text = "再次选择牌组"
+icon = ExtResource("6_deck")
 
-[node name="TitleButton" type="Button" parent="Center/VictoryPanel/Margin/Content/Buttons"]
+[node name="TitleButton" type="Button" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content/Buttons"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(245, 58)
+custom_minimum_size = Vector2(218, 56)
 layout_mode = 2
+theme_type_variation = &"FrontSecondaryButton"
+tooltip_text = "结束当前流程并返回标题页"
 text = "返回标题"
+icon = ExtResource("8_arrow_left")
+
+[node name="FooterHint" type="Label" parent="SafeContent/Center/VictoryPanel/PanelMargin/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FrontMutedLabel"
+theme_override_font_sizes/font_size = 14
+text = "Enter 确认主操作 · Tab 切换焦点"
+horizontal_alignment = 1
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
 unique_name_in_owner = true

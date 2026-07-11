@@ -57,6 +57,19 @@ class RuntimeVersionMismatchBackend:
 		return ""
 
 
+class AcceptingChoiceNetworkController:
+	extends NetworkMatchController
+
+	var submitted_response: ChoiceResponse
+
+	func _init(p_catalog: CardCatalog) -> void:
+		super(p_catalog)
+
+	func submit_choice(response: ChoiceResponse) -> bool:
+		submitted_response = response
+		return true
+
+
 func _initialize() -> void:
 	_run_phase_zero_tests()
 	_run_phase_one_tests()
@@ -1878,15 +1891,22 @@ func _run_phase_three_tests() -> void:
 	root.add_child(ui)
 	ui.initialize_ui()
 	_check(ui.current_screen == "title", "UI did not open on title screen")
-	_check(ui.find_child("TitlePanel", true, false) != null, "Title panel is missing")
+	_check(ui.find_child("ModesPanel", true, false) != null, "Title mode panel is missing")
 	var local_button := ui.find_child("LocalTwoPlayerButton", true, false) as Button
 	_check(local_button != null, "Local two-player entry is missing")
 	if local_button:
 		_check(local_button.custom_minimum_size.y >= 48, "Touch target is below 48 px")
 	ui.show_deck_select()
 	_check(ui.current_screen == "decks", "Deck selection screen did not open")
-	_check(ui.deck_one_option.item_count == 10, "Player one deck list must contain 10 decks")
-	_check(ui.deck_two_option.item_count == 10, "Player two deck list must contain 10 decks")
+	var deck_page := ui.screen_host.get_child(0) as DeckSelectPage
+	_check(deck_page != null, "Deck selection page is missing")
+	if deck_page:
+		_check(deck_page.deck_count() == 10, "Deck gallery must contain 10 decks")
+		_check(
+			not deck_page.selected_deck_key(0).is_empty()
+			and not deck_page.selected_deck_key(1).is_empty(),
+			"Deck selection defaults must initialize both player slots",
+		)
 	var started: bool = ui.start_local_match_for_test("fire", "water")
 	_check(started, "UI could not start a local match")
 	_check(ui.current_screen == "game", "Game screen did not open")
@@ -4332,8 +4352,8 @@ func _run_visual_upgrade_tests() -> void:
 			"HelpButton",
 		],
 		"res://scenes/decks/deck_select_page.tscn": [
-			"DeckOneOption", "DeckTwoOption", "DeckOneDetailsButton",
-			"DeckTwoDetailsButton", "StartButton",
+			"PlayerOneSlotButton", "PlayerTwoSlotButton", "GalleryGrid",
+			"DetailsButton", "StartButton",
 		],
 		"res://scenes/network/network_lobby_page.tscn": [
 			"NetworkRoleOption", "NetworkAddressInput", "NetworkConnectButton",
@@ -4412,7 +4432,7 @@ func _run_visual_upgrade_tests() -> void:
 		func(deck_key: String) -> void: deck_signal["details"] = deck_key
 	)
 	(deck_page.find_child("StartButton", true, false) as Button).pressed.emit()
-	(deck_page.find_child("DeckOneDetailsButton", true, false) as Button).pressed.emit()
+	(deck_page.find_child("DetailsButton", true, false) as Button).pressed.emit()
 	_check(deck_signal.get("mode", "") == "challenge",
 		"Deck page start signal did not carry the game mode")
 	_check(not str(deck_signal.get("first", "")).is_empty(),
@@ -4465,6 +4485,23 @@ func _run_visual_upgrade_tests() -> void:
 		"Network page signal did not carry the room code")
 	_check(not str(network_signal.get("deck", "")).is_empty(),
 		"Network page signal omitted the selected deck")
+	network_page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.WAITING,
+		"旧房间等待中",
+		"OLDROOM",
+	)
+	_check(network_page.room_code_display.visible,
+		"Relay host room code was not exposed while waiting")
+	network_page.set_connection_state(NetworkLobbyPage.ConnectionState.VALIDATING)
+	_check(network_page._current_room_code.is_empty()
+		and not network_page.room_code_display.visible,
+		"Starting a new network attempt retained the previous room code")
+	network_page.set_connection_state(NetworkLobbyPage.ConnectionState.WAITING)
+	_check(not network_page.room_code_display.visible,
+		"Relay retry displayed a stale room code before room_created")
+	_check(not network_page.address_input.accessibility_name.is_empty()
+		and not network_page.deck_option.accessibility_name.is_empty(),
+		"Network form controls are missing accessible names")
 	network_page.queue_free()
 
 	var settings_scene := load(
@@ -4486,15 +4523,86 @@ func _run_visual_upgrade_tests() -> void:
 	)
 	_check(bool(settings_signal.get("muted", false)),
 		"Settings panel save signal omitted the mute state")
+	settings_panel.reduced_motion_toggle.button_pressed = true
+	_check(
+		str(settings_panel.animation_mode_option.get_item_metadata(
+			settings_panel.animation_mode_option.selected
+		)) == "reduced",
+		"Reduced-motion toggle did not update the animation mode selector",
+	)
+	var standard_index := -1
+	for index in range(settings_panel.animation_mode_option.item_count):
+		if settings_panel.animation_mode_option.get_item_metadata(index) == "standard":
+			standard_index = index
+			break
+	settings_panel.animation_mode_option.select(standard_index)
+	settings_panel.animation_mode_option.item_selected.emit(standard_index)
+	_check(not settings_panel.reduced_motion_toggle.button_pressed
+		and not bool(settings_panel.values().get("reduced_motion", true)),
+		"Animation mode selector did not clear the reduced-motion toggle")
+	_check(not settings_panel.master_volume_slider.accessibility_name.is_empty()
+		and not settings_panel.sfx_volume_slider.accessibility_name.is_empty(),
+		"Settings sliders are missing accessible names")
 	settings_panel.queue_free()
 
 	var modal_ui := main_scene.instantiate()
 	root.add_child(modal_ui)
 	modal_ui.initialize_ui()
+	_check(modal_ui.modal_scroll.follow_focus,
+		"Main modal scroll does not follow keyboard focus")
+	_check(modal_ui.toast_label.theme_type_variation == &"FrontToastLabel"
+		and modal_ui.toast_label.get_theme_constant("outline_size") <= 2,
+		"Toast typography is not using the readable frontend status style")
+	var scaled_safe_insets: Vector4 = modal_ui._safe_insets_to_canvas(
+		Vector2i(1920, 0),
+		Vector2i(2400, 1080),
+		Rect2i(1968, 24, 2304, 1032),
+		Vector2(2000, 900),
+	)
+	_check(
+		scaled_safe_insets.is_equal_approx(Vector4(40, 20, 40, 20)),
+		"Physical display safe area was not converted to logical canvas units",
+	)
+	var choice_controller := AcceptingChoiceNetworkController.new(page_catalog)
+	modal_ui.network_controller = choice_controller
+	modal_ui.game_mode = "network"
+	modal_ui.state = null
+	modal_ui.active_request = ChoiceRequest.new(
+		"choice:network-ui",
+		"select_card",
+		0,
+		"选择一项",
+		[{"option_id": "one", "label": "第一项"}],
+		1,
+		1,
+		false,
+	)
+	modal_ui.selected_choice_ids.assign(["one"])
+	modal_ui._confirm_choice()
+	_check(
+		choice_controller.submitted_response != null
+		and choice_controller.submitted_response.option_ids == ["one"],
+		"Network choice was not submitted to the authoritative controller",
+	)
+	modal_ui.game_mode = "local"
+	modal_ui._show_settings()
+	var retryable_settings_save := false
+	for connection in modal_ui.modal_confirm.pressed.get_connections():
+		var callback: Callable = connection.get("callable", Callable())
+		if callback.get_method() == &"request_save":
+			retryable_settings_save = (
+				int(connection.get("flags", 0)) & CONNECT_ONE_SHOT
+			) == 0
+	_check(
+		retryable_settings_save,
+		"Settings save action cannot be retried after a transient write failure",
+	)
+	modal_ui._close_modal()
+	modal_ui._finish_modal_close(modal_ui._modal_generation)
 	modal_ui._show_help()
 	_check(modal_ui.modal_layer.visible,
 		"Help modal did not open from the main shell")
-	_check(is_equal_approx(float(modal_ui.modal_shade.color.a), 0.86),
+	_check(is_equal_approx(float(modal_ui.modal_shade.color.a), 0.72),
 		"Title help modal did not use the default translucent shade")
 	var help_labels: Array[Node] = modal_ui.modal_body.find_children(
 		"*", "Label", true, false)
@@ -4516,7 +4624,10 @@ func _run_visual_upgrade_tests() -> void:
 		"Help modal body labels inherited the global outline")
 	_check(not help_body_has_fullwidth_semicolon,
 		"Help modal body still contains Android-unsafe fullwidth semicolons")
-	modal_ui._close_modal()
+	modal_ui._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	modal_ui._finish_modal_close(modal_ui._modal_generation)
+	_check(not modal_ui.modal_layer.visible,
+		"System back did not close the cancellable frontend help modal")
 	var distribute_request := ChoiceRequest.new(
 		"choice:test:energy",
 		"distribute_energy",
@@ -4553,6 +4664,9 @@ func _run_visual_upgrade_tests() -> void:
 		"Local match did not open the privacy pass overlay")
 	_check(float(privacy_ui.modal_shade.color.a) >= 0.99,
 		"Local privacy pass overlay did not use an opaque shade")
+	privacy_ui._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+	_check(privacy_ui.modal_layer.visible,
+		"System back dismissed the non-cancellable hot-seat privacy overlay")
 	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
 	privacy_ui._refresh_game()
 	privacy_ui.battle_screen.show_card_detail("sv1-104")
@@ -4575,7 +4689,7 @@ func _run_visual_upgrade_tests() -> void:
 	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
 	privacy_ui.show_title()
 	privacy_ui._show_help()
-	_check(is_equal_approx(float(privacy_ui.modal_shade.color.a), 0.86),
+	_check(is_equal_approx(float(privacy_ui.modal_shade.color.a), 0.72),
 		"Title help modal retained an opaque in-game shade")
 	privacy_ui.queue_free()
 

@@ -10,6 +10,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - ENet LAN 与 WebSocket Relay 协议 v3 联机。
 - 原生 GDScript 规则引擎和 C++ GDExtension ONNX Runtime 推理。
 - 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
+- 深蓝桌游风格的非战斗前台，支持 wide/compact、安全区、键盘/手柄焦点与减少动画。
 - LAN 与 Relay 均允许双方选择同一牌组，牌库和隐藏信息仍按玩家隔离。
 
 ## 打开工程
@@ -28,10 +29,26 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 - 打开 `res://tools/ui_workbench.tscn` 后按 `F6`，可安全预览标题、选牌、
   网络、设置、复杂选择、战斗和胜利界面，并触发主要战斗演出。
 - 主要页面和组件现在都包含完整可编辑场景树；动态手牌和动作按钮仍由实时数据生成。
-- 全局 Theme 位于 `res://ui/game_theme.tres`，牌桌尺寸和动画参数可在各场景根节点
-  的 Inspector 分组中调整。
+- 前台 Theme 位于 `res://ui/frontend/front_end_theme.tres`，只挂到标题、牌组、网络、
+  设置、帮助、详情和胜利等前台 surface；战斗与兼容 Theme 仍为 `res://ui/game_theme.tres`。
+  不要把前台 Theme 挂到 `Main` 或 `BattleScreen` 根节点。
+- 前台背景与动效位于 `res://ui/frontend/frontend_backdrop.*` 和 `frontend_motion.gd`；
+  弹窗用 `ModalSpec.frontend(...)` / `ModalSpec.battle(...)` 隔离尺寸、遮罩、焦点和 Theme。
+- 前台字体为 `res://assets/ui/fonts/NotoSansCJKsc-VF.ttf`，来源、SHA-256 和 OFL 许可证见
+  同目录 `SOURCE.md` / `OFL.txt`；项目原创 24×24 SVG 图标位于 `res://assets/ui/icons/`。
+- 前台以安全区宽度 1360、纵横比 1.5 为 wide/compact 分界，最大内容宽度 1480；
+  Workbench 的窄预览宿主可快速检查 compact，但真实弹窗仍应从 `F5` 主流程验证。
 - 详细学习路线见
   [`../docs/GODOT_DEVELOPMENT_GUIDE.md`](../docs/GODOT_DEVELOPMENT_GUIDE.md)。
+
+### 前台稳定接口
+
+- `DeckSelectPage`：使用 `selected_deck_key(player_idx)`、`select_deck(player_idx, key)` 和
+  `deck_count()`；旧的内部双下拉适配器已经移除。两个槽位允许选择同一牌组。
+- `NetworkLobbyPage`：使用 `ConnectionState` 的 `IDLE`、`VALIDATING`、`CONNECTING`、
+  `WAITING`、`CONNECTED`、`ERROR`，并通过
+  `set_connection_state(state, message, room_code)` 更新固定状态区。
+- 页面仍通过 `configure(...)` 接收数据、通过既有信号报告意图；规则与网络权威校验留在 `Main`。
 
 ## 测试与构建
 
@@ -40,10 +57,20 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 .\tools\test_godot_ai.ps1
 .\tools\test_godot_network.ps1
 
+# 需要图形渲染器；截图期间固定 reduced motion 并等待布局稳定
+.\.tools\godot-4.7\Godot_v4.7-stable_win64.exe `
+  --path .\godot `
+  --script res://tests/ui_preview.gd
+
 .\tools\build_native_ai.ps1 -Target all -Configuration all
 .\tools\build_godot.ps1 -Target all -Configuration debug
 .\tools\smoke_godot_build.ps1
 ```
+
+`test_godot.ps1` 包含前台多分辨率、四边安全区、跨阈值焦点、弹窗历史、Theme 隔离和
+交互 contract。截图输出到 `build/ui-preview/`，包含 compact 页面、网络状态、设置滚动、
+加载和 Toast 等基线，用于人工检查视觉层级、溢出和长文案；它不代替 Windows/Android
+调试导出与真机烟雾测试。
 
 发布包构建：
 

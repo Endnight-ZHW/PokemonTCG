@@ -1,6 +1,8 @@
 class_name NetworkLobbyPage
 extends Control
 
+const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
+
 signal back_requested
 signal connect_requested(
 	kind: String,
@@ -11,38 +13,92 @@ signal connect_requested(
 	deck_key: String,
 )
 
-var kind := "lan"
+enum ConnectionState {
+	IDLE,
+	VALIDATING,
+	CONNECTING,
+	WAITING,
+	CONNECTED,
+	ERROR,
+}
 
+const COMPACT_ASPECT := 1.5
+const COMPACT_WIDTH := 1360.0
+const FRONT_ERROR := Color("#ff9aa4")
+
+var kind := "lan"
+var connection_state := ConnectionState.IDLE
+var _current_room_code := ""
+var _compact := false
+var _compact_step := 0
+
+@onready var page: VBoxContainer = %Page
+@onready var back_button: Button = %BackButton
+@onready var intro_panel: PanelContainer = %IntroPanel
+@onready var steps: HBoxContainer = %Steps
+@onready var compact_step_bar: HBoxContainer = %CompactStepBar
+@onready var compact_step_label: Label = %CompactStepLabel
+@onready var compact_previous_button: Button = %CompactPreviousButton
+@onready var compact_next_button: Button = %CompactNextButton
+@onready var heading: Label = %Heading
+@onready var subtitle: Label = %Subtitle
+@onready var kind_label: Label = %KindLabel
+@onready var kind_description: Label = %KindDescription
 @onready var role_option: OptionButton = %NetworkRoleOption
+@onready var role_label: Label = %RoleLabel
+@onready var address_label: Label = %AddressLabel
 @onready var address_input: LineEdit = %NetworkAddressInput
+@onready var port_row: VBoxContainer = %PortRow
 @onready var port_input: LineEdit = %NetworkPortInput
+@onready var room_row: VBoxContainer = %RoomCodeRow
 @onready var room_input: LineEdit = %NetworkRoomInput
 @onready var deck_option: OptionButton = %NetworkDeckOption
+@onready var deck_label: Label = %DeckLabel
+@onready var status_panel: PanelContainer = %StatusPanel
+@onready var status_dot: Label = %StatusDot
 @onready var status_label: Label = %NetworkStatusLabel
+@onready var room_code_display: LineEdit = %RoomCodeDisplay
+@onready var copy_room_button: Button = %CopyRoomButton
+@onready var connect_button: Button = %NetworkConnectButton
+@onready var address_error: Label = %AddressError
+@onready var port_error: Label = %PortError
+@onready var room_error: Label = %RoomError
 
 
 func _ready() -> void:
 	_resolve_nodes()
 	_ensure_connections()
+	status_label.set("accessibility_live", 1)
+	resized.connect(_apply_responsive_layout)
+	_apply_responsive_layout()
+	call_deferred("_focus_initial_control")
 
 
 func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> void:
 	_resolve_nodes()
 	_ensure_connections()
-	kind = p_kind
-	(get_node("Root/TopBar/Heading") as Label).text = (
-		"局域网联机" if kind == "lan" else "WebSocket Relay 联机"
+	_clear_room_code()
+	kind = p_kind if p_kind in ["lan", "relay"] else "lan"
+	var relay := kind == "relay"
+	heading.text = "WebSocket Relay 联机" if relay else "局域网联机"
+	subtitle.text = (
+		"通过房间码跨网络连接另一名玩家"
+		if relay
+		else "连接同一局域网内的 Windows 或 Android 设备"
 	)
-	(get_node(
-		"Root/Center/Panel/Margin/Content/AddressRow/AddressLabel"
-	) as Label).text = "主机地址" if kind == "lan" else "Relay URL"
-	address_input.text = "127.0.0.1" if kind == "lan" else relay_url
-	(get_node(
-		"Root/Center/Panel/Margin/Content/PortRow"
-	) as HBoxContainer).visible = kind == "lan"
-	(get_node(
-		"Root/Center/Panel/Margin/Content/RoomCodeRow"
-	) as HBoxContainer).visible = false
+	kind_label.text = "RELAY" if relay else "LAN"
+	kind_description.text = (
+		"通过 Relay 服务创建房间并分享房间码。规则仍由房主运行，卡牌隐藏信息按玩家隔离。"
+		if relay
+		else "适合同一局域网内的两台设备。房主运行权威规则，挑战者只提交动作和选择。"
+	)
+	address_label.text = "Relay URL" if relay else "主机地址"
+	address_input.accessibility_name = "Relay URL" if relay else "主机地址"
+	address_input.virtual_keyboard_type = (
+		LineEdit.KEYBOARD_TYPE_URL if relay else LineEdit.KEYBOARD_TYPE_DEFAULT
+	)
+	address_input.text = relay_url if relay else "127.0.0.1"
+	port_row.visible = not relay
 	role_option.clear()
 	role_option.add_item("创建房间（房主）")
 	role_option.set_item_metadata(0, "host")
@@ -60,56 +116,429 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 		])
 		deck_option.set_item_metadata(deck_option.item_count - 1, key)
 	refresh_fields(0)
-	if not AppSettings.reduced_motion:
-		(get_node("AnimationPlayer") as AnimationPlayer).play("enter")
+	set_connection_state(ConnectionState.IDLE)
+	_play_enter_motion()
 
 
 func _resolve_nodes() -> void:
-	var content_path := "Root/Center/Panel/Margin/Content/"
-	role_option = get_node(content_path + "RoleRow/NetworkRoleOption") as OptionButton
-	address_input = get_node(
-		content_path + "AddressRow/NetworkAddressInput"
-	) as LineEdit
-	port_input = get_node(content_path + "PortRow/NetworkPortInput") as LineEdit
-	room_input = get_node(
-		content_path + "RoomCodeRow/NetworkRoomInput"
-	) as LineEdit
-	deck_option = get_node(content_path + "DeckRow/NetworkDeckOption") as OptionButton
-	status_label = get_node(content_path + "NetworkStatusLabel") as Label
+	page = get_node("PageMargin/Center/Page") as VBoxContainer
+	back_button = page.get_node("TopBar/BackButton") as Button
+	intro_panel = page.get_node("Body/IntroPanel") as PanelContainer
+	steps = page.get_node("Steps") as HBoxContainer
+	compact_step_bar = page.get_node("CompactStepBar") as HBoxContainer
+	compact_step_label = compact_step_bar.get_node("CompactStepLabel") as Label
+	compact_previous_button = compact_step_bar.get_node("CompactPreviousButton") as Button
+	compact_next_button = compact_step_bar.get_node("CompactNextButton") as Button
+	heading = page.get_node("TopBar/TitleGroup/Heading") as Label
+	subtitle = page.get_node("TopBar/TitleGroup/Subtitle") as Label
+	kind_label = intro_panel.get_node("IntroMargin/Intro/KindLabel") as Label
+	kind_description = intro_panel.get_node("IntroMargin/Intro/KindDescription") as Label
+	var form := page.get_node("Body/FormPanel/FormMargin/Form") as VBoxContainer
+	role_label = form.get_node("RoleLabel") as Label
+	role_option = form.get_node("NetworkRoleOption") as OptionButton
+	address_label = form.get_node("AddressRow/AddressLabel") as Label
+	address_input = form.get_node("AddressRow/NetworkAddressInput") as LineEdit
+	address_error = form.get_node("AddressRow/AddressError") as Label
+	port_row = form.get_node("PortRow") as VBoxContainer
+	port_input = port_row.get_node("NetworkPortInput") as LineEdit
+	port_error = port_row.get_node("PortError") as Label
+	room_row = form.get_node("RoomCodeRow") as VBoxContainer
+	room_input = room_row.get_node("NetworkRoomInput") as LineEdit
+	room_error = room_row.get_node("RoomError") as Label
+	deck_option = form.get_node("NetworkDeckOption") as OptionButton
+	deck_label = form.get_node("DeckLabel") as Label
+	status_panel = page.get_node("StatusPanel") as PanelContainer
+	var status_content := status_panel.get_node("StatusMargin/StatusContent") as HBoxContainer
+	status_dot = status_content.get_node("StatusDot") as Label
+	status_label = status_content.get_node("NetworkStatusLabel") as Label
+	room_code_display = status_content.get_node("RoomCodeDisplay") as LineEdit
+	copy_room_button = status_content.get_node("CopyRoomButton") as Button
+	connect_button = page.get_node("NetworkConnectButton") as Button
+	role_option.accessibility_name = "联机身份"
+	address_input.accessibility_name = "连接地址"
+	port_input.accessibility_name = "局域网端口"
+	room_input.accessibility_name = "Relay 房间码"
+	deck_option.accessibility_name = "联机牌组"
+	room_code_display.accessibility_name = "当前房间码"
+	port_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
 
 
 func _ensure_connections() -> void:
-	var back_button := get_node("Root/TopBar/BackButton") as Button
-	var connect_button := get_node(
-		"Root/Center/Panel/Margin/Content/NetworkConnectButton"
-	) as Button
 	if not back_button.pressed.is_connected(back_requested.emit):
 		back_button.pressed.connect(back_requested.emit)
 	if not connect_button.pressed.is_connected(_emit_connect_requested):
 		connect_button.pressed.connect(_emit_connect_requested)
 	if not role_option.item_selected.is_connected(refresh_fields):
 		role_option.item_selected.connect(refresh_fields)
+	if not copy_room_button.pressed.is_connected(_copy_room_code):
+		copy_room_button.pressed.connect(_copy_room_code)
+	if not compact_previous_button.pressed.is_connected(_show_previous_compact_step):
+		compact_previous_button.pressed.connect(_show_previous_compact_step)
+	if not compact_next_button.pressed.is_connected(_show_next_compact_step):
+		compact_next_button.pressed.connect(_show_next_compact_step)
 
 
 func refresh_fields(_selected: int) -> void:
-	var role := str(role_option.get_item_metadata(role_option.selected))
+	if role_option.item_count == 0:
+		return
+	_clear_room_code()
+	var role := selected_role()
 	address_input.editable = not (kind == "lan" and role == "host")
-	(get_node(
-		"Root/Center/Panel/Margin/Content/RoomCodeRow"
-	) as HBoxContainer).visible = kind == "relay" and role == "client"
-	(get_node(
-		"Root/Center/Panel/Margin/Content/NetworkConnectButton"
-	) as Button).text = "创建房间" if role == "host" else "加入房间"
+	room_row.visible = kind == "relay" and role == "client"
+	connect_button.text = "创建房间" if role == "host" else "加入房间"
+	_clear_validation()
+	_apply_compact_step_visibility()
+	_rebuild_focus_neighbors()
+
+
+func selected_role() -> String:
+	if role_option.item_count == 0:
+		return "host"
+	return str(role_option.get_item_metadata(role_option.selected))
+
+
+func selected_deck_key() -> String:
+	if deck_option.item_count == 0:
+		return ""
+	return str(deck_option.get_item_metadata(deck_option.selected))
+
+
+func set_connection_state(
+	state: ConnectionState,
+	message: String = "",
+	room_code: String = "",
+) -> void:
+	var previous_state := connection_state
+	connection_state = state
+	if state in [
+		ConnectionState.IDLE,
+		ConnectionState.VALIDATING,
+		ConnectionState.CONNECTING,
+		ConnectionState.ERROR,
+	] or (state == ConnectionState.WAITING and room_code.is_empty()):
+		_clear_room_code()
+	elif not room_code.is_empty():
+		_current_room_code = room_code
+	var locked := state in [
+		ConnectionState.VALIDATING,
+		ConnectionState.CONNECTING,
+		ConnectionState.WAITING,
+		ConnectionState.CONNECTED,
+	]
+	role_option.disabled = locked
+	address_input.editable = not locked and not (kind == "lan" and selected_role() == "host")
+	port_input.editable = not locked
+	room_input.editable = not locked
+	deck_option.disabled = locked
+	connect_button.disabled = locked
+	compact_previous_button.disabled = locked
+	compact_next_button.disabled = locked
+	var default_message: String = str({
+		ConnectionState.IDLE: "确认身份、连接信息和牌组后即可开始。",
+		ConnectionState.VALIDATING: "正在检查连接信息……",
+		ConnectionState.CONNECTING: "正在建立连接……",
+		ConnectionState.WAITING: "房间已就绪，正在等待另一名玩家……",
+		ConnectionState.CONNECTED: "对手已连接，正在同步牌组和对局……",
+		ConnectionState.ERROR: "连接失败，请检查信息后重试。",
+	}.get(state, ""))
+	status_label.text = message if not message.is_empty() else default_message
+	var state_color: Color = {
+		ConnectionState.IDLE: DesignTokens.TEXT_MUTED,
+		ConnectionState.VALIDATING: DesignTokens.CYAN,
+		ConnectionState.CONNECTING: DesignTokens.CYAN,
+		ConnectionState.WAITING: DesignTokens.GOLD,
+		ConnectionState.CONNECTED: DesignTokens.GREEN,
+		ConnectionState.ERROR: FRONT_ERROR,
+	}.get(state, DesignTokens.TEXT_MUTED)
+	status_dot.add_theme_color_override("font_color", state_color)
+	status_label.add_theme_color_override(
+		"font_color",
+		DesignTokens.TEXT if state != ConnectionState.ERROR else FRONT_ERROR,
+	)
+	var show_code := not _current_room_code.is_empty() and state in [
+		ConnectionState.WAITING,
+		ConnectionState.CONNECTED,
+	]
+	room_code_display.visible = show_code
+	copy_room_button.visible = show_code
+	if show_code:
+		room_code_display.text = _current_room_code
+	if state == ConnectionState.ERROR:
+		connect_button.disabled = false
+		connect_button.text = "重新尝试"
+	elif locked:
+		connect_button.text = str({
+			ConnectionState.VALIDATING: "正在检查…",
+			ConnectionState.CONNECTING: "正在连接…",
+			ConnectionState.WAITING: "等待连接…",
+			ConnectionState.CONNECTED: "已连接",
+		}.get(state, "处理中…"))
+	elif not locked:
+		connect_button.text = "创建房间" if selected_role() == "host" else "加入房间"
+	_rebuild_focus_neighbors()
+	_repair_focus_after_state_change()
+	if (
+		state == ConnectionState.ERROR
+		and previous_state in [
+			ConnectionState.VALIDATING,
+			ConnectionState.CONNECTING,
+			ConnectionState.WAITING,
+			ConnectionState.CONNECTED,
+		]
+		and connect_button.is_visible_in_tree()
+	):
+		connect_button.grab_focus.call_deferred()
+
+
+func _clear_room_code() -> void:
+	_current_room_code = ""
+	if room_code_display:
+		room_code_display.text = ""
+		room_code_display.visible = false
+	if copy_room_button:
+		copy_room_button.visible = false
 
 
 func _emit_connect_requested() -> void:
-	if role_option.item_count == 0 or deck_option.item_count == 0:
+	if not _validate_form():
+		set_connection_state(ConnectionState.ERROR, "请先修正标出的连接信息。")
 		return
+	set_connection_state(ConnectionState.VALIDATING)
 	connect_requested.emit(
 		kind,
-		str(role_option.get_item_metadata(role_option.selected)),
+		selected_role(),
 		address_input.text.strip_edges(),
 		int(port_input.text),
 		room_input.text.strip_edges(),
-		str(deck_option.get_item_metadata(deck_option.selected)),
+		selected_deck_key(),
 	)
+
+
+func _validate_form() -> bool:
+	_clear_validation()
+	var first_invalid: Control
+	var address := address_input.text.strip_edges()
+	if address.is_empty() or (kind == "relay" and not (
+		address.begins_with("ws://") or address.begins_with("wss://")
+	)):
+		address_error.text = (
+			"Relay URL 必须以 ws:// 或 wss:// 开头。"
+			if kind == "relay"
+			else "加入局域网房间时必须填写主机地址。"
+		)
+		address_error.visible = true
+		address_input.accessibility_description = address_error.text
+		first_invalid = address_input
+	if kind == "lan":
+		var port_text := port_input.text.strip_edges()
+		var port := int(port_text) if port_text.is_valid_int() else -1
+		if port <= 0 or port > 65535:
+			port_error.text = "端口必须是 1 到 65535 之间的数字。"
+			port_error.visible = true
+			port_input.accessibility_description = port_error.text
+			if first_invalid == null:
+				first_invalid = port_input
+	if kind == "relay" and selected_role() == "client" and room_input.text.strip_edges().is_empty():
+		room_error.visible = true
+		room_input.accessibility_description = room_error.text
+		if first_invalid == null:
+			first_invalid = room_input
+	if deck_option.item_count == 0:
+		if first_invalid == null:
+			first_invalid = deck_option
+	if first_invalid:
+		if _compact:
+			if first_invalid == role_option:
+				_set_compact_step(0, false)
+			elif first_invalid == deck_option:
+				_set_compact_step(2, false)
+			else:
+				_set_compact_step(1, false)
+		first_invalid.grab_focus.call_deferred()
+	return first_invalid == null
+
+
+func _clear_validation() -> void:
+	address_error.visible = false
+	port_error.visible = false
+	room_error.visible = false
+	address_input.accessibility_description = ""
+	port_input.accessibility_description = ""
+	room_input.accessibility_description = ""
+
+
+func _copy_room_code() -> void:
+	if _current_room_code.is_empty():
+		return
+	DisplayServer.clipboard_set(_current_room_code)
+	status_label.text = "房间码已复制：%s" % _current_room_code
+
+
+func _apply_responsive_layout() -> void:
+	if not is_node_ready() or page == null:
+		return
+	var focus_owner := get_viewport().gui_get_focus_owner() if is_inside_tree() else null
+	var owned_focus_before := focus_owner != null and is_ancestor_of(focus_owner)
+	_compact = size.x < COMPACT_WIDTH or size.x / maxf(size.y, 1.0) < COMPACT_ASPECT
+	intro_panel.visible = not _compact
+	steps.visible = not _compact
+	compact_step_bar.visible = _compact
+	page.custom_minimum_size.x = (
+		minf(1040.0, maxf(620.0, size.x - 40.0))
+		if _compact
+		else 1120.0
+	)
+	var margin := 20 if _compact else 32
+	var page_margin := get_node("PageMargin") as MarginContainer
+	for side in ["left", "right"]:
+		page_margin.add_theme_constant_override("margin_" + side, margin)
+	_apply_compact_step_visibility()
+	_rebuild_focus_neighbors()
+	if owned_focus_before:
+		call_deferred("_repair_focus_after_layout")
+
+
+func handle_back() -> bool:
+	if (
+		_compact
+		and _compact_step > 0
+		and connection_state in [ConnectionState.IDLE, ConnectionState.ERROR]
+	):
+		_show_previous_compact_step()
+		return true
+	return false
+
+
+func _show_previous_compact_step() -> void:
+	_set_compact_step(_compact_step - 1)
+
+
+func _show_next_compact_step() -> void:
+	_set_compact_step(_compact_step + 1)
+
+
+func _set_compact_step(value: int, focus_step: bool = true) -> void:
+	_compact_step = clampi(value, 0, 2)
+	_apply_compact_step_visibility()
+	_rebuild_focus_neighbors()
+	if not focus_step:
+		return
+	var target: Control = role_option
+	if _compact_step == 1:
+		target = address_input
+	elif _compact_step == 2:
+		target = deck_option
+	if target and target.is_visible_in_tree():
+		target.grab_focus.call_deferred()
+
+
+func _apply_compact_step_visibility() -> void:
+	if role_label == null:
+		return
+	role_label.visible = not _compact or _compact_step == 0
+	role_option.visible = not _compact or _compact_step == 0
+	address_input.get_parent().visible = not _compact or _compact_step == 1
+	port_row.visible = (not _compact or _compact_step == 1) and kind == "lan"
+	room_row.visible = (
+		(not _compact or _compact_step == 1)
+		and kind == "relay"
+		and selected_role() == "client"
+	)
+	deck_label.visible = not _compact or _compact_step == 2
+	deck_option.visible = not _compact or _compact_step == 2
+	connect_button.visible = not _compact or _compact_step == 2
+	if not _compact:
+		return
+	compact_step_label.text = [
+		"01 / 03  选择身份",
+		"02 / 03  连接信息",
+		"03 / 03  选择牌组",
+	][_compact_step]
+	compact_previous_button.visible = _compact_step > 0
+	compact_next_button.visible = _compact_step < 2
+
+
+func _focus_initial_control() -> void:
+	if role_option and role_option.visible and not role_option.disabled:
+		role_option.grab_focus()
+
+
+func _rebuild_focus_neighbors() -> void:
+	var controls: Array[Control] = [back_button]
+	if (
+		compact_step_bar.visible
+		and compact_previous_button.visible
+		and not compact_previous_button.disabled
+	):
+		controls.append(compact_previous_button)
+	if role_option.visible and not role_option.disabled:
+		controls.append(role_option)
+	if address_input.visible and address_input.get_parent().visible and address_input.editable:
+		controls.append(address_input)
+	if port_row.visible and port_input.editable:
+		controls.append(port_input)
+	if room_row.visible and room_input.editable:
+		controls.append(room_input)
+	if deck_option.visible and not deck_option.disabled:
+		controls.append(deck_option)
+	if (
+		compact_step_bar.visible
+		and compact_next_button.visible
+		and not compact_next_button.disabled
+	):
+		controls.append(compact_next_button)
+	if connect_button.visible and not connect_button.disabled:
+		controls.append(connect_button)
+	if room_code_display.visible:
+		controls.append(room_code_display)
+	if copy_room_button.visible:
+		controls.append(copy_room_button)
+	if controls.is_empty():
+		return
+	for index in range(controls.size()):
+		var control := controls[index]
+		control.focus_neighbor_top = control.get_path_to(controls[posmod(index - 1, controls.size())])
+		control.focus_neighbor_bottom = control.get_path_to(controls[(index + 1) % controls.size()])
+		control.focus_next = control.focus_neighbor_bottom
+		control.focus_previous = control.focus_neighbor_top
+
+
+func _repair_focus_after_state_change() -> void:
+	if not is_inside_tree():
+		return
+	var owner := get_viewport().gui_get_focus_owner()
+	if owner == null or not is_ancestor_of(owner):
+		return
+	var usable := owner.is_visible_in_tree()
+	if owner is BaseButton:
+		usable = usable and not (owner as BaseButton).disabled
+	elif owner is LineEdit and owner != room_code_display:
+		usable = usable and (owner as LineEdit).editable
+	if usable:
+		return
+	var target: Control = copy_room_button if copy_room_button.visible else back_button
+	target.grab_focus.call_deferred()
+
+
+func _repair_focus_after_layout() -> void:
+	if not is_inside_tree():
+		return
+	var owner := get_viewport().gui_get_focus_owner()
+	if owner and is_ancestor_of(owner) and owner.is_visible_in_tree():
+		return
+	var target: Control = back_button
+	if _compact:
+		if _compact_step == 0 and role_option.is_visible_in_tree():
+			target = role_option
+		elif _compact_step == 1 and address_input.is_visible_in_tree():
+			target = address_input
+		elif _compact_step == 2 and deck_option.is_visible_in_tree():
+			target = deck_option
+	if target:
+		target.grab_focus()
+
+
+func _play_enter_motion() -> void:
+	if page == null:
+		return
+	FRONTEND_MOTION.play_enter(page, 0.22, 0.985)
