@@ -217,6 +217,9 @@ func _render_previews() -> void:
 	if not _capture("toast.png"):
 		_finish(1)
 		return
+	# The toast baseline is intentionally captured above. Hide it before battle
+	# baselines so it cannot cover the turn/phase/task header in reduced motion.
+	ui.toast_label.visible = false
 
 	if not ui.start_local_match_for_test("fire", "water"):
 		push_error("Unable to start preview match")
@@ -229,15 +232,28 @@ func _render_previews() -> void:
 		return
 
 	ui._close_modal()
-	ui._refresh_game()
-	await process_frame
-	await create_timer(0.25).timeout
+	await _wait_until_hidden(ui.modal_layer)
+	var setup_demo := UIPreviewStateFactory.setup_state()
+	_update_battle_preview(
+		ui,
+		setup_demo,
+		UIPreviewStateFactory.setup_action_rows(setup_demo),
+		"hand:0",
+	)
+	await _settle_rendered(4)
 	if not _capture("game.png"):
 		_finish(1)
 		return
+	if not _capture("battle-setup.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1280, 720)
+	await _settle_rendered(3)
+	if not _capture("battle-setup-1280x720.png"):
+		_finish(1)
+		return
 	root.size = Vector2i(2000, 900)
-	await process_frame
-	await create_timer(0.1).timeout
+	await _settle_rendered(3)
 	if not _capture("game-20x9.png"):
 		_finish(1)
 		return
@@ -286,29 +302,106 @@ func _render_previews() -> void:
 	demo.players[1].hand = ["", "", "", "", "", ""]
 	demo.log_action("玩家1附着了火能量。")
 	demo.log_action("玩家2的宝可梦受到40点伤害。")
+	demo.log_action("玩家1将喷火龙ex放置到active。")
+	demo.log_action("玩家2将小火焰猴放置到bench_0。")
 	ui.state = demo
 	ui.current_view_player = 0
 	ui._build_game_screen()
-	await process_frame
-	await create_timer(0.2).timeout
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_rendered(4)
 	if not _capture("battle-populated.png"):
 		_finish(1)
 		return
+	if not _capture("battle-main.png"):
+		_finish(1)
+		return
+	# Two adjacent Energy cards are both actionable here. This baseline guards
+	# the parent-card Z ordering: a lower card's cyan outline must disappear
+	# behind the next card instead of drawing across its face.
+	var overlapping_highlight_demo := demo.clone_state()
+	overlapping_highlight_demo.players[0].hand = [
+		"sv1-ener-2", "sv1-ener-2", "sv1-189", "svf-potion", "sv1-151",
+		"svi-jete", "sv1-189", "svf-potion", "sv1-151",
+	]
+	_update_battle_preview(
+		ui,
+		overlapping_highlight_demo,
+		UIPreviewStateFactory.action_rows(overlapping_highlight_demo),
+	)
+	await _settle_rendered(4)
+	if not _capture("battle-overlapping-highlights.png"):
+		_finish(1)
+		return
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_rendered(3)
+	ui._show_toast("能量已附着。")
+	await _settle_rendered(4)
+	if not _capture("battle-toast.png"):
+		_finish(1)
+		return
+	ui.toast_label.visible = false
 	demo.active_player_idx = 1
 	demo.players[1].name = "Challenge AI"
-	ui.game_mode = "challenge"
-	ui.ai_thinking = true
-	ui._refresh_game()
-	await process_frame
-	await create_timer(0.25).timeout
+	_update_battle_preview(ui, demo, [], "", true, "challenge")
+	await _settle_rendered(4)
 	if not _capture("ai-thinking.png"):
 		_finish(1)
 		return
-	ui.ai_thinking = false
-	ui.game_mode = "local"
+	if not _capture("battle-ai.png"):
+		_finish(1)
+		return
 	demo.active_player_idx = 0
-	ui._refresh_game()
-	await process_frame
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_frontend(3)
+	_update_battle_preview(
+		ui,
+		demo,
+		UIPreviewStateFactory.action_rows(demo),
+		"hand:1",
+	)
+	ui.battle_screen.show_card_detail(str(demo.players[0].hand[1]))
+	await _settle_rendered(4)
+	if not _capture("card-actions.png"):
+		_finish(1)
+		return
+	if not _capture("battle-card-preview.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1280, 720)
+	await _settle_rendered(4)
+	if not _capture("battle-card-preview-1280x720.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
+	_update_battle_preview(
+		ui,
+		demo,
+		UIPreviewStateFactory.action_rows(demo),
+		"pokemon:0:active",
+	)
+	ui.battle_screen.show_card_detail(
+		demo.players[0].active.card_id,
+		demo.players[0].active,
+	)
+	await _settle_rendered(4)
+	if not _capture("battle-attack-actions.png"):
+		_finish(1)
+		return
+
+	var promotion_demo := UIPreviewStateFactory.promotion_state()
+	_update_battle_preview(
+		ui,
+		promotion_demo,
+		UIPreviewStateFactory.promotion_action_rows(promotion_demo),
+		"pokemon:0:bench_0",
+	)
+	await _settle_rendered(4)
+	if not _capture("battle-promotion.png"):
+		_finish(1)
+		return
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_frontend(3)
 	ui._show_card_inspector({
 		"card_id": "svi-hrot",
 		"pokemon": demo.players[0].active,
@@ -320,6 +413,7 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
 	ui._show_zone_inspector({
 		"title": "弃牌",
 		"player": 0,
@@ -334,17 +428,10 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	ui._close_modal()
-	await process_frame
-	await create_timer(0.22).timeout
-	ui.selected_entity_key = "hand:1"
-	ui._refresh_game()
-	await process_frame
-	await create_timer(0.12).timeout
-	if not _capture("card-actions.png"):
-		_finish(1)
-		return
-	ui.selected_entity_key = ""
-	ui._refresh_game()
+	await _wait_until_hidden(ui.modal_layer)
+	await _settle_frontend(2)
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_frontend(3)
 
 	ui.battle_screen.play_presentation([{
 		"event_type": "cards_drawn",
@@ -487,7 +574,130 @@ func _render_previews() -> void:
 	if not _capture("choice.png"):
 		_finish(1)
 		return
+	var first_choice_card := (
+		ui.active_choice_panel._option_cards.get("card:deck:0:sv1-104") as CardView
+		if ui.active_choice_panel
+		else null
+	)
+	if first_choice_card:
+		first_choice_card.activated.emit("sv1-104", -1, 0, "")
+	await process_frame
+	await create_timer(0.18).timeout
+	if not _capture("choice-selected.png"):
+		_finish(1)
+		return
+	var second_choice_card := (
+		ui.active_choice_panel._option_cards.get("card:deck:1:sv1-151") as CardView
+		if ui.active_choice_panel
+		else null
+	)
+	if second_choice_card:
+		second_choice_card.activated.emit("sv1-151", -1, 0, "")
+	await process_frame
+	await create_timer(0.18).timeout
+	if not _capture("choice-switched.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(560, 720)
+	await _settle_rendered(4)
+	if not _capture("choice-compact-preview.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
 	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	var multi_card_ids: Array[String] = [
+		"sv1-104",
+		"sv1-106",
+		"sv1-108",
+		"sv2-delib",
+		"sv1-151",
+		"svf-potion",
+		"sv1-189",
+		"svi-jete",
+		"svi-dtur",
+		"svi-hrot",
+	]
+	var multi_options: Array[Dictionary] = []
+	for index in range(multi_card_ids.size()):
+		var card_id := multi_card_ids[index]
+		multi_options.append({
+			"option_id": "card:deck:%d:%s" % [index, card_id],
+			"label": ui.catalog.card_name(card_id),
+			"value": {"index": index, "card_id": card_id},
+		})
+	var multi_choice := ChoiceRequest.new(
+		"preview-multi-choice",
+		"search",
+		0,
+		"从这些卡牌中选择两至三张加入手牌。",
+		multi_options,
+		2,
+		3,
+	)
+	ui.show_choice(multi_choice)
+	ui._toggle_choice(str(multi_options[0]["option_id"]))
+	ui._toggle_choice(str(multi_options[4]["option_id"]))
+	ui._toggle_choice(str(multi_options[8]["option_id"]))
+	await _settle_rendered(4)
+	if not _capture("choice-multi-limit.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1280, 720)
+	await _settle_rendered(4)
+	if not _capture("choice-multi-1280x720.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	var confirm_revealed_choice := ChoiceRequest.new(
+		"preview-confirm-revealed",
+		"confirm",
+		0,
+		"要将查看到的卡牌加入手牌吗？",
+		[
+			{"option_id": "confirm:yes", "label": "是，加入手牌", "value": true},
+			{"option_id": "confirm:no", "label": "否，放入弃牌", "value": false},
+		],
+		1,
+		1,
+		false,
+		false,
+		{
+			"top_card_id": "svf-potion",
+			"revealed_card_ids": ["svf-potion"],
+		},
+	)
+	ui.show_choice(confirm_revealed_choice)
+	ui._toggle_choice("confirm:no")
+	await _settle_rendered(4)
+	if not _capture("choice-confirm-revealed.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+
+	var empty_choice := ChoiceRequest.new(
+		"preview-empty-choice",
+		"resolve_empty",
+		0,
+		"没有找到符合条件的卡牌。",
+		[],
+		0,
+		0,
+	)
+	ui.show_choice(empty_choice)
+	await _settle_rendered(4)
+	if not _capture("choice-empty.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
 
 	var energy_choice := ChoiceRequest.new(
 		"preview-energy-choice",
@@ -509,6 +719,8 @@ func _render_previews() -> void:
 		2,
 		2,
 		true,
+		false,
+		{"max_per_target": 2, "same_target": true},
 	)
 	var energy_stack := ResolutionStack.new()
 	energy_stack.push_continuation("energy_attach_distribution", {
@@ -519,19 +731,21 @@ func _render_previews() -> void:
 	energy_stack.pending_request = energy_choice
 	demo.resolution_stack = energy_stack.to_dict()
 	ui.show_choice(energy_choice)
-	await process_frame
-	var energy_preview_card := (
-		ui.active_choice_panel.energy_grid.get_child(0) as CardView
-		if ui.active_choice_panel and ui.active_choice_panel.energy_grid.get_child_count() > 0
-		else null
-	)
-	if energy_preview_card:
-		energy_preview_card.activated.emit("svi-jete", -1, -1, "")
-	await create_timer(0.25).timeout
+	ui._toggle_choice("pokemon:0:active:svi-hrot")
+	await _settle_rendered(4)
 	if not _capture("choice-energy.png"):
 		_finish(1)
 		return
+	if not _capture("choice-energy-progress.png"):
+		_finish(1)
+		return
+	ui._toggle_choice("pokemon:0:active:svi-hrot")
+	await _settle_rendered(4)
+	if not _capture("choice-energy-complete.png"):
+		_finish(1)
+		return
 	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
 
 	ui.battle_screen.play_presentation([
 		{
@@ -600,6 +814,50 @@ func _settle_frontend(frame_count: int = 3) -> void:
 	# renderer is faster than the former timer-based preview cadence.
 	for _frame in range(maxi(frame_count, 2)):
 		await process_frame
+
+
+func _wait_until_hidden(control: Control, maximum_frames := 45) -> void:
+	if control == null:
+		return
+	for _frame in range(maximum_frames):
+		if not control.visible:
+			return
+		await process_frame
+
+
+func _settle_rendered(frame_count := 3) -> void:
+	for _frame in range(maxi(frame_count, 2)):
+		await process_frame
+		await RenderingServer.frame_post_draw
+
+
+func _update_battle_preview(
+	ui,
+	preview_state: GameState,
+	action_rows: Array[Dictionary],
+	selected_source := "",
+	ai_is_thinking := false,
+	mode := "local",
+) -> void:
+	# Battle baselines exercise BattleScreen itself; no shell modal is part of
+	# these states. Force a completed close so a previous inspector cannot leave
+	# its 86% shade in a later capture on a very fast renderer.
+	if ui.modal_layer:
+		ui.modal_layer.visible = false
+	ui.state = preview_state
+	ui.current_view_player = 0
+	ui.selected_entity_key = selected_source
+	ui.ai_thinking = ai_is_thinking
+	ui.game_mode = mode
+	if ui.battle_screen:
+		ui.battle_screen.update_view(
+			preview_state,
+			0,
+			action_rows,
+			selected_source,
+			ai_is_thinking,
+			mode,
+		)
 
 
 func _enable_deterministic_preview_mode() -> bool:

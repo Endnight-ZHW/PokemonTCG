@@ -85,6 +85,7 @@ window/size/viewport_width=1600
 window/size/viewport_height=900
 window/size/window_width_override=1280
 window/size/window_height_override=720
+window/handheld/orientation=0
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 

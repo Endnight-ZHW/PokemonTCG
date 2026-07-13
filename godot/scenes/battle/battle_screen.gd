@@ -14,6 +14,7 @@ signal card_drop_requested(
 signal detail_requested(card_id: String)
 signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
+signal choice_target_selected(option_id: String)
 
 @onready var table: BattleTable = %BattleTable
 
@@ -120,6 +121,16 @@ func update_view(
 		p_game_mode,
 	)
 	_sync_from_table()
+
+
+func set_choice_targets(options_by_source: Dictionary, prompt: String) -> void:
+	if table:
+		table.set_choice_targets(options_by_source, prompt)
+
+
+func clear_choice_targets() -> void:
+	if table:
+		table.clear_choice_targets()
 
 
 func play_presentation(
@@ -300,6 +311,7 @@ func _bind_table_signals() -> void:
 	table.detail_requested.connect(detail_requested.emit)
 	table.inspect_card_requested.connect(inspect_card_requested.emit)
 	table.inspect_zone_requested.connect(inspect_zone_requested.emit)
+	table.choice_target_selected.connect(choice_target_selected.emit)
 
 
 func _sync_from_table() -> void:

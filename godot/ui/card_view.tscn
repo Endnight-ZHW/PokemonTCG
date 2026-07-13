@@ -25,7 +25,8 @@ corner_radius_bottom_right = 11
 corner_radius_bottom_left = 11
 
 [sub_resource type="StyleBoxFlat" id="Style_target"]
-bg_color = Color(0.25, 0.72, 1, 0.11)
+bg_color = Color(0, 0, 0, 0)
+draw_center = false
 border_width_left = 3
 border_width_top = 3
 border_width_right = 3
@@ -35,9 +36,12 @@ corner_radius_top_left = 11
 corner_radius_top_right = 11
 corner_radius_bottom_right = 11
 corner_radius_bottom_left = 11
+shadow_color = Color(0.2, 0.78, 1, 0.46)
+shadow_size = 5
 
 [sub_resource type="StyleBoxFlat" id="Style_selected"]
-bg_color = Color(1, 0.82, 0.25, 0.08)
+bg_color = Color(0, 0, 0, 0)
+draw_center = false
 border_width_left = 3
 border_width_top = 3
 border_width_right = 3
@@ -47,6 +51,8 @@ corner_radius_top_left = 11
 corner_radius_top_right = 11
 corner_radius_bottom_right = 11
 corner_radius_bottom_left = 11
+shadow_color = Color(0.957, 0.784, 0.29, 0.42)
+shadow_size = 5
 
 [sub_resource type="StyleBoxFlat" id="Style_actions"]
 bg_color = Color(0.018, 0.035, 0.065, 0.92)
@@ -119,7 +125,7 @@ layout_mode = 3
 anchors_preset = 0
 mouse_filter = 0
 focus_mode = 0
-editor_description = "可复用卡牌组件。Frame、信息栏和高亮可以在此场景中编辑；运行时卡图和数值由 CardView.configure() 注入。"
+editor_description = "可复用卡牌组件。Frame、信息栏和只读交互高亮可以在此场景中编辑；运行时卡图、数值和合法交互状态由 CardView 注入。"
 script = ExtResource("1_card")
 
 [node name="Shadow" type="Panel" parent="."]
@@ -214,10 +220,58 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("Style_selected")
 
+[node name="ActionableMarker" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -2.0
+offset_top = -2.0
+offset_right = 2.0
+offset_bottom = 2.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="InteractionHint" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 1
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 5.0
+offset_top = -34.0
+offset_right = -5.0
+offset_bottom = -5.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="InteractionHintLabel" type="Label" parent="InteractionHint"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 2.0
+offset_right = -4.0
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 10
+text_overrun_behavior = 3
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="ActionOverlay" type="PanelContainer" parent="."]
 unique_name_in_owner = true
 visible = false
-mouse_filter = 0
+mouse_filter = 2
 layout_mode = 1
 anchors_preset = 12
 anchor_right = 1.0
@@ -243,15 +297,16 @@ theme_override_constants/separation = 3
 
 [node name="ActionHint" type="Label" parent="ActionOverlay/Margin/Content"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
 theme_override_font_sizes/font_size = 10
-text = "选择合法目标"
 horizontal_alignment = 1
 autowrap_mode = 2
 
 [node name="ActionButtons" type="VBoxContainer" parent="ActionOverlay/Margin/Content"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 3
 

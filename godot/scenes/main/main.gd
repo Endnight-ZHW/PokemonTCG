@@ -706,9 +706,9 @@ func _build_game_screen() -> void:
 	battle_screen.pokemon_selected.connect(_on_battle_pokemon_selected)
 	battle_screen.action_requested.connect(_execute_action)
 	battle_screen.card_drop_requested.connect(_on_battle_card_dropped)
-	battle_screen.detail_requested.connect(_show_card_detail)
 	battle_screen.inspect_card_requested.connect(_show_card_inspector)
 	battle_screen.inspect_zone_requested.connect(_show_zone_inspector)
+	battle_screen.choice_target_selected.connect(_on_battle_choice_target_selected)
 	screen_host.add_child(battle_screen)
 	battle_screen.initialize_ui()
 	action_list = battle_screen.action_list
@@ -794,9 +794,9 @@ func _on_battle_card_dropped(
 	if candidates.size() > 1:
 		selected_entity_key = "hand:%d" % hand_index
 		_refresh_game()
-		_show_toast("该目标有多个可用动作，请在卡牌上的操作按钮中选择。")
 		return
-	_show_toast("这张卡不能放到该位置。", true)
+	# BattleTable/CardView only emit drops for legal targets. Keep this branch as
+	# a silent stale-state guard for network revisions racing with a drag.
 	_refresh_game()
 
 
@@ -809,6 +809,20 @@ func _matching_drop_actions(
 	for row in _current_action_rows():
 		var action: GameAction = row.get("action")
 		if action == null or int(action.params.get("hand_idx", -1)) != hand_index:
+			continue
+		if (
+			target_slot == "stadium"
+			and action.action == "PLAY_TRAINER"
+			and action.actor == target_player
+			and action.actor in [0, 1]
+			and hand_index >= 0
+		):
+			var actor_hand := state.get_player(action.actor).hand
+			if (
+				hand_index < actor_hand.size()
+				and catalog.is_stadium(str(actor_hand[hand_index]))
+			):
+				result.append(action)
 			continue
 		var action_slot := str(action.params.get(
 			"target_slot",
@@ -863,6 +877,9 @@ func _execute_action(action: GameAction) -> StepResult:
 	if action.action == "RETREAT":
 		_show_retreat_confirmation(action)
 		return StepResult.new(true, "等待确认撤退。")
+	if action.action == "END_TURN" and not _remaining_turn_action_labels().is_empty():
+		_show_end_turn_confirmation(action)
+		return StepResult.new(true, "等待确认结束回合。")
 	return _execute_action_now(action)
 
 
@@ -872,6 +889,9 @@ func _execute_action_now(action: GameAction) -> StepResult:
 		var accepted := network_controller.submit_action(action)
 		if not accepted:
 			_show_toast("动作未发送或被房主拒绝。", true)
+		else:
+			selected_entity_key = ""
+			_refresh_game()
 		return StepResult.new(accepted, "动作已提交。" if accepted else "动作提交失败。")
 	if game_mode != MODE_LOCAL and _current_actor() == 1:
 		return StepResult.new(false, "AI 回合不能由玩家操作。")
@@ -955,26 +975,63 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	active_choice_panel = null
 	selected_choice_ids.clear()
 	option_buttons.clear()
+	if battle_screen:
+		battle_screen.clear_choice_targets()
+	if request.request_type == "coin_flip":
+		_show_coin_flip_choice(request)
+		return
+	var field_targets := _choice_field_target_options(request)
+	if not field_targets.is_empty() and battle_screen:
+		selected_entity_key = ""
+		battle_screen.set_choice_targets(field_targets, request.prompt)
+		_refresh_game()
+		return
 	var energy_cards := _choice_energy_cards(request)
 	var revealed_cards := _choice_revealed_cards(request)
 	var has_card_preview := not energy_cards.is_empty() or not revealed_cards.is_empty()
+	var pure_empty_choice := (
+		request.options.is_empty()
+		and energy_cards.is_empty()
+		and revealed_cards.is_empty()
+	)
 	for option in request.options:
 		if not _choice_option_card_id(option).is_empty():
 			has_card_preview = true
 			break
 	_open_modal(
 		request.prompt,
-		"确认选择",
-		"取消" if request.can_cancel else "",
+		_choice_confirm_cta(request, 0),
+		_choice_cancel_cta(request),
 		false,
-		ModalSpec.battle(_choice_modal_size(has_card_preview)),
+		ModalSpec.battle(_choice_modal_size(has_card_preview, pure_empty_choice)),
 	)
+	if pure_empty_choice:
+		if modal_scroll:
+			var compact_scroll_minimum := modal_scroll.custom_minimum_size
+			compact_scroll_minimum.y = 150.0
+			modal_scroll.custom_minimum_size = compact_scroll_minimum
+		# ModalHost intentionally maintains a 480 px general-purpose floor. An
+		# empty result has no scrolling content, so override that floor only for
+		# this request; _open_modal restores the shared defaults next time.
+		modal_panel.custom_minimum_size = _choice_modal_size(false, true)
 	modal_title.text = _choice_title(request)
 	var metadata_text := _choice_metadata_text(request)
 	var panel := CHOICE_PANEL_SCENE.instantiate() as ChoicePanel
 	modal_body.add_child(panel)
 	active_choice_panel = panel
-	panel.configure(metadata_text, not request.options.is_empty(), catalog)
+	panel.configure(
+		metadata_text,
+		not request.options.is_empty(),
+		catalog,
+		{
+			"prompt": request.prompt,
+			"min_select": request.min_select,
+			"max_select": request.max_select,
+			"request_type": request.request_type,
+			"can_cancel": request.can_cancel,
+			"allow_duplicates": request.allow_duplicates,
+		},
+	)
 	panel.option_toggled.connect(_toggle_choice)
 	panel.energy_index_requested.connect(_rewind_energy_distribution)
 	panel.undo_requested.connect(_undo_energy_distribution)
@@ -1008,18 +1065,94 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	_refresh_choice_buttons()
 
 
-func _choice_modal_size(has_preview: bool) -> Vector2:
-	var viewport_size := Vector2(1280, 720)
-	if is_inside_tree():
-		viewport_size = get_viewport_rect().size
-	else:
+func _show_coin_flip_choice(request: ChoiceRequest) -> void:
+	_open_modal(
+		request.prompt,
+		"继续结算",
+		"",
+		false,
+		ModalSpec.battle(Vector2(640, 420)),
+	)
+	modal_title.text = "硬币结算"
+	var results: Array = request.metadata.get("predetermined_flips", [])
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 18)
+	modal_body.add_child(content)
+	var coins := HBoxContainer.new()
+	coins.alignment = BoxContainer.ALIGNMENT_CENTER
+	coins.add_theme_constant_override("separation", 14)
+	content.add_child(coins)
+	var heads := 0
+	for index in range(results.size()):
+		var is_heads := bool(results[index])
+		if is_heads:
+			heads += 1
+		var coin := Label.new()
+		coin.custom_minimum_size = Vector2(76.0, 76.0)
+		coin.text = "正" if is_heads else "反"
+		coin.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		coin.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		coin.add_theme_font_size_override("font_size", 24)
+		coin.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
+		coin.add_theme_stylebox_override(
+			"normal",
+			DesignTokens.panel_style(
+				DesignTokens.GOLD if is_heads else DesignTokens.CYAN,
+				38,
+				Color(1, 1, 1, 0.82),
+				2,
+				0,
+			),
+		)
+		coins.add_child(coin)
+		if not AppSettings.reduced_motion:
+			coin.scale = Vector2(0.2, 1.0)
+			coin.modulate.a = 0.0
+			var tween := coin.create_tween()
+			tween.tween_interval(float(index) * 0.10)
+			tween.tween_property(coin, "modulate:a", 1.0, 0.08)
+			tween.parallel().tween_property(coin, "scale", Vector2.ONE, 0.34).set_trans(
+				Tween.TRANS_BACK,
+			).set_ease(Tween.EASE_OUT)
+	var summary := Label.new()
+	summary.text = "正面 %d · 反面 %d" % [heads, results.size() - heads]
+	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	summary.add_theme_font_size_override("font_size", 18)
+	summary.add_theme_color_override("font_color", DesignTokens.TEXT)
+	content.add_child(summary)
+	modal_confirm.disabled = false
+	modal_confirm.text = "继续结算"
+	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
+
+
+func _choice_modal_size(has_preview: bool, compact_empty: bool = false) -> Vector2:
+	# ModalHost resolves this preferred size against the safe content area, not
+	# the raw sub-viewport. Headless and embedded viewports can report a tiny
+	# placeholder rect even while the safe root layout has its final size.
+	var viewport_size := _safe_content_size() if is_inside_tree() else Vector2.ZERO
+	if viewport_size.x <= 1.0 or viewport_size.y <= 1.0:
 		var tree := Engine.get_main_loop() as SceneTree
 		if tree and tree.root:
 			viewport_size = Vector2(tree.root.size)
-	var target := Vector2(980, 660) if has_preview else Vector2(720, 620)
+	if viewport_size.x <= 1.0 or viewport_size.y <= 1.0:
+		viewport_size = Vector2(1280, 720)
+	var target := (
+		Vector2(640, 360)
+		if compact_empty
+		else Vector2(980, 660) if has_preview else Vector2(720, 620)
+	)
+	var compact := (
+		viewport_size.x / maxf(viewport_size.y, 1.0) < 1.5
+		or viewport_size.x < 1360.0
+	)
+	var inset := Vector2(24, 24) if compact else Vector2(96, 72)
+	var available := Vector2(
+		maxf(1.0, viewport_size.x - inset.x),
+		maxf(1.0, viewport_size.y - inset.y),
+	)
 	return Vector2(
-		minf(target.x, maxf(640.0, viewport_size.x - 96.0)),
-		minf(target.y, maxf(520.0, viewport_size.y - 72.0)),
+		minf(target.x, available.x),
+		minf(target.y, available.y),
 	)
 
 
@@ -1041,16 +1174,37 @@ func _choice_option_caption(option: Dictionary) -> String:
 	var value_data: Dictionary = {}
 	if value_variant is Dictionary:
 		value_data = value_variant
-		var value_slot := str(value_data.get("slot", ""))
-		var base_name := str(value_data.get("base_name", ""))
-		var evolution_name := str(value_data.get("evolution_name", ""))
-		if not value_slot.is_empty() and not base_name.is_empty() and not evolution_name.is_empty():
-			return "%s · %s → %s" % [_slot_name(value_slot), base_name, evolution_name]
-		if not value_slot.is_empty():
-			return _slot_name(value_slot)
 	var ref_variant: Variant = option.get("ref")
+	var ref_data: Dictionary = {}
 	if ref_variant is Dictionary:
-		var ref: Dictionary = ref_variant
+		ref_data = ref_variant
+	var is_attachment := (
+		str(ref_data.get("kind", "")) == "attachment"
+		or str(option.get("option_id", "")).begins_with("attachment:")
+	)
+	if is_attachment:
+		var attachment_slot := str(value_data.get("slot", ref_data.get("slot", "")))
+		var attachment_index := int(value_data.get("index", ref_data.get("index", -1)))
+		var attachment_label := label_text.replace(" - ", " · ")
+		if attachment_label.is_empty() and catalog != null:
+			attachment_label = catalog.card_name(_choice_option_card_id(option))
+		var attachment_parts: Array[String] = []
+		if not attachment_slot.is_empty():
+			attachment_parts.append(_slot_name(attachment_slot))
+		if not attachment_label.is_empty():
+			attachment_parts.append(attachment_label)
+		if attachment_index >= 0:
+			attachment_parts.append("第%d张" % (attachment_index + 1))
+		return " · ".join(attachment_parts)
+	var value_slot := str(value_data.get("slot", ""))
+	var base_name := str(value_data.get("base_name", ""))
+	var evolution_name := str(value_data.get("evolution_name", ""))
+	if not value_slot.is_empty() and not base_name.is_empty() and not evolution_name.is_empty():
+		return "%s · %s → %s" % [_slot_name(value_slot), base_name, evolution_name]
+	if not value_slot.is_empty():
+		return _slot_name(value_slot)
+	if not ref_data.is_empty():
+		var ref: Dictionary = ref_data
 		var ref_slot := str(ref.get("slot", ""))
 		if not ref_slot.is_empty():
 			return _slot_name(ref_slot)
@@ -1064,6 +1218,65 @@ func _choice_option_caption(option: Dictionary) -> String:
 	if value_variant is Dictionary and value_data.has("index"):
 		return "#%d" % (int(value_data.get("index", -1)) + 1)
 	return label_text
+
+
+func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
+	var result: Dictionary = {}
+	if (
+		request == null
+		or request.min_select != 1
+		or request.max_select != 1
+		or request.allow_duplicates
+		or request.can_cancel
+		or request.request_type == "select_attachment"
+	):
+		return result
+	for option in request.options:
+		var option_id := str(option.get("option_id", ""))
+		var player_idx := request.player
+		var slot := ""
+		var ref_value: Variant = option.get("ref")
+		if ref_value is Dictionary:
+			var ref := ref_value as Dictionary
+			if str(ref.get("kind", "")) == "pokemon":
+				player_idx = int(ref.get("player", player_idx))
+				slot = str(ref.get("slot", ""))
+		var option_value: Variant = option.get("value")
+		if slot.is_empty() and option_value is Dictionary:
+			var value := option_value as Dictionary
+			player_idx = int(value.get("player", player_idx))
+			slot = str(value.get("slot", ""))
+		if (
+			option_id.is_empty()
+			or player_idx not in [0, 1]
+			or slot.is_empty()
+			or state == null
+			or state.get_player(player_idx).get_pokemon(slot) == null
+		):
+			return {}
+		var key := CardInteractionRouter.pokemon_key(player_idx, slot)
+		# Attachment choices may expose several energies on one Pokémon; in that
+		# case the card alone is not a unique option, so keep the card grid panel.
+		if result.has(key):
+			return {}
+		result[key] = option_id
+	return result
+
+
+func _on_battle_choice_target_selected(option_id: String) -> void:
+	if active_request == null or option_id.is_empty():
+		return
+	var is_valid_option := false
+	for option in active_request.options:
+		if str(option.get("option_id", "")) == option_id:
+			is_valid_option = true
+			break
+	if not is_valid_option:
+		return
+	if battle_screen:
+		battle_screen.clear_choice_targets()
+	selected_choice_ids.assign([option_id])
+	_confirm_choice()
 
 
 func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
@@ -1112,6 +1325,33 @@ func _show_retreat_confirmation(action: GameAction) -> void:
 	body.add_theme_color_override("font_color", DesignTokens.TEXT)
 	body.text = "\n".join(lines)
 	modal_body.add_child(body)
+	var payment_card_ids := _retreat_energy_card_ids(action)
+	if not payment_card_ids.is_empty():
+		var payment_hint := Label.new()
+		payment_hint.text = "请点选下列附着能量，确认撤退支付："
+		payment_hint.add_theme_font_size_override("font_size", 15)
+		payment_hint.add_theme_color_override("font_color", DesignTokens.CYAN)
+		modal_body.add_child(payment_hint)
+		var payment_row := HBoxContainer.new()
+		payment_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		payment_row.add_theme_constant_override("separation", 10)
+		modal_body.add_child(payment_row)
+		var selected_payments: Dictionary = {}
+		for payment_position in range(payment_card_ids.size()):
+			var energy_card_id := payment_card_ids[payment_position]
+			var energy_view := CARD_SCENE.instantiate() as CardView
+			energy_view.custom_minimum_size = Vector2(92.0, 128.0)
+			energy_view.configure(energy_card_id, null, false, -1, action.actor, "", true)
+			energy_view.set_interaction_state(false)
+			payment_row.add_child(energy_view)
+			energy_view.activated.connect(_toggle_retreat_payment_card.bind(
+				payment_position,
+				energy_view,
+				selected_payments,
+				payment_card_ids.size(),
+			))
+			energy_view.detail_requested.connect(_inspect_retreat_payment_card.bind(action))
+		modal_confirm.disabled = true
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
 		_close_modal()
@@ -1176,18 +1416,204 @@ func _choice_revealed_cards(request: ChoiceRequest) -> Array[String]:
 	return result
 
 
+func _choice_option_by_id(request: ChoiceRequest, option_id: String) -> Dictionary:
+	if request == null or option_id.is_empty():
+		return {}
+	for option_value in request.options:
+		var option: Dictionary = option_value
+		if str(option.get("option_id", "")) == option_id:
+			return option
+	return {}
+
+
+func _choice_continuation_data() -> Dictionary:
+	if state == null or state.resolution_stack.is_empty():
+		return {}
+	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	for index in range(stack.frames.size() - 1, -1, -1):
+		var frame: Dictionary = stack.frames[index]
+		if str(frame.get("kind", "")) == "continuation":
+			var data: Variant = frame.get("data", {})
+			return Dictionary(data) if data is Dictionary else {}
+	return {}
+
+
+func _choice_has_cancel_action_checkpoint() -> bool:
+	if state == null or state.resolution_stack.is_empty():
+		return false
+	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	var checkpoint: Variant = stack.context.get("cancel_action_checkpoint")
+	if checkpoint is Dictionary and not Dictionary(checkpoint).is_empty():
+		return true
+	return stack.context.get("cancel_action_snapshot") is Dictionary
+
+
+func _choice_cancel_cta(request: ChoiceRequest) -> String:
+	if request == null or not request.can_cancel:
+		return ""
+	return "取消使用此卡" if _choice_has_cancel_action_checkpoint() else "取消"
+
+
+func _choice_confirm_cta(request: ChoiceRequest, selected_count: int) -> String:
+	if request == null:
+		return "确认选择"
+	if request.max_select == 0:
+		return "继续结算"
+	if request.min_select == 0 and selected_count == 0:
+		return "不选择并继续"
+	if request.request_type == "confirm":
+		if selected_count == 1:
+			var selected_option := _choice_option_by_id(
+				request,
+				selected_choice_ids[0] if not selected_choice_ids.is_empty() else "",
+			)
+			var selected_label := str(selected_option.get("label", ""))
+			if not selected_label.is_empty():
+				return "确认“%s”" % selected_label
+		return "确认决定"
+	if request.request_type == "distribute_energy":
+		return "确认能量分配（%d/%d）" % [selected_count, request.max_select]
+	return "确认选择（%d/%d）" % [selected_count, request.max_select]
+
+
+func _choice_option_category(option: Dictionary) -> String:
+	if option.is_empty() or catalog == null:
+		return ""
+	var card_id := _choice_option_card_id(option)
+	if card_id.is_empty():
+		return ""
+	if catalog.is_tool(card_id):
+		return "tool"
+	if catalog.is_item(card_id):
+		return "item"
+	if catalog.is_pokemon(card_id):
+		return "pokemon"
+	if catalog.is_basic_energy(card_id):
+		return "basic_energy"
+	return ""
+
+
+func _choice_selected_category_count(request: ChoiceRequest, category: String) -> int:
+	var count := 0
+	for selected_id in selected_choice_ids:
+		if _choice_option_category(_choice_option_by_id(request, selected_id)) == category:
+			count += 1
+	return count
+
+
+func _choice_selected_option_count(option_id: String) -> int:
+	var count := 0
+	for selected_id in selected_choice_ids:
+		if selected_id == option_id:
+			count += 1
+	return count
+
+
+func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) -> String:
+	var option := _choice_option_by_id(request, option_id)
+	if option.is_empty():
+		return "该选择项已失效，请重新选择"
+	var already_selected := selected_choice_ids.find(option_id) >= 0
+	if already_selected and not request.allow_duplicates:
+		# Existing exclusive selections must always remain available so they can
+		# be removed, even while every unselected option is at capacity.
+		return ""
+	if not request.allow_duplicates and request.max_select == 1:
+		# A radio-style request replaces the old selection atomically. It is not
+		# blocked merely because the one available slot is already occupied.
+		return ""
+
+	var category := _choice_option_category(option)
+	if request.request_type == "arven":
+		if category == "item" and _choice_selected_category_count(request, "item") >= 1:
+			return "物品和宝可梦道具各最多选择1张，请先取消已选物品卡"
+		if category == "tool" and _choice_selected_category_count(request, "tool") >= 1:
+			return "物品和宝可梦道具各最多选择1张，请先取消已选宝可梦道具"
+	elif request.request_type == "clara":
+		var clara_data := _choice_continuation_data()
+		var pokemon_limit := int(request.metadata.get(
+			"pokemon_count",
+			clara_data.get("pokemon_count", request.max_select),
+		))
+		var energy_limit := int(request.metadata.get(
+			"energy_count",
+			clara_data.get("energy_count", request.max_select),
+		))
+		if (
+			category == "pokemon"
+			and _choice_selected_category_count(request, "pokemon") >= pokemon_limit
+		):
+			return "宝可梦最多选择%d张，请先取消一张宝可梦" % pokemon_limit
+		if (
+			category == "basic_energy"
+			and _choice_selected_category_count(request, "basic_energy") >= energy_limit
+		):
+			return "基本能量最多选择%d张，请先取消一张基本能量" % energy_limit
+	elif request.request_type == "distribute_energy":
+		var distribution_data := _choice_continuation_data()
+		if (
+			bool(request.metadata.get(
+				"same_target",
+				distribution_data.get("same_target", false),
+			))
+			and not selected_choice_ids.is_empty()
+			and option_id != selected_choice_ids[0]
+		):
+			return "此效果要求所有能量分配到同一目标"
+		var max_per_target := int(request.metadata.get(
+			"max_per_target",
+			distribution_data.get("max_per_target", 99),
+		))
+		if _choice_selected_option_count(option_id) >= max_per_target:
+			return "该目标最多可分配 %d张能量" % max_per_target
+
+	if selected_choice_ids.size() >= request.max_select:
+		return "已达到选择上限，请先取消一张"
+	return ""
+
+
+func _choice_option_disabled_reasons(request: ChoiceRequest) -> Dictionary:
+	var reasons: Dictionary = {}
+	if request == null:
+		return reasons
+	for option_value in request.options:
+		var option: Dictionary = option_value
+		var option_id := str(option.get("option_id", ""))
+		if option_id.is_empty():
+			continue
+		var reason := _choice_addition_blocked_reason(request, option_id)
+		if not reason.is_empty():
+			reasons[option_id] = reason
+	return reasons
+
+
+func _show_choice_blocked_reason(reason: String) -> void:
+	if reason.is_empty() or active_choice_panel == null:
+		return
+	active_choice_panel.show_blocked_reason(reason)
+
+
 func _toggle_choice(option_id: String) -> void:
 	_play_click()
 	if active_request == null:
 		return
-	if active_request.allow_duplicates:
-		if selected_choice_ids.size() < active_request.max_select:
-			selected_choice_ids.append(option_id)
+	var existing := selected_choice_ids.find(option_id)
+	if not active_request.allow_duplicates and existing >= 0:
+		selected_choice_ids.remove_at(existing)
 	else:
-		var existing := selected_choice_ids.find(option_id)
-		if existing >= 0:
-			selected_choice_ids.remove_at(existing)
-		elif selected_choice_ids.size() < active_request.max_select:
+		var blocked_reason := _choice_addition_blocked_reason(active_request, option_id)
+		if not blocked_reason.is_empty():
+			_refresh_choice_buttons()
+			_show_choice_blocked_reason(blocked_reason)
+			return
+		if active_request.allow_duplicates:
+			selected_choice_ids.append(option_id)
+		elif active_request.max_select == 1:
+			# Single-choice panels behave like a radio group: choosing another
+			# option replaces the previous selection in one refresh. Choosing the
+			# selected option above still clears it, preserving the existing toggle.
+			selected_choice_ids.assign([option_id])
+		else:
 			selected_choice_ids.append(option_id)
 	_refresh_choice_buttons()
 
@@ -1232,12 +1658,16 @@ func _refresh_choice_buttons() -> void:
 			active_request.max_select,
 			active_request.allow_duplicates,
 		)
+		active_choice_panel.set_option_disabled_reasons(
+			_choice_option_disabled_reasons(active_request),
+		)
 	modal_confirm.disabled = not (
 		selected_choice_ids.size() >= active_request.min_select
 		and selected_choice_ids.size() <= active_request.max_select
 	)
-	modal_confirm.text = "确认选择（%d/%d）" % [
-		selected_choice_ids.size(), active_request.max_select]
+	modal_confirm.text = _choice_confirm_cta(active_request, selected_choice_ids.size())
+	if active_request.can_cancel:
+		modal_cancel.text = _choice_cancel_cta(active_request)
 
 
 func _confirm_choice() -> void:
@@ -1246,6 +1676,8 @@ func _confirm_choice() -> void:
 	_play_click()
 	var request := active_request
 	var confirmed_ids: Array[String] = selected_choice_ids.duplicate()
+	if battle_screen:
+		battle_screen.clear_choice_targets()
 	_close_modal()
 	if game_mode == MODE_NETWORK:
 		active_request = null
@@ -1298,6 +1730,8 @@ func _cancel_choice() -> void:
 		return
 	_play_click()
 	var request := active_request
+	if battle_screen:
+		battle_screen.clear_choice_targets()
 	_close_modal()
 	if game_mode == MODE_NETWORK:
 		active_request = null
@@ -1384,6 +1818,103 @@ func _show_pause_overlay() -> void:
 	, CONNECT_ONE_SHOT)
 
 
+func _show_end_turn_confirmation(action: GameAction) -> void:
+	var remaining := _remaining_turn_action_labels()
+	if remaining.is_empty():
+		_execute_action_now(action)
+		return
+	_play_click()
+	_open_modal(
+		"确认结束回合",
+		"结束回合",
+		"继续操作",
+		false,
+		ModalSpec.battle(Vector2(580, 380)),
+	)
+	var body := Label.new()
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_font_size_override("font_size", 17)
+	body.add_theme_color_override("font_color", DesignTokens.TEXT)
+	body.text = "仍可执行：\n\n• %s\n\n结束回合后将无法执行这些动作。" % "\n• ".join(remaining)
+	modal_body.add_child(body)
+	modal_confirm.pressed.connect(func() -> void:
+		_play_click()
+		_close_modal()
+		_execute_action_now(action)
+	, CONNECT_ONE_SHOT)
+	modal_cancel.pressed.connect(func() -> void:
+		_play_click()
+		_close_modal()
+	, CONNECT_ONE_SHOT)
+
+
+func _remaining_turn_action_labels() -> Array[String]:
+	var result: Array[String] = []
+	for row in _current_action_rows():
+		var action := row.get("action") as GameAction
+		if action == null or action.action in ["END_TURN", "SETUP_DONE"]:
+			continue
+		var label := str({
+			"PLAY_BASIC": "放置基础宝可梦",
+			"EVOLVE": "进化宝可梦",
+			"ATTACH_ENERGY": "附加能量",
+			"PLAY_TRAINER": "使用训练家卡",
+			"USE_ABILITY": "发动特性",
+			"USE_STADIUM": "发动竞技场效果",
+			"RETREAT": "撤退",
+			"DECLARE_ATTACK": "发动攻击",
+			"PROMOTE": "晋升备战宝可梦",
+		}.get(action.action, "执行%s" % action.action))
+		if label not in result:
+			result.append(label)
+	return result
+
+
+func _retreat_energy_card_ids(action: GameAction) -> Array[String]:
+	var result: Array[String] = []
+	var actor := action.actor if action.actor != null else _current_actor()
+	if state == null or actor not in [0, 1]:
+		return result
+	var active := state.get_player(actor).active
+	if active == null:
+		return result
+	for raw_index in action.params.get("energy_indices", []):
+		var index := int(raw_index)
+		if index >= 0 and index < active.energy_card_ids.size():
+			result.append(active.energy_card_ids[index])
+	return result
+
+
+func _toggle_retreat_payment_card(
+	_card_id: String,
+	_hand_index: int,
+	_player: int,
+	_slot: String,
+	payment_position: int,
+	energy_view: CardView,
+	selected_payments: Dictionary,
+	required_count: int,
+) -> void:
+	_play_click()
+	if selected_payments.has(payment_position):
+		selected_payments.erase(payment_position)
+	else:
+		selected_payments[payment_position] = true
+	energy_view.set_selected(selected_payments.has(payment_position))
+	modal_confirm.disabled = selected_payments.size() < required_count
+
+
+func _inspect_retreat_payment_card(
+	inspected_card_id: String,
+	action: GameAction,
+) -> void:
+	_show_card_inspector({
+		"card_id": inspected_card_id,
+		"location": "撤退支付",
+		"player": action.actor,
+	}, _show_retreat_confirmation.bind(action), "返回撤退确认")
+
+
 func _surrender_network_and_show_title() -> void:
 	network_controller.surrender()
 	# Give ENet/WebSocket two process turns to flush the surrender/final state
@@ -1418,6 +1949,7 @@ func _show_help(resume_ai_on_close: bool = false) -> void:
 func _show_card_inspector(
 	context: Dictionary,
 	return_action: Callable = Callable(),
+	return_label: String = "",
 ) -> void:
 	var card_id := str(context.get("card_id", ""))
 	if card_id.is_empty():
@@ -1436,10 +1968,10 @@ func _show_card_inspector(
 	var panel := CARD_INSPECTOR_PANEL_SCENE.instantiate() as CardInspectorPanel
 	modal_body.add_child(panel)
 	panel.configure(catalog, context)
-	panel.card_requested.connect(_show_card_inspector.bind(return_action))
+	panel.card_requested.connect(_show_card_inspector.bind(return_action, return_label))
 	_modal_back_action = return_action
 	if return_action.is_valid():
-		modal_confirm.text = "返回牌组详情"
+		modal_confirm.text = return_label if not return_label.is_empty() else "返回上一界面"
 		modal_confirm.pressed.connect(return_action, CONNECT_ONE_SHOT)
 	else:
 		modal_confirm.pressed.connect(_close_modal, CONNECT_ONE_SHOT)
@@ -1503,6 +2035,7 @@ func _show_deck_card_inspector(context: Dictionary, deck_key: String) -> void:
 	_show_card_inspector(
 		context,
 		_show_deck_details.bind(deck_key, scroll_position),
+		"返回牌组详情",
 	)
 
 
@@ -1629,6 +2162,10 @@ func _open_modal(
 ) -> void:
 	if battle_screen:
 		battle_screen.hide_card_detail()
+	if modal_scroll:
+		var default_scroll_minimum := modal_scroll.custom_minimum_size
+		default_scroll_minimum.y = 420.0
+		modal_scroll.custom_minimum_size = default_scroll_minimum
 	var viewport := get_viewport()
 	var text_owner := viewport.gui_get_focus_owner() if viewport else null
 	if text_owner is LineEdit:
@@ -1737,7 +2274,11 @@ func _select_hand_card(index: int, card_id: String) -> void:
 	_play_click()
 	var key := "hand:%d" % index
 	selected_entity_key = "" if selected_entity_key == key else key
-	_show_card_detail(card_id)
+	if battle_screen:
+		if selected_entity_key.is_empty():
+			battle_screen.hide_card_detail()
+		else:
+			battle_screen.show_card_detail(card_id)
 	_refresh_game()
 
 
@@ -1745,7 +2286,14 @@ func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 	_play_click()
 	var key := "pokemon:%d:%s" % [player_idx, slot]
 	selected_entity_key = "" if selected_entity_key == key else key
-	_show_card_detail(card_id)
+	if battle_screen:
+		if selected_entity_key.is_empty():
+			battle_screen.hide_card_detail()
+		else:
+			battle_screen.show_card_detail(
+				card_id,
+				state.get_player(player_idx).get_pokemon(slot) if state else null,
+			)
 	_refresh_game()
 
 
@@ -1996,9 +2544,32 @@ func _choice_title(request: ChoiceRequest) -> String:
 	return {
 		"coin_flip": "硬币结算",
 		"confirm": "确认操作",
+		"discard_cards": "选择要丢弃的卡",
+		"discard_then_draw": "丢弃手牌后抽牌",
+		"zinnia": "选择要丢弃的手牌",
+		"houb": "选择放回牌库底的卡",
+		"hand_bottom_draw": "整理手牌",
+		"search_move": "搜寻卡牌",
+		"arven": "搜寻物品与宝可梦道具",
+		"look_top": "查看牌库顶",
+		"look_top_attach_energy": "选择基本能量",
+		"clara": "从弃牌区回收卡牌",
+		"shuffle_from_discard": "将卡牌洗回牌库",
 		"distribute_energy": "分配能量",
-		"evolve_skip_stage": "神奇糖果",
-	}.get(request.request_type, "选择")
+		"select_energy_target": "选择附能目标",
+		"select_energy_source": "选择能量来源",
+		"select_attachment": "选择附着能量",
+		"evolve_skip_stage": "选择进化目标",
+		"select_heal_target": "选择回复目标",
+		"damage_target": "选择伤害目标",
+		"bench_damage_target": "选择备战区伤害目标",
+		"place_counters_self_ko": "选择伤害指示物目标",
+		"select_bench": "选择替换上场的宝可梦",
+		"select_opponent_bench": "选择对手替换上场的宝可梦",
+	}.get(
+		request.request_type,
+		"选择卡牌" if _choice_request_has_card_options(request) else "选择",
+	)
 
 
 func _choice_metadata_text(request: ChoiceRequest) -> String:
@@ -2008,7 +2579,74 @@ func _choice_metadata_text(request: ChoiceRequest) -> String:
 		for result in results:
 			labels.append("正面" if bool(result) else "反面")
 		return "结果：" + "、".join(labels)
-	return "请选择 %d–%d 项。" % [request.min_select, request.max_select]
+	if request.max_select == 0:
+		return "本次无需选择，点击继续结算。"
+	if request.request_type == "distribute_energy":
+		var distribution_lines: Array[String] = []
+		if request.min_select == request.max_select:
+			distribution_lines.append("需要分配 %d 张能量。" % request.max_select)
+		elif request.min_select == 0:
+			distribution_lines.append(
+				"最多可分配 %d 张能量，也可以不分配。" % request.max_select
+			)
+		else:
+			distribution_lines.append("请分配 %d 至 %d 张能量。" % [
+				request.min_select,
+				request.max_select,
+			])
+		var distribution_data := _choice_continuation_data()
+		if bool(request.metadata.get(
+			"same_target",
+			distribution_data.get("same_target", false),
+		)):
+			distribution_lines.append("所有能量必须分配到同一目标。")
+		var max_per_target := int(request.metadata.get(
+			"max_per_target",
+			distribution_data.get("max_per_target", 99),
+		))
+		if max_per_target < 99:
+			distribution_lines.append(
+				"每个目标最多可分配 %d 张能量。" % max_per_target
+			)
+		return " ".join(distribution_lines)
+	var unit := _choice_count_unit(request)
+	if request.min_select == request.max_select:
+		return "请选择 %d %s。" % [request.max_select, unit]
+	if request.min_select == 0:
+		return "最多选择 %d %s，也可以不选择。" % [request.max_select, unit]
+	return "请选择 %d 至 %d %s。" % [
+		request.min_select,
+		request.max_select,
+		unit,
+	]
+
+
+func _choice_request_has_card_options(request: ChoiceRequest) -> bool:
+	if request == null:
+		return false
+	for option_value in request.options:
+		if not _choice_option_card_id(Dictionary(option_value)).is_empty():
+			return true
+	return false
+
+
+func _choice_count_unit(request: ChoiceRequest) -> String:
+	if request.request_type == "select_attachment":
+		return "个附着物"
+	if request.request_type in [
+		"distribute_energy",
+		"select_energy_target",
+		"select_energy_source",
+		"evolve_skip_stage",
+		"select_heal_target",
+		"damage_target",
+		"bench_damage_target",
+		"place_counters_self_ko",
+		"select_bench",
+		"select_opponent_bench",
+	]:
+		return "个目标"
+	return "张卡牌" if _choice_request_has_card_options(request) else "项"
 
 
 func _refresh_log() -> void:
@@ -2350,6 +2988,10 @@ func _show_toast(message: String, is_error: bool = false) -> void:
 		toast_label.add_theme_color_override("font_color", Color("#ff9aa4"))
 	else:
 		toast_label.remove_theme_color_override("font_color")
+	_layout_toast()
+	# The battle rail finishes its container layout at the end of the frame.
+	# Re-evaluate once so a toast shown while entering battle uses the final rail rect.
+	call_deferred("_layout_toast")
 	toast_label.visible = true
 	if not FrontendMotion.decorative_motion_enabled():
 		toast_label.modulate.a = 1.0
@@ -2523,14 +3165,7 @@ func _apply_safe_area() -> void:
 			safe_center.offset_top = top
 			safe_center.offset_right = -right
 			safe_center.offset_bottom = -bottom
-	if toast_label:
-		var available_width := maxf(320.0, logical_size.x - left - right)
-		var toast_width := minf(760.0, available_width - 32.0)
-		var side_offset := maxf(16.0, (logical_size.x - toast_width) * 0.5)
-		toast_label.offset_left = side_offset
-		toast_label.offset_right = -side_offset
-		toast_label.offset_top = top + 12
-		toast_label.offset_bottom = top + 72
+	_layout_toast(logical_size, left, top, right, bottom)
 	if (
 		modal_host_controller
 		and modal_layer
@@ -2538,6 +3173,68 @@ func _apply_safe_area() -> void:
 		and modal_host_controller.active_spec
 	):
 		modal_host_controller.update_available_size(_safe_content_size())
+
+
+func _layout_toast(
+	logical_size: Vector2 = Vector2.ZERO,
+	left: int = -1,
+	top: int = -1,
+	right: int = -1,
+	bottom: int = -1,
+) -> void:
+	if toast_label == null:
+		return
+	if logical_size.x <= 0.0 or logical_size.y <= 0.0:
+		logical_size = size
+		if logical_size.x <= 0.0 or logical_size.y <= 0.0:
+			logical_size = get_viewport_rect().size if is_inside_tree() else Vector2(1280, 720)
+	if safe_margin:
+		if left < 0:
+			left = safe_margin.get_theme_constant("margin_left")
+		if top < 0:
+			top = safe_margin.get_theme_constant("margin_top")
+		if right < 0:
+			right = safe_margin.get_theme_constant("margin_right")
+		if bottom < 0:
+			bottom = safe_margin.get_theme_constant("margin_bottom")
+	left = maxi(left, 0)
+	top = maxi(top, 0)
+	right = maxi(right, 0)
+	bottom = maxi(bottom, 0)
+
+	toast_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	if current_screen == SCREEN_GAME and battle_screen and is_instance_valid(battle_screen):
+		var rail := battle_screen.log_panel as Control
+		if rail and rail.size.x >= 180.0 and rail.size.y >= 80.0:
+			var rail_position := rail.global_position - global_position
+			var battle_width := clampf(rail.size.x - 16.0, 200.0, 264.0)
+			var battle_height := _toast_content_height(battle_width, 48.0, 76.0)
+			toast_label.position = rail_position + Vector2(8.0, 8.0)
+			toast_label.size = Vector2(battle_width, minf(battle_height, rail.size.y - 16.0))
+			return
+
+	# Front-end pages have no command rail, so retain a centered safe-area status chip.
+	var available_width := maxf(1.0, logical_size.x - left - right - 32.0)
+	var toast_width := minf(560.0, available_width)
+	var toast_height := _toast_content_height(toast_width, 48.0, 72.0)
+	toast_label.position = Vector2(
+		clampf((logical_size.x - toast_width) * 0.5, float(left + 16), logical_size.x - right - toast_width - 16.0),
+		float(top + 12),
+	)
+	toast_label.size = Vector2(toast_width, toast_height)
+
+
+func _toast_content_height(width: float, minimum: float, maximum: float) -> float:
+	if toast_label == null or toast_label.text.is_empty():
+		return minimum
+	var usable_width := maxf(80.0, width - 28.0)
+	# Chinese glyphs are close to one font-height wide. This estimate keeps short
+	# confirmations on one line and reserves up to three lines for network errors.
+	var characters_per_line := maxi(6, floori(usable_width / 15.0))
+	var line_count := 0
+	for paragraph in toast_label.text.split("\n", true):
+		line_count += maxi(1, ceili(float(paragraph.length()) / float(characters_per_line)))
+	return clampf(16.0 + float(line_count) * 20.0, minimum, maximum)
 
 
 func _notification(what: int) -> void:

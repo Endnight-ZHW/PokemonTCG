@@ -10,6 +10,8 @@ signal card_dropped(
 	target_slot: String,
 )
 signal action_requested(action: GameAction)
+signal drag_started(hand_index: int)
+signal drag_ended
 
 const LONG_PRESS_MSEC := 350
 const DRAG_THRESHOLD := 14.0
@@ -21,8 +23,6 @@ const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 @export var selected_scale := 1.06
 @export var hover_scale := 1.035
 @export var interaction_duration := 0.12
-@export_category("Action Overlay")
-@export_range(1, 5, 1) var maximum_action_buttons := 3
 
 const ENERGY_LABELS := {
 	"Grass": "G",
@@ -69,6 +69,7 @@ var is_hidden_card := false
 var empty := true
 var selected := false
 var targetable := false
+var actionable := false
 var compact := false
 var pokemon: PokemonState
 var catalog: CardCatalog
@@ -80,6 +81,9 @@ var catalog: CardCatalog
 @onready var status_row: HBoxContainer = %StatusRow
 @onready var selection_ring: Panel = %SelectionRing
 @onready var target_glow: Panel = %TargetGlow
+@onready var actionable_marker: Panel = %ActionableMarker
+@onready var interaction_hint: Panel = %InteractionHint
+@onready var interaction_hint_label: Label = %InteractionHintLabel
 @onready var action_overlay: PanelContainer = %ActionOverlay
 @onready var action_buttons: VBoxContainer = %ActionButtons
 @onready var action_hint: Label = %ActionHint
@@ -92,9 +96,12 @@ var _hovered := false
 var _base_position := Vector2.ZERO
 var _has_base_position := false
 var _content_signature := ""
-var _actions_signature := ""
 var _pending_action_rows: Array[Dictionary] = []
 var _pending_action_hint := ""
+var _disabled_reason := ""
+var _legal_target_hint := ""
+var _allowed_drop_hand_indices: Array[int] = []
+var _dragging := false
 var _presentation_hidden := false
 var _presentation_tween: Tween
 var _lift_tween: Tween
@@ -117,6 +124,7 @@ func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	focus_mode = Control.FOCUS_NONE
 	_resolve_scene_nodes()
+	_normalize_interaction_overlay_z_order()
 	_ensure_overlay_nodes()
 	resized.connect(_on_resized)
 	mouse_entered.connect(_on_mouse_entered)
@@ -125,11 +133,15 @@ func _ready() -> void:
 	_refresh()
 	selection_ring.visible = selected
 	target_glow.visible = targetable
+	_refresh_interaction_visuals()
 	_refresh_state_animation()
-	var pending_rows := _pending_action_rows.duplicate()
-	var pending_hint := _pending_action_hint
-	_actions_signature = ""
-	set_actions(pending_rows, pending_hint)
+	_disable_legacy_action_overlay()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAG_END and _dragging:
+		_dragging = false
+		drag_ended.emit()
 
 
 func configure(
@@ -161,6 +173,7 @@ func configure(
 	if next_signature == _content_signature:
 		return
 	_content_signature = next_signature
+	clear_interaction_state()
 	_refresh()
 
 
@@ -177,68 +190,93 @@ func set_table_depth(value: float, near_side: bool = true) -> void:
 
 
 func set_actions(rows: Array[Dictionary], target_hint := "") -> void:
+	# Compatibility shim. Card actions now live in the battle-table popover, never
+	# inside CardView: child controls here would change the card's minimum size.
 	_pending_action_rows = rows.duplicate()
 	_pending_action_hint = target_hint
 	_resolve_scene_nodes()
-	if action_overlay == null or action_buttons == null:
-		return
-	var signature_parts: Array[String] = [target_hint]
-	for row in rows:
-		var action: GameAction = row.get("action")
-		signature_parts.append("%s:%s" % [
-			_action_signature(action),
-			str(row.get("label", action.action if action else "")),
-		])
-	var signature := "|".join(signature_parts)
-	if signature == _actions_signature:
-		action_overlay.visible = selected and (
-			not rows.is_empty() or not target_hint.is_empty()
-		)
-		return
-	_actions_signature = signature
-	for child in action_buttons.get_children():
-		action_buttons.remove_child(child)
-		child.queue_free()
-	action_hint.text = target_hint
-	action_hint.visible = not target_hint.is_empty()
-	var shown := 0
-	for row in rows:
-		if shown >= maximum_action_buttons:
-			break
-		var action: GameAction = row.get("action")
-		if action == null:
-			continue
-		var button := Button.new()
-		button.text = str(row.get("label", action.action))
-		button.focus_mode = Control.FOCUS_NONE
-		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		button.custom_minimum_size.y = 48
-		button.add_theme_font_size_override("font_size", 11)
-		button.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				Color(0.035, 0.075, 0.12, 0.96),
-				7,
-				DesignTokens.CYAN,
-				1,
-				0,
-			),
-		)
-		button.pressed.connect(action_requested.emit.bind(action))
-		action_buttons.add_child(button)
-		shown += 1
-	var overlay_height := 8.0 + float(shown) * 51.0
-	if not target_hint.is_empty():
-		overlay_height += 27.0
-	action_overlay.offset_top = -maxf(40.0, overlay_height)
-	action_overlay.visible = selected and (
-		shown > 0 or not target_hint.is_empty()
-	)
+	_disable_legacy_action_overlay()
 
 
 func configure_target(player: int, target_slot_value: String) -> void:
+	if target_player != player or target_slot != target_slot_value:
+		_legal_target_hint = ""
+		_allowed_drop_hand_indices.clear()
+		set_targetable(false)
 	target_player = player
 	target_slot = target_slot_value
+	_refresh_interaction_visuals()
+
+
+func set_interaction_state(
+	p_actionable: bool,
+	disabled_reason := "",
+	legal_target_hint := "",
+	allowed_hand_indices: Array = [],
+) -> void:
+	# Read-only presentation state supplied by the interaction router. CardView
+	# visualizes legality but never derives or executes a game action itself.
+	actionable = p_actionable
+	_disabled_reason = disabled_reason
+	_legal_target_hint = legal_target_hint
+	_replace_allowed_drop_hand_indices(allowed_hand_indices)
+	set_targetable(
+		not _legal_target_hint.is_empty()
+		or not _allowed_drop_hand_indices.is_empty()
+	)
+	_refresh_interaction_visuals()
+
+
+func set_actionable(value: bool, disabled_reason := "") -> void:
+	actionable = value
+	_disabled_reason = disabled_reason
+	_refresh_interaction_visuals()
+
+
+func is_actionable() -> bool:
+	return actionable
+
+
+func set_disabled_reason(reason: String) -> void:
+	_disabled_reason = reason
+	_refresh_interaction_visuals()
+
+
+func get_disabled_reason() -> String:
+	return _disabled_reason
+
+
+func set_legal_target_hint(text: String) -> void:
+	_legal_target_hint = text
+	set_targetable(
+		not _legal_target_hint.is_empty()
+		or not _allowed_drop_hand_indices.is_empty()
+	)
+
+
+func get_legal_target_hint() -> String:
+	return _legal_target_hint
+
+
+func set_allowed_drop_hand_indices(indices: Array) -> void:
+	_replace_allowed_drop_hand_indices(indices)
+	set_targetable(
+		not _legal_target_hint.is_empty()
+		or not _allowed_drop_hand_indices.is_empty()
+	)
+
+
+func get_allowed_drop_hand_indices() -> Array[int]:
+	return _allowed_drop_hand_indices.duplicate()
+
+
+func clear_interaction_state() -> void:
+	actionable = false
+	_disabled_reason = ""
+	_legal_target_hint = ""
+	_allowed_drop_hand_indices.clear()
+	set_targetable(false)
+	_refresh_interaction_visuals()
 
 
 func set_selected(value: bool) -> void:
@@ -247,15 +285,20 @@ func set_selected(value: bool) -> void:
 		selection_ring.visible = value
 	_refresh_state_animation()
 	_refresh_empty_slot_visibility()
+	_refresh_interaction_visuals()
 	_update_lift()
 
 
 func set_targetable(value: bool) -> void:
 	targetable = value
+	if not value:
+		_legal_target_hint = ""
+		_allowed_drop_hand_indices.clear()
 	if target_glow:
 		target_glow.visible = value
 	_refresh_state_animation()
 	_refresh_empty_slot_visibility()
+	_refresh_interaction_visuals()
 
 
 func set_empty_label(text: String) -> void:
@@ -477,6 +520,8 @@ func _get_drag_data(_at_position: Vector2) -> Variant:
 	preview.texture = image.texture
 	preview.modulate = Color(1, 1, 1, 0.92)
 	set_drag_preview(preview)
+	_dragging = true
+	drag_started.emit(hand_index)
 	return {
 		"kind": "hand_card",
 		"hand_index": hand_index,
@@ -485,11 +530,15 @@ func _get_drag_data(_at_position: Vector2) -> Variant:
 
 
 func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-	return (
-		not target_slot.is_empty()
-		and data is Dictionary
-		and str(data.get("kind", "")) == "hand_card"
-	)
+	if (
+		target_slot.is_empty()
+		or not data is Dictionary
+		or str(data.get("kind", "")) != "hand_card"
+		or not data.has("hand_index")
+	):
+		return false
+	var dropped_hand_index := int(data.get("hand_index", -1))
+	return _allowed_drop_hand_indices.has(dropped_hand_index)
 
 
 func _drop_data(_at_position: Vector2, data: Variant) -> void:
@@ -533,10 +582,6 @@ func _update_lift() -> void:
 	elif _hovered:
 		desired_scale = Vector2.ONE * hover_scale
 		desired_y -= hover_lift
-	if action_overlay:
-		action_overlay.visible = selected and (
-			action_buttons.get_child_count() > 0 or action_hint.visible
-		)
 	if _reduced_motion_enabled():
 		if _lift_tween and _lift_tween.is_valid():
 			_lift_tween.kill()
@@ -619,6 +664,14 @@ func _resolve_scene_nodes() -> void:
 		selection_ring = get_node_or_null("SelectionRing") as Panel
 	if target_glow == null:
 		target_glow = get_node_or_null("TargetGlow") as Panel
+	if actionable_marker == null:
+		actionable_marker = get_node_or_null("ActionableMarker") as Panel
+	if interaction_hint == null:
+		interaction_hint = get_node_or_null("InteractionHint") as Panel
+	if interaction_hint_label == null:
+		interaction_hint_label = get_node_or_null(
+			"InteractionHint/InteractionHintLabel"
+		) as Label
 	if action_overlay == null:
 		action_overlay = get_node_or_null("ActionOverlay") as PanelContainer
 	if action_buttons == null:
@@ -631,6 +684,110 @@ func _resolve_scene_nodes() -> void:
 		) as Label
 	if animation_player == null:
 		animation_player = get_node_or_null("AnimationPlayer") as AnimationPlayer
+
+
+func _replace_allowed_drop_hand_indices(indices: Array) -> void:
+	_allowed_drop_hand_indices.clear()
+	for value in indices:
+		var index := int(value)
+		if index < 0 or _allowed_drop_hand_indices.has(index):
+			continue
+		_allowed_drop_hand_indices.append(index)
+
+
+func _normalize_interaction_overlay_z_order() -> void:
+	# Keep every interaction outline in this CardView's effective Z layer. Scene
+	# order still draws these nodes after Frame on their own card, while a sibling
+	# CardView with a higher Z now covers the lower card and its outline together.
+	for overlay: CanvasItem in [
+		target_glow,
+		selection_ring,
+		actionable_marker,
+		interaction_hint,
+	]:
+		if overlay == null:
+			continue
+		overlay.z_as_relative = true
+		overlay.z_index = 0
+
+
+func _disable_legacy_action_overlay() -> void:
+	if action_buttons:
+		for child in action_buttons.get_children():
+			action_buttons.remove_child(child)
+			child.queue_free()
+		action_buttons.visible = false
+	if action_hint:
+		action_hint.text = ""
+		action_hint.visible = false
+	if action_overlay:
+		action_overlay.visible = false
+		action_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func _refresh_interaction_visuals() -> void:
+	_resolve_scene_nodes()
+	# Only one card-outline state is shown at a time. A selected source stays gold,
+	# a legal target uses the stronger cyan target treatment, and an otherwise
+	# actionable card gets the quiet outer ring below.
+	if selection_ring:
+		selection_ring.visible = selected
+	if target_glow:
+		target_glow.visible = targetable and not selected
+	var can_show_marker := (
+		actionable
+		and not empty
+		and not is_hidden_card
+		and not selected
+		and not targetable
+	)
+	if actionable_marker:
+		actionable_marker.visible = can_show_marker
+		var actionable_style := DesignTokens.panel_style(
+			Color.TRANSPARENT,
+			13,
+			Color(0.36, 0.88, 1.0, 0.98),
+			3,
+			0,
+		)
+		# The marker sits above the whole CardView so it must never paint its
+		# center. Even a very low-alpha fill noticeably veils detailed card art.
+		actionable_style.draw_center = false
+		actionable_style.shadow_color = Color(0.20, 0.78, 1.0, 0.50)
+		actionable_style.shadow_size = 5
+		actionable_style.shadow_offset = Vector2.ZERO
+		actionable_marker.add_theme_stylebox_override("panel", actionable_style)
+
+	var hint_text := ""
+	var hint_color := DesignTokens.GOLD
+	if targetable and not selected:
+		hint_text = (
+			_legal_target_hint
+			if not _legal_target_hint.is_empty()
+			else "可放置"
+			if not _allowed_drop_hand_indices.is_empty()
+			else "可选择"
+		)
+		hint_color = DesignTokens.CYAN
+	elif selected and not actionable and not _disabled_reason.is_empty():
+		hint_text = _disabled_reason
+	if interaction_hint:
+		interaction_hint.visible = not hint_text.is_empty()
+		interaction_hint.tooltip_text = hint_text
+		interaction_hint.accessibility_name = hint_text
+		interaction_hint.add_theme_stylebox_override(
+			"panel",
+			DesignTokens.panel_style(
+				Color(0.018, 0.042, 0.07, 0.94),
+				7,
+				hint_color,
+				1,
+				0,
+			),
+		)
+	if interaction_hint_label:
+		interaction_hint_label.text = hint_text
+		interaction_hint_label.add_theme_color_override("font_color", hint_color)
 
 
 func _ensure_overlay_nodes() -> void:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_table.gd" id="1_battle"]
 [ext_resource type="PackedScene" path="res://ui/card_view.tscn" id="2_card"]
@@ -10,8 +10,8 @@
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_phase_hud.tscn" id="8_hud"]
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_detail_panel.tscn" id="9_detail"]
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_log_panel.tscn" id="10_log"]
-[ext_resource type="PackedScene" path="res://scenes/battle/components/battle_action_panel.tscn" id="11_action"]
 [ext_resource type="Script" path="res://scenes/battle/components/ai_thinking_overlay.gd" id="12_ai_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/battle/components/card_action_popover.tscn" id="13_popover"]
 
 [sub_resource type="StyleBoxFlat" id="Style_board"]
 bg_color = Color(0.031, 0.075, 0.055, 1)
@@ -24,34 +24,6 @@ corner_radius_top_left = 14
 corner_radius_top_right = 14
 corner_radius_bottom_right = 14
 corner_radius_bottom_left = 14
-
-[sub_resource type="StyleBoxFlat" id="Style_hud"]
-bg_color = Color(0.055, 0.1, 0.17, 0.94)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.188, 0.278, 0.392, 1)
-corner_radius_top_left = 14
-corner_radius_top_right = 14
-corner_radius_bottom_right = 14
-corner_radius_bottom_left = 14
-content_margin_left = 12.0
-content_margin_top = 12.0
-content_margin_right = 12.0
-content_margin_bottom = 12.0
-
-[sub_resource type="StyleBoxFlat" id="Style_phase_button"]
-bg_color = Color(0.471, 0.322, 0.106, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.957, 0.784, 0.29, 1)
-corner_radius_top_left = 11
-corner_radius_top_right = 11
-corner_radius_bottom_right = 11
-corner_radius_bottom_left = 11
 
 [sub_resource type="Animation" id="Animation_reset"]
 resource_name = "RESET"
@@ -88,7 +60,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-editor_description = "战斗桌面组合组件。承载牌桌、固定牌位、牌区、手牌、HUD、详情、日志和表现层；BattleScreen 作为兼容门面转发到这里。"
+editor_description = "战斗桌面组合组件。承载牌桌、固定牌位、牌区、手牌、系统按钮、日志、贴卡动作浮层和表现层；BattleScreen 作为兼容门面转发到这里。"
 script = ExtResource("1_battle")
 
 [node name="BattleRoot" type="VBoxContainer" parent="."]
@@ -156,13 +128,57 @@ text = "玩家 2 · 手牌 7 · 牌库 46 · 奖品 6"
 
 [node name="OwnInfo" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
 unique_name_in_owner = true
-offset_left = 18.0
-offset_top = 510.0
-offset_right = 902.0
-offset_bottom = 534.0
-theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
-theme_override_font_sizes/font_size = 13
+offset_left = 150.0
+offset_top = 420.0
+offset_right = 454.0
+offset_bottom = 446.0
+theme_override_colors/font_color = Color(0.86, 0.91, 0.98, 1)
+theme_override_font_sizes/font_size = 12
 text = "玩家 1 · 手牌 7 · 牌库 46 · 奖品 6"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="OwnAllowanceRow" type="HBoxContainer" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
+unique_name_in_owner = true
+z_index = 46
+mouse_filter = 2
+offset_left = 150.0
+offset_top = 450.0
+offset_right = 454.0
+offset_bottom = 476.0
+theme_override_constants/separation = 6
+
+[node name="Energy" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas/OwnAllowanceRow"]
+custom_minimum_size = Vector2(68, 26)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "附能  可用"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Supporter" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas/OwnAllowanceRow"]
+custom_minimum_size = Vector2(68, 26)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "支援  可用"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Retreat" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas/OwnAllowanceRow"]
+custom_minimum_size = Vector2(68, 26)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "撤退  可用"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Stadium" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas/OwnAllowanceRow"]
+custom_minimum_size = Vector2(82, 26)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "竞技场  可用"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="OpponentHandSurface" type="Control" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
 unique_name_in_owner = true
@@ -347,7 +363,7 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="OverlayPanels" type="Control" parent="."]
-z_index = 20
+z_index = 110
 mouse_filter = 2
 layout_mode = 1
 anchors_preset = 15
@@ -355,11 +371,11 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-editor_description = "战斗详情与日志浮层。它们不参与 Body 布局，因此不会压缩牌桌宽度。"
+editor_description = "牌桌根层的瞬态信息浮层，不参与 Board 或右侧 HUD 的容器布局。"
 
 [node name="DetailPanel" parent="OverlayPanels" instance=ExtResource("9_detail")]
 
-[node name="ActionPanel" parent="." instance=ExtResource("11_action")]
+[node name="CardActionPopover" parent="." instance=ExtResource("13_popover")]
 
 [node name="Effects" type="Control" parent="."]
 unique_name_in_owner = true

@@ -1,14 +1,14 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_detail_panel.gd" id="1_detail"]
 
-[sub_resource type="StyleBoxFlat" id="Style_hud"]
-bg_color = Color(0.055, 0.1, 0.17, 0.94)
+[sub_resource type="StyleBoxFlat" id="Style_panel"]
+bg_color = Color(0.025, 0.055, 0.102, 0.985)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.188, 0.278, 0.392, 1)
+border_color = Color(0.22, 0.66, 0.82, 0.92)
 corner_radius_top_left = 14
 corner_radius_top_right = 14
 corner_radius_bottom_right = 14
@@ -17,46 +17,191 @@ content_margin_left = 12.0
 content_margin_top = 12.0
 content_margin_right = 12.0
 content_margin_bottom = 12.0
+shadow_color = Color(0, 0, 0, 0.62)
+shadow_size = 10
+
+[sub_resource type="StyleBoxFlat" id="Style_image"]
+bg_color = Color(0.055, 0.098, 0.16, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.246, 0.361, 0.502, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="Style_close_normal"]
+bg_color = Color(0.072, 0.121, 0.192, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.31, 0.43, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="Style_close_hover"]
+bg_color = Color(0.105, 0.195, 0.286, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.384, 0.843, 1, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="Style_close_pressed"]
+bg_color = Color(0.04, 0.085, 0.145, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.957, 0.784, 0.29, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="Style_close_focus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.957, 0.784, 0.29, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxLine" id="Style_separator"]
+color = Color(0.18, 0.29, 0.41, 0.9)
+thickness = 1
 
 [node name="DetailPanel" type="PanelContainer"]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(320, 220)
+custom_minimum_size = Vector2(372, 312)
 layout_mode = 0
-offset_right = 320.0
-offset_bottom = 220.0
-theme_override_styles/panel = SubResource("Style_hud")
-editor_description = "战斗卡牌详情浮层。大图、标题和卡文结构在这里编辑；位置由 BattleTable 根据牌桌尺寸摆放。"
+offset_right = 372.0
+offset_bottom = 312.0
+mouse_filter = 0
+z_index = 90
+theme_override_styles/panel = SubResource("Style_panel")
+editor_description = "瞬态战斗卡牌预览浮层。根节点使用绝对定位，不应放入 Container；外部只负责摆放与安全区约束。"
 script = ExtResource("1_detail")
 
-[node name="Row" type="HBoxContainer" parent="."]
+[node name="Content" type="VBoxContainer" parent="."]
 layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="Content"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TitleColumn" type="VBoxContainer" parent="Content/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="DetailTitle" type="Label" parent="Content/Header/TitleColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 17
+text = "卡牌预览"
+text_overrun_behavior = 3
+
+[node name="DetailMeta" type="Label" parent="Content/Header/TitleColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.61, 0.72, 0.84, 1)
+theme_override_font_sizes/font_size = 11
+text_overrun_behavior = 3
+
+[node name="CloseButton" type="Button" parent="Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(0.86, 0.91, 0.97, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 25
+theme_override_styles/normal = SubResource("Style_close_normal")
+theme_override_styles/hover = SubResource("Style_close_hover")
+theme_override_styles/pressed = SubResource("Style_close_pressed")
+theme_override_styles/focus = SubResource("Style_close_focus")
+text = "×"
+tooltip_text = "关闭卡牌预览"
+accessibility_name = "关闭卡牌预览"
+
+[node name="HeaderSeparator" type="HSeparator" parent="Content"]
+layout_mode = 2
+theme_override_styles/separator = SubResource("Style_separator")
+
+[node name="Body" type="HBoxContainer" parent="Content"]
+layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="DetailImage" type="TextureRect" parent="Row"]
+[node name="ImageColumn" type="VBoxContainer" parent="Content/Body"]
+custom_minimum_size = Vector2(126, 0)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ImageFrame" type="PanelContainer" parent="Content/Body/ImageColumn"]
+custom_minimum_size = Vector2(126, 176)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Style_image")
+
+[node name="ImageMargin" type="MarginContainer" parent="Content/Body/ImageColumn/ImageFrame"]
+layout_mode = 2
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
+
+[node name="DetailImage" type="TextureRect" parent="Content/Body/ImageColumn/ImageFrame/ImageMargin"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(96, 136)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
 
-[node name="TextColumn" type="VBoxContainer" parent="Row"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="DetailTitle" type="Label" parent="Row/TextColumn"]
+[node name="ContextLabel" type="Label" parent="Content/Body/ImageColumn"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
-theme_override_font_sizes/font_size = 16
-text = "卡牌详情"
-autowrap_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "战斗区"
+horizontal_alignment = 1
+text_overrun_behavior = 3
 
-[node name="DetailText" type="RichTextLabel" parent="Row/TextColumn"]
+[node name="DetailText" type="RichTextLabel" parent="Content/Body"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(212, 0)
 layout_mode = 2
-focus_mode = 0
+size_flags_horizontal = 3
 size_flags_vertical = 3
+focus_mode = 0
+mouse_filter = 0
+theme_override_colors/default_color = Color(0.86, 0.91, 0.97, 1)
+theme_override_colors/font_selected_color = Color(0.035, 0.07, 0.12, 1)
+theme_override_colors/selection_color = Color(0.384, 0.843, 1, 0.8)
 theme_override_font_sizes/normal_font_size = 12
 bbcode_enabled = true
-text = "点击或长按卡牌查看详情。"
+selection_enabled = false
+scroll_active = true
+scroll_following = false
+text = ""
+
+[connection signal="pressed" from="Content/Header/CloseButton" to="." method="_on_close_pressed"]

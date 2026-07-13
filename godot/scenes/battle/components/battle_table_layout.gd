@@ -7,6 +7,10 @@ extends RefCounted
 
 static func board_metrics(width: float, height: float, config: Dictionary) -> Dictionary:
 	var layout_scale := clampf(minf(width / 1500.0, height / 840.0), 0.76, 1.08)
+	# Keep the central composition readable on ultrawide displays instead of
+	# pushing zones to opposite edges of the monitor.
+	var layout_width := minf(width, 1600.0)
+	var layout_origin_x := maxf(0.0, (width - layout_width) * 0.5)
 	var battle_card_boost := 1.32
 	var active_size: Vector2 = config["active_card_size"] * layout_scale * battle_card_boost
 	var bench_size: Vector2 = config["bench_card_size"] * layout_scale * battle_card_boost
@@ -19,13 +23,13 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 	var top_margin := maxf(10.0, float(config["table_top_margin"]) * layout_scale)
 	var bottom_margin := maxf(8.0, float(config["table_bottom_margin"]) * layout_scale)
 	var zone_gap := 12.0 * layout_scale
-	var left_zone_x := side_margin
-	var side_zone_x := width - zone_visual_size.x - side_margin
+	var left_zone_x := layout_origin_x + side_margin
+	var side_zone_x := layout_origin_x + layout_width - zone_visual_size.x - side_margin
 	var field_left := left_zone_x + zone_visual_size.x + 36.0 * layout_scale
 	var field_right := side_zone_x - 36.0 * layout_scale
 	if field_right <= field_left + 360.0 * layout_scale:
-		field_left = side_margin
-		field_right = width - side_margin
+		field_left = layout_origin_x + side_margin
+		field_right = layout_origin_x + layout_width - side_margin
 	var table_width := maxf(300.0, field_right - field_left)
 	var center_x := (field_left + field_right) * 0.5
 	var top_hand_height := hidden_hand_size.y + 20.0 * layout_scale
@@ -35,7 +39,11 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 		minf(table_width, 500.0 * layout_scale),
 	)
 	var own_hand_height := own_hand_size.y + 22.0 * layout_scale
-	var own_hand_peek := clampf(own_hand_height * 0.72, 118.0 * layout_scale, own_hand_height)
+	var own_hand_peek := clampf(
+		own_hand_height * 0.72,
+		118.0 * layout_scale,
+		own_hand_height,
+	)
 	var own_hand_y := (
 		height
 		- own_hand_peek
@@ -51,7 +59,6 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 	top_hand_height = hidden_hand_visible_height + 10.0 * layout_scale
 	var opponent_hand_y := top_margin - hidden_hand_size.y * 0.72
 	var opponent_info_y := top_margin + hidden_hand_visible_height + 3.0
-	var own_info_y := own_hand_y - 28.0
 	return {
 		"width": width,
 		"height": height,
@@ -79,9 +86,10 @@ static func board_metrics(width: float, height: float, config: Dictionary) -> Di
 		"own_hand_y": own_hand_y,
 		"hand_width": hand_width,
 		"opponent_info_y": opponent_info_y,
-		"own_info_y": own_info_y,
 		"arena_top": opponent_info_y + 8.0,
-		"arena_bottom": own_hand_y - 6.0,
+		# The allowance/status group is anchored beside the active Pokemon, so
+		# this only keeps a small breathing gap above the original hand peek.
+		"arena_bottom": own_hand_y - 8.0 * layout_scale,
 	}
 
 
@@ -210,6 +218,41 @@ static func zone_plan(metrics: Dictionary) -> Dictionary:
 	}
 
 
+static func own_status_plan(
+	metrics: Dictionary,
+	own_active_rect: Rect2,
+	status_size: Vector2 = Vector2(304.0, 56.0),
+) -> Dictionary:
+	var layout_scale := float(metrics["layout_scale"])
+	var active_gap := clampf(16.0 * layout_scale, 12.0, 18.0)
+	var left_zone_clearance := (
+		float(metrics["left_zone_x"])
+		+ Vector2(metrics["zone_size"]).x * 1.08
+		+ clampf(12.0 * layout_scale, 9.0, 14.0)
+	)
+	# Anchor the right edge to the active slot. Supported landscape sizes leave
+	# this position beyond the left prize/Stadium column; retain the clearance
+	# calculation here so the invariant remains explicit and easy to validate.
+	var status_x := own_active_rect.position.x - active_gap - status_size.x
+	var clears_left_column := status_x >= left_zone_clearance
+	var preferred_y := own_active_rect.get_center().y - status_size.y * 0.5
+	var status_y := clampf(
+		preferred_y,
+		float(metrics["arena_top"]) + 4.0 * layout_scale,
+		float(metrics["own_hand_y"]) - status_size.y - 8.0 * layout_scale,
+	)
+	var group_rect := Rect2(Vector2(status_x, status_y), status_size)
+	return {
+		"rect": group_rect,
+		"clears_left_column": clears_left_column,
+		"info_rect": Rect2(group_rect.position, Vector2(status_size.x, 26.0)),
+		"allowance_rect": Rect2(
+			group_rect.position + Vector2(0.0, 30.0),
+			Vector2(status_size.x, 26.0),
+		),
+	}
+
+
 static func own_hand_plan(
 	visible_count: int,
 	available_width: float,
@@ -278,46 +321,6 @@ static func opponent_hand_plan(
 			5,
 		),
 	}
-
-
-static func detail_drawer_rect(
-	board_rect: Rect2,
-	drawer_width: float,
-	default_height: float,
-	discard_rect: Rect2,
-	own_discard_rect: Rect2,
-	own_deck_rect: Rect2,
-) -> Rect2:
-	var margin := 14.0
-	var gap := 18.0
-	var detail_gap := 26.0
-	var minimum_height := 120.0
-	var right_edge := (
-		discard_rect.end.x if discard_rect.size != Vector2.ZERO else board_rect.end.x - margin
-	)
-	var x_value := clampf(
-		right_edge - drawer_width,
-		board_rect.position.x + margin,
-		board_rect.end.x - drawer_width - margin,
-	)
-	var preferred_y := (
-		discard_rect.end.y + detail_gap
-		if discard_rect.size != Vector2.ZERO
-		else board_rect.position.y + margin
-	)
-	var lower_zone_top := board_rect.end.y - margin
-	if own_discard_rect.size != Vector2.ZERO:
-		lower_zone_top = minf(lower_zone_top, own_discard_rect.position.y - gap)
-	if own_deck_rect.size != Vector2.ZERO:
-		lower_zone_top = minf(lower_zone_top, own_deck_rect.position.y - gap)
-	var max_height := maxf(minimum_height, lower_zone_top - preferred_y)
-	var height_value := minf(default_height, max_height)
-	var y_value := clampf(
-		preferred_y,
-		board_rect.position.y + margin,
-		maxf(board_rect.position.y + margin, lower_zone_top - height_value),
-	)
-	return Rect2(Vector2(x_value, y_value), Vector2(drawer_width, height_value))
 
 
 static func perspective_card_rect(

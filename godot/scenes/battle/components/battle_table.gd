@@ -14,8 +14,10 @@ signal card_drop_requested(
 signal detail_requested(card_id: String)
 signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
+signal choice_target_selected(option_id: String)
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
+const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 const MIN_FLYING_CARD_DURATION := 0.06
 const FLYING_CARD_FINISH_PAD := 0.0
 const MAX_ACTIVE_FLYERS_HIGH := 12
@@ -70,10 +72,12 @@ var board_canvas: Control
 var playmat: BattlePlaymat
 var header: BattleHeader
 var ai_thinking_overlay: AIThinkingOverlay
-var hud: VBoxContainer
+var hud: BattlePhaseHud
 var turn_label: Label
 var opponent_info: Label
 var own_info: Label
+var own_allowance_row: HBoxContainer
+var own_allowance_labels: Dictionary = {}
 var phase_labels: Dictionary = {}
 var phase_advance_button: Button
 var all_actions_button: Button
@@ -88,6 +92,10 @@ var detail_text: RichTextLabel
 var detail_close_button: Button
 var log_panel: BattleLogPanel
 var log_label: RichTextLabel
+var action_popover: CardActionPopover
+var interaction_router := CardInteractionRouter.new()
+var choice_target_options: Dictionary = {}
+var choice_target_prompt := ""
 var opponent_hand_surface: Control
 var opponent_hand_count_badge: Label
 var hand_scroll: ScrollContainer
@@ -105,7 +113,16 @@ var hand_views: Array[CardView] = []
 var opponent_hand_views: Array[CardView] = []
 var zones: Dictionary = {}
 var slot_views: Dictionary = {}
-var _all_actions_expanded := false
+var _selected_action_group_key := ""
+var _last_selected_source_key := ""
+var _popover_dismissed_source_key := ""
+var _popover_source_key := ""
+var _forced_popover_rows: Array[Dictionary] = []
+var _forced_popover_source_key := ""
+var _drag_source_key := ""
+var _last_action_rows_signature := ""
+var _last_selected_entity_identity := ""
+var _detail_content_signature := ""
 var _board_origin := Vector2.ZERO
 var _initialized := false
 var _active_flyers: Array[Control] = []
@@ -165,38 +182,36 @@ func _resolve_scene_nodes() -> void:
 	ai_thinking_overlay = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/AIThinkingOverlay"
 	) as AIThinkingOverlay
-	hud = get_node("BattleRoot/Body/BattleHUD") as VBoxContainer
+	hud = get_node("BattleRoot/Body/BattleHUD") as BattlePhaseHud
 	turn_label = get_node("BattleRoot/Header/TurnLabel") as Label
 	opponent_info = get_node(
 		"BattleRoot/Body/BoardPanel/BoardCanvas/OpponentInfo"
 	) as Label
 	own_info = get_node("BattleRoot/Body/BoardPanel/BoardCanvas/OwnInfo") as Label
+	own_allowance_row = get_node(
+		"BattleRoot/Body/BoardPanel/BoardCanvas/OwnAllowanceRow"
+	) as HBoxContainer
+	own_allowance_labels = {
+		"energy": own_allowance_row.get_node("Energy") as Label,
+		"supporter": own_allowance_row.get_node("Supporter") as Label,
+		"retreat": own_allowance_row.get_node("Retreat") as Label,
+		"stadium": own_allowance_row.get_node("Stadium") as Label,
+	}
 	phase_advance_button = get_node(
 		"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseAdvanceButton"
 	) as Button
-	all_actions_button = get_node(
-		"BattleRoot/Body/BattleHUD/PhasePanel/Content/AllActionsButton"
-	) as Button
-	action_panel = get_node("ActionPanel") as BattleActionPanel
-	action_list = get_node(
-		"ActionPanel/Margin/Content/AllActionsScroll/ActionList"
-	) as VBoxContainer
-	all_actions_scroll = get_node(
-		"ActionPanel/Margin/Content/AllActionsScroll"
-	) as ScrollContainer
-	all_actions_toggle = get_node(
-		"ActionPanel/Margin/Content/Heading/AllActionsToggle"
-	) as Button
+	all_actions_button = null
+	action_panel = null
+	action_list = null
+	all_actions_scroll = null
+	all_actions_toggle = null
 	detail_panel = get_node("OverlayPanels/DetailPanel") as PanelContainer
-	detail_image = get_node(
-		"OverlayPanels/DetailPanel/Row/DetailImage"
-	) as TextureRect
-	detail_title = get_node(
-		"OverlayPanels/DetailPanel/Row/TextColumn/DetailTitle"
-	) as Label
-	detail_text = get_node(
-		"OverlayPanels/DetailPanel/Row/TextColumn/DetailText"
-	) as RichTextLabel
+	var detail_component := detail_panel as BattleDetailPanel
+	detail_image = detail_component.detail_image if detail_component else null
+	detail_title = detail_component.detail_title if detail_component else null
+	detail_text = detail_component.detail_text if detail_component else null
+	detail_close_button = detail_component.close_button if detail_component else null
+	action_popover = get_node("CardActionPopover") as CardActionPopover
 	log_panel = get_node("BattleRoot/Body/BattleHUD/LogPanel") as BattleLogPanel
 	log_label = get_node(
 		"BattleRoot/Body/BattleHUD/LogPanel/Content/LogLabel"
@@ -237,6 +252,25 @@ func update_view(
 	view_player = p_view_player
 	action_rows = p_action_rows.duplicate()
 	selected_entity_key = p_selected_entity_key
+	var next_action_rows_signature := _action_rows_semantic_signature(action_rows)
+	var next_selected_entity_identity := _selected_entity_identity()
+	var interaction_context_changed := (
+		selected_entity_key != _last_selected_source_key
+		or next_action_rows_signature != _last_action_rows_signature
+		or next_selected_entity_identity != _last_selected_entity_identity
+	)
+	if interaction_context_changed:
+		_selected_action_group_key = ""
+		_popover_dismissed_source_key = ""
+		_forced_popover_rows.clear()
+		_forced_popover_source_key = ""
+		_popover_source_key = ""
+		if action_popover and action_popover.visible:
+			action_popover.dismiss(false)
+	_last_selected_source_key = selected_entity_key
+	_last_action_rows_signature = next_action_rows_signature
+	_last_selected_entity_identity = next_selected_entity_identity
+	interaction_router.rebuild(_routed_action_rows(), selected_entity_key)
 	_update_ai_thinking_clock(p_ai_thinking)
 	ai_thinking = p_ai_thinking
 	game_mode = p_game_mode
@@ -250,6 +284,50 @@ func update_view(
 	_refresh_log()
 	_refresh_target_hints()
 	_refresh_ai_thinking_indicator()
+	if selected_entity_key.is_empty():
+		hide_card_detail()
+	elif detail_panel and detail_panel.visible:
+		_sync_visible_card_detail()
+		if action_popover and action_popover.visible:
+			_reposition_action_popover()
+
+
+func set_choice_targets(options_by_source: Dictionary, prompt: String) -> void:
+	choice_target_options = options_by_source.duplicate()
+	choice_target_prompt = prompt
+	if _initialized:
+		_refresh_target_hints()
+		_refresh_header()
+
+
+func clear_choice_targets() -> void:
+	choice_target_options.clear()
+	choice_target_prompt = ""
+	if _initialized:
+		_refresh_target_hints()
+		_refresh_header()
+
+
+func visible_card_source_keys() -> Array[String]:
+	var result: Array[String] = []
+	for hand_view in hand_views:
+		if hand_view and hand_view.visible and not hand_view.card_id.is_empty():
+			result.append(CardInteractionRouter.hand_key(hand_view.hand_index))
+	for slot_key_value in slot_views.keys():
+		var slot_key := str(slot_key_value)
+		var slot_view := slot_views[slot_key] as CardView
+		if slot_view and slot_view.visible and not slot_view.card_id.is_empty():
+			result.append("pokemon:%s" % slot_key)
+	var stadium := zones.get("stadium") as ZoneView
+	if stadium and stadium.visible and not stadium.card_id.is_empty():
+		result.append("stadium")
+	return result
+
+
+func all_card_actions_reachable_from_visible_cards() -> bool:
+	return interaction_router.all_card_actions_reachable_from(
+		visible_card_source_keys(),
+	)
 
 
 func _update_ai_thinking_clock(next_ai_thinking: bool) -> void:
@@ -347,65 +425,111 @@ func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
 	if card_id.is_empty():
 		hide_card_detail()
 		return
-	if _all_actions_expanded:
-		_collapse_all_actions()
-	if detail_panel:
-		detail_panel.visible = true
-	if detail_close_button:
-		detail_close_button.visible = true
-	var card := CardDatabase.get_card(card_id)
-	detail_image.texture = CardTextureCache.get_texture(str(card.get("image_path", "")))
-	detail_title.text = str(card.get("name", card_id))
-	var lines: Array[String] = []
-	var supertype := str(card.get("supertype", ""))
-	var subtypes: Array = card.get("subtypes", [])
-	lines.append("[color=#9eb0ca]%s%s[/color]" % [
-		supertype,
-		" · %s" % "/".join(subtypes) if not subtypes.is_empty() else "",
-	])
-	if int(card.get("hp", 0)) > 0:
-		var hp_text := "HP %d" % int(card.get("hp", 0))
-		if pokemon:
-			hp_text = "HP %d/%d" % [
-				pokemon.current_hp(catalog),
-				int(card.get("hp", 0)),
-			]
-		lines.append(hp_text)
-	for ability_value in card.get("abilities", []):
-		var ability: Dictionary = ability_value
-		lines.append("[color=#62d7ff]特性 · %s[/color]\n%s" % [
-			ability.get("name", ""),
-			ability.get("text", ""),
-		])
-	for attack_value in card.get("attacks", []):
-		var attack: Dictionary = attack_value
-		var damage_label := str(attack.get("damage_text", ""))
-		if damage_label.is_empty() and int(attack.get("damage", 0)) > 0:
-			damage_label = str(attack.get("damage", 0))
-		lines.append("[color=#f4c84a]%s · %s[/color]\n%s" % [
-			attack.get("name", ""),
-			damage_label,
-			attack.get("text", ""),
-		])
-	if not str(card.get("trainer_text", "")).is_empty():
-		lines.append(str(card.get("trainer_text", "")))
-	for rule in card.get("rules", []):
-		if not str(rule).is_empty() and str(rule) not in lines:
-			lines.append(str(rule))
-	detail_text.text = "\n\n".join(lines)
+	var component := detail_panel as BattleDetailPanel
+	if component == null:
+		return
+	component.show_card(card_id, pokemon, catalog)
+	_detail_content_signature = (
+		_detail_signature(card_id, pokemon)
+		if component.is_showing_card()
+		else ""
+	)
+	detail_image = component.detail_image
+	detail_title = component.detail_title
+	detail_text = component.detail_text
+	detail_close_button = component.close_button
+	_layout_detail_panel()
+	if action_popover and action_popover.visible:
+		_reposition_action_popover()
 
 
 func hide_card_detail() -> void:
-	if detail_panel:
+	_detail_content_signature = ""
+	var component := detail_panel as BattleDetailPanel
+	if component:
+		component.hide_card()
+	elif detail_panel:
 		detail_panel.visible = false
-	if detail_close_button:
-		detail_close_button.visible = false
-	if detail_image:
-		detail_image.texture = null
-	if detail_title:
-		detail_title.text = "选择一张卡牌"
-	if detail_text:
-		detail_text.text = "点击或长按卡牌查看详情。"
+	if action_popover and action_popover.visible:
+		_reposition_action_popover()
+
+
+func _on_detail_close_requested() -> void:
+	_detail_content_signature = ""
+	# BattleDetailPanel has already cleared itself. Reflow the action popover into
+	# the released area while preserving the selected source card.
+	if action_popover and action_popover.visible:
+		_reposition_action_popover()
+
+
+func _sync_visible_card_detail() -> void:
+	var component := detail_panel as BattleDetailPanel
+	if component == null or not component.visible or state_ref == null:
+		return
+	var card_id := ""
+	var pokemon: PokemonState
+	if selected_entity_key.begins_with("hand:"):
+		var hand_index := selected_entity_key.trim_prefix("hand:").to_int()
+		var hand := state_ref.get_player(view_player).hand
+		if hand_index >= 0 and hand_index < hand.size():
+			card_id = str(hand[hand_index])
+	elif selected_entity_key.begins_with("pokemon:"):
+		var parts := selected_entity_key.split(":")
+		if parts.size() >= 3:
+			var player := int(parts[1])
+			if player in [0, 1]:
+				pokemon = state_ref.get_player(player).get_pokemon(str(parts[2]))
+				if pokemon:
+					card_id = pokemon.card_id
+	elif selected_entity_key == "stadium":
+		card_id = state_ref.stadium_card_id
+	if card_id.is_empty():
+		hide_card_detail()
+		return
+	var next_signature := _detail_signature(card_id, pokemon)
+	if (
+		component.current_card_id != card_id
+		or next_signature != _detail_content_signature
+	):
+		component.show_card(card_id, pokemon, catalog)
+		_detail_content_signature = (
+			next_signature if component.is_showing_card() else ""
+		)
+	_layout_detail_panel()
+
+
+func _selected_entity_identity() -> String:
+	if state_ref == null or selected_entity_key.is_empty():
+		return ""
+	if selected_entity_key.begins_with("hand:"):
+		var hand_index := selected_entity_key.trim_prefix("hand:").to_int()
+		var hand := state_ref.get_player(view_player).hand
+		return "hand:%d:%d:%s" % [
+			view_player,
+			hand_index,
+			str(hand[hand_index]) if hand_index >= 0 and hand_index < hand.size() else "",
+		]
+	if selected_entity_key.begins_with("pokemon:"):
+		var parts := selected_entity_key.split(":")
+		if parts.size() >= 3:
+			var player := int(parts[1])
+			var slot_name := str(parts[2])
+			if player in [0, 1]:
+				var pokemon := state_ref.get_player(player).get_pokemon(slot_name)
+				return "%s:%s" % [
+					selected_entity_key,
+					pokemon.card_id if pokemon else "",
+				]
+	if selected_entity_key == "stadium":
+		return "stadium:%s" % state_ref.stadium_card_id
+	return selected_entity_key
+
+
+func _detail_signature(card_id: String, pokemon: PokemonState) -> String:
+	return "%s|%s" % [
+		card_id,
+		_stable_value_signature(pokemon.to_dict()) if pokemon else "",
+	]
 
 
 func get_slot_view(player: int, slot: String) -> CardView:
@@ -566,10 +690,11 @@ func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 
 func _bind_scene_nodes() -> void:
 	hud.custom_minimum_size.x = hud_width
-	if detail_panel:
-		detail_panel.visible = false
-		detail_panel.z_index = 34
-		_ensure_detail_close_button()
+	var detail_component := detail_panel as BattleDetailPanel
+	if detail_component:
+		detail_component.hide_card()
+		if not detail_component.close_requested.is_connected(_on_detail_close_requested):
+			detail_component.close_requested.connect(_on_detail_close_requested)
 	if log_panel:
 		log_panel.z_index = 0
 		log_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -593,20 +718,26 @@ func _bind_scene_nodes() -> void:
 		"font_color",
 		DesignTokens.BG_DEEP,
 	)
-	phase_labels = {
-		"DRAW": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/DrawPhase"
+	own_info.z_index = 46
+	own_info.add_theme_stylebox_override(
+		"normal",
+		DesignTokens.panel_style(
+			Color(0.025, 0.060, 0.105, 0.94),
+			7,
+			Color(0.28, 0.53, 0.78, 0.72),
+			1,
+			7,
 		),
-		"MAIN": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/MainPhase"
-		),
-		"ATTACK": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/AttackPhase"
-		),
-		"POKEMON_CHECKUP": get_node(
-			"BattleRoot/Body/BattleHUD/PhasePanel/Content/PhaseRow/CheckupPhase"
-		),
-	}
+	)
+	for allowance_label_value in own_allowance_labels.values():
+		var allowance_label := allowance_label_value as Label
+		allowance_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		allowance_label.add_theme_stylebox_override(
+			"normal",
+			_allowance_chip_style(false),
+		)
+		allowance_label.add_theme_color_override("font_color", DesignTokens.GREEN)
+	phase_labels.clear()
 	var board_path := "BattleRoot/Body/BoardPanel/BoardCanvas/"
 	opponent_bench.assign([
 		get_node(board_path + "OpponentBench0"),
@@ -643,15 +774,15 @@ func _bind_scene_nodes() -> void:
 		var zone := zone_value as ZoneView
 		zone.activated.connect(_on_detail_requested)
 		zone.inspected.connect(_on_zone_inspected)
+		zone.detail_requested.connect(_on_detail_requested)
 		zone.action_requested.connect(action_requested.emit)
-	(get_node("BattleRoot/Header/MenuButton") as Button).pressed.connect(_on_menu_pressed)
-	phase_advance_button.pressed.connect(_on_phase_advance_pressed)
-	all_actions_button.pressed.connect(_toggle_all_actions)
-	all_actions_toggle.pressed.connect(_collapse_all_actions)
-	if action_panel:
-		action_panel.z_index = 35
-		action_panel.action_requested.connect(action_requested.emit)
-	show_card_detail("")
+		zone.card_dropped.connect(_on_card_dropped)
+	header.menu_requested.connect(_on_menu_pressed)
+	hud.phase_action_requested.connect(action_requested.emit)
+	if action_popover:
+		action_popover.action_chosen.connect(_on_popover_action_chosen)
+		action_popover.dismissed.connect(_on_popover_dismissed)
+		action_popover.outside_pressed.connect(_on_popover_outside_pressed)
 	director.sequence_started.connect(func(_count: int) -> void:
 		input_blocker.visible = not AppSettings.reduced_motion
 	)
@@ -670,9 +801,11 @@ func _bind_scene_nodes() -> void:
 func _bind_card_view(view: CardView) -> void:
 	view.set_catalog(catalog)
 	view.activated.connect(_on_card_activated)
-	view.detail_requested.connect(_on_detail_requested)
+	view.detail_requested.connect(_on_card_view_detail_requested.bind(view))
 	view.card_dropped.connect(_on_card_dropped)
 	view.action_requested.connect(action_requested.emit)
+	view.drag_started.connect(_on_hand_drag_started)
+	view.drag_ended.connect(_on_hand_drag_ended)
 
 
 func _on_phase_advance_pressed() -> void:
@@ -683,7 +816,12 @@ func _on_phase_advance_pressed() -> void:
 
 func _refresh_header() -> void:
 	if header:
-		header.update_header(state_ref, view_player, ai_thinking)
+		header.update_header(
+			state_ref,
+			view_player,
+			ai_thinking,
+			_current_task_hint(),
+		)
 	else:
 		var display_actor := view_player if state_ref.phase == "SETUP" else state_ref.active_player_idx
 		turn_label.text = "第 %d 回合 · %s · 玩家 %d" % [
@@ -691,40 +829,24 @@ func _refresh_header() -> void:
 			_phase_name(state_ref.phase),
 			display_actor + 1,
 		]
-	for phase in phase_labels:
-		var active := str(phase) == state_ref.phase
-		var label: Label = phase_labels[phase]
-		label.add_theme_color_override(
-			"font_color",
-			DesignTokens.BG_DEEP if active else DesignTokens.TEXT_MUTED,
-		)
-		label.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				DesignTokens.GOLD if active else Color("#1b293c"),
-				8,
-				DesignTokens.GOLD if active else DesignTokens.BORDER_SOFT,
-				1,
-				0,
-			),
-		)
 
 
 func _refresh_field() -> void:
 	var own := state_ref.get_player(view_player)
 	var opponent := state_ref.get_player(1 - view_player)
-	opponent_info.text = "%s  ·  手牌 %d  ·  牌库 %d  ·  奖品 %d" % [
+	opponent_info.text = "%s　手牌 %d　牌库 %d　奖品 %d" % [
 		opponent.name,
 		opponent.hand.size(),
 		opponent.deck.size(),
 		opponent.prizes.size(),
 	]
-	own_info.text = "%s  ·  手牌 %d  ·  牌库 %d  ·  奖品 %d" % [
+	own_info.text = "%s　手牌 %d　牌库 %d　奖品 %d" % [
 		own.name,
 		own.hand.size(),
 		own.deck.size(),
 		own.prizes.size(),
 	]
+	_refresh_turn_allowance_chips(own)
 	_configure_slot(opponent_active, opponent.active, 1 - view_player, "active")
 	_configure_slot(own_active, own.active, view_player, "active")
 	for index in range(5):
@@ -842,98 +964,36 @@ func _refresh_opponent_hand() -> void:
 
 
 func _refresh_actions() -> void:
-	var phase_row: Dictionary = {}
-	var hand_rows: Dictionary = {}
-	var slot_rows: Dictionary = {}
-	var stadium_row: Dictionary = {}
-	for row in action_rows:
-		var action: GameAction = row.get("action")
-		if action == null:
-			continue
-		if action.action in ["END_TURN", "SETUP_DONE"]:
-			phase_row = row
-			continue
-		if action.action == "USE_STADIUM":
-			stadium_row = row
-			continue
-		var hand_index := int(action.params.get("hand_idx", -1))
-		if hand_index >= 0:
-			if not hand_rows.has(hand_index):
-				hand_rows[hand_index] = []
-			(hand_rows[hand_index] as Array).append(row)
-			continue
-		var endpoint := action.source if action.source else action.target
-		if endpoint and not endpoint.slot.is_empty():
-			var key := "%d:%s" % [endpoint.player, endpoint.slot]
-			if not slot_rows.has(key):
-				slot_rows[key] = []
-			(slot_rows[key] as Array).append(row)
+	interaction_router.rebuild(_routed_action_rows(), selected_entity_key)
+	if hud:
+		hud.update_phase(state_ref, view_player, ai_thinking, game_mode, action_rows)
+	phase_advance_button = hud.phase_advance_button if hud else null
 
-	var phase_action: GameAction = phase_row.get("action") as GameAction
-	phase_advance_button.set_meta("action", phase_action)
-	phase_advance_button.disabled = phase_action == null or ai_thinking
-	phase_advance_button.text = (
-		"完成准备"
-		if phase_action and phase_action.action == "SETUP_DONE"
-		else "进入下一阶段"
-	)
-	phase_advance_button.tooltip_text = (
-		""
-		if phase_action
-		else "等待对手行动"
-		if game_mode == "network"
-		else "请先完成当前卡牌操作"
-	)
-
-	for view in hand_views:
-		var rows: Array[Dictionary] = []
-		rows.assign(hand_rows.get(view.hand_index, []))
-		var direct: Array[Dictionary] = []
-		var targeted := false
-		for row in rows:
-			var action: GameAction = row.get("action")
-			if action and action.target and not action.target.slot.is_empty():
-				targeted = true
-			else:
-				direct.append(_compact_card_action_row(row))
-		view.set_actions(
-			direct,
-			"点击高亮牌位" if targeted and view.selected else "",
+	# CardView only receives read-only legality state. It never creates action
+	# buttons and never derives rules from card data.
+	for hand_view in hand_views:
+		if not hand_view.visible:
+			continue
+		var source_key := CardInteractionRouter.hand_key(hand_view.hand_index)
+		var source_actionable := interaction_router.has_source(source_key)
+		hand_view.set_interaction_state(
+			source_actionable,
+			_disabled_reason_for_source(source_key) if hand_view.selected and not source_actionable else "",
 		)
-	for key in slot_views:
-		var view := slot_views[key] as CardView
-		var rows: Array[Dictionary] = []
-		for row in slot_rows.get(key, []):
-			rows.append(_compact_card_action_row(row))
-		view.set_actions(rows)
-	(zones["stadium"] as ZoneView).set_action(
-		_compact_card_action_row(stadium_row) if not stadium_row.is_empty() else {}
-	)
-	_refresh_all_actions_panel()
-
-
-func _refresh_all_actions_panel() -> void:
-	var has_actions := not action_rows.is_empty()
-	if not has_actions:
-		_all_actions_expanded = false
-	if all_actions_button:
-		all_actions_button.disabled = not has_actions
-		all_actions_button.text = "隐藏动作" if _all_actions_expanded else "全部动作"
-		all_actions_button.tooltip_text = (
-			"收起完整动作列表"
-			if _all_actions_expanded
-			else "查看全部合法动作"
-			if has_actions
-			else "当前没有可执行动作"
+	for slot_key_value in slot_views.keys():
+		var slot_key := str(slot_key_value)
+		var slot_view := slot_views[slot_key] as CardView
+		var source_key := "pokemon:%s" % slot_key
+		var source_actionable := interaction_router.has_source(source_key)
+		slot_view.set_interaction_state(
+			source_actionable,
+			_disabled_reason_for_source(source_key) if slot_view.selected and not source_actionable else "",
 		)
-	if action_panel:
-		action_panel.update_actions(
-			action_rows,
-			selected_entity_key,
-			ai_thinking,
-			game_mode,
-			_all_actions_expanded,
-		)
+
+	var stadium_zone := zones["stadium"] as ZoneView
+	stadium_zone.set_action({})
+	stadium_zone.set_actionable(interaction_router.has_source("stadium"))
+	_refresh_action_popover()
 
 
 func _refresh_log() -> void:
@@ -949,27 +1009,69 @@ func _refresh_log() -> void:
 
 
 func _refresh_target_hints() -> void:
-	for view_value in slot_views.values():
-		(view_value as CardView).set_targetable(false)
-	if selected_entity_key.is_empty():
-		return
-	for row in action_rows:
-		var action: GameAction = row.get("action")
-		if action == null or not _action_matches_selected(action):
+	var selected_rows := _rows_for_active_selection()
+	# A drag is an explicit interaction with its own source card. It must take
+	# precedence over any card that happened to remain selected before the drag;
+	# otherwise the table highlights the old card's targets and can reject a
+	# completely legal drop from the card currently under the pointer.
+	if not _drag_source_key.is_empty():
+		selected_rows = interaction_router.rows_for_source(_drag_source_key)
+	var selected_target_labels: Dictionary = {}
+	for row in selected_rows:
+		var action := row.get("action") as GameAction
+		if action == null:
 			continue
-		var target_slot := str(action.params.get(
-			"target_slot",
-			action.params.get("target", action.params.get("slot", "")),
-		))
-		if target_slot.is_empty() and action.target:
-			target_slot = action.target.slot
-		if not target_slot.is_empty():
-			var target_player := action.actor
-			if action.target:
-				target_player = action.target.player
-			var view := get_slot_view(target_player, target_slot)
-			if view:
-				view.set_targetable(true)
+		for target_key in CardInteractionRouter.target_keys_for_action(action, row):
+			selected_target_labels[target_key] = _target_hint_for_action(action)
+	for target_key_value in choice_target_options.keys():
+		selected_target_labels[str(target_key_value)] = "选择"
+
+	for slot_key_value in slot_views.keys():
+		var slot_key := str(slot_key_value)
+		var target_key := "pokemon:%s" % slot_key
+		var view := slot_views[slot_key] as CardView
+		var allowed_hand_indices: Array[int] = []
+		for source_key in interaction_router.source_keys():
+			if not source_key.begins_with("hand:"):
+				continue
+			if interaction_router.is_target_legal(source_key, target_key):
+				allowed_hand_indices.append(source_key.trim_prefix("hand:").to_int())
+		var source_key := target_key
+		var source_actionable := interaction_router.has_source(source_key)
+		var disabled_reason := (
+			_disabled_reason_for_source(source_key)
+			if view.selected and not source_actionable
+			else ""
+		)
+		var target_hint := str(selected_target_labels.get(target_key, ""))
+		view.set_interaction_state(
+			source_actionable,
+			disabled_reason,
+			target_hint,
+			allowed_hand_indices,
+		)
+		if target_hint.is_empty():
+			view.set_targetable(false)
+
+	var stadium_hand_indices: Array[int] = []
+	for source_key in interaction_router.source_keys():
+		if source_key.begins_with("hand:"):
+			var hand_index := source_key.trim_prefix("hand:").to_int()
+			if interaction_router.is_drop_legal(hand_index, view_player, "stadium"):
+				stadium_hand_indices.append(hand_index)
+	(zones["stadium"] as ZoneView).set_drop_target(
+		view_player,
+		"stadium",
+		stadium_hand_indices,
+	)
+	var stadium_highlighted := false
+	if not _drag_source_key.is_empty():
+		for row in selected_rows:
+			var action := row.get("action") as GameAction
+			if action and "stadium" in CardInteractionRouter.drag_target_keys_for_action(action, row):
+				stadium_highlighted = true
+				break
+	(zones["stadium"] as ZoneView).set_drop_highlight(stadium_highlighted)
 
 
 func _configure_slot(
@@ -1004,8 +1106,10 @@ func _layout_board() -> void:
 		return
 	var metrics := _board_layout_metrics(width, height)
 	_layout_player_hands(metrics)
-	_layout_field_slots(metrics)
+	var field_plan := BattleTableLayout.field_plan(metrics, bench_spacing)
+	_layout_field_slots(metrics, field_plan)
 	_layout_table_zones(metrics)
+	_layout_own_status(metrics, field_plan)
 	_layout_opponent_hand(metrics["hidden_hand_size"])
 	_layout_hand(metrics["own_hand_size"])
 	_layout_overlay_drawers()
@@ -1062,12 +1166,9 @@ func _layout_player_hands(metrics: Dictionary) -> void:
 	hand_scroll.position = Vector2(center_x - hand_width * 0.5, own_hand_y)
 	hand_scroll.size = Vector2(hand_width, float(metrics["own_hand_height"]))
 	hand_surface.custom_minimum_size.y = float(metrics["own_hand_height"]) - 8.0
-	own_info.position = Vector2(float(metrics["field_left"]), float(metrics["own_info_y"]))
-	own_info.size = Vector2(float(metrics["table_width"]), 24.0)
 
 
-func _layout_field_slots(metrics: Dictionary) -> void:
-	var plan := BattleTableLayout.field_plan(metrics, bench_spacing)
+func _layout_field_slots(metrics: Dictionary, plan: Dictionary) -> void:
 	var active_size: Vector2 = plan["active_size"]
 	var bench_size: Vector2 = plan["bench_size"]
 	var opponent_bench_centers: Array[Vector2] = plan["opponent_bench_centers"]
@@ -1236,61 +1337,94 @@ func _perspective_depth(y: float, metrics: Dictionary) -> float:
 
 
 func _layout_overlay_drawers() -> void:
-	if board_panel == null:
+	if hud:
+		var responsive_width := 260.0
+		if size.x < 1400.0:
+			responsive_width = 232.0
+		elif size.x >= 1900.0:
+			responsive_width = 280.0
+		if not is_equal_approx(hud.custom_minimum_size.x, responsive_width):
+			hud.custom_minimum_size.x = responsive_width
+	if detail_panel and detail_panel.visible:
+		_layout_detail_panel()
+	if action_popover and action_popover.visible:
+		_reposition_action_popover()
+
+
+func _layout_detail_panel() -> void:
+	if detail_panel == null or board_panel == null:
 		return
-	var board_origin := board_panel.global_position - global_position
-	var board_rect := Rect2(board_origin, board_panel.size)
-	var drawer_width := clampf(
-		board_panel.size.x * 0.23,
-		260.0,
-		340.0,
+	var inverse := get_global_transform_with_canvas().affine_inverse()
+	var board_global_rect := board_panel.get_global_rect()
+	var board_start := inverse * board_global_rect.position
+	var board_end := inverse * board_global_rect.end
+	var board_rect := Rect2(board_start, board_end - board_start)
+	var inset := 12.0
+	var safe_rect := Rect2(
+		board_rect.position + Vector2(inset, inset),
+		board_rect.size - Vector2(inset * 2.0, inset * 2.0),
 	)
-	var drawer_x := board_origin.x + board_panel.size.x - drawer_width - 14.0
-	var detail_height := clampf(board_panel.size.y * 0.28, 190.0, 240.0)
-	var action_height := clampf(board_panel.size.y * 0.42, 240.0, 360.0)
-	if detail_panel:
-		var detail_rect := _detail_drawer_rect(board_rect, drawer_width, detail_height)
-		detail_panel.position = detail_rect.position
-		detail_panel.size = detail_rect.size
-		detail_panel.custom_minimum_size = detail_rect.size
-	if action_panel:
-		action_panel.position = Vector2(drawer_x, board_origin.y + 14.0)
-		action_panel.size = Vector2(drawer_width, action_height)
-		action_panel.custom_minimum_size = Vector2(drawer_width, action_height)
-	if detail_close_button:
-		var close_anchor := (
-			detail_panel.position if detail_panel else Vector2(drawer_x, board_origin.y + 14.0)
-		)
-		var close_width := detail_panel.size.x if detail_panel else drawer_width
-		detail_close_button.position = Vector2(
-			close_anchor.x + close_width - 54.0,
-			close_anchor.y + 6.0,
-		)
-		detail_close_button.size = Vector2(48.0, 48.0)
+	if safe_rect.size.x <= 1.0 or safe_rect.size.y <= 1.0:
+		return
 
+	var panel_size := detail_panel.get_combined_minimum_size()
+	if panel_size.x <= 1.0 or panel_size.y <= 1.0:
+		panel_size = Vector2(372.0, 312.0)
+	panel_size.x = minf(panel_size.x, safe_rect.size.x)
+	panel_size.y = minf(panel_size.y, safe_rect.size.y)
 
-func _detail_drawer_rect(
-	board_rect: Rect2,
-	drawer_width: float,
-	default_height: float,
-) -> Rect2:
-	var discard_rect := _control_rect_in_table(zones.get("opponent_discard") as Control)
-	var own_discard_rect := _control_rect_in_table(zones.get("own_discard") as Control)
-	var own_deck_rect := _control_rect_in_table(zones.get("own_deck") as Control)
-	return BattleTableLayout.detail_drawer_rect(
-		board_rect,
-		drawer_width,
-		default_height,
-		discard_rect,
-		own_discard_rect,
-		own_deck_rect,
+	# Keep the preview immediately to the left of the deck/discard column when
+	# that column is present. This preserves the visible identities/counts of the
+	# right-side zones without consuming HUD layout width.
+	var right_zone_left := safe_rect.end.x
+	for zone_key in ["opponent_deck", "opponent_discard", "own_deck", "own_discard"]:
+		var zone := zones.get(zone_key) as Control
+		if zone == null or not zone.visible:
+			continue
+		var zone_left := (inverse * zone.get_global_rect().position).x
+		right_zone_left = minf(right_zone_left, zone_left)
+	var preview_x := right_zone_left - panel_size.x - 12.0
+	if preview_x < safe_rect.position.x:
+		preview_x = safe_rect.end.x - panel_size.x
+	preview_x = clampf(
+		preview_x,
+		safe_rect.position.x,
+		maxf(safe_rect.position.x, safe_rect.end.x - panel_size.x),
 	)
 
+	# Prefer the half of the table opposite the selected source so the preview
+	# does not hide the card that owns the currently visible actions.
+	var preview_y := safe_rect.position.y + (safe_rect.size.y - panel_size.y) * 0.5
+	var source_control := _source_control_for_key(selected_entity_key)
+	if source_control:
+		var source_center := inverse * source_control.get_global_rect().get_center()
+		if source_center.y < safe_rect.get_center().y:
+			preview_y = safe_rect.end.y - panel_size.y
+		else:
+			preview_y = safe_rect.position.y
 
-func _control_rect_in_table(control: Control) -> Rect2:
-	if control == null or not is_instance_valid(control):
-		return Rect2()
-	return Rect2(control.global_position - global_position, control.size)
+	# The opponent bench is the first readable row below the hidden hand. Keep
+	# the floating preview wholly below that row instead of letting its upper
+	# edge sit over the bench tray. If a very short viewport cannot provide the
+	# required space, the final safe-area clamp still keeps the panel on-screen.
+	var opponent_bench_bottom := safe_rect.position.y
+	var has_opponent_bench := false
+	for bench_view in opponent_bench:
+		if bench_view == null or not bench_view.visible:
+			continue
+		has_opponent_bench = true
+		var bench_bottom := (inverse * bench_view.get_global_rect().end).y
+		opponent_bench_bottom = maxf(opponent_bench_bottom, bench_bottom)
+	if has_opponent_bench:
+		preview_y = maxf(preview_y, opponent_bench_bottom + 20.0)
+	preview_y = clampf(
+		preview_y,
+		safe_rect.position.y,
+		maxf(safe_rect.position.y, safe_rect.end.y - panel_size.y),
+	)
+
+	detail_panel.position = Vector2(preview_x, preview_y)
+	detail_panel.size = panel_size
 
 
 func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
@@ -1367,70 +1501,638 @@ func _compact_card_action_row(row: Dictionary) -> Dictionary:
 	if action == null:
 		return result
 	match action.action:
+		"PLAY_BASIC":
+			result["label"] = "放置到场上"
+		"EVOLVE":
+			result["label"] = "进化"
+		"ATTACH_ENERGY":
+			result["label"] = "附能"
 		"PLAY_TRAINER":
-			result["label"] = "使用"
+			var trainer_type := _trainer_type_for_action(action)
+			result["label"] = (
+				"打出竞技场"
+				if trainer_type == "Stadium"
+				else "附着道具"
+				if trainer_type in ["Tool", "Pokémon Tool"]
+				else "使用"
+			)
 		"DECLARE_ATTACK":
-			result["label"] = str(row.get("label", "攻击")).trim_prefix("攻击 · ")
+			result.merge(_attack_popover_metadata(action, row), true)
 		"USE_ABILITY":
-			result["label"] = str(action.params.get("ability_name", "发动特性"))
+			result["label"] = "特性 · %s（可用）" % str(
+				action.params.get("ability_name", "发动特性"),
+			)
+			result["hint"] = "发动特性"
 		"RETREAT":
 			result["label"] = "撤退到这里 · %s" % _retreat_compact_suffix(action)
 		"PROMOTE":
-			result["label"] = "晋升"
+			result["label"] = "晋升为战斗宝可梦"
 		"USE_STADIUM":
-			result["label"] = "发动"
+			result["label"] = "发动效果"
+	return result
+
+
+func _trainer_type_for_action(action: GameAction) -> String:
+	if action == null or state_ref == null:
+		return ""
+	var hand_index := int(action.params.get("hand_idx", -1))
+	if hand_index < 0 or action.actor not in [0, 1]:
+		return ""
+	var hand := state_ref.get_player(action.actor).hand
+	if hand_index >= hand.size():
+		return ""
+	var card_id := str(hand[hand_index])
+	if catalog.is_stadium(card_id):
+		return "Stadium"
+	if catalog.is_tool(card_id):
+		return "Tool"
+	if catalog.is_supporter(card_id):
+		return "Supporter"
+	if catalog.is_item(card_id):
+		return "Item"
+	return str(catalog.get_card(card_id).get("trainer_type", ""))
+
+
+func _attack_popover_metadata(action: GameAction, row: Dictionary) -> Dictionary:
+	var fallback := str(row.get("label", "攻击")).trim_prefix("攻击 · ")
+	var result := {
+		"label": fallback,
+		"hint": "攻击后结束回合",
+	}
+	if state_ref == null or action.actor not in [0, 1]:
+		return result
+	var active := state_ref.get_player(action.actor).active
+	if active == null:
+		return result
+	var attacks: Array = catalog.get_card(active.card_id).get("attacks", [])
+	var attack_index := int(action.params.get("attack_idx", -1))
+	if attack_index < 0 or attack_index >= attacks.size():
+		return result
+	var attack: Dictionary = attacks[attack_index]
+	var cost_labels: Array[String] = []
+	var attack_cost: Array = attack.get("cost", [])
+	for value in attack_cost:
+		cost_labels.append({
+			"Grass": "草", "Fire": "火", "Water": "水", "Lightning": "雷",
+			"Psychic": "超", "Fighting": "斗", "Darkness": "恶",
+			"Metal": "钢", "Colorless": "无",
+		}.get(str(value), str(value).left(1)))
+	var name := str(attack.get("name", fallback))
+	var damage := str(attack.get("damage_text", ""))
+	if damage.is_empty() and int(attack.get("damage", 0)) > 0:
+		damage = str(attack.get("damage", 0))
+	result["label"] = "%s%s%s\n攻击后结束回合" % [
+		("[%s] " % "".join(cost_labels)) if not cost_labels.is_empty() else "",
+		name,
+		(" · %s" % damage) if not damage.is_empty() else "",
+	]
+	if not attack_cost.is_empty():
+		result["icon"] = ENERGY_ICONS.texture_for(str(attack_cost[0]))
 	return result
 
 
 func _retreat_compact_suffix(action: GameAction) -> String:
-	var count := 0
-	if action != null:
-		count = action.params.get("energy_indices", []).size()
-	if count <= 0:
+	if action == null:
 		return "免费"
-	return "丢%d能量" % count
+	var indices: Array = action.params.get("energy_indices", [])
+	if indices.is_empty():
+		return "免费"
+	var names: Array[String] = []
+	if state_ref and action.actor in [0, 1]:
+		var active := state_ref.get_player(action.actor).active
+		if active:
+			for raw_index in indices:
+				var index := int(raw_index)
+				if index >= 0 and index < active.energy_card_ids.size():
+					var name := catalog.card_name(active.energy_card_ids[index])
+					names.append(name)
+	if names.is_empty():
+		return "丢%d能量" % indices.size()
+	return "丢%s" % "、".join(names)
 
 
-func _action_matches_selected(action: GameAction) -> bool:
-	if selected_entity_key.is_empty():
-		return false
-	if selected_entity_key.begins_with("hand:"):
-		return int(action.params.get("hand_idx", -1)) == (
-			selected_entity_key.trim_prefix("hand:").to_int()
-		)
-	if selected_entity_key.begins_with("pokemon:"):
-		var parts := selected_entity_key.split(":")
-		if parts.size() < 3:
-			return false
-		var player := int(parts[1])
-		var slot_name := str(parts[2])
-		if (
-			action.action == "RETREAT"
-			and player == action.actor
-			and slot_name == "active"
-		):
-			return true
-		return (
-			(action.source and action.source.player == player and action.source.slot == slot_name)
-			or (action.target and action.target.player == player and action.target.slot == slot_name)
-			or str(action.params.get("slot", "")) == slot_name
-			or str(action.params.get("target_slot", "")) == slot_name
-		)
-	return false
-
-
-func _toggle_all_actions() -> void:
-	if action_rows.is_empty():
+func _refresh_turn_allowance_chips(player: PlayerState) -> void:
+	if player == null or own_allowance_labels.is_empty():
 		return
-	_all_actions_expanded = not _all_actions_expanded
-	if _all_actions_expanded:
-		hide_card_detail()
-	_refresh_all_actions_panel()
+	var rows := {
+		"energy": ["附能", player.energy_attached_this_turn],
+		"supporter": ["支援", player.supporter_played_this_turn],
+		"retreat": ["撤退", player.retreated_this_turn],
+		"stadium": ["竞技场", player.stadium_played_this_turn],
+	}
+	for key_value in rows.keys():
+		var key := str(key_value)
+		var row: Array = rows[key]
+		var used := bool(row[1])
+		var allowance_label := own_allowance_labels.get(key) as Label
+		if allowance_label == null:
+			continue
+		allowance_label.text = "%s  %s" % [str(row[0]), "已用" if used else "可用"]
+		allowance_label.add_theme_stylebox_override(
+			"normal",
+			_allowance_chip_style(used),
+		)
+		allowance_label.add_theme_color_override(
+			"font_color",
+			Color(0.52, 0.60, 0.70, 0.86) if used else DesignTokens.GREEN,
+		)
 
 
-func _collapse_all_actions() -> void:
-	_all_actions_expanded = false
-	_refresh_all_actions_panel()
+func _allowance_chip_style(used: bool) -> StyleBoxFlat:
+	return DesignTokens.panel_style(
+		Color(0.025, 0.040, 0.060, 0.90) if used else Color(0.025, 0.105, 0.090, 0.94),
+		7,
+		Color(0.25, 0.34, 0.45, 0.62) if used else Color(0.36, 0.78, 0.58, 0.78),
+		1,
+		5,
+	)
+
+
+func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
+	if own_info == null or own_allowance_row == null:
+		return
+	var status_plan := BattleTableLayout.own_status_plan(
+		metrics,
+		field_plan["own_active_rect"],
+	)
+	var info_rect: Rect2 = status_plan["info_rect"]
+	var allowance_rect: Rect2 = status_plan["allowance_rect"]
+	own_info.position = info_rect.position
+	own_info.size = info_rect.size
+	own_allowance_row.position = allowance_rect.position
+	own_allowance_row.size = allowance_rect.size
+
+
+func _routed_action_rows() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for value in action_rows:
+		var row := value.duplicate()
+		var action := row.get("action") as GameAction
+		# Playing a Stadium is a no-target action on the rules layer, but the UI
+		# also accepts the same action when that hand card is dragged onto the
+		# Stadium zone. This metadata never enters GameAction serialization.
+		if action and action.action == "PLAY_TRAINER" and _trainer_type_for_action(action) == "Stadium":
+			row["drag_target_keys"] = ["stadium"]
+		result.append(row)
+	return result
+
+
+func _action_rows_semantic_signature(rows: Array[Dictionary]) -> String:
+	var result: Array[String] = []
+	for input_row in rows:
+		var row := input_row as Dictionary
+		var action_value = row.get("action")
+		var action := action_value as GameAction
+		if action == null and action_value is Dictionary:
+			action = GameAction.from_dict(action_value as Dictionary)
+		var parts: Array[String] = [
+			_action_semantic_signature(action),
+			str(row.get("label", "")),
+			str(row.get("hint", "")),
+			str(row.get("source_key", "")),
+			str(row.get("target_key", "")),
+			str(row.get("group_key", "")),
+			_stable_value_signature(row.get("target_keys", [])),
+			_stable_value_signature(row.get("drag_target_keys", [])),
+			str(bool(row.get("disabled", false))),
+		]
+		result.append("|".join(parts))
+	return "\n".join(result)
+
+
+func _action_semantic_signature(action: GameAction) -> String:
+	if action == null:
+		return ""
+	return _stable_value_signature(action.to_dict())
+
+
+func _stable_value_signature(value: Variant) -> String:
+	if value is Dictionary:
+		var dictionary := value as Dictionary
+		var keys: Array = dictionary.keys()
+		keys.sort_custom(func(left: Variant, right: Variant) -> bool:
+			return str(left) < str(right)
+		)
+		var parts: Array[String] = []
+		for key in keys:
+			parts.append("%s:%s" % [
+				str(key),
+				_stable_value_signature(dictionary[key]),
+			])
+		return "{" + ",".join(parts) + "}"
+	if value is Array:
+		var parts: Array[String] = []
+		for item in value:
+			parts.append(_stable_value_signature(item))
+		return "[" + ",".join(parts) + "]"
+	return str(value)
+
+
+func _current_task_hint() -> String:
+	if not choice_target_options.is_empty():
+		return choice_target_prompt if not choice_target_prompt.is_empty() else "选择场上的卡牌"
+	if selected_entity_key.is_empty():
+		return ""
+	if (
+		_popover_dismissed_source_key == selected_entity_key
+		and _selected_action_group_key.is_empty()
+	):
+		return "点击卡牌重新打开操作"
+	var groups := interaction_router.action_groups_for_source(selected_entity_key)
+	if groups.is_empty():
+		return _disabled_reason_for_source(selected_entity_key)
+	if not _selected_action_group_key.is_empty():
+		var selected_group := _group_by_key(groups, _selected_action_group_key)
+		var rows: Array = selected_group.get("rows", [])
+		if not rows.is_empty():
+			var action := (rows[0] as Dictionary).get("action") as GameAction
+			return "选择%s目标" % _target_hint_for_action(action)
+	if groups.size() > 1:
+		return "选择一个卡牌动作"
+	var only_group: Dictionary = groups[0]
+	if bool(only_group.get("requires_target", false)):
+		var rows: Array = only_group.get("rows", [])
+		if not rows.is_empty():
+			var action := (rows[0] as Dictionary).get("action") as GameAction
+			return "选择%s目标" % _target_hint_for_action(action)
+	return "确认要执行的卡牌动作"
+
+
+func _disabled_reason_for_source(source_key: String) -> String:
+	if state_ref == null:
+		return "正在载入对局状态"
+	if ai_thinking:
+		return "等待对手行动"
+	if state_ref.phase not in ["SETUP", "MAIN"]:
+		return "当前阶段不能执行卡牌动作"
+	if state_ref.phase != "SETUP" and state_ref.active_player_idx != view_player:
+		return "现在是对手的回合"
+	var player := state_ref.get_player(view_player)
+	if source_key.begins_with("hand:"):
+		var hand_index := source_key.trim_prefix("hand:").to_int()
+		if hand_index < 0 or hand_index >= player.hand.size():
+			return "这张卡已不在手牌中"
+		var card := catalog.get_card(player.hand[hand_index])
+		var supertype := str(card.get("supertype", ""))
+		var card_id := str(player.hand[hand_index])
+		var trainer_type := (
+			"Stadium"
+			if catalog.is_stadium(card_id)
+			else "Tool"
+			if catalog.is_tool(card_id)
+			else "Supporter"
+			if catalog.is_supporter(card_id)
+			else str(card.get("trainer_type", ""))
+		)
+		var subtypes: Array = card.get("subtypes", [])
+		if supertype == "Energy" and player.energy_attached_this_turn:
+			return "本回合已附能"
+		if supertype == "Energy":
+			return "当前没有可附能的宝可梦"
+		if trainer_type == "Supporter" and player.supporter_played_this_turn:
+			return "本回合已使用支援者"
+		if trainer_type == "Stadium" and player.stadium_played_this_turn:
+			return "本回合已打出竞技场"
+		if (
+			trainer_type == "Stadium"
+			and state_ref.stadium_card_id == player.hand[hand_index]
+		):
+			return "场上已经是同名竞技场"
+		if trainer_type in ["Tool", "Pokémon Tool"]:
+			return "没有可附着道具的宝可梦，或目标已有道具"
+		if "Basic" in subtypes:
+			return "战斗区与备战区没有合法空位"
+		if "Stage 1" in subtypes or "Stage 2" in subtypes:
+			return "场上没有可进化为这张卡的宝可梦"
+		if state_ref.phase == "SETUP":
+			return "准备阶段只能放置基础宝可梦"
+		return "当前没有合法目标或不满足使用条件"
+	if source_key.begins_with("pokemon:"):
+		var parts := source_key.split(":")
+		if parts.size() >= 3 and int(parts[1]) != view_player:
+			return "对手的卡牌不能由你操作"
+		if parts.size() >= 3 and str(parts[2]) == "active" and player.retreated_this_turn:
+			return "本回合已撤退"
+		return "当前没有可用招式、特性或撤退动作"
+	if source_key == "stadium":
+		return "该竞技场没有可主动发动的效果"
+	return "当前没有合法卡牌动作"
+
+
+func _rows_for_active_selection() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if selected_entity_key.is_empty():
+		return result
+	var groups := interaction_router.action_groups_for_source(selected_entity_key)
+	if groups.is_empty():
+		return result
+	if not _selected_action_group_key.is_empty():
+		var selected_group := _group_by_key(groups, _selected_action_group_key)
+		for value in selected_group.get("rows", []):
+			result.append(value as Dictionary)
+		return result
+	if groups.size() == 1:
+		for value in (groups[0] as Dictionary).get("rows", []):
+			result.append(value as Dictionary)
+	return result
+
+
+func _matching_active_selection_rows(target_key: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for row in _rows_for_active_selection():
+		var action := row.get("action") as GameAction
+		if action and target_key in CardInteractionRouter.target_keys_for_action(action, row):
+			result.append(row)
+	return result
+
+
+func _group_by_key(groups: Array[Dictionary], group_key: String) -> Dictionary:
+	for group in groups:
+		if str(group.get("key", "")) == group_key:
+			return group
+	return {}
+
+
+func _group_for_action(source_key: String, action: GameAction) -> Dictionary:
+	for group in interaction_router.action_groups_for_source(source_key):
+		for candidate_value in group.get("actions", []):
+			if candidate_value == action:
+				return group
+	return {}
+
+
+func _target_hint_for_action(action: GameAction) -> String:
+	if action == null:
+		return "选择"
+	match action.action:
+		"PLAY_BASIC":
+			return "放置"
+		"EVOLVE":
+			return "进化"
+		"ATTACH_ENERGY":
+			return "附能"
+		"RETREAT":
+			return "撤退"
+		"PLAY_TRAINER":
+			var hand_index := int(action.params.get("hand_idx", -1))
+			if state_ref and hand_index >= 0:
+				var hand := state_ref.get_player(action.actor).hand
+				if hand_index < hand.size():
+					if catalog.is_tool(str(hand[hand_index])):
+						return "道具"
+			return "使用"
+		_:
+			return "选择"
+
+
+func _refresh_action_popover() -> void:
+	if action_popover == null:
+		return
+	if selected_entity_key.is_empty():
+		action_popover.dismiss(false)
+		_popover_source_key = ""
+		return
+	if _popover_dismissed_source_key == selected_entity_key:
+		action_popover.dismiss(false)
+		return
+	if not _forced_popover_rows.is_empty():
+		_present_popover_rows(_forced_popover_source_key, _forced_popover_rows)
+		return
+	var groups := interaction_router.action_groups_for_source(selected_entity_key)
+	var contextual_disabled_rows := _disabled_context_rows_for_source(selected_entity_key)
+	if groups.is_empty():
+		_present_popover_rows(
+			selected_entity_key,
+			contextual_disabled_rows,
+			"无法操作",
+			_disabled_reason_for_source(selected_entity_key),
+		)
+		return
+	if not _selected_action_group_key.is_empty():
+		action_popover.dismiss(false)
+		return
+	if (
+		groups.size() == 1
+		and bool(groups[0].get("requires_target", false))
+	):
+		# Disabled informational rows (for example, an ability already used this
+		# turn) do not turn a single targeted action into a multi-action choice.
+		# Keep the one-tap contract and enter target selection immediately.
+		action_popover.dismiss(false)
+		return
+	var popover_rows := _popover_rows_for_groups(groups)
+	popover_rows.append_array(contextual_disabled_rows)
+	_present_popover_rows(
+		selected_entity_key,
+		popover_rows,
+	)
+
+
+func _popover_rows_for_groups(groups: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if groups.size() == 1:
+		for row_value in groups[0].get("rows", []):
+			result.append(_compact_card_action_row(row_value as Dictionary))
+		return result
+	for group in groups:
+		var rows: Array = group.get("rows", [])
+		if rows.is_empty():
+			continue
+		var row := _compact_card_action_row(rows[0] as Dictionary)
+		if str(group.get("action_type", "")) == "RETREAT":
+			# This button chooses the retreat action family, not a particular
+			# benched Pokemon or payment. Show those details only after the target
+			# card has been chosen and the concrete rows are presented.
+			row["label"] = "撤退"
+			row["hint"] = "选择备战宝可梦"
+		elif bool(group.get("requires_target", false)):
+			row["hint"] = "选择合法目标"
+		result.append(row)
+	return result
+
+
+func _disabled_context_rows_for_source(source_key: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if state_ref == null or not source_key.begins_with("pokemon:"):
+		return result
+	var parts := source_key.split(":")
+	if parts.size() < 3:
+		return result
+	var pokemon := state_ref.get_player(int(parts[1])).get_pokemon(str(parts[2]))
+	if pokemon == null or pokemon.used_abilities.is_empty():
+		return result
+	var legal_abilities: Dictionary = {}
+	for action in interaction_router.actions_for_source(source_key):
+		if action.action == "USE_ABILITY":
+			legal_abilities[str(action.params.get("ability_name", ""))] = true
+	for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
+		var ability: Dictionary = ability_value
+		var ability_name := str(ability.get("name", ""))
+		if ability_name in pokemon.used_abilities and not legal_abilities.has(ability_name):
+			result.append({
+				"label": "特性 · %s（已使用）" % ability_name,
+				"hint": "本回合已发动",
+				"disabled": true,
+			})
+	return result
+
+
+func _present_popover_rows(
+	source_key: String,
+	rows: Array[Dictionary],
+	title := "卡牌操作",
+	hint := "",
+) -> void:
+	if action_popover == null:
+		return
+	var source_control := _source_control_for_key(source_key)
+	if source_control == null:
+		action_popover.dismiss(false)
+		return
+	var display_rows: Array[Dictionary] = []
+	for row in rows:
+		display_rows.append(_compact_card_action_row(row))
+	var avoidance_rows := rows
+	if _forced_popover_source_key != source_key:
+		avoidance_rows = interaction_router.rows_for_source(source_key)
+	_popover_source_key = source_key
+	action_popover.show_for_control(
+		display_rows,
+		source_control,
+		_safe_popover_rect(),
+		_avoid_controls_for_rows(avoidance_rows),
+		title,
+		hint,
+	)
+
+
+func _source_control_for_key(source_key: String) -> Control:
+	if source_key.begins_with("hand:"):
+		var hand_index := source_key.trim_prefix("hand:").to_int()
+		if hand_index >= 0 and hand_index < hand_views.size():
+			var hand_view := hand_views[hand_index]
+			return hand_view if hand_view.visible else null
+	if source_key.begins_with("pokemon:"):
+		var parts := source_key.split(":")
+		if parts.size() >= 3:
+			return get_slot_view(int(parts[1]), str(parts[2]))
+	if source_key == "stadium":
+		return zones.get("stadium") as Control
+	return null
+
+
+func _safe_popover_rect() -> Rect2:
+	var inset := Vector2(8.0, 8.0)
+	if board_panel and board_panel.size.x > 16.0 and board_panel.size.y > 16.0:
+		return Rect2(
+			board_panel.global_position + inset,
+			board_panel.size - inset * 2.0,
+		)
+	if size.x <= 16.0 or size.y <= 16.0:
+		return Rect2()
+	return Rect2(global_position + inset, size - inset * 2.0)
+
+
+func _avoid_controls_for_rows(rows: Array[Dictionary]) -> Array[Control]:
+	var result: Array[Control] = []
+	var seen: Dictionary = {}
+	if detail_panel and detail_panel.visible:
+		seen[detail_panel] = true
+		result.append(detail_panel)
+	for row in rows:
+		var action := row.get("action") as GameAction
+		if action == null:
+			continue
+		if action.action == "DECLARE_ATTACK" and action.actor in [0, 1]:
+			var defending_active := get_slot_view(1 - action.actor, "active")
+			if defending_active and not seen.has(defending_active):
+				seen[defending_active] = true
+				result.append(defending_active)
+		for target_key in CardInteractionRouter.target_keys_for_action(action, row):
+			var control := _source_control_for_key(target_key)
+			if control and not seen.has(control):
+				seen[control] = true
+				result.append(control)
+	return result
+
+
+func _reposition_action_popover() -> void:
+	if action_popover == null or not action_popover.visible:
+		return
+	var source_control := _source_control_for_key(_popover_source_key)
+	if source_control == null:
+		action_popover.dismiss(false)
+		return
+	var avoidance_rows := interaction_router.rows_for_source(_popover_source_key)
+	if _forced_popover_source_key == _popover_source_key:
+		avoidance_rows = _forced_popover_rows
+	var avoid_rects: Array[Rect2] = []
+	for control in _avoid_controls_for_rows(avoidance_rows):
+		avoid_rects.append(control.get_global_rect())
+	action_popover.reposition(
+		source_control.get_global_rect(),
+		_safe_popover_rect(),
+		avoid_rects,
+	)
+
+
+func _show_forced_action_rows(
+	rows: Array[Dictionary],
+	source_key: String = selected_entity_key,
+) -> void:
+	_forced_popover_rows.clear()
+	for row in rows:
+		_forced_popover_rows.append(_compact_card_action_row(row))
+	_forced_popover_source_key = source_key
+	_popover_dismissed_source_key = ""
+	_present_popover_rows(
+		source_key,
+		_forced_popover_rows,
+		"选择具体动作",
+		"同一目标存在多种合法执行方式",
+	)
+
+
+func _on_popover_action_chosen(action: GameAction) -> void:
+	if action == null:
+		return
+	for row in _forced_popover_rows:
+		if row.get("action") == action:
+			_forced_popover_rows.clear()
+			_forced_popover_source_key = ""
+			_popover_source_key = ""
+			action_requested.emit(action)
+			return
+	var group := _group_for_action(_popover_source_key, action)
+	if not group.is_empty() and bool(group.get("requires_target", false)):
+		_selected_action_group_key = str(group.get("key", ""))
+		_popover_source_key = ""
+		_refresh_target_hints()
+		_refresh_header()
+		return
+	_popover_source_key = ""
+	action_requested.emit(action)
+
+
+func _on_popover_dismissed() -> void:
+	if not _popover_source_key.is_empty():
+		_popover_dismissed_source_key = _popover_source_key
+		if _forced_popover_source_key == _popover_source_key:
+			_forced_popover_rows.clear()
+			_forced_popover_source_key = ""
+	_popover_source_key = ""
+	_refresh_header()
+
+
+func _on_popover_outside_pressed(global_pointer_position: Vector2) -> void:
+	if header and header.menu_button.get_global_rect().has_point(global_pointer_position):
+		call_deferred("_on_menu_pressed")
+	elif (
+		phase_advance_button
+		and not phase_advance_button.disabled
+		and phase_advance_button.get_global_rect().has_point(global_pointer_position)
+	):
+		call_deferred("_on_phase_advance_pressed")
 
 
 func _on_card_activated(
@@ -1439,6 +2141,35 @@ func _on_card_activated(
 	player: int,
 	slot_name: String,
 ) -> void:
+	var clicked_key := (
+		CardInteractionRouter.hand_key(hand_index)
+		if hand_index >= 0
+		else CardInteractionRouter.pokemon_key(player, slot_name)
+	)
+	if choice_target_options.has(clicked_key):
+		choice_target_selected.emit(str(choice_target_options[clicked_key]))
+		return
+	if (
+		clicked_key == selected_entity_key
+		and _popover_dismissed_source_key == clicked_key
+		and _selected_action_group_key.is_empty()
+	):
+		_popover_dismissed_source_key = ""
+		_refresh_action_popover()
+		_refresh_header()
+		return
+	if not selected_entity_key.is_empty() and clicked_key != selected_entity_key:
+		var target_rows := _matching_active_selection_rows(clicked_key)
+		if target_rows.size() == 1:
+			var target_action := target_rows[0].get("action") as GameAction
+			if target_action:
+				action_requested.emit(target_action)
+				return
+		elif target_rows.size() > 1:
+			_show_forced_action_rows(target_rows)
+			return
+	if hand_index < 0 and card_id.is_empty():
+		return
 	if hand_index >= 0:
 		hand_card_selected.emit(hand_index, card_id)
 	else:
@@ -1446,10 +2177,30 @@ func _on_card_activated(
 
 
 func _on_detail_requested(card_id: String) -> void:
-	show_card_detail(card_id)
 	detail_requested.emit(card_id)
 	if not card_id.is_empty():
 		inspect_card_requested.emit(_card_inspection_context(card_id))
+
+
+func _on_card_view_detail_requested(card_id: String, view: CardView) -> void:
+	detail_requested.emit(card_id)
+	if card_id.is_empty() or view == null:
+		return
+	var context := _card_inspection_context(card_id)
+	context["player"] = view.owner_player
+	if view.hand_index >= 0:
+		context["location"] = "%s 手牌" % _player_label(view.owner_player)
+		context["hand_index"] = view.hand_index
+		context["slot"] = ""
+		context["pokemon"] = null
+	elif not view.slot.is_empty():
+		context["slot"] = view.slot
+		context["pokemon"] = view.pokemon
+		context["location"] = "%s %s" % [
+			_player_label(view.owner_player),
+			_slot_name(view.slot),
+		]
+	inspect_card_requested.emit(context)
 
 
 func _on_menu_pressed() -> void:
@@ -1457,59 +2208,18 @@ func _on_menu_pressed() -> void:
 	menu_requested.emit()
 
 
-func _ensure_detail_close_button() -> void:
-	if detail_close_button or detail_panel == null:
-		return
-	var overlay := detail_panel.get_parent() as Control
-	if overlay == null:
-		return
-	detail_close_button = Button.new()
-	detail_close_button.name = "DetailCloseButton"
-	detail_close_button.text = "×"
-	detail_close_button.tooltip_text = "关闭卡牌详情"
-	detail_close_button.accessibility_name = "关闭卡牌详情"
-	detail_close_button.custom_minimum_size = Vector2(48.0, 48.0)
-	detail_close_button.focus_mode = Control.FOCUS_NONE
-	detail_close_button.mouse_filter = Control.MOUSE_FILTER_STOP
-	detail_close_button.visible = false
-	detail_close_button.z_index = 36
-	detail_close_button.add_theme_font_size_override("font_size", 18)
-	detail_close_button.add_theme_color_override("font_color", DesignTokens.TEXT)
-	detail_close_button.add_theme_stylebox_override(
-		"normal",
-		DesignTokens.panel_style(
-			Color(0.08, 0.14, 0.23, 0.98),
-			8,
-			DesignTokens.BORDER,
-			1,
-			0,
-		),
-	)
-	detail_close_button.add_theme_stylebox_override(
-		"hover",
-		DesignTokens.panel_style(
-			DesignTokens.PANEL_RAISED,
-			8,
-			DesignTokens.CYAN,
-			1,
-			0,
-		),
-	)
-	detail_close_button.add_theme_stylebox_override(
-		"pressed",
-		DesignTokens.panel_style(
-			DesignTokens.BORDER,
-			8,
-			DesignTokens.CYAN,
-			1,
-			0,
-		),
-	)
-	overlay.add_child(detail_close_button)
-	detail_close_button.pressed.connect(hide_card_detail)
-
-
 func _on_zone_inspected(context: Dictionary) -> void:
+	if str(context.get("zone", "")) == "stadium" and interaction_router.has_source("stadium"):
+		if action_popover and action_popover.visible and _popover_source_key == "stadium":
+			action_popover.dismiss()
+		else:
+			_popover_dismissed_source_key = ""
+			_present_popover_rows(
+				"stadium",
+				interaction_router.rows_for_source("stadium"),
+				"竞技场操作",
+			)
+		return
 	inspect_zone_requested.emit(context)
 
 
@@ -1519,12 +2229,42 @@ func _on_card_dropped(
 	target_player: int,
 	target_slot: String,
 ) -> void:
+	var matching_rows := interaction_router.matching_drag_rows(
+		hand_index,
+		target_player,
+		target_slot,
+	)
+	if matching_rows.is_empty():
+		return
+	if matching_rows.size() > 1:
+		_show_forced_action_rows(
+			matching_rows,
+			CardInteractionRouter.hand_key(hand_index),
+		)
+		return
 	card_drop_requested.emit(
 		hand_index,
 		card_id,
 		target_player,
 		target_slot,
 	)
+
+
+func _on_hand_drag_started(hand_index: int) -> void:
+	_drag_source_key = CardInteractionRouter.hand_key(hand_index)
+	if action_popover:
+		action_popover.dismiss(false)
+	_refresh_target_hints()
+	if header:
+		header.set_task_hint("将卡牌拖到青色合法目标")
+
+
+func _on_hand_drag_ended() -> void:
+	if _drag_source_key.is_empty():
+		return
+	_drag_source_key = ""
+	_refresh_target_hints()
+	_refresh_header()
 
 
 func _on_floating_text_requested(

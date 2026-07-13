@@ -10,16 +10,22 @@
 [ext_resource type="PackedScene" path="res://ui/frontend/title_backdrop.tscn" id="11_title_backdrop"]
 
 [sub_resource type="StyleBoxFlat" id="Style_toast"]
-bg_color = Color(0.106, 0.18, 0.286, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
+bg_color = Color(0.071, 0.125, 0.204, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
 border_color = Color(0.271, 0.651, 1, 1)
-corner_radius_top_left = 12
-corner_radius_top_right = 12
-corner_radius_bottom_right = 12
-corner_radius_bottom_left = 12
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 14.0
+content_margin_top = 8.0
+content_margin_right = 14.0
+content_margin_bottom = 8.0
+shadow_color = Color(0, 0, 0, 0.32)
+shadow_size = 5
 
 [sub_resource type="Animation" id="Animation_modal_reset"]
 resource_name = "RESET"
@@ -162,18 +168,17 @@ layout_mode = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_left = 520.0
+offset_left = 360.0
 offset_top = 26.0
-offset_right = -520.0
-offset_bottom = 84.0
-grow_horizontal = 2
+offset_right = 920.0
+offset_bottom = 74.0
+mouse_filter = 2
 theme_override_styles/normal = SubResource("Style_toast")
 text = "操作提示"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
+text_overrun_behavior = 3
 
 [node name="UISound" type="AudioStreamPlayer" parent="." unique_id=445180272]
 unique_name_in_owner = true

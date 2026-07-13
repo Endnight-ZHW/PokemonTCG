@@ -1942,16 +1942,19 @@ func _run_phase_three_tests() -> void:
 	_check(ui.modal_layer.visible, "Hot-seat privacy overlay is missing")
 	_check(ui.find_child("BoardPanel", true, false) != null, "Board panel is missing")
 	_check(ui.find_child("HandScroll", true, false) != null, "Hand area is missing")
-	_check(ui.find_child("ActionList", true, false) != null, "Action list is missing")
 	ui._close_modal()
 	ui._refresh_game()
-	if (
-		ui.battle_screen
-		and ui.battle_screen.action_panel
-		and not ui.battle_screen.action_panel.visible
-	):
-		ui.battle_screen.all_actions_button.pressed.emit()
-	_check(ui.action_list.get_child_count() > 0, "Setup actions were not rendered")
+	_check(
+		ui.battle_screen != null
+		and ui.battle_screen.phase_advance_button != null
+		and ui.battle_screen.find_child("AllActionsButton", true, false) == null
+		and ui.battle_screen.find_child("ActionPanel", true, false) == null,
+		"Battle sidebar did not keep only the system action entry",
+	)
+	_check(
+		ui.battle_screen.table.interaction_router.all_card_actions_reachable(),
+		"Setup card actions were not reachable from their hand cards",
+	)
 	var setup_actions: Array[GameAction] = ui.engine.legal_actions(ui.state, 0, false)
 	var active_action: GameAction
 	for candidate in setup_actions:
@@ -1963,15 +1966,60 @@ func _run_phase_three_tests() -> void:
 			break
 	_check(active_action != null, "UI setup has no active placement action")
 	if active_action:
+		var setup_hand_index := int(active_action.params.get("hand_idx", -1))
+		var setup_card_id := str(ui.state.players[0].hand[setup_hand_index])
+		var setup_hand_view := ui.battle_screen.hand_views[setup_hand_index] as CardView
+		var board_size_before_preview: Vector2 = ui.battle_screen.board_canvas.size
+		setup_hand_view.activated.emit(setup_card_id, setup_hand_index, 0, "")
+		var setup_detail := ui.battle_screen.detail_panel as BattleDetailPanel
+		_check(
+			ui.selected_entity_key == "hand:%d" % setup_hand_index
+			and setup_hand_view.selected
+			and setup_detail != null
+			and setup_detail.is_showing_card()
+			and setup_detail.current_card_id == setup_card_id
+			and setup_detail.detail_image.texture != null
+			and setup_detail.detail_title.text == ui.catalog.card_name(setup_card_id)
+			and not setup_detail.detail_text.text.is_empty()
+			and ui.battle_screen.board_canvas.size == board_size_before_preview,
+			"Tapping a card did not enter card-source target selection",
+		)
+		setup_hand_view.activated.emit(setup_card_id, setup_hand_index, 0, "")
+		_check(
+			ui.selected_entity_key.is_empty()
+			and not setup_hand_view.selected
+			and not ui.battle_screen.table.action_popover.visible
+			and not setup_detail.visible,
+			"Tapping the selected source card again did not close card interaction",
+		)
+		setup_hand_view.activated.emit(setup_card_id, setup_hand_index, 0, "")
+		_check(setup_detail.visible,
+			"Re-selecting a hand card did not restore its floating preview")
 		ui._execute_action(active_action)
-		_check(ui.state.players[0].active != null, "UI action did not mutate rules state")
-		if (
-			ui.battle_screen
-			and ui.battle_screen.action_panel
-			and not ui.battle_screen.action_panel.visible
-		):
-			ui.battle_screen.all_actions_button.pressed.emit()
-		_check(ui.action_list.get_child_count() > 0, "UI actions did not refresh")
+		_check(
+			ui.state.players[0].active != null
+			and ui.selected_entity_key.is_empty()
+			and not setup_detail.visible,
+			"UI action did not mutate rules state or clear the floating preview",
+		)
+		_check(
+			ui.battle_screen.table.all_card_actions_reachable_from_visible_cards(),
+			"Card interaction index did not refresh after a setup action",
+		)
+		var active_view: CardView = ui.battle_screen.table.get_slot_view(0, "active")
+		if active_view and ui.state.players[0].active:
+			var active_card_id := str(ui.state.players[0].active.card_id)
+			active_view.activated.emit(active_card_id, -1, 0, "active")
+			_check(
+				ui.selected_entity_key == "pokemon:0:active"
+				and setup_detail.is_showing_card()
+				and setup_detail.current_card_id == active_card_id
+				and setup_detail.detail_text.text.contains("特殊状态"),
+				"Tapping a field Pokémon did not show its live-state preview",
+			)
+			active_view.activated.emit(active_card_id, -1, 0, "active")
+			_check(not setup_detail.visible,
+				"Tapping the selected field Pokémon again did not hide its preview")
 	_run_local_ui_playout(ui)
 	_check(ui.current_screen == "end", "Completed local UI match did not show end screen")
 	var title_button := ui.find_child("TitleButton", true, false) as Button
@@ -2026,25 +2074,616 @@ func _run_phase_three_tests() -> void:
 			"Card choice overlay did not show an automatic card preview",
 		)
 		_check(
-			choice_ui.modal_panel.custom_minimum_size == choice_ui._choice_modal_size(true)
-			and choice_ui.modal_panel.custom_minimum_size.x
-			>= choice_ui._choice_modal_size(false).x,
-			"Card choice overlay did not use the responsive preview modal",
+			choice_ui.modal_panel.custom_minimum_size.x >= 560.0
+			and choice_ui.modal_panel.custom_minimum_size.y >= 480.0
+			and choice_ui._safe_content_size().x
+			>= choice_ui.modal_panel.custom_minimum_size.x
+			and choice_ui._safe_content_size().y
+			>= choice_ui.modal_panel.custom_minimum_size.y
+			and choice_panel.preview_panel.visible,
+			"Card choice overlay did not fit a visible preview inside the safe modal area",
 		)
 		_check(
 			choice_panel.text_option_count() == 0 and choice_ui.option_buttons.is_empty(),
 			"Card choice overlay duplicated card options as text buttons",
 		)
+	choice_ui.active_choice_panel = null
+	choice_ui.active_request = ChoiceRequest.new(
+		"single-choice-switch",
+		"search",
+		0,
+		"选择一张卡牌。",
+		[
+			{"option_id": "card:first", "label": "第一张", "value": {}},
+			{"option_id": "card:second", "label": "第二张", "value": {}},
+		],
+		1,
+		1,
+	)
+	choice_ui.selected_choice_ids.assign(["card:first"])
+	choice_ui._toggle_choice("card:second")
+	_check(
+		choice_ui.selected_choice_ids.size() == 1
+		and choice_ui.selected_choice_ids[0] == "card:second"
+		and choice_ui.modal_confirm.text.contains("1/1"),
+		"Single-choice panel did not replace the previous selection",
+	)
+	choice_ui._toggle_choice("card:second")
+	_check(
+		choice_ui.selected_choice_ids.is_empty()
+		and choice_ui.modal_confirm.disabled,
+		"Single-choice panel could not clear the current selection",
+	)
+	choice_ui.active_request = ChoiceRequest.new(
+		"multi-choice-limit",
+		"search",
+		0,
+		"选择两张卡牌。",
+		[
+			{"option_id": "card:first", "label": "第一张", "value": {}},
+			{"option_id": "card:second", "label": "第二张", "value": {}},
+			{"option_id": "card:third", "label": "第三张", "value": {}},
+		],
+		0,
+		2,
+	)
+	choice_ui.selected_choice_ids.assign(["card:first", "card:second"])
+	choice_ui._toggle_choice("card:third")
+	_check(
+		choice_ui.selected_choice_ids == ["card:first", "card:second"],
+		"Full multi-choice panel unexpectedly replaced an existing selection",
+	)
 	choice_ui.queue_free()
+
+	var choice_ux_ui := packed.instantiate()
+	root.add_child(choice_ux_ui)
+	choice_ux_ui.initialize_ui()
+	choice_ux_ui.state = _battle_state()
+	choice_ux_ui.current_view_player = 0
+	var multi_ux_request := ChoiceRequest.new(
+		"choice:ux:multi",
+		"search",
+		0,
+		"从牌库中选择一至两张卡牌加入手牌；达到上限后可先取消一张。",
+		[
+			{
+				"option_id": "ux:multi:first",
+				"label": "墓仔狗",
+				"value": {"index": 0, "card_id": "sv1-104"},
+			},
+			{
+				"option_id": "ux:multi:second",
+				"label": "巢穴球",
+				"value": {"index": 1, "card_id": "sv1-151"},
+			},
+			{
+				"option_id": "ux:multi:third",
+				"label": "伤药",
+				"value": {"index": 2, "card_id": "svf-potion"},
+			},
+		],
+		1,
+		2,
+	)
+	choice_ux_ui.show_choice(multi_ux_request)
+	var multi_ux_panel := choice_ux_ui.active_choice_panel as ChoicePanel
+	_check(multi_ux_panel != null, "Multi-choice UX panel was not created")
+	if multi_ux_panel:
+		_check(
+			multi_ux_panel.prompt_label.visible
+			and multi_ux_panel.prompt_label.text == multi_ux_request.prompt
+			and multi_ux_panel.prompt_label.autowrap_mode
+			!= TextServer.AUTOWRAP_OFF,
+			"ChoicePanel did not preserve and wrap the complete choice prompt",
+		)
+		_check(
+			multi_ux_panel.metadata_label.text.contains("1")
+			and multi_ux_panel.metadata_label.text.contains("2")
+			and multi_ux_panel.metadata_label.text.contains("张")
+			and not multi_ux_panel.metadata_label.text.contains("项"),
+			"Card multi-choice metadata did not use a natural card quantity",
+		)
+		_check(
+			choice_ux_ui.modal_confirm.disabled,
+			"Multi-choice confirmation was enabled below min_select",
+		)
+		choice_ux_ui._toggle_choice("ux:multi:first")
+		_check(
+			not choice_ux_ui.modal_confirm.disabled
+			and choice_ux_ui.selected_choice_ids == ["ux:multi:first"],
+			"Multi-choice confirmation did not enable at min_select",
+		)
+		choice_ux_ui._toggle_choice("ux:multi:second")
+		var third_reason := str(
+			multi_ux_panel._option_disabled_reasons.get("ux:multi:third", "")
+		)
+		var third_tile := multi_ux_panel._option_tiles.get(
+			"ux:multi:third"
+		) as PanelContainer
+		_check(
+			third_reason.contains("已达到选择上限")
+			and third_tile != null
+			and bool(third_tile.get_meta("choice_blocked", false))
+			and str(third_tile.get_meta(
+				"choice_disabled_reason", ""
+			)).contains("已达到选择上限")
+			and third_tile.tooltip_text.contains("已达到选择上限"),
+			"Unselected card did not explain that the multi-choice limit was reached",
+		)
+		choice_ux_ui._toggle_choice("ux:multi:third")
+		_check(
+			choice_ux_ui.selected_choice_ids == [
+				"ux:multi:first", "ux:multi:second",
+			]
+			and multi_ux_panel.blocked_reason_label.visible
+			and multi_ux_panel.blocked_reason_label.text.contains("已达到选择上限"),
+			"Clicking a choice blocked by max_select did not preserve state and explain why",
+		)
+		choice_ux_ui._toggle_choice("ux:multi:first")
+		_check(
+			choice_ux_ui.selected_choice_ids == ["ux:multi:second"]
+			and str(multi_ux_panel._option_disabled_reasons.get(
+				"ux:multi:third", ""
+			)).is_empty()
+			and not bool(third_tile.get_meta("choice_blocked", false))
+			and str(third_tile.get_meta(
+				"choice_disabled_reason", ""
+			)).is_empty(),
+			"Deselecting a multi-choice card did not release capacity",
+		)
+		choice_ux_ui._toggle_choice("ux:multi:third")
+		_check(
+			choice_ux_ui.selected_choice_ids == [
+				"ux:multi:second", "ux:multi:third",
+			],
+			"A newly released multi-choice slot could not be selected",
+		)
+	choice_ux_ui._close_modal()
+	choice_ux_ui._finish_modal_close(choice_ux_ui._modal_generation)
+
+	var text_ux_request := ChoiceRequest.new(
+		"choice:ux:text",
+		"confirm",
+		0,
+		"要将查看到的卡牌加入手牌吗？",
+		[
+			{"option_id": "confirm:yes", "label": "是，加入手牌", "value": true},
+			{"option_id": "confirm:no", "label": "否，放入弃牌", "value": false},
+		],
+		1,
+		1,
+	)
+	choice_ux_ui.show_choice(text_ux_request)
+	var text_ux_panel := choice_ux_ui.active_choice_panel as ChoicePanel
+	_check(text_ux_panel != null, "Text choice UX panel was not created")
+	if text_ux_panel:
+		var yes_button := text_ux_panel._option_buttons.get("confirm:yes") as Button
+		var no_button := text_ux_panel._option_buttons.get("confirm:no") as Button
+		_check(
+			text_ux_panel.prompt_label.text == text_ux_request.prompt
+			and text_ux_panel.metadata_label.text.contains("1")
+			and text_ux_panel.metadata_label.text.contains("项")
+			and not text_ux_panel.metadata_label.text.contains("1–1"),
+			"Text choice did not use its full prompt and natural item quantity",
+		)
+		yes_button.pressed.emit()
+		var yes_selected_style := yes_button.get_theme_stylebox(
+			"normal"
+		) as StyleBoxFlat
+		_check(
+			choice_ux_ui.selected_choice_ids == ["confirm:yes"]
+			and yes_button.text.begins_with("✓ ")
+			and not no_button.text.begins_with("✓ ")
+			and yes_selected_style != null
+			and yes_selected_style.border_width_left >= 2,
+			"Selected text option did not expose a clear selected style",
+		)
+		no_button.pressed.emit()
+		var no_selected_style := no_button.get_theme_stylebox(
+			"normal"
+		) as StyleBoxFlat
+		_check(
+			choice_ux_ui.selected_choice_ids == ["confirm:no"]
+			and not yes_button.text.begins_with("✓ ")
+			and no_button.text.begins_with("✓ ")
+			and no_selected_style != null
+			and no_selected_style.border_width_left >= 2,
+			"Clicking another text option did not atomically switch the selected style",
+		)
+	choice_ux_ui._close_modal()
+	choice_ux_ui._finish_modal_close(choice_ux_ui._modal_generation)
+
+	var optional_ux_request := ChoiceRequest.new(
+		"choice:ux:optional",
+		"search",
+		0,
+		"你可以选择最多两张卡牌，也可以不选择并继续。",
+		[
+			{
+				"option_id": "optional:first",
+				"label": "墓仔狗",
+				"value": {"index": 0, "card_id": "sv1-104"},
+			},
+			{
+				"option_id": "optional:second",
+				"label": "伤药",
+				"value": {"index": 1, "card_id": "svf-potion"},
+			},
+		],
+		0,
+		2,
+		false,
+		true,
+	)
+	var optional_ux_stack := ResolutionStack.new()
+	optional_ux_stack.context["cancel_action_checkpoint"] = {"state": {}}
+	optional_ux_stack.pending_request = optional_ux_request
+	choice_ux_ui.state.resolution_stack = optional_ux_stack.to_dict()
+	choice_ux_ui.show_choice(optional_ux_request)
+	var optional_ux_panel := choice_ux_ui.active_choice_panel as ChoicePanel
+	_check(
+		optional_ux_panel != null
+		and not choice_ux_ui.modal_confirm.disabled
+		and choice_ux_ui.modal_confirm.text.contains("不选择并继续")
+		and choice_ux_ui.modal_cancel.visible
+		and choice_ux_ui.modal_cancel.text.contains("取消使用此卡")
+		and optional_ux_panel.metadata_label.text.contains("最多")
+		and optional_ux_panel.metadata_label.text.contains("2")
+		and optional_ux_panel.metadata_label.text.contains("张"),
+		"Optional 0/N choice did not distinguish skip-confirm from cancelling card use",
+	)
+	choice_ux_ui._toggle_choice("optional:first")
+	_check(
+		not choice_ux_ui.modal_confirm.text.contains("不选择并继续"),
+		"Optional choice CTA did not change after selecting a card",
+	)
+	choice_ux_ui._close_modal()
+	choice_ux_ui._finish_modal_close(choice_ux_ui._modal_generation)
+
+	choice_ux_ui.state.resolution_stack = {}
+	var empty_ux_request := ChoiceRequest.new(
+		"choice:ux:empty",
+		"resolve_empty",
+		0,
+		"没有找到符合条件的卡牌。",
+		[],
+		0,
+		0,
+	)
+	choice_ux_ui.show_choice(empty_ux_request)
+	var empty_ux_panel := choice_ux_ui.active_choice_panel as ChoicePanel
+	_check(
+		empty_ux_panel != null
+		and empty_ux_panel.prompt_label.text == empty_ux_request.prompt
+		and not empty_ux_panel.empty_label.visible
+		and empty_ux_panel.metadata_label.text.contains("无需选择")
+		and not choice_ux_ui.modal_confirm.disabled
+		and choice_ux_ui.modal_confirm.text.contains("继续结算")
+		and not choice_ux_ui.modal_cancel.visible,
+		"Empty 0/0 choice did not expose a safe and understandable continuation state",
+	)
+	choice_ux_ui._close_modal()
+	choice_ux_ui._finish_modal_close(choice_ux_ui._modal_generation)
+
+	var attachment_ux_request := ChoiceRequest.new(
+		"choice:ux:attachment",
+		"select_attachment",
+		0,
+		"选择战斗宝可梦身上要丢弃的能量。",
+		[
+			{
+				"option_id": "attachment:0:active:energy:0:sv1-ener-5",
+				"label": "墓仔狗 · 基本火能量",
+				"ref": EntityRef.new(
+					"attachment", 0, "", "active", 0, "energy", "sv1-ener-5"
+				).to_dict(),
+				"value": {
+					"player": 0,
+					"slot": "active",
+					"index": 0,
+					"card_id": "sv1-ener-5",
+				},
+			},
+			{
+				"option_id": "attachment:0:active:energy:1:svi-jete",
+				"label": "墓仔狗 · 喷射能量",
+				"ref": EntityRef.new(
+					"attachment", 0, "", "active", 1, "energy", "svi-jete"
+				).to_dict(),
+				"value": {
+					"player": 0,
+					"slot": "active",
+					"index": 1,
+					"card_id": "svi-jete",
+				},
+			},
+		],
+		1,
+		1,
+	)
+	choice_ux_ui.show_choice(attachment_ux_request)
+	var attachment_panel := choice_ux_ui.active_choice_panel as ChoicePanel
+	_check(
+		attachment_panel != null
+		and attachment_panel.card_option_count() == 2
+		and (attachment_panel._option_captions.get(
+			"attachment:0:active:energy:0:sv1-ener-5"
+		) as Label).text.contains("基本火能量")
+		and (attachment_panel._option_captions.get(
+			"attachment:0:active:energy:1:svi-jete"
+		) as Label).text.contains("喷射能量"),
+		"Attachment card captions discarded the distinct attachment labels",
+	)
+	choice_ux_ui._close_modal()
+	choice_ux_ui._finish_modal_close(choice_ux_ui._modal_generation)
+
+	var arven_ux_request := ChoiceRequest.new(
+		"choice:ux:arven",
+		"arven",
+		0,
+		"选择物品卡和宝可梦道具，各最多一张。",
+		[
+			{"option_id": "arven:item:0", "label": "巢穴球", "value": {"card_id": "sv1-151"}},
+			{"option_id": "arven:item:1", "label": "高级球", "value": {"card_id": "sv1-153"}},
+			{"option_id": "arven:tool:0", "label": "不服输头带", "value": {"card_id": "sv1-201"}},
+			{"option_id": "arven:tool:1", "label": "勇气护符", "value": {"card_id": "sv1-202"}},
+		],
+		0,
+		2,
+	)
+	choice_ux_ui.show_choice(arven_ux_request)
+	choice_ux_ui._toggle_choice("arven:item:0")
+	var arven_panel := choice_ux_ui.active_choice_panel as ChoicePanel
+	var second_item_reason := (
+		arven_panel.option_disabled_reason("arven:item:1")
+		if arven_panel
+		else ""
+	)
+	_check(
+		second_item_reason.contains("物品和宝可梦道具各最多"),
+		"Arven choice did not explain its one-item and one-tool category limit",
+	)
+	choice_ux_ui._toggle_choice("arven:tool:0")
+	_check(
+		choice_ux_ui.selected_choice_ids == ["arven:item:0", "arven:tool:0"],
+		"Arven choice blocked a legal item-plus-tool combination",
+	)
+	choice_ux_ui._close_modal()
+	choice_ux_ui._finish_modal_close(choice_ux_ui._modal_generation)
+
+	var clara_ux_request := ChoiceRequest.new(
+		"choice:ux:clara",
+		"clara",
+		0,
+		"从弃牌区选择宝可梦和基本能量，各最多一张。",
+		[
+			{"option_id": "clara:pokemon:0", "label": "墓仔狗", "value": {"card_id": "sv1-104"}},
+			{"option_id": "clara:pokemon:1", "label": "天然雀", "value": {"card_id": "sv1-107"}},
+			{"option_id": "clara:energy:0", "label": "火能量", "value": {"card_id": "sv1-ener-2"}},
+			{"option_id": "clara:energy:1", "label": "水能量", "value": {"card_id": "sv1-ener-3"}},
+		],
+		0,
+		2,
+		false,
+		false,
+		{"pokemon_count": 1, "energy_count": 1},
+	)
+	choice_ux_ui.show_choice(clara_ux_request)
+	choice_ux_ui._toggle_choice("clara:pokemon:0")
+	var clara_panel := choice_ux_ui.active_choice_panel as ChoicePanel
+	var second_pokemon_reason := (
+		clara_panel.option_disabled_reason("clara:pokemon:1")
+		if clara_panel
+		else ""
+	)
+	_check(
+		second_pokemon_reason.contains("宝可梦最多"),
+		"Clara choice did not explain its Pokémon category limit",
+	)
+	choice_ux_ui._toggle_choice("clara:energy:0")
+	var second_energy_reason := (
+		clara_panel.option_disabled_reason("clara:energy:1")
+		if clara_panel
+		else ""
+	)
+	_check(
+		second_energy_reason.contains("基本能量最多")
+		and choice_ux_ui.selected_choice_ids == [
+			"clara:pokemon:0", "clara:energy:0",
+		],
+		"Clara choice did not enforce distinct Pokémon/basic-energy limits",
+	)
+	choice_ux_ui.queue_free()
+
+	var field_choice_ui := packed.instantiate()
+	root.add_child(field_choice_ui)
+	field_choice_ui.initialize_ui()
+	var field_choice_state := _battle_state()
+	field_choice_state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	field_choice_ui.state = field_choice_state
+	field_choice_ui.current_view_player = 0
+	field_choice_ui._build_game_screen()
+	var field_choice := ChoiceRequest.new(
+		"field-choice",
+		"select_heal_target",
+		0,
+		"选择回复目标。",
+		[
+			{
+				"option_id": "target:active",
+				"label": "战斗区",
+				"value": {"slot": "active", "card_id": "sv1-104"},
+			},
+			{
+				"option_id": "target:bench_0",
+				"label": "备战区 1",
+				"value": {"slot": "bench_0", "card_id": "sv2-delib"},
+			},
+		],
+		1,
+		1,
+	)
+	field_choice_ui._show_choice_overlay(field_choice)
+	_check(
+		not field_choice_ui.modal_layer.visible
+		and field_choice_ui.battle_screen.table.choice_target_options.size() == 2
+		and field_choice_ui.battle_screen.table.get_slot_view(0, "active").targetable
+		and field_choice_ui.battle_screen.table.get_slot_view(0, "bench_0").targetable,
+		"Visible single-target card choice did not route to highlighted field cards",
+	)
+	var coin_choice := ChoiceRequest.new(
+		"coin-choice",
+		"coin_flip",
+		0,
+		"硬币结果",
+		[],
+		0,
+		0,
+		false,
+		false,
+		{"predetermined_flips": [true, false, true]},
+	)
+	field_choice_ui._show_choice_overlay(coin_choice)
+	var has_coin_face := false
+	for label_value in field_choice_ui.modal_body.find_children("*", "Label", true, false):
+		var label := label_value as Label
+		if label and label.text in ["正", "反"]:
+			has_coin_face = true
+			break
+	_check(
+		field_choice_ui.modal_layer.visible
+		and field_choice_ui.active_choice_panel == null
+		and has_coin_face,
+		"Coin flip choice did not use the dedicated coin animation surface",
+	)
+	field_choice_ui.queue_free()
 
 	var choice_panel_scene := load("res://ui/dialogs/choice_panel.tscn") as PackedScene
 	_check(choice_panel_scene != null, "ChoicePanel scene failed to load")
 	if choice_panel_scene:
 		var panel := choice_panel_scene.instantiate() as ChoicePanel
 		root.add_child(panel)
-		panel.configure("请选择 0-2 项。", true, CardCatalog.new())
-		panel.add_card_option("dup:target", "sv1-104", "备战区 1", 0)
+		var direct_panel_prompt := "请选择需要处理的卡牌；你可以点击另一张卡牌直接换选。"
+		panel.configure(
+			"最多选择 2 张卡牌。",
+			true,
+			CardCatalog.new(),
+			{
+				"prompt": direct_panel_prompt,
+				"min_select": 0,
+				"max_select": 2,
+				"request_type": "search",
+			},
+		)
+		var first_card := panel.add_card_option(
+			"dup:target", "sv1-104", "备战区 1", 0)
 		var second_card := panel.add_card_option("dup:second", "sv1-151", "牌库 2", 0)
+		_check(
+			panel.prompt_label.visible
+			and panel.prompt_label.text == direct_panel_prompt
+			and first_card.catalog == panel.catalog
+			and second_card.catalog == panel.catalog,
+			"ChoicePanel configure context did not render its complete prompt",
+		)
+		panel.size = Vector2(980.0, 600.0)
+		panel._apply_responsive_layout()
+		var wide_choice_columns := panel.responsive_column_count()
+		panel.size = Vector2(560.0, 600.0)
+		panel._apply_responsive_layout()
+		var compact_choice_columns := panel.responsive_column_count()
+		_check(
+			wide_choice_columns <= 5
+			and compact_choice_columns >= 2
+			and compact_choice_columns < wide_choice_columns
+			and panel.card_grid is HFlowContainer
+			and panel.get_combined_minimum_size().x <= 320.0,
+			"ChoicePanel card grid did not reduce its column count at compact width",
+		)
+		for narrow_case in [
+			{"width": 480.0, "columns": 2},
+			{"width": 400.0, "columns": 2},
+			{"width": 320.0, "columns": 1},
+		]:
+			var narrow_width := float(narrow_case["width"])
+			panel.size = Vector2(narrow_width, 600.0)
+			panel._apply_responsive_layout()
+			var narrow_columns := panel.responsive_column_count()
+			var occupied_width := (
+				float(narrow_columns) * ChoicePanel.CARD_TILE_SIZE.x
+				+ float(maxi(0, narrow_columns - 1)) * ChoicePanel.CARD_GRID_GAP
+				+ panel.content_row.get_theme_constant("separation")
+				+ panel.responsive_preview_width()
+			)
+			_check(
+				panel.is_preview_visible()
+				and narrow_columns == int(narrow_case["columns"])
+				and occupied_width <= narrow_width + 0.5,
+				"ChoicePanel hid or overflowed its preview at %d px: columns=%d occupied=%.1f" % [
+					int(narrow_width), narrow_columns, occupied_width,
+				],
+			)
+		second_card.activated.emit("sv1-151", -1, 0, "")
+		_check(
+			panel.is_preview_visible()
+			and panel.previewed_card_id() == "sv1-151"
+			and panel.preview_title.text.contains("巢穴球"),
+			"Narrow ChoicePanel did not update the visible preview after a card click",
+		)
+		panel._preview_card("missing-choice-card")
+		_check(
+			panel.is_preview_visible()
+			and panel.previewed_card_id() == "missing-choice-card"
+			and panel.preview_title.text.contains("资料暂不可用")
+			and panel.preview_image.texture == null,
+			"Missing card data silently removed the ChoicePanel preview",
+		)
+		panel._preview_card("sv1-104")
+		panel.set_option_disabled_reasons({"dup:second": "已达到选择上限"})
+		panel.show_blocked_reason("已达到选择上限")
+		panel.set_option_disabled_reasons({})
+		_check(
+			not panel.blocked_reason_label.visible
+			and panel.blocked_reason_label.accessibility_name.is_empty(),
+			"ChoicePanel retained a stale blocked accessibility announcement",
+		)
+		panel.size = Vector2(980.0, 600.0)
+		panel._apply_responsive_layout()
+		panel.refresh_selection(["dup:target"], 1, false)
+		var selected_badge := panel._option_badges.get("dup:target") as Label
+		var unselected_badge := panel._option_badges.get("dup:second") as Label
+		var selected_tile := panel._option_tiles.get("dup:target") as PanelContainer
+		var selection_ring := first_card.get_node_or_null("SelectionRing") as Panel
+		var selection_style := (
+			selection_ring.get_theme_stylebox("panel") as StyleBoxFlat
+			if selection_ring
+			else null
+		)
+		var tile_style := (
+			selected_tile.get_theme_stylebox("panel") as StyleBoxFlat
+			if selected_tile
+			else null
+		)
+		_check(
+			first_card.selected
+			and not second_card.selected
+			and selected_badge != null
+			and selected_badge.visible
+			and selected_badge.text.begins_with("✓")
+			and selected_badge.tooltip_text.contains("已选择")
+			and unselected_badge != null
+			and not unselected_badge.visible,
+			"ChoicePanel did not expose a clear exclusive selected state",
+		)
+		_check(
+			selection_style != null
+			and not selection_style.draw_center
+			and selection_style.border_width_left >= 3
+			and selection_style.shadow_size >= 8
+			and tile_style != null
+			and tile_style.border_width_left >= 2
+			and panel.selection_hint_label.text.contains("换选"),
+			"ChoicePanel selected card did not receive the strong outline contract",
+		)
 		panel.refresh_selection(["dup:target", "dup:target"], 2, true)
 		_check(panel.card_option_count() == 2, "ChoicePanel did not create card tiles")
 		_check(
@@ -2086,6 +2725,21 @@ func _run_phase_three_tests() -> void:
 			and panel.preview_title.text.contains("伤药"),
 			"ChoicePanel did not preview revealed non-option cards",
 		)
+		var enum_tokens := [
+			"Pokémon", "Trainer", "Energy", "Basic", "Stage", "Colorless",
+		]
+		var localized_preview := true
+		for preview_card_id in ["sv1-104", "sv1-106", "sv1-151", "svi-jete"]:
+			panel._preview_card(preview_card_id)
+			for enum_token in enum_tokens:
+				localized_preview = (
+					localized_preview
+					and not panel.preview_text.text.contains(str(enum_token))
+				)
+		_check(
+			localized_preview,
+			"Choice preview leaked raw English card type or energy enum values",
+		)
 		panel.queue_free()
 
 	var energy_ui := packed.instantiate()
@@ -2094,13 +2748,24 @@ func _run_phase_three_tests() -> void:
 	if choice_panel_scene:
 		var energy_panel := choice_panel_scene.instantiate() as ChoicePanel
 		root.add_child(energy_panel)
-		energy_panel.configure("请选择 3-3 项。", true, CardCatalog.new())
+		energy_panel.configure(
+			"最多分配 2 张能量。",
+			true,
+			CardCatalog.new(),
+			{
+				"prompt": "依次为每张能量选择附着目标。",
+				"min_select": 0,
+				"max_select": 2,
+				"request_type": "distribute_energy",
+				"allow_duplicates": true,
+			},
+		)
 		energy_panel.add_text_option("target:active", "战斗区")
 		energy_panel.add_text_option("target:bench_0", "备战区 1")
 		energy_panel.add_energy_preview(
-			["sv1-ener-1", "sv1-ener-2", "sv1-ener-3"], CardCatalog.new())
+			["sv1-ener-1", "sv1-ener-2"], CardCatalog.new())
 		energy_ui.active_request = ChoiceRequest.new(
-			"choice:energy",
+			"choice:energy:max-per-target",
 			"distribute_energy",
 			0,
 			"分配能量",
@@ -2108,41 +2773,117 @@ func _run_phase_three_tests() -> void:
 				{"option_id": "target:active", "label": "战斗区", "value": {"slot": "active"}},
 				{"option_id": "target:bench_0", "label": "备战区 1", "value": {"slot": "bench_0"}},
 			],
-			3,
-			3,
+			0,
+			2,
 			true,
 			false,
-			{},
+			{"max_per_target": 1},
 		)
 		energy_ui.active_choice_panel = energy_panel
 		energy_ui.selected_choice_ids.clear()
-		energy_ui.selected_choice_ids.append_array([
-			"target:active", "target:bench_0", "target:active"])
 		energy_ui._refresh_choice_buttons()
 		_check(
-			energy_panel._energy_assignment_labels.size() == 3
+			energy_panel.undo_button.disabled
+			and energy_panel.clear_button.disabled,
+			"Empty energy distribution left undo or clear enabled",
+		)
+		energy_ui._toggle_choice("target:active")
+		_check(
+			energy_ui.selected_choice_ids == ["target:active"]
+			and energy_panel._energy_assignment_labels[0].text.contains("战斗区")
+			and energy_panel._energy_assignment_labels[1].text.contains("请选择目标")
+			and not energy_panel.undo_button.disabled
+			and not energy_panel.clear_button.disabled,
+			"Energy distribution did not expose non-zero progress and the current card",
+		)
+		var active_cap_reason := str(
+			energy_panel._option_disabled_reasons.get("target:active", "")
+		)
+		_check(
+			active_cap_reason.contains("该目标最多")
+			and active_cap_reason.contains("1")
+			and active_cap_reason.contains("张能量"),
+			"Energy target did not explain its max_per_target limit",
+		)
+		energy_ui._toggle_choice("target:active")
+		_check(
+			energy_ui.selected_choice_ids == ["target:active"]
+			and energy_panel.blocked_reason_label.text.contains("该目标最多"),
+			"Energy max_per_target did not block an extra assignment with feedback",
+		)
+		energy_ui._toggle_choice("target:bench_0")
+		_check(
+			energy_ui.selected_choice_ids == ["target:active", "target:bench_0"]
+			and not energy_ui.modal_confirm.disabled
 			and energy_panel._energy_assignment_labels[1].text.contains("备战区 1"),
-			"Energy distribution preview did not show assigned targets",
+			"Energy distribution did not complete across two legal targets",
 		)
 		energy_ui._rewind_energy_distribution(1)
 		_check(
 			energy_ui.selected_choice_ids == ["target:active"]
-			and energy_panel._energy_assignment_labels[1].text == "当前",
+			and energy_panel._energy_assignment_labels[1].text.contains("请选择目标"),
 			"Energy distribution rewind did not roll back to the selected energy",
 		)
 		energy_ui._undo_energy_distribution()
 		_check(
 			energy_ui.selected_choice_ids.is_empty()
-			and energy_panel._energy_assignment_labels[0].text == "当前",
+			and energy_panel._energy_assignment_labels[0].text.contains("请选择目标")
+			and energy_panel.undo_button.disabled
+			and energy_panel.clear_button.disabled,
 			"Energy distribution undo did not remove the last assignment",
 		)
-		energy_ui.selected_choice_ids.clear()
-		energy_ui.selected_choice_ids.append_array(["target:active", "target:bench_0"])
+		energy_ui._toggle_choice("target:active")
+		energy_ui._toggle_choice("target:bench_0")
 		energy_ui._clear_energy_distribution()
 		_check(
 			energy_ui.selected_choice_ids.is_empty()
-			and energy_panel._energy_assignment_labels[0].text == "当前",
+			and energy_panel._energy_assignment_labels[0].text.contains("请选择目标")
+			and energy_panel.undo_button.disabled
+			and energy_panel.clear_button.disabled,
 			"Energy distribution clear did not reset assignments",
+		)
+
+		energy_ui.active_request = ChoiceRequest.new(
+			"choice:energy:same-target",
+			"distribute_energy",
+			0,
+			"把这些能量附着到同一目标。",
+			[
+				{"option_id": "target:active", "label": "战斗区", "value": {"slot": "active"}},
+				{"option_id": "target:bench_0", "label": "备战区 1", "value": {"slot": "bench_0"}},
+			],
+			2,
+			2,
+			true,
+			false,
+			{"max_per_target": 2, "same_target": true},
+		)
+		energy_ui.selected_choice_ids.clear()
+		energy_ui._refresh_choice_buttons()
+		energy_ui._toggle_choice("target:active")
+		var same_target_reason := str(
+			energy_panel._option_disabled_reasons.get("target:bench_0", "")
+		)
+		_check(
+			same_target_reason.contains("同一目标"),
+			"Energy same_target choice did not explain why another target is blocked",
+		)
+		energy_ui._toggle_choice("target:bench_0")
+		_check(
+			energy_ui.selected_choice_ids == ["target:active"]
+			and energy_panel.blocked_reason_label.text.contains("同一目标"),
+			"Energy same_target constraint did not preserve the current assignment",
+		)
+		energy_ui._toggle_choice("target:active")
+		_check(
+			energy_ui.selected_choice_ids == ["target:active", "target:active"]
+			and not energy_ui.modal_confirm.disabled
+			and energy_panel.selected_count_for("target:active") == 2
+			and energy_panel._energy_assignment_labels[0].text.contains("战斗区")
+			and energy_panel._energy_assignment_labels[1].text.contains("战斗区")
+			and not energy_panel._energy_assignment_labels[0].text.contains("请选择目标")
+			and not energy_panel._energy_assignment_labels[1].text.contains("请选择目标"),
+			"Same-target energy distribution did not reach an unambiguous complete state",
 		)
 		energy_panel.queue_free()
 	energy_ui.queue_free()
@@ -2179,7 +2920,62 @@ func _run_phase_three_tests() -> void:
 		and not retreat_ui.state.players[0].retreated_this_turn,
 		"Retreat confirmation changed state before the player confirmed",
 	)
+	var retreat_payment_views: Array[Node] = retreat_ui.modal_body.find_children(
+		"*", "CardView", true, false)
+	_check(
+		retreat_payment_views.size() == 1 and retreat_ui.modal_confirm.disabled,
+		"Retreat confirmation did not require card-based attached-energy payment",
+	)
+	if not retreat_payment_views.is_empty():
+		var payment_view := retreat_payment_views[0] as CardView
+		payment_view.detail_requested.emit(payment_view.card_id)
+		_check(
+			retreat_ui.modal_confirm.text == "返回撤退确认"
+			and retreat_ui.modal_body.find_child(
+				"CardInspectorPanel", true, false
+			) != null,
+			"Retreat payment inspector exposed the wrong return destination",
+		)
+		retreat_ui.modal_confirm.pressed.emit()
+		retreat_payment_views.assign(retreat_ui.modal_body.find_children(
+			"*", "CardView", true, false))
+		payment_view = (
+			retreat_payment_views[0] as CardView
+			if not retreat_payment_views.is_empty()
+			else null
+		)
+		_check(
+			payment_view != null and retreat_ui.modal_title.text == "确认撤退",
+			"Retreat payment inspector did not return to its confirmation panel",
+		)
+		if payment_view:
+			payment_view.activated.emit(payment_view.card_id, -1, 0, "")
+			_check(
+				not retreat_ui.modal_confirm.disabled and payment_view.selected,
+				"Selecting the retreat energy card did not unlock confirmation",
+			)
 	retreat_ui.queue_free()
+
+	var end_turn_ui := packed.instantiate()
+	root.add_child(end_turn_ui)
+	end_turn_ui.initialize_ui()
+	var end_turn_state := _battle_state()
+	end_turn_ui.state = end_turn_state
+	end_turn_ui.current_screen = "game"
+	end_turn_ui.current_view_player = 0
+	end_turn_ui.game_mode = "local"
+	end_turn_ui._build_game_screen()
+	var end_turn_step: StepResult = end_turn_ui._execute_action(
+		GameAction.new("END_TURN", {}, true, 0))
+	_check(
+		end_turn_step.success
+		and end_turn_ui.modal_layer.visible
+		and end_turn_ui.state.active_player_idx == 0
+		and end_turn_ui.modal_body.get_child_count() > 0
+		and str(end_turn_ui.modal_body.get_child(0).text).contains("附加能量"),
+		"End turn did not warn about remaining legal card actions",
+	)
+	end_turn_ui.queue_free()
 
 
 func _run_phase_four_foundation_tests() -> void:
@@ -4367,6 +5163,7 @@ func _run_visual_upgrade_tests() -> void:
 	_check_pointer_only_input_contract()
 	for layout_failure in BattleTableLayoutContract.run():
 		failures.append(layout_failure)
+	_run_card_direct_interaction_contract_tests()
 	var seeded_state_a := UIPreviewStateFactory.battle_state(77)
 	var seeded_state_b := UIPreviewStateFactory.battle_state(77)
 	_check(
@@ -4389,7 +5186,11 @@ func _run_visual_upgrade_tests() -> void:
 		"res://ui/dialogs/pause_panel.tscn",
 		"res://presentation/presentation_event.gd",
 		"res://presentation/presentation_director.gd",
+		"res://scenes/battle/components/card_interaction_router.gd",
+		"res://scenes/battle/components/card_action_popover.gd",
+		"res://scenes/battle/components/card_action_popover.tscn",
 		"res://scenes/battle/components/battle_table_layout.gd",
+		"res://scenes/battle/playmat.gd",
 		"res://scenes/title/title_page.tscn",
 		"res://scenes/decks/deck_select_page.tscn",
 		"res://scenes/network/network_lobby_page.tscn",
@@ -4398,6 +5199,18 @@ func _run_visual_upgrade_tests() -> void:
 		"res://tools/ui_workbench.tscn",
 	]:
 		_check(FileAccess.file_exists(path), "Visual upgrade asset is missing: %s" % path)
+	var battle_playmat_source := FileAccess.get_file_as_string(
+		"res://scenes/battle/playmat.gd"
+	)
+	_check(
+		not battle_playmat_source.contains("lip_rect")
+		and battle_playmat_source.contains("_draw_bench_outline_without_top")
+		and battle_playmat_source.contains("var top_hairline")
+		and battle_playmat_source.contains(
+			"draw_line(points[0], points[1], top_hairline, 1.0)"
+		),
+		"Bench trays lost the 1px top hairline or restored the heavy top lip",
+	)
 	var expected_energy_icon_paths := {
 		"Grass": "res://assets/ui/energy/grass.png",
 		"Fire": "res://assets/ui/energy/fire.png",
@@ -5080,30 +5893,58 @@ func _run_visual_upgrade_tests() -> void:
 		"System back dismissed the non-cancellable hot-seat privacy overlay")
 	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
 	privacy_ui._refresh_game()
-	privacy_ui.battle_screen.show_card_detail("sv1-104")
-	_check_pointer_only_focus_tree(privacy_ui.battle_screen, "Battle screen")
-	_check(privacy_ui.battle_screen.detail_panel.visible,
-		"Battle card detail did not open for the close control test")
-	_check(privacy_ui.battle_screen.detail_close_button != null
-		and privacy_ui.battle_screen.detail_close_button.visible,
-		"Battle card detail close button was not shown")
+	# The synchronous test runner has no rendered container pass. Seed the final
+	# right-rail geometry that the runtime establishes at the end of the frame.
+	privacy_ui.battle_screen.log_panel.size = Vector2(260.0, 360.0)
+	privacy_ui.battle_screen.log_panel.global_position = Vector2(1000.0, 112.0)
+	privacy_ui.battle_screen.header.size = Vector2(1280.0, 80.0)
+	privacy_ui.battle_screen.header.global_position = Vector2.ZERO
+	privacy_ui._show_toast("能量已附着。")
+	privacy_ui._layout_toast(Vector2(1280.0, 720.0), 0, 0, 0, 0)
+	var battle_toast_rect: Rect2 = privacy_ui.toast_label.get_global_rect()
+	var battle_log_rect: Rect2 = privacy_ui.battle_screen.log_panel.get_global_rect()
 	_check(
-		privacy_ui.battle_screen.detail_close_button.custom_minimum_size.x >= 48.0
-		and privacy_ui.battle_screen.detail_close_button.custom_minimum_size.y >= 48.0
-		and privacy_ui.battle_screen.detail_close_button.focus_mode
-			== Control.FOCUS_NONE
-		and not privacy_ui.battle_screen.detail_close_button.accessibility_name.is_empty(),
-		"Battle card detail close control is not a 48 px pointer/touch target",
+		battle_log_rect.encloses(battle_toast_rect)
+		and not battle_toast_rect.intersects(
+			privacy_ui.battle_screen.header.get_global_rect()
+		),
+		"Battle toast still overlaps the header/table instead of using the log rail: toast=%s log=%s header=%s screen=%s" % [
+			battle_toast_rect,
+			battle_log_rect,
+			privacy_ui.battle_screen.header.get_global_rect(),
+			privacy_ui.current_screen,
+		],
 	)
-	privacy_ui.battle_screen.detail_close_button.pressed.emit()
-	_check(not privacy_ui.battle_screen.detail_panel.visible,
-		"Battle card detail close button did not hide the detail panel")
+	privacy_ui.battle_screen._on_detail_requested("sv1-104")
+	_check_pointer_only_focus_tree(privacy_ui.modal_layer, "Battle card inspector")
+	_check(
+		privacy_ui.modal_layer.visible
+		and privacy_ui.modal_body.find_child("CardInspectorPanel", true, false) != null
+		and privacy_ui.battle_screen.detail_panel != null
+		and privacy_ui.battle_screen.find_child("DetailPanel", true, false) != null
+		and not privacy_ui.battle_screen.detail_panel.visible,
+		"Long press did not use the modal inspector while hiding the tap preview",
+	)
+	_check(
+		privacy_ui.modal_confirm.custom_minimum_size.y >= 48.0
+		and privacy_ui.modal_confirm.focus_mode == Control.FOCUS_NONE,
+		"Card inspector close control is below the 48 px touch target",
+	)
+	privacy_ui.modal_confirm.pressed.emit()
+	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
 	privacy_ui.battle_screen.show_card_detail("sv1-104")
+	_check(
+		privacy_ui.battle_screen.detail_panel.visible,
+		"Battle floating card preview could not be reopened after the inspector",
+	)
 	privacy_ui._show_pause_overlay()
 	_check(privacy_ui.modal_layer.z_index > privacy_ui.battle_screen.z_index + 20,
 		"Pause menu modal layer can be drawn under battle overlay panels")
-	_check(not privacy_ui.battle_screen.detail_panel.visible,
-		"Pause menu left the battle card detail overlay visible")
+	_check(
+		privacy_ui.battle_screen.find_child("DetailPanel", true, false) != null
+		and not privacy_ui.battle_screen.detail_panel.visible,
+		"Pause menu did not hide the transient card preview",
+	)
 	_check(float(privacy_ui.modal_shade.color.a) >= 0.99,
 		"Pause menu did not use an opaque privacy shade")
 	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
@@ -5208,6 +6049,10 @@ func _run_visual_upgrade_tests() -> void:
 		var battle := packed.instantiate()
 		root.add_child(battle)
 		battle.initialize_ui()
+		_prime_card_action_popover(battle.table.action_popover)
+		battle.table.hud._ready()
+		battle.table.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		battle.table.size = Vector2(1280.0, 720.0)
 		var state := _battle_state()
 		state.players[0].hand = [
 			"sv1-104", "sv1-ener-5", "sv1-151", "sv1-189",
@@ -5232,42 +6077,337 @@ func _run_visual_upgrade_tests() -> void:
 			rows.append({"action": action, "label": action.action})
 		battle.update_view(state, 0, rows, "", false, "local")
 		battle._layout_board()
-		battle.show_card_detail("sv1-104")
-		var detail_rect := Rect2(battle.detail_panel.global_position, battle.detail_panel.size)
-		var opponent_deck_rect := Rect2(
-			(battle.zones["opponent_deck"] as ZoneView).global_position,
-			(battle.zones["opponent_deck"] as ZoneView).size,
+		var subtype_catalog := CardCatalog.new(true)
+		subtype_catalog.cards["test-subtype-stadium"] = {
+			"name": "测试竞技场",
+			"supertype": "Trainer",
+			"subtypes": ["Stadium"],
+			# Deliberately omit trainer_type: CardCatalog subtype classification is
+			# the same authority used by the rules layer.
+		}
+		var subtype_state := GameState.new()
+		subtype_state.phase = "MAIN"
+		subtype_state.active_player_idx = 0
+		subtype_state.players[0].hand = ["test-subtype-stadium"]
+		var subtype_stadium_action := GameAction.new(
+			"PLAY_TRAINER",
+			{"hand_idx": 0},
+			false,
+			0,
+			EntityRef.new(
+				"card", 0, "hand", "", 0, "", "test-subtype-stadium"
+			),
 		)
-		var opponent_discard_rect := Rect2(
-			(battle.zones["opponent_discard"] as ZoneView).global_position,
-			(battle.zones["opponent_discard"] as ZoneView).size,
-		)
-		var own_discard_rect := Rect2(
-			(battle.zones["own_discard"] as ZoneView).global_position,
-			(battle.zones["own_discard"] as ZoneView).size,
-		)
-		var own_deck_rect := Rect2(
-			(battle.zones["own_deck"] as ZoneView).global_position,
-			(battle.zones["own_deck"] as ZoneView).size,
-		)
-		var lower_zone_top := minf(
-			own_discard_rect.position.y,
-			own_deck_rect.position.y,
-		)
-		var has_detail_space_below_discard := (
-			lower_zone_top - opponent_discard_rect.end.y >= 120.0
+		var subtype_action_rows: Array[Dictionary] = [{
+			"action": subtype_stadium_action,
+			"label": "打出竞技场",
+		}]
+		var original_table_catalog: CardCatalog = battle.table.catalog
+		var original_table_state: GameState = battle.table.state_ref
+		var original_table_rows: Array[Dictionary] = battle.table.action_rows
+		battle.table.catalog = subtype_catalog
+		battle.table.state_ref = subtype_state
+		battle.table.action_rows = subtype_action_rows
+		var subtype_routed_rows: Array[Dictionary] = (
+			battle.table._routed_action_rows()
 		)
 		_check(
-			not detail_rect.intersects(opponent_deck_rect)
-			and not detail_rect.intersects(own_discard_rect)
-			and not detail_rect.intersects(own_deck_rect)
-			and (
-				not has_detail_space_below_discard
-				or detail_rect.position.y >= opponent_discard_rect.end.y - 1.0
-			),
-			"Battle detail panel overlapped side zones or ignored discard anchor",
+			battle.table._trainer_type_for_action(
+				subtype_stadium_action
+			) == "Stadium"
+			and subtype_routed_rows.size() == 1
+			and subtype_routed_rows[0].get(
+				"drag_target_keys", []
+			) == ["stadium"],
+			"BattleTable ignored CardCatalog Stadium subtype classification",
 		)
-		battle.hide_card_detail()
+		battle.table.catalog = original_table_catalog
+		battle.table.state_ref = original_table_state
+		battle.table.action_rows = original_table_rows
+		var actionable_stadium_state := state.clone_state()
+		actionable_stadium_state.stadium_card_id = "sv1-180"
+		var actionable_stadium_rows: Array[Dictionary] = [{
+			"action": GameAction.new("USE_STADIUM", {}, false, 0),
+			"label": "发动竞技场效果",
+		}]
+		battle.update_view(
+			actionable_stadium_state,
+			0,
+			actionable_stadium_rows,
+			"",
+			false,
+			"local",
+		)
+		var actionable_stadium := battle.zones["stadium"] as ZoneView
+		if actionable_stadium.frame == null:
+			actionable_stadium.frame = actionable_stadium.get_node("Frame") as Panel
+		if actionable_stadium.action_button == null:
+			actionable_stadium.action_button = actionable_stadium.get_node(
+				"ActionButton"
+			) as Button
+		actionable_stadium._apply_frame_style()
+		var actionable_stadium_style := actionable_stadium.frame.get_theme_stylebox(
+			"panel"
+		) as StyleBoxFlat
+		_check(
+			actionable_stadium.is_actionable()
+			and actionable_stadium_style != null
+			and actionable_stadium_style.border_width_left >= 3
+			and actionable_stadium_style.shadow_size >= 5
+			and not actionable_stadium.action_button.visible,
+			"An activatable Stadium was missing the label-free actionable outline",
+		)
+		battle.update_view(state, 0, rows, "", false, "local")
+		# Starting a drag is a stronger source selection than a card left selected
+		# from an earlier tap. The dragged Energy must therefore expose its own
+		# legal targets instead of inheriting the stale hand-card selection.
+		battle.update_view(state, 0, rows, "hand:0", false, "local")
+		battle.table._on_hand_drag_started(1)
+		_check(
+			battle.table._drag_source_key == "hand:1"
+			and battle.own_active.targetable
+			and battle.own_active.get_legal_target_hint() == "附能"
+			and battle.own_active.get_allowed_drop_hand_indices().has(1),
+			"Dragging a different hand card reused the previously selected card's targets",
+		)
+		battle.table._on_hand_drag_ended()
+		battle.update_view(state, 0, rows, "", false, "local")
+		var single_target_state := state.clone_state()
+		single_target_state.players[0].active = PokemonState.new("sv1-108")
+		single_target_state.players[0].active.used_abilities.assign(["以太感知"])
+		single_target_state.players[0].bench[0] = PokemonState.new("sv1-104")
+		var single_retreat := GameAction.new(
+			"RETREAT",
+			{"bench_idx": 0, "energy_indices": []},
+			false,
+			0,
+			null,
+			EntityRef.new("pokemon", 0, "", "bench_0"),
+		)
+		var single_retreat_rows: Array[Dictionary] = [{
+			"action": single_retreat,
+			"label": "撤退",
+		}]
+		battle.update_view(
+			single_target_state,
+			0,
+			single_retreat_rows,
+			"pokemon:0:active",
+			false,
+			"local",
+		)
+		_check(
+			not battle.table.action_popover.visible
+			and battle.own_bench[0].targetable
+			and battle.own_bench[0].get_legal_target_hint() == "撤退",
+			"A disabled ability row forced an extra popover before a single targeted action",
+		)
+		var test_attack := GameAction.new(
+			"DECLARE_ATTACK",
+			{"attack_idx": 0},
+			true,
+			0,
+			EntityRef.new("pokemon", 0, "", "active"),
+		)
+		var mixed_active_rows: Array[Dictionary] = [
+			{"action": test_attack, "label": "攻击"},
+			{"action": single_retreat, "label": "撤退"},
+		]
+		battle.update_view(
+			single_target_state,
+			0,
+			mixed_active_rows,
+			"pokemon:0:active",
+			false,
+			"local",
+		)
+		var mixed_groups: Array[Dictionary] = battle.table.interaction_router.action_groups_for_source(
+			"pokemon:0:active"
+		)
+		var mixed_popover_rows: Array[Dictionary] = battle.table._popover_rows_for_groups(
+			mixed_groups
+		)
+		var retreat_group_is_neutral := false
+		for mixed_row in mixed_popover_rows:
+			var mixed_action := mixed_row.get("action") as GameAction
+			if mixed_action and mixed_action.action == "RETREAT":
+				retreat_group_is_neutral = (
+					str(mixed_row.get("label", "")) == "撤退"
+					and str(mixed_row.get("hint", "")) == "选择备战宝可梦"
+				)
+		_check(
+			battle.table.action_popover.visible and retreat_group_is_neutral,
+			"Retreat group exposed a target/payment before the bench was selected",
+		)
+		battle.table._on_popover_action_chosen(single_retreat)
+		_check(
+			battle.table._selected_action_group_key == "RETREAT",
+			"Retreat action group did not enter target-selection mode",
+		)
+		var attack_only_rows: Array[Dictionary] = [{
+			"action": test_attack,
+			"label": "攻击",
+		}]
+		battle.update_view(
+			single_target_state,
+			0,
+			attack_only_rows,
+			"pokemon:0:active",
+			false,
+			"local",
+		)
+		_check(
+			battle.table._selected_action_group_key.is_empty()
+			and battle.table._forced_popover_rows.is_empty()
+			and battle.table.action_popover.visible,
+			"A stale selected action group hid the replacement legal action set",
+		)
+		battle.table.action_popover.dismiss()
+		_check(
+			not battle.table.action_popover.visible
+			and battle.table._current_task_hint() == "点击卡牌重新打开操作",
+			"Dismissing a direct-action popover left a misleading task hint",
+		)
+		battle.table._on_card_activated(
+			single_target_state.players[0].active.card_id,
+			-1,
+			0,
+			"active",
+		)
+		_check(
+			battle.table.action_popover.visible
+			and battle.table._popover_dismissed_source_key.is_empty(),
+			"Tapping a dismissed source did not reopen its card actions",
+		)
+		battle.update_view(state, 0, rows, "", false, "local")
+		var floating_detail := battle.detail_panel as BattleDetailPanel
+		_check(
+			floating_detail != null
+			and battle.find_child("DetailPanel", true, false) == floating_detail
+			and floating_detail.get_parent().name == "OverlayPanels"
+			and not floating_detail.visible
+			and not battle.hud.is_ancestor_of(floating_detail)
+			and battle.find_child("ActionPanel", true, false) == null,
+			"Battle detail preview is not a hidden root overlay independent of the HUD",
+		)
+		var preview_board_size: Vector2 = battle.board_canvas.size
+		battle.show_card_detail(state.players[0].active.card_id, state.players[0].active)
+		battle.table._layout_overlay_drawers()
+		var preview_board_rect: Rect2 = battle.board_panel.get_global_rect()
+		var preview_detail_rect: Rect2 = floating_detail.get_global_rect()
+		var preview_geometry_ready: bool = (
+			preview_board_rect.size.x > 1.0 and preview_board_rect.size.y > 1.0
+		)
+		_check(
+			floating_detail.is_showing_card()
+			and floating_detail.current_card_id == state.players[0].active.card_id
+			and floating_detail.detail_image.texture != null
+			and floating_detail.detail_title.text == battle.catalog.card_name(
+				state.players[0].active.card_id
+			)
+			and floating_detail.detail_text.text.contains("HP")
+			and floating_detail.detail_text.text.contains("剩余 HP 100")
+			and floating_detail.detail_text.text.contains("卡面 HP 70")
+			and not floating_detail.detail_text.text.contains("100／70")
+			and floating_detail.close_button.custom_minimum_size.y >= 48.0
+			and (
+				not preview_geometry_ready
+				or preview_board_rect.encloses(preview_detail_rect)
+			)
+			and battle.board_canvas.size == preview_board_size,
+			"Floating card preview did not render safely without changing table size: visible=%s id=%s image=%s title=%s text=%s close=%.1f board=%s detail=%s size=%s/%s" % [
+				floating_detail.visible,
+				floating_detail.current_card_id,
+				floating_detail.detail_image.texture != null,
+				floating_detail.detail_title.text,
+				floating_detail.detail_text.text.left(24),
+				floating_detail.close_button.custom_minimum_size.y,
+				preview_board_rect,
+				preview_detail_rect,
+				preview_board_size,
+				battle.board_canvas.size,
+			],
+		)
+		var live_preview_state := state.clone_state()
+		live_preview_state.players[0].active.damage_counters = 3
+		live_preview_state.players[0].active.status_conditions.append("BURNED")
+		battle.update_view(
+			live_preview_state,
+			0,
+			rows,
+			"pokemon:0:active",
+			false,
+			"local",
+		)
+		_check(
+			floating_detail.visible
+			and floating_detail.current_card_id
+			== live_preview_state.players[0].active.card_id
+			and floating_detail.detail_text.text.contains("伤害 30")
+			and floating_detail.detail_text.text.contains("灼伤"),
+			"Visible card preview did not refresh live Pokemon state for the same source key",
+		)
+		var changed_hand_state := state.clone_state()
+		changed_hand_state.players[0].hand[0] = "sv1-151"
+		var no_card_actions: Array[Dictionary] = []
+		battle.update_view(
+			state,
+			0,
+			no_card_actions,
+			"hand:0",
+			false,
+			"local",
+		)
+		battle.show_card_detail(str(state.players[0].hand[0]))
+		battle.table._selected_action_group_key = "stale-group"
+		battle.table._popover_dismissed_source_key = "hand:0"
+		battle.table._forced_popover_rows.clear()
+		battle.table._forced_popover_rows.append({
+			"action": GameAction.new("PLAY_TRAINER", {"hand_idx": 0}),
+		})
+		battle.table._forced_popover_source_key = "hand:0"
+		battle.update_view(
+			changed_hand_state,
+			0,
+			no_card_actions,
+			"hand:0",
+			false,
+			"local",
+		)
+		_check(
+			floating_detail.visible
+			and floating_detail.current_card_id == "sv1-151"
+			and floating_detail.detail_title.text
+			== battle.catalog.card_name("sv1-151")
+			and battle.table._selected_action_group_key.is_empty()
+			and battle.table._popover_dismissed_source_key.is_empty()
+			and battle.table._forced_popover_rows.is_empty(),
+			"Visible hand preview kept the old card after the selected index changed identity",
+		)
+		floating_detail.close_button.pressed.emit()
+		_check(
+			not floating_detail.visible and floating_detail.current_card_id.is_empty(),
+			"Floating card preview close control did not clear the preview: visible=%s id=%s connections=%d" % [
+				floating_detail.visible,
+				floating_detail.current_card_id,
+				floating_detail.close_button.pressed.get_connections().size(),
+			],
+		)
+		var hidden_preview_state := changed_hand_state.clone_state()
+		hidden_preview_state.players[0].hand[0] = "sv1-189"
+		battle.update_view(
+			hidden_preview_state,
+			0,
+			no_card_actions,
+			"hand:0",
+			false,
+			"local",
+		)
+		_check(
+			not floating_detail.visible,
+			"A state refresh reopened a card preview that the user explicitly closed",
+		)
+		battle.update_view(state, 0, rows, "", false, "local")
 		_check(
 			battle.effects != null and not battle.effects.is_processing(),
 			"Idle battle effects layer kept processing",
@@ -5411,16 +6551,98 @@ func _run_visual_upgrade_tests() -> void:
 				and narrow_card.accessibility_description == narrow_card.tooltip_text,
 				"CardView did not expose the complete attached-energy summary",
 			)
+			var card_minimum_before := narrow_card.get_combined_minimum_size()
 			narrow_card.set_actions([{
 				"action": GameAction.new("TEST_ACTION"),
 				"label": "测试动作",
 			}])
-			var card_action_button := narrow_card.action_buttons.get_child(0) as Button
 			_check(
-				card_action_button != null
-				and card_action_button.custom_minimum_size.y >= 48.0,
-				"CardView action control is below the 48 px touch target",
+				narrow_card.action_buttons.get_child_count() == 0
+				and not narrow_card.action_overlay.visible
+				and narrow_card.get_combined_minimum_size() == card_minimum_before,
+				"CardView retained layout-changing internal action controls",
 			)
+			var frame_modulate_before := narrow_card.frame.modulate
+			var image_modulate_before := narrow_card.image.modulate
+			var frame_self_modulate_before := narrow_card.frame.self_modulate
+			var image_self_modulate_before := narrow_card.image.self_modulate
+			narrow_card.set_actionable(true)
+			var actionable_style := narrow_card.actionable_marker.get_theme_stylebox(
+				"panel"
+			) as StyleBoxFlat
+			_check(
+				narrow_card.is_actionable()
+				and narrow_card.actionable_marker.visible
+				and narrow_card.actionable_marker.get_node_or_null(
+					"ActionableMarkerLabel"
+				) == null
+				and narrow_card.actionable_marker.mouse_filter == Control.MOUSE_FILTER_IGNORE
+				and narrow_card.actionable_marker.offset_left <= -2.0
+				and narrow_card.actionable_marker.offset_right >= 2.0
+				and narrow_card.actionable_marker.z_as_relative
+				and narrow_card.actionable_marker.z_index == 0
+				and actionable_style != null
+				and actionable_style.border_width_left >= 3
+				and not actionable_style.draw_center
+				and actionable_style.bg_color.a <= 0.001
+				and narrow_card.frame.modulate == frame_modulate_before
+				and narrow_card.image.modulate == image_modulate_before
+				and narrow_card.frame.self_modulate == frame_self_modulate_before
+				and narrow_card.image.self_modulate == image_self_modulate_before,
+				"CardView did not use a label-free full-card actionable outline",
+			)
+			narrow_card.configure_target(0, "active")
+			narrow_card.set_interaction_state(true, "", "附能", [2])
+			var target_outline := narrow_card.target_glow.get_theme_stylebox(
+				"panel"
+			) as StyleBoxFlat
+			var legal_drop_data := {
+				"kind": "hand_card",
+				"hand_index": 2,
+				"card_id": "sv1-ener-5",
+			}
+			var illegal_drop_data := legal_drop_data.duplicate()
+			illegal_drop_data["hand_index"] = 1
+			_check(
+				narrow_card.targetable
+				and target_outline != null
+				and narrow_card.target_glow.z_as_relative
+				and narrow_card.target_glow.z_index == 0
+				and not target_outline.draw_center
+				and target_outline.bg_color.a <= 0.001
+				and narrow_card.get_legal_target_hint() == "附能"
+				and narrow_card.get_allowed_drop_hand_indices() == [2]
+				and narrow_card.interaction_hint.visible
+				and narrow_card.interaction_hint_label.text == "附能"
+				and narrow_card._can_drop_data(Vector2.ZERO, legal_drop_data)
+				and not narrow_card._can_drop_data(Vector2.ZERO, illegal_drop_data),
+				"CardView did not restrict drop acceptance to router-provided legal cards",
+			)
+			narrow_card.clear_interaction_state()
+			_check(
+				not narrow_card.is_actionable()
+				and not narrow_card.targetable
+				and not narrow_card._can_drop_data(Vector2.ZERO, legal_drop_data),
+				"CardView leaked its previous card-interaction state",
+			)
+			narrow_card.set_selected(true)
+			narrow_card.set_interaction_state(false, "本回合已附能")
+			var selection_outline := narrow_card.selection_ring.get_theme_stylebox(
+				"panel"
+			) as StyleBoxFlat
+			_check(
+				CardView.LONG_PRESS_MSEC == 350
+				and selection_outline != null
+				and narrow_card.selection_ring.z_as_relative
+				and narrow_card.selection_ring.z_index == 0
+				and not selection_outline.draw_center
+				and selection_outline.bg_color.a <= 0.001
+				and narrow_card.get_disabled_reason() == "本回合已附能"
+				and narrow_card.interaction_hint.visible
+				and narrow_card.interaction_hint_label.text == "本回合已附能",
+				"CardView did not show the disabled reason or keep the 350ms inspector hold",
+			)
+			narrow_card.set_selected(false)
 			narrow_card.configure("", null, true)
 			_check(
 				narrow_card.tooltip_text.is_empty()
@@ -5437,8 +6659,63 @@ func _run_visual_upgrade_tests() -> void:
 			battle.own_active.status_row.get_child_count() == 1,
 			"Active Pokemon status badge was not rendered",
 		)
+		var header_task_caption := battle.header.get_node_or_null("TaskCaption") as Label
+		var header_spacer := battle.header.get_node_or_null("HeaderSpacer") as Control
+		_check(
+			battle.header.menu_button.custom_minimum_size == Vector2(84.0, 48.0)
+			and battle.header.turn_label.custom_minimum_size.x <= 292.0
+			and battle.header.task_hint_label.custom_minimum_size.x >= 270.0
+			and battle.header.task_hint_label.custom_minimum_size.x <= 330.0
+			and battle.header.task_hint_label.get_index()
+			== battle.header.turn_label.get_index() + 1
+			and header_spacer != null
+			and header_spacer.get_index()
+			== battle.header.task_hint_label.get_index() + 1
+			and header_spacer.size_flags_horizontal == Control.SIZE_EXPAND_FILL
+			and (header_task_caption == null or not header_task_caption.visible),
+			"Battle header did not keep one compact continuous information group",
+		)
+		var allowance_row := battle.table.own_allowance_row as HBoxContainer
+		var allowance_texts: Array[String] = []
+		if allowance_row:
+			for allowance_value in allowance_row.get_children():
+				var allowance_label := allowance_value as Label
+				if allowance_label:
+					allowance_texts.append(allowance_label.text)
+		var allowance_summary := " ".join(allowance_texts)
+		_check(
+			allowance_row != null
+			and allowance_row.get_child_count() == 4
+			and allowance_row.size == Vector2(304.0, 26.0)
+			and battle.own_info.size == Vector2(304.0, 26.0)
+			and allowance_row.position.y > battle.own_info.position.y
+			and allowance_summary.contains("附能")
+			and allowance_summary.contains("竞技场")
+			and (allowance_summary.contains("可用") or allowance_summary.contains("已用"))
+			and not battle.own_info.text.contains("│"),
+			"Own-player status was not placed as a compact two-level group left of active",
+		)
 		_check(battle.hand_views.size() == 4,
 			"Battle screen did not create stable hand card views")
+		var lower_hand_card := battle.hand_views[0] as CardView
+		var upper_hand_card := battle.hand_views[1] as CardView
+		lower_hand_card.set_actionable(true)
+		upper_hand_card.set_actionable(true)
+		_check(
+			battle.hand_scroll.z_index == 0
+			and lower_hand_card.position.y >= 14.0
+			and lower_hand_card.z_index < upper_hand_card.z_index
+			and lower_hand_card.actionable_marker.visible
+			and upper_hand_card.actionable_marker.visible
+			and lower_hand_card.actionable_marker.z_as_relative
+			and upper_hand_card.actionable_marker.z_as_relative
+			and lower_hand_card.actionable_marker.z_index == 0
+			and upper_hand_card.actionable_marker.z_index == 0
+			and lower_hand_card.z_index
+			+ lower_hand_card.actionable_marker.z_index
+			< upper_hand_card.z_index + upper_hand_card.frame.z_index,
+			"A lower hand card's highlight can still draw over the next card body",
+		)
 		_check(
 			battle.find_child("OpponentHandSurface", true, false) != null,
 			"Battle screen is missing the opponent hand surface",
@@ -5501,49 +6778,81 @@ func _run_visual_upgrade_tests() -> void:
 			cache_zone.free()
 			texture_cache.call("clear")
 		_check(battle.phase_advance_button != null,
-			"Battle screen is missing the dedicated phase advance button")
+			"Battle screen is missing the dedicated system action button")
 		_check(
 			battle.find_child("QuickActions", true, false) == null,
 			"Legacy quick action node still exists in the battle scene",
 		)
 		_check(
-			battle.action_panel != null and not battle.action_panel.visible,
-			"All-actions fallback drawer should start hidden",
+			battle.phase_labels.is_empty()
+			and battle.find_child("PhaseRow", true, false) == null
+			and battle.find_child("AllActionsButton", true, false) == null
+			and battle.find_child("ActionPanel", true, false) == null,
+			"Battle screen retained the phase track or all-actions drawer",
 		)
 		_check(
-			battle.all_actions_button != null and not battle.all_actions_button.disabled,
-			"Battle screen is missing the all-actions HUD button",
+			battle.action_panel == null
+			and battle.action_list == null
+			and battle.all_actions_button == null
+			and battle.all_actions_toggle == null
+			and battle.detail_panel != null
+			and battle.detail_panel.get_parent().name == "OverlayPanels",
+			"Legacy action controls or the floating detail facade are misconfigured",
 		)
 		_check(
-			battle.all_actions_button != null
-			and battle.all_actions_button.custom_minimum_size.y >= 48.0
-			and battle.all_actions_toggle != null
-			and battle.all_actions_toggle.custom_minimum_size.y >= 48.0,
-			"Battle action drawer controls are below the 48 px touch target",
+			battle.phase_advance_button.custom_minimum_size.y >= 48.0
+			and battle.hud.custom_minimum_size.x >= 232.0
+			and battle.hud.custom_minimum_size.x <= 280.0
+			and battle.hud.get_node_or_null("PhasePanel") != null
+			and battle.hud.get_node_or_null("LogPanel") == battle.log_panel
+			and battle.hud.get_child_count() == 2,
+			"Right rail is not limited to one 48 px system button and the action log",
 		)
-		if battle.all_actions_button:
-			battle.all_actions_button.pressed.emit()
-		_check(
-			battle.action_panel != null and battle.action_panel.visible,
-			"All-actions fallback drawer did not open from the HUD button",
+		var rail_action := {}
+		battle.table.hud.phase_action_requested.connect(
+			func(action: GameAction) -> void: rail_action["action"] = action.action
+		)
+		var setup_rail_state := state.clone_state()
+		setup_rail_state.phase = "SETUP"
+		setup_rail_state.setup_ready.assign([false, false])
+		battle.table.hud.update_phase(
+			setup_rail_state,
+			0,
+			false,
+			"local",
+			[{"action": GameAction.new("SETUP_DONE", {}, true, 0)}],
 		)
 		_check(
-			battle.action_list != null and battle.action_list.get_child_count() > 0,
-			"All-actions fallback drawer did not render legal actions",
+			battle.phase_advance_button.text == "完成准备"
+			and not battle.phase_advance_button.disabled,
+			"Setup system action was not mapped to the right-rail button",
 		)
-		if battle.action_list:
-			for action_control_value in battle.action_list.get_children():
-				var action_control := action_control_value as Button
-				_check(
-					action_control != null
-					and action_control.custom_minimum_size.y >= 48.0,
-					"All-actions drawer rendered an action below the 48 px touch target",
-				)
-		if battle.all_actions_toggle:
-			battle.all_actions_toggle.pressed.emit()
+		battle.phase_advance_button.pressed.emit()
 		_check(
-			battle.action_panel != null and not battle.action_panel.visible,
-			"All-actions fallback drawer did not close from its collapse button",
+			str(rail_action.get("action", "")) == "SETUP_DONE",
+			"Right-rail system button did not emit its mapped action",
+		)
+		battle.table.hud.update_phase(
+			state,
+			0,
+			false,
+			"local",
+			[{"action": GameAction.new("END_TURN", {}, true, 0)}],
+		)
+		_check(
+			battle.phase_advance_button.text == "结束回合"
+			and not battle.phase_advance_button.disabled,
+			"Main-phase system action was not mapped to the right-rail button",
+		)
+		var resolving_state := state.clone_state()
+		resolving_state.phase = "ATTACK"
+		battle.table.hud.update_phase(
+			resolving_state, 0, false, "local", []
+		)
+		_check(
+			battle.phase_advance_button.text == "结算中"
+			and battle.phase_advance_button.disabled,
+			"Automatic resolution did not disable the system action button",
 		)
 		battle.update_view(state, 0, rows, "", true, "challenge")
 		var ai_chip := battle.find_child("AIThinkingChip", true, false) as Label
@@ -5564,22 +6873,15 @@ func _run_visual_upgrade_tests() -> void:
 			"AI thinking board overlay was not visible during AI turn",
 		)
 		_check(
-			battle.phase_advance_button != null and battle.phase_advance_button.disabled,
-			"AI thinking state did not disable the phase action button",
+			battle.phase_advance_button != null
+			and battle.phase_advance_button.disabled
+			and battle.phase_advance_button.text == "等待对手",
+			"AI thinking state did not put the system button into waiting state",
 		)
-		if battle.all_actions_button:
-			battle.all_actions_button.pressed.emit()
-		var disabled_action_buttons: bool = (
-			battle.action_list != null and battle.action_list.get_child_count() > 0
-		)
-		if battle.action_list:
-			for child in battle.action_list.get_children():
-				var action_button := child as Button
-				if action_button:
-					disabled_action_buttons = disabled_action_buttons and action_button.disabled
 		_check(
-			disabled_action_buttons,
-			"AI thinking state did not disable rendered action buttons",
+			not battle.table.action_popover.visible
+			and battle.find_child("AllActionsButton", true, false) == null,
+			"AI thinking state exposed card actions through a global action entry",
 		)
 		_check(
 			not battle.input_blocker.visible,
@@ -5623,8 +6925,6 @@ func _run_visual_upgrade_tests() -> void:
 			int(ai_settings_node.get("card_cache_size")),
 			ai_previous_animation_mode,
 		)
-		if battle.all_actions_toggle:
-			battle.all_actions_toggle.pressed.emit()
 		battle.update_view(state, 0, rows, "", false, "challenge")
 		_check(
 			ai_status != null
@@ -5715,11 +7015,32 @@ func _run_visual_upgrade_tests() -> void:
 		var first_hand: Variant = battle.hand_views[0]
 		_check(first_hand.catalog == battle.catalog,
 			"Battle cards do not reuse the shared card catalog")
+		var board_size_before_card_actions: Vector2 = battle.board_canvas.size
 		battle.update_view(state, 0, rows, "hand:3", false, "local")
 		var trainer_view: Variant = battle.hand_views[3]
-		_check(not trainer_view._pending_action_rows.is_empty(),
-			"Direct trainer action was not placed on the selected card")
+		battle.show_card_detail(str(state.players[0].hand[3]))
+		battle.table._layout_overlay_drawers()
+		_check(
+			trainer_view.is_actionable()
+			and trainer_view.action_buttons.get_child_count() == 0
+			and not trainer_view.action_overlay.visible
+			and battle.table.action_popover.visible
+			and battle.table.action_popover.button_count() > 0
+			and battle.detail_panel.visible
+			and not battle.table.action_popover.panel_global_rect().intersects(
+				battle.detail_panel.get_global_rect()
+			),
+			"Card action popover or floating preview was missing or overlapping",
+		)
+		_check(
+			battle.board_canvas.size == board_size_before_card_actions,
+			"Selecting a card changed the battle-table dimensions",
+		)
 		battle.update_view(state, 0, rows, "", false, "local")
+		_check(
+			not battle.detail_panel.visible,
+			"Clearing the selected card did not hide the floating preview",
+		)
 		var fallback_start := Vector2(321, 654)
 		var non_first_expected: Vector2 = (
 			battle._effects_local(battle.hand_views[1].global_center())
@@ -6561,6 +7882,10 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		var long_logs := [
 			"玩家 1 将一对鼠放到[active]圈\n换行内容",
+			"玩家1将喷火龙ex放置到active。",
+			"玩家2将小火焰猴放置到bench_0。",
+			"Challenge AI 的宝可梦KO。",
+			"",
 			"第一条很长的行动日志，用于验证完整日志可滚动而不是被裁剪。",
 			"第二条很长的行动日志，用于验证中文自动换行不会丢失最新内容。",
 			"第三条很长的行动日志，用于验证 RichTextLabel 保持滚动状态。",
@@ -6576,11 +7901,20 @@ func _run_visual_upgrade_tests() -> void:
 		battle_log_panel.update_entries(long_logs)
 		_check(
 			battle_log_panel.visible
-			and not battle.log_label.bbcode_enabled
-			and battle.log_label.autowrap_mode == TextServer.AUTOWRAP_WORD_SMART
+			and battle.log_label.bbcode_enabled
+			and battle.log_label.autowrap_mode == TextServer.AUTOWRAP_ARBITRARY
 			and battle.log_label.scroll_following
 			and not battle.log_label.text.contains("◆")
-			and battle.log_label.text.contains("玩家 1 将一对鼠放到[active]圈 换行内容")
+			and battle.log_label.text.contains("[行动]")
+			and battle.log_label.text.contains("玩家 1 将一对鼠放到［战斗区］圈 换行内容")
+			and battle.log_label.text.contains("喷火龙ex放置到战斗区")
+			and battle.log_label.text.contains("小火焰猴放置到备战区1")
+			and battle.log_label.text.contains("挑战电脑 的宝可梦气绝")
+			and not battle.log_label.text.contains("active")
+			and not battle.log_label.text.contains("bench_0")
+			and not battle.log_label.text.contains("AI")
+			and not battle.log_label.text.contains("KO")
+			and not battle.log_label.text.contains("\n\n")
 			and battle.log_label.text.contains("第一条很长的行动日志")
 			and battle.log_label.text.contains("最后一条很长的行动日志")
 			and battle.log_label.scroll_active,
@@ -6636,11 +7970,26 @@ func _run_visual_upgrade_tests() -> void:
 			previous_animation_mode,
 		)
 		first_hand.configure_target(0, "active")
-		_check(first_hand._can_drop_data(Vector2.ZERO, {
+		var first_hand_drag_data := {
 			"kind": "hand_card",
 			"hand_index": 0,
 			"card_id": "sv1-104",
-		}), "Card drag data is not accepted by a configured target")
+		}
+		_check(
+			not first_hand._can_drop_data(Vector2.ZERO, first_hand_drag_data),
+			"Configured card target accepted a drop without router legality",
+		)
+		first_hand.set_allowed_drop_hand_indices([0])
+		_check(
+			first_hand._can_drop_data(Vector2.ZERO, first_hand_drag_data),
+			"Card target rejected its router-approved hand card",
+		)
+		var wrong_hand_drag_data := first_hand_drag_data.duplicate()
+		wrong_hand_drag_data["hand_index"] = 1
+		_check(
+			not first_hand._can_drop_data(Vector2.ZERO, wrong_hand_drag_data),
+			"Card target accepted a hand card outside the legal drop set",
+		)
 		first_hand.set_targetable(true)
 		var card_animation := first_hand.get_node(
 			"AnimationPlayer"
@@ -6707,6 +8056,451 @@ func _run_visual_upgrade_tests() -> void:
 		"Quality profile did not resolve to a runtime tier")
 	_check(int(runtime_settings.call("target_fps")) in [30, 60],
 		"Performance profile returned an unsupported FPS target")
+
+
+func _prime_card_action_popover(popover: CardActionPopover) -> void:
+	# The suite runs synchronously from SceneTree._initialize(), before the first
+	# process frame can resolve @onready fields. Runtime scenes resolve these on
+	# their normal ready pass; prime them explicitly for this headless contract.
+	popover.pointer_line = popover.get_node("PointerLine") as Line2D
+	popover.panel = popover.get_node("Panel") as PanelContainer
+	popover.title_label = popover.get_node("Panel/Margin/Content/TitleLabel") as Label
+	popover.hint_label = popover.get_node("Panel/Margin/Content/HintLabel") as Label
+	popover.empty_hint = popover.get_node("Panel/Margin/Content/EmptyHint") as Label
+	popover.action_scroll = popover.get_node(
+		"Panel/Margin/Content/ActionScroll"
+	) as ScrollContainer
+	popover.action_buttons = popover.get_node(
+		"Panel/Margin/Content/ActionScroll/ActionButtons"
+	) as VBoxContainer
+	popover.compact_scroll = popover.get_node(
+		"Panel/Margin/Content/CompactScroll"
+	) as ScrollContainer
+	popover.compact_action_buttons = popover.get_node(
+		"Panel/Margin/Content/CompactScroll/CompactActionButtons"
+	) as HBoxContainer
+
+
+func _run_card_direct_interaction_contract_tests() -> void:
+	var hand_sources: Array[EntityRef] = []
+	for hand_index in range(6):
+		hand_sources.append(EntityRef.new(
+			"card", 0, "hand", "", hand_index, "", "card-%d" % hand_index
+		))
+	var active_ref := EntityRef.new(
+		"pokemon", 0, "", "active", -1, "", "active-card"
+	)
+	var bench_zero_ref := EntityRef.new(
+		"pokemon", 0, "", "bench_0", -1, "", "bench-card-0"
+	)
+	var bench_one_ref := EntityRef.new(
+		"pokemon", 0, "", "bench_1", -1, "", "bench-card-1"
+	)
+	var actions_by_name := {
+		"PLAY_BASIC": GameAction.new(
+			"PLAY_BASIC",
+			{"hand_idx": 0, "target": "active"},
+			false,
+			0,
+			hand_sources[0],
+			active_ref,
+		),
+		"EVOLVE": GameAction.new(
+			"EVOLVE",
+			{"hand_idx": 1, "slot": "active"},
+			false,
+			0,
+			hand_sources[1],
+			active_ref,
+		),
+		"ATTACH_ENERGY": GameAction.new(
+			"ATTACH_ENERGY",
+			{"hand_idx": 2, "target_slot": "bench_0"},
+			false,
+			0,
+			hand_sources[2],
+			bench_zero_ref,
+		),
+		"PLAY_TRAINER": GameAction.new(
+			"PLAY_TRAINER",
+			{"hand_idx": 3},
+			false,
+			0,
+			hand_sources[3],
+		),
+		"USE_ABILITY": GameAction.new(
+			"USE_ABILITY",
+			{"slot": "active", "ability_name": "测试特性"},
+			false,
+			0,
+			active_ref,
+		),
+		"USE_STADIUM": GameAction.new(
+			"USE_STADIUM",
+			{},
+			false,
+			0,
+			EntityRef.new("stadium", 0, "stadium", "", -1),
+		),
+		"RETREAT": GameAction.new(
+			"RETREAT",
+			{"bench_idx": 0, "discard_indices": [0]},
+			false,
+			0,
+			active_ref,
+			bench_zero_ref,
+		),
+		"DECLARE_ATTACK": GameAction.new(
+			"DECLARE_ATTACK",
+			{"attack_idx": 0},
+			true,
+			0,
+			active_ref,
+		),
+		"PROMOTE": GameAction.new(
+			"PROMOTE",
+			{"bench_idx": 1},
+			false,
+			0,
+			bench_one_ref,
+			bench_one_ref,
+		),
+	}
+	var expected_source_keys := {
+		"PLAY_BASIC": "hand:0",
+		"EVOLVE": "hand:1",
+		"ATTACH_ENERGY": "hand:2",
+		"PLAY_TRAINER": "hand:3",
+		"USE_ABILITY": "pokemon:0:active",
+		"USE_STADIUM": "stadium",
+		"RETREAT": "pokemon:0:active",
+		"DECLARE_ATTACK": "pokemon:0:active",
+		"PROMOTE": "pokemon:0:bench_1",
+	}
+	_check(
+		expected_source_keys.size() == 9
+		and CardInteractionRouter.CARD_ACTIONS.size() == 9,
+		"Card interaction contract no longer covers all nine public card actions",
+	)
+
+	var rows: Array[Dictionary] = []
+	for action_name_value in actions_by_name.keys():
+		var action_name := str(action_name_value)
+		rows.append({
+			"action": actions_by_name[action_name] as GameAction,
+			"label": "动作 · %s" % action_name,
+		})
+	rows.append({
+		"action": GameAction.new("END_TURN", {}, true, 0),
+		"label": "结束回合",
+	})
+	rows.append({
+		"action": GameAction.new("SETUP_DONE", {}, true, 0),
+		"label": "完成准备",
+	})
+
+	var router := CardInteractionRouter.new()
+	router.rebuild(rows)
+	_check(
+		router.all_card_actions_reachable()
+		and router.unreachable_rows().is_empty(),
+		"A supported card action has no card interaction source",
+	)
+	for action_name_value in expected_source_keys.keys():
+		var action_name := str(action_name_value)
+		var source_key := str(expected_source_keys[action_name])
+		var routed_action := actions_by_name[action_name] as GameAction
+		_check(
+			CardInteractionRouter.is_supported_card_action(routed_action)
+			and router.actions_for_source(source_key).has(routed_action),
+			"%s was not routed from %s" % [action_name, source_key],
+		)
+	_check(
+		router.system_action("END_TURN") != null
+		and router.system_action("SETUP_DONE") != null
+		and "END_TURN" not in router.source_keys()
+		and "SETUP_DONE" not in router.source_keys(),
+		"System actions leaked into the card-source index",
+	)
+
+	_check(
+		router.is_target_legal("hand:0", "pokemon:0:active")
+		and router.is_target_legal("hand:1", "pokemon:0:active")
+		and router.is_target_legal("hand:2", "pokemon:0:bench_0")
+		and router.is_target_legal(
+			"pokemon:0:active", "pokemon:0:bench_0"
+		)
+		and router.target_keys_for_source("hand:3").is_empty()
+		and router.target_keys_for_source("stadium").is_empty()
+		and router.target_keys_for_source("pokemon:0:bench_1").is_empty(),
+		"Card interaction targets do not match basic/evolution/energy/retreat semantics",
+	)
+	_check(
+		router.is_drop_legal(0, 0, "active")
+		and router.is_drop_legal(1, 0, "active")
+		and router.is_drop_legal(2, 0, "bench_0")
+		and not router.is_drop_legal(2, 0, "active")
+		and not router.is_drop_legal(3, 0, "active"),
+		"Drag matching accepts an illegal card/slot pair or rejects a legal one",
+	)
+
+	var stadium_drag_router := CardInteractionRouter.new()
+	stadium_drag_router.rebuild([{
+		"action": GameAction.new(
+			"PLAY_TRAINER",
+			{"hand_idx": 5},
+			false,
+			0,
+			hand_sources[5],
+		),
+		"label": "打出竞技场",
+		"drag_target_keys": ["stadium"],
+	}])
+	_check(
+		stadium_drag_router.is_drop_legal(5, 0, "stadium")
+		and not stadium_drag_router.is_drop_legal(5, 0, "active"),
+		"Stadium drag metadata did not restrict the card to the stadium zone",
+	)
+	var main_script := load("res://scenes/main/main.gd") as Script
+	var main_stadium_probe: Variant = main_script.new() if main_script else null
+	if main_stadium_probe:
+		var subtype_catalog := CardCatalog.new(true)
+		subtype_catalog.cards["test-main-subtype-stadium"] = {
+			"name": "测试竞技场",
+			"supertype": "Trainer",
+			"subtypes": ["Stadium"],
+		}
+		var subtype_state := GameState.new()
+		subtype_state.phase = "MAIN"
+		subtype_state.active_player_idx = 0
+		subtype_state.players[0].hand = ["test-main-subtype-stadium"]
+		var subtype_action := GameAction.new(
+			"PLAY_TRAINER",
+			{"hand_idx": 0},
+			false,
+			0,
+		)
+		main_stadium_probe.catalog = subtype_catalog
+		main_stadium_probe.state = subtype_state
+		main_stadium_probe.game_mode = "network"
+		main_stadium_probe.network_player_idx = 0
+		main_stadium_probe.network_legal_actions.assign([subtype_action])
+		_check(
+			main_stadium_probe._matching_drop_actions(
+				0, 0, "stadium"
+			).size() == 1,
+			"Main rejected a Stadium classified by the rules-layer subtype",
+		)
+		main_stadium_probe.free()
+	var energy_alternative := GameAction.new(
+		"ATTACH_ENERGY",
+		{"hand_idx": 2, "target_slot": "bench_0", "resolution": "alternative"},
+		false,
+		0,
+		hand_sources[2],
+		bench_zero_ref,
+	)
+	var retreat_alternative := GameAction.new(
+		"RETREAT",
+		{"bench_idx": 0, "discard_indices": [1]},
+		false,
+		0,
+		active_ref,
+		bench_zero_ref,
+	)
+	var second_attack := GameAction.new(
+		"DECLARE_ATTACK",
+		{"attack_idx": 1},
+		true,
+		0,
+		active_ref,
+	)
+	var multi_rows := rows.duplicate()
+	multi_rows.append({"action": energy_alternative, "label": "替代附能"})
+	multi_rows.append({"action": retreat_alternative, "label": "替代撤退支付"})
+	multi_rows.append({"action": second_attack, "label": "第二招式"})
+	var multi_router := CardInteractionRouter.new()
+	multi_router.rebuild(multi_rows, "pokemon:0:active")
+	_check(
+		multi_router.matching_actions(
+			"hand:2", "pokemon:0:bench_0"
+		).size() == 2
+		and multi_router.matching_actions(
+			"pokemon:0:active", "pokemon:0:bench_0"
+		).size() == 2,
+		"Identical targets with multiple actions/payment combinations were collapsed",
+	)
+	var energy_groups := multi_router.action_groups_for_source("hand:2")
+	var active_groups := multi_router.action_groups_for_source("pokemon:0:active")
+	var energy_group_action_count := 0
+	var retreat_group_action_count := 0
+	var attack_group_count := 0
+	for group in energy_groups:
+		if str(group.get("action_type", "")) == "ATTACH_ENERGY":
+			energy_group_action_count = Array(group.get("actions", [])).size()
+	for group in active_groups:
+		match str(group.get("action_type", "")):
+			"RETREAT":
+				retreat_group_action_count = Array(group.get("actions", [])).size()
+			"DECLARE_ATTACK":
+				attack_group_count += 1
+	_check(
+		energy_group_action_count == 2
+		and retreat_group_action_count == 2
+		and attack_group_count == 2,
+		"Action grouping lost duplicate targets, retreat payments, or distinct attacks",
+	)
+
+	var visible_sources := router.source_keys()
+	_check(
+		router.all_card_actions_reachable_from(visible_sources),
+		"Visible card sources failed the action-reachability contract",
+	)
+	visible_sources.erase("stadium")
+	_check(
+		not router.all_card_actions_reachable_from(visible_sources),
+		"Reachability contract did not detect a missing visible stadium source",
+	)
+	var malformed_router := CardInteractionRouter.new()
+	malformed_router.rebuild([{
+		"action": GameAction.new("PLAY_TRAINER", {}, false, 0),
+		"label": "无来源动作",
+	}])
+	_check(
+		not malformed_router.all_card_actions_reachable()
+		and malformed_router.unreachable_actions().size() == 1,
+		"Reachability contract accepted a card action without a source",
+	)
+
+	var popover_scene := load(
+		"res://scenes/battle/components/card_action_popover.tscn"
+	) as PackedScene
+	_check(popover_scene != null, "CardActionPopover scene failed to load")
+	if popover_scene == null:
+		return
+	var popover := popover_scene.instantiate() as CardActionPopover
+	root.add_child(popover)
+	_prime_card_action_popover(popover)
+	popover.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	popover.size = Vector2(1280.0, 720.0)
+	var popover_rows: Array[Dictionary] = []
+	for action_name in [
+		"PLAY_TRAINER", "USE_ABILITY", "RETREAT", "DECLARE_ATTACK", "USE_STADIUM",
+	]:
+		popover_rows.append({
+			"action": actions_by_name[action_name] as GameAction,
+			"label": "卡牌动作 · %s" % action_name,
+			"hint": "动作说明",
+		})
+	var oversized_energy_image := Image.create(512, 512, false, Image.FORMAT_RGBA8)
+	oversized_energy_image.fill(Color(0.2, 0.9, 0.3, 1.0))
+	popover_rows[0]["icon"] = ImageTexture.create_from_image(oversized_energy_image)
+	var safe_rect := Rect2(48.0, 48.0, 1184.0, 624.0)
+	var source_rect := Rect2(520.0, 460.0, 112.0, 157.0)
+	var avoid_above := Rect2(515.0, 100.0, 122.0, 350.0)
+	var avoid_right := Rect2(640.0, 350.0, 290.0, 320.0)
+	popover.show_actions(
+		popover_rows,
+		source_rect,
+		safe_rect,
+		[avoid_above, avoid_right],
+		"卡牌操作",
+		"选择动作",
+	)
+	_check(
+		popover.visible
+		and popover.button_count() == 5
+		and popover.current_placement == "left"
+		and safe_rect.encloses(popover.panel_global_rect())
+		and not popover.overlaps_avoid_rects(),
+		"CardActionPopover escaped the safe area or covered a legal target",
+	)
+	var popover_buttons_are_touchable := popover.action_buttons.get_child_count() == 5
+	for child_value in popover.action_buttons.get_children():
+		var action_button := child_value as Button
+		popover_buttons_are_touchable = (
+			popover_buttons_are_touchable
+			and action_button != null
+			and action_button.custom_minimum_size.y >= 48.0
+			and action_button.focus_mode == Control.FOCUS_NONE
+		)
+	_check(
+		popover_buttons_are_touchable
+		and popover.action_scroll.custom_minimum_size.y
+		<= 4.0 * popover.action_button_height + 12.0,
+		"CardActionPopover buttons or four-action scroll limit violate touch sizing",
+	)
+	var icon_action_button := popover.action_buttons.get_child(0) as Button
+	_check(
+		icon_action_button.icon != null
+		and icon_action_button.icon.get_size() == Vector2(22.0, 22.0)
+		and icon_action_button.text == str(popover_rows[0].get("label"))
+		and icon_action_button.get_node_or_null("FixedIconContent") == null
+		and icon_action_button.get_combined_minimum_size().y <= 52.0,
+		"Large energy artwork expanded the card action button or popover",
+	)
+	var chosen_probe := {}
+	popover.action_chosen.connect(
+		func(action: GameAction) -> void: chosen_probe["action"] = action
+	)
+	(popover.action_buttons.get_child(0) as Button).pressed.emit()
+	_check(
+		not popover.visible
+		and chosen_probe.get("action") == popover_rows[0].get("action"),
+		"CardActionPopover did not close and emit the selected GameAction",
+	)
+
+	var dismiss_probe := {"count": 0}
+	popover.dismissed.connect(func() -> void:
+		dismiss_probe["count"] = int(dismiss_probe["count"]) + 1
+	)
+	popover.show_actions(
+		[popover_rows[0]], source_rect, safe_rect, [], "卡牌操作", ""
+	)
+	var outside_touch := InputEventScreenTouch.new()
+	outside_touch.pressed = true
+	outside_touch.position = Vector2(50.0, 50.0)
+	popover._gui_input(outside_touch)
+	_check(
+		not popover.visible and int(dismiss_probe["count"]) == 1,
+		"Tapping blank table space did not dismiss CardActionPopover",
+	)
+
+	var moving_source := Control.new()
+	moving_source.position = Vector2(840.0, 280.0)
+	moving_source.size = Vector2(100.0, 140.0)
+	root.add_child(moving_source)
+	popover.show_for_control(
+		[popover_rows[0]], moving_source, safe_rect, [], "卡牌操作", ""
+	)
+	var tracked_panel_before := popover.panel_global_rect()
+	moving_source.position += Vector2(-120.0, 80.0)
+	popover._process(0.0)
+	_check(
+		popover.visible
+		and popover._last_tracked_source_rect == moving_source.get_global_rect()
+		and popover.panel_global_rect() != tracked_panel_before,
+		"CardActionPopover did not follow a moving card source",
+	)
+	popover.dismiss(false)
+	moving_source.free()
+
+	var compact_safe_rect := Rect2(48.0, 48.0, 400.0, 160.0)
+	popover.show_actions(
+		popover_rows,
+		Rect2(200.0, 70.0, 96.0, 120.0),
+		compact_safe_rect,
+		[],
+		"卡牌操作",
+		"",
+	)
+	_check(
+		popover.is_compact_layout()
+		and compact_safe_rect.encloses(popover.panel_global_rect())
+		and popover.compact_action_buttons.get_child_count() == 5,
+		"Constrained safe area did not activate the compact horizontal popover",
+	)
+	popover.free()
 
 
 func _run_local_ui_playout(ui: Node) -> void:

@@ -3,9 +3,18 @@ extends Control
 
 signal activated(card_id: String)
 signal inspected(context: Dictionary)
+signal detail_requested(card_id: String)
 signal action_requested(action: GameAction)
+signal card_dropped(
+	hand_index: int,
+	card_id: String,
+	target_player: int,
+	target_slot: String,
+)
 
 const CARD_BACK_TEXTURE: Texture2D = preload("res://assets/cards/card_back.webp")
+const LONG_PRESS_MSEC := 350
+const TAP_MOVE_THRESHOLD := 14.0
 static var _fallback_card_back_cache: Texture2D
 
 var title := ""
@@ -20,7 +29,13 @@ var stack_visual_mode := ""
 var stack_visual_max_count := 0
 var stack_visual_direction := "up"
 var table_depth := 0.55
+var actionable := false
+var _allowed_drop_hand_indices: Array[int] = []
+var _drop_highlighted := false
 var _texture_cache: Node
+var _pressed := false
+var _press_msec := 0
+var _press_position := Vector2.ZERO
 
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
@@ -28,6 +43,7 @@ var _texture_cache: Node
 @onready var count_label: Label = %CountLabel
 @onready var empty_label: Label = %EmptyLabel
 @onready var action_button: Button = %ActionButton
+@onready var drop_hint: Label = %DropHint
 var fallback_back_panel: Panel
 var fallback_back_label: Label
 var _pending_action_row: Dictionary = {}
@@ -102,6 +118,44 @@ func set_action(row: Dictionary = {}) -> void:
 		return
 	action_button.text = str(row.get("label", action.action))
 	action_button.set_meta("action", action)
+
+
+func set_actionable(value: bool) -> void:
+	actionable = value
+	_apply_frame_style()
+
+
+func is_actionable() -> bool:
+	return actionable
+
+
+func set_drop_target(
+	player: int,
+	slot: String,
+	allowed_hand_indices: Array = [],
+) -> void:
+	target_player = player
+	target_slot = slot
+	_allowed_drop_hand_indices.clear()
+	for value in allowed_hand_indices:
+		var hand_index := int(value)
+		if hand_index >= 0 and hand_index not in _allowed_drop_hand_indices:
+			_allowed_drop_hand_indices.append(hand_index)
+	if drop_hint:
+		drop_hint.visible = _drop_highlighted and not _allowed_drop_hand_indices.is_empty()
+		drop_hint.text = "打出竞技场"
+	_apply_frame_style()
+
+
+func get_allowed_drop_hand_indices() -> Array[int]:
+	return _allowed_drop_hand_indices.duplicate()
+
+
+func set_drop_highlight(value: bool) -> void:
+	_drop_highlighted = value and not _allowed_drop_hand_indices.is_empty()
+	if drop_hint:
+		drop_hint.visible = _drop_highlighted
+	_apply_frame_style()
 
 
 func set_presentation_hidden(value: bool) -> void:
@@ -266,11 +320,34 @@ func _ensure_fallback_card_back() -> void:
 
 
 func _on_gui_input(event: InputEvent) -> void:
-	if (
-		event is InputEventMouseButton
-		and event.button_index == MOUSE_BUTTON_LEFT
-		and not event.pressed
-	):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_pressed = true
+			_press_msec = Time.get_ticks_msec()
+			_press_position = event.position
+			accept_event()
+		elif _pressed:
+			_pressed = false
+			_finish_pointer_interaction(event.position)
+			accept_event()
+	elif event is InputEventScreenTouch:
+		if event.pressed:
+			_pressed = true
+			_press_msec = Time.get_ticks_msec()
+			_press_position = event.position
+		else:
+			if not _pressed:
+				return
+			_pressed = false
+			_finish_pointer_interaction(event.position)
+
+
+func _finish_pointer_interaction(release_position: Vector2) -> void:
+	var held := Time.get_ticks_msec() - _press_msec
+	var moved := release_position.distance_to(_press_position)
+	if held >= LONG_PRESS_MSEC and not card_id.is_empty():
+		detail_requested.emit(card_id)
+	elif moved < TAP_MOVE_THRESHOLD:
 		if not inspect_context.is_empty():
 			inspected.emit(inspect_context.duplicate(true))
 		elif not card_id.is_empty():
@@ -281,6 +358,27 @@ func _on_action_pressed() -> void:
 	var action: GameAction = action_button.get_meta("action") as GameAction
 	if action:
 		action_requested.emit(action)
+
+
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+	if (
+		target_slot.is_empty()
+		or not data is Dictionary
+		or str(data.get("kind", "")) != "hand_card"
+	):
+		return false
+	return _allowed_drop_hand_indices.has(int(data.get("hand_index", -1)))
+
+
+func _drop_data(_at_position: Vector2, data: Variant) -> void:
+	if not _can_drop_data(Vector2.ZERO, data):
+		return
+	card_dropped.emit(
+		int(data.get("hand_index", -1)),
+		str(data.get("card_id", "")),
+		target_player,
+		target_slot,
+	)
 
 
 func _card_texture(path: String) -> Texture2D:
@@ -399,10 +497,20 @@ func _apply_frame_style() -> void:
 	elif not card_id.is_empty():
 		fill = Color(0.055, 0.08, 0.12, 0.92)
 		border = DesignTokens.CYAN.darkened(0.18)
-	frame.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(fill, 8, border, 2, 0),
+	if actionable or _drop_highlighted:
+		border = DesignTokens.CYAN
+	var frame_style := DesignTokens.panel_style(
+		fill,
+		8,
+		border,
+		3 if actionable or _drop_highlighted else 2,
+		0,
 	)
+	if actionable or _drop_highlighted:
+		frame_style.shadow_color = Color(0.20, 0.78, 1.0, 0.46)
+		frame_style.shadow_size = 5
+		frame_style.shadow_offset = Vector2.ZERO
+	frame.add_theme_stylebox_override("panel", frame_style)
 	if count_label:
 		count_label.add_theme_stylebox_override(
 			"normal",

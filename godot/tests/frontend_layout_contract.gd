@@ -583,6 +583,23 @@ func _check_battle_canvas_resize() -> void:
 		and canvas.resized.is_connected(Callable(battle.table, "_layout_board")),
 		"BattleTable must listen to its resolved BoardCanvas size",
 	)
+	battle.show_card_detail("sv1-104")
+	await _settle_layout(2)
+	var detail := battle.detail_panel as BattleDetailPanel
+	var opponent_bench_bottom := -INF
+	for bench_view in battle.opponent_bench:
+		if bench_view != null and bench_view.visible:
+			opponent_bench_bottom = maxf(
+				opponent_bench_bottom,
+				bench_view.get_global_rect().end.y,
+			)
+	_check(
+		detail != null
+		and detail.visible
+		and opponent_bench_bottom > -INF
+		and detail.get_global_rect().position.y + EPSILON >= opponent_bench_bottom,
+		"Battle card preview must stay below the opponent bench row",
+	)
 	var first_center_x := own_active.position.x + own_active.size.x * 0.5
 	root.size = Vector2i(2000, 900)
 	await _settle_layout(5)

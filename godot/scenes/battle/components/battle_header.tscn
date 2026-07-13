@@ -1,64 +1,151 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_header.gd" id="1_header"]
 
-[sub_resource type="StyleBoxFlat" id="Style_ai_chip"]
-bg_color = Color(0.086, 0.148, 0.235, 0.96)
+[sub_resource type="StyleBoxFlat" id="Style_menu_normal"]
+bg_color = Color(0.067, 0.118, 0.192, 0.96)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.384, 0.843, 1, 0.72)
-corner_radius_top_left = 8
-corner_radius_top_right = 8
-corner_radius_bottom_right = 8
-corner_radius_bottom_left = 8
-content_margin_left = 12.0
-content_margin_top = 7.0
+border_color = Color(0.212, 0.306, 0.424, 0.9)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="Style_menu_hover"]
+bg_color = Color(0.094, 0.177, 0.286, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.384, 0.843, 1, 0.78)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="Style_menu_pressed"]
+bg_color = Color(0.047, 0.094, 0.165, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.957, 0.784, 0.29, 0.85)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+
+[sub_resource type="StyleBoxFlat" id="Style_turn_context"]
+bg_color = Color(0.055, 0.098, 0.157, 0.92)
+border_width_left = 3
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.957, 0.784, 0.29, 0.92)
+corner_radius_top_left = 9
+corner_radius_bottom_left = 9
+content_margin_left = 14.0
+content_margin_top = 5.0
 content_margin_right = 12.0
-content_margin_bottom = 7.0
+content_margin_bottom = 5.0
+
+[sub_resource type="StyleBoxFlat" id="Style_task_hint"]
+bg_color = Color(0.055, 0.098, 0.157, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 2
+border_color = Color(0.384, 0.843, 1, 0.76)
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+content_margin_left = 14.0
+content_margin_top = 5.0
+content_margin_right = 12.0
+content_margin_bottom = 5.0
 
 [node name="Header" type="HBoxContainer"]
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 58)
 layout_mode = 2
-theme_override_constants/separation = 12
-editor_description = "战斗顶部栏。可编辑菜单按钮、标题和回合状态文字；点击菜单只发出 menu_requested 信号。"
+theme_override_constants/separation = 0
+editor_description = "紧凑战斗顶部栏。菜单、回合上下文和当前任务组成左侧连续操作带，宽屏剩余空间保留在操作带右侧。"
 script = ExtResource("1_header")
+
+[node name="LeftInset" type="Control" parent="."]
+custom_minimum_size = Vector2(8, 0)
+layout_mode = 2
+mouse_filter = 2
 
 [node name="MenuButton" type="Button" parent="."]
 focus_mode = 0
 unique_name_in_owner = true
-custom_minimum_size = Vector2(104, 48)
+custom_minimum_size = Vector2(84, 48)
 layout_mode = 2
+size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
+theme_override_colors/font_hover_color = Color(0.957, 0.969, 1, 1)
+theme_override_colors/font_pressed_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("Style_menu_normal")
+theme_override_styles/hover = SubResource("Style_menu_hover")
+theme_override_styles/pressed = SubResource("Style_menu_pressed")
 text = "菜单"
 
+[node name="MenuContextGap" type="Control" parent="."]
+custom_minimum_size = Vector2(10, 0)
+layout_mode = 2
+mouse_filter = 2
+
 [node name="BattleTitle" type="Label" parent="."]
+visible = false
+layout_mode = 2
+text = "Pokémon TCG"
+
+[node name="TurnLabel" type="Label" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(292, 44)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+theme_override_font_sizes/font_size = 16
+theme_override_styles/normal = SubResource("Style_turn_context")
+text = "第 1 回合 · 玩家 1 · 准备阶段"
+horizontal_alignment = 0
+vertical_alignment = 1
+text_overrun_behavior = 3
+
+[node name="TaskHint" type="Label" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 44)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.86, 0.91, 0.98, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("Style_task_hint")
+text = "选择基础宝可梦放到战斗场"
+horizontal_alignment = 0
+vertical_alignment = 1
+text_overrun_behavior = 3
+clip_text = true
+
+[node name="HeaderSpacer" type="Control" parent="."]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
-theme_override_font_sizes/font_size = 24
-text = "Pokémon TCG"
-horizontal_alignment = 1
-vertical_alignment = 1
+mouse_filter = 2
+
+[node name="TaskCaption" type="Label" parent="."]
+visible = false
+layout_mode = 2
+text = "当前任务"
+
+[node name="RightInset" type="Control" parent="."]
+custom_minimum_size = Vector2(8, 0)
+layout_mode = 2
+mouse_filter = 2
 
 [node name="AIThinkingChip" type="Label" parent="."]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(220, 34)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
-theme_override_font_sizes/font_size = 13
-theme_override_styles/normal = SubResource("Style_ai_chip")
-text = "Challenge AI 思考中 · 0.0s"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="TurnLabel" type="Label" parent="."]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(330, 0)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 16
-text = "第 1 回合 · 准备阶段 · 玩家 1"
-horizontal_alignment = 2
-vertical_alignment = 1
+text = "AI 思考中"

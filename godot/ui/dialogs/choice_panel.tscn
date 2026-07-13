@@ -7,12 +7,43 @@ theme_override_constants/separation = 10
 editor_description = "复杂规则选择的可视化容器。卡牌选项渲染为单一卡牌网格，非卡牌选项渲染为紧凑按钮。"
 script = ExtResource("1_panel")
 
+[node name="PromptLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
+theme_override_font_sizes/font_size = 17
+text = "请选择一张卡牌。"
+autowrap_mode = 2
+
 [node name="MetadataLabel" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
-theme_override_font_sizes/font_size = 17
+theme_override_font_sizes/font_size = 14
 text = "请选择 1 项"
+autowrap_mode = 2
+
+[node name="SelectionHintLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+custom_minimum_size = Vector2(0, 20)
+theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+theme_override_font_sizes/font_size = 12
+text = "单选模式 · 点击任意卡牌进行选择"
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="BlockedReasonLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+custom_minimum_size = Vector2(0, 24)
+theme_override_colors/font_color = Color(0.937, 0.396, 0.447, 1)
+theme_override_font_sizes/font_size = 13
+text = "当前不能选择此项。"
+vertical_alignment = 1
 autowrap_mode = 2
 
 [node name="EmptyLabel" type="Label" parent="."]
@@ -59,24 +90,27 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="UndoButton" type="Button" parent="ContentRow/ChoiceColumn/EnergyPreview/EnergyActions"]
+unique_name_in_owner = true
 focus_mode = 0
+custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "撤销上一张"
 
 [node name="ClearButton" type="Button" parent="ContentRow/ChoiceColumn/EnergyPreview/EnergyActions"]
+unique_name_in_owner = true
 focus_mode = 0
+custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "清空分配"
 
-[node name="CardGrid" type="GridContainer" parent="ContentRow/ChoiceColumn"]
+[node name="CardGrid" type="HFlowContainer" parent="ContentRow/ChoiceColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/h_separation = 10
 theme_override_constants/v_separation = 10
-columns = 5
 
 [node name="OptionList" type="VBoxContainer" parent="ContentRow/ChoiceColumn"]
 unique_name_in_owner = true
@@ -86,8 +120,9 @@ theme_override_constants/separation = 6
 [node name="PreviewPanel" type="PanelContainer" parent="ContentRow"]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(270, 430)
+custom_minimum_size = Vector2(120, 260)
 layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="PreviewContent" type="VBoxContainer" parent="ContentRow/PreviewPanel"]
@@ -96,9 +131,9 @@ theme_override_constants/separation = 8
 
 [node name="PreviewImage" type="TextureRect" parent="ContentRow/PreviewPanel/PreviewContent"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(206, 288)
+custom_minimum_size = Vector2(88, 123)
 layout_mode = 2
-size_flags_horizontal = 4
+size_flags_horizontal = 3
 expand_mode = 1
 stretch_mode = 5
 

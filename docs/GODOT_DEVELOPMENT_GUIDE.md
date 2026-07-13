@@ -84,10 +84,11 @@ flowchart TD
     Main --> Controllers[Controllers 控制器节点]
     Battle --> Table[battle_table.tscn]
     Table --> Header[battle_header.tscn]
-    Table --> HUD[battle_phase_hud.tscn]
-    Table --> Detail[battle_detail_panel.tscn]
+    Table --> HUD[battle_phase_hud.tscn 系统按钮]
     Table --> Log[battle_log_panel.tscn]
-    Table --> Actions[battle_action_panel.tscn]
+    Table --> Detail[battle_detail_panel.tscn 卡牌预览浮层]
+    Table --> Router[CardInteractionRouter]
+    Table --> Popover[card_action_popover.tscn]
     Battle --> Card[card_view.tscn]
     Battle --> Zone[zone_view.tscn]
     Battle --> Presentation[PresentationDirector]
@@ -106,7 +107,7 @@ flowchart TD
 | 网络大厅与 LAN/Relay 选择 | `scenes/network/network_lobby_page.tscn` |
 | 战斗界面兼容门面 | `scenes/battle/battle_screen.tscn` |
 | 牌桌、固定牌位、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
-| 战斗顶部栏、阶段 HUD、动作、详情和日志 | `scenes/battle/components/` |
+| 战斗顶部栏、卡牌交互、卡牌预览、系统按钮和日志 | `scenes/battle/components/` |
 | 单张卡牌的显示结构 | `ui/card_view.tscn` |
 | 牌库、弃牌和奖品区 | `ui/zone_view.tscn` |
 | 设置、选择、隐私与暂停弹窗 | `ui/dialogs/` |
@@ -340,7 +341,8 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 - `StatusRow`：运行时生成中毒、灼伤等状态徽章。
 - `TargetGlow`：合法目标高亮。
 - `SelectionRing`：选中状态。
-- `ActionOverlay`：卡牌上的上下文动作按钮。
+- `ActionableMarker`：提示这张卡当前可以发起动作。
+- `InteractionHint`：显示合法目标或不可用原因。
 - `AnimationPlayer`：选中脉冲和合法目标脉冲时间轴。
 
 卡图、HP 和状态不是写死在场景中的。控制器调用：
@@ -351,6 +353,20 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 
 静态结构在场景中编辑，动态数据在脚本中绑定。这是本项目最重要的 UI 模式。
 
+战斗中的动作按钮不再创建在 `CardView` 内部。轻点卡牌后，`BattleTable` 使用
+`CardInteractionRouter` 查询来源动作；需要确认或存在多个动作时，在牌桌根浮层显示
+`CardActionPopover`。这样浮层不会进入卡牌的最小尺寸计算，也不会挤压牌桌或手牌。
+`CardView.set_actions(...)` 仅为旧调用保留兼容，内部动作容器始终隐藏，新代码应使用
+`set_interaction_state(...)` 注入可操作、合法目标和禁用原因等只读表现状态。
+
+卡牌输入约定：
+
+- 轻点可操作卡牌：选中来源；只有一个需要目标的动作时直接高亮合法目标，其他情况显示贴卡浮层。
+- 再次轻点来源卡或点击浮层外空白：关闭浮层；浮层关闭后再次轻点来源可取消选中。
+- 长按至少 350ms：发出 `detail_requested(card_id)`，打开完整卡牌检查器，不执行回合动作。
+- 手牌拖放：只有 `CardInteractionRouter` 判定合法的卡牌/牌位组合才接受；非法牌位不进入可投放状态。
+- 来源选中使用 `SelectionRing`，合法目标使用 `TargetGlow` 和动作提示文字；不要只靠颜色表达状态。
+
 常见修改入口：
 
 | 想改什么 | 选中节点或位置 | 注意事项 |
@@ -360,9 +376,9 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 | 场上 HP、伤害、能量、道具 | `CardView.gd` 的 `_ensure_overlay_nodes()`、`_layout_battle_overlay()` | 这些徽章运行时创建；样式和位置在脚本中统一调整 |
 | 选中边框 | `SelectionRing` | 和 `selected_pulse` 动画一起看 |
 | 合法目标高亮 | `TargetGlow` | 和 `target_pulse` 动画一起看 |
-| 卡上动作按钮 | `ActionOverlay`、`ActionButtons` | 按钮由 `set_actions(...)` 生成；布局在场景中调 |
+| 可操作标记和原因提示 | `ActionableMarker`、`InteractionHint` | 内容由 `set_interaction_state(...)` 注入，不在这里推导规则 |
+| 贴卡动作按钮 | `card_action_popover.tscn` | 独立挂在牌桌浮层；不要放回 `CardView` 子节点 |
 | 选中抬升和悬停缩放 | 根节点 `CardView` | Inspector 的 `Card Layout` 导出参数 |
-| 同时显示几个卡上动作 | 根节点 `CardView` | Inspector 的 `Action Overlay / maximum_action_buttons` |
 
 ### BattleScreen
 
@@ -376,7 +392,10 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 - 双方战斗区和五个备战位。
 - 双方牌库、弃牌、奖品和竞技场。
 - 手牌滚动区域。
-- 右侧贴边回合阶段 HUD，以及不占用牌桌宽度的详情/日志浮层。
+- 顶部回合、玩家、阶段和当前任务提示。
+- 右侧贴边系统按钮与行动日志；卡牌动作不进入右栏。
+- 牌桌根层的 `BattleDetailPanel` 卡图与效果预览。
+- 牌桌根层的 `CardActionPopover`。
 - 表现效果层与输入遮挡层。
 
 选择 `BattleTable` 根节点后，Inspector 的 `Table Layout` 可以修改：
@@ -388,8 +407,8 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 - 牌区尺寸。
 - 手牌尺寸、最小重叠间距和扇形角度。
 
-`Presentation` 分组还可以修改动态飞牌的最低弧线、距离比例、错峰高度、错峰时间，
-以及主要/次要操作按钮的触控高度。`PresentationDirector` 节点则暴露电影、标准、
+`Presentation` 分组还可以修改动态飞牌的最低弧线、距离比例、错峰高度和错峰时间。
+`PresentationDirector` 节点则暴露电影、标准、
 快速和减少动画四档速度。保持默认值即可获得当前节奏；修改后应重跑截图回归。
 
 修改后运行 Workbench 的“战斗场景”，同时观察 16:9 与超宽屏截图，避免只在
@@ -399,17 +418,42 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 
 | 想改什么 | 打开哪里 |
 |---|---|
-| 顶部菜单、标题和回合文字 | `scenes/battle/components/battle_header.tscn` |
+| 顶部菜单、回合/玩家/阶段和任务提示 | `scenes/battle/components/battle_header.tscn` |
 | 牌桌、牌位、牌区、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
-| 右侧阶段 HUD | `scenes/battle/components/battle_phase_hud.tscn` |
-| 预留动作面板 | `scenes/battle/components/battle_action_panel.tscn` |
-| 战斗内卡牌详情浮层 | `scenes/battle/components/battle_detail_panel.tscn` |
+| 右侧唯一系统按钮 | `scenes/battle/components/battle_phase_hud.tscn` |
 | 右侧行动日志面板 | `scenes/battle/components/battle_log_panel.tscn` |
+| 点击卡牌后的卡图与效果预览 | `scenes/battle/components/battle_detail_panel.tscn` |
+| 卡牌动作索引与合法目标匹配 | `scenes/battle/components/card_interaction_router.gd` |
+| 贴卡动作浮层 | `scenes/battle/components/card_action_popover.tscn` |
 
-`BattleHUD` 位于右侧边栏，包含阶段轨和 `LogPanel` 行动日志；日志不覆盖牌桌或手牌。
-`DetailPanel` 位于 `battle_table.tscn` 根节点下的 `OverlayPanels`，由脚本定位成浮层。
-如果要调详情或日志外观，优先打开对应组件场景；如果要调详情浮层在牌桌上的位置，
-再看 `BattleTable._layout_overlay_drawers()`。
+`BattleHUD` 位于右侧边栏，顶部只有保留兼容节点名的 `PhaseAdvanceButton`，余下空间由
+`LogPanel` 占满。按钮根据状态显示“完成准备”“结束回合”“结算中”或“等待对手”；
+只有前两种可执行系统动作通过 `phase_action_requested(GameAction)` 上报。不要向右栏添加
+卡牌详情、阶段格或动作列表。日志只展示结果，不提供规则操作入口。
+`DetailPanel` 位于 `battle_table.tscn` 根节点的 `OverlayPanels` 下；轻点手牌或场上宝可梦时
+显示卡图、卡文和实时场上状态，再次轻点同一来源或按关闭按钮时隐藏。它不参与右栏或牌桌
+容器的最小尺寸计算，并由 `BattleTable._layout_detail_panel()` 保持在安全区内、对方备战区下方。
+顶部 `BattleHeader` 显示“第 N 回合 · 玩家 N · 当前阶段”，任务可通过
+`update_header(..., task_hint)` 或 `set_task_hint(...)` 注入；不要恢复重复品牌标题或 AI 状态 Chip。
+
+`CardInteractionRouter` 每次随合法 `action_rows` 重建索引。系统动作 `END_TURN` 和
+`SETUP_DONE` 单独交给右栏；其余动作必须映射到可见来源：`hand:<index>`、
+`pokemon:<player>:<slot>` 或 `stadium`。它同时提供来源动作分组、合法目标和拖放匹配，
+UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽度、至少 48px 高的按钮，
+超过四项时滚动；按上、右、左、下顺序寻找安全位置，避开合法目标，并用短连线指回来源卡。
+路由必须覆盖 `PLAY_BASIC`、`EVOLVE`、`ATTACH_ENERGY`、`PLAY_TRAINER`、`USE_ABILITY`、
+`USE_STADIUM`、`RETREAT`、`DECLARE_ATTACK` 和 `PROMOTE`；新增卡牌动作时也必须加入动作可达性测试。
+
+兼容边界保持不变：`BattleScreen.update_view(...)` 及 `action_requested(GameAction)`、
+`hand_card_selected`、`pokemon_selected`、`card_drop_requested`、`detail_requested` 等对外信号
+继续存在。`CardActionPopover.action_chosen` 和右栏 `phase_action_requested` 最终都转发为
+`action_requested(GameAction)`；规则、AI 和网络层不需要知道动作来自轻点、浮层还是拖放。
+
+效果结算同样优先使用牌桌对象：单选且能唯一映射到场上宝可梦的 `ChoiceRequest` 通过
+`BattleScreen.set_choice_targets(...)` 高亮对应卡牌，轻点后仍提交原 `option_id`。隐藏区卡牌、
+同一宝可梦上无法仅靠卡牌区分的多个附着物，以及多选请求继续使用 `ChoicePanel`；能量分配保留
+专用卡牌面板，`coin_flip` 使用独立硬币翻转表现。撤退动作会要求点选本次支付所丢弃的附着能量卡，
+然后才开放确认按钮，整个过程不修改 `GameAction` schema。
 
 战斗界面最容易误解的一点：`OpponentActive`、`OwnActive`、`OpponentBench0` 等固定卡位
 虽然在场景树里能拖动，但运行时会被 `_layout_board()` 重新计算位置。想调整体比例时，
@@ -417,7 +461,7 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 
 | 导出参数 | 影响 |
 |---|---|
-| `hud_width` | 右侧贴边阶段 HUD 的宽度 |
+| `hud_width` | 右侧系统按钮与日志栏的宽度 |
 | `table_side_margin` / `table_top_margin` / `table_bottom_margin` | 牌桌边缘安全距离 |
 | `hand_bottom_padding` | 手牌与底部边缘的额外距离 |
 | `active_card_size` | 双方战斗宝可梦大小 |
@@ -428,7 +472,7 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 | `hand_minimum_spacing` | 手牌最小重叠间距 |
 | `hand_rotation_degrees` | 手牌扇形角度 |
 
-只有当这些参数不能表达你的目标时，再改 `battle_screen.gd`。例如“把双方弃牌区放到另一侧”
+只有当这些参数不能表达你的目标时，再改 `battle_table.gd`。例如“把双方弃牌区放到另一侧”
 属于布局算法变化，需要看 `_layout_board()` 中的 `_place_zone(...)` 调用。
 
 ![固定种子的战斗预览](images/godot-guide/battle-preview.png)
@@ -571,22 +615,36 @@ else:
 sequenceDiagram
     participant Player as 玩家
     participant Card as CardView
+    participant Router as CardInteractionRouter
+    participant Popover as CardActionPopover
     participant Battle as BattleScreen
     participant Main
     participant Engine as GameEngine
     participant Stack as ResolutionStack
     participant Present as PresentationDirector
 
-    Player->>Card: 点击卡牌或动作
-    Card-->>Battle: action_requested(GameAction)
+    Main->>Battle: update_view(state, action_rows)
+    Battle->>Router: rebuild(action_rows)
+    Player->>Card: 轻点或合法拖放
+    Card-->>Battle: activated / card_dropped
+    Battle->>Router: 查询来源动作与合法目标
+    Router-->>Battle: 动作分组 / 目标集合
+    Battle->>Popover: 需要确认或多动作时显示
+    Player->>Popover: 选择动作
+    Popover-->>Battle: action_chosen(GameAction)
     Battle-->>Main: action_requested(GameAction)
     Main->>Engine: apply_action(state, action, rng)
     Engine->>Stack: 推入效果帧/选择请求
     Engine-->>Main: StepResult + events
-    Main->>Battle: update_view(state)
+    Main->>Battle: update_view(state, action_rows)
     Main->>Present: play(events)
     Present-->>Battle: 动画、音效、粒子请求
 ```
+
+长按卡牌 350ms 走 `detail_requested` 打开检查器，不进入上述动作执行链。右侧
+`PhaseAdvanceButton` 只处理 `SETUP_DONE` / `END_TURN`，经 `phase_action_requested` 汇入同一个
+`action_requested(GameAction)` 出口。拖放也必须先由 Router 精确匹配到唯一合法动作；
+视觉预览不能提前移动卡牌或修改 `GameState`。
 
 核心类型：
 
@@ -595,6 +653,8 @@ sequenceDiagram
 - `ChoiceRequest` / `ChoiceResponse`：复杂效果中的显式选择。
 - `GameState`：完整规则状态。
 - `ResolutionStack`：可序列化的效果与继续执行帧。
+- `CardInteractionRouter`：只读索引合法动作、来源卡、目标卡位和拖放匹配。
+- `CardActionPopover`：显示来源卡的可执行动作，不保存或推导规则状态。
 
 `GameEngine.apply_action()` 会先保存 `state.snapshot()`。动作失败时恢复快照，因此
 UI 不能在调用规则前自行移动卡牌或扣除资源。
@@ -606,7 +666,8 @@ UI 不能在调用规则前自行移动卡牌或扣除资源。
 1. 训练家卡或招式把效果帧推入 `ResolutionStack`。
 2. `EffectEngine` 处理栈顶效果。
 3. 如果需要玩家选择，生成 `ChoiceRequest` 并暂停。
-4. UI 展示 `choice_panel.tscn`。
+4. UI 按对象路由：唯一场上目标直接高亮卡牌；隐藏区、歧义目标和多选显示
+   `choice_panel.tscn`；能量分配与硬币分别使用专用卡牌面板和硬币动画。
 5. `GameEngine.apply_choice()` 验证 request ID 和选项。
 6. 结算栈继续执行，直到为空或出现下一次选择。
 
@@ -1234,14 +1295,16 @@ Godot UI 修改先判断节点属于哪一种布局：
 
 1. 打开 `res://scenes/battle/components/battle_table.tscn`。
 2. 选择根节点 `BattleTable`。
-3. 在 Inspector 的 `Table Layout / HUD` 中调整右侧贴边阶段轨的 `hud_width`。
+3. 在 Inspector 的 `Table Layout / HUD` 中调整右侧系统按钮与日志栏的 `hud_width`。
 4. 在 `Table Layout / Table Margins` 中调整牌桌安全边距和手牌底部预留。
 5. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
 6. 在 `Table Layout / Hand` 中调整 `hand_card_size`、`hand_minimum_spacing` 和 `hand_rotation_degrees`。
-7. 如果要改详情或日志浮层，打开 `battle_detail_panel.tscn` 或 `battle_log_panel.tscn`。
-8. 如果要改“全部动作”抽屉按钮高度，打开 `battle_action_panel.tscn`，在根节点调整 `action_button_height`。
-9. 按 `F6` 或在 Workbench 选择“战斗场景”。
-10. 运行 UI 截图脚本检查 16:9 和 20:9。
+7. 系统按钮外观在 `battle_phase_hud.tscn`，日志外观在 `battle_log_panel.tscn`；右栏不得加入卡牌动作入口。
+8. 卡图与效果预览在 `battle_detail_panel.tscn` 调整；它必须继续挂在 `OverlayPanels`，不要放进右栏容器。
+9. 动作浮层尺寸、按钮高度、滚动数量和指向线在 `card_action_popover.tscn` 及同名脚本中调整。
+10. 选中与合法目标反馈在 `CardView` 的 `SelectionRing`、`TargetGlow`、`ActionableMarker` 和 `InteractionHint` 调整。
+11. 按 `F6` 或在 Workbench 选择“战斗场景”，验证轻点、再次轻点关闭、空白关闭、350ms 长按和合法/非法拖放。
+12. 运行 UI 截图脚本检查 16:9 和 20:9，确认浮层不越过安全区、不覆盖合法目标且不改变牌桌尺寸。
 
 不要只拖 `OpponentActive`、`OwnActive`、`OwnDeck` 或 `Stadium` 来定最终位置。
 这些节点运行时会由 `_layout_board()` 重排。拖动只适合改善编辑器里的预览摆放。
@@ -1264,8 +1327,9 @@ Godot UI 修改先判断节点属于哪一种布局：
 `BattleTable._layout_board()` 中的 `_place_zone(...)` 调用。修改后检查 16:9 和 20:9
 截图，避免宽屏或移动端遮挡。
 
-详情与日志浮层由 `_layout_overlay_drawers()` 定位。它们不参与 `Body` 的
-`HBoxContainer` 排版，所以调整浮层尺寸时要同时检查右侧牌库、弃牌和手牌是否仍可读。
+`BattleDetailPanel` 与 `CardActionPopover` 都位于牌桌根浮层，不参与 `Body` 或 `CardView`
+的最小尺寸计算。牌桌缩放、窗口变化或来源卡移动后会重新定位；调整浮层时要同时检查双方
+战斗位、五个备战位、全部手牌位置和安全区边缘，并确认两个浮层互相避让。
 
 ### 配方：修改 CardView 卡牌组件
 
@@ -1274,9 +1338,9 @@ Godot UI 修改先判断节点属于哪一种布局：
 3. 选择 `Shadow`，修改阴影 StyleBox 或颜色透明度。
 4. 选择 `Frame`，修改卡牌边框、圆角或背景。
 5. 如需调整场上 HP、伤害、能量或道具徽章，编辑 `CardView.gd` 的 `_ensure_overlay_nodes()` 和 `_layout_battle_overlay()`。
-6. 选择 `TargetGlow` 和 `SelectionRing`，调整合法目标和选中效果的静态样式。
-7. 选择 `ActionOverlay`，调整卡上动作按钮面板的位置、内边距和按钮排列。
-8. 按 `F6` 看组件占位内容；再打开 Workbench 的战斗页，确认真实数据下也正常。
+6. 选择 `TargetGlow`、`SelectionRing` 和 `ActionableMarker`，调整合法目标、选中和可操作效果的静态样式。
+7. 选择 `InteractionHint` 调整目标标签与禁用原因；动作按钮应在独立的 `card_action_popover.tscn` 中修改。
+8. 按 `F6` 看组件占位内容；再打开 Workbench 的战斗页，确认轻点不会改变卡牌尺寸，长按 350ms 打开检查器，拖放只接受合法目标。
 
 `CardView` 是复用组件。一次修改会影响场上宝可梦、手牌、选择弹窗和检查器中的卡牌预览。
 改前先确认你想要的是全局统一变化，而不是只改某一个页面。
@@ -1571,7 +1635,7 @@ MY_FIRE_DECK = [
 本轮新增的查看能力有四类：
 
 - 帮助面板：标题页和暂停菜单进入，内容在 `ui/panels/help_panel.tscn`。
-- 卡牌检查器：长按卡牌进入，内容在 `ui/panels/card_inspector_panel.tscn`。
+- 卡牌检查器：长按卡牌至少 350ms 后由兼容信号 `detail_requested(card_id)` 进入，内容在 `ui/panels/card_inspector_panel.tscn`。
 - 区域查看：点击弃牌、牌库、奖品或竞技场进入，内容在 `ui/panels/zone_inspector_panel.tscn`，入口由 `ZoneView.inspect_context` 提供。
 - 牌组详情：牌组选择页按钮进入，内容在 `ui/panels/deck_detail_panel.tscn`。
 

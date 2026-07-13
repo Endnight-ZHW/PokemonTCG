@@ -78,6 +78,40 @@ static func run() -> Array[String]:
 		float(field["battle_scale"]) > 0.0 and float(field["battle_scale"]) <= 1.0,
 		"battle scale escaped its valid range",
 	)
+	for board_size in [
+		Vector2(1024.0, 630.0),
+		Vector2(1320.0, 790.0),
+		Vector2(1690.0, 790.0),
+	]:
+		var responsive_metrics := BattleTableLayout.board_metrics(
+			board_size.x, board_size.y, _default_config()
+		)
+		var responsive_field := BattleTableLayout.field_plan(responsive_metrics, 16.0)
+		var status_plan := BattleTableLayout.own_status_plan(
+			responsive_metrics,
+			responsive_field["own_active_rect"],
+		)
+		var status_rect: Rect2 = status_plan["rect"]
+		var active_rect: Rect2 = responsive_field["own_active_rect"]
+		_expect(
+			failures,
+			bool(status_plan["clears_left_column"])
+			and status_rect.end.x <= active_rect.position.x
+			and not status_rect.intersects(active_rect)
+			and status_rect.end.y < float(responsive_metrics["own_hand_y"]),
+			"own status group overlaps a field/hand region at %s" % board_size,
+		)
+		var visible_hand_height: float = (
+			board_size.y - float(responsive_metrics["own_hand_y"])
+		)
+		_expect(
+			failures,
+			visible_hand_height
+			>= float(responsive_metrics["own_hand_height"]) * 0.65
+			and visible_hand_height < float(responsive_metrics["own_hand_height"]),
+			"hand peek no longer preserves the original lower-edge position at %s"
+			% board_size,
+		)
 
 	_expect_close(
 		failures,
@@ -150,6 +184,14 @@ static func run() -> Array[String]:
 			0.001,
 			"own hand center card must remain unrotated",
 		)
+		_expect(
+			failures,
+			int(own_items[0]["z_index"]) < int(own_items[1]["z_index"])
+			and int(own_items[1]["z_index"]) < int(own_items[2]["z_index"])
+			and int(own_items[2]["z_index"]) < int(own_items[3]["z_index"])
+			and int(own_items[3]["z_index"]) < int(own_items[4]["z_index"]),
+			"overlapping hand cards no longer have a deterministic parent Z order",
+		)
 	var opponent_hand := BattleTableLayout.opponent_hand_plan(
 		5, 360.0, Vector2(70.0, 98.0), 26.0, 6.0
 	)
@@ -162,26 +204,6 @@ static func run() -> Array[String]:
 			and float(opponent_items[4]["rotation_degrees"]) < 0.0,
 			"opponent hand fan must face the opposite direction",
 		)
-
-	var board_rect := Rect2(100.0, 40.0, 1200.0, 760.0)
-	var drawer := BattleTableLayout.detail_drawer_rect(
-		board_rect,
-		300.0,
-		220.0,
-		Rect2(1000.0, 100.0, 90.0, 130.0),
-		Rect2(1000.0, 610.0, 90.0, 130.0),
-		Rect2(1110.0, 610.0, 90.0, 130.0),
-	)
-	_expect(
-		failures,
-		board_rect.encloses(drawer),
-		"detail drawer escaped the board bounds",
-	)
-	_expect(
-		failures,
-		drawer.end.y <= 592.0,
-		"detail drawer overlaps the lower table zones",
-	)
 
 	var union := BattleTableLayout.union_rects([
 		Rect2(10.0, 20.0, 30.0, 40.0),

@@ -237,13 +237,15 @@ func _draw_bench_tray(guide: Dictionary) -> void:
 		0.0,
 		maxf(10.0, rect.size.y * 0.14),
 	)
+	var outer_cut := maxf(10.0, rect.size.y * 0.14)
 	_draw_beveled_panel(
 		rect,
 		Color(0.055, 0.060, 0.070, 0.86),
-		accent.darkened(0.26),
-		3.0,
-		maxf(10.0, rect.size.y * 0.14),
+		Color.TRANSPARENT,
+		0.0,
+		outer_cut,
 	)
+	_draw_bench_outline_without_top(rect, accent.darkened(0.26), 3.0, outer_cut)
 	var inner := rect.grow(-5.0)
 	_draw_beveled_panel(
 		inner,
@@ -252,8 +254,6 @@ func _draw_bench_tray(guide: Dictionary) -> void:
 		1.0,
 		maxf(8.0, inner.size.y * 0.11),
 	)
-	var lip_rect := Rect2(rect.position, Vector2(rect.size.x, maxf(5.0, rect.size.y * 0.08)))
-	draw_rect(lip_rect, accent.lightened(0.12) * Color(1, 1, 1, 0.72), true)
 	var slots: Array = guide.get("slots", [])
 	for slot_value in slots:
 		var slot_rect: Rect2 = slot_value
@@ -306,6 +306,29 @@ func _draw_beveled_panel(
 		var outline := points.duplicate()
 		outline.append(points[0])
 		draw_polyline(outline, border, border_width)
+
+
+func _draw_bench_outline_without_top(
+	rect: Rect2,
+	border: Color,
+	border_width: float,
+	cut: float,
+) -> void:
+	var points := _beveled_points(rect, cut)
+	if points.size() < 3:
+		return
+	# Keep the tray sides and lower edge, but leave its upper edge open so the
+	# two bench rows do not read as heavy horizontal dividers across the field.
+	var outline := PackedVector2Array()
+	for index in range(1, points.size()):
+		outline.append(points[index])
+	outline.append(points[0])
+	draw_polyline(outline, border, border_width)
+	# Close only the span between the two upper bevels with a restrained
+	# hairline. It keeps the tray silhouette readable without bringing back the
+	# former thick, glowing color lip above the bench row.
+	var top_hairline := Color(border.r, border.g, border.b, 0.24)
+	draw_line(points[0], points[1], top_hairline, 1.0)
 
 
 func _beveled_points(rect: Rect2, cut: float) -> PackedVector2Array:
