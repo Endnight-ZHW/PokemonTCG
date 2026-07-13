@@ -41,6 +41,8 @@ const STATUS_NAMES := {
 	"PARALYZED": "麻痹",
 	"CONFUSED": "混乱",
 }
+const NORMAL_PANEL_SIZE := Vector2(372.0, 312.0)
+const COMPACT_PANEL_SIZE := Vector2(188.0, 196.0)
 
 @onready var detail_image: TextureRect = %DetailImage
 @onready var detail_title: Label = %DetailTitle
@@ -52,6 +54,7 @@ const STATUS_NAMES := {
 var current_card_id := ""
 var current_context: Dictionary = {}
 var _catalog: CardCatalog
+var _compact_layout := false
 
 
 func _ready() -> void:
@@ -138,6 +141,53 @@ func hide_preview() -> void:
 
 func is_showing_card() -> bool:
 	return visible and not current_card_id.is_empty()
+
+
+func set_compact_layout(value: bool) -> void:
+	_resolve_nodes()
+	_compact_layout = value
+	var target_size := COMPACT_PANEL_SIZE if value else NORMAL_PANEL_SIZE
+	custom_minimum_size = target_size
+	size = target_size
+
+	var header := get_node_or_null("Content/Header") as Control
+	var content := get_node_or_null("Content") as VBoxContainer
+	var body := get_node_or_null("Content/Body") as HBoxContainer
+	var image_column := get_node_or_null("Content/Body/ImageColumn") as Control
+	var image_frame := get_node_or_null(
+		"Content/Body/ImageColumn/ImageFrame"
+	) as Control
+	if header:
+		header.custom_minimum_size.y = 48.0
+	if content:
+		content.add_theme_constant_override("separation", 4 if value else 6)
+	if body:
+		body.add_theme_constant_override("separation", 6 if value else 10)
+	if image_column:
+		image_column.custom_minimum_size.x = 56.0 if value else 126.0
+	if image_frame:
+		image_frame.custom_minimum_size = (
+			Vector2(56.0, 78.0) if value else Vector2(126.0, 176.0)
+		)
+	if detail_text:
+		detail_text.custom_minimum_size.x = 92.0 if value else 212.0
+		detail_text.add_theme_font_size_override("normal_font_size", 11 if value else 12)
+	if detail_title:
+		detail_title.add_theme_font_size_override("font_size", 15 if value else 17)
+	if detail_meta:
+		detail_meta.add_theme_font_size_override("font_size", 10 if value else 11)
+	if context_label:
+		context_label.add_theme_font_size_override("font_size", 10 if value else 12)
+	if close_button:
+		close_button.custom_minimum_size = Vector2(48.0, 48.0)
+
+
+func is_compact_layout() -> bool:
+	return _compact_layout
+
+
+func layout_size() -> Vector2:
+	return COMPACT_PANEL_SIZE if _compact_layout else NORMAL_PANEL_SIZE
 
 
 func _on_close_pressed() -> void:

@@ -14,12 +14,19 @@ var _task_hint_override := ""
 
 
 func _ready() -> void:
-	_resolve_nodes()
-	_ensure_connections()
-	_hide_compatibility_nodes()
+	initialize_ui()
 	_apply_responsive_layout()
 	resized.connect(_apply_responsive_layout)
 	set_process(false)
+
+
+## BattleTable supports explicit synchronous initialization for tests and tools,
+## before child _ready callbacks have run. Keep the public menu signal wired in
+## both that path and the normal scene-tree ready path.
+func initialize_ui() -> void:
+	_resolve_nodes()
+	_ensure_connections()
+	_hide_compatibility_nodes()
 
 
 func update_header(
@@ -149,17 +156,17 @@ func _update_task_hint(value: String) -> void:
 
 
 func _apply_responsive_layout() -> void:
-	# Keep all battle context in one continuous group beside the menu. Extra
-	# width belongs after the group, so ultrawide screens do not pull the task
-	# hint away from the turn information.
+	# The fixed space at each edge is balanced (12 + 84 + 12 on the left,
+	# 108 on the right). Equal expanding spacers therefore keep the continuous
+	# turn/task group centered while the menu remains pinned to the left edge.
 	if menu_button == null or turn_label == null or task_hint_label == null:
 		return
 	menu_button.custom_minimum_size = Vector2(84.0, 48.0)
 	turn_label.custom_minimum_size = Vector2(
-		276.0 if size.x < 1080.0 else 292.0,
+		252.0 if size.x < 1080.0 else 292.0,
 		44.0,
 	)
 	task_hint_label.custom_minimum_size = Vector2(
-		clampf(size.x * 0.22, 270.0, 330.0),
+		clampf(size.x * 0.22, 250.0, 340.0),
 		44.0,
 	)

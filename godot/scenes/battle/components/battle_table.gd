@@ -2,6 +2,7 @@ class_name BattleTable
 extends Control
 
 signal menu_requested
+signal selection_clear_requested(expected_key: String)
 signal hand_card_selected(index: int, card_id: String)
 signal pokemon_selected(player: int, slot: String, card_id: String)
 signal action_requested(action: GameAction)
@@ -28,10 +29,12 @@ const SHUFFLE_CARD_LIMITS := {
 	"medium": 5,
 	"low": 3,
 }
+const HAND_CARD_MAX_Z := 78
+const SELECTED_HAND_CARD_Z := 79
 
 @export_category("Table Layout")
 @export_group("HUD")
-@export var hud_width := 260.0
+@export var hud_width := 132.0
 @export_group("Table Margins")
 @export var table_side_margin := 22.0
 @export var table_top_margin := 16.0
@@ -123,6 +126,7 @@ var _drag_source_key := ""
 var _last_action_rows_signature := ""
 var _last_selected_entity_identity := ""
 var _detail_content_signature := ""
+var _detail_passthrough_key := ""
 var _board_origin := Vector2.ZERO
 var _initialized := false
 var _active_flyers: Array[Control] = []
@@ -252,6 +256,11 @@ func update_view(
 	view_player = p_view_player
 	action_rows = p_action_rows.duplicate()
 	selected_entity_key = p_selected_entity_key
+	if (
+		not _detail_passthrough_key.is_empty()
+		and selected_entity_key != _detail_passthrough_key
+	):
+		_detail_passthrough_key = ""
 	var next_action_rows_signature := _action_rows_semantic_signature(action_rows)
 	var next_selected_entity_identity := _selected_entity_identity()
 	var interaction_context_changed := (
@@ -260,13 +269,7 @@ func update_view(
 		or next_selected_entity_identity != _last_selected_entity_identity
 	)
 	if interaction_context_changed:
-		_selected_action_group_key = ""
-		_popover_dismissed_source_key = ""
-		_forced_popover_rows.clear()
-		_forced_popover_source_key = ""
-		_popover_source_key = ""
-		if action_popover and action_popover.visible:
-			action_popover.dismiss(false)
+		_reset_action_interaction_state()
 	_last_selected_source_key = selected_entity_key
 	_last_action_rows_signature = next_action_rows_signature
 	_last_selected_entity_identity = next_selected_entity_identity
@@ -456,15 +459,14 @@ func hide_card_detail() -> void:
 
 func _on_detail_close_requested() -> void:
 	_detail_content_signature = ""
-	# BattleDetailPanel has already cleared itself. Reflow the action popover into
-	# the released area while preserving the selected source card.
-	if action_popover and action_popover.visible:
-		_reposition_action_popover()
+	var expected_key := selected_entity_key
+	_reset_action_interaction_state()
+	selection_clear_requested.emit(expected_key)
 
 
-func _sync_visible_card_detail() -> void:
+func _sync_visible_card_detail(force_show := false) -> void:
 	var component := detail_panel as BattleDetailPanel
-	if component == null or not component.visible or state_ref == null:
+	if component == null or (not component.visible and not force_show) or state_ref == null:
 		return
 	var card_id := ""
 	var pokemon: PokemonState
@@ -588,7 +590,7 @@ func capture_presentation_snapshot() -> Dictionary:
 		(snapshot["zones"] as Dictionary)[logical_key] = {
 			"card_id": zone.card_id,
 			"center": _zone_center(str(zone_key)),
-			"size": zone.size,
+			"size": _zone_card_size(zone),
 			"rotation_degrees": zone.rotation_degrees,
 			"count": zone.count,
 			"hidden": zone.is_hidden_zone,
@@ -689,7 +691,6 @@ func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 
 
 func _bind_scene_nodes() -> void:
-	hud.custom_minimum_size.x = hud_width
 	var detail_component := detail_panel as BattleDetailPanel
 	if detail_component:
 		detail_component.hide_card()
@@ -717,6 +718,19 @@ func _bind_scene_nodes() -> void:
 	opponent_hand_count_badge.add_theme_color_override(
 		"font_color",
 		DesignTokens.BG_DEEP,
+	)
+	opponent_info.z_index = 46
+	opponent_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	opponent_info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	opponent_info.add_theme_stylebox_override(
+		"normal",
+		DesignTokens.panel_style(
+			Color(0.105, 0.025, 0.045, 0.94),
+			7,
+			Color(0.76, 0.22, 0.32, 0.72),
+			1,
+			7,
+		),
 	)
 	own_info.z_index = 46
 	own_info.add_theme_stylebox_override(
@@ -762,12 +776,14 @@ func _bind_scene_nodes() -> void:
 		"own_prizes": get_node(board_path + "OwnPrizes"),
 		"stadium": get_node(board_path + "Stadium"),
 	}
-	(zones["opponent_deck"] as ZoneView).set_stack_visual("deck", 60, "up")
-	(zones["own_deck"] as ZoneView).set_stack_visual("deck", 60, "down")
-	(zones["opponent_discard"] as ZoneView).set_stack_visual("discard", 60, "up")
-	(zones["own_discard"] as ZoneView).set_stack_visual("discard", 60, "down")
-	(zones["opponent_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
-	(zones["own_prizes"] as ZoneView).set_stack_visual("prizes", 6, "right")
+	# Deck/discard retain their left/bottom paper depth. Prizes use a separate
+	# six-card horizontal fan matching a physical face-down prize row.
+	(zones["opponent_deck"] as ZoneView).set_stack_visual("deck", 60, "down_left")
+	(zones["own_deck"] as ZoneView).set_stack_visual("deck", 60, "down_left")
+	(zones["opponent_discard"] as ZoneView).set_stack_visual("discard", 60, "down_left")
+	(zones["own_discard"] as ZoneView).set_stack_visual("discard", 60, "down_left")
+	(zones["opponent_prizes"] as ZoneView).set_stack_visual("prizes", 6, "fan_right")
+	(zones["own_prizes"] as ZoneView).set_stack_visual("prizes", 6, "fan_right")
 	for view in [opponent_active, own_active] + opponent_bench + own_bench:
 		_bind_card_view(view)
 	for zone_value in zones.values():
@@ -777,12 +793,18 @@ func _bind_scene_nodes() -> void:
 		zone.detail_requested.connect(_on_detail_requested)
 		zone.action_requested.connect(action_requested.emit)
 		zone.card_dropped.connect(_on_card_dropped)
+	header.initialize_ui()
 	header.menu_requested.connect(_on_menu_pressed)
 	hud.phase_action_requested.connect(action_requested.emit)
+	if not hud.log_drawer_toggled.is_connected(_on_log_drawer_toggled):
+		hud.log_drawer_toggled.connect(_on_log_drawer_toggled)
+	# Keep global input enabled even while the log drawer is closed. This lets us
+	# remove a popover before GUI hit testing while preserving the original card
+	# press and its normal release/long-press/drag semantics.
+	set_process_input(true)
 	if action_popover:
 		action_popover.action_chosen.connect(_on_popover_action_chosen)
 		action_popover.dismissed.connect(_on_popover_dismissed)
-		action_popover.outside_pressed.connect(_on_popover_outside_pressed)
 	director.sequence_started.connect(func(_count: int) -> void:
 		input_blocker.visible = not AppSettings.reduced_motion
 	)
@@ -812,6 +834,106 @@ func _on_phase_advance_pressed() -> void:
 	var action: GameAction = phase_advance_button.get_meta("action") as GameAction
 	if action:
 		action_requested.emit(action)
+
+
+func _input(event: InputEvent) -> void:
+	# PresentationInputBlocker owns the GUI phase while an effect sequence runs.
+	# Global input must stay read-only so it cannot dismiss transient surfaces
+	# before the blocker consumes the same pointer gesture.
+	if input_blocker and input_blocker.visible:
+		return
+	var pointer_button := event as InputEventMouseButton
+	var is_left_pointer_button := (
+		pointer_button != null
+		and pointer_button.button_index == MOUSE_BUTTON_LEFT
+	)
+	if is_left_pointer_button and not pointer_button.pressed:
+		if not _detail_passthrough_key.is_empty():
+			var expected_key := _detail_passthrough_key
+			_detail_passthrough_key = ""
+			# GUI release runs after _input. Restore only on the following frame, and
+			# only if CardView did not complete the normal same-card cancellation.
+			call_deferred("_restore_detail_after_passthrough", expected_key)
+		return
+	var is_pointer_press := is_left_pointer_button and pointer_button.pressed
+	if not is_pointer_press:
+		return
+	var pointer_position := (event as InputEventMouseButton).position
+	# The log drawer is the top-most table surface. Closing it consumes this
+	# press so the same gesture cannot also activate a card beneath the drawer.
+	if hud and hud.is_log_drawer_open():
+		if log_panel and log_panel.get_global_rect().has_point(pointer_position):
+			return
+		var phase_panel := hud.get_node_or_null("PhasePanel") as Control
+		if phase_panel and phase_panel.get_global_rect().has_point(pointer_position):
+			return
+		if header and header.menu_button.get_global_rect().has_point(pointer_position):
+			return
+		hud.close_log_drawer()
+		var viewport := get_viewport()
+		if viewport:
+			viewport.set_input_as_handled()
+		return
+	var selected_source := _source_control_for_key(selected_entity_key)
+	var selected_source_pressed := (
+		selected_source != null
+		and _control_contains_global_point(selected_source, pointer_position)
+	)
+	if (
+		selected_source_pressed
+		and detail_panel
+		and detail_panel.visible
+		and detail_panel.get_global_rect().has_point(pointer_position)
+	):
+		# On very narrow layouts the detail surface can be forced over its source.
+		# Remove both transient surfaces before GUI hit testing and let the original
+		# gesture reach CardView; this preserves click, long-press and drag semantics.
+		_detail_passthrough_key = selected_entity_key
+		hide_card_detail()
+		if action_popover and action_popover.visible:
+			action_popover.dismiss()
+		return
+	if action_popover == null or not action_popover.visible:
+		return
+	var source_inside_informational_panel := (
+		action_popover.is_informational_only()
+		and action_popover.source_contains_global_point(pointer_position)
+	)
+	if (
+		action_popover.panel_global_rect().has_point(pointer_position)
+		and not source_inside_informational_panel
+	):
+		return
+	if (
+		detail_panel
+		and detail_panel.visible
+		and detail_panel.get_global_rect().has_point(pointer_position)
+	):
+		return
+	# Hide the full-screen popover before GUI hit testing, but deliberately do
+	# not handle the event. CardView must receive the original press so its
+	# release, long-press and drag thresholds stay intact.
+	action_popover.dismiss()
+
+
+func _restore_detail_after_passthrough(expected_key: String) -> void:
+	if (
+		expected_key.is_empty()
+		or selected_entity_key != expected_key
+		or state_ref == null
+		or (detail_panel and detail_panel.visible)
+	):
+		return
+	_sync_visible_card_detail(true)
+
+
+func _control_contains_global_point(control: Control, global_point: Vector2) -> bool:
+	if control == null or not is_instance_valid(control) or not control.is_visible_in_tree():
+		return false
+	var local_point := (
+		control.get_global_transform_with_canvas().affine_inverse() * global_point
+	)
+	return Rect2(Vector2.ZERO, control.size).has_point(local_point)
 
 
 func _refresh_header() -> void:
@@ -1108,7 +1230,7 @@ func _layout_board() -> void:
 	_layout_player_hands(metrics)
 	var field_plan := BattleTableLayout.field_plan(metrics, bench_spacing)
 	_layout_field_slots(metrics, field_plan)
-	_layout_table_zones(metrics)
+	_layout_table_zones(metrics, field_plan)
 	_layout_own_status(metrics, field_plan)
 	_layout_opponent_hand(metrics["hidden_hand_size"])
 	_layout_hand(metrics["own_hand_size"])
@@ -1141,7 +1263,6 @@ func _layout_player_hands(metrics: Dictionary) -> void:
 	var opponent_hand_width := float(metrics["opponent_hand_width"])
 	var top_hand_height := float(metrics["top_hand_height"])
 	var opponent_hand_y := float(metrics["opponent_hand_y"])
-	var opponent_visible_height := float(metrics["opponent_hand_visible_height"])
 	opponent_hand_surface.position = Vector2(
 		center_x - opponent_hand_width * 0.5,
 		opponent_hand_y,
@@ -1152,14 +1273,14 @@ func _layout_player_hands(metrics: Dictionary) -> void:
 	)
 	opponent_hand_count_badge.position = Vector2(
 		opponent_hand_surface.position.x + opponent_hand_surface.size.x - 18.0,
-		top_margin + opponent_visible_height - 25.0,
+		float(metrics.get("top_interaction_clearance", top_margin)) + 4.0,
 	)
 	opponent_hand_count_badge.size = Vector2(34.0, 34.0)
 	opponent_info.position = Vector2(
 		float(metrics["field_left"]),
 		float(metrics["opponent_info_y"]),
 	)
-	opponent_info.size = Vector2(float(metrics["table_width"]), 24.0)
+	opponent_info.size = Vector2(304.0, 24.0)
 
 	var own_hand_y := float(metrics["own_hand_y"])
 	var hand_width := float(metrics["hand_width"])
@@ -1217,8 +1338,8 @@ func _layout_field_slots(metrics: Dictionary, plan: Dictionary) -> void:
 	)
 
 
-func _layout_table_zones(metrics: Dictionary) -> void:
-	var plan := BattleTableLayout.zone_plan(metrics)
+func _layout_table_zones(metrics: Dictionary, field_plan: Dictionary) -> void:
+	var plan := BattleTableLayout.zone_plan(metrics, field_plan)
 	var positions: Dictionary = plan["positions"]
 	var zone_visual_size: Vector2 = plan["size"]
 	for key in [
@@ -1230,7 +1351,193 @@ func _layout_table_zones(metrics: Dictionary) -> void:
 		"own_deck",
 		"own_prizes",
 	]:
-		_place_perspective_zone(key, positions[key], zone_visual_size, metrics)
+		var placed_position: Vector2 = positions[key]
+		var placed_size := zone_visual_size
+		if key == "stadium":
+			var stadium_scale := float(plan.get("stadium_scale", 1.0))
+			placed_size *= stadium_scale
+			placed_position += (zone_visual_size - placed_size) * 0.5
+		_place_perspective_zone(key, placed_position, placed_size, metrics)
+	_layout_prize_stack_bounds(metrics)
+	_layout_pile_docks(metrics)
+
+
+func _layout_prize_stack_bounds(metrics: Dictionary) -> void:
+	var layout_scale := float(metrics["layout_scale"])
+	var left_safe_edge := float(metrics["left_zone_x"])
+	var top_safe_edge := maxf(
+		70.0,
+		float(metrics["top_interaction_clearance"])
+			+ clampf(8.0 * layout_scale, 6.0, 10.0),
+	)
+	var bottom_safe_edge := (
+		float(metrics["height"])
+		- clampf(18.0 * layout_scale, 14.0, 20.0)
+	)
+	var right_safe_edge := float(metrics["stadium_x"]) - clampf(
+		14.0 * layout_scale,
+		11.0,
+		16.0,
+	)
+	var stadium := zones.get("stadium") as ZoneView
+	if stadium:
+		var stadium_bounds := _visual_rect_in_control(
+			stadium,
+			Rect2(Vector2.ZERO, stadium.size).grow(4.0),
+			board_canvas,
+		)
+		right_safe_edge = stadium_bounds.position.x - clampf(
+			10.0 * layout_scale,
+			8.0,
+			12.0,
+		)
+	for key in ["opponent_prizes", "own_prizes"]:
+		var prize_stack := zones.get(key) as ZoneView
+		if prize_stack == null:
+			continue
+		# The root already spans the six-card fan. Transform all capacity corners so
+		# its subtle table rotation is included in the safe-area calculation.
+		var visual_bounds := _visual_rect_in_control(
+			prize_stack,
+			prize_stack.get_stack_visual_max_rect().grow(6.0),
+			board_canvas,
+		)
+		var minimum_shift := Vector2(
+			left_safe_edge - visual_bounds.position.x,
+			top_safe_edge - visual_bounds.position.y,
+		)
+		var maximum_shift := Vector2(
+			right_safe_edge - visual_bounds.end.x,
+			bottom_safe_edge - visual_bounds.end.y,
+		)
+		var safe_shift := Vector2(
+			(
+				clampf(0.0, minimum_shift.x, maximum_shift.x)
+				if minimum_shift.x <= maximum_shift.x
+				else (minimum_shift.x + maximum_shift.x) * 0.5
+			),
+			(
+				clampf(0.0, minimum_shift.y, maximum_shift.y)
+				if minimum_shift.y <= maximum_shift.y
+				else (minimum_shift.y + maximum_shift.y) * 0.5
+			),
+		)
+		prize_stack.position += safe_shift
+
+
+func _visual_rect_in_control(
+	control: Control,
+	local_rect: Rect2,
+	target: CanvasItem,
+) -> Rect2:
+	if control == null or target == null:
+		return Rect2()
+	var transform_to_target := (
+		target.get_global_transform_with_canvas().affine_inverse()
+		* control.get_global_transform_with_canvas()
+	)
+	var points := PackedVector2Array([
+		transform_to_target * local_rect.position,
+		transform_to_target * Vector2(local_rect.end.x, local_rect.position.y),
+		transform_to_target * local_rect.end,
+		transform_to_target * Vector2(local_rect.position.x, local_rect.end.y),
+	])
+	var minimum := points[0]
+	var maximum := points[0]
+	for point in points:
+		minimum = minimum.min(point)
+		maximum = maximum.max(point)
+	return Rect2(minimum, maximum - minimum)
+
+
+func _layout_pile_docks(metrics: Dictionary) -> void:
+	if playmat == null:
+		return
+	var guides: Array[Dictionary] = []
+	var layout_scale := float(metrics["layout_scale"])
+	var horizontal_padding := clampf(4.8 * layout_scale, 4.0, 5.5)
+	var vertical_padding := clampf(7.5 * layout_scale, 6.0, 9.0)
+	var pile_gap := float(metrics["pile_gap"])
+	var outer_right := float(metrics["command_dock_left"]) - float(metrics["zone_gap"])
+	var right_safe_edge := (
+		float(metrics["command_dock_left"])
+		- clampf(10.0 * layout_scale, 8.0, 12.0)
+	)
+	var top_safe_edge := maxf(
+		70.0,
+		float(metrics["top_interaction_clearance"])
+			+ clampf(8.0 * layout_scale, 6.0, 10.0),
+	)
+	var bottom_safe_edge := (
+		float(metrics["height"])
+		- clampf(18.0 * layout_scale, 14.0, 20.0)
+	)
+	for row in [
+		{"prefix": "opponent", "side": "opponent"},
+		{"prefix": "own", "side": "own"},
+	]:
+		var prefix := str(row["prefix"])
+		var deck := zones.get("%s_deck" % prefix) as ZoneView
+		var discard := zones.get("%s_discard" % prefix) as ZoneView
+		if deck == null or discard == null:
+			continue
+		# Anchor the rendered card size, not only the planner's base size, to the
+		# command-dock clearance. Near-side perspective therefore cannot consume
+		# the reserved gap on wide or compact screens.
+		discard.position.x = outer_right - discard.size.x
+		deck.position.x = discard.position.x - deck.size.x - pile_gap
+		# Top cards no longer overlap; matching Z lets the later discard sibling
+		# naturally cover only any decorative paper edge that reaches the gap.
+		deck.z_index = discard.z_index
+		# Use transformed AABBs for both the top-card recess and full paper stack.
+		# ZoneView carries a subtle perspective rotation and draws shadows outside
+		# its raw rect, so position/size merging alone clips the lower-left depth.
+		var deck_rect := _visual_rect_in_control(
+			deck,
+			deck.get_stack_face_rect().grow(2.5),
+			board_canvas,
+		)
+		var discard_rect := _visual_rect_in_control(
+			discard,
+			discard.get_stack_face_rect().grow(2.5),
+			board_canvas,
+		)
+		var deck_visual := _visual_rect_in_control(
+			deck,
+			deck.get_stack_visual_max_rect().grow(6.0),
+			board_canvas,
+		)
+		var discard_visual := _visual_rect_in_control(
+			discard,
+			discard.get_stack_visual_max_rect().grow(6.0),
+			board_canvas,
+		)
+		var visual_bounds := deck_visual.merge(discard_visual)
+		var dock_rect := Rect2(
+			visual_bounds.position - Vector2(horizontal_padding, vertical_padding),
+			visual_bounds.size + Vector2(horizontal_padding, vertical_padding) * 2.0,
+		)
+		var safe_shift := Vector2.ZERO
+		if dock_rect.end.x > right_safe_edge:
+			safe_shift.x = right_safe_edge - dock_rect.end.x
+		if prefix == "own" and dock_rect.end.y > bottom_safe_edge:
+			safe_shift.y = bottom_safe_edge - dock_rect.end.y
+		elif prefix == "opponent" and dock_rect.position.y < top_safe_edge:
+			safe_shift.y = top_safe_edge - dock_rect.position.y
+		if not safe_shift.is_zero_approx():
+			deck.position += safe_shift
+			discard.position += safe_shift
+			deck_rect.position += safe_shift
+			discard_rect.position += safe_shift
+			dock_rect.position += safe_shift
+		guides.append({
+			"rect": dock_rect,
+			"deck_rect": deck_rect,
+			"discard_rect": discard_rect,
+			"side": str(row["side"]),
+			"depth": (deck.table_depth + discard.table_depth) * 0.5,
+		})
+	playmat.set_pile_guides(guides)
 
 
 func _place_perspective_card(
@@ -1330,6 +1637,11 @@ func _place_perspective_zone(
 		-1.6 if depth < 0.45 else 1.2,
 		int(8 + depth * 34.0),
 	)
+	var zone := zones.get(key) as ZoneView
+	if zone and zone.stack_visual_mode == "prizes":
+		# Keep the card face at the perspective size while the ZoneView root grows
+		# to the six-card capacity, making the complete visible fan interactive.
+		zone.set_stack_card_size(size_value)
 
 
 func _perspective_depth(y: float, metrics: Dictionary) -> float:
@@ -1338,17 +1650,28 @@ func _perspective_depth(y: float, metrics: Dictionary) -> float:
 
 func _layout_overlay_drawers() -> void:
 	if hud:
-		var responsive_width := 260.0
-		if size.x < 1400.0:
-			responsive_width = 232.0
-		elif size.x >= 1900.0:
-			responsive_width = 280.0
-		if not is_equal_approx(hud.custom_minimum_size.x, responsive_width):
-			hud.custom_minimum_size.x = responsive_width
+		var overlay_width := maxf(504.0, hud.get_combined_minimum_size().x)
+		var overlay_height := maxf(400.0, size.y - 80.0)
+		hud.position = Vector2(
+			maxf(
+				0.0,
+				size.x - overlay_width - BattlePhaseHud.DOCK_RIGHT_MARGIN,
+			),
+			68.0,
+		)
+		hud.size = Vector2(overlay_width, overlay_height)
 	if detail_panel and detail_panel.visible:
 		_layout_detail_panel()
 	if action_popover and action_popover.visible:
 		_reposition_action_popover()
+
+
+func _on_log_drawer_toggled(is_open: bool) -> void:
+	if is_open and action_popover and action_popover.visible:
+		action_popover.dismiss()
+	# BattlePhaseHud completes its own drawer layout after emitting the signal.
+	# Reflow transient side surfaces on the following frame using final geometry.
+	call_deferred("_layout_overlay_drawers")
 
 
 func _layout_detail_panel() -> void:
@@ -1367,69 +1690,110 @@ func _layout_detail_panel() -> void:
 	if safe_rect.size.x <= 1.0 or safe_rect.size.y <= 1.0:
 		return
 
-	var panel_size := detail_panel.get_combined_minimum_size()
-	if panel_size.x <= 1.0 or panel_size.y <= 1.0:
-		panel_size = Vector2(372.0, 312.0)
-	panel_size.x = minf(panel_size.x, safe_rect.size.x)
-	panel_size.y = minf(panel_size.y, safe_rect.size.y)
+	# The detail surface owns the fixed left corridor between both six-card prize
+	# rows. Capacity bounds keep this position stable as prizes are taken. The
+	# panel's shadow halo participates in every bound, so the rendered surface—not
+	# merely its Control rectangle—stays clear of prizes and Stadium.
+	var detail_halo := 10.0
+	var corridor_top := safe_rect.position.y
+	var corridor_bottom := safe_rect.end.y
+	var prize_gap := 10.0
+	var opponent_prizes := zones.get("opponent_prizes") as ZoneView
+	if opponent_prizes:
+		var opponent_bounds := _visual_rect_in_control(
+			opponent_prizes,
+			opponent_prizes.get_stack_visual_max_rect().grow(6.0),
+			self,
+		)
+		corridor_top = maxf(
+			corridor_top,
+			opponent_bounds.end.y + prize_gap + detail_halo,
+		)
+	var own_prizes := zones.get("own_prizes") as ZoneView
+	if own_prizes:
+		var own_bounds := _visual_rect_in_control(
+			own_prizes,
+			own_prizes.get_stack_visual_max_rect().grow(6.0),
+			self,
+		)
+		corridor_bottom = minf(
+			corridor_bottom,
+			own_bounds.position.y - prize_gap - detail_halo,
+		)
 
-	# Keep the preview immediately to the left of the deck/discard column when
-	# that column is present. This preserves the visible identities/counts of the
-	# right-side zones without consuming HUD layout width.
-	var right_zone_left := safe_rect.end.x
-	for zone_key in ["opponent_deck", "opponent_discard", "own_deck", "own_discard"]:
-		var zone := zones.get(zone_key) as Control
-		if zone == null or not zone.visible:
-			continue
-		var zone_left := (inverse * zone.get_global_rect().position).x
-		right_zone_left = minf(right_zone_left, zone_left)
-	var preview_x := right_zone_left - panel_size.x - 12.0
-	if preview_x < safe_rect.position.x:
-		preview_x = safe_rect.end.x - panel_size.x
-	preview_x = clampf(
-		preview_x,
-		safe_rect.position.x,
-		maxf(safe_rect.position.x, safe_rect.end.x - panel_size.x),
+	var minimum_fixed_x := safe_rect.position.x + detail_halo
+	var maximum_detail_right := safe_rect.end.x - detail_halo
+	var stadium := zones.get("stadium") as ZoneView
+	if stadium:
+		var stadium_bounds := _visual_rect_in_control(
+			stadium,
+			Rect2(Vector2.ZERO, stadium.size).grow(4.0),
+			self,
+		)
+		maximum_detail_right = minf(
+			maximum_detail_right,
+			stadium_bounds.position.x - 8.0 - detail_halo,
+		)
+
+	var available_width := maxf(1.0, maximum_detail_right - minimum_fixed_x)
+	var available_height := maxf(1.0, corridor_bottom - corridor_top)
+	var component := detail_panel as BattleDetailPanel
+	if component:
+		component.set_compact_layout(
+			available_width < BattleDetailPanel.NORMAL_PANEL_SIZE.x
+			or available_height < BattleDetailPanel.NORMAL_PANEL_SIZE.y
+		)
+	var base_panel_size := (
+		component.layout_size()
+		if component
+		else detail_panel.get_combined_minimum_size()
 	)
-
-	# Prefer the half of the table opposite the selected source so the preview
-	# does not hide the card that owns the currently visible actions.
-	var preview_y := safe_rect.position.y + (safe_rect.size.y - panel_size.y) * 0.5
-	var source_control := _source_control_for_key(selected_entity_key)
-	if source_control:
-		var source_center := inverse * source_control.get_global_rect().get_center()
-		if source_center.y < safe_rect.get_center().y:
-			preview_y = safe_rect.end.y - panel_size.y
-		else:
-			preview_y = safe_rect.position.y
-
-	# The opponent bench is the first readable row below the hidden hand. Keep
-	# the floating preview wholly below that row instead of letting its upper
-	# edge sit over the bench tray. If a very short viewport cannot provide the
-	# required space, the final safe-area clamp still keeps the panel on-screen.
-	var opponent_bench_bottom := safe_rect.position.y
-	var has_opponent_bench := false
-	for bench_view in opponent_bench:
-		if bench_view == null or not bench_view.visible:
-			continue
-		has_opponent_bench = true
-		var bench_bottom := (inverse * bench_view.get_global_rect().end).y
-		opponent_bench_bottom = maxf(opponent_bench_bottom, bench_bottom)
-	if has_opponent_bench:
-		preview_y = maxf(preview_y, opponent_bench_bottom + 20.0)
-	preview_y = clampf(
-		preview_y,
-		safe_rect.position.y,
-		maxf(safe_rect.position.y, safe_rect.end.y - panel_size.y),
+	if base_panel_size.x <= 1.0 or base_panel_size.y <= 1.0:
+		base_panel_size = BattleDetailPanel.NORMAL_PANEL_SIZE
+	var panel_scale := minf(
+		1.0,
+		minf(
+			available_width / base_panel_size.x,
+			available_height / base_panel_size.y,
+		),
 	)
+	panel_scale = maxf(0.1, panel_scale)
+	var panel_size := base_panel_size * panel_scale
+	detail_panel.pivot_offset = Vector2.ZERO
+	detail_panel.scale = Vector2.ONE * panel_scale
 
-	detail_panel.position = Vector2(preview_x, preview_y)
-	detail_panel.size = panel_size
+	var maximum_fixed_x := maximum_detail_right - panel_size.x
+	var fixed_x := clampf(
+		minimum_fixed_x,
+		minimum_fixed_x,
+		maxf(minimum_fixed_x, maximum_fixed_x),
+	)
+	var corridor_height := maxf(0.0, corridor_bottom - corridor_top)
+	var fixed_y := roundf(
+		corridor_top + (corridor_height - panel_size.y) * 0.5
+	)
+	fixed_y = clampf(
+		fixed_y,
+		corridor_top,
+		maxf(corridor_top, corridor_bottom - panel_size.y),
+	)
+	detail_panel.position = Vector2(fixed_x, fixed_y)
+	detail_panel.size = base_panel_size
 
 
 func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 	if hand_surface == null:
 		return
+	# Control hit testing follows sibling order more strictly than CanvasItem Z on
+	# touch-emulated mouse events. Restore the canonical order first, then move the
+	# selected source to the end so its lifted, visible face is also the hit target.
+	for canonical_index in range(hand_views.size()):
+		var canonical_view := hand_views[canonical_index]
+		if (
+			canonical_view.get_parent() == hand_surface
+			and canonical_view.get_index() != canonical_index
+		):
+			hand_surface.move_child(canonical_view, canonical_index)
 	var visible_count := 0
 	for view in hand_views:
 		if view.visible:
@@ -1444,6 +1808,7 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 	hand_surface.custom_minimum_size.x = float(plan["surface_width"])
 	var items: Array[Dictionary] = plan["items"]
 	var visible_index := 0
+	var selected_hand_view: CardView
 	for view in hand_views:
 		if not view.visible:
 			continue
@@ -1452,11 +1817,28 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 		view.size = card_size
 		view.position = item["position"]
 		view.rotation_degrees = float(item["rotation_degrees"])
-		view.z_index = int(item["z_index"])
+		var is_selected := selected_entity_key == "hand:%d" % view.hand_index
+		# A selected card must remain the top hand hit target even in a tightly
+		# overlapped fan. Keep the whole hand below the HUD/popover overlay layers.
+		view.z_index = (
+			SELECTED_HAND_CARD_Z
+			if is_selected
+			else mini(HAND_CARD_MAX_Z, int(item["z_index"]))
+		)
 		view.set_table_depth(0.96, true)
 		view.remember_base_position()
-		view.set_selected(selected_entity_key == "hand:%d" % view.hand_index)
+		view.set_selected(is_selected)
+		if is_selected:
+			selected_hand_view = view
 		visible_index += 1
+	if (
+		selected_hand_view
+		and selected_hand_view.get_index() != hand_surface.get_child_count() - 1
+	):
+		hand_surface.move_child(
+			selected_hand_view,
+			maxi(0, hand_surface.get_child_count() - 1),
+		)
 
 
 func _layout_opponent_hand(card_size: Vector2 = Vector2(70, 98)) -> void:
@@ -1651,9 +2033,20 @@ func _allowance_chip_style(used: bool) -> StyleBoxFlat:
 func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 	if own_info == null or own_allowance_row == null:
 		return
+	var stadium_rect := Rect2()
+	var stadium := zones.get("stadium") as ZoneView
+	if stadium:
+		stadium_rect = _visual_rect_in_control(
+			stadium,
+			Rect2(Vector2.ZERO, stadium.size).grow(4.0),
+			board_canvas,
+		)
+	var status_height := 48.0 if float(metrics["height"]) < 600.0 else 56.0
 	var status_plan := BattleTableLayout.own_status_plan(
 		metrics,
 		field_plan["own_active_rect"],
+		Vector2(304.0, status_height),
+		stadium_rect,
 	)
 	var info_rect: Rect2 = status_plan["info_rect"]
 	var allowance_rect: Rect2 = status_plan["allowance_rect"]
@@ -1661,6 +2054,24 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 	own_info.size = info_rect.size
 	own_allowance_row.position = allowance_rect.position
 	own_allowance_row.size = allowance_rect.size
+	var compact_status := allowance_rect.size.x < 300.0
+	var separation := 3 if compact_status else 6
+	own_allowance_row.add_theme_constant_override("separation", separation)
+	own_info.add_theme_font_size_override("font_size", 11 if compact_status else 12)
+	var compact_unit := maxf(
+		1.0,
+		(allowance_rect.size.x - float(separation * 3)) / 4.2,
+	)
+	for key in ["energy", "supporter", "retreat", "stadium"]:
+		var label := own_allowance_labels.get(key) as Label
+		if label == null:
+			continue
+		label.add_theme_font_size_override("font_size", 10 if compact_status else 12)
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		if compact_status:
+			label.custom_minimum_size.x = compact_unit * (1.2 if key == "stadium" else 1.0)
+		else:
+			label.custom_minimum_size.x = 82.0 if key == "stadium" else 68.0
 
 
 func _routed_action_rows() -> Array[Dictionary]:
@@ -1737,7 +2148,7 @@ func _current_task_hint() -> String:
 		_popover_dismissed_source_key == selected_entity_key
 		and _selected_action_group_key.is_empty()
 	):
-		return "点击卡牌重新打开操作"
+		return "再次点击卡牌取消选择"
 	var groups := interaction_router.action_groups_for_source(selected_entity_key)
 	if groups.is_empty():
 		return _disabled_reason_for_source(selected_entity_key)
@@ -2023,19 +2434,59 @@ func _source_control_for_key(source_key: String) -> Control:
 
 func _safe_popover_rect() -> Rect2:
 	var inset := Vector2(8.0, 8.0)
+	var result := Rect2()
 	if board_panel and board_panel.size.x > 16.0 and board_panel.size.y > 16.0:
-		return Rect2(
+		result = Rect2(
 			board_panel.global_position + inset,
 			board_panel.size - inset * 2.0,
 		)
-	if size.x <= 16.0 or size.y <= 16.0:
+	elif size.x > 16.0 and size.y > 16.0:
+		result = Rect2(global_position + inset, size - inset * 2.0)
+	if result.size.x <= 0.0 or result.size.y <= 0.0:
 		return Rect2()
-	return Rect2(global_position + inset, size - inset * 2.0)
+	# The header is deliberately above every table-local overlay so the menu is
+	# always reachable. Exclude the same strip from popover placement; otherwise
+	# an upper card could put its action panel behind the visible header.
+	if header and header.visible:
+		var header_bottom := header.get_global_rect().end.y + inset.y
+		if header_bottom > result.position.y and header_bottom < result.end.y:
+			var result_bottom := result.end.y
+			result.position.y = header_bottom
+			result.size.y = result_bottom - header_bottom
+	return result
 
 
 func _avoid_controls_for_rows(rows: Array[Dictionary]) -> Array[Control]:
 	var result: Array[Control] = []
 	var seen: Dictionary = {}
+	# Popovers are transient controls, but they should not hide the board objects
+	# a player is trying to read. Reserve the fixed HUD edge, occupied zones and
+	# visible cards before adding action-specific legal targets below.
+	var persistent_controls: Array[Control] = []
+	if header:
+		persistent_controls.append(header)
+	if hud:
+		var phase_panel := hud.get_node_or_null("PhasePanel") as Control
+		if phase_panel:
+			persistent_controls.append(phase_panel)
+	if log_panel and log_panel.visible and log_panel.is_visible_in_tree():
+		persistent_controls.append(log_panel)
+	for zone_value in zones.values():
+		var zone := zone_value as ZoneView
+		if zone and zone.visible and zone.count > 0:
+			persistent_controls.append(zone)
+	for hand_view in hand_views:
+		if hand_view.visible and not hand_view.empty:
+			persistent_controls.append(hand_view)
+	for slot_value in slot_views.values():
+		var slot_view := slot_value as CardView
+		if slot_view and slot_view.visible and not slot_view.empty:
+			persistent_controls.append(slot_view)
+	for control in persistent_controls:
+		if seen.has(control):
+			continue
+		seen[control] = true
+		result.append(control)
 	if detail_panel and detail_panel.visible:
 		seen[detail_panel] = true
 		result.append(detail_panel)
@@ -2066,13 +2517,10 @@ func _reposition_action_popover() -> void:
 	var avoidance_rows := interaction_router.rows_for_source(_popover_source_key)
 	if _forced_popover_source_key == _popover_source_key:
 		avoidance_rows = _forced_popover_rows
-	var avoid_rects: Array[Rect2] = []
-	for control in _avoid_controls_for_rows(avoidance_rows):
-		avoid_rects.append(control.get_global_rect())
-	action_popover.reposition(
-		source_control.get_global_rect(),
+	action_popover.reposition_for_control(
+		source_control,
 		_safe_popover_rect(),
-		avoid_rects,
+		_avoid_controls_for_rows(avoidance_rows),
 	)
 
 
@@ -2124,15 +2572,14 @@ func _on_popover_dismissed() -> void:
 	_refresh_header()
 
 
-func _on_popover_outside_pressed(global_pointer_position: Vector2) -> void:
-	if header and header.menu_button.get_global_rect().has_point(global_pointer_position):
-		call_deferred("_on_menu_pressed")
-	elif (
-		phase_advance_button
-		and not phase_advance_button.disabled
-		and phase_advance_button.get_global_rect().has_point(global_pointer_position)
-	):
-		call_deferred("_on_phase_advance_pressed")
+func _reset_action_interaction_state(dismiss_popover := true) -> void:
+	_selected_action_group_key = ""
+	_popover_dismissed_source_key = ""
+	_popover_source_key = ""
+	_forced_popover_rows.clear()
+	_forced_popover_source_key = ""
+	if dismiss_popover and action_popover and action_popover.visible:
+		action_popover.dismiss(false)
 
 
 func _on_card_activated(
@@ -2146,17 +2593,12 @@ func _on_card_activated(
 		if hand_index >= 0
 		else CardInteractionRouter.pokemon_key(player, slot_name)
 	)
+	if not selected_entity_key.is_empty() and clicked_key == selected_entity_key:
+		_reset_action_interaction_state()
+		selection_clear_requested.emit(clicked_key)
+		return
 	if choice_target_options.has(clicked_key):
 		choice_target_selected.emit(str(choice_target_options[clicked_key]))
-		return
-	if (
-		clicked_key == selected_entity_key
-		and _popover_dismissed_source_key == clicked_key
-		and _selected_action_group_key.is_empty()
-	):
-		_popover_dismissed_source_key = ""
-		_refresh_action_popover()
-		_refresh_header()
 		return
 	if not selected_entity_key.is_empty() and clicked_key != selected_entity_key:
 		var target_rows := _matching_active_selection_rows(clicked_key)
@@ -2204,7 +2646,12 @@ func _on_card_view_detail_requested(card_id: String, view: CardView) -> void:
 
 
 func _on_menu_pressed() -> void:
+	var expected_key := selected_entity_key
 	hide_card_detail()
+	_reset_action_interaction_state()
+	if hud and hud.is_log_drawer_open():
+		hud.close_log_drawer()
+	selection_clear_requested.emit(expected_key)
 	menu_requested.emit()
 
 
@@ -3642,7 +4089,7 @@ func _current_endpoint_size(endpoint: Dictionary, fallback: Vector2) -> Vector2:
 			)
 		var zone := _zone_view_for_endpoint(endpoint)
 		if zone:
-			return zone.size
+			return _zone_card_size(zone)
 	return fallback
 
 
@@ -3737,6 +4184,7 @@ func _zone_motion_offset(
 	leaving_stack: bool,
 ) -> Vector2:
 	var zone_name := str(endpoint.get("zone", ""))
+	var player := int(endpoint.get("player", view_player))
 	if zone_name.is_empty() or zone_name == "hand":
 		return _stack_offset(index, visible_count, zone_name == "hand")
 	var zone := _zone_view_for_endpoint(endpoint)
@@ -3745,8 +4193,31 @@ func _zone_motion_offset(
 	if zone:
 		direction = zone.stack_visual_direction
 		depth = zone.table_depth
-	var step := _stack_visual_step(direction, depth)
+	var step := (
+		zone.get_stack_motion_step()
+		if zone
+		else _stack_visual_step(direction, depth)
+	)
+	if zone:
+		var zone_transform := zone.get_global_transform_with_canvas()
+		var step_origin := _effects_local(zone_transform * Vector2.ZERO)
+		step = _effects_local(zone_transform * step) - step_origin
 	var clamped_index := clampi(index, 0, maxi(0, visible_count - 1))
+	if zone_name == "prizes":
+		var stack_count := zone.count if zone else visible_count
+		if leaving_stack:
+			var snapshot_row := _snapshot_zone_row(player, "prizes")
+			stack_count = int(snapshot_row.get("count", stack_count))
+			# With no explicit prize index, remove cards from the visible fan edge.
+			# A one-card pile therefore starts exactly at the physical face center.
+			var source_slot := maxi(0, stack_count - 1 - clamped_index)
+			return step * float(source_slot)
+		# Incoming cards occupy the newly added rightmost slots in final-state order.
+		var first_target_slot := maxi(0, stack_count - visible_count)
+		var target_slot := first_target_slot + clamped_index
+		if zone:
+			target_slot = mini(target_slot, maxi(0, zone.stack_visual_max_count - 1))
+		return step * float(target_slot)
 	var stack_bias := step * float(mini(clamped_index + 1, 4))
 	if not leaving_stack:
 		stack_bias *= 0.36 if zone_name == "discard" else 0.55
@@ -3767,6 +4238,10 @@ func _zone_motion_offset(
 func _stack_visual_step(direction: String, depth: float) -> Vector2:
 	var depth_scale := 0.75 + clampf(depth, 0.0, 1.0) * 0.55
 	match direction:
+		"down_left":
+			return Vector2(-1.5, 3.6) * depth_scale
+		"up_right":
+			return Vector2(1.5, -3.6) * depth_scale
 		"down":
 			return Vector2(3.6, 3.2) * depth_scale
 		"left":
@@ -4016,7 +4491,7 @@ func _create_paper_card_token(
 		"panel",
 		DesignTokens.panel_style(
 			Color("#d8dde4"),
-			8,
+			3,
 			Color(0.60, 0.64, 0.70, 0.48),
 			1,
 			0,
@@ -4032,7 +4507,7 @@ func _create_paper_card_token(
 		"panel",
 		DesignTokens.panel_style(
 			Color("#eef1f5"),
-			8,
+			3,
 			Color(0.20, 0.25, 0.32, 0.58),
 			1,
 			0,
@@ -4516,7 +4991,16 @@ func _zone_center(key: String) -> Vector2:
 	var zone := zones.get(key) as ZoneView
 	if zone == null:
 		return effects.size * Vector2(0.5, 0.5)
-	return _effects_local(zone.global_position + zone.size * 0.5)
+	var local_center := zone.size * 0.5
+	if zone.stack_visual_mode == "prizes":
+		local_center = zone.get_stack_face_rect().get_center()
+	return _effects_local(zone.get_global_transform_with_canvas() * local_center)
+
+
+func _zone_card_size(zone: ZoneView) -> Vector2:
+	if zone != null and zone.stack_visual_mode == "prizes":
+		return zone.get_stack_face_size()
+	return zone.size if zone != null else Vector2.ZERO
 
 
 func _own_hand_center() -> Vector2:

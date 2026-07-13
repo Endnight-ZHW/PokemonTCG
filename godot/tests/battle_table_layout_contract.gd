@@ -2,9 +2,28 @@ class_name BattleTableLayoutContract
 extends RefCounted
 
 
+const SAFE_INSET := 48.0
+const EPSILON := 1.5
+const MIN_BENCH_CENTER_SPACING := 48.0
+
+
 static func run() -> Array[String]:
 	var failures: Array[String] = []
-	var metrics := BattleTableLayout.board_metrics(1600.0, 900.0, _default_config())
+	var viewport_cases: Array[Vector2] = [
+		Vector2(1280.0, 720.0),
+		Vector2(1600.0, 900.0),
+		Vector2(2000.0, 900.0),
+		Vector2(900.0, 540.0),
+	]
+	for viewport_size in viewport_cases:
+		_check_layout_case(failures, viewport_size, 0.0)
+		_check_layout_case(failures, viewport_size, SAFE_INSET)
+
+	var metrics := BattleTableLayout.board_metrics(
+		1600.0,
+		900.0,
+		_default_config(),
+	)
 	_expect_close(
 		failures,
 		float(metrics["layout_scale"]),
@@ -12,18 +31,6 @@ static func run() -> Array[String]:
 		0.0001,
 		"desktop layout scale changed",
 	)
-	_expect(
-		failures,
-		float(metrics["field_left"]) < float(metrics["center_x"])
-		and float(metrics["center_x"]) < float(metrics["field_right"]),
-		"desktop field center escaped the field bounds",
-	)
-	_expect(
-		failures,
-		float(metrics["arena_top"]) < float(metrics["arena_bottom"]),
-		"desktop arena has no positive height",
-	)
-
 	var compact := BattleTableLayout.board_metrics(900.0, 540.0, _default_config())
 	_expect_close(
 		failures,
@@ -32,87 +39,6 @@ static func run() -> Array[String]:
 		0.0001,
 		"compact layout no longer uses the minimum scale",
 	)
-	_expect(
-		failures,
-		float(compact["field_left"]) < float(compact["field_right"]),
-		"compact field bounds inverted",
-	)
-
-	var field := BattleTableLayout.field_plan(metrics, 16.0)
-	var opponent_centers: Array[Vector2] = field["opponent_bench_centers"]
-	var own_centers: Array[Vector2] = field["own_bench_centers"]
-	_expect(
-		failures,
-		opponent_centers.size() == 5 and own_centers.size() == 5,
-		"field planner must produce five bench slots per player",
-	)
-	if opponent_centers.size() == 5 and own_centers.size() == 5:
-		_expect(
-			failures,
-			opponent_centers[0].x < opponent_centers[4].x
-			and own_centers[0].x < own_centers[4].x,
-			"bench slots are not ordered from left to right",
-		)
-		_expect_close(
-			failures,
-			opponent_centers[2].x,
-			float(metrics["center_x"]),
-			0.01,
-			"opponent bench is no longer centered",
-		)
-		_expect_close(
-			failures,
-			own_centers[2].x,
-			float(metrics["center_x"]),
-			0.01,
-			"own bench is no longer centered",
-		)
-	_expect(
-		failures,
-		Vector2(field["opponent_active_center"]).y
-		< Vector2(field["own_active_center"]).y,
-		"active slots lost opponent/own perspective ordering",
-	)
-	_expect(
-		failures,
-		float(field["battle_scale"]) > 0.0 and float(field["battle_scale"]) <= 1.0,
-		"battle scale escaped its valid range",
-	)
-	for board_size in [
-		Vector2(1024.0, 630.0),
-		Vector2(1320.0, 790.0),
-		Vector2(1690.0, 790.0),
-	]:
-		var responsive_metrics := BattleTableLayout.board_metrics(
-			board_size.x, board_size.y, _default_config()
-		)
-		var responsive_field := BattleTableLayout.field_plan(responsive_metrics, 16.0)
-		var status_plan := BattleTableLayout.own_status_plan(
-			responsive_metrics,
-			responsive_field["own_active_rect"],
-		)
-		var status_rect: Rect2 = status_plan["rect"]
-		var active_rect: Rect2 = responsive_field["own_active_rect"]
-		_expect(
-			failures,
-			bool(status_plan["clears_left_column"])
-			and status_rect.end.x <= active_rect.position.x
-			and not status_rect.intersects(active_rect)
-			and status_rect.end.y < float(responsive_metrics["own_hand_y"]),
-			"own status group overlaps a field/hand region at %s" % board_size,
-		)
-		var visible_hand_height: float = (
-			board_size.y - float(responsive_metrics["own_hand_y"])
-		)
-		_expect(
-			failures,
-			visible_hand_height
-			>= float(responsive_metrics["own_hand_height"]) * 0.65
-			and visible_hand_height < float(responsive_metrics["own_hand_height"]),
-			"hand peek no longer preserves the original lower-edge position at %s"
-			% board_size,
-		)
-
 	_expect_close(
 		failures,
 		BattleTableLayout.perspective_depth(float(metrics["arena_top"]) - 10.0, metrics),
@@ -141,27 +67,6 @@ static func run() -> Array[String]:
 		failures,
 		near_rect.size.x > far_rect.size.x and near_rect.size.y > far_rect.size.y,
 		"near-side cards must remain larger than far-side cards",
-	)
-
-	var zones := BattleTableLayout.zone_plan(metrics)
-	var zone_positions: Dictionary = zones["positions"]
-	_expect(
-		failures,
-		zone_positions.keys().size() == 7,
-		"zone planner must return all seven table zones",
-	)
-	_expect_close(
-		failures,
-		Vector2(zone_positions["opponent_deck"]).x,
-		Vector2(zone_positions["own_deck"]).x,
-		0.001,
-		"deck zones no longer share the side column",
-	)
-	_expect(
-		failures,
-		Vector2(zone_positions["opponent_deck"]).y
-		< Vector2(zone_positions["own_deck"]).y,
-		"deck zones lost opponent/own ordering",
 	)
 
 	var own_hand := BattleTableLayout.own_hand_plan(
@@ -215,6 +120,347 @@ static func run() -> Array[String]:
 		"field guide rectangle union changed",
 	)
 	return failures
+
+
+static func _check_layout_case(
+	failures: Array[String],
+	viewport_size: Vector2,
+	safe_inset: float,
+) -> void:
+	var content_size := viewport_size - Vector2.ONE * safe_inset * 2.0
+	var label := "%dx%d+safe%d (content=%dx%d)" % [
+		int(viewport_size.x),
+		int(viewport_size.y),
+		int(safe_inset),
+		int(content_size.x),
+		int(content_size.y),
+	]
+	_expect(
+		failures,
+		content_size.x > 0.0 and content_size.y > 0.0,
+		"%s has no positive safe content area" % label,
+	)
+	if content_size.x <= 0.0 or content_size.y <= 0.0:
+		return
+
+	var metrics := BattleTableLayout.board_metrics(
+		content_size.x,
+		content_size.y,
+		_default_config(),
+	)
+	var field := BattleTableLayout.field_plan(metrics, 16.0)
+	var zones := BattleTableLayout.zone_plan(metrics, field)
+	var zone_size: Vector2 = zones["size"]
+	var zone_positions: Dictionary = zones["positions"]
+	var content_rect := Rect2(Vector2.ZERO, content_size)
+
+	_expect_close(
+		failures,
+		float(metrics["width"]),
+		content_size.x,
+		0.001,
+		"%s planner width ignored the safe content size" % label,
+	)
+	_expect_close(
+		failures,
+		float(metrics["height"]),
+		content_size.y,
+		0.001,
+		"%s planner height ignored the safe content size" % label,
+	)
+	_expect(
+		failures,
+		float(metrics["field_left"]) < float(metrics["center_x"])
+		and float(metrics["center_x"]) < float(metrics["field_right"]),
+		"%s field center escaped the field bounds" % label,
+	)
+	_expect(
+		failures,
+		float(metrics["arena_top"]) < float(metrics["arena_bottom"]),
+		"%s arena has no positive height" % label,
+	)
+	_expect(
+		failures,
+		float(field["battle_scale"]) > 0.0
+		and float(field["battle_scale"]) <= 1.0,
+		"%s battle scale escaped its valid range" % label,
+	)
+
+	var command_dock_left := float(metrics["command_dock_left"])
+	var required_command_reserve := BattlePhaseHud.RESERVED_BOARD_WIDTH
+	_expect(
+		failures,
+		command_dock_left
+		<= content_size.x - required_command_reserve + EPSILON,
+		"%s did not reserve %.0fpx for the command rail and right margin"
+		% [label, required_command_reserve],
+	)
+
+	_check_field_slots(failures, label, metrics, field, content_rect)
+	_check_status_region(
+		failures,
+		label,
+		metrics,
+		field,
+		zone_positions,
+		zone_size,
+		float(zones.get("stadium_scale", 1.0)),
+		content_rect,
+	)
+	_check_zone_plan(
+		failures,
+		label,
+		metrics,
+		zone_positions,
+		zone_size,
+		content_rect,
+	)
+
+	var visible_hand_height := content_size.y - float(metrics["own_hand_y"])
+	_expect(
+		failures,
+		visible_hand_height >= float(metrics["own_hand_height"]) * 0.65
+		and visible_hand_height < float(metrics["own_hand_height"]),
+		"%s hand peek escaped its intended lower-edge range" % label,
+	)
+
+
+static func _check_field_slots(
+	failures: Array[String],
+	label: String,
+	metrics: Dictionary,
+	field: Dictionary,
+	content_rect: Rect2,
+) -> void:
+	var opponent_centers: Array[Vector2] = field["opponent_bench_centers"]
+	var own_centers: Array[Vector2] = field["own_bench_centers"]
+	var opponent_rects: Array[Rect2] = field["opponent_bench_rects"]
+	var own_rects: Array[Rect2] = field["own_bench_rects"]
+	_expect(
+		failures,
+		opponent_centers.size() == 5
+		and own_centers.size() == 5
+		and opponent_rects.size() == 5
+		and own_rects.size() == 5,
+		"%s must expose five bench slots per player" % label,
+	)
+	if (
+		opponent_centers.size() != 5
+		or own_centers.size() != 5
+		or opponent_rects.size() != 5
+		or own_rects.size() != 5
+	):
+		return
+
+	_expect_close(
+		failures,
+		opponent_centers[2].x,
+		float(metrics["center_x"]),
+		0.01,
+		"%s opponent bench is no longer centered" % label,
+	)
+	_expect_close(
+		failures,
+		own_centers[2].x,
+		float(metrics["center_x"]),
+		0.01,
+		"%s own bench is no longer centered" % label,
+	)
+	_expect(
+		failures,
+		Vector2(field["opponent_active_center"]).y
+		< Vector2(field["own_active_center"]).y,
+		"%s active slots lost opponent/own perspective ordering" % label,
+	)
+
+	var bench_size: Vector2 = field["bench_size"]
+	var spacing_is_possible := (
+		float(metrics["table_width"])
+		>= bench_size.x + MIN_BENCH_CENTER_SPACING * 4.0 - EPSILON
+	)
+	for index in range(5):
+		_expect(
+			failures,
+			_rect_inside(opponent_rects[index], content_rect)
+			and _rect_inside(own_rects[index], content_rect),
+			"%s bench slot %d escaped the content bounds" % [label, index],
+		)
+		if index == 0:
+			continue
+		var opponent_spacing := (
+			opponent_rects[index].get_center().x
+			- opponent_rects[index - 1].get_center().x
+		)
+		var own_spacing := (
+			own_rects[index].get_center().x
+			- own_rects[index - 1].get_center().x
+		)
+		_expect(
+			failures,
+			opponent_spacing > 0.0 and own_spacing > 0.0,
+			"%s bench slots are not ordered left to right" % label,
+		)
+		if spacing_is_possible:
+			_expect(
+				failures,
+				opponent_spacing >= MIN_BENCH_CENTER_SPACING - EPSILON
+				and own_spacing >= MIN_BENCH_CENTER_SPACING - EPSILON,
+				"%s bench centers fell below %.0fpx although the table has room"
+				% [label, MIN_BENCH_CENTER_SPACING],
+			)
+
+	for active_key in ["opponent_active_rect", "own_active_rect"]:
+		var active_rect: Rect2 = field[active_key]
+		_expect(
+			failures,
+			_rect_inside(active_rect, content_rect),
+			"%s %s escaped the content bounds" % [label, active_key],
+		)
+
+
+static func _check_status_region(
+	failures: Array[String],
+	label: String,
+	metrics: Dictionary,
+	field: Dictionary,
+	zone_positions: Dictionary,
+	zone_size: Vector2,
+	stadium_scale: float,
+	content_rect: Rect2,
+) -> void:
+	var own_active_rect: Rect2 = field["own_active_rect"]
+	var stadium_base_size := zone_size * stadium_scale
+	var stadium_base_position := (
+		Vector2(zone_positions["stadium"])
+		+ (zone_size - stadium_base_size) * 0.5
+	)
+	var stadium_rect := _perspective_zone_rect(
+		stadium_base_position,
+		stadium_base_size,
+		metrics,
+	).grow(4.0)
+	var status_size := Vector2(
+		304.0,
+		48.0 if float(metrics["height"]) < 600.0 else 56.0,
+	)
+	var status_plan := BattleTableLayout.own_status_plan(
+		metrics,
+		own_active_rect,
+		status_size,
+		stadium_rect,
+	)
+	var status_rect: Rect2 = status_plan["rect"]
+	_expect(
+		failures,
+		bool(status_plan["clears_left_column"]),
+		"%s status region entered the prize/Stadium column" % label,
+	)
+	_expect(
+		failures,
+		_rect_inside(status_rect, content_rect),
+		"%s status region escaped the content bounds" % label,
+	)
+	_expect(
+		failures,
+		status_rect.end.x <= own_active_rect.position.x + EPSILON
+		and not status_rect.intersects(own_active_rect),
+		"%s status region overlaps the own active slot" % label,
+	)
+	_expect(
+		failures,
+		status_rect.position.y >= float(metrics["arena_top"]) - EPSILON
+		and status_rect.end.y <= float(metrics["own_hand_y"]) - EPSILON,
+		"%s status region escaped the arena/hand corridor" % label,
+	)
+	_expect(
+		failures,
+		not status_rect.intersects(stadium_rect),
+		"%s status region overlaps Stadium" % label,
+	)
+
+
+static func _check_zone_plan(
+	failures: Array[String],
+	label: String,
+	metrics: Dictionary,
+	zone_positions: Dictionary,
+	zone_size: Vector2,
+	content_rect: Rect2,
+) -> void:
+	_expect(
+		failures,
+		zone_positions.keys().size() == 7,
+		"%s zone planner must return all seven table zones" % label,
+	)
+	if zone_positions.keys().size() != 7:
+		return
+
+	for zone_key in zone_positions.keys():
+		var face_rect := Rect2(Vector2(zone_positions[zone_key]), zone_size)
+		_expect(
+			failures,
+			_rect_inside(face_rect, content_rect),
+			"%s %s face escaped the content bounds" % [label, zone_key],
+		)
+
+	for prefix in ["opponent", "own"]:
+		var deck_position := Vector2(zone_positions["%s_deck" % prefix])
+		var discard_position := Vector2(zone_positions["%s_discard" % prefix])
+		_expect(
+			failures,
+			deck_position.x + zone_size.x <= discard_position.x + EPSILON,
+			"%s %s deck must stay left of the discard pile" % [label, prefix],
+		)
+		_expect_close(
+			failures,
+			deck_position.y,
+			discard_position.y,
+			0.001,
+			"%s %s deck/discard row lost alignment" % [label, prefix],
+		)
+		_expect(
+			failures,
+			discard_position.x + zone_size.x
+			<= float(metrics["command_dock_left"]) + EPSILON,
+			"%s %s discard pile entered the command dock reserve" % [label, prefix],
+		)
+
+	_expect_close(
+		failures,
+		Vector2(zone_positions["opponent_deck"]).x,
+		Vector2(zone_positions["own_deck"]).x,
+		0.001,
+		"%s deck rows no longer share a column" % label,
+	)
+	_expect(
+		failures,
+		Vector2(zone_positions["opponent_deck"]).y
+		< Vector2(zone_positions["own_deck"]).y,
+		"%s deck rows lost opponent/own ordering" % label,
+	)
+
+
+static func _perspective_zone_rect(
+	position: Vector2,
+	base_size: Vector2,
+	metrics: Dictionary,
+) -> Rect2:
+	var center_y := position.y + base_size.y * 0.5
+	var depth := BattleTableLayout.perspective_depth(center_y, metrics)
+	var rendered_size := base_size * lerpf(0.88, 1.05, depth)
+	var adjusted_position := position
+	if depth >= 0.52:
+		adjusted_position.y -= (rendered_size.y - base_size.y) * 0.5
+	return Rect2(adjusted_position, rendered_size)
+
+
+static func _rect_inside(inner: Rect2, outer: Rect2) -> bool:
+	return (
+		inner.position.x >= outer.position.x - EPSILON
+		and inner.position.y >= outer.position.y - EPSILON
+		and inner.end.x <= outer.end.x + EPSILON
+		and inner.end.y <= outer.end.y + EPSILON
+	)
 
 
 static func _default_config() -> Dictionary:

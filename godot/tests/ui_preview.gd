@@ -233,6 +233,17 @@ func _render_previews() -> void:
 
 	ui._close_modal()
 	await _wait_until_hidden(ui.modal_layer)
+	var empty_demo := UIPreviewStateFactory.setup_state()
+	for empty_player in empty_demo.players:
+		empty_player.active = null
+		for bench_index in range(empty_player.bench.size()):
+			empty_player.bench[bench_index] = null
+	_update_battle_preview(ui, empty_demo, [])
+	await _settle_rendered(4)
+	if not _capture("battle-empty.png"):
+		_finish(1)
+		return
+
 	var setup_demo := UIPreviewStateFactory.setup_state()
 	_update_battle_preview(
 		ui,
@@ -315,6 +326,80 @@ func _render_previews() -> void:
 	if not _capture("battle-main.png"):
 		_finish(1)
 		return
+	root.size = Vector2i(1280, 720)
+	await _settle_rendered(4)
+	if not _capture("battle-main-1280x720.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(2000, 900)
+	await _settle_rendered(4)
+	if not _capture("battle-main-20x9.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if not _capture("battle-main-compact.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
+	var full_bench_demo := demo.clone_state()
+	var bench_cards := [
+		"svi-chim", "svi-ente", "sv2-starm", "sv2-keldeo", "svi-hrot",
+	]
+	for player_index in range(2):
+		for bench_index in range(5):
+			full_bench_demo.players[player_index].bench[bench_index] = PokemonState.new(
+				str(bench_cards[(bench_index + player_index) % bench_cards.size()])
+			)
+	_update_battle_preview(
+		ui,
+		full_bench_demo,
+		UIPreviewStateFactory.action_rows(full_bench_demo),
+	)
+	await _settle_rendered(4)
+	if not _capture("battle-full-bench.png"):
+		_finish(1)
+		return
+
+	var discard_stack_demo := demo.clone_state()
+	discard_stack_demo.players[0].discard.clear()
+	discard_stack_demo.players[1].discard.clear()
+	for discard_index in range(30):
+		discard_stack_demo.players[0].discard.append(
+			"sv1-180" if discard_index % 2 == 0 else "sv1-176"
+		)
+		discard_stack_demo.players[1].discard.append(
+			"sv1-176" if discard_index % 2 == 0 else "sv1-180"
+		)
+	_update_battle_preview(ui, discard_stack_demo, [])
+	await _settle_rendered(4)
+	if not _capture("battle-discard-stack-30.png"):
+		_finish(1)
+		return
+
+	var three_prize_demo := demo.clone_state()
+	three_prize_demo.players[0].prizes = [
+		"sv1-ener-2", "sv1-151", "sv1-189",
+	]
+	three_prize_demo.players[1].prizes = ["", "", ""]
+	_update_battle_preview(
+		ui,
+		three_prize_demo,
+		UIPreviewStateFactory.action_rows(three_prize_demo),
+		"pokemon:0:active",
+	)
+	ui.battle_screen.show_card_detail(
+		three_prize_demo.players[0].active.card_id,
+		three_prize_demo.players[0].active,
+	)
+	await _settle_rendered(4)
+	if not _capture("battle-prizes-3.png"):
+		_finish(1)
+		return
+	ui.battle_screen.hide_card_detail()
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	await _settle_rendered(3)
 	# Two adjacent Energy cards are both actionable here. This baseline guards
 	# the parent-card Z ordering: a lower card's cyan outline must disappear
 	# behind the next card instead of drawing across its face.
@@ -340,9 +425,10 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	ui.toast_label.visible = false
-	demo.active_player_idx = 1
-	demo.players[1].name = "Challenge AI"
-	_update_battle_preview(ui, demo, [], "", true, "challenge")
+	var ai_demo := demo.clone_state()
+	ai_demo.active_player_idx = 1
+	ai_demo.players[1].name = "Challenge AI"
+	_update_battle_preview(ui, ai_demo, [], "", true, "challenge")
 	await _settle_rendered(4)
 	if not _capture("ai-thinking.png"):
 		_finish(1)
@@ -350,7 +436,6 @@ func _render_previews() -> void:
 	if not _capture("battle-ai.png"):
 		_finish(1)
 		return
-	demo.active_player_idx = 0
 	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
 	await _settle_frontend(3)
 	_update_battle_preview(
@@ -372,8 +457,44 @@ func _render_previews() -> void:
 	if not _capture("battle-card-preview-1280x720.png"):
 		_finish(1)
 		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if not _capture("battle-card-preview-compact.png"):
+		_finish(1)
+		return
 	root.size = Vector2i(1600, 900)
 	await _settle_rendered(4)
+	_update_battle_preview(
+		ui,
+		demo,
+		UIPreviewStateFactory.action_rows(demo),
+		"pokemon:1:active",
+	)
+	ui.battle_screen.show_card_detail(
+		demo.players[1].active.card_id,
+		demo.players[1].active,
+	)
+	await _settle_rendered(4)
+	if not _capture("battle-card-preview-opponent.png"):
+		_finish(1)
+		return
+	ui.battle_screen.hide_card_detail()
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
+	var preview_hud := ui.battle_screen.hud as BattlePhaseHud
+	if preview_hud == null:
+		push_error("Battle preview HUD is unavailable")
+		_finish(1)
+		return
+	preview_hud.set_log_drawer_open(true)
+	await _settle_rendered(4)
+	if not _capture("battle-log-open.png"):
+		_finish(1)
+		return
+	preview_hud.close_log_drawer()
+	await _settle_rendered(3)
+	if not _capture("battle-log-closed.png"):
+		_finish(1)
+		return
 	_update_battle_preview(
 		ui,
 		demo,
@@ -388,6 +509,51 @@ func _render_previews() -> void:
 	if not _capture("battle-attack-actions.png"):
 		_finish(1)
 		return
+	var preview_source_card := ui.battle_screen.own_active as CardView
+	await _move_pointer_to_control(preview_source_card)
+	var hovered_card_control := root.gui_get_hovered_control()
+	if (
+		hovered_card_control == null
+		or (
+			hovered_card_control != preview_source_card
+			and not preview_source_card.is_ancestor_of(hovered_card_control)
+		)
+	):
+		push_error("Battle card became unreachable through transparent layout surfaces")
+		_finish(1)
+		return
+	var preview_action_button := ui.battle_screen.table.action_popover.action_buttons.get_child(
+		0
+	) as Button
+	await _move_pointer_to_control(preview_action_button)
+	var hovered_action_control := root.gui_get_hovered_control()
+	if (
+		hovered_action_control == null
+		or (
+			hovered_action_control != preview_action_button
+			and not preview_action_button.is_ancestor_of(hovered_action_control)
+		)
+	):
+		push_error("Card action button became unreachable through its transparent root")
+		_finish(1)
+		return
+	# Reproduce the reported state exactly: a card action popover and detail panel
+	# are visible, then the player clicks the system menu. Use routed pointer input
+	# instead of emitting Button.pressed so z-order and full-screen blockers are
+	# covered by this visual smoke test.
+	ui.battle_screen.input_blocker.visible = true
+	await _click_control(ui.battle_screen.header.menu_button)
+	await _settle_rendered(3)
+	if not ui.modal_layer.visible or ui.modal_title.text != "对局菜单":
+		push_error("Battle menu click was intercepted by a table overlay")
+		_finish(1)
+		return
+	if not _capture("battle-menu-open.png"):
+		_finish(1)
+		return
+	ui._close_modal()
+	await _wait_until_hidden(ui.modal_layer)
+	ui.battle_screen.input_blocker.visible = false
 
 	var promotion_demo := UIPreviewStateFactory.promotion_state()
 	_update_battle_preview(
@@ -814,6 +980,39 @@ func _settle_frontend(frame_count: int = 3) -> void:
 	# renderer is faster than the former timer-based preview cadence.
 	for _frame in range(maxi(frame_count, 2)):
 		await process_frame
+
+
+func _click_control(control: Control) -> void:
+	if control == null:
+		return
+	await _move_pointer_to_control(control)
+	var pointer_position := control.get_global_rect().get_center()
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = pointer_position
+	press.global_position = pointer_position
+	Input.parse_input_event(press)
+	await process_frame
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = pointer_position
+	release.global_position = pointer_position
+	Input.parse_input_event(release)
+	await process_frame
+
+
+func _move_pointer_to_control(control: Control) -> void:
+	if control == null:
+		return
+	var pointer_position := control.get_global_rect().get_center()
+	Input.warp_mouse(pointer_position)
+	var motion := InputEventMouseMotion.new()
+	motion.position = pointer_position
+	motion.global_position = pointer_position
+	Input.parse_input_event(motion)
+	await process_frame
 
 
 func _wait_until_hidden(control: Control, maximum_frames := 45) -> void:

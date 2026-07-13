@@ -84,9 +84,9 @@ flowchart TD
     Main --> Controllers[Controllers 控制器节点]
     Battle --> Table[battle_table.tscn]
     Table --> Header[battle_header.tscn]
-    Table --> HUD[battle_phase_hud.tscn 系统按钮]
-    Table --> Log[battle_log_panel.tscn]
-    Table --> Detail[battle_detail_panel.tscn 卡牌预览浮层]
+    Table --> HUD[battle_phase_hud.tscn 132px 悬浮命令轨]
+    HUD --> Log[battle_log_panel.tscn 默认收起日志抽屉]
+    Table --> Detail[battle_detail_panel.tscn 左侧固定卡牌预览]
     Table --> Router[CardInteractionRouter]
     Table --> Popover[card_action_popover.tscn]
     Battle --> Card[card_view.tscn]
@@ -275,9 +275,11 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 
 牌桌中的固定牌位位于 `components/battle_table.tscn` 的 `BoardCanvas` 下，运行时由
 `BattleTable._layout_board()` 根据窗口尺寸定位。场景中的坐标用于编辑器预览，真正运行时
-尺寸由 `BattleTable` 根节点 Inspector 中的 `Table Layout` 参数控制。想改战斗宝可梦、
-备战宝可梦、手牌和 HUD 的尺寸时，先选 `BattleTable` 根节点改导出参数；只有想移动牌库、
-弃牌、奖品和竞技场的算法位置时，才进入 `_layout_board()` 和 `_place_zone(...)`。
+尺寸由 `BattleTable` 根节点 Inspector 中的 `Table Layout` 参数控制。竞技场底板始终铺满
+战斗视口；顶部信息和右侧 132px 命令轨作为悬浮层叠加，布局规划器只为交互内容预留安全边界，
+不会再用 `HBoxContainer` 从牌桌宽度中切出常驻侧栏。想改战斗宝可梦、备战宝可梦和手牌的
+尺寸时，先选 `BattleTable` 根节点改导出参数；只有想移动牌库、弃牌、奖品和竞技场的算法
+位置时，才进入 `_layout_board()` 和对应的牌区定位函数。
 
 ## 4. 第一个练习：修改标题页
 
@@ -355,14 +357,17 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 
 战斗中的动作按钮不再创建在 `CardView` 内部。轻点卡牌后，`BattleTable` 使用
 `CardInteractionRouter` 查询来源动作；需要确认或存在多个动作时，在牌桌根浮层显示
-`CardActionPopover`。这样浮层不会进入卡牌的最小尺寸计算，也不会挤压牌桌或手牌。
+`CardActionPopover`。浮层固定在来源卡牌正上方并与卡牌水平居中；顶部安全区不足时才切换到
+卡牌下方。这样浮层不会进入卡牌的最小尺寸计算，也不会挤压牌桌或手牌。
 `CardView.set_actions(...)` 仅为旧调用保留兼容，内部动作容器始终隐藏，新代码应使用
 `set_interaction_state(...)` 注入可操作、合法目标和禁用原因等只读表现状态。
 
 卡牌输入约定：
 
 - 轻点可操作卡牌：选中来源；只有一个需要目标的动作时直接高亮合法目标，其他情况显示贴卡浮层。
-- 再次轻点来源卡或点击浮层外空白：关闭浮层；浮层关闭后再次轻点来源可取消选中。
+- 再次轻点同一张来源卡：立即清除 `SelectionRing`、关闭动作浮层和牌桌卡牌详情；不可操作卡、
+  对手卡和只提供说明的来源也遵循同一卡二次轻点取消语义。
+- 轻点动作浮层外空白：只关闭当前瞬态浮层；是否保留来源选择由 `BattleTable` 的交互状态统一决定。
 - 长按至少 350ms：发出 `detail_requested(card_id)`，打开完整卡牌检查器，不执行回合动作。
 - 手牌拖放：只有 `CardInteractionRouter` 判定合法的卡牌/牌位组合才接受；非法牌位不进入可投放状态。
 - 来源选中使用 `SelectionRing`，合法目标使用 `TargetGlow` 和动作提示文字；不要只靠颜色表达状态。
@@ -390,22 +395,36 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 打开 `scenes/battle/components/battle_table.tscn`，可以直接看到：
 
 - 双方战斗区和五个备战位。
-- 双方牌库、弃牌、奖品和竞技场。
+- 双方横向重叠的六张奖品卡，以及显示左侧面和下侧面厚度的牌库、弃牌堆。
 - 手牌滚动区域。
 - 顶部回合、玩家、阶段和当前任务提示。
-- 右侧贴边系统按钮与行动日志；卡牌动作不进入右栏。
-- 牌桌根层的 `BattleDetailPanel` 卡图与效果预览。
+- 右侧 132px 悬浮命令轨，以及默认收起、按需向左展开的行动日志抽屉；卡牌动作不进入右栏。
+- 双方奖品卡之间靠左固定的 `BattleDetailPanel` 卡图与效果预览。
+
+顶部菜单是对局中的系统出口，必须在卡牌动作浮层、详情面板和表现动画输入遮罩存在时仍可点击。
+`BattleRoot`、`Body`、`BoardPanel`、`BoardCanvas` 以及 `CardActionPopover` 的全屏结构层均使用
+`MOUSE_FILTER_IGNORE`，只让具体卡牌、动作面板和按钮接收输入；`PresentationInputBlocker` 从
+顶部 HUD 下方开始覆盖，不得重新扩展到菜单区域。
 - 牌桌根层的 `CardActionPopover`。
 - 表现效果层与输入遮挡层。
 
+`BoardPanel` 和原创深色玻璃竞技场铺满整个战斗视口。`BattleHeader`、`BattlePhaseHud`、日志、
+详情和动作浮层都位于牌桌之上的独立层；不要重新把它们放进会压缩 `BoardPanel` 的横向容器。
+战斗位、备战位、手牌和牌区仍会避开命令轨的可视光晕与安全区，但竞技场背景、金属框、蜂窝纹、
+中心圆环和红蓝导轨应连续延伸到视口边缘。
+
 选择 `BattleTable` 根节点后，Inspector 的 `Table Layout` 可以修改：
 
-- HUD 贴边窄轨宽度。
 - 牌桌边距和手牌底部预留。
 - 战斗宝可梦尺寸。
 - 备战宝可梦尺寸和间距。
 - 牌区尺寸。
 - 手牌尺寸、最小重叠间距和扇形角度。
+
+命令轨的正式宽度固定为 `BattlePhaseHud.RAIL_WIDTH = 132.0`，日志抽屉宽度为 360px。
+`BattleTable.hud_width` 仅为旧场景和 Inspector 的兼容导出值；不要只改它来调整新版命令轨。
+确需改变轨道宽度时，应同步 `BattlePhaseHud` 常量、`BattleTableLayout` 的保留安全宽度、布局契约
+和全部战斗截图。
 
 `Presentation` 分组还可以修改动态飞牌的最低弧线、距离比例、错峰高度和错峰时间。
 `PresentationDirector` 节点则暴露电影、标准、
@@ -420,19 +439,23 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 |---|---|
 | 顶部菜单、回合/玩家/阶段和任务提示 | `scenes/battle/components/battle_header.tscn` |
 | 牌桌、牌位、牌区、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
-| 右侧唯一系统按钮 | `scenes/battle/components/battle_phase_hud.tscn` |
-| 右侧行动日志面板 | `scenes/battle/components/battle_log_panel.tscn` |
-| 点击卡牌后的卡图与效果预览 | `scenes/battle/components/battle_detail_panel.tscn` |
+| 右侧 132px 悬浮命令轨 | `scenes/battle/components/battle_phase_hud.tscn` |
+| 默认收起、向左展开的行动日志抽屉 | `scenes/battle/components/battle_log_panel.tscn` |
+| 双方奖品卡之间靠左固定的卡图与效果预览 | `scenes/battle/components/battle_detail_panel.tscn` |
 | 卡牌动作索引与合法目标匹配 | `scenes/battle/components/card_interaction_router.gd` |
 | 贴卡动作浮层 | `scenes/battle/components/card_action_popover.tscn` |
 
-`BattleHUD` 位于右侧边栏，顶部只有保留兼容节点名的 `PhaseAdvanceButton`，余下空间由
-`LogPanel` 占满。按钮根据状态显示“完成准备”“结束回合”“结算中”或“等待对手”；
-只有前两种可执行系统动作通过 `phase_action_requested(GameAction)` 上报。不要向右栏添加
-卡牌详情、阶段格或动作列表。日志只展示结果，不提供规则操作入口。
-`DetailPanel` 位于 `battle_table.tscn` 根节点的 `OverlayPanels` 下；轻点手牌或场上宝可梦时
-显示卡图、卡文和实时场上状态，再次轻点同一来源或按关闭按钮时隐藏。它不参与右栏或牌桌
-容器的最小尺寸计算，并由 `BattleTable._layout_detail_panel()` 保持在安全区内、对方备战区下方。
+`BattleHUD` 是右侧悬浮命令坞。132px 的 `PhasePanel` 保留兼容节点名
+`PhaseAdvanceButton`，按钮根据状态显示“完成准备”“结束回合”“结算中”或“等待对手”；
+只有前两种可执行系统动作通过 `phase_action_requested(GameAction)` 上报。`LogPanel` 启动时隐藏，
+轻点“行动日志”后才以 360px 抽屉向命令轨左侧展开，再次轻点、按关闭按钮或点击抽屉外区域时
+收起。不要向命令轨或日志加入卡牌详情、阶段格或卡牌动作入口；日志只展示结果，不提供规则操作。
+
+`DetailPanel` 位于 `battle_table.tscn` 根节点的 `OverlayPanels` 下。它固定使用双方奖品卡之间的
+左侧走廊，并以六张奖品的最大占位计算上下边界，因此奖品减少时不会漂向屏幕中央，也不会进入
+主战斗区。标准布局为 372×312；走廊不足时回退到 188×196 的紧凑布局，仍不足时再在走廊内
+等比缩放。轻点手牌或场上宝可梦时显示卡图、卡文和实时状态；再次轻点同一来源或按关闭按钮时，
+详情与来源高亮一起清除。无论查看己方还是对方卡牌，预览都不得跟随来源移动到下方或竞技场中央。
 顶部 `BattleHeader` 显示“第 N 回合 · 玩家 N · 当前阶段”，任务可通过
 `update_header(..., task_hint)` 或 `set_task_hint(...)` 注入；不要恢复重复品牌标题或 AI 状态 Chip。
 
@@ -461,7 +484,7 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 
 | 导出参数 | 影响 |
 |---|---|
-| `hud_width` | 右侧系统按钮与日志栏的宽度 |
+| `hud_width` | 兼容导出值；新版 132px 命令轨由 `BattlePhaseHud.RAIL_WIDTH` 和布局安全宽度共同定义 |
 | `table_side_margin` / `table_top_margin` / `table_bottom_margin` | 牌桌边缘安全距离 |
 | `hand_bottom_padding` | 手牌与底部边缘的额外距离 |
 | `active_card_size` | 双方战斗宝可梦大小 |
@@ -474,6 +497,12 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 
 只有当这些参数不能表达你的目标时，再改 `battle_table.gd`。例如“把双方弃牌区放到另一侧”
 属于布局算法变化，需要看 `_layout_board()` 中的 `_place_zone(...)` 调用。
+
+双方 `ZoneView` 使用一致的实体堆叠语言：牌库和弃牌堆都以 `down_left` 方向露出左侧面与下侧面，
+并按实际卡牌数量增加可见厚度；渲染层数和总深度有上限，避免满牌库越出安全区。弃牌仍显示当前
+顶牌，隐藏牌库只显示卡背。奖品区使用 `prizes` / `fan_right` 模式，在固定托盘内最多横向重叠
+六张卡背；拿取奖品后从扇列边缘减少，并保留计数徽章。调整 `zone_size` 后必须同时检查牌面、
+左/下侧厚度、横向奖品最大边界和详情走廊，不能只看根 `Control` 的矩形。
 
 ![固定种子的战斗预览](images/godot-guide/battle-preview.png)
 
@@ -840,6 +869,11 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 弹窗历史恢复、Theme 隔离、关键对比度、AI 类型切换状态保留，以及 LAN/Relay 切换时的字段
 锁定和 transport 清理。布局 contract 是结构回归，仍需配合截图观察视觉层级、长文案与卡图构图。
 
+战斗布局 contract 还必须单独覆盖 1280×720、1600×900、2000×900、紧凑横屏和四边安全区。
+关键状态包括准备/空场、常规主阶段、满备战区、长手牌与重叠高亮、高弃牌数量、奖品减少、日志抽屉、AI 等待、
+己方/对方卡牌详情、动作/目标浮层和主要战斗表现。结构断言至少确认全屏 `BoardPanel`、132px
+悬浮命令轨、默认隐藏的日志、固定左侧详情走廊、六张横向奖品，以及牌库/弃牌完整左下厚度边界。
+
 涉及 AI、规则或网络时执行：
 
 ```powershell
@@ -862,7 +896,25 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 
 截图输出到 `build/ui-preview/`，包括 1280×720 标题基线、Wide / Compact landscape / Dense
 标题、牌组和网络页，网络等待/错误、设置顶部/底部、帮助、详情、加载、Toast、隐私交接、
-16:9/20:9 战斗、复杂选择、战斗动画、胜利页和 Workbench。标题截图还要确认午夜背景没有意外边框、
+16:9/20:9 战斗、复杂选择、战斗动画、胜利页和 Workbench。新版战斗界面的正式审核清单如下：
+
+| 截图 | 必查内容 |
+|---|---|
+| `battle-empty.png`、`battle-setup.png`、`battle-setup-1280x720.png` | 空场与准备阶段构图、全屏竞技场、顶部信息和默认收起日志 |
+| `battle-main.png`、`battle-main-1280x720.png`、`battle-main-20x9.png`、`battle-main-compact.png` | 1600×900、1280×720、2000×900、900×540 主战斗构图；132px 命令轨不压缩牌桌 |
+| `battle-full-bench.png`、`battle-discard-stack-30.png` | 双方五个备战位满场，以及弃牌数量增加后的左/下侧厚度与安全边界 |
+| `battle-prizes-3.png` | 双方各三张奖品仍横向重叠，详情走廊不随数量漂移 |
+| `battle-overlapping-highlights.png` | 长手牌、卡牌父级顺序、选中框和合法目标不穿过相邻卡面 |
+| `battle-card-preview.png`、`battle-card-preview-1280x720.png`、`battle-card-preview-compact.png` | 己方卡牌详情固定在左侧走廊；紧凑尺寸和等比回退不侵入竞技场 |
+| `battle-card-preview-opponent.png` | 对方卡牌详情仍使用同一固定走廊，不跳到屏幕下方或中央 |
+| `battle-log-open.png`、`battle-log-closed.png` | 360px 日志从命令轨向左展开，关闭后不残留占位；输入遮挡另由交互契约验证 |
+| `battle-attack-actions.png`、`battle-promotion.png` | 动作浮层、详情、战斗位和合法目标之间的避让关系 |
+| `battle-ai.png`、`ai-thinking.png` | AI 等待状态、任务提示和命令轨状态，不新增规则功能 |
+| `draw.png`、`discard.png`、`shuffle.png`、`energy-attach.png`、`evolve.png` | 牌库/弃牌厚度、飞牌端点、附着与进化表现 |
+| `attack.png`、`impact.png`、`ko.png`、`end.png` | 攻击、命中、气绝和胜利表现不破坏牌桌布局 |
+
+其中 `battle-main.png` 是更新 `docs/images/godot-guide/battle-preview.png` 的候选来源；必须在三种
+宽高比、日志、详情和牌堆专项截图全部审核通过后，才替换正式文档图片。标题截图还要确认午夜背景没有意外边框、
 大块空白或重复层，八枚能量没有黑色底圈，三入口没有总外框或顶部装饰线，并用
 `title-rotated.png` 检查展示卡确实完成替换。截图用于检查遮挡、溢出和布局，不能代替 Android
 横屏安全区、触控与真机帧率测试。
@@ -870,7 +922,8 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 本手册使用的稳定图片位于 `docs/images/godot-guide/`。修改场景结构或动画面板后，
 应重新生成运行时截图，并在 Godot 4.7 编辑器中更新对应界面截图；不要直接引用
 会被清理的 `build/ui-preview/` 文件。当前标题页正式基线为
-`title-midnight-arena.png` 与 `title-midnight-arena-dense.png`。
+`title-midnight-arena.png` 与 `title-midnight-arena-dense.png`；战斗页正式基线为
+`battle-preview.png`，其来源和替换条件见上方审核清单。
 
 Windows 与 Android 调试构建：
 
@@ -1295,16 +1348,23 @@ Godot UI 修改先判断节点属于哪一种布局：
 
 1. 打开 `res://scenes/battle/components/battle_table.tscn`。
 2. 选择根节点 `BattleTable`。
-3. 在 Inspector 的 `Table Layout / HUD` 中调整右侧系统按钮与日志栏的 `hud_width`。
+3. 确认右侧命令轨保持 `BattlePhaseHud.RAIL_WIDTH = 132.0`；`hud_width` 是兼容导出值，
+   不能单独改变新版命令轨。确需改宽度时同步修改命令轨常量、布局安全宽度和布局契约。
 4. 在 `Table Layout / Table Margins` 中调整牌桌安全边距和手牌底部预留。
 5. 在 `Table Layout / Board Cards` 中调整 `active_card_size`、`bench_card_size`、`zone_size` 和 `bench_spacing`。
 6. 在 `Table Layout / Hand` 中调整 `hand_card_size`、`hand_minimum_spacing` 和 `hand_rotation_degrees`。
-7. 系统按钮外观在 `battle_phase_hud.tscn`，日志外观在 `battle_log_panel.tscn`；右栏不得加入卡牌动作入口。
-8. 卡图与效果预览在 `battle_detail_panel.tscn` 调整；它必须继续挂在 `OverlayPanels`，不要放进右栏容器。
+7. 系统按钮外观在 `battle_phase_hud.tscn`，日志外观在 `battle_log_panel.tscn`；日志必须默认收起，
+   展开时向左覆盖为抽屉，命令轨不得加入卡牌动作入口。
+8. 卡图与效果预览在 `battle_detail_panel.tscn` 调整；它必须继续挂在 `OverlayPanels`，固定在双方
+   奖品卡之间靠左的走廊，并保留 372×312 → 188×196 → 等比缩放的紧凑回退。
 9. 动作浮层尺寸、按钮高度、滚动数量和指向线在 `card_action_popover.tscn` 及同名脚本中调整。
 10. 选中与合法目标反馈在 `CardView` 的 `SelectionRing`、`TargetGlow`、`ActionableMarker` 和 `InteractionHint` 调整。
-11. 按 `F6` 或在 Workbench 选择“战斗场景”，验证轻点、再次轻点关闭、空白关闭、350ms 长按和合法/非法拖放。
-12. 运行 UI 截图脚本检查 16:9 和 20:9，确认浮层不越过安全区、不覆盖合法目标且不改变牌桌尺寸。
+11. 在 `ZoneView` 检查双方牌库和弃牌均露出左/下侧厚度，厚度随数量变化；双方奖品均为最多六张
+    向右横向重叠的卡背，而不是单张厚牌堆。
+12. 按 `F6` 或在 Workbench 选择“战斗场景”，验证首次轻点选中、同一卡二次轻点同时清除高亮和
+    详情、空白关闭浮层、350ms 长按，以及合法/非法拖放。
+13. 运行 UI 截图脚本检查 1600×900、1280×720 和 2000×900，确认命令轨不压缩全屏竞技场、
+    日志默认收起、预览不进入战斗区、所有堆叠完整留在安全区内。
 
 不要只拖 `OpponentActive`、`OwnActive`、`OwnDeck` 或 `Stadium` 来定最终位置。
 这些节点运行时会由 `_layout_board()` 重排。拖动只适合改善编辑器里的预览摆放。
@@ -1324,12 +1384,15 @@ Godot UI 修改先判断节点属于哪一种布局：
 5. 按 `F6` 运行战斗场景或打开 Workbench 的“战斗场景”预览。
 
 如果想改牌库、弃牌、奖品的位置，不要只拖场景节点；应修改
-`BattleTable._layout_board()` 中的 `_place_zone(...)` 调用。修改后检查 16:9 和 20:9
-截图，避免宽屏或移动端遮挡。
+`BattleTable._layout_board()` 中对应的牌区定位。修改后检查 16:9 和 20:9 截图，并以
+`ZoneView.get_stack_visual_max_rect()` 的完整可视边界判断遮挡；根节点矩形不包含向左、向下伸出的
+全部纸边，也不能代表六张奖品卡的最大横向占位。
 
 `BattleDetailPanel` 与 `CardActionPopover` 都位于牌桌根浮层，不参与 `Body` 或 `CardView`
-的最小尺寸计算。牌桌缩放、窗口变化或来源卡移动后会重新定位；调整浮层时要同时检查双方
-战斗位、五个备战位、全部手牌位置和安全区边缘，并确认两个浮层互相避让。
+的最小尺寸计算。`BattleDetailPanel` 使用固定左侧走廊，不再跟随来源卡寻找候选位置；窗口收紧时
+只切换紧凑布局并在走廊内缩放。`CardActionPopover` 始终跟随来源卡牌的上方中心锚点，顶部
+空间不足时只允许切换到下方锚点，不再搜索竞技场中央或侧边空位；其安全区同时排除顶部菜单。
+调整浮层时要同时检查双方战斗位、五个备战位、全部手牌、奖品最大占位和安全区边缘。
 
 ### 配方：修改 CardView 卡牌组件
 

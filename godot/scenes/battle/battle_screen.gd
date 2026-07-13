@@ -2,6 +2,7 @@ class_name BattleScreen
 extends Control
 
 signal menu_requested
+signal selection_clear_requested(expected_key: String)
 signal hand_card_selected(index: int, card_id: String)
 signal pokemon_selected(player: int, slot: String, card_id: String)
 signal action_requested(action: GameAction)
@@ -38,7 +39,9 @@ var board_canvas: Control
 var playmat: BattlePlaymat
 var header: BattleHeader
 var ai_thinking_overlay: AIThinkingOverlay
-var hud: VBoxContainer
+# Keep the compatibility facade broad: callers historically treated this as a
+# generic Control/Container surface, while BattleTable owns the concrete HUD.
+var hud: Control
 var turn_label: Label
 var opponent_info: Label
 var own_info: Label
@@ -304,6 +307,7 @@ func _bind_table_signals() -> void:
 		return
 	_signals_bound = true
 	table.menu_requested.connect(menu_requested.emit)
+	table.selection_clear_requested.connect(selection_clear_requested.emit)
 	table.hand_card_selected.connect(hand_card_selected.emit)
 	table.pokemon_selected.connect(pokemon_selected.emit)
 	table.action_requested.connect(action_requested.emit)

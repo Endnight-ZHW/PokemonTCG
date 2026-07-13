@@ -1,12 +1,17 @@
 class_name BattleLogPanel
 extends PanelContainer
 
+signal close_requested
+
 @onready var log_label: RichTextLabel = %LogLabel
+@onready var close_button: Button = %CloseButton
 
 
 func _ready() -> void:
 	_resolve_nodes()
 	_configure_label()
+	if not close_button.pressed.is_connected(_on_close_pressed):
+		close_button.pressed.connect(_on_close_pressed)
 	resized.connect(_on_resized)
 
 
@@ -14,7 +19,6 @@ func update_entries(action_log: Array) -> void:
 	_resolve_nodes()
 	_configure_label()
 	if action_log.is_empty():
-		visible = true
 		log_label.text = "尚无行动记录"
 		log_label.tooltip_text = "行动记录会按发生顺序显示在这里"
 		return
@@ -31,7 +35,6 @@ func update_entries(action_log: Array) -> void:
 			category,
 			_escape_bbcode(entry_text),
 		])
-	visible = true
 	log_label.text = "\n".join(lines) if not lines.is_empty() else "尚无行动记录"
 	log_label.tooltip_text = ""
 	call_deferred("_scroll_to_latest")
@@ -39,6 +42,7 @@ func update_entries(action_log: Array) -> void:
 
 func _resolve_nodes() -> void:
 	log_label = get_node("Content/LogLabel") as RichTextLabel
+	close_button = get_node("Content/HeaderRow/CloseButton") as Button
 
 
 func _configure_label() -> void:
@@ -199,3 +203,7 @@ func _scroll_to_latest() -> void:
 func _on_resized() -> void:
 	if visible and log_label and not log_label.text.is_empty():
 		call_deferred("_scroll_to_latest")
+
+
+func _on_close_pressed() -> void:
+	close_requested.emit()

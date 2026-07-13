@@ -15,6 +15,11 @@ signal card_dropped(
 const CARD_BACK_TEXTURE: Texture2D = preload("res://assets/cards/card_back.webp")
 const LONG_PRESS_MSEC := 350
 const TAP_MOVE_THRESHOLD := 14.0
+const MIN_CARD_CORNER_RADIUS := 3
+const MAX_CARD_CORNER_RADIUS := 6
+const DECK_MAX_LAYERS := 6
+const DISCARD_MAX_LAYERS := 6
+const STACK_MAX_DEPTH := 12.0
 static var _fallback_card_back_cache: Texture2D
 
 var title := ""
@@ -29,6 +34,7 @@ var stack_visual_mode := ""
 var stack_visual_max_count := 0
 var stack_visual_direction := "up"
 var table_depth := 0.55
+var _stack_card_size := Vector2.ZERO
 var actionable := false
 var _allowed_drop_hand_indices: Array[int] = []
 var _drop_highlighted := false
@@ -56,6 +62,7 @@ func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	gui_input.connect(_on_gui_input)
 	action_button.pressed.connect(_on_action_pressed)
+	resized.connect(_on_resized)
 	_ensure_fallback_card_back()
 	_refresh()
 	set_action(_pending_action_row)
@@ -98,7 +105,44 @@ func set_stack_visual(
 	stack_visual_mode = mode
 	stack_visual_max_count = maxi(0, max_count)
 	stack_visual_direction = direction
+	if stack_visual_mode == "prizes" and _stack_card_size.length_squared() <= 1.0:
+		_stack_card_size = size if size.length_squared() > 1.0 else custom_minimum_size
+	if is_node_ready():
+		_apply_stack_geometry()
+		_refresh()
+	else:
+		queue_redraw()
+
+
+func set_stack_card_size(value: Vector2) -> void:
+	_stack_card_size = Vector2(maxf(1.0, value.x), maxf(1.0, value.y))
+	_apply_stack_geometry()
+	_layout_count_badge()
 	queue_redraw()
+
+
+func get_stack_visual_rect() -> Rect2:
+	var face_size := _stack_face_size()
+	var result := Rect2(Vector2.ZERO, face_size)
+	if stack_visual_mode.is_empty() or count <= 0 or stack_visual_max_count <= 0:
+		return result
+	return result.merge(Rect2(get_stack_visual_extent(), face_size))
+
+
+func get_stack_visual_max_rect() -> Rect2:
+	var face_size := _stack_face_size()
+	var result := Rect2(Vector2.ZERO, face_size)
+	if stack_visual_mode.is_empty() or stack_visual_max_count <= 0:
+		return result
+	return result.merge(Rect2(get_stack_visual_max_extent(), face_size))
+
+
+func get_stack_face_size() -> Vector2:
+	return _stack_face_size()
+
+
+func get_stack_face_rect() -> Rect2:
+	return Rect2(Vector2.ZERO, _stack_face_size())
 
 
 func set_table_depth(value: float) -> void:
@@ -125,8 +169,38 @@ func set_actionable(value: bool) -> void:
 	_apply_frame_style()
 
 
+func get_stack_visual_extent() -> Vector2:
+	if stack_visual_mode.is_empty() or count <= 0 or stack_visual_max_count <= 0:
+		return Vector2.ZERO
+	return _stack_step() * float(_stack_layer_count())
+
+
+func get_stack_visual_max_extent() -> Vector2:
+	if stack_visual_mode in ["deck", "discard"]:
+		return _stack_extent_for_depth(_stack_max_depth())
+	if stack_visual_mode == "prizes":
+		return _stack_step() * float(maxi(0, stack_visual_max_count - 1))
+	return get_stack_visual_extent()
+
+
+func get_stack_motion_step() -> Vector2:
+	if stack_visual_mode in ["deck", "discard"]:
+		# Motion choreography uses four stable depth stops, independent of the
+		# current count and the number of decorative paper edges being drawn.
+		return get_stack_visual_max_extent() / 4.0
+	return _stack_step()
+
+
 func is_actionable() -> bool:
 	return actionable
+
+
+func _has_point(point: Vector2) -> bool:
+	if stack_visual_mode == "prizes":
+		# The root reserves six-card capacity for stable layout, but only the cards
+		# currently visible (plus their tray edge) should receive inspection input.
+		return get_stack_visual_rect().grow(6.0).has_point(point)
+	return Rect2(Vector2.ZERO, size).has_point(point)
 
 
 func set_drop_target(
@@ -161,12 +235,23 @@ func set_drop_highlight(value: bool) -> void:
 func set_presentation_hidden(value: bool) -> void:
 	_presentation_hidden = value
 	_kill_presentation_tween()
+	if stack_visual_mode == "prizes":
+		# Prize fans are rendered as individual backs. Stage one incoming card by
+		# shortening the fan at its right edge; only a one-card fan needs its Frame
+		# hidden as well.
+		_set_top_card_alpha(0.0 if value and count <= 1 else 1.0)
+		queue_redraw()
+		return
 	_set_top_card_alpha(0.0 if value else 1.0)
 
 
 func reveal_presentation(duration: float = 0.14, delay: float = 0.0) -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
+	if stack_visual_mode == "prizes":
+		_set_top_card_alpha(1.0)
+		queue_redraw()
+		return
 	if duration <= 0.0:
 		_set_top_card_alpha(1.0)
 		return
@@ -180,6 +265,7 @@ func clear_presentation_state() -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
 	_set_top_card_alpha(1.0)
+	queue_redraw()
 
 
 func is_presentation_hidden() -> bool:
@@ -212,40 +298,109 @@ func has_visible_card_back() -> bool:
 
 
 func _draw() -> void:
-	var shadow_offset := Vector2(4.0 + table_depth * 4.0, 6.0 + table_depth * 5.0)
-	var shadow_color := Color(0.0, 0.0, 0.0, 0.22 + table_depth * 0.18)
-	draw_rect(Rect2(shadow_offset, size), shadow_color, true)
+	var shadow_offset := Vector2(2.0 + table_depth * 2.0, 3.0 + table_depth * 3.0)
+	var shadow_color := Color(0.0, 0.0, 0.0, 0.20 + table_depth * 0.14)
+	var face_size := _stack_face_size()
+	var visual_rect := get_stack_visual_rect()
+	if stack_visual_mode == "prizes":
+		var displayed_count := maxi(0, count - (1 if _presentation_hidden else 0))
+		var displayed_rect := Rect2(Vector2.ZERO, face_size)
+		if displayed_count > 1:
+			displayed_rect = displayed_rect.merge(Rect2(
+				_stack_step() * float(displayed_count - 1),
+				face_size,
+			))
+		_draw_prize_fan(
+			displayed_rect,
+			face_size,
+			shadow_offset,
+			shadow_color,
+			displayed_count,
+		)
+		return
+	draw_rect(Rect2(visual_rect.position + shadow_offset, visual_rect.size), shadow_color, true)
 	if stack_visual_mode.is_empty() or count <= 0 or stack_visual_max_count <= 0:
 		return
 	var layers := _stack_layer_count()
 	var step := _stack_step()
 	for layer in range(layers, 0, -1):
 		var offset := step * float(layer)
-		var layer_rect := Rect2(offset, size)
+		var layer_rect := Rect2(offset, face_size)
 		var t := float(layer) / float(maxi(1, layers))
-		var fill := _stack_color().darkened(0.04 + t * 0.08)
-		fill.a = 0.78
+		var fill := _stack_color().darkened(0.02 + t * 0.07)
+		fill.a = 0.90
 		var paper_edge := _paper_edge_color().lerp(_stack_color(), t * 0.16)
-		paper_edge.a = 0.92
+		paper_edge.a = 0.96
 		var border := _stack_border_color()
-		border.a = 0.70
+		border.a = 0.62
 		draw_rect(layer_rect, paper_edge, true)
-		draw_rect(layer_rect.grow(-2.0), fill, true)
-		draw_rect(layer_rect, border, false, 1.15)
-		var side := Color(0.0, 0.0, 0.0, 0.16 + t * 0.14)
-		draw_line(
-			layer_rect.position + Vector2(layer_rect.size.x, 4.0),
-			layer_rect.position + layer_rect.size + Vector2(0.0, -4.0),
-			side,
-			2.0,
+		draw_rect(layer_rect.grow(-1.35), fill, true)
+		draw_rect(layer_rect, border, false, 1.0)
+		var exposes_left := stack_visual_direction in ["down_left", "left"]
+		var side_x := (
+			layer_rect.position.x + 1.0
+			if exposes_left
+			else layer_rect.end.x - 1.0
 		)
-		var highlight := Color(1.0, 1.0, 1.0, 0.08 - t * 0.025)
+		var side := Color(0.0, 0.0, 0.0, 0.18 + t * 0.13)
 		draw_line(
-			layer_rect.position + Vector2(5.0, 3.0),
-			layer_rect.position + Vector2(layer_rect.size.x - 5.0, 3.0),
+			Vector2(side_x, layer_rect.position.y + 3.0),
+			Vector2(side_x, layer_rect.end.y - 3.0),
+			side,
+			1.35,
+		)
+		var edge_y := (
+			layer_rect.end.y - 1.0
+			if stack_visual_direction.begins_with("down")
+			else layer_rect.position.y + 1.0
+		)
+		var highlight := Color(1.0, 1.0, 1.0, 0.18 - t * 0.04)
+		draw_line(
+			Vector2(layer_rect.position.x + 4.0, edge_y),
+			Vector2(layer_rect.end.x - 4.0, edge_y),
 			highlight,
 			1.0,
 		)
+
+
+func _draw_prize_fan(
+	visual_rect: Rect2,
+	face_size: Vector2,
+	shadow_offset: Vector2,
+	shadow_color: Color,
+	displayed_count: int,
+) -> void:
+	if displayed_count <= 0 or stack_visual_max_count <= 0:
+		draw_rect(
+			Rect2(visual_rect.position + shadow_offset, visual_rect.size),
+			shadow_color,
+			true,
+		)
+		return
+	var tray_rect := visual_rect.grow(5.0)
+	draw_rect(
+		Rect2(tray_rect.position + shadow_offset, tray_rect.size),
+		shadow_color,
+		true,
+	)
+	draw_rect(tray_rect, Color(0.018, 0.032, 0.058, 0.92), true)
+	var tray_border := _stack_border_color()
+	tray_border.a = 0.80
+	draw_rect(tray_rect, tray_border, false, 1.5)
+	var layers := maxi(0, displayed_count - 1)
+	var step := _stack_step()
+	for layer in range(layers, 0, -1):
+		var layer_rect := Rect2(step * float(layer), face_size)
+		draw_rect(layer_rect, _paper_edge_color(), true)
+		draw_texture_rect(
+			CARD_BACK_TEXTURE,
+			layer_rect.grow(-2.0),
+			false,
+			Color(0.96, 0.97, 1.0, 1.0),
+		)
+		var border := _stack_border_color()
+		border.a = 0.82
+		draw_rect(layer_rect, border, false, 1.15)
 
 
 func _refresh() -> void:
@@ -253,8 +408,11 @@ func _refresh() -> void:
 		return
 	_ensure_fallback_card_back()
 	title_label.text = title
+	title_label.visible = stack_visual_mode.is_empty()
 	count_label.text = str(count)
 	count_label.visible = count > 0
+	_layout_count_badge()
+	tooltip_text = "%s · %d 张" % [title, count]
 	var texture_path := ""
 	var texture: Texture2D = null
 	if is_hidden_zone and count > 0:
@@ -289,16 +447,16 @@ func _ensure_fallback_card_back() -> void:
 	fallback_back_panel.name = "FallbackCardBack"
 	fallback_back_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fallback_back_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	fallback_back_panel.offset_left = 4.0
-	fallback_back_panel.offset_top = 4.0
-	fallback_back_panel.offset_right = -4.0
-	fallback_back_panel.offset_bottom = -4.0
+	fallback_back_panel.offset_left = 2.0
+	fallback_back_panel.offset_top = 2.0
+	fallback_back_panel.offset_right = -2.0
+	fallback_back_panel.offset_bottom = -2.0
 	fallback_back_panel.visible = false
 	fallback_back_panel.add_theme_stylebox_override(
 		"panel",
 		DesignTokens.panel_style(
 			Color("#174ea6"),
-			7,
+			_card_corner_radius(),
 			Color("#f1d35a"),
 			3,
 			0,
@@ -330,16 +488,6 @@ func _on_gui_input(event: InputEvent) -> void:
 			_pressed = false
 			_finish_pointer_interaction(event.position)
 			accept_event()
-	elif event is InputEventScreenTouch:
-		if event.pressed:
-			_pressed = true
-			_press_msec = Time.get_ticks_msec()
-			_press_position = event.position
-		else:
-			if not _pressed:
-				return
-			_pressed = false
-			_finish_pointer_interaction(event.position)
 
 
 func _finish_pointer_interaction(release_position: Vector2) -> void:
@@ -429,23 +577,85 @@ func _kill_presentation_tween() -> void:
 	_presentation_tween = null
 
 
+func _stack_face_size() -> Vector2:
+	if stack_visual_mode == "prizes" and _stack_card_size.length_squared() > 1.0:
+		return _stack_card_size
+	if size.length_squared() > 1.0:
+		return size
+	return custom_minimum_size
+
+
+func _apply_stack_geometry() -> void:
+	if stack_visual_mode == "prizes":
+		var required_size := get_stack_visual_max_rect().size
+		custom_minimum_size = required_size
+		if not size.is_equal_approx(required_size):
+			size = required_size
+	_layout_stack_face()
+
+
+func _layout_stack_face() -> void:
+	if frame == null:
+		return
+	if stack_visual_mode == "prizes":
+		var face_size := _stack_face_size()
+		frame.anchor_left = 0.0
+		frame.anchor_top = 0.0
+		frame.anchor_right = 0.0
+		frame.anchor_bottom = 0.0
+		frame.offset_left = 0.0
+		frame.offset_top = 0.0
+		frame.offset_right = face_size.x
+		frame.offset_bottom = face_size.y
+		return
+	frame.anchor_left = 0.0
+	frame.anchor_top = 0.0
+	frame.anchor_right = 1.0
+	frame.anchor_bottom = 1.0
+	frame.offset_left = 0.0
+	frame.offset_top = 0.0
+	frame.offset_right = 0.0
+	frame.offset_bottom = 0.0
+
+
 func _stack_layer_count() -> int:
+	if count <= 1 or stack_visual_max_count <= 1:
+		return 0
+	if stack_visual_mode in ["deck", "discard"]:
+		var max_layers := (
+			DECK_MAX_LAYERS
+			if stack_visual_mode == "deck"
+			else DISCARD_MAX_LAYERS
+		)
+		var layer_spacing := maxf(1.5, 2.0 * _stack_size_scale())
+		return clampi(
+			int(ceil(_stack_depth_for_count() / layer_spacing)),
+			1,
+			mini(count - 1, max_layers),
+		)
 	var ratio := clampf(
-		float(count) / float(maxi(1, stack_visual_max_count)),
+		float(count - 1) / float(maxi(1, stack_visual_max_count - 1)),
 		0.0,
 		1.0,
 	)
-	var max_layers := 7
-	if stack_visual_mode == "deck":
-		max_layers = 9
-	elif stack_visual_mode == "discard":
-		max_layers = 8
+	var max_layers := maxi(1, stack_visual_max_count - 1)
 	return clampi(int(ceil(ratio * float(max_layers))), 1, max_layers)
 
 
 func _stack_step() -> Vector2:
+	var layers := maxi(1, _stack_layer_count())
+	if stack_visual_mode in ["deck", "discard"]:
+		# Divide the count-driven physical depth across a bounded number of paper
+		# edges, so the pile grows continuously without ballooning off the table.
+		return _stack_total_extent() / float(layers)
+	if stack_visual_mode == "prizes":
+		return Vector2(clampf(_stack_face_size().x * 0.17, 11.0, 18.0), 0.0)
 	var depth_scale := 0.75 + table_depth * 0.55
 	match stack_visual_direction:
+		"down_left":
+			return Vector2(-3.6, 2.4) * depth_scale
+		"up_right":
+			return Vector2(3.6, -2.4) * depth_scale
 		"down":
 			return Vector2(3.6, 3.2) * depth_scale
 		"left":
@@ -453,6 +663,49 @@ func _stack_step() -> Vector2:
 		"right":
 			return Vector2(3.6, 2.4) * depth_scale
 	return Vector2(3.6, -3.2) * depth_scale
+
+
+func _stack_total_extent() -> Vector2:
+	return _stack_extent_for_depth(_stack_depth_for_count())
+
+
+func _stack_depth_for_count() -> float:
+	if count <= 1 or stack_visual_max_count <= 1:
+		return 0.0
+	var ratio := clampf(
+		float(count - 1) / float(stack_visual_max_count - 1),
+		0.0,
+		1.0,
+	)
+	var scale_value := _stack_size_scale()
+	return maxf(
+		1.25 * scale_value,
+		_stack_max_depth() * pow(ratio, 0.65),
+	)
+
+
+func _stack_max_depth() -> float:
+	return STACK_MAX_DEPTH * _stack_size_scale()
+
+
+func _stack_size_scale() -> float:
+	var card_width := _stack_face_size().x
+	return clampf(card_width / 96.0, 0.82, 1.12)
+
+
+func _stack_extent_for_depth(total_depth: float) -> Vector2:
+	match stack_visual_direction:
+		"down_left":
+			return Vector2(-total_depth * 0.42, total_depth)
+		"up_right":
+			return Vector2(total_depth * 0.42, -total_depth)
+		"down":
+			return Vector2(total_depth * 0.42, total_depth)
+		"left":
+			return Vector2(-total_depth, total_depth * 0.42)
+		"right":
+			return Vector2(total_depth, total_depth * 0.42)
+	return Vector2(total_depth * 0.42, -total_depth)
 
 
 func _stack_color() -> Color:
@@ -501,24 +754,74 @@ func _apply_frame_style() -> void:
 		border = DesignTokens.CYAN
 	var frame_style := DesignTokens.panel_style(
 		fill,
-		8,
+		_card_corner_radius(),
 		border,
-		3 if actionable or _drop_highlighted else 2,
+		2 if actionable or _drop_highlighted or stack_visual_mode in ["deck", "discard"] else 1,
 		0,
 	)
 	if actionable or _drop_highlighted:
 		frame_style.shadow_color = Color(0.20, 0.78, 1.0, 0.46)
-		frame_style.shadow_size = 5
+		frame_style.shadow_size = 3
 		frame_style.shadow_offset = Vector2.ZERO
 	frame.add_theme_stylebox_override("panel", frame_style)
 	if count_label:
+		var badge_fill := DesignTokens.GOLD
+		var badge_border := Color(1, 1, 1, 0.70)
+		var badge_text := DesignTokens.BG_DEEP
+		if stack_visual_mode in ["deck", "discard"]:
+			badge_fill = Color(0.025, 0.055, 0.095, 0.98)
+			badge_border = DesignTokens.GOLD
+			badge_text = Color("#ffe071")
+		count_label.add_theme_color_override("font_color", badge_text)
 		count_label.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				DesignTokens.GOLD,
-				12,
-				Color(1, 1, 1, 0.70),
+				badge_fill,
+				10 if stack_visual_mode in ["deck", "discard"] else 4,
+				badge_border,
 				1,
 				0,
 			),
 		)
+
+
+func _on_resized() -> void:
+	_layout_stack_face()
+	_layout_count_badge()
+	_apply_frame_style()
+	queue_redraw()
+
+
+func _layout_count_badge() -> void:
+	if count_label == null:
+		return
+	count_label.anchor_top = 1.0
+	count_label.anchor_bottom = 1.0
+	count_label.offset_top = -24.0
+	count_label.offset_bottom = 2.0
+	if stack_visual_mode == "deck":
+		# Keep the deck count away from the discard-card seam.
+		count_label.anchor_left = 0.0
+		count_label.anchor_right = 0.0
+		count_label.offset_left = -2.0
+		count_label.offset_right = 30.0
+	elif stack_visual_mode == "prizes":
+		var badge_right := _stack_face_size().x + get_stack_visual_extent().x + 2.0
+		count_label.anchor_left = 0.0
+		count_label.anchor_right = 0.0
+		count_label.offset_left = badge_right - 32.0
+		count_label.offset_right = badge_right
+	else:
+		count_label.anchor_left = 1.0
+		count_label.anchor_right = 1.0
+		count_label.offset_left = -30.0
+		count_label.offset_right = 2.0
+
+
+func _card_corner_radius() -> int:
+	var card_width := _stack_face_size().x
+	return clampi(
+		int(round(card_width / 24.0)),
+		MIN_CARD_CORNER_RADIUS,
+		MAX_CARD_CORNER_RADIUS,
+	)

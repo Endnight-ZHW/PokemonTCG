@@ -1,16 +1,37 @@
 class_name BattlePhaseHud
-extends VBoxContainer
+extends Control
 
 signal phase_action_requested(action: GameAction)
+signal log_drawer_toggled(is_open: bool)
 
 @onready var phase_advance_button: Button = %PhaseAdvanceButton
+@onready var log_toggle_button: Button = %LogToggleButton
+
+const RAIL_WIDTH := 132.0
+const RAIL_HEIGHT := 196.0
+const DRAWER_WIDTH := 360.0
+const DRAWER_MAX_HEIGHT := 560.0
+const DRAWER_GAP := 10.0
+const PHASE_PANEL_OFFSET_Y := 52.0
+const DOCK_EDGE_MARGIN := 16.0
+const DOCK_RIGHT_MARGIN := 8.0
+const RAIL_VISUAL_HALO := 14.0
+const RESERVED_BOARD_WIDTH := RAIL_WIDTH + DOCK_RIGHT_MARGIN + RAIL_VISUAL_HALO
 
 var _connected := false
+var _log_drawer_open := false
+var _layout_connected := false
+var _phase_panel: PanelContainer
 
 
 func _ready() -> void:
 	_resolve_nodes()
 	_ensure_connections()
+	if not _layout_connected:
+		_layout_connected = true
+		resized.connect(_layout_dock)
+	set_log_drawer_open(false, false)
+	call_deferred("_layout_dock")
 
 
 func update_phase(
@@ -99,17 +120,93 @@ func _is_waiting_for_opponent(
 
 
 func _resolve_nodes() -> void:
+	_phase_panel = get_node("PhasePanel") as PanelContainer
 	phase_advance_button = get_node(
 		"PhasePanel/Content/PhaseAdvanceButton"
+	) as Button
+	log_toggle_button = get_node(
+		"PhasePanel/Content/LogToggleButton"
 	) as Button
 
 
 func _ensure_connections() -> void:
-	if _connected:
-		return
-	_connected = true
-	phase_advance_button.pressed.connect(func() -> void:
-		var action := phase_advance_button.get_meta("action") as GameAction
-		if action:
-			phase_action_requested.emit(action)
+	if not _connected:
+		_connected = true
+		phase_advance_button.pressed.connect(func() -> void:
+			var action := phase_advance_button.get_meta("action") as GameAction
+			if action:
+				phase_action_requested.emit(action)
+		)
+		log_toggle_button.toggled.connect(func(is_open: bool) -> void:
+			set_log_drawer_open(is_open)
+		)
+	# LogPanel is composed by BattleTable rather than owned by the standalone HUD
+	# scene. Re-check this optional child idempotently so a dynamically attached
+	# drawer still gets a working close button after _ready().
+	var log_panel := get_node_or_null("LogPanel") as BattleLogPanel
+	if log_panel and not log_panel.close_requested.is_connected(close_log_drawer):
+		log_panel.close_requested.connect(close_log_drawer)
+
+
+func set_log_drawer_open(is_open: bool, emit_change: bool = true) -> void:
+	_resolve_nodes()
+	var changed := _log_drawer_open != is_open
+	_log_drawer_open = is_open
+	var log_panel := get_node_or_null("LogPanel") as Control
+	if log_panel:
+		log_panel.visible = is_open
+	log_toggle_button.set_pressed_no_signal(is_open)
+	log_toggle_button.text = "收起日志" if is_open else "行动日志"
+	log_toggle_button.tooltip_text = (
+		"收起行动日志抽屉" if is_open else "展开行动日志抽屉"
 	)
+	if changed and emit_change:
+		log_drawer_toggled.emit(is_open)
+	_layout_dock()
+
+
+func toggle_log_drawer() -> void:
+	set_log_drawer_open(not _log_drawer_open)
+
+
+func close_log_drawer() -> void:
+	set_log_drawer_open(false)
+
+
+func is_log_drawer_open() -> bool:
+	return _log_drawer_open
+
+
+func _layout_dock() -> void:
+	if _phase_panel == null:
+		return
+	var rail_x := maxf(0.0, size.x - RAIL_WIDTH)
+	var usable_height := maxf(size.y, RAIL_HEIGHT)
+	var drawer_height := minf(
+		DRAWER_MAX_HEIGHT,
+		maxf(260.0, usable_height - 96.0),
+	)
+	var drawer_y := maxf(DOCK_EDGE_MARGIN, (usable_height - drawer_height) * 0.5)
+	# Keep the log drawer vertically centered while placing the compact turn
+	# controls slightly below the visual midpoint. This leaves the upper-right
+	# deck/discard row unobstructed and makes the primary action easier to reach.
+	var maximum_phase_y := maxf(
+		DOCK_EDGE_MARGIN,
+		usable_height - RAIL_HEIGHT - DOCK_EDGE_MARGIN,
+	)
+	var phase_panel_y := minf(
+		drawer_y + PHASE_PANEL_OFFSET_Y,
+		maximum_phase_y,
+	)
+	_phase_panel.position = Vector2(rail_x, phase_panel_y)
+	_phase_panel.size = Vector2(RAIL_WIDTH, RAIL_HEIGHT)
+
+	var log_panel := get_node_or_null("LogPanel") as Control
+	if log_panel == null:
+		return
+	log_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	log_panel.position = Vector2(
+		maxf(0.0, rail_x - DRAWER_GAP - DRAWER_WIDTH),
+		drawer_y,
+	)
+	log_panel.size = Vector2(DRAWER_WIDTH, drawer_height)

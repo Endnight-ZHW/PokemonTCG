@@ -15,7 +15,10 @@ signal drag_ended
 
 const LONG_PRESS_MSEC := 350
 const DRAG_THRESHOLD := 14.0
+const MINIMUM_TOUCH_TARGET := 48.0
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
+const MIN_CARD_CORNER_RADIUS := 3
+const MAX_CARD_CORNER_RADIUS := 6
 
 @export_category("Card Layout")
 @export var selected_lift := 12.0
@@ -126,6 +129,7 @@ func _ready() -> void:
 	_resolve_scene_nodes()
 	_normalize_interaction_overlay_z_order()
 	_ensure_overlay_nodes()
+	_make_card_content_input_transparent()
 	resized.connect(_on_resized)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
@@ -341,7 +345,21 @@ func is_presentation_hidden() -> bool:
 
 
 func global_center() -> Vector2:
-	return global_position + size * 0.5
+	# Hand and table cards can be rotated, scaled and lifted around their center.
+	# Transforming the local midpoint keeps presentation flights anchored to the
+	# actual rendered card instead of the unrotated layout rectangle.
+	return get_global_transform_with_canvas() * (size * 0.5)
+
+
+func _has_point(point: Vector2) -> bool:
+	# Compact landscape can render a bench card narrower than the recommended
+	# touch target. Keep the artwork unchanged while expanding only its hit shape
+	# around the same center; sibling Z/order resolves the rare overlap.
+	var hit_size := Vector2(
+		maxf(size.x, MINIMUM_TOUCH_TARGET),
+		maxf(size.y, MINIMUM_TOUCH_TARGET),
+	)
+	return Rect2((size - hit_size) * 0.5, hit_size).has_point(point)
 
 
 func flash(color: Color, duration: float = 0.3) -> void:
@@ -352,7 +370,9 @@ func flash(color: Color, duration: float = 0.3) -> void:
 	overlay.color = Color(color.r, color.g, color.b, 0.0)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.z_index = 24
+	# Stay above every local badge (maximum 9) without escaping the battle-card
+	# layer and flashing over the HUD/action popover when a hand card is selected.
+	overlay.z_index = 10
 	add_child(overlay)
 	if duration <= 0.0 or _reduced_motion_enabled():
 		overlay.color.a = 0.34
@@ -434,7 +454,13 @@ func _refresh() -> void:
 		_refresh_battle_overlay(current_card, border_color)
 	frame.add_theme_stylebox_override(
 		"panel",
-		DesignTokens.panel_style(frame_color, 9, border_color, 2, 0),
+		DesignTokens.panel_style(
+			frame_color,
+			_card_corner_radius(),
+			border_color,
+			2,
+			0,
+		),
 	)
 	_refresh_empty_slot_visibility()
 	_apply_depth_visuals()
@@ -451,6 +477,7 @@ func _refresh_statuses() -> void:
 		return
 	for status in pokemon.status_conditions:
 		var badge := Label.new()
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		badge.text = {
 			"POISONED": "毒",
 			"BURNED": "灼",
@@ -466,7 +493,7 @@ func _refresh_statuses() -> void:
 			"normal",
 			DesignTokens.panel_style(
 				DesignTokens.status_color(status),
-				7,
+				3,
 				Color(1, 1, 1, 0.52),
 				1,
 				0,
@@ -493,21 +520,8 @@ func _gui_input(event: InputEvent) -> void:
 			elif moved < DRAG_THRESHOLD:
 				activated.emit(card_id, hand_index, owner_player, slot)
 			accept_event()
-	elif event is InputEventScreenTouch:
-		if event.pressed:
-			_pressed = true
-			_press_msec = Time.get_ticks_msec()
-			_press_position = event.position
-		else:
-			if not _pressed:
-				return
-			_pressed = false
-			var held := Time.get_ticks_msec() - _press_msec
-			var moved: float = Vector2(event.position).distance_to(_press_position)
-			if held >= LONG_PRESS_MSEC and not card_id.is_empty():
-				detail_requested.emit(card_id)
-			elif moved < DRAG_THRESHOLD:
-				activated.emit(card_id, hand_index, owner_player, slot)
+	# Touch intentionally follows Godot's mouse-from-touch emulation so desktop
+	# and Android share one click/long-press/drag state machine and hit-test order.
 
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
@@ -711,6 +725,21 @@ func _normalize_interaction_overlay_z_order() -> void:
 		overlay.z_index = 0
 
 
+func _make_card_content_input_transparent() -> void:
+	# CardView owns the full pointer gesture. Visual descendants must not become
+	# separate hit targets or they can split a press/release pair and prevent the
+	# card's activation, long-press, or drag handlers from completing.
+	for child in get_children():
+		_make_control_branch_input_transparent(child)
+
+
+func _make_control_branch_input_transparent(node: Node) -> void:
+	if node is Control:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in node.get_children():
+		_make_control_branch_input_transparent(child)
+
+
 func _disable_legacy_action_overlay() -> void:
 	if action_buttons:
 		for child in action_buttons.get_children():
@@ -745,7 +774,7 @@ func _refresh_interaction_visuals() -> void:
 		actionable_marker.visible = can_show_marker
 		var actionable_style := DesignTokens.panel_style(
 			Color.TRANSPARENT,
-			13,
+			_outline_corner_radius(),
 			Color(0.36, 0.88, 1.0, 0.98),
 			3,
 			0,
@@ -773,13 +802,11 @@ func _refresh_interaction_visuals() -> void:
 		hint_text = _disabled_reason
 	if interaction_hint:
 		interaction_hint.visible = not hint_text.is_empty()
-		interaction_hint.tooltip_text = hint_text
-		interaction_hint.accessibility_name = hint_text
 		interaction_hint.add_theme_stylebox_override(
 			"panel",
 			DesignTokens.panel_style(
 				Color(0.018, 0.042, 0.07, 0.94),
-				7,
+				4,
 				hint_color,
 				1,
 				0,
@@ -788,6 +815,7 @@ func _refresh_interaction_visuals() -> void:
 	if interaction_hint_label:
 		interaction_hint_label.text = hint_text
 		interaction_hint_label.add_theme_color_override("font_color", hint_color)
+	_refresh_accessibility_summary()
 
 
 func _ensure_overlay_nodes() -> void:
@@ -822,7 +850,7 @@ func _ensure_overlay_nodes() -> void:
 
 	energy_row = HBoxContainer.new()
 	energy_row.name = "EnergyRow"
-	energy_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	energy_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	energy_row.add_theme_constant_override("separation", int(ENERGY_BADGE_SEPARATION))
 	energy_row.z_index = 8
 	add_child(energy_row)
@@ -899,7 +927,7 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 	hp_pill.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
 	hp_pill.add_theme_stylebox_override(
 		"normal",
-		DesignTokens.panel_style(hp_color, 8, Color(1, 1, 1, 0.78), 1, 0),
+		DesignTokens.panel_style(hp_color, 4, Color(1, 1, 1, 0.78), 1, 0),
 	)
 	var damage := pokemon.damage_counters * 10
 	if damage > 0:
@@ -911,7 +939,7 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 			"normal",
 			DesignTokens.panel_style(
 				DesignTokens.RED.lightened(0.16),
-				12,
+				4,
 				Color(1, 1, 1, 0.72),
 				1,
 				0,
@@ -928,7 +956,7 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 			"normal",
 			DesignTokens.panel_style(
 				Color("#213146"),
-				6,
+				3,
 				border_color.lightened(0.25),
 				1,
 				0,
@@ -994,7 +1022,7 @@ func _new_energy_badge(
 ) -> Control:
 	var badge := Control.new()
 	badge.name = "EnergyBadge"
-	badge.mouse_filter = Control.MOUSE_FILTER_PASS
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.custom_minimum_size = Vector2(badge_size, badge_size)
 	var accessible_name := (
 		display_name
@@ -1012,7 +1040,7 @@ func _new_energy_badge(
 		"panel",
 		DesignTokens.panel_style(
 			Color(0.025, 0.055, 0.09, 0.92),
-			12,
+			4,
 			_energy_color(energy_type).lightened(0.28),
 			1,
 			0,
@@ -1074,7 +1102,7 @@ func _new_energy_badge(
 			"normal",
 			DesignTokens.panel_style(
 				Color(0.02, 0.04, 0.075, 0.98),
-				7,
+				3,
 				Color(1, 1, 1, 0.82),
 				1,
 				0,
@@ -1087,7 +1115,7 @@ func _new_energy_badge(
 func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 	var badge := Control.new()
 	badge.name = "EnergyOverflowBadge"
-	badge.mouse_filter = Control.MOUSE_FILTER_PASS
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.custom_minimum_size = Vector2(badge_size, badge_size)
 	badge.tooltip_text = "另有 %d 张附加能量" % count
 	badge.accessibility_name = badge.tooltip_text
@@ -1100,7 +1128,7 @@ func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 		"panel",
 		DesignTokens.panel_style(
 			Color(0.025, 0.055, 0.09, 0.94),
-			12,
+			4,
 			DesignTokens.GOLD.lightened(0.12),
 			1,
 			0,
@@ -1124,22 +1152,57 @@ func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 
 
 func _set_energy_summary(grouped: Array[Dictionary]) -> void:
-	if is_hidden_card or empty or pokemon == null or grouped.is_empty():
-		tooltip_text = ""
-		accessibility_description = ""
-		return
+	_refresh_accessibility_summary(grouped)
+
+
+func _refresh_accessibility_summary(energy_groups: Array[Dictionary] = []) -> void:
 	var parts: Array[String] = []
-	for row in grouped:
-		var display_name := str(row.get("display_name", ""))
-		if display_name.is_empty():
-			display_name = str(ENERGY_DISPLAY_NAMES.get(
-				str(row.get("type", "Colorless")),
-				str(row.get("type", "Colorless")),
-			))
-		parts.append("%s ×%d" % [display_name, int(row.get("count", 1))])
-	var summary := "附加能量：%s" % "、".join(parts)
+	if is_hidden_card:
+		parts.append("隐藏卡牌")
+	elif empty:
+		parts.append(_empty_slot_label_text if not _empty_slot_label_text.is_empty() else "空牌位")
+	else:
+		var card := _card_data(card_id)
+		parts.append(str(card.get("name", card_id)))
+		if pokemon != null:
+			var maximum := _pokemon_max_hp(card, pokemon)
+			var current := pokemon.current_hp(catalog) if catalog else maximum - (
+				pokemon.damage_counters * 10
+			)
+			parts.append("HP %d/%d" % [current, maximum])
+			var damage := pokemon.damage_counters * 10
+			if damage > 0:
+				parts.append("伤害 %d" % damage)
+			if not pokemon.status_conditions.is_empty():
+				parts.append("状态：%s" % "、".join(pokemon.status_conditions))
+			if not pokemon.attached_tool_id.is_empty():
+				parts.append("宝可梦道具：%s" % _card_data(
+					pokemon.attached_tool_id
+				).get("name", pokemon.attached_tool_id))
+			if energy_groups.is_empty():
+				energy_groups = _attached_energy_groups()
+			var energy_parts: Array[String] = []
+			for row in energy_groups:
+				var display_name := str(row.get("display_name", ""))
+				if display_name.is_empty():
+					display_name = str(ENERGY_DISPLAY_NAMES.get(
+						str(row.get("type", "Colorless")),
+						str(row.get("type", "Colorless")),
+					))
+				energy_parts.append("%s ×%d" % [
+					display_name,
+					int(row.get("count", 1)),
+				])
+			if not energy_parts.is_empty():
+				parts.append("附加能量：%s" % "、".join(energy_parts))
+	if selected and not actionable and not _disabled_reason.is_empty():
+		parts.append(_disabled_reason)
+	elif targetable and not _legal_target_hint.is_empty():
+		parts.append(_legal_target_hint)
+	var summary := "；".join(parts)
 	tooltip_text = summary
 	accessibility_description = summary
+	accessibility_name = parts[0] if not parts.is_empty() else "卡牌"
 
 
 func _clear_energy_badges() -> void:
@@ -1248,33 +1311,82 @@ func _layout_battle_overlay() -> void:
 	status_row.offset_top = 6.0
 	status_row.offset_right = -6.0
 	if top_gloss:
-		top_gloss.position = Vector2(5.0, 5.0)
-		top_gloss.size = Vector2(maxf(0.0, size.x - 10.0), maxf(4.0, size.y * 0.18))
+		top_gloss.position = Vector2(3.0, 3.0)
+		top_gloss.size = Vector2(maxf(0.0, size.x - 6.0), maxf(3.0, size.y * 0.14))
+
+
+func _card_corner_radius() -> int:
+	var card_width := size.x if size.x > 0.0 else custom_minimum_size.x
+	return clampi(
+		int(round(card_width / 24.0)),
+		MIN_CARD_CORNER_RADIUS,
+		MAX_CARD_CORNER_RADIUS,
+	)
+
+
+func _outline_corner_radius() -> int:
+	return mini(MAX_CARD_CORNER_RADIUS, _card_corner_radius() + 1)
+
+
+func _apply_card_corner_styles() -> void:
+	var card_radius := _card_corner_radius()
+	_set_control_corner_radius(shadow, "panel", card_radius)
+	_set_control_corner_radius(frame, "panel", card_radius)
+	_set_control_corner_radius(target_glow, "panel", _outline_corner_radius())
+	_set_control_corner_radius(selection_ring, "panel", _outline_corner_radius())
+	_set_control_corner_radius(actionable_marker, "panel", _outline_corner_radius())
+	_set_control_corner_radius(depth_edge, "panel", card_radius)
+
+
+func _set_control_corner_radius(
+	control: Control,
+	style_name: String,
+	radius: int,
+) -> void:
+	if control == null:
+		return
+	var current := control.get_theme_stylebox(style_name) as StyleBoxFlat
+	if current == null:
+		return
+	if (
+		current.corner_radius_top_left == radius
+		and current.corner_radius_top_right == radius
+		and current.corner_radius_bottom_right == radius
+		and current.corner_radius_bottom_left == radius
+	):
+		return
+	var shaped := current.duplicate() as StyleBoxFlat
+	shaped.corner_radius_top_left = radius
+	shaped.corner_radius_top_right = radius
+	shaped.corner_radius_bottom_right = radius
+	shaped.corner_radius_bottom_left = radius
+	control.add_theme_stylebox_override(style_name, shaped)
 
 
 func _apply_depth_visuals() -> void:
 	if shadow:
-		var shadow_drop := 4.0 + _table_depth * 7.0
-		shadow.offset_left = 1.0 + _table_depth * 1.5
+		var shadow_drop := 2.5 + _table_depth * 4.0
+		shadow.offset_left = 0.5 + _table_depth
 		shadow.offset_top = shadow_drop
-		shadow.offset_right = 2.0 + _table_depth * 2.0
-		shadow.offset_bottom = shadow_drop + 2.0
+		shadow.offset_right = 1.0 + _table_depth * 1.5
+		shadow.offset_bottom = shadow_drop + 1.0
 	if depth_edge:
-		var edge := 2.0 + _table_depth * 4.0
+		var edge := 1.0 + _table_depth * 2.5
 		depth_edge.offset_left = edge
 		depth_edge.offset_top = edge
-		depth_edge.offset_right = edge + 1.0
-		depth_edge.offset_bottom = edge + 1.0
+		depth_edge.offset_right = edge + 0.75
+		depth_edge.offset_bottom = edge + 0.75
 		depth_edge.add_theme_stylebox_override(
 			"panel",
 			DesignTokens.panel_style(
 				Color(0, 0, 0, 0.30 + _table_depth * 0.18),
-				9,
+				_card_corner_radius(),
 				Color(0, 0, 0, 0.0),
 				0,
 				0,
 			),
 		)
+	_apply_card_corner_styles()
 
 
 func _kill_presentation_tween() -> void:

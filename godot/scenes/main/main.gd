@@ -38,6 +38,7 @@ var current_screen := SCREEN_TITLE
 var current_view_player := 0
 var action_sequence := 0
 var selected_entity_key := ""
+var selected_entity_identity := ""
 var selected_choice_ids: Array[String] = []
 var option_buttons: Array[Button] = []
 var game_mode := MODE_LOCAL
@@ -231,8 +232,8 @@ func _build_shell() -> void:
 			modal_cancel,
 			modal_panel,
 		)
-	modal_layer.z_index = 200
-	loading_layer.z_index = 210
+	modal_layer.z_index = 400
+	loading_layer.z_index = 500
 
 
 func _show_title() -> void:
@@ -682,6 +683,7 @@ func _start_match(
 			ai_inference = null
 	current_view_player = 0
 	selected_entity_key = ""
+	selected_entity_identity = ""
 	_build_game_screen()
 	if game_mode == MODE_DEEP and ai_inference == null:
 		_show_toast(
@@ -702,6 +704,7 @@ func _build_game_screen() -> void:
 	battle_screen = BATTLE_SCENE.instantiate() as BattleScreen
 	battle_screen.name = "GameScreen"
 	battle_screen.menu_requested.connect(_show_pause_overlay)
+	battle_screen.selection_clear_requested.connect(_on_selection_clear_requested)
 	battle_screen.hand_card_selected.connect(_select_hand_card)
 	battle_screen.pokemon_selected.connect(_on_battle_pokemon_selected)
 	battle_screen.action_requested.connect(_execute_action)
@@ -726,6 +729,14 @@ func _build_game_screen() -> void:
 func _refresh_game() -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
+	# Network revisions and completed actions can invalidate a selected hand
+	# index or field slot before the next frame. Clear both halves of the
+	# selection/detail state in-place, then continue this same refresh once.
+	if not _selected_entity_is_valid(selected_entity_key):
+		selected_entity_key = ""
+		selected_entity_identity = ""
+		if battle_screen:
+			battle_screen.hide_card_detail()
 	if battle_screen:
 		var rows := _current_action_rows()
 		battle_screen.update_view(
@@ -764,6 +775,12 @@ func _on_battle_pokemon_selected(
 	slot: String,
 	card_id: String,
 ) -> void:
+	# Re-selecting the source is an explicit UI toggle, never a target choice.
+	# This keeps cancellation deterministic even for actions that can target the
+	# source Pokemon itself.
+	if selected_entity_key == "pokemon:%d:%s" % [player_idx, slot]:
+		_select_pokemon(player_idx, slot, card_id)
+		return
 	if selected_entity_key.begins_with("hand:"):
 		var hand_index := selected_entity_key.trim_prefix("hand:").to_int()
 		var candidates := _matching_drop_actions(hand_index, player_idx, slot)
@@ -793,6 +810,7 @@ func _on_battle_card_dropped(
 		return
 	if candidates.size() > 1:
 		selected_entity_key = "hand:%d" % hand_index
+		selected_entity_identity = _entity_identity_for_key(selected_entity_key)
 		_refresh_game()
 		return
 	# BattleTable/CardView only emit drops for legal targets. Keep this branch as
@@ -891,6 +909,7 @@ func _execute_action_now(action: GameAction) -> StepResult:
 			_show_toast("动作未发送或被房主拒绝。", true)
 		else:
 			selected_entity_key = ""
+			selected_entity_identity = ""
 			_refresh_game()
 		return StepResult.new(accepted, "动作已提交。" if accepted else "动作提交失败。")
 	if game_mode != MODE_LOCAL and _current_actor() == 1:
@@ -911,6 +930,7 @@ func _execute_action_now(action: GameAction) -> StepResult:
 		_refresh_game()
 		return result
 	selected_entity_key = ""
+	selected_entity_identity = ""
 	_show_toast(result.message if not result.message.is_empty() else "动作完成。")
 	_refresh_game()
 	if battle_screen and not result.events.is_empty():
@@ -983,6 +1003,7 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	var field_targets := _choice_field_target_options(request)
 	if not field_targets.is_empty() and battle_screen:
 		selected_entity_key = ""
+		selected_entity_identity = ""
 		battle_screen.set_choice_targets(field_targets, request.prompt)
 		_refresh_game()
 		return
@@ -2160,8 +2181,13 @@ func _open_modal(
 	opaque_shade: bool = false,
 	spec: ModalSpec = null,
 ) -> void:
-	if battle_screen:
-		battle_screen.hide_card_detail()
+	if battle_screen and battle_screen.hud is BattlePhaseHud:
+		(battle_screen.hud as BattlePhaseHud).close_log_drawer()
+	_clear_battle_selection("", false)
+	# Refresh even if Main already considers the key empty: a modal is a hard
+	# interaction boundary and must also reconcile any stale Table highlight.
+	if current_screen == SCREEN_GAME and state:
+		_refresh_game()
 	if modal_scroll:
 		var default_scroll_minimum := modal_scroll.custom_minimum_size
 		default_scroll_minimum.y = 420.0
@@ -2273,19 +2299,106 @@ func _finish_modal_close(generation: int) -> void:
 func _select_hand_card(index: int, card_id: String) -> void:
 	_play_click()
 	var key := "hand:%d" % index
-	selected_entity_key = "" if selected_entity_key == key else key
+	if selected_entity_key == key:
+		selected_entity_key = ""
+		selected_entity_identity = ""
+	else:
+		selected_entity_key = key
+		selected_entity_identity = _entity_identity_for_key(key)
+	# Synchronize the authoritative key into BattleTable before asking it to
+	# position the detail surface. Otherwise the first layout frame can still be
+	# anchored to the previous card (or no source at all).
+	_refresh_game()
 	if battle_screen:
 		if selected_entity_key.is_empty():
 			battle_screen.hide_card_detail()
 		else:
 			battle_screen.show_card_detail(card_id)
-	_refresh_game()
+
+
+func _on_selection_clear_requested(expected_key: String) -> void:
+	_clear_battle_selection(expected_key)
+
+
+func _clear_battle_selection(
+	expected_key: String = "",
+	refresh_view: bool = true,
+) -> bool:
+	if not expected_key.is_empty() and expected_key != selected_entity_key:
+		# Table may already have dismissed its local popover for this stale event.
+		# Re-apply Main's authoritative selection without clearing the newer key.
+		if refresh_view and current_screen == SCREEN_GAME and state:
+			_refresh_game()
+		return false
+	var changed := not selected_entity_key.is_empty()
+	selected_entity_key = ""
+	selected_entity_identity = ""
+	if battle_screen:
+		battle_screen.hide_card_detail()
+	if refresh_view and current_screen == SCREEN_GAME and state:
+		_refresh_game()
+	return changed
+
+
+func _selected_entity_is_valid(key: String) -> bool:
+	if key.is_empty():
+		return true
+	var current_identity := _entity_identity_for_key(key)
+	if current_identity.is_empty():
+		return false
+	return (
+		selected_entity_identity.is_empty()
+		or selected_entity_identity == current_identity
+	)
+
+
+func _entity_identity_for_key(key: String) -> String:
+	if state == null or key.is_empty():
+		return ""
+	if key.begins_with("hand:"):
+		var index_text := key.trim_prefix("hand:")
+		if not index_text.is_valid_int() or current_view_player not in [0, 1]:
+			return ""
+		var hand_index := index_text.to_int()
+		var hand := state.get_player(current_view_player).hand
+		if hand_index < 0 or hand_index >= hand.size():
+			return ""
+		return "hand:%d:%d:%s" % [
+			current_view_player,
+			hand_index,
+			str(hand[hand_index]),
+		]
+	if key.begins_with("pokemon:"):
+		var parts := key.split(":")
+		if parts.size() != 3 or not str(parts[1]).is_valid_int():
+			return ""
+		var player_idx := int(parts[1])
+		if player_idx not in [0, 1]:
+			return ""
+		var slot_name := str(parts[2])
+		var pokemon := state.get_player(player_idx).get_pokemon(slot_name)
+		if pokemon == null:
+			return ""
+		return "pokemon:%d:%s:%s" % [player_idx, slot_name, pokemon.card_id]
+	if key == "stadium":
+		return (
+			"stadium:%s" % state.stadium_card_id
+			if not state.stadium_card_id.is_empty()
+			else ""
+		)
+	return ""
 
 
 func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 	_play_click()
 	var key := "pokemon:%d:%s" % [player_idx, slot]
-	selected_entity_key = "" if selected_entity_key == key else key
+	if selected_entity_key == key:
+		selected_entity_key = ""
+		selected_entity_identity = ""
+	else:
+		selected_entity_key = key
+		selected_entity_identity = _entity_identity_for_key(key)
+	_refresh_game()
 	if battle_screen:
 		if selected_entity_key.is_empty():
 			battle_screen.hide_card_detail()
@@ -2294,7 +2407,6 @@ func _select_pokemon(player_idx: int, slot: String, card_id: String) -> void:
 				card_id,
 				state.get_player(player_idx).get_pokemon(slot) if state else null,
 			)
-	_refresh_game()
 
 
 func _show_card_detail(card_id: String) -> void:
@@ -2989,8 +3101,8 @@ func _show_toast(message: String, is_error: bool = false) -> void:
 	else:
 		toast_label.remove_theme_color_override("font_color")
 	_layout_toast()
-	# The battle rail finishes its container layout at the end of the frame.
-	# Re-evaluate once so a toast shown while entering battle uses the final rail rect.
+	# The battle header finishes its container layout at the end of the frame.
+	# Re-evaluate once so a toast shown while entering battle uses the final header gap.
 	call_deferred("_layout_toast")
 	toast_label.visible = true
 	if not FrontendMotion.decorative_motion_enabled():
@@ -3204,14 +3316,35 @@ func _layout_toast(
 
 	toast_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	if current_screen == SCREEN_GAME and battle_screen and is_instance_valid(battle_screen):
-		var rail := battle_screen.log_panel as Control
-		if rail and rail.size.x >= 180.0 and rail.size.y >= 80.0:
-			var rail_position := rail.global_position - global_position
-			var battle_width := clampf(rail.size.x - 16.0, 200.0, 264.0)
-			var battle_height := _toast_content_height(battle_width, 48.0, 76.0)
-			toast_label.position = rail_position + Vector2(8.0, 8.0)
-			toast_label.size = Vector2(battle_width, minf(battle_height, rail.size.y - 16.0))
-			return
+		# The log is now a drawer layered over the right edge of the table. Anchoring
+		# battle feedback to that legacy panel puts confirmations over the deck and
+		# discard zones even while the drawer is closed. Use the reserved header gap
+		# between the menu and phase status instead; it remains outside card play.
+		var menu_button := (
+			battle_screen.header.menu_button as Control
+			if battle_screen.header
+			else null
+		)
+		var turn_status := (
+			battle_screen.header.turn_label as Control
+			if battle_screen.header
+			else null
+		)
+		if menu_button and turn_status:
+			var menu_rect := menu_button.get_global_rect()
+			var status_rect := turn_status.get_global_rect()
+			var gap_left := menu_rect.end.x + 12.0
+			var gap_right := status_rect.position.x - 12.0
+			var gap_width := gap_right - gap_left
+			if gap_width >= 180.0:
+				var battle_width := minf(300.0, gap_width)
+				var battle_height := _toast_content_height(battle_width, 44.0, 52.0)
+				toast_label.position = Vector2(
+					gap_left + (gap_width - battle_width) * 0.5,
+					menu_rect.get_center().y - battle_height * 0.5,
+				) - global_position
+				toast_label.size = Vector2(battle_width, battle_height)
+				return
 
 	# Front-end pages have no command rail, so retain a centered safe-area status chip.
 	var available_width := maxf(1.0, logical_size.x - left - right - 32.0)

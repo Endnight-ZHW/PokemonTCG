@@ -36,10 +36,17 @@ var _compact_layout := false
 var _last_tracked_source_rect := Rect2()
 var _icon_thumbnail_cache: Dictionary[int, Texture2D] = {}
 
+const SOURCE_OVERLAP_BASE_PENALTY := 1_000_000_000.0
+const SOURCE_OVERLAP_AREA_WEIGHT := 1000.0
+const PANEL_CONTENT_HORIZONTAL_MARGIN := 20.0
+
 
 func _ready() -> void:
 	_resolve_nodes()
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	# Only the visible Panel should participate in GUI hit testing. A full-screen
+	# STOP root steals clicks from the battle menu before BattleTable can dismiss
+	# the popover; IGNORE still lets Panel and its action buttons receive input.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_process(false)
 	visible = false
 	var viewport := get_viewport()
@@ -82,13 +89,13 @@ func show_for_control(
 	var tracked_avoid_rects := _tracked_avoid_rects()
 	_present(
 		rows,
-		source_control.get_global_rect(),
+		_control_global_bounds(source_control),
 		safe_rect,
 		tracked_avoid_rects,
 		title,
 		hint,
 	)
-	_last_tracked_source_rect = source_control.get_global_rect()
+	_last_tracked_source_rect = _control_global_bounds(source_control)
 	set_process(true)
 
 
@@ -120,6 +127,30 @@ func reposition(
 		_layout_popover()
 
 
+## Refreshes both geometry and the tracked Control references. Use this when a
+## dynamic surface such as the detail panel or log drawer becomes visible after
+## the popover was first presented.
+func reposition_for_control(
+	source_control: Control,
+	safe_rect: Rect2 = Rect2(),
+	avoid_controls: Array = [],
+) -> void:
+	if source_control == null or not is_instance_valid(source_control):
+		return
+	_source_control_ref = weakref(source_control)
+	_avoid_control_refs.clear()
+	for value in avoid_controls:
+		if value is Control and is_instance_valid(value):
+			_avoid_control_refs.append(weakref(value))
+	_last_tracked_source_rect = _control_global_bounds(source_control)
+	reposition(
+		_last_tracked_source_rect,
+		safe_rect,
+		_tracked_avoid_rects(),
+	)
+	set_process(visible)
+
+
 func refresh_position() -> void:
 	if visible:
 		_layout_popover()
@@ -145,6 +176,46 @@ func is_compact_layout() -> bool:
 
 func button_count() -> int:
 	return _rows.size()
+
+
+## True when the current content offers at least one action the player can run.
+## This only inspects presentation data and never changes action state.
+func has_enabled_action() -> bool:
+	for row in _rows:
+		if bool(row.get("disabled", false)):
+			continue
+		var action_value: Variant = row.get("action")
+		if action_value is GameAction or action_value is Dictionary:
+			return true
+	return false
+
+
+## Informational popovers (including all-disabled rows) may be treated as
+## non-modal by the table without changing the meaning of any action button.
+func is_informational_only() -> bool:
+	return not has_enabled_action()
+
+
+## Uses the tracked Control's inverse canvas transform so scaled or rotated
+## cards are hit-tested against their real local bounds. Rect-only callers fall
+## back to the source rectangle supplied to show_actions().
+func source_contains_global_point(global_point: Vector2) -> bool:
+	if _source_control_ref != null:
+		var source_control = _source_control_ref.get_ref()
+		if (
+			source_control is Control
+			and is_instance_valid(source_control)
+			and source_control.is_visible_in_tree()
+		):
+			var local_point: Vector2 = (
+				(source_control as Control)
+				.get_global_transform_with_canvas()
+				.affine_inverse()
+			) * global_point
+			return Rect2(Vector2.ZERO, (source_control as Control).size).has_point(
+				local_point
+			)
+	return _source_rect.has_point(global_point)
 
 
 func overlaps_avoid_rects() -> bool:
@@ -216,6 +287,7 @@ func _action_button(row: Dictionary) -> Button:
 	button.custom_minimum_size = Vector2(0.0, action_button_height)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.text = label
+	button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	button.tooltip_text = str(row.get("hint", ""))
 	button.accessibility_name = label
 	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -276,6 +348,7 @@ func _layout_popover() -> void:
 
 	panel.custom_minimum_size = panel_size
 	panel.size = panel_size
+	_sync_action_content_width(panel_size.x)
 	panel.global_position = placement.get("position", _safe_rect.position)
 	current_placement = str(placement.get("direction", "compact"))
 	if _compact_layout and not current_placement.begins_with("compact_"):
@@ -304,14 +377,15 @@ func _desired_panel_size(compact_layout: bool) -> Vector2:
 	return Vector2(width, height)
 
 
-## Returns the first non-overlapping placement in the required order:
-## above, right, left, below.
+## Keep actions spatially attached to the selected card. The stable placement is
+## centered directly above the source; only a card against the top safe edge may
+## use the centered below fallback. Avoid rectangles remain available for
+## diagnostics, but must not make the action UI jump to an unrelated board area.
 func _preferred_placement(panel_size: Vector2) -> Dictionary:
-	for candidate in _placement_candidates(panel_size):
-		var raw_position: Vector2 = candidate["position"]
-		var position := _clamp_to_safe_rect(raw_position, panel_size)
+	for candidate in _anchored_placement_candidates(panel_size):
+		var position: Vector2 = candidate["position"]
 		var rect := Rect2(position, panel_size)
-		if not _collides(rect):
+		if _safe_rect.encloses(rect) and not rect.intersects(_source_rect.grow(2.0)):
 			return {
 				"valid": true,
 				"position": position,
@@ -320,34 +394,25 @@ func _preferred_placement(panel_size: Vector2) -> Dictionary:
 	return {"valid": false}
 
 
-func _placement_candidates(panel_size: Vector2) -> Array[Dictionary]:
+func _anchored_placement_candidates(panel_size: Vector2) -> Array[Dictionary]:
 	var center := _source_rect.get_center()
+	var centered_x := clampf(
+		center.x - panel_size.x * 0.5,
+		_safe_rect.position.x,
+		maxf(_safe_rect.position.x, _safe_rect.end.x - panel_size.x),
+	)
 	return [
 		{
 			"direction": "above",
 			"position": Vector2(
-				center.x - panel_size.x * 0.5,
+				centered_x,
 				_source_rect.position.y - anchor_gap - panel_size.y,
 			),
 		},
 		{
-			"direction": "right",
+			"direction": "below_fallback",
 			"position": Vector2(
-				_source_rect.end.x + anchor_gap,
-				center.y - panel_size.y * 0.5,
-			),
-		},
-		{
-			"direction": "left",
-			"position": Vector2(
-				_source_rect.position.x - anchor_gap - panel_size.x,
-				center.y - panel_size.y * 0.5,
-			),
-		},
-		{
-			"direction": "below",
-			"position": Vector2(
-				center.x - panel_size.x * 0.5,
+				centered_x,
 				_source_rect.end.y + anchor_gap,
 			),
 		},
@@ -357,43 +422,22 @@ func _placement_candidates(panel_size: Vector2) -> Array[Dictionary]:
 func _nearest_free_placement(panel_size: Vector2) -> Dictionary:
 	var best_position := _safe_rect.position
 	var best_score := INF
-	var step := 24.0
-	var max_x := maxf(_safe_rect.position.x, _safe_rect.end.x - panel_size.x)
-	var max_y := maxf(_safe_rect.position.y, _safe_rect.end.y - panel_size.y)
-	var y := _safe_rect.position.y
-	while y <= max_y + 0.1:
-		var x := _safe_rect.position.x
-		while x <= max_x + 0.1:
-			var position := Vector2(minf(x, max_x), minf(y, max_y))
-			var rect := Rect2(position, panel_size)
-			if not _collides(rect):
-				var score := rect.get_center().distance_squared_to(_source_rect.get_center())
-				if score < best_score:
-					best_score = score
-					best_position = position
-			x += step
-		y += step
-	if best_score < INF:
-		return {
-			"valid": true,
-			"position": best_position,
-			"direction": "free",
-		}
-
-	# Extremely small safe areas may have no collision-free solution. Keep the
-	# panel in bounds and choose the candidate with the least covered target area.
-	for candidate in _placement_candidates(panel_size):
+	var best_direction := "above"
+	# Extremely small safe areas may have no collision-free solution. Never scan
+	# the board for an unrelated free point: keep the panel attached to the same
+	# horizontal card axis and choose only between its above/below anchors.
+	for candidate in _anchored_placement_candidates(panel_size):
 		var position := _clamp_to_safe_rect(candidate["position"], panel_size)
 		var rect := Rect2(position, panel_size)
 		var score := _collision_area(rect)
 		if score < best_score:
 			best_score = score
 			best_position = position
-			current_placement = str(candidate["direction"])
+			best_direction = str(candidate["direction"])
 	return {
 		"valid": false,
 		"position": best_position,
-		"direction": current_placement if not current_placement.is_empty() else "fallback",
+		"direction": best_direction,
 	}
 
 
@@ -415,7 +459,13 @@ func _collides(rect: Rect2) -> bool:
 
 
 func _collision_area(rect: Rect2) -> float:
-	var result := _intersection_area(rect, _source_rect.grow(2.0))
+	var source_overlap := _intersection_area(rect, _source_rect.grow(2.0))
+	var result := 0.0
+	if source_overlap > 0.0:
+		# Covering the source card prevents a reliable second click. Prefer
+		# overlapping every ordinary avoid rect before covering even a sliver of it.
+		result += SOURCE_OVERLAP_BASE_PENALTY
+		result += source_overlap * SOURCE_OVERLAP_AREA_WEIGHT
 	for avoid_rect in _avoid_rects:
 		result += _intersection_area(rect, avoid_rect.grow(2.0))
 	return result
@@ -442,12 +492,30 @@ func _set_compact_layout(value: bool) -> void:
 		from_container.remove_child(child)
 		to_container.add_child(child)
 		if child is Button:
+			(child as Button).size_flags_horizontal = (
+				Control.SIZE_SHRINK_CENTER
+				if value
+				else Control.SIZE_EXPAND_FILL
+			)
 			(child as Button).custom_minimum_size = Vector2(
 				112.0 if value else 0.0,
 				action_button_height,
 			)
 	action_scroll.visible = not value and not _rows.is_empty()
 	compact_scroll.visible = value and not _rows.is_empty()
+
+
+func _sync_action_content_width(panel_width: float) -> void:
+	var content_width := maxf(0.0, panel_width - PANEL_CONTENT_HORIZONTAL_MARGIN)
+	action_buttons.custom_minimum_size.x = content_width
+	compact_action_buttons.custom_minimum_size.x = content_width
+	# In the normal vertical layout every action occupies the panel's full inner
+	# width. The compact horizontal layout deliberately keeps touch-sized rows and
+	# scrolls them instead of shrinking their labels.
+	for child_value in action_buttons.get_children():
+		var button := child_value as Button
+		if button:
+			button.custom_minimum_size.x = content_width
 
 
 func _update_pointer() -> void:
@@ -491,7 +559,7 @@ func _process(_delta: float) -> void:
 	if not (source_control is Control) or not is_instance_valid(source_control):
 		dismiss()
 		return
-	var next_source_rect: Rect2 = source_control.get_global_rect()
+	var next_source_rect: Rect2 = _control_global_bounds(source_control)
 	var next_avoid_rects := _tracked_avoid_rects()
 	if (
 		next_source_rect != _last_tracked_source_rect
@@ -504,22 +572,22 @@ func _process(_delta: float) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	var pointer := event as InputEventMouseButton
 	if (
-		event is InputEventMouseButton
-		and event.pressed
-		and event.button_index == MOUSE_BUTTON_LEFT
-		and not panel_global_rect().has_point(get_global_mouse_position())
+		pointer == null
+		or not pointer.pressed
+		or pointer.button_index != MOUSE_BUTTON_LEFT
 	):
-		outside_pressed.emit(get_global_mouse_position())
-		accept_event()
-		dismiss()
-	elif event is InputEventScreenTouch and event.pressed:
-		var touch := event as InputEventScreenTouch
-		var global_touch: Vector2 = get_global_transform_with_canvas() * touch.position
-		if not panel_global_rect().has_point(global_touch):
-			outside_pressed.emit(global_touch)
-			accept_event()
-			dismiss()
+		return
+	# Use the event coordinate instead of the process-global mouse cache. Touch
+	# emulation and headless input can update that cache one frame later, which
+	# otherwise makes an outside press nondeterministically look inside the panel.
+	var global_pointer := get_global_transform_with_canvas() * pointer.position
+	if panel_global_rect().has_point(global_pointer):
+		return
+	outside_pressed.emit(global_pointer)
+	accept_event()
+	dismiss()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -558,6 +626,25 @@ func _rect_array(values: Array) -> Array[Rect2]:
 		if value is Rect2:
 			result.append(value)
 	return result
+
+
+## Control.get_global_rect() does not describe the visual bounds of a scaled or
+## rotated card. Transform all four corners so the anchor follows the card the
+## player actually sees during hand fan and transition animations.
+func _control_global_bounds(control: Control) -> Rect2:
+	var transform := control.get_global_transform_with_canvas()
+	var corners := PackedVector2Array([
+		transform * Vector2.ZERO,
+		transform * Vector2(control.size.x, 0.0),
+		transform * control.size,
+		transform * Vector2(0.0, control.size.y),
+	])
+	var minimum := corners[0]
+	var maximum := corners[0]
+	for corner in corners:
+		minimum = minimum.min(corner)
+		maximum = maximum.max(corner)
+	return Rect2(minimum, maximum - minimum)
 
 
 func _clear_buttons(container: Container) -> void:

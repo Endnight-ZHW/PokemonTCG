@@ -14,16 +14,7 @@
 [ext_resource type="PackedScene" path="res://scenes/battle/components/card_action_popover.tscn" id="13_popover"]
 
 [sub_resource type="StyleBoxFlat" id="Style_board"]
-bg_color = Color(0.031, 0.075, 0.055, 1)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.161, 0.298, 0.208, 1)
-corner_radius_top_left = 14
-corner_radius_top_right = 14
-corner_radius_bottom_right = 14
-corner_radius_bottom_left = 14
+bg_color = Color(0.012, 0.023, 0.043, 1)
 
 [sub_resource type="Animation" id="Animation_reset"]
 resource_name = "RESET"
@@ -63,31 +54,46 @@ grow_vertical = 2
 editor_description = "战斗桌面组合组件。承载牌桌、固定牌位、牌区、手牌、系统按钮、日志、贴卡动作浮层和表现层；BattleScreen 作为兼容门面转发到这里。"
 script = ExtResource("1_battle")
 
-[node name="BattleRoot" type="VBoxContainer" parent="."]
+[node name="BattleRoot" type="Control" parent="."]
+mouse_filter = 2
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 8
 
 [node name="Header" parent="BattleRoot" instance=ExtResource("7_header")]
+z_index = 301
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 68.0
+grow_horizontal = 2
 
-[node name="Body" type="HBoxContainer" parent="BattleRoot"]
-layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 10
+[node name="Body" type="Control" parent="BattleRoot"]
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="BoardPanel" type="PanelContainer" parent="BattleRoot/Body"]
 unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 theme_override_styles/panel = SubResource("Style_board")
 
 [node name="BoardCanvas" type="Control" parent="BattleRoot/Body/BoardPanel"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(920, 700)
+mouse_filter = 2
 layout_mode = 2
 clip_contents = true
 editor_description = "牌桌坐标空间。运行时根据可用尺寸重排，但可以在这里查看所有固定牌位和牌区。"
@@ -355,12 +361,11 @@ custom_minimum_size = Vector2(668, 156)
 layout_mode = 2
 
 [node name="BattleHUD" parent="BattleRoot/Body" instance=ExtResource("8_hud")]
+z_index = 92
+layout_mode = 0
 
 [node name="LogPanel" parent="BattleRoot/Body/BattleHUD" instance=ExtResource("10_log")]
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
+visible = false
 
 [node name="OverlayPanels" type="Control" parent="."]
 z_index = 110
@@ -391,11 +396,13 @@ script = ExtResource("5_effect")
 [node name="PresentationInputBlocker" type="Control" parent="."]
 unique_name_in_owner = true
 visible = false
+z_index = 300
 mouse_filter = 0
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_top = 68.0
 grow_horizontal = 2
 grow_vertical = 2
 

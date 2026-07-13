@@ -23,7 +23,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 0
+mouse_filter = 2
 z_index = 100
 visible = false
 editor_description = "牌桌根层上的贴卡动作浮层。按钮不会参与 CardView 的最小尺寸计算。"
@@ -111,6 +111,8 @@ vertical_scroll_mode = 0
 [node name="CompactActionButtons" type="HBoxContainer" parent="Panel/Margin/Content/CompactScroll"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 4
+alignment = 1
 
 [connection signal="theme_changed" from="." to="." method="_on_viewport_size_changed"]

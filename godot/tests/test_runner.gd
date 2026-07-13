@@ -101,6 +101,9 @@ func _run_phase_zero_tests() -> void:
 		"Android orientation must be landscape")
 	_check(ProjectSettings.get_setting("display/window/stretch/aspect") == "expand",
 		"Window stretch aspect must support wide mobile displays")
+	_check(bool(ProjectSettings.get_setting(
+		"input_devices/pointing/emulate_mouse_from_touch", false)),
+		"Android touch input must emulate mouse events for shared card gesture handling")
 	_check(not bool(ProjectSettings.get_setting(
 		"gui/theme/default_font_multichannel_signed_distance_field", false)),
 		"Default font MSDF must stay disabled for Android Compatibility text")
@@ -1984,6 +1987,21 @@ func _run_phase_three_tests() -> void:
 			and ui.battle_screen.board_canvas.size == board_size_before_preview,
 			"Tapping a card did not enter card-source target selection",
 		)
+		setup_detail.close_button.pressed.emit()
+		_check(
+			ui.selected_entity_key.is_empty()
+			and not setup_hand_view.selected
+			and not ui.battle_screen.table.action_popover.visible
+			and not setup_detail.visible,
+			"Closing card detail did not clear Main's authoritative selection",
+		)
+		setup_hand_view.activated.emit(setup_card_id, setup_hand_index, 0, "")
+		_check(
+			ui.selected_entity_key == "hand:%d" % setup_hand_index
+			and setup_hand_view.selected
+			and setup_detail.is_showing_card(),
+			"Re-selecting a card after closing detail did not restore interaction",
+		)
 		setup_hand_view.activated.emit(setup_card_id, setup_hand_index, 0, "")
 		_check(
 			ui.selected_entity_key.is_empty()
@@ -2006,6 +2024,51 @@ func _run_phase_three_tests() -> void:
 			ui.battle_screen.table.all_card_actions_reachable_from_visible_cards(),
 			"Card interaction index did not refresh after a setup action",
 		)
+		var unavailable_hand_view: CardView
+		for candidate_view_value in ui.battle_screen.hand_views:
+			var candidate_view := candidate_view_value as CardView
+			if candidate_view == null or not candidate_view.visible:
+				continue
+			var candidate_key := "hand:%d" % candidate_view.hand_index
+			if ui.battle_screen.table.interaction_router.rows_for_source(
+				candidate_key
+			).is_empty():
+				unavailable_hand_view = candidate_view
+				break
+		_check(
+			unavailable_hand_view != null,
+			"Setup fixture did not expose a non-actionable hand card",
+		)
+		if unavailable_hand_view:
+			var unavailable_card_id := unavailable_hand_view.card_id
+			var unavailable_key := "hand:%d" % unavailable_hand_view.hand_index
+			unavailable_hand_view.activated.emit(
+				unavailable_card_id,
+				unavailable_hand_view.hand_index,
+				0,
+				"",
+			)
+			_check(
+				ui.selected_entity_key == unavailable_key
+				and unavailable_hand_view.selected
+				and setup_detail.is_showing_card()
+				and ui.battle_screen.table.action_popover.visible
+				and ui.battle_screen.table.action_popover.is_informational_only(),
+				"A non-actionable card did not enter inspectable selected state",
+			)
+			unavailable_hand_view.activated.emit(
+				unavailable_card_id,
+				unavailable_hand_view.hand_index,
+				0,
+				"",
+			)
+			_check(
+				ui.selected_entity_key.is_empty()
+				and not unavailable_hand_view.selected
+				and not setup_detail.visible
+				and not ui.battle_screen.table.action_popover.visible,
+				"Tapping a selected non-actionable card did not clear all interaction",
+			)
 		var active_view: CardView = ui.battle_screen.table.get_slot_view(0, "active")
 		if active_view and ui.state.players[0].active:
 			var active_card_id := str(ui.state.players[0].active.card_id)
@@ -5204,12 +5267,15 @@ func _run_visual_upgrade_tests() -> void:
 	)
 	_check(
 		not battle_playmat_source.contains("lip_rect")
-		and battle_playmat_source.contains("_draw_bench_outline_without_top")
-		and battle_playmat_source.contains("var top_hairline")
+		and not battle_playmat_source.contains("_draw_bench_outline_without_top")
+		and battle_playmat_source.contains("func _draw_bench_tray")
 		and battle_playmat_source.contains(
-			"draw_line(points[0], points[1], top_hairline, 1.0)"
+			"_draw_rounded_panel(rect, tray_fill, tray_border, 1.5, 8.0)"
+		)
+		and battle_playmat_source.contains(
+			"var lane_y := rect.end.y - 2.0 if side == \"opponent\" else rect.position.y + 2.0"
 		),
-		"Bench trays lost the 1px top hairline or restored the heavy top lip",
+		"Bench trays lost the shallow rounded treatment or restored the legacy beveled lip",
 	)
 	var expected_energy_icon_paths := {
 		"Grass": "res://assets/ui/energy/grass.png",
@@ -5893,25 +5959,31 @@ func _run_visual_upgrade_tests() -> void:
 		"System back dismissed the non-cancellable hot-seat privacy overlay")
 	privacy_ui._finish_modal_close(privacy_ui._modal_generation)
 	privacy_ui._refresh_game()
-	# The synchronous test runner has no rendered container pass. Seed the final
-	# right-rail geometry that the runtime establishes at the end of the frame.
-	privacy_ui.battle_screen.log_panel.size = Vector2(260.0, 360.0)
-	privacy_ui.battle_screen.log_panel.global_position = Vector2(1000.0, 112.0)
-	privacy_ui.battle_screen.header.size = Vector2(1280.0, 80.0)
-	privacy_ui.battle_screen.header.global_position = Vector2.ZERO
+	# The synchronous runner has no rendered container pass. Seed the menu and
+	# turn-status rectangles that bound the final battle-header feedback gap.
+	var battle_menu: Button = privacy_ui.battle_screen.header.menu_button
+	var battle_turn_status: Label = privacy_ui.battle_screen.header.turn_label
+	battle_menu.position = Vector2(12.0, 10.0)
+	battle_menu.size = Vector2(84.0, 48.0)
+	battle_turn_status.position = Vector2(620.0, 12.0)
+	battle_turn_status.size = Vector2(292.0, 44.0)
 	privacy_ui._show_toast("能量已附着。")
 	privacy_ui._layout_toast(Vector2(1280.0, 720.0), 0, 0, 0, 0)
 	var battle_toast_rect: Rect2 = privacy_ui.toast_label.get_global_rect()
-	var battle_log_rect: Rect2 = privacy_ui.battle_screen.log_panel.get_global_rect()
+	var battle_menu_rect: Rect2 = battle_menu.get_global_rect()
+	var battle_turn_rect: Rect2 = battle_turn_status.get_global_rect()
 	_check(
-		battle_log_rect.encloses(battle_toast_rect)
-		and not battle_toast_rect.intersects(
-			privacy_ui.battle_screen.header.get_global_rect()
-		),
-		"Battle toast still overlaps the header/table instead of using the log rail: toast=%s log=%s header=%s screen=%s" % [
+		battle_toast_rect.position.x >= battle_menu_rect.end.x + 12.0
+		and battle_toast_rect.end.x <= battle_turn_rect.position.x - 12.0
+		and not battle_toast_rect.intersects(battle_menu_rect)
+		and not battle_toast_rect.intersects(battle_turn_rect)
+		and battle_toast_rect.size.x <= 300.0
+		and battle_toast_rect.size.y >= 44.0
+		and battle_toast_rect.size.y <= 52.0,
+		"Battle toast escaped the reserved header gap: toast=%s menu=%s turn=%s screen=%s" % [
 			battle_toast_rect,
-			battle_log_rect,
-			privacy_ui.battle_screen.header.get_global_rect(),
+			battle_menu_rect,
+			battle_turn_rect,
 			privacy_ui.current_screen,
 		],
 	)
@@ -5937,7 +6009,41 @@ func _run_visual_upgrade_tests() -> void:
 		privacy_ui.battle_screen.detail_panel.visible,
 		"Battle floating card preview could not be reopened after the inspector",
 	)
-	privacy_ui._show_pause_overlay()
+	# Exercise the complete GUI signal chain rather than calling Main directly:
+	# Header -> BattleTable -> BattleScreen -> Main. The header must also stay
+	# above every table-local surface so touch hit testing cannot be intercepted.
+	var battle_root_surface := privacy_ui.battle_screen.table.get_node(
+		"BattleRoot"
+	) as Control
+	var battle_body_surface := privacy_ui.battle_screen.table.get_node(
+		"BattleRoot/Body"
+	) as Control
+	var battle_action_panel := privacy_ui.battle_screen.table.action_popover.get_node(
+		"Panel"
+	) as Control
+	_check(
+		privacy_ui.battle_screen.header.z_index
+		> privacy_ui.battle_screen.table.action_popover.z_index
+		and privacy_ui.battle_screen.header.z_index
+		> privacy_ui.battle_screen.input_blocker.z_index
+		and battle_root_surface.mouse_filter == Control.MOUSE_FILTER_IGNORE
+		and battle_body_surface.mouse_filter == Control.MOUSE_FILTER_IGNORE
+		and privacy_ui.battle_screen.board_panel.mouse_filter
+		== Control.MOUSE_FILTER_IGNORE
+		and privacy_ui.battle_screen.board_canvas.mouse_filter
+		== Control.MOUSE_FILTER_IGNORE
+		and privacy_ui.battle_screen.table.action_popover.mouse_filter
+		== Control.MOUSE_FILTER_IGNORE
+		and battle_action_panel.mouse_filter == Control.MOUSE_FILTER_STOP
+		and privacy_ui.battle_screen.input_blocker.offset_top >= 68.0,
+		"Battle menu can be intercepted by a table-local overlay",
+	)
+	privacy_ui.battle_screen.header.menu_button.pressed.emit()
+	_check(
+		privacy_ui.modal_layer.visible
+		and privacy_ui.modal_title.text == "对局菜单",
+		"Battle menu button did not open the pause modal through the public signal chain",
+	)
 	_check(privacy_ui.modal_layer.z_index > privacy_ui.battle_screen.z_index + 20,
 		"Pause menu modal layer can be drawn under battle overlay panels")
 	_check(
@@ -6077,6 +6183,15 @@ func _run_visual_upgrade_tests() -> void:
 			rows.append({"action": action, "label": action.action})
 		battle.update_view(state, 0, rows, "", false, "local")
 		battle._layout_board()
+		var runtime_popover_safe_rect: Rect2 = battle.table._safe_popover_rect()
+		var runtime_header_rect: Rect2 = battle.header.get_global_rect()
+		_check(
+			runtime_popover_safe_rect.size.y <= 0.0
+			or runtime_header_rect.size.y <= 0.0
+			or runtime_popover_safe_rect.position.y
+			>= runtime_header_rect.end.y + 8.0 - 0.01,
+			"CardActionPopover safe area still extends behind the battle header",
+		)
 		var subtype_catalog := CardCatalog.new(true)
 		subtype_catalog.cards["test-subtype-stadium"] = {
 			"name": "测试竞技场",
@@ -6152,8 +6267,8 @@ func _run_visual_upgrade_tests() -> void:
 		_check(
 			actionable_stadium.is_actionable()
 			and actionable_stadium_style != null
-			and actionable_stadium_style.border_width_left >= 3
-			and actionable_stadium_style.shadow_size >= 5
+			and actionable_stadium_style.border_width_left == 2
+			and actionable_stadium_style.shadow_size == 3
 			and not actionable_stadium.action_button.visible,
 			"An activatable Stadium was missing the label-free actionable outline",
 		)
@@ -6265,19 +6380,34 @@ func _run_visual_upgrade_tests() -> void:
 		battle.table.action_popover.dismiss()
 		_check(
 			not battle.table.action_popover.visible
-			and battle.table._current_task_hint() == "点击卡牌重新打开操作",
-			"Dismissing a direct-action popover left a misleading task hint",
+			and battle.table._current_task_hint() == "再次点击卡牌取消选择",
+			"Dismissed card actions did not advertise the same-card cancel gesture",
 		)
-		battle.table._on_card_activated(
+		var actionable_same_card_clear := {}
+		battle.selection_clear_requested.connect(func(expected_key: String) -> void:
+			actionable_same_card_clear["key"] = expected_key
+			battle.update_view(
+				single_target_state,
+				0,
+				attack_only_rows,
+				"",
+				false,
+				"local",
+			)
+		, CONNECT_ONE_SHOT)
+		battle.own_active.activated.emit(
 			single_target_state.players[0].active.card_id,
 			-1,
 			0,
 			"active",
 		)
 		_check(
-			battle.table.action_popover.visible
-			and battle.table._popover_dismissed_source_key.is_empty(),
-			"Tapping a dismissed source did not reopen its card actions",
+			str(actionable_same_card_clear.get("key", ""))
+			== "pokemon:0:active"
+			and battle.selected_entity_key.is_empty()
+			and not battle.own_active.selected
+			and not battle.table.action_popover.visible,
+			"Tapping a selected actionable card did not clear its interaction",
 		)
 		battle.update_view(state, 0, rows, "", false, "local")
 		var floating_detail := battle.detail_panel as BattleDetailPanel
@@ -6289,6 +6419,14 @@ func _run_visual_upgrade_tests() -> void:
 			and not battle.hud.is_ancestor_of(floating_detail)
 			and battle.find_child("ActionPanel", true, false) == null,
 			"Battle detail preview is not a hidden root overlay independent of the HUD",
+		)
+		battle.update_view(
+			state,
+			0,
+			rows,
+			"pokemon:0:active",
+			false,
+			"local",
 		)
 		var preview_board_size: Vector2 = battle.board_canvas.size
 		battle.show_card_detail(state.players[0].active.card_id, state.players[0].active)
@@ -6328,6 +6466,112 @@ func _run_visual_upgrade_tests() -> void:
 				battle.board_canvas.size,
 			],
 		)
+		var preview_opponent_prizes := battle.zones["opponent_prizes"] as ZoneView
+		var preview_own_prizes := battle.zones["own_prizes"] as ZoneView
+		var preview_stadium := battle.zones["stadium"] as ZoneView
+		var preview_detail_position := floating_detail.position
+		var preview_detail_local_rect := Rect2(
+			floating_detail.position,
+			floating_detail.size * floating_detail.scale,
+		)
+		var preview_opponent_prize_bounds: Rect2 = battle.table._visual_rect_in_control(
+			preview_opponent_prizes,
+			preview_opponent_prizes.get_stack_visual_max_rect().grow(6.0),
+			battle.table,
+		)
+		var preview_own_prize_bounds: Rect2 = battle.table._visual_rect_in_control(
+			preview_own_prizes,
+			preview_own_prizes.get_stack_visual_max_rect().grow(6.0),
+			battle.table,
+		)
+		var preview_stadium_bounds: Rect2 = battle.table._visual_rect_in_control(
+			preview_stadium,
+			Rect2(Vector2.ZERO, preview_stadium.size).grow(4.0),
+			battle.table,
+		)
+		battle.update_view(
+			state,
+			0,
+			rows,
+			"pokemon:1:active",
+			false,
+			"local",
+		)
+		battle.show_card_detail(
+			state.players[1].active.card_id,
+			state.players[1].active,
+		)
+		battle.table._layout_overlay_drawers()
+		var opponent_preview_local_rect := Rect2(
+			floating_detail.position,
+			floating_detail.size * floating_detail.scale,
+		)
+		_check(
+			floating_detail.position.distance_to(preview_detail_position) < 0.01
+			and (
+				not preview_geometry_ready
+				or (
+					not opponent_preview_local_rect.intersects(
+						preview_opponent_prize_bounds
+					)
+					and not opponent_preview_local_rect.intersects(
+						preview_own_prize_bounds
+					)
+					and not opponent_preview_local_rect.intersects(
+						preview_stadium_bounds
+					)
+					and opponent_preview_local_rect.end.x
+					<= preview_stadium_bounds.position.x
+				)
+			),
+			"Opponent-card detail moved away from the fixed prize corridor",
+		)
+		var stadium_position_before_compact := preview_stadium.position
+		# Constrain the same fixed corridor without changing the scene-tree viewport;
+		# this exercises BattleTable's compact-detail switch deterministically.
+		preview_stadium.position.x = minf(preview_stadium.position.x, 300.0)
+		battle.table._layout_detail_panel()
+		var compact_preview_rect := Rect2(
+			floating_detail.position,
+			floating_detail.size * floating_detail.scale,
+		)
+		var compact_stadium_bounds: Rect2 = battle.table._visual_rect_in_control(
+			preview_stadium,
+			Rect2(Vector2.ZERO, preview_stadium.size).grow(4.0),
+			battle.table,
+		)
+		_check(
+			not preview_geometry_ready
+			or (
+				floating_detail.is_compact_layout()
+				and floating_detail.layout_size()
+				== BattleDetailPanel.COMPACT_PANEL_SIZE
+				and floating_detail.close_button.custom_minimum_size
+				== Vector2(48.0, 48.0)
+				and not compact_preview_rect.intersects(compact_stadium_bounds)
+				and not compact_preview_rect.intersects(preview_opponent_prize_bounds)
+				and not compact_preview_rect.intersects(preview_own_prize_bounds)
+			),
+			"Constrained detail corridor did not switch to a safe compact layout",
+		)
+		preview_stadium.position = stadium_position_before_compact
+		battle.update_view(
+			state,
+			0,
+			rows,
+			"pokemon:0:active",
+			false,
+			"local",
+		)
+		battle.show_card_detail(state.players[0].active.card_id, state.players[0].active)
+		battle.table._layout_overlay_drawers()
+		_check(
+			not preview_geometry_ready
+			or preview_detail_local_rect.position.distance_to(
+				floating_detail.position
+			) < 0.01,
+			"Restoring the detail corridor did not restore its fixed anchor",
+		)
 		var live_preview_state := state.clone_state()
 		live_preview_state.players[0].active.damage_counters = 3
 		live_preview_state.players[0].active.status_conditions.append("BURNED")
@@ -6350,6 +6594,89 @@ func _run_visual_upgrade_tests() -> void:
 		var changed_hand_state := state.clone_state()
 		changed_hand_state.players[0].hand[0] = "sv1-151"
 		var no_card_actions: Array[Dictionary] = []
+		battle.update_view(
+			state,
+			0,
+			no_card_actions,
+			"hand:0",
+			false,
+			"local",
+		)
+		battle.show_card_detail(str(state.players[0].hand[0]))
+		var unavailable_same_card_clear := {}
+		battle.selection_clear_requested.connect(func(expected_key: String) -> void:
+			unavailable_same_card_clear["key"] = expected_key
+			battle.update_view(
+				state,
+				0,
+				no_card_actions,
+				"",
+				false,
+				"local",
+			)
+		, CONNECT_ONE_SHOT)
+		(battle.hand_views[0] as CardView).activated.emit(
+			str(state.players[0].hand[0]),
+			0,
+			0,
+			"",
+		)
+		_check(
+			str(unavailable_same_card_clear.get("key", "")) == "hand:0"
+			and battle.selected_entity_key.is_empty()
+			and not (battle.hand_views[0] as CardView).selected
+			and not battle.table.action_popover.visible
+			and not floating_detail.visible,
+			"Tapping a selected non-actionable hand card did not clear detail and highlight",
+		)
+		battle.update_view(
+			state,
+			0,
+			no_card_actions,
+			"pokemon:1:active",
+			false,
+			"local",
+		)
+		battle.show_card_detail(
+			state.players[1].active.card_id,
+			state.players[1].active,
+		)
+		_check(
+			battle.opponent_active.selected
+			and floating_detail.is_showing_card()
+			and battle.table.action_popover.visible
+			and battle.table.action_popover.is_informational_only()
+			and battle.opponent_active.get_disabled_reason()
+			== "对手的卡牌不能由你操作",
+			"Opponent card did not enter a visible inspect-only selected state",
+		)
+		var opponent_same_card_clear := {}
+		battle.selection_clear_requested.connect(func(expected_key: String) -> void:
+			opponent_same_card_clear["key"] = expected_key
+			battle.update_view(
+				state,
+				0,
+				no_card_actions,
+				"",
+				false,
+				"local",
+			)
+		, CONNECT_ONE_SHOT)
+		battle.opponent_active.activated.emit(
+			state.players[1].active.card_id,
+			-1,
+			1,
+			"active",
+		)
+		_check(
+			str(opponent_same_card_clear.get("key", ""))
+			== "pokemon:1:active"
+			and battle.selected_entity_key.is_empty()
+			and not battle.opponent_active.selected
+			and not battle.table.action_popover.visible
+			and not floating_detail.visible,
+			"Tapping a selected opponent card did not clear detail and highlight",
+		)
 		battle.update_view(
 			state,
 			0,
@@ -6520,29 +6847,30 @@ func _run_visual_upgrade_tests() -> void:
 				"EnergyOverflowBadge", true, false
 			) as Control
 			var occupied_width := 0.0
-			var badges_receive_hover := overflow_energy_row != null
+			var badges_are_input_transparent := overflow_energy_row != null
 			if overflow_energy_row:
 				for badge_value in overflow_energy_row.get_children():
 					var badge := badge_value as Control
 					if badge == null:
 						continue
 					occupied_width += badge.custom_minimum_size.x
-					badges_receive_hover = (
-						badges_receive_hover
-						and badge.mouse_filter != Control.MOUSE_FILTER_IGNORE
+					badges_are_input_transparent = (
+						badges_are_input_transparent
+						and badge.mouse_filter == Control.MOUSE_FILTER_IGNORE
 					)
 				occupied_width += 2.0 * float(maxi(
 					0, overflow_energy_row.get_child_count() - 1
 				))
 			_check(
 				overflow_energy_row != null
-				and overflow_energy_row.mouse_filter != Control.MOUSE_FILTER_IGNORE
+				and overflow_energy_row.mouse_filter == Control.MOUSE_FILTER_IGNORE
 				and overflow_energy_row.get_child_count() <= 4
 				and overflow_badge != null
+				and overflow_badge.mouse_filter == Control.MOUSE_FILTER_IGNORE
 				and overflow_badge.tooltip_text.contains("另有")
 				and occupied_width <= narrow_card.size.x - 10.0 + 0.01
-				and badges_receive_hover,
-				"Narrow CardView energy badges overflowed or could not receive tooltips",
+				and badges_are_input_transparent,
+				"Narrow CardView energy badges overflowed or intercepted full-card gestures",
 			)
 			_check(
 				narrow_card.tooltip_text.contains("附加能量")
@@ -6642,11 +6970,47 @@ func _run_visual_upgrade_tests() -> void:
 				and narrow_card.interaction_hint_label.text == "本回合已附能",
 				"CardView did not show the disabled reason or keep the 350ms inspector hold",
 			)
+			var gesture_probe := {"activated": 0, "detail": 0}
+			narrow_card.activated.connect(func(
+				_card_id: String,
+				_hand_index: int,
+				_player: int,
+				_slot: String,
+			) -> void:
+				gesture_probe["activated"] = int(gesture_probe["activated"]) + 1
+			)
+			narrow_card.detail_requested.connect(func(_card_id: String) -> void:
+				gesture_probe["detail"] = int(gesture_probe["detail"]) + 1
+			)
+			var gesture_press := InputEventMouseButton.new()
+			gesture_press.button_index = MOUSE_BUTTON_LEFT
+			gesture_press.pressed = true
+			gesture_press.position = Vector2(24.0, 24.0)
+			var gesture_release := InputEventMouseButton.new()
+			gesture_release.button_index = MOUSE_BUTTON_LEFT
+			gesture_release.pressed = false
+			gesture_release.position = gesture_press.position
+			narrow_card._gui_input(gesture_press)
+			narrow_card._press_msec = (
+				Time.get_ticks_msec() - CardView.LONG_PRESS_MSEC + 40
+			)
+			narrow_card._gui_input(gesture_release)
+			narrow_card._gui_input(gesture_press)
+			narrow_card._press_msec = (
+				Time.get_ticks_msec() - CardView.LONG_PRESS_MSEC - 40
+			)
+			narrow_card._gui_input(gesture_release)
+			_check(
+				int(gesture_probe["activated"]) == 1
+				and int(gesture_probe["detail"]) == 1,
+				"Mouse-emulated touch did not preserve click and 350ms long-press semantics",
+			)
 			narrow_card.set_selected(false)
 			narrow_card.configure("", null, true)
 			_check(
-				narrow_card.tooltip_text.is_empty()
-				and narrow_card.accessibility_description.is_empty()
+				narrow_card.tooltip_text == narrow_card.accessibility_description
+				and not narrow_card.tooltip_text.contains("附加能量")
+				and narrow_card.accessibility_name == "隐藏卡牌"
 				and not overflow_energy_row.visible,
 				"Reused hidden CardView leaked its previous attached-energy summary",
 			)
@@ -6759,6 +7123,134 @@ func _run_visual_upgrade_tests() -> void:
 			(battle.zones["own_discard"] as ZoneView)._stack_layer_count() >= 1,
 			"Discard pile did not expose a physical stack thickness",
 		)
+		var own_prize_zone := battle.zones["own_prizes"] as ZoneView
+		var prize_face_size := own_prize_zone.get_stack_face_size()
+		var prize_visible_rect := own_prize_zone.get_stack_visual_rect()
+		var prize_capacity_rect := own_prize_zone.get_stack_visual_max_rect()
+		_check(
+			own_prize_zone.stack_visual_max_count == 6
+			and own_prize_zone.count == 2
+			and prize_visible_rect.size.x > prize_face_size.x
+			and prize_visible_rect.size.x < prize_capacity_rect.size.x
+			and is_equal_approx(prize_visible_rect.size.y, prize_face_size.y)
+			and own_prize_zone._has_point(Vector2(
+				prize_visible_rect.end.x - 1.0,
+				prize_face_size.y * 0.5,
+			))
+			and not own_prize_zone._has_point(Vector2(
+				prize_capacity_rect.end.x - 1.0,
+				prize_face_size.y * 0.5,
+			)),
+			"Prize cards did not render or hit-test as a six-card horizontal fan",
+		)
+		var prize_endpoint := {"player": 0, "zone": "prizes"}
+		var prize_fan_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		var prize_snapshot_row: Dictionary = Dictionary(
+			Dictionary(prize_fan_snapshot.get("zones", {})).get("0:prizes", {})
+		)
+		var prize_snapshot_center: Vector2 = prize_snapshot_row.get(
+			"center", Vector2.ZERO
+		)
+		var prize_snapshot_size: Vector2 = prize_snapshot_row.get(
+			"size", Vector2.ZERO
+		)
+		battle.table._presentation_snapshot = prize_fan_snapshot
+		var prize_source_points: Array[Vector2] = battle.table._source_points_for_event(
+			prize_endpoint,
+			[],
+			own_prize_zone.count,
+			Vector2.ZERO,
+		)
+		var prize_source_sizes: Array[Vector2] = battle.table._source_sizes_for_event(
+			prize_endpoint,
+			[],
+			own_prize_zone.count,
+			Vector2(1.0, 1.0),
+		)
+		var prize_source_bounds: Rect2 = battle.table._visual_rect_in_control(
+			own_prize_zone,
+			prize_visible_rect.grow(6.0),
+			battle.effects,
+		)
+		var prize_sources_inside_fan := (
+			prize_source_points.size() == own_prize_zone.count
+			and prize_source_sizes.size() == own_prize_zone.count
+		)
+		for point in prize_source_points:
+			prize_sources_inside_fan = (
+				prize_sources_inside_fan and prize_source_bounds.has_point(point)
+			)
+		for source_size in prize_source_sizes:
+			prize_sources_inside_fan = (
+				prize_sources_inside_fan
+				and source_size.is_equal_approx(prize_face_size)
+			)
+		_check(
+			prize_snapshot_center.distance_to(
+				battle.table._zone_center("own_prizes")
+			) < 0.01
+			and prize_snapshot_size.is_equal_approx(prize_face_size)
+			and prize_sources_inside_fan,
+			"Prize presentation snapshot or outgoing animation endpoints used tray geometry",
+		)
+		var single_prize_state := state.clone_state()
+		single_prize_state.players[0].prizes = ["sv1-151"]
+		battle.update_view(single_prize_state, 0, rows, "", false, "local")
+		var single_prize_snapshot: Dictionary = battle.capture_presentation_snapshot()
+		battle.table._presentation_snapshot = single_prize_snapshot
+		var single_prize_row: Dictionary = Dictionary(
+			Dictionary(single_prize_snapshot.get("zones", {})).get("0:prizes", {})
+		)
+		var single_prize_center: Vector2 = single_prize_row.get(
+			"center", Vector2.ZERO
+		)
+		var single_prize_points: Array[Vector2] = battle.table._source_points_for_event(
+			prize_endpoint,
+			[],
+			1,
+			Vector2.ZERO,
+		)
+		_check(
+			single_prize_points.size() == 1
+			and single_prize_points[0].distance_to(single_prize_center) < 0.01,
+			"A one-card prize animation did not start at the physical face center",
+		)
+		var incoming_prize_state := state.clone_state()
+		incoming_prize_state.players[0].prizes = [
+			"sv1-151", "sv1-153", "sv1-ener-5",
+		]
+		battle.update_view(incoming_prize_state, 0, rows, "", false, "local")
+		var incoming_prize_zone := battle.zones["own_prizes"] as ZoneView
+		var incoming_prize_center: Vector2 = battle.table._zone_center("own_prizes")
+		var incoming_prize_points: Array[Vector2] = battle.table._target_points_for_event(
+			prize_endpoint,
+			[],
+			1,
+			incoming_prize_center,
+			{},
+		)
+		var incoming_prize_sizes: Array[Vector2] = battle.table._target_sizes_for_event(
+			prize_endpoint,
+			1,
+			Vector2(1.0, 1.0),
+			{},
+		)
+		var incoming_prize_bounds: Rect2 = battle.table._visual_rect_in_control(
+			incoming_prize_zone,
+			incoming_prize_zone.get_stack_visual_rect().grow(6.0),
+			battle.effects,
+		)
+		_check(
+			incoming_prize_points.size() == 1
+			and incoming_prize_sizes.size() == 1
+			and incoming_prize_bounds.has_point(incoming_prize_points[0])
+			and incoming_prize_sizes[0].is_equal_approx(
+				incoming_prize_zone.get_stack_face_size()
+			),
+			"Incoming prize animation did not land on the final fan face",
+		)
+		battle.update_view(state, 0, rows, "", false, "local")
+		battle.table._presentation_snapshot = prize_fan_snapshot
 		var texture_cache: Node = root.get_node("CardTextureCache")
 		var zone_scene := load("res://ui/zone_view.tscn") as PackedScene
 		_check(zone_scene != null, "ZoneView scene failed to load")
@@ -6801,12 +7293,19 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		_check(
 			battle.phase_advance_button.custom_minimum_size.y >= 48.0
-			and battle.hud.custom_minimum_size.x >= 232.0
-			and battle.hud.custom_minimum_size.x <= 280.0
+			and battle.hud.custom_minimum_size.x
+			>= BattlePhaseHud.DRAWER_WIDTH
+			+ BattlePhaseHud.DRAWER_GAP
+			+ BattlePhaseHud.RAIL_WIDTH
+			and battle.hud.custom_minimum_size.x
+			<= BattlePhaseHud.DRAWER_WIDTH
+			+ BattlePhaseHud.DRAWER_GAP
+			+ BattlePhaseHud.RAIL_WIDTH
+			+ 4.0
 			and battle.hud.get_node_or_null("PhasePanel") != null
 			and battle.hud.get_node_or_null("LogPanel") == battle.log_panel
 			and battle.hud.get_child_count() == 2,
-			"Right rail is not limited to one 48 px system button and the action log",
+			"Floating command dock did not reserve its rail and collapsible log drawer",
 		)
 		var rail_action := {}
 		battle.table.hud.phase_action_requested.connect(
@@ -7897,10 +8396,28 @@ func _run_visual_upgrade_tests() -> void:
 		]
 		var battle_log_panel := battle.log_panel as BattleLogPanel
 		_check(battle_log_panel != null, "Battle log panel was not typed as BattleLogPanel")
+		var battle_hud := battle.hud as BattlePhaseHud
+		_check(
+			battle_hud != null
+			and not battle_hud.is_log_drawer_open()
+			and not battle_log_panel.visible,
+			"Battle log drawer did not start collapsed",
+		)
 		battle_log_panel.size = Vector2(420, 200)
 		battle_log_panel.update_entries(long_logs)
 		_check(
-			battle_log_panel.visible
+			not battle_hud.is_log_drawer_open()
+			and not battle_log_panel.visible,
+			"Updating battle-log entries opened the drawer without user intent",
+		)
+		battle.table.action_popover.visible = true
+		battle_hud.set_log_drawer_open(true)
+		_check(
+			battle_hud.is_log_drawer_open()
+			and battle_log_panel.visible
+			and battle_hud.log_toggle_button.button_pressed
+			and battle_hud.log_toggle_button.text == "收起日志"
+			and not battle.table.action_popover.visible
 			and battle.log_label.bbcode_enabled
 			and battle.log_label.autowrap_mode == TextServer.AUTOWRAP_ARBITRARY
 			and battle.log_label.scroll_following
@@ -7919,6 +8436,30 @@ func _run_visual_upgrade_tests() -> void:
 			and battle.log_label.text.contains("最后一条很长的行动日志")
 			and battle.log_label.scroll_active,
 			"Battle log panel did not wrap, retain, and follow full entries",
+		)
+		battle_log_panel.close_button.pressed.emit()
+		_check(
+			not battle_hud.is_log_drawer_open()
+			and not battle_log_panel.visible
+			and not battle_hud.log_toggle_button.button_pressed
+			and battle_hud.log_toggle_button.text == "行动日志",
+			"Battle-log close button did not collapse the drawer and reset its toggle",
+		)
+		battle_hud.set_log_drawer_open(true)
+		var selection_before_log_outside: String = battle.table.selected_entity_key
+		var log_outside_press := InputEventMouseButton.new()
+		log_outside_press.button_index = MOUSE_BUTTON_LEFT
+		log_outside_press.pressed = true
+		log_outside_press.position = (
+			battle.board_panel.get_global_rect().position
+			+ Vector2(20.0, battle.board_panel.size.y * 0.5)
+		)
+		battle.table._input(log_outside_press)
+		_check(
+			not battle_hud.is_log_drawer_open()
+			and not battle_log_panel.visible
+			and battle.table.selected_entity_key == selection_before_log_outside,
+			"Clicking outside the battle log did not close only the drawer",
 		)
 
 		var settings_node: Node = root.get_node("AppSettings")
@@ -8407,13 +8948,21 @@ func _run_card_direct_interaction_contract_tests() -> void:
 		"卡牌操作",
 		"选择动作",
 	)
+	var anchored_panel_rect := popover.panel_global_rect()
 	_check(
 		popover.visible
 		and popover.button_count() == 5
-		and popover.current_placement == "left"
-		and safe_rect.encloses(popover.panel_global_rect())
-		and not popover.overlaps_avoid_rects(),
-		"CardActionPopover escaped the safe area or covered a legal target",
+		and popover.current_placement == "above"
+		and safe_rect.encloses(anchored_panel_rect)
+		and not anchored_panel_rect.intersects(source_rect)
+		and absf(
+			anchored_panel_rect.get_center().x - source_rect.get_center().x
+		) < 0.01
+		and absf(
+			anchored_panel_rect.end.y
+			- (source_rect.position.y - popover.anchor_gap)
+		) < 0.01,
+		"CardActionPopover was not fixed directly above its source inside the safe area",
 	)
 	var popover_buttons_are_touchable := popover.action_buttons.get_child_count() == 5
 	for child_value in popover.action_buttons.get_children():
@@ -8422,6 +8971,10 @@ func _run_card_direct_interaction_contract_tests() -> void:
 			popover_buttons_are_touchable
 			and action_button != null
 			and action_button.custom_minimum_size.y >= 48.0
+			and action_button.custom_minimum_size.x
+			>= anchored_panel_rect.size.x
+			- CardActionPopover.PANEL_CONTENT_HORIZONTAL_MARGIN
+			and action_button.alignment == HORIZONTAL_ALIGNMENT_CENTER
 			and action_button.focus_mode == Control.FOCUS_NONE
 		)
 	_check(
@@ -8457,18 +9010,21 @@ func _run_card_direct_interaction_contract_tests() -> void:
 	popover.show_actions(
 		[popover_rows[0]], source_rect, safe_rect, [], "卡牌操作", ""
 	)
-	var outside_touch := InputEventScreenTouch.new()
-	outside_touch.pressed = true
-	outside_touch.position = Vector2(50.0, 50.0)
-	popover._gui_input(outside_touch)
+	var outside_pointer := InputEventMouseButton.new()
+	outside_pointer.button_index = MOUSE_BUTTON_LEFT
+	outside_pointer.pressed = true
+	outside_pointer.position = Vector2(50.0, 50.0)
+	popover._gui_input(outside_pointer)
 	_check(
 		not popover.visible and int(dismiss_probe["count"]) == 1,
-		"Tapping blank table space did not dismiss CardActionPopover",
+		"Mouse-emulated touch on blank table space did not dismiss CardActionPopover",
 	)
 
 	var moving_source := Control.new()
 	moving_source.position = Vector2(840.0, 280.0)
 	moving_source.size = Vector2(100.0, 140.0)
+	moving_source.pivot_offset = moving_source.size * 0.5
+	moving_source.rotation = 0.08
 	root.add_child(moving_source)
 	popover.show_for_control(
 		[popover_rows[0]], moving_source, safe_rect, [], "卡牌操作", ""
@@ -8476,19 +9032,43 @@ func _run_card_direct_interaction_contract_tests() -> void:
 	var tracked_panel_before := popover.panel_global_rect()
 	moving_source.position += Vector2(-120.0, 80.0)
 	popover._process(0.0)
+	var moved_source_bounds := popover._control_global_bounds(moving_source)
+	var tracked_panel_after := popover.panel_global_rect()
 	_check(
 		popover.visible
-		and popover._last_tracked_source_rect == moving_source.get_global_rect()
-		and popover.panel_global_rect() != tracked_panel_before,
-		"CardActionPopover did not follow a moving card source",
+		and popover._last_tracked_source_rect == moved_source_bounds
+		and tracked_panel_after != tracked_panel_before
+		and popover.current_placement == "above"
+		and not tracked_panel_after.intersects(moved_source_bounds)
+		and absf(
+			tracked_panel_after.get_center().x - moved_source_bounds.get_center().x
+		) < 0.01,
+		"CardActionPopover did not stay centered above a moving transformed card",
 	)
 	popover.dismiss(false)
 	moving_source.free()
 
-	var compact_safe_rect := Rect2(48.0, 48.0, 400.0, 160.0)
+	var top_edge_source := Rect2(560.0, 56.0, 100.0, 140.0)
+	popover.show_actions(
+		[popover_rows[0]], top_edge_source, safe_rect, [], "卡牌操作", ""
+	)
+	var edge_fallback_rect := popover.panel_global_rect()
+	_check(
+		popover.current_placement == "below_fallback"
+		and safe_rect.encloses(edge_fallback_rect)
+		and not edge_fallback_rect.intersects(top_edge_source)
+		and absf(
+			edge_fallback_rect.get_center().x - top_edge_source.get_center().x
+		) < 0.01,
+		"Top-edge CardActionPopover fallback escaped the safe area or covered its source",
+	)
+	popover.dismiss(false)
+
+	var compact_safe_rect := Rect2(48.0, 48.0, 400.0, 300.0)
+	var compact_source_rect := Rect2(200.0, 200.0, 96.0, 120.0)
 	popover.show_actions(
 		popover_rows,
-		Rect2(200.0, 70.0, 96.0, 120.0),
+		compact_source_rect,
 		compact_safe_rect,
 		[],
 		"卡牌操作",
@@ -8496,9 +9076,38 @@ func _run_card_direct_interaction_contract_tests() -> void:
 	)
 	_check(
 		popover.is_compact_layout()
+		and popover.current_placement == "compact_above"
 		and compact_safe_rect.encloses(popover.panel_global_rect())
-		and popover.compact_action_buttons.get_child_count() == 5,
-		"Constrained safe area did not activate the compact horizontal popover",
+		and not popover.panel_global_rect().intersects(compact_source_rect)
+		and popover.compact_action_buttons.get_child_count() == 5
+		and not popover.current_placement.contains("free"),
+		"Constrained safe area did not activate a safe anchored compact popover",
+	)
+	popover.dismiss(false)
+	popover.show_actions(
+		[popover_rows[0]],
+		Rect2(200.0, 70.0, 96.0, 120.0),
+		Rect2(48.0, 48.0, 400.0, 160.0),
+		[],
+		"卡牌操作",
+		"",
+	)
+	var centered_compact_button := (
+		popover.compact_action_buttons.get_child(0) as Button
+	)
+	_check(
+		popover.is_compact_layout()
+		and popover.compact_action_buttons.alignment
+		== BoxContainer.ALIGNMENT_CENTER
+		and popover.compact_action_buttons.custom_minimum_size.x
+		>= popover.panel_global_rect().size.x
+		- CardActionPopover.PANEL_CONTENT_HORIZONTAL_MARGIN
+		and centered_compact_button != null
+		and centered_compact_button.size_flags_horizontal
+		== Control.SIZE_SHRINK_CENTER
+		and centered_compact_button.custom_minimum_size.y >= 48.0
+		and not popover.current_placement.contains("free"),
+		"Single-button compact CardActionPopover is not centered in its panel",
 	)
 	popover.free()
 

@@ -1,95 +1,163 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_phase_hud.gd" id="1_hud"]
 
 [sub_resource type="StyleBoxFlat" id="Style_hud"]
-bg_color = Color(0.055, 0.1, 0.17, 0.94)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.188, 0.278, 0.392, 1)
-corner_radius_top_left = 14
-corner_radius_top_right = 14
-corner_radius_bottom_right = 14
-corner_radius_bottom_left = 14
+bg_color = Color(0.025, 0.047, 0.086, 0.97)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.245, 0.431, 0.588, 0.92)
+corner_radius_top_left = 16
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 16
 content_margin_left = 10.0
-content_margin_top = 10.0
+content_margin_top = 12.0
 content_margin_right = 10.0
-content_margin_bottom = 10.0
+content_margin_bottom = 12.0
+shadow_color = Color(0, 0, 0, 0.52)
+shadow_size = 10
+shadow_offset = Vector2(-4, 3)
 
 [sub_resource type="StyleBoxFlat" id="Style_system_button"]
-bg_color = Color(0.471, 0.322, 0.106, 1)
+bg_color = Color(0.42, 0.245, 0.063, 1)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.957, 0.784, 0.29, 1)
-corner_radius_top_left = 11
-corner_radius_top_right = 11
-corner_radius_bottom_right = 11
-corner_radius_bottom_left = 11
+border_color = Color(0.98, 0.733, 0.224, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0.95, 0.55, 0.08, 0.24)
+shadow_size = 5
 
 [sub_resource type="StyleBoxFlat" id="Style_system_button_hover"]
-bg_color = Color(0.58, 0.397, 0.132, 1)
+bg_color = Color(0.584, 0.343, 0.082, 1)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(1, 0.86, 0.46, 1)
-corner_radius_top_left = 11
-corner_radius_top_right = 11
-corner_radius_bottom_right = 11
-corner_radius_bottom_left = 11
+border_color = Color(1, 0.86, 0.45, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(1, 0.68, 0.16, 0.38)
+shadow_size = 7
 
 [sub_resource type="StyleBoxFlat" id="Style_system_button_pressed"]
-bg_color = Color(0.36, 0.244, 0.08, 1)
+bg_color = Color(0.302, 0.165, 0.035, 1)
 border_width_left = 2
 border_width_top = 2
 border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.957, 0.784, 0.29, 1)
-corner_radius_top_left = 11
-corner_radius_top_right = 11
-corner_radius_bottom_right = 11
-corner_radius_bottom_left = 11
+border_color = Color(0.98, 0.733, 0.224, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
 
 [sub_resource type="StyleBoxFlat" id="Style_system_button_disabled"]
-bg_color = Color(0.086, 0.132, 0.198, 0.92)
+bg_color = Color(0.055, 0.086, 0.133, 0.96)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.188, 0.278, 0.392, 1)
-corner_radius_top_left = 11
-corner_radius_top_right = 11
-corner_radius_bottom_right = 11
-corner_radius_bottom_left = 11
+border_color = Color(0.212, 0.333, 0.451, 0.9)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
 
-[node name="BattleHUD" type="VBoxContainer"]
+[sub_resource type="StyleBoxFlat" id="Style_log_button"]
+bg_color = Color(0.039, 0.094, 0.157, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.263, 0.576, 0.788, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="Style_log_button_hover"]
+bg_color = Color(0.059, 0.153, 0.251, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.831, 1, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="Style_log_button_pressed"]
+bg_color = Color(0.031, 0.071, 0.125, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.98, 0.733, 0.224, 0.95)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[node name="BattleHUD" type="Control"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(232, 0)
+custom_minimum_size = Vector2(504, 400)
 layout_mode = 2
-theme_override_constants/separation = 8
-editor_description = "右侧命令轨。顶部仅保留系统动作按钮，其余空间由行动日志占用。"
+mouse_filter = 2
+editor_description = "悬浮右侧命令坞。关闭时保持窄轨，日志展开时由 LogPanel 向牌桌左侧形成抽屉。"
 script = ExtResource("1_hud")
 
 [node name="PhasePanel" type="PanelContainer" parent="."]
-custom_minimum_size = Vector2(0, 76)
-layout_mode = 2
+custom_minimum_size = Vector2(132, 196)
+layout_mode = 0
+offset_left = 372.0
+offset_top = 52.0
+offset_right = 504.0
+offset_bottom = 248.0
+mouse_filter = 0
 theme_override_styles/panel = SubResource("Style_hud")
 
 [node name="Content" type="VBoxContainer" parent="PhasePanel"]
 layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="DockCaption" type="Label" parent="PhasePanel/Content"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.439, 0.757, 0.941, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.72)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 11
+text = "回合操作"
+horizontal_alignment = 1
+
+[node name="AccentLine" type="ColorRect" parent="PhasePanel/Content"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.98, 0.733, 0.224, 0.88)
 
 [node name="PhaseAdvanceButton" type="Button" parent="PhasePanel/Content"]
 focus_mode = 0
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
+custom_minimum_size = Vector2(108, 64)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.957, 0.969, 1, 1)
-theme_override_colors/font_disabled_color = Color(0.62, 0.69, 0.79, 1)
-theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(1, 0.976, 0.91, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.91, 0.64, 1)
+theme_override_colors/font_disabled_color = Color(0.58, 0.65, 0.74, 1)
+theme_override_font_sizes/font_size = 15
 theme_override_styles/normal = SubResource("Style_system_button")
 theme_override_styles/hover = SubResource("Style_system_button_hover")
 theme_override_styles/pressed = SubResource("Style_system_button_pressed")
@@ -97,3 +165,19 @@ theme_override_styles/disabled = SubResource("Style_system_button_disabled")
 disabled = true
 text = "结算中"
 autowrap_mode = 2
+
+[node name="LogToggleButton" type="Button" parent="PhasePanel/Content"]
+focus_mode = 0
+unique_name_in_owner = true
+custom_minimum_size = Vector2(108, 44)
+layout_mode = 2
+toggle_mode = true
+theme_override_colors/font_color = Color(0.839, 0.922, 0.98, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.86, 0.49, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("Style_log_button")
+theme_override_styles/hover = SubResource("Style_log_button_hover")
+theme_override_styles/pressed = SubResource("Style_log_button_pressed")
+text = "行动日志"
+tooltip_text = "展开行动日志抽屉"
