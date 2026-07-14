@@ -19,6 +19,8 @@ func end_turn(
 		return StepResult.new(false, "不是你的回合。", null, [], state.winner, false, "wrong_actor")
 	var events: Array[Dictionary] = [{
 		"event_type": "turn_end",
+		"actor": actor,
+		"target": {"player": actor, "slot": "active"},
 		"data": {"player": actor, "turn": state.turn_number},
 	}]
 	state.phase = "POKEMON_CHECKUP"
@@ -105,6 +107,7 @@ func begin_turn(
 	events.append({
 		"event_type": "turn_start",
 		"actor": state.active_player_idx,
+		"target": {"player": state.active_player_idx, "slot": "active"},
 		"data": {"player": state.active_player_idx, "turn": state.turn_number},
 	})
 	return StepResult.new(true, "回合开始。", null, events)
@@ -115,14 +118,25 @@ func resolve_checkup(
 	rng: PortableRandomSource,
 	events: Array[Dictionary],
 ) -> void:
+	events.append({
+		"event_type": "checkup",
+		"actor": state.active_player_idx,
+		"target": {"player": state.active_player_idx, "slot": "active"},
+		"data": {
+			"player": state.active_player_idx,
+			"turn": state.turn_number,
+		},
+	})
 	for player_idx in [0, 1]:
 		var pokemon := state.get_player(player_idx).active
 		if pokemon == null:
 			continue
 		if "POISONED" in pokemon.status_conditions:
 			pokemon.damage_counters += 1
+			events.append(_checkup_damage_event(player_idx, 10, "poisoned"))
 		if "BURNED" in pokemon.status_conditions:
 			pokemon.damage_counters += 2
+			events.append(_checkup_damage_event(player_idx, 20, "burned"))
 			if rng.coin():
 				pokemon.status_conditions.erase("BURNED")
 		if "ASLEEP" in pokemon.status_conditions and rng.coin():
@@ -132,4 +146,20 @@ func resolve_checkup(
 			and state.turn_number > pokemon.paralyzed_since_turn
 		):
 			pokemon.status_conditions.erase("PARALYZED")
-	events.append({"event_type": "checkup", "data": {"turn": state.turn_number}})
+
+
+func _checkup_damage_event(player_idx: int, amount: int, cause: String) -> Dictionary:
+	return {
+		"event_type": "damage_dealt",
+		"actor": player_idx,
+		"source": {"player": player_idx, "slot": "active"},
+		"target": {"player": player_idx, "slot": "active"},
+		"amount": amount,
+		"data": {
+			"player": player_idx,
+			"slot": "active",
+			"amount": amount,
+			"cause": cause,
+			"checkup": true,
+		},
+	}

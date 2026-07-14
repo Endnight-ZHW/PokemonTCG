@@ -39,6 +39,7 @@ func resolve_knockouts(
 			})
 	if knockouts.is_empty():
 		return VMResult.ok()
+	var pending_prize_events: Array[Dictionary] = []
 	for knockout in knockouts:
 		var defeated_idx := int(knockout["player"])
 		var defeated_player := state.get_player(defeated_idx)
@@ -64,26 +65,64 @@ func resolve_knockouts(
 		)
 		if not bool(trigger_result.get("success", false)):
 			return trigger_result
-		state.discard_pokemon(defeated_idx, str(knockout["slot"]))
+		var defeated_slot := str(knockout["slot"])
+		var discard_index := defeated_player.discard.size()
+		var discarded_card_ids: Array[String] = [knocked_out.card_id]
+		discarded_card_ids.append_array(knocked_out.evolution_stack_ids)
+		if not knocked_out.attached_tool_id.is_empty():
+			discarded_card_ids.append(knocked_out.attached_tool_id)
+		discarded_card_ids.append_array(knocked_out.energy_card_ids)
+		state.discard_pokemon(defeated_idx, defeated_slot)
 		var winner_idx := 1 - defeated_idx
+		var source_index := (
+			defeated_slot.trim_prefix("bench_").to_int()
+			if defeated_slot.begins_with("bench_")
+			else 0
+		)
+		events.append({
+			"event_type": "pokemon_ko",
+			"actor": attack_actor,
+			"card_id": str(knockout["card_id"]),
+			"source": {
+				"player": defeated_idx,
+				"slot": defeated_slot,
+				"index": source_index,
+			},
+			"target": {
+				"player": defeated_idx,
+				"zone": "discard",
+				"index": discard_index,
+			},
+			"amount": discarded_card_ids.size(),
+			"data": knockout.merged({
+				"count": discarded_card_ids.size(),
+				"card_ids": discarded_card_ids,
+			}, true),
+		})
 		for _index in range(int(knockout["prizes"])):
-			var prize_card_id := state.get_player(winner_idx).take_prize()
-			events.append({
+			var winner := state.get_player(winner_idx)
+			var hand_index := winner.hand.size()
+			var prize_card_id := winner.take_prize()
+			if prize_card_id.is_empty():
+				break
+			pending_prize_events.append({
 				"event_type": "prize_taken",
 				"actor": winner_idx,
 				"visibility": "owner",
 				"card_id": prize_card_id,
-				"source": {"player": winner_idx, "zone": "prizes"},
-				"target": {"player": winner_idx, "zone": "hand"},
+				"source": {"player": winner_idx, "zone": "prizes", "index": 0},
+				"target": {"player": winner_idx, "zone": "hand", "index": hand_index},
 				"data": {
 					"player": winner_idx,
 					"count": 1,
 					"card_id": prize_card_id,
+					"source_index": 0,
+					"target_index": hand_index,
 				},
 			})
 		if from_attack and defeated_idx != attack_actor:
 			defeated_player.was_ko_by_attack = true
-		events.append({"event_type": "pokemon_ko", "data": knockout.duplicate(true)})
+	events.append_array(pending_prize_events)
 	resolve_empty_boards_and_promotions(state)
 	return VMResult.ok()
 

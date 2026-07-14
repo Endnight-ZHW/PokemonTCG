@@ -85,6 +85,7 @@ func resolve_look_top(
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
+	var source_indices := VMZoneHelpers.selected_source_indices(selected)
 	var selected_cards: Array[String] = VMZoneHelpers.remove_selected_from_zone(
 		player, "deck", selected, false)
 	var top_cards: Array = data["top_cards"]
@@ -96,6 +97,7 @@ func resolve_look_top(
 			player.deck.remove_at(index)
 			remaining.append(card_id)
 	var destination := str(data["destination"])
+	var hand_start := player.hand.size()
 	if destination == "bench_energy":
 		if bool(data["shuffle_rest"]):
 			player.deck.append_array(remaining)
@@ -109,9 +111,13 @@ func resolve_look_top(
 		else:
 			player.deck.append_array(remaining)
 		if selected_cards.is_empty():
-			events.append({"event_type": "cards_selected", "data": {
-				"player": int(data["player_idx"]), "count": 0,
-			}})
+			events.append(VMZoneHelpers.cards_selected_event(
+				int(data["player_idx"]),
+				"deck",
+				"choice",
+				[],
+				0,
+			))
 			return VMResult.ok("未选择能量。")
 		var options: Array[Dictionary] = []
 		for index in range(player.bench.size()):
@@ -136,12 +142,18 @@ func resolve_look_top(
 			}})
 			return VMResult.ok("没有备战雷宝可梦。")
 		if options.size() == 1:
-			for energy_id in selected_cards:
-				player.get_pokemon(str(options[0].get("value", {}).get("slot", ""))).energy_card_ids.append(energy_id)
-			return VMResult.ok()
+			return attach_selected_energy_to_slot(
+				state,
+				int(data["player_idx"]),
+				selected_cards,
+				str(options[0].get("value", {}).get("slot", "")),
+				events,
+				source_indices,
+			)
 		stack.push_continuation("detached_energy_distribution", {
 			"player_idx": int(data["player_idx"]),
 			"card_ids": selected_cards,
+			"source_indices": source_indices,
 			"max_per_target": 99,
 		})
 		stack.pending_request = ChoiceRequest.new(
@@ -156,9 +168,14 @@ func resolve_look_top(
 			false,
 			{"revision": state.revision, "max_per_target": 99},
 		)
-		events.append({"event_type": "cards_selected", "data": {
-			"player": int(data["player_idx"]), "count": selected_cards.size(),
-		}})
+		events.append(VMZoneHelpers.cards_selected_event(
+			int(data["player_idx"]),
+			"deck",
+			"choice",
+			selected_cards,
+			-1,
+			source_indices,
+		))
 		return VMResult.ok()
 	else:
 		player.hand.append_array(selected_cards)
@@ -173,9 +190,15 @@ func resolve_look_top(
 			player.deck.push_front(card_id)
 	else:
 		player.deck.append_array(remaining)
-	events.append({"event_type": "cards_selected", "data": {
-		"player": int(data["player_idx"]), "count": selected_cards.size(),
-	}})
+	events.append(VMZoneHelpers.cards_selected_event(
+		int(data["player_idx"]),
+		"deck",
+		"hand",
+		selected_cards,
+		-1,
+		source_indices,
+		range(hand_start, hand_start + selected_cards.size()),
+	))
 	return VMResult.ok()
 
 
@@ -196,6 +219,7 @@ func resolve_look_top_attach_energy(
 	indices.sort()
 	indices.reverse()
 	var selected_cards: Array[String] = []
+	var selected_deck_indices: Array[int] = []
 	var remaining: Array[String] = []
 	for raw_index in indices:
 		var deck_index := int(raw_index)
@@ -204,6 +228,7 @@ func resolve_look_top_attach_energy(
 		var card_id: String = player.deck.pop_at(deck_index)
 		if selected_indices.has(deck_index):
 			selected_cards.append(card_id)
+			selected_deck_indices.append(deck_index)
 		else:
 			remaining.append(card_id)
 	player.deck.append_array(remaining)
@@ -227,10 +252,17 @@ func resolve_look_top_attach_energy(
 		return VMResult.fail("没有附能目标。")
 	if options.size() == 1:
 		return attach_selected_energy_to_slot(
-			state, player_idx, selected_cards, str(options[0].get("value", {}).get("slot", "")), events)
+			state,
+			player_idx,
+			selected_cards,
+			str(options[0].get("value", {}).get("slot", "")),
+			events,
+			selected_deck_indices,
+		)
 	stack.push_continuation("look_top_attach_target", {
 		"player_idx": player_idx,
 		"card_ids": selected_cards,
+		"source_indices": selected_deck_indices,
 	})
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, player_idx, "look_top_attach_target"),
@@ -261,6 +293,7 @@ func resolve_look_top_attach_target(
 		Array(data["card_ids"]),
 		str(selected[0].get("value", {}).get("slot", "")),
 		events,
+		Array(data.get("source_indices", [])),
 	)
 
 
@@ -270,19 +303,40 @@ func attach_selected_energy_to_slot(
 	card_ids: Array,
 	target_slot: String,
 	events: Array[Dictionary],
+	source_indices: Array = [],
 ) -> Dictionary:
 	var target := state.get_player(player_idx).get_pokemon(target_slot)
 	if target == null:
 		return VMResult.fail("附能目标不存在。")
-	for card_value in card_ids:
+	for index in range(card_ids.size()):
+		var card_value: Variant = card_ids[index]
 		var card_id := str(card_value)
+		var source_index := (
+			int(source_indices[index]) if index < source_indices.size() else -1
+		)
+		var target_index := target.energy_card_ids.size()
 		target.energy_card_ids.append(card_id)
 		events.append({
 			"event_type": "energy_attached",
 			"actor": player_idx,
 			"card_id": card_id,
-			"source": {"player": player_idx, "zone": "deck"},
-			"target": {"player": player_idx, "slot": target_slot},
-			"data": {"player": player_idx, "slot": target_slot, "card_id": card_id},
+			"source": {
+				"player": player_idx,
+				"zone": "deck",
+				"index": source_index,
+			},
+			"target": {
+				"player": player_idx,
+				"slot": target_slot,
+				"index": target_index,
+			},
+			"data": {
+				"player": player_idx,
+				"slot": target_slot,
+				"card_id": card_id,
+				"source_zone": "deck",
+				"source_index": source_index,
+				"target_index": target_index,
+			},
 		})
 	return VMResult.ok("附着了%d张能量。" % card_ids.size())

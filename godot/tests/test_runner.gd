@@ -74,11 +74,36 @@ func _initialize() -> void:
 	_run_phase_zero_tests()
 	_run_phase_one_tests()
 	_run_phase_two_tests()
-	_run_phase_three_tests()
 	_run_phase_four_foundation_tests()
 	_run_phase_five_foundation_tests()
 	_run_phase_six_foundation_tests()
 	_run_visual_upgrade_tests()
+	# Most legacy geometry contracts intentionally inspect controls before their
+	# first rendered container pass. Run the new frame-aware Main flow last so
+	# those contracts keep their established synchronous environment.
+	call_deferred("_run_async_phase_three_tests")
+
+
+func _run_async_phase_three_tests() -> void:
+	await _run_phase_three_tests()
+	_stop_test_audio_players()
+	# Flush queue_free calls made by the final UI fixtures before terminating the
+	# SceneTree; otherwise they are reported as leaked ObjectDB instances.
+	await process_frame
+	await process_frame
+	_finish_tests()
+
+
+func _stop_test_audio_players() -> void:
+	for node in root.find_children("*", "AudioStreamPlayer", true, false):
+		var player := node as AudioStreamPlayer
+		if player == null:
+			continue
+		player.stop()
+		player.stream = null
+
+
+func _finish_tests() -> void:
 
 	if failures.is_empty():
 		print("GODOT_TESTS_OK phase=6")
@@ -1890,6 +1915,17 @@ func _run_phase_three_tests() -> void:
 	_check(packed != null, "Main UI scene failed to load")
 	if packed == null:
 		return
+	# Flow barriers intentionally finish on a later frame, even when spatial
+	# motion is disabled. Keep this broad UI contract deterministic and fast
+	# while still exercising that asynchronous completion boundary.
+	var settings_node := root.get_node_or_null("AppSettings")
+	var previous_animation_mode := "cinematic"
+	var previous_reduced_motion := false
+	if settings_node:
+		previous_animation_mode = str(settings_node.get("animation_mode"))
+		previous_reduced_motion = bool(settings_node.get("reduced_motion"))
+		settings_node.set("animation_mode", "reduced")
+		settings_node.set("reduced_motion", true)
 	var ui := packed.instantiate()
 	root.add_child(ui)
 	ui.initialize_ui()
@@ -2020,6 +2056,7 @@ func _run_phase_three_tests() -> void:
 			and not setup_detail.visible,
 			"UI action did not mutate rules state or clear the floating preview",
 		)
+		await _wait_for_battle_transition(ui, "setup placement")
 		_check(
 			ui.battle_screen.table.all_card_actions_reachable_from_visible_cards(),
 			"Card interaction index did not refresh after a setup action",
@@ -2083,7 +2120,8 @@ func _run_phase_three_tests() -> void:
 			active_view.activated.emit(active_card_id, -1, 0, "active")
 			_check(not setup_detail.visible,
 				"Tapping the selected field Pokémon again did not hide its preview")
-	_run_local_ui_playout(ui)
+	await _run_local_ui_playout(ui)
+	await _wait_for_battle_transition(ui, "local playout terminal transition")
 	_check(ui.current_screen == "end", "Completed local UI match did not show end screen")
 	var title_button := ui.find_child("TitleButton", true, false) as Button
 	_check(title_button != null, "Victory screen title return button is missing")
@@ -2124,6 +2162,7 @@ func _run_phase_three_tests() -> void:
 		EntityRef.new("card", 0, "hand", "", 0, "", "sv1-151"),
 	)
 	choice_ui._execute_action(trainer)
+	await _wait_for_battle_transition(choice_ui, "trainer choice publication")
 	_check(choice_ui.modal_layer.visible, "Choice overlay was not displayed")
 	_check(choice_ui.active_request != null, "Choice overlay has no request")
 	var choice_panel := choice_ui.active_choice_panel as ChoicePanel
@@ -2563,6 +2602,11 @@ func _run_phase_three_tests() -> void:
 	field_choice_ui.initialize_ui()
 	var field_choice_state := _battle_state()
 	field_choice_state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	field_choice_state.players[1].bench[0] = PokemonState.new("sv2-delib")
+	_set_energy_cards(
+		field_choice_state.players[1].bench[0],
+		["sv1-ener-4", "sv1-ener-5"],
+	)
 	field_choice_ui.state = field_choice_state
 	field_choice_ui.current_view_player = 0
 	field_choice_ui._build_game_screen()
@@ -2593,6 +2637,83 @@ func _run_phase_three_tests() -> void:
 		and field_choice_ui.battle_screen.table.get_slot_view(0, "active").targetable
 		and field_choice_ui.battle_screen.table.get_slot_view(0, "bench_0").targetable,
 		"Visible single-target card choice did not route to highlighted field cards",
+	)
+	var unique_attachment_id := "attachment:1:bench_0:energy:0:sv1-ener-4"
+	var unique_attachment_choice := ChoiceRequest.new(
+		"field-attachment-choice",
+		"select_attachment",
+		0,
+		"选择对手备战宝可梦身上的能量。",
+		[{
+			"option_id": unique_attachment_id,
+			"label": "备战区 1 · 基本水能量",
+			"ref": EntityRef.new(
+				"attachment", 1, "", "bench_0", 0, "energy", "sv1-ener-4"
+			).to_dict(),
+			"value": {
+				"player": 1,
+				"slot": "bench_0",
+				"index": 0,
+				"card_id": "sv1-ener-4",
+			},
+		}],
+		1,
+		1,
+	)
+	field_choice_ui._show_choice_overlay(unique_attachment_choice)
+	var opponent_bench_key := CardInteractionRouter.pokemon_key(1, "bench_0")
+	_check(
+		not field_choice_ui.modal_layer.visible
+		and field_choice_ui.battle_screen.table.choice_target_options
+			.get(opponent_bench_key, "") == unique_attachment_id
+		and field_choice_ui.battle_screen.table.get_slot_view(
+			1, "bench_0").targetable,
+		"Unique attachment choice did not route to its visible field Pokemon",
+	)
+	var duplicate_attachment_choice := ChoiceRequest.new(
+		"duplicate-field-attachment-choice",
+		"select_attachment",
+		0,
+		"选择对手备战宝可梦身上的一张能量。",
+		[
+			{
+				"option_id": unique_attachment_id,
+				"label": "备战区 1 · 基本水能量",
+				"ref": EntityRef.new(
+					"attachment", 1, "", "bench_0", 0, "energy", "sv1-ener-4"
+				).to_dict(),
+				"value": {
+					"player": 1,
+					"slot": "bench_0",
+					"index": 0,
+					"card_id": "sv1-ener-4",
+				},
+			},
+			{
+				"option_id": "attachment:1:bench_0:energy:1:sv1-ener-5",
+				"label": "备战区 1 · 基本草能量",
+				"ref": EntityRef.new(
+					"attachment", 1, "", "bench_0", 1, "energy", "sv1-ener-5"
+				).to_dict(),
+				"value": {
+					"player": 1,
+					"slot": "bench_0",
+					"index": 1,
+					"card_id": "sv1-ener-5",
+				},
+			},
+		],
+		1,
+		1,
+	)
+	field_choice_ui._show_choice_overlay(duplicate_attachment_choice)
+	var duplicate_attachment_panel := field_choice_ui.active_choice_panel as ChoicePanel
+	_check(
+		field_choice_ui.modal_layer.visible
+		and field_choice_ui.battle_screen.table.choice_target_options.is_empty()
+		and duplicate_attachment_panel != null
+		and duplicate_attachment_panel.card_option_count() == 2,
+		"Ambiguous attachments on one Pokemon did not fall back to the option panel",
 	)
 	var coin_choice := ChoiceRequest.new(
 		"coin-choice",
@@ -3039,6 +3160,9 @@ func _run_phase_three_tests() -> void:
 		"End turn did not warn about remaining legal card actions",
 	)
 	end_turn_ui.queue_free()
+	if settings_node:
+		settings_node.set("animation_mode", previous_animation_mode)
+		settings_node.set("reduced_motion", previous_reduced_motion)
 
 
 func _run_phase_four_foundation_tests() -> void:
@@ -7792,7 +7916,7 @@ func _run_visual_upgrade_tests() -> void:
 		state.players[0].hand = ["sv1-104", "sv1-104"]
 		state.players[0].discard = ["sv1-ener-5"]
 		battle.update_view(state, 0, rows, "", false, "local")
-		battle._presentation_snapshot = discard_snapshot
+		battle.table._presentation_snapshot = discard_snapshot
 		var snapshot_discard_starts: Array[Vector2] = (
 			battle._source_points_for_event(
 				{"player": 0, "zone": "hand"},
@@ -8291,13 +8415,36 @@ func _run_visual_upgrade_tests() -> void:
 			if not battle.table._active_flyers.is_empty()
 			else null
 		)
+		var paper_shadow := (
+			paper_flyer.get_node_or_null("PaperShadow") as Panel
+			if paper_flyer != null
+			else null
+		)
+		var paper_shadow_style := (
+			paper_shadow.get_theme_stylebox("panel") as StyleBoxFlat
+			if paper_shadow != null
+			else null
+		)
+		var paper_image := (
+			paper_flyer.get_node_or_null("PaperImage") as TextureRect
+			if paper_flyer != null
+			else null
+		)
 		_check(
 			paper_flyer != null
 			and paper_flyer.has_meta("paper_card_token")
 			and paper_flyer.has_meta("card_motion_entity")
-			and paper_flyer.find_child("PaperEdge", true, false) != null
-			and paper_flyer.find_child("PaperGloss", true, false) != null,
-			"Card motion entity did not use the physical paper-card token",
+			and bool(paper_flyer.get_meta("paper_card_single_face", false))
+			and paper_flyer.find_child("PaperEdge", true, false) == null
+			and paper_flyer.find_child("PaperFace", true, false) == null
+			and paper_flyer.find_child("PaperGloss", true, false) == null
+			and paper_shadow_style != null
+			and paper_shadow_style.bg_color.a <= 0.001
+			and paper_image != null
+			and paper_image.position.distance_to(Vector2.ZERO) < 0.01
+			and paper_image.size.distance_to(paper_flyer.size) < 0.01
+			and paper_image.stretch_mode == TextureRect.STRETCH_KEEP_ASPECT_COVERED,
+			"Card motion entity did not use a full-face single-card token",
 		)
 		if paper_flyer != null:
 			battle.table._finish_flyer(paper_flyer, Vector2(40, 40), "cards_drawn")
@@ -8313,23 +8460,25 @@ func _run_visual_upgrade_tests() -> void:
 			0.78,
 		)
 		var shuffle_cards := 0
-		var shuffle_cards_are_physical := true
+		var shuffle_cards_are_single_face := true
 		for flyer_value in battle.table._active_flyers:
 			var flyer := flyer_value as Control
 			if flyer == null:
 				continue
 			if flyer.has_meta("shuffle_card"):
 				shuffle_cards += 1
-			shuffle_cards_are_physical = (
-				shuffle_cards_are_physical
+			shuffle_cards_are_single_face = (
+				shuffle_cards_are_single_face
 				and flyer.has_meta("paper_card_token")
+				and bool(flyer.get_meta("paper_card_single_face", false))
+				and flyer.get_node_or_null("PaperEdge") == null
 			)
 		_check(
 			shuffle_spawned
 			and shuffle_cards == battle.table._shuffle_card_count()
 			and battle.table._active_flyers.size() <= battle.table._max_active_flyers()
-			and shuffle_cards_are_physical,
-			"Deck shuffle did not create bounded physical card-back motion entities",
+			and shuffle_cards_are_single_face,
+			"Deck shuffle did not create bounded single-face card-back motion entities",
 		)
 		battle._clear_transient_visuals()
 		var stale_cover := Control.new()
@@ -8604,7 +8753,7 @@ func _prime_card_action_popover(popover: CardActionPopover) -> void:
 	# process frame can resolve @onready fields. Runtime scenes resolve these on
 	# their normal ready pass; prime them explicitly for this headless contract.
 	popover.pointer_line = popover.get_node("PointerLine") as Line2D
-	popover.panel = popover.get_node("Panel") as PanelContainer
+	popover.panel = popover.get_node("Panel") as Panel
 	popover.title_label = popover.get_node("Panel/Margin/Content/TitleLabel") as Label
 	popover.hint_label = popover.get_node("Panel/Margin/Content/HintLabel") as Label
 	popover.empty_hint = popover.get_node("Panel/Margin/Content/EmptyHint") as Label
@@ -8992,6 +9141,54 @@ func _run_card_direct_interaction_contract_tests() -> void:
 		and icon_action_button.get_combined_minimum_size().y <= 52.0,
 		"Large energy artwork expanded the card action button or popover",
 	)
+	# Reuse the same instance in the same frame, matching a direct click from a
+	# card with several actions to an unusable card. A PanelContainer used to
+	# retain the previous content minimum and leave this informational surface at
+	# roughly four action rows tall.
+	var four_action_rows: Array[Dictionary] = []
+	for row_index in range(4):
+		four_action_rows.append(popover_rows[row_index])
+	popover.show_actions(
+		four_action_rows,
+		source_rect,
+		safe_rect,
+		[],
+		"卡牌操作",
+		"",
+	)
+	var multi_action_height := popover.panel_global_rect().size.y
+	popover.show_actions(
+		[],
+		source_rect,
+		safe_rect,
+		[],
+		"无法操作",
+		"场上没有可进化为这张卡的宝可梦",
+	)
+	var empty_panel_rect := popover.panel_global_rect()
+	var expected_empty_size := popover._desired_panel_size(false)
+	_check(
+		popover.panel.get_class() == "Panel"
+		and popover.button_count() == 0
+		and popover.empty_hint.visible
+		and not popover.action_scroll.visible
+		and popover.action_buttons.get_child_count() == 0
+		and popover.compact_action_buttons.get_child_count() == 0
+		and empty_panel_rect.size.is_equal_approx(expected_empty_size)
+		and empty_panel_rect.size.y < multi_action_height
+		and safe_rect.encloses(empty_panel_rect)
+		and not empty_panel_rect.intersects(source_rect),
+		"CardActionPopover retained a previous multi-action minimum size",
+	)
+	# Restore actionable content for the signal and dismissal contracts below.
+	popover.show_actions(
+		popover_rows,
+		source_rect,
+		safe_rect,
+		[avoid_above, avoid_right],
+		"卡牌操作",
+		"选择动作",
+	)
 	var chosen_probe := {}
 	popover.action_chosen.connect(
 		func(action: GameAction) -> void: chosen_probe["action"] = action
@@ -9109,6 +9306,22 @@ func _run_card_direct_interaction_contract_tests() -> void:
 		and not popover.current_placement.contains("free"),
 		"Single-button compact CardActionPopover is not centered in its panel",
 	)
+	popover.show_actions(
+		[popover_rows[0]],
+		source_rect,
+		safe_rect,
+		[],
+		"卡牌操作",
+		"",
+	)
+	_check(
+		not popover.is_compact_layout()
+		and popover.action_scroll.visible
+		and not popover.compact_scroll.visible
+		and popover.action_buttons.get_child_count() == 1
+		and popover.compact_action_buttons.get_child_count() == 0,
+		"CardActionPopover did not reset its compact container state on reuse",
+	)
 	popover.free()
 
 
@@ -9157,6 +9370,10 @@ func _run_local_ui_playout(ui: Node) -> void:
 		)
 		if ui.state.revision <= previous_revision:
 			break
+		await _wait_for_battle_transition(
+			ui,
+			"local playout action %d" % action_count,
+		)
 		var choice_guard := 0
 		while ui.active_request != null and choice_guard < 32:
 			choice_guard += 1
@@ -9173,9 +9390,34 @@ func _run_local_ui_playout(ui: Node) -> void:
 				ui.selected_choice_ids.append(str(
 					request.options[option_index]["option_id"]))
 			ui._confirm_choice()
+			await _wait_for_battle_transition(
+				ui,
+				"local playout choice %d:%d" % [action_count, choice_guard],
+			)
 		_check(choice_guard < 32, "Local UI choice chain exceeded guard")
 	_check(action_count < 1200, "Local UI playout exceeded action guard")
 	_check(ui.state.winner >= 0, "Local UI playout did not terminate")
+
+
+func _wait_for_battle_transition(
+	ui: Node,
+	context: String,
+	max_frames: int = 240,
+) -> void:
+	var frame_count := 0
+	while frame_count < max_frames:
+		if ui == null or not is_instance_valid(ui):
+			return
+		var battle: Variant = ui.get("battle_screen")
+		if (
+			battle == null
+			or not is_instance_valid(battle)
+			or not battle.is_presentation_busy()
+		):
+			return
+		frame_count += 1
+		await process_frame
+	_check(false, "Battle transition timed out: %s" % context)
 
 
 func _battle_state() -> GameState:
@@ -13065,9 +13307,102 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		and "svl-vitb" in state.players[0].hand,
 		"Tatsugiri return-to-hand did not deal 30 damage or failed to return attached cards",
 	)
+	var tatsugiri_attack_event_index := _first_event_type_index(
+		step.events, "attack_declared")
+	var tatsugiri_damage_event_index := _first_event_type_index(
+		step.events, "damage_dealt")
+	var tatsugiri_return_event_index := _first_event_type_index(
+		step.events, "card_moved")
+	_check(
+		tatsugiri_attack_event_index >= 0
+		and tatsugiri_damage_event_index > tatsugiri_attack_event_index
+		and tatsugiri_return_event_index > tatsugiri_damage_event_index,
+		"Tatsugiri return-to-hand was presented before its attack damage",
+	)
 	_check(
 		state.winner == 1,
 		"Tatsugiri return-to-hand without bench did not lose by leaving no Pokemon in play",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.placed_this_turn = false
+	_set_energy_cards(state.players[0].active, ["sv1-ener-2"])
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(61151),
+	)
+	var self_discard_damage_event_index := _first_event_type_index(
+		step.events, "damage_dealt")
+	var self_discard_event_index := _first_event_type_index(
+		step.events, "cards_discarded")
+	var self_discard_turn_end_event_index := _first_event_type_index(
+		step.events, "turn_end")
+	_check(
+		step.success
+		and state.players[1].active.damage_counters == 3
+		and state.players[0].active.energy_card_ids.is_empty()
+		and self_discard_damage_event_index >= 0
+		and self_discard_event_index > self_discard_damage_event_index
+		and self_discard_turn_end_event_index > self_discard_event_index,
+		"Attack self-discard was not presented between damage and turn handoff",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv1-114")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].bench[0] = PokemonState.new("svi-chim")
+	state.players[0].bench[0].placed_this_turn = false
+	_set_energy_cards(
+		state.players[0].active,
+		["sv1-ener-5", "sv1-ener-5"],
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(61152),
+	)
+	_check(
+		step.success
+		and step.pending_choice != null
+		and _first_event_type_index(step.events, "attack_declared") >= 0
+		and _first_event_type_index(step.events, "damage_dealt") < 0,
+		"Optional switch attack did not pause after its declaration",
+	)
+	if step.pending_choice != null:
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, ["confirm:yes"]),
+			PortableRandomSource.new(61153),
+		)
+	_check(
+		step.success and step.pending_choice != null,
+		"Optional switch attack did not continue to a bench choice",
+	)
+	step = _apply_slot_choice(
+		engine,
+		state,
+		step,
+		"bench_0",
+		PortableRandomSource.new(61154),
+	)
+	var switch_damage_event_index := _first_event_type_index(
+		step.events, "damage_dealt")
+	var switched_event_index := _first_event_type_index(step.events, "switched")
+	var switch_turn_end_event_index := _first_event_type_index(
+		step.events, "turn_end")
+	_check(
+		step.success
+		and step.pending_choice == null
+		and state.players[1].active.damage_counters == 5
+		and state.players[0].active != null
+		and state.players[0].active.card_id == "svi-chim"
+		and switch_damage_event_index >= 0
+		and switched_event_index > switch_damage_event_index
+		and switch_turn_end_event_index > switched_event_index,
+		"Choice-resumed switch attack was not presented as damage then switch then turn handoff",
 	)
 
 	state = _battle_state()
@@ -14062,6 +14397,16 @@ func _darkness_battle_state() -> GameState:
 func _set_energy_cards(pokemon: PokemonState, card_ids: Array) -> void:
 	pokemon.energy_card_ids.clear()
 	pokemon.energy_card_ids.assign(card_ids)
+
+
+func _first_event_type_index(
+	events: Array[Dictionary],
+	event_type: String,
+) -> int:
+	for index in range(events.size()):
+		if str(events[index].get("event_type", "")) == event_type:
+			return index
+	return -1
 
 
 func _apply_slot_choice(

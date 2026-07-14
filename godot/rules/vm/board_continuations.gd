@@ -128,12 +128,23 @@ func continue_place_counters_self_ko(
 	var target_slot := str(selected[0].get("value", {}).get("slot", ""))
 	var target := state.get_player(int(data["target_player"])).get_pokemon(target_slot)
 	if target:
-		target.damage_counters += int(data["counters"])
-		events.append({"event_type": "damage_counters_placed", "data": {
-			"player": int(data["target_player"]),
-			"slot": target_slot,
-			"count": int(data["counters"]),
-		}})
+		var counter_count := int(data["counters"])
+		target.damage_counters += counter_count
+		events.append({
+			"event_type": "damage_counters_placed",
+			"actor": int(data.get("source_player", data["target_player"])),
+			"target": {
+				"player": int(data["target_player"]),
+				"slot": target_slot,
+			},
+			"amount": counter_count * 10,
+			"data": {
+				"player": int(data["target_player"]),
+				"slot": target_slot,
+				"count": counter_count,
+				"counter_count": counter_count,
+			},
+		})
 	var source_player := int(data["source_player"])
 	var source_slot := str(data["source_slot"])
 	var source_state := state.get_player(source_player)
@@ -146,9 +157,12 @@ func continue_place_counters_self_ko(
 		if not discarded_cards.is_empty():
 			events.append(VMZoneHelpers.discard_event(
 				source_player,
-				source_slot,
+				"",
 				discarded_cards,
 				discarded_cards.size(),
+				range(discarded_cards.size()),
+				source_slot,
+				discard_start,
 			))
 	if (
 		source_slot == "active"
@@ -276,7 +290,7 @@ func resolve_discard_attachment(
 		return VMResult.fail("选择的能量已不存在。")
 	state.get_player(target_player).discard.append(target.energy_card_ids.pop_at(energy_index))
 	events.append({
-		"event_type": "card_discarded",
+		"event_type": "cards_discarded",
 		"actor": int(data.get("player_idx", state.active_player_idx)),
 		"card_id": card_id,
 		"source": {
@@ -286,6 +300,16 @@ func resolve_discard_attachment(
 			"index": energy_index,
 		},
 		"target": {"player": target_player, "zone": "discard"},
-		"data": {"player": target_player, "slot": target_slot, "card_id": card_id},
+		"amount": 1,
+		"data": {
+			"player": target_player,
+			"slot": target_slot,
+			"source_slot": target_slot,
+			"source_index": energy_index,
+			"source_indices": [energy_index],
+			"count": 1,
+			"card_id": card_id,
+			"card_ids": [card_id],
+		},
 	})
 	return VMResult.ok()

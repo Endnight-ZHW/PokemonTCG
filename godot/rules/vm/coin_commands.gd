@@ -162,7 +162,24 @@ func resolve_coin(
 			if heads == 2:
 				var target := state.get_player(1 - player_idx).active
 				if target:
-					target.damage_counters += max(1, ceili(float(target.current_hp(catalog)) / 10.0))
+					var applied_counters: int = maxi(
+						1,
+						ceili(float(target.current_hp(catalog)) / 10.0),
+					)
+					target.damage_counters += applied_counters
+					events.append({
+						"event_type": "damage_dealt",
+						"actor": player_idx,
+						"source": {"player": player_idx, "slot": source_slot},
+						"target": {"player": 1 - player_idx, "slot": "active"},
+						"amount": applied_counters * 10,
+						"data": {
+							"player": 1 - player_idx,
+							"slot": "active",
+							"amount": applied_counters * 10,
+							"cause": "coin_double_ko",
+						},
+					})
 		"until_tails":
 			return combat_damage.deal_attack_or_effect_damage(
 				state, stack, player_idx, 1 - player_idx, "active",

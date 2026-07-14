@@ -41,7 +41,10 @@ func apply_choice(
 	if not step.success:
 		return transaction_manager.rollback_failed_step(state, rng, checkpoint, step)
 	if step.pending_choice == null and stack.has_finalize_attack_frame():
-		step = _merge_steps(step, attack_settlement.complete_attack_context(state, stack, rng))
+		step = attack_settlement.merge_attack_presentation(
+			step,
+			attack_settlement.complete_attack_context(state, stack, rng),
+		)
 	elif step.pending_choice == null:
 		var ko_result := knockout_settlement.resolve_knockouts(state, request.player, step.events, false)
 		if not bool(ko_result.get("success", false)):

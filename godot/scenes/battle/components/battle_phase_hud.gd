@@ -22,6 +22,7 @@ var _connected := false
 var _log_drawer_open := false
 var _layout_connected := false
 var _phase_panel: PanelContainer
+var _log_drawer_tween: Tween
 
 
 func _ready() -> void:
@@ -153,6 +154,7 @@ func set_log_drawer_open(is_open: bool, emit_change: bool = true) -> void:
 	var changed := _log_drawer_open != is_open
 	_log_drawer_open = is_open
 	var log_panel := get_node_or_null("LogPanel") as Control
+	_kill_log_drawer_tween()
 	if log_panel:
 		log_panel.visible = is_open
 	log_toggle_button.set_pressed_no_signal(is_open)
@@ -163,6 +165,11 @@ func set_log_drawer_open(is_open: bool, emit_change: bool = true) -> void:
 	if changed and emit_change:
 		log_drawer_toggled.emit(is_open)
 	_layout_dock()
+	if log_panel:
+		if is_open and changed:
+			_play_log_drawer_motion(log_panel)
+		else:
+			log_panel.modulate.a = 1.0
 
 
 func toggle_log_drawer() -> void:
@@ -175,6 +182,31 @@ func close_log_drawer() -> void:
 
 func is_log_drawer_open() -> bool:
 	return _log_drawer_open
+
+
+func _play_log_drawer_motion(log_panel: Control) -> void:
+	var duration := MotionPolicy.duration("panel")
+	if duration <= 0.0 or MotionPolicy.reduced():
+		log_panel.modulate.a = 1.0
+		return
+	var target_position := log_panel.position
+	log_panel.position = target_position + Vector2(18.0, 0.0)
+	log_panel.modulate.a = 0.0
+	_log_drawer_tween = create_tween().set_parallel(true)
+	_log_drawer_tween.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	_log_drawer_tween.tween_property(
+		log_panel, "position", target_position, duration
+	)
+	_log_drawer_tween.tween_property(log_panel, "modulate:a", 1.0, duration)
+	_log_drawer_tween.finished.connect(func() -> void:
+		_log_drawer_tween = null
+	)
+
+
+func _kill_log_drawer_tween() -> void:
+	if _log_drawer_tween and _log_drawer_tween.is_valid():
+		_log_drawer_tween.kill()
+	_log_drawer_tween = null
 
 
 func _layout_dock() -> void:

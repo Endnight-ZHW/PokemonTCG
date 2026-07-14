@@ -83,7 +83,7 @@ tracks/0/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Arr
 tracks/1/type = "value"
 tracks/1/imported = false
 tracks/1/enabled = true
-tracks/1/path = NodePath("TargetGlow:modulate")
+tracks/1/path = NodePath("InteractionRoot/FeedbackRoot/ContentRoot/TargetGlow:modulate")
 tracks/1/interp = 1
 tracks/1/loop_wrap = true
 tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Array(1), "update": 0, "values": [Color(1, 1, 1, 1)]}
@@ -107,7 +107,7 @@ loop_mode = 1
 tracks/0/type = "value"
 tracks/0/imported = false
 tracks/0/enabled = true
-tracks/0/path = NodePath("TargetGlow:modulate")
+tracks/0/path = NodePath("InteractionRoot/FeedbackRoot/ContentRoot/TargetGlow:modulate")
 tracks/0/interp = 1
 tracks/0/loop_wrap = true
 tracks/0/keys = {"times": PackedFloat32Array(0, 0.4, 0.8), "transitions": PackedFloat32Array(1, 1, 1), "update": 0, "values": [Color(1, 1, 1, 0.6), Color(1, 1, 1, 1), Color(1, 1, 1, 0.6)]}
@@ -128,7 +128,37 @@ focus_mode = 0
 editor_description = "可复用卡牌组件。Frame、信息栏和只读交互高亮可以在此场景中编辑；运行时卡图、数值和合法交互状态由 CardView 注入。"
 script = ExtResource("1_card")
 
-[node name="Shadow" type="Panel" parent="."]
+[node name="InteractionRoot" type="Control" parent="."]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="FeedbackRoot" type="Control" parent="InteractionRoot"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ContentRoot" type="Control" parent="InteractionRoot/FeedbackRoot"]
+unique_name_in_owner = true
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Shadow" type="Panel" parent="InteractionRoot/FeedbackRoot/ContentRoot"]
 unique_name_in_owner = true
 mouse_filter = 2
 layout_mode = 1
@@ -141,7 +171,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("Style_shadow")
 
-[node name="Frame" type="Panel" parent="."]
+[node name="Frame" type="Panel" parent="InteractionRoot/FeedbackRoot/ContentRoot"]
 unique_name_in_owner = true
 mouse_filter = 2
 layout_mode = 1
@@ -152,7 +182,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("Style_frame")
 
-[node name="Image" type="TextureRect" parent="Frame"]
+[node name="Image" type="TextureRect" parent="InteractionRoot/FeedbackRoot/ContentRoot/Frame"]
 unique_name_in_owner = true
 mouse_filter = 2
 layout_mode = 1
@@ -168,7 +198,7 @@ grow_vertical = 2
 expand_mode = 1
 stretch_mode = 6
 
-[node name="EmptyLabel" type="Label" parent="Frame"]
+[node name="EmptyLabel" type="Label" parent="InteractionRoot/FeedbackRoot/ContentRoot/Frame"]
 unique_name_in_owner = true
 mouse_filter = 2
 layout_mode = 1
@@ -183,7 +213,7 @@ text = "空位"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="StatusRow" type="HBoxContainer" parent="Frame"]
+[node name="StatusRow" type="HBoxContainer" parent="InteractionRoot/FeedbackRoot/ContentRoot/Frame"]
 unique_name_in_owner = true
 mouse_filter = 2
 layout_mode = 1
@@ -196,7 +226,7 @@ offset_right = -6.0
 grow_horizontal = 0
 theme_override_constants/separation = 3
 
-[node name="TargetGlow" type="Panel" parent="."]
+[node name="TargetGlow" type="Panel" parent="InteractionRoot/FeedbackRoot/ContentRoot"]
 unique_name_in_owner = true
 visible = false
 mouse_filter = 2
@@ -220,7 +250,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("Style_selected")
 
-[node name="ActionableMarker" type="Panel" parent="."]
+[node name="ActionableMarker" type="Panel" parent="InteractionRoot/FeedbackRoot/ContentRoot"]
 unique_name_in_owner = true
 visible = false
 mouse_filter = 2
@@ -235,7 +265,7 @@ offset_bottom = 2.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="InteractionHint" type="Panel" parent="."]
+[node name="InteractionHint" type="Panel" parent="InteractionRoot/FeedbackRoot/ContentRoot"]
 unique_name_in_owner = true
 visible = false
 mouse_filter = 2
@@ -250,7 +280,7 @@ offset_bottom = -5.0
 grow_horizontal = 2
 grow_vertical = 0
 
-[node name="InteractionHintLabel" type="Label" parent="InteractionHint"]
+[node name="InteractionHintLabel" type="Label" parent="InteractionRoot/FeedbackRoot/ContentRoot/InteractionHint"]
 unique_name_in_owner = true
 mouse_filter = 2
 layout_mode = 1
@@ -268,7 +298,7 @@ text_overrun_behavior = 3
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ActionOverlay" type="PanelContainer" parent="."]
+[node name="ActionOverlay" type="PanelContainer" parent="InteractionRoot/FeedbackRoot/ContentRoot"]
 unique_name_in_owner = true
 visible = false
 mouse_filter = 2
@@ -284,18 +314,18 @@ grow_horizontal = 2
 grow_vertical = 0
 theme_override_styles/panel = SubResource("Style_actions")
 
-[node name="Margin" type="MarginContainer" parent="ActionOverlay"]
+[node name="Margin" type="MarginContainer" parent="InteractionRoot/FeedbackRoot/ContentRoot/ActionOverlay"]
 layout_mode = 2
 theme_override_constants/margin_left = 4
 theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 4
 theme_override_constants/margin_bottom = 4
 
-[node name="Content" type="VBoxContainer" parent="ActionOverlay/Margin"]
+[node name="Content" type="VBoxContainer" parent="InteractionRoot/FeedbackRoot/ContentRoot/ActionOverlay/Margin"]
 layout_mode = 2
 theme_override_constants/separation = 3
 
-[node name="ActionHint" type="Label" parent="ActionOverlay/Margin/Content"]
+[node name="ActionHint" type="Label" parent="InteractionRoot/FeedbackRoot/ContentRoot/ActionOverlay/Margin/Content"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -304,7 +334,7 @@ theme_override_font_sizes/font_size = 10
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="ActionButtons" type="VBoxContainer" parent="ActionOverlay/Margin/Content"]
+[node name="ActionButtons" type="VBoxContainer" parent="InteractionRoot/FeedbackRoot/ContentRoot/ActionOverlay/Margin/Content"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2

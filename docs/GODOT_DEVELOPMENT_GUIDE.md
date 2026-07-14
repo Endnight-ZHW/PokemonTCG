@@ -50,7 +50,8 @@
 
 Workbench 顶部可以切换标题、选牌、网络、设置、选择、能量分配、帮助、卡牌检查器、
 区域查看、牌组详情、战斗和胜利页面；右侧按钮可以单独触发抽牌、进化、攻击、伤害、
-击倒和胜利演出。它使用固定种子的预览状态，不读取正式存档，也不会连接网络。预览宿主
+击倒和胜利演出。“0% / 50% / 100%”检查点会使用同一份 before/after fixture 停在动画
+起点、接触中段或最终状态，适合稳定截图。它使用固定种子的预览状态，不读取正式存档，也不会连接网络。预览宿主
 比 1600×900 主窗口窄，可快速发现标题页 Compact landscape / Dense 以及其他前台 compact
 布局问题；但设置、帮助等面板在 Workbench 中是直接装入预览容器的，仍要按 `F5` 验证
 全屏标题背景、`ModalSpec` 的主题切换、遮罩、鼠标/触控操作与安全区。
@@ -388,9 +389,22 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 ### BattleScreen
 
 `scenes/battle/battle_screen.tscn` 现在是兼容门面：它只实例化
-`scenes/battle/components/battle_table.tscn`，并保留旧的 `BattleScreen.update_view()`、
-`play_presentation()`、`capture_presentation_snapshot()` 等 API。日常可视化编辑应打开
+`scenes/battle/components/battle_table.tscn`。规则动作、AI、Choice 和联机同步统一调用
+`BattleScreen.submit_transition(BattleTransitionRequest)`；旧的 `update_view()`、
+`play_presentation()`、`capture_presentation_snapshot()` 只保留给静态页面和工具兼容。日常可视化编辑应打开
 `components/battle_table.tscn` 或其中的子组件。
+
+表现层采用“权威状态立即结算、可见状态按事件提交”的视觉事务：
+
+- `BattleViewModel` 是当前玩家可见的不可变目标视图，不反向修改 `GameState`。
+- `BattlePresentationCoordinator` 为每批请求保存独立的 from/target 快照并返回 `PresentationHandle`。
+- `PresentationDirector` 逐事件调度；空间运动由 `MotionHandle` / `MotionGroup` 的真实 Tween 完成信号收尾。
+- `HandMotionController`、`CardMotionLayer`、`CardMotionEntity` 和 `BoardAnchorResolver` 分别拥有手牌布局、运动代理和动态落点。
+- `MotionPolicy` 统一 cinematic / standard / fast / reduced 节奏；reduced 仍在本帧末按同一事件顺序完成。
+
+不要在规则提交后先调用 `update_view()` 刷出最终手牌，再补调 `play_presentation()`；这会重新制造
+“先腾位置、后飞牌”的问题。需要等待 Choice、AI、回合交接或胜利页时，等待对应
+`PresentationHandle.completed`，并再次核对 revision。
 
 打开 `scenes/battle/components/battle_table.tscn`，可以直接看到：
 
@@ -428,7 +442,8 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 
 `Presentation` 分组还可以修改动态飞牌的最低弧线、距离比例、错峰高度和错峰时间。
 `PresentationDirector` 节点则暴露电影、标准、
-快速和减少动画四档速度。保持默认值即可获得当前节奏；修改后应重跑截图回归。
+快速和减少动画四档速度；standard / fast 默认分别为 0.82 / 0.58，reduced 为零空间运动。
+保持默认值即可获得当前节奏；修改后应重跑截图回归。
 
 修改后运行 Workbench 的“战斗场景”，同时观察 16:9 与超宽屏截图，避免只在
 自己的窗口尺寸上看起来正确。
@@ -626,8 +641,9 @@ page.select_deck(1, "water")
 | 弹窗打开和关闭 | `main.tscn` 的 ModalLayer 与 `ModalHost` | 前台/战斗规格共享外壳但隔离 Theme |
 | 卡牌选中呼吸 | `card_view.tscn` 的 `selected_pulse` | 复用组件固定状态 |
 | 合法目标闪烁 | `card_view.tscn` 的 `target_pulse` | 复用组件固定状态 |
-| 抽牌飞向手牌 | `battle_screen.gd` 的 `_on_card_motion_requested()` 和导出参数 | 起点终点来自实时对局 |
-| 攻击、击倒、奖品飞牌 | `PresentationDirector` + `BattleTable` | 事件和目标位置运行时才知道 |
+| 抽牌飞向手牌 | `BattlePresentationCoordinator` + `HandMotionController` | 旧手牌保持原位，到 55% 接触点才逐张插入 anchor |
+| 出牌、击倒、奖品飞牌 | `PresentationDirector` + `CardMotionLayer` | 同一个 `CardMotionEntity` 从真实源姿态连续移动 |
+| 镜头与动态落点 | `BattleCameraRig` + `BoardAnchorResolver` | 牌桌和 Effects 同步位移，resize 时重新解析目标 |
 
 减少动画模式下不要强制播放时间轴。前台优先使用共享策略：
 
@@ -650,6 +666,7 @@ sequenceDiagram
     participant Main
     participant Engine as GameEngine
     participant Stack as ResolutionStack
+    participant Coordinator as BattlePresentationCoordinator
     participant Present as PresentationDirector
 
     Main->>Battle: update_view(state, action_rows)
@@ -665,12 +682,19 @@ sequenceDiagram
     Main->>Engine: apply_action(state, action, rng)
     Engine->>Stack: 推入效果帧/选择请求
     Engine-->>Main: StepResult + events
-    Main->>Battle: update_view(state, action_rows)
-    Main->>Present: play(events)
+    Main->>Battle: submit_transition(target_view, events, revision)
+    Battle->>Coordinator: 排队独立 from/target 批次
+    Coordinator->>Battle: staging 后提交可见目标视图
+    Coordinator->>Present: 逐事件 play(events)
     Present-->>Battle: 动画、音效、粒子请求
+    Battle-->>Coordinator: MotionGroup 真实完成
+    Coordinator-->>Main: PresentationHandle.completed
 ```
 
-长按卡牌 350ms 走 `detail_requested` 打开检查器，不进入上述动作执行链。右侧
+长按卡牌 350ms 走 `detail_requested` 打开检查器，不进入上述动作执行链。桌面移动 8px 开始拖牌；
+触屏移动 12px 后，明显横向手势滚动手牌，向牌桌上方的手势才开始拖牌。拖动期间源卡 Content
+立即隐藏并退出布局，自有 `CardMotionEntity` 是唯一完整卡面；不要重新使用 `set_drag_preview()`。
+右侧
 `PhaseAdvanceButton` 只处理 `SETUP_DONE` / `END_TURN`，经 `phase_action_requested` 汇入同一个
 `action_requested(GameAction)` 出口。拖放也必须先由 Router 精确匹配到唯一合法动作；
 视觉预览不能提前移动卡牌或修改 `GameState`。
@@ -846,8 +870,11 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 | 控件位置不听拖拽 | 它是否位于 Container 下 |
 | `%NodeName` 为 null | 是否删除或重命名了唯一节点；是否在 `_ready()` 前访问 |
 | 点击没有反应 | Button 信号是否连接；遮挡层的 mouse filter |
-| 动作完成但画面没更新 | 是否调用 `BattleScreen.update_view()` |
+| 动作完成但画面没更新 | 是否提交了包含最新 `BattleViewModel` 的 transition，并等待了正确 revision 的 Handle |
 | 动画重复播放 | Presentation event ID 是否去重 |
+| 动画永久忙碌 | `MotionGroup` 是否 seal；Tween 是否被旧动画 kill 后未取消 Handle |
+| 抽牌先出现空位 | 是否绕过 `submit_transition()` 提前刷新最终手牌 |
+| 拖牌出现两张完整卡面 | 源 `CardView` 的 drag mask 与自有 proxy 是否由同一个 `DragSession` 管理 |
 | 联机显示错误卡牌 | `StateSerializer.for_player()` 和事件可见性 |
 
 本项目部分页面会在 `_ready()` 前调用 `configure()`。对应脚本使用显式
@@ -861,7 +888,9 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 .\tools\test_godot.ps1
 ```
 
-该入口包含前台布局 contract，会在 1280×720、1600×900、1024×768、2000×900、标题页
+该入口会运行规则/UI 主回归、battle table layout、presentation event、CardView layers、
+battle transition、Workbench transition、网络协议和前台布局 contract。前台布局会在
+1280×720、1600×900、1024×768、2000×900、标题页
 720×1280 / 800×1280 竖屏兜底、
 窄 Workbench 宿主和模拟四边 48px 安全区下检查关键控件边界、重叠、横向滚动与最小命中区。
 标题页会覆盖 Wide、Compact landscape、Dense 三档，并验证主入口、本地/AI/联机后续路径、

@@ -955,6 +955,39 @@ def _turn_transition_event_types(
     return events
 
 
+def _canonical_attack_presentation_order(events: list[str]) -> list[str]:
+    """Keep rule settlement order separate from the attack presentation order."""
+    declarations = [event for event in events if event == "attack_declared"]
+    pre_hit = [event for event in events if event == "coin_flip"]
+    hit_types = {
+        "confusion_failed",
+        "damage_counters_placed",
+        "damage_dealt",
+        "damage_prevented",
+    }
+    hit = [event for event in events if event in hit_types]
+    knockouts = [event for event in events if event == "pokemon_ko"]
+    prizes = [event for event in events if event == "prize_taken"]
+    reserved = {
+        "attack_declared",
+        "coin_flip",
+        "pokemon_ko",
+        "prize_taken",
+        *hit_types,
+    }
+    post_hit: list[str] = []
+    flow: list[str] = []
+    reached_flow = False
+    for event in events:
+        if event in {"turn_end", "game_over"}:
+            reached_flow = True
+        if reached_flow:
+            flow.append(event)
+        elif event not in reserved:
+            post_hit.append(event)
+    return declarations + pre_hit + hit + knockouts + prizes + post_hit + flow
+
+
 def _canonical_transaction_event_types(
     before: dict[str, Any],
     state: GameState,
@@ -1016,6 +1049,11 @@ def _canonical_transaction_event_types(
     elif action_name == "ATTACH_ENERGY":
         events.append("energy_attached")
     elif action_name == "RETREAT":
+        if (
+            _pokemon_energy_count(after_players[actor])
+            < _pokemon_energy_count(before_players[actor])
+        ):
+            events.append("cards_discarded")
         events.append("retreat")
     elif action_name == "PROMOTE":
         events.append("promoted")
@@ -1036,6 +1074,7 @@ def _canonical_transaction_event_types(
             if isinstance(effect, dict)
         } if card is not None else set()
         if "shuffle_then_draw_cards" in compiled_ops:
+            events.append("card_moved")
             events.append("deck_shuffled")
     elif action_name == "DECLARE_ATTACK":
         events.append("attack_declared")
@@ -1073,6 +1112,13 @@ def _canonical_transaction_event_types(
                 )
             ):
                 events.append("damage_dealt")
+            if (
+                _pokemon_energy_count(after_players[actor])
+                < _pokemon_energy_count(before_players[actor])
+                and len(after_players[actor].get("discard", []))
+                > len(before_players[actor].get("discard", []))
+            ):
+                events.append("cards_discarded")
 
     if kind == "action" and action_name not in {"DECLARE_ATTACK"}:
         for _index in range(sum(
@@ -1118,6 +1164,11 @@ def _canonical_transaction_event_types(
                 events.append("cards_drawn")
                 break
     events.extend(_turn_transition_event_types(before, after))
+    if (
+        action_name == "DECLARE_ATTACK"
+        or (kind == "choice" and bool(operation.get("finish_attack", False)))
+    ):
+        return _canonical_attack_presentation_order(events)
     return events
 
 
@@ -1294,6 +1345,10 @@ def _pending_choice_case(
             "kind": "choice",
             "actor": step.pending_choice.player,
             "request_type": step.pending_choice.request_type,
+            "finish_attack": (
+                pending_request.get("metadata", {}).get("finish_attack_actor")
+                is not None
+            ),
         },
     ))
     return {

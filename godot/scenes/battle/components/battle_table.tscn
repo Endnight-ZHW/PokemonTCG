@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://scenes/battle/components/battle_table.gd" id="1_battle"]
 [ext_resource type="PackedScene" path="res://ui/card_view.tscn" id="2_card"]
@@ -12,6 +12,8 @@
 [ext_resource type="PackedScene" path="res://scenes/battle/components/battle_log_panel.tscn" id="10_log"]
 [ext_resource type="Script" path="res://scenes/battle/components/ai_thinking_overlay.gd" id="12_ai_overlay"]
 [ext_resource type="PackedScene" path="res://scenes/battle/components/card_action_popover.tscn" id="13_popover"]
+[ext_resource type="Script" path="res://scenes/battle/components/battle_camera_rig.gd" id="14_camera_rig"]
+[ext_resource type="PackedScene" path="res://scenes/battle/components/battle_announcement_layer.tscn" id="15_announcement"]
 
 [sub_resource type="StyleBoxFlat" id="Style_board"]
 bg_color = Color(0.012, 0.023, 0.043, 1)
@@ -53,6 +55,11 @@ grow_horizontal = 2
 grow_vertical = 2
 editor_description = "战斗桌面组合组件。承载牌桌、固定牌位、牌区、手牌、系统按钮、日志、贴卡动作浮层和表现层；BattleScreen 作为兼容门面转发到这里。"
 script = ExtResource("1_battle")
+
+[node name="CameraRig" type="Node" parent="."]
+unique_name_in_owner = true
+editor_description = "同步驱动牌桌、卡牌运动层与世界反馈层，保证飞牌和命中特效处于同一视觉坐标变换。"
+script = ExtResource("14_camera_rig")
 
 [node name="BattleRoot" type="Control" parent="."]
 mouse_filter = 2
@@ -361,7 +368,7 @@ custom_minimum_size = Vector2(668, 156)
 layout_mode = 2
 
 [node name="BattleHUD" parent="BattleRoot/Body" instance=ExtResource("8_hud")]
-z_index = 92
+z_index = 180
 layout_mode = 0
 
 [node name="LogPanel" parent="BattleRoot/Body/BattleHUD" instance=ExtResource("10_log")]
@@ -382,6 +389,20 @@ editor_description = "牌桌根层的瞬态信息浮层，不参与 Board 或右
 
 [node name="CardActionPopover" parent="." instance=ExtResource("13_popover")]
 
+[node name="WorldFeedback" type="Control" parent="."]
+unique_name_in_owner = true
+z_index = 170
+z_as_relative = false
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+editor_description = "高于场上卡牌及飞牌、低于 HUD 的世界反馈层，只绘制伤害、治疗、状态文字与命中特效。"
+script = ExtResource("5_effect")
+
 [node name="Effects" type="Control" parent="."]
 unique_name_in_owner = true
 mouse_filter = 2
@@ -391,7 +412,11 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+editor_description = "卡牌运动坐标层。其飞牌子节点保留独立 z 值，不与世界反馈文字共享父级层级。"
 script = ExtResource("5_effect")
+
+[node name="AnnouncementLayer" parent="." instance=ExtResource("15_announcement")]
+unique_name_in_owner = true
 
 [node name="PresentationInputBlocker" type="Control" parent="."]
 unique_name_in_owner = true

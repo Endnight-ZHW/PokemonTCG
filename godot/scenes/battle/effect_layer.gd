@@ -8,7 +8,12 @@ var quality_profile := "high"
 const MAX_PARTICLES := 220
 const MAX_FLOATING_TEXTS := 18
 const MAX_IMPACT_RINGS := 24
+const REDUCED_SLOT_RADIUS := 14.0
+const REDUCED_SLOT_OFFSET := Vector2(22.0, 32.0)
 const FLOATING_TEXT_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres")
+
+var _reduced_slot_frame := -1
+var _reduced_slot_groups: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -47,26 +52,52 @@ func floating_text(
 	text: String,
 	position_value: Vector2,
 	color: Color,
-) -> void:
+	drift: bool = true,
+) -> MotionHandle:
 	while floating_texts.size() >= MAX_FLOATING_TEXTS:
-		floating_texts.pop_front()
+		var removed: Dictionary = floating_texts.pop_front()
+		var removed_handle := removed.get("motion_handle") as MotionHandle
+		if removed_handle != null:
+			removed_handle.cancel()
+	var handle := MotionHandle.new()
+	var motion_duration := _floating_motion_duration(drift)
+	var resolved_position := position_value
+	if motion_duration <= 0.0:
+		resolved_position = _reduced_slot_position(position_value)
+		handle.finish()
 	floating_texts.append({
 		"text": text,
-		"position": position_value,
+		"position": resolved_position,
+		"anchor_position": position_value,
 		"color": color,
 		"life": 1.05,
 		"total": 1.05,
+		"velocity": Vector2(0.0, -38.0) if drift else Vector2.ZERO,
+		"motion_remaining": motion_duration,
+		"motion_handle": handle,
+		"created_frame": Engine.get_process_frames(),
 	})
 	_update_processing()
 	queue_redraw()
+	return handle
 
 
 func clear_transients() -> void:
+	var removed_texts := floating_texts.duplicate()
 	particles.clear()
 	floating_texts.clear()
 	impact_rings.clear()
+	_reduced_slot_groups.clear()
+	_reduced_slot_frame = -1
 	set_process(false)
 	queue_redraw()
+	# Cancel after clearing local arrays so a completion callback that advances
+	# the Director cannot have its newly-created feedback erased reentrantly.
+	for row_value in removed_texts:
+		var row: Dictionary = row_value
+		var handle := row.get("motion_handle") as MotionHandle
+		if handle != null:
+			handle.cancel()
 
 
 func _process(delta: float) -> void:
@@ -88,8 +119,24 @@ func _process(delta: float) -> void:
 	for row in floating_texts:
 		row["life"] = float(row["life"]) - delta
 		if float(row["life"]) <= 0.0:
+			var expired_handle := row.get("motion_handle") as MotionHandle
+			if expired_handle != null:
+				expired_handle.finish()
 			continue
-		row["position"] = Vector2(row["position"]) + Vector2(0, -38.0) * delta
+		var motion_remaining := float(row.get("motion_remaining", 0.0))
+		if motion_remaining > 0.0:
+			var motion_step := minf(delta, motion_remaining)
+			row["position"] = (
+				Vector2(row["position"])
+				+ Vector2(row.get("velocity", Vector2(0.0, -38.0)))
+				* motion_step
+			)
+			motion_remaining = maxf(0.0, motion_remaining - motion_step)
+			row["motion_remaining"] = motion_remaining
+			if motion_remaining <= 0.0:
+				var motion_handle := row.get("motion_handle") as MotionHandle
+				if motion_handle != null:
+					motion_handle.finish()
 		live_texts.append(row)
 	floating_texts = live_texts
 	var live_rings: Array[Dictionary] = []
@@ -108,6 +155,44 @@ func _update_processing() -> void:
 		not particles.is_empty()
 		or not floating_texts.is_empty()
 		or not impact_rings.is_empty()
+	)
+
+
+func _floating_motion_duration(drift: bool) -> float:
+	if not drift or MotionPolicy.reduced():
+		return 0.0
+	# Finish positional writes before the shortest damage-event barrier. The text
+	# may remain visible while fading, but its anchor is stable when input returns.
+	# Keep more than one 30 FPS frame of headroom before the event barrier so
+	# process ordering cannot produce a final positional write after input unlocks.
+	return MotionPolicy.duration("damage") * 0.60
+
+
+func _reduced_slot_position(anchor: Vector2) -> Vector2:
+	var frame := Engine.get_process_frames()
+	if frame != _reduced_slot_frame:
+		_reduced_slot_frame = frame
+		_reduced_slot_groups.clear()
+	var slot := 0
+	var matched := false
+	for index in range(_reduced_slot_groups.size()):
+		var group: Dictionary = _reduced_slot_groups[index]
+		if Vector2(group.get("anchor", anchor)).distance_to(anchor) > REDUCED_SLOT_RADIUS:
+			continue
+		slot = int(group.get("count", 0))
+		group["count"] = slot + 1
+		_reduced_slot_groups[index] = group
+		matched = true
+		break
+	if not matched:
+		_reduced_slot_groups.append({"anchor": anchor, "count": 1})
+	if slot <= 0:
+		return anchor
+	var row := ceili(float(slot) / 2.0)
+	var side := -1.0 if slot % 2 == 1 else 1.0
+	return anchor + Vector2(
+		REDUCED_SLOT_OFFSET.x * side,
+		-REDUCED_SLOT_OFFSET.y * float(row),
 	)
 
 

@@ -46,15 +46,37 @@ func deal_damage(
 		pokemon.damage_prevented_next_turn = false
 		if pokemon.all_prevented_next_turn:
 			pokemon.all_prevented_next_turn = false
+		events.append({
+			"event_type": "damage_prevented",
+			"target": {"player": player_idx, "slot": slot},
+			"data": {
+				"player": player_idx,
+				"slot": slot,
+				"reason": "damage_immunity",
+			},
+		})
 		return VMResult.ok("伤害被免疫。")
 	if consume_effect_immunity and pokemon.all_prevented_next_turn:
 		pokemon.all_prevented_next_turn = false
+		events.append({
+			"event_type": "damage_prevented",
+			"target": {"player": player_idx, "slot": slot},
+			"data": {
+				"player": player_idx,
+				"slot": slot,
+				"reason": "effect_immunity",
+			},
+		})
 		return VMResult.ok("附加效果伤害被免疫。")
-	pokemon.damage_counters += int(amount / DAMAGE_PER_COUNTER)
+	var applied_counters := int(amount / DAMAGE_PER_COUNTER)
+	if applied_counters <= 0:
+		return VMResult.ok()
+	var applied_amount := applied_counters * DAMAGE_PER_COUNTER
+	pokemon.damage_counters += applied_counters
 	events.append({"event_type": "damage_dealt", "data": {
-		"player": player_idx, "slot": slot, "amount": amount,
+		"player": player_idx, "slot": slot, "amount": applied_amount,
 	}})
-	return VMResult.ok("造成%d点伤害。" % amount)
+	return VMResult.ok("造成%d点伤害。" % applied_amount)
 
 
 func heal_pokemon(

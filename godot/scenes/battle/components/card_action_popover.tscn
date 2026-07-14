@@ -24,7 +24,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-z_index = 100
+z_index = 210
 visible = false
 editor_description = "牌桌根层上的贴卡动作浮层。按钮不会参与 CardView 的最小尺寸计算。"
 script = ExtResource("1_script")
@@ -38,7 +38,7 @@ begin_cap_mode = 2
 end_cap_mode = 2
 antialiased = true
 
-[node name="Panel" type="PanelContainer" parent="."]
+[node name="Panel" type="Panel" parent="."]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 0)
 offset_right = 236.0
@@ -47,7 +47,12 @@ mouse_filter = 0
 theme_override_styles/panel = SubResource("Style_panel")
 
 [node name="Margin" type="MarginContainer" parent="Panel"]
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10

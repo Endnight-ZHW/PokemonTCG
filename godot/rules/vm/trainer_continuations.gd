@@ -44,9 +44,12 @@ func continue_discard_then_draw(
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var player_idx := int(data["player_idx"])
+	var source_indices := VMZoneHelpers.selected_source_indices(selected)
 	var discarded: Array[String] = VMZoneHelpers.remove_selected_from_zone(
 		state.get_player(player_idx), "hand", selected, true)
-	events.append(VMZoneHelpers.discard_event(player_idx, "hand", discarded, discarded.size()))
+	if not discarded.is_empty():
+		events.append(VMZoneHelpers.discard_event(
+			player_idx, "hand", discarded, discarded.size(), source_indices))
 	return VMZoneHelpers.draw_available(state, player_idx, int(data["draw_amount"]), events)
 
 
@@ -60,9 +63,12 @@ func continue_discard_cards(
 ) -> Dictionary:
 	var player_idx := int(data["player_idx"])
 	var zone := str(data["zone"])
+	var source_indices := VMZoneHelpers.selected_source_indices(selected)
 	var discarded: Array[String] = VMZoneHelpers.remove_selected_from_zone(
 		state.get_player(player_idx), zone, selected, true)
-	events.append(VMZoneHelpers.discard_event(player_idx, zone, discarded, discarded.size()))
+	if not discarded.is_empty():
+		events.append(VMZoneHelpers.discard_event(
+			player_idx, zone, discarded, discarded.size(), source_indices))
 	return VMResult.ok()
 
 
@@ -75,9 +81,13 @@ func continue_hand_bottom_draw(
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
+	var source_indices := VMZoneHelpers.selected_source_indices(selected)
 	var moved: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "hand", selected, false)
 	for card_id in moved:
 		player.deck.push_front(card_id)
+	if not moved.is_empty():
+		events.append(VMZoneHelpers.cards_selected_event(
+			int(data["player_idx"]), "hand", "deck", moved, -1, source_indices, [0]))
 	return VMZoneHelpers.draw_available(state, int(data["player_idx"]), moved.size(), events)
 
 
@@ -90,9 +100,13 @@ func continue_houb(
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
+	var source_indices := VMZoneHelpers.selected_source_indices(selected)
 	var bottom: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "hand", selected, false)
 	for card_id in bottom:
 		player.deck.push_front(card_id)
+	if not bottom.is_empty():
+		events.append(VMZoneHelpers.cards_selected_event(
+			int(data["player_idx"]), "hand", "deck", bottom, -1, source_indices, [0]))
 	return VMZoneHelpers.draw_available(
 		state, int(data["player_idx"]),
 		max(0, int(data["target"]) - player.hand.size()), events)
@@ -107,9 +121,11 @@ func continue_zinnia(
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
+	var source_indices := VMZoneHelpers.selected_source_indices(selected)
 	var discarded: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "hand", selected, true)
-	events.append(VMZoneHelpers.discard_event(
-		int(data["player_idx"]), "hand", discarded, discarded.size()))
+	if not discarded.is_empty():
+		events.append(VMZoneHelpers.discard_event(
+			int(data["player_idx"]), "hand", discarded, discarded.size(), source_indices))
 	return VMZoneHelpers.draw_available(
 		state, int(data["player_idx"]), int(data["draw_amount"]), events)
 
@@ -126,6 +142,7 @@ func continue_shuffle_from_discard(
 	var player := state.get_player(player_idx)
 	if selected.is_empty():
 		return VMResult.fail("至少选择1张卡。", "choice_count")
+	var source_indices := VMZoneHelpers.selected_source_indices(selected)
 	var shuffled: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "discard", selected, false)
 	if shuffled.is_empty():
 		return VMResult.fail("没有可洗回牌库的卡。", "choice_count")
@@ -143,6 +160,8 @@ func continue_shuffle_from_discard(
 			"target_zone": "deck",
 			"card_ids": shuffled.duplicate(),
 			"count": shuffled.size(),
+			"source_index": source_indices[0] if not source_indices.is_empty() else -1,
+			"source_indices": source_indices,
 		},
 	})
 	events.append({"event_type": "deck_shuffled", "data": {
@@ -158,7 +177,7 @@ func continue_clara(
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
 	var pokemon_left := int(data["pokemon_count"])
@@ -172,8 +191,23 @@ func continue_clara(
 		elif catalog.is_basic_energy(card_id) and energy_left > 0:
 			accepted.append(option)
 			energy_left -= 1
+	var source_indices := VMZoneHelpers.selected_source_indices(accepted)
+	var hand_start := player.hand.size()
 	var recovered: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "discard", accepted, false)
 	player.hand.append_array(recovered)
+	if not recovered.is_empty():
+		var target_indices: Array[int] = []
+		for index in range(recovered.size()):
+			target_indices.append(hand_start + index)
+		events.append(VMZoneHelpers.cards_selected_event(
+			int(data["player_idx"]),
+			"discard",
+			"hand",
+			recovered,
+			-1,
+			source_indices,
+			target_indices,
+		))
 	return VMResult.ok()
 
 
@@ -197,8 +231,23 @@ func continue_arven(
 		elif catalog.is_tool(card_id) and not tool_taken:
 			accepted.append(option)
 			tool_taken = true
+	var source_indices := VMZoneHelpers.selected_source_indices(accepted)
+	var hand_start := player.hand.size()
 	var cards: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "deck", accepted, false)
 	player.hand.append_array(cards)
+	if not cards.is_empty():
+		var target_indices: Array[int] = []
+		for index in range(cards.size()):
+			target_indices.append(hand_start + index)
+		events.append(VMZoneHelpers.cards_selected_event(
+			int(data["player_idx"]),
+			"deck",
+			"hand",
+			cards,
+			-1,
+			source_indices,
+			target_indices,
+		))
 	rng.shuffle(player.deck)
 	events.append({"event_type": "deck_shuffled", "data": {
 		"player": int(data["player_idx"]),

@@ -63,7 +63,11 @@ func declare_attack(
 		attacker.damage_counters += 3
 		var confused_events: Array[Dictionary] = [attack_event, {
 			"event_type": "confusion_failed",
-			"data": {"player": actor, "self_damage": 30},
+			"actor": actor,
+			"source": {"player": actor, "slot": "active"},
+			"target": {"player": actor, "slot": "active"},
+			"amount": 30,
+			"data": {"player": actor, "slot": "active", "self_damage": 30},
 		}]
 		var confused_ko_result := knockout_settlement.resolve_knockouts(state, actor, confused_events, false)
 		if not bool(confused_ko_result.get("success", false)):
@@ -133,7 +137,10 @@ func declare_attack(
 		return step
 	var stack := ResolutionStack.from_dict(state.resolution_stack)
 	step.events.push_front(attack_event)
-	return _merge_steps(step, complete_attack_context(state, stack, rng))
+	return merge_attack_presentation(
+		step,
+		complete_attack_context(state, stack, rng),
+	)
 
 
 func complete_attack_context(
@@ -247,7 +254,13 @@ func apply_attack_damage(
 	if defender.damage_prevented_next_turn and not ignore_defender_effects:
 		defender.damage_prevented_next_turn = false
 		defender.all_prevented_next_turn = false
-		events.append({"event_type": "damage_prevented", "data": {"player": 1 - actor}})
+		events.append({
+			"event_type": "damage_prevented",
+			"actor": actor,
+			"source": {"player": actor, "slot": "active"},
+			"target": {"player": 1 - actor, "slot": "active"},
+			"data": {"player": 1 - actor, "slot": "active"},
+		})
 		return
 	var damage := base_damage
 	if state.apply_type_matchups and not piercing:
@@ -275,10 +288,13 @@ func apply_attack_damage(
 	}
 	damage = VMDamageModifierHooks.apply_modify_damage(state, catalog, damage_context)
 	damage_context["damage"] = damage
-	defender.damage_counters += int(float(damage) / 10.0)
-	events.append({"event_type": "damage_dealt", "data": {
-		"player": 1 - actor, "slot": "active", "amount": damage,
-	}})
+	var applied_counters := int(float(damage) / 10.0)
+	var applied_amount := applied_counters * 10
+	defender.damage_counters += applied_counters
+	if applied_amount > 0:
+		events.append({"event_type": "damage_dealt", "data": {
+			"player": 1 - actor, "slot": "active", "amount": applied_amount,
+		}})
 	trigger_command_runner.collect_after_damage_commands(
 		state,
 		damage_context,
@@ -303,6 +319,60 @@ func run_attack_effects(
 
 func attack_runtime_effects(attack: Dictionary) -> Array:
 	return VMRuntimeEffects.strict_attack_effects(attack)
+
+
+func merge_attack_presentation(
+	effect_step: StepResult,
+	completion_step: StepResult,
+) -> StepResult:
+	# Attack effects are resolved before base damage so they can update damage
+	# formulas and authoritative state. That rule order must not leak into the
+	# presentation order: self-discard, status, switching and leave-play effects
+	# are consequences of the hit and should be shown after damage/KO settlement.
+	var declarations: Array[Dictionary] = []
+	var pre_hit_events: Array[Dictionary] = []
+	var effect_hit_events: Array[Dictionary] = []
+	var post_hit_events: Array[Dictionary] = []
+	for event in effect_step.events:
+		var event_type := str(event.get("event_type", ""))
+		if event_type == "attack_declared":
+			declarations.append(event)
+		elif event_type == "coin_flip":
+			pre_hit_events.append(event)
+		elif event_type in [
+			"confusion_failed",
+			"damage_counters_placed",
+			"damage_dealt",
+			"damage_prevented",
+			"pokemon_ko",
+			"prize_taken",
+		]:
+			effect_hit_events.append(event)
+		else:
+			post_hit_events.append(event)
+
+	var completion_settlement: Array[Dictionary] = []
+	var completion_flow: Array[Dictionary] = []
+	var reached_flow := false
+	for completion_event in completion_step.events:
+		var completion_event_type := str(completion_event.get("event_type", ""))
+		if completion_event_type in ["turn_end", "game_over"]:
+			reached_flow = true
+		if reached_flow:
+			completion_flow.append(completion_event)
+		else:
+			completion_settlement.append(completion_event)
+
+	var ordered_events: Array[Dictionary] = []
+	ordered_events.append_array(declarations)
+	ordered_events.append_array(pre_hit_events)
+	ordered_events.append_array(effect_hit_events)
+	ordered_events.append_array(completion_settlement)
+	ordered_events.append_array(post_hit_events)
+	ordered_events.append_array(completion_flow)
+	var merged := _merge_steps(effect_step, completion_step)
+	merged.events = ordered_events
+	return merged
 
 
 func _error(

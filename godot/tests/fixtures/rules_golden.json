@@ -2413,8 +2413,8 @@
         {
           "event_types": [
             "attack_declared",
-            "status_applied",
             "damage_dealt",
+            "status_applied",
             "turn_end",
             "checkup",
             "cards_drawn",
@@ -3304,8 +3304,8 @@
         {
           "event_types": [
             "attack_declared",
-            "healed",
             "damage_dealt",
+            "healed",
             "turn_end",
             "checkup",
             "cards_drawn",
@@ -3780,6 +3780,7 @@
       "trace": [
         {
           "event_types": [
+            "cards_discarded",
             "retreat"
           ],
           "expected": {
@@ -6482,8 +6483,9 @@
           "event_types": [
             "attack_declared",
             "damage_dealt",
+            "pokemon_ko",
             "prize_taken",
-            "pokemon_ko"
+            "cards_discarded"
           ],
           "expected": {
             "active_player_idx": 0,
@@ -7557,8 +7559,8 @@
         },
         {
           "event_types": [
-            "deck_shuffled",
             "damage_dealt",
+            "deck_shuffled",
             "turn_end",
             "checkup",
             "cards_drawn",
@@ -8525,9 +8527,9 @@
         },
         {
           "event_types": [
+            "damage_dealt",
             "energy_attached",
             "deck_shuffled",
-            "damage_dealt",
             "turn_end",
             "checkup",
             "cards_drawn",
@@ -11601,6 +11603,7 @@
         {
           "event_types": [
             "trainer_played",
+            "card_moved",
             "deck_shuffled",
             "cards_drawn"
           ],

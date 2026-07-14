@@ -167,6 +167,8 @@ layout_mode = 2
 [node name="Toast" type="Label" parent="." unique_id=109388610]
 unique_name_in_owner = true
 visible = false
+z_index = 350
+z_as_relative = false
 layout_mode = 1
 offset_left = 360.0
 offset_top = 26.0

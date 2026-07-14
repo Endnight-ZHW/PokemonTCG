@@ -72,7 +72,14 @@ func cmd_discard_then_draw_cards(
 		var discard_draw_player := state.get_player(player_idx)
 		var discarded_cards := discard_draw_player.hand.duplicate()
 		var discarded_count := discard_draw_player.discard_entire_hand()
-		events.append(VMZoneHelpers.discard_event(player_idx, "hand", discarded_cards, discarded_count))
+		if discarded_count > 0:
+			events.append(VMZoneHelpers.discard_event(
+				player_idx,
+				"hand",
+				discarded_cards,
+				discarded_count,
+				range(discarded_count),
+			))
 		return VMZoneHelpers.draw_available(state, player_idx, draw_amount, events)
 	var select_discard_amount := int(args.get("discard_amount", args.get("amount", 1)))
 	return VMChoiceRequests.request_cards(
@@ -229,7 +236,14 @@ func zinnia_resolve_request(
 	if player.hand.size() == 2:
 		var discarded_cards := player.hand.duplicate()
 		var discarded_count := player.discard_entire_hand()
-		events.append(VMZoneHelpers.discard_event(player_idx, "hand", discarded_cards, discarded_count))
+		if discarded_count > 0:
+			events.append(VMZoneHelpers.discard_event(
+				player_idx,
+				"hand",
+				discarded_cards,
+				discarded_count,
+				range(discarded_count),
+			))
 		return VMZoneHelpers.draw_available(state, player_idx, draw_amount, events)
 	return VMChoiceRequests.request_cards(
 		catalog,

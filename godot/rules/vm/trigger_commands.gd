@@ -607,12 +607,19 @@ func _execute_place_damage_counters(
 	var counters := int(args.get("count", 0))
 	if target and counters > 0:
 		target.damage_counters += counters
-		events.append({"event_type": "damage_counters_placed", "data": {
-			"player": target_player,
-			"slot": target_slot,
-			"count": counters,
-			"source": str(args.get("source", "")),
-		}})
+		events.append({
+			"event_type": "damage_counters_placed",
+			"actor": int(args.get("source_player", target_player)),
+			"target": {"player": target_player, "slot": target_slot},
+			"amount": counters * 10,
+			"data": {
+				"player": target_player,
+				"slot": target_slot,
+				"count": counters,
+				"counter_count": counters,
+				"source": str(args.get("source", "")),
+			},
+		})
 
 
 func _execute_move_basic_energy(
@@ -636,19 +643,35 @@ func _execute_move_basic_energy(
 	if basic_energy_index < 0:
 		return
 	var energy_id: String = source.energy_card_ids.pop_at(basic_energy_index)
+	var target_index := target.energy_card_ids.size()
 	target.energy_card_ids.append(energy_id)
 	events.append({
 		"event_type": "energy_attached",
 		"actor": to_player,
 		"card_id": energy_id,
-		"source": {"player": from_player, "slot": from_slot},
-		"target": {"player": to_player, "slot": to_slot},
+		"source": {
+			"player": from_player,
+			"slot": from_slot,
+			"attachment_type": "energy",
+			"index": basic_energy_index,
+		},
+		"target": {
+			"player": to_player,
+			"slot": to_slot,
+			"attachment_type": "energy",
+			"index": target_index,
+		},
 		"data": {
 			"player": to_player,
 			"slot": to_slot,
 			"card_id": energy_id,
 			"source": str(args.get("source", "")),
+			"source_player": from_player,
 			"source_slot": from_slot,
+			"source_index": basic_energy_index,
+			"target_player": to_player,
+			"target_slot": to_slot,
+			"target_index": target_index,
 		},
 	})
 

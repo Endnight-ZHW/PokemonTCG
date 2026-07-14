@@ -12,9 +12,12 @@ signal card_dropped(
 signal action_requested(action: GameAction)
 signal drag_started(hand_index: int)
 signal drag_ended
+signal hovered_changed(hovered: bool)
 
 const LONG_PRESS_MSEC := 350
-const DRAG_THRESHOLD := 14.0
+const MOUSE_DRAG_THRESHOLD := 8.0
+const TOUCH_DRAG_THRESHOLD := 12.0
+const TOUCH_SCROLL_AXIS_RATIO := 1.25
 const MINIMUM_TOUCH_TARGET := 48.0
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
 const MIN_CARD_CORNER_RADIUS := 3
@@ -63,6 +66,7 @@ const DEFAULT_ENERGY_BADGE_SIZE := 24.0
 const ENERGY_BADGE_SEPARATION := 2.0
 
 var card_id := ""
+var local_visual_id := ""
 var hand_index := -1
 var owner_player := -1
 var slot := ""
@@ -77,6 +81,9 @@ var compact := false
 var pokemon: PokemonState
 var catalog: CardCatalog
 
+@onready var interaction_root: Control = %InteractionRoot
+@onready var feedback_root: Control = %FeedbackRoot
+@onready var content_root: Control = %ContentRoot
 @onready var shadow: Panel = %Shadow
 @onready var frame: Panel = %Frame
 @onready var image: TextureRect = %Image
@@ -95,6 +102,8 @@ var catalog: CardCatalog
 var _press_msec := 0
 var _press_position := Vector2.ZERO
 var _pressed := false
+var _touch_pointer := -1
+var _touch_scrolling := false
 var _hovered := false
 var _base_position := Vector2.ZERO
 var _has_base_position := false
@@ -105,10 +114,18 @@ var _disabled_reason := ""
 var _legal_target_hint := ""
 var _allowed_drop_hand_indices: Array[int] = []
 var _dragging := false
+var _drag_masked := false
+var _native_drag_masked := false
 var _presentation_hidden := false
 var _presentation_tween: Tween
+var _presentation_motion_handle: MotionHandle
 var _lift_tween: Tween
 var _shake_tween: Tween
+var _interaction_target_offset := Vector2.ZERO
+var _interaction_target_scale := Vector2.ONE
+var _interaction_target_reduced := false
+var _interaction_target_initialized := false
+var _active_state_animation := ""
 var _flash_overlays: Array[ColorRect] = []
 var _table_depth := 0.5
 var _near_side := true
@@ -120,6 +137,15 @@ var energy_row: HBoxContainer
 var tool_badge: Label
 var _empty_slot_label_text := ""
 var _texture_cache: Node
+
+
+func set_local_visual_id(value: String) -> void:
+	local_visual_id = value
+	if value.is_empty():
+		if has_meta("local_visual_id"):
+			remove_meta("local_visual_id")
+	else:
+		set_meta("local_visual_id", value)
 
 
 func _ready() -> void:
@@ -135,7 +161,7 @@ func _ready() -> void:
 	mouse_exited.connect(_on_mouse_exited)
 	_on_resized()
 	_refresh()
-	selection_ring.visible = selected
+	_sync_detached_selection_ring()
 	target_glow.visible = targetable
 	_refresh_interaction_visuals()
 	_refresh_state_animation()
@@ -144,8 +170,16 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_DRAG_END and _dragging:
+		_set_native_drag_masked(false)
 		_dragging = false
 		drag_ended.emit()
+
+
+func _process(_delta: float) -> void:
+	# SelectionRing intentionally stays at the legacy root path for ChoicePanel
+	# styling compatibility. Mirror the layered transforms without ever writing
+	# CardView.position, which belongs exclusively to the external layout owner.
+	_sync_detached_selection_ring()
 
 
 func configure(
@@ -285,8 +319,6 @@ func clear_interaction_state() -> void:
 
 func set_selected(value: bool) -> void:
 	selected = value
-	if selection_ring:
-		selection_ring.visible = value
 	_refresh_state_animation()
 	_refresh_empty_slot_visibility()
 	_refresh_interaction_visuals()
@@ -315,19 +347,36 @@ func set_empty_label(text: String) -> void:
 func set_presentation_hidden(value: bool) -> void:
 	_presentation_hidden = value
 	_kill_presentation_tween()
-	modulate.a = 0.0 if value else 1.0
+	_set_presentation_alpha(0.0 if value else 1.0)
 
 
-func reveal_presentation(duration: float = 0.14, delay: float = 0.0) -> void:
+func reveal_presentation(
+	duration: float = 0.14,
+	delay: float = 0.0,
+) -> MotionHandle:
+	var handle := MotionHandle.new()
 	_presentation_hidden = false
 	_kill_presentation_tween()
 	if duration <= 0.0:
+		_set_presentation_alpha(1.0)
+		handle.finish()
+		return handle
+	_resolve_scene_nodes()
+	if content_root == null:
 		modulate.a = 1.0
-		return
+		handle.finish()
+		return handle
 	_presentation_tween = create_tween()
 	if delay > 0.0:
 		_presentation_tween.tween_interval(delay)
-	_presentation_tween.tween_property(self, "modulate:a", 1.0, duration)
+	_presentation_tween.tween_property(content_root, "modulate:a", 1.0, duration)
+	_presentation_motion_handle = handle
+	handle.bind_tween(_presentation_tween)
+	handle.completed.connect(
+		_on_presentation_motion_completed.bind(handle),
+		CONNECT_ONE_SHOT,
+	)
+	return handle
 
 
 func clear_presentation_state() -> void:
@@ -336,19 +385,111 @@ func clear_presentation_state() -> void:
 	if _shake_tween and _shake_tween.is_valid():
 		_shake_tween.kill()
 	_shake_tween = null
+	if feedback_root:
+		feedback_root.position = Vector2.ZERO
 	_clear_flash_overlays()
+	# Older presentation callers may still mask the CardView root directly.
+	# Reconcile that legacy alpha without using the layout transform properties.
 	modulate.a = 1.0
+	_set_presentation_alpha(1.0)
 
 
 func is_presentation_hidden() -> bool:
 	return _presentation_hidden
 
 
+func set_drag_masked(value: bool) -> void:
+	# This mask is owned by the drag coordinator and is deliberately independent
+	# from presentation staging. A pending authoritative action can therefore keep
+	# the source hidden after Godot's native drag has already ended.
+	if _drag_masked == value:
+		return
+	_drag_masked = value
+	_apply_content_visibility()
+
+
+func is_drag_masked() -> bool:
+	return _drag_masked
+
+
+func clear_drag_mask() -> void:
+	set_drag_masked(false)
+
+
+func cancel_drag_state() -> void:
+	# Resync/scene teardown must not wait for NOTIFICATION_DRAG_END: the native
+	# drag may outlive the authoritative view replacement by one input frame.
+	_pressed = false
+	_touch_pointer = -1
+	_touch_scrolling = false
+	_dragging = false
+	_set_native_drag_masked(false)
+	set_drag_masked(false)
+
+
+func set_drag_hidden(value: bool) -> void:
+	# Compatibility-friendly semantic alias for callers that describe the visual
+	# result rather than the mask source.
+	set_drag_masked(value)
+
+
+func is_drag_hidden() -> bool:
+	return _drag_masked or _native_drag_masked
+
+
 func global_center() -> Vector2:
 	# Hand and table cards can be rotated, scaled and lifted around their center.
 	# Transforming the local midpoint keeps presentation flights anchored to the
 	# actual rendered card instead of the unrotated layout rectangle.
+	if content_root:
+		return content_root.get_global_transform_with_canvas() * (content_root.size * 0.5)
 	return get_global_transform_with_canvas() * (size * 0.5)
+
+
+func attachment_anchor_global(
+	attachment_type: String,
+	attachment_card_id: String = "",
+	attachment_index: int = -1,
+) -> Vector2:
+	# Attachments are summarized as badges on a Pokemon card. Motion that starts
+	# at the Pokemon's centre makes it look as if the Pokemon itself moved, and is
+	# especially ambiguous when an opponent chooses one of several bench slots.
+	# Expose the rendered badge position so the presentation layer can preserve a
+	# stable, semantically correct source/landing point.
+	var anchor: Control
+	match attachment_type:
+		"energy":
+			anchor = energy_row
+			# The row spans the card width while its badges are packed from the
+			# leading edge. Anchor to a rendered badge rather than the empty centre
+			# of that container so the energy visibly peels out of the icon itself.
+			if energy_row != null and energy_row.get_child_count() > 0:
+				var energy_badges: Array[Control] = []
+				for child_value in energy_row.get_children():
+					var child := child_value as Control
+					if child == null:
+						continue
+					energy_badges.append(child)
+					var card_ids: Array = child.get_meta("energy_card_ids", [])
+					if (
+						not attachment_card_id.is_empty()
+						and attachment_card_id in card_ids
+					):
+						anchor = child
+						break
+				if (
+					anchor == energy_row
+					and attachment_index >= 0
+					and attachment_index < energy_badges.size()
+				):
+					anchor = energy_badges[attachment_index]
+				elif anchor == energy_row and not energy_badges.is_empty():
+					anchor = energy_badges[0]
+		"tool":
+			anchor = tool_badge
+	if anchor != null and is_instance_valid(anchor) and anchor.visible:
+		return anchor.get_global_transform_with_canvas() * (anchor.size * 0.5)
+	return global_center()
 
 
 func _has_point(point: Vector2) -> bool:
@@ -373,7 +514,7 @@ func flash(color: Color, duration: float = 0.3) -> void:
 	# Stay above every local badge (maximum 9) without escaping the battle-card
 	# layer and flashing over the HUD/action popover when a hand card is selected.
 	overlay.z_index = 10
-	add_child(overlay)
+	(content_root if content_root else self).add_child(overlay)
 	if duration <= 0.0 or _reduced_motion_enabled():
 		overlay.color.a = 0.34
 		var instant_tween := create_tween()
@@ -387,14 +528,15 @@ func flash(color: Color, duration: float = 0.3) -> void:
 
 
 func shake(strength: float = 7.0, duration: float = 0.26) -> void:
+	_resolve_scene_nodes()
+	if feedback_root == null:
+		return
 	if _reduced_motion_enabled():
+		feedback_root.position = Vector2.ZERO
 		return
 	if _shake_tween and _shake_tween.is_valid():
 		_shake_tween.kill()
-	var origin := position
-	if _has_base_position:
-		origin.x = _base_position.x
-	position.x = origin.x
+	feedback_root.position = Vector2.ZERO
 	_shake_tween = create_tween()
 	for offset in [
 		Vector2(strength, 0),
@@ -404,12 +546,15 @@ func shake(strength: float = 7.0, duration: float = 0.26) -> void:
 		Vector2.ZERO,
 	]:
 		_shake_tween.tween_property(
-			self,
+			feedback_root,
 			"position",
-			origin + offset,
+			offset,
 			duration / 5.0,
 		)
-	_shake_tween.tween_callback(func() -> void: _shake_tween = null)
+	_shake_tween.tween_callback(func() -> void:
+		feedback_root.position = Vector2.ZERO
+		_shake_tween = null
+	)
 
 
 func _refresh() -> void:
@@ -503,6 +648,12 @@ func _refresh_statuses() -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		_handle_screen_touch(event as InputEventScreenTouch)
+		return
+	if event is InputEventScreenDrag:
+		_handle_screen_drag(event as InputEventScreenDrag)
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_pressed = true
@@ -517,30 +668,106 @@ func _gui_input(event: InputEvent) -> void:
 			var moved: float = Vector2(event.position).distance_to(_press_position)
 			if held >= LONG_PRESS_MSEC and not card_id.is_empty():
 				detail_requested.emit(card_id)
-			elif moved < DRAG_THRESHOLD:
+			elif moved < MOUSE_DRAG_THRESHOLD:
 				activated.emit(card_id, hand_index, owner_player, slot)
 			accept_event()
-	# Touch intentionally follows Godot's mouse-from-touch emulation so desktop
-	# and Android share one click/long-press/drag state machine and hit-test order.
+	elif event is InputEventMouseMotion and _pressed and hand_index >= 0:
+		if Vector2(event.position).distance_to(_press_position) >= MOUSE_DRAG_THRESHOLD:
+			_begin_forced_drag()
+			accept_event()
+
+
+func _handle_screen_touch(event: InputEventScreenTouch) -> void:
+	if event.pressed:
+		_touch_pointer = event.index
+		_touch_scrolling = false
+		_pressed = true
+		_press_msec = Time.get_ticks_msec()
+		_press_position = event.position
+		accept_event()
+		return
+	if event.index != _touch_pointer:
+		return
+	_touch_pointer = -1
+	var was_pressed := _pressed
+	_pressed = false
+	if not was_pressed or _touch_scrolling or _dragging:
+		accept_event()
+		return
+	var held := Time.get_ticks_msec() - _press_msec
+	var moved := event.position.distance_to(_press_position)
+	if held >= LONG_PRESS_MSEC and moved < TOUCH_DRAG_THRESHOLD and not card_id.is_empty():
+		detail_requested.emit(card_id)
+	elif moved < TOUCH_DRAG_THRESHOLD:
+		activated.emit(card_id, hand_index, owner_player, slot)
+	accept_event()
+
+
+func _handle_screen_drag(event: InputEventScreenDrag) -> void:
+	if event.index != _touch_pointer or not _pressed:
+		return
+	if _touch_scrolling:
+		var active_scroll := _ancestor_scroll_container()
+		if active_scroll != null:
+			active_scroll.scroll_horizontal -= int(event.relative.x)
+		accept_event()
+		return
+	var displacement := event.position - _press_position
+	if displacement.length() < TOUCH_DRAG_THRESHOLD:
+		return
+	if absf(displacement.x) >= absf(displacement.y) * TOUCH_SCROLL_AXIS_RATIO:
+		_touch_scrolling = true
+		var scroll := _ancestor_scroll_container()
+		if scroll != null:
+			scroll.scroll_horizontal -= int(event.relative.x)
+		accept_event()
+		return
+	if displacement.y < -TOUCH_DRAG_THRESHOLD and hand_index >= 0:
+		_begin_forced_drag()
+		accept_event()
+
+
+func _ancestor_scroll_container() -> ScrollContainer:
+	var current := get_parent()
+	while current != null:
+		if current is ScrollContainer:
+			return current as ScrollContainer
+		current = current.get_parent()
+	return null
+
+
+func _begin_forced_drag() -> void:
+	if _dragging:
+		return
+	var data: Variant = _get_drag_data(Vector2.ZERO)
+	if data == null:
+		return
+	_pressed = false
+	force_drag(data, null)
 
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
 	if hand_index < 0 or card_id.is_empty():
 		return null
-	var preview := TextureRect.new()
-	preview.custom_minimum_size = Vector2(98, 138)
-	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	preview.texture = image.texture
-	preview.modulate = Color(1, 1, 1, 0.92)
-	set_drag_preview(preview)
-	_dragging = true
-	drag_started.emit(hand_index)
+	if not _dragging:
+		_dragging = true
+		_set_native_drag_masked(true)
+		drag_started.emit(hand_index)
 	return {
 		"kind": "hand_card",
 		"hand_index": hand_index,
 		"card_id": card_id,
 	}
+
+
+func drag_grab_offset_local() -> Vector2:
+	# Keep the physical grab point stable when CardView hands visual ownership to
+	# the table's persistent drag proxy. Clamping also makes synthetic/keyboard
+	# drags deterministic when no real pointer press preceded the request.
+	return Vector2(
+		clampf(_press_position.x, 0.0, size.x),
+		clampf(_press_position.y, 0.0, size.y),
+	)
 
 
 func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
@@ -568,6 +795,14 @@ func _drop_data(_at_position: Vector2, data: Variant) -> void:
 
 func _on_resized() -> void:
 	pivot_offset = size * 0.5
+	if interaction_root:
+		interaction_root.pivot_offset = interaction_root.size * 0.5
+	if feedback_root:
+		feedback_root.pivot_offset = feedback_root.size * 0.5
+	if content_root:
+		content_root.pivot_offset = content_root.size * 0.5
+	if selection_ring:
+		selection_ring.pivot_offset = selection_ring.size * 0.5
 	_layout_battle_overlay()
 	if energy_row != null and energy_row.visible and pokemon != null:
 		_refresh_energy_badges()
@@ -577,38 +812,59 @@ func _on_resized() -> void:
 func _on_mouse_entered() -> void:
 	_hovered = true
 	_update_lift()
+	hovered_changed.emit(true)
 
 
 func _on_mouse_exited() -> void:
 	_hovered = false
 	_pressed = false
 	_update_lift()
+	hovered_changed.emit(false)
 
 
 func _update_lift() -> void:
 	if not is_inside_tree() or not _has_base_position:
 		return
+	_resolve_scene_nodes()
+	if interaction_root == null:
+		return
 	var desired_scale := Vector2.ONE
-	var desired_y := _base_position.y
+	var desired_offset := Vector2.ZERO
 	if selected:
 		desired_scale = Vector2.ONE * selected_scale
-		desired_y -= selected_lift
+		desired_offset.y = -selected_lift
 	elif _hovered:
 		desired_scale = Vector2.ONE * hover_scale
-		desired_y -= hover_lift
-	if _reduced_motion_enabled():
+		desired_offset.y = -hover_lift
+	var reduced := _reduced_motion_enabled()
+	if (
+		_interaction_target_initialized
+		and _interaction_target_offset.is_equal_approx(desired_offset)
+		and _interaction_target_scale.is_equal_approx(desired_scale)
+		and _interaction_target_reduced == reduced
+	):
+		return
+	_interaction_target_initialized = true
+	_interaction_target_offset = desired_offset
+	_interaction_target_scale = desired_scale
+	_interaction_target_reduced = reduced
+	if reduced:
 		if _lift_tween and _lift_tween.is_valid():
 			_lift_tween.kill()
 		_lift_tween = null
-		scale = desired_scale
-		position.y = desired_y
+		interaction_root.scale = desired_scale
+		interaction_root.position = desired_offset
 		return
 	if _lift_tween and _lift_tween.is_valid():
 		_lift_tween.kill()
 	_lift_tween = create_tween().set_parallel(true)
 	_lift_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_lift_tween.tween_property(self, "scale", desired_scale, interaction_duration)
-	_lift_tween.tween_property(self, "position:y", desired_y, interaction_duration)
+	_lift_tween.tween_property(
+		interaction_root, "scale", desired_scale, interaction_duration
+	)
+	_lift_tween.tween_property(
+		interaction_root, "position", desired_offset, interaction_duration
+	)
 
 
 func remember_base_position() -> void:
@@ -622,16 +878,18 @@ func _refresh_state_animation() -> void:
 		animation_player = get_node("AnimationPlayer") as AnimationPlayer
 	if animation_player == null:
 		return
-	animation_player.stop()
+	var desired_animation := "RESET"
 	if _reduced_motion_enabled():
-		animation_player.play("RESET")
-		return
-	if selected:
-		animation_player.play("selected_pulse")
+		desired_animation = "RESET"
+	elif selected:
+		desired_animation = "selected_pulse"
 	elif targetable:
-		animation_player.play("target_pulse")
-	else:
-		animation_player.play("RESET")
+		desired_animation = "target_pulse"
+	if _active_state_animation == desired_animation:
+		return
+	_active_state_animation = desired_animation
+	animation_player.stop()
+	animation_player.play(desired_animation)
 
 
 func _build_content_signature(
@@ -664,37 +922,48 @@ func _build_content_signature(
 
 
 func _resolve_scene_nodes() -> void:
+	if interaction_root == null:
+		interaction_root = get_node_or_null("InteractionRoot") as Control
+	if feedback_root == null:
+		feedback_root = get_node_or_null(
+			"InteractionRoot/FeedbackRoot"
+		) as Control
+	if content_root == null:
+		content_root = get_node_or_null(
+			"InteractionRoot/FeedbackRoot/ContentRoot"
+		) as Control
+	var content_path := "InteractionRoot/FeedbackRoot/ContentRoot/"
 	if shadow == null:
-		shadow = get_node_or_null("Shadow") as Panel
+		shadow = get_node_or_null(content_path + "Shadow") as Panel
 	if frame == null:
-		frame = get_node_or_null("Frame") as Panel
+		frame = get_node_or_null(content_path + "Frame") as Panel
 	if image == null:
-		image = get_node_or_null("Frame/Image") as TextureRect
+		image = get_node_or_null(content_path + "Frame/Image") as TextureRect
 	if empty_label == null:
-		empty_label = get_node_or_null("Frame/EmptyLabel") as Label
+		empty_label = get_node_or_null(content_path + "Frame/EmptyLabel") as Label
 	if status_row == null:
-		status_row = get_node_or_null("Frame/StatusRow") as HBoxContainer
+		status_row = get_node_or_null(content_path + "Frame/StatusRow") as HBoxContainer
 	if selection_ring == null:
 		selection_ring = get_node_or_null("SelectionRing") as Panel
 	if target_glow == null:
-		target_glow = get_node_or_null("TargetGlow") as Panel
+		target_glow = get_node_or_null(content_path + "TargetGlow") as Panel
 	if actionable_marker == null:
-		actionable_marker = get_node_or_null("ActionableMarker") as Panel
+		actionable_marker = get_node_or_null(content_path + "ActionableMarker") as Panel
 	if interaction_hint == null:
-		interaction_hint = get_node_or_null("InteractionHint") as Panel
+		interaction_hint = get_node_or_null(content_path + "InteractionHint") as Panel
 	if interaction_hint_label == null:
 		interaction_hint_label = get_node_or_null(
-			"InteractionHint/InteractionHintLabel"
+			content_path + "InteractionHint/InteractionHintLabel"
 		) as Label
 	if action_overlay == null:
-		action_overlay = get_node_or_null("ActionOverlay") as PanelContainer
+		action_overlay = get_node_or_null(content_path + "ActionOverlay") as PanelContainer
 	if action_buttons == null:
 		action_buttons = get_node_or_null(
-			"ActionOverlay/Margin/Content/ActionButtons"
+			content_path + "ActionOverlay/Margin/Content/ActionButtons"
 		) as VBoxContainer
 	if action_hint == null:
 		action_hint = get_node_or_null(
-			"ActionOverlay/Margin/Content/ActionHint"
+			content_path + "ActionOverlay/Margin/Content/ActionHint"
 		) as Label
 	if animation_player == null:
 		animation_player = get_node_or_null("AnimationPlayer") as AnimationPlayer
@@ -760,7 +1029,7 @@ func _refresh_interaction_visuals() -> void:
 	# a legal target uses the stronger cyan target treatment, and an otherwise
 	# actionable card gets the quiet outer ring below.
 	if selection_ring:
-		selection_ring.visible = selected
+		selection_ring.visible = selected and _content_is_visible()
 	if target_glow:
 		target_glow.visible = targetable and not selected
 	var can_show_marker := (
@@ -821,46 +1090,48 @@ func _refresh_interaction_visuals() -> void:
 func _ensure_overlay_nodes() -> void:
 	if depth_edge != null:
 		return
+	_resolve_scene_nodes()
+	var overlay_parent: Control = content_root if content_root else self
 	depth_edge = Panel.new()
 	depth_edge.name = "DepthEdge"
 	depth_edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	depth_edge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	depth_edge.z_index = -1
-	add_child(depth_edge)
-	move_child(depth_edge, 1)
+	overlay_parent.add_child(depth_edge)
+	overlay_parent.move_child(depth_edge, 1)
 
 	top_gloss = ColorRect.new()
 	top_gloss.name = "TopGloss"
 	top_gloss.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_gloss.color = Color(1, 1, 1, 0.09)
 	top_gloss.z_index = 3
-	add_child(top_gloss)
+	overlay_parent.add_child(top_gloss)
 
 	hp_pill = _new_overlay_label("HPPill")
 	hp_pill.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hp_pill.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hp_pill.z_index = 8
-	add_child(hp_pill)
+	overlay_parent.add_child(hp_pill)
 
 	damage_badge = _new_overlay_label("DamageBadge")
 	damage_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	damage_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	damage_badge.z_index = 9
-	add_child(damage_badge)
+	overlay_parent.add_child(damage_badge)
 
 	energy_row = HBoxContainer.new()
 	energy_row.name = "EnergyRow"
 	energy_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	energy_row.add_theme_constant_override("separation", int(ENERGY_BADGE_SEPARATION))
 	energy_row.z_index = 8
-	add_child(energy_row)
+	overlay_parent.add_child(energy_row)
 
 	tool_badge = _new_overlay_label("ToolBadge")
 	tool_badge.text = "TOOL"
 	tool_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tool_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	tool_badge.z_index = 8
-	add_child(tool_badge)
+	overlay_parent.add_child(tool_badge)
 
 
 func _new_overlay_label(node_name: String) -> Label:
@@ -999,13 +1270,16 @@ func _refresh_energy_badges() -> void:
 		var row: Dictionary = row_value
 		var energy_type := str(row.get("type", "Colorless"))
 		var count := int(row.get("count", 1))
-		energy_row.add_child(_new_energy_badge(
+		var badge := _new_energy_badge(
 			energy_type,
 			count,
 			str(row.get("icon_card_id", "")),
 			str(row.get("display_name", "")),
 			badge_size,
-		))
+		)
+		badge.set_meta("energy_type", energy_type)
+		badge.set_meta("energy_card_ids", row.get("card_ids", []).duplicate())
+		energy_row.add_child(badge)
 	if has_overflow:
 		var overflow_count := 0
 		for index in range(visible_group_count, grouped.size()):
@@ -1241,8 +1515,10 @@ func _attached_energy_groups() -> Array[Dictionary]:
 					if not icon_card_id.is_empty()
 					else ""
 				),
+				"card_ids": [],
 			}
 		counts[group_key]["count"] = int(counts[group_key].get("count", 0)) + 1
+		(counts[group_key]["card_ids"] as Array).append(str(energy_id))
 	var result: Array[Dictionary] = []
 	for group_key in counts:
 		result.append(counts[group_key] as Dictionary)
@@ -1390,9 +1666,67 @@ func _apply_depth_visuals() -> void:
 
 
 func _kill_presentation_tween() -> void:
-	if _presentation_tween and _presentation_tween.is_valid():
+	if _presentation_motion_handle != null and not _presentation_motion_handle.is_finished():
+		_presentation_motion_handle.cancel()
+	elif _presentation_tween and _presentation_tween.is_valid():
 		_presentation_tween.kill()
 	_presentation_tween = null
+	_presentation_motion_handle = null
+
+
+func _on_presentation_motion_completed(
+	_completed_handle: MotionHandle,
+	expected_handle: MotionHandle,
+) -> void:
+	if _presentation_motion_handle == expected_handle:
+		_presentation_motion_handle = null
+		_presentation_tween = null
+
+
+func _set_presentation_alpha(alpha: float) -> void:
+	_resolve_scene_nodes()
+	if content_root:
+		content_root.modulate.a = clampf(alpha, 0.0, 1.0)
+	else:
+		modulate.a = clampf(alpha, 0.0, 1.0)
+	_sync_detached_selection_ring()
+
+
+func _set_native_drag_masked(value: bool) -> void:
+	if _native_drag_masked == value:
+		return
+	_native_drag_masked = value
+	_apply_content_visibility()
+
+
+func _apply_content_visibility() -> void:
+	_resolve_scene_nodes()
+	if content_root:
+		content_root.visible = _content_is_visible()
+	_sync_detached_selection_ring()
+
+
+func _content_is_visible() -> bool:
+	return not _drag_masked and not _native_drag_masked
+
+
+func _sync_detached_selection_ring() -> void:
+	if selection_ring == null:
+		return
+	var content_visible := _content_is_visible()
+	if content_root:
+		content_visible = content_visible and content_root.visible
+		selection_ring.self_modulate.a = content_root.modulate.a
+	else:
+		selection_ring.self_modulate.a = modulate.a
+	selection_ring.visible = selected and content_visible
+	if interaction_root:
+		selection_ring.scale = interaction_root.scale
+		var feedback_offset := Vector2.ZERO
+		if feedback_root:
+			feedback_offset = feedback_root.position * interaction_root.scale
+		selection_ring.position = interaction_root.position + feedback_offset
+	selection_ring.pivot_offset = selection_ring.size * 0.5
 
 
 func _dispose_flash_overlay(overlay_value: Variant) -> void:

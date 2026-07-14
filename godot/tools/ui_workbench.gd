@@ -1,6 +1,8 @@
 class_name UIWorkbench
 extends Control
 
+signal presentation_checkpoint_ready(percent: int, kind: String)
+
 const TITLE_SCENE := preload("res://scenes/title/title_page.tscn")
 const DECK_SCENE := preload("res://scenes/decks/deck_select_page.tscn")
 const NETWORK_SCENE := preload("res://scenes/network/network_lobby_page.tscn")
@@ -18,9 +20,16 @@ var catalog := CardCatalog.new()
 var current_battle: BattleScreen
 var sample_state: GameState
 var event_sequence := 0
+var current_presentation_kind := "draw"
+var presentation_checkpoint_percent := -1
+var presentation_before_view: BattleViewModel
+var presentation_after_view: BattleViewModel
+var presentation_request: BattleTransitionRequest
+var _checkpoint_generation := 0
 
 @onready var preview_host: Control = %PreviewHost
 @onready var preview_caption: Label = %PreviewCaption
+@onready var checkpoint_status: Label = %CheckpointStatus
 
 
 func _ready() -> void:
@@ -61,16 +70,109 @@ func show_preview(kind: String) -> void:
 			_show_battle()
 
 
-func trigger_presentation(kind: String) -> void:
+func trigger_presentation(kind: String) -> PresentationHandle:
 	_resolve_nodes()
 	if kind == "victory":
 		show_preview("victory")
-		return
+		return null
 	if current_battle == null or not is_instance_valid(current_battle):
 		show_preview("battle")
-	event_sequence += 1
-	var event := _presentation_event(kind)
-	current_battle.play_presentation([event], event_sequence, 0)
+	_checkpoint_generation += 1
+	var generation := _checkpoint_generation
+	current_presentation_kind = kind
+	presentation_checkpoint_percent = -1
+	var fixture := _build_presentation_fixture(kind)
+	_apply_presentation_fixture(fixture)
+	_set_checkpoint_status("实时播放 · %s" % _presentation_label(kind))
+	var handle := current_battle.submit_transition(presentation_request)
+	if handle != null and not handle.is_completed():
+		handle.completed.connect(
+			_on_live_presentation_completed.bind(generation, kind),
+			CONNECT_ONE_SHOT,
+		)
+	else:
+		_on_live_presentation_completed(handle, generation, kind)
+	return handle
+
+
+## Rebuilds the selected before/after fixture and leaves it at an exact capture
+## checkpoint. Values may be expressed as 0/50/100 or as 0.0/0.5/1.0.
+## Await this method (or presentation_checkpoint_ready) before taking a capture.
+func set_presentation_checkpoint(percent: float, kind: String = "") -> void:
+	_resolve_nodes()
+	if not kind.is_empty():
+		current_presentation_kind = kind
+	if current_presentation_kind == "victory":
+		current_presentation_kind = "draw"
+	if current_battle == null or not is_instance_valid(current_battle):
+		show_preview("battle")
+	_checkpoint_generation += 1
+	var generation := _checkpoint_generation
+	var checkpoint := _normalize_checkpoint(percent)
+	var fixture := _build_presentation_fixture(current_presentation_kind)
+	_apply_presentation_fixture(fixture)
+	if checkpoint == 0:
+		presentation_checkpoint_percent = 0
+		_set_checkpoint_status(
+			"0%% · %s · before" % _presentation_label(current_presentation_kind)
+		)
+		presentation_checkpoint_ready.emit(0, current_presentation_kind)
+		return
+	_set_checkpoint_status(
+		"%d%% · %s · 捕获中…" % [
+			checkpoint,
+			_presentation_label(current_presentation_kind),
+		]
+	)
+	var event: Dictionary = presentation_request.events[0]
+	var handle := current_battle.submit_transition(presentation_request)
+	if checkpoint == 100:
+		if handle != null and not handle.is_completed():
+			await handle.completed
+		if generation != _checkpoint_generation:
+			return
+		if is_inside_tree() and get_tree() != null:
+			await get_tree().process_frame
+		if generation != _checkpoint_generation:
+			return
+		presentation_checkpoint_percent = 100
+		_set_checkpoint_status(
+			"100%% · %s · after" % _presentation_label(current_presentation_kind)
+		)
+		presentation_checkpoint_ready.emit(100, current_presentation_kind)
+		return
+	# Let the coordinator enter the batch before measuring its real event timing.
+	if is_inside_tree() and get_tree() != null:
+		await get_tree().process_frame
+	if generation != _checkpoint_generation:
+		return
+	var half_duration := _presentation_duration(event) * 0.5
+	if half_duration > 0.0 and get_tree() != null:
+		await get_tree().create_timer(half_duration, true, false, true).timeout
+	if generation != _checkpoint_generation:
+		return
+	# Node-bound tweens stop with the battle subtree while the toolbar remains live.
+	if current_battle != null and is_instance_valid(current_battle):
+		current_battle.process_mode = Node.PROCESS_MODE_DISABLED
+	presentation_checkpoint_percent = 50
+	_set_checkpoint_status(
+		"50%% · %s · motion paused" % _presentation_label(current_presentation_kind)
+	)
+	presentation_checkpoint_ready.emit(50, current_presentation_kind)
+
+
+func capture_presentation_checkpoint(percent: float, kind: String = "") -> void:
+	await set_presentation_checkpoint(percent, kind)
+
+
+func get_presentation_checkpoint() -> Dictionary:
+	return {
+		"percent": presentation_checkpoint_percent,
+		"kind": current_presentation_kind,
+		"before_view": presentation_before_view,
+		"after_view": presentation_after_view,
+		"request": presentation_request,
+	}
 
 
 func _bind_toolbar() -> void:
@@ -110,6 +212,13 @@ func _bind_toolbar() -> void:
 		button.custom_minimum_size.y = 48.0
 		var key := str(button.get_meta("event"))
 		button.pressed.connect(trigger_presentation.bind(key))
+	for button_name in ["Checkpoint0", "Checkpoint50", "Checkpoint100"]:
+		var button := get_node(
+			"Layout/Sidebar/Scroll/Buttons/" + button_name
+		) as Button
+		button.custom_minimum_size.y = 48.0
+		var percent := float(button.get_meta("checkpoint"))
+		button.pressed.connect(set_presentation_checkpoint.bind(percent, ""))
 
 
 func _show_title() -> void:
@@ -243,6 +352,7 @@ func _show_battle() -> void:
 		false,
 		"preview",
 	)
+	_set_checkpoint_status("选择表现事件，然后捕获 0% / 50% / 100%")
 
 
 func _show_ai_thinking() -> void:
@@ -308,8 +418,14 @@ func _presentation_event(kind: String) -> Dictionary:
 			base.merge({
 				"event_type": "pokemon_evolved",
 				"card_id": "svi-infr",
-				"source": {"player": 0, "zone": "hand"},
+				"source": {"player": 0, "zone": "hand", "index": 0},
 				"target": {"player": 0, "slot": "active"},
+				"data": {
+					"player": 0,
+					"slot": "active",
+					"card_id": "svi-infr",
+					"source_index": 0,
+				},
 			})
 		"attack":
 			base.merge({
@@ -323,6 +439,12 @@ func _presentation_event(kind: String) -> Dictionary:
 				"card_id": "sv2-keldeo",
 				"source": {"player": 1, "slot": "active"},
 				"target": {"player": 1, "zone": "discard"},
+				"amount": 1,
+				"data": {
+					"player": 1,
+					"slot": "active",
+					"card_ids": ["sv2-keldeo"],
+				},
 			})
 		_:
 			base.merge({
@@ -330,8 +452,136 @@ func _presentation_event(kind: String) -> Dictionary:
 				"source": {"player": 0, "slot": "active"},
 				"target": {"player": 1, "slot": "active"},
 				"amount": 90,
+				"counter_count": 9,
 			})
 	return base
+
+
+func _build_presentation_fixture(kind: String) -> Dictionary:
+	event_sequence += 1
+	var before := UIPreviewStateFactory.battle_state(20260623 + event_sequence)
+	before.revision = event_sequence * 2
+	match kind:
+		"draw":
+			before.players[0].deck[-1] = "sv1-151"
+		"evolve":
+			before.players[0].hand.insert(0, "svi-infr")
+	var after := before.clone_state()
+	match kind:
+		"draw":
+			after.players[0].draw_cards(1)
+			after.log_action("预览玩家抽到了 妙蛙种子。")
+		"attach_energy":
+			var energy_id: String = after.players[0].hand.pop_at(0)
+			after.players[0].active.energy_card_ids.append(energy_id)
+			after.players[0].energy_attached_this_turn = true
+			after.log_action("预览玩家为战斗宝可梦附加了能量。")
+		"evolve":
+			after.players[0].hand.pop_at(0)
+			var old_card_id := after.players[0].active.card_id
+			after.players[0].active.evolution_stack_ids.append(old_card_id)
+			after.players[0].active.card_id = "svi-infr"
+			after.log_action("预览玩家进化了战斗宝可梦。")
+		"attack":
+			after.log_action("预览玩家使用了 高温冲撞。")
+		"ko":
+			after.discard_pokemon(1, "active")
+			after.log_action("预览对手的战斗宝可梦气绝了。")
+		_:
+			after.players[1].active.damage_counters += 9
+			after.log_action("预览对手的战斗宝可梦受到了 90 点伤害。")
+	after.revision = before.revision + 1
+	var before_view := BattleViewModel.capture(
+		before,
+		0,
+		UIPreviewStateFactory.action_rows(before),
+		"pokemon:0:active",
+		false,
+		"preview",
+	)
+	var after_action_rows: Array[Dictionary] = []
+	if after.players[0].active != null and after.players[1].active != null:
+		after_action_rows = UIPreviewStateFactory.action_rows(after)
+	var after_view := BattleViewModel.capture(
+		after,
+		0,
+		after_action_rows,
+		"pokemon:0:active",
+		false,
+		"preview",
+	)
+	var request := BattleTransitionRequest.create(
+		after_view,
+		[_presentation_event(kind)],
+		0,
+		BattleTransitionRequest.CAUSE_REFRESH,
+		"workbench:%d" % event_sequence,
+		"",
+		"",
+		false,
+	)
+	return {
+		"before_state": before,
+		"after_state": after,
+		"before_view": before_view,
+		"after_view": after_view,
+		"request": request,
+	}
+
+
+func _apply_presentation_fixture(fixture: Dictionary) -> void:
+	if current_battle == null or not is_instance_valid(current_battle):
+		return
+	current_battle.process_mode = Node.PROCESS_MODE_INHERIT
+	presentation_before_view = fixture.get("before_view") as BattleViewModel
+	presentation_after_view = fixture.get("after_view") as BattleViewModel
+	presentation_request = fixture.get("request") as BattleTransitionRequest
+	sample_state = (fixture.get("before_state") as GameState).clone_state()
+	current_battle.cancel_presentations("workbench_fixture_reset", presentation_before_view)
+
+
+func _presentation_duration(event: Dictionary) -> float:
+	if current_battle == null or not is_instance_valid(current_battle):
+		return 0.0
+	if current_battle.table == null or current_battle.table.director == null:
+		return 0.0
+	return float(current_battle.table.director.call("_duration_for", event))
+
+
+func _normalize_checkpoint(percent: float) -> int:
+	var resolved := percent * 100.0 if percent > 0.0 and percent <= 1.0 else percent
+	if resolved < 25.0:
+		return 0
+	if resolved < 75.0:
+		return 50
+	return 100
+
+
+func _presentation_label(kind: String) -> String:
+	return {
+		"draw": "抽牌",
+		"attach_energy": "附能",
+		"evolve": "进化",
+		"attack": "攻击蓄力",
+		"damage": "伤害",
+		"ko": "击倒",
+	}.get(kind, kind)
+
+
+func _on_live_presentation_completed(
+	_handle: PresentationHandle,
+	generation: int,
+	kind: String,
+) -> void:
+	if generation != _checkpoint_generation:
+		return
+	presentation_checkpoint_percent = 100
+	_set_checkpoint_status("播放完成 · %s" % _presentation_label(kind))
+
+
+func _set_checkpoint_status(text_value: String) -> void:
+	if checkpoint_status != null:
+		checkpoint_status.text = text_value
 
 
 func _centered_panel(min_size: Vector2, frontend_surface: bool = false) -> Container:
@@ -392,7 +642,14 @@ func _card_image(card_id: String, min_size: Vector2) -> TextureRect:
 
 
 func _clear_preview() -> void:
+	_checkpoint_generation += 1
+	if current_battle != null and is_instance_valid(current_battle):
+		current_battle.process_mode = Node.PROCESS_MODE_INHERIT
 	current_battle = null
+	presentation_checkpoint_percent = -1
+	presentation_before_view = null
+	presentation_after_view = null
+	presentation_request = null
 	for child in preview_host.get_children():
 		preview_host.remove_child(child)
 		child.queue_free()
@@ -401,3 +658,6 @@ func _clear_preview() -> void:
 func _resolve_nodes() -> void:
 	preview_host = get_node("Layout/PreviewColumn/PreviewHost") as Control
 	preview_caption = get_node("Layout/PreviewColumn/PreviewCaption") as Label
+	checkpoint_status = get_node(
+		"Layout/Sidebar/Scroll/Buttons/CheckpointStatus"
+	) as Label

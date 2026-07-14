@@ -20,7 +20,9 @@ func discard_hand_then_damage(
 	var player := state.get_player(player_idx)
 	var discarded_cards := player.hand.duplicate()
 	var hand_size := player.discard_entire_hand()
-	events.append(VMZoneHelpers.discard_event(player_idx, "hand", discarded_cards, hand_size))
+	if hand_size > 0:
+		events.append(VMZoneHelpers.discard_event(
+			player_idx, "hand", discarded_cards, hand_size, range(hand_size)))
 	var total_damage := int(params.get("base_damage", 0))
 	if hand_size >= int(params.get("threshold", 5)):
 		total_damage += int(params.get("bonus", 0))
@@ -42,13 +44,31 @@ func discard_fighting_energy_then_damage(
 		return VMResult.fail("没有攻击来源。")
 	var kept: Array[String] = []
 	var discarded := 0
-	for energy_id in source.energy_card_ids:
+	var discarded_ids: Array[String] = []
+	var discarded_indices: Array[int] = []
+	var discard_start := player.discard.size()
+	for index in range(source.energy_card_ids.size()):
+		var energy_id := source.energy_card_ids[index]
 		if "Fighting" in catalog.provides_energy(energy_id):
 			player.discard.append(energy_id)
+			discarded_ids.append(energy_id)
+			discarded_indices.append(index)
 			discarded += 1
 		else:
 			kept.append(energy_id)
 	source.energy_card_ids = kept
+	if not discarded_ids.is_empty():
+		var discarded_event := VMZoneHelpers.discard_event(
+			player_idx,
+			"",
+			discarded_ids,
+			discarded_ids.size(),
+			discarded_indices,
+			source_slot,
+			discard_start,
+		)
+		discarded_event["source"]["attachment_type"] = "energy"
+		events.append(discarded_event)
 	return damage.deal_attack_or_effect_damage(
 		state, stack, player_idx, 1 - player_idx, "active",
 		int(params.get("base", 0)) + discarded * int(params.get("per_energy", 0)),

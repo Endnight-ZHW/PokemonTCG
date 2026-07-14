@@ -83,8 +83,20 @@ func cmd_judge(
 		var player := state.get_player(player_idx)
 		if player.hand.is_empty():
 			continue
-		player.deck.append_array(player.hand)
+		var returned_cards := player.hand.duplicate()
+		var deck_start := player.deck.size()
+		player.deck.append_array(returned_cards)
 		player.hand.clear()
+		var target_indices: Array[int] = []
+		for index in range(returned_cards.size()):
+			target_indices.append(deck_start + index)
+		events.append(VMZoneHelpers.card_moved_event(
+			player_idx,
+			returned_cards,
+			{"player": player_idx, "zone": "hand", "indices": range(returned_cards.size())},
+			{"player": player_idx, "zone": "deck", "indices": target_indices},
+			"owner",
+		))
 		rng.shuffle(player.deck)
 		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
 		draw_available(state, player_idx, int(args.get("draw", args.get("amount", 4))), events)
@@ -103,8 +115,21 @@ func cmd_shuffle_then_draw_cards(
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	if bool(args.get("shuffle_hand", false)):
-		player.deck.append_array(player.hand)
+		var returned_cards := player.hand.duplicate()
+		var deck_start := player.deck.size()
+		player.deck.append_array(returned_cards)
 		player.hand.clear()
+		if not returned_cards.is_empty():
+			var target_indices: Array[int] = []
+			for index in range(returned_cards.size()):
+				target_indices.append(deck_start + index)
+			events.append(VMZoneHelpers.card_moved_event(
+				player_idx,
+				returned_cards,
+				{"player": player_idx, "zone": "hand", "indices": range(returned_cards.size())},
+				{"player": player_idx, "zone": "deck", "indices": target_indices},
+				"owner",
+			))
 		rng.shuffle(player.deck)
 		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
 	return draw_available(state, player_idx, int(args.get("draw", args.get("amount", 5))), events)

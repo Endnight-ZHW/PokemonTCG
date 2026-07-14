@@ -56,9 +56,9 @@ func cmd_discard_energy(
 	_branches: Dictionary,
 	player_idx: int,
 	source_slot: String,
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
-	return discard_energy(state, player_idx, source_slot, args)
+	return discard_energy(state, player_idx, source_slot, args, events)
 
 
 func cmd_draw_and_attach_energy(
@@ -490,6 +490,7 @@ func discard_energy(
 	player_idx: int,
 	source_slot: String,
 	params: Dictionary,
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var from_opponent := str(params.get("from", "self")) != "self"
 	var owner_idx := 1 - player_idx if from_opponent else player_idx
@@ -502,16 +503,35 @@ func discard_energy(
 		return VMResult.ok("能量丢弃效果被免疫。")
 	var filter_type := str(params.get("filter", params.get("energy_type", "any"))).to_lower()
 	var kept_energy: Array[String] = []
+	var discarded_ids: Array[String] = []
+	var discarded_indices: Array[int] = []
+	var discard_start := owner.discard.size()
 	var discarded_energy := 0
-	for energy_value in source.energy_card_ids:
+	for index in range(source.energy_card_ids.size()):
+		var energy_value := source.energy_card_ids[index]
 		var energy_id := str(energy_value)
 		var matches := energy_matches(energy_id, filter_type)
 		if matches and discarded_energy < int(params.get("amount", 1)):
 			owner.discard.append(energy_id)
+			discarded_ids.append(energy_id)
+			discarded_indices.append(index)
 			discarded_energy += 1
 		else:
 			kept_energy.append(energy_id)
 	source.energy_card_ids = kept_energy
+	if not discarded_ids.is_empty():
+		var discarded_event := VMZoneHelpers.discard_event(
+			owner_idx,
+			"",
+			discarded_ids,
+			discarded_ids.size(),
+			discarded_indices,
+			"active" if from_opponent else source_slot,
+			discard_start,
+		)
+		discarded_event["actor"] = player_idx
+		discarded_event["source"]["attachment_type"] = "energy"
+		events.append(discarded_event)
 	return VMResult.ok("丢弃了%d张能量。" % discarded_energy)
 
 

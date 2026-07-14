@@ -14,7 +14,7 @@ signal outside_pressed(global_position: Vector2)
 @export var pointer_max_length := 34.0
 
 @onready var pointer_line: Line2D = %PointerLine
-@onready var panel: PanelContainer = %Panel
+@onready var panel: Panel = %Panel
 @onready var title_label: Label = %TitleLabel
 @onready var hint_label: Label = %HintLabel
 @onready var empty_hint: Label = %EmptyHint
@@ -35,6 +35,7 @@ var _uses_viewport_safe_rect := false
 var _compact_layout := false
 var _last_tracked_source_rect := Rect2()
 var _icon_thumbnail_cache: Dictionary[int, Texture2D] = {}
+var _visibility_tween: Tween
 
 const SOURCE_OVERLAP_BASE_PENALTY := 1_000_000_000.0
 const SOURCE_OVERLAP_AREA_WEIGHT := 1000.0
@@ -159,6 +160,8 @@ func refresh_position() -> void:
 func dismiss(emit_dismissed := true) -> void:
 	if not visible:
 		return
+	_kill_visibility_tween()
+	modulate.a = 1.0
 	visible = false
 	pointer_line.visible = false
 	set_process(false)
@@ -243,12 +246,37 @@ func _present(
 	_build_content(title, hint)
 	visible = true
 	_layout_popover()
+	_play_present_motion()
+
+
+func _play_present_motion() -> void:
+	_kill_visibility_tween()
+	var duration := MotionPolicy.duration("panel")
+	if duration <= 0.0 or MotionPolicy.reduced():
+		modulate.a = 1.0
+		return
+	modulate.a = 0.0
+	_visibility_tween = create_tween()
+	_visibility_tween.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	_visibility_tween.tween_property(self, "modulate:a", 1.0, duration)
+	_visibility_tween.finished.connect(func() -> void:
+		_visibility_tween = null
+	)
+
+
+func _kill_visibility_tween() -> void:
+	if _visibility_tween and _visibility_tween.is_valid():
+		_visibility_tween.kill()
+	_visibility_tween = null
 
 
 func _build_content(title: String, hint: String) -> void:
+	# Reconcile the physical button container, scroll visibility and button size
+	# flags through the same transition used by live relayout. A direct flag
+	# assignment bypasses those compact-layout invariants during instance reuse.
+	_set_compact_layout(false)
 	_clear_buttons(action_buttons)
 	_clear_buttons(compact_action_buttons)
-	_compact_layout = false
 	action_scroll.visible = true
 	compact_scroll.visible = false
 
@@ -657,7 +685,7 @@ func _clear_buttons(container: Container) -> void:
 
 func _resolve_nodes() -> void:
 	pointer_line = get_node_or_null("PointerLine") as Line2D
-	panel = get_node_or_null("Panel") as PanelContainer
+	panel = get_node_or_null("Panel") as Panel
 	title_label = get_node_or_null("Panel/Margin/Content/TitleLabel") as Label
 	hint_label = get_node_or_null("Panel/Margin/Content/HintLabel") as Label
 	empty_hint = get_node_or_null("Panel/Margin/Content/EmptyHint") as Label

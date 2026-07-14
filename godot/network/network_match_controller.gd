@@ -19,13 +19,18 @@ var remote_deck_key := ""
 var send_sequence := 0
 var receive_sequence := 0
 var current_revision := -1
+# `awaiting_update` remains as a compatibility mirror for callers that only need
+# a boolean. Correlation and timeout state live in `pending_submission`.
 var awaiting_update := false
+var pending_submission: Dictionary = {}
+var resync_in_progress := false
 var connected := false
 var connection_phase: ConnectionPhase = ConnectionPhase.CLOSED
 var deck_selection_sent := false
 var last_receive_msec := 0
 var last_send_msec := 0
 const HEARTBEAT_INTERVAL_MSEC := 15000
+const PENDING_SUBMISSION_TIMEOUT_MSEC := 10000
 const CONNECTION_TIMEOUT_MSEC := 45000
 var seed := -1
 var events: Array[Dictionary] = []
@@ -149,15 +154,20 @@ func poll() -> Array[Dictionary]:
 			"disconnected", "connection_failed":
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
+				_clear_pending_submission()
+				resync_in_progress = false
 				_discard_transport()
 				events.append(event)
 			"transport_error":
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
+				_clear_pending_submission()
+				resync_in_progress = false
 				_discard_transport()
 				events.append(event)
 				events.append({"type": "disconnected", "reason": "transport_error"})
 	var now := Time.get_ticks_msec()
+	_check_pending_submission_timeout(now)
 	if (
 		connected
 		and connection_phase != ConnectionPhase.CLOSED
@@ -171,6 +181,8 @@ func poll() -> Array[Dictionary]:
 	):
 		connected = false
 		connection_phase = ConnectionPhase.CLOSED
+		_clear_pending_submission()
+		resync_in_progress = false
 		_discard_transport()
 		events.append({"type": "disconnected", "reason": "timeout"})
 	return _drain_events()
@@ -186,7 +198,7 @@ func needs_poll() -> bool:
 func submit_action(action: GameAction) -> bool:
 	if player_idx < 0 or connection_phase != ConnectionPhase.PLAYING:
 		return false
-	if not host and awaiting_update:
+	if not host and submission_locked():
 		return false
 	if action.action_id.is_empty():
 		action.action_id = "net:%d:%d:%d" % [
@@ -198,32 +210,49 @@ func submit_action(action: GameAction) -> bool:
 	if host:
 		var step := session.submit_action(0, action.to_dict())
 		if not step.success:
-			events.append({"type": "error", "code": step.error_code, "message": step.message})
+			events.append({
+				"type": "error",
+				"code": step.error_code,
+				"message": step.message,
+				"origin_action_id": action.action_id,
+				"origin_request_id": "",
+			})
 			return false
-		_broadcast_state(step.events)
+		_broadcast_state(step.events, action.action_id)
 		return true
+	var base_revision := get_revision()
 	var sent := _send(
 		ProtocolV3.ACTION_SUBMIT,
 		{"action": action.to_dict()},
 		get_revision(),
 		action.action_id,
 	)
-	awaiting_update = sent
+	if sent:
+		_begin_pending_submission(
+			"action", action.action_id, "", base_revision
+		)
 	return sent
 
 
 func submit_choice(response: ChoiceResponse) -> bool:
 	if player_idx < 0 or connection_phase != ConnectionPhase.PLAYING:
 		return false
-	if not host and awaiting_update:
+	if not host and submission_locked():
 		return false
 	if host:
 		var step := session.submit_choice(0, response.to_dict())
 		if not step.success:
-			events.append({"type": "error", "code": step.error_code, "message": step.message})
+			events.append({
+				"type": "error",
+				"code": step.error_code,
+				"message": step.message,
+				"origin_action_id": "",
+				"origin_request_id": response.request_id,
+			})
 			return false
-		_broadcast_state(step.events)
+		_broadcast_state(step.events, "", response.request_id)
 		return true
+	var base_revision := get_revision()
 	var sent := _send(
 		ProtocolV3.CHOICE_SUBMIT,
 		{"response": response.to_dict()},
@@ -231,7 +260,10 @@ func submit_choice(response: ChoiceResponse) -> bool:
 		"",
 		response.request_id,
 	)
-	awaiting_update = sent
+	if sent:
+		_begin_pending_submission(
+			"choice", "", response.request_id, base_revision
+		)
 	return sent
 
 
@@ -255,7 +287,14 @@ func surrender() -> void:
 
 func request_resync() -> void:
 	if not host and connection_phase == ConnectionPhase.PLAYING:
+		if resync_in_progress:
+			return
+		resync_in_progress = true
 		_send(ProtocolV3.RESYNC_REQUEST, {}, get_revision())
+
+
+func submission_locked() -> bool:
+	return not pending_submission.is_empty() or resync_in_progress
 
 
 func get_revision() -> int:
@@ -277,7 +316,8 @@ func close() -> void:
 	send_sequence = 0
 	receive_sequence = 0
 	current_revision = -1
-	awaiting_update = false
+	_clear_pending_submission()
+	resync_in_progress = false
 	connected = false
 	connection_phase = ConnectionPhase.CLOSED
 	deck_selection_sent = false
@@ -302,13 +342,24 @@ func _handle_message(message: Variant) -> void:
 	)
 	if not bool(validation.get("ok", false)):
 		var code := str(validation.get("code", "invalid_message"))
+		var origin_action_id := _envelope_identifier(message, "action_id")
+		var origin_request_id := _envelope_identifier(message, "request_id")
 		if host:
-			_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
-				code, str(validation.get("message", "消息无效。"))))
+			_send(
+				ProtocolV3.ERROR,
+				ProtocolV3.error_payload(
+					code, str(validation.get("message", "消息无效。"))
+				),
+				get_revision(),
+				origin_action_id,
+				origin_request_id,
+			)
 		events.append({
 			"type": "error",
 			"code": code,
 			"message": str(validation.get("message", "消息无效。")),
+			"origin_action_id": origin_action_id,
+			"origin_request_id": origin_request_id,
 		})
 		return
 	var row: Dictionary = message
@@ -320,16 +371,25 @@ func _handle_message(message: Variant) -> void:
 	if not bool(payload_validation.get("ok", false)):
 		var code := str(payload_validation.get("code", "invalid_payload"))
 		var message_text := str(payload_validation.get("message", "消息内容无效。"))
+		var origin_action_id := str(row.get("action_id", ""))
+		var origin_request_id := str(row.get("request_id", ""))
 		if host:
-			_send(ProtocolV3.ERROR, ProtocolV3.error_payload(code, message_text))
+			_send(
+				ProtocolV3.ERROR,
+				ProtocolV3.error_payload(code, message_text),
+				get_revision(),
+				origin_action_id,
+				origin_request_id,
+			)
 		else:
-			awaiting_update = false
 			if message_type == ProtocolV3.STATE_UPDATE:
 				request_resync()
 		events.append({
 			"type": "error",
 			"code": code,
 			"message": message_text,
+			"origin_action_id": origin_action_id,
+			"origin_request_id": origin_request_id,
 		})
 		return
 	if (
@@ -337,11 +397,12 @@ func _handle_message(message: Variant) -> void:
 		and int(row["state_revision"])
 		!= int(Dictionary(payload["state"]).get("revision", -1))
 	):
-		awaiting_update = false
 		events.append({
 			"type": "error",
 			"code": "revision_mismatch",
 			"message": "状态消息的局面版本不一致。",
+			"origin_action_id": str(row.get("action_id", "")),
+			"origin_request_id": str(row.get("request_id", "")),
 		})
 		if not host:
 			request_resync()
@@ -349,7 +410,7 @@ func _handle_message(message: Variant) -> void:
 	if host:
 		_handle_host_message(row, message_type, payload)
 	else:
-		_handle_client_message(message_type, payload)
+		_handle_client_message(row, message_type, payload)
 
 
 func _handle_host_message(
@@ -384,42 +445,50 @@ func _handle_host_message(
 			connection_phase = ConnectionPhase.PLAYING
 			_broadcast_state(result.events)
 		ProtocolV3.ACTION_SUBMIT:
-			if not _remote_message_allowed_while_playing():
+			if not _remote_message_allowed_while_playing(row):
 				return
 			if not _revision_matches(row):
 				return
 			var action_data: Dictionary = payload["action"]
 			if str(row["action_id"]) != str(action_data.get("action_id", "")):
-				_reject("action_id_mismatch", "动作 ID 不匹配。")
+				_reject("action_id_mismatch", "动作 ID 不匹配。", row)
 				return
 			var step := session.submit_action(1, action_data)
 			if not step.success:
-				_reject(step.error_code, step.message)
+				_reject(step.error_code, step.message, row)
 				return
-			_broadcast_state(step.events)
+			_broadcast_state(
+				step.events,
+				str(row.get("action_id", "")),
+				str(row.get("request_id", "")),
+			)
 		ProtocolV3.CHOICE_SUBMIT:
-			if not _remote_message_allowed_while_playing():
+			if not _remote_message_allowed_while_playing(row):
 				return
 			if not _revision_matches(row):
 				return
 			var response_data: Dictionary = payload["response"]
 			if str(row["request_id"]) != str(response_data.get("request_id", "")):
-				_reject("request_id_mismatch", "选择请求 ID 不匹配。")
+				_reject("request_id_mismatch", "选择请求 ID 不匹配。", row)
 				return
 			var step := session.submit_choice(1, response_data)
 			if not step.success:
-				_reject(step.error_code, step.message)
+				_reject(step.error_code, step.message, row)
 				return
-			_broadcast_state(step.events)
+			_broadcast_state(
+				step.events,
+				str(row.get("action_id", "")),
+				str(row.get("request_id", "")),
+			)
 		ProtocolV3.RESYNC_REQUEST:
-			if _remote_message_allowed_while_playing():
+			if _remote_message_allowed_while_playing(row):
 				_send_state_to_client()
 		ProtocolV3.SURRENDER:
-			if not _remote_message_allowed_while_playing():
+			if not _remote_message_allowed_while_playing(row):
 				return
 			var step := session.surrender(1)
 			if not step.success:
-				_reject(step.error_code, step.message)
+				_reject(step.error_code, step.message, row)
 				return
 			_broadcast_state(step.events)
 		ProtocolV3.PING:
@@ -428,7 +497,11 @@ func _handle_host_message(
 			_reject("unexpected_message", "房主不接受该消息。")
 
 
-func _handle_client_message(message_type: String, payload: Dictionary) -> void:
+func _handle_client_message(
+	row: Dictionary,
+	message_type: String,
+	payload: Dictionary,
+) -> void:
 	match message_type:
 		ProtocolV3.WELCOME:
 			if (
@@ -449,6 +522,8 @@ func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 			):
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
+				_clear_pending_submission()
+				resync_in_progress = false
 				_discard_transport()
 				events.append({
 					"type": "error",
@@ -485,8 +560,21 @@ func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 				})
 				return
 			var state_payload: Dictionary = payload["state"]
-			current_revision = int(state_payload.get("revision", -1))
-			awaiting_update = false
+			var next_revision := int(state_payload.get("revision", -1))
+			if current_revision >= 0 and next_revision < current_revision:
+				events.append({
+					"type": "error",
+					"code": "stale_state_revision",
+					"message": "收到的局面版本早于当前局面，正在重新同步。",
+					"origin_action_id": str(row.get("action_id", "")),
+					"origin_request_id": str(row.get("request_id", "")),
+					"matched_pending": false,
+				})
+				request_resync()
+				return
+			var origins := _resolve_pending_state(row, next_revision)
+			current_revision = next_revision
+			resync_in_progress = false
 			connection_phase = (
 				ConnectionPhase.CLOSED
 				if str(state_payload.get("phase", "")) == "GAME_OVER"
@@ -496,13 +584,21 @@ func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 				"type": "state",
 				"view": payload,
 				"player_idx": player_idx,
+				"origin_action_id": str(origins.get("action_id", "")),
+				"origin_request_id": str(origins.get("request_id", "")),
+				"matched_pending": bool(origins.get("matched", false)),
 			})
+			if connection_phase == ConnectionPhase.CLOSED:
+				_clear_pending_submission()
 		ProtocolV3.ERROR:
-			awaiting_update = false
+			var origins := _resolve_pending_error(row)
 			events.append({
 				"type": "error",
 				"code": str(payload.get("code", "remote_error")),
 				"message": str(payload.get("message", "房主拒绝了请求。")),
+				"origin_action_id": str(origins.get("action_id", "")),
+				"origin_request_id": str(origins.get("request_id", "")),
+				"matched_pending": bool(origins.get("matched", false)),
 			})
 			if str(payload.get("code", "")) in [
 				"stale_revision", "sequence_gap", "stale_sequence",
@@ -522,7 +618,7 @@ func _handle_client_message(message_type: String, payload: Dictionary) -> void:
 
 func _revision_matches(row: Dictionary) -> bool:
 	if session == null or session.state == null:
-		_reject("not_started", "对局尚未开始。")
+		_reject("not_started", "对局尚未开始。", row)
 		return false
 	if int(row["state_revision"]) != session.state.revision:
 		_reject(
@@ -531,45 +627,218 @@ func _revision_matches(row: Dictionary) -> bool:
 				int(row["state_revision"]),
 				session.state.revision,
 			],
+			row,
 		)
 		_send_state_to_client()
 		return false
 	return true
 
 
-func _remote_message_allowed_while_playing() -> bool:
+func _remote_message_allowed_while_playing(row: Dictionary = {}) -> bool:
 	if connection_phase == ConnectionPhase.PLAYING:
 		return true
-	_reject("invalid_phase", "对局尚未开始或已经结束。")
+	_reject("invalid_phase", "对局尚未开始或已经结束。", row)
 	return false
 
 
-func _broadcast_state(presentation_events: Array = []) -> void:
+func _broadcast_state(
+	presentation_events: Array = [],
+	origin_action_id: String = "",
+	origin_request_id: String = "",
+) -> void:
 	if session == null or session.state == null:
 		return
 	events.append({
 		"type": "state",
 		"view": session.view_for(0, presentation_events),
 		"player_idx": 0,
+		"origin_action_id": origin_action_id,
+		"origin_request_id": origin_request_id,
 	})
-	_send_state_to_client(presentation_events)
+	_send_state_to_client(
+		presentation_events, origin_action_id, origin_request_id
+	)
 	if session.state.phase == "GAME_OVER" or session.state.winner >= 0:
-		awaiting_update = false
+		_clear_pending_submission()
+		resync_in_progress = false
 		connection_phase = ConnectionPhase.CLOSED
 
 
-func _send_state_to_client(presentation_events: Array = []) -> void:
+func _send_state_to_client(
+	presentation_events: Array = [],
+	origin_action_id: String = "",
+	origin_request_id: String = "",
+) -> void:
 	if session == null or session.state == null:
 		return
 	_send(
 		ProtocolV3.STATE_UPDATE,
 		session.view_for(1, presentation_events),
 		session.state.revision,
+		origin_action_id,
+		origin_request_id,
 	)
 
 
-func _reject(code: String, message: String) -> void:
-	_send(ProtocolV3.ERROR, ProtocolV3.error_payload(code, message), get_revision())
+func _reject(
+	code: String,
+	message: String,
+	origin: Dictionary = {},
+) -> void:
+	_send(
+		ProtocolV3.ERROR,
+		ProtocolV3.error_payload(code, message),
+		get_revision(),
+		str(origin.get("action_id", "")),
+		str(origin.get("request_id", "")),
+	)
+
+
+func _begin_pending_submission(
+	kind: String,
+	action_id: String,
+	request_id: String,
+	base_revision: int,
+) -> void:
+	pending_submission = {
+		"kind": kind,
+		"action_id": action_id,
+		"request_id": request_id,
+		"base_revision": base_revision,
+		"sent_msec": Time.get_ticks_msec(),
+		"timeout_notified": false,
+	}
+	awaiting_update = true
+
+
+func _clear_pending_submission() -> void:
+	pending_submission.clear()
+	awaiting_update = false
+
+
+func _check_pending_submission_timeout(now_msec: int) -> void:
+	if host or pending_submission.is_empty():
+		return
+	if bool(pending_submission.get("timeout_notified", false)):
+		return
+	var sent_msec := int(pending_submission.get("sent_msec", now_msec))
+	if now_msec - sent_msec < PENDING_SUBMISSION_TIMEOUT_MSEC:
+		return
+	pending_submission["timeout_notified"] = true
+	pending_submission["timeout_msec"] = now_msec
+	events.append({
+		"type": "pending_timeout",
+		"code": "authoritative_timeout",
+		"base_revision": int(pending_submission.get("base_revision", -1)),
+		"origin_action_id": str(pending_submission.get("action_id", "")),
+		"origin_request_id": str(pending_submission.get("request_id", "")),
+	})
+	request_resync()
+
+
+func _resolve_pending_state(row: Dictionary, next_revision: int) -> Dictionary:
+	var origins := {
+		"action_id": str(row.get("action_id", "")),
+		"request_id": str(row.get("request_id", "")),
+		"matched": false,
+	}
+	if pending_submission.is_empty():
+		return origins
+	var pending_action_id := str(pending_submission.get("action_id", ""))
+	var pending_request_id := str(pending_submission.get("request_id", ""))
+	var incoming_action_id := str(origins["action_id"])
+	var incoming_request_id := str(origins["request_id"])
+	var has_incoming_origin := (
+		not incoming_action_id.is_empty()
+		or not incoming_request_id.is_empty()
+	)
+	var matched := false
+	if has_incoming_origin:
+		var identifier_matches := (
+			(not pending_action_id.is_empty() and incoming_action_id == pending_action_id)
+			or (
+				not pending_request_id.is_empty()
+				and incoming_request_id == pending_request_id
+			)
+		)
+		matched = (
+			identifier_matches
+			and next_revision > int(pending_submission.get("base_revision", -1))
+		)
+		if identifier_matches and not matched:
+			# An echoed identifier without a causally newer authoritative state is
+			# not a confirmation. Hide it from presentation correlation so a stale
+			# echo cannot commit a parked drag proxy.
+			origins["action_id"] = ""
+			origins["request_id"] = ""
+	elif bool(pending_submission.get("timeout_notified", false)):
+		# A valid state received after our explicit resync completes recovery,
+		# but is not presented as confirmation of the timed-out action.
+		matched = true
+	elif resync_in_progress:
+		# Protocol recovery can legitimately return the same revision (for
+		# example after rejecting a stale or malformed submission). The valid
+		# uncorrelated snapshot releases the lock without attributing the action.
+		matched = true
+	elif next_revision > int(pending_submission.get("base_revision", -1)):
+		# Protocol V3 peers predating correlation echo sent an empty envelope.
+		# With one in-flight submission, a strict revision advance is unambiguous.
+		origins["action_id"] = pending_action_id
+		origins["request_id"] = pending_request_id
+		matched = true
+	if matched:
+		origins["matched"] = true
+		_clear_pending_submission()
+	return origins
+
+
+func _resolve_pending_error(row: Dictionary) -> Dictionary:
+	var origins := {
+		"action_id": str(row.get("action_id", "")),
+		"request_id": str(row.get("request_id", "")),
+		"matched": false,
+	}
+	if pending_submission.is_empty():
+		return origins
+	var pending_action_id := str(pending_submission.get("action_id", ""))
+	var pending_request_id := str(pending_submission.get("request_id", ""))
+	var incoming_action_id := str(origins["action_id"])
+	var incoming_request_id := str(origins["request_id"])
+	var has_incoming_origin := (
+		not incoming_action_id.is_empty()
+		or not incoming_request_id.is_empty()
+	)
+	var matched := false
+	if has_incoming_origin:
+		matched = (
+			(not pending_action_id.is_empty() and incoming_action_id == pending_action_id)
+			or (
+				not pending_request_id.is_empty()
+				and incoming_request_id == pending_request_id
+			)
+		)
+	else:
+		# Legacy errors did not echo correlation identifiers. There can only be
+		# one in-flight client submission, so the rejection is still attributable.
+		origins["action_id"] = pending_action_id
+		origins["request_id"] = pending_request_id
+		matched = true
+	if matched:
+		origins["matched"] = true
+		_clear_pending_submission()
+	return origins
+
+
+func _envelope_identifier(message: Variant, field: String) -> String:
+	if not message is Dictionary:
+		return ""
+	var value: Variant = Dictionary(message).get(field, "")
+	if not value is String:
+		return ""
+	var identifier := str(value)
+	if identifier.to_utf8_buffer().size() > ProtocolV3.MAX_IDENTIFIER_BYTES:
+		return ""
+	return identifier
 
 
 func _send(

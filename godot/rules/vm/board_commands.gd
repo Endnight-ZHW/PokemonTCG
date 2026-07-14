@@ -54,9 +54,9 @@ func cmd_return_to_hand(
 	_branches: Dictionary,
 	player_idx: int,
 	source_slot: String,
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
-	return return_to_hand(state, player_idx, source_slot)
+	return return_to_hand(state, player_idx, source_slot, events)
 
 
 func cmd_search_any_and_switch(
@@ -261,6 +261,12 @@ func ability_discard_revive(
 		return VMResult.fail("紧急上浮条件不满足。")
 	player.discard.remove_at(discard_index)
 	player.place_bench(revive_id, bench_slot)
+	events.append(VMZoneHelpers.card_moved_event(
+		player_idx,
+		[revive_id],
+		{"player": player_idx, "zone": "discard", "index": discard_index},
+		{"player": player_idx, "slot": "bench_%d" % bench_slot, "index": bench_slot},
+	))
 	VMZoneHelpers.draw(state, player_idx, 3, events)
 	return VMResult.ok()
 
@@ -338,18 +344,40 @@ func return_to_hand(
 	state: GameState,
 	player_idx: int,
 	source_slot: String,
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var source := player.get_pokemon(source_slot)
 	if source == null:
 		return VMResult.fail("没有宝可梦。")
-	player.hand.append(source.card_id)
-	player.hand.append_array(source.evolution_stack_ids)
-	player.hand.append_array(source.energy_card_ids)
+	var returned_cards: Array[String] = [source.card_id]
+	returned_cards.append_array(source.evolution_stack_ids)
+	returned_cards.append_array(source.energy_card_ids)
 	if not source.attached_tool_id.is_empty():
-		player.hand.append(source.attached_tool_id)
+		returned_cards.append(source.attached_tool_id)
+	var hand_start := player.hand.size()
+	player.hand.append_array(returned_cards)
 	if source_slot == "active":
 		player.active = null
 	elif source_slot.begins_with("bench_"):
 		player.bench[source_slot.trim_prefix("bench_").to_int()] = null
+	var source_indices: Array[int] = []
+	var target_indices: Array[int] = []
+	for index in range(returned_cards.size()):
+		source_indices.append(index)
+		target_indices.append(hand_start + index)
+	events.append(VMZoneHelpers.card_moved_event(
+		player_idx,
+		returned_cards,
+		{
+			"player": player_idx,
+			"slot": source_slot,
+			"indices": source_indices,
+		},
+		{
+			"player": player_idx,
+			"zone": "hand",
+			"indices": target_indices,
+		},
+	))
 	return VMResult.ok()

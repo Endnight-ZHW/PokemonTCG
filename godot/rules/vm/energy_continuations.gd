@@ -133,7 +133,7 @@ func continue_energy_relocate_source(
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
 	if selected.is_empty():
 		return VMResult.fail("没有选择能量来源。")
@@ -155,13 +155,15 @@ func continue_energy_relocate_target(
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
 	if selected.is_empty():
 		return VMResult.ok("未选择能量目标。")
 	var player := state.get_player(int(data["player_idx"]))
-	var source := player.get_pokemon(str(data["source_slot"]))
-	var target := player.get_pokemon(str(selected[0].get("value", {}).get("slot", "")))
+	var source_slot := str(data["source_slot"])
+	var target_slot := str(selected[0].get("value", {}).get("slot", ""))
+	var source := player.get_pokemon(source_slot)
+	var target := player.get_pokemon(target_slot)
 	if source == null or target == null:
 		return VMResult.fail("能量转移目标无效。")
 	var moved_ids: Array = data.get("card_ids", [])
@@ -170,8 +172,34 @@ func continue_energy_relocate_target(
 		var energy_id := str(moved_ids[index])
 		var source_index := source.energy_card_ids.find(energy_id)
 		if source_index >= 0:
+			var target_index := target.energy_card_ids.size()
 			source.energy_card_ids.remove_at(source_index)
 			target.energy_card_ids.append(energy_id)
+			events.append({
+				"event_type": "energy_attached",
+				"actor": int(data["player_idx"]),
+				"card_id": energy_id,
+				"source": {
+					"player": int(data["player_idx"]),
+					"slot": source_slot,
+					"attachment_type": "energy",
+					"index": source_index,
+				},
+				"target": {
+					"player": int(data["player_idx"]),
+					"slot": target_slot,
+					"attachment_type": "energy",
+					"index": target_index,
+				},
+				"data": {
+					"player": int(data["player_idx"]),
+					"slot": target_slot,
+					"card_id": energy_id,
+					"source_slot": source_slot,
+					"source_index": source_index,
+					"target_index": target_index,
+				},
+			})
 	return VMResult.ok()
 
 
@@ -181,7 +209,7 @@ func continue_energy_relocate_distribution(
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
 	var source := player.get_pokemon(str(data["source_slot"]))
@@ -204,8 +232,34 @@ func continue_energy_relocate_distribution(
 			var energy_id := str(moved_ids[index])
 			var source_index := source.energy_card_ids.find(energy_id)
 			if source_index >= 0:
+				var target_index := target.energy_card_ids.size()
 				source.energy_card_ids.remove_at(source_index)
 				target.energy_card_ids.append(energy_id)
+				events.append({
+					"event_type": "energy_attached",
+					"actor": int(data["player_idx"]),
+					"card_id": energy_id,
+					"source": {
+						"player": int(data["player_idx"]),
+						"slot": str(data["source_slot"]),
+						"attachment_type": "energy",
+						"index": source_index,
+					},
+					"target": {
+						"player": int(data["player_idx"]),
+						"slot": target_slot,
+						"attachment_type": "energy",
+						"index": target_index,
+					},
+					"data": {
+						"player": int(data["player_idx"]),
+						"slot": target_slot,
+						"card_id": energy_id,
+						"source_slot": str(data["source_slot"]),
+						"source_index": source_index,
+						"target_index": target_index,
+					},
+				})
 	return VMResult.ok()
 
 
@@ -229,6 +283,7 @@ func resolve_detached_energy_distribution(
 	var player_idx := int(data["player_idx"])
 	var player := state.get_player(player_idx)
 	var card_ids: Array = data.get("card_ids", [])
+	var source_indices: Array = data.get("source_indices", [])
 	var max_per_target := int(data.get("max_per_target", 99))
 	var per_target: Dictionary = {}
 	for index in range(min(card_ids.size(), selected.size())):
@@ -239,20 +294,30 @@ func resolve_detached_energy_distribution(
 		if target == null:
 			continue
 		var card_id := str(card_ids[index])
+		var source_index := (
+			int(source_indices[index]) if index < source_indices.size() else -1
+		)
+		var target_index := target.energy_card_ids.size()
 		target.energy_card_ids.append(card_id)
 		per_target[target_slot] = int(per_target.get(target_slot, 0)) + 1
 		events.append({
 			"event_type": "energy_attached",
 			"actor": player_idx,
 			"card_id": card_id,
-			"source": {"player": player_idx, "zone": "deck", "index": -1},
-			"target": {"player": player_idx, "slot": target_slot},
+			"source": {"player": player_idx, "zone": "deck", "index": source_index},
+			"target": {
+				"player": player_idx,
+				"slot": target_slot,
+				"attachment_type": "energy",
+				"index": target_index,
+			},
 			"data": {
 				"player": player_idx,
 				"slot": target_slot,
 				"card_id": card_id,
 				"source_zone": "deck",
-				"source_index": -1,
+				"source_index": source_index,
+				"target_index": target_index,
 			},
 		})
 	return VMResult.ok()

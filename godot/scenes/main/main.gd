@@ -27,6 +27,7 @@ const MODE_DEEP := "deep"
 const MODE_NETWORK := "network"
 const MODAL_SHADE_ALPHA := 0.72
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
+const TOAST_Z_INDEX := 350
 
 var catalog: CardCatalog = CardDatabase.catalog
 var engine := GameEngine.new(catalog)
@@ -91,9 +92,13 @@ var active_choice_panel: ChoicePanel
 var ui_initialized := false
 var _modal_generation := 0
 var _modal_back_action := Callable()
+var _modal_close_completion := Callable()
+var _modal_close_completion_generation := -1
 var _toast_tween: Tween
 var _toast_generation := 0
 var _deep_start_generation := 0
+var _presented_coin_request_ids: Dictionary = {}
+var _pending_ai_resume_revision := -1
 
 
 func _ready() -> void:
@@ -189,6 +194,8 @@ func _build_shell() -> void:
 	screen_host = get_node("SafeArea/ScreenHost") as Control
 	title_full_bleed_backdrop = get_node_or_null("TitleFullBleedBackdrop") as Control
 	toast_label = get_node("Toast") as Label
+	toast_label.z_index = TOAST_Z_INDEX
+	toast_label.z_as_relative = false
 	toast_label.theme = FRONTEND_THEME
 	toast_label.theme_type_variation = &"FrontToastLabel"
 	toast_label.set("accessibility_live", 1)
@@ -420,12 +427,18 @@ func _poll_network() -> void:
 					_apply_network_view(
 						view_value,
 						int(event.get("player_idx", network_player_idx)),
+						str(event.get("origin_action_id", "")),
+						str(event.get("origin_request_id", "")),
 					)
 				else:
 					_show_toast("收到的联机局面无效，正在请求重新同步。", true)
 					network_controller.request_resync()
 			"error", "connection_failed", "transport_error":
 				var event_type := str(event.get("type", ""))
+				_presented_coin_request_ids.erase(str(event.get(
+					"origin_request_id",
+					"",
+				)))
 				var message := str(event.get(
 					"message",
 					event.get("code", "网络连接失败。"),
@@ -436,7 +449,15 @@ func _poll_network() -> void:
 				)
 				_show_toast(message, true)
 				if event_type == "error" and current_screen == SCREEN_GAME:
-					network_controller.request_resync()
+					# Only the rejection correlated to our in-flight submission owns its
+					# parked visual. An unrelated or delayed ERROR must not tear down the
+					# current drag/presentation batch or start a recovery snapshot that
+					# could accidentally release that submission. Protocol-level stale /
+					# sequence errors already request resync inside the controller.
+					if bool(event.get("matched_pending", false)):
+						if battle_screen:
+							battle_screen.clear_pending_drag("network_error")
+						network_controller.request_resync()
 				# These transport events are terminal. Clear the controller now so the
 				# lobby can immediately start a clean retry; protocol-level "error"
 				# events may still be recoverable and keep their existing session.
@@ -444,6 +465,11 @@ func _poll_network() -> void:
 					_stop_network()
 			"disconnected":
 				_handle_network_disconnected(str(event.get("reason", "")))
+			"pending_timeout":
+				_presented_coin_request_ids.clear()
+				_show_toast("动作确认超时，正在重新同步局面。", true)
+				if battle_screen:
+					battle_screen.clear_pending_drag("network_timeout")
 
 
 func _handle_network_disconnected(reason: String = "") -> void:
@@ -490,17 +516,17 @@ func _set_network_page_state(
 	current_network_page.set_connection_state(state_value, message, room_code)
 
 
-func _apply_network_view(view: Dictionary, player: int) -> void:
+func _apply_network_view(
+	view: Dictionary,
+	player: int,
+	origin_action_id: String = "",
+	origin_request_id: String = "",
+) -> void:
 	if view.is_empty() or not _network_view_is_valid(view):
 		_show_toast("收到的联机局面无效，正在请求重新同步。", true)
 		network_controller.request_resync()
 		return
 	var had_game_screen := current_screen == SCREEN_GAME and battle_screen != null
-	var presentation_snapshot := (
-		battle_screen.capture_presentation_snapshot()
-		if had_game_screen
-		else {}
-	)
 	game_mode = MODE_NETWORK
 	network_player_idx = player
 	current_view_player = player
@@ -518,17 +544,35 @@ func _apply_network_view(view: Dictionary, player: int) -> void:
 	)
 	if current_screen != SCREEN_GAME and current_screen != SCREEN_END:
 		_build_game_screen()
-	else:
-		_refresh_game()
-	if battle_screen:
+		call_deferred("_continue_after_network_transition")
+	elif had_game_screen and battle_screen:
 		var presentation_events: Array = view.get("presentation_events", [])
-		if had_game_screen and not presentation_events.is_empty():
-			battle_screen.play_presentation(
-				presentation_events,
-				state.revision,
-				state.active_player_idx,
-				presentation_snapshot,
-			)
+		if _presented_coin_request_ids.has(origin_request_id):
+			presentation_events = _without_coin_flip_events(presentation_events)
+			_presented_coin_request_ids.erase(origin_request_id)
+		var drag_session_id := battle_screen.drag_session_id_for_origin(
+			origin_action_id)
+		var handle := _submit_battle_transition(
+			presentation_events,
+			state.active_player_idx,
+			BattleTransitionRequest.CAUSE_NETWORK,
+			origin_action_id,
+			origin_request_id,
+			drag_session_id,
+		)
+		_continue_when_presented(
+			handle,
+			state.revision,
+			Callable(self, "_continue_after_network_transition"),
+		)
+
+
+func _continue_after_network_transition() -> void:
+	if state == null or current_screen != SCREEN_GAME:
+		return
+	if state.winner >= 0:
+		_refresh_game()
+		return
 	if (
 		network_choice_request != null
 		and (
@@ -551,6 +595,7 @@ func _stop_network() -> void:
 	network_legal_actions.clear()
 	network_choice_request = null
 	network_player_idx = -1
+	_presented_coin_request_ids.clear()
 	_refresh_process_state()
 
 
@@ -729,14 +774,7 @@ func _build_game_screen() -> void:
 func _refresh_game() -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
-	# Network revisions and completed actions can invalidate a selected hand
-	# index or field slot before the next frame. Clear both halves of the
-	# selection/detail state in-place, then continue this same refresh once.
-	if not _selected_entity_is_valid(selected_entity_key):
-		selected_entity_key = ""
-		selected_entity_identity = ""
-		if battle_screen:
-			battle_screen.hide_card_detail()
+	_sanitize_battle_selection()
 	if battle_screen:
 		var rows := _current_action_rows()
 		battle_screen.update_view(
@@ -747,8 +785,159 @@ func _refresh_game() -> void:
 			ai_thinking,
 			game_mode,
 		)
-	if state.winner >= 0:
+	if (
+		state.winner >= 0
+		and (battle_screen == null or not battle_screen.is_presentation_busy())
+	):
 		_show_end_screen()
+
+
+func _sanitize_battle_selection() -> void:
+	# Network revisions and completed actions can invalidate a selected hand
+	# index or field slot before the next frame. Clear both halves together.
+	if _selected_entity_is_valid(selected_entity_key):
+		return
+	selected_entity_key = ""
+	selected_entity_identity = ""
+	if battle_screen:
+		battle_screen.hide_card_detail()
+
+
+func _capture_battle_view_model() -> BattleViewModel:
+	if state == null:
+		return null
+	_sanitize_battle_selection()
+	return BattleViewModel.capture(
+		state,
+		current_view_player,
+		_current_action_rows(),
+		selected_entity_key,
+		ai_thinking,
+		game_mode,
+	)
+
+
+func _submit_battle_transition(
+	events: Array,
+	fallback_actor: int,
+	cause: String,
+	origin_action_id: String = "",
+	origin_request_id: String = "",
+	drag_session_id: String = "",
+) -> PresentationHandle:
+	if battle_screen == null:
+		return null
+	var target_view := _capture_battle_view_model()
+	if target_view == null:
+		return null
+	return _submit_battle_transition_to_view(
+		target_view,
+		events,
+		fallback_actor,
+		cause,
+		origin_action_id,
+		origin_request_id,
+		drag_session_id,
+	)
+
+
+func _submit_battle_transition_to_view(
+	target_view: BattleViewModel,
+	events: Array,
+	fallback_actor: int,
+	cause: String,
+	origin_action_id: String = "",
+	origin_request_id: String = "",
+	drag_session_id: String = "",
+) -> PresentationHandle:
+	if battle_screen == null or target_view == null:
+		return null
+	var request := BattleTransitionRequest.create(
+		target_view,
+		events,
+		fallback_actor,
+		cause,
+		origin_action_id,
+		origin_request_id,
+		drag_session_id,
+		true,
+	)
+	return battle_screen.submit_transition(request)
+
+
+func _continue_when_presented(
+	handle: PresentationHandle,
+	expected_revision: int,
+	continuation: Callable,
+) -> void:
+	if handle == null:
+		continuation.call()
+		return
+	if handle.is_completed():
+		if handle.status in [PresentationHandle.COMPLETED, PresentationHandle.SNAPPED]:
+			call_deferred("_run_presentation_continuation", expected_revision, continuation)
+		elif handle.status == PresentationHandle.CANCELLED:
+			call_deferred(
+				"_recover_cancelled_presentation",
+				expected_revision,
+				continuation,
+			)
+		return
+	handle.completed.connect(
+		_on_presentation_handle_completed.bind(expected_revision, continuation),
+		CONNECT_ONE_SHOT,
+	)
+
+
+func _on_presentation_handle_completed(
+	_handle: PresentationHandle,
+	expected_revision: int,
+	continuation: Callable,
+) -> void:
+	if _handle.status in [PresentationHandle.COMPLETED, PresentationHandle.SNAPPED]:
+		# Handle completion may be emitted from inside coordinator cancellation,
+		# before its active row and busy flag have been cleared.
+		call_deferred("_run_presentation_continuation", expected_revision, continuation)
+	elif _handle.status == PresentationHandle.CANCELLED:
+		call_deferred(
+			"_recover_cancelled_presentation",
+			expected_revision,
+			continuation,
+		)
+
+
+func _recover_cancelled_presentation(
+	expected_revision: int,
+	continuation: Callable,
+) -> void:
+	if (
+		state == null
+		or current_screen != SCREEN_GAME
+		or battle_screen == null
+		or not is_instance_valid(battle_screen)
+		or (expected_revision >= 0 and state.revision != expected_revision)
+	):
+		return
+	# Network cancellation during a resync is reconciled by the incoming
+	# authoritative view. Local/AI queued batches have no such future state, so
+	# snap the table to the already-committed rules state before continuing flow.
+	if game_mode == MODE_NETWORK and network_controller.resync_in_progress:
+		return
+	_refresh_game()
+	_run_presentation_continuation(expected_revision, continuation)
+
+
+func _run_presentation_continuation(
+	expected_revision: int,
+	continuation: Callable,
+) -> void:
+	if state == null or current_screen != SCREEN_GAME:
+		return
+	# A newer network view supersedes continuations belonging to an older batch.
+	if expected_revision >= 0 and state.revision != expected_revision:
+		return
+	if continuation.is_valid():
+		continuation.call()
 
 
 func _current_action_rows() -> Array[Dictionary]:
@@ -800,22 +989,45 @@ func _on_battle_pokemon_selected(
 
 func _on_battle_card_dropped(
 	hand_index: int,
-	_card_id: String,
+	card_id: String,
 	target_player: int,
 	target_slot: String,
 ) -> void:
+	if state == null or hand_index < 0:
+		if battle_screen:
+			battle_screen.clear_pending_drag("invalid_drop")
+		return
+	var actor := _current_actor()
+	var actor_hand := state.get_player(actor).hand if actor in [0, 1] else []
+	var drag_context := battle_screen.active_drag_context() if battle_screen else {}
+	var identity_valid := (
+		hand_index < actor_hand.size()
+		and str(actor_hand[hand_index]) == card_id
+		and (
+			drag_context.is_empty()
+			or (
+				int(drag_context.get("revision", -1)) == state.revision
+				and int(drag_context.get("hand_index", -1)) == hand_index
+				and str(drag_context.get("card_id", "")) == card_id
+			)
+		)
+	)
+	if not identity_valid:
+		if battle_screen:
+			battle_screen.clear_pending_drag("stale_drag")
+		_show_toast("手牌状态已经变化，请重新拖动。", true)
+		return
 	var candidates := _matching_drop_actions(hand_index, target_player, target_slot)
 	if candidates.size() == 1:
 		_execute_action(candidates[0])
 		return
 	if candidates.size() > 1:
-		selected_entity_key = "hand:%d" % hand_index
-		selected_entity_identity = _entity_identity_for_key(selected_entity_key)
-		_refresh_game()
+		# BattleTable owns the variant popover and keeps the drag proxy parked.
 		return
 	# BattleTable/CardView only emit drops for legal targets. Keep this branch as
 	# a silent stale-state guard for network revisions racing with a drag.
-	_refresh_game()
+	if battle_screen:
+		battle_screen.clear_pending_drag("illegal_drop")
 
 
 func _matching_drop_actions(
@@ -892,6 +1104,10 @@ func _matching_selected_pokemon_target_actions(
 
 
 func _execute_action(action: GameAction) -> StepResult:
+	if _battle_submission_locked():
+		var locked_message := "动画或局面同步尚未完成，请稍候。"
+		_show_toast(locked_message, true)
+		return StepResult.new(false, locked_message)
 	if action.action == "RETREAT":
 		_show_retreat_confirmation(action)
 		return StepResult.new(true, "等待确认撤退。")
@@ -902,15 +1118,36 @@ func _execute_action(action: GameAction) -> StepResult:
 
 
 func _execute_action_now(action: GameAction) -> StepResult:
+	if _battle_submission_locked():
+		var locked_message := "动画或局面同步尚未完成，请稍候。"
+		_show_toast(locked_message, true)
+		return StepResult.new(false, locked_message)
+	var drag_context := battle_screen.active_drag_context() if battle_screen else {}
+	var action_hand_index := int(action.params.get("hand_idx", -1))
+	var action_uses_drag := (
+		not drag_context.is_empty()
+		and action_hand_index >= 0
+		and action_hand_index == int(drag_context.get("hand_index", -1))
+	)
 	if game_mode == MODE_NETWORK:
 		_play_click()
 		var accepted := network_controller.submit_action(action)
 		if not accepted:
 			_show_toast("动作未发送或被房主拒绝。", true)
+			if action_uses_drag and battle_screen:
+				battle_screen.clear_pending_drag("network_submit_rejected")
 		else:
 			selected_entity_key = ""
 			selected_entity_identity = ""
-			_refresh_game()
+			if battle_screen:
+				battle_screen.hide_card_detail()
+			if action_uses_drag and battle_screen:
+				battle_screen.mark_drag_pending(action.action_id, true)
+			# The host settles authoritatively in submit_action() and queues its own
+			# state event. Drain it now so submit_transition() makes the Main-level
+			# busy guard effective before another pointer event can submit again.
+			if network_controller.host:
+				_poll_network()
 		return StepResult.new(accepted, "动作已提交。" if accepted else "动作提交失败。")
 	if game_mode != MODE_LOCAL and _current_actor() == 1:
 		return StepResult.new(false, "AI 回合不能由玩家操作。")
@@ -919,27 +1156,85 @@ func _execute_action_now(action: GameAction) -> StepResult:
 	action.action_id = "local:%d:%d" % [state.revision, action_sequence]
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var presentation_snapshot := (
-		battle_screen.capture_presentation_snapshot()
-		if battle_screen
-		else {}
-	)
+	# Reserve the live drag proxy while the table still renders the action's base
+	# revision. GameState is settled in place and increments revision before this
+	# method regains control; marking it afterwards makes a valid drag look stale
+	# and forces Presentation to create a second card from the old hand snapshot.
+	var drag_session_id := ""
+	if action_uses_drag and battle_screen:
+		drag_session_id = battle_screen.mark_drag_pending(action.action_id, false)
 	var result := engine.apply_action(state, action, rng)
 	if not result.success:
 		_show_toast(result.message, true)
+		if action_uses_drag and battle_screen:
+			battle_screen.clear_pending_drag("rules_rejected")
 		_refresh_game()
 		return result
 	selected_entity_key = ""
 	selected_entity_identity = ""
+	if battle_screen:
+		battle_screen.hide_card_detail()
 	_show_toast(result.message if not result.message.is_empty() else "动作完成。")
-	_refresh_game()
-	if battle_screen and not result.events.is_empty():
-		battle_screen.play_presentation(
-			result.events,
-			state.revision,
+	var presented_revision := state.revision
+	var local_handoff := _build_local_handoff_plan(
+		result.events,
+		previous_active,
+	)
+	if not local_handoff.is_empty():
+		var prefix_handle := _submit_battle_transition_to_view(
+			local_handoff.get("outgoing_view") as BattleViewModel,
+			local_handoff.get("prefix_events", []),
 			action.actor,
-			presentation_snapshot,
+			BattleTransitionRequest.CAUSE_LOCAL_ACTION,
+			action.action_id,
+			"",
+			drag_session_id,
 		)
+		_continue_when_presented(
+			prefix_handle,
+			presented_revision,
+			_open_local_handoff_gate.bind(
+				result,
+				local_handoff,
+				previous_active,
+				previous_phase,
+				action.action_id,
+				"",
+				BattleTransitionRequest.CAUSE_LOCAL_ACTION,
+			),
+		)
+		return result
+	var handle := _submit_battle_transition(
+		result.events,
+		action.actor,
+		BattleTransitionRequest.CAUSE_LOCAL_ACTION,
+		action.action_id,
+		"",
+		drag_session_id,
+	)
+	_continue_when_presented(
+		handle,
+		presented_revision,
+		_continue_after_player_transition.bind(
+			result,
+			previous_active,
+			previous_phase,
+		),
+	)
+	return result
+
+
+func _battle_submission_locked() -> bool:
+	if battle_screen != null and battle_screen.is_presentation_busy():
+		return true
+	return game_mode == MODE_NETWORK and network_controller.submission_locked()
+
+
+func _continue_after_player_transition(
+	result: StepResult,
+	previous_active: int,
+	previous_phase: String,
+) -> void:
 	var pending_choice := _step_pending_choice(result)
 	if pending_choice:
 		if game_mode != MODE_LOCAL and pending_choice.player == 1:
@@ -948,7 +1243,228 @@ func _execute_action_now(action: GameAction) -> StepResult:
 			_show_choice_overlay(pending_choice)
 	else:
 		_after_step(previous_active, previous_phase)
+
+
+func _build_local_handoff_plan(
+	raw_events: Array,
+	previous_active: int,
+) -> Dictionary:
+	if (
+		game_mode != MODE_LOCAL
+		or state == null
+		or state.winner >= 0
+		or state.active_player_idx == previous_active
+	):
+		return {}
+	var incoming_player := state.active_player_idx
+	var events: Array[Dictionary] = []
+	for index in range(raw_events.size()):
+		if not raw_events[index] is Dictionary:
+			continue
+		var event: Dictionary = Dictionary(raw_events[index]).duplicate(true)
+		var event_type := PresentationEvent.canonical_event_type(
+			str(event.get("event_type", "")),
+		)
+		if str(event.get("event_id", "")).is_empty():
+			event["event_id"] = "presentation:%d:%d:%s" % [
+				state.revision,
+				index,
+				event_type,
+			]
+		events.append(event)
+	var boundary := -1
+	for index in range(events.size()):
+		var event: Dictionary = events[index]
+		var event_type := PresentationEvent.canonical_event_type(
+			str(event.get("event_type", "")),
+		)
+		var data: Dictionary = event.get("data", {})
+		var actor := int(event.get("actor", data.get("player", -1)))
+		if actor == incoming_player and event_type == "cards_drawn":
+			boundary = index
+			break
+	if boundary < 0:
+		for index in range(events.size()):
+			var event: Dictionary = events[index]
+			var event_type := PresentationEvent.canonical_event_type(
+				str(event.get("event_type", "")),
+			)
+			var data: Dictionary = event.get("data", {})
+			var actor := int(event.get("actor", data.get("player", -1)))
+			if actor == incoming_player and event_type == "turn_start":
+				boundary = index
+				break
+	if boundary < 0:
+		return {}
+	var prefix_events: Array[Dictionary] = []
+	var suffix_events: Array[Dictionary] = []
+	for index in range(events.size()):
+		if index < boundary:
+			prefix_events.append(events[index])
+		else:
+			suffix_events.append(events[index])
+	var pre_draw_state := _state_before_handoff_draw(suffix_events, incoming_player)
+	if pre_draw_state == null:
+		return {}
+	var outgoing_view := BattleViewModel.capture(
+		pre_draw_state,
+		current_view_player,
+		[],
+		"",
+		ai_thinking,
+		game_mode,
+	)
+	var incoming_view := BattleViewModel.capture(
+		pre_draw_state,
+		incoming_player,
+		[],
+		"",
+		ai_thinking,
+		game_mode,
+	)
+	return {
+		"incoming_player": incoming_player,
+		"prefix_events": prefix_events,
+		"suffix_events": suffix_events,
+		"outgoing_view": outgoing_view,
+		"incoming_view": incoming_view,
+	}
+
+
+func _state_before_handoff_draw(
+	suffix_events: Array[Dictionary],
+	incoming_player: int,
+) -> GameState:
+	if state == null or incoming_player not in [0, 1]:
+		return null
+	var result := state.clone_state()
+	var player := result.get_player(incoming_player)
+	for event_index in range(suffix_events.size() - 1, -1, -1):
+		var event: Dictionary = suffix_events[event_index]
+		if PresentationEvent.canonical_event_type(
+			str(event.get("event_type", "")),
+		) != "cards_drawn":
+			continue
+		var data: Dictionary = event.get("data", {})
+		var actor := int(event.get("actor", data.get("player", -1)))
+		if actor != incoming_player:
+			continue
+		var raw_card_ids: Variant = data.get("card_ids", data.get("cards", []))
+		var card_ids: Array[String] = []
+		if raw_card_ids is Array:
+			for value in raw_card_ids:
+				card_ids.append(str(value))
+		var amount := maxi(0, int(event.get(
+			"amount",
+			data.get("count", card_ids.size()),
+		)))
+		for offset in range(amount):
+			var expected_id := (
+				card_ids[card_ids.size() - 1 - offset]
+				if offset < card_ids.size()
+				else ""
+			)
+			var restored_id := _pop_last_matching_card(player.hand, expected_id)
+			if not restored_id.is_empty():
+				player.deck.append(restored_id)
+	result.phase = "DRAW"
+	if (
+		not result.action_log.is_empty()
+		and str(result.action_log[-1]).begins_with("—— ")
+	):
+		result.action_log.pop_back()
 	return result
+
+
+func _pop_last_matching_card(cards: Array[String], card_id: String) -> String:
+	if cards.is_empty():
+		return ""
+	if card_id.is_empty() or cards[-1] == card_id:
+		return cards.pop_back()
+	for index in range(cards.size() - 1, -1, -1):
+		if cards[index] == card_id:
+			return cards.pop_at(index)
+	return cards.pop_back()
+
+
+func _open_local_handoff_gate(
+	result: StepResult,
+	plan: Dictionary,
+	previous_active: int,
+	previous_phase: String,
+	origin_action_id: String,
+	origin_request_id: String,
+	transition_cause: String,
+) -> void:
+	var incoming_player := int(plan.get("incoming_player", state.active_player_idx))
+	current_view_player = incoming_player
+	_show_pass_overlay(
+		incoming_player,
+		"回合交接",
+		"请将设备交给玩家 %d。" % (incoming_player + 1),
+		_resume_local_handoff.bind(
+			result,
+			plan,
+			previous_active,
+			previous_phase,
+			origin_action_id,
+			origin_request_id,
+			transition_cause,
+		),
+		false,
+	)
+	var incoming_view := plan.get("incoming_view") as BattleViewModel
+	if incoming_view != null and battle_screen != null:
+		var render_state := incoming_view.state_for_render()
+		battle_screen.update_view(
+			render_state,
+			incoming_view.view_player,
+			incoming_view.action_rows,
+			incoming_view.selected_entity_key,
+			incoming_view.ai_thinking,
+			incoming_view.game_mode,
+		)
+	modal_confirm.disabled = false
+
+
+func _resume_local_handoff(
+	result: StepResult,
+	plan: Dictionary,
+	previous_active: int,
+	previous_phase: String,
+	origin_action_id: String,
+	origin_request_id: String,
+	transition_cause: String,
+) -> void:
+	var suffix_events: Array = plan.get("suffix_events", [])
+	var handle := _submit_battle_transition(
+		suffix_events,
+		int(plan.get("incoming_player", state.active_player_idx)),
+		transition_cause,
+		origin_action_id,
+		origin_request_id,
+	)
+	_continue_when_presented(
+		handle,
+		state.revision,
+		_continue_after_local_handoff.bind(
+			result,
+			previous_active,
+			previous_phase,
+		),
+	)
+
+
+func _continue_after_local_handoff(
+	result: StepResult,
+	_previous_active: int,
+	_previous_phase: String,
+) -> void:
+	var pending_choice := _step_pending_choice(result)
+	if pending_choice:
+		_show_choice_overlay(pending_choice)
+		return
+	_refresh_game()
 
 
 func _after_step(previous_active: int, previous_phase: String) -> void:
@@ -1103,6 +1619,9 @@ func _show_coin_flip_choice(request: ChoiceRequest) -> void:
 	coins.alignment = BoxContainer.ALIGNMENT_CENTER
 	coins.add_theme_constant_override("separation", 14)
 	content.add_child(coins)
+	var reveal_generation := _modal_generation
+	var reveal_animated := not AppSettings.reduced_motion and not results.is_empty()
+	modal_confirm.disabled = reveal_animated
 	var heads := 0
 	for index in range(results.size()):
 		var is_heads := bool(results[index])
@@ -1126,24 +1645,50 @@ func _show_coin_flip_choice(request: ChoiceRequest) -> void:
 			),
 		)
 		coins.add_child(coin)
-		if not AppSettings.reduced_motion:
+		if reveal_animated:
 			coin.scale = Vector2(0.2, 1.0)
 			coin.modulate.a = 0.0
 			var tween := coin.create_tween()
 			tween.tween_interval(float(index) * 0.10)
+			tween.tween_callback(_play_coin_reveal_cue)
 			tween.tween_property(coin, "modulate:a", 1.0, 0.08)
 			tween.parallel().tween_property(coin, "scale", Vector2.ONE, 0.34).set_trans(
 				Tween.TRANS_BACK,
 			).set_ease(Tween.EASE_OUT)
+			if index == results.size() - 1:
+				tween.finished.connect(
+					_finish_coin_flip_reveal.bind(
+						reveal_generation,
+						request.request_id,
+					),
+					CONNECT_ONE_SHOT,
+				)
+		elif index == 0:
+			_play_coin_reveal_cue()
 	var summary := Label.new()
 	summary.text = "正面 %d · 反面 %d" % [heads, results.size() - heads]
 	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	summary.add_theme_font_size_override("font_size", 18)
 	summary.add_theme_color_override("font_color", DesignTokens.TEXT)
 	content.add_child(summary)
-	modal_confirm.disabled = false
 	modal_confirm.text = "继续结算"
 	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
+
+
+func _play_coin_reveal_cue() -> void:
+	if audio_director:
+		audio_director.play_cue("coin")
+
+
+func _finish_coin_flip_reveal(generation: int, request_id: String) -> void:
+	if (
+		generation != _modal_generation
+		or not modal_layer.visible
+		or active_request == null
+		or active_request.request_id != request_id
+	):
+		return
+	modal_confirm.disabled = false
 
 
 func _choice_modal_size(has_preview: bool, compact_empty: bool = false) -> Vector2:
@@ -1249,7 +1794,6 @@ func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
 		or request.max_select != 1
 		or request.allow_duplicates
 		or request.can_cancel
-		or request.request_type == "select_attachment"
 	):
 		return result
 	for option in request.options:
@@ -1375,8 +1919,7 @@ func _show_retreat_confirmation(action: GameAction) -> void:
 		modal_confirm.disabled = true
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
-		_close_modal()
-		_execute_action_now(action)
+		_close_modal(_execute_action_now.bind(action))
 	, CONNECT_ONE_SHOT)
 	modal_cancel.pressed.connect(func() -> void:
 		_play_click()
@@ -1694,47 +2237,120 @@ func _refresh_choice_buttons() -> void:
 func _confirm_choice() -> void:
 	if active_request == null:
 		return
+	if _battle_submission_locked():
+		_show_toast("动画或局面同步尚未完成，请稍候。", true)
+		return
 	_play_click()
 	var request := active_request
 	var confirmed_ids: Array[String] = selected_choice_ids.duplicate()
 	if battle_screen:
 		battle_screen.clear_choice_targets()
-	_close_modal()
+	_close_modal(_submit_confirmed_choice.bind(request, confirmed_ids))
+
+
+func _submit_confirmed_choice(
+	request: ChoiceRequest,
+	confirmed_ids: Array[String],
+) -> void:
 	if game_mode == MODE_NETWORK:
-		active_request = null
-		if not network_controller.submit_choice(
+		if request.request_type == "coin_flip":
+			_presented_coin_request_ids[request.request_id] = true
+		var choice_sent := network_controller.submit_choice(
 			ChoiceResponse.new(request.request_id, confirmed_ids)
-		):
+		)
+		if not choice_sent:
+			_presented_coin_request_ids.erase(request.request_id)
 			_show_toast("选择未发送或被房主拒绝。", true)
 			return
+		if network_controller.host:
+			_poll_network()
 		_show_toast("选择已提交，等待房主同步。")
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var presentation_snapshot := (
-		battle_screen.capture_presentation_snapshot()
-		if battle_screen
-		else {}
-	)
 	var result := engine.apply_choice(
 		state,
 		request,
 		ChoiceResponse.new(request.request_id, confirmed_ids),
 		rng,
 	)
-	active_request = null
 	if not result.success:
 		_show_toast(result.message, true)
 		_refresh_game()
 		return
-	_refresh_game()
-	if battle_screen and not result.events.is_empty():
-		battle_screen.play_presentation(
-			result.events,
-			state.revision,
+	var presentation_events: Array = _choice_presentation_events(request, result.events)
+	var presented_revision := state.revision
+	var local_handoff := _build_local_handoff_plan(
+		presentation_events,
+		previous_active,
+	)
+	if not local_handoff.is_empty():
+		var prefix_handle := _submit_battle_transition_to_view(
+			local_handoff.get("outgoing_view") as BattleViewModel,
+			local_handoff.get("prefix_events", []),
 			request.player,
-			presentation_snapshot,
+			BattleTransitionRequest.CAUSE_CHOICE,
+			"",
+			request.request_id,
 		)
+		_continue_when_presented(
+			prefix_handle,
+			presented_revision,
+			_open_local_handoff_gate.bind(
+				result,
+				local_handoff,
+				previous_active,
+				previous_phase,
+				"",
+				request.request_id,
+				BattleTransitionRequest.CAUSE_CHOICE,
+			),
+		)
+		return
+	var handle := _submit_battle_transition(
+		presentation_events,
+		request.player,
+		BattleTransitionRequest.CAUSE_CHOICE,
+		"",
+		request.request_id,
+	)
+	_continue_when_presented(
+		handle,
+		presented_revision,
+		_continue_after_choice_transition.bind(
+			result,
+			previous_active,
+			previous_phase,
+		),
+	)
+
+
+func _choice_presentation_events(request: ChoiceRequest, events: Array) -> Array:
+	if request == null or request.request_type != "coin_flip":
+		return events
+	return _without_coin_flip_events(events)
+
+
+func _without_coin_flip_events(events: Array) -> Array:
+	var filtered: Array = []
+	for event_value in events:
+		if not event_value is Dictionary:
+			filtered.append(event_value)
+			continue
+		var event := event_value as Dictionary
+		if PresentationEvent.canonical_event_type(
+			str(event.get("event_type", "")),
+		) == "coin_flip":
+			continue
+		filtered.append(event_value)
+	return filtered
+
+
+func _continue_after_choice_transition(
+	result: StepResult,
+	previous_active: int,
+	previous_phase: String,
+) -> void:
 	var pending_choice := _step_pending_choice(result)
 	if pending_choice:
 		if game_mode != MODE_LOCAL and pending_choice.player == 1:
@@ -1749,29 +2365,83 @@ func _confirm_choice() -> void:
 func _cancel_choice() -> void:
 	if active_request == null:
 		return
+	if _battle_submission_locked():
+		_show_toast("动画或局面同步尚未完成，请稍候。", true)
+		return
 	_play_click()
 	var request := active_request
 	if battle_screen:
 		battle_screen.clear_choice_targets()
-	_close_modal()
+	_close_modal(_submit_cancelled_choice.bind(request))
+
+
+func _submit_cancelled_choice(request: ChoiceRequest) -> void:
 	if game_mode == MODE_NETWORK:
-		active_request = null
-		if not network_controller.submit_choice(
+		var cancellation_sent := network_controller.submit_choice(
 			ChoiceResponse.new(request.request_id, [], true)
-		):
+		)
+		if not cancellation_sent:
 			_show_toast("取消请求未发送。", true)
 			return
+		if network_controller.host:
+			_poll_network()
 		_show_toast("取消请求已提交，等待房主同步。")
 		return
+	var previous_active := state.active_player_idx
+	var previous_phase := state.phase
 	var result := engine.apply_choice(
 		state,
 		request,
 		ChoiceResponse.new(request.request_id, [], true),
 		rng,
 	)
-	active_request = null
 	_show_toast(result.message if result.success else result.message, not result.success)
-	_refresh_game()
+	if not result.success:
+		_refresh_game()
+		return
+	var local_handoff := _build_local_handoff_plan(
+		result.events,
+		previous_active,
+	)
+	if not local_handoff.is_empty():
+		var prefix_handle := _submit_battle_transition_to_view(
+			local_handoff.get("outgoing_view") as BattleViewModel,
+			local_handoff.get("prefix_events", []),
+			request.player,
+			BattleTransitionRequest.CAUSE_CHOICE,
+			"",
+			request.request_id,
+		)
+		_continue_when_presented(
+			prefix_handle,
+			state.revision,
+			_open_local_handoff_gate.bind(
+				result,
+				local_handoff,
+				previous_active,
+				previous_phase,
+				"",
+				request.request_id,
+				BattleTransitionRequest.CAUSE_CHOICE,
+			),
+		)
+		return
+	var handle := _submit_battle_transition(
+		result.events,
+		request.player,
+		BattleTransitionRequest.CAUSE_CHOICE,
+		"",
+		request.request_id,
+	)
+	_continue_when_presented(
+		handle,
+		state.revision,
+		_continue_after_choice_transition.bind(
+			result,
+			previous_active,
+			previous_phase,
+		),
+	)
 
 
 func _step_pending_choice(result: StepResult) -> ChoiceRequest:
@@ -1782,7 +2452,13 @@ func _step_pending_choice(result: StepResult) -> ChoiceRequest:
 	return ResolutionStack.from_dict(state.resolution_stack).pending_request
 
 
-func _show_pass_overlay(player_idx: int, heading: String, body: String) -> void:
+func _show_pass_overlay(
+	player_idx: int,
+	heading: String,
+	body: String,
+	confirmed: Callable = Callable(),
+	confirm_enabled: bool = true,
+) -> void:
 	var privacy_spec := ModalSpec.battle(Vector2(720, 620), true)
 	privacy_spec.cancellable = false
 	_open_modal(
@@ -1795,10 +2471,12 @@ func _show_pass_overlay(player_idx: int, heading: String, body: String) -> void:
 	var privacy := PRIVACY_PANEL_SCENE.instantiate() as PrivacyPanel
 	modal_body.add_child(privacy)
 	privacy.configure(body)
+	modal_confirm.disabled = not confirm_enabled
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
-		_close_modal()
-		_refresh_game()
+		_close_modal(
+			confirmed if confirmed.is_valid() else Callable(self, "_refresh_game")
+		)
 	, CONNECT_ONE_SHOT)
 
 
@@ -1824,9 +2502,7 @@ func _show_pause_overlay() -> void:
 	)
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
-		_close_modal()
-		if game_mode != MODE_NETWORK:
-			_maybe_start_ai()
+		_close_modal(Callable(self, "_resume_after_pause"))
 	, CONNECT_ONE_SHOT)
 	modal_cancel.pressed.connect(func() -> void:
 		_play_click()
@@ -1860,13 +2536,17 @@ func _show_end_turn_confirmation(action: GameAction) -> void:
 	modal_body.add_child(body)
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
-		_close_modal()
-		_execute_action_now(action)
+		_close_modal(_execute_action_now.bind(action))
 	, CONNECT_ONE_SHOT)
 	modal_cancel.pressed.connect(func() -> void:
 		_play_click()
 		_close_modal()
 	, CONNECT_ONE_SHOT)
+
+
+func _resume_after_pause() -> void:
+	if game_mode != MODE_NETWORK:
+		_maybe_start_ai()
 
 
 func _remaining_turn_action_labels() -> Array[String]:
@@ -1961,9 +2641,11 @@ func _show_help(resume_ai_on_close: bool = false) -> void:
 	modal_body.add_child(panel)
 	panel.configure()
 	modal_confirm.pressed.connect(func() -> void:
-		_close_modal()
-		if resume_ai_on_close:
-			_maybe_start_ai()
+		_close_modal(
+			Callable(self, "_resume_after_pause")
+			if resume_ai_on_close
+			else Callable()
+		)
 	, CONNECT_ONE_SHOT)
 
 
@@ -2206,6 +2888,8 @@ func _open_modal(
 		)
 	resolved_spec.opaque_shade = opaque_shade or resolved_spec.opaque_shade
 	_modal_generation += 1
+	_modal_close_completion = Callable()
+	_modal_close_completion_generation = -1
 	_disconnect_button(modal_confirm)
 	_disconnect_button(modal_cancel)
 	if modal_host_controller:
@@ -2246,9 +2930,11 @@ func _open_modal(
 	shell_animations.play("modal_open")
 
 
-func _close_modal() -> void:
+func _close_modal(completion: Callable = Callable()) -> void:
 	_modal_generation += 1
 	var close_generation := _modal_generation
+	_modal_close_completion = completion
+	_modal_close_completion_generation = close_generation
 	active_request = null
 	active_choice_panel = null
 	selected_choice_ids.clear()
@@ -2294,6 +2980,13 @@ func _finish_modal_close(generation: int) -> void:
 	if modal_host_controller:
 		modal_host_controller.reset_surface()
 		modal_host_controller.finish()
+	var completion := Callable()
+	if _modal_close_completion_generation == generation:
+		completion = _modal_close_completion
+	_modal_close_completion = Callable()
+	_modal_close_completion_generation = -1
+	if completion.is_valid():
+		completion.call()
 
 
 func _select_hand_card(index: int, card_id: String) -> void:
@@ -2792,6 +3485,9 @@ func _schedule_ai_action() -> void:
 		or _current_actor() != 1
 	):
 		return
+	if _defer_ai_until_presentation_idle():
+		return
+	_pending_ai_resume_revision = -1
 	var actions := engine.legal_actions(state, 1, true)
 	if actions.is_empty():
 		_show_toast("AI 没有合法动作。", true)
@@ -2837,6 +3533,9 @@ func _schedule_ai_action() -> void:
 func _schedule_ai_choice(request: ChoiceRequest) -> void:
 	if state == null or game_mode == MODE_LOCAL or ai_thinking:
 		return
+	if _defer_ai_until_presentation_idle():
+		return
+	_pending_ai_resume_revision = -1
 	ai_request_sequence += 1
 	active_ai_request_id = "ai-choice:%d:%d" % [state.revision, ai_request_sequence]
 	var payload := {
@@ -2890,12 +3589,9 @@ func _apply_ai_result(result: Dictionary) -> void:
 		)
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var presentation_snapshot := (
-		battle_screen.capture_presentation_snapshot()
-		if battle_screen
-		else {}
-	)
 	var step: StepResult
+	var origin_action_id := ""
+	var origin_request_id := ""
 	if str(result.get("kind", "")) == "choice":
 		var stack_request := ResolutionStack.from_dict(state.resolution_stack).pending_request
 		if stack_request == null:
@@ -2906,10 +3602,12 @@ func _apply_ai_result(result: Dictionary) -> void:
 			_maybe_start_ai()
 			return
 		step = engine.apply_choice(state, stack_request, response, rng)
+		origin_request_id = response.request_id
 	else:
 		var action := GameAction.from_dict(result["action"])
 		ai_request_sequence += 1
 		action.action_id = "ai-action:%d:%d" % [state.revision, ai_request_sequence]
+		origin_action_id = action.action_id
 		step = engine.apply_action(state, action, rng)
 	if not step.success:
 		var pending_after_reject := ResolutionStack.from_dict(
@@ -2922,16 +3620,19 @@ func _apply_ai_result(result: Dictionary) -> void:
 		else:
 			_apply_ai_fallback_action("AI 动作被规则拒绝：%s" % step.message)
 		return
-	_refresh_game()
-	if battle_screen and not step.events.is_empty():
-		battle_screen.play_presentation(
-			step.events,
-			state.revision,
-			1,
-			presentation_snapshot,
-		)
 	_show_toast(step.message if not step.message.is_empty() else "AI 完成动作。")
-	_continue_after_ai_step(step, previous_active, previous_phase)
+	var handle := _submit_battle_transition(
+		step.events,
+		1,
+		BattleTransitionRequest.CAUSE_AI_ACTION,
+		origin_action_id,
+		origin_request_id,
+	)
+	_continue_when_presented(
+		handle,
+		state.revision,
+		_continue_after_ai_step.bind(step, previous_active, previous_phase),
+	)
 
 
 func _apply_ai_fallback_action(reason: String) -> void:
@@ -2945,27 +3646,24 @@ func _apply_ai_fallback_action(reason: String) -> void:
 	for action in _ordered_ai_fallback_actions(actions):
 		var previous_active := state.active_player_idx
 		var previous_phase := state.phase
-		var presentation_snapshot := (
-			battle_screen.capture_presentation_snapshot()
-			if battle_screen
-			else {}
-		)
 		ai_request_sequence += 1
 		action.action_id = "ai-fallback:%d:%d" % [state.revision, ai_request_sequence]
 		var step := engine.apply_action(state, action, rng)
 		if not step.success:
 			continue
-		_refresh_game()
-		if battle_screen and not step.events.is_empty():
-			battle_screen.play_presentation(
-				step.events,
-				state.revision,
-				1,
-				presentation_snapshot,
-			)
 		var message := step.message if not step.message.is_empty() else "AI 完成兜底动作。"
 		_show_toast("%s %s" % [reason, message], true)
-		_continue_after_ai_step(step, previous_active, previous_phase)
+		var handle := _submit_battle_transition(
+			step.events,
+			1,
+			BattleTransitionRequest.CAUSE_AI_ACTION,
+			action.action_id,
+		)
+		_continue_when_presented(
+			handle,
+			state.revision,
+			_continue_after_ai_step.bind(step, previous_active, previous_phase),
+		)
 		return
 	_show_toast("%s AI 兜底动作全部被规则拒绝。" % reason, true)
 	_refresh_game()
@@ -3001,27 +3699,25 @@ func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:
 	var response := _fallback_choice_response(request)
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var presentation_snapshot := (
-		battle_screen.capture_presentation_snapshot()
-		if battle_screen
-		else {}
-	)
 	var step := engine.apply_choice(state, request, response, rng)
 	if not step.success:
 		_show_toast("%s AI 兜底选择被规则拒绝：%s" % [reason, step.message], true)
 		_refresh_game()
 		return
-	_refresh_game()
-	if battle_screen and not step.events.is_empty():
-		battle_screen.play_presentation(
-			step.events,
-			state.revision,
-			request.player,
-			presentation_snapshot,
-		)
 	var message := step.message if not step.message.is_empty() else "AI 完成兜底选择。"
 	_show_toast("%s %s" % [reason, message], true)
-	_continue_after_ai_step(step, previous_active, previous_phase)
+	var handle := _submit_battle_transition(
+		step.events,
+		request.player,
+		BattleTransitionRequest.CAUSE_CHOICE,
+		"",
+		request.request_id,
+	)
+	_continue_when_presented(
+		handle,
+		state.revision,
+		_continue_after_ai_step.bind(step, previous_active, previous_phase),
+	)
 
 
 func _fallback_choice_response(request: ChoiceRequest) -> ChoiceResponse:
@@ -3069,7 +3765,46 @@ func _maybe_start_ai() -> void:
 		and game_mode != MODE_LOCAL
 		and _current_actor() == 1
 	):
-		_schedule_ai_action()
+		var pending := _step_pending_choice(null)
+		if pending != null and pending.player == 1:
+			_schedule_ai_choice(pending)
+		else:
+			_schedule_ai_action()
+
+
+func _defer_ai_until_presentation_idle() -> bool:
+	if (
+		battle_screen == null
+		or not is_instance_valid(battle_screen)
+		or not battle_screen.is_presentation_busy()
+	):
+		return false
+	_pending_ai_resume_revision = state.revision if state != null else -1
+	var callback := Callable(self, "_on_ai_presentation_busy_changed")
+	if not battle_screen.presentation_busy_changed.is_connected(callback):
+		battle_screen.presentation_busy_changed.connect(callback)
+	return true
+
+
+func _on_ai_presentation_busy_changed(busy: bool) -> void:
+	if busy or _pending_ai_resume_revision < 0:
+		return
+	var expected_revision := _pending_ai_resume_revision
+	_pending_ai_resume_revision = -1
+	call_deferred("_resume_ai_after_presentation", expected_revision)
+
+
+func _resume_ai_after_presentation(expected_revision: int) -> void:
+	if (
+		state == null
+		or state.revision != expected_revision
+		or current_screen != SCREEN_GAME
+		or game_mode == MODE_LOCAL
+		or _current_actor() != 1
+		or (modal_layer != null and modal_layer.visible)
+	):
+		return
+	_maybe_start_ai()
 
 
 func _stop_ai() -> void:
@@ -3078,6 +3813,7 @@ func _stop_ai() -> void:
 	ai_inference = null
 	ai_thinking = false
 	active_ai_request_id = ""
+	_pending_ai_resume_revision = -1
 	_refresh_process_state()
 
 
@@ -3339,12 +4075,37 @@ func _layout_toast(
 			if gap_width >= 180.0:
 				var battle_width := minf(300.0, gap_width)
 				var battle_height := _toast_content_height(battle_width, 44.0, 52.0)
-				toast_label.position = Vector2(
-					gap_left + (gap_width - battle_width) * 0.5,
-					menu_rect.get_center().y - battle_height * 0.5,
-				) - global_position
-				toast_label.size = Vector2(battle_width, battle_height)
+				var header_rect := Rect2(
+					Vector2(
+						gap_left + (gap_width - battle_width) * 0.5,
+						menu_rect.get_center().y - battle_height * 0.5,
+					),
+					Vector2(battle_width, battle_height),
+				)
+				# This is a scene-reserved header lane and is already outside the
+				# tabletop. Preserve its exact coordinates; compact layouts without
+				# this lane use the obstacle-aware fallback below.
+				toast_label.position = header_rect.position - global_position
+				toast_label.size = header_rect.size
 				return
+		# On compact layouts the header has no 180 px gap. Keep the toast out of
+		# the fanned opponent hand instead of falling back to the screen centre,
+		# where it can cover the card backs at 900x540.
+		var battle_safe_rect := _battle_toast_safe_rect(
+			logical_size, left, top, right, bottom)
+		var compact_width := minf(360.0, battle_safe_rect.size.x)
+		var compact_height := _toast_content_height(compact_width, 44.0, 64.0)
+		_apply_battle_toast_rect(
+			Rect2(
+				Vector2(
+					battle_safe_rect.get_center().x - compact_width * 0.5,
+					battle_safe_rect.position.y + 4.0,
+				),
+				Vector2(compact_width, compact_height),
+			),
+			battle_safe_rect,
+		)
+		return
 
 	# Front-end pages have no command rail, so retain a centered safe-area status chip.
 	var available_width := maxf(1.0, logical_size.x - left - right - 32.0)
@@ -3355,6 +4116,122 @@ func _layout_toast(
 		float(top + 12),
 	)
 	toast_label.size = Vector2(toast_width, toast_height)
+
+
+func _battle_toast_safe_rect(
+	logical_size: Vector2,
+	left: int,
+	top: int,
+	right: int,
+	bottom: int,
+) -> Rect2:
+	var origin := global_position + Vector2(left + 12, top + 8)
+	return Rect2(
+		origin,
+		Vector2(
+			maxf(1.0, logical_size.x - left - right - 24.0),
+			maxf(1.0, logical_size.y - top - bottom - 16.0),
+		),
+	)
+
+
+func _apply_battle_toast_rect(preferred: Rect2, safe_rect: Rect2) -> void:
+	var resolved := _clamp_rect_to_rect(preferred, safe_rect)
+	var opponent_hand_rect := _opponent_hand_visual_rect()
+	if (
+		opponent_hand_rect.size.x > 1.0
+		and opponent_hand_rect.size.y > 1.0
+		and resolved.intersects(opponent_hand_rect)
+	):
+		resolved = _toast_rect_outside_obstacle(resolved, opponent_hand_rect, safe_rect)
+	toast_label.position = resolved.position - global_position
+	toast_label.size = resolved.size
+
+
+func _opponent_hand_visual_rect() -> Rect2:
+	if battle_screen == null or not is_instance_valid(battle_screen):
+		return Rect2()
+	var controls: Array[Control] = []
+	if battle_screen.opponent_hand_surface:
+		controls.append(battle_screen.opponent_hand_surface)
+	for view_value in battle_screen.opponent_hand_views:
+		var view := view_value as Control
+		if view:
+			controls.append(view)
+	var merged := Rect2()
+	var has_rect := false
+	for control in controls:
+		if not is_instance_valid(control) or not control.is_visible_in_tree():
+			continue
+		var control_rect := control.get_global_rect()
+		if control_rect.size.x <= 1.0 or control_rect.size.y <= 1.0:
+			continue
+		merged = merged.merge(control_rect) if has_rect else control_rect
+		has_rect = true
+	return merged.grow(10.0) if has_rect else Rect2()
+
+
+func _toast_rect_outside_obstacle(
+	preferred: Rect2,
+	obstacle: Rect2,
+	safe_rect: Rect2,
+) -> Rect2:
+	const GAP := 10.0
+	var candidates: Array[Rect2] = []
+	var above := Rect2(
+		Vector2(preferred.position.x, obstacle.position.y - GAP - preferred.size.y),
+		preferred.size,
+	)
+	if safe_rect.encloses(above):
+		candidates.append(above)
+	var left_width := obstacle.position.x - GAP - safe_rect.position.x
+	var right_width := safe_rect.end.x - obstacle.end.x - GAP
+	var add_side := func(on_right: bool, available_width: float) -> void:
+		if available_width < 180.0:
+			return
+		var width := minf(preferred.size.x, available_width)
+		var x := obstacle.end.x + GAP if on_right else obstacle.position.x - GAP - width
+		var y := clampf(
+			preferred.position.y,
+			safe_rect.position.y,
+			maxf(safe_rect.position.y, safe_rect.end.y - preferred.size.y),
+		)
+		candidates.append(Rect2(Vector2(x, y), Vector2(width, preferred.size.y)))
+	if right_width >= left_width:
+		add_side.call(true, right_width)
+		add_side.call(false, left_width)
+	else:
+		add_side.call(false, left_width)
+		add_side.call(true, right_width)
+	var below := Rect2(
+		Vector2(preferred.position.x, obstacle.end.y + GAP),
+		preferred.size,
+	)
+	below = _clamp_rect_to_rect(below, safe_rect)
+	if not below.intersects(obstacle):
+		candidates.append(below)
+	for candidate in candidates:
+		var fitted := _clamp_rect_to_rect(candidate, safe_rect)
+		if not fitted.intersects(obstacle):
+			return fitted
+	return _clamp_rect_to_rect(preferred, safe_rect)
+
+
+func _clamp_rect_to_rect(rect: Rect2, bounds: Rect2) -> Rect2:
+	var fitted := rect
+	fitted.size.x = minf(fitted.size.x, bounds.size.x)
+	fitted.size.y = minf(fitted.size.y, bounds.size.y)
+	fitted.position.x = clampf(
+		fitted.position.x,
+		bounds.position.x,
+		maxf(bounds.position.x, bounds.end.x - fitted.size.x),
+	)
+	fitted.position.y = clampf(
+		fitted.position.y,
+		bounds.position.y,
+		maxf(bounds.position.y, bounds.end.y - fitted.size.y),
+	)
+	return fitted
 
 
 func _toast_content_height(width: float, minimum: float, maximum: float) -> float:
@@ -3416,9 +4293,11 @@ func _notification(what: int) -> void:
 				_modal_back_action = Callable()
 				return_action.call()
 			elif current_screen == SCREEN_GAME:
-				_close_modal()
-				if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
-					_maybe_start_ai()
+				_close_modal(
+					Callable(self, "_resume_after_pause")
+					if game_mode in [MODE_CHALLENGE, MODE_DEEP]
+					else Callable()
+				)
 			else:
 				_close_modal()
 			return

@@ -239,9 +239,18 @@ func play_trainer(
 		"target": {"player": actor, "zone": "discard"},
 		"data": {"player": actor, "card_id": card_id},
 	}
+	var play_events: Array[Dictionary] = []
 	if catalog.is_stadium(card_id):
 		if not state.stadium_card_id.is_empty():
-			player.discard.append(state.stadium_card_id)
+			var replaced_stadium_id := state.stadium_card_id
+			var discard_index := player.discard.size()
+			player.discard.append(replaced_stadium_id)
+			play_events.append(VMZoneHelpers.card_moved_event(
+				actor,
+				[replaced_stadium_id],
+				{"player": actor, "zone": "stadium", "index": 0},
+				{"player": actor, "zone": "discard", "index": discard_index},
+			))
 		state.stadium_card_id = card_id
 		player.stadium_played_this_turn = true
 		play_event["event_type"] = "stadium_changed"
@@ -250,12 +259,13 @@ func play_trainer(
 		player.discard.append(card_id)
 		if catalog.is_supporter(card_id):
 			player.supporter_played_this_turn = true
+	play_events.append(play_event)
 	state.log_action("%s使用了%s。" % [player.name, catalog.card_name(card_id)])
 	var effects: Array = _trainer_runtime_effects(card_id)
 	if effects.is_empty():
-		return StepResult.new(true, "训练家卡已使用。", null, [play_event])
+		return StepResult.new(true, "训练家卡已使用。", null, play_events)
 	var step := run_effects(state, effects, actor, "active", rng)
-	step.events.push_front(play_event)
+	step.events = play_events + step.events
 	return step
 
 
@@ -309,6 +319,13 @@ func retreat(
 	var indices: Array[int] = []
 	for value in energy_indices:
 		indices.append(int(value))
+	var source_indices := indices.duplicate()
+	source_indices.sort()
+	var paid_energy_ids: Array[String] = []
+	for index in source_indices:
+		if index >= 0 and index < player.active.energy_card_ids.size():
+			paid_energy_ids.append(player.active.energy_card_ids[index])
+	var discard_start := player.discard.size()
 	indices.sort()
 	indices.reverse()
 	for index in indices:
@@ -316,10 +333,24 @@ func retreat(
 	player.switch_active_to_bench(bench_idx)
 	player.retreated_this_turn = true
 	state.log_action("%s完成撤退。" % player.name)
-	return StepResult.new(true, "撤退完成。", null, [{
+	var events: Array[Dictionary] = []
+	if not paid_energy_ids.is_empty():
+		var discard_event := VMZoneHelpers.discard_event(
+			actor,
+			"",
+			paid_energy_ids,
+			paid_energy_ids.size(),
+			source_indices,
+			"active",
+			discard_start,
+		)
+		discard_event["source"]["attachment_type"] = "energy"
+		events.append(discard_event)
+	events.append({
 		"event_type": "retreat",
 		"data": {"player": actor, "bench_idx": bench_idx},
-	}])
+	})
+	return StepResult.new(true, "撤退完成。", null, events)
 
 
 func run_effects(

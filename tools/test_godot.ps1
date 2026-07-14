@@ -49,6 +49,38 @@ function Invoke-GodotCapture {
 $ignoredGodotErrorPattern = 'Failed to read the root certificate store\.'
 $fatalGodotErrorPattern = "(?m)^(SCRIPT ERROR|ERROR|WARNING): (?!$ignoredGodotErrorPattern)"
 
+function Invoke-GodotCheckedScript {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Script,
+
+        [Parameter(Mandatory)]
+        [string]$SuccessMarker,
+
+        [Parameter(Mandatory)]
+        [string]$ContractName
+    )
+
+    $output = Invoke-GodotCapture -ArgumentList @(
+        '--headless',
+        '--path', (Join-Path $repoRoot 'godot'),
+        '--script', $Script
+    )
+    $output | ForEach-Object { Write-Host $_ }
+
+    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    if ($exitCode -ne 0) {
+        throw "$ContractName failed with exit code $exitCode"
+    }
+    $joinedOutput = $output -join "`n"
+    if ($joinedOutput -match $fatalGodotErrorPattern) {
+        throw "Godot emitted script/runtime errors during $ContractName."
+    }
+    if ($joinedOutput -notmatch [regex]::Escape($SuccessMarker)) {
+        throw "$ContractName success marker '$SuccessMarker' was not emitted."
+    }
+}
+
 Clear-StaleGodotImportArtifacts
 $importOutput = Invoke-GodotCapture -ArgumentList @(
     '--headless',
@@ -66,78 +98,59 @@ if ($joinedImportOutput -match $fatalGodotErrorPattern) {
     throw 'Godot emitted script/runtime errors during import.'
 }
 
-$testOutput = Invoke-GodotCapture -ArgumentList @(
-    '--headless',
-    '--path', (Join-Path $repoRoot 'godot'),
-    '--script', 'res://tests/test_runner.gd'
-)
-$testOutput | ForEach-Object { Write-Host $_ }
-
-$exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-if ($exitCode -ne 0) {
-    throw "Godot tests failed with exit code $exitCode"
+$battleTableLayoutContractPath = Join-Path $repoRoot 'godot\tests\battle_table_layout_contract.gd'
+$testRunnerPath = Join-Path $repoRoot 'godot\tests\test_runner.gd'
+if (-not (Test-Path -LiteralPath $battleTableLayoutContractPath)) {
+    throw 'Battle table layout contract script is missing.'
 }
-$joinedOutput = $testOutput -join "`n"
-if ($joinedOutput -match $fatalGodotErrorPattern) {
-    throw 'Godot emitted script/runtime errors during tests.'
-}
-if ($joinedOutput -notmatch 'GODOT_TESTS_OK') {
-    throw 'Godot test success marker was not emitted.'
+$testRunnerSource = Get-Content -LiteralPath $testRunnerPath -Raw
+if ($testRunnerSource -notmatch 'BattleTableLayoutContract\.run\(\)') {
+    throw 'Battle table layout contract is not registered in the main Godot test runner.'
 }
 
-$catalogContractOutput = Invoke-GodotCapture -ArgumentList @(
-    '--headless',
-    '--path', (Join-Path $repoRoot 'godot'),
-    '--script', 'res://tests/card_catalog_contract.gd'
-)
-$catalogContractOutput | ForEach-Object { Write-Host $_ }
+# BattleTableLayoutContract is a RefCounted suite, so the main SceneTree runner
+# executes it and GODOT_TESTS_OK is its process-level success marker.
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/test_runner.gd' `
+    -SuccessMarker 'GODOT_TESTS_OK' `
+    -ContractName 'Godot tests (including the battle table layout contract)'
 
-$catalogContractExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-if ($catalogContractExitCode -ne 0) {
-    throw "Card catalog contract failed with exit code $catalogContractExitCode"
-}
-$joinedCatalogContractOutput = $catalogContractOutput -join "`n"
-if ($joinedCatalogContractOutput -match $fatalGodotErrorPattern) {
-    throw 'Godot emitted script/runtime errors during the card catalog contract.'
-}
-if ($joinedCatalogContractOutput -notmatch 'CARD_CATALOG_CONTRACT_OK') {
-    throw 'Card catalog contract success marker was not emitted.'
-}
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/card_catalog_contract.gd' `
+    -SuccessMarker 'CARD_CATALOG_CONTRACT_OK' `
+    -ContractName 'Card catalog contract'
 
-$networkContractOutput = Invoke-GodotCapture -ArgumentList @(
-    '--headless',
-    '--path', (Join-Path $repoRoot 'godot'),
-    '--script', 'res://tests/network_protocol_contract.gd'
-)
-$networkContractOutput | ForEach-Object { Write-Host $_ }
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/network_protocol_contract.gd' `
+    -SuccessMarker 'NETWORK_PROTOCOL_CONTRACT_OK' `
+    -ContractName 'Network protocol contract'
 
-$networkContractExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-if ($networkContractExitCode -ne 0) {
-    throw "Network protocol contract failed with exit code $networkContractExitCode"
-}
-$joinedNetworkContractOutput = $networkContractOutput -join "`n"
-if ($joinedNetworkContractOutput -match $fatalGodotErrorPattern) {
-    throw 'Godot emitted script/runtime errors during the network protocol contract.'
-}
-if ($joinedNetworkContractOutput -notmatch 'NETWORK_PROTOCOL_CONTRACT_OK') {
-    throw 'Network protocol contract success marker was not emitted.'
-}
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/frontend_layout_contract.gd' `
+    -SuccessMarker 'FRONTEND_LAYOUT_CONTRACT_OK' `
+    -ContractName 'Frontend layout contract'
 
-$frontendLayoutOutput = Invoke-GodotCapture -ArgumentList @(
-    '--headless',
-    '--path', (Join-Path $repoRoot 'godot'),
-    '--script', 'res://tests/frontend_layout_contract.gd'
-)
-$frontendLayoutOutput | ForEach-Object { Write-Host $_ }
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/presentation_event_contract.gd' `
+    -SuccessMarker 'PRESENTATION_EVENT_CONTRACT_OK' `
+    -ContractName 'Presentation event contract'
 
-$frontendLayoutExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-if ($frontendLayoutExitCode -ne 0) {
-    throw "Frontend layout contract failed with exit code $frontendLayoutExitCode"
-}
-$joinedFrontendLayoutOutput = $frontendLayoutOutput -join "`n"
-if ($joinedFrontendLayoutOutput -match $fatalGodotErrorPattern) {
-    throw 'Godot emitted script/runtime errors during the frontend layout contract.'
-}
-if ($joinedFrontendLayoutOutput -notmatch 'FRONTEND_LAYOUT_CONTRACT_OK') {
-    throw 'Frontend layout contract success marker was not emitted.'
-}
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/battle_feedback_lifecycle_contract.gd' `
+    -SuccessMarker 'BATTLE_FEEDBACK_LIFECYCLE_OK' `
+    -ContractName 'Battle feedback lifecycle contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/card_view_layers_contract.gd' `
+    -SuccessMarker 'CARD_VIEW_LAYERS_OK' `
+    -ContractName 'Card view layers contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/battle_transition_contract.gd' `
+    -SuccessMarker 'BATTLE_TRANSITION_CONTRACT_OK' `
+    -ContractName 'Battle transition contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/ui_workbench_transition_contract.gd' `
+    -SuccessMarker 'UI_WORKBENCH_TRANSITION_OK' `
+    -ContractName 'UI Workbench transition contract'

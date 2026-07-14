@@ -55,6 +55,7 @@ var current_card_id := ""
 var current_context: Dictionary = {}
 var _catalog: CardCatalog
 var _compact_layout := false
+var _visibility_tween: Tween
 
 
 func _ready() -> void:
@@ -72,6 +73,7 @@ func show_card(
 	context: Variant = {},
 ) -> void:
 	_resolve_nodes()
+	var was_visible := visible
 	if card_id.is_empty():
 		clear()
 		return
@@ -108,10 +110,14 @@ func show_card(
 	context_label.text = location
 	context_label.visible = not location.is_empty()
 	visible = true
+	if not was_visible:
+		_play_present_motion()
 
 
 func clear() -> void:
 	_resolve_nodes()
+	_kill_visibility_tween()
+	modulate.a = 1.0
 	current_card_id = ""
 	current_context.clear()
 	_catalog = null
@@ -141,6 +147,27 @@ func hide_preview() -> void:
 
 func is_showing_card() -> bool:
 	return visible and not current_card_id.is_empty()
+
+
+func _play_present_motion() -> void:
+	_kill_visibility_tween()
+	var duration := MotionPolicy.duration("panel")
+	if duration <= 0.0 or MotionPolicy.reduced():
+		modulate.a = 1.0
+		return
+	modulate.a = 0.0
+	_visibility_tween = create_tween()
+	_visibility_tween.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	_visibility_tween.tween_property(self, "modulate:a", 1.0, duration)
+	_visibility_tween.finished.connect(func() -> void:
+		_visibility_tween = null
+	)
+
+
+func _kill_visibility_tween() -> void:
+	if _visibility_tween and _visibility_tween.is_valid():
+		_visibility_tween.kill()
+	_visibility_tween = null
 
 
 func set_compact_layout(value: bool) -> void:

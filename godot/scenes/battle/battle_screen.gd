@@ -16,6 +16,9 @@ signal detail_requested(card_id: String)
 signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
 signal choice_target_selected(option_id: String)
+signal transition_started(handle: PresentationHandle)
+signal transition_finished(handle: PresentationHandle)
+signal presentation_busy_changed(busy: bool)
 
 @onready var table: BattleTable = %BattleTable
 
@@ -65,6 +68,8 @@ var hand_scroll: ScrollContainer
 var hand_surface: Control
 var input_blocker: Control
 var effects: BattleEffectLayer
+var world_feedback: BattleEffectLayer
+var announcement_layer: BattleAnnouncementLayer
 var director: PresentationDirector
 var animation_player: AnimationPlayer
 var opponent_active: CardView
@@ -88,6 +93,7 @@ var _presentation_hand_target_cursor: Dictionary = {}
 var _presentation_hand_removed_counts: Dictionary = {}
 var _initialized := false
 var _signals_bound := false
+var presentation_coordinator: BattlePresentationCoordinator
 
 
 func _ready() -> void:
@@ -100,8 +106,39 @@ func initialize_ui() -> void:
 		return
 	table.initialize_ui()
 	_bind_table_signals()
+	_ensure_presentation_coordinator()
 	_sync_from_table()
 	_initialized = true
+
+
+func _ensure_presentation_coordinator() -> void:
+	if presentation_coordinator != null:
+		presentation_coordinator.configure(table)
+		return
+	presentation_coordinator = BattlePresentationCoordinator.new()
+	presentation_coordinator.name = "BattlePresentationCoordinator"
+	add_child(presentation_coordinator)
+	presentation_coordinator.configure(table)
+	presentation_coordinator.transition_started.connect(transition_started.emit)
+	presentation_coordinator.transition_finished.connect(transition_finished.emit)
+	presentation_coordinator.busy_changed.connect(presentation_busy_changed.emit)
+
+
+func submit_transition(request: BattleTransitionRequest) -> PresentationHandle:
+	_resolve_table()
+	if table == null:
+		var rejected := PresentationHandle.new()
+		rejected.finish(PresentationHandle.CANCELLED, "battle_table_missing")
+		return rejected
+	_ensure_presentation_coordinator()
+	return presentation_coordinator.submit(request)
+
+
+func is_presentation_busy() -> bool:
+	return (
+		presentation_coordinator != null
+		and presentation_coordinator.is_busy()
+	)
 
 
 func update_view(
@@ -136,6 +173,27 @@ func clear_choice_targets() -> void:
 		table.clear_choice_targets()
 
 
+func active_drag_context() -> Dictionary:
+	return table.active_drag_context() if table != null else {}
+
+
+func mark_drag_pending(action_id: String, network_pending: bool) -> String:
+	return (
+		table.mark_drag_pending(action_id, network_pending)
+		if table != null
+		else ""
+	)
+
+
+func drag_session_id_for_origin(action_id: String) -> String:
+	return table.drag_session_id_for_origin(action_id) if table != null else ""
+
+
+func clear_pending_drag(reason: String = "cancelled") -> void:
+	if table != null:
+		table.clear_pending_drag(reason)
+
+
 func play_presentation(
 	raw_events: Array,
 	revision: int,
@@ -148,9 +206,21 @@ func play_presentation(
 
 
 func clear_presentation_for_resync() -> void:
-	_sync_to_table()
-	table.clear_presentation_for_resync()
+	if presentation_coordinator != null:
+		presentation_coordinator.cancel_all("resync")
+	else:
+		table.clear_presentation_for_resync()
 	_sync_from_table()
+
+
+func cancel_presentations(
+	reason: String = "cancelled",
+	replacement: BattleViewModel = null,
+) -> void:
+	if presentation_coordinator != null:
+		presentation_coordinator.cancel_all(reason, replacement)
+	elif table != null:
+		table.clear_presentation_for_resync()
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
@@ -356,6 +426,8 @@ func _sync_from_table() -> void:
 	hand_surface = table.hand_surface
 	input_blocker = table.input_blocker
 	effects = table.effects
+	world_feedback = table.world_feedback
+	announcement_layer = table.announcement_layer
 	director = table.director
 	animation_player = table.animation_player
 	opponent_active = table.opponent_active
@@ -380,16 +452,7 @@ func _sync_from_table() -> void:
 
 
 func _sync_to_table() -> void:
-	if table == null:
-		return
-	table._presentation_snapshot = _presentation_snapshot
-	table._presentation_reveals = _presentation_reveals
-	table._presentation_mask_counts = _presentation_mask_counts
-	table._presentation_feedbacks = _presentation_feedbacks
-	table._presentation_covers = _presentation_covers
-	table._presentation_cover_tweens = _presentation_cover_tweens
-	table._presentation_event_hand_targets = _presentation_event_hand_targets
-	table._presentation_hand_target_cursor = _presentation_hand_target_cursor
-	table._presentation_hand_removed_counts = _presentation_hand_removed_counts
-	table._active_flyers = _active_flyers
-	table._flyer_tweens = _flyer_tweens
+	# Compatibility wrappers are intentionally one-way. BattleTable owns all
+	# presentation registries; copying facade snapshots back would replace the
+	# controller-owned Array/Dictionary identities while a batch is running.
+	pass

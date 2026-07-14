@@ -185,6 +185,48 @@ layout_mode = 2
 text = "胜利"
 metadata/event = "victory"
 
+[node name="CheckpointSeparator" type="HSeparator" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+
+[node name="CheckpointHeading" type="Label" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.384, 0.843, 1, 1)
+text = "动画捕获检查点"
+
+[node name="CheckpointHint" type="Label" parent="Layout/Sidebar/Scroll/Buttons"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.612, 0.675, 0.773, 1)
+text = "以最近选择的表现事件重建 before/after fixture。"
+autowrap_mode = 2
+
+[node name="Checkpoint0" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+custom_minimum_size = Vector2(0, 48)
+focus_mode = 0
+layout_mode = 2
+text = "捕获 0% · Before"
+metadata/checkpoint = 0
+
+[node name="Checkpoint50" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+custom_minimum_size = Vector2(0, 48)
+focus_mode = 0
+layout_mode = 2
+text = "捕获 50% · Motion"
+metadata/checkpoint = 50
+
+[node name="Checkpoint100" type="Button" parent="Layout/Sidebar/Scroll/Buttons"]
+custom_minimum_size = Vector2(0, 48)
+focus_mode = 0
+layout_mode = 2
+text = "捕获 100% · After"
+metadata/checkpoint = 100
+
+[node name="CheckpointStatus" type="Label" parent="Layout/Sidebar/Scroll/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.957, 0.784, 0.29, 1)
+text = "选择表现事件，然后捕获 0% / 50% / 100%"
+autowrap_mode = 2
+
 [node name="PreviewColumn" type="VBoxContainer" parent="Layout"]
 layout_mode = 2
 size_flags_horizontal = 3
