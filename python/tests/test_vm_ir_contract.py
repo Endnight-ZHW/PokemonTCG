@@ -731,12 +731,284 @@ class VmIrContractTests(unittest.TestCase):
             "attach_discard_energy_distribution",
             "attach_discard_energy_to_bench",
             "attach_discard_energy_to_board",
+            "discard_energy_attachments",
             "energy_relocate_source",
+            "energy_relocate_attachments",
             "energy_relocate_distribution",
         }
         self.assertEqual(registry.supported_kinds, frozenset(expected))
         self.assertFalse(
             hasattr(stack, "_resolve_attach_energy_distribution_continuation")
+        )
+
+    def test_exact_attachment_batch_removal_is_atomic_and_index_stable(self):
+        from engine.actions import AttachmentRef
+        from engine.commands.primitives_board import discard_energy_attachment_refs
+
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p1.active.energy_cards = [
+            CardRegistry.get("sv1-ener-1"),
+            CardRegistry.get("sv1-ener-2"),
+            CardRegistry.get("sv1-ener-3"),
+        ]
+        refs = [
+            AttachmentRef(0, "active", "energy", 0, "sv1-ener-1"),
+            AttachmentRef(0, "active", "energy", 2, "sv1-ener-3"),
+        ]
+        success, message, discarded = discard_energy_attachment_refs(
+            state,
+            actor_idx=0,
+            owner_idx=0,
+            source_slot="active",
+            refs=refs,
+        )
+        self.assertTrue(success, message)
+        self.assertEqual(discarded, 2)
+        self.assertEqual(
+            [card.api_id for card in state.p1.active.energy_cards],
+            ["sv1-ener-2"],
+        )
+        self.assertEqual(
+            [card.api_id for card in state.p1.discard],
+            ["sv1-ener-1", "sv1-ener-3"],
+        )
+
+        before_energy = list(state.p1.active.energy_cards)
+        before_discard = list(state.p1.discard)
+        success, _message, discarded = discard_energy_attachment_refs(
+            state,
+            actor_idx=0,
+            owner_idx=0,
+            source_slot="active",
+            refs=[
+                AttachmentRef(0, "active", "energy", 0, "sv1-ener-2"),
+                AttachmentRef(0, "active", "energy", 1, "sv1-ener-3"),
+            ],
+        )
+        self.assertFalse(success)
+        self.assertEqual(discarded, 0)
+        self.assertEqual(state.p1.active.energy_cards, before_energy)
+        self.assertEqual(state.p1.discard, before_discard)
+
+    def test_energy_choice_metadata_promotes_exact_continuation_fields(self):
+        from engine.choice_manager import VMChoiceManager
+        from engine.game_state import ActionRequest
+
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        energy = CardRegistry.get("sv1-ener-1")
+        manager = VMChoiceManager()
+
+        for request_type in ("distribute_energy", "select_energy_target"):
+            with self.subTest(request_type=request_type):
+                legacy = ActionRequest(
+                    request_type=request_type,
+                    player=0,
+                    prompt="选择附能目标",
+                    card_list=[energy],
+                    from_zone="legacy_zone",
+                    target_info=[{
+                        "player": 0,
+                        "slot": "bench_0",
+                        "name": state.p1.bench[0].card.name,
+                        "card_id": state.p1.bench[0].card.api_id,
+                    }],
+                    distribute_mode="paired",
+                    max_per_target=99,
+                    continuation={
+                        "kind": "energy_attach_distribution",
+                        "purpose": "exact_attach_target",
+                        "player_idx": 1,
+                        "source_player": 0,
+                        "source_zone": "deck",
+                        "card_ids": ["exact-energy-id"],
+                        "same_target": True,
+                        "max_per_target": 1,
+                    },
+                )
+                request = manager.choice_request(state, legacy)
+                self.assertEqual(request.metadata["card_list_ids"], [energy.api_id])
+                self.assertEqual(request.metadata["card_ids"], ["exact-energy-id"])
+                self.assertEqual(request.metadata["purpose"], "exact_attach_target")
+                self.assertEqual(request.metadata["source_player"], 0)
+                self.assertEqual(request.metadata["source_zone"], "deck")
+                self.assertTrue(request.metadata["same_target"])
+                self.assertEqual(request.metadata["max_per_target"], 1)
+
+        fallback = manager.choice_request(
+            state,
+            ActionRequest(
+                request_type="distribute_energy",
+                player=0,
+                prompt="兼容旧附能选择",
+                card_list=[energy],
+                continuation={"kind": "energy_attach_distribution"},
+            ),
+        )
+        self.assertEqual(fallback.metadata["card_ids"], [energy.api_id])
+        self.assertEqual(fallback.metadata["card_list_ids"], [energy.api_id])
+
+    def test_energy_relocation_duplicate_ids_use_exact_attachment_index(self):
+        import copy
+
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        first = copy.copy(CardRegistry.get("sv1-ener-1"))
+        second = copy.copy(CardRegistry.get("sv1-ener-1"))
+        state.p1.active.energy_cards = [first, second]
+
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "relocate_energy",
+            "args": {"amount": 1, "from_self": True},
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        engine = GameEngine()
+        request = engine.choice_request(state, result.pending_choice)
+        self.assertEqual(request.request_type, "select_attachment")
+        self.assertNotEqual(request.options[0].option_id, request.options[1].option_id)
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (request.options[1].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        target_request = step.pending_choice
+        step = engine.apply_choice(
+            state,
+            target_request,
+            ChoiceResponse(target_request.request_id, (target_request.options[0].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(len(state.p1.active.energy_cards), 1)
+        self.assertIs(state.p1.active.energy_cards[0], first)
+        self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
+        self.assertIs(state.p1.bench[0].energy_cards[0], second)
+
+    def test_energy_relocation_stale_target_rolls_back_atomically(self):
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-1")]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "relocate_energy",
+            "args": {"amount": 1, "from_self": True},
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        from engine.commands.energy_continuations import resolve_energy_relocate_distribution
+
+        legacy_request = result.pending_choice
+        source_before_wrong_player = list(state.p1.active.energy_cards)
+        wrong_player = resolve_energy_relocate_distribution(
+            stack,
+            legacy_request,
+            legacy_request.continuation,
+            [{
+                "player": 1,
+                "slot": "bench_0",
+                "card_id": state.p1.bench[0].card.api_id,
+            }],
+        )
+        self.assertFalse(wrong_player.success)
+        self.assertEqual(state.p1.active.energy_cards, source_before_wrong_player)
+        self.assertEqual(state.p1.bench[0].energy_cards, [])
+
+        engine = GameEngine()
+        request = engine.choice_request(state, result.pending_choice)
+        selected_target = request.options[0].option_id
+
+        # Replace the Pokemon in the same slot after the option snapshot was
+        # issued. The old option must not silently target the replacement.
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svf-rio"))
+        source_before = [card.api_id for card in state.p1.active.energy_cards]
+        target_before = [card.api_id for card in state.p1.bench[0].energy_cards]
+        revision_before = state.revision
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (selected_target,)),
+        )
+        self.assertFalse(step.success)
+        self.assertEqual(state.p1.active.card.api_id, "svi-chim")
+        self.assertEqual(state.p1.bench[0].card.api_id, "svf-rio")
+        self.assertEqual(
+            [card.api_id for card in state.p1.active.energy_cards],
+            source_before,
+        )
+        self.assertEqual(
+            [card.api_id for card in state.p1.bench[0].energy_cards],
+            target_before,
+        )
+        self.assertEqual(state.revision, revision_before)
+
+    def test_optional_energy_relocation_accepts_zero_or_one_attachment(self):
+        def pending_attachment_choice():
+            state = GameState()
+            state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+            state.p1.active.energy_cards = [
+                CardRegistry.get("sv1-ener-1"),
+                CardRegistry.get("sv1-ener-2"),
+            ]
+            state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+            state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+            stack = ResolutionStack(state)
+            stack.push(compile_command_spec({
+                "op": "relocate_energy",
+                "args": {
+                    "amount": 2,
+                    "from_self": True,
+                    "min_select": 0,
+                    "same_target": True,
+                },
+                "branches": {},
+            }))
+            result = stack.resolve_all(0, "active")
+            engine = GameEngine()
+            return state, engine, engine.choice_request(state, result.pending_choice)
+
+        state, engine, request = pending_attachment_choice()
+        before = [card.api_id for card in state.p1.active.energy_cards]
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, ()),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNone(step.pending_choice)
+        self.assertEqual([card.api_id for card in state.p1.active.energy_cards], before)
+        self.assertEqual(state.p1.bench[0].energy_cards, [])
+
+        state, engine, request = pending_attachment_choice()
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (request.options[1].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        target_request = step.pending_choice
+        self.assertEqual((target_request.min_select, target_request.max_select), (1, 1))
+        step = engine.apply_choice(
+            state,
+            target_request,
+            ChoiceResponse(target_request.request_id, (target_request.options[0].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(
+            [card.api_id for card in state.p1.active.energy_cards],
+            ["sv1-ener-1"],
+        )
+        self.assertEqual(
+            [card.api_id for card in state.p1.bench[0].energy_cards],
+            ["sv1-ener-2"],
         )
 
     def test_search_continuations_are_module_registered(self):
@@ -1529,6 +1801,20 @@ class VmIrContractTests(unittest.TestCase):
                 "branches": {},
             }],
         ))
+        self.assertTrue(effects_have_legal_target(
+            state,
+            0,
+            [{
+                "op": "search_cards",
+                "args": {
+                    "from_zone": "deck",
+                    "filter": "pokemon",
+                    "destination": "hand",
+                    "count": 1,
+                },
+                "branches": {},
+            }],
+        ), "Deck-search availability inspected hidden card identities")
         self.assertFalse(effects_have_legal_target(
             state,
             0,
@@ -2581,9 +2867,26 @@ class VmIrContractTests(unittest.TestCase):
         }))
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
-        self.assertIsNone(result.pending_choice)
-        self.assertEqual([card.api_id for card in state.p1.active.energy_cards], ["sv1-ener-2"])
-        self.assertEqual([card.api_id for card in state.p1.bench[0].energy_cards], ["sv1-ener-1"])
+        self.assertIsNotNone(result.pending_choice)
+        self.assertEqual(result.pending_choice.request_type, "select_attachment")
+        request = engine.choice_request(state, result.pending_choice)
+        self.assertEqual(request.metadata.get("source_slot"), "active")
+        self.assertEqual(request.metadata.get("purpose"), "relocate_energy")
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (request.options[1].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNotNone(step.pending_choice)
+        step = engine.apply_choice(
+            state,
+            step.pending_choice,
+            ChoiceResponse(step.pending_choice.request_id, (step.pending_choice.options[0].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual([card.api_id for card in state.p1.active.energy_cards], ["sv1-ener-1"])
+        self.assertEqual([card.api_id for card in state.p1.bench[0].energy_cards], ["sv1-ener-2"])
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -2655,6 +2958,20 @@ class VmIrContractTests(unittest.TestCase):
         self.assertIsNotNone(step.pending_choice)
         request = step.pending_choice
         self.assertFalse(request.legacy_request._resolution_stack_had_callback)
+        self.assertEqual(
+            request.metadata.get("continuation", {}).get("kind"),
+            "energy_relocate_attachments",
+        )
+        self.assertEqual(request.request_type, "select_attachment")
+        self.assertEqual((request.min_select, request.max_select), (0, 2))
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, tuple(option.option_id for option in request.options)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNotNone(step.pending_choice)
+        request = step.pending_choice
         self.assertEqual(
             request.metadata.get("continuation", {}).get("kind"),
             "energy_relocate_distribution",
@@ -2939,6 +3256,10 @@ class VmIrContractTests(unittest.TestCase):
             for option in request.options
             if getattr(option.ref, "slot", "") == "bench_0"
         )
+        shuffle_observations = []
+        state.p1.on_shuffle = lambda: shuffle_observations.append(
+            len(state.p1.bench[0].energy_cards)
+        )
         step = engine.apply_choice(state, request, ChoiceResponse(request.request_id, (bench_zero,)))
         self.assertTrue(step.success, step.message)
         self.assertEqual(
@@ -2946,6 +3267,7 @@ class VmIrContractTests(unittest.TestCase):
             ["sv1-ener-2", "sv1-ener-1"],
         )
         self.assertEqual([card.api_id for card in state.p1.deck], ["svf-potion"])
+        self.assertEqual(shuffle_observations, [2])
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -3132,6 +3454,14 @@ class VmIrContractTests(unittest.TestCase):
         self.assertTrue(step.success, step.message)
         self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-1"])
         self.assertEqual([card.api_id for card in state.p1.discard], ["svf-potion"])
+        self.assertEqual(
+            [event["event_type"] for event in step.events],
+            ["cards_discarded", "cards_drawn"],
+        )
+        self.assertEqual(step.events[0]["data"]["source"]["zone"], "deck")
+        self.assertEqual(step.events[0]["data"]["target"]["zone"], "discard")
+        self.assertEqual(step.events[1]["data"]["target"]["zone"], "hand")
+        self.assertEqual(step.events[1]["data"]["visibility"], "owner")
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -3614,8 +3944,10 @@ class VmIrContractTests(unittest.TestCase):
         }))
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
-        self.assertFalse(state.p2.active.dazzled)
-        self.assertFalse(state.p2.active.all_prevented_next_turn)
+        # An unmarked VM stack represents a Trainer/Ability effect. Attack
+        # protection does not block it and is not consumed by it.
+        self.assertTrue(state.p2.active.dazzled)
+        self.assertTrue(state.p2.active.all_prevented_next_turn)
 
         stack = ResolutionStack(state)
         stack.push(compile_command_spec({
@@ -4185,8 +4517,18 @@ class VmIrContractTests(unittest.TestCase):
         }))
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
-        self.assertEqual([card.api_id for card in state.p1.active.energy_cards], ["sv1-ener-2"])
-        self.assertEqual([card.api_id for card in state.p1.discard], ["sv1-ener-1"])
+        self.assertIsNotNone(result.pending_choice)
+        self.assertEqual(result.pending_choice.request_type, "select_attachment")
+        request = engine.choice_request(state, result.pending_choice)
+        self.assertEqual(request.metadata.get("purpose"), "discard_energy")
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (request.options[1].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual([card.api_id for card in state.p1.active.energy_cards], ["sv1-ener-1"])
+        self.assertEqual([card.api_id for card in state.p1.discard], ["sv1-ener-2"])
         self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-4"])
 
         stack = ResolutionStack(state)
@@ -4665,6 +5007,10 @@ class VmIrContractTests(unittest.TestCase):
         self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-2"])
 
         state = GameState()
+        state.phase = TurnPhase.MAIN
+        prize = CardRegistry.get("sv1-ener-3")
+        state.p1.prizes = [prize] * 6
+        state.p2.prizes = [prize] * 6
         state.p1.active = PokemonInPlay(CardRegistry.get("sv2-starm"))
         state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svi-chim"))
         state.p1.deck = [CardRegistry.get("sv1-ener-2")]

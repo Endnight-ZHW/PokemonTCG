@@ -104,23 +104,37 @@ func view_for(
 ) -> Dictionary:
 	if state == null:
 		return {}
-	var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
+	var stack := ResolutionStack.from_dict(state.resolution_stack)
+	var pending := stack.pending_request
+	var render_state := state
+	var hide_cancellable_transaction := false
+	if pending != null and pending.player != player_idx:
+		var checkpoint: Variant = stack.context.get("cancel_action_checkpoint")
+		if checkpoint is Dictionary and Dictionary(checkpoint).get("state") is Dictionary:
+			# A cancellable Trainer is provisional until its final choice commits.
+			# The chooser must see the working state, while the opponent keeps the
+			# pre-action board and only learns that a generic choice is pending.
+			render_state = GameState.from_dict(Dictionary(checkpoint)["state"])
+			render_state.revision = state.revision
+			render_state.choice_sequence = state.choice_sequence
+			hide_cancellable_transaction = true
 	var legal: Array = []
 	if pending == null and _current_actor() == player_idx:
 		for action in engine.legal_actions(state, player_idx, true):
 			legal.append(action.to_dict())
 	var visible_events: Array[Dictionary] = []
-	var normalized := PresentationEvent.normalize_all(
-		presentation_events,
-		state.revision,
-		state.active_player_idx,
-	)
-	for event in normalized:
-		var visible := PresentationEvent.for_player(event, player_idx)
-		if not visible.is_empty():
-			visible_events.append(visible)
+	if not hide_cancellable_transaction:
+		var normalized := PresentationEvent.normalize_all(
+			presentation_events,
+			state.revision,
+			state.active_player_idx,
+		)
+		for event in normalized:
+			var visible := PresentationEvent.for_player(event, player_idx)
+			if not visible.is_empty():
+				visible_events.append(visible)
 	return {
-		"state": StateSerializer.for_player(state, player_idx),
+		"state": StateSerializer.for_player(render_state, player_idx),
 		"legal_actions": legal,
 		"presentation_events": visible_events,
 		"choice_request": (
@@ -128,7 +142,30 @@ func view_for(
 			if pending != null and pending.player == player_idx
 			else null
 		),
+		"wait_context": (
+			{
+				"waiting_for_player": pending.player,
+				"choice_kind": _coarse_choice_kind(pending),
+			}
+			if pending != null and pending.player != player_idx
+			else null
+		),
 	}
+
+
+static func _coarse_choice_kind(request: ChoiceRequest) -> String:
+	if request == null:
+		return ""
+	if request.request_type == "select_attachment":
+		return "attachment"
+	if request.request_type in [
+		"distribute_energy", "select_energy_source", "select_energy_target",
+		"select_own_bench_energy",
+	]:
+		return "energy"
+	if request.request_type == "coin_flip":
+		return "coin"
+	return "choice"
 
 
 func _current_actor() -> int:

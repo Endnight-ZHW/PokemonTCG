@@ -136,14 +136,15 @@ func cmd_conditional_damage_then_heal(
 func cmd_conditional_search(
 	state: GameState,
 	stack: ResolutionStack,
-	_rng: PortableRandomSource,
+	rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
 	_source_slot: String,
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
-	return trainer_commands.conditional_search_request(state, stack, player_idx, args)
+	return trainer_commands.conditional_search_request(
+		state, stack, rng, player_idx, args, events)
 
 
 func cmd_deal_bench_damage(

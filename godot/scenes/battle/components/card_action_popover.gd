@@ -210,6 +210,11 @@ func source_contains_global_point(global_point: Vector2) -> bool:
 			and is_instance_valid(source_control)
 			and source_control.is_visible_in_tree()
 		):
+			if source_control.has_method("contains_visual_global_point"):
+				return bool(source_control.call(
+					"contains_visual_global_point",
+					global_point,
+				))
 			var local_point: Vector2 = (
 				(source_control as Control)
 				.get_global_transform_with_canvas()
@@ -576,7 +581,7 @@ func _tracked_avoid_rects() -> Array[Rect2]:
 	for ref in _avoid_control_refs:
 		var control = ref.get_ref()
 		if control is Control and is_instance_valid(control) and control.visible:
-			result.append(control.get_global_rect())
+			result.append(_control_global_bounds(control as Control))
 	return result
 
 
@@ -660,6 +665,10 @@ func _rect_array(values: Array) -> Array[Rect2]:
 ## rotated card. Transform all four corners so the anchor follows the card the
 ## player actually sees during hand fan and transition animations.
 func _control_global_bounds(control: Control) -> Rect2:
+	if control.has_method("visual_global_bounds"):
+		var visual_bounds: Variant = control.call("visual_global_bounds")
+		if visual_bounds is Rect2:
+			return visual_bounds
 	var transform := control.get_global_transform_with_canvas()
 	var corners := PackedVector2Array([
 		transform * Vector2.ZERO,

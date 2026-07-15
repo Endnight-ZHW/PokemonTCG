@@ -27,6 +27,8 @@ class SearchCards:
         search_pool = player.deck if from_zone == "deck" else player.discard
         valid_cards = [card for card in search_pool if self._matches(card, filter_type, filter_name)]
         if not valid_cards:
+            if from_zone == "deck":
+                player.shuffle_deck()
             return CommandResult.ok(f"No valid cards found in {from_zone}.")
 
         max_select = min(count, len(valid_cards))
@@ -116,9 +118,14 @@ class LookTopDeck:
             top_cards = []
             for _ in range(min(count, len(player.deck))):
                 top_cards.append(player.deck.pop())
-            player.deck.extend(top_cards)
             if shuffle_rest:
+                player.deck.extend(top_cards)
                 player.shuffle_deck()
+            elif rest_bottom:
+                for card in top_cards:
+                    player.deck.insert(0, card)
+            else:
+                player.deck.extend(reversed(top_cards))
             return CommandResult.ok(f"牌库顶{count}张没有可选择的卡。")
 
         max_select = min(take, len(display_cards))
@@ -309,6 +316,7 @@ class SearchItemAndTool:
             or getattr(card, "is_trainer_tool", False)
         ]
         if not available:
+            player.shuffle_deck()
             return CommandResult.ok("牌库中没有物品卡或宝可梦道具卡。")
 
         return CommandResult.ok(

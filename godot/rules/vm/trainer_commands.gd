@@ -144,27 +144,27 @@ func cmd_recover_clara(
 func cmd_search_cards(
 	state: GameState,
 	stack: ResolutionStack,
-	_rng: PortableRandomSource,
+	rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
 	_source_slot: String,
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
-	return search_request(state, stack, player_idx, args)
+	return search_request(state, stack, rng, player_idx, args, events)
 
 
 func cmd_search_item_and_tool(
 	state: GameState,
 	stack: ResolutionStack,
-	_rng: PortableRandomSource,
+	rng: PortableRandomSource,
 	_args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
 	_source_slot: String,
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
-	return arven_request(state, stack, player_idx)
+	return arven_request(state, stack, rng, player_idx, events)
 
 
 func cmd_shuffle_from_discard_to_deck(
@@ -298,7 +298,9 @@ func recover_from_discard_request(
 func arven_request(
 	state: GameState,
 	stack: ResolutionStack,
+	rng: PortableRandomSource,
 	player_idx: int,
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var available: Array[String] = []
@@ -306,6 +308,7 @@ func arven_request(
 		if catalog.is_item(card_id) or catalog.is_tool(card_id):
 			available.append(card_id)
 	if available.is_empty():
+		complete_empty_deck_search(state, rng, player_idx, "hand", events)
 		return VMResult.ok("牌库中没有物品卡或宝可梦道具卡。")
 	return VMChoiceRequests.request_cards(
 		catalog,
@@ -337,8 +340,10 @@ func trekking_shoes_request(
 func conditional_search_request(
 	state: GameState,
 	stack: ResolutionStack,
+	rng: PortableRandomSource,
 	player_idx: int,
 	params: Dictionary,
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var count := int(params.get("default_count", 1))
 	if (
@@ -347,20 +352,22 @@ func conditional_search_request(
 		and state.is_player_first_turn(player_idx)
 	):
 		count = int(params.get("max_count", count))
-	return search_request(state, stack, player_idx, {
+	return search_request(state, stack, rng, player_idx, {
 		"from_zone": "deck",
 		"filter": params.get("filter", "pokemon"),
 		"destination": "hand",
 		"count": count,
 		"min_select": 0 if count == int(params.get("max_count", count)) else 1,
-	})
+	}, events)
 
 
 func search_request(
 	state: GameState,
 	stack: ResolutionStack,
+	rng: PortableRandomSource,
 	player_idx: int,
 	params: Dictionary,
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var zone := str(params.get("from_zone", "deck"))
@@ -371,8 +378,16 @@ func search_request(
 		str(params.get("filter_name", "")),
 	)
 	if available.is_empty():
+		if zone == "deck":
+			complete_empty_deck_search(
+				state, rng, player_idx, str(params.get("destination", "hand")), events)
 		return VMResult.ok("没有符合条件的卡。")
 	var requested_count := int(params.get("count", 1))
+	if requested_count <= 0:
+		if zone == "deck":
+			complete_empty_deck_search(
+				state, rng, player_idx, str(params.get("destination", "hand")), events)
+		return VMResult.ok("未选择卡牌。")
 	var min_select: int = min(
 		int(params.get("min_select", min(1, requested_count))),
 		min(requested_count, available.size())
@@ -390,3 +405,20 @@ func search_request(
 		min(requested_count, available.size()),
 		"选择符合条件的卡。",
 		min_select <= 0)
+
+
+func complete_empty_deck_search(
+	state: GameState,
+	rng: PortableRandomSource,
+	player_idx: int,
+	destination: String,
+	events: Array[Dictionary],
+) -> void:
+	events.append(VMZoneHelpers.cards_selected_event(
+		player_idx,
+		"deck",
+		destination,
+		[],
+		0,
+	))
+	VMZoneHelpers.shuffle_deck(state, rng, player_idx, events)

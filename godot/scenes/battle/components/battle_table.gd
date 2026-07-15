@@ -16,25 +16,35 @@ signal detail_requested(card_id: String)
 signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
 signal choice_target_selected(option_id: String)
+signal choice_option_toggled(option_id: String)
+signal choice_selection_confirmed
+signal choice_cancel_requested
 
 const CARD_SCENE := preload("res://ui/card_view.tscn")
 const CARD_DRAG_SESSION := preload("res://presentation/card_drag_session.gd")
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
+const ATTACHMENT_POPOVER := preload(
+	"res://scenes/battle/components/attachment_choice_popover.gd"
+)
 const MIN_FLYING_CARD_DURATION := 0.06
 const FLYING_CARD_FINISH_PAD := 0.0
 const MAX_ACTIVE_FLYERS_HIGH := 12
 const MAX_ACTIVE_FLYERS_LOW := 8
 const PAPER_CARD_BASE_SIZE := Vector2(94, 132)
 const SHUFFLE_CARD_LIMITS := {
-	"high": 7,
-	"medium": 5,
-	"low": 3,
+	"high": 8,
+	"medium": 6,
+	"low": 4,
 }
+const REVEAL_CARD_MAX_SIZE := Vector2(100, 140)
+const REVEAL_CARD_GAP := 14.0
+const REVEAL_MIN_READ_HOLD := 0.90
 const HAND_CARD_MAX_Z := 78
-const HOVERED_HAND_CARD_Z := 79
 const SELECTED_HAND_CARD_Z := 80
 const CARD_MOTION_EVENT_TYPES: Array[String] = [
 	"cards_drawn",
+	"cards_revealed",
+	"coin_flip",
 	"cards_discarded",
 	"card_moved",
 	"cards_selected",
@@ -116,6 +126,7 @@ var detail_close_button: Button
 var log_panel: BattleLogPanel
 var log_label: RichTextLabel
 var action_popover: CardActionPopover
+var attachment_choice_popover: AttachmentChoicePopover
 var interaction_router := CardInteractionRouter.new()
 var choice_target_options: Dictionary = {}
 var choice_target_prompt := ""
@@ -126,6 +137,8 @@ var hand_surface: Control
 var input_blocker: Control
 var effects: BattleEffectLayer
 var world_feedback: BattleEffectLayer
+var reveal_layer: BattleRevealLayer
+var coin_showcase: CoinShowcase
 var announcement_layer: BattleAnnouncementLayer
 var camera_rig: BattleCameraRig
 var director: PresentationDirector
@@ -146,6 +159,9 @@ var _popover_dismissed_source_key := ""
 var _popover_source_key := ""
 var _forced_popover_rows: Array[Dictionary] = []
 var _forced_popover_source_key := ""
+var _attachment_popover_source_key := ""
+var _hand_layout_geometry_signature := ""
+var _hand_scroll_center_generation := 0
 var _drag_source_key := ""
 var _drag_session
 var _drag_session_sequence := 0
@@ -186,6 +202,9 @@ var _presentation_hand_snapshot_rows: Dictionary = {}
 var _presentation_hand_virtual_keys: Array[String] = []
 var _presentation_attachment_source_proxies: Dictionary = {}
 var _presentation_zone_states: Dictionary = {}
+var _presentation_hud_state: GameState
+var _presentation_actions_suppressed := false
+var _active_presentation_event_id := ""
 var _presentation_hand_geometry_staged := false
 var _presentation_hand_old_count := 0
 var _presentation_hand_final_count := 0
@@ -202,6 +221,12 @@ var _pending_removed_hand_visual_ids: Dictionary = {}
 var _ai_thinking_started_msec := 0
 var _transition_input_blocked := false
 var _director_input_blocked := false
+var _startup_input_blocked := false
+var _recovery_input_blocked := false
+var _startup_shuffle_handle: MotionHandle
+var _shuffle_source_masks: Dictionary = {}
+var _local_hand_privacy_hidden := false
+var _resync_tween: Tween
 
 
 func _ready() -> void:
@@ -232,22 +257,26 @@ func initialize_ui() -> void:
 	_initialized = true
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_bind_scene_nodes()
-	if not AppSettings.changed.is_connected(_apply_runtime_settings):
-		AppSettings.changed.connect(_apply_runtime_settings)
+	var settings := _settings_node()
+	if (
+		settings != null
+		and not settings.is_connected("changed", _apply_runtime_settings)
+	):
+		settings.connect("changed", _apply_runtime_settings)
 	_apply_runtime_settings()
 	if not resized.is_connected(_layout_board):
 		resized.connect(_layout_board)
 	if board_canvas != null and not board_canvas.resized.is_connected(_layout_board):
 		board_canvas.resized.connect(_layout_board)
 	call_deferred("_layout_board")
-	if not AppSettings.reduced_motion:
+	if not _settings_reduced_motion():
 		animation_player.play("enter")
 
 
 func _apply_runtime_settings() -> void:
 	if not _initialized:
 		return
-	var profile := AppSettings.resolved_quality_profile()
+	var profile := _settings_quality_profile()
 	if playmat:
 		playmat.quality_profile = profile
 	if effects:
@@ -255,6 +284,36 @@ func _apply_runtime_settings() -> void:
 	if world_feedback:
 		world_feedback.quality_profile = profile
 	_refresh_ai_thinking_indicator()
+
+
+func _settings_node() -> Node:
+	return _autoload_node("AppSettings")
+
+
+func _autoload_node(node_name: String) -> Node:
+	var main_loop := Engine.get_main_loop()
+	if main_loop is SceneTree and (main_loop as SceneTree).root != null:
+		return (main_loop as SceneTree).root.get_node_or_null(node_name)
+	return null
+
+
+func _settings_reduced_motion() -> bool:
+	var settings := _settings_node()
+	return bool(settings.get("reduced_motion")) if settings != null else false
+
+
+func _settings_animation_mode() -> String:
+	var settings := _settings_node()
+	return str(settings.get("animation_mode")) if settings != null else "cinematic"
+
+
+func _settings_quality_profile() -> String:
+	var settings := _settings_node()
+	return (
+		str(settings.call("resolved_quality_profile"))
+		if settings != null
+		else "high"
+	)
 
 
 func _resolve_scene_nodes() -> void:
@@ -378,8 +437,15 @@ func update_view(
 
 
 func set_choice_targets(options_by_source: Dictionary, prompt: String) -> void:
-	choice_target_options = options_by_source.duplicate()
+	choice_target_options = options_by_source.duplicate(true)
 	choice_target_prompt = prompt
+	if (
+		attachment_choice_popover != null
+		and attachment_choice_popover.visible
+		and not choice_target_options.has(_attachment_popover_source_key)
+	):
+		attachment_choice_popover.dismiss(false)
+		_attachment_popover_source_key = ""
 	if _initialized:
 		_refresh_target_hints()
 		_refresh_header()
@@ -388,9 +454,29 @@ func set_choice_targets(options_by_source: Dictionary, prompt: String) -> void:
 func clear_choice_targets() -> void:
 	choice_target_options.clear()
 	choice_target_prompt = ""
+	_attachment_popover_source_key = ""
+	if attachment_choice_popover != null:
+		attachment_choice_popover.dismiss(false)
 	if _initialized:
 		_refresh_target_hints()
 		_refresh_header()
+
+
+func update_choice_selection(
+	selected_ids: Array,
+	disabled_reasons: Dictionary = {},
+) -> void:
+	for key_value in choice_target_options.keys():
+		var key := str(key_value)
+		var group_value: Variant = choice_target_options[key]
+		if not group_value is Dictionary:
+			continue
+		var group := Dictionary(group_value).duplicate(true)
+		group["selected_ids"] = selected_ids.duplicate()
+		group["disabled_reasons"] = disabled_reasons.duplicate(true)
+		choice_target_options[key] = group
+	if attachment_choice_popover != null and attachment_choice_popover.visible:
+		attachment_choice_popover.refresh_selection(selected_ids, disabled_reasons)
 
 
 func visible_card_source_keys() -> Array[String]:
@@ -441,7 +527,7 @@ func _refresh_ai_thinking_indicator() -> void:
 			active,
 			ai_player,
 			_ai_slot_rects(ai_player),
-			AppSettings.reduced_motion,
+			_settings_reduced_motion(),
 			ai_name,
 			_ai_thinking_started_msec,
 		)
@@ -493,11 +579,148 @@ func play_presentation(
 	if normalized.is_empty():
 		return
 	_stage_presentation_targets(normalized, previous_snapshot)
-	director.set_speed_mode(AppSettings.animation_mode)
+	director.set_speed_mode(_settings_animation_mode())
 	director.play(normalized)
 
 
+func clear_unplayed_presentation_staging() -> void:
+	# A coordinator batch made entirely from already-seen event IDs never starts
+	# the director and therefore has no sequence_finished signal. Keep this
+	# explicit instead of clearing in play_presentation(): preview/compatibility
+	# callers are allowed to drive event lifecycle callbacks manually.
+	_clear_presentation_masks(true)
+
+
+func play_startup_shuffle(mulligan_counts: Array = []) -> MotionHandle:
+	_cancel_startup_shuffle()
+	var handle := MotionHandle.new()
+	_startup_shuffle_handle = handle
+	if not is_inside_tree() or effects == null:
+		handle.finish()
+		return handle
+	var mode_scale: float = float({
+		"cinematic": 1.0,
+		"standard": 0.82,
+		"fast": 0.58,
+		"reduced": 0.0,
+	}.get(_settings_animation_mode(), 0.82))
+	var reduced := MotionPolicy.reduced()
+	var duration := 0.22 if reduced else maxf(0.46, 0.80 * mode_scale)
+	for player_idx in [0, 1]:
+		var endpoint := {"player": player_idx, "zone": "deck"}
+		if reduced:
+			_burst_world_at_motion_point(
+				resolve_endpoint_center(endpoint),
+				DesignTokens.CYAN,
+				"shuffle",
+			)
+		else:
+			_spawn_shuffle_motion(endpoint, duration, "", true)
+		var mulligan_count := (
+			maxi(0, int(mulligan_counts[player_idx]))
+			if player_idx < mulligan_counts.size()
+			else 0
+		)
+		if mulligan_count > 0:
+			_spawn_startup_mulligan_summary(
+				endpoint,
+				mulligan_count,
+				duration,
+				reduced,
+			)
+	if director != null:
+		director.audio_requested.emit("shuffle")
+	var timer := create_tween()
+	timer.tween_interval(duration)
+	handle.bind_tween(timer)
+	handle.completed.connect(
+		_on_startup_shuffle_completed.bind(handle),
+		CONNECT_ONE_SHOT,
+	)
+	return handle
+
+
+func _spawn_startup_mulligan_summary(
+	endpoint: Dictionary,
+	count: int,
+	duration: float,
+	reduced: bool,
+) -> void:
+	if effects == null:
+		return
+	var label := Label.new()
+	label.name = "StartupShuffleSummary"
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.text = "再战 ×%d" % count
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.size = Vector2(102.0, 30.0)
+	label.pivot_offset = label.size * 0.5
+	var label_offset_y := (
+		-label.size.y - 56.0
+		if int(endpoint.get("player", view_player)) == view_player
+		else 56.0
+	)
+	label.position = (
+		resolve_endpoint_center(endpoint)
+		+ Vector2(-label.size.x * 0.5, label_offset_y)
+	)
+	label.z_index = 142
+	label.modulate.a = 0.0
+	label.set_meta("startup_shuffle", true)
+	label.set_meta("battle_transient_visual", true)
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", DesignTokens.GOLD)
+	label.add_theme_stylebox_override(
+		"normal",
+		DesignTokens.panel_style(
+			Color(DesignTokens.BG_DEEP, 0.92),
+			10,
+			DesignTokens.GOLD,
+			1,
+			4,
+		),
+	)
+	card_motion_layer.add(label)
+	var tween := create_tween()
+	card_motion_layer.bind_tween(label, tween)
+	tween.tween_property(label, "modulate:a", 1.0, minf(0.12, duration * 0.25))
+	if not reduced:
+		tween.parallel().tween_property(label, "scale", Vector2.ONE * 1.04, minf(0.12, duration * 0.25))
+	tween.tween_interval(maxf(0.0, duration - minf(0.24, duration * 0.5)))
+	tween.tween_property(label, "modulate:a", 0.0, minf(0.12, duration * 0.25))
+
+
+func _on_startup_shuffle_completed(
+	_completed_handle: MotionHandle,
+	expected_handle: MotionHandle,
+) -> void:
+	if _startup_shuffle_handle == expected_handle:
+		_startup_shuffle_handle = null
+	_clear_startup_shuffle_visuals()
+
+
+func _cancel_startup_shuffle() -> void:
+	var handle := _startup_shuffle_handle
+	_startup_shuffle_handle = null
+	if handle != null and not handle.is_finished():
+		handle.cancel()
+	_clear_startup_shuffle_visuals()
+
+
+func _clear_startup_shuffle_visuals() -> void:
+	for flyer in _active_flyers.duplicate():
+		if (
+			is_instance_valid(flyer)
+			and bool(flyer.get_meta("startup_shuffle", false))
+		):
+			_dispose_flyer(flyer)
+
+
 func clear_presentation_for_resync() -> void:
+	if _resync_tween != null and _resync_tween.is_valid():
+		_resync_tween.kill()
+	_resync_tween = null
 	if director:
 		director.clear_for_resync()
 	_hand_identity_player = -1
@@ -505,9 +728,9 @@ func clear_presentation_for_resync() -> void:
 		if view != null:
 			view.set_local_visual_id("")
 	_clear_transient_visuals()
-	modulate.a = 0.35
-	var tween := create_tween()
-	tween.tween_property(self, "modulate:a", 1.0, resync_fade_duration)
+	# A recovery snapshot is already authoritative. Keep the snap synchronous so
+	# interaction cannot reopen while a decorative, untracked fade is pending.
+	modulate.a = 1.0
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
@@ -676,6 +899,10 @@ func capture_presentation_snapshot() -> Dictionary:
 				if not attachment_centers.has("energy"):
 					attachment_centers["energy"] = energy_center
 				attachment_centers["energy:%s" % energy_id] = energy_center
+				attachment_centers["energy:%d" % energy_index] = energy_center
+				attachment_centers[
+					"energy:%d:%s" % [energy_index, energy_id]
+				] = energy_center
 			if not view.pokemon.attached_tool_id.is_empty():
 				var tool_center := _effects_local(
 					view.attachment_anchor_global(
@@ -739,7 +966,7 @@ func _zone_context(
 func _card_inspection_context(card_id: String) -> Dictionary:
 	var context := {
 		"card_id": card_id,
-		"title": CardDatabase.get_card(card_id).get("name", card_id),
+		"title": catalog.get_card(card_id).get("name", card_id),
 		"location": "卡牌",
 		"pokemon": null,
 		"player": view_player,
@@ -835,10 +1062,21 @@ func _bind_scene_nodes() -> void:
 		log_panel.z_index = 0
 		log_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		log_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	playmat.quality_profile = AppSettings.resolved_quality_profile()
-	effects.quality_profile = AppSettings.resolved_quality_profile()
-	world_feedback.quality_profile = AppSettings.resolved_quality_profile()
+	playmat.quality_profile = _settings_quality_profile()
+	effects.quality_profile = _settings_quality_profile()
+	world_feedback.quality_profile = _settings_quality_profile()
 	card_motion_layer.configure(effects, _active_flyers, _flyer_tweens)
+	if reveal_layer == null:
+		reveal_layer = BattleRevealLayer.new()
+		reveal_layer.name = "BattleRevealLayer"
+		effects.add_child(reveal_layer)
+	if coin_showcase == null:
+		coin_showcase = CoinShowcase.new()
+		coin_showcase.name = "BattleCoinShowcase"
+		coin_showcase.z_index = 95
+		coin_showcase.visible = false
+		coin_showcase.audio_requested.connect(_on_coin_showcase_audio_requested)
+		add_child(coin_showcase)
 	if camera_rig != null:
 		camera_rig.configure([board_panel, effects, world_feedback])
 	opponent_hand_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -944,8 +1182,27 @@ func _bind_scene_nodes() -> void:
 	if action_popover:
 		action_popover.action_chosen.connect(_on_popover_action_chosen)
 		action_popover.dismissed.connect(_on_popover_dismissed)
+	if attachment_choice_popover == null:
+		attachment_choice_popover = ATTACHMENT_POPOVER.new() as AttachmentChoicePopover
+		attachment_choice_popover.name = "AttachmentChoicePopover"
+		add_child(attachment_choice_popover)
+		attachment_choice_popover.option_chosen.connect(
+			_on_attachment_option_chosen,
+		)
+		attachment_choice_popover.option_toggled.connect(
+			choice_option_toggled.emit,
+		)
+		attachment_choice_popover.confirmed.connect(
+			_on_attachment_selection_confirmed,
+		)
+		attachment_choice_popover.cancelled.connect(
+			_on_attachment_selection_cancelled,
+		)
+		attachment_choice_popover.dismissed.connect(
+			_on_attachment_popover_dismissed,
+		)
 	director.sequence_started.connect(func(_count: int) -> void:
-		_director_input_blocked = not AppSettings.reduced_motion
+		_director_input_blocked = not _settings_reduced_motion()
 		_sync_input_blocker()
 	)
 	director.sequence_finished.connect(func() -> void:
@@ -974,9 +1231,44 @@ func set_transition_blocked(value: bool) -> void:
 	_sync_input_blocker()
 
 
+func set_startup_blocked(value: bool) -> void:
+	_startup_input_blocked = value
+	if value:
+		clear_pending_drag_immediately("startup_choreography")
+	_sync_input_blocker()
+
+
+func set_local_hand_privacy_hidden(value: bool) -> void:
+	_local_hand_privacy_hidden = value
+	_sync_local_hand_privacy()
+
+
+func set_recovery_blocked(value: bool) -> void:
+	_recovery_input_blocked = value
+	if value:
+		clear_pending_drag_immediately("network_recovery")
+	_sync_input_blocker()
+
+
+func _sync_local_hand_privacy() -> void:
+	if hand_scroll == null:
+		return
+	hand_scroll.visible = not _local_hand_privacy_hidden
+	hand_scroll.mouse_filter = (
+		Control.MOUSE_FILTER_IGNORE
+		if _local_hand_privacy_hidden
+		else Control.MOUSE_FILTER_PASS
+	)
+
+
 func _sync_input_blocker() -> void:
 	if input_blocker != null:
-		input_blocker.visible = _transition_input_blocked or _director_input_blocked
+		input_blocker.visible = (
+			_transition_input_blocked
+			or _director_input_blocked
+			or _startup_input_blocked
+			or _recovery_input_blocked
+		)
 
 
 func _on_presentation_event_completion_requested(
@@ -986,7 +1278,9 @@ func _on_presentation_event_completion_requested(
 	var event_type := PresentationEvent.canonical_event_type(
 		str(event.get("event_type", "")),
 	)
-	if MotionPolicy.reduced() or event_type not in CARD_MOTION_EVENT_TYPES:
+	if event_type not in CARD_MOTION_EVENT_TYPES:
+		return
+	if MotionPolicy.reduced() and event_type != "coin_flip":
 		return
 	if event_type == "cards_selected" and int(event.get("amount", 0)) <= 0:
 		return
@@ -1024,7 +1318,6 @@ func _bind_card_view(view: CardView) -> void:
 	view.action_requested.connect(action_requested.emit)
 	view.drag_started.connect(_on_hand_drag_started)
 	view.drag_ended.connect(_on_hand_drag_ended)
-	view.hovered_changed.connect(_on_card_hovered_changed.bind(view))
 
 
 func _on_phase_advance_pressed() -> void:
@@ -1071,6 +1364,13 @@ func _input(event: InputEvent) -> void:
 		if viewport:
 			viewport.set_input_as_handled()
 		return
+	if attachment_choice_popover != null and attachment_choice_popover.visible:
+		if attachment_choice_popover.panel_global_rect().has_point(pointer_position):
+			return
+		# Dismiss before GUI hit testing without consuming the press. Tapping a
+		# different highlighted Pokemon can therefore open its energy list with
+		# the same gesture.
+		attachment_choice_popover.dismiss()
 	var selected_source := _source_control_for_key(selected_entity_key)
 	var selected_source_pressed := (
 		selected_source != null
@@ -1127,6 +1427,8 @@ func _restore_detail_after_passthrough(expected_key: String) -> void:
 func _control_contains_global_point(control: Control, global_point: Vector2) -> bool:
 	if control == null or not is_instance_valid(control) or not control.is_visible_in_tree():
 		return false
+	if control.has_method("contains_visual_global_point"):
+		return bool(control.call("contains_visual_global_point", global_point))
 	var local_point := (
 		control.get_global_transform_with_canvas().affine_inverse() * global_point
 	)
@@ -1491,7 +1793,13 @@ func _refresh_target_hints() -> void:
 		for target_key in CardInteractionRouter.target_keys_for_action(action, row):
 			selected_target_labels[target_key] = _target_hint_for_action(action)
 	for target_key_value in choice_target_options.keys():
-		selected_target_labels[str(target_key_value)] = "选择"
+		var choice_value: Variant = choice_target_options[target_key_value]
+		selected_target_labels[str(target_key_value)] = (
+			"选择能量"
+			if choice_value is Dictionary
+			and str(Dictionary(choice_value).get("kind", "")) == "attachment_group"
+			else "选择"
+		)
 
 	for slot_key_value in slot_views.keys():
 		var slot_key := str(slot_key_value)
@@ -1511,6 +1819,17 @@ func _refresh_target_hints() -> void:
 			else ""
 		)
 		var target_hint := str(selected_target_labels.get(target_key, ""))
+		if view.has_method("set_target_accent"):
+			var slot_choice_value: Variant = choice_target_options.get(target_key)
+			var is_attachment_source := (
+				slot_choice_value is Dictionary
+				and str(Dictionary(slot_choice_value).get("kind", ""))
+				== "attachment_group"
+			)
+			view.call(
+				"set_target_accent",
+				DesignTokens.GOLD if is_attachment_source else DesignTokens.CYAN,
+			)
 		view.set_interaction_state(
 			source_actionable,
 			disabled_reason,
@@ -1589,6 +1908,7 @@ func _layout_board() -> void:
 	else:
 		_layout_hand(metrics["own_hand_size"])
 	_layout_overlay_drawers()
+	_layout_coin_showcase()
 	_reconcile_drag_after_layout_change()
 	_refresh_ai_thinking_indicator()
 	if playmat:
@@ -1597,6 +1917,17 @@ func _layout_board() -> void:
 		effects.queue_redraw()
 	if world_feedback:
 		world_feedback.queue_redraw()
+
+
+func _layout_coin_showcase() -> void:
+	if coin_showcase == null:
+		return
+	var showcase_size := coin_showcase.custom_minimum_size
+	coin_showcase.size = showcase_size
+	coin_showcase.position = Vector2(
+		maxf(16.0, (size.x - showcase_size.x) * 0.5),
+		maxf(16.0, (size.y - showcase_size.y) * 0.5),
+	)
 
 
 func _board_layout_metrics(width: float, height: float) -> Dictionary:
@@ -2141,16 +2472,6 @@ func _layout_detail_panel() -> void:
 func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 	if hand_surface == null:
 		return
-	# Control hit testing follows sibling order more strictly than CanvasItem Z on
-	# touch-emulated mouse events. Restore the canonical order first, then move the
-	# selected source to the end so its lifted, visible face is also the hit target.
-	for canonical_index in range(hand_views.size()):
-		var canonical_view := hand_views[canonical_index]
-		if (
-			canonical_view.get_parent() == hand_surface
-			and canonical_view.get_index() != canonical_index
-		):
-			hand_surface.move_child(canonical_view, canonical_index)
 	var visible_count := 0
 	for view in hand_views:
 		if _hand_view_participates_in_layout(view):
@@ -2162,10 +2483,9 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 		hand_minimum_spacing,
 		hand_rotation_degrees,
 	)
-	hand_surface.custom_minimum_size.x = float(plan["surface_width"])
+	_apply_hand_layout_geometry(plan, card_size)
 	var items: Array[Dictionary] = plan["items"]
 	var visible_index := 0
-	var selected_hand_view: CardView
 	for view in hand_views:
 		if not _hand_view_participates_in_layout(view):
 			continue
@@ -2175,52 +2495,102 @@ func _layout_hand(card_size: Vector2 = Vector2(96, 135)) -> void:
 		view.position = item["position"]
 		view.rotation_degrees = float(item["rotation_degrees"])
 		var is_selected := selected_entity_key == "hand:%d" % view.hand_index
-		# A selected card must remain the top hand hit target even in a tightly
-		# overlapped fan. Keep the whole hand below the HUD/popover overlay layers.
-		view.z_index = (
-			SELECTED_HAND_CARD_Z
-			if is_selected
-			else mini(HAND_CARD_MAX_Z, int(item["z_index"]))
-		)
+		view.z_index = mini(HAND_CARD_MAX_Z, int(item["z_index"]))
 		view.set_table_depth(0.96, true)
 		view.remember_base_position()
 		view.set_selected(is_selected)
-		if is_selected:
+		visible_index += 1
+	_apply_hand_interaction_order()
+
+
+func _apply_hand_layout_geometry(plan: Dictionary, card_size: Vector2) -> void:
+	if hand_surface == null or hand_scroll == null:
+		return
+	hand_surface.custom_minimum_size.x = float(plan.get(
+		"surface_width",
+		hand_scroll.size.x,
+	))
+	var items: Array = plan.get("items", [])
+	var geometry_signature := "%d|%d|%d|%d|%d|%d" % [
+		items.size(),
+		roundi(hand_scroll.size.x * 100.0),
+		roundi(card_size.x * 100.0),
+		roundi(card_size.y * 100.0),
+		roundi(float(plan.get("content_width", 0.0)) * 100.0),
+		roundi(float(plan.get("surface_width", 0.0)) * 100.0),
+	]
+	if geometry_signature == _hand_layout_geometry_signature:
+		return
+	_hand_layout_geometry_signature = geometry_signature
+	_hand_scroll_center_generation += 1
+	var generation := _hand_scroll_center_generation
+	var center_scroll := maxi(0, roundi(float(plan.get("center_scroll", 0.0))))
+	_set_hand_scroll_center(center_scroll)
+	# ScrollContainer updates its range during the container sort that follows a
+	# custom-minimum-size change. Repeat after that sort so growing from a small
+	# hand cannot clamp the new center against the previous maximum.
+	call_deferred(
+		"_finish_hand_scroll_center",
+		generation,
+		center_scroll,
+		0,
+	)
+
+
+func _set_hand_scroll_center(center_scroll: int) -> void:
+	if hand_scroll == null:
+		return
+	hand_scroll.scroll_horizontal = maxi(0, center_scroll)
+
+
+func _finish_hand_scroll_center(
+	generation: int,
+	center_scroll: int,
+	attempt: int,
+) -> void:
+	if generation != _hand_scroll_center_generation or hand_scroll == null:
+		return
+	_set_hand_scroll_center(center_scroll)
+	if abs(hand_scroll.scroll_horizontal - center_scroll) > 1 and attempt < 2:
+		call_deferred(
+			"_finish_hand_scroll_center",
+			generation,
+			center_scroll,
+			attempt + 1,
+		)
+
+
+func _apply_hand_interaction_order() -> void:
+	if hand_surface == null:
+		return
+	# GUI picking uses sibling order for overlapping Controls. Rebuild a stable
+	# canonical left-to-right order first. Hover only transforms InteractionRoot,
+	# so a dense hand keeps the card on the right above the card on its left.
+	# Only an explicitly selected source rises above the fan for its action UI.
+	for canonical_index in range(hand_views.size()):
+		var canonical_view := hand_views[canonical_index]
+		if (
+			canonical_view != null
+			and is_instance_valid(canonical_view)
+			and canonical_view.get_parent() == hand_surface
+			and canonical_view.get_index() != canonical_index
+		):
+			hand_surface.move_child(canonical_view, canonical_index)
+	var selected_hand_view: CardView
+	var visible_index := 0
+	for view in hand_views:
+		if not _hand_view_participates_in_layout(view):
+			continue
+		view.z_index = mini(HAND_CARD_MAX_Z, 70 + visible_index)
+		if selected_entity_key == "hand:%d" % view.hand_index:
 			selected_hand_view = view
 		visible_index += 1
-	if (
-		selected_hand_view
-		and selected_hand_view.get_index() != hand_surface.get_child_count() - 1
-	):
+	if selected_hand_view != null:
+		selected_hand_view.z_index = SELECTED_HAND_CARD_Z
 		hand_surface.move_child(
 			selected_hand_view,
 			maxi(0, hand_surface.get_child_count() - 1),
 		)
-
-
-func _on_card_hovered_changed(hovered: bool, view: CardView) -> void:
-	if view == null or not is_instance_valid(view) or view.hand_index < 0:
-		return
-	if hovered:
-		view.z_index = (
-			SELECTED_HAND_CARD_Z
-			if selected_entity_key == "hand:%d" % view.hand_index
-			else HOVERED_HAND_CARD_Z
-		)
-		return
-	# Recompute the base fan depth instead of restoring a cached number: cards
-	# may have reflowed while the pointer remained over this anchor.
-	var layout_views: Array[CardView] = []
-	for candidate in hand_views:
-		if _hand_view_participates_in_layout(candidate):
-			layout_views.append(candidate)
-	var layout_index := layout_views.find(view)
-	if layout_index < 0:
-		return
-	if selected_entity_key == "hand:%d" % view.hand_index:
-		view.z_index = SELECTED_HAND_CARD_Z
-	else:
-		view.z_index = mini(HAND_CARD_MAX_Z, 70 + layout_index)
 
 
 func _snap_staged_hand_layout(card_size: Vector2) -> void:
@@ -2246,7 +2616,7 @@ func _snap_staged_hand_layout(card_size: Vector2) -> void:
 		hand_minimum_spacing,
 		hand_rotation_degrees,
 	)
-	hand_surface.custom_minimum_size.x = float(stage_plan["surface_width"])
+	_apply_hand_layout_geometry(stage_plan, card_size)
 	var stage_items: Array[Dictionary] = stage_plan["items"]
 	var final_items: Array[Dictionary] = final_plan["items"]
 	var snapshot_hand: Array = _presentation_snapshot.get("hand", [])
@@ -2278,6 +2648,7 @@ func _snap_staged_hand_layout(card_size: Vector2) -> void:
 		view.z_index = mini(HAND_CARD_MAX_Z, int(item["z_index"]))
 		view.set_table_depth(0.96, true)
 		view.remember_base_position()
+	_apply_hand_interaction_order()
 
 
 func _snapshot_hand_index_for_view(
@@ -2568,6 +2939,8 @@ func _layout_own_status(metrics: Dictionary, field_plan: Dictionary) -> void:
 
 func _routed_action_rows() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
+	if _presentation_actions_suppressed:
+		return result
 	for value in action_rows:
 		var row := value.duplicate()
 		var action := row.get("action") as GameAction
@@ -3082,6 +3455,62 @@ func _reset_action_interaction_state(dismiss_popover := true) -> void:
 		action_popover.dismiss(false)
 
 
+func _show_attachment_choice_group(source_key: String, group: Dictionary) -> void:
+	var options: Array = group.get("options", [])
+	if options.is_empty():
+		return
+	if (
+		options.size() == 1
+		and int(group.get("min_select", 1)) == 1
+		and int(group.get("max_select", 1)) == 1
+	):
+		choice_target_selected.emit(str(Dictionary(options[0]).get("option_id", "")))
+		return
+	var source_control := _source_control_for_key(source_key)
+	if source_control == null or attachment_choice_popover == null:
+		return
+	if action_popover != null and action_popover.visible:
+		action_popover.dismiss(false)
+	_attachment_popover_source_key = source_key
+	attachment_choice_popover.show_for_source(
+		options,
+		group.get("selected_ids", []),
+		group.get("disabled_reasons", {}),
+		int(group.get("min_select", 1)),
+		int(group.get("max_select", 1)),
+		bool(group.get("can_cancel", false)),
+		source_control,
+		_safe_popover_rect(),
+		catalog,
+		str(group.get("source_label", "能量来源")),
+	)
+
+
+func _on_attachment_option_chosen(option_id: String) -> void:
+	_attachment_popover_source_key = ""
+	if attachment_choice_popover != null:
+		attachment_choice_popover.dismiss(false)
+	choice_target_selected.emit(option_id)
+
+
+func _on_attachment_selection_confirmed() -> void:
+	_attachment_popover_source_key = ""
+	if attachment_choice_popover != null:
+		attachment_choice_popover.dismiss(false)
+	choice_selection_confirmed.emit()
+
+
+func _on_attachment_selection_cancelled() -> void:
+	_attachment_popover_source_key = ""
+	if attachment_choice_popover != null:
+		attachment_choice_popover.dismiss(false)
+	choice_cancel_requested.emit()
+
+
+func _on_attachment_popover_dismissed() -> void:
+	_attachment_popover_source_key = ""
+
+
 func _on_card_activated(
 	card_id: String,
 	hand_index: int,
@@ -3098,7 +3527,15 @@ func _on_card_activated(
 		selection_clear_requested.emit(clicked_key)
 		return
 	if choice_target_options.has(clicked_key):
-		choice_target_selected.emit(str(choice_target_options[clicked_key]))
+		var choice_value: Variant = choice_target_options[clicked_key]
+		if (
+			choice_value is Dictionary
+			and str(Dictionary(choice_value).get("kind", ""))
+			== "attachment_group"
+		):
+			_show_attachment_choice_group(clicked_key, Dictionary(choice_value))
+		else:
+			choice_target_selected.emit(str(choice_value))
 		return
 	if not selected_entity_key.is_empty() and clicked_key != selected_entity_key:
 		var target_rows := _matching_active_selection_rows(clicked_key)
@@ -3542,7 +3979,7 @@ func _tween_drag_hand_layout() -> void:
 		hand_minimum_spacing,
 		hand_rotation_degrees,
 	)
-	hand_surface.custom_minimum_size.x = float(plan["surface_width"])
+	_apply_hand_layout_geometry(plan, card_size)
 	var items: Array[Dictionary] = plan["items"]
 	var duration := MotionPolicy.duration("hand_reflow")
 	for index in range(layout_views.size()):
@@ -3557,6 +3994,7 @@ func _tween_drag_hand_layout() -> void:
 			float(item["rotation_degrees"]),
 			duration,
 		)
+	_apply_hand_interaction_order()
 
 
 func _drag_source_layout_center() -> Vector2:
@@ -3638,7 +4076,7 @@ func _on_floating_text_requested(
 				color,
 				MotionPolicy.reduced(),
 			)
-			director.register_feedback_motion(handle)
+			_register_presentation_feedback_motion(handle)
 		return
 	var layer := _world_feedback_layer()
 	if layer:
@@ -3648,6 +4086,18 @@ func _on_floating_text_requested(
 			color,
 			not MotionPolicy.reduced(),
 		)
+		_register_presentation_feedback_motion(handle)
+
+
+func _register_presentation_feedback_motion(handle: MotionHandle) -> void:
+	if handle == null or handle.is_finished():
+		return
+	if (
+		not _active_presentation_event_id.is_empty()
+		and _event_motion_completions.has(_active_presentation_event_id)
+	):
+		_register_event_motion_handle(_active_presentation_event_id, handle)
+	elif director != null:
 		director.register_feedback_motion(handle)
 
 
@@ -3665,9 +4115,11 @@ func _on_burst_requested(
 	if view == null:
 		view = get_slot_view(player, slot_name)
 	if view:
-		view.flash(color, 0.36)
+		_register_presentation_feedback_motion(view.flash(color, 0.36))
 		if kind in ["impact", "ko"]:
-			view.shake(8.0 if kind == "impact" else 11.0, 0.3)
+			_register_presentation_feedback_motion(
+				view.shake(8.0 if kind == "impact" else 11.0, 0.3),
+			)
 
 
 func _on_card_landing_feedback_scheduled(
@@ -3702,7 +4154,7 @@ func _play_card_landing_feedback(
 		camera_rig.impulse(
 			camera_strength,
 			camera_duration,
-			AppSettings.reduced_motion,
+			_settings_reduced_motion(),
 		)
 	return true
 
@@ -3738,13 +4190,114 @@ func _stage_presentation_hud(previous_snapshot: Dictionary) -> void:
 	if not state_value is Dictionary or Dictionary(state_value).is_empty():
 		return
 	var previous_state := GameState.from_dict(Dictionary(state_value))
+	_presentation_hud_state = previous_state
+	_presentation_actions_suppressed = true
 	_refresh_header(previous_state)
 	_refresh_field_info(previous_state)
 	_refresh_log(previous_state)
+	_refresh_actions()
+	_refresh_target_hints()
 	var previous_opponent_hand := previous_state.get_player(1 - view_player).hand.size()
 	if opponent_hand_count_badge != null:
 		opponent_hand_count_badge.visible = previous_opponent_hand > 0
 		opponent_hand_count_badge.text = str(previous_opponent_hand)
+
+
+func _apply_event_to_presentation_hud(event: Dictionary) -> void:
+	if _presentation_hud_state == null:
+		return
+	var event_type := PresentationEvent.canonical_event_type(
+		str(event.get("event_type", "")),
+	)
+	var data: Dictionary = event.get("data", {})
+	var actor := int(event.get("actor", data.get("player", view_player)))
+	var card_ids := _event_card_ids(event)
+	var amount := _event_amount(event, card_ids)
+	match event_type:
+		"cards_drawn":
+			_hud_move_zone_cards(actor, "deck", actor, "hand", card_ids, amount)
+		"prize_taken":
+			_hud_move_zone_cards(actor, "prizes", actor, "hand", card_ids, amount)
+		"cards_discarded":
+			var endpoints := _discard_endpoints_for_event(event)
+			_hud_move_endpoint_cards(endpoints.get("source", {}), endpoints.get("target", {}), card_ids, amount)
+		"cards_revealed":
+			for row in _reveal_rows(event):
+				var destination := _reveal_destination(row, actor)
+				if str(destination.get("zone", "deck")) != "deck":
+					_hud_move_zone_cards(actor, "deck", int(destination.get("player", actor)), str(destination.get("zone", "deck")), [str(row.get("card_id", ""))], 1)
+		"pokemon_played", "trainer_played", "stadium_changed", "tool_attached", "energy_attached", "card_moved", "cards_selected":
+			_hud_move_endpoint_cards(_event_source_endpoint(event), _event_target_endpoint(event), card_ids, amount)
+		"turn_end", "checkup":
+			_presentation_hud_state.phase = "POKEMON_CHECKUP"
+		"turn_start":
+			_presentation_hud_state.active_player_idx = actor
+			_presentation_hud_state.turn_number = int(data.get("turn", _presentation_hud_state.turn_number))
+			_presentation_hud_state.phase = "DRAW"
+		"deck_exhausted", "game_over":
+			_presentation_hud_state.phase = "GAME_OVER"
+			if state_ref != null:
+				_presentation_hud_state.winner = state_ref.winner
+	_refresh_header(_presentation_hud_state)
+	_refresh_field_info(_presentation_hud_state)
+	var opponent_count := _presentation_hud_state.get_player(1 - view_player).hand.size()
+	if opponent_hand_count_badge != null:
+		opponent_hand_count_badge.visible = opponent_count > 0
+		opponent_hand_count_badge.text = str(opponent_count)
+
+
+func _hud_move_endpoint_cards(
+	source_value: Variant,
+	target_value: Variant,
+	card_ids: Array,
+	amount: int,
+) -> void:
+	var source := Dictionary(source_value) if source_value is Dictionary else {}
+	var target := Dictionary(target_value) if target_value is Dictionary else {}
+	_hud_move_zone_cards(
+		int(source.get("player", -1)),
+		str(source.get("zone", "")),
+		int(target.get("player", -1)),
+		str(target.get("zone", "")),
+		card_ids,
+		amount,
+	)
+
+
+func _hud_move_zone_cards(
+	source_player: int,
+	source_zone: String,
+	target_player: int,
+	target_zone: String,
+	card_ids: Array,
+	amount: int,
+) -> void:
+	if source_player in [0, 1] and not source_zone.is_empty():
+		var source_cards := _hud_zone_cards(source_player, source_zone)
+		for index in range(amount):
+			var card_id := str(card_ids[index]) if index < card_ids.size() else ""
+			if not card_id.is_empty() and card_id in source_cards:
+				source_cards.erase(card_id)
+			elif not source_cards.is_empty():
+				source_cards.pop_back()
+	if target_player in [0, 1] and not target_zone.is_empty():
+		var target_cards := _hud_zone_cards(target_player, target_zone)
+		for index in range(amount):
+			target_cards.append(str(card_ids[index]) if index < card_ids.size() else "")
+
+
+func _hud_zone_cards(player: int, zone: String) -> Array[String]:
+	var owner := _presentation_hud_state.get_player(player)
+	match zone:
+		"hand":
+			return owner.hand
+		"deck":
+			return owner.deck
+		"discard":
+			return owner.discard
+		"prizes":
+			return owner.prizes
+	return []
 
 
 func _stage_slot_visual_transactions(
@@ -3787,8 +4340,10 @@ func _slot_visual_keys_for_event(event: Dictionary) -> Array[String]:
 	if event_type not in [
 		"card_moved",
 		"cards_discarded",
+		"confusion_failed",
 		"damage_counters_placed",
 		"damage_dealt",
+		"dazzled_failed",
 		"energy_attached",
 		"healed",
 		"pokemon_evolved",
@@ -3797,6 +4352,7 @@ func _slot_visual_keys_for_event(event: Dictionary) -> Array[String]:
 		"promoted",
 		"retreat",
 		"status_applied",
+		"status_removed",
 		"switched",
 		"tool_attached",
 	]:
@@ -3871,20 +4427,39 @@ func _spawn_slot_state_cover(
 
 
 func _on_presentation_event_started(event: Dictionary) -> void:
+	_active_presentation_event_id = str(event.get("event_id", ""))
 	var event_type := PresentationEvent.canonical_event_type(
 		str(event.get("event_type", "")),
 	)
 	var keys := _slot_visual_keys_for_event(event)
-	if event_type in ["card_moved", "pokemon_ko", "promoted", "retreat", "switched"]:
+	if event_type in ["card_moved", "promoted", "retreat", "switched"]:
 		for key in keys:
 			_release_slot_state_cover(key)
 		return
-	if event_type in ["damage_counters_placed", "damage_dealt", "healed", "status_applied"]:
+	# KO feedback must land on the old stack. Deferred KO declarations also keep
+	# that stack alive for intervening triggers such as Exp. Share; the later
+	# ko_leave_play card_moved event owns the actual departure.
+	if event_type == "pokemon_ko":
+		return
+	if event_type in [
+		"cards_discarded",
+		"confusion_failed",
+		"damage_counters_placed",
+		"damage_dealt",
+		"energy_attached",
+		"healed",
+		"status_applied",
+		"status_removed",
+	]:
 		for key in keys:
-			_apply_event_to_slot_cover(key, event)
+			_apply_event_to_slot_cover(key, event, "takeoff")
 
 
-func _apply_event_to_slot_cover(key: String, event: Dictionary) -> void:
+func _apply_event_to_slot_cover(
+	key: String,
+	event: Dictionary,
+	phase: String = "complete",
+) -> void:
 	var state := _presentation_slot_cover_states.get(key) as PokemonState
 	var cover := _valid_card_view(_presentation_slot_covers.get(key))
 	if state == null or cover == null:
@@ -3895,7 +4470,7 @@ func _apply_event_to_slot_cover(key: String, event: Dictionary) -> void:
 	var data: Dictionary = event.get("data", {})
 	var amount := maxi(0, int(event.get("amount", data.get("amount", 0))))
 	match event_type:
-		"damage_dealt", "damage_counters_placed":
+		"damage_dealt", "damage_counters_placed", "confusion_failed":
 			var counters := int(data.get("counter_count", 0))
 			if counters <= 0 and amount > 0:
 				counters = ceili(float(amount) / 10.0)
@@ -3909,29 +4484,31 @@ func _apply_event_to_slot_cover(key: String, event: Dictionary) -> void:
 			var status := str(data.get("status", event.get("status", "")))
 			if not status.is_empty() and status not in state.status_conditions:
 				state.status_conditions.append(status)
+		"status_removed":
+			var removed_status := str(data.get("status", event.get("status", "")))
+			state.status_conditions.erase(removed_status)
 		"cards_discarded":
-			var source := _discard_endpoints_for_event(event).get("source", {}) as Dictionary
-			match str(source.get("attachment_type", "")):
-				"energy":
-					for card_id_value in _event_card_ids(event):
-						state.energy_card_ids.erase(str(card_id_value))
-				"tool":
-					if _event_card_ids(event).is_empty() or state.attached_tool_id in _event_card_ids(event):
-						state.attached_tool_id = ""
+			if phase != "landing":
+				var source := _discard_endpoints_for_event(event).get("source", {}) as Dictionary
+				match str(source.get("attachment_type", "")):
+					"energy":
+						_remove_event_energy_cards(state, event, source)
+					"tool":
+						if _event_card_ids(event).is_empty() or state.attached_tool_id in _event_card_ids(event):
+							state.attached_tool_id = ""
 		"energy_attached":
 			var source := _event_source_endpoint(event)
 			var target := _event_target_endpoint(event)
 			var key_parts := key.split(":")
 			var key_player := int(key_parts[0])
 			var key_slot := str(key_parts[1])
+			if phase != "landing" and int(source.get("player", -99)) == key_player and str(source.get("slot", "")) == key_slot:
+				_remove_event_energy_cards(state, event, source)
 			for card_id_value in _event_card_ids(event):
 				var card_id := str(card_id_value)
 				if (
-					int(source.get("player", -99)) == key_player
-					and str(source.get("slot", "")) == key_slot
-				):
-					state.energy_card_ids.erase(card_id)
-				if (
+					phase != "takeoff"
+					and
 					int(target.get("player", -99)) == key_player
 					and str(target.get("slot", "")) == key_slot
 					and card_id not in state.energy_card_ids
@@ -3959,6 +4536,81 @@ func _apply_event_to_slot_cover(key: String, event: Dictionary) -> void:
 	cover.remember_base_position()
 
 
+func _remove_event_energy_cards(
+	state: PokemonState,
+	event: Dictionary,
+	source: Dictionary,
+) -> void:
+	var card_ids := _event_card_ids(event)
+	var data: Dictionary = event.get("data", {})
+	var raw_indices: Variant = data.get("source_indices", [])
+	var rows: Array[Dictionary] = []
+	for index in range(card_ids.size()):
+		var source_index := int(source.get("index", -1))
+		if raw_indices is Array and index < Array(raw_indices).size():
+			source_index = int(Array(raw_indices)[index])
+		rows.append({"card_id": str(card_ids[index]), "index": source_index})
+	rows.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left.get("index", -1)) > int(right.get("index", -1))
+	)
+	for row in rows:
+		var index := int(row.get("index", -1))
+		var card_id := str(row.get("card_id", ""))
+		if (
+			index >= 0
+			and index < state.energy_card_ids.size()
+			and state.energy_card_ids[index] == card_id
+		):
+			state.energy_card_ids.remove_at(index)
+		else:
+			state.energy_card_ids.erase(card_id)
+
+
+func _sync_slot_snapshot_from_cover(key: String) -> void:
+	# `_presentation_snapshot` starts as the pre-batch board, but later events
+	# must launch from the visual state left by earlier events in the same batch.
+	# In particular, retreat payment must not fly discarded energy a second time,
+	# while an energy attached before a switch must travel with its Pokemon.
+	var state := _presentation_slot_cover_states.get(key) as PokemonState
+	var cover := _valid_card_view(_presentation_slot_covers.get(key))
+	if state == null or cover == null:
+		return
+	var slots: Dictionary = _presentation_snapshot.get("slots", {})
+	var row: Dictionary = Dictionary(slots.get(key, {})).duplicate(true)
+	var attachment_centers: Dictionary = {}
+	for energy_index in range(state.energy_card_ids.size()):
+		var energy_id := str(state.energy_card_ids[energy_index])
+		var energy_center := _effects_local(cover.attachment_anchor_global(
+			"energy",
+			energy_id,
+			energy_index,
+		))
+		if not attachment_centers.has("energy"):
+			attachment_centers["energy"] = energy_center
+		attachment_centers["energy:%s" % energy_id] = energy_center
+		attachment_centers["energy:%d" % energy_index] = energy_center
+		attachment_centers[
+			"energy:%d:%s" % [energy_index, energy_id]
+		] = energy_center
+	if not state.attached_tool_id.is_empty():
+		var tool_center := _effects_local(cover.attachment_anchor_global(
+			"tool",
+			state.attached_tool_id,
+		))
+		attachment_centers["tool"] = tool_center
+		attachment_centers["tool:%s" % state.attached_tool_id] = tool_center
+	row["card_id"] = state.card_id
+	row["center"] = _effects_local(cover.global_center())
+	row["size"] = cover.size
+	row["rotation_degrees"] = cover.rotation_degrees
+	row["empty"] = false
+	row["hidden"] = cover.is_hidden_card
+	row["attachment_centers"] = attachment_centers
+	row["pokemon"] = state.to_dict()
+	slots[key] = row
+	_presentation_snapshot["slots"] = slots
+
+
 func _finish_slot_visual_event(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
 	var event_type := PresentationEvent.canonical_event_type(
@@ -3968,12 +4620,12 @@ func _finish_slot_visual_event(event: Dictionary) -> void:
 		if not _presentation_slot_event_queues.has(key):
 			continue
 		if event_type in [
-			"cards_discarded",
 			"energy_attached",
 			"pokemon_evolved",
 			"tool_attached",
 		]:
-			_apply_event_to_slot_cover(key, event)
+			_apply_event_to_slot_cover(key, event, "landing")
+		_sync_slot_snapshot_from_cover(key)
 		var queue: Array = _presentation_slot_event_queues.get(key, [])
 		queue.erase(event_id)
 		_presentation_slot_event_queues[key] = queue
@@ -4583,7 +5235,14 @@ func _stage_attachment_source_proxies(events: Array[Dictionary]) -> void:
 			var card_id := str(card_ids[index])
 			var exact_source := source.duplicate(true)
 			exact_source["attachment_card_id"] = card_id
-			exact_source["attachment_index"] = index
+			var attachment_index := int(source.get("index", index))
+			var raw_indices: Variant = Dictionary(event.get("data", {})).get(
+				"source_indices",
+				[],
+			)
+			if raw_indices is Array and index < Array(raw_indices).size():
+				attachment_index = int(Array(raw_indices)[index])
+			exact_source["attachment_index"] = attachment_index
 			var base_center := _snapshot_endpoint_center(
 				exact_source,
 				resolve_endpoint_center(exact_source),
@@ -4715,6 +5374,22 @@ func _stage_hand_transition_geometry(previous_snapshot: Dictionary) -> void:
 	_presentation_hand_old_count = snapshot_hand.size()
 	_presentation_hand_final_count = current_views.size()
 	_presentation_hand_stage_count = _presentation_hand_old_count
+	# Establish the snapshot hand's scroll transform before translating saved
+	# global centers back into HandSurface coordinates. Re-centering afterwards
+	# would shift every restored anchor by the old/new overflow delta.
+	var stage_card_size := _current_hand_card_size()
+	var old_plan := BattleTableLayout.own_hand_plan(
+		_presentation_hand_old_count,
+		hand_scroll.size.x,
+		stage_card_size,
+		hand_minimum_spacing,
+		hand_rotation_degrees,
+	)
+	_apply_hand_layout_geometry(old_plan, stage_card_size)
+	var pending_stage_scroll_delta := (
+		float(old_plan.get("center_scroll", 0.0))
+		- float(hand_scroll.scroll_horizontal)
+	)
 	var used: Dictionary = {}
 	var restored := 0
 	for row_value in snapshot_hand:
@@ -4752,6 +5427,7 @@ func _stage_hand_transition_geometry(previous_snapshot: Dictionary) -> void:
 				hand_surface.get_global_transform_with_canvas().affine_inverse()
 				* global_center
 			)
+			hand_center.x += pending_stage_scroll_delta
 			matched.position = hand_center - matched.size * 0.5
 		matched.rotation_degrees = float(row.get(
 			"rotation_degrees", matched.rotation_degrees))
@@ -4762,14 +5438,6 @@ func _stage_hand_transition_geometry(previous_snapshot: Dictionary) -> void:
 	# own all old cards, so the staged geometry must remain active even when zero
 	# real anchors were restored; otherwise the incoming hand is laid out at its
 	# final count before the discard sequence begins.
-	var old_plan := BattleTableLayout.own_hand_plan(
-		_presentation_hand_old_count,
-		hand_scroll.size.x,
-		_current_hand_card_size(),
-		hand_minimum_spacing,
-		hand_rotation_degrees,
-	)
-	hand_surface.custom_minimum_size.x = float(old_plan["surface_width"])
 	_presentation_hand_geometry_staged = true
 
 
@@ -5092,7 +5760,7 @@ func _tween_hand_to_stage_count(
 		hand_minimum_spacing,
 		hand_rotation_degrees,
 	)
-	hand_surface.custom_minimum_size.x = float(plan["surface_width"])
+	_apply_hand_layout_geometry(plan, card_size)
 	var items: Array[Dictionary] = plan["items"]
 	var duration := (
 		duration_override
@@ -5117,6 +5785,7 @@ func _tween_hand_to_stage_count(
 		)
 		if handle != null:
 			handles.append(handle)
+	_apply_hand_interaction_order()
 	return handles
 
 
@@ -5200,6 +5869,12 @@ func _zone_endpoints_for_event(event: Dictionary) -> Array[Dictionary]:
 	match event_type:
 		"cards_drawn":
 			result.append({"player": actor, "zone": "deck"})
+		"cards_revealed":
+			result.append({"player": actor, "zone": "deck"})
+			for row in _reveal_rows(event):
+				var destination := _reveal_destination(row, actor)
+				if not destination.is_empty():
+					result.append(destination)
 		"prize_taken":
 			result.append({"player": actor, "zone": "prizes"})
 		"cards_discarded":
@@ -5325,6 +6000,20 @@ func _apply_presentation_zone_event(event: Dictionary) -> void:
 				-_event_amount(event, _event_card_ids(event)),
 				[],
 			)
+		"cards_revealed":
+			var reveal_source := {"player": actor, "zone": "deck"}
+			for row in _reveal_rows(event):
+				var destination := _reveal_destination(row, actor)
+				if _presentation_zone_key(destination) == _presentation_zone_key(
+					reveal_source,
+				):
+					continue
+				_adjust_presentation_zone(reveal_source, -1, [])
+				_adjust_presentation_zone(
+					destination,
+					1,
+					[str(row.get("card_id", ""))],
+				)
 		"prize_taken":
 			_adjust_presentation_zone(
 				{"player": actor, "zone": "prizes"},
@@ -6048,17 +6737,17 @@ func _clear_presentation_covers() -> void:
 
 
 func _flash_presentation_feedbacks(event_id: String) -> void:
-	var nodes: Array = _presentation_feedbacks.get(event_id, [])
+	# Landing/reveal owns the visible flash while its motion barrier is active.
+	# Keeping a second flash here starts it after the event barrier has already
+	# completed and sequence cleanup truncates it in the same call stack.
 	_presentation_feedbacks.erase(event_id)
-	for node_value in nodes:
-		var view := _valid_card_view(node_value)
-		if view == null:
-			continue
-		view.flash(DesignTokens.GOLD, 0.22)
 
 
 func _on_presentation_event_finished(event: Dictionary) -> void:
 	var event_id := str(event.get("event_id", ""))
+	var event_type := PresentationEvent.canonical_event_type(
+		str(event.get("event_type", "")),
+	)
 	_apply_presentation_zone_event(event)
 	var nodes: Array = _presentation_reveals.get(event_id, [])
 	for node_value in nodes:
@@ -6067,8 +6756,14 @@ func _on_presentation_event_finished(event: Dictionary) -> void:
 	_finish_slot_visual_event(event)
 	_finish_opponent_hand_event(event)
 	_finish_presentation_covers(event_id)
-	_clear_active_flyers()
+	if event_type == "cards_revealed" and reveal_layer != null:
+		reveal_layer.clear()
+	if event_type == "coin_flip" and coin_showcase != null:
+		coin_showcase.clear()
+	_clear_active_flyers_for_event(event_id)
 	_flash_presentation_feedbacks(event_id)
+	_apply_event_to_presentation_hud(event)
+	_active_presentation_event_id = ""
 
 
 func _clear_presentation_masks(reveal: bool) -> void:
@@ -6093,10 +6788,15 @@ func _clear_presentation_masks(reveal: bool) -> void:
 	_presentation_hand_target_cursor.clear()
 	_presentation_hand_removed_counts.clear()
 	_presentation_zone_states.clear()
+	_presentation_hud_state = null
+	_presentation_actions_suppressed = false
+	_active_presentation_event_id = ""
 	if state_ref != null:
 		_refresh_field()
 		_refresh_header()
 		_refresh_log()
+		_refresh_actions()
+		_refresh_target_hints()
 		_layout_hand(_current_hand_card_size())
 
 
@@ -6234,6 +6934,16 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	var target := _event_target_endpoint(event)
 	var event_type := str(event.get("event_type", ""))
 	var actor := int(event.get("actor", view_player))
+	if event_type == "pokemon_ko":
+		if bool(data.get("defer_leave_play", false)):
+			_finish_event_motion_dispatch(motion_event_id)
+			return
+		for key in _slot_visual_keys_for_event(event):
+			_release_slot_state_cover(key)
+	if event_type == "coin_flip":
+		_spawn_coin_motion(event, motion_event_id, actor)
+		_finish_event_motion_dispatch(motion_event_id)
+		return
 	var card_ids: Array = data.get("card_ids", data.get("cards", []))
 	var event_card_id := str(event.get("card_id", data.get("card_id", "")))
 	if card_ids.is_empty() and not event_card_id.is_empty():
@@ -6272,6 +6982,15 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			"zone": "deck",
 		}
 		target = source.duplicate(true)
+	elif event_type == "cards_revealed":
+		source = {
+			"player": int(data.get("player", actor)),
+			"zone": "deck",
+		}
+		target = source.duplicate(true)
+		_spawn_reveal_motion(event, duration, motion_event_id)
+		_finish_event_motion_dispatch(motion_event_id)
+		return
 	var staged_source_proxies: Array[Control] = []
 	if (
 		str(source.get("zone", "")) == "hand"
@@ -6288,7 +7007,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		"source": source,
 		"target": target,
 	}, true), duration)
-	if AppSettings.reduced_motion:
+	if _settings_reduced_motion():
 		for proxy in staged_source_proxies:
 			_dispose_snapshot_hand_source(proxy)
 		for proxy in staged_attachment_proxies:
@@ -6467,6 +7186,20 @@ func _register_event_motion(
 	flying.set_meta("motion_handle", handle)
 
 
+func _register_event_motion_handle(event_id: String, handle: MotionHandle) -> void:
+	if (
+		event_id.is_empty()
+		or handle == null
+		or handle.is_finished()
+		or not _event_motion_completions.has(event_id)
+	):
+		return
+	var row: Dictionary = _event_motion_completions.get(event_id, {})
+	var group := row.get("group") as MotionGroup
+	if group != null:
+		group.add(handle)
+
+
 func _finish_event_motion_dispatch(event_id: String) -> void:
 	if event_id.is_empty() or not _event_motion_completions.has(event_id):
 		return
@@ -6510,13 +7243,47 @@ func _event_card_ids(event: Dictionary) -> Array:
 		raw_cards = raw_value
 	var result: Array = []
 	for value in raw_cards:
-		var card_id := str(value)
+		var card_id := (
+			str(Dictionary(value).get("card_id", ""))
+			if value is Dictionary
+			else str(value)
+		)
 		if not card_id.is_empty():
 			result.append(card_id)
 	var event_card_id := str(event.get("card_id", data.get("card_id", "")))
 	if result.is_empty() and not event_card_id.is_empty():
 		result.append(event_card_id)
 	return result
+
+
+func _reveal_rows(event: Dictionary) -> Array[Dictionary]:
+	var data: Dictionary = event.get("data", {})
+	var raw_value: Variant = data.get("cards", [])
+	var result: Array[Dictionary] = []
+	if not raw_value is Array:
+		return result
+	for value in Array(raw_value):
+		if not value is Dictionary:
+			continue
+		var row := Dictionary(value).duplicate(true)
+		if str(row.get("card_id", "")).is_empty():
+			continue
+		result.append(row)
+	return result
+
+
+func _reveal_destination(row: Dictionary, fallback_player: int) -> Dictionary:
+	var destination_value: Variant = row.get("destination", {})
+	var destination := (
+		Dictionary(destination_value).duplicate(true)
+		if destination_value is Dictionary
+		else {}
+	)
+	if int(destination.get("player", -1)) < 0:
+		destination["player"] = fallback_player
+	if str(destination.get("zone", "")).is_empty():
+		destination["zone"] = "deck"
+	return destination
 
 
 func _event_amount(event: Dictionary, card_ids: Array) -> int:
@@ -6793,7 +7560,11 @@ func _slot_component_endpoint(
 	elif card_id in Array(pokemon_data.get("energy_card_ids", [])):
 		result["attachment_type"] = "energy"
 		result["attachment_card_id"] = card_id
-		result["attachment_index"] = component_index
+		var energy_start := 1 + Array(pokemon_data.get("evolution_stack_ids", [])).size()
+		if not str(pokemon_data.get("attached_tool_id", "")).is_empty():
+			energy_start += 1
+		var energy_index := component_index - energy_start
+		result["attachment_index"] = energy_index if energy_index >= 0 else 0
 	return result
 
 
@@ -6930,6 +7701,15 @@ func _snapshot_endpoint_center(endpoint: Dictionary, fallback: Vector2) -> Vecto
 					if not attachment_card_id.is_empty()
 					else attachment_type
 				)
+				var attachment_index := int(endpoint.get("attachment_index", -1))
+				if attachment_index >= 0:
+					var indexed_key := (
+						"%s:%d:%s" % [attachment_type, attachment_index, attachment_card_id]
+						if not attachment_card_id.is_empty()
+						else "%s:%d" % [attachment_type, attachment_index]
+					)
+					if attachment_centers.has(indexed_key):
+						return _vector_or_default(attachment_centers.get(indexed_key), fallback)
 				if attachment_centers.has(attachment_key):
 					return _vector_or_default(
 						attachment_centers.get(attachment_key),
@@ -7209,12 +7989,24 @@ func _stack_visual_step(direction: String, depth: float) -> Vector2:
 func _texture_for_card_id(card_id: String) -> Texture2D:
 	var texture_path := "res://assets/cards/card_back.webp"
 	if not card_id.is_empty():
-		texture_path = str(CardDatabase.get_card(card_id).get("image_path", ""))
+		texture_path = str(catalog.get_card(card_id).get("image_path", ""))
 		if texture_path.is_empty():
 			texture_path = "res://assets/cards/card_back.webp"
-	var texture := CardTextureCache.get_texture(texture_path)
+	var texture_cache := _autoload_node("CardTextureCache")
+	var texture := (
+		texture_cache.call("get_texture", texture_path) as Texture2D
+		if texture_cache != null
+		else load(texture_path) as Texture2D
+	)
 	if texture == null and texture_path != "res://assets/cards/card_back.webp":
-		texture = CardTextureCache.get_texture("res://assets/cards/card_back.webp")
+		texture = (
+			texture_cache.call(
+				"get_texture",
+				"res://assets/cards/card_back.webp",
+			) as Texture2D
+			if texture_cache != null
+			else load("res://assets/cards/card_back.webp") as Texture2D
+		)
 	return texture
 
 
@@ -7311,10 +8103,57 @@ func _spawn_slot_transition(
 			finish_view.size,
 			start_rotation,
 			finish_view.rotation_degrees,
-			finish_view,
+			null,
 			null,
 			motion_event_id,
 		)
+		var pokemon_data: Dictionary = snapshot_row.get("pokemon", {})
+		var attachment_rows: Array[Dictionary] = []
+		var energy_ids: Array = pokemon_data.get("energy_card_ids", [])
+		for energy_index in range(energy_ids.size()):
+			attachment_rows.append({
+				"type": "energy",
+				"card_id": str(energy_ids[energy_index]),
+				"index": energy_index,
+			})
+		var tool_id := str(pokemon_data.get("attached_tool_id", ""))
+		if not tool_id.is_empty():
+			attachment_rows.append({"type": "tool", "card_id": tool_id, "index": -1})
+		for attachment in attachment_rows:
+			if _active_flyers.size() >= _max_active_flyers():
+				break
+			var attachment_type := str(attachment.get("type", ""))
+			var attachment_id := str(attachment.get("card_id", ""))
+			var attachment_index := int(attachment.get("index", -1))
+			var attachment_texture := _texture_for_card_id(attachment_id)
+			if attachment_texture == null:
+				continue
+			var exact_source := {
+				"player": player,
+				"slot": from_slot,
+				"attachment_type": attachment_type,
+				"attachment_card_id": attachment_id,
+				"attachment_index": attachment_index,
+			}
+			var attachment_start := _snapshot_endpoint_center(exact_source, _vector_or_default(snapshot_row.get("center"), finish))
+			var attachment_finish := _effects_local(finish_view.attachment_anchor_global(attachment_type, attachment_id, attachment_index))
+			var attachment_size := _attachment_motion_size(start_size, PAPER_CARD_BASE_SIZE * 0.52)
+			_spawn_flying_card(
+				attachment_texture,
+				attachment_start,
+				attachment_finish,
+				float(timing.get("duration", 0.0)),
+				float(timing.get("delay", 0.0)) + 0.018 * float(attachment_index + 1),
+				event_type,
+				index + attachment_index + 1,
+				attachment_size,
+				attachment_size,
+				start_rotation,
+				finish_view.rotation_degrees,
+				null,
+				null,
+				motion_event_id,
+			)
 		spawned = true
 		index += 1
 	return spawned
@@ -7535,7 +8374,7 @@ func _resize_paper_card_token(card: Control, size_value: Vector2) -> void:
 func _max_active_flyers() -> int:
 	return (
 		MAX_ACTIVE_FLYERS_LOW
-		if AppSettings.resolved_quality_profile() == "low"
+		if _settings_quality_profile() == "low"
 		else MAX_ACTIVE_FLYERS_HIGH
 	)
 
@@ -7557,13 +8396,128 @@ func _motion_depth_for_point(point: Vector2) -> float:
 
 
 func _shuffle_card_count() -> int:
-	return int(SHUFFLE_CARD_LIMITS.get(AppSettings.resolved_quality_profile(), 5))
+	return int(SHUFFLE_CARD_LIMITS.get(_settings_quality_profile(), 5))
+
+
+func _spawn_coin_motion(
+	event: Dictionary,
+	motion_event_id: String,
+	actor: int,
+) -> bool:
+	if coin_showcase == null:
+		return false
+	var data: Dictionary = event.get("data", {})
+	var raw_results: Variant = data.get("results", [])
+	if not raw_results is Array or Array(raw_results).is_empty():
+		return false
+	var results: Array = []
+	for value in Array(raw_results):
+		results.append(bool(value))
+	_layout_coin_showcase()
+	coin_showcase.visible = true
+	var title := "你掷硬币" if actor == view_player else "对手掷硬币"
+	if str(data.get("purpose", "")) == "setup_first_player":
+		var first_player := int(data.get("first_player", -1))
+		if game_mode == "local":
+			title = "决定先攻 · 玩家 %d 先攻" % (first_player + 1)
+		else:
+			title = (
+				"决定先攻 · 你先攻"
+				if first_player == view_player
+				else "决定先攻 · 对手先攻"
+			)
+	var handle := coin_showcase.play(results, false, title)
+	_register_event_motion_handle(motion_event_id, handle)
+	return true
+
+
+func _on_coin_showcase_audio_requested(cue: String) -> void:
+	if director != null:
+		director.audio_requested.emit(cue)
+
+
+func _spawn_reveal_motion(
+	event: Dictionary,
+	duration: float,
+	motion_event_id: String = "",
+) -> bool:
+	if reveal_layer == null or effects == null:
+		return false
+	var rows := _reveal_rows(event)
+	var actor := int(event.get(
+		"actor",
+		Dictionary(event.get("data", {})).get("player", view_player),
+	))
+	var deck_endpoint := {"player": actor, "zone": "deck"}
+	var deck_origin := _snapshot_endpoint_center(
+		deck_endpoint,
+		resolve_endpoint_center(deck_endpoint),
+	)
+	var card_back := _texture_for_card_id("")
+	if card_back == null and not rows.is_empty():
+		return false
+	var face_textures: Array[Texture2D] = []
+	var destination_points: Array[Vector2] = []
+	for row in rows:
+		face_textures.append(_texture_for_card_id(str(row.get("card_id", ""))))
+		var destination := _reveal_destination(row, actor)
+		destination_points.append(_snapshot_endpoint_center(
+			destination,
+			resolve_endpoint_center(destination),
+		))
+	var data: Dictionary = event.get("data", {})
+	var summary_value: Variant = data.get("summary", {})
+	var summary := (
+		Dictionary(summary_value).duplicate(true)
+		if summary_value is Dictionary
+		else {}
+	)
+	var handle := reveal_layer.present(
+		rows,
+		card_back,
+		face_textures,
+		deck_origin,
+		destination_points,
+		_reveal_content_rect(),
+		summary,
+		duration,
+		MotionPolicy.reduced(),
+	)
+	_register_event_motion_handle(motion_event_id, handle)
+	return true
+
+
+func _reveal_content_rect() -> Rect2:
+	if effects == null:
+		return Rect2()
+	var fallback_size := effects.size
+	if fallback_size.x <= 1.0 or fallback_size.y <= 1.0:
+		fallback_size = size
+	if fallback_size.x <= 1.0 or fallback_size.y <= 1.0:
+		fallback_size = Vector2(1280.0, 720.0)
+	if board_panel == null or board_panel.size.x <= 1.0 or board_panel.size.y <= 1.0:
+		return Rect2(Vector2.ZERO, fallback_size)
+	var global_rect := board_panel.get_global_rect()
+	var first := _effects_local(global_rect.position)
+	var second := _effects_local(global_rect.end)
+	var rect_position := Vector2(
+		minf(first.x, second.x),
+		minf(first.y, second.y),
+	)
+	var resolved_size := Vector2(
+		absf(second.x - first.x),
+		absf(second.y - first.y),
+	)
+	if resolved_size.x <= 1.0 or resolved_size.y <= 1.0:
+		return Rect2(Vector2.ZERO, fallback_size)
+	return Rect2(rect_position, resolved_size)
 
 
 func _spawn_shuffle_motion(
 	endpoint: Dictionary,
 	duration: float,
 	motion_event_id: String = "",
+	startup: bool = false,
 ) -> bool:
 	if effects == null:
 		return false
@@ -7573,58 +8527,92 @@ func _spawn_shuffle_motion(
 	var count := _shuffle_card_count()
 	if count <= 0:
 		return false
+	var source_zone := _zone_view_for_endpoint(endpoint)
 	var origin := _snapshot_endpoint_center(endpoint, resolve_endpoint_center(endpoint))
+	var card_size := _snapshot_endpoint_size(
+		endpoint,
+		_current_endpoint_size(endpoint, _flying_card_size("deck_shuffled")),
+	)
+	var pile_extent := Vector2.ZERO
+	if source_zone != null:
+		var zone_transform := source_zone.get_global_transform_with_canvas()
+		var extent_origin := _effects_local(zone_transform * Vector2.ZERO)
+		pile_extent = (
+			_effects_local(zone_transform * source_zone.get_stack_visual_extent())
+			- extent_origin
+		)
 	var playable_duration := maxf(0.0, duration - FLYING_CARD_FINISH_PAD)
 	if playable_duration < MIN_FLYING_CARD_DURATION:
 		_landing_burst(origin, "deck_shuffled")
 		return true
-	var max_delay := minf(playable_duration * 0.24, 0.032 * float(maxi(0, count - 1)))
-	var delay_step := max_delay / float(maxi(1, count - 1))
 	var spawned := false
 	for index in range(count):
 		_prune_flyers()
-		while _active_flyers.size() >= _max_active_flyers():
+		while not startup and _active_flyers.size() >= _max_active_flyers():
 			var oldest: Control = _active_flyers.pop_front()
 			_dispose_flyer(oldest)
-		var delay := float(index) * delay_step
-		var motion_duration := playable_duration - delay
-		if motion_duration < MIN_FLYING_CARD_DURATION:
-			continue
-		var start: Vector2 = origin + _zone_motion_offset(endpoint, index, count, true) * 0.55
+		# Replace the visible pile one-for-one while it is being shuffled.  The
+		# highest-z proxy begins on the physical top card, while lower proxies span
+		# the pile's actual drawn paper depth.  This avoids a second, floating pack
+		# appearing over an unchanged deck ZoneView.
+		var depth_ratio := (
+			1.0 - float(index) / float(count - 1)
+			if count > 1
+			else 0.0
+		)
+		var start: Vector2 = origin + pile_extent * depth_ratio
 		var side: float = -1.0 if index % 2 == 0 else 1.0
 		var row: float = floor(float(index) * 0.5)
-		var split: Vector2 = origin + Vector2(
-			side * (38.0 + row * 9.0),
-			(float(index) - float(count - 1) * 0.5) * 5.0,
+		var pile_count := ceili(float(count) * 0.5)
+		var split: Vector2 = start + Vector2(
+			side * (card_size.x * 0.34 + row * 2.4),
+			(row - float(pile_count - 1) * 0.5) * 2.8,
 		)
-		var finish: Vector2 = origin + _zone_motion_offset(endpoint, count - index - 1, count, false) * 0.32
-		var spin: float = side * (9.0 + row * 2.0)
+		var riffle: Vector2 = origin + Vector2(
+			(float(index) - float(count - 1) * 0.5) * 1.8,
+			absf(float(index) - float(count - 1) * 0.5) * 0.9,
+		)
+		var finish: Vector2 = origin + pile_extent * depth_ratio
 		var flyer := _create_paper_card_token(
 			texture,
-			_flying_card_size("deck_shuffled"),
+			card_size,
 			"CardMotionEntity",
 			110 + index,
 			_motion_depth_for_point(origin),
 		)
 		flyer.set_meta("shuffle_card", true)
+		flyer.set_meta("startup_shuffle", startup)
+		flyer.set_meta("shuffle_from_physical_pile", source_zone != null)
+		flyer.set_meta("shuffle_source_center", origin)
+		flyer.set_meta("shuffle_source_extent", pile_extent)
+		flyer.set_meta("shuffle_source_zone", source_zone)
 		flyer.set_meta("card_motion_entity", true)
 		flyer.set_meta("motion_start", start)
 		flyer.set_meta("motion_finish", finish)
 		flyer.position = start - flyer.size * 0.5
-		flyer.rotation_degrees = -spin * 0.22
+		flyer.rotation_degrees = side * -1.5
 		flyer.modulate.a = 1.0
 		card_motion_layer.add(flyer)
+		_retain_shuffle_source_zone(source_zone, flyer)
 		var tween := create_tween()
-		if delay > 0.0:
-			tween.tween_interval(delay)
 		card_motion_layer.bind_tween(flyer, tween)
 		tween.tween_method(
-			_update_shuffle_card.bind(flyer, start, split, finish, spin),
+			_update_shuffle_card.bind(
+				flyer,
+				start,
+				split,
+				riffle,
+				finish,
+				side,
+				int(row),
+				index,
+				count,
+			),
 			0.0,
 			1.0,
-			motion_duration,
-		).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-		tween.tween_callback(_finish_flyer.bind(flyer, origin, "deck_shuffled"))
+			playable_duration,
+		).set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN_OUT)
+		tween.tween_callback(_finish_shuffle_card.bind(flyer, finish))
 		_register_event_motion(flyer, motion_event_id, tween)
 		spawned = true
 	return spawned
@@ -7635,26 +8623,145 @@ func _update_shuffle_card(
 	flying_value: Variant,
 	start: Vector2,
 	split: Vector2,
+	riffle: Vector2,
 	finish: Vector2,
-	spin: float,
+	side: float,
+	pile_index: int,
+	index: int,
+	count: int,
 ) -> void:
 	if not is_instance_valid(flying_value):
 		return
 	var flying := flying_value as Control
 	if flying == null:
 		return
-	var point := Vector2.ZERO
-	if progress < 0.48:
-		var outward := sin((progress / 0.48) * PI * 0.5)
-		point = start.lerp(split, outward)
+	var normalized := clampf(progress, 0.0, 1.0)
+	var point := finish
+	var rotation_value := 0.0
+	var scale_value := Vector2.ONE
+	if normalized < 0.24:
+		var split_progress := _shuffle_ease_in_out_cubic(normalized / 0.24)
+		point = start.lerp(split, split_progress)
+		rotation_value = lerpf(side * -1.5, side * 7.0, split_progress)
+	elif normalized < 0.58:
+		# Each half releases from its inside edge in a short alternating cascade.
+		var pile_count := ceili(float(count) * 0.5)
+		var release_offset := (
+			float(pile_index) / float(maxi(1, pile_count - 1)) * 0.11
+		)
+		var riffle_progress := clampf(
+			(normalized - 0.24 - release_offset) / (0.34 - release_offset),
+			0.0,
+			1.0,
+		)
+		riffle_progress = _shuffle_ease_out_cubic(riffle_progress)
+		point = split.lerp(riffle, riffle_progress)
+		rotation_value = lerpf(side * 7.0, side * 1.2, riffle_progress)
+		scale_value = Vector2(
+			1.0 + sin(riffle_progress * PI) * 0.025,
+			1.0 - sin(riffle_progress * PI) * 0.035,
+		)
+	elif normalized < 0.82:
+		# The interleaved packet arches and settles like a light bridge shuffle.
+		var bridge_progress := _shuffle_ease_in_out_cubic((normalized - 0.58) / 0.24)
+		point = riffle.lerp(finish, bridge_progress)
+		var center_distance := absf(float(index) - float(count - 1) * 0.5)
+		point.y -= sin(bridge_progress * PI) * (10.0 + center_distance * 1.2)
+		rotation_value = lerpf(side * 1.2, 0.0, bridge_progress)
+		scale_value = Vector2(
+			1.0 + sin(bridge_progress * PI) * 0.045,
+			1.0 - sin(bridge_progress * PI) * 0.055,
+		)
 	else:
-		var inward := (progress - 0.48) / 0.52
-		inward = 1.0 - pow(1.0 - inward, 2.0)
-		point = split.lerp(finish, inward)
+		# Finish with one compact cut: the upper packet slides out and returns.
+		var cut_progress := clampf((normalized - 0.82) / 0.18, 0.0, 1.0)
+		var upper_packet := index >= int(floor(float(count) * 0.5))
+		var cut_offset := Vector2(
+			24.0 if upper_packet else -7.0,
+			-8.0 if upper_packet else 3.0,
+		) * sin(cut_progress * PI)
+		point = finish + cut_offset
+		rotation_value = (4.0 if upper_packet else -1.5) * sin(cut_progress * PI)
 	flying.position = point - flying.size * 0.5
-	flying.rotation_degrees = lerpf(-spin * 0.35, spin, sin(progress * PI))
-	flying.scale = Vector2.ONE * (1.0 + sin(progress * PI) * 0.08)
+	flying.rotation_degrees = rotation_value
+	flying.scale = scale_value
 	flying.modulate.a = 1.0
+
+
+func _shuffle_ease_out_cubic(value: float) -> float:
+	return 1.0 - pow(1.0 - clampf(value, 0.0, 1.0), 3.0)
+
+
+func _shuffle_ease_in_out_cubic(value: float) -> float:
+	var t := clampf(value, 0.0, 1.0)
+	if t < 0.5:
+		return 4.0 * t * t * t
+	return 1.0 - pow(-2.0 * t + 2.0, 3.0) * 0.5
+
+
+func _finish_shuffle_card(
+	flying_value: Variant,
+	finish: Vector2,
+) -> void:
+	if not is_instance_valid(flying_value):
+		return
+	var flying := flying_value as Control
+	if flying == null:
+		return
+	_flyer_tweens.erase(flying.get_instance_id())
+	flying.set_meta("motion_completed", true)
+	flying.position = finish - flying.size * 0.5
+	flying.rotation_degrees = 0.0
+	flying.scale = Vector2.ONE
+	# Hand the visual back to the real deck pile as soon as every proxy has
+	# returned.  The proxy stays alive (but hidden) until its MotionHandle has
+	# completed, preserving the presentation barrier without a duplicate pile.
+	_release_shuffle_source_zone(flying)
+	flying.visible = false
+	flying.modulate.a = 0.0
+
+
+func _retain_shuffle_source_zone(zone: ZoneView, flying: Control) -> void:
+	if zone == null or flying == null or not is_instance_valid(zone):
+		return
+	var instance_id := zone.get_instance_id()
+	var row: Dictionary = _shuffle_source_masks.get(instance_id, {
+		"zone": zone,
+		"count": 0,
+	})
+	row["zone"] = zone
+	row["count"] = int(row.get("count", 0)) + 1
+	_shuffle_source_masks[instance_id] = row
+	flying.set_meta("shuffle_source_zone_id", instance_id)
+	zone.set_stack_presentation_hidden(true)
+
+
+func _release_shuffle_source_zone(flying: Control) -> void:
+	if flying == null or not flying.has_meta("shuffle_source_zone_id"):
+		return
+	var instance_id := int(flying.get_meta("shuffle_source_zone_id", 0))
+	flying.remove_meta("shuffle_source_zone_id")
+	var row: Dictionary = _shuffle_source_masks.get(instance_id, {})
+	if row.is_empty():
+		return
+	var remaining := maxi(0, int(row.get("count", 0)) - 1)
+	var zone := row.get("zone") as ZoneView
+	if remaining > 0:
+		row["count"] = remaining
+		_shuffle_source_masks[instance_id] = row
+		return
+	_shuffle_source_masks.erase(instance_id)
+	if zone != null and is_instance_valid(zone):
+		zone.set_stack_presentation_hidden(false)
+
+
+func _clear_shuffle_source_masks() -> void:
+	for row_value in _shuffle_source_masks.values():
+		var row: Dictionary = row_value
+		var zone := row.get("zone") as ZoneView
+		if zone != null and is_instance_valid(zone):
+			zone.set_stack_presentation_hidden(false)
+	_shuffle_source_masks.clear()
 
 
 func _spawn_flying_card(
@@ -7801,7 +8908,7 @@ func _spawn_flying_card(
 		var landing_wait := (
 			MotionPolicy.duration("draw_landing")
 			if event_type in ["cards_drawn", "prize_taken"]
-			else 0.14
+			else 0.22
 		)
 		var landing_feedback: Dictionary = _presentation_landing_feedbacks.get(
 			motion_event_id,
@@ -7982,20 +9089,38 @@ func _clear_active_flyers() -> void:
 	_flyer_tweens.clear()
 	for flyer in _active_flyers.duplicate():
 		if is_instance_valid(flyer):
+			_release_shuffle_source_zone(flyer)
 			_complete_event_motion_entity(flyer)
 			flyer.visible = false
 			flyer.modulate.a = 0.0
 			flyer.free()
 	_active_flyers.clear()
+	_clear_shuffle_source_masks()
 	_clear_effect_child_controls(["CardMotionEntity", "FlyingCard"])
 	_finish_all_event_motions()
+
+
+func _clear_active_flyers_for_event(event_id: String) -> void:
+	if event_id.is_empty():
+		return
+	for flyer in _active_flyers.duplicate():
+		if (
+			is_instance_valid(flyer)
+			and str(flyer.get_meta("motion_event_id", "")) == event_id
+		):
+			_dispose_flyer(flyer)
 
 
 func _clear_transient_visuals() -> void:
 	if camera_rig != null:
 		camera_rig.cancel()
+	_cancel_startup_shuffle()
 	_clear_presentation_masks(true)
 	_clear_active_flyers()
+	if reveal_layer != null:
+		reveal_layer.clear()
+	if coin_showcase != null:
+		coin_showcase.clear()
 	if effects:
 		effects.clear_transients()
 	if world_feedback:
@@ -8010,6 +9135,7 @@ func _dispose_flyer(flying: Control) -> void:
 	if not is_instance_valid(flying):
 		return
 	_cancel_hand_layout_motion(flying)
+	_release_shuffle_source_zone(flying)
 	_complete_event_motion_entity(flying)
 	var tween := _flyer_tweens.get(flying.get_instance_id()) as Tween
 	if tween and tween.is_valid():
@@ -8031,6 +9157,10 @@ func _clear_effect_child_controls(prefixes: Array = []) -> void:
 		var control := child as Control
 		if control == null or not is_instance_valid(control):
 			continue
+		# RevealLayer is a reusable presentation executor, not one of the
+		# short-lived entities it owns.
+		if control == reveal_layer:
+			continue
 		var name_value := str(control.name)
 		var kind_value := str(control.get_meta("battle_transient_kind", ""))
 		if (
@@ -8048,6 +9178,7 @@ func _clear_effect_child_controls(prefixes: Array = []) -> void:
 			should_clear = true
 		if not should_clear:
 			continue
+		_release_shuffle_source_zone(control)
 		_complete_event_motion_entity(control)
 		var instance_id := control.get_instance_id()
 		var flyer_tween := _flyer_tweens.get(instance_id) as Tween
@@ -8070,7 +9201,7 @@ func _on_camera_impulse_requested(strength: float, duration: float) -> void:
 		var handle := camera_rig.impulse(
 			strength,
 			duration,
-			AppSettings.reduced_motion,
+			_settings_reduced_motion(),
 		)
 		director.register_feedback_motion(handle)
 

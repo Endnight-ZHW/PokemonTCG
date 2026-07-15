@@ -8,7 +8,10 @@ const DECK_SELECT_SCENE := preload("res://scenes/decks/deck_select_page.tscn")
 const NETWORK_LOBBY_SCENE := preload("res://scenes/network/network_lobby_page.tscn")
 const SETTINGS_PANEL_SCENE := preload("res://ui/dialogs/settings_panel.tscn")
 const CHOICE_PANEL_SCENE := preload("res://ui/dialogs/choice_panel.tscn")
+const COIN_SHOWCASE := preload("res://scenes/battle/components/coin_showcase.gd")
 const PRIVACY_PANEL_SCENE := preload("res://ui/dialogs/privacy_panel.tscn")
+const COIN_PRESENTATION_TOMBSTONE_TTL_MSEC := 120000
+const COIN_PRESENTATION_TOMBSTONE_LIMIT := 64
 const PAUSE_PANEL_SCENE := preload("res://ui/dialogs/pause_panel.tscn")
 const HELP_PANEL_SCENE := preload("res://ui/panels/help_panel.tscn")
 const CARD_INSPECTOR_PANEL_SCENE := preload("res://ui/panels/card_inspector_panel.tscn")
@@ -53,6 +56,7 @@ var deep_runtime := DeepAIRuntime.new()
 var network_controller := NetworkMatchController.new(catalog)
 var network_legal_actions: Array[GameAction] = []
 var network_choice_request: ChoiceRequest
+var network_wait_context: Dictionary = {}
 var network_kind := "lan"
 var network_player_idx := -1
 
@@ -68,6 +72,7 @@ var loading_layer: Control
 var loading_label: Label
 var shell_animations: AnimationPlayer
 var lifecycle_network_interrupted := false
+var _network_recovery_phase := ""
 var screen_router: ScreenRouter
 var modal_host_controller: ModalHost
 var current_network_page: NetworkLobbyPage
@@ -99,6 +104,8 @@ var _toast_generation := 0
 var _deep_start_generation := 0
 var _presented_coin_request_ids: Dictionary = {}
 var _pending_ai_resume_revision := -1
+var _startup_choreography_generation := 0
+var _startup_choreography_running := false
 
 
 func _ready() -> void:
@@ -429,6 +436,7 @@ func _poll_network() -> void:
 						int(event.get("player_idx", network_player_idx)),
 						str(event.get("origin_action_id", "")),
 						str(event.get("origin_request_id", "")),
+						bool(event.get("is_resync", false)),
 					)
 				else:
 					_show_toast("收到的联机局面无效，正在请求重新同步。", true)
@@ -463,10 +471,25 @@ func _poll_network() -> void:
 				# events may still be recoverable and keep their existing session.
 				if event_type in ["connection_failed", "transport_error"]:
 					_stop_network()
+			"reconnecting":
+				_network_recovery_phase = "reconnecting"
+				if current_screen == SCREEN_GAME and battle_screen != null:
+					battle_screen.cancel_presentations("network_reconnecting")
+					battle_screen.set_recovery_blocked(true)
+					_refresh_game()
+				_show_toast("连接中断，正在尝试恢复对局…", true)
+			"reconnected":
+				_network_recovery_phase = "resync"
+				if current_screen == SCREEN_GAME and battle_screen != null:
+					battle_screen.set_recovery_blocked(true)
+					_refresh_game()
+				_show_toast("连接已恢复，正在同步局面…")
 			"disconnected":
 				_handle_network_disconnected(str(event.get("reason", "")))
 			"pending_timeout":
-				_presented_coin_request_ids.clear()
+				# Preserve the request tombstone until the matching recovery state or
+				# error arrives; otherwise its public coin event is played twice.
+				_prune_coin_presentation_tombstones()
 				_show_toast("动作确认超时，正在重新同步局面。", true)
 				if battle_screen:
 					battle_screen.clear_pending_drag("network_timeout")
@@ -521,6 +544,7 @@ func _apply_network_view(
 	player: int,
 	origin_action_id: String = "",
 	origin_request_id: String = "",
+	is_resync: bool = false,
 ) -> void:
 	if view.is_empty() or not _network_view_is_valid(view):
 		_show_toast("收到的联机局面无效，正在请求重新同步。", true)
@@ -532,6 +556,7 @@ func _apply_network_view(
 	current_view_player = player
 	var state_payload: Dictionary = view["state"]
 	state = StateSerializer.from_player_view(state_payload, player)
+	var incoming_presentation_events: Array = view.get("presentation_events", [])
 	network_legal_actions.clear()
 	var legal_rows: Array = view.get("legal_actions", [])
 	for row in legal_rows:
@@ -542,14 +567,35 @@ func _apply_network_view(
 		if view.get("choice_request") is Dictionary
 		else null
 	)
+	network_wait_context = (
+		Dictionary(view["wait_context"]).duplicate(true)
+		if view.get("wait_context") is Dictionary
+		else {}
+	)
 	if current_screen != SCREEN_GAME and current_screen != SCREEN_END:
 		_build_game_screen()
-		call_deferred("_continue_after_network_transition")
+		if _network_view_is_fresh_match_start():
+			_begin_startup_choreography(
+				Callable(self, "_continue_after_network_transition"),
+				incoming_presentation_events,
+			)
+		else:
+			_continue_after_network_transition()
 	elif had_game_screen and battle_screen:
-		var presentation_events: Array = view.get("presentation_events", [])
+		var presentation_events: Array = incoming_presentation_events
+		_prune_coin_presentation_tombstones()
 		if _presented_coin_request_ids.has(origin_request_id):
 			presentation_events = _without_coin_flip_events(presentation_events)
 			_presented_coin_request_ids.erase(origin_request_id)
+		if is_resync:
+			_network_recovery_phase = ""
+			battle_screen.set_recovery_blocked(false)
+			battle_screen.snap_to_authoritative_view(
+				_capture_battle_view_model(),
+				"resync",
+			)
+			_continue_after_network_transition()
+			return
 		var drag_session_id := battle_screen.drag_session_id_for_origin(
 			origin_action_id)
 		var handle := _submit_battle_transition(
@@ -570,8 +616,8 @@ func _apply_network_view(
 func _continue_after_network_transition() -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
+	_refresh_game()
 	if state.winner >= 0:
-		_refresh_game()
 		return
 	if (
 		network_choice_request != null
@@ -583,6 +629,18 @@ func _continue_after_network_transition() -> void:
 		_show_choice_overlay(network_choice_request)
 
 
+func _network_view_is_fresh_match_start() -> bool:
+	return (
+		state != null
+		and state.phase == "SETUP"
+		and state.turn_number == 1
+		and state.revision == 0
+		and state.setup_ready.size() >= 2
+		and not state.setup_ready[0]
+		and not state.setup_ready[1]
+	)
+
+
 func _network_view_is_valid(view: Dictionary) -> bool:
 	return bool(ProtocolV3.validate_payload(
 		ProtocolV3.STATE_UPDATE,
@@ -590,10 +648,42 @@ func _network_view_is_valid(view: Dictionary) -> bool:
 	).get("ok", false))
 
 
+func _remember_coin_presentation_tombstone(request_id: String) -> void:
+	if request_id.is_empty():
+		return
+	_prune_coin_presentation_tombstones()
+	_presented_coin_request_ids[request_id] = Time.get_ticks_msec()
+	if _presented_coin_request_ids.size() <= COIN_PRESENTATION_TOMBSTONE_LIMIT:
+		return
+	var rows: Array[Dictionary] = []
+	for key_value in _presented_coin_request_ids.keys():
+		var key := str(key_value)
+		rows.append({
+			"request_id": key,
+			"created_msec": int(_presented_coin_request_ids.get(key, 0)),
+		})
+	rows.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left.get("created_msec", 0)) < int(right.get("created_msec", 0))
+	)
+	while rows.size() > COIN_PRESENTATION_TOMBSTONE_LIMIT:
+		_presented_coin_request_ids.erase(str(rows.pop_front().get("request_id", "")))
+
+
+func _prune_coin_presentation_tombstones() -> void:
+	var now := Time.get_ticks_msec()
+	for key_value in _presented_coin_request_ids.keys():
+		var key := str(key_value)
+		var created := int(_presented_coin_request_ids.get(key, now))
+		if now - created > COIN_PRESENTATION_TOMBSTONE_TTL_MSEC:
+			_presented_coin_request_ids.erase(key)
+
+
 func _stop_network() -> void:
 	network_controller.close()
+	_network_recovery_phase = ""
 	network_legal_actions.clear()
 	network_choice_request = null
+	network_wait_context.clear()
 	network_player_idx = -1
 	_presented_coin_request_ids.clear()
 	_refresh_process_state()
@@ -617,7 +707,7 @@ func _on_match_start_requested(
 ) -> void:
 	game_mode = mode
 	if mode == MODE_LOCAL:
-		start_local_match_for_test(first_key, second_key)
+		start_local_match_for_test(first_key, second_key, -1, forced_first, true)
 		return
 	if mode == MODE_DEEP:
 		_start_deep_match_with_loading(
@@ -631,6 +721,8 @@ func _on_match_start_requested(
 			first_key,
 			second_key,
 			forced_first,
+			-1,
+			true,
 		)
 
 
@@ -664,6 +756,8 @@ func _start_deep_match_with_loading(
 		human_key,
 		opponent_key,
 		forced_first,
+		-1,
+		true,
 	)
 	_hide_loading()
 
@@ -673,9 +767,10 @@ func start_local_match_for_test(
 	second_key: String,
 	match_seed: int = -1,
 	forced_first: int = -1,
+	play_startup: bool = false,
 ) -> bool:
 	game_mode = MODE_LOCAL
-	return _start_match(first_key, second_key, match_seed, forced_first)
+	return _start_match(first_key, second_key, match_seed, forced_first, play_startup)
 
 
 func start_ai_match_for_test(
@@ -684,10 +779,17 @@ func start_ai_match_for_test(
 	opponent_key: String,
 	forced_first: int = -1,
 	match_seed: int = -1,
+	play_startup: bool = false,
 ) -> bool:
 	game_mode = mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
 	ai_deck_key = opponent_key
-	return _start_match(human_key, opponent_key, match_seed, forced_first)
+	return _start_match(
+		human_key,
+		opponent_key,
+		match_seed,
+		forced_first,
+		play_startup,
+	)
 
 
 func _start_match(
@@ -695,6 +797,7 @@ func _start_match(
 	second_key: String,
 	match_seed: int,
 	forced_first: int,
+	play_startup: bool = true,
 ) -> bool:
 	_play_click()
 	_stop_ai()
@@ -735,12 +838,151 @@ func _start_match(
 			"Deep AI 模型不可用，将自动回退 Challenge AI：%s" % deep_runtime.last_error,
 			true,
 		)
+	if play_startup:
+		_begin_startup_choreography(
+			Callable(self, "_continue_after_fresh_match_start"),
+			result.events,
+		)
+	else:
+		_continue_after_fresh_match_start()
+	return true
+
+
+func _continue_after_fresh_match_start() -> void:
+	if state == null or current_screen != SCREEN_GAME:
+		return
 	if game_mode == MODE_LOCAL:
-		_show_pass_overlay(0, "准备阶段", "玩家 1 放置战斗宝可梦，可继续放置备战宝可梦。")
+		_show_pass_overlay(
+			0,
+			"准备阶段",
+			"玩家 1 放置战斗宝可梦，可继续放置备战宝可梦。",
+		)
 	else:
 		_refresh_game()
 		_maybe_start_ai()
-	return true
+
+
+func _begin_startup_choreography(
+	completion: Callable,
+	startup_events: Array = [],
+) -> void:
+	_startup_choreography_generation += 1
+	var generation := _startup_choreography_generation
+	if (
+		battle_screen == null
+		or state == null
+		or not battle_screen.has_method("play_startup_shuffle")
+	):
+		_startup_choreography_running = false
+		if battle_screen != null and is_instance_valid(battle_screen):
+			battle_screen.set_startup_blocked(false)
+		if completion.is_valid():
+			completion.call_deferred()
+		return
+	_startup_choreography_running = true
+	battle_screen.set_startup_blocked(true)
+	var handle: MotionHandle = battle_screen.call(
+		"play_startup_shuffle",
+		state.mulligan_count.duplicate(),
+	) as MotionHandle
+	if handle == null or handle.is_finished():
+		_finish_startup_choreography(generation, completion, startup_events)
+		return
+	handle.completed.connect(
+		_on_startup_choreography_completed.bind(
+			generation,
+			completion,
+			startup_events.duplicate(true),
+		),
+		CONNECT_ONE_SHOT,
+	)
+
+
+func _on_startup_choreography_completed(
+	_handle: MotionHandle,
+	generation: int,
+	completion: Callable,
+	startup_events: Array,
+) -> void:
+	_finish_startup_choreography(generation, completion, startup_events)
+
+
+func _finish_startup_choreography(
+	generation: int,
+	completion: Callable,
+	startup_events: Array = [],
+) -> void:
+	if generation != _startup_choreography_generation:
+		return
+	if not startup_events.is_empty():
+		var setup_handle := _submit_battle_transition(
+			startup_events,
+			0,
+			BattleTransitionRequest.CAUSE_INITIAL,
+		)
+		if setup_handle != null and not setup_handle.is_completed():
+			setup_handle.completed.connect(
+				_on_startup_result_presentation_completed.bind(
+					generation,
+					completion,
+				),
+				CONNECT_ONE_SHOT,
+			)
+			return
+	_startup_choreography_running = false
+	if battle_screen != null and is_instance_valid(battle_screen):
+		battle_screen.set_startup_blocked(false)
+	_complete_startup_when_presentations_idle(generation, completion)
+
+
+func _on_startup_result_presentation_completed(
+	_handle: PresentationHandle,
+	generation: int,
+	completion: Callable,
+) -> void:
+	_finish_startup_choreography(generation, completion)
+
+
+func _complete_startup_when_presentations_idle(
+	generation: int,
+	completion: Callable,
+) -> void:
+	if generation != _startup_choreography_generation:
+		return
+	if (
+		battle_screen != null
+		and is_instance_valid(battle_screen)
+		and battle_screen.is_presentation_busy()
+	):
+		var callback := _on_startup_presentation_busy_changed.bind(
+			generation,
+			completion,
+		)
+		if not battle_screen.presentation_busy_changed.is_connected(callback):
+			battle_screen.presentation_busy_changed.connect(callback)
+		return
+	if completion.is_valid():
+		completion.call()
+
+
+func _on_startup_presentation_busy_changed(
+	busy: bool,
+	generation: int,
+	completion: Callable,
+) -> void:
+	if busy:
+		return
+	var callback := _on_startup_presentation_busy_changed.bind(
+		generation,
+		completion,
+	)
+	if (
+		battle_screen != null
+		and is_instance_valid(battle_screen)
+		and battle_screen.presentation_busy_changed.is_connected(callback)
+	):
+		battle_screen.presentation_busy_changed.disconnect(callback)
+	_complete_startup_when_presentations_idle(generation, completion)
 
 
 func _build_game_screen() -> void:
@@ -757,8 +999,14 @@ func _build_game_screen() -> void:
 	battle_screen.inspect_card_requested.connect(_show_card_inspector)
 	battle_screen.inspect_zone_requested.connect(_show_zone_inspector)
 	battle_screen.choice_target_selected.connect(_on_battle_choice_target_selected)
+	battle_screen.choice_option_toggled.connect(_toggle_choice)
+	battle_screen.choice_selection_confirmed.connect(_confirm_choice)
+	battle_screen.choice_cancel_requested.connect(_cancel_choice)
 	screen_host.add_child(battle_screen)
 	battle_screen.initialize_ui()
+	# Hot-seat hands are private from the first rendered frame. Opening shuffle
+	# and the pass-device gate can both outlive the synchronous table mount.
+	battle_screen.set_local_hand_privacy_hidden(game_mode == MODE_LOCAL)
 	action_list = battle_screen.action_list
 	log_label = battle_screen.log_label
 	detail_image = battle_screen.detail_image
@@ -785,11 +1033,40 @@ func _refresh_game() -> void:
 			ai_thinking,
 			game_mode,
 		)
+		_apply_network_wait_hint()
 	if (
 		state.winner >= 0
 		and (battle_screen == null or not battle_screen.is_presentation_busy())
 	):
 		_show_end_screen()
+
+
+func _apply_network_wait_hint() -> void:
+	if battle_screen == null or battle_screen.header == null:
+		return
+	if not _network_recovery_phase.is_empty():
+		battle_screen.header.set_task_hint(
+			"连接中断，正在恢复对局…"
+			if _network_recovery_phase == "reconnecting"
+			else "连接已恢复，正在同步权威局面…"
+		)
+		return
+	if (
+		game_mode != MODE_NETWORK
+		or network_choice_request != null
+		or network_wait_context.is_empty()
+	):
+		battle_screen.header.clear_task_hint()
+		return
+	var waiting_player := int(network_wait_context.get("waiting_for_player", -1))
+	var actor_label := "对手" if waiting_player != current_view_player else "当前玩家"
+	var activity: String = str({
+		"attachment": "选择附着能量",
+		"energy": "处理能量",
+		"coin": "确认硬币结果",
+		"choice": "完成选择",
+	}.get(str(network_wait_context.get("choice_kind", "choice")), "完成选择"))
+	battle_screen.header.set_task_hint("等待%s%s…" % [actor_label, activity])
 
 
 func _sanitize_battle_selection() -> void:
@@ -1106,6 +1383,8 @@ func _matching_selected_pokemon_target_actions(
 func _execute_action(action: GameAction) -> StepResult:
 	if _battle_submission_locked():
 		var locked_message := "动画或局面同步尚未完成，请稍候。"
+		if battle_screen:
+			battle_screen.clear_pending_drag("submission_locked")
 		_show_toast(locked_message, true)
 		return StepResult.new(false, locked_message)
 	if action.action == "RETREAT":
@@ -1120,6 +1399,8 @@ func _execute_action(action: GameAction) -> StepResult:
 func _execute_action_now(action: GameAction) -> StepResult:
 	if _battle_submission_locked():
 		var locked_message := "动画或局面同步尚未完成，请稍候。"
+		if battle_screen:
+			battle_screen.clear_pending_drag("submission_locked")
 		_show_toast(locked_message, true)
 		return StepResult.new(false, locked_message)
 	var drag_context := battle_screen.active_drag_context() if battle_screen else {}
@@ -1225,6 +1506,8 @@ func _execute_action_now(action: GameAction) -> StepResult:
 
 
 func _battle_submission_locked() -> bool:
+	if _startup_choreography_running:
+		return true
 	if battle_screen != null and battle_screen.is_presentation_busy():
 		return true
 	return game_mode == MODE_NETWORK and network_controller.submission_locked()
@@ -1520,7 +1803,7 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 	if not field_targets.is_empty() and battle_screen:
 		selected_entity_key = ""
 		selected_entity_identity = ""
-		battle_screen.set_choice_targets(field_targets, request.prompt)
+		battle_screen.set_choice_targets(field_targets, _choice_field_prompt(request))
 		_refresh_game()
 		return
 	var energy_cards := _choice_energy_cards(request)
@@ -1587,7 +1870,7 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 				option_id,
 				option_card_id,
 				_choice_option_caption(option),
-				request.player,
+				_choice_option_owner(option, request.player),
 			)
 		else:
 			option_buttons.append(
@@ -1608,76 +1891,43 @@ func _show_coin_flip_choice(request: ChoiceRequest) -> void:
 		"继续结算",
 		"",
 		false,
-		ModalSpec.battle(Vector2(640, 420)),
+		ModalSpec.battle(Vector2(680, 500)),
 	)
 	modal_title.text = "硬币结算"
 	var results: Array = request.metadata.get("predetermined_flips", [])
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 18)
-	modal_body.add_child(content)
-	var coins := HBoxContainer.new()
-	coins.alignment = BoxContainer.ALIGNMENT_CENTER
-	coins.add_theme_constant_override("separation", 14)
-	content.add_child(coins)
+	var showcase := COIN_SHOWCASE.new() as CoinShowcase
+	showcase.name = "CoinShowcase"
+	showcase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	showcase.custom_minimum_size = Vector2(540, 300)
+	if audio_director:
+		showcase.audio_requested.connect(audio_director.play_cue)
+	modal_body.add_child(showcase)
 	var reveal_generation := _modal_generation
-	var reveal_animated := not AppSettings.reduced_motion and not results.is_empty()
-	modal_confirm.disabled = reveal_animated
-	var heads := 0
-	for index in range(results.size()):
-		var is_heads := bool(results[index])
-		if is_heads:
-			heads += 1
-		var coin := Label.new()
-		coin.custom_minimum_size = Vector2(76.0, 76.0)
-		coin.text = "正" if is_heads else "反"
-		coin.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		coin.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		coin.add_theme_font_size_override("font_size", 24)
-		coin.add_theme_color_override("font_color", DesignTokens.BG_DEEP)
-		coin.add_theme_stylebox_override(
-			"normal",
-			DesignTokens.panel_style(
-				DesignTokens.GOLD if is_heads else DesignTokens.CYAN,
-				38,
-				Color(1, 1, 1, 0.82),
-				2,
-				0,
+	var playback := showcase.play(results, true, "硬币结果")
+	modal_confirm.disabled = not playback.is_finished()
+	if not playback.is_finished():
+		playback.completed.connect(
+			_on_coin_choice_playback_completed.bind(
+				reveal_generation,
+				request.request_id,
 			),
+			CONNECT_ONE_SHOT,
 		)
-		coins.add_child(coin)
-		if reveal_animated:
-			coin.scale = Vector2(0.2, 1.0)
-			coin.modulate.a = 0.0
-			var tween := coin.create_tween()
-			tween.tween_interval(float(index) * 0.10)
-			tween.tween_callback(_play_coin_reveal_cue)
-			tween.tween_property(coin, "modulate:a", 1.0, 0.08)
-			tween.parallel().tween_property(coin, "scale", Vector2.ONE, 0.34).set_trans(
-				Tween.TRANS_BACK,
-			).set_ease(Tween.EASE_OUT)
-			if index == results.size() - 1:
-				tween.finished.connect(
-					_finish_coin_flip_reveal.bind(
-						reveal_generation,
-						request.request_id,
-					),
-					CONNECT_ONE_SHOT,
-				)
-		elif index == 0:
-			_play_coin_reveal_cue()
-	var summary := Label.new()
-	summary.text = "正面 %d · 反面 %d" % [heads, results.size() - heads]
-	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	summary.add_theme_font_size_override("font_size", 18)
-	summary.add_theme_color_override("font_color", DesignTokens.TEXT)
-	content.add_child(summary)
 	modal_confirm.text = "继续结算"
 	modal_confirm.pressed.connect(_confirm_choice, CONNECT_ONE_SHOT)
 
 
 func _play_coin_reveal_cue() -> void:
 	if audio_director:
-		audio_director.play_cue("coin")
+		audio_director.play_cue("coin_toss")
+
+
+func _on_coin_choice_playback_completed(
+	_handle: MotionHandle,
+	generation: int,
+	request_id: String,
+) -> void:
+	_finish_coin_flip_reveal(generation, request_id)
 
 
 func _finish_coin_flip_reveal(generation: int, request_id: String) -> void:
@@ -1734,6 +1984,39 @@ func _choice_option_card_id(option: Dictionary) -> String:
 	return ""
 
 
+func _choice_option_owner(option: Dictionary, fallback_player: int) -> int:
+	var ref := _choice_attachment_ref(option)
+	if not ref.is_empty():
+		return int(ref.get("player", fallback_player))
+	var value_variant: Variant = option.get("value")
+	if value_variant is Dictionary:
+		return int(Dictionary(value_variant).get("player", fallback_player))
+	return fallback_player
+
+
+func _choice_attachment_ref(option: Dictionary) -> Dictionary:
+	var ref_value: Variant = option.get("ref")
+	if ref_value is Dictionary:
+		var ref := Dictionary(ref_value)
+		if (
+			str(ref.get("kind", "")) == "attachment"
+			or not str(ref.get("attachment_type", "")).is_empty()
+		):
+			return ref
+	var value_variant: Variant = option.get("value")
+	if value_variant is Dictionary:
+		var value := Dictionary(value_variant).duplicate(true)
+		if (
+			value.has("slot")
+			and value.has("index")
+			and value.has("card_id")
+		):
+			value["kind"] = "attachment"
+			value["attachment_type"] = str(value.get("attachment_type", "energy"))
+			return value
+	return {}
+
+
 func _choice_option_caption(option: Dictionary) -> String:
 	var label_text := str(option.get("label", ""))
 	var value_variant: Variant = option.get("value")
@@ -1749,12 +2032,17 @@ func _choice_option_caption(option: Dictionary) -> String:
 		or str(option.get("option_id", "")).begins_with("attachment:")
 	)
 	if is_attachment:
+		var attachment_player := int(value_data.get(
+			"player",
+			ref_data.get("player", active_request.player if active_request else current_view_player),
+		))
 		var attachment_slot := str(value_data.get("slot", ref_data.get("slot", "")))
 		var attachment_index := int(value_data.get("index", ref_data.get("index", -1)))
 		var attachment_label := label_text.replace(" - ", " · ")
 		if attachment_label.is_empty() and catalog != null:
 			attachment_label = catalog.card_name(_choice_option_card_id(option))
 		var attachment_parts: Array[String] = []
+		attachment_parts.append("己方" if attachment_player == current_view_player else "对手")
 		if not attachment_slot.is_empty():
 			attachment_parts.append(_slot_name(attachment_slot))
 		if not attachment_label.is_empty():
@@ -1788,6 +2076,8 @@ func _choice_option_caption(option: Dictionary) -> String:
 
 func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
 	var result: Dictionary = {}
+	if request != null and request.request_type == "select_attachment":
+		return _choice_attachment_target_groups(request)
 	if (
 		request == null
 		or request.min_select != 1
@@ -1828,6 +2118,77 @@ func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
 	return result
 
 
+func _choice_attachment_target_groups(request: ChoiceRequest) -> Dictionary:
+	var result: Dictionary = {}
+	if request == null or request.options.is_empty() or state == null:
+		return result
+	var disabled_reasons := _choice_option_disabled_reasons(request)
+	for option_value in request.options:
+		var option := Dictionary(option_value)
+		var option_id := str(option.get("option_id", ""))
+		var ref := _choice_attachment_ref(option)
+		var player_idx := int(ref.get("player", request.player))
+		var slot := str(ref.get("slot", ""))
+		if (
+			option_id.is_empty()
+			or player_idx not in [0, 1]
+			or slot.is_empty()
+			or state.get_player(player_idx).get_pokemon(slot) == null
+		):
+			return {}
+		var key := CardInteractionRouter.pokemon_key(player_idx, slot)
+		if not result.has(key):
+			result[key] = {
+				"kind": "attachment_group",
+				"player": player_idx,
+				"slot": slot,
+				"source_label": _choice_attachment_source_label(player_idx, slot),
+				"options": [],
+				"selected_ids": selected_choice_ids.duplicate(),
+				"disabled_reasons": disabled_reasons.duplicate(true),
+				"min_select": request.min_select,
+				"max_select": request.max_select,
+				"can_cancel": request.can_cancel,
+			}
+		var group: Dictionary = result[key]
+		var group_options: Array = group.get("options", [])
+		group_options.append(option.duplicate(true))
+		group["options"] = group_options
+		result[key] = group
+	return result
+
+
+func _choice_attachment_source_label(player_idx: int, slot: String) -> String:
+	var pokemon := state.get_player(player_idx).get_pokemon(slot) if state != null else null
+	var owner_text := "己方" if player_idx == current_view_player else "对手"
+	var pokemon_name := (
+		catalog.card_name(pokemon.card_id)
+		if pokemon != null and catalog != null
+		else "宝可梦"
+	)
+	return "%s · %s · %s" % [owner_text, _slot_name(slot), pokemon_name]
+
+
+func _choice_field_prompt(request: ChoiceRequest) -> String:
+	if request == null:
+		return "请选择目标"
+	if request.request_type not in ["select_energy_target", "distribute_energy"]:
+		return request.prompt
+	var source_slot := str(request.metadata.get("source_slot", ""))
+	var source_player := int(request.metadata.get("source_player", request.player))
+	var card_names: Array[String] = []
+	for value in request.metadata.get("card_ids", []):
+		var card_name := catalog.card_name(str(value)) if catalog != null else str(value)
+		if not card_name.is_empty() and card_name not in card_names:
+			card_names.append(card_name)
+	if source_slot.is_empty() or card_names.is_empty():
+		return request.prompt
+	return "从「%s」移动「%s」；请选择目标" % [
+		_choice_attachment_source_label(source_player, source_slot),
+		"、".join(card_names),
+	]
+
+
 func _on_battle_choice_target_selected(option_id: String) -> void:
 	if active_request == null or option_id.is_empty():
 		return
@@ -1847,6 +2208,21 @@ func _on_battle_choice_target_selected(option_id: String) -> void:
 func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
 	var result: Array[String] = []
 	if request == null or request.request_type not in ["distribute_energy", "select_energy_target"]:
+		return result
+	for value in request.metadata.get("card_ids", []):
+		var metadata_card_id := str(value)
+		if not metadata_card_id.is_empty():
+			result.append(metadata_card_id)
+	if result.is_empty():
+		for ref_value in request.metadata.get("attachment_refs", []):
+			if not ref_value is Dictionary:
+				continue
+			var ref_card_id := str(Dictionary(ref_value).get("card_id", ""))
+			if not ref_card_id.is_empty():
+				result.append(ref_card_id)
+	if not result.is_empty():
+		return result
+	if game_mode == MODE_NETWORK:
 		return result
 	if state == null or state.resolution_stack.is_empty():
 		return result
@@ -1991,18 +2367,40 @@ func _choice_option_by_id(request: ChoiceRequest, option_id: String) -> Dictiona
 
 
 func _choice_continuation_data() -> Dictionary:
+	# Network player views intentionally omit the private resolution stack. Every
+	# modern ChoiceRequest therefore carries its UI constraints in metadata; the
+	# continuation only fills fields for legacy/local requests.
+	var result: Dictionary = (
+		active_request.metadata.duplicate(true)
+		if active_request != null
+		else {}
+	)
+	if game_mode == MODE_NETWORK:
+		return result
 	if state == null or state.resolution_stack.is_empty():
-		return {}
+		return result
 	var stack := ResolutionStack.from_dict(state.resolution_stack)
 	for index in range(stack.frames.size() - 1, -1, -1):
 		var frame: Dictionary = stack.frames[index]
-		if str(frame.get("kind", "")) == "continuation":
-			var data: Variant = frame.get("data", {})
-			return Dictionary(data) if data is Dictionary else {}
-	return {}
+		if str(frame.get("kind", "")) != "continuation":
+			continue
+		var data_value: Variant = frame.get("data", {})
+		if data_value is Dictionary:
+			for key in Dictionary(data_value).keys():
+				if not result.has(key):
+					result[key] = Dictionary(data_value)[key]
+		break
+	return result
 
 
-func _choice_has_cancel_action_checkpoint() -> bool:
+func _choice_has_cancel_action_checkpoint(request: ChoiceRequest = null) -> bool:
+	# Player views deliberately omit the private resolution stack. The request
+	# metadata is the authoritative, protocol-safe way to describe whether
+	# cancelling rewinds the enclosing card/action.
+	if request != null and bool(request.metadata.get("cancels_action", false)):
+		return true
+	if game_mode == MODE_NETWORK:
+		return false
 	if state == null or state.resolution_stack.is_empty():
 		return false
 	var stack := ResolutionStack.from_dict(state.resolution_stack)
@@ -2015,7 +2413,7 @@ func _choice_has_cancel_action_checkpoint() -> bool:
 func _choice_cancel_cta(request: ChoiceRequest) -> String:
 	if request == null or not request.can_cancel:
 		return ""
-	return "取消使用此卡" if _choice_has_cancel_action_checkpoint() else "取消"
+	return "取消使用此卡" if _choice_has_cancel_action_checkpoint(request) else "取消"
 
 
 func _choice_confirm_cta(request: ChoiceRequest, selected_count: int) -> String:
@@ -2130,6 +2528,20 @@ func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) 
 		))
 		if _choice_selected_option_count(option_id) >= max_per_target:
 			return "该目标最多可分配 %d张能量" % max_per_target
+	elif request.request_type == "select_attachment":
+		var same_source := bool(request.metadata.get("same_source", false))
+		if same_source and not selected_choice_ids.is_empty():
+			var candidate_ref := _choice_attachment_ref(option)
+			var selected_ref := _choice_attachment_ref(
+				_choice_option_by_id(request, selected_choice_ids[0]),
+			)
+			if (
+				int(candidate_ref.get("player", -1))
+				!= int(selected_ref.get("player", -1))
+				or str(candidate_ref.get("slot", ""))
+				!= str(selected_ref.get("slot", ""))
+			):
+				return "此效果要求所选能量来自同一只宝可梦"
 
 	if selected_choice_ids.size() >= request.max_select:
 		return "已达到选择上限，请先取消一张"
@@ -2216,6 +2628,7 @@ func _clear_energy_distribution() -> void:
 func _refresh_choice_buttons() -> void:
 	if active_request == null:
 		return
+	var disabled_reasons := _choice_option_disabled_reasons(active_request)
 	if active_choice_panel:
 		active_choice_panel.refresh_selection(
 			selected_choice_ids,
@@ -2223,8 +2636,14 @@ func _refresh_choice_buttons() -> void:
 			active_request.allow_duplicates,
 		)
 		active_choice_panel.set_option_disabled_reasons(
-			_choice_option_disabled_reasons(active_request),
+			disabled_reasons,
 		)
+	elif battle_screen:
+		battle_screen.set_choice_targets(
+			_choice_field_target_options(active_request),
+			_choice_field_prompt(active_request),
+		)
+		battle_screen.update_choice_selection(selected_choice_ids, disabled_reasons)
 	modal_confirm.disabled = not (
 		selected_choice_ids.size() >= active_request.min_select
 		and selected_choice_ids.size() <= active_request.max_select
@@ -2254,7 +2673,7 @@ func _submit_confirmed_choice(
 ) -> void:
 	if game_mode == MODE_NETWORK:
 		if request.request_type == "coin_flip":
-			_presented_coin_request_ids[request.request_id] = true
+			_remember_coin_presentation_tombstone(request.request_id)
 		var choice_sent := network_controller.submit_choice(
 			ChoiceResponse.new(request.request_id, confirmed_ids)
 		)
@@ -2459,6 +2878,8 @@ func _show_pass_overlay(
 	confirmed: Callable = Callable(),
 	confirm_enabled: bool = true,
 ) -> void:
+	if battle_screen != null and is_instance_valid(battle_screen):
+		battle_screen.set_local_hand_privacy_hidden(true)
 	var privacy_spec := ModalSpec.battle(Vector2(720, 620), true)
 	privacy_spec.cancellable = false
 	_open_modal(
@@ -2475,9 +2896,18 @@ func _show_pass_overlay(
 	modal_confirm.pressed.connect(func() -> void:
 		_play_click()
 		_close_modal(
-			confirmed if confirmed.is_valid() else Callable(self, "_refresh_game")
+			_complete_pass_overlay.bind(confirmed),
 		)
 	, CONNECT_ONE_SHOT)
+
+
+func _complete_pass_overlay(confirmed: Callable) -> void:
+	if battle_screen != null and is_instance_valid(battle_screen):
+		battle_screen.set_local_hand_privacy_hidden(false)
+	if confirmed.is_valid():
+		confirmed.call()
+	else:
+		_refresh_game()
 
 
 func _show_pause_overlay() -> void:
@@ -3870,6 +4300,8 @@ func _show_title_from_game() -> void:
 	_show_title()
 
 func _clear_screen() -> void:
+	_startup_choreography_generation += 1
+	_startup_choreography_running = false
 	current_network_page = null
 	if title_full_bleed_backdrop:
 		title_full_bleed_backdrop.visible = false
@@ -4249,26 +4681,32 @@ func _toast_content_height(width: float, minimum: float, maximum: float) -> floa
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
-		if battle_screen:
-			battle_screen.clear_presentation_for_resync()
 		CardTextureCache.clear()
 		if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
+			if battle_screen:
+				battle_screen.clear_presentation_for_resync()
 			ai_coordinator.cancel_and_wait()
 			ai_thinking = false
 			_refresh_process_state()
-		elif game_mode == MODE_NETWORK and current_screen in [
-			SCREEN_NETWORK,
-			SCREEN_GAME,
-			SCREEN_END,
-		]:
+		elif (
+			game_mode == MODE_NETWORK
+			and state != null
+			and current_screen in [SCREEN_GAME, SCREEN_END]
+		):
 			lifecycle_network_interrupted = true
-			_stop_network()
-			state = null
+			_network_recovery_phase = "reconnecting"
+			if battle_screen:
+				battle_screen.cancel_presentations("application_paused")
+				battle_screen.set_recovery_blocked(true)
+			network_controller.begin_reconnect("application_paused")
+			_refresh_process_state()
 	elif what == NOTIFICATION_APPLICATION_RESUMED:
 		if lifecycle_network_interrupted:
 			lifecycle_network_interrupted = false
-			_show_title()
-			_show_toast("应用进入后台时已安全断开联机对局。", true)
+			if not network_controller.reconnecting:
+				network_controller.begin_reconnect("application_resumed")
+			_show_toast("正在恢复联机对局…")
+			_refresh_process_state()
 		elif game_mode in [MODE_CHALLENGE, MODE_DEEP]:
 			_maybe_start_ai()
 	elif what == NOTIFICATION_OS_MEMORY_WARNING:

@@ -49,6 +49,7 @@ class FailingStartController:
 func _initialize() -> void:
 	_run_protocol_boundaries()
 	_run_submission_correlation_contract()
+	_run_recovery_contract()
 	_run_start_failure_contract()
 	_run_terminal_state_contract()
 	if failures.is_empty():
@@ -85,6 +86,22 @@ func _run_protocol_boundaries() -> void:
 	_expect(
 		bool(ProtocolV3.validate_payload(ProtocolV3.STATE_UPDATE, view).get("ok", false)),
 		"authoritative fixture view is not protocol-valid",
+	)
+	var random_session := AuthoritativeSession.new("setup-coin-contract")
+	var random_started := random_session.start_match("fire", "water", 20260709)
+	var random_view := random_session.view_for(0, random_started.events)
+	var setup_events: Array = random_view.get("presentation_events", [])
+	_expect(
+		random_started.success
+		and setup_events.size() == 1
+		and str(Dictionary(setup_events[0]).get("event_type", "")) == "coin_flip"
+		and str(Dictionary(setup_events[0]).get("data", {}).get("purpose", ""))
+		== "setup_first_player"
+		and bool(ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE,
+			random_view,
+		).get("ok", false)),
+		"random setup coin was not public and protocol-valid",
 	)
 
 	var inconsistent_terminal: Dictionary = view.duplicate(true)
@@ -124,7 +141,11 @@ func _run_protocol_boundaries() -> void:
 		1,
 		false,
 		false,
-		{"revision": int(view["state"]["revision"]), "revealed_card_ids": []},
+		{
+			"revision": int(view["state"]["revision"]),
+			"revealed_card_ids": [],
+			"source_zone": "deck",
+		},
 	).to_dict()
 	var choice_view: Dictionary = view.duplicate(true)
 	choice_view["choice_request"] = choice_request
@@ -140,6 +161,77 @@ func _run_protocol_boundaries() -> void:
 	var malformed_choice_metadata: Dictionary = choice_view.duplicate(true)
 	malformed_choice_metadata["choice_request"]["metadata"]["predetermined_flips"] = {}
 	_expect_invalid_state(malformed_choice_metadata, "malformed choice metadata")
+	var malformed_source_zone: Dictionary = choice_view.duplicate(true)
+	malformed_source_zone["choice_request"]["metadata"]["source_zone"] = {}
+	_expect_invalid_state(malformed_source_zone, "non-string choice source_zone")
+	var source_zone_choice: Dictionary = choice_view.duplicate(true)
+	source_zone_choice["choice_request"]["metadata"]["source_zone"] = "hand"
+	_expect(
+		bool(ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, source_zone_choice
+		).get("ok", false)),
+		"valid choice metadata source_zone was rejected",
+	)
+	var attachment_ref := EntityRef.new(
+		"attachment", 0, "field", "active", 0, "energy", "sv1-ener-2"
+	).to_dict()
+	var wait_stack := ResolutionStack.new()
+	wait_stack.pending_request = ChoiceRequest.new(
+		"choice:attachment-wait",
+		"select_attachment",
+		0,
+		"选择能量",
+		[{
+			"option_id": "attachment:0:active:energy:0:sv1-ener-2",
+			"label": "Energy",
+			"ref": attachment_ref,
+			"value": {
+				"player": 0, "slot": "active", "index": 0,
+				"attachment_type": "energy", "card_id": "sv1-ener-2",
+			},
+		}],
+		1,
+		1,
+		false,
+		false,
+		{
+			"revision": session.state.revision,
+			"purpose": "discard_energy",
+			"attachment_refs": [attachment_ref],
+			"card_ids": ["sv1-ener-2"],
+			"source_player": 0,
+			"source_slot": "active",
+			"same_source": true,
+			"same_target": false,
+			"max_per_target": 1,
+		},
+	)
+	session.state.resolution_stack = wait_stack.to_dict()
+	var chooser_view := session.view_for(0)
+	var waiting_view := session.view_for(1)
+	_expect(
+		chooser_view.get("choice_request") is Dictionary
+		and chooser_view.get("wait_context") == null,
+		"choice owner did not receive the full attachment request",
+	)
+	_expect(
+		waiting_view.get("choice_request") == null
+		and waiting_view.get("wait_context") == {
+			"waiting_for_player": 0,
+			"choice_kind": "attachment",
+		},
+		"non-chooser did not receive the coarse attachment wait context",
+	)
+	_expect(
+		bool(ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, waiting_view
+		).get("ok", false)),
+		"coarse attachment wait context was rejected by ProtocolV3",
+	)
+	var malformed_wait_view: Dictionary = waiting_view.duplicate(true)
+	malformed_wait_view["wait_context"]["card_ids"] = ["sv1-ener-2"]
+	_expect_invalid_state(malformed_wait_view, "wait context leaked attachment identities")
+	session.state.resolution_stack = ResolutionStack.new().to_dict()
 
 	var presentation_event := PresentationEvent.normalize({
 		"event_type": "cards_drawn",
@@ -155,6 +247,64 @@ func _run_protocol_boundaries() -> void:
 		).get("ok", false)),
 		"valid presentation event fixture was rejected",
 	)
+	var reveal_view: Dictionary = view.duplicate(true)
+	reveal_view["presentation_events"] = [PresentationEvent.normalize({
+		"event_type": "cards_revealed",
+		"actor": 0,
+		"visibility": "public",
+		"data": {
+			"player": 0,
+			"cards": [{
+				"card_id": "sv1-ener-2",
+				"matched": true,
+				"destination": {"player": 0, "zone": "discard"},
+			}],
+			"summary": {
+				"kind": "energy_damage",
+				"matched_count": 1,
+				"amount": 80,
+			},
+		},
+	}, int(view["state"]["revision"]))]
+	_expect(
+		bool(ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, reveal_view
+		).get("ok", false)),
+		"valid structured public reveal event was rejected",
+	)
+	var malformed_reveal: Dictionary = reveal_view.duplicate(true)
+	malformed_reveal["presentation_events"][0]["data"]["cards"][0][
+		"matched"
+	] = "true"
+	_expect_invalid_state(malformed_reveal, "malformed structured reveal card")
+	var empty_reveal: Dictionary = reveal_view.duplicate(true)
+	empty_reveal["presentation_events"][0]["data"]["cards"] = []
+	empty_reveal["presentation_events"][0]["data"]["summary"] = {
+		"kind": "energy_damage",
+		"matched_count": 0,
+		"amount": 0,
+	}
+	empty_reveal["presentation_events"][0]["amount"] = 0
+	_expect(
+		bool(ProtocolV3.validate_payload(
+			ProtocolV3.STATE_UPDATE, empty_reveal
+		).get("ok", false)),
+		"valid zero-card public reveal event was rejected",
+	)
+	var missing_reveal_summary: Dictionary = reveal_view.duplicate(true)
+	missing_reveal_summary["presentation_events"][0]["data"].erase("summary")
+	_expect_invalid_state(missing_reveal_summary, "missing reveal summary")
+	for malformed_summary in [
+		{"kind": 4, "matched_count": 1, "amount": 80},
+		{"kind": "energy_damage", "matched_count": "1", "amount": 80},
+		{"kind": "energy_damage", "matched_count": 2, "amount": 80},
+		{"kind": "energy_damage", "matched_count": 1, "amount": -1},
+	]:
+		var malformed_summary_view: Dictionary = reveal_view.duplicate(true)
+		malformed_summary_view["presentation_events"][0]["data"][
+			"summary"
+		] = malformed_summary
+		_expect_invalid_state(malformed_summary_view, "malformed reveal summary")
 	for mutation in [
 		{"path": "amount", "value": {}},
 		{"path": "source_player", "value": {}},
@@ -682,6 +832,107 @@ func _has_event_code(rows: Array, code: String) -> bool:
 		if str(event.get("code", "")) == code:
 			return true
 	return false
+
+
+func _run_recovery_contract() -> void:
+	var session := AuthoritativeSession.new("recovery-room")
+	var started := session.start_match("fire", "water", 20260715, 0)
+	_expect(started.success, "recovery fixture did not start")
+	if not started.success:
+		return
+	var client := NetworkMatchController.new()
+	client.host = false
+	client.player_idx = 1
+	client.room_id = "recovery-room"
+	client.local_deck_key = "water"
+	client.current_revision = session.state.revision
+	client.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
+	client.connected = true
+	client.transport = FakeNetworkTransport.new()
+	# A structurally valid gap establishes a new receive fence and sends one
+	# RESYNC request.  The following reply can then be accepted at sequence 4.
+	client._handle_message(ProtocolV3.envelope(
+		ProtocolV3.PING,
+		"recovery-room",
+		0,
+		3,
+		session.state.revision,
+	))
+	_expect(
+		client.receive_sequence == 3 and client.resync_in_progress,
+		"sequence gap did not establish a recoverable receive fence",
+	)
+	var transport := client.transport as FakeNetworkTransport
+	_expect(
+		transport != null
+		and transport.sent_messages.size() == 1
+		and str(transport.sent_messages[0].get("message_type", ""))
+		== ProtocolV3.RESYNC_REQUEST,
+		"sequence gap did not request exactly one recovery snapshot",
+	)
+	client._handle_message(ProtocolV3.envelope(
+		ProtocolV3.STATE_UPDATE,
+		"recovery-room",
+		0,
+		4,
+		session.state.revision,
+		"",
+		"",
+		session.view_for(1),
+	))
+	var state_event: Dictionary = {}
+	for event in client.events:
+		if str(event.get("type", "")) == "state":
+			state_event = event
+	_expect(
+		not state_event.is_empty()
+		and bool(state_event.get("is_resync", false))
+		and not client.resync_in_progress,
+		"recovery snapshot was not identified or did not complete resync",
+	)
+
+	var host := NetworkMatchController.new()
+	host.host = true
+	host.player_idx = 0
+	host.room_id = "recovery-room"
+	host.local_deck_key = "fire"
+	host.remote_deck_key = "water"
+	host.session = session
+	host.transport = FakeNetworkTransport.new()
+	host.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
+	host.reconnecting = true
+	var revision_before := session.state.revision
+	host._handle_host_message({}, ProtocolV3.DECK_SELECT, {
+		"deck_key": "water",
+		"rules_version": AppState.RULES_SCHEMA_VERSION,
+		"action_version": AppState.ACTION_SCHEMA_VERSION,
+		"resume": true,
+	})
+	_expect(
+		host.connection_phase == NetworkMatchController.ConnectionPhase.PLAYING
+		and not host.reconnecting
+		and session.state.revision == revision_before,
+		"resume handshake restarted or failed to restore the existing match",
+	)
+	var host_state_event: Dictionary = {}
+	var reconnected_index := -1
+	var recovery_state_index := -1
+	for index in range(host.events.size()):
+		var event: Dictionary = host.events[index]
+		if str(event.get("type", "")) == "reconnected":
+			reconnected_index = index
+		if str(event.get("type", "")) == "state":
+			host_state_event = event
+			recovery_state_index = index
+	_expect(
+		bool(host_state_event.get("is_resync", false)),
+		"host resume did not publish an atomic recovery snapshot",
+	)
+	_expect(
+		reconnected_index >= 0
+		and recovery_state_index > reconnected_index,
+		"resume notification did not precede the recovery snapshot barrier",
+	)
 
 
 func _run_start_failure_contract() -> void:

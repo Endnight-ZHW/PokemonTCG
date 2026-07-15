@@ -622,7 +622,12 @@ func _choose_request(
 	var response: ChoiceResponse
 	var deep_error := ""
 	if mode == "deep":
-		if inference == null:
+		# Attachment choices carry exact, revision-bound indices that were not
+		# part of the released choice-head training schema. Keep the model
+		# dimensions stable and resolve these choices with the shared heuristic.
+		if request.request_type == "select_attachment":
+			deep_error = "attachment_choice_heuristic"
+		elif inference == null:
 			deep_error = "runtime_unavailable"
 		elif not inference.has_method("supports_choice_head") or not bool(inference.call("supports_choice_head")):
 			deep_error = "choice_head_disabled"
@@ -835,6 +840,12 @@ func _choice_max_count(request: ChoiceRequest) -> int:
 func _choice_score_mode(request: ChoiceRequest, continuation: Dictionary) -> String:
 	var operation := str(continuation.get("operation", ""))
 	var prompt := request.prompt.to_lower()
+	if request.request_type == "select_attachment":
+		return (
+			"energy"
+			if str(request.metadata.get("purpose", "")).begins_with("relocate_energy")
+			else "discard"
+		)
 	if operation in ["discard_then_draw", "discard_cards", "hand_bottom_draw", "houb", "zinnia"]:
 		return "discard"
 	if request.request_type == "select_energy_source" or operation == "energy_relocate_source":

@@ -133,7 +133,7 @@ class PendingContinuationTests(unittest.TestCase):
         self.assertTrue(resume["complete"])
         self.assertEqual(
             [frame["kind"] for frame in resume["frames"]],
-            ["finalize_attack_turn", "finalize_attack_damage"],
+            ["finalize_attack_turn", "finalize_attack_ko_checks"],
         )
 
         restored = state_from_snapshot(snapshot_state(state))

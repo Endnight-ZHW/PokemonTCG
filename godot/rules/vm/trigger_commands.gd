@@ -665,6 +665,9 @@ func _execute_move_basic_energy(
 			"player": to_player,
 			"slot": to_slot,
 			"card_id": energy_id,
+			"presentation_phase": (
+				"knockout" if str(args.get("source", "")) == "exp_share" else ""
+			),
 			"source": str(args.get("source", "")),
 			"source_player": from_player,
 			"source_slot": from_slot,

@@ -110,8 +110,12 @@ class DazzlingBeam:
         target = ctx.opponent.active if self.target == "opponent_active" else ctx.player.active
         if target is None:
             return CommandResult.ok("没有目标。")
-        if getattr(target, "all_prevented_next_turn", False):
-            target.all_prevented_next_turn = False
+        from engine.commands.attack_frames import is_opponent_attack_effect
+
+        if (
+            getattr(target, "all_prevented_next_turn", False)
+            and is_opponent_attack_effect(ctx.state, ctx.stack, target)
+        ):
             ctx.state._log(f"{target.card.name}免疫了炫目光束的效果！")
             return CommandResult.ok("免疫了效果。")
         target.dazzled = True
@@ -131,8 +135,12 @@ class AttackLockBasic:
         target = ctx.opponent.active if self.target == "opponent_active" else ctx.player.active
         if target is None:
             return CommandResult.ok("没有目标。")
-        if getattr(target, "all_prevented_next_turn", False):
-            target.all_prevented_next_turn = False
+        from engine.commands.attack_frames import is_opponent_attack_effect
+
+        if (
+            getattr(target, "all_prevented_next_turn", False)
+            and is_opponent_attack_effect(ctx.state, ctx.stack, target)
+        ):
             ctx.state._log(f"{target.card.name}免疫了攻击封锁的效果！")
             return CommandResult.ok("免疫了效果。")
         if target.card.is_basic_pokemon:
@@ -157,8 +165,12 @@ class OutgoingDamageReduction:
         amount = int(self.amount or 0)
         if target is None or amount <= 0:
             return CommandResult.ok("没有目标。")
-        if getattr(target, "all_prevented_next_turn", False):
-            target.all_prevented_next_turn = False
+        from engine.commands.attack_frames import is_opponent_attack_effect
+
+        if (
+            getattr(target, "all_prevented_next_turn", False)
+            and is_opponent_attack_effect(ctx.state, ctx.stack, target)
+        ):
             ctx.state._log(f"{target.card.name}免疫了恫吓的效果！")
             return CommandResult.ok("免疫了效果。")
         target.outgoing_damage_reduction_next_turn = max(

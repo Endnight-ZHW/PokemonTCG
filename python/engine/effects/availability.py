@@ -214,7 +214,9 @@ def effects_have_legal_target(
                 return True
         elif etype == "arven":
             saw_checked_effect = True
-            if any(getattr(card, "is_trainer_item", False) or getattr(card, "is_trainer_tool", False) for card in player.deck):
+            # Deck identities are hidden. A legal search may fail, so only the
+            # public deck count participates in availability.
+            if player.deck:
                 return True
         elif etype == "shuffle_from_discard":
             saw_checked_effect = True
@@ -254,7 +256,7 @@ def effects_have_legal_target(
                 return True
         elif etype == "switch_opponent":
             saw_checked_effect = True
-            if opponent.active is not None and opponent.bench_count() > 0 and not getattr(opponent.active, "all_prevented_next_turn", False):
+            if opponent.active is not None and opponent.bench_count() > 0:
                 return True
         elif etype == "heal":
             saw_checked_effect = True
@@ -276,7 +278,7 @@ def effects_have_legal_target(
                 return True
         elif etype in {"any_pokemon_damage", "place_counters_and_self_ko"}:
             saw_checked_effect = True
-            if any(pokemon is not None and not getattr(pokemon, "all_prevented_next_turn", False) for _slot, pokemon in opponent.get_all_pokemon()):
+            if any(pokemon is not None for _slot, pokemon in opponent.get_all_pokemon()):
                 return True
         elif etype == "bench_damage":
             saw_checked_effect = True
@@ -284,7 +286,7 @@ def effects_have_legal_target(
                 return True
         elif etype in {"status", "conditional_status", "attack_lock_basic", "dazzling_beam"}:
             saw_checked_effect = True
-            if opponent.active is not None and not getattr(opponent.active, "all_prevented_next_turn", False):
+            if opponent.active is not None:
                 return True
         elif etype == "damage_counter_self":
             saw_checked_effect = True
@@ -381,30 +383,25 @@ def _search_has_target(state, player_idx: int, params: dict[str, Any], exclude_h
     if destination == "bench_energy" and not _energy_effect_target_slots(state, player_idx, params, None):
         return False
     from_zone = str(params.get("from_zone", "deck") or "deck")
-    if from_zone == "deck" and "count" in params and str(params.get("effect_type", "")) == "look_top_deck":
-        pool = player.deck[-int(params.get("count", 0) or 0):]
-    else:
-        pool = _zone_cards(state, player_idx, from_zone, exclude_hand_index)
+    if from_zone == "deck":
+        return int(params.get("count", 1) or 0) > 0 and bool(player.deck)
+    pool = _zone_cards(state, player_idx, from_zone, exclude_hand_index)
     return _zone_has_matching_cards(pool, params)
 
 
 def _look_top_has_target(state, player_idx: int, params: dict[str, Any]) -> bool:
     player = state.get_player(player_idx)
-    count = int(params.get("count", 1) or 1)
-    pool = player.deck[-count:]
     if str(params.get("destination", "hand") or "hand") == "bench_energy":
         if not _energy_effect_target_slots(state, player_idx, params, None):
             return False
-    return _zone_has_matching_cards(pool, params)
+    return int(params.get("count", 1) or 0) > 0 and bool(player.deck)
 
 
 def _look_top_attach_has_target(state, player_idx: int, params: dict[str, Any]) -> bool:
     player = state.get_player(player_idx)
     if not any(pokemon is not None for _slot, pokemon in player.get_all_pokemon()):
         return False
-    count = int(params.get("count", 5) or 5)
-    filter_type = str(params.get("filter", "basic_energy") or "basic_energy")
-    return any(_energy_matches(card, filter_type) for card in player.deck[-count:])
+    return int(params.get("count", 5) or 0) > 0 and bool(player.deck)
 
 
 def _zone_has_matching_cards(cards, params: dict[str, Any]) -> bool:
@@ -474,18 +471,22 @@ def _energy_attach_has_target(
     player = state.get_player(player_idx)
     from_zone = str(params.get("from_zone", "deck") or "deck")
     filter_type = str(params.get("filter", params.get("energy_type", "any")) or "any")
+    if not _energy_effect_target_slots(state, player_idx, params, source_slot):
+        return False
+    if from_zone == "deck":
+        return bool(player.deck)
     if from_zone == "discard":
         source_cards = player.discard
     elif from_zone == "hand":
         source_cards = _zone_cards(state, player_idx, "hand", exclude_hand_index)
-        if include_deck:
-            source_cards = list(source_cards) + list(player.deck)
+        if include_deck and player.deck:
+            return True
     else:
         look_count = int(params.get("count", 0) or 0)
         source_cards = player.deck[-look_count:] if look_count > 0 else player.deck
     if not any(_energy_matches(card, filter_type) for card in source_cards):
         return False
-    return bool(_energy_effect_target_slots(state, player_idx, params, source_slot))
+    return True
 
 
 def _energy_effect_target_slots(state, player_idx: int, params: dict[str, Any], source_slot: str | None) -> list[str]:
@@ -566,8 +567,6 @@ def _energy_discard_has_target(state, player_idx: int, params: dict[str, Any], s
     owner = state.get_player(player_idx if from_target == "self" else 1 - player_idx)
     target = owner.get_pokemon(source_slot or "active") if from_target == "self" else owner.active
     if target is None:
-        return False
-    if from_target != "self" and getattr(target, "all_prevented_next_turn", False):
         return False
     return any(_energy_matches(card, energy_type) for card in target.energy_cards)
 

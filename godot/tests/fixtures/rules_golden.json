@@ -1510,8 +1510,8 @@
             "damage_dealt",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -1666,7 +1666,9 @@
           "index": 2,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         }
       ]
@@ -1969,8 +1971,8 @@
             "damage_dealt",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -2109,7 +2111,9 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         }
       ]
@@ -2417,8 +2421,8 @@
             "status_applied",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -2560,7 +2564,9 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         }
       ]
@@ -2862,11 +2868,12 @@
         {
           "event_types": [
             "attack_declared",
+            "coin_flip",
             "confusion_failed",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -3006,7 +3013,11 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared",
+            "coin_flip",
+            "confusion_failed"
+          ],
           "rng_state": 178770039
         }
       ]
@@ -3308,8 +3319,8 @@
             "healed",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -3447,7 +3458,9 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         }
       ]
@@ -4228,8 +4241,8 @@
           "event_types": [
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -5100,8 +5113,8 @@
             "damage_dealt",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -5239,7 +5252,9 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         }
       ]
@@ -6483,9 +6498,10 @@
           "event_types": [
             "attack_declared",
             "damage_dealt",
+            "cards_discarded",
             "pokemon_ko",
-            "prize_taken",
-            "cards_discarded"
+            "card_moved",
+            "prize_taken"
           ],
           "expected": {
             "active_player_idx": 0,
@@ -6627,7 +6643,9 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         },
         {
@@ -6635,8 +6653,8 @@
             "promoted",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -7254,7 +7272,7 @@
                 "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
-                "damage_counters": 0,
+                "damage_counters": 3,
                 "damage_prevented_next_turn": false,
                 "dazzled": false,
                 "energy_card_ids": [],
@@ -7352,7 +7370,8 @@
       "trace": [
         {
           "event_types": [
-            "attack_declared"
+            "attack_declared",
+            "damage_dealt"
           ],
           "expected": {
             "active_player_idx": 0,
@@ -7465,7 +7484,7 @@
                   "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
-                  "damage_counters": 0,
+                  "damage_counters": 3,
                   "damage_prevented_next_turn": false,
                   "dazzled": false,
                   "energy_card_ids": [],
@@ -7554,17 +7573,18 @@
             "player": 0,
             "request_type": "distribute_energy"
           },
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         },
         {
           "event_types": [
-            "damage_dealt",
             "deck_shuffled",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -8222,7 +8242,7 @@
                 "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
-                "damage_counters": 0,
+                "damage_counters": 3,
                 "damage_prevented_next_turn": false,
                 "dazzled": false,
                 "energy_card_ids": [],
@@ -8320,7 +8340,8 @@
       "trace": [
         {
           "event_types": [
-            "attack_declared"
+            "attack_declared",
+            "damage_dealt"
           ],
           "expected": {
             "active_player_idx": 0,
@@ -8433,7 +8454,7 @@
                   "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
-                  "damage_counters": 0,
+                  "damage_counters": 3,
                   "damage_prevented_next_turn": false,
                   "dazzled": false,
                   "energy_card_ids": [],
@@ -8522,18 +8543,19 @@
             "player": 0,
             "request_type": "distribute_energy"
           },
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         },
         {
           "event_types": [
-            "damage_dealt",
             "energy_attached",
             "deck_shuffled",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -9888,8 +9910,8 @@
             "damage_dealt",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -10031,7 +10053,9 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         }
       ]
@@ -10334,8 +10358,8 @@
             "damage_dealt",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,
@@ -10474,7 +10498,9 @@
           "index": 0,
           "kind": "action",
           "pending": {},
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 700
         }
       ]
@@ -11148,17 +11174,19 @@
             "player": 0,
             "request_type": "search_move"
           },
-          "python_step_event_types": [],
+          "python_step_event_types": [
+            "attack_declared"
+          ],
           "rng_state": 2027
         },
         {
           "event_types": [
-            "deck_shuffled",
             "cards_selected",
+            "deck_shuffled",
             "turn_end",
             "checkup",
-            "cards_drawn",
-            "turn_start"
+            "turn_start",
+            "cards_drawn"
           ],
           "expected": {
             "active_player_idx": 1,

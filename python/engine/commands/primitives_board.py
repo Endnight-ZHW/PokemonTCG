@@ -31,36 +31,162 @@ class DiscardEnergy:
     energy_filter: str = "any"
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
+        from engine.actions import AttachmentRef
         from engine.commands.base import CommandResult
+        from engine.game_state import ActionRequest
 
         from_target = str(self.from_target or "self")
-        amount = int(self.amount or 0)
+        amount = max(0, int(self.amount or 0))
         owner = ctx.player if from_target == "self" else ctx.opponent
-        pokemon = ctx.player.active if from_target == "self" else ctx.opponent.active
+        owner_idx = ctx.player_idx if from_target == "self" else 1 - ctx.player_idx
+        source_slot = ctx.source_slot if from_target == "self" else "active"
+        pokemon = owner.get_pokemon(source_slot)
 
         if pokemon is None:
             return CommandResult.fail("没有可丢弃能量的目标。")
 
-        if from_target != "self" and getattr(pokemon, "all_prevented_next_turn", False):
-            pokemon.all_prevented_next_turn = False
+        from engine.commands.attack_frames import is_opponent_attack_effect
+
+        if (
+            from_target != "self"
+            and getattr(pokemon, "all_prevented_next_turn", False)
+            and is_opponent_attack_effect(ctx.state, ctx.stack, pokemon)
+        ):
             ctx.state._log(f"{pokemon.card.name}免疫了能量丢弃的效果！")
             return CommandResult.ok("免疫了效果。")
 
-        discarded = 0
-        kept = []
-        for card in pokemon.energy_cards:
-            if discarded < amount and _energy_card_matches(card, self.energy_filter):
-                owner.discard.append(card)
-                discarded += 1
-            else:
-                kept.append(card)
-        pokemon.energy_cards = kept
+        matching = [
+            (index, card)
+            for index, card in enumerate(pokemon.energy_cards)
+            if _energy_card_matches(card, self.energy_filter)
+        ]
+        amount = min(amount, len(matching))
+        if amount <= 0:
+            return CommandResult.ok("没有符合条件的能量。")
+
+        refs = [
+            AttachmentRef(
+                owner_idx,
+                source_slot,
+                "energy",
+                index,
+                str(getattr(card, "api_id", "") or ""),
+            )
+            for index, card in matching
+        ]
+        if amount < len(refs):
+            source_name = str(getattr(pokemon.card, "name", "") or source_slot)
+            target_info = [
+                {
+                    "player": ref.player,
+                    "slot": ref.slot,
+                    "attachment_type": ref.attachment_type,
+                    "index": ref.index,
+                    "card_id": ref.card_id,
+                    "label": f"{source_name} - {getattr(card, 'name', ref.card_id)}",
+                }
+                for ref, (_index, card) in zip(refs, matching)
+            ]
+            return CommandResult.ok(
+                f"选择要丢弃的{amount}张能量。",
+                pending_choice=ActionRequest(
+                    request_type="select_attachment",
+                    player=ctx.player_idx,
+                    prompt=f"选择要丢弃的{amount}张能量。",
+                    min_select=amount,
+                    max_select=amount,
+                    target_player="self" if owner_idx == ctx.player_idx else "opponent",
+                    target_info=target_info,
+                    continuation={
+                        "kind": "discard_energy_attachments",
+                        "purpose": "discard_energy",
+                        "player_idx": ctx.player_idx,
+                        "owner_idx": owner_idx,
+                        "source_player": owner_idx,
+                        "source_slot": source_slot,
+                        "amount": amount,
+                        "energy_filter": str(self.energy_filter or "any"),
+                        "same_source": True,
+                        "same_target": False,
+                    },
+                ),
+            )
+
+        success, message, discarded = discard_energy_attachment_refs(
+            ctx.state,
+            actor_idx=ctx.player_idx,
+            owner_idx=owner_idx,
+            source_slot=source_slot,
+            refs=refs[:amount],
+        )
+        if not success:
+            return CommandResult.fail(message)
 
         ctx.state._log(f"从{pokemon.card.name}丢弃了{discarded}个能量。")
         return CommandResult.ok(
             f"丢弃了{discarded}个能量。",
             cards_discarded=discarded,
         )
+
+
+def discard_energy_attachment_refs(
+    state,
+    *,
+    actor_idx: int,
+    owner_idx: int,
+    source_slot: str,
+    refs,
+):
+    """Validate every exact attachment before removing any of them."""
+    from engine.actions import AttachmentRef
+
+    if owner_idx not in (0, 1):
+        return False, "能量来源玩家无效。", 0
+    owner = state.get_player(owner_idx)
+    source = owner.get_pokemon(source_slot)
+    if source is None:
+        return False, "能量来源已不存在。", 0
+
+    validated = []
+    seen_indices = set()
+    for raw_ref in list(refs or []):
+        if isinstance(raw_ref, AttachmentRef):
+            ref = raw_ref
+        elif isinstance(raw_ref, dict):
+            ref = AttachmentRef(
+                raw_ref.get("player", -1),
+                str(raw_ref.get("slot", "") or ""),
+                str(raw_ref.get("attachment_type", "") or ""),
+                raw_ref.get("index", -1),
+                str(raw_ref.get("card_id", "") or ""),
+            )
+        else:
+            return False, "能量引用无效。", 0
+        if (
+            type(ref.player) is not int
+            or ref.player != owner_idx
+            or ref.slot != source_slot
+            or ref.attachment_type != "energy"
+            or type(ref.index) is not int
+            or ref.index < 0
+            or ref.index >= len(source.energy_cards)
+            or ref.index in seen_indices
+            or getattr(source.energy_cards[ref.index], "api_id", "") != ref.card_id
+        ):
+            return False, "选择的能量已不存在。", 0
+        seen_indices.add(ref.index)
+        validated.append((ref, source.energy_cards[ref.index]))
+
+    # Removing high indices first preserves every validated original index.
+    for ref, _card in sorted(validated, key=lambda item: item[0].index, reverse=True):
+        source.energy_cards.pop(ref.index)
+    for _ref, card in validated:
+        owner.discard.append(card)
+    if validated:
+        state._log(
+            f"玩家{actor_idx + 1}从{source.card.name}身上丢弃了{len(validated)}张能量。"
+        )
+    return True, "", len(validated)
 
 
 @dataclass
@@ -175,8 +301,14 @@ class SwitchPokemon:
         target_idx = ctx.player_idx if self.target == "self" else 1 - ctx.player_idx
         player = ctx.state.get_player(target_idx)
 
-        if self.target == "opponent" and player.active and player.active.all_prevented_next_turn:
-            player.active.all_prevented_next_turn = False
+        from engine.commands.attack_frames import is_opponent_attack_effect
+
+        if (
+            self.target == "opponent"
+            and player.active
+            and player.active.all_prevented_next_turn
+            and is_opponent_attack_effect(ctx.state, ctx.stack, player.active)
+        ):
             ctx.state._log(f"{player.active.card.name}免疫了强制替换的效果！")
             return CommandResult.ok("免疫了效果。")
 

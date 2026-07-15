@@ -510,9 +510,30 @@ func _build_presentation_fixture(kind: String) -> Dictionary:
 		false,
 		"preview",
 	)
+	var events: Array[Dictionary] = [_presentation_event(kind)]
+	if kind == "ko":
+		# KO is a two-step presentation lifecycle.  The declaration keeps the
+		# old stack available for impact feedback; the following move owns the
+		# physical departure to the discard pile.
+		events[0]["data"]["defer_leave_play"] = true
+		var leave_event: Dictionary = events[0].duplicate(true)
+		leave_event["event_id"] = "%s:leave" % str(events[0].get("event_id", ""))
+		leave_event["event_type"] = "card_moved"
+		leave_event["source"] = {"player": 1, "slot": "active"}
+		leave_event["target"] = {"player": 1, "zone": "discard"}
+		leave_event["data"] = {
+			"player": 1,
+			"source_player": 1,
+			"source_slot": "active",
+			"target_player": 1,
+			"target_zone": "discard",
+			"card_ids": ["sv2-keldeo"],
+			"ko_leave_play": true,
+		}
+		events.append(leave_event)
 	var request := BattleTransitionRequest.create(
 		after_view,
-		[_presentation_event(kind)],
+		events,
 		0,
 		BattleTransitionRequest.CAUSE_REFRESH,
 		"workbench:%d" % event_sequence,

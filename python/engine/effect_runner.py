@@ -3,12 +3,15 @@ from __future__ import annotations
 
 from engine.commands.attack_frames import (
     FinalizeAttackDamage,
+    FinalizeAttackKoChecks,
     FinalizeAttackTurn,
+    begin_attack_resolution_context,
     begin_attack_damage_context,
     apply_accumulated_attack_damage,
     apply_attack_damage,
     check_kos,
     clear_attack_damage_context,
+    clear_attack_resolution_context,
     do_attack_ko_checks,
     handle_ko,
 )
@@ -60,6 +63,16 @@ FULL_DAMAGE_VM_OPS = {
     "flip_until_tails",
     "mill_then_damage",
     "set_attack_damage_formula",
+}
+
+PRE_HIT_ATTACK_VM_OPS = FULL_DAMAGE_VM_OPS | {
+    "choose_damage_target",
+    "conditional_damage",
+    "deal_damage_with_self_penalty",
+    "fail_attack",
+    "flip_coin",
+    "flip_coin_then_ko",
+    "set_attack_flags",
 }
 
 
@@ -150,6 +163,35 @@ def attack_effects_replace_base_damage(attack) -> bool:
     )
 
 
+def partition_attack_effects(effects: list) -> tuple[list, list]:
+    """Split attack prerequisites/formulas from consequences of the hit."""
+    pre_hit, post_hit = [], []
+    for effect in effects:
+        op = effect_op(effect)
+        args = effect_args(effect)
+        if op == "deal_damage_then_heal":
+            pre_hit.append({
+                "op": "deal_damage",
+                "args": {"amount": int(args.get("damage", 0) or 0)},
+                "branches": {},
+            })
+            post_hit.append({
+                "op": "heal_damage",
+                "args": {
+                    "amount": int(args.get("heal", 0) or 0),
+                    "target": "self",
+                },
+                "branches": {},
+            })
+        elif op == "deal_damage":
+            (pre_hit if str(args.get("target", "opponent_active")) != "self" else post_hit).append(effect)
+        elif op in PRE_HIT_ATTACK_VM_OPS:
+            pre_hit.append(effect)
+        else:
+            post_hit.append(effect)
+    return pre_hit, post_hit
+
+
 class VMEffectRunner:
     """Builds VM commands and resolves them through a ResolutionStack."""
 
@@ -190,13 +232,19 @@ class VMEffectRunner:
     ) -> ActionResult:
         stack = ResolutionStack(self.state)
         begin_attack_damage_context(self.state, stack, attack_damage_context)
+        begin_attack_resolution_context(stack, player_idx)
         stack.add_abort_handler(lambda: clear_attack_damage_context(self.state, stack))
+        stack.add_abort_handler(lambda: clear_attack_resolution_context(stack))
+        pre_hit_effects, post_hit_effects = partition_attack_effects(effects)
         try:
-            commands = [self._build_runtime_command(effect) for effect in effects]
+            pre_hit_commands = [self._build_runtime_command(effect) for effect in pre_hit_effects]
+            post_hit_commands = [self._build_runtime_command(effect) for effect in post_hit_effects]
         except (KeyError, ValueError) as exc:
             clear_attack_damage_context(self.state, stack)
+            clear_attack_resolution_context(stack)
             return ActionResult(False, str(exc))
-        commands.append(FinalizeAttackDamage())
+        commands = pre_hit_commands + [FinalizeAttackDamage()] + post_hit_commands
+        commands.append(FinalizeAttackKoChecks())
         if finish_attack_in_stack:
             commands.append(FinalizeAttackTurn(player_idx))
         stack.push_many(commands)

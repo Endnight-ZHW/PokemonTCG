@@ -82,14 +82,21 @@ func continue_coin(
 
 func continue_damage_target(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
 ) -> Dictionary:
 	return combat_damage.selected_target_damage(
-		state, selected, int(data["target_player"]), int(data["amount"]), events)
+		state,
+		stack,
+		selected,
+		int(data.get("source_player", stack.context.get("actor", -1))),
+		int(data["target_player"]),
+		int(data["amount"]),
+		events,
+	)
 
 
 func continue_evolve_skip_stage(
@@ -105,14 +112,21 @@ func continue_evolve_skip_stage(
 
 func continue_bench_damage_target(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
 ) -> Dictionary:
 	return combat_damage.selected_bench_damage(
-		state, selected, int(data["target_player"]), int(data["amount"]), events)
+		state,
+		stack,
+		selected,
+		int(data.get("source_player", stack.context.get("actor", -1))),
+		int(data["target_player"]),
+		int(data["amount"]),
+		events,
+	)
 
 
 func continue_place_counters_self_ko(
@@ -256,13 +270,13 @@ func continue_heal_target(
 
 func continue_discard_attachment(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
 ) -> Dictionary:
-	return resolve_discard_attachment(state, data, selected, events)
+	return resolve_discard_attachment(state, data, selected, events, stack)
 
 
 func resolve_discard_attachment(
@@ -270,6 +284,7 @@ func resolve_discard_attachment(
 	data: Dictionary,
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
+	stack: ResolutionStack = null,
 ) -> Dictionary:
 	if selected.is_empty():
 		return VMResult.fail("没有选择要丢弃的能量。")
@@ -288,6 +303,15 @@ func resolve_discard_attachment(
 		or str(target.energy_card_ids[energy_index]) != card_id
 	):
 		return VMResult.fail("选择的能量已不存在。")
+	var source_player := int(data.get(
+		"player_idx", stack.context.get("actor", -1) if stack != null else -1))
+	if (
+		stack != null
+		and
+		target.all_prevented_next_turn
+		and stack.is_blockable_opponent_attack_effect(source_player, target_player)
+	):
+		return VMResult.ok("能量丢弃效果被免疫。")
 	state.get_player(target_player).discard.append(target.energy_card_ids.pop_at(energy_index))
 	events.append({
 		"event_type": "cards_discarded",

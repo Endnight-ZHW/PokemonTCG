@@ -380,15 +380,19 @@ static func own_hand_plan(
 			minimum_spacing,
 			card_size.x + 6.0,
 		)
-	var content_width := (
-		card_size.x
-		if visible_count <= 1
-		else card_size.x + spacing * float(visible_count - 1)
-	)
+	var content_width := 0.0
+	if visible_count == 1:
+		content_width = card_size.x
+	elif visible_count > 1:
+		content_width = card_size.x + spacing * float(visible_count - 1)
 	var surface_width := maxf(available, content_width)
 	var start_x := maxf(0.0, (surface_width - content_width) * 0.5)
 	return {
+		"content_width": content_width,
 		"surface_width": surface_width,
+		# ScrollContainer starts at the leading edge when its child overflows.
+		# Centering that overflow gives both ends of a large hand equal access.
+		"center_scroll": maxf(0.0, (content_width - available) * 0.5),
 		"items": _fan_items(
 			visible_count,
 			start_x,

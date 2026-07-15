@@ -150,18 +150,37 @@ func resolve_coin(
 	match coin_kind:
 		"branch":
 			var branch: Variant = params.get("on_heads", []) if bool(results[0]) else params.get("on_tails", [])
-			if branch is Dictionary:
-				stack.push_effect(branch, player_idx, source_slot)
-			elif branch is Array:
-				stack.push_effects(branch, player_idx, source_slot)
+			var branch_effects: Array = [branch] if branch is Dictionary else branch
+			if bool(stack.context.get("finish_attack", false)):
+				var pre_hit_branch: Array[Dictionary] = []
+				var post_hit_branch: Array[Dictionary] = []
+				for effect_value in branch_effects:
+					var effect := Dictionary(effect_value).duplicate(true)
+					if _branch_effect_is_pre_hit(effect):
+						pre_hit_branch.append(effect)
+					else:
+						post_hit_branch.append(effect)
+				var deferred: Array = stack.context.get("conditional_post_hit_effects", [])
+				deferred.append_array(post_hit_branch)
+				stack.context["conditional_post_hit_effects"] = deferred
+				stack.push_effects(pre_hit_branch, player_idx, source_slot)
+			else:
+				stack.push_effects(branch_effects, player_idx, source_slot)
 		"repeat_damage":
 			return combat_damage.deal_attack_or_effect_damage(
 				state, stack, player_idx, 1 - player_idx, "active",
 				heads * int(params.get("damage_per_head", 10)), events)
 		"double_ko":
 			if heads == 2:
-				var target := state.get_player(1 - player_idx).active
+				var target_player_idx := 1 - player_idx
+				var target := state.get_player(target_player_idx).active
 				if target:
+					if (
+						target.all_prevented_next_turn
+						and stack.is_blockable_opponent_attack_effect(
+							player_idx, target_player_idx)
+					):
+						return VMResult.ok("击倒效果被免疫。")
 					var applied_counters: int = maxi(
 						1,
 						ceili(float(target.current_hp(catalog)) / 10.0),
@@ -186,21 +205,35 @@ func resolve_coin(
 				heads * int(params.get("per_head", 20)), events)
 		"discard_energy":
 			if bool(results[0]):
-				var opponent := state.get_player(1 - player_idx)
+				var opponent_idx := 1 - player_idx
+				var opponent := state.get_player(opponent_idx)
 				var options: Array[Dictionary] = []
+				var attachment_refs: Array[Dictionary] = []
+				var card_ids: Array[String] = []
 				for row in opponent.get_all_pokemon():
 					var pokemon: PokemonState = row["pokemon"]
 					if pokemon == null:
 						continue
+					if (
+						pokemon.all_prevented_next_turn
+						and stack.is_blockable_opponent_attack_effect(
+							player_idx, opponent_idx)
+					):
+						continue
 					var slot := str(row["slot"])
 					for index in range(pokemon.energy_card_ids.size()):
 						var energy_id := str(pokemon.energy_card_ids[index])
+						var attachment_ref := EntityRef.new(
+							"attachment", opponent_idx, "field", slot,
+							index, "energy", energy_id).to_dict()
+						attachment_refs.append(attachment_ref)
+						card_ids.append(energy_id)
 						options.append({
-							"option_id": "attachment:%d:%s:energy:%d:%s" % [1 - player_idx, slot, index, energy_id],
+							"option_id": "attachment:%d:%s:energy:%d:%s" % [opponent_idx, slot, index, energy_id],
 							"label": "%s - %s" % [catalog.card_name(pokemon.card_id), catalog.card_name(energy_id)],
-							"ref": EntityRef.new("attachment", 1 - player_idx, "", slot, index, "energy", energy_id).to_dict(),
+							"ref": attachment_ref,
 							"value": {
-								"player": 1 - player_idx,
+								"player": opponent_idx,
 								"slot": slot,
 								"index": index,
 								"card_id": energy_id,
@@ -219,6 +252,47 @@ func resolve_coin(
 					1,
 					false,
 					false,
-					{"revision": state.revision},
+					{
+						"revision": state.revision,
+						"purpose": "discard_energy",
+						"attachment_refs": attachment_refs,
+						"card_ids": card_ids,
+						"source_player": opponent_idx,
+						"source_slot": "",
+						"same_source": false,
+						"same_target": false,
+						"max_per_target": 1,
+					},
 				)
 	return VMResult.ok()
+
+
+func _branch_effect_is_pre_hit(effect: Dictionary) -> bool:
+	var op := str(effect.get("op", ""))
+	if op == "deal_damage":
+		return str(Dictionary(effect.get("args", {})).get(
+			"target", "opponent_active")) != "self"
+	return op in [
+		"choose_damage_target",
+		"conditional_damage",
+		"conditional_damage_then_heal",
+		"deal_damage_per_discard_psychic",
+		"deal_damage_per_energy",
+		"deal_damage_per_evolved",
+		"deal_damage_per_hand_size",
+		"deal_damage_per_self_damage",
+		"deal_damage_per_self_energy",
+		"deal_damage_per_self_energy_type",
+		"deal_damage_plus_bench",
+		"deal_damage_with_self_penalty",
+		"discard_energy_then_damage",
+		"discard_hand_then_damage",
+		"fail_attack",
+		"flip_coin",
+		"flip_coin_repeat_damage",
+		"flip_coin_then_ko",
+		"flip_until_tails",
+		"mill_then_damage",
+		"set_attack_damage_formula",
+		"set_attack_flags",
+	]

@@ -11,11 +11,18 @@ var _active: Dictionary = {}
 var _next_batch_id := 1
 var _pump_scheduled := false
 var _generation := 0
+var _preflight: MotionHandle
 
 
 func _exit_tree() -> void:
 	_generation += 1
+	_cancel_preflight()
 	if _table != null and is_instance_valid(_table):
+		# Scene teardown may happen in the middle of a feedback/motion barrier.
+		# Cancel those table-owned groups before releasing the coordinator's
+		# active handle so EventCompletion/MotionGroup references cannot survive
+		# until ObjectDB shutdown.
+		_table.clear_presentation_for_resync()
 		_table.set_transition_blocked(false)
 	if not _active.is_empty():
 		var active_handle := _active.get("handle") as PresentationHandle
@@ -35,7 +42,55 @@ func configure(table: BattleTable) -> void:
 
 
 func is_busy() -> bool:
-	return not _active.is_empty() or not _queue.is_empty()
+	return (
+		(_preflight != null and not _preflight.is_finished())
+		or not _active.is_empty()
+		or not _queue.is_empty()
+	)
+
+
+## Installs a presentation barrier that must finish before authoritative battle
+## transitions may mutate the rendered table. Startup shuffle uses this so a
+## network state received during the opening choreography is queued, not applied
+## underneath the physical deck animation.
+func set_preflight(handle: MotionHandle) -> void:
+	if _preflight == handle:
+		return
+	var was_busy := is_busy()
+	_cancel_preflight()
+	if handle == null or handle.is_finished():
+		_refresh_critical_blocker()
+		_schedule_pump()
+		return
+	_preflight = handle
+	handle.completed.connect(
+		_on_preflight_completed.bind(handle),
+		CONNECT_ONE_SHOT,
+	)
+	_refresh_critical_blocker()
+	if not was_busy:
+		busy_changed.emit(true)
+
+
+func _on_preflight_completed(
+	_completed_handle: MotionHandle,
+	expected_handle: MotionHandle,
+) -> void:
+	if _preflight != expected_handle:
+		return
+	_preflight = null
+	_refresh_critical_blocker()
+	if _queue.is_empty() and _active.is_empty():
+		busy_changed.emit(false)
+	else:
+		_schedule_pump()
+
+
+func _cancel_preflight() -> void:
+	var handle := _preflight
+	_preflight = null
+	if handle != null and not handle.is_finished():
+		handle.cancel()
 
 
 func submit(request: BattleTransitionRequest) -> PresentationHandle:
@@ -55,6 +110,7 @@ func submit(request: BattleTransitionRequest) -> PresentationHandle:
 
 func cancel_all(reason: String = "cancelled", replacement: BattleViewModel = null) -> void:
 	_generation += 1
+	_cancel_preflight()
 	if _table != null:
 		_table.clear_presentation_for_resync()
 		_table.clear_pending_drag_immediately(reason)
@@ -87,6 +143,7 @@ func _pump() -> void:
 	if (
 		not is_inside_tree()
 		or get_tree() == null
+		or (_preflight != null and not _preflight.is_finished())
 		or not _active.is_empty()
 		or _queue.is_empty()
 		or _table == null
@@ -128,7 +185,7 @@ func _pump() -> void:
 	# A duplicate-only batch does not start the director.  It still commits on
 	# this deferred pump turn and must not deadlock the flow barrier.
 	if not director.is_playing() and director.pending_count() == 0:
-		pass
+		_table.clear_unplayed_presentation_staging()
 	else:
 		await director.sequence_finished
 	_finish_active(run_generation)
@@ -173,7 +230,7 @@ func _finish_active(
 func _refresh_critical_blocker() -> void:
 	if _table == null or not is_instance_valid(_table):
 		return
-	var blocked := false
+	var blocked := _preflight != null and not _preflight.is_finished()
 	if not _active.is_empty():
 		var active_request := _active.get("request") as BattleTransitionRequest
 		blocked = active_request != null and active_request.critical

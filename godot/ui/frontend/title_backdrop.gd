@@ -3,8 +3,7 @@ class_name TitleBackdrop
 extends Control
 
 ## Asset-light midnight arena used behind the title page. Static artwork is
-## redrawn only when the viewport or accessibility profile changes; animation
-## is limited to the edge card-back nodes.
+## redrawn only when the viewport or accessibility profile changes.
 
 const FRONTEND_MOTION := preload("res://ui/frontend/frontend_motion.gd")
 
@@ -24,21 +23,8 @@ const ENERGY_TICK_COLORS := [
 	Color("#c8d4df"), # Metal
 ]
 
-@onready var card_layer: Control = %CardBackLayer
-@onready var card_backs: Array[TextureRect] = [
-	%CardBackOne,
-	%CardBackTwo,
-	%CardBackThree,
-	%CardBackFour,
-]
-
 var _quality := "high"
-var _motion_enabled := false
 var _decorations_reduced := false
-var _elapsed := 0.0
-var _parallax := Vector2.ZERO
-var _base_positions: Array[Vector2] = []
-var _base_rotations: Array[float] = []
 
 
 func _ready() -> void:
@@ -46,25 +32,6 @@ func _ready() -> void:
 	resized.connect(_on_resized)
 	_connect_settings()
 	_refresh_runtime_settings()
-	call_deferred("_layout_card_backs")
-
-
-func _process(delta: float) -> void:
-	_elapsed += delta
-	var target := Vector2.ZERO
-	if not Engine.is_editor_hint() and is_inside_tree():
-		var pointer := get_viewport().get_mouse_position()
-		target = Vector2(
-			clampf(pointer.x / maxf(size.x, 1.0) - 0.5, -0.5, 0.5),
-			clampf(pointer.y / maxf(size.y, 1.0) - 0.5, -0.5, 0.5),
-		) * 13.0
-	_parallax = _parallax.lerp(target, minf(1.0, delta * 3.2))
-	_apply_card_motion()
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_VISIBILITY_CHANGED and is_node_ready():
-		_refresh_processing()
 
 
 func _draw() -> void:
@@ -279,72 +246,14 @@ func _connect_settings() -> void:
 
 func _refresh_runtime_settings() -> void:
 	_quality = "high"
-	_motion_enabled = not Engine.is_editor_hint()
 	_decorations_reduced = false
 	if not Engine.is_editor_hint():
 		var settings := get_node_or_null("/root/AppSettings")
 		if settings != null and settings.has_method("resolved_quality_profile"):
 			_quality = str(settings.call("resolved_quality_profile"))
-		_motion_enabled = FRONTEND_MOTION.decorative_motion_enabled()
 		_decorations_reduced = FRONTEND_MOTION.is_reduced() or _quality == "low"
-	if _quality == "low":
-		_motion_enabled = false
-	_elapsed = 0.0
-	_parallax = Vector2.ZERO
-	_layout_card_backs()
-	_refresh_processing()
 	queue_redraw()
-
-
-func _refresh_processing() -> void:
-	set_process(_motion_enabled and is_visible_in_tree())
-	if not is_processing():
-		_apply_card_motion()
 
 
 func _on_resized() -> void:
-	_layout_card_backs()
 	queue_redraw()
-
-
-func _layout_card_backs() -> void:
-	if not is_node_ready() or size.x <= 0.0 or size.y <= 0.0:
-		return
-	var compact := size.x < 1180.0 or size.x / maxf(size.y, 1.0) < 1.5
-	var visible_count := 2 if _quality == "low" else 3 if _quality == "medium" else 4
-	var card_size := Vector2(138, 193) if compact else Vector2(172, 240)
-	var placements := [
-		[Vector2(-card_size.x * 0.30, size.y * 0.18), -0.38],
-		[Vector2(size.x - card_size.x * 0.58, size.y * 0.13), 0.31],
-		[Vector2(size.x - card_size.x * 0.38, size.y * 0.62), 0.20],
-		[Vector2(size.x * 0.07, size.y * 0.72), -0.24],
-	]
-	_base_positions.clear()
-	_base_rotations.clear()
-	for index in range(card_backs.size()):
-		var card := card_backs[index]
-		card.visible = index < visible_count
-		card.size = card_size
-		card.pivot_offset = card_size * 0.5
-		var position_value: Vector2 = placements[index][0]
-		var rotation_value: float = placements[index][1]
-		_base_positions.append(position_value)
-		_base_rotations.append(rotation_value)
-	_apply_card_motion()
-
-
-func _apply_card_motion() -> void:
-	if not is_node_ready() or _base_positions.size() != card_backs.size():
-		return
-	for index in range(card_backs.size()):
-		var float_offset := 0.0
-		var rotation_offset := 0.0
-		if _motion_enabled:
-			float_offset = sin(_elapsed * 0.58 + index * 1.4) * 4.5
-			rotation_offset = sin(_elapsed * 0.34 + index) * 0.009
-		card_backs[index].position = (
-			_base_positions[index]
-			+ _parallax * (0.18 + float(index) * 0.06)
-			+ Vector2(0, float_offset)
-		)
-		card_backs[index].rotation = _base_rotations[index] + rotation_offset

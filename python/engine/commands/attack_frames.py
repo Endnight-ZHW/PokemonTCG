@@ -10,6 +10,7 @@ from engine.enums import EventType, PlayerAction, TurnPhase
 from engine.rules_constants import DAMAGE_PER_COUNTER
 
 ATTACK_DAMAGE_CONTEXT_KEY = "attack_damage"
+ATTACK_RESOLUTION_CONTEXT_KEY = "attack_resolution"
 FINISH_ATTACK_AFTER_PROMOTIONS_KEY = "finish_attack_after_promotions"
 
 
@@ -39,6 +40,48 @@ def clear_attack_damage_context(state: GameState, stack=None) -> None:
             stack_context.pop(ATTACK_DAMAGE_CONTEXT_KEY, None)
 
 
+def begin_attack_resolution_context(stack, player_idx: int) -> None:
+    """Mark commands in this stack as consequences of one declared attack."""
+    stack.context[ATTACK_RESOLUTION_CONTEXT_KEY] = {
+        "active": True,
+        "player_idx": int(player_idx),
+    }
+
+
+def clear_attack_resolution_context(stack=None) -> None:
+    if stack is None:
+        return
+    stack_context = getattr(stack, "context", {})
+    if isinstance(stack_context, dict):
+        stack_context.pop(ATTACK_RESOLUTION_CONTEXT_KEY, None)
+
+
+def is_opponent_attack_effect(state: GameState, stack, pokemon) -> bool:
+    """Return whether ``pokemon`` is targeted by the marked opponent attack.
+
+    The marker deliberately outlives the primary damage frame so protection
+    applies to every effect of the attack, including commands resumed after a
+    choice. Trainer and Ability stacks do not carry this marker.
+    """
+    if stack is None or pokemon is None:
+        return False
+    stack_context = getattr(stack, "context", {})
+    context = (
+        stack_context.get(ATTACK_RESOLUTION_CONTEXT_KEY)
+        if isinstance(stack_context, dict)
+        else None
+    )
+    if not isinstance(context, dict) or not context.get("active"):
+        return False
+    player_idx = context.get("player_idx", -1)
+    if type(player_idx) is not int or player_idx not in (0, 1):
+        return False
+    return any(
+        candidate is pokemon
+        for _slot, candidate in state.get_player(1 - player_idx).get_all_pokemon()
+    )
+
+
 def _resolution_stack_context(state: GameState) -> dict:
     stack_data = getattr(state, "resolution_stack", None)
     if not isinstance(stack_data, dict):
@@ -64,6 +107,34 @@ def finish_attack_after_promotions_actor(state: GameState) -> int | None:
 
 def clear_finish_attack_after_promotions(state: GameState) -> None:
     _resolution_stack_context(state).pop(FINISH_ATTACK_AFTER_PROMOTIONS_KEY, None)
+
+
+def finalize_game_over_if_needed(state: GameState, *, reason: str = "knockout") -> int | None:
+    """Finalize a terminal rules state once, after the whole KO batch."""
+    from engine.events.game_events import GameEvent
+    from engine.rules_validator import check_win_condition
+
+    winner = state.winner
+    if winner not in (0, 1):
+        winner = check_win_condition(state)
+    if winner not in (0, 1):
+        return None
+
+    was_terminal = state.phase == TurnPhase.GAME_OVER and state.winner == winner
+    state.winner = int(winner)
+    state.phase = TurnPhase.GAME_OVER
+    state.pending_promotions.clear()
+    clear_finish_attack_after_promotions(state)
+    if not was_terminal:
+        state._log(f"{state.get_player(winner).name}获胜！")
+
+    events = getattr(getattr(state, "event_stream", None), "_events", ())
+    if not any(getattr(event, "event_type", "") == "game_over" for event in events):
+        state.event_stream.push(GameEvent(
+            "game_over",
+            {"winner": int(winner), "reason": str(reason or "knockout")},
+        ))
+    return int(winner)
 
 
 def attack_context_for_opponent_active(
@@ -183,8 +254,6 @@ def apply_attack_damage(
     trigger_commands: list | None = None,
 ) -> None:
     if defender.damage_prevented_next_turn and not ignore_defender_effects:
-        defender.damage_prevented_next_turn = False
-        defender.all_prevented_next_turn = False
         state._log(f"{defender.card.name}免疫了所有伤害！")
         return
 
@@ -216,18 +285,9 @@ def do_attack_ko_checks(state: GameState, result: CommandResult) -> None:
     finally:
         state._ko_from_attack = False
 
-    for player_idx in (0, 1):
-        player = state.get_player(player_idx)
-        if player.active is None and player.has_any_pokemon_in_play():
-            state.pending_promotion_player = player_idx
+    refresh_pending_promotions(state)
 
-    from engine.rules_validator import check_win_condition
-
-    winner = check_win_condition(state)
-    if winner is not None:
-        state.winner = winner
-        state.phase = TurnPhase.GAME_OVER
-        state._log(f"{state.get_player(winner).name}获胜！")
+    finalize_game_over_if_needed(state, reason="knockout")
 
 
 def check_kos(state: GameState) -> list[str]:
@@ -242,7 +302,18 @@ def check_kos(state: GameState) -> list[str]:
             if pokemon and pokemon.is_knocked_out:
                 ko_slots.append(f"p{player_idx}_bench_{index}")
                 handle_ko(state, player_idx, f"bench_{index}")
+    refresh_pending_promotions(state)
     return ko_slots
+
+
+def refresh_pending_promotions(state: GameState) -> None:
+    turn_owner = int(state.active_player_idx)
+    state.pending_promotions = [
+        player_idx
+        for player_idx in (turn_owner, 1 - turn_owner)
+        if state.get_player(player_idx).active is None
+        and state.get_player(player_idx).has_any_pokemon_in_play()
+    ]
 
 
 def handle_ko(state: GameState, player_idx: int, slot: str) -> None:
@@ -268,6 +339,10 @@ def handle_ko(state: GameState, player_idx: int, slot: str) -> None:
         event_bus=state.event_bus,
         player_idx=player_idx,
     )
+
+    # Announce the KO before attachment-moving triggers. The Pokemon remains in
+    # play until those atomic trigger commands have finished.
+    state._log(f"{player.name}的{pokemon.card.name}被击倒了！")
 
     hook_results = state.event_bus.emit(
         EventType.POKEMON_KO,
@@ -295,7 +370,6 @@ def handle_ko(state: GameState, player_idx: int, slot: str) -> None:
             state._log(str(hook_result["log"]))
 
     state.discard_pokemon(player_idx, slot)
-    state._log(f"{player.name}的{pokemon.card.name}被击倒了！")
 
     for _ in range(prize_count):
         if opponent.prizes:
@@ -305,19 +379,13 @@ def handle_ko(state: GameState, player_idx: int, slot: str) -> None:
                 f"（剩余{len(opponent.prizes)}张）"
             )
 
-    if not player.has_any_pokemon_in_play():
-        state.winner = 1 - player_idx
-        state.phase = TurnPhase.GAME_OVER
-        state._log(f"{opponent.name}获胜——对手场上没有宝可梦了！")
-        return
-
-    if slot == "active":
-        state.pending_promotion_player = player_idx
+    # Winner and simultaneous-promotion decisions are made only after the full
+    # KO batch, avoiding loop/index bias.
 
 
 @dataclass
 class FinalizeAttackDamage:
-    """Final attack damage packet; trigger commands resolve before KO checks."""
+    """Primary hit; reactive triggers and deferred coin branches run next."""
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         result = CommandResult.ok()
@@ -329,7 +397,9 @@ class FinalizeAttackDamage:
             trigger_commands=trigger_commands,
             stack=ctx.stack,
         )
-        ctx.stack.push(FinalizeAttackKoChecks())
+        deferred = list(ctx.stack.context.pop("conditional_post_hit_commands", []) or [])
+        if deferred:
+            ctx.stack.push_many(deferred)
         if trigger_commands:
             from engine.commands.trigger_commands import push_trigger_command_specs
 
@@ -344,6 +414,7 @@ class FinalizeAttackKoChecks:
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         result = CommandResult.ok()
         do_attack_ko_checks(ctx.state, result)
+        clear_attack_resolution_context(ctx.stack)
         return result
 
 

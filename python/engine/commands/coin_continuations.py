@@ -45,11 +45,26 @@ def continue_flip_coin_branch(
     if branch_items:
         try:
             from engine.commands.primitives_coin import _build_branch_command
-
-            stack.push_many([
-                _build_branch_command(item)
-                for item in branch_items
-            ])
+            if isinstance(stack.context.get("attack_damage"), dict):
+                pre_items, post_items = [], []
+                for item in branch_items:
+                    op = str(item.get("op", "")) if isinstance(item, dict) else ""
+                    args = dict(item.get("args", {}) or {}) if isinstance(item, dict) else {}
+                    is_pre = op in {
+                        "choose_damage_target", "conditional_damage",
+                        "conditional_damage_then_heal", "discard_energy_then_damage",
+                        "discard_hand_then_damage", "fail_attack", "flip_coin",
+                        "flip_coin_repeat_damage", "flip_coin_then_ko",
+                        "flip_until_tails", "mill_then_damage",
+                        "set_attack_damage_formula", "set_attack_flags",
+                    } or (op == "deal_damage" and str(args.get("target", "opponent_active")) != "self")
+                    (pre_items if is_pre else post_items).append(item)
+                if post_items:
+                    deferred = stack.context.setdefault("conditional_post_hit_commands", [])
+                    deferred.extend(_build_branch_command(item) for item in post_items)
+                stack.push_many([_build_branch_command(item) for item in pre_items])
+            else:
+                stack.push_many([_build_branch_command(item) for item in branch_items])
         except Exception as exc:
             return ActionResult(False, str(exc))
     return ActionResult(True, f"硬币: {cn}.")
@@ -80,7 +95,7 @@ def resolve_coin_special(
             target = opponent.active
             if target is None:
                 return ActionResult(True, "没有对手宝可梦。")
-            if _consume_effect_damage_prevention(stack.state, target):
+            if _consume_effect_damage_prevention(stack.state, target, stack=stack):
                 return ActionResult(True, "击倒效果被免疫。")
             remaining = target.current_hp
             counters = max(1, (remaining + DAMAGE_PER_COUNTER - 1) // DAMAGE_PER_COUNTER)

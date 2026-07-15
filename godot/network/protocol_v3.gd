@@ -153,6 +153,7 @@ static func validate_payload(message_type: String, payload: Dictionary) -> Dicti
 				not _bounded_int(payload, "player_idx", 0, 1)
 				or not _bounded_int(payload, "rules_version", 1, 2147483647)
 				or not _bounded_int(payload, "action_version", 1, 2147483647)
+				or (payload.has("resume") and not payload["resume"] is bool)
 			):
 				return _invalid("invalid_payload", "欢迎消息缺少玩家编号。")
 			return {"ok": true}
@@ -162,6 +163,7 @@ static func validate_payload(message_type: String, payload: Dictionary) -> Dicti
 				or str(payload.get("deck_key", "")).is_empty()
 				or not _bounded_int(payload, "rules_version", 1, 2147483647)
 				or not _bounded_int(payload, "action_version", 1, 2147483647)
+				or (payload.has("resume") and not payload["resume"] is bool)
 			):
 				return _invalid("invalid_payload", "牌组选择消息缺少牌组。")
 			return {"ok": true}
@@ -226,6 +228,9 @@ static func _validate_state_update_payload(payload: Dictionary) -> Dictionary:
 	if payload.has("choice_request") and payload["choice_request"] != null:
 		if not payload["choice_request"] is Dictionary:
 			return _invalid("invalid_payload", "选择请求类型错误。")
+	if payload.has("wait_context") and payload["wait_context"] != null:
+		if not _validate_wait_context(payload["wait_context"]):
+			return _invalid("invalid_payload", "等待上下文格式无效。")
 	var state: Dictionary = payload["state"]
 	if not _bounded_int(state, "revision", 0, 2147483647):
 		return _invalid("invalid_payload", "状态同步消息缺少版本号。")
@@ -254,6 +259,20 @@ static func _validate_state_update_payload(payload: Dictionary) -> Dictionary:
 		if not bool(choice_validation.get("ok", false)):
 			return choice_validation
 	return {"ok": true}
+
+
+static func _validate_wait_context(value: Variant) -> bool:
+	if not value is Dictionary:
+		return false
+	var context: Dictionary = value
+	return (
+		context.size() == 2
+		and _bounded_int(context, "waiting_for_player", 0, 1)
+		and _bounded_string(context.get("choice_kind", ""), 32)
+		and str(context.get("choice_kind", "")) in [
+			"attachment", "energy", "coin", "choice",
+		]
+	)
 
 
 static func _validate_state_payload(state: Dictionary) -> Dictionary:
@@ -510,6 +529,8 @@ static func _validate_choice_request(value: Variant) -> Dictionary:
 
 
 static func _validate_choice_metadata(metadata: Dictionary) -> bool:
+	if not _json_tree_is_bounded(metadata):
+		return false
 	if metadata.has("revision") and not _bounded_int(
 		metadata, "revision", 0, 2147483647
 	):
@@ -518,6 +539,37 @@ static func _validate_choice_metadata(metadata: Dictionary) -> bool:
 		metadata, "max_per_target", 0, 2147483647
 	):
 		return false
+	if metadata.has("purpose") and not _bounded_string(
+		metadata["purpose"], 64
+	):
+		return false
+	if metadata.has("source_player") and not _bounded_int(
+		metadata, "source_player", -1, 1
+	):
+		return false
+	if metadata.has("finish_attack_actor") and not _bounded_int(
+		metadata, "finish_attack_actor", -1, 1
+	):
+		return false
+	for source_field in ["source_slot", "source_zone"]:
+		if metadata.has(source_field) and not _bounded_string(
+			metadata[source_field], 32
+		):
+			return false
+	for flag in ["same_source", "same_target", "cancels_action"]:
+		if metadata.has(flag) and not metadata[flag] is bool:
+			return false
+	if metadata.has("card_ids") and not _bounded_string_array(
+		metadata["card_ids"], MAX_CHOICE_OPTIONS, MAX_IDENTIFIER_BYTES
+	):
+		return false
+	if metadata.has("attachment_refs"):
+		var refs: Variant = metadata["attachment_refs"]
+		if not refs is Array or Array(refs).size() > MAX_CHOICE_OPTIONS:
+			return false
+		for ref in refs:
+			if not _validate_entity_ref(ref):
+				return false
 	if metadata.has("top_card_id") and not _bounded_string(
 		metadata["top_card_id"], MAX_IDENTIFIER_BYTES
 	):
@@ -578,12 +630,34 @@ static func _validate_presentation_event(value: Variant) -> bool:
 		or not event.get("target", {}) is Dictionary
 	):
 		return false
+	if (
+		str(event.get("event_type", "")) == "cards_revealed"
+		and not _validate_cards_revealed_data(event["data"])
+	):
+		return false
 	return (
 		_validate_presentation_endpoint(event["source"])
 		and _validate_presentation_endpoint(event["target"])
 		and _validate_presentation_data(event["data"])
 		and _json_tree_is_bounded(event)
 	)
+
+
+static func _validate_cards_revealed_data(data: Dictionary) -> bool:
+	if not data.has("cards") or not _validate_presentation_cards(data["cards"]):
+		return false
+	var summary_value: Variant = data.get("summary")
+	if not summary_value is Dictionary:
+		return false
+	var summary: Dictionary = summary_value
+	if (
+		not _bounded_string(summary.get("kind"), 64)
+		or str(summary.get("kind", "")).is_empty()
+		or not _bounded_int(summary, "matched_count", 0, MAX_DECK_CARDS)
+		or not _bounded_int(summary, "amount", 0, 2147483647)
+	):
+		return false
+	return int(summary["matched_count"]) <= Array(data["cards"]).size()
 
 
 static func _validate_presentation_endpoint(value: Variant) -> bool:
@@ -605,7 +679,10 @@ static func _validate_presentation_endpoint(value: Variant) -> bool:
 
 
 static func _validate_presentation_data(data: Dictionary) -> bool:
-	for field in ["player", "actor", "source_player", "target_player", "winner"]:
+	for field in [
+		"player", "actor", "source_player", "target_player", "winner",
+		"loser", "first_player",
+	]:
 		if data.has(field) and not _bounded_int(data, field, -1, 1):
 			return false
 	for field_and_bounds in [
@@ -622,15 +699,18 @@ static func _validate_presentation_data(data: Dictionary) -> bool:
 			return false
 	for field in [
 		"slot", "source_slot", "target_slot", "source_zone", "target_zone",
-		"card_id", "source_card_id", "target_card_id", "status",
+		"card_id", "source_card_id", "target_card_id", "status", "purpose",
+		"reason",
 	]:
 		if data.has(field) and not _bounded_string(data[field], MAX_TEXT_BYTES):
 			return false
-	for field in ["card_ids", "cards", "selected_card_ids"]:
+	for field in ["card_ids", "selected_card_ids"]:
 		if data.has(field) and not _bounded_string_array(
 			data[field], MAX_DECK_CARDS, MAX_IDENTIFIER_BYTES
 		):
 			return false
+	if data.has("cards") and not _validate_presentation_cards(data["cards"]):
+		return false
 	if data.has("results"):
 		var results: Variant = data["results"]
 		if not results is Array or Array(results).size() > MAX_CHOICE_OPTIONS:
@@ -638,6 +718,25 @@ static func _validate_presentation_data(data: Dictionary) -> bool:
 		for result in results:
 			if not result is bool:
 				return false
+	return true
+
+
+static func _validate_presentation_cards(value: Variant) -> bool:
+	if _bounded_string_array(value, MAX_DECK_CARDS, MAX_IDENTIFIER_BYTES):
+		return true
+	if not value is Array or Array(value).size() > MAX_DECK_CARDS:
+		return false
+	for row_value in Array(value):
+		if not row_value is Dictionary:
+			return false
+		var row: Dictionary = row_value
+		if (
+			row.size() != 3
+			or not _bounded_string(row.get("card_id", ""), MAX_IDENTIFIER_BYTES)
+			or not row.get("matched") is bool
+			or not _validate_presentation_endpoint(row.get("destination", {}))
+		):
+			return false
 	return true
 
 

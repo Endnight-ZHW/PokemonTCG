@@ -58,6 +58,14 @@ func apply_action(
 		and action.action == "PLAY_TRAINER"
 	):
 		var cancellable_stack := ResolutionStack.from_dict(state.resolution_stack)
+		result.pending_choice.metadata["cancels_action"] = true
+		if cancellable_stack.pending_request != null:
+			cancellable_stack.pending_request.metadata["cancels_action"] = true
+		# The chooser may see the optimistic play immediately, but opponents must
+		# not learn it until the cancellable multi-step transaction commits. Fixed
+		# IDs let the chooser harmlessly de-duplicate the committed replay.
+		transaction_manager.append_deferred_public_events(
+			cancellable_stack, result.events, state.revision)
 		transaction_manager.store_cancel_action_checkpoint(cancellable_stack, checkpoint)
 		state.resolution_stack = cancellable_stack.to_dict()
 	if not action.action_id.is_empty():

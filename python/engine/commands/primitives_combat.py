@@ -42,15 +42,15 @@ def _attack_context_for_opponent_active(state, player_idx: int, opponent, stack=
     )
 
 
-def _consume_effect_damage_prevention(state, defender) -> bool:
+def _consume_effect_damage_prevention(state, defender, *, stack=None) -> bool:
+    from engine.commands.attack_frames import is_opponent_attack_effect
+
+    if not is_opponent_attack_effect(state, stack, defender):
+        return False
     if getattr(defender, "damage_prevented_next_turn", False):
-        defender.damage_prevented_next_turn = False
-        if getattr(defender, "all_prevented_next_turn", False):
-            defender.all_prevented_next_turn = False
         state._log(f"{defender.card.name}免疫了伤害！")
         return True
     if getattr(defender, "all_prevented_next_turn", False):
-        defender.all_prevented_next_turn = False
         state._log(f"{defender.card.name}免疫了附加效果伤害！")
         return True
     return False
@@ -178,7 +178,7 @@ def _queue_or_apply_opponent_active_damage(
     defender = opponent.active
     if (
         not ignore_defender_effects
-        and _consume_effect_damage_prevention(state, defender)
+        and _consume_effect_damage_prevention(state, defender, stack=stack)
     ):
         return ActionResult(True, prevent_msg)
     defender.damage_counters += damage // DAMAGE_PER_COUNTER
@@ -264,12 +264,9 @@ class DealDamage:
                 ctx.state._log(f"{active.card.name}自身受到{damage}点伤害。")
                 result.log_message = f"自身伤害: {damage}"
                 if self.check_self_ko and active.is_knocked_out:
-                    ko_slots: list[str] = []
-
-                    if ctx.player.get_pokemon(slot) is None:
-                        slot = "active"
-                    _handle_effect_ko_if_needed(ctx.state, ctx.player_idx, slot, active, ko_slots)
-                    result.pokemon_ko.extend(ko_slots)
+                    # The attack/non-attack settlement frame performs one KO
+                    # batch after every command in the effect has resolved.
+                    pass
 
         elif self.target == "any_opponent":
             opponent = ctx.opponent
@@ -450,7 +447,7 @@ class SetAttackDamageFormula:
 
         if (
             not ignore_defender_effects
-            and _consume_effect_damage_prevention(ctx.state, defender)
+            and _consume_effect_damage_prevention(ctx.state, defender, stack=ctx.stack)
         ):
             return CommandResult.ok("伤害被免疫。")
 
@@ -834,13 +831,21 @@ class BenchDamage:
             ctx.state._log(f"{target_state.name}的备战宝可梦受到特性保护，不会受到伤害。")
             return CommandResult.ok("Bench protected by ability.")
 
-        bench_indices = [
-            index
-            for index, pokemon in enumerate(target_state.bench)
-            if pokemon is not None
-            and not pokemon.damage_prevented_next_turn
-            and not getattr(pokemon, "all_prevented_next_turn", False)
-        ]
+        from engine.commands.attack_frames import is_opponent_attack_effect
+
+        bench_indices = []
+        for index, pokemon in enumerate(target_state.bench):
+            if pokemon is None:
+                continue
+            protected = (
+                is_opponent_attack_effect(ctx.state, ctx.stack, pokemon)
+                and (
+                    pokemon.damage_prevented_next_turn
+                    or getattr(pokemon, "all_prevented_next_turn", False)
+                )
+            )
+            if not protected:
+                bench_indices.append(index)
         if not bench_indices:
             ctx.state._log(f"{target_state.name}的备战区没有可攻击的宝可梦。")
             return CommandResult.ok("No bench targets.")
@@ -911,7 +916,11 @@ class ChooseDamageTarget:
             return CommandResult.ok("对手场上没有宝可梦。")
 
         def apply_damage(target_poke):
-            if _consume_effect_damage_prevention(ctx.state, target_poke):
+            if _consume_effect_damage_prevention(
+                ctx.state,
+                target_poke,
+                stack=ctx.stack,
+            ):
                 return False
             counters = int(self.amount or 0) // DAMAGE_PER_COUNTER
             target_poke.damage_counters += counters
@@ -960,7 +969,6 @@ class PlaceCountersThenSelfKo:
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult
         from engine.game_state import ActionRequest
-        from engine.enums import TurnPhase
 
         target_state = ctx.opponent if self.target_player == "opponent" else ctx.player
         target_player_idx = 1 - ctx.player_idx if self.target_player == "opponent" else ctx.player_idx
@@ -974,30 +982,16 @@ class PlaceCountersThenSelfKo:
         if not targets:
             return CommandResult.ok("对手场上没有宝可梦。")
 
-        ko_slots: list[str] = []
-
         def do_effect(slot_name, target_poke):
             target_poke.damage_counters += int(self.counters or 0)
             ctx.state._log(f"在{target_poke.card.name}身上放置了{self.counters}个伤害指示物。")
-            _handle_effect_ko_if_needed(
-                ctx.state,
-                target_player_idx,
-                slot_name,
-                target_poke,
-                ko_slots,
-            )
-            if ctx.state.phase == TurnPhase.GAME_OVER:
-                return
-
             source = _discard_pokemon_for_effect(ctx.state, ctx.player_idx, ctx.source_slot)
             if source:
                 ctx.state._log(f"{source.card.name}被放置于弃牌区。")
-                if ctx.source_slot == "active":
-                    _set_promotion_or_game_over(ctx.state, ctx.player_idx)
 
         if len(targets) == 1:
             do_effect(*targets[0])
-            return CommandResult.ok("神秘彗星结算完毕。", pokemon_ko=list(ko_slots))
+            return CommandResult.ok("神秘彗星结算完毕。")
 
         return CommandResult.ok(
             "选择1只对手的宝可梦放置伤害指示物。",

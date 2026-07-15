@@ -946,12 +946,12 @@ def _turn_transition_event_types(
     incoming = int(after.get("active_player_idx", 0))
     before_player = before["players"][incoming]
     after_player = after["players"][incoming]
+    events.append("turn_start")
     if (
         len(after_player.get("deck", [])) < len(before_player.get("deck", []))
         and len(after_player.get("hand", [])) > len(before_player.get("hand", []))
     ):
         events.append("cards_drawn")
-    events.append("turn_start")
     return events
 
 
@@ -967,11 +967,13 @@ def _canonical_attack_presentation_order(events: list[str]) -> list[str]:
     }
     hit = [event for event in events if event in hit_types]
     knockouts = [event for event in events if event == "pokemon_ko"]
+    leave_play = [event for event in events if event == "card_moved"]
     prizes = [event for event in events if event == "prize_taken"]
     reserved = {
         "attack_declared",
         "coin_flip",
         "pokemon_ko",
+        "card_moved",
         "prize_taken",
         *hit_types,
     }
@@ -985,7 +987,10 @@ def _canonical_attack_presentation_order(events: list[str]) -> list[str]:
             flow.append(event)
         elif event not in reserved:
             post_hit.append(event)
-    return declarations + pre_hit + hit + knockouts + prizes + post_hit + flow
+    # Ordinary attack effects resolve after the primary hit but before KO is
+    # settled.  KO itself is a visible lifecycle: declaration, leave play,
+    # then prize collection.
+    return declarations + pre_hit + hit + post_hit + knockouts + leave_play + prizes + flow
 
 
 def _canonical_transaction_event_types(
@@ -1013,7 +1018,7 @@ def _canonical_transaction_event_types(
             < len(before_players[player_index].get("deck", []))
             for player_index in (0, 1)
         ):
-            events.extend(["deck_shuffled", "cards_selected"])
+            events.extend(["cards_selected", "deck_shuffled"])
         if any(
             _pokemon_energy_count(after_players[index])
             > _pokemon_energy_count(before_players[index])
@@ -1086,7 +1091,7 @@ def _canonical_transaction_event_types(
             > int(before_active.get("damage_counters", 0))
         )
         if confused_failure:
-            events.append("confusion_failed")
+            events.extend(["coin_flip", "confusion_failed"])
         else:
             for _index in range(sum(
                 _healed_target_count(
@@ -1151,7 +1156,7 @@ def _canonical_transaction_event_types(
             and len(after_players[player_index].get("discard", []))
             > len(before_players[player_index].get("discard", []))
         ):
-            events.append("pokemon_ko")
+            events.extend(["pokemon_ko", "card_moved"])
 
     if int(before.get("turn_number", 0)) == int(after.get("turn_number", 0)):
         for player_index in (0, 1):
@@ -1164,6 +1169,12 @@ def _canonical_transaction_event_types(
                 events.append("cards_drawn")
                 break
     events.extend(_turn_transition_event_types(before, after))
+    before_winner = int(before.get("winner", -1))
+    after_winner = int(after.get("winner", -1))
+    if before_winner not in (0, 1) and after_winner in (0, 1):
+        # Terminal settlement is observable only after the complete KO/prize
+        # batch. The attack presentation normalizer keeps it after prizes.
+        events.append("game_over")
     if (
         action_name == "DECLARE_ATTACK"
         or (kind == "choice" and bool(operation.get("finish_attack", False)))

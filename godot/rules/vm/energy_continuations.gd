@@ -14,7 +14,9 @@ func register(interpreter: VMInterpreter) -> void:
 	var registrations := {
 		"energy_attach_target": Callable(self, "continue_energy_attach_target"),
 		"energy_attach_distribution": Callable(self, "continue_energy_attach_distribution"),
+		"discard_energy_attachments": Callable(self, "continue_discard_energy_attachments"),
 		"energy_relocate_source": Callable(self, "continue_energy_relocate_source"),
+		"energy_relocate_attachments": Callable(self, "continue_energy_relocate_attachments"),
 		"energy_relocate_target": Callable(self, "continue_energy_relocate_target"),
 		"energy_relocate_distribution": Callable(self, "continue_energy_relocate_distribution"),
 		"detached_energy_distribution": Callable(self, "continue_detached_energy_distribution"),
@@ -127,6 +129,33 @@ func continue_energy_attach_distribution(
 	return VMResult.ok()
 
 
+func continue_discard_energy_attachments(
+	state: GameState,
+	_stack: ResolutionStack,
+	_rng: PortableRandomSource,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	events: Array[Dictionary],
+) -> Dictionary:
+	var expected := int(data.get("amount", 0))
+	if selected.size() != expected:
+		return VMResult.fail("选择的能量数量无效。")
+	var refs: Array[Dictionary] = []
+	for option in selected:
+		var ref_value: Variant = option.get("ref", {})
+		if not ref_value is Dictionary:
+			return VMResult.fail("能量引用无效。")
+		refs.append(Dictionary(ref_value).duplicate(true))
+	return energy_commands.discard_attachment_refs(
+		state,
+		int(data.get("player_idx", state.active_player_idx)),
+		int(data.get("owner_idx", -1)),
+		str(data.get("source_slot", "")),
+		refs,
+		events,
+	)
+
+
 func continue_energy_relocate_source(
 	state: GameState,
 	stack: ResolutionStack,
@@ -137,7 +166,7 @@ func continue_energy_relocate_source(
 ) -> Dictionary:
 	if selected.is_empty():
 		return VMResult.fail("没有选择能量来源。")
-	return energy_commands.request_relocation_targets(
+	return energy_commands.request_relocation_attachments(
 		state,
 		stack,
 		int(data["player_idx"]),
@@ -145,6 +174,54 @@ func continue_energy_relocate_source(
 		int(data["amount"]),
 		str(data.get("energy_type", "any")),
 		int(data.get("min_select", -1)),
+		bool(data.get("same_target", false)),
+	)
+
+
+func continue_energy_relocate_attachments(
+	state: GameState,
+	stack: ResolutionStack,
+	_rng: PortableRandomSource,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	_events: Array[Dictionary],
+) -> Dictionary:
+	if selected.is_empty():
+		return VMResult.ok("未选择要转附的能量。")
+	var player_idx := int(data.get("player_idx", -1))
+	var source_slot := str(data.get("source_slot", ""))
+	var source := state.get_player(player_idx).get_pokemon(source_slot)
+	if source == null:
+		return VMResult.fail("能量来源已失效。")
+	var refs: Array[Dictionary] = []
+	var seen_indices: Dictionary = {}
+	for option in selected:
+		var ref_value: Variant = option.get("ref", {})
+		if not ref_value is Dictionary:
+			return VMResult.fail("能量引用无效。")
+		var ref := Dictionary(ref_value).duplicate(true)
+		var index := int(ref.get("index", -1))
+		if (
+			str(ref.get("kind", "")) != "attachment"
+			or int(ref.get("player", -1)) != player_idx
+			or str(ref.get("slot", "")) != source_slot
+			or str(ref.get("attachment_type", "")) != "energy"
+			or index < 0
+			or index >= source.energy_card_ids.size()
+			or seen_indices.has(index)
+			or str(source.energy_card_ids[index]) != str(ref.get("card_id", ""))
+			or not energy_commands.energy_matches(
+				str(ref.get("card_id", "")), str(data.get("energy_type", "any")))
+		):
+			return VMResult.fail("选择的能量已不存在。")
+		seen_indices[index] = true
+		refs.append(ref)
+	return energy_commands.request_relocation_targets(
+		state,
+		stack,
+		player_idx,
+		source_slot,
+		refs,
 		bool(data.get("same_target", false)),
 	)
 
@@ -157,50 +234,7 @@ func continue_energy_relocate_target(
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
 ) -> Dictionary:
-	if selected.is_empty():
-		return VMResult.ok("未选择能量目标。")
-	var player := state.get_player(int(data["player_idx"]))
-	var source_slot := str(data["source_slot"])
-	var target_slot := str(selected[0].get("value", {}).get("slot", ""))
-	var source := player.get_pokemon(source_slot)
-	var target := player.get_pokemon(target_slot)
-	if source == null or target == null:
-		return VMResult.fail("能量转移目标无效。")
-	var moved_ids: Array = data.get("card_ids", [])
-	var amount: int = min(int(data["amount"]), moved_ids.size())
-	for index in range(amount):
-		var energy_id := str(moved_ids[index])
-		var source_index := source.energy_card_ids.find(energy_id)
-		if source_index >= 0:
-			var target_index := target.energy_card_ids.size()
-			source.energy_card_ids.remove_at(source_index)
-			target.energy_card_ids.append(energy_id)
-			events.append({
-				"event_type": "energy_attached",
-				"actor": int(data["player_idx"]),
-				"card_id": energy_id,
-				"source": {
-					"player": int(data["player_idx"]),
-					"slot": source_slot,
-					"attachment_type": "energy",
-					"index": source_index,
-				},
-				"target": {
-					"player": int(data["player_idx"]),
-					"slot": target_slot,
-					"attachment_type": "energy",
-					"index": target_index,
-				},
-				"data": {
-					"player": int(data["player_idx"]),
-					"slot": target_slot,
-					"card_id": energy_id,
-					"source_slot": source_slot,
-					"source_index": source_index,
-					"target_index": target_index,
-				},
-			})
-	return VMResult.ok()
+	return resolve_energy_relocation(state, data, selected, events)
 
 
 func continue_energy_relocate_distribution(
@@ -211,56 +245,103 @@ func continue_energy_relocate_distribution(
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
 ) -> Dictionary:
-	var player := state.get_player(int(data["player_idx"]))
-	var source := player.get_pokemon(str(data["source_slot"]))
+	return resolve_energy_relocation(state, data, selected, events)
+
+
+func resolve_energy_relocation(
+	state: GameState,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	events: Array[Dictionary],
+) -> Dictionary:
+	var player_idx := int(data.get("player_idx", -1))
+	if player_idx < 0 or player_idx > 1:
+		return VMResult.fail("能量来源玩家无效。")
+	var player := state.get_player(player_idx)
+	var source_slot := str(data.get("source_slot", ""))
+	var source := player.get_pokemon(source_slot)
 	if source == null:
 		return VMResult.fail("能量来源已失效。")
-	var moved_ids: Array = data.get("card_ids", [])
-	var move_count: int = min(
-		int(data["amount"]),
-		min(moved_ids.size(), selected.size()),
-	)
+	var refs: Array = data.get("attachment_refs", [])
+	if refs.is_empty() or refs.size() != selected.size():
+		return VMResult.fail("能量转移数量无效。")
+	var seen_indices: Dictionary = {}
+	var plan: Array[Dictionary] = []
 	var forced_slot := ""
 	if bool(data.get("same_target", false)) and not selected.is_empty():
 		forced_slot = str(selected[0].get("value", {}).get("slot", ""))
-	for index in range(move_count):
-		var target_slot := str(selected[index].get("value", {}).get("slot", ""))
-		if not forced_slot.is_empty():
-			target_slot = forced_slot
+	var per_target: Dictionary = {}
+	var max_per_target := int(data.get("max_per_target", refs.size()))
+	for index in range(refs.size()):
+		if not refs[index] is Dictionary:
+			return VMResult.fail("能量引用无效。")
+		var ref: Dictionary = refs[index]
+		var source_index := int(ref.get("index", -1))
+		var card_id := str(ref.get("card_id", ""))
+		var option_value: Dictionary = selected[index].get("value", {})
+		var selected_target_slot := str(option_value.get("slot", ""))
+		var target_slot := forced_slot if not forced_slot.is_empty() else selected_target_slot
 		var target := player.get_pokemon(target_slot)
-		if target:
-			var energy_id := str(moved_ids[index])
-			var source_index := source.energy_card_ids.find(energy_id)
-			if source_index >= 0:
-				var target_index := target.energy_card_ids.size()
-				source.energy_card_ids.remove_at(source_index)
-				target.energy_card_ids.append(energy_id)
-				events.append({
-					"event_type": "energy_attached",
-					"actor": int(data["player_idx"]),
-					"card_id": energy_id,
-					"source": {
-						"player": int(data["player_idx"]),
-						"slot": str(data["source_slot"]),
-						"attachment_type": "energy",
-						"index": source_index,
-					},
-					"target": {
-						"player": int(data["player_idx"]),
-						"slot": target_slot,
-						"attachment_type": "energy",
-						"index": target_index,
-					},
-					"data": {
-						"player": int(data["player_idx"]),
-						"slot": target_slot,
-						"card_id": energy_id,
-						"source_slot": str(data["source_slot"]),
-						"source_index": source_index,
-						"target_index": target_index,
-					},
-				})
-	return VMResult.ok()
+		if (
+			str(ref.get("kind", "")) != "attachment"
+			or int(ref.get("player", -1)) != player_idx
+			or str(ref.get("slot", "")) != source_slot
+			or str(ref.get("attachment_type", "")) != "energy"
+			or source_index < 0
+			or source_index >= source.energy_card_ids.size()
+			or seen_indices.has(source_index)
+			or str(source.energy_card_ids[source_index]) != card_id
+			or target == null
+			or target_slot == source_slot
+			or (not forced_slot.is_empty() and selected_target_slot != forced_slot)
+			or int(option_value.get("player", player_idx)) != player_idx
+			or str(option_value.get("card_id", target.card_id)) != target.card_id
+			or int(per_target.get(target_slot, 0)) >= max_per_target
+		):
+			return VMResult.fail("能量转移引用已失效。")
+		seen_indices[source_index] = true
+		per_target[target_slot] = int(per_target.get(target_slot, 0)) + 1
+		plan.append({
+			"card_id": card_id,
+			"source_index": source_index,
+			"target_slot": target_slot,
+		})
+	var removal_order := plan.duplicate(true)
+	removal_order.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left["source_index"]) > int(right["source_index"])
+	)
+	for row in removal_order:
+		source.energy_card_ids.remove_at(int(row["source_index"]))
+	for row in plan:
+		var target := player.get_pokemon(str(row["target_slot"]))
+		var target_index := target.energy_card_ids.size()
+		target.energy_card_ids.append(str(row["card_id"]))
+		events.append({
+			"event_type": "energy_attached",
+			"actor": player_idx,
+			"card_id": str(row["card_id"]),
+			"source": {
+				"player": player_idx,
+				"slot": source_slot,
+				"attachment_type": "energy",
+				"index": int(row["source_index"]),
+			},
+			"target": {
+				"player": player_idx,
+				"slot": str(row["target_slot"]),
+				"attachment_type": "energy",
+				"index": target_index,
+			},
+			"data": {
+				"player": player_idx,
+				"slot": str(row["target_slot"]),
+				"card_id": str(row["card_id"]),
+				"source_slot": source_slot,
+				"source_index": int(row["source_index"]),
+				"target_index": target_index,
+			},
+		})
+	return VMResult.ok("转附了%d张能量。" % plan.size())
 
 
 func continue_detached_energy_distribution(

@@ -3,10 +3,11 @@ import random
 from engine.rules_constants import COIN_FLIP_THRESHOLD
 from engine.enums import TurnPhase, StatusType, PlayerAction
 from engine.game_state import GameState, ActionResult
+from engine.events.game_events import GameEvent
 from engine.rules_validator import (
     can_play_basic, can_evolve, can_attach_energy, can_play_supporter,
     can_play_item, can_play_stadium, can_play_tool, can_retreat,
-    can_declare_attack, can_use_ability, check_win_condition
+    can_declare_attack, can_use_ability
 )
 from engine.commands.modifier_registration import (
     register_pokemon_modifiers,
@@ -420,12 +421,25 @@ class ActionResolver:
         attack = attacker.card.attacks[attack_idx]
         attacker_type = attacker.card.energy_types[0] if attacker.card.energy_types else "Colorless"
 
+        self.state.event_stream.push(GameEvent("attack_declared", {
+            "player": player_idx,
+            "card_id": attacker.card.api_id,
+            "attack_idx": attack_idx,
+            "attack_name": attack.name,
+        }))
+
         # Check confusion
         if StatusType.CONFUSED in attacker.status_conditions:
             source = getattr(self.state, "random_source", None)
             coin = ("heads" if source.coin() else "tails") if source else random.choice(["heads", "tails"])
+            self.state.event_stream.push(GameEvent("coin_flip", {
+                "player": player_idx, "results": [coin == "heads"], "purpose": "confusion",
+            }))
             if coin == "tails":
                 attacker.damage_counters += 3
+                self.state.event_stream.push(GameEvent("confusion_failed", {
+                    "player": player_idx, "slot": "active", "self_damage": 30,
+                }))
                 msg = (f"{player.name}的{attacker.card.name}处于混乱状态！"
                        f"掷出反面。攻击失败，自身放置3个伤害指示物。")
                 self.state._log(msg)
@@ -433,6 +447,9 @@ class ActionResolver:
                 result = ActionResult(True, msg, attack_failed=True)
                 if ko_results:
                     result.pokemon_ko.extend(ko_results)
+                from engine.commands.attack_frames import finalize_game_over_if_needed
+
+                finalize_game_over_if_needed(self.state, reason="knockout")
                 return result
 
         # Check dazzling_beam marker (炫目光束 effect)
@@ -440,10 +457,16 @@ class ActionResolver:
             attacker.dazzled = False
             source = getattr(self.state, "random_source", None)
             coin = ("heads" if source.coin() else "tails") if source else random.choice(["heads", "tails"])
+            self.state.event_stream.push(GameEvent("coin_flip", {
+                "player": player_idx, "results": [coin == "heads"], "purpose": "dazzled",
+            }))
             self.state._log(f"{attacker.card.name}受炫目光束影响，掷硬币: {coin}!")
             if coin == "tails":
                 msg = f"{attacker.card.name}的招式失败！（炫目光束效果）"
                 self.state._log(msg)
+                self.state.event_stream.push(GameEvent("dazzled_failed", {
+                    "player": player_idx, "slot": "active",
+                }))
                 return ActionResult(True, msg, attack_failed=True)
 
         msg = f"{player.name}的{attacker.card.name}使用了{attack.name}！"
@@ -526,17 +549,23 @@ class ActionResolver:
     def resolve_checkup(self):
         results = []
 
+        # Pokemon Checkup is resolved by condition for both Active Pokemon:
+        # Poison, Burn, Asleep, then Paralyzed.  KO is checked only after all
+        # four passes so simultaneous damage cannot be biased by player order.
         for player_idx in range(2):
             player = self.state.get_player(player_idx)
-
             if player.active:
                 active = player.active
                 name = active.card.name
-
                 if StatusType.POISONED in active.status_conditions:
                     active.damage_counters += 1
                     results.append(f"{name}因中毒受到1个伤害指示物。")
 
+        for player_idx in range(2):
+            player = self.state.get_player(player_idx)
+            if player.active:
+                active = player.active
+                name = active.card.name
                 if StatusType.BURNED in active.status_conditions:
                     active.damage_counters += 2
                     source = getattr(self.state, "random_source", None)
@@ -547,6 +576,11 @@ class ActionResolver:
                     else:
                         results.append(f"{name}因灼伤受到2个伤害指示物（仍未治愈）。")
 
+        for player_idx in range(2):
+            player = self.state.get_player(player_idx)
+            if player.active:
+                active = player.active
+                name = active.card.name
                 if StatusType.ASLEEP in active.status_conditions:
                     source = getattr(self.state, "random_source", None)
                     roll = source.random() if source else random.random()
@@ -556,6 +590,11 @@ class ActionResolver:
                     else:
                         results.append(f"{name}仍在睡眠中。")
 
+        for player_idx in range(2):
+            player = self.state.get_player(player_idx)
+            if player.active:
+                active = player.active
+                name = active.card.name
                 if StatusType.PARALYZED in active.status_conditions:
                     # PTCG rule: Paralyzed cures at end of the paralyzed player's NEXT turn.
                     if self.state.turn_number > active.paralyzed_since_turn:
@@ -564,16 +603,17 @@ class ActionResolver:
                     else:
                         results.append(f"{name}仍处于麻痹状态。")
 
+        # Log causal checkup outcomes before KO/prize settlement logs.
+        for message in results:
+            self.state._log(message)
+
         ko_slots = self._check_kos()
         if ko_slots:
-            results.append(f"击倒: {', '.join(ko_slots)}")
+            ko_summary = f"击倒: {', '.join(ko_slots)}"
+            results.append(ko_summary)
+            self.state._log(ko_summary)
 
-        winner = check_win_condition(self.state)
-        if winner is not None:
-            self.state.winner = winner
-            self.state.phase = TurnPhase.GAME_OVER
+        from engine.commands.attack_frames import finalize_game_over_if_needed
 
-        for r in results:
-            self.state._log(r)
-
+        finalize_game_over_if_needed(self.state, reason="pokemon_checkup")
         return results

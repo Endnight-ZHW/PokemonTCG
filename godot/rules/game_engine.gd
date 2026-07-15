@@ -65,6 +65,23 @@ func setup_game(
 	state.setup_ready = [false, false]
 	state.action_log.clear()
 	state.setup_game(deck_one, deck_two, rng, forced_first)
+	var setup_events: Array[Dictionary] = []
+	if forced_first not in [0, 1]:
+		# The setup coin is authoritative: every peer consumes the same result,
+		# while forced-first debug/test matches do not pretend a toss occurred.
+		setup_events.append({
+			"event_id": "setup:first-player",
+			"event_type": "coin_flip",
+			"actor": 0,
+			"visibility": "public",
+			"source": {"player": 0},
+			"target": {"player": state.first_player_idx},
+			"data": {
+				"purpose": "setup_first_player",
+				"results": [state.first_player_idx == 0],
+				"first_player": state.first_player_idx,
+			},
+		})
 	for player_idx in [0, 1]:
 		var player := state.get_player(player_idx)
 		var guard := 0
@@ -84,7 +101,14 @@ func setup_game(
 			state.extra_draws[opponent_idx] += 1
 			state.get_player(opponent_idx).draw_cards(1)
 	state.log_action("起始手牌已准备。")
-	return StepResult.new(true, "游戏准备完成。", null, [], state.winner, false)
+	return StepResult.new(
+		true,
+		"游戏准备完成。",
+		null,
+		setup_events,
+		state.winner,
+		false,
+	)
 
 
 func legal_actions(

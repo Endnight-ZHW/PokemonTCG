@@ -113,6 +113,49 @@ class RelayServerTests(unittest.TestCase):
         with relay.rooms_lock:
             self.assertIn(code, relay.rooms)
 
+    def test_disconnected_room_slot_can_resume_with_credential(self):
+        host = _FakeWebSocket(port=1)
+        guest = _FakeWebSocket(port=2)
+        code = relay._create_room(host)
+        room, error = relay._join_room(guest, code)
+        self.assertEqual(error, "")
+        token = room["p2_token"]
+        with relay.rooms_lock:
+            room["p2"] = None
+            room["p2_joined"].clear()
+
+        replacement = _FakeWebSocket(port=3)
+        resumed, resume_error = relay._resume_room(
+            replacement, code, "p2", token
+        )
+
+        self.assertEqual(resume_error, "")
+        self.assertIs(resumed["p2"], replacement)
+        self.assertTrue(resumed["p2_joined"].is_set())
+        rejected, rejected_error = relay._resume_room(
+            _FakeWebSocket(port=4), code, "p1", "x" * 32
+        )
+        self.assertIsNone(rejected)
+        self.assertIn("凭证", rejected_error)
+
+    def test_resume_control_message_is_strictly_validated(self):
+        room = relay._create_room(_FakeWebSocket(port=1))
+        token = relay.rooms[room]["p1_token"]
+        payload = {
+            "type": "resume_room",
+            "room_id": room,
+            "role": "p1",
+            "resume_token": token,
+        }
+        parsed, error = relay._parse_control_message(json.dumps(payload))
+        self.assertEqual(error, "")
+        self.assertEqual(parsed, payload)
+
+        malformed = dict(payload, role="owner")
+        parsed, error = relay._parse_control_message(json.dumps(malformed))
+        self.assertIsNone(parsed)
+        self.assertIn("角色", error)
+
     def test_oversized_control_handshake_is_rejected_before_room_creation(self):
         raw = json.dumps(
             {"type": "create_room", "padding": "界" * relay.MAX_CONTROL_MESSAGE_BYTES},

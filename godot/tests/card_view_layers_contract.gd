@@ -53,6 +53,64 @@ func _run() -> void:
 			card.feedback_root.position,
 		],
 	)
+	var visual_bounds := card.visual_global_bounds()
+	var raw_bounds := card.get_global_rect()
+	var raised_edge_point := Vector2(
+		visual_bounds.get_center().x,
+		visual_bounds.position.y + 1.0,
+	)
+	var raised_edge_local := (
+		card.get_global_transform_with_canvas().affine_inverse()
+		* raised_edge_point
+	)
+	_check(
+		visual_bounds.position.y < raw_bounds.position.y
+		and visual_bounds.size.x > raw_bounds.size.x,
+		"CardView visual bounds ignored InteractionRoot lift/scale",
+	)
+	_check(
+		card.contains_visual_global_point(raised_edge_point)
+		and card._has_point(raised_edge_local),
+		"CardView raised visual edge is not part of its transformed hit target",
+	)
+	var vacated_bottom_point := Vector2(
+		raw_bounds.get_center().x,
+		raw_bounds.end.y - 1.0,
+	)
+	var vacated_bottom_local := (
+		card.get_global_transform_with_canvas().affine_inverse()
+		* vacated_bottom_point
+	)
+	_check(
+		not card.contains_visual_global_point(vacated_bottom_point)
+		and not card._has_point(vacated_bottom_local),
+		"CardView kept the vacated pre-lift rectangle clickable",
+	)
+	var popover_scene := load(
+		"res://scenes/battle/components/card_action_popover.tscn"
+	) as PackedScene
+	_check(popover_scene != null, "CardActionPopover scene did not load")
+	var popover: CardActionPopover
+	if popover_scene != null:
+		popover = popover_scene.instantiate() as CardActionPopover
+		root.add_child(popover)
+		await process_frame
+		var popover_source_bounds := popover._control_global_bounds(card)
+		_check(
+			popover_source_bounds.is_equal_approx(visual_bounds),
+			"CardActionPopover did not anchor to CardView visual bounds",
+		)
+		var no_rows: Array[Dictionary] = []
+		popover.show_for_control(
+			no_rows,
+			card,
+			Rect2(Vector2.ZERO, Vector2(900.0, 700.0)),
+		)
+		_check(
+			popover.source_contains_global_point(raised_edge_point)
+			and not popover.source_contains_global_point(vacated_bottom_point),
+			"CardActionPopover source hit test ignored CardView visual geometry",
+		)
 	var selected_animation_position := card.animation_player.current_animation_position
 	var selected_lift_tween := card._lift_tween
 	card.set_selected(true)
@@ -94,6 +152,34 @@ func _run() -> void:
 		card.animation_player.current_animation_position >= target_animation_position,
 		"Idempotent set_targetable restarted the target animation",
 	)
+	card.set_target_accent(DesignTokens.GOLD)
+	card.set_legal_target_hint("选择能量来源")
+	var amber_target_style := card.target_glow.get_theme_stylebox(
+		"panel",
+	) as StyleBoxFlat
+	var amber_hint_style := card.interaction_hint.get_theme_stylebox(
+		"panel",
+	) as StyleBoxFlat
+	_check(
+		amber_target_style != null
+		and amber_target_style.border_color.is_equal_approx(DesignTokens.GOLD)
+		and amber_hint_style != null
+		and amber_hint_style.border_color.is_equal_approx(DesignTokens.GOLD)
+		and card.interaction_hint_label.get_theme_color(
+			"font_color",
+		).is_equal_approx(DesignTokens.GOLD),
+		"CardView target accent did not reach glow and interaction hint",
+	)
+	card.set_targetable(false)
+	card.set_targetable(true)
+	var reset_target_style := card.target_glow.get_theme_stylebox(
+		"panel",
+	) as StyleBoxFlat
+	_check(
+		reset_target_style != null
+		and reset_target_style.border_color.is_equal_approx(DesignTokens.CYAN),
+		"CardView retained a stale contextual target accent",
+	)
 
 	card.set_presentation_hidden(true)
 	_check(
@@ -128,6 +214,8 @@ func _run() -> void:
 		"CardView did not restore content after every drag-mask owner released it",
 	)
 
+	if popover != null:
+		popover.queue_free()
 	card.queue_free()
 	await process_frame
 	_finish()

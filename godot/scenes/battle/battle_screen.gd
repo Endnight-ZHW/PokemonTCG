@@ -16,6 +16,9 @@ signal detail_requested(card_id: String)
 signal inspect_card_requested(context: Dictionary)
 signal inspect_zone_requested(context: Dictionary)
 signal choice_target_selected(option_id: String)
+signal choice_option_toggled(option_id: String)
+signal choice_selection_confirmed
+signal choice_cancel_requested
 signal transition_started(handle: PresentationHandle)
 signal transition_finished(handle: PresentationHandle)
 signal presentation_busy_changed(busy: bool)
@@ -173,6 +176,44 @@ func clear_choice_targets() -> void:
 		table.clear_choice_targets()
 
 
+func update_choice_selection(
+	selected_ids: Array,
+	disabled_reasons: Dictionary = {},
+) -> void:
+	if table and table.has_method("update_choice_selection"):
+		table.update_choice_selection(selected_ids, disabled_reasons)
+
+
+func play_startup_shuffle(mulligan_counts: Array) -> MotionHandle:
+	if table and table.has_method("play_startup_shuffle"):
+		_ensure_presentation_coordinator()
+		var handle := table.call(
+			"play_startup_shuffle",
+			mulligan_counts,
+		) as MotionHandle
+		if presentation_coordinator != null:
+			presentation_coordinator.set_preflight(handle)
+		return handle
+	var completed := MotionHandle.new()
+	completed.finish()
+	return completed
+
+
+func set_startup_blocked(value: bool) -> void:
+	if table and table.has_method("set_startup_blocked"):
+		table.call("set_startup_blocked", value)
+
+
+func set_local_hand_privacy_hidden(value: bool) -> void:
+	if table and table.has_method("set_local_hand_privacy_hidden"):
+		table.call("set_local_hand_privacy_hidden", value)
+
+
+func set_recovery_blocked(value: bool) -> void:
+	if table and table.has_method("set_recovery_blocked"):
+		table.call("set_recovery_blocked", value)
+
+
 func active_drag_context() -> Dictionary:
 	return table.active_drag_context() if table != null else {}
 
@@ -221,6 +262,31 @@ func cancel_presentations(
 		presentation_coordinator.cancel_all(reason, replacement)
 	elif table != null:
 		table.clear_presentation_for_resync()
+
+
+## Recovery snapshots are not transitions: cancel every in-flight/queued visual
+## transaction and synchronously render the authoritative replacement.
+func snap_to_authoritative_view(
+	replacement: BattleViewModel,
+	reason: String = "resync",
+) -> void:
+	_ensure_presentation_coordinator()
+	if presentation_coordinator != null:
+		presentation_coordinator.cancel_all(reason, replacement)
+	elif table != null:
+		table.clear_presentation_for_resync()
+		if replacement != null:
+			var render_state := replacement.state_for_render()
+			if render_state != null:
+				table.update_view(
+					render_state,
+					replacement.view_player,
+					replacement.action_rows,
+					replacement.selected_entity_key,
+					replacement.ai_thinking,
+					replacement.game_mode,
+				)
+	_sync_from_table()
 
 
 func show_card_detail(card_id: String, pokemon: PokemonState = null) -> void:
@@ -386,6 +452,12 @@ func _bind_table_signals() -> void:
 	table.inspect_card_requested.connect(inspect_card_requested.emit)
 	table.inspect_zone_requested.connect(inspect_zone_requested.emit)
 	table.choice_target_selected.connect(choice_target_selected.emit)
+	if table.has_signal("choice_option_toggled"):
+		table.choice_option_toggled.connect(choice_option_toggled.emit)
+	if table.has_signal("choice_selection_confirmed"):
+		table.choice_selection_confirmed.connect(choice_selection_confirmed.emit)
+	if table.has_signal("choice_cancel_requested"):
+		table.choice_cancel_requested.connect(choice_cancel_requested.emit)
 
 
 func _sync_from_table() -> void:

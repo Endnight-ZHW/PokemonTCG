@@ -77,6 +77,44 @@ func _run_normalization_contract() -> void:
 		"selected card event leaked private card identities",
 	)
 
+	var revealed := PresentationEvent.normalize({
+		"event_type": "cards_revealed",
+		"actor": 0,
+		"visibility": "public",
+		"data": {
+			"player": 0,
+			"cards": [
+				{
+					"card_id": "sv1-ener-1",
+					"matched": true,
+					"destination": {"player": 0, "zone": "discard"},
+				},
+				{
+					"card_id": "sv2-delib",
+					"matched": false,
+					"destination": {"player": 0, "zone": "deck"},
+				},
+			],
+			"summary": {
+				"kind": "energy_damage",
+				"matched_count": 1,
+				"amount": 80,
+			},
+		},
+	}, 14, 0)
+	var opponent_reveal := PresentationEvent.for_player(revealed, 1)
+	var opponent_reveal_data: Dictionary = opponent_reveal.get("data", {})
+	var opponent_reveal_cards: Array = opponent_reveal_data.get("cards", [])
+	_expect(
+		int(revealed.get("amount", 0)) == 2
+		and str(revealed.get("source", {}).get("zone", "")) == "deck"
+		and str(revealed.get("target", {}).get("zone", "")) == "deck"
+		and opponent_reveal_cards.size() == 2
+		and str(Dictionary(opponent_reveal_cards[0]).get(
+			"card_id", "")) == "sv1-ener-1",
+		"public card reveal lost its order, endpoints, or opponent-visible identity",
+	)
+
 	var indexed_discard := PresentationEvent.normalize(
 		VMZoneHelpers.discard_event(
 			0,
@@ -317,6 +355,7 @@ func _run_rule_event_contract() -> void:
 	var result := settlement.resolve_knockouts(state, 0, events, true)
 	_expect(bool(result.get("success", false)), "KO contract fixture failed to resolve")
 	var ko_index := -1
+	var ko_leave_index := -1
 	var prize_index := -1
 	for index in range(events.size()):
 		match str(events[index].get("event_type", "")):
@@ -325,19 +364,99 @@ func _run_rule_event_contract() -> void:
 				var ko_event: Dictionary = events[index]
 				_expect(
 					str(ko_event.get("source", {}).get("slot", "")) == "active"
-					and str(ko_event.get("target", {}).get("zone", "")) == "discard",
-					"KO event is missing its board-to-discard endpoints",
+					and str(ko_event.get("target", {}).get("slot", "")) == "active"
+					and bool(ko_event.get("data", {}).get("defer_leave_play", false)),
+					"KO declaration does not preserve its on-board source for triggers",
 				)
+			"card_moved":
+				if bool(events[index].get("data", {}).get("ko_leave_play", false)):
+					ko_leave_index = index
 			"prize_taken":
 				if prize_index < 0:
 					prize_index = index
 	_expect(
-		ko_index >= 0 and prize_index >= 0 and ko_index < prize_index,
-		"KO event was not emitted before prize movement",
+		ko_index >= 0
+		and ko_leave_index > ko_index
+		and prize_index > ko_leave_index,
+		"KO declaration, leave-play movement and prize movement are out of order",
 	)
 
 
 func _run_rule_event_regressions() -> void:
+	var reveal_catalog := CardCatalog.new()
+	var reveal_state := GameState.new()
+	reveal_state.players[0].active = PokemonState.new("svi-infr")
+	reveal_state.players[1].active = PokemonState.new("sv1-104")
+	reveal_state.players[0].deck = [
+		"sv2-delib",
+		"sv1-ener-1",
+		"sv1-ener-2",
+	]
+	var reveal_events: Array[Dictionary] = []
+	var reveal_result := VMCombatCombo.new(
+		reveal_catalog,
+		VMCombatDamage.new(),
+	).mill_then_damage(
+		reveal_state,
+		ResolutionStack.new(),
+		PortableRandomSource.new(20260715),
+		0,
+		{"mill_count": 5, "damage_per": 40},
+		reveal_events,
+	)
+	var reveal_event: Dictionary = (
+		reveal_events[0] if not reveal_events.is_empty() else {}
+	)
+	var reveal_event_data: Dictionary = reveal_event.get("data", {})
+	var reveal_rows: Array = reveal_event_data.get("cards", [])
+	var reveal_summary: Dictionary = reveal_event_data.get("summary", {})
+	_expect(
+		bool(reveal_result.get("success", false))
+		and reveal_events.size() == 3
+		and str(reveal_event.get("event_type", "")) == "cards_revealed"
+		and str(reveal_events[1].get("event_type", "")) == "deck_shuffled"
+		and str(reveal_events[2].get("event_type", "")) == "damage_dealt"
+		and reveal_rows.size() == 3
+		and str(reveal_rows[0].get("card_id", "")) == "sv1-ener-2"
+		and str(reveal_rows[1].get("card_id", "")) == "sv1-ener-1"
+		and str(reveal_rows[2].get("card_id", "")) == "sv2-delib"
+		and str(reveal_rows[0].get("destination", {}).get("zone", "")) == "discard"
+		and str(reveal_rows[2].get("destination", {}).get("zone", "")) == "deck"
+		and int(reveal_summary.get("amount", 0)) == 80,
+		"mill_then_damage did not emit an ordered public composite reveal before shuffle and damage",
+	)
+
+	var empty_reveal_state := GameState.new()
+	empty_reveal_state.players[0].active = PokemonState.new("svi-infr")
+	empty_reveal_state.players[1].active = PokemonState.new("sv1-104")
+	var empty_reveal_events: Array[Dictionary] = []
+	var empty_reveal_result := VMCombatCombo.new(
+		reveal_catalog,
+		VMCombatDamage.new(),
+	).mill_then_damage(
+		empty_reveal_state,
+		ResolutionStack.new(),
+		PortableRandomSource.new(20260716),
+		0,
+		{"mill_count": 5, "damage_per": 40},
+		empty_reveal_events,
+	)
+	var empty_event: Dictionary = (
+		empty_reveal_events[0] if not empty_reveal_events.is_empty() else {}
+	)
+	var empty_data: Dictionary = empty_event.get("data", {})
+	var empty_summary: Dictionary = empty_data.get("summary", {})
+	_expect(
+		bool(empty_reveal_result.get("success", false))
+		and empty_reveal_events.size() == 2
+		and str(empty_event.get("event_type", "")) == "cards_revealed"
+		and Array(empty_data.get("cards", [])).is_empty()
+		and int(empty_summary.get("matched_count", -1)) == 0
+		and int(empty_summary.get("amount", -1)) == 0
+		and str(empty_reveal_events[1].get("event_type", "")) == "deck_shuffled",
+		"mill_then_damage suppressed the zero-card public reveal result",
+	)
+
 	var hammer_catalog := CardCatalog.new()
 	var hammer_runtime := VMRuntime.new(hammer_catalog)
 	var hammer_state := GameState.new()

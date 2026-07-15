@@ -9,12 +9,12 @@ from engine.commands.attack_frames import (
     clear_finish_attack_after_promotions,
     finish_attack_after_promotions_actor,
     FinalizeAttackTurn,
+    finalize_game_over_if_needed,
 )
 from engine.commands.resolution_stack import ResolutionStack
 from engine.enums import TurnPhase
 from engine.game_state import ActionResult, GameState
 from engine.random_source import RandomSource
-from engine.rules_validator import check_win_condition
 from engine.turn_manager import TurnManager
 
 
@@ -132,12 +132,12 @@ class VMSettlementManager:
         if (
             not step.success
             or step.pending_choice is not None
-            or state.phase in (TurnPhase.SETUP, TurnPhase.GAME_OVER)
-            or state.winner is not None
+            or state.phase == TurnPhase.SETUP
         ):
             return step
         from engine.action_resolver import ActionResolver
 
+        event_offset = len(getattr(state.event_stream, "_events", ()))
         state._ko_from_attack = False
         try:
             ko_slots = ActionResolver(state)._check_kos()
@@ -151,15 +151,10 @@ class VMSettlementManager:
                 terminal=state.winner is not None or state.phase == TurnPhase.GAME_OVER,
                 error_code="ko_trigger_failed",
             )
-        if not ko_slots:
-            return step
         if ko_slots and step.action_result is not None:
             step.action_result.pokemon_ko.extend(ko_slots)
-        winner = check_win_condition(state)
-        if winner is not None:
-            state.winner = winner
-            state.phase = TurnPhase.GAME_OVER
-            state._log(f"{state.get_player(winner).name}获胜！")
+        finalize_game_over_if_needed(state, reason="knockout")
+        step.events += VMSettlementManager.events_since(state, event_offset)
         step.winner = state.winner
         step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
         return step

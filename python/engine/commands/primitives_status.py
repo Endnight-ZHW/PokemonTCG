@@ -42,7 +42,12 @@ class ApplyStatus:
         if st is None:
             return CommandResult.fail(f"未知状态: {self.status}")
 
-        if getattr(target, "all_prevented_next_turn", False):
+        from engine.commands.attack_frames import is_opponent_attack_effect
+
+        if (
+            getattr(target, "all_prevented_next_turn", False)
+            and is_opponent_attack_effect(ctx.state, ctx.stack, target)
+        ):
             ctx.state._log(f"{target.card.name}免疫了所有效果！")
             return CommandResult.ok("免疫了效果。")
 

@@ -46,6 +46,36 @@ func resolve_knockouts(
 		var knocked_out := defeated_player.get_pokemon(str(knockout["slot"]))
 		if knocked_out == null:
 			continue
+		var defeated_slot := str(knockout["slot"])
+		var source_index := (
+			defeated_slot.trim_prefix("bench_").to_int()
+			if defeated_slot.begins_with("bench_")
+			else 0
+		)
+		# Announce the KO while the source Pokemon and its attachments still
+		# exist. KO triggers such as Exp. Share then have a truthful visual
+		# source; the separate leave-play event below performs the discard.
+		var ko_event := {
+			"event_type": "pokemon_ko",
+			"actor": attack_actor,
+			"card_id": str(knockout["card_id"]),
+			"source": {
+				"player": defeated_idx,
+				"slot": defeated_slot,
+				"index": source_index,
+			},
+			"target": {
+				"player": defeated_idx,
+				"slot": defeated_slot,
+			},
+			"amount": 1,
+			"data": knockout.merged({
+				"stage": "declared",
+				"defer_leave_play": true,
+				"presentation_phase": "knockout",
+			}, true),
+		}
+		events.append(ko_event)
 		var trigger_commands_to_resolve: Array[Dictionary] = []
 		trigger_command_runner.collect_pokemon_ko_commands(
 			state,
@@ -65,7 +95,6 @@ func resolve_knockouts(
 		)
 		if not bool(trigger_result.get("success", false)):
 			return trigger_result
-		var defeated_slot := str(knockout["slot"])
 		var discard_index := defeated_player.discard.size()
 		var discarded_card_ids: Array[String] = [knocked_out.card_id]
 		discarded_card_ids.append_array(knocked_out.evolution_stack_ids)
@@ -74,13 +103,12 @@ func resolve_knockouts(
 		discarded_card_ids.append_array(knocked_out.energy_card_ids)
 		state.discard_pokemon(defeated_idx, defeated_slot)
 		var winner_idx := 1 - defeated_idx
-		var source_index := (
-			defeated_slot.trim_prefix("bench_").to_int()
-			if defeated_slot.begins_with("bench_")
-			else 0
-		)
+		ko_event["data"] = Dictionary(ko_event["data"]).merged({
+			"count": discarded_card_ids.size(),
+			"card_ids": discarded_card_ids,
+		}, true)
 		events.append({
-			"event_type": "pokemon_ko",
+			"event_type": "card_moved",
 			"actor": attack_actor,
 			"card_id": str(knockout["card_id"]),
 			"source": {
@@ -95,6 +123,9 @@ func resolve_knockouts(
 			},
 			"amount": discarded_card_ids.size(),
 			"data": knockout.merged({
+				"cause": "pokemon_ko",
+				"ko_leave_play": true,
+				"presentation_phase": "knockout",
 				"count": discarded_card_ids.size(),
 				"card_ids": discarded_card_ids,
 			}, true),
@@ -124,19 +155,48 @@ func resolve_knockouts(
 			defeated_player.was_ko_by_attack = true
 	events.append_array(pending_prize_events)
 	resolve_empty_boards_and_promotions(state)
+	if state.winner >= 0:
+		_append_game_over_event(events, state.winner)
 	return VMResult.ok()
 
 
 func resolve_empty_boards_and_promotions(state: GameState) -> void:
-	for player_idx in [0, 1]:
+	var turn_order: Array[int] = [state.active_player_idx, 1 - state.active_player_idx]
+	var ordered_pending: Array[int] = []
+	for player_idx in turn_order:
 		var player := state.get_player(player_idx)
 		if (
 			player.active == null
 			and player.bench_count() > 0
-			and player_idx not in state.pending_promotions
 		):
-			state.pending_promotions.append(player_idx)
+			ordered_pending.append(player_idx)
+	state.pending_promotions.assign(ordered_pending)
 	var rules_winner := validator.check_winner(state)
 	if rules_winner >= 0:
 		state.winner = rules_winner
 		state.phase = "GAME_OVER"
+		# A terminal batch cannot also wait for promotion.  The winner is only
+		# decided after every simultaneous KO and prize has settled, so any
+		# provisional promotion rows computed above are now stale.
+		state.pending_promotions.clear()
+
+
+func _append_game_over_event(
+	events: Array[Dictionary],
+	winner: int,
+) -> void:
+	# Settlement may be reached through action, choice, attack, or checkup
+	# wrappers.  Normalize any pre-existing terminal marker so this batch exposes
+	# exactly one, in the only causally valid position after all prize events.
+	for index in range(events.size() - 1, -1, -1):
+		if str(events[index].get("event_type", "")) == "game_over":
+			events.remove_at(index)
+	events.append({
+		"event_type": "game_over",
+		"actor": winner,
+		"data": {
+			"winner": winner,
+			"loser": 1 - winner,
+			"reason": "knockout",
+		},
+	})

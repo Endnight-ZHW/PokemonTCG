@@ -52,6 +52,10 @@ class VMChoiceManager:
                 allow_duplicates = True
         can_cancel = min_select <= 0 or bool(getattr(request, "can_cancel", False))
         continuation = dict(getattr(request, "continuation", {}) or {})
+        card_list_ids = [
+            str(getattr(card, "api_id", card) or "")
+            for card in request.card_list
+        ]
         metadata = {
             "from_zone": request.from_zone,
             "target_player": request.target_player,
@@ -60,10 +64,9 @@ class VMChoiceManager:
             "source_name": request.source_name,
             "bench_indices": [int(index) for index in request.bench_indices],
             "target_info": self._json_safe(request.target_info),
-            "card_list_ids": [
-                str(getattr(card, "api_id", card) or "")
-                for card in request.card_list
-            ],
+            # Kept for loading pending choices written by older builds. New
+            # consumers should use the purpose-specific ``card_ids`` field.
+            "card_list_ids": card_list_ids,
             "pending_card_id": str(
                 getattr(request.pending_card, "api_id", "") or ""
             ),
@@ -72,6 +75,116 @@ class VMChoiceManager:
             "revision": getattr(state, "revision", 0),
             "continuation": continuation,
         }
+        if request.request_type in {"distribute_energy", "select_energy_target"}:
+            continuation_card_ids = continuation.get("card_ids")
+            metadata["card_ids"] = (
+                [str(card_id or "") for card_id in continuation_card_ids]
+                if isinstance(continuation_card_ids, list)
+                else list(card_list_ids)
+            )
+            metadata["purpose"] = str(
+                continuation.get(
+                    "purpose",
+                    continuation.get("kind", request.request_type),
+                )
+                or request.request_type
+            )
+            source_player = continuation.get(
+                "source_player",
+                continuation.get("player_idx", request.player),
+            )
+            metadata["source_player"] = (
+                int(source_player)
+                if type(source_player) is int
+                else int(request.player)
+            )
+            metadata["source_zone"] = str(
+                continuation.get("source_zone", request.from_zone) or ""
+            )
+            metadata["same_target"] = bool(
+                continuation.get("same_target", False)
+            )
+            precise_max_per_target = continuation.get(
+                "max_per_target",
+                request.max_per_target,
+            )
+            metadata["max_per_target"] = (
+                int(precise_max_per_target)
+                if type(precise_max_per_target) is int
+                else int(request.max_per_target)
+            )
+        continuation_refs = continuation.get("attachment_refs", [])
+        attachment_refs = [
+            option.ref
+            for option in options
+            if isinstance(option.ref, AttachmentRef)
+        ]
+        serialized_attachment_refs = [
+            {
+                "kind": "attachment",
+                "player": int(ref.player),
+                "zone": "field",
+                "slot": ref.slot,
+                "index": int(ref.index),
+                "attachment_type": ref.attachment_type,
+                "card_id": ref.card_id,
+            }
+            for ref in attachment_refs
+        ]
+        if not serialized_attachment_refs and isinstance(continuation_refs, list):
+            serialized_attachment_refs = [
+                self._json_safe(ref)
+                for ref in continuation_refs
+                if isinstance(ref, dict)
+            ]
+        if request.request_type == "select_attachment" or serialized_attachment_refs:
+            metadata["purpose"] = str(
+                continuation.get("purpose", continuation.get("kind", request.request_type))
+                or request.request_type
+            )
+            metadata["attachment_refs"] = serialized_attachment_refs
+            metadata["card_ids"] = [
+                str(ref.get("card_id", "") or "")
+                for ref in serialized_attachment_refs
+            ]
+            source_players = {
+                int(ref.get("player", -1))
+                for ref in serialized_attachment_refs
+                if type(ref.get("player")) is int
+            }
+            source_slots = {
+                str(ref.get("slot", "") or "")
+                for ref in serialized_attachment_refs
+            }
+            metadata["source_player"] = int(
+                continuation.get(
+                    "source_player",
+                    next(iter(source_players)) if len(source_players) == 1 else -1,
+                )
+            )
+            metadata["source_slot"] = str(
+                continuation.get(
+                    "source_slot",
+                    next(iter(source_slots)) if len(source_slots) == 1 else "",
+                )
+                or ""
+            )
+            metadata["same_source"] = bool(
+                continuation.get("same_source", len(source_players) <= 1 and len(source_slots) <= 1)
+            )
+            metadata["same_target"] = bool(continuation.get("same_target", False))
+            metadata["source_zone"] = str(
+                continuation.get("source_zone", "field") or "field"
+            )
+            precise_max_per_target = continuation.get(
+                "max_per_target",
+                request.max_per_target,
+            )
+            metadata["max_per_target"] = (
+                int(precise_max_per_target)
+                if type(precise_max_per_target) is int
+                else int(request.max_per_target)
+            )
         top_card_id = str(
             continuation.get("top_card_id", continuation.get("card_id", "")) or ""
         )
@@ -258,6 +371,20 @@ class VMChoiceManager:
         if request.request_type == "distribute_energy":
             if request.distribute_mode == "source_select":
                 return [(0, str(selected[0].value.get("slot", "")))] if selected else []
+            if str((request.continuation or {}).get("kind", "")) == "energy_relocate_distribution":
+                # Keep the target snapshot intact through the legacy callback
+                # bridge. A bare slot cannot detect replacement while pending.
+                target_refs = []
+                for option in selected:
+                    if isinstance(option.ref, PokemonRef):
+                        target_refs.append({
+                            "player": option.ref.player,
+                            "slot": option.ref.slot,
+                            "card_id": option.ref.card_id,
+                        })
+                    elif isinstance(option.value, dict):
+                        target_refs.append(dict(option.value))
+                return target_refs
             return [
                 (energy_idx, str(option.value.get("slot", "")))
                 for energy_idx, option in enumerate(selected)

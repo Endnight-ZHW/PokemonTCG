@@ -143,7 +143,12 @@ def resolve_bench_damage_targets(
         if allowed and index not in allowed:
             continue
         if 0 <= index < len(target_state.bench) and target_state.bench[index]:
-            target_state.bench[index].damage_counters += counters
+            target = target_state.bench[index]
+            from engine.commands.primitives_combat import _consume_effect_damage_prevention
+
+            if _consume_effect_damage_prevention(stack.state, target, stack=stack):
+                continue
+            target.damage_counters += counters
             hits += 1
     stack.state._log(
         f"对{target_state.name}的备战区造成了{hits}次{amount}点伤害。"
@@ -168,7 +173,7 @@ def resolve_choose_damage_target(
     )
     if target_poke is None:
         return ActionResult(True, "")
-    if _consume_effect_damage_prevention(stack.state, target_poke):
+    if _consume_effect_damage_prevention(stack.state, target_poke, stack=stack):
         return ActionResult(True, "")
 
     amount = int(continuation.get("amount", 0) or 0)
@@ -259,12 +264,9 @@ def resolve_place_counters_then_self_ko(
     player_idx: int,
     source_slot: str,
 ):
-    from engine.enums import TurnPhase
     from engine.game_state import ActionResult
     from engine.commands.primitives_combat import (
         _discard_pokemon_for_effect,
-        _handle_effect_ko_if_needed,
-        _set_promotion_or_game_over,
     )
 
     target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
@@ -277,31 +279,19 @@ def resolve_place_counters_then_self_ko(
         return ActionResult(True, "神秘彗星没有选择目标。")
 
     counters = int(continuation.get("counters", 0) or 0)
-    ko_slots: list[str] = []
     target_poke.damage_counters += counters
     stack.state._log(f"在{target_poke.card.name}身上放置了{counters}个伤害指示物。")
-    _handle_effect_ko_if_needed(
+    source = _discard_pokemon_for_effect(
         stack.state,
-        target_player_idx,
-        slot_name,
-        target_poke,
-        ko_slots,
+        player_idx,
+        source_slot,
     )
-    if stack.state.phase != TurnPhase.GAME_OVER:
-        source = _discard_pokemon_for_effect(
-            stack.state,
-            player_idx,
-            source_slot,
-        )
-        if source:
-            stack.state._log(f"{source.card.name}被放置于弃牌区。")
-            if source_slot == "active":
-                _set_promotion_or_game_over(stack.state, player_idx)
+    if source:
+        stack.state._log(f"{source.card.name}被放置于弃牌区。")
 
     return ActionResult(
         True,
         "神秘彗星结算完毕。",
-        pokemon_ko=list(ko_slots),
     )
 
 

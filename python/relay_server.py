@@ -11,6 +11,7 @@ import json
 import logging
 import random
 import re
+import secrets
 import threading
 import time
 from collections import deque
@@ -21,17 +22,20 @@ logger = logging.getLogger("relay")
 
 ROOM_WAIT_TIMEOUT = 120
 ROOM_TTL = 60 * 60
+ROOM_RECONNECT_GRACE = 120
 RELAY_RECV_TIMEOUT = 30
 MAX_MESSAGE_BYTES = 262_144
 MAX_CONTROL_MESSAGE_BYTES = 1024
 MAX_MESSAGES_PER_SECOND = 60
 MAX_CONTROL_HANDSHAKES_PER_SECOND = 60
+MAX_JSON_DEPTH = 32
 RATE_LIMIT_WINDOW_SECONDS = 1.0
 PROTOCOL_V3 = 3
 MAX_WIRE_INTEGER = 2_147_483_647
 MSG_ERROR = "error"
 MSG_OPPONENT_DISCONNECTED = "opponent_disconnected"
 ROOM_CODE_PATTERN = re.compile(r"^[0-9]{4}$")
+RESUME_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 V3_MESSAGE_TYPES = {
     "welcome",
     "deck_select",
@@ -84,7 +88,23 @@ def _load_json_object(raw: str, *, object_error: str) -> tuple[dict | None, str]
         return None, "收到无效JSON。"
     if not isinstance(message, dict):
         return None, object_error
+    if not _json_tree_depth_is_bounded(message):
+        return None, "收到无效JSON。"
     return message, ""
+
+
+def _json_tree_depth_is_bounded(value, max_depth: int = MAX_JSON_DEPTH) -> bool:
+    """Reject adversarial nesting without relying on interpreter recursion limits."""
+    stack = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        if depth > max_depth:
+            return False
+        if isinstance(current, dict):
+            stack.extend((item, depth + 1) for item in current.values())
+        elif isinstance(current, (list, tuple)):
+            stack.extend((item, depth + 1) for item in current)
+    return True
 
 
 def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bool, str]:
@@ -171,6 +191,19 @@ def _parse_control_message(raw) -> tuple[dict | None, str]:
         if not ROOM_CODE_PATTERN.fullmatch(room_id):
             return None, "房间号格式无效。"
         return message, ""
+    if message_type == "resume_room":
+        room_id = message.get("room_id")
+        role = message.get("role")
+        token = message.get("resume_token")
+        if set(message) != {"type", "room_id", "role", "resume_token"}:
+            return None, "恢复房间控制消息字段无效。"
+        if not isinstance(room_id, str) or not ROOM_CODE_PATTERN.fullmatch(room_id):
+            return None, "房间号格式无效。"
+        if role not in ("p1", "p2"):
+            return None, "恢复房间角色无效。"
+        if not isinstance(token, str) or not RESUME_TOKEN_PATTERN.fullmatch(token):
+            return None, "恢复凭证无效。"
+        return message, ""
     return None, f"未知命令: {message_type}"
 
 
@@ -255,12 +288,21 @@ def _cleanup_expired_rooms_locked(now: float) -> list[str]:
     expired = [
         code
         for code, room in rooms.items()
-        if room.get("p2") is None
-        and now - room.get("created_at", now) > ROOM_TTL
+        if (
+            room.get("p1") is None
+            and room.get("p2") is None
+            and now - room.get("last_active", room.get("created_at", now))
+            > ROOM_RECONNECT_GRACE
+        )
+        or (
+            room.get("p2_token") is None
+            and now - room.get("created_at", now) > ROOM_TTL
+        )
     ]
     for code in expired:
         room = rooms.pop(code, None)
         if room:
+            room["p1_joined"].set()
             room["p2_joined"].set()
     return expired
 
@@ -292,8 +334,13 @@ def _create_room(websocket) -> str:
             "p1": websocket,
             "p2": None,
             "created_at": time.time(),
+            "last_active": time.time(),
+            "p1_token": secrets.token_urlsafe(32),
+            "p2_token": None,
+            "p1_joined": threading.Event(),
             "p2_joined": threading.Event(),
         }
+        rooms[code]["p1_joined"].set()
         return code
 
 
@@ -307,6 +354,27 @@ def _join_room(websocket, code: str) -> tuple[dict | None, str]:
         if room["p2"] is not None:
             return None, "房间已满"
         room["p2"] = websocket
+        if room.get("p2_token") is None:
+            room["p2_token"] = secrets.token_urlsafe(32)
+        room["p2_joined"].set()
+        room["last_active"] = time.time()
+        return room, ""
+
+
+def _resume_room(websocket, code: str, role: str, token: str) -> tuple[dict | None, str]:
+    """Reclaim one disconnected room slot using its unguessable credential."""
+    with rooms_lock:
+        _cleanup_expired_rooms_locked(time.time())
+        room = rooms.get(code)
+        if room is None:
+            return None, "房间恢复期限已过"
+        if token != room.get(f"{role}_token"):
+            return None, "恢复凭证不匹配"
+        if room.get(role) is not None:
+            return None, "该玩家仍在线"
+        room[role] = websocket
+        room[f"{role}_joined"].set()
+        room["last_active"] = time.time()
         return room, ""
 
 
@@ -345,6 +413,7 @@ def handle_client(websocket):
             my_role = "p1"
             websocket.send(json.dumps({
                 "type": "room_created", "room_id": code,
+                "resume_token": rooms[code]["p1_token"],
             }, ensure_ascii=False))
             logger.info("房间 %s 已创建 (房主: %s)", code, remote_label)
 
@@ -359,6 +428,7 @@ def handle_client(websocket):
             my_role = "p2"
             websocket.send(json.dumps({
                 "type": "room_joined", "room_id": code,
+                "resume_token": room["p2_token"],
             }, ensure_ascii=False))
             logger.info("%s 加入了房间 %s", remote_label, code)
 
@@ -367,25 +437,54 @@ def handle_client(websocket):
             if p1:
                 p1.send(json.dumps({"type": "opponent_joined"}, ensure_ascii=False))
             websocket.send(json.dumps({"type": "opponent_joined"}, ensure_ascii=False))
-            room["p2_joined"].set()
             paired = True
+
+        elif msg_type == "resume_room":
+            code = msg["room_id"]
+            my_role = msg["role"]
+            room, resume_error = _resume_room(
+                websocket, code, my_role, msg["resume_token"]
+            )
+            if room is None:
+                _send_error(websocket, resume_error)
+                return
+            my_room = code
+            websocket.send(json.dumps({
+                "type": "room_resumed",
+                "room_id": code,
+                "resume_token": msg["resume_token"],
+            }, ensure_ascii=False))
+            opponent_role = "p2" if my_role == "p1" else "p1"
+            opponent = room.get(opponent_role)
+            if opponent:
+                opponent.send(json.dumps({"type": "opponent_joined"}, ensure_ascii=False))
+                websocket.send(json.dumps({"type": "opponent_joined"}, ensure_ascii=False))
+                paired = True
+            logger.info("%s 已恢复房间 %s 的 %s", remote_label, code, my_role)
 
         else:
             _send_error(websocket, f"未知命令: {msg_type}")
             return
 
-        # 阶段2: 等待对手（仅房主需要）
-        if my_role == "p1" and not paired:
+        # 阶段2: 首次房主或恢复中的任一方等待对手回到房间。
+        if not paired:
             with rooms_lock:
                 room = rooms.get(my_room)
             if room:
-                if not room["p2_joined"].wait(timeout=ROOM_WAIT_TIMEOUT):
+                opponent_role = "p2" if my_role == "p1" else "p1"
+                wait_event = room[f"{opponent_role}_joined"]
+                wait_timeout = (
+                    ROOM_WAIT_TIMEOUT
+                    if msg_type == "create_room"
+                    else ROOM_RECONNECT_GRACE
+                )
+                if not wait_event.wait(timeout=wait_timeout):
                     _send_error(websocket, "等待对手超时")
-                    logger.info("房间 %s 等待超时，清理", my_room)
+                    logger.info("房间 %s 等待对手超时", my_room)
                     return
                 with rooms_lock:
                     current_room = rooms.get(my_room)
-                    paired = current_room is room and room.get("p2") is not None
+                    paired = current_room is room and room.get(opponent_role) is not None
                 if not paired:
                     return
 
@@ -438,9 +537,12 @@ def handle_client(websocket):
                 try:
                     opponent.send(raw)
                 except Exception:
-                    break
+                    # The opponent's handler will release its slot.  Keep this
+                    # side alive so the room can be resumed within the grace.
+                    continue
             else:
-                break
+                _send_error(websocket, "对手正在重连，请稍候。")
+                continue
 
     except websockets.exceptions.ConnectionClosed:
         pass
@@ -451,14 +553,13 @@ def handle_client(websocket):
     finally:
         logger.info("断开连接: %s (房间: %s)", remote_label, my_room or "N/A")
         opponent = None
-        removed = False
         with rooms_lock:
             room = rooms.get(my_room) if my_room else None
             if room is not None and room.get(my_role) is websocket:
-                room["p2_joined"].set()
                 opponent = room.get("p2" if my_role == "p1" else "p1")
-                del rooms[my_room]
-                removed = True
+                room[my_role] = None
+                room[f"{my_role}_joined"].clear()
+                room["last_active"] = time.time()
         if opponent:
             try:
                 opponent.send(json.dumps({
@@ -466,8 +567,7 @@ def handle_client(websocket):
                 }, ensure_ascii=False))
             except Exception:
                 pass
-        if removed:
-            logger.info("房间 %s 已移除", my_room)
+        cleanup_expired_rooms()
 
 
 def main(host: str, port: int):

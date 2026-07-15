@@ -28,6 +28,8 @@ func deal_attack_or_effect_damage(
 		amount,
 		events,
 		consume_effect_immunity,
+		stack,
+		attacker_idx,
 	)
 
 
@@ -37,15 +39,18 @@ func deal_damage(
 	slot: String,
 	amount: int,
 	events: Array[Dictionary],
-	consume_effect_immunity: bool = true,
+	_consume_effect_immunity: bool = true,
+	stack: ResolutionStack = null,
+	source_player_idx: int = -1,
 ) -> Dictionary:
 	var pokemon := state.get_player(player_idx).get_pokemon(slot)
 	if pokemon == null or amount <= 0:
 		return VMResult.ok()
-	if pokemon.damage_prevented_next_turn:
-		pokemon.damage_prevented_next_turn = false
-		if pokemon.all_prevented_next_turn:
-			pokemon.all_prevented_next_turn = false
+	var from_blockable_attack := (
+		stack != null
+		and stack.is_blockable_opponent_attack_effect(source_player_idx, player_idx)
+	)
+	if from_blockable_attack and pokemon.damage_prevented_next_turn:
 		events.append({
 			"event_type": "damage_prevented",
 			"target": {"player": player_idx, "slot": slot},
@@ -56,18 +61,6 @@ func deal_damage(
 			},
 		})
 		return VMResult.ok("伤害被免疫。")
-	if consume_effect_immunity and pokemon.all_prevented_next_turn:
-		pokemon.all_prevented_next_turn = false
-		events.append({
-			"event_type": "damage_prevented",
-			"target": {"player": player_idx, "slot": slot},
-			"data": {
-				"player": player_idx,
-				"slot": slot,
-				"reason": "effect_immunity",
-			},
-		})
-		return VMResult.ok("附加效果伤害被免疫。")
 	var applied_counters := int(amount / DAMAGE_PER_COUNTER)
 	if applied_counters <= 0:
 		return VMResult.ok()
@@ -103,7 +96,9 @@ func heal_pokemon(
 
 func selected_target_damage(
 	state: GameState,
+	stack: ResolutionStack,
 	selected: Array[Dictionary],
+	source_player: int,
 	target_player: int,
 	amount: int,
 	events: Array[Dictionary],
@@ -113,12 +108,14 @@ func selected_target_damage(
 	return deal_damage(
 		state, target_player,
 		str(selected[0].get("value", {}).get("slot", "")),
-		amount, events)
+		amount, events, true, stack, source_player)
 
 
 func selected_bench_damage(
 	state: GameState,
+	stack: ResolutionStack,
 	selected: Array[Dictionary],
+	source_player: int,
 	target_player: int,
 	amount: int,
 	events: Array[Dictionary],
@@ -128,5 +125,7 @@ func selected_bench_damage(
 	for option in selected:
 		var slot := str(option.get("value", {}).get("slot", ""))
 		if slot.begins_with("bench_"):
-			deal_damage(state, target_player, slot, amount, events)
+			deal_damage(
+				state, target_player, slot, amount, events,
+				true, stack, source_player)
 	return VMResult.ok("备战伤害已结算。")

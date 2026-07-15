@@ -70,6 +70,10 @@ func end_turn(
 	if incoming.active == null and incoming.bench_count() > 0:
 		if state.active_player_idx not in state.pending_promotions:
 			state.pending_promotions.append(state.active_player_idx)
+	# Every checkup KO must be promoted before the next turn can draw.  This is
+	# intentionally broader than checking only the incoming player: the player
+	# whose turn just ended can also be KO'd by Poison/Burn.
+	if not state.pending_promotions.is_empty():
 		return StepResult.new(true, "需要选择新的战斗宝可梦。", null, events)
 	var begin := begin_turn(state, rng)
 	begin.events = events + begin.events
@@ -81,14 +85,34 @@ func begin_turn(
 	_rng: PortableRandomSource,
 ) -> StepResult:
 	var player := state.get_player(state.active_player_idx)
-	var events: Array[Dictionary] = []
+	var events: Array[Dictionary] = [{
+		"event_type": "turn_start",
+		"actor": state.active_player_idx,
+		"target": {"player": state.active_player_idx, "slot": "active"},
+		"data": {"player": state.active_player_idx, "turn": state.turn_number},
+	}]
 	if state.turn_number != 1:
 		var drawn := player.draw_cards(1)
 		if drawn.is_empty():
 			state.winner = 1 - state.active_player_idx
 			state.phase = "GAME_OVER"
+			events.append({
+				"event_type": "deck_exhausted",
+				"actor": state.active_player_idx,
+				"source": {"player": state.active_player_idx, "zone": "deck"},
+				"data": {"player": state.active_player_idx, "reason": "draw_failed"},
+			})
+			events.append({
+				"event_type": "game_over",
+				"actor": state.winner,
+				"data": {
+					"winner": state.winner,
+					"reason": "deck_exhausted",
+					"loser": state.active_player_idx,
+				},
+			})
 			return StepResult.new(
-				true, "牌库耗尽。", null, [], state.winner, true)
+				true, "牌库耗尽。", null, events, state.winner, true)
 		events.append({
 			"event_type": "cards_drawn",
 			"actor": state.active_player_idx,
@@ -104,12 +128,6 @@ func begin_turn(
 		})
 	state.phase = "MAIN"
 	state.log_action("—— %s的第%d回合 ——" % [player.name, state.turn_number])
-	events.append({
-		"event_type": "turn_start",
-		"actor": state.active_player_idx,
-		"target": {"player": state.active_player_idx, "slot": "active"},
-		"data": {"player": state.active_player_idx, "turn": state.turn_number},
-	})
 	return StepResult.new(true, "回合开始。", null, events)
 
 
@@ -127,25 +145,47 @@ func resolve_checkup(
 			"turn": state.turn_number,
 		},
 	})
+	# Pokemon Checkup is ordered by condition, not by player: resolve Poison
+	# for both Active Pokemon, then Burn, Asleep, and finally Paralyzed.  KO is
+	# checked only after every condition has finished, so damage remains
+	# simultaneous while the public event stream keeps the official causality.
+	for player_idx in [0, 1]:
+		var pokemon := state.get_player(player_idx).active
+		if pokemon != null and "POISONED" in pokemon.status_conditions:
+			pokemon.damage_counters += 1
+			events.append(_checkup_damage_event(player_idx, 10, "poisoned"))
 	for player_idx in [0, 1]:
 		var pokemon := state.get_player(player_idx).active
 		if pokemon == null:
 			continue
-		if "POISONED" in pokemon.status_conditions:
-			pokemon.damage_counters += 1
-			events.append(_checkup_damage_event(player_idx, 10, "poisoned"))
 		if "BURNED" in pokemon.status_conditions:
 			pokemon.damage_counters += 2
 			events.append(_checkup_damage_event(player_idx, 20, "burned"))
-			if rng.coin():
+			var burn_recovered := rng.coin()
+			events.append(_checkup_coin_event(player_idx, burn_recovered, "burned"))
+			if burn_recovered:
 				pokemon.status_conditions.erase("BURNED")
-		if "ASLEEP" in pokemon.status_conditions and rng.coin():
-			pokemon.status_conditions.erase("ASLEEP")
+				events.append(_status_removed_event(player_idx, "BURNED", "checkup_coin"))
+	for player_idx in [0, 1]:
+		var pokemon := state.get_player(player_idx).active
+		if pokemon == null:
+			continue
+		if "ASLEEP" in pokemon.status_conditions:
+			var woke_up := rng.coin()
+			events.append(_checkup_coin_event(player_idx, woke_up, "asleep"))
+			if woke_up:
+				pokemon.status_conditions.erase("ASLEEP")
+				events.append(_status_removed_event(player_idx, "ASLEEP", "checkup_coin"))
+	for player_idx in [0, 1]:
+		var pokemon := state.get_player(player_idx).active
+		if pokemon == null:
+			continue
 		if (
 			"PARALYZED" in pokemon.status_conditions
 			and state.turn_number > pokemon.paralyzed_since_turn
 		):
 			pokemon.status_conditions.erase("PARALYZED")
+			events.append(_status_removed_event(player_idx, "PARALYZED", "checkup_expired"))
 
 
 func _checkup_damage_event(player_idx: int, amount: int, cause: String) -> Dictionary:
@@ -159,6 +199,36 @@ func _checkup_damage_event(player_idx: int, amount: int, cause: String) -> Dicti
 			"player": player_idx,
 			"slot": "active",
 			"amount": amount,
+			"cause": cause,
+			"checkup": true,
+		},
+	}
+
+
+func _checkup_coin_event(player_idx: int, result: bool, purpose: String) -> Dictionary:
+	return {
+		"event_type": "coin_flip",
+		"actor": player_idx,
+		"source": {"player": player_idx, "slot": "active"},
+		"target": {"player": player_idx, "slot": "active"},
+		"data": {
+			"results": [result],
+			"purpose": "checkup_%s" % purpose,
+			"player": player_idx,
+		},
+	}
+
+
+func _status_removed_event(player_idx: int, status: String, cause: String) -> Dictionary:
+	return {
+		"event_type": "status_removed",
+		"actor": player_idx,
+		"source": {"player": player_idx, "slot": "active"},
+		"target": {"player": player_idx, "slot": "active"},
+		"data": {
+			"player": player_idx,
+			"slot": "active",
+			"status": status,
 			"cause": cause,
 			"checkup": true,
 		},

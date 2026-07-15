@@ -39,7 +39,7 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   设置、帮助、详情和胜利等前台 surface；战斗与兼容 Theme 仍为 `res://ui/game_theme.tres`。
   不要把前台 Theme 挂到 `Main` 或 `BattleScreen` 根节点。
 - 前台背景与动效位于 `res://ui/frontend/frontend_backdrop.*` 和 `frontend_motion.gd`；
-  `neutral` 二级页背景不绘制装饰卡扇，胜利页仍保留庆祝卡牌。弹窗用
+  所有变体都不加载边角装饰卡牌，胜利页只保留面板内的代表卡。弹窗用
   `ModalSpec.frontend(...)` / `ModalSpec.battle(...)` 隔离尺寸、遮罩和 Theme。
 - 发布运行时禁用 `ui_accept`、`ui_select`、`ui_cancel`、Tab、方向键和手柄导航；按钮、卡牌、
   选项与滑杆均通过鼠标/触控操作。网络地址、端口和房间码 `LineEdit` 使用点击焦点，以保留

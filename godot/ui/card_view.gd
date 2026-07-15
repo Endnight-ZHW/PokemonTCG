@@ -112,6 +112,7 @@ var _pending_action_rows: Array[Dictionary] = []
 var _pending_action_hint := ""
 var _disabled_reason := ""
 var _legal_target_hint := ""
+var _target_accent := DesignTokens.CYAN
 var _allowed_drop_hand_indices: Array[int] = []
 var _dragging := false
 var _drag_masked := false
@@ -121,6 +122,7 @@ var _presentation_tween: Tween
 var _presentation_motion_handle: MotionHandle
 var _lift_tween: Tween
 var _shake_tween: Tween
+var _shake_motion_handle: MotionHandle
 var _interaction_target_offset := Vector2.ZERO
 var _interaction_target_scale := Vector2.ONE
 var _interaction_target_reduced := false
@@ -330,10 +332,22 @@ func set_targetable(value: bool) -> void:
 	if not value:
 		_legal_target_hint = ""
 		_allowed_drop_hand_indices.clear()
+		_target_accent = DesignTokens.CYAN
 	if target_glow:
 		target_glow.visible = value
 	_refresh_state_animation()
 	_refresh_empty_slot_visibility()
+	_refresh_interaction_visuals()
+
+
+func set_target_accent(value: Color = DesignTokens.CYAN) -> void:
+	# Target accents are contextual (cyan for destinations, amber for attachment
+	# sources). A transparent/default-like value falls back to cyan, and leaving
+	# targetable state resets it so a later interaction cannot inherit stale UI.
+	var resolved := value if value.a > 0.0 else DesignTokens.CYAN
+	if _target_accent.is_equal_approx(resolved):
+		return
+	_target_accent = resolved
 	_refresh_interaction_visuals()
 
 
@@ -383,8 +397,12 @@ func clear_presentation_state() -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
 	if _shake_tween and _shake_tween.is_valid():
-		_shake_tween.kill()
+		if _shake_motion_handle != null and not _shake_motion_handle.is_finished():
+			_shake_motion_handle.cancel()
+		else:
+			_shake_tween.kill()
 	_shake_tween = null
+	_shake_motion_handle = null
 	if feedback_root:
 		feedback_root.position = Vector2.ZERO
 	_clear_flash_overlays()
@@ -446,6 +464,38 @@ func global_center() -> Vector2:
 	return get_global_transform_with_canvas() * (size * 0.5)
 
 
+func visual_global_bounds() -> Rect2:
+	# Selection and hover deliberately transform InteractionRoot rather than the
+	# layout-owned CardView root. Expose that rendered rectangle to table overlays
+	# and hit tests so they follow the card the player actually sees.
+	_resolve_scene_nodes()
+	var visual_root := interaction_root if interaction_root != null else self
+	var transform := visual_root.get_global_transform_with_canvas()
+	var visual_size := visual_root.size
+	var corners := PackedVector2Array([
+		transform * Vector2.ZERO,
+		transform * Vector2(visual_size.x, 0.0),
+		transform * visual_size,
+		transform * Vector2(0.0, visual_size.y),
+	])
+	var minimum := corners[0]
+	var maximum := corners[0]
+	for corner in corners:
+		minimum = minimum.min(corner)
+		maximum = maximum.max(corner)
+	return Rect2(minimum, maximum - minimum)
+
+
+func contains_visual_global_point(global_point: Vector2) -> bool:
+	_resolve_scene_nodes()
+	var visual_root := interaction_root if interaction_root != null else self
+	var local_point := (
+		visual_root.get_global_transform_with_canvas().affine_inverse()
+		* global_point
+	)
+	return _minimum_touch_rect(visual_root.size).has_point(local_point)
+
+
 func attachment_anchor_global(
 	attachment_type: String,
 	attachment_card_id: String = "",
@@ -493,19 +543,29 @@ func attachment_anchor_global(
 
 
 func _has_point(point: Vector2) -> bool:
+	# Input arrives in the layout root's local space, while hover/selection lift
+	# and scale InteractionRoot. Transform through canvas space so the visible
+	# raised edge remains clickable and the old, vacated rectangle does not.
+	var global_point := get_global_transform_with_canvas() * point
+	return contains_visual_global_point(global_point)
+
+
+func _minimum_touch_rect(control_size: Vector2) -> Rect2:
 	# Compact landscape can render a bench card narrower than the recommended
 	# touch target. Keep the artwork unchanged while expanding only its hit shape
 	# around the same center; sibling Z/order resolves the rare overlap.
 	var hit_size := Vector2(
-		maxf(size.x, MINIMUM_TOUCH_TARGET),
-		maxf(size.y, MINIMUM_TOUCH_TARGET),
+		maxf(control_size.x, MINIMUM_TOUCH_TARGET),
+		maxf(control_size.y, MINIMUM_TOUCH_TARGET),
 	)
-	return Rect2((size - hit_size) * 0.5, hit_size).has_point(point)
+	return Rect2((control_size - hit_size) * 0.5, hit_size)
 
 
-func flash(color: Color, duration: float = 0.3) -> void:
+func flash(color: Color, duration: float = 0.3) -> MotionHandle:
+	var handle := MotionHandle.new()
 	if frame == null:
-		return
+		handle.finish()
+		return handle
 	var overlay := ColorRect.new()
 	_flash_overlays.append(overlay)
 	overlay.color = Color(color.r, color.g, color.b, 0.0)
@@ -520,22 +580,31 @@ func flash(color: Color, duration: float = 0.3) -> void:
 		var instant_tween := create_tween()
 		instant_tween.tween_property(overlay, "color:a", 0.0, 0.08)
 		instant_tween.tween_callback(_dispose_flash_overlay.bind(overlay))
-		return
+		handle.bind_tween(instant_tween)
+		return handle
 	var tween := create_tween()
 	tween.tween_property(overlay, "color:a", 0.58, duration * 0.28)
 	tween.tween_property(overlay, "color:a", 0.0, duration * 0.72)
 	tween.tween_callback(_dispose_flash_overlay.bind(overlay))
+	handle.bind_tween(tween)
+	return handle
 
 
-func shake(strength: float = 7.0, duration: float = 0.26) -> void:
+func shake(strength: float = 7.0, duration: float = 0.26) -> MotionHandle:
+	var handle := MotionHandle.new()
 	_resolve_scene_nodes()
 	if feedback_root == null:
-		return
+		handle.finish()
+		return handle
 	if _reduced_motion_enabled():
 		feedback_root.position = Vector2.ZERO
-		return
+		handle.finish()
+		return handle
 	if _shake_tween and _shake_tween.is_valid():
-		_shake_tween.kill()
+		if _shake_motion_handle != null and not _shake_motion_handle.is_finished():
+			_shake_motion_handle.cancel()
+		else:
+			_shake_tween.kill()
 	feedback_root.position = Vector2.ZERO
 	_shake_tween = create_tween()
 	for offset in [
@@ -554,7 +623,11 @@ func shake(strength: float = 7.0, duration: float = 0.26) -> void:
 	_shake_tween.tween_callback(func() -> void:
 		feedback_root.position = Vector2.ZERO
 		_shake_tween = null
+		_shake_motion_handle = null
 	)
+	_shake_motion_handle = handle
+	handle.bind_tween(_shake_tween)
+	return handle
 
 
 func _refresh() -> void:
@@ -1032,6 +1105,20 @@ func _refresh_interaction_visuals() -> void:
 		selection_ring.visible = selected and _content_is_visible()
 	if target_glow:
 		target_glow.visible = targetable and not selected
+		var target_style := DesignTokens.panel_style(
+			Color.TRANSPARENT,
+			_outline_corner_radius(),
+			_target_accent,
+			3,
+			0,
+		)
+		target_style.draw_center = false
+		var target_shadow := _target_accent
+		target_shadow.a = 0.46
+		target_style.shadow_color = target_shadow
+		target_style.shadow_size = 5
+		target_style.shadow_offset = Vector2.ZERO
+		target_glow.add_theme_stylebox_override("panel", target_style)
 	var can_show_marker := (
 		actionable
 		and not empty
@@ -1066,7 +1153,7 @@ func _refresh_interaction_visuals() -> void:
 			if not _allowed_drop_hand_indices.is_empty()
 			else "可选择"
 		)
-		hint_color = DesignTokens.CYAN
+		hint_color = _target_accent
 	elif selected and not actionable and not _disabled_reason.is_empty():
 		hint_text = _disabled_reason
 	if interaction_hint:

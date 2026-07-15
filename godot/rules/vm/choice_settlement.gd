@@ -34,12 +34,27 @@ func apply_choice(
 		return _error("局面已变化，选择请求已过期。", "stale_choice", state)
 	var cancel_checkpoint := transaction_manager.cancel_action_checkpoint(stack)
 	if response.cancelled and request.can_cancel and not cancel_checkpoint.is_empty():
-		return transaction_manager.restore_cancelled_action(state, rng, cancel_checkpoint)
+		var rollback_event := transaction_manager.cancelled_trainer_return_event(
+			stack, request.player)
+		var cancelled_step := transaction_manager.restore_cancelled_action(
+			state, rng, cancel_checkpoint)
+		if not rollback_event.is_empty():
+			cancelled_step.events.append(rollback_event)
+		return cancelled_step
 	var checkpoint := transaction_manager.capture_transaction(state, rng)
 	state.revision += 1
 	var step := effect_engine.apply_choice(state, stack, response, rng)
 	if not step.success:
 		return transaction_manager.rollback_failed_step(state, rng, checkpoint, step)
+	var has_deferred_public_events := not transaction_manager.deferred_public_events(
+		stack).is_empty()
+	if has_deferred_public_events and step.pending_choice != null:
+		step.pending_choice.metadata["cancels_action"] = true
+		if stack.pending_request != null:
+			stack.pending_request.metadata["cancels_action"] = true
+		transaction_manager.append_deferred_public_events(
+			stack, step.events, state.revision)
+		state.resolution_stack = stack.to_dict()
 	if step.pending_choice == null and stack.has_finalize_attack_frame():
 		step = attack_settlement.merge_attack_presentation(
 			step,
@@ -62,6 +77,17 @@ func apply_choice(
 					str(ko_result.get("error_code", "trigger_command_failed")),
 				),
 			)
+	if step.pending_choice != null and bool(stack.context.get("finish_attack", false)):
+		var attack_actor := int(stack.context.get("actor", request.player))
+		step.pending_choice.metadata["finish_attack_actor"] = attack_actor
+		if stack.pending_request != null:
+			stack.pending_request.metadata["finish_attack_actor"] = attack_actor
+		state.resolution_stack = stack.to_dict()
+	if step.pending_choice == null and has_deferred_public_events:
+		var committed_events := transaction_manager.deferred_public_events(stack)
+		transaction_manager.clear_deferred_public_events(stack)
+		step.events = committed_events + step.events
+		state.resolution_stack = stack.to_dict()
 	step.winner = state.winner
 	step.terminal = state.winner >= 0 or state.phase == "GAME_OVER"
 	if not step.success:

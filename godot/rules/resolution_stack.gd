@@ -32,10 +32,11 @@ func push_continuation(operation: String, data: Dictionary) -> void:
 	})
 
 
-func push_finalize_attack(actor: int) -> void:
+func push_finalize_attack(actor: int, stage: String = "primary_hit") -> void:
 	frames.append({
 		"kind": "finalize_attack",
 		"actor": actor,
+		"stage": stage,
 	})
 
 
@@ -70,6 +71,22 @@ func pop_frame() -> Dictionary:
 	if frames.is_empty():
 		return {}
 	return frames.pop_back()
+
+
+func is_blockable_opponent_attack_effect(
+	source_player_idx: int,
+	target_player_idx: int,
+) -> bool:
+	# Attack protection applies to every damage/effect packet produced by the
+	# opponent's attack. Trainer/Ability stacks deliberately have no
+	# finish_attack context, while reactive commands can share an attack stack
+	# but use a different source player. Both distinctions matter here.
+	return (
+		bool(context.get("finish_attack", false))
+		and int(context.get("actor", -1)) == source_player_idx
+		and target_player_idx != source_player_idx
+		and not bool(context.get("ignore_defender_effects", false))
+	)
 
 
 func next_request_id(state: GameState, player_idx: int, request_type: String) -> String:

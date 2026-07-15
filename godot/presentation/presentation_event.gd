@@ -13,14 +13,17 @@ const SUPPORTED_EVENT_TYPES: Array[String] = [
 	"card_moved",
 	"cards_discarded",
 	"cards_drawn",
+	"cards_revealed",
 	"cards_selected",
 	"checkup",
 	"coin_flip",
 	"confusion_failed",
+	"dazzled_failed",
 	"damage_counters_placed",
 	"damage_dealt",
 	"damage_prevented",
 	"deck_shuffled",
+	"deck_exhausted",
 	"energy_attached",
 	"game_over",
 	"healed",
@@ -32,6 +35,7 @@ const SUPPORTED_EVENT_TYPES: Array[String] = [
 	"retreat",
 	"stadium_changed",
 	"status_applied",
+	"status_removed",
 	"switched",
 	"tool_attached",
 	"trainer_played",
@@ -215,6 +219,12 @@ static func _apply_endpoint_defaults(
 		"cards_selected":
 			_merge_endpoint_defaults(event, "source", player, str(data.get("source_zone", "deck")))
 			_merge_endpoint_defaults(event, "target", player, str(data.get("target_zone", data.get("destination", "hand"))))
+		"cards_revealed":
+			# A reveal can fan out to several public destinations. The top-level
+			# endpoints describe the hidden source and its natural return point;
+			# each card row owns its exact destination.
+			_merge_endpoint_defaults(event, "source", player, "deck")
+			_merge_endpoint_defaults(event, "target", player, "deck")
 		"card_moved":
 			_merge_endpoint_defaults(event, "source", player, str(data.get("source_zone", "")), str(data.get("source_slot", "")), int(data.get("source_index", -1)))
 			_merge_endpoint_defaults(event, "target", player, str(data.get("target_zone", "")), str(data.get("target_slot", "")), int(data.get("target_index", -1)))
@@ -230,9 +240,9 @@ static func _apply_endpoint_defaults(
 			if _has_endpoint_hint(raw_event, data, "source"):
 				_merge_endpoint_defaults(event, "source", player, "hand", "", int(data.get("source_index", -1)))
 			_merge_endpoint_defaults(event, "target", player, "stadium")
-		"damage_dealt", "damage_counters_placed", "healed", "status_applied", "damage_prevented":
+		"damage_dealt", "damage_counters_placed", "healed", "status_applied", "status_removed", "damage_prevented":
 			_merge_endpoint_defaults(event, "target", player, "", slot if not slot.is_empty() else "active")
-		"confusion_failed":
+		"confusion_failed", "dazzled_failed":
 			_merge_endpoint_defaults(event, "source", player, "", "active")
 			_merge_endpoint_defaults(event, "target", player, "", "active")
 		"retreat", "switched", "promoted":
@@ -246,6 +256,9 @@ static func _apply_endpoint_defaults(
 			_merge_endpoint_defaults(event, "source", player, "prizes")
 			_merge_endpoint_defaults(event, "target", player, "hand")
 		"deck_shuffled":
+			_merge_endpoint_defaults(event, "source", player, "deck")
+			_merge_endpoint_defaults(event, "target", player, "deck")
+		"deck_exhausted":
 			_merge_endpoint_defaults(event, "source", player, "deck")
 			_merge_endpoint_defaults(event, "target", player, "deck")
 		"turn_start", "turn_end":

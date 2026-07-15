@@ -92,15 +92,6 @@ static func move_selected_cards(
 					))
 		_:
 			player.hand.append_array(moved)
-	if bool(data.get("shuffle", false)):
-		rng.shuffle(player.deck)
-		events.append({
-			"event_type": "deck_shuffled",
-			"actor": player_idx,
-			"source": {"player": player_idx, "zone": "deck"},
-			"target": {"player": player_idx, "zone": "deck"},
-			"data": {"player": player_idx},
-		})
 	# A generic `zone = bench` endpoint has no visual anchor and used to resolve
 	# to the centre of the screen, so bench searches use one exact event per slot.
 	if destination == "bench":
@@ -114,7 +105,31 @@ static func move_selected_cards(
 			-1,
 			source_indices,
 		))
+	# Presentation follows event order. Keep the selected/moved cards visible
+	# before the remaining deck is shuffled, including a zero-card selection.
+	if bool(data.get("shuffle", false)):
+		shuffle_deck(state, rng, player_idx, events)
 	return VMResult.ok()
+
+
+static func shuffle_deck(
+	state: GameState,
+	rng: PortableRandomSource,
+	player_idx: int,
+	events: Array[Dictionary],
+) -> void:
+	rng.shuffle(state.get_player(player_idx).deck)
+	events.append(deck_shuffled_event(player_idx))
+
+
+static func deck_shuffled_event(player_idx: int) -> Dictionary:
+	return {
+		"event_type": "deck_shuffled",
+		"actor": player_idx,
+		"source": {"player": player_idx, "zone": "deck"},
+		"target": {"player": player_idx, "zone": "deck"},
+		"data": {"player": player_idx},
+	}
 
 
 static func remove_selected_from_zone(

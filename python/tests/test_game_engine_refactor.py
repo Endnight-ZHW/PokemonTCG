@@ -1364,7 +1364,7 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertTrue(result.success, result.message)
         after = snapshot_state(state)
         self.assertEqual(replace(after, revision=before.revision), before)
-        self.assertEqual(state.revision, before.revision + 1)
+        self.assertEqual(state.revision, before.revision + 2)
         self.assertEqual(rng.getstate(), before_rng)
         self.assertEqual(state.action_log, before_log)
         self.assertEqual(

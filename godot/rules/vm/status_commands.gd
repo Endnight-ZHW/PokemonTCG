@@ -28,7 +28,7 @@ func register(interpreter: VMInterpreter) -> void:
 
 func cmd_apply_attack_lock_basic(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -36,12 +36,12 @@ func cmd_apply_attack_lock_basic(
 	_source_slot: String,
 	_events: Array[Dictionary],
 ) -> Dictionary:
-	return apply_attack_lock_basic(state, player_idx, args)
+	return apply_attack_lock_basic(state, stack, player_idx, args)
 
 
 func cmd_apply_dazzling_beam(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -49,12 +49,12 @@ func cmd_apply_dazzling_beam(
 	_source_slot: String,
 	_events: Array[Dictionary],
 ) -> Dictionary:
-	return apply_dazzling_beam(state, player_idx, args)
+	return apply_dazzling_beam(state, stack, player_idx, args)
 
 
 func cmd_apply_outgoing_damage_reduction(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -62,7 +62,7 @@ func cmd_apply_outgoing_damage_reduction(
 	source_slot: String,
 	_events: Array[Dictionary],
 ) -> Dictionary:
-	return apply_outgoing_damage_reduction(state, player_idx, source_slot, args)
+	return apply_outgoing_damage_reduction(state, stack, player_idx, source_slot, args)
 
 
 func cmd_apply_self_attack_lock(
@@ -80,7 +80,7 @@ func cmd_apply_self_attack_lock(
 
 func cmd_apply_status(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -90,12 +90,14 @@ func cmd_apply_status(
 ) -> Dictionary:
 	var target_player_idx := target_player_idx_for(player_idx, args)
 	var target_slot := target_slot_for(source_slot, args)
-	return apply_status(state, target_player_idx, target_slot, str(args.get("status", "")), events)
+	return apply_status(
+		state, stack, player_idx, target_player_idx, target_slot,
+		str(args.get("status", "")), events)
 
 
 func cmd_conditional_status(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -109,7 +111,9 @@ func cmd_conditional_status(
 		state.get_player(player_idx).was_ko_by_attack = false
 	var target_player_idx := target_player_idx_for(player_idx, args)
 	var target_slot := target_slot_for(source_slot, args)
-	return apply_status(state, target_player_idx, target_slot, str(args.get("status", "")), events)
+	return apply_status(
+		state, stack, player_idx, target_player_idx, target_slot,
+		str(args.get("status", "")), events)
 
 
 func cmd_fail_attack(
@@ -180,29 +184,37 @@ func cmd_set_attack_flags(
 	return VMResult.ok("穿透攻击标记已设置。")
 
 
-func apply_dazzling_beam(state: GameState, player_idx: int, args: Dictionary) -> Dictionary:
-	var target := (
-		state.get_player(1 - player_idx).active
-		if str(args.get("target", "opponent_active")) == "opponent_active"
-		else state.get_player(player_idx).active
-	)
+func apply_dazzling_beam(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	args: Dictionary,
+) -> Dictionary:
+	var target_player_idx := target_player_idx_for(player_idx, args)
+	var target := state.get_player(target_player_idx).active
 	if target:
-		if target.all_prevented_next_turn:
-			target.all_prevented_next_turn = false
+		if (
+			target.all_prevented_next_turn
+			and stack.is_blockable_opponent_attack_effect(player_idx, target_player_idx)
+		):
 			return VMResult.ok("炫目效果被免疫。")
 		target.dazzled = true
 	return VMResult.ok("目标被施加炫目效果。")
 
 
-func apply_attack_lock_basic(state: GameState, player_idx: int, args: Dictionary) -> Dictionary:
-	var target := (
-		state.get_player(1 - player_idx).active
-		if str(args.get("target", "opponent_active")) == "opponent_active"
-		else state.get_player(player_idx).active
-	)
+func apply_attack_lock_basic(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	args: Dictionary,
+) -> Dictionary:
+	var target_player_idx := target_player_idx_for(player_idx, args)
+	var target := state.get_player(target_player_idx).active
 	if target:
-		if target.all_prevented_next_turn:
-			target.all_prevented_next_turn = false
+		if (
+			target.all_prevented_next_turn
+			and stack.is_blockable_opponent_attack_effect(player_idx, target_player_idx)
+		):
 			return VMResult.ok("攻击封锁被免疫。")
 		if catalog.is_basic_pokemon(target.card_id):
 			target.attack_locked = true
@@ -211,18 +223,19 @@ func apply_attack_lock_basic(state: GameState, player_idx: int, args: Dictionary
 
 func apply_outgoing_damage_reduction(
 	state: GameState,
+	stack: ResolutionStack,
 	player_idx: int,
 	source_slot: String,
 	args: Dictionary,
 ) -> Dictionary:
-	var target := (
-		state.get_player(1 - player_idx).active
-		if str(args.get("target", "opponent_active")) == "opponent_active"
-		else state.get_player(player_idx).get_pokemon(source_slot)
-	)
+	var target_player_idx := target_player_idx_for(player_idx, args)
+	var target := state.get_player(target_player_idx).get_pokemon(
+		"active" if target_player_idx != player_idx else source_slot)
 	if target:
-		if target.all_prevented_next_turn:
-			target.all_prevented_next_turn = false
+		if (
+			target.all_prevented_next_turn
+			and stack.is_blockable_opponent_attack_effect(player_idx, target_player_idx)
+		):
 			return VMResult.ok("恫吓效果被免疫。")
 		target.outgoing_damage_reduction_next_turn = maxi(
 			target.outgoing_damage_reduction_next_turn,
@@ -264,30 +277,54 @@ func apply_prevention(
 
 func apply_status(
 	state: GameState,
-	player_idx: int,
+	stack: ResolutionStack,
+	source_player_idx: int,
+	target_player_idx: int,
 	slot: String,
 	status: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	var pokemon := state.get_player(player_idx).get_pokemon(slot)
+	var pokemon := state.get_player(target_player_idx).get_pokemon(slot)
 	if pokemon == null:
 		return VMResult.fail("没有状态目标。")
-	if pokemon.all_prevented_next_turn:
-		pokemon.all_prevented_next_turn = false
+	if (
+		pokemon.all_prevented_next_turn
+		and stack.is_blockable_opponent_attack_effect(source_player_idx, target_player_idx)
+	):
 		return VMResult.ok("状态效果被免疫。")
 	var normalized := status.to_upper()
 	if normalized not in ["POISONED", "BURNED", "ASLEEP", "PARALYZED", "CONFUSED"]:
 		return VMResult.fail("未知状态: %s" % status)
 	if normalized in ["ASLEEP", "PARALYZED", "CONFUSED"]:
 		for exclusive in ["ASLEEP", "PARALYZED", "CONFUSED"]:
+			if exclusive == normalized or exclusive not in pokemon.status_conditions:
+				continue
 			pokemon.status_conditions.erase(exclusive)
+			events.append({
+				"event_type": "status_removed",
+				"actor": target_player_idx,
+				"source": {"player": target_player_idx, "slot": slot},
+				"target": {"player": target_player_idx, "slot": slot},
+				"data": {
+					"player": target_player_idx,
+					"slot": slot,
+					"status": exclusive,
+					"cause": "status_replaced",
+				},
+			})
 	if normalized not in pokemon.status_conditions:
 		pokemon.status_conditions.append(normalized)
 	if normalized == "PARALYZED":
 		pokemon.paralyzed_since_turn = state.turn_number
-	events.append({"event_type": "status_applied", "data": {
-		"player": player_idx, "slot": slot, "status": normalized,
-	}})
+	events.append({
+		"event_type": "status_applied",
+		"actor": target_player_idx,
+		"source": {"player": target_player_idx, "slot": slot},
+		"target": {"player": target_player_idx, "slot": slot},
+		"data": {
+			"player": target_player_idx, "slot": slot, "status": normalized,
+		},
+	})
 	return VMResult.ok()
 
 

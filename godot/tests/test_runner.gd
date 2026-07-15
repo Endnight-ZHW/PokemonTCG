@@ -1506,7 +1506,7 @@ func _run_phase_two_tests() -> void:
 		_check(cancel_state.players[0].hand == ["svi-cait", "sv1-ener-5"],
 			"Trainer cancellation did not restore the pre-action state")
 		var expected_cancel_snapshot := cancel_before_snapshot.duplicate(true)
-		expected_cancel_snapshot["revision"] = cancel_before_revision + 1
+		expected_cancel_snapshot["revision"] = cancel_before_revision + 2
 		_check(
 			cancel_state.snapshot() == expected_cancel_snapshot,
 			"Trainer cancellation did not restore the serialized action checkpoint",
@@ -1749,6 +1749,45 @@ func _run_phase_two_tests() -> void:
 	_check(
 		choice_ko_step.pending_choice == null and choice_ko_step.events.is_empty(),
 		"Failed post-choice KO trigger StepResult still exposes rolled-back pending/events",
+	)
+
+	var terminal_ko_state := _battle_state()
+	terminal_ko_state.players[0].prizes = ["sv1-ener-2"]
+	terminal_ko_state.players[1].bench[0] = PokemonState.new("svi-chim")
+	terminal_ko_state.players[1].active.damage_counters = 99
+	var terminal_ko_events: Array[Dictionary] = []
+	var terminal_ko_result := engine.knockout_settlement.resolve_knockouts(
+		terminal_ko_state,
+		0,
+		terminal_ko_events,
+		true,
+	)
+	var terminal_game_over_count := 0
+	var terminal_game_over_index := -1
+	var terminal_last_prize_index := -1
+	for event_index in range(terminal_ko_events.size()):
+		var terminal_event: Dictionary = terminal_ko_events[event_index]
+		match str(terminal_event.get("event_type", "")):
+			"prize_taken":
+				terminal_last_prize_index = event_index
+			"game_over":
+				terminal_game_over_count += 1
+				terminal_game_over_index = event_index
+	_check(
+		bool(terminal_ko_result.get("success", false))
+		and terminal_ko_state.winner == 0
+		and terminal_ko_state.phase == "GAME_OVER"
+		and terminal_ko_state.pending_promotions.is_empty(),
+		"Terminal KO batch retained a stale promotion after deciding the winner",
+	)
+	_check(
+		terminal_last_prize_index >= 0
+		and terminal_game_over_count == 1
+		and terminal_game_over_index > terminal_last_prize_index
+		and terminal_game_over_index == terminal_ko_events.size() - 1
+		and int(terminal_ko_events[terminal_game_over_index].get(
+			"data", {}).get("winner", -1)) == 0,
+		"Terminal KO batch did not append one game_over after every prize event",
 	)
 
 	var self_ko_state := _battle_state()
@@ -2662,19 +2701,58 @@ func _run_phase_three_tests() -> void:
 	)
 	field_choice_ui._show_choice_overlay(unique_attachment_choice)
 	var opponent_bench_key := CardInteractionRouter.pokemon_key(1, "bench_0")
+	var field_choice_table := field_choice_ui.battle_screen.table as BattleTable
+	var unique_group_value: Variant = field_choice_table.choice_target_options.get(
+		opponent_bench_key,
+		{},
+	)
+	var unique_group := (
+		Dictionary(unique_group_value)
+		if unique_group_value is Dictionary
+		else {}
+	)
+	var unique_group_options: Array = unique_group.get("options", [])
 	_check(
 		not field_choice_ui.modal_layer.visible
-		and field_choice_ui.battle_screen.table.choice_target_options
-			.get(opponent_bench_key, "") == unique_attachment_id
-		and field_choice_ui.battle_screen.table.get_slot_view(
+		and str(unique_group.get("kind", "")) == "attachment_group"
+		and int(unique_group.get("player", -1)) == 1
+		and str(unique_group.get("slot", "")) == "bench_0"
+		and unique_group_options.size() == 1
+		and str(Dictionary(unique_group_options[0]).get(
+			"option_id", "")) == unique_attachment_id
+		and field_choice_table.get_slot_view(
 			1, "bench_0").targetable,
-		"Unique attachment choice did not route to its visible field Pokemon",
+		"Unique attachment choice did not map its Pokemon to one exact attachment group",
+	)
+	var direct_attachment_ids: Array[String] = []
+	field_choice_ui.battle_screen.choice_target_selected.connect(
+		func(option_id: String) -> void:
+			direct_attachment_ids.append(option_id)
+	)
+	var main_target_choice_handler := Callable(
+		field_choice_ui,
+		"_on_battle_choice_target_selected",
+	)
+	if field_choice_ui.battle_screen.choice_target_selected.is_connected(
+		main_target_choice_handler,
+	):
+		field_choice_ui.battle_screen.choice_target_selected.disconnect(
+			main_target_choice_handler,
+		)
+	field_choice_table._on_card_activated("sv2-delib", -1, 1, "bench_0")
+	_check(
+		direct_attachment_ids == [unique_attachment_id]
+		and not field_choice_table.attachment_choice_popover.visible,
+		"Single attachment group did not resolve directly from its Pokemon",
+	)
+	field_choice_ui.battle_screen.choice_target_selected.connect(
+		main_target_choice_handler,
 	)
 	var duplicate_attachment_choice := ChoiceRequest.new(
 		"duplicate-field-attachment-choice",
 		"select_attachment",
 		0,
-		"选择对手备战宝可梦身上的一张能量。",
+		"选择对手备战宝可梦身上的能量。",
 		[
 			{
 				"option_id": unique_attachment_id,
@@ -2704,16 +2782,83 @@ func _run_phase_three_tests() -> void:
 			},
 		],
 		1,
-		1,
+		2,
 	)
 	field_choice_ui._show_choice_overlay(duplicate_attachment_choice)
-	var duplicate_attachment_panel := field_choice_ui.active_choice_panel as ChoicePanel
+	var duplicate_group_value: Variant = field_choice_table.choice_target_options.get(
+		opponent_bench_key,
+		{},
+	)
+	var duplicate_group := (
+		Dictionary(duplicate_group_value)
+		if duplicate_group_value is Dictionary
+		else {}
+	)
+	var duplicate_group_options: Array = duplicate_group.get("options", [])
 	_check(
-		field_choice_ui.modal_layer.visible
-		and field_choice_ui.battle_screen.table.choice_target_options.is_empty()
-		and duplicate_attachment_panel != null
-		and duplicate_attachment_panel.card_option_count() == 2,
-		"Ambiguous attachments on one Pokemon did not fall back to the option panel",
+		not field_choice_ui.modal_layer.visible
+		and field_choice_ui.active_choice_panel == null
+		and str(duplicate_group.get("kind", "")) == "attachment_group"
+		and duplicate_group_options.size() == 2
+		and str(Dictionary(duplicate_group_options[0]).get("ref", {}).get(
+			"card_id", "")) == "sv1-ener-4"
+		and int(Dictionary(duplicate_group_options[0]).get("ref", {}).get(
+			"index", -1)) == 0
+		and str(Dictionary(duplicate_group_options[1]).get("ref", {}).get(
+			"card_id", "")) == "sv1-ener-5"
+		and int(Dictionary(duplicate_group_options[1]).get("ref", {}).get(
+			"index", -1)) == 1,
+		"Multiple attachments did not remain exact options in their Pokemon group",
+	)
+	field_choice_table._on_card_activated("sv2-delib", -1, 1, "bench_0")
+	var attachment_popover := field_choice_table.attachment_choice_popover
+	_check(
+		attachment_popover.visible
+		and attachment_popover.option_count() == 2
+		and attachment_popover._button_by_id.has(unique_attachment_id)
+		and attachment_popover._button_by_id.has(
+			"attachment:1:bench_0:energy:1:sv1-ener-5",
+		),
+		"Multiple attachments did not open the source-anchored exact-energy popover",
+	)
+	var toggled_attachment_ids: Array[String] = []
+	field_choice_ui.battle_screen.choice_option_toggled.connect(
+		func(option_id: String) -> void:
+			toggled_attachment_ids.append(option_id)
+	)
+	var first_attachment_button := attachment_popover._button_by_id.get(
+		unique_attachment_id,
+	) as Button
+	if first_attachment_button != null:
+		first_attachment_button.pressed.emit()
+	_check(
+		toggled_attachment_ids == [unique_attachment_id]
+		and field_choice_ui.selected_choice_ids == [unique_attachment_id]
+		and attachment_popover._selected_ids == [unique_attachment_id]
+		and attachment_popover._confirm_button.visible
+		and not attachment_popover._confirm_button.disabled,
+		"Attachment popover did not emit and reflect an exact-energy selection",
+	)
+	var attachment_confirmations: Array[bool] = []
+	field_choice_ui.battle_screen.choice_selection_confirmed.connect(
+		func() -> void:
+			attachment_confirmations.append(true)
+	)
+	var main_choice_confirm_handler := Callable(field_choice_ui, "_confirm_choice")
+	if field_choice_ui.battle_screen.choice_selection_confirmed.is_connected(
+		main_choice_confirm_handler,
+	):
+		field_choice_ui.battle_screen.choice_selection_confirmed.disconnect(
+			main_choice_confirm_handler,
+		)
+	attachment_popover._confirm_button.pressed.emit()
+	_check(
+		attachment_confirmations.size() == 1
+		and not attachment_popover.visible,
+		"Attachment popover did not emit confirmation and close",
+	)
+	field_choice_ui.battle_screen.choice_selection_confirmed.connect(
+		main_choice_confirm_handler,
 	)
 	var coin_choice := ChoiceRequest.new(
 		"coin-choice",
@@ -4803,10 +4948,51 @@ func _run_phase_five_foundation_tests() -> void:
 		var network_view_ui := main_scene.instantiate()
 		root.add_child(network_view_ui)
 		network_view_ui.initialize_ui()
+		var startup_generation_before: int = int(
+			network_view_ui._startup_choreography_generation)
 		network_view_ui._apply_network_view(view_row["view"], int(view_row["player"]))
 		_check(not network_view_ui.modal_layer.visible,
 			"Network %s view opened the local privacy overlay" % view_row["label"])
+		_check(
+			network_view_ui._network_view_is_fresh_match_start()
+			and network_view_ui._startup_choreography_generation
+			== startup_generation_before + 2,
+			"Fresh network %s mount did not enter startup choreography"
+			% view_row["label"],
+		)
 		network_view_ui.queue_free()
+	var resync_view: Dictionary = host_view.duplicate(true)
+	var resync_state_payload: Dictionary = resync_view["state"]
+	resync_state_payload["revision"] = max(1, int(resync_state_payload["revision"]))
+	resync_view["state"] = resync_state_payload
+	resync_view["legal_actions"] = []
+	resync_view["wait_context"] = {
+		"waiting_for_player": 1,
+		"choice_kind": "attachment",
+	}
+	var resync_view_ui := main_scene.instantiate()
+	root.add_child(resync_view_ui)
+	resync_view_ui.initialize_ui()
+	var resync_generation_before: int = int(
+		resync_view_ui._startup_choreography_generation)
+	resync_view_ui._apply_network_view(resync_view, 0)
+	_check(resync_view_ui.state != null,
+		"Valid non-initial network state was rejected")
+	_check(not resync_view_ui._network_view_is_fresh_match_start(),
+		"Non-initial network state was classified as a fresh match")
+	_check(
+		resync_view_ui._startup_choreography_generation == resync_generation_before + 1
+		and not resync_view_ui._startup_choreography_running,
+		"Non-initial network state replayed startup choreography",
+	)
+	_check(not resync_view_ui.battle_screen.table._startup_input_blocked,
+		"Non-initial network state left the startup input blocker active")
+	_check(
+		resync_view_ui.battle_screen.header.task_hint_label.text
+		== "等待对手选择附着能量…",
+		"Network transition completion did not refresh the coarse wait hint",
+	)
+	resync_view_ui.queue_free()
 	var malformed_view_ui := main_scene.instantiate()
 	root.add_child(malformed_view_ui)
 	malformed_view_ui.initialize_ui()
@@ -8461,6 +8647,8 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		var shuffle_cards := 0
 		var shuffle_cards_are_single_face := true
+		var shuffle_cards_replace_physical_pile := true
+		var shuffle_deck := battle.table.zones.get("own_deck") as ZoneView
 		for flyer_value in battle.table._active_flyers:
 			var flyer := flyer_value as Control
 			if flyer == null:
@@ -8473,14 +8661,96 @@ func _run_visual_upgrade_tests() -> void:
 				and bool(flyer.get_meta("paper_card_single_face", false))
 				and flyer.get_node_or_null("PaperEdge") == null
 			)
+			if flyer.has_meta("shuffle_card"):
+				var shuffle_start: Vector2 = flyer.get_meta(
+					"motion_start", Vector2.ZERO)
+				var shuffle_finish: Vector2 = flyer.get_meta(
+					"motion_finish", Vector2.ZERO)
+				shuffle_cards_replace_physical_pile = (
+					shuffle_cards_replace_physical_pile
+					and bool(flyer.get_meta("shuffle_from_physical_pile", false))
+					and flyer.get_meta("shuffle_source_zone", null) == shuffle_deck
+					and shuffle_start.distance_to(shuffle_finish) < 0.1
+					and shuffle_deck != null
+					and flyer.size.distance_to(shuffle_deck.get_stack_face_size()) < 0.5
+				)
 		_check(
 			shuffle_spawned
 			and shuffle_cards == battle.table._shuffle_card_count()
 			and battle.table._active_flyers.size() <= battle.table._max_active_flyers()
-			and shuffle_cards_are_single_face,
-			"Deck shuffle did not create bounded single-face card-back motion entities",
+			and shuffle_cards_are_single_face
+			and shuffle_cards_replace_physical_pile
+			and shuffle_deck != null
+			and shuffle_deck.is_stack_presentation_hidden(),
+			"Deck shuffle did not take over the physical pile with exact card backs",
 		)
 		battle._clear_transient_visuals()
+		_check(
+			shuffle_deck != null
+			and not shuffle_deck.is_stack_presentation_hidden()
+			and battle.table._shuffle_source_masks.is_empty(),
+			"Deck shuffle cleanup did not restore the physical pile",
+		)
+		var reveal_spawned: bool = battle.table._spawn_reveal_motion({
+			"event_type": "cards_revealed",
+			"actor": 0,
+			"visibility": "public",
+			"data": {
+				"player": 0,
+				"cards": [
+					{
+						"card_id": "sv1-ener-2",
+						"matched": true,
+						"destination": {"player": 0, "zone": "discard"},
+					},
+					{
+						"card_id": "sv1-151",
+						"matched": false,
+						"destination": {"player": 0, "zone": "deck"},
+					},
+				],
+				"summary": {
+					"kind": "energy_damage",
+					"matched_count": 1,
+					"amount": 80,
+				},
+			},
+		}, 1.85)
+		var reveal_showcase: Control = battle.table.reveal_layer._showcase as Control
+		var reveal_cards: Array = (
+			reveal_showcase.get_meta("reveal_cards", [])
+			if reveal_showcase != null
+			else []
+		)
+		var reveal_summary: Label = (
+			reveal_showcase.get_node_or_null("RevealSummary") as Label
+			if reveal_showcase != null
+			else null
+		)
+		_check(
+			reveal_spawned
+			and battle.table.reveal_layer.is_presenting()
+			and reveal_cards.size() == 2
+			and reveal_summary != null
+			and reveal_summary.text == "正在翻牌…"
+			and str(reveal_showcase.get_meta("reveal_summary_text", ""))
+			== "翻到 1 张能量"
+			and not str(reveal_showcase.get_meta(
+				"reveal_summary_text", "",
+			)).contains("伤害"),
+			"Public reveal layer did not stage every ordered card and summary "
+			+ "(spawned=%s, presenting=%s, cards=%d, summary=%s)" % [
+				reveal_spawned,
+				battle.table.reveal_layer.is_presenting(),
+				reveal_cards.size(),
+				reveal_summary.text if reveal_summary != null else "<missing>",
+			],
+		)
+		battle._clear_transient_visuals()
+		_check(
+			not battle.table.reveal_layer.is_presenting(),
+			"Public reveal layer survived transient/resync cleanup",
+		)
 		var stale_cover := Control.new()
 		stale_cover.name = "PresentationCover"
 		battle.effects.add_child(stale_cover)
@@ -10056,11 +10326,11 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		"branches": {},
 	}, 0, "active")
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(202606262))
-	_check(step.success, "Native dazzling_beam immunity branch failed: %s" % step.message)
-	_check(not state.players[1].active.dazzled,
-		"Native dazzling_beam ignored effect immunity")
-	_check(not state.players[1].active.all_prevented_next_turn,
-		"Native dazzling_beam did not consume effect immunity")
+	_check(step.success, "Native non-attack dazzling_beam branch failed: %s" % step.message)
+	_check(state.players[1].active.dazzled,
+		"Effect immunity incorrectly blocked a non-attack dazzling_beam source")
+	_check(state.players[1].active.all_prevented_next_turn,
+		"Non-attack dazzling_beam consumed effect immunity")
 
 	stack = ResolutionStack.new()
 	stack.push_effect({
@@ -10087,6 +10357,152 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	_check(state.players[1].active.outgoing_damage_reduction_next_turn == 50,
 		"Native apply_outgoing_damage_reduction did not set reduction marker")
 
+	state = _effect_state()
+	state.players[1].active.all_prevented_next_turn = true
+	stack = ResolutionStack.new()
+	stack.context = {"finish_attack": true, "actor": 0}
+	stack.push_effects([
+		{"op": "apply_status", "args": {"status": "asleep"}, "branches": {}},
+		{
+			"op": "apply_dazzling_beam",
+			"args": {"target": "opponent_active"},
+			"branches": {},
+		},
+		{
+			"op": "apply_attack_lock_basic",
+			"args": {"target": "opponent_active"},
+			"branches": {},
+		},
+		{
+			"op": "apply_outgoing_damage_reduction",
+			"args": {"target": "opponent_active", "amount": 50},
+			"branches": {},
+		},
+	], 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062641))
+	_check(step.success, "Attack effect immunity sequence failed: %s" % step.message)
+	_check(
+		state.players[1].active.status_conditions.is_empty()
+		and not state.players[1].active.dazzled
+		and not state.players[1].active.attack_locked
+		and state.players[1].active.outgoing_damage_reduction_next_turn == 0,
+		"Effect immunity did not block every effect from the same attack",
+	)
+	_check(
+		state.players[1].active.all_prevented_next_turn,
+		"Attack effects consumed effect immunity before its turn boundary",
+	)
+	var effect_only_damage_events: Array[Dictionary] = []
+	var effect_only_damage_result := VMCombatDamage.new().deal_damage(
+		state,
+		1,
+		"active",
+		20,
+		effect_only_damage_events,
+		true,
+		stack,
+		0,
+	)
+	_check(
+		bool(effect_only_damage_result.get("success", false))
+		and state.players[1].active.damage_counters == 3
+		and state.players[1].active.all_prevented_next_turn,
+		"Effect-only immunity incorrectly blocked attack damage",
+	)
+	stack = ResolutionStack.new()
+	stack.context = {"finish_attack": true, "actor": 0}
+	stack.push_effect({
+		"op": "switch_pokemon",
+		"args": {"target": "opponent", "you_choose": true},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260626411))
+	_check(
+		step.success and step.pending_choice == null
+		and state.players[1].active.all_prevented_next_turn,
+		"Attack switch effect bypassed or consumed persistent effect immunity",
+	)
+	stack = ResolutionStack.new()
+	stack.context = {"finish_attack": true, "actor": 0}
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"from": "opponent", "amount": 1},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260626412))
+	_check(
+		step.success and step.pending_choice == null
+		and state.players[1].active.energy_card_ids == ["sv1-ener-5"]
+		and state.players[1].active.all_prevented_next_turn,
+		"Attack energy-discard effect bypassed or consumed persistent effect immunity",
+	)
+
+	state = _effect_state()
+	state.players[1].active.damage_prevented_next_turn = true
+	state.players[1].active.all_prevented_next_turn = true
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "deal_damage",
+		"args": {"amount": 20},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026062642))
+	_check(step.success, "Non-attack damage source failed: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 3
+		and state.players[1].active.damage_prevented_next_turn
+		and state.players[1].active.all_prevented_next_turn,
+		"Attack protection incorrectly blocked or consumed a Trainer/Ability damage source",
+	)
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"from": "opponent", "amount": 1},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260626421))
+	_check(
+		step.success
+		and state.players[1].active.energy_card_ids.is_empty()
+		and state.players[1].active.all_prevented_next_turn,
+		"Effect immunity incorrectly blocked or consumed a non-attack energy discard",
+	)
+
+	var protected_availability := VMAvailability.new(engine.catalog)
+	state.players[1].bench[0] = PokemonState.new("sv2-delib")
+	state.players[1].active.energy_card_ids = ["sv1-ener-4"]
+	_check(
+		protected_availability.effects_have_legal_target(
+			state,
+			0,
+			[{
+				"op": "apply_status",
+				"args": {"status": "asleep", "target": "opponent_active"},
+				"branches": {},
+			}],
+		)
+		and protected_availability.effects_have_legal_target(
+			state,
+			0,
+			[{
+				"op": "switch_pokemon",
+				"args": {"target": "opponent"},
+				"branches": {},
+			}],
+		)
+		and protected_availability.effects_have_legal_target(
+			state,
+			0,
+			[{
+				"op": "discard_energy",
+				"args": {"from": "opponent", "amount": 1},
+				"branches": {},
+			}],
+		),
+		"Effect immunity incorrectly removed legal Trainer/Ability or attack targets",
+	)
+
+	state.turn_number = 7
 	stack = ResolutionStack.new()
 	stack.push_effect({
 		"op": "apply_self_attack_lock",
@@ -10590,7 +11006,7 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 			super_rod_cancel_rng,
 		)
 		var expected_super_rod_cancel := super_rod_cancel_snapshot.duplicate(true)
-		expected_super_rod_cancel["revision"] = int(expected_super_rod_cancel["revision"]) + 1
+		expected_super_rod_cancel["revision"] = int(expected_super_rod_cancel["revision"]) + 2
 		_check(cancelled_super_rod.success, "Super Rod cancellation failed: %s" % cancelled_super_rod.message)
 		_check(
 			super_rod_cancel_state.snapshot() == expected_super_rod_cancel
@@ -10722,6 +11138,14 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		PortableRandomSource.new(202606312),
 	)
 	_check(step.success, "Native search_cards deck path failed: %s" % step.message)
+	var searched_move_event_index := _first_event_type_index(step.events, "card_moved")
+	if searched_move_event_index < 0:
+		searched_move_event_index = _first_event_type_index(step.events, "cards_selected")
+	_check(
+		searched_move_event_index >= 0
+		and _first_event_type_index(step.events, "deck_shuffled") > searched_move_event_index,
+		"Deck search did not present selected movement before shuffling",
+	)
 	var search_deck_remaining := state.players[0].deck.duplicate()
 	search_deck_remaining.sort()
 	_check(
@@ -10814,6 +11238,12 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		state.players[0].hand == ["sv1-ener-1"]
 		and state.players[0].discard == ["svf-potion"],
 		"Native trekking_shoes did not discard top and draw next card",
+	)
+	_check(
+		_first_event_type_index(step.events, "cards_discarded") >= 0
+		and _first_event_type_index(step.events, "cards_drawn")
+			> _first_event_type_index(step.events, "cards_discarded"),
+		"Trekking Shoes did not present deck-to-discard before drawing",
 	)
 
 	state = _effect_state()
@@ -11007,6 +11437,19 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	)
 	_check(step.success and step.pending_choice != null,
 		"Native look_top_attach_energy did not continue to target choice")
+	_check(
+		step.pending_choice != null
+		and step.pending_choice.metadata.get("purpose", "") == "look_top_attach_target"
+		and step.pending_choice.metadata.get("card_ids", []) == [
+			"sv1-ener-2", "sv1-ener-1",
+		]
+		and int(step.pending_choice.metadata.get("source_player", -1)) == 0
+		and step.pending_choice.metadata.get("source_zone", "") == "deck"
+		and bool(step.pending_choice.metadata.get("same_source", false))
+		and bool(step.pending_choice.metadata.get("same_target", false))
+		and int(step.pending_choice.metadata.get("max_per_target", -1)) == 2,
+		"look_top_attach_target choice omitted metadata required by network UI",
+	)
 	var attach_target_id := ""
 	for option_value in step.pending_choice.options:
 		var option: Dictionary = option_value
@@ -11020,6 +11463,12 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		PortableRandomSource.new(2026063267),
 	)
 	_check(step.success, "Native look_top_attach_energy target choice failed: %s" % step.message)
+	_check(
+		_first_event_type_index(step.events, "energy_attached") >= 0
+		and _first_event_type_index(step.events, "deck_shuffled")
+			> _first_event_type_index(step.events, "energy_attached"),
+		"Look-top attachment shuffled before the selected energy was attached",
+	)
 	_check(
 		state.players[0].bench[0].energy_card_ids == ["sv1-ener-2", "sv1-ener-1"]
 		and state.players[0].deck == ["svf-potion"],
@@ -11172,6 +11621,17 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063276))
 	_check(step.success and step.pending_choice != null,
 		"Native attach_energy self did not request target")
+	_check(
+		step.pending_choice != null
+		and step.pending_choice.metadata.get("purpose", "") == "energy_attach_target"
+		and step.pending_choice.metadata.get("card_ids", []) == ["sv1-ener-6"]
+		and int(step.pending_choice.metadata.get("source_player", -1)) == 0
+		and step.pending_choice.metadata.get("source_zone", "") == "deck"
+		and bool(step.pending_choice.metadata.get("same_source", false))
+		and not bool(step.pending_choice.metadata.get("same_target", true))
+		and int(step.pending_choice.metadata.get("max_per_target", -1)) == 99,
+		"request_energy_target omitted metadata required by network UI",
+	)
 	step = engine.effect_engine.apply_choice(
 		state,
 		ResolutionStack.from_dict(state.resolution_stack),
@@ -11471,19 +11931,31 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		"branches": {},
 	}, 0, "active")
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063294))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "select_attachment"
+		and step.pending_choice.metadata.get("source_slot", "") == "active",
+		"Native relocate_energy from_self did not request an exact attachment",
+	)
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[1]["option_id"])]),
+		PortableRandomSource.new(2026063295),
+	)
 	_check(step.success and step.pending_choice != null,
-		"Native relocate_energy from_self did not request target")
+		"Native relocate_energy exact attachment did not continue to target")
 	step = engine.effect_engine.apply_choice(
 		state,
 		ResolutionStack.from_dict(state.resolution_stack),
 		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[0]["option_id"])]),
-		PortableRandomSource.new(2026063295),
+		PortableRandomSource.new(20260632951),
 	)
 	_check(step.success, "Native relocate_energy from_self target failed: %s" % step.message)
 	_check(
-		state.players[0].active.energy_card_ids == ["sv1-ener-2"]
-		and state.players[0].bench[0].energy_card_ids == ["sv1-ener-1"],
-		"Native relocate_energy from_self did not move one basic energy",
+		state.players[0].active.energy_card_ids == ["sv1-ener-1"]
+		and state.players[0].bench[0].energy_card_ids == ["sv1-ener-2"],
+		"Native relocate_energy did not move the selected non-first energy",
 	)
 
 	state = _effect_state()
@@ -11553,8 +12025,71 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		ChoiceResponse.new(step.pending_choice.request_id, [active_relocate_source]),
 		PortableRandomSource.new(2026063299),
 	)
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "select_attachment"
+		and step.pending_choice.min_select == 0
+		and step.pending_choice.max_select == 2,
+		"Native relocate_energy source choice did not continue to exact 0-2 attachments",
+	)
+	var poppy_zero_state := GameState.from_dict(state.snapshot())
+	var poppy_zero_request := ResolutionStack.from_dict(
+		poppy_zero_state.resolution_stack).pending_request
+	var poppy_zero_step := engine.apply_choice(
+		poppy_zero_state,
+		poppy_zero_request,
+		ChoiceResponse.new(poppy_zero_request.request_id, []),
+		PortableRandomSource.new(20260632981),
+	)
+	_check(
+		poppy_zero_step.success and poppy_zero_step.pending_choice == null
+		and poppy_zero_state.players[0].active.energy_card_ids
+		== ["sv1-ener-1", "sv1-ener-2"]
+		and poppy_zero_state.players[0].bench[0].energy_card_ids == ["sv1-ener-3"]
+		and poppy_zero_state.players[0].bench[1].energy_card_ids.is_empty(),
+		"Optional same-source energy relocation did not support selecting zero",
+	)
+	var poppy_one_state := GameState.from_dict(state.snapshot())
+	var poppy_one_request := ResolutionStack.from_dict(
+		poppy_one_state.resolution_stack).pending_request
+	var poppy_one_step := engine.apply_choice(
+		poppy_one_state,
+		poppy_one_request,
+		ChoiceResponse.new(poppy_one_request.request_id, [
+			str(poppy_one_request.options[1].get("option_id", "")),
+		]),
+		PortableRandomSource.new(20260632982),
+	)
+	var poppy_one_target := (
+		_choice_id_for_slot(poppy_one_step.pending_choice, "bench_1")
+		if poppy_one_step.pending_choice != null
+		else ""
+	)
+	if poppy_one_step.pending_choice:
+		poppy_one_step = engine.apply_choice(
+			poppy_one_state,
+			poppy_one_step.pending_choice,
+			ChoiceResponse.new(poppy_one_step.pending_choice.request_id, [poppy_one_target]),
+			PortableRandomSource.new(20260632983),
+		)
+	_check(
+		poppy_one_step.success
+		and poppy_one_state.players[0].active.energy_card_ids == ["sv1-ener-1"]
+		and poppy_one_state.players[0].bench[1].energy_card_ids == ["sv1-ener-2"]
+		and poppy_one_state.players[0].bench[0].energy_card_ids == ["sv1-ener-3"],
+		"Optional same-source energy relocation did not support selecting one",
+	)
+	var relocate_attachment_ids: Array[String] = []
+	for option_value in step.pending_choice.options:
+		relocate_attachment_ids.append(str(option_value.get("option_id", "")))
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, relocate_attachment_ids),
+		PortableRandomSource.new(20260632991),
+	)
 	_check(step.success and step.pending_choice != null,
-		"Native relocate_energy source choice did not continue to targets")
+		"Native relocate_energy attachment choice did not continue to targets")
 	var bench_one_relocate := ""
 	for option_value in step.pending_choice.options:
 		var option: Dictionary = option_value
@@ -11810,14 +12345,148 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		"branches": {},
 	}, 0, "active")
 	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(20260633))
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "select_attachment"
+		and step.pending_choice.metadata.get("purpose", "") == "discard_energy",
+		"Native discard_energy did not request an exact attachment",
+	)
+	step = engine.effect_engine.apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(step.pending_choice.request_id, [str(step.pending_choice.options[1]["option_id"])]),
+		PortableRandomSource.new(202606331),
+	)
 	_check(step.success, "Native discard_energy command spec failed: %s" % step.message)
-	_check(state.players[0].active.energy_card_ids == ["sv1-ener-6"],
-		"Native discard_energy did not remove self energy")
-	_check(state.players[0].discard == ["sv1-ener-5"],
-		"Native discard_energy did not put self energy in owner discard")
+	_check(state.players[0].active.energy_card_ids == ["sv1-ener-5"],
+		"Native discard_energy did not preserve the unselected energy")
+	_check(state.players[0].discard == ["sv1-ener-6"],
+		"Native discard_energy did not discard the selected non-first energy")
 	_check(state.players[0].hand == ["sv1-ener-2"],
 		"Native discard_energy did not continue remaining command")
 
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = [
+		"sv1-ener-5", "sv1-ener-5", "sv1-ener-6",
+	]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"amount": 1, "from": "self", "filter": "any"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063311))
+	var duplicate_energy_choice := (
+		str(step.pending_choice.options[1].get("option_id", ""))
+		if step.pending_choice != null and step.pending_choice.options.size() > 1
+		else ""
+	)
+	_check(
+		duplicate_energy_choice.contains(":energy:1:sv1-ener-5"),
+		"Duplicate energy attachments did not expose distinct indexed options",
+	)
+	if step.pending_choice:
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, [duplicate_energy_choice]),
+			PortableRandomSource.new(2026063312),
+		)
+	var duplicate_discard_event: Dictionary = {}
+	for event in step.events:
+		if str(event.get("event_type", "")) == "cards_discarded":
+			duplicate_discard_event = event
+			break
+	_check(
+		step.success
+		and state.players[0].active.energy_card_ids == ["sv1-ener-5", "sv1-ener-6"]
+		and duplicate_discard_event.get("data", {}).get("source_indices", []) == [1],
+		"Duplicate card ID selection did not discard the exact attachment index",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = [
+		"sv1-ener-1", "sv1-ener-2", "sv1-ener-3", "sv1-ener-4",
+	]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"amount": 2, "from": "self", "filter": "any"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063313))
+	if step.pending_choice:
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, [
+				str(step.pending_choice.options[1].get("option_id", "")),
+				str(step.pending_choice.options[3].get("option_id", "")),
+			]),
+			PortableRandomSource.new(2026063314),
+		)
+	_check(
+		step.success
+		and state.players[0].active.energy_card_ids == ["sv1-ener-1", "sv1-ener-3"]
+		and state.players[0].discard == ["sv1-ener-2", "sv1-ener-4"],
+		"Multi-attachment discard did not remove original indices in descending order",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = [
+		"sv1-ener-1", "sv1-ener-2", "sv1-ener-3",
+	]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"amount": 2, "from": "self", "filter": "any"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063315))
+	var stale_request := step.pending_choice
+	var stale_energy_choices: Array[String] = []
+	if stale_request:
+		stale_energy_choices.assign([
+			str(stale_request.options[0].get("option_id", "")),
+			str(stale_request.options[1].get("option_id", "")),
+		])
+	state.players[0].active.energy_card_ids[1] = "sv1-ener-4"
+	var stale_attachment_snapshot := state.snapshot()
+	if stale_request:
+		step = engine.apply_choice(
+			state,
+			stale_request,
+			ChoiceResponse.new(stale_request.request_id, stale_energy_choices),
+			PortableRandomSource.new(2026063316),
+		)
+	_check(
+		not step.success
+		and state.snapshot() == stale_attachment_snapshot,
+		"Stale attachment reference did not roll back the full choice transaction",
+	)
+
+	state = _effect_state()
+	state.players[0].active.energy_card_ids = ["sv1-ener-5", "sv1-ener-6"]
+	state.players[0].discard = []
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "discard_energy",
+		"args": {"amount": 99, "from": "self", "filter": "any"},
+		"branches": {},
+	}, 0, "active")
+	step = engine.effect_engine.resolve(state, stack, PortableRandomSource.new(2026063317))
+	_check(
+		step.success and step.pending_choice == null
+		and state.players[0].active.energy_card_ids.is_empty()
+		and state.players[0].discard == ["sv1-ener-5", "sv1-ener-6"],
+		"Discard-all energy effect requested a redundant attachment choice",
+	)
+
+	state.players[1].active.energy_card_ids = ["sv1-ener-3"]
+	state.players[1].discard = []
 	stack = ResolutionStack.new()
 	stack.push_effect({
 		"op": "discard_energy",
@@ -12930,8 +13599,8 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	_set_energy_cards(state.players[0].active, ["sv1-ener-5"])
 	state.players[0].deck = ["sv1-ener-3"]
 	_check(
-		not _has_action(engine.legal_actions(state, 0, false), "DECLARE_ATTACK", {"attack_idx": 0}),
-		"Cresselia zero-damage attack without matching deck energy was listed as legal",
+		_has_action(engine.legal_actions(state, 0, false), "DECLARE_ATTACK", {"attack_idx": 0}),
+		"Cresselia deck-search attack inspected hidden energy identities",
 	)
 	step = engine.apply_action(
 		state,
@@ -12939,8 +13608,8 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		PortableRandomSource.new(61004),
 	)
 	_check(
-		not step.success and step.error_code == "no_legal_target",
-		"Cresselia zero-damage attack without a legal target was not rejected",
+		step.success,
+		"Cresselia deck-search attack could not legally fail its search",
 	)
 
 	state = _battle_state()
@@ -13005,6 +13674,69 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		and state.players[0].deck.size() == 3,
 		"Electric Generator did not attach only to benched Lightning Pokemon",
 	)
+
+	state = _battle_state()
+	state.players[0].hand = ["sv1-170"]
+	state.players[0].bench[0] = PokemonState.new("svl-pikaex")
+	state.players[0].bench[1] = PokemonState.new("svl-pikaex")
+	state.players[0].deck = [
+		"sv1-ener-3", "sv1-ener-3", "sv1-ener-3", "sv1-ener-4", "sv1-ener-4",
+	]
+	step = engine.apply_action(
+		state,
+		GameAction.new("PLAY_TRAINER", {"hand_idx": 0}, false, 0),
+		PortableRandomSource.new(61041),
+	)
+	var detached_energy_ids: Array[String] = []
+	var detached_energy_option_ids: Array[String] = []
+	if step.pending_choice:
+		for index in range(min(2, step.pending_choice.options.size())):
+			var option: Dictionary = step.pending_choice.options[index]
+			detached_energy_option_ids.append(str(option.get("option_id", "")))
+			detached_energy_ids.append(str(option.get("value", {}).get("card_id", "")))
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, detached_energy_option_ids),
+			PortableRandomSource.new(61042),
+		)
+	_check(
+		step.success and step.pending_choice != null
+		and step.pending_choice.request_type == "distribute_energy",
+		"Electric Generator did not request a target distribution for two legal sources",
+	)
+	_check(
+		step.pending_choice != null
+		and step.pending_choice.metadata.get("purpose", "") == "detached_energy_distribution"
+		and step.pending_choice.metadata.get("card_ids", []) == detached_energy_ids
+		and int(step.pending_choice.metadata.get("source_player", -1)) == 0
+		and step.pending_choice.metadata.get("source_zone", "") == "deck"
+		and bool(step.pending_choice.metadata.get("same_source", false))
+		and not bool(step.pending_choice.metadata.get("same_target", true))
+		and int(step.pending_choice.metadata.get("max_per_target", -1)) == 99,
+		"detached_energy_distribution omitted metadata required by network UI",
+	)
+	var detached_session := AuthoritativeSession.new("metadata-contract", engine.catalog)
+	detached_session.state = state
+	var detached_view := detached_session.view_for(0)
+	_check(
+		detached_view.get("choice_request") is Dictionary
+		and not Dictionary(detached_view.get("state", {})).has("resolution_stack")
+		and detached_view["choice_request"].get("metadata", {}).get(
+			"card_ids", []) == detached_energy_ids,
+		"Network energy choice depended on a client-visible resolution_stack",
+	)
+	if step.pending_choice:
+		var generator_target := str(step.pending_choice.options[0].get("option_id", ""))
+		step = engine.apply_choice(
+			state,
+			step.pending_choice,
+			ChoiceResponse.new(step.pending_choice.request_id, [
+				generator_target, generator_target,
+			]),
+			PortableRandomSource.new(61043),
+		)
+	_check(step.success, "Electric Generator metadata contract did not finish cleanly")
 
 	state = _battle_state()
 	state.players[0].hand = ["svg2-hamm"]
@@ -13186,6 +13918,25 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		"sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5", "sv1-ener-5",
 	])
 	state.players[1].active.damage_prevented_next_turn = true
+	state.players[1].active.all_prevented_next_turn = true
+	var prevention_packet_events: Array[Dictionary] = []
+	var prevention_trigger_commands: Array[Dictionary] = []
+	engine.attack_settlement.apply_attack_damage(
+		state,
+		0,
+		120,
+		"Fighting",
+		false,
+		false,
+		prevention_packet_events,
+		prevention_trigger_commands,
+	)
+	_check(
+		state.players[1].active.damage_counters == 0
+		and state.players[1].active.damage_prevented_next_turn
+		and state.players[1].active.all_prevented_next_turn,
+		"Primary attack damage consumed prevention before the protected turn boundary",
+	)
 	step = engine.apply_action(
 		state,
 		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
@@ -13194,8 +13945,9 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	_check(step.success, "Conditional bonus prevention attack failed: %s" % step.message)
 	_check(
 		state.players[1].active.damage_counters == 0
-		and not state.players[1].active.damage_prevented_next_turn,
-		"Conditional bonus and base damage were not prevented as one attack damage packet",
+		and not state.players[1].active.damage_prevented_next_turn
+		and not state.players[1].active.all_prevented_next_turn,
+		"Attack prevention did not survive the damage packet and expire at the protected turn start",
 	)
 
 	state = _battle_state()
@@ -13231,6 +13983,142 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	_check(
 		state.players[1].active.damage_counters == 3,
 		"Piercing attack did not ignore defender damage prevention",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-infr")
+	state.players[0].active.placed_this_turn = false
+	state.players[1].active = PokemonState.new("sv2-grex")
+	_set_energy_cards(state.players[0].active, ["sv1-ener-2"])
+	state.players[0].deck = [
+		"sv2-delib",
+		"sv2-delib",
+		"sv2-delib",
+		"sv2-delib",
+		"sv1-ener-1",
+	]
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(61140),
+	)
+	var infernape_reveal_index := _first_event_type_index(
+		step.events, "cards_revealed")
+	var infernape_shuffle_index := _first_event_type_index(
+		step.events, "deck_shuffled")
+	var infernape_damage_index := _first_event_type_index(
+		step.events, "damage_dealt")
+	_check(
+		step.success
+		and state.players[1].active.damage_counters == 8
+		and infernape_reveal_index >= 0
+		and infernape_shuffle_index > infernape_reveal_index
+		and infernape_damage_index > infernape_shuffle_index,
+		"Infernape reveal attack was not presented as reveal, shuffle, then damage",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svf-luca")
+	state.players[0].active.placed_this_turn = false
+	state.players[1].active = PokemonState.new("sv2-grex")
+	_set_energy_cards(
+		state.players[0].active,
+		["sv1-ener-6", "sv1-ener-6"],
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(611401),
+	)
+	var lucario_discard_index := _first_event_type_index(
+		step.events, "cards_discarded")
+	var lucario_damage_index := _first_event_type_index(
+		step.events, "damage_dealt")
+	_check(
+		step.success
+		and state.players[0].active.energy_card_ids.is_empty()
+		and lucario_discard_index >= 0
+		and lucario_damage_index > lucario_discard_index,
+		"Lucario calculated-damage attack was not presented as discard then damage",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-gree")
+	state.players[0].active.placed_this_turn = false
+	state.players[1].active = PokemonState.new("sv2-grex")
+	_set_energy_cards(
+		state.players[0].active,
+		["sv1-ener-1", "sv1-ener-1"],
+	)
+	state.players[0].hand = [
+		"sv2-delib",
+		"sv2-delib",
+		"sv2-delib",
+		"sv2-delib",
+		"sv2-delib",
+	]
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(611402),
+	)
+	var greedent_discard_index := _first_event_type_index(
+		step.events, "cards_discarded")
+	var greedent_damage_index := _first_event_type_index(
+		step.events, "damage_dealt")
+	_check(
+		step.success
+		and state.players[0].hand.is_empty()
+		and greedent_discard_index >= 0
+		and greedent_damage_index > greedent_discard_index,
+		"Greedent calculated-damage attack was not presented as discard then damage",
+	)
+
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("sv2-glast")
+	state.players[0].active.placed_this_turn = false
+	state.players[1].active = PokemonState.new("sv2-grex")
+	state.players[1].active.damage_counters = 17
+	_set_energy_cards(
+		state.players[0].active,
+		["sv1-ener-3", "sv1-ener-3", "sv1-ener-3"],
+	)
+	step = engine.apply_action(
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+		PortableRandomSource.new(611403),
+	)
+	var glastrier_damage_index := -1
+	var glastrier_recoil_index := -1
+	var glastrier_ko_index := -1
+	var glastrier_event_types: Array[String] = []
+	for index in range(step.events.size()):
+		var event: Dictionary = step.events[index]
+		var event_type := str(event.get("event_type", ""))
+		var event_data: Dictionary = event.get("data", {})
+		glastrier_event_types.append(event_type)
+		if event_type == "damage_dealt":
+			if int(event_data.get("player", -1)) == 1:
+				glastrier_damage_index = index
+			elif int(event_data.get("player", -1)) == 0:
+				glastrier_recoil_index = index
+		elif (
+			event_type == "pokemon_ko"
+			and int(event_data.get("player", -1)) == 1
+		):
+			glastrier_ko_index = index
+	_check(
+		step.success
+		and state.players[1].active == null
+		and state.players[0].active.damage_counters == 3
+		and glastrier_damage_index >= 0
+		and glastrier_recoil_index > glastrier_damage_index
+		and glastrier_ko_index > glastrier_recoil_index,
+		"Attack recoil was not presented between its primary hit and KO "
+		+ "(events=%s, attacker=%d)" % [
+			glastrier_event_types,
+			state.players[0].active.damage_counters,
+		],
 	)
 
 	state = _battle_state()
@@ -13283,6 +14171,14 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		and restored_attack_state.phase == "MAIN",
 		"Restored pending attack choice did not consume finalize_attack frame and finish the turn",
 	)
+	var coin_event_index := _first_event_type_index(step.events, "coin_flip")
+	var coin_damage_event_index := _first_event_type_index(
+		step.events, "damage_dealt")
+	_check(
+		coin_event_index >= 0
+		and coin_damage_event_index > coin_event_index,
+		"Coin-dependent attack was not presented as coin result then damage",
+	)
 	_check(
 		ResolutionStack.from_dict(restored_attack_state.resolution_stack).frames.is_empty(),
 		"Restored attack finalize frame remained after attack completion",
@@ -13300,12 +14196,12 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	)
 	_check(step.success, "Tatsugiri return-to-hand attack failed: %s" % step.message)
 	_check(
-		state.players[1].active.damage_counters == 3
+		state.players[1].active.damage_counters == 4
 		and state.players[0].active == null
 		and "sv2-tatsu" in state.players[0].hand
 		and "sv1-ener-3" in state.players[0].hand
 		and "svl-vitb" in state.players[0].hand,
-		"Tatsugiri return-to-hand did not deal 30 damage or failed to return attached cards",
+		"Tatsugiri did not retain its original-attacker +10 modifier before returning",
 	)
 	var tatsugiri_attack_event_index := _first_event_type_index(
 		step.events, "attack_declared")
@@ -13367,8 +14263,8 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		step.success
 		and step.pending_choice != null
 		and _first_event_type_index(step.events, "attack_declared") >= 0
-		and _first_event_type_index(step.events, "damage_dealt") < 0,
-		"Optional switch attack did not pause after its declaration",
+		and _first_event_type_index(step.events, "damage_dealt") > 0,
+		"Optional switch attack did not apply its hit before the switch choice",
 	)
 	if step.pending_choice != null:
 		step = engine.apply_choice(
@@ -13388,8 +14284,6 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		"bench_0",
 		PortableRandomSource.new(61154),
 	)
-	var switch_damage_event_index := _first_event_type_index(
-		step.events, "damage_dealt")
 	var switched_event_index := _first_event_type_index(step.events, "switched")
 	var switch_turn_end_event_index := _first_event_type_index(
 		step.events, "turn_end")
@@ -13399,10 +14293,10 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 		and state.players[1].active.damage_counters == 5
 		and state.players[0].active != null
 		and state.players[0].active.card_id == "svi-chim"
-		and switch_damage_event_index >= 0
-		and switched_event_index > switch_damage_event_index
+		and _first_event_type_index(step.events, "damage_dealt") < 0
+		and switched_event_index >= 0
 		and switch_turn_end_event_index > switched_event_index,
-		"Choice-resumed switch attack was not presented as damage then switch then turn handoff",
+		"Choice-resumed switch attack did not continue with switch then turn handoff",
 	)
 
 	state = _battle_state()
@@ -14087,9 +14981,38 @@ func _run_turn_state_regression_tests(
 		"Forced-first setup did not set both first and active player",
 	)
 	_check(
+		forced.events.is_empty(),
+		"Forced-first setup emitted a fake coin presentation",
+	)
+	_check(
 		not forced_state.action_log.is_empty()
 		and forced_state.action_log[0].find("玩家2先攻") >= 0,
 		"Forced-first setup log did not name the forced first player",
+	)
+	var random_first_state := GameState.new()
+	var random_first := engine.setup_game(
+		random_first_state,
+		catalog.expand_deck("fire"),
+		catalog.expand_deck("water"),
+		PortableRandomSource.new(3109),
+	)
+	var setup_coin: Dictionary = (
+		random_first.events[0]
+		if random_first.events.size() == 1
+		and random_first.events[0] is Dictionary
+		else {}
+	)
+	var setup_coin_data: Dictionary = setup_coin.get("data", {})
+	_check(
+		random_first.success
+		and str(setup_coin.get("event_type", "")) == "coin_flip"
+		and str(setup_coin_data.get("purpose", "")) == "setup_first_player"
+		and int(setup_coin_data.get("first_player", -1))
+		== random_first_state.first_player_idx
+		and Array(setup_coin_data.get("results", [])).size() == 1
+		and bool(Array(setup_coin_data.get("results", []))[0])
+		== (random_first_state.first_player_idx == 0),
+		"Random-first setup did not expose its authoritative coin result",
 	)
 
 
@@ -14420,15 +15343,49 @@ func _apply_slot_choice(
 	if not step.success or step.pending_choice == null:
 		return step
 	var request := step.pending_choice
+	var started_with_attachment := request.request_type == "select_attachment"
+	if started_with_attachment:
+		var attachment_ids: Array[String] = []
+		for index in range(min(request.max_select, request.options.size())):
+			attachment_ids.append(str(request.options[index].get("option_id", "")))
+		step = engine.apply_choice(
+			state,
+			request,
+			ChoiceResponse.new(request.request_id, attachment_ids),
+			rng,
+		)
+		if not step.success or step.pending_choice == null:
+			return step
+		request = step.pending_choice
 	var option_id := _choice_id_for_slot(request, slot)
 	if option_id.is_empty():
 		return step
-	return engine.apply_choice(
+	step = engine.apply_choice(
 		state,
 		request,
 		ChoiceResponse.new(request.request_id, [option_id]),
 		rng,
 	)
+	# Source selection can now be followed by an exact-attachment choice.
+	# Resolve that attachment here, but leave its target choice for the next
+	# explicit slot call so existing scenario intent remains unambiguous.
+	if (
+		not started_with_attachment
+		and step.success
+		and step.pending_choice != null
+		and step.pending_choice.request_type == "select_attachment"
+	):
+		request = step.pending_choice
+		var attachment_ids: Array[String] = []
+		for index in range(min(request.max_select, request.options.size())):
+			attachment_ids.append(str(request.options[index].get("option_id", "")))
+		step = engine.apply_choice(
+			state,
+			request,
+			ChoiceResponse.new(request.request_id, attachment_ids),
+			rng,
+		)
+	return step
 
 
 func _choice_id_for_slot(request: ChoiceRequest, slot: String) -> String:

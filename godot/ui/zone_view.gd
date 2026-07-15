@@ -54,6 +54,7 @@ var fallback_back_panel: Panel
 var fallback_back_label: Label
 var _pending_action_row: Dictionary = {}
 var _presentation_hidden := false
+var _stack_presentation_hidden := false
 var _presentation_tween: Tween
 
 
@@ -245,6 +246,17 @@ func set_presentation_hidden(value: bool) -> void:
 	_set_top_card_alpha(0.0 if value else 1.0)
 
 
+func set_stack_presentation_hidden(value: bool) -> void:
+	_stack_presentation_hidden = value
+	if frame != null:
+		frame.visible = not value
+	queue_redraw()
+
+
+func is_stack_presentation_hidden() -> bool:
+	return _stack_presentation_hidden
+
+
 func reveal_presentation(duration: float = 0.14, delay: float = 0.0) -> void:
 	_presentation_hidden = false
 	_kill_presentation_tween()
@@ -263,7 +275,10 @@ func reveal_presentation(duration: float = 0.14, delay: float = 0.0) -> void:
 
 func clear_presentation_state() -> void:
 	_presentation_hidden = false
+	_stack_presentation_hidden = false
 	_kill_presentation_tween()
+	if frame != null:
+		frame.visible = true
 	_set_top_card_alpha(1.0)
 	queue_redraw()
 
@@ -298,6 +313,8 @@ func has_visible_card_back() -> bool:
 
 
 func _draw() -> void:
+	if _stack_presentation_hidden:
+		return
 	var shadow_offset := Vector2(2.0 + table_depth * 2.0, 3.0 + table_depth * 3.0)
 	var shadow_color := Color(0.0, 0.0, 0.0, 0.20 + table_depth * 0.14)
 	var face_size := _stack_face_size()
@@ -432,6 +449,8 @@ func _refresh() -> void:
 	empty_label.text = "空%s" % title
 	if not _presentation_hidden:
 		_set_top_card_alpha(1.0)
+	if frame != null:
+		frame.visible = not _stack_presentation_hidden
 	_apply_frame_style()
 	queue_redraw()
 

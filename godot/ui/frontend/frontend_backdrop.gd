@@ -16,28 +16,18 @@ const _VALID_VARIANTS := [VARIANT_TITLE, VARIANT_NEUTRAL, VARIANT_VICTORY]
 		if is_node_ready():
 			_apply_variant()
 
-@onready var card_fan: Control = %CardFan
-@onready var cards: Array[TextureRect] = [
-	%FeaturedCardOne,
-	%FeaturedCardTwo,
-	%FeaturedCardThree,
-]
-
 var _elapsed := 0.0
 var _motion_enabled := false
 var _quality := "high"
 var _parallax := Vector2.ZERO
-var _card_base_positions: Array[Vector2] = []
-var _card_base_rotations: Array[float] = []
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	resized.connect(_layout_decorations)
+	resized.connect(queue_redraw)
 	_connect_settings()
 	_refresh_runtime_settings()
 	_apply_variant()
-	call_deferred("_layout_decorations")
 
 
 func configure(value: String) -> void:
@@ -47,7 +37,6 @@ func configure(value: String) -> void:
 func _process(delta: float) -> void:
 	_elapsed += delta
 	_update_parallax(delta)
-	_apply_card_motion()
 	queue_redraw()
 
 
@@ -76,21 +65,12 @@ func _refresh_runtime_settings() -> void:
 	if not _motion_enabled:
 		_elapsed = 0.0
 		_parallax = Vector2.ZERO
-	_layout_decorations()
 	queue_redraw()
 
 
 func _apply_variant() -> void:
 	if not is_node_ready():
 		return
-	match variant:
-		VARIANT_TITLE:
-			card_fan.modulate = Color(0.92, 0.97, 1.0, 0.43)
-		VARIANT_VICTORY:
-			card_fan.modulate = Color(1.0, 0.86, 0.48, 0.34)
-		_:
-			card_fan.modulate = Color(0.62, 0.8, 1.0, 0.14)
-	_layout_decorations()
 	queue_redraw()
 
 
@@ -225,38 +205,6 @@ func _draw_victory_marks() -> void:
 		draw_line(point - Vector2(3, 5), point + Vector2(3, 5), color, 2.0, true)
 
 
-func _layout_decorations() -> void:
-	if not is_node_ready() or size.x <= 0.0 or size.y <= 0.0:
-		return
-	var compact := size.x < 1100.0 or size.x / maxf(size.y, 1.0) < 1.35
-	# Neutral is used behind task-focused secondary pages. Decorative cards here
-	# compete with their forms and deck content, so reserve the fan for semantic
-	# title/victory variants only.
-	var show_cards := variant != VARIANT_NEUTRAL
-	card_fan.visible = show_cards
-	if not show_cards:
-		return
-	var card_size := Vector2(150, 210) if compact else Vector2(190, 266)
-	if variant == VARIANT_VICTORY:
-		card_size *= 0.86
-	var origin := Vector2(size.x * (0.04 if variant == VARIANT_TITLE else 0.78), size.y * 0.54)
-	if compact:
-		origin = Vector2(size.x * 0.72, size.y * 0.64)
-	var spread := card_size.x * 0.58
-	_card_base_positions.clear()
-	_card_base_rotations.clear()
-	for index in range(cards.size()):
-		var card := cards[index]
-		card.size = card_size
-		card.pivot_offset = card_size * 0.5
-		var base_position := origin + Vector2(index * spread, absf(index - 1.0) * 26.0)
-		var base_rotation := deg_to_rad(float(index - 1) * 8.0)
-		_card_base_positions.append(base_position)
-		_card_base_rotations.append(base_rotation)
-		card.visible = index < (2 if compact or _quality == "low" else 3)
-	_apply_card_motion()
-
-
 func _update_parallax(delta: float) -> void:
 	var target := Vector2.ZERO
 	if is_inside_tree():
@@ -266,16 +214,3 @@ func _update_parallax(delta: float) -> void:
 			clampf(mouse.y / maxf(size.y, 1.0) - 0.5, -0.5, 0.5),
 		) * 18.0
 	_parallax = _parallax.lerp(target, minf(1.0, delta * 3.5))
-
-
-func _apply_card_motion() -> void:
-	if not is_node_ready() or _card_base_positions.size() != cards.size():
-		return
-	for index in range(cards.size()):
-		var float_offset := 0.0
-		var rotation_offset := 0.0
-		if _motion_enabled:
-			float_offset = sin(_elapsed * 0.72 + index * 1.1) * 5.0
-			rotation_offset = sin(_elapsed * 0.46 + index * 0.8) * 0.012
-		cards[index].position = _card_base_positions[index] + _parallax * (0.28 + index * 0.12) + Vector2(0, float_offset)
-		cards[index].rotation = _card_base_rotations[index] + rotation_offset

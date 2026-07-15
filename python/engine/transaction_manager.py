@@ -197,7 +197,13 @@ class VMTransactionManager:
         if not isinstance(snapshot_payload, dict):
             return False
         snapshot = snapshot_from_dict(snapshot_payload)
-        restored_revision = int(getattr(snapshot, "revision", 0)) + 1
+        # The pending action revision may already have been observed by a
+        # remote client.  Cancellation is a new committed transaction and
+        # must advance beyond both the checkpoint and the published state.
+        restored_revision = max(
+            int(getattr(state, "revision", 0)),
+            int(getattr(snapshot, "revision", 0)),
+        ) + 1
         restore_state(state, snapshot, rebuild_event_bus=False)
         rebuild_state_event_bus(state)
         state.revision = restored_revision

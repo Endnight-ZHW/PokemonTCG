@@ -358,17 +358,22 @@ def can_use_ability(state: GameState, player_idx: int,
 
 def check_win_condition(state: GameState) -> int | None:
     """Check if any player has won. Returns winning player_idx or None."""
+    scores = [0, 0]
     if len(state.p1.prizes) == 0:
-        return 0
+        scores[0] += 1
     if len(state.p2.prizes) == 0:
-        return 1
-
-    if not state.p1.has_any_pokemon_in_play():
-        return 1
+        scores[1] += 1
     if not state.p2.has_any_pokemon_in_play():
-        return 0
-
-    return None
+        scores[0] += 1
+    if not state.p1.has_any_pokemon_in_play():
+        scores[1] += 1
+    if scores == [0, 0]:
+        return None
+    if scores[0] != scores[1]:
+        return 0 if scores[0] > scores[1] else 1
+    # No sudden-death phase exists in this engine; the current turn owner is a
+    # deterministic tie-break that remains symmetric under player relabeling.
+    return int(state.active_player_idx)
 
 
 def is_ace_spec(card: Card) -> bool:

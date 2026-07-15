@@ -170,12 +170,21 @@ func effective_retreat_cost(state: GameState, player: PlayerState) -> int:
 
 
 func check_winner(state: GameState) -> int:
+	# Count each independent win condition before choosing a winner. This avoids
+	# player-index bias when a recoil/checkup packet satisfies both sides at once.
+	var scores: Array[int] = [0, 0]
 	if state.players[0].prizes.is_empty():
-		return 0
+		scores[0] += 1
 	if state.players[1].prizes.is_empty():
-		return 1
-	if not state.players[0].has_any_pokemon_in_play():
-		return 1
+		scores[1] += 1
 	if not state.players[1].has_any_pokemon_in_play():
-		return 0
-	return -1
+		scores[0] += 1
+	if not state.players[0].has_any_pokemon_in_play():
+		scores[1] += 1
+	if scores[0] == 0 and scores[1] == 0:
+		return -1
+	if scores[0] != scores[1]:
+		return 0 if scores[0] > scores[1] else 1
+	# The engine has no sudden-death phase. Use the current turn owner as the
+	# deterministic symmetric tie-break (renaming players also renames winner).
+	return state.active_player_idx

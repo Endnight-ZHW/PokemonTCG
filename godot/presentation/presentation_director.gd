@@ -82,6 +82,7 @@ const STATUS_DISPLAY_NAMES := {
 }
 const EVENT_DURATIONS := {
 	"cards_drawn": 0.54,
+	"cards_revealed": 2.50,
 	"cards_discarded": 0.48,
 	"card_moved": 0.46,
 	"cards_selected": 0.42,
@@ -93,17 +94,20 @@ const EVENT_DURATIONS := {
 	"pokemon_evolved": 0.65,
 	"attack_declared": 0.30,
 	"confusion_failed": 0.34,
+	"dazzled_failed": 0.30,
 	"damage_dealt": 0.26,
 	"damage_counters_placed": 0.26,
 	"damage_prevented": 0.28,
 	"healed": 0.30,
 	"status_applied": 0.28,
+	"status_removed": 0.28,
 	"retreat": 0.46,
 	"switched": 0.46,
 	"promoted": 0.48,
 	"pokemon_ko": 0.75,
 	"prize_taken": 0.42,
-	"deck_shuffled": 0.54,
+	"deck_shuffled": 1.20,
+	"deck_exhausted": 0.42,
 	"coin_flip": 0.50,
 	"turn_end": 0.20,
 	"checkup": 0.22,
@@ -128,6 +132,13 @@ var _generation := 0
 var _active_completion: EventCompletion
 var _active_feedback_group: MotionGroup
 var _feedback_registration_open := false
+
+
+func _exit_tree() -> void:
+	# A scene can be closed while an event is awaiting a real feedback handle.
+	# Finish that barrier explicitly; relying on Tween/SceneTree destruction
+	# leaves the RefCounted completion group alive until engine shutdown.
+	clear_for_resync()
 
 
 func is_playing() -> bool:
@@ -268,6 +279,9 @@ func _dispatch(event: Dictionary) -> void:
 		"cards_drawn":
 			audio_requested.emit("card_draw")
 			card_motion_requested.emit(event, _duration_for(event))
+		"cards_revealed":
+			audio_requested.emit("card_reveal")
+			card_motion_requested.emit(event, _duration_for(event))
 		"cards_discarded":
 			audio_requested.emit("card_discard")
 			if not str(source.get("attachment_type", "")).is_empty():
@@ -343,6 +357,14 @@ func _dispatch(event: Dictionary) -> void:
 				DesignTokens.PURPLE,
 			)
 			burst_requested.emit("status", target, DesignTokens.PURPLE)
+		"dazzled_failed":
+			audio_requested.emit("status")
+			floating_text_requested.emit(
+				"眩目：攻击失败",
+				target,
+				DesignTokens.CYAN,
+			)
+			burst_requested.emit("status", target, DesignTokens.CYAN)
 		"damage_dealt", "damage_counters_placed":
 			audio_requested.emit("attack_hit")
 			camera_impulse_requested.emit(
@@ -375,6 +397,14 @@ func _dispatch(event: Dictionary) -> void:
 				target,
 				DesignTokens.status_color(status),
 			)
+		"status_removed":
+			audio_requested.emit("status")
+			var removed_status := str(data.get("status", ""))
+			floating_text_requested.emit(
+				"%s解除" % _status_display_name(removed_status),
+				target,
+				DesignTokens.GREEN,
+			)
 		"retreat", "switched", "promoted":
 			audio_requested.emit("card_move")
 			card_motion_requested.emit(event, _duration_for(event))
@@ -392,16 +422,23 @@ func _dispatch(event: Dictionary) -> void:
 			audio_requested.emit("prize")
 			card_motion_requested.emit(event, _duration_for(event))
 		"coin_flip":
-			audio_requested.emit("coin")
+			card_motion_requested.emit(event, _duration_for(event))
 			burst_requested.emit("coin", target, DesignTokens.GOLD)
 		"deck_shuffled":
-			audio_requested.emit("card_move")
+			audio_requested.emit("shuffle")
 			var deck_target := {
 				"player": int(data.get("player", event.get("actor", -1))),
 				"zone": "deck",
 			}
 			card_motion_requested.emit(event, _duration_for(event))
 			burst_requested.emit("shuffle", deck_target, DesignTokens.CYAN)
+		"deck_exhausted":
+			audio_requested.emit("status")
+			floating_text_requested.emit(
+				"牌库耗尽",
+				_feedback_target(source, FEEDBACK_CHANNEL_ANNOUNCEMENT),
+				DesignTokens.RED,
+			)
 		"turn_start":
 			audio_requested.emit("turn_change")
 			floating_text_requested.emit(
@@ -495,18 +532,28 @@ func _duration_for(event: Dictionary) -> float:
 	)
 	if event_type == "cards_selected" and int(event.get("amount", 0)) <= 0:
 		return 0.0
+	# Public card identities remain readable even when spatial motion is disabled.
+	# This is a semantic result hold, not an animation delay.
+	if event_type == "cards_revealed" and _speed_mode == "reduced":
+		return 1.15
 	if event_type in ANNOUNCEMENT_EVENT_TYPES:
 		return float(ANNOUNCEMENT_DURATIONS.get(_speed_mode, 0.46))
 	var base := float(EVENT_DURATIONS.get(event_type, 0.0))
 	if base <= 0.0 or _speed_scale <= 0.0:
 		return 0.0
 	if _queue.size() > 8 and event_type not in [
+		"cards_revealed",
 		"pokemon_evolved",
 		"attack_declared",
 		"pokemon_ko",
 	]:
 		base *= 0.55
-	return maxf(0.02, base * _speed_scale)
+	var duration := maxf(0.02, base * _speed_scale)
+	if event_type == "cards_revealed":
+		# Preserve the result-reading window in fast mode; only the travel and
+		# stagger are compressed below this floor.
+		return maxf(1.85, duration)
+	return duration
 
 
 func _trim_seen() -> void:

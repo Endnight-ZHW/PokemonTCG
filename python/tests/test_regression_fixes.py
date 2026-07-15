@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from engine.game_state import GameState, ActionRequest, ActionResult
 from engine.turn_manager import TurnManager
-from engine.enums import TurnPhase, PlayerAction
+from engine.enums import TurnPhase, StatusType, PlayerAction
 from engine.player_state import PokemonInPlay, PlayerState
 from engine.actions import ChoiceResponse, GameAction
 from engine.game_engine import GameEngine
@@ -67,6 +67,173 @@ def _give_prizes(state):
     state.p1.prizes = [prize] * 6
     state.p2.prizes = [prize] * 6
     return state
+
+
+class TestPokemonCheckupOrder(unittest.TestCase):
+
+    def test_conditions_resolve_for_both_players_in_rule_order(self):
+        from engine.action_resolver import ActionResolver
+
+        state = _give_prizes(_make_state_with_pokemon())
+        state.turn_number = 3
+        state.random_source = ScriptedRandomSource(seed=17)
+        state.p1.active.status_conditions = {
+            StatusType.POISONED,
+            StatusType.BURNED,
+            StatusType.ASLEEP,
+        }
+        state.p2.active.status_conditions = {
+            StatusType.POISONED,
+            StatusType.BURNED,
+            StatusType.PARALYZED,
+        }
+        state.p2.active.paralyzed_since_turn = 1
+
+        rows = ActionResolver(state).resolve_checkup()
+        poison = [index for index, row in enumerate(rows) if "中毒" in row]
+        burned = [index for index, row in enumerate(rows) if "灼伤" in row]
+        asleep = [
+            index for index, row in enumerate(rows)
+            if "醒来" in row or "睡眠" in row
+        ]
+        paralyzed = [index for index, row in enumerate(rows) if "麻痹" in row]
+
+        self.assertEqual(len(poison), 2)
+        self.assertEqual(len(burned), 2)
+        self.assertEqual(len(asleep), 1)
+        self.assertEqual(len(paralyzed), 1)
+        self.assertLess(max(poison), min(burned))
+        self.assertLess(max(burned), min(asleep))
+        self.assertLess(max(asleep), min(paralyzed))
+
+    def test_status_damage_is_logged_before_ko_prize_and_game_over(self):
+        from engine.action_resolver import ActionResolver
+
+        state = _give_prizes(_make_state_with_pokemon())
+        active = state.p1.active
+        active.damage_counters = active.card.hp // 10 - 1
+        active.status_conditions.add(StatusType.POISONED)
+
+        ActionResolver(state).resolve_checkup()
+
+        poison_idx = next(i for i, row in enumerate(state.action_log) if "中毒" in row)
+        ko_idx = next(i for i, row in enumerate(state.action_log) if "被击倒" in row)
+        prize_idx = next(i for i, row in enumerate(state.action_log) if "获得了奖品卡" in row)
+        self.assertLess(poison_idx, ko_idx)
+        self.assertLess(ko_idx, prize_idx)
+        self.assertEqual(state.phase, TurnPhase.GAME_OVER)
+        self.assertEqual(state.pending_promotions, [])
+        self.assertEqual(
+            [event.event_type for event in state.event_stream._events].count("game_over"),
+            1,
+        )
+
+
+class TestEffectSettlementSequence(unittest.TestCase):
+
+    def test_mystical_comet_discards_source_before_batch_ko_and_terminal(self):
+        state = _give_prizes(_make_state_with_pokemon(active_card_id="sv2-delib"))
+        state.p1.active = PokemonInPlay(CardRegistry.get("sv2-starm"))
+        state.p1.prizes = [CardRegistry.get("sv1-ener-3")]
+        target = state.p2.active
+        target.damage_counters = target.card.hp // 10 - 2
+
+        step = GameEngine().apply_action(
+            state,
+            GameAction(
+                PlayerAction.USE_ABILITY,
+                {"slot": "active", "ability_name": "神秘彗星"},
+                actor=0,
+            ),
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertIsNone(state.p1.active)
+        self.assertIsNone(state.p2.active)
+        self.assertEqual([card.api_id for card in state.p1.discard], ["sv2-starm"])
+        self.assertEqual(len(state.p1.prizes), 0)
+        self.assertEqual(len(state.p2.prizes), 6)
+        self.assertEqual(state.winner, 0)
+        self.assertEqual(state.pending_promotions, [])
+        counter_idx = next(i for i, row in enumerate(state.action_log) if "伤害指示物" in row)
+        discard_idx = next(i for i, row in enumerate(state.action_log) if "放置于弃牌区" in row)
+        ko_idx = next(i for i, row in enumerate(state.action_log) if "被击倒" in row)
+        prize_idx = next(i for i, row in enumerate(state.action_log) if "获得了奖品卡" in row)
+        self.assertLess(counter_idx, discard_idx)
+        self.assertLess(discard_idx, ko_idx)
+        self.assertLess(ko_idx, prize_idx)
+        self.assertEqual(
+            [event.event_type for event in state.event_stream._events].count("game_over"),
+            1,
+        )
+
+    def test_attack_protection_blocks_all_attack_effects_without_consuming(self):
+        from engine.effect_runner import VMEffectRunner
+
+        state = _give_prizes(_make_state_with_pokemon())
+        energy = CardRegistry.get("sv1-ener-3")
+        state.p2.active.energy_cards = [energy]
+        state.p2.active.damage_prevented_next_turn = True
+        state.p2.active.all_prevented_next_turn = True
+        effects = [
+            {"op": "apply_status", "args": {"status": "poisoned"}, "branches": {}},
+            {
+                "op": "discard_energy",
+                "args": {"amount": 1, "from": "opponent", "filter": "any"},
+                "branches": {},
+            },
+        ]
+
+        result = VMEffectRunner(state).execute_attack_effects(
+            effects,
+            0,
+            "active",
+            {
+                "active": True,
+                "player_idx": 0,
+                "attacker": state.p1.active,
+                "base_damage": 20,
+                "attacker_type": "Colorless",
+            },
+        )
+
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual(state.p2.active.damage_counters, 0)
+        self.assertNotIn(StatusType.POISONED, state.p2.active.status_conditions)
+        self.assertEqual(state.p2.active.energy_cards, [energy])
+        self.assertTrue(state.p2.active.damage_prevented_next_turn)
+        self.assertTrue(state.p2.active.all_prevented_next_turn)
+
+    def test_attack_protection_does_not_block_unmarked_ability_effects(self):
+        from engine.commands.dsl_compiler import compile_command_spec
+        from engine.commands.resolution_stack import ResolutionStack
+
+        state = _give_prizes(_make_state_with_pokemon())
+        energy = CardRegistry.get("sv1-ener-3")
+        state.p2.active.energy_cards = [energy]
+        state.p2.active.damage_prevented_next_turn = True
+        state.p2.active.all_prevented_next_turn = True
+        stack = ResolutionStack(state)
+        stack.push_many([
+            compile_command_spec({
+                "op": "apply_status",
+                "args": {"status": "poisoned"},
+                "branches": {},
+            }),
+            compile_command_spec({
+                "op": "discard_energy",
+                "args": {"amount": 1, "from": "opponent", "filter": "any"},
+                "branches": {},
+            }),
+        ])
+
+        result = stack.resolve_all(0, "active")
+
+        self.assertTrue(result.success, result.log_messages)
+        self.assertIn(StatusType.POISONED, state.p2.active.status_conditions)
+        self.assertEqual(state.p2.active.energy_cards, [])
+        self.assertTrue(state.p2.active.damage_prevented_next_turn)
+        self.assertTrue(state.p2.active.all_prevented_next_turn)
 
 
 # ── 1. Slot / Bench Boundary Protection ────────────────────────────────────
@@ -741,7 +908,15 @@ class TestCardEffectAccuracy(unittest.TestCase):
             auto_resolve=False,
         )
         self.assertTrue(step.success, step.message)
-        self.assertIsNone(step.pending_choice)
+        self.assertEqual(step.pending_choice.request_type, "distribute_energy")
+        bench_0 = next(
+            option for option in step.pending_choice.options
+            if option.value.get("slot") == "bench_0"
+        )
+        step = self._choose(
+            engine, state, step.pending_choice, (bench_0.option_id,)
+        )
+        self.assertTrue(step.success, step.message)
         self.assertEqual(state.p1.active.energy_cards, [CardRegistry.get("svi-jete")])
         self.assertEqual(state.p1.bench[0].energy_cards, [water])
 
@@ -755,9 +930,15 @@ class TestCardEffectAccuracy(unittest.TestCase):
             GameAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0}, actor=0),
             auto_resolve=False,
         )
-        source = next(option for option in step.pending_choice.options if option.value.get("slot") == "active")
-        target_step = self._choose(engine, state, step.pending_choice, (source.option_id,))
-        self.assertEqual(target_step.pending_choice.min_select, 0)
+        attachment_step = step
+        self.assertEqual(attachment_step.pending_choice.request_type, "select_attachment")
+        self.assertEqual(attachment_step.pending_choice.min_select, 0)
+        target_step = self._choose(
+            engine,
+            state,
+            attachment_step.pending_choice,
+            (attachment_step.pending_choice.options[1].option_id,),
+        )
         bench_1 = next(
             option
             for option in target_step.pending_choice.options
@@ -856,7 +1037,7 @@ class TestCardEffectAccuracy(unittest.TestCase):
         self.assertEqual(len(state.p2.hand), 0)
         self.assertEqual(len(state.p2.deck), 1)
 
-    def test_failed_pending_attack_choice_does_not_apply_accumulated_damage(self):
+    def test_failed_post_hit_choice_keeps_already_resolved_primary_damage(self):
         from engine import action_resolver as action_resolver_module
         from engine.action_resolver import ActionResolver
         from engine.commands.base import CommandResult
@@ -890,7 +1071,10 @@ class TestCardEffectAccuracy(unittest.TestCase):
             action_resolver_module.compile_command_spec = original_compile_command_spec
 
         self.assertFalse(continuation.success)
-        self.assertEqual(state.p2.active.damage_counters, 0)
+        # The primary hit is a completed causal phase before an ordinary
+        # post-hit choice (here, the optional self-switch).  Failure rolls
+        # back only the choice transaction; it must not erase that hit.
+        self.assertEqual(state.p2.active.damage_counters, 5)
         self.assertFalse(hasattr(state, "_attack_damage_context"))
 
     def test_attack_effects_enter_attack_resolution_stack(self):

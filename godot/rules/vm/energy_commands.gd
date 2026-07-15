@@ -25,14 +25,14 @@ func register(interpreter: VMInterpreter) -> void:
 func cmd_attach_energy(
 	state: GameState,
 	stack: ResolutionStack,
-	_rng: PortableRandomSource,
+	rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
 	source_slot: String,
-	_events: Array[Dictionary],
+	events: Array[Dictionary],
 ) -> Dictionary:
-	return energy_attach(state, stack, player_idx, source_slot, args)
+	return energy_attach(state, stack, rng, player_idx, source_slot, args, events)
 
 
 func cmd_attach_energy_from_discard(
@@ -50,7 +50,7 @@ func cmd_attach_energy_from_discard(
 
 func cmd_discard_energy(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -58,7 +58,7 @@ func cmd_discard_energy(
 	source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	return discard_energy(state, player_idx, source_slot, args, events)
+	return discard_energy(state, stack, player_idx, source_slot, args, events)
 
 
 func cmd_draw_and_attach_energy(
@@ -98,9 +98,11 @@ func cmd_relocate_energy(
 func energy_attach(
 	state: GameState,
 	stack: ResolutionStack,
+	rng: PortableRandomSource,
 	player_idx: int,
 	source_slot: String,
 	params: Dictionary,
+	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var zone := str(params.get("from_zone", "deck"))
@@ -117,6 +119,10 @@ func energy_attach(
 		amount = max(amount, int(params.get("going_second_bonus", amount)))
 		bonus_applied = amount > base_amount
 	if matching.is_empty():
+		if zone == "deck":
+			events.append(VMZoneHelpers.cards_selected_event(
+				player_idx, "deck", "field", [], 0))
+			VMZoneHelpers.shuffle_deck(state, rng, player_idx, events)
 		return VMResult.ok("没有符合条件的能量。")
 	var optional_count := bool(params.has("min_select") or params.get("optional", false) or bonus_applied)
 	var min_select := int(params.get("min_select", 0 if optional_count else -1))
@@ -261,7 +267,16 @@ func request_energy_target(
 		request_max,
 		capped_card_ids.size() > 1,
 		request_min <= 0,
-		{"revision": state.revision, "max_per_target": max_per_target},
+		{
+			"revision": state.revision,
+			"purpose": operation,
+			"card_ids": capped_card_ids.duplicate(),
+			"source_player": player_idx,
+			"source_zone": source_zone,
+			"same_source": true,
+			"same_target": same_target,
+			"max_per_target": max_per_target,
+		},
 	)
 	return VMResult.ok()
 
@@ -323,8 +338,7 @@ func attach_cards(
 			if not bool(trigger_result.get("success", false)):
 				return trigger_result
 	if source_zone == "deck":
-		rng.shuffle(player.deck)
-		events.append({"event_type": "deck_shuffled", "data": {"player": player_idx}})
+		VMZoneHelpers.shuffle_deck(state, rng, player_idx, events)
 	return VMResult.ok()
 
 
@@ -348,12 +362,15 @@ func energy_relocate_request(
 			source_options.append({
 				"option_id": "pokemon:%d:%s:%s" % [player_idx, slot, pokemon.card_id],
 				"label": catalog.card_name(pokemon.card_id),
-				"value": {"slot": slot, "card_id": pokemon.card_id},
+				"ref": EntityRef.new(
+					"pokemon", player_idx, "field", slot, -1, "", pokemon.card_id
+				).to_dict(),
+				"value": {"player": player_idx, "slot": slot, "card_id": pokemon.card_id},
 			})
 	if source_options.is_empty():
 		return VMResult.ok("场上没有可移动的能量。")
 	if source_options.size() == 1:
-		return request_relocation_targets(
+		return request_relocation_attachments(
 			state,
 			stack,
 			player_idx,
@@ -378,11 +395,21 @@ func energy_relocate_request(
 		source_options,
 		1,
 		1,
+		false,
+		false,
+		{
+			"revision": state.revision,
+			"purpose": "relocate_energy_source",
+			"source_player": player_idx,
+			"same_source": true,
+			"same_target": bool(params.get("same_target", false)),
+			"max_per_target": int(params.get("amount", 1)),
+		},
 	)
 	return VMResult.ok()
 
 
-func request_relocation_targets(
+func request_relocation_attachments(
 	state: GameState,
 	stack: ResolutionStack,
 	player_idx: int,
@@ -395,9 +422,91 @@ func request_relocation_targets(
 	var player := state.get_player(player_idx)
 	var source := player.get_pokemon(source_slot)
 	if source == null:
+		return VMResult.ok("能量来源已不存在。")
+	var has_target := false
+	for row in player.get_all_pokemon():
+		if row["pokemon"] and str(row["slot"]) != source_slot:
+			has_target = true
+			break
+	if not has_target:
+		return VMResult.ok("没有能量转移目标。")
+	var matching_refs := matching_energy_refs(
+		player_idx, source_slot, source.energy_card_ids, energy_type)
+	if matching_refs.is_empty():
 		return VMResult.ok("能量来源没有可移动的能量。")
-	var matching_energy := matching_energy_ids(source.energy_card_ids, energy_type)
-	if matching_energy.is_empty():
+	var move_count: int = min(max(0, amount), matching_refs.size())
+	var request_min := move_count
+	if min_select >= 0:
+		request_min = min(move_count, max(0, min_select))
+	var must_choose_exact_attachments := request_min < move_count or matching_refs.size() > move_count
+	if not must_choose_exact_attachments:
+		return request_relocation_targets(
+			state,
+			stack,
+			player_idx,
+			source_slot,
+			matching_refs.slice(0, move_count),
+			same_target,
+		)
+	var options: Array[Dictionary] = []
+	for ref_value in matching_refs:
+		var ref: Dictionary = ref_value
+		var energy_id := str(ref.get("card_id", ""))
+		options.append({
+			"option_id": attachment_option_id(ref),
+			"label": "%s - %s" % [
+				catalog.card_name(source.card_id), catalog.card_name(energy_id)],
+			"ref": ref.duplicate(true),
+			"value": {
+				"player": player_idx,
+				"slot": source_slot,
+				"index": int(ref.get("index", -1)),
+				"attachment_type": "energy",
+				"card_id": energy_id,
+			},
+		})
+	stack.push_continuation("energy_relocate_attachments", {
+		"player_idx": player_idx,
+		"source_slot": source_slot,
+		"amount": move_count,
+		"energy_type": energy_type,
+		"same_target": same_target,
+	})
+	stack.pending_request = ChoiceRequest.new(
+		stack.next_request_id(state, player_idx, "energy_relocate_attachments"),
+		"select_attachment",
+		player_idx,
+		"选择要转附的能量。",
+		options,
+		request_min,
+		move_count,
+		false,
+		request_min <= 0,
+		attachment_choice_metadata(
+			state,
+			"relocate_energy",
+			matching_refs,
+			player_idx,
+			source_slot,
+			true,
+			same_target,
+			move_count,
+		),
+	)
+	return VMResult.ok()
+
+
+func request_relocation_targets(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	source_slot: String,
+	attachment_refs: Array,
+	same_target: bool = false,
+) -> Dictionary:
+	var player := state.get_player(player_idx)
+	var source := player.get_pokemon(source_slot)
+	if source == null or attachment_refs.is_empty():
 		return VMResult.ok("能量来源没有可移动的能量。")
 	var options: Array[Dictionary] = []
 	for row in player.get_all_pokemon():
@@ -407,16 +516,14 @@ func request_relocation_targets(
 			options.append({
 				"option_id": "pokemon:%d:%s:%s" % [player_idx, slot, pokemon.card_id],
 				"label": catalog.card_name(pokemon.card_id),
-				"value": {"slot": slot, "card_id": pokemon.card_id},
+				"ref": EntityRef.new(
+					"pokemon", player_idx, "field", slot, -1, "", pokemon.card_id
+				).to_dict(),
+				"value": {"player": player_idx, "slot": slot, "card_id": pokemon.card_id},
 			})
 	if options.is_empty():
 		return VMResult.ok("没有能量转移目标。")
-	var move_count: int = min(amount, matching_energy.size())
-	var request_min := move_count if move_count > 1 else 1
-	var request_max := request_min
-	if min_select >= 0:
-		request_min = min(move_count, max(0, min_select))
-		request_max = move_count
+	var move_count := attachment_refs.size()
 	var operation := (
 		"energy_relocate_distribution"
 		if move_count > 1
@@ -426,8 +533,9 @@ func request_relocation_targets(
 		"player_idx": player_idx,
 		"source_slot": source_slot,
 		"amount": move_count,
-		"energy_type": energy_type,
-		"card_ids": matching_energy.slice(0, move_count),
+		"attachment_refs": attachment_refs.duplicate(true),
+		"card_ids": attachment_card_ids(attachment_refs),
+		"max_per_target": move_count,
 		"same_target": same_target,
 	})
 	stack.pending_request = ChoiceRequest.new(
@@ -436,10 +544,20 @@ func request_relocation_targets(
 		player_idx,
 		"为每张能量选择转移目标。" if move_count > 1 else "选择能量转移目标。",
 		options,
-		request_min,
-		request_max,
+		move_count,
+		move_count,
 		move_count > 1,
-		request_min <= 0,
+		false,
+		attachment_choice_metadata(
+			state,
+			"relocate_energy_target",
+			attachment_refs,
+			player_idx,
+			source_slot,
+			true,
+			same_target,
+			move_count,
+		),
 	)
 	return VMResult.ok()
 
@@ -487,6 +605,7 @@ func energy_matches(card_id: String, energy_type: String) -> bool:
 
 func discard_energy(
 	state: GameState,
+	stack: ResolutionStack,
 	player_idx: int,
 	source_slot: String,
 	params: Dictionary,
@@ -498,27 +617,122 @@ func discard_energy(
 	var source := owner.active if from_opponent else owner.get_pokemon(source_slot)
 	if source == null:
 		return VMResult.fail("没有能量来源。")
-	if from_opponent and source.all_prevented_next_turn:
-		source.all_prevented_next_turn = false
+	if (
+		from_opponent
+		and source.all_prevented_next_turn
+		and stack.is_blockable_opponent_attack_effect(player_idx, owner_idx)
+	):
 		return VMResult.ok("能量丢弃效果被免疫。")
 	var filter_type := str(params.get("filter", params.get("energy_type", "any"))).to_lower()
-	var kept_energy: Array[String] = []
+	var resolved_slot := "active" if from_opponent else source_slot
+	var matching_refs := matching_energy_refs(
+		owner_idx, resolved_slot, source.energy_card_ids, filter_type)
+	var amount: int = min(max(0, int(params.get("amount", 1))), matching_refs.size())
+	if amount <= 0:
+		return VMResult.ok("没有符合条件的能量。")
+	if amount < matching_refs.size():
+		var options: Array[Dictionary] = []
+		for ref_value in matching_refs:
+			var ref: Dictionary = ref_value
+			var energy_id := str(ref.get("card_id", ""))
+			options.append({
+				"option_id": attachment_option_id(ref),
+				"label": "%s - %s" % [
+					catalog.card_name(source.card_id), catalog.card_name(energy_id)],
+				"ref": ref.duplicate(true),
+				"value": {
+					"player": owner_idx,
+					"slot": resolved_slot,
+					"index": int(ref.get("index", -1)),
+					"attachment_type": "energy",
+					"card_id": energy_id,
+				},
+			})
+		stack.push_continuation("discard_energy_attachments", {
+			"player_idx": player_idx,
+			"owner_idx": owner_idx,
+			"source_slot": resolved_slot,
+			"amount": amount,
+			"filter": filter_type,
+		})
+		stack.pending_request = ChoiceRequest.new(
+			stack.next_request_id(state, player_idx, "discard_energy_attachments"),
+			"select_attachment",
+			player_idx,
+			"选择要丢弃的%d张能量。" % amount,
+			options,
+			amount,
+			amount,
+			false,
+			false,
+			attachment_choice_metadata(
+				state,
+				"discard_energy",
+				matching_refs,
+				owner_idx,
+				resolved_slot,
+				true,
+				false,
+				amount,
+			),
+		)
+		return VMResult.ok()
+	return discard_attachment_refs(
+		state,
+		player_idx,
+		owner_idx,
+		resolved_slot,
+		matching_refs.slice(0, amount),
+		events,
+	)
+
+
+func discard_attachment_refs(
+	state: GameState,
+	actor_idx: int,
+	owner_idx: int,
+	source_slot: String,
+	attachment_refs: Array,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var owner := state.get_player(owner_idx)
+	var source := owner.get_pokemon(source_slot)
+	if source == null:
+		return VMResult.fail("能量来源已不存在。")
+	var seen_indices: Dictionary = {}
+	var validated: Array[Dictionary] = []
+	for ref_value in attachment_refs:
+		if not ref_value is Dictionary:
+			return VMResult.fail("能量引用无效。")
+		var ref: Dictionary = ref_value
+		var index := int(ref.get("index", -1))
+		var card_id := str(ref.get("card_id", ""))
+		if (
+			str(ref.get("kind", "")) != "attachment"
+			or int(ref.get("player", -1)) != owner_idx
+			or str(ref.get("slot", "")) != source_slot
+			or str(ref.get("attachment_type", "")) != "energy"
+			or index < 0
+			or index >= source.energy_card_ids.size()
+			or seen_indices.has(index)
+			or str(source.energy_card_ids[index]) != card_id
+		):
+			return VMResult.fail("选择的能量已不存在。")
+		seen_indices[index] = true
+		validated.append({"index": index, "card_id": card_id})
+	var removal_order := validated.duplicate(true)
+	removal_order.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left["index"]) > int(right["index"])
+	)
+	for row in removal_order:
+		source.energy_card_ids.remove_at(int(row["index"]))
 	var discarded_ids: Array[String] = []
 	var discarded_indices: Array[int] = []
 	var discard_start := owner.discard.size()
-	var discarded_energy := 0
-	for index in range(source.energy_card_ids.size()):
-		var energy_value := source.energy_card_ids[index]
-		var energy_id := str(energy_value)
-		var matches := energy_matches(energy_id, filter_type)
-		if matches and discarded_energy < int(params.get("amount", 1)):
-			owner.discard.append(energy_id)
-			discarded_ids.append(energy_id)
-			discarded_indices.append(index)
-			discarded_energy += 1
-		else:
-			kept_energy.append(energy_id)
-	source.energy_card_ids = kept_energy
+	for row in validated:
+		discarded_ids.append(str(row["card_id"]))
+		discarded_indices.append(int(row["index"]))
+		owner.discard.append(str(row["card_id"]))
 	if not discarded_ids.is_empty():
 		var discarded_event := VMZoneHelpers.discard_event(
 			owner_idx,
@@ -526,13 +740,69 @@ func discard_energy(
 			discarded_ids,
 			discarded_ids.size(),
 			discarded_indices,
-			"active" if from_opponent else source_slot,
+			source_slot,
 			discard_start,
 		)
-		discarded_event["actor"] = player_idx
+		discarded_event["actor"] = actor_idx
 		discarded_event["source"]["attachment_type"] = "energy"
 		events.append(discarded_event)
-	return VMResult.ok("丢弃了%d张能量。" % discarded_energy)
+	return VMResult.ok("丢弃了%d张能量。" % discarded_ids.size())
+
+
+func matching_energy_refs(
+	player_idx: int,
+	slot: String,
+	card_ids: Array,
+	energy_type: String,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for index in range(card_ids.size()):
+		var card_id := str(card_ids[index])
+		if energy_matches(card_id, energy_type):
+			result.append(EntityRef.new(
+				"attachment", player_idx, "field", slot, index, "energy", card_id
+			).to_dict())
+	return result
+
+
+static func attachment_option_id(ref: Dictionary) -> String:
+	return "attachment:%d:%s:energy:%d:%s" % [
+		int(ref.get("player", -1)),
+		str(ref.get("slot", "")),
+		int(ref.get("index", -1)),
+		str(ref.get("card_id", "")),
+	]
+
+
+static func attachment_card_ids(attachment_refs: Array) -> Array[String]:
+	var result: Array[String] = []
+	for ref_value in attachment_refs:
+		if ref_value is Dictionary:
+			result.append(str(Dictionary(ref_value).get("card_id", "")))
+	return result
+
+
+static func attachment_choice_metadata(
+	state: GameState,
+	purpose: String,
+	attachment_refs: Array,
+	source_player: int,
+	source_slot: String,
+	same_source: bool,
+	same_target: bool,
+	max_per_target: int,
+) -> Dictionary:
+	return {
+		"revision": state.revision,
+		"purpose": purpose,
+		"attachment_refs": attachment_refs.duplicate(true),
+		"card_ids": attachment_card_ids(attachment_refs),
+		"source_player": source_player,
+		"source_slot": source_slot,
+		"same_source": same_source,
+		"same_target": same_target,
+		"max_per_target": max_per_target,
+	}
 
 
 func matching_energy_ids(card_ids: Array, energy_type: String) -> Array[String]:

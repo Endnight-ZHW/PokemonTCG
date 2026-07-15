@@ -417,6 +417,93 @@ func _render_previews() -> void:
 	if not _capture("battle-overlapping-highlights.png"):
 		_finish(1)
 		return
+	# Dense-hand hover must keep the canonical left-to-right card stack. Drive a
+	# real pointer into the exposed edge of a middle card so these baselines cover
+	# GUI picking, CardView hover feedback, and the neighboring card's occlusion.
+	var dense_hover_demo := demo.clone_state()
+	dense_hover_demo.players[0].hand = [
+		"sv1-104",
+		"sv1-106",
+		"sv1-108",
+		"sv2-delib",
+		"sv1-151",
+		"svf-potion",
+		"sv1-189",
+		"svi-jete",
+		"svi-dtur",
+		"svi-hrot",
+		"sv1-ener-1",
+		"sv1-ener-2",
+		"sv1-ener-3",
+		"sv1-ener-4",
+		"sv1-ener-5",
+	]
+	# start_local_match_for_test intentionally enters pass-and-play privacy mode.
+	# Reveal only this fixture's local hand, just as completing the handoff does.
+	ui.battle_screen.set_local_hand_privacy_hidden(false)
+	_update_battle_preview(
+		ui,
+		dense_hover_demo,
+		UIPreviewStateFactory.action_rows(dense_hover_demo),
+	)
+	await _settle_rendered(4)
+	var dense_hover_index := 7
+	var dense_hover_view := (
+		ui.battle_screen.hand_views[dense_hover_index] as CardView
+	)
+	var dense_hover_routed := await _move_pointer_to_hand_card_exposed_edge(
+		dense_hover_view,
+	)
+	if not dense_hover_routed or not dense_hover_view._hovered:
+		push_error(_dense_hand_hover_failure_message(
+			"Dense-hand preview did not produce a real middle-card hover",
+			dense_hover_view,
+		))
+		_finish(1)
+		return
+	var dense_hover_right := (
+		ui.battle_screen.hand_views[dense_hover_index + 1] as CardView
+	)
+	if not _preview_card_draws_above(dense_hover_right, dense_hover_view):
+		push_error("Dense-hand hover raised the middle card above its right neighbor")
+		_finish(1)
+		return
+	await _settle_rendered(3)
+	if not _capture("battle-dense-hand-hover-1600x900.png"):
+		_finish(1)
+		return
+
+	await _move_pointer_to_position(Vector2(4.0, 4.0))
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	dense_hover_view = ui.battle_screen.hand_views[dense_hover_index] as CardView
+	dense_hover_routed = await _move_pointer_to_hand_card_exposed_edge(
+		dense_hover_view,
+	)
+	if not dense_hover_routed or not dense_hover_view._hovered:
+		push_error(_dense_hand_hover_failure_message(
+			"Compact dense-hand preview did not produce a real middle-card hover",
+			dense_hover_view,
+		))
+		_finish(1)
+		return
+	dense_hover_right = (
+		ui.battle_screen.hand_views[dense_hover_index + 1] as CardView
+	)
+	if not _preview_card_draws_above(dense_hover_right, dense_hover_view):
+		push_error(
+			"Compact dense-hand hover raised the middle card above its right neighbor"
+		)
+		_finish(1)
+		return
+	await _settle_rendered(3)
+	if not _capture("battle-dense-hand-hover-900x540.png"):
+		_finish(1)
+		return
+	await _move_pointer_to_position(Vector2(4.0, 4.0))
+	ui.battle_screen.set_local_hand_privacy_hidden(true)
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
 	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
 	await _settle_rendered(3)
 	ui._show_toast("能量已附着。")
@@ -634,6 +721,8 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("standard", "high")
+	await _settle_rendered(2)
 	ui.battle_screen.play_presentation([{
 		"event_type": "deck_shuffled",
 		"actor": 0,
@@ -642,7 +731,212 @@ func _render_previews() -> void:
 		"data": {"player": 0},
 	}], demo.revision + 111, 0)
 	await create_timer(0.24).timeout
-	if not _capture("shuffle.png"):
+	if not _capture("shuffle-high.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("standard", "low")
+	await _settle_rendered(2)
+	ui.battle_screen.play_presentation([{
+		"event_type": "deck_shuffled",
+		"actor": 0,
+		"source": {"player": 0, "zone": "deck"},
+		"target": {"player": 0, "zone": "deck"},
+		"data": {"player": 0},
+	}], demo.revision + 112, 0)
+	await create_timer(0.24).timeout
+	if not _capture("shuffle-low.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("reduced", "high")
+	await _settle_rendered(2)
+	ui.battle_screen.play_presentation([{
+		"event_type": "deck_shuffled",
+		"actor": 0,
+		"source": {"player": 0, "zone": "deck"},
+		"target": {"player": 0, "zone": "deck"},
+		"data": {"player": 0},
+	}], demo.revision + 113, 0)
+	await create_timer(0.08).timeout
+	if not _capture("shuffle-reduced.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("standard", "high")
+	await _settle_rendered(2)
+	var reveal_preview_event := {
+		"event_type": "cards_revealed",
+		"actor": 0,
+		"visibility": "public",
+		"source": {"player": 0, "zone": "deck"},
+		"target": {"player": 0, "zone": "deck"},
+		"data": {
+			"player": 0,
+			"purpose": "mill_then_damage",
+			"cards": [
+				{
+					"card_id": "sv1-ener-2",
+					"matched": true,
+					"destination": {"player": 0, "zone": "discard"},
+				},
+				{
+					"card_id": "sv1-151",
+					"matched": false,
+					"destination": {"player": 0, "zone": "deck"},
+				},
+				{
+					"card_id": "sv1-ener-5",
+					"matched": true,
+					"destination": {"player": 0, "zone": "discard"},
+				},
+				{
+					"card_id": "svf-potion",
+					"matched": false,
+					"destination": {"player": 0, "zone": "deck"},
+				},
+				{
+					"card_id": "svi-chim",
+					"matched": false,
+					"destination": {"player": 0, "zone": "deck"},
+				},
+			],
+			"summary": {
+				"kind": "energy_damage",
+				"matched_count": 2,
+				"amount": 160,
+			},
+		},
+	}
+	ui.battle_screen.play_presentation(
+		[reveal_preview_event], demo.revision + 114, 0)
+	await create_timer(0.82).timeout
+	if not _capture("reveal-public.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("reduced", "high")
+	await _settle_rendered(2)
+	ui.battle_screen.play_presentation(
+		[reveal_preview_event], demo.revision + 115, 0)
+	await create_timer(0.12).timeout
+	if not _capture("reveal-public-reduced.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("standard", "high")
+	await _settle_rendered(2)
+	var reveal_no_energy_event: Dictionary = reveal_preview_event.duplicate(true)
+	reveal_no_energy_event["data"]["cards"] = [
+		{
+			"card_id": "sv1-151",
+			"matched": false,
+			"destination": {"player": 0, "zone": "deck"},
+		},
+		{
+			"card_id": "svf-potion",
+			"matched": false,
+			"destination": {"player": 0, "zone": "deck"},
+		},
+		{
+			"card_id": "svi-chim",
+			"matched": false,
+			"destination": {"player": 0, "zone": "deck"},
+		},
+	]
+	reveal_no_energy_event["data"]["summary"] = {
+		"kind": "energy_damage",
+		"matched_count": 0,
+		"amount": 0,
+	}
+	ui.battle_screen.play_presentation(
+		[reveal_no_energy_event], demo.revision + 116, 0)
+	await create_timer(0.82).timeout
+	if not _capture("reveal-public-no-energy.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	await _settle_rendered(2)
+	var reveal_all_energy_event: Dictionary = reveal_preview_event.duplicate(true)
+	reveal_all_energy_event["data"]["cards"] = [
+		{
+			"card_id": "sv1-ener-1",
+			"matched": true,
+			"destination": {"player": 0, "zone": "discard"},
+		},
+		{
+			"card_id": "sv1-ener-2",
+			"matched": true,
+			"destination": {"player": 0, "zone": "discard"},
+		},
+		{
+			"card_id": "sv1-ener-3",
+			"matched": true,
+			"destination": {"player": 0, "zone": "discard"},
+		},
+		{
+			"card_id": "sv1-ener-4",
+			"matched": true,
+			"destination": {"player": 0, "zone": "discard"},
+		},
+		{
+			"card_id": "sv1-ener-5",
+			"matched": true,
+			"destination": {"player": 0, "zone": "discard"},
+		},
+	]
+	reveal_all_energy_event["data"]["summary"] = {
+		"kind": "energy_damage",
+		"matched_count": 5,
+		"amount": 400,
+	}
+	ui.battle_screen.play_presentation(
+		[reveal_all_energy_event], demo.revision + 117, 0)
+	await create_timer(0.82).timeout
+	if not _capture("reveal-public-all-energy.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	await _settle_rendered(2)
+	var single_coin_preview_event := {
+		"event_type": "coin_flip",
+		"actor": 0,
+		"visibility": "public",
+		"data": {
+			"results": [true],
+			"purpose": "setup_first_player",
+			"first_player": 0,
+		},
+	}
+	ui.battle_screen.play_presentation(
+		[single_coin_preview_event], demo.revision + 118, 0)
+	await create_timer(0.72).timeout
+	if not _capture("coin-public-single.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	await _settle_rendered(2)
+	var coin_preview_event := {
+		"event_type": "coin_flip",
+		"actor": 1,
+		"visibility": "public",
+		"data": {
+			"results": [true, false, true, true, false, false, true, false],
+		},
+	}
+	ui.battle_screen.play_presentation(
+		[coin_preview_event], demo.revision + 119, 1)
+	await create_timer(1.95).timeout
+	if not _capture("coin-public-multi.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("reduced", "high")
+	await _settle_rendered(2)
+	ui.battle_screen.play_presentation(
+		[coin_preview_event], demo.revision + 120, 1)
+	await create_timer(0.08).timeout
+	if not _capture("coin-public-reduced.png"):
 		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
@@ -886,16 +1180,15 @@ func _render_previews() -> void:
 		2,
 		true,
 		false,
-		{"max_per_target": 2, "same_target": true},
+		{
+			"purpose": "energy_attach_distribution",
+			"card_ids": ["svi-jete", "svi-dtur"],
+			"source_player": 0,
+			"source_zone": "hand",
+			"max_per_target": 2,
+			"same_target": true,
+		},
 	)
-	var energy_stack := ResolutionStack.new()
-	energy_stack.push_continuation("energy_attach_distribution", {
-		"player_idx": 0,
-		"source_zone": "hand",
-		"card_ids": ["svi-jete", "svi-dtur"],
-	})
-	energy_stack.pending_request = energy_choice
-	demo.resolution_stack = energy_stack.to_dict()
 	ui.show_choice(energy_choice)
 	ui._toggle_choice("pokemon:0:active:svi-hrot")
 	await _settle_rendered(4)
@@ -912,6 +1205,71 @@ func _render_previews() -> void:
 		return
 	ui._close_modal()
 	await _wait_until_hidden(ui.modal_layer)
+	demo.resolution_stack = {
+		"frames": [], "pending_request": null, "sequence": 0, "context": {},
+	}
+	demo.players[0].active.energy_card_ids = ["sv1-ener-2", "sv1-ener-5"]
+	ui._refresh_game()
+	await _settle_rendered(2)
+	var attachment_options: Array[Dictionary] = []
+	for index in range(demo.players[0].active.energy_card_ids.size()):
+		var energy_id: String = demo.players[0].active.energy_card_ids[index]
+		var option_id := "attachment:0:active:energy:%d:%s" % [index, energy_id]
+		var attachment_ref := EntityRef.new(
+			"attachment", 0, "", "active", index, "energy", energy_id,
+		).to_dict()
+		attachment_options.append({
+			"option_id": option_id,
+			"label": "己方 战斗区 · %s" % ui.catalog.card_name(energy_id),
+			"ref": attachment_ref,
+			"value": attachment_ref.duplicate(true),
+		})
+	var attachment_choice := ChoiceRequest.new(
+		"preview-attachment-choice",
+		"select_attachment",
+		0,
+		"从己方战斗宝可梦选择至多两张能量。",
+		attachment_options,
+		0,
+		2,
+		true,
+		false,
+		{
+			"purpose": "energy_relocate_attachments",
+			"attachment_refs": attachment_options.map(
+				func(option: Dictionary) -> Dictionary:
+					return Dictionary(option["ref"]).duplicate(true)),
+			"card_ids": demo.players[0].active.energy_card_ids.duplicate(),
+			"source_player": 0,
+			"source_slot": "active",
+			"same_source": true,
+		},
+	)
+	ui.show_choice(attachment_choice)
+	ui.battle_screen.table._on_card_activated(
+		demo.players[0].active.card_id, -1, 0, "active")
+	await _settle_rendered(4)
+	if not _capture("choice-attachment-source.png"):
+		_finish(1)
+		return
+	ui._toggle_choice(str(attachment_options[1]["option_id"]))
+	await _settle_rendered(3)
+	if not _capture("choice-attachment-selected.png"):
+		_finish(1)
+		return
+	ui.battle_screen.table.attachment_choice_popover.dismiss(false)
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(3)
+	ui.battle_screen.table._on_card_activated(
+		demo.players[0].active.card_id, -1, 0, "active")
+	await _settle_rendered(4)
+	if not _capture("choice-attachment-compact.png"):
+		_finish(1)
+		return
+	ui.battle_screen.clear_choice_targets()
+	ui.active_request = null
+	root.size = Vector2i(1600, 900)
+	await _settle_rendered(3)
 
 	ui.battle_screen.play_presentation([
 		{
@@ -945,7 +1303,12 @@ func _render_previews() -> void:
 		"card_id": "sv2-keldeo",
 		"source": {"player": 1, "slot": "active"},
 		"target": {"player": 1, "zone": "discard"},
-		"data": {"player": 1, "slot": "active", "card_id": "sv2-keldeo"},
+		"data": {
+			"player": 1,
+			"slot": "active",
+			"card_id": "sv2-keldeo",
+			"defer_leave_play": true,
+		},
 	}], demo.revision + 1, 0)
 	await create_timer(0.18).timeout
 	if not _capture("ko.png"):
@@ -1013,6 +1376,83 @@ func _move_pointer_to_control(control: Control) -> void:
 	motion.global_position = pointer_position
 	Input.parse_input_event(motion)
 	await process_frame
+
+
+func _move_pointer_to_hand_card_exposed_edge(card: CardView) -> bool:
+	if card == null:
+		return false
+	# The right half of a dense fan card is intentionally covered by its next
+	# sibling. Probe a small deterministic grid inside the exposed leading strip,
+	# using the same logical rectangle as GUI input. Every probe is routed as a real
+	# mouse motion and accepted only when Viewport GUI picking names this card.
+	for x_fraction in [0.08, 0.16, 0.24, 0.32, 0.40]:
+		for y_fraction in [0.50, 0.36, 0.64, 0.22, 0.78]:
+			# InputEvent positions use the same logical GUI coordinates reported by
+			# get_global_rect(). A Canvas/global transform includes Window stretch and
+			# maps this point a second time after a 900×540 resize.
+			var card_rect := card.get_global_rect()
+			var pointer_position := card_rect.position + Vector2(
+				card_rect.size.x * float(x_fraction),
+				card_rect.size.y * float(y_fraction),
+			)
+			await _move_pointer_to_position(pointer_position)
+			if _pointer_is_over_card(card):
+				return true
+	return false
+
+
+func _move_pointer_to_position(pointer_position: Vector2) -> void:
+	# Window stretch keeps a 1600×900 logical battle canvas at compact capture
+	# sizes. Warp/parsed mouse coordinates are physical Window coordinates, so
+	# map the logical Control point through the Viewport's final transform first.
+	var window_position := root.get_final_transform() * pointer_position
+	Input.warp_mouse(window_position)
+	var motion := InputEventMouseMotion.new()
+	motion.position = window_position
+	motion.global_position = window_position
+	Input.parse_input_event(motion)
+	await process_frame
+	await process_frame
+
+
+func _pointer_is_over_card(card: CardView) -> bool:
+	if card == null:
+		return false
+	var hovered_control := root.gui_get_hovered_control()
+	return (
+		hovered_control != null
+		and (
+			hovered_control == card
+			or card.is_ancestor_of(hovered_control)
+		)
+	)
+
+
+func _dense_hand_hover_failure_message(prefix: String, card: CardView) -> String:
+	var hovered_control := root.gui_get_hovered_control()
+	return "%s: target=%s rect=%s pointer=%s hovered=%s" % [
+		prefix,
+		str(card.get_path()) if card != null else "<null>",
+		str(card.get_global_rect()) if card != null else "<null>",
+		str(root.get_mouse_position()),
+		(
+			str(hovered_control.get_path())
+			if hovered_control != null
+			else "<null>"
+		),
+	]
+
+
+func _preview_card_draws_above(upper: CardView, lower: CardView) -> bool:
+	if upper == null or lower == null:
+		return false
+	return (
+		upper.z_index > lower.z_index
+		or (
+			upper.z_index == lower.z_index
+			and upper.get_index() > lower.get_index()
+		)
+	)
 
 
 func _wait_until_hidden(control: Control, maximum_frames := 45) -> void:
@@ -1088,15 +1528,19 @@ func _enable_deterministic_preview_mode() -> bool:
 
 
 func _set_preview_quality(profile: String) -> void:
+	_set_preview_motion("reduced", profile)
+
+
+func _set_preview_motion(mode: String, profile: String) -> void:
 	if _settings_node == null:
 		return
 	_settings_node.call(
 		"update",
 		float(_settings_node.get("master_volume")),
 		bool(_settings_node.get("muted")),
-		true,
+		mode == "reduced",
 		int(_settings_node.get("card_cache_size")),
-		"reduced",
+		mode,
 		profile,
 		float(_settings_node.get("music_volume")),
 		float(_settings_node.get("sfx_volume")),

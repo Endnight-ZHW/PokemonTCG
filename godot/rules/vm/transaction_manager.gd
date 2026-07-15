@@ -34,13 +34,100 @@ func cancel_action_checkpoint(stack: ResolutionStack) -> Dictionary:
 	return {}
 
 
+func append_deferred_public_events(
+	stack: ResolutionStack,
+	events: Array[Dictionary],
+	revision: int,
+) -> void:
+	var deferred: Array = stack.context.get("deferred_public_events", [])
+	var sequence := int(stack.context.get("deferred_public_event_sequence", deferred.size()))
+	for event in events:
+		if str(event.get("event_id", "")).is_empty():
+			event["event_id"] = "deferred:%d:%d:%s" % [
+				revision,
+				sequence,
+				str(event.get("event_type", "event")),
+			]
+		sequence += 1
+		deferred.append(event.duplicate(true))
+	stack.context["deferred_public_events"] = deferred
+	stack.context["deferred_public_event_sequence"] = sequence
+
+
+func deferred_public_events(stack: ResolutionStack) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for event_value in stack.context.get("deferred_public_events", []):
+		if event_value is Dictionary:
+			result.append(Dictionary(event_value).duplicate(true))
+	return result
+
+
+func clear_deferred_public_events(stack: ResolutionStack) -> void:
+	stack.context.erase("deferred_public_events")
+	stack.context.erase("deferred_public_event_sequence")
+	stack.context.erase("cancel_action_checkpoint")
+	stack.context.erase("cancel_action_snapshot")
+	stack.context.erase("cancel_action_rng_state")
+	stack.context.erase("cancel_action_events")
+	stack.context.erase("cancel_action_event_capacity")
+
+
+func cancelled_trainer_return_event(
+	stack: ResolutionStack,
+	actor: int,
+) -> Dictionary:
+	for event in deferred_public_events(stack):
+		if str(event.get("event_type", "")) not in [
+			"trainer_played", "stadium_changed",
+		]:
+			continue
+		var source := Dictionary(event.get("source", {}))
+		var played_target := Dictionary(event.get("target", {})).duplicate(true)
+		if str(played_target.get("zone", "")).is_empty():
+			played_target = {"player": actor, "zone": "discard"}
+		var card_id := str(event.get("card_id", Dictionary(event.get(
+			"data", {})).get("card_id", "")))
+		return {
+			"event_id": "%s:cancel" % str(event.get("event_id", "trainer")),
+			"event_type": "card_moved",
+			"actor": actor,
+			"visibility": "private",
+			"card_id": card_id,
+			"source": played_target,
+			"target": {
+				"player": actor,
+				"zone": "hand",
+				"index": int(source.get("index", -1)),
+			},
+			"amount": 1,
+			"data": {
+				"player": actor,
+				"card_id": card_id,
+				"card_ids": [card_id],
+				"source_zone": str(played_target.get("zone", "discard")),
+				"target_zone": "hand",
+				"target_index": int(source.get("index", -1)),
+				"cause": "cancelled_trainer",
+			},
+		}
+	return {}
+
+
 func restore_cancelled_action(
 	state: GameState,
 	rng: PortableRandomSource,
 	checkpoint: Dictionary,
 ) -> StepResult:
 	var snapshot := Dictionary(checkpoint.get("state", {}))
-	var restored_revision := int(snapshot.get("revision", state.revision)) + 1
+	# Cancelling is itself an authoritative choice transaction.  The pending
+	# action state has already been published at `state.revision`, so restoring
+	# the pre-action snapshot must still advance beyond that published revision.
+	# Reusing the pending revision leaves remote submitters locked because an
+	# equal-revision STATE_UPDATE is not a causal acknowledgement.
+	var restored_revision := maxi(
+		state.revision,
+		int(snapshot.get("revision", state.revision)),
+	) + 1
 	restore_state(state, snapshot)
 	if checkpoint.has("rng_state"):
 		rng.set_state(int(checkpoint["rng_state"]))

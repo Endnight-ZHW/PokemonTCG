@@ -1,7 +1,6 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://ui/frontend/title_backdrop.gd" id="1_script"]
-[ext_resource type="Texture2D" path="res://assets/cards/card_back.webp" id="2_card_back"]
 
 [node name="TitleBackdrop" type="Control"]
 layout_mode = 3
@@ -12,53 +11,3 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_script")
-
-[node name="CardBackLayer" type="Control" parent="."]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="CardBackOne" type="TextureRect" parent="CardBackLayer"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-self_modulate = Color(0.42, 0.58, 0.78, 0.28)
-texture = ExtResource("2_card_back")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="CardBackTwo" type="TextureRect" parent="CardBackLayer"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-self_modulate = Color(0.4, 0.56, 0.76, 0.25)
-texture = ExtResource("2_card_back")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="CardBackThree" type="TextureRect" parent="CardBackLayer"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-self_modulate = Color(0.38, 0.54, 0.74, 0.22)
-texture = ExtResource("2_card_back")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="CardBackFour" type="TextureRect" parent="CardBackLayer"]
-unique_name_in_owner = true
-layout_mode = 0
-texture_filter = 4
-mouse_filter = 2
-self_modulate = Color(0.36, 0.52, 0.72, 0.19)
-texture = ExtResource("2_card_back")
-expand_mode = 1
-stretch_mode = 5

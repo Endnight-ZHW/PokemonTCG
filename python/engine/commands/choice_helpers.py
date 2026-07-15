@@ -89,6 +89,17 @@ def return_top_cards_except_selected(
     rest_bottom: bool,
     shuffle_rest: bool,
 ) -> list:
+    selected_cards, rest = partition_top_cards(top_cards, selected_positions)
+    return_top_cards(
+        player,
+        rest,
+        rest_bottom=rest_bottom,
+        shuffle_rest=shuffle_rest,
+    )
+    return selected_cards
+
+
+def partition_top_cards(top_cards: list, selected_positions: list[int]):
     from collections import Counter
 
     selected_counter = Counter(int(index) for index in selected_positions)
@@ -100,16 +111,26 @@ def return_top_cards_except_selected(
             selected_cards.append(card)
         else:
             rest.append(card)
+    return selected_cards, rest
+
+
+def return_top_cards(
+    player,
+    rest: list,
+    *,
+    rest_bottom: bool,
+    shuffle_rest: bool,
+) -> None:
     if shuffle_rest:
         player.deck.extend(rest)
         player.shuffle_deck()
-    else:
+    elif rest_bottom:
         for card in rest:
-            if rest_bottom:
-                player.deck.insert(0, card)
-            else:
-                player.deck.append(card)
-    return selected_cards
+            player.deck.insert(0, card)
+    else:
+        # ``rest`` is ordered from the former top down. Append in the opposite
+        # order to preserve the original top order.
+        player.deck.extend(reversed(rest))
 
 
 def attach_lightning_energy_to_bench(state, player_idx: int, selected_cards: list):

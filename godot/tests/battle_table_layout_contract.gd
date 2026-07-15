@@ -97,6 +97,7 @@ static func run() -> Array[String]:
 			and int(own_items[3]["z_index"]) < int(own_items[4]["z_index"]),
 			"overlapping hand cards no longer have a deterministic parent Z order",
 		)
+	_check_hand_centering(failures)
 	var opponent_hand := BattleTableLayout.opponent_hand_plan(
 		5, 360.0, Vector2(70.0, 98.0), 26.0, 6.0
 	)
@@ -120,6 +121,80 @@ static func run() -> Array[String]:
 		"field guide rectangle union changed",
 	)
 	return failures
+
+
+static func _check_hand_centering(failures: Array[String]) -> void:
+	for viewport_size in [
+		Vector2(900.0, 540.0),
+		Vector2(1280.0, 720.0),
+		Vector2(1600.0, 900.0),
+	]:
+		var metrics := BattleTableLayout.board_metrics(
+			viewport_size.x,
+			viewport_size.y,
+			_default_config(),
+		)
+		var available_width := float(metrics["hand_width"])
+		var card_size: Vector2 = metrics["own_hand_size"]
+		for card_count in [0, 1, 10, 15]:
+			var label := "%dx%d hand=%d" % [
+				int(viewport_size.x),
+				int(viewport_size.y),
+				card_count,
+			]
+			var plan := BattleTableLayout.own_hand_plan(
+				card_count,
+				available_width,
+				card_size,
+				52.0,
+				6.0,
+			)
+			var items: Array[Dictionary] = plan["items"]
+			var content_width := float(plan["content_width"])
+			var surface_width := float(plan["surface_width"])
+			var center_scroll := float(plan["center_scroll"])
+			_expect(
+				failures,
+				items.size() == card_count,
+				"%s planner changed the visible card count" % label,
+			)
+			_expect_close(
+				failures,
+				surface_width,
+				maxf(available_width, content_width),
+				0.001,
+				"%s surface width does not cover viewport and content" % label,
+			)
+			_expect_close(
+				failures,
+				center_scroll,
+				maxf(0.0, (content_width - available_width) * 0.5),
+				0.001,
+				"%s center scroll is not half the overflow" % label,
+			)
+			if card_count == 0:
+				_expect_close(
+					failures,
+					content_width,
+					0.0,
+					0.001,
+					"%s empty hand retained phantom card width" % label,
+				)
+				continue
+			var first_item: Dictionary = items[0]
+			var last_item: Dictionary = items[items.size() - 1]
+			var visible_center := (
+				float(first_item["position"].x)
+				+ float(last_item["position"].x)
+				+ card_size.x
+			) * 0.5 - center_scroll
+			_expect_close(
+				failures,
+				visible_center,
+				available_width * 0.5,
+				0.01,
+				"%s hand content is not centered in the viewport" % label,
+			)
 
 
 static func _check_layout_case(

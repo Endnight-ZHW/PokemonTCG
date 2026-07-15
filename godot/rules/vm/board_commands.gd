@@ -187,8 +187,8 @@ func switch_request(
 		target_player_idx != chooser
 		and target_player.active
 		and target_player.active.all_prevented_next_turn
+		and stack.is_blockable_opponent_attack_effect(chooser, target_player_idx)
 	):
-		target_player.active.all_prevented_next_turn = false
 		return VMResult.ok("替换效果被免疫。")
 	var options: Array[Dictionary] = []
 	for index in range(target_player.bench.size()):

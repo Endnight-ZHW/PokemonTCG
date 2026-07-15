@@ -120,6 +120,8 @@ class EnergyAttach:
         min_attach = int(self.params.get("min_select", 0 if optional_count else 1) or 0)
         source_pool, zone_name = self._energy_source(player, from_zone)
         if not self._matching_energy_cards(source_pool, filter_type):
+            if from_zone == "deck":
+                player.shuffle_deck()
             return CommandResult.ok(f"{zone_name}中无匹配的能量。")
 
         def distribution(energy_cards, targets_info, *, min_select, max_select, max_per_target=99, same_target=False):
@@ -320,6 +322,8 @@ class EnergyAttach:
             return CommandResult.ok("无目标宝可梦。") if optional else CommandResult.fail("没有目标宝可梦。")
         matching = self._matching_energy_cards(source_pool, filter_type)
         if not matching and optional:
+            if from_zone == "deck":
+                ctx.player.shuffle_deck()
             return CommandResult.ok(f"{zone_name}中无匹配的能量。")
         attached = 0
         trigger_specs = []
@@ -583,72 +587,44 @@ class EnergyRelocate:
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult
-        from engine.game_state import ActionRequest, ActionResult
+        from engine.game_state import ActionRequest
 
         player = ctx.player
-        amount = int(self.params.get("amount", 2) or 2)
+        amount = max(0, int(self.params.get("amount", 2) or 2))
         from_self = bool(self.params.get("from_self", False))
         energy_type = str(self.params.get("energy_type", self.params.get("filter", "any")) or "any")
         same_target = bool(self.params.get("same_target", False))
         optional_count = bool("min_select" in self.params or self.params.get("optional", False))
-
-        if from_self:
-            source_pokemon = player.active
-            matching_source = (
-                self._matching_energy_cards(source_pokemon.energy_cards, energy_type)
-                if source_pokemon is not None else []
-            )
-            if source_pokemon is None or not matching_source:
-                return CommandResult.ok("没有能量可转附。")
-
-            bench_pokemon = [(index, pokemon) for index, pokemon in enumerate(player.bench) if pokemon is not None]
-            if not bench_pokemon:
-                return CommandResult.ok("备战区没有宝可梦可转附能量。")
-
-            move_count = min(amount, len(matching_source))
-            min_move = min(move_count, int(self.params.get("min_select", move_count if not optional_count else 0) or 0))
-
-            if len(bench_pokemon) == 1:
-                bench_index, target_pokemon = bench_pokemon[0]
-                if optional_count:
-                    return self._request_distribution(
-                        ctx,
-                        source_pokemon,
-                        list(matching_source[:move_count]),
-                        [{"slot": f"bench_{bench_index}", "name": target_pokemon.card.name, "bench_idx": bench_index}],
-                        min_select=min_move,
-                        max_select=move_count,
-                        max_per_target=move_count,
-                    )
-                moved = self._move_energy(ctx, source_pokemon, target_pokemon, matching_source, move_count)
-                return CommandResult.ok(
-                    f"将{moved}个能量从{source_pokemon.card.name}转附到{target_pokemon.card.name}。"
-                )
-
-            energy_to_move = list(matching_source[:move_count])
-            return self._request_distribution(
-                ctx,
-                source_pokemon,
-                energy_to_move,
-                [
-                    {"slot": f"bench_{index}", "name": pokemon.card.name, "bench_idx": index}
-                    for index, pokemon in bench_pokemon
-                ],
-                min_select=min_move,
-                max_select=move_count,
-            )
 
         all_pokemon = [
             (slot_name, pokemon)
             for slot_name, pokemon in player.get_all_pokemon()
             if pokemon is not None
             and self._matching_energy_cards(pokemon.energy_cards, energy_type)
+            and (not from_self or slot_name == "active")
         ]
         if not all_pokemon:
             return CommandResult.ok("场上没有宝可梦附着能量。")
 
         if sum(1 for _slot_name, pokemon in player.get_all_pokemon() if pokemon is not None) <= 1:
             return CommandResult.ok("没有其他宝可梦可转附能量。")
+
+        if len(all_pokemon) == 1:
+            source_slot, source_pokemon = all_pokemon[0]
+            request = self._attachment_or_target_request(
+                ctx,
+                source_slot,
+                source_pokemon,
+                amount=amount,
+                energy_type=energy_type,
+                optional_count=optional_count,
+                min_select=self.params.get("min_select", None),
+                same_target=same_target,
+            )
+            return CommandResult.ok(
+                "选择要转附的能量和目标。",
+                pending_choice=request,
+            ) if request is not None else CommandResult.ok("没有可转附的能量。")
 
         source_options = []
         for slot_name, pokemon in all_pokemon:
@@ -670,10 +646,14 @@ class EnergyRelocate:
                 source_name="选择来源",
                 continuation={
                     "kind": "energy_relocate_source",
+                    "purpose": "relocate_energy_source",
                     "player_idx": ctx.player_idx,
+                    "source_player": ctx.player_idx,
+                    "source_zone": "field",
                     "amount": amount,
                     "energy_type": energy_type,
                     "same_target": same_target,
+                    "same_source": True,
                     "optional_count": optional_count,
                     "min_select": self.params.get("min_select", None),
                 },
@@ -693,34 +673,97 @@ class EnergyRelocate:
             )
         ]
 
-    def _request_distribution(
+    def _attachment_or_target_request(
         self,
         ctx: ResolutionContext,
+        source_slot,
         source_pokemon,
-        energy_cards,
-        targets_info,
         *,
+        amount,
+        energy_type,
+        optional_count,
         min_select,
-        max_select,
-        max_per_target=99,
         same_target=False,
-        mode="distribute",
-    ) -> CommandResult:
-        from engine.commands.base import CommandResult
+    ):
+        from engine.actions import AttachmentRef
+        from engine.game_state import ActionRequest
 
-        return CommandResult.ok(
-            "选择能量卡分配到宝可梦。",
-            pending_choice=self._distribution_request(
-                ctx,
-                source_pokemon,
-                energy_cards,
-                targets_info,
-                min_select=min_select,
-                max_select=max_select,
-                max_per_target=max_per_target,
-                same_target=same_target,
-                mode=mode,
-            ),
+        targets_info = [
+            {
+                "player": ctx.player_idx,
+                "slot": slot_name,
+                "name": pokemon.card.name,
+                "card_id": pokemon.card.api_id,
+                "bench_idx": int(slot_name.split("_", 1)[1]) if slot_name.startswith("bench_") else -1,
+            }
+            for slot_name, pokemon in ctx.player.get_all_pokemon()
+            if pokemon is not None and slot_name != source_slot
+        ]
+        if not targets_info:
+            return None
+        matching = [
+            (index, card)
+            for index, card in enumerate(source_pokemon.energy_cards)
+            if card in self._matching_energy_cards(source_pokemon.energy_cards, energy_type)
+        ]
+        move_count = min(max(0, int(amount)), len(matching))
+        if move_count <= 0:
+            return None
+        if min_select is None:
+            request_min = 0 if optional_count else move_count
+        else:
+            request_min = min(move_count, max(0, int(min_select or 0)))
+        refs = [
+            AttachmentRef(
+                ctx.player_idx,
+                source_slot,
+                "energy",
+                index,
+                str(getattr(card, "api_id", "") or ""),
+            )
+            for index, card in matching
+        ]
+        exact_choice_required = request_min < move_count or len(refs) > move_count
+        if exact_choice_required:
+            return ActionRequest(
+                request_type="select_attachment",
+                player=ctx.player_idx,
+                prompt=f"选择从{source_pokemon.card.name}转附的能量。",
+                min_select=request_min,
+                max_select=move_count,
+                can_cancel=request_min <= 0,
+                target_info=[
+                    {
+                        "player": ref.player,
+                        "slot": ref.slot,
+                        "attachment_type": ref.attachment_type,
+                        "index": ref.index,
+                        "card_id": ref.card_id,
+                        "label": f"{source_pokemon.card.name} - {getattr(card, 'name', ref.card_id)}",
+                    }
+                    for ref, (_index, card) in zip(refs, matching)
+                ],
+                continuation={
+                    "kind": "energy_relocate_attachments",
+                    "purpose": "relocate_energy",
+                    "player_idx": ctx.player_idx,
+                    "source_player": ctx.player_idx,
+                    "source_zone": "field",
+                    "source_slot": source_slot,
+                    "amount": move_count,
+                    "energy_type": energy_type,
+                    "same_source": True,
+                    "same_target": same_target,
+                    "max_per_target": move_count,
+                },
+            )
+        return self._distribution_request(
+            ctx,
+            source_pokemon,
+            [card for _index, card in matching[:move_count]],
+            targets_info,
+            attachment_refs=refs[:move_count],
+            same_target=same_target,
         )
 
     @staticmethod
@@ -730,16 +773,12 @@ class EnergyRelocate:
         energy_cards,
         targets_info,
         *,
-        min_select,
-        max_select,
-        max_per_target=99,
+        attachment_refs,
         same_target=False,
-        mode="distribute",
     ):
         from engine.game_state import ActionRequest
 
-        max_select = min(max(0, int(max_select)), len(energy_cards))
-        min_select = min(max_select, max(0, int(min_select)))
+        move_count = min(len(energy_cards), len(attachment_refs))
         source_slot = ""
         for slot_name, pokemon in ctx.player.get_all_pokemon():
             if pokemon is source_pokemon:
@@ -750,31 +789,38 @@ class EnergyRelocate:
             request_type="distribute_energy",
             player=ctx.player_idx,
             prompt=f"分配能量 — {source_pokemon.card.name}",
-            card_list=list(energy_cards[:max_select]),
+            card_list=list(energy_cards[:move_count]),
             target_info=targets_info,
-            distribute_mode=mode,
-            min_select=min_select,
-            max_select=max_select,
-            max_per_target=max_per_target,
+            distribute_mode="paired",
+            min_select=move_count,
+            max_select=move_count,
+            max_per_target=move_count,
             source_name=source_pokemon.card.name,
             continuation={
                 "kind": "energy_relocate_distribution",
+                "purpose": "relocate_energy_target",
                 "player_idx": ctx.player_idx,
+                "source_player": ctx.player_idx,
+                "source_zone": "field",
                 "source_slot": source_slot,
-                "max_per_target": max_per_target,
+                "attachment_refs": [
+                    {
+                        "kind": "attachment",
+                        "player": ref.player,
+                        "zone": "field",
+                        "slot": ref.slot,
+                        "index": ref.index,
+                        "attachment_type": ref.attachment_type,
+                        "card_id": ref.card_id,
+                    }
+                    for ref in attachment_refs[:move_count]
+                ],
+                "card_ids": [ref.card_id for ref in attachment_refs[:move_count]],
+                "same_source": True,
+                "max_per_target": move_count,
                 "same_target": same_target,
             },
         )
-
-    def _move_energy(self, ctx: ResolutionContext, source_pokemon, target_pokemon, matching_source, move_count: int) -> int:
-        moved = 0
-        for card in list(matching_source[:move_count]):
-            if card in source_pokemon.energy_cards:
-                source_pokemon.energy_cards.remove(card)
-                target_pokemon.energy_cards.append(card)
-                moved += 1
-        ctx.state._log(f"将{moved}个能量从{source_pokemon.card.name}转附到{target_pokemon.card.name}。")
-        return moved
 
 
 __all__ = [

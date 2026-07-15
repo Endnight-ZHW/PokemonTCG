@@ -64,12 +64,19 @@ func bench_damage(
 					"bench_%d" % index,
 					int(params.get("amount", 0)),
 					events,
+					true,
+					stack,
+					player_idx,
 				)
 				applied += 1
 		return VMResult.ok("备战伤害已结算。")
 	return board_commands.request_bench_target(
 		state, stack, player_idx, target_idx, "bench_damage_target",
-		{"amount": int(params.get("amount", 0)), "target_player": target_idx},
+		{
+			"amount": int(params.get("amount", 0)),
+			"source_player": player_idx,
+			"target_player": target_idx,
+		},
 		"选择1只对手备战宝可梦作为伤害目标。",
 		int(params.get("count", 1)))
 
@@ -84,7 +91,11 @@ func choose_damage_target(
 	var target_idx := 1 - player_idx if target_player_key == "opponent" else player_idx
 	return board_commands.request_board_target(
 		state, stack, player_idx, target_idx, "damage_target",
-		{"amount": int(params.get("amount", 0)), "target_player": target_idx},
+		{
+			"amount": int(params.get("amount", 0)),
+			"source_player": player_idx,
+			"target_player": target_idx,
+		},
 		"选择1只对手宝可梦作为伤害目标。")
 
 

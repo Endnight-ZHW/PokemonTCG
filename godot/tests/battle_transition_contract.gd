@@ -148,6 +148,11 @@ func _run() -> void:
 	await _run_attachment_motion_contract(battle, empty_rows)
 	await _run_slot_visual_transaction_contract(battle, empty_rows)
 	await _run_prize_stack_transaction_contract(battle, empty_rows)
+	await _run_public_coin_contract(battle)
+	await _run_empty_public_reveal_contract(battle, settings)
+	await _run_public_reveal_damage_sequence_contract(battle, empty_rows, settings)
+	await _run_startup_shuffle_contract(battle)
+	await _run_preflight_and_event_cleanup_contract(battle, empty_rows)
 
 	battle.table._on_hand_drag_started(0)
 	await process_frame
@@ -228,6 +233,7 @@ func _run() -> void:
 	)
 
 	await _run_drag_identity_contract(battle, empty_rows)
+	await _run_dense_hand_hover_order_contract(battle, empty_rows)
 
 	battle.queue_free()
 	await process_frame
@@ -248,6 +254,225 @@ func _run() -> void:
 	for failure in failures:
 		push_error(failure)
 	quit(1)
+
+
+func _run_dense_hand_hover_order_contract(
+	battle: Control,
+	empty_rows: Array[Dictionary],
+) -> void:
+	var previous_window_size := root.size
+	var hand_card_ids: Array[String] = [
+		"sv1-104",
+		"sv1-106",
+		"sv1-108",
+		"sv2-delib",
+		"sv1-151",
+		"svf-potion",
+		"sv1-189",
+		"svi-jete",
+		"svi-dtur",
+		"svi-hrot",
+		"sv1-ener-1",
+		"sv1-ener-2",
+		"sv1-ener-3",
+		"sv1-ener-4",
+		"sv1-ener-5",
+	]
+	var viewport_sizes: Array[Vector2i] = [
+		Vector2i(900, 540),
+		Vector2i(1280, 720),
+		Vector2i(1600, 900),
+	]
+	var fixture_index := 0
+	for viewport_size in viewport_sizes:
+		root.size = viewport_size
+		for _frame in range(4):
+			await process_frame
+		for hand_count in [10, 15]:
+			fixture_index += 1
+			var fixture_label := "%d cards at %dx%d" % [
+				hand_count,
+				viewport_size.x,
+				viewport_size.y,
+			]
+			var dense_state := UIPreviewStateFactory.battle_state(
+				20260810 + fixture_index,
+			)
+			dense_state.revision = 200 + fixture_index
+			dense_state.players[0].hand.clear()
+			for card_index in range(hand_count):
+				dense_state.players[0].hand.append(
+					hand_card_ids[card_index % hand_card_ids.size()],
+				)
+			battle.update_view(
+				dense_state,
+				0,
+				empty_rows,
+				"",
+				false,
+				"test",
+			)
+			battle.table._layout_board()
+			for _frame in range(4):
+				await process_frame
+			_expect(
+				battle.hand_views.size() >= hand_count,
+				"Dense-hand fixture did not create %s" % fixture_label,
+			)
+			if battle.hand_views.size() < hand_count:
+				continue
+			# Exercise a user-owned scroll position whenever this fan overflows. The
+			# hover contract must not silently snap it back to the layout center.
+			var horizontal_bar := (
+				battle.table.hand_scroll.get_h_scroll_bar() as HScrollBar
+			)
+			var maximum_scroll := maxi(
+				0,
+				roundi(horizontal_bar.max_value - horizontal_bar.page),
+			)
+			if maximum_scroll > 4:
+				battle.table.hand_scroll.scroll_horizontal = maxi(
+					1,
+					roundi(float(maximum_scroll) * 0.27),
+				)
+				await process_frame
+
+			var middle_index := floori(float(hand_count) * 0.5)
+			var middle_view := _visible_hand_view_at_index(battle, middle_index)
+			var middle_right := _visible_hand_view_at_index(
+				battle,
+				middle_index + 1,
+			)
+			var base_geometry := _dense_hand_geometry_snapshot(battle, hand_count)
+			var base_order := _dense_hand_order_snapshot(battle, hand_count)
+			middle_view._on_mouse_entered()
+			await process_frame
+			_expect(
+				_dense_hand_geometry_matches(battle, hand_count, base_geometry),
+				"Hover changed hand positions, content width, or scroll for %s"
+				% fixture_label,
+			)
+			_expect(
+				_dense_hand_order_snapshot(battle, hand_count) == base_order
+				and _dense_hand_is_canonical(battle, hand_count)
+				and _hand_view_draws_above(middle_right, middle_view),
+				"Middle hover raised a card above its right neighbor for %s"
+				% fixture_label,
+			)
+			_expect(
+				_card_hover_target_is_active(middle_view),
+				"Middle hover lost its lift/scale feedback for %s" % fixture_label,
+			)
+
+			middle_view._on_mouse_exited()
+			var switched_index := maxi(0, middle_index - 1)
+			var switched_view := _visible_hand_view_at_index(
+				battle,
+				switched_index,
+			)
+			switched_view._on_mouse_entered()
+			await process_frame
+			_expect(
+				_dense_hand_order_snapshot(battle, hand_count) == base_order
+				and _dense_hand_geometry_matches(
+					battle,
+					hand_count,
+					base_geometry,
+				),
+				"Switching hover changed canonical hand geometry/order for %s"
+				% fixture_label,
+			)
+			switched_view._on_mouse_exited()
+
+			var last_view := _visible_hand_view_at_index(battle, hand_count - 1)
+			last_view._on_mouse_entered()
+			await process_frame
+			_expect(
+				_dense_hand_order_snapshot(battle, hand_count) == base_order
+				and _dense_hand_geometry_matches(
+					battle,
+					hand_count,
+					base_geometry,
+				)
+				and _card_hover_target_is_active(last_view),
+				"Last-card hover changed the fan contract for %s" % fixture_label,
+			)
+			last_view._on_mouse_exited()
+			await process_frame
+			_expect(
+				_dense_hand_order_snapshot(battle, hand_count) == base_order
+				and _dense_hand_is_canonical(battle, hand_count),
+				"Hover exit did not preserve canonical order for %s" % fixture_label,
+			)
+
+			battle.update_view(
+				dense_state,
+				0,
+				empty_rows,
+				"hand:%d" % middle_index,
+				false,
+				"test",
+			)
+			for _frame in range(2):
+				await process_frame
+			var selected_view := _visible_hand_view_at_index(battle, middle_index)
+			var selected_geometry := _dense_hand_geometry_snapshot(
+				battle,
+				hand_count,
+			)
+			var selected_order := _dense_hand_order_snapshot(battle, hand_count)
+			var hover_while_selected := _visible_hand_view_at_index(
+				battle,
+				mini(hand_count - 1, middle_index + 1),
+			)
+			hover_while_selected._on_mouse_entered()
+			await process_frame
+			_expect(
+				_selected_hand_is_topmost(battle, hand_count, selected_view)
+				and _dense_hand_order_snapshot(battle, hand_count) == selected_order,
+				"Hover displaced the selected top card for %s" % fixture_label,
+			)
+			_expect(
+				_dense_hand_geometry_matches(
+					battle,
+					hand_count,
+					selected_geometry,
+				),
+				"Hover changed selected-hand positions or scroll for %s"
+				% fixture_label,
+			)
+			hover_while_selected._on_mouse_exited()
+			selected_view._on_mouse_entered()
+			await process_frame
+			_expect(
+				_selected_hand_is_topmost(battle, hand_count, selected_view)
+				and _dense_hand_order_snapshot(battle, hand_count) == selected_order
+				and _card_hover_target_is_active(selected_view),
+				"Selected+hover did not retain the selected top layer for %s"
+				% fixture_label,
+			)
+			selected_view._on_mouse_exited()
+			battle.update_view(
+				dense_state,
+				0,
+				empty_rows,
+				"",
+				false,
+				"test",
+			)
+			for _frame in range(2):
+				await process_frame
+			_expect(
+				_dense_hand_is_canonical(battle, hand_count),
+				"Clearing selection did not restore canonical order for %s"
+				% fixture_label,
+			)
+
+	root.size = previous_window_size
+	for _frame in range(4):
+		await process_frame
+	battle.table._layout_board()
+	await process_frame
 
 
 func _run_multi_draw_contract(
@@ -1575,16 +1800,102 @@ func _run_slot_visual_transaction_contract(
 	)
 	battle.table._on_presentation_event_started(events[1])
 	battle.table._on_presentation_event_finished(events[1])
+	var retreat_source_row: Dictionary = battle.table._snapshot_slot_row(0, "active")
+	var retreat_source_state: Dictionary = retreat_source_row.get("pokemon", {})
 	_expect(
 		active_cover_state.energy_card_ids.is_empty()
+		and Array(retreat_source_state.get("energy_card_ids", [])).is_empty()
 		and battle.table._presentation_slot_covers.has("0:active"),
-		"retreat cost did not leave the Pokemon visible through its energy discard",
+		"retreat cost did not advance the visual source state before movement",
 	)
 	battle.table._on_presentation_event_started(events[2])
 	_expect(
 		not battle.table._presentation_slot_covers.has("0:active")
 		and not battle.table._presentation_slot_covers.has("0:bench_0"),
 		"retreat did not transfer visual ownership at movement start",
+	)
+	var retreat_flyer_start_count: int = battle.table._active_flyers.size()
+	var retreat_spawned: bool = battle.table._spawn_slot_transition(
+		events[2],
+		0.46,
+		str(events[2].get("event_id", "")),
+	)
+	var retreat_flyer_count: int = (
+		battle.table._active_flyers.size() - retreat_flyer_start_count
+	)
+	_expect(
+		retreat_spawned and retreat_flyer_count == 2,
+		"paid retreat energy was launched again as a ghost attachment (%d flyers)"
+		% retreat_flyer_count,
+	)
+	battle.table._clear_transient_visuals()
+
+	var attach_switch_before := UIPreviewStateFactory.battle_state(20260807)
+	attach_switch_before.revision = 134
+	attach_switch_before.players[0].active = PokemonState.new("sv1-104")
+	attach_switch_before.players[0].bench[0] = PokemonState.new("svi-chim")
+	attach_switch_before.players[0].discard = ["sv1-ener-5"]
+	battle.update_view(attach_switch_before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var attach_switch_snapshot: Dictionary = battle.capture_presentation_snapshot()
+	var attach_switch_after := attach_switch_before.clone_state()
+	attach_switch_after.revision = 135
+	attach_switch_after.players[0].discard.clear()
+	attach_switch_after.players[0].active.energy_card_ids.append("sv1-ener-5")
+	var attached_active := attach_switch_after.players[0].active
+	attach_switch_after.players[0].active = attach_switch_after.players[0].bench[0]
+	attach_switch_after.players[0].bench[0] = attached_active
+	var attach_switch_events: Array[Dictionary] = PresentationEvent.normalize_all([
+		{
+			"event_id": "contract:slot:attach-before-switch",
+			"event_type": "energy_attached",
+			"actor": 0,
+			"card_id": "sv1-ener-5",
+			"source": {"player": 0, "zone": "discard", "index": 0},
+			"target": {"player": 0, "slot": "active"},
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_id": "sv1-ener-5",
+				"card_ids": ["sv1-ener-5"],
+			},
+		},
+		{
+			"event_id": "contract:slot:switch-after-attach",
+			"event_type": "switched",
+			"actor": 0,
+			"data": {"player": 0, "slot": "bench_0"},
+		},
+	], 135, 0)
+	battle.update_view(attach_switch_after, 0, empty_rows, "", false, "test")
+	battle.table._stage_presentation_targets(
+		attach_switch_events,
+		attach_switch_snapshot,
+	)
+	battle.table._on_presentation_event_started(attach_switch_events[0])
+	battle.table._on_presentation_event_finished(attach_switch_events[0])
+	var attached_source_row: Dictionary = battle.table._snapshot_slot_row(0, "active")
+	var attached_source_state: Dictionary = attached_source_row.get("pokemon", {})
+	_expect(
+		Array(attached_source_state.get("energy_card_ids", []))
+		== ["sv1-ener-5"],
+		"attached energy was not committed to the next movement source snapshot",
+	)
+	battle.table._on_presentation_event_started(attach_switch_events[1])
+	var switch_flyer_start_count: int = battle.table._active_flyers.size()
+	var switch_spawned: bool = battle.table._spawn_slot_transition(
+		attach_switch_events[1],
+		0.46,
+		str(attach_switch_events[1].get("event_id", "")),
+	)
+	var switch_flyer_count: int = (
+		battle.table._active_flyers.size() - switch_flyer_start_count
+	)
+	_expect(
+		switch_spawned and switch_flyer_count == 3,
+		"energy attached earlier in the batch did not travel with its Pokemon (%d flyers)"
+		% switch_flyer_count,
 	)
 	battle.table._clear_transient_visuals()
 
@@ -1623,11 +1934,26 @@ func _run_slot_visual_transaction_contract(
 			"event_type": "pokemon_ko",
 			"actor": 1,
 			"source": {"player": 1, "slot": "active"},
+			"target": {"player": 1, "slot": "active"},
+			"amount": 4,
+			"data": {
+				"player": 1,
+				"slot": "active",
+				"defer_leave_play": true,
+				"card_ids": ["sv1-104", "sv1-202", "sv1-ener-4", "sv1-ener-5"],
+			},
+		},
+		{
+			"event_id": "contract:slot:ko-leave",
+			"event_type": "card_moved",
+			"actor": 1,
+			"source": {"player": 1, "slot": "active"},
 			"target": {"player": 1, "zone": "discard"},
 			"amount": 4,
 			"data": {
 				"player": 1,
 				"slot": "active",
+				"ko_leave_play": true,
 				"card_ids": ["sv1-104", "sv1-202", "sv1-ener-4", "sv1-ener-5"],
 			},
 		},
@@ -1675,8 +2001,19 @@ func _run_slot_visual_transaction_contract(
 	)
 	battle.table._on_presentation_event_started(ko_events[1])
 	_expect(
+		battle.table._presentation_slot_covers.has("1:active"),
+		"KO source cover disappeared before KO feedback could hit the old stack",
+	)
+	battle.table._on_card_motion_requested(ko_events[1], 0.24)
+	_expect(
+		battle.table._presentation_slot_covers.has("1:active"),
+		"Deferred KO declaration incorrectly started leave-play motion",
+	)
+	battle.table._on_presentation_event_finished(ko_events[1])
+	battle.table._on_presentation_event_started(ko_events[2])
+	_expect(
 		not battle.table._presentation_slot_covers.has("1:active"),
-		"KO source cover remained over the departing component motion",
+		"KO source cover remained over the explicit leave-play motion",
 	)
 	battle.table._clear_transient_visuals()
 
@@ -1925,7 +2262,9 @@ func _run_main_shell_flow_contract() -> void:
 		ui.modal_layer.visible and ui.modal_confirm.disabled,
 		"Coin result modal allowed continuation before its reveal animation",
 	)
-	await create_timer(0.62).timeout
+	# Three cinematic tosses run the full 0.90 s first toss and 0.55 s
+	# follow-ups before the modal becomes actionable.
+	await create_timer(2.72).timeout
 	_expect(
 		ui.modal_layer.visible and not ui.modal_confirm.disabled,
 		"Coin result modal did not unlock after its real reveal animation",
@@ -1980,6 +2319,8 @@ func _run_main_shell_flow_contract() -> void:
 	ui._build_game_screen()
 	await process_frame
 	await process_frame
+
+
 	var ai_barrier_handle: PresentationHandle = ui._submit_battle_transition(
 		[{
 			"event_type": "turn_end",
@@ -2008,6 +2349,455 @@ func _run_main_shell_flow_contract() -> void:
 	ui.queue_free()
 	await process_frame
 	await process_frame
+
+
+func _run_public_coin_contract(battle: Control) -> void:
+	battle.play_presentation([{
+		"event_type": "coin_flip",
+		"actor": 1,
+		"visibility": "public",
+		"data": {"results": [false]},
+	}], 91, 1)
+	await process_frame
+	await process_frame
+	var showcase: CoinShowcase = battle.table.coin_showcase
+	_expect(
+		showcase != null
+		and showcase.visible
+		and showcase.results == [false]
+		and battle.director.is_playing(),
+		"Public coin event did not open the shared screen-space showcase",
+	)
+	await create_timer(0.25).timeout
+	_expect(
+		battle.director.is_playing(),
+		"Public coin event bypassed its real-motion completion barrier",
+	)
+	var deadline := Time.get_ticks_msec() + 3000
+	while battle.director.is_playing() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	_expect(
+		not battle.director.is_playing()
+		and not showcase.visible
+		and not battle.input_blocker.visible,
+		"Public coin event did not release its barrier or clear its proxy",
+	)
+
+
+func _run_empty_public_reveal_contract(battle: Control, settings: Node) -> void:
+	for mode in ["standard", "reduced"]:
+		settings.set("animation_mode", mode)
+		settings.set("reduced_motion", mode == "reduced")
+		battle.play_presentation([{
+			"event_type": "cards_revealed",
+			"actor": 0,
+			"visibility": "public",
+			"source": {"player": 0, "zone": "deck"},
+			"target": {"player": 0, "zone": "deck"},
+			"data": {
+				"player": 0,
+				"cards": [],
+				"summary": {
+					"kind": "energy_damage",
+					"matched_count": 0,
+					"amount": 0,
+				},
+			},
+		}], 92 if mode == "standard" else 93, 0)
+		await process_frame
+		await process_frame
+		var showcase: Control = battle.table.reveal_layer._showcase as Control
+		var summary := (
+			showcase.get_node_or_null("RevealSummary") as Label
+			if showcase != null
+			else null
+		)
+		_expect(
+			showcase != null
+			and battle.table.reveal_layer.is_presenting()
+			and Array(showcase.get_meta("reveal_cards", [])).is_empty()
+			and summary != null
+			and summary.text == "未翻到能量"
+			and battle.director.is_playing(),
+			"%s zero-card reveal did not show its semantic result" % mode,
+		)
+		var deadline := Time.get_ticks_msec() + 4500
+		while battle.director.is_playing() and Time.get_ticks_msec() < deadline:
+			await process_frame
+		_expect(
+			not battle.director.is_playing()
+			and not battle.table.reveal_layer.is_presenting()
+			and not battle.input_blocker.visible,
+			"%s zero-card reveal did not release its completion barrier" % mode,
+		)
+	settings.set("animation_mode", "cinematic")
+	settings.set("reduced_motion", false)
+
+
+func _run_public_reveal_damage_sequence_contract(
+	battle: Control,
+	empty_rows: Array[Dictionary],
+	settings: Node,
+) -> void:
+	settings.set("animation_mode", "fast")
+	settings.set("reduced_motion", false)
+	var before := UIPreviewStateFactory.battle_state(20260808)
+	before.revision = 140
+	before.players[0].deck = ["sv2-delib", "sv1-ener-1", "sv1-ener-2"]
+	before.players[0].discard.clear()
+	before.players[1].active = PokemonState.new("sv1-104")
+	before.players[1].active.damage_counters = 0
+	battle.update_view(before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+
+	var after := before.clone_state()
+	after.revision = 141
+	after.players[0].deck = ["sv2-delib"]
+	after.players[0].discard = ["sv1-ener-2", "sv1-ener-1"]
+	after.players[1].active.damage_counters = 8
+	var events: Array[Dictionary] = [
+		{
+			"event_type": "cards_revealed",
+			"actor": 0,
+			"visibility": "public",
+			"source": {"player": 0, "zone": "deck"},
+			"target": {"player": 0, "zone": "deck"},
+			"data": {
+				"player": 0,
+				"purpose": "mill_then_damage",
+				"cards": [
+					{
+						"card_id": "sv1-ener-2",
+						"matched": true,
+						"destination": {"player": 0, "zone": "discard"},
+					},
+					{
+						"card_id": "sv1-ener-1",
+						"matched": true,
+						"destination": {"player": 0, "zone": "discard"},
+					},
+					{
+						"card_id": "sv2-delib",
+						"matched": false,
+						"destination": {"player": 0, "zone": "deck"},
+					},
+				],
+				"summary": {
+					"kind": "energy_damage",
+					"matched_count": 2,
+					"amount": 80,
+				},
+			},
+		},
+		{
+			"event_type": "deck_shuffled",
+			"actor": 0,
+			"data": {"player": 0},
+		},
+		{
+			"event_type": "damage_dealt",
+			"actor": 0,
+			"amount": 80,
+			"target": {"player": 1, "slot": "active"},
+			"data": {"player": 1, "slot": "active", "amount": 80},
+		},
+	]
+	var lifecycle: Array[String] = []
+	var probes := {
+		"damage_started_while_revealing": false,
+		"cover_before_damage": -1,
+		"cover_at_damage": -1,
+	}
+	var on_started := func(event: Dictionary) -> void:
+		var event_type := PresentationEvent.canonical_event_type(
+			str(event.get("event_type", "")),
+		)
+		lifecycle.append("start:%s" % event_type)
+		var cover_state := battle.table._presentation_slot_cover_states.get(
+			"1:active",
+		) as PokemonState
+		if event_type == "deck_shuffled" and cover_state != null:
+			probes["cover_before_damage"] = cover_state.damage_counters
+		if event_type == "damage_dealt":
+			probes["damage_started_while_revealing"] = (
+				battle.table.reveal_layer.is_presenting()
+			)
+			if cover_state != null:
+				probes["cover_at_damage"] = cover_state.damage_counters
+	var on_finished := func(event: Dictionary) -> void:
+		lifecycle.append("finish:%s" % PresentationEvent.canonical_event_type(
+			str(event.get("event_type", "")),
+		))
+	battle.director.event_started.connect(on_started)
+	battle.director.event_finished.connect(on_finished)
+	var target_view := BattleViewModel.capture(
+		after, 0, empty_rows, "", false, "test")
+	var handle: PresentationHandle = battle.submit_transition(
+		BattleTransitionRequest.create(
+			target_view,
+			events,
+			0,
+			BattleTransitionRequest.CAUSE_LOCAL_ACTION,
+		)
+	)
+	await process_frame
+	await process_frame
+	var showcase := battle.table.reveal_layer._showcase as Control
+	var summary := (
+		showcase.get_node_or_null("RevealSummary") as Label
+		if showcase != null
+		else null
+	)
+	var staged_damage := battle.table._presentation_slot_cover_states.get(
+		"1:active",
+	) as PokemonState
+	_expect(
+		showcase != null
+		and summary != null
+		and summary.text == "正在翻牌…"
+		and staged_damage != null
+		and staged_damage.damage_counters == 0,
+		"Public reveal exposed its result or target damage before cards flipped",
+	)
+
+	var reveal_deadline := Time.get_ticks_msec() + 2500
+	while (
+		summary != null
+		and summary.text == "正在翻牌…"
+		and Time.get_ticks_msec() < reveal_deadline
+	):
+		await process_frame
+	var all_faces_revealed := showcase != null
+	if showcase != null:
+		for card_value in showcase.get_meta("reveal_cards", []):
+			var card := card_value as Control
+			all_faces_revealed = (
+				all_faces_revealed
+				and card != null
+				and bool(card.get_meta("face_swapped", false))
+			)
+	_expect(
+		summary != null
+		and summary.text == "翻到 2 张能量"
+		and not summary.text.contains("伤害")
+		and all_faces_revealed,
+		"Public reveal announced damage/result before every card was face up",
+	)
+
+	await _wait_for_handle(handle, battle)
+	var expected_prefix: Array[String] = [
+		"start:cards_revealed",
+		"finish:cards_revealed",
+		"start:deck_shuffled",
+		"finish:deck_shuffled",
+		"start:damage_dealt",
+	]
+	_expect(
+		handle.status == PresentationHandle.COMPLETED
+		and lifecycle.size() >= expected_prefix.size()
+		and lifecycle.slice(0, expected_prefix.size()) == expected_prefix
+		and not bool(probes["damage_started_while_revealing"])
+		and int(probes["cover_before_damage"]) == 0
+		and int(probes["cover_at_damage"]) == 8,
+		"Reveal/destination/shuffle/damage presentation order was not causal: %s"
+		% [lifecycle],
+	)
+	if battle.director.event_started.is_connected(on_started):
+		battle.director.event_started.disconnect(on_started)
+	if battle.director.event_finished.is_connected(on_finished):
+		battle.director.event_finished.disconnect(on_finished)
+	settings.set("animation_mode", "cinematic")
+	settings.set("reduced_motion", false)
+
+
+func _run_preflight_and_event_cleanup_contract(
+	battle: Control,
+	empty_rows: Array[Dictionary],
+) -> void:
+	var before := UIPreviewStateFactory.battle_state(20260804)
+	before.revision = 150
+	battle.update_view(before, 0, empty_rows, "", false, "test")
+	await process_frame
+	var preflight := MotionHandle.new()
+	battle.presentation_coordinator.set_preflight(preflight)
+	var after := before.clone_state()
+	after.revision = 151
+	after.turn_number += 1
+	var target_view := BattleViewModel.capture(after, 0, empty_rows, "", false, "test")
+	var request := BattleTransitionRequest.create(
+		target_view,
+		[],
+		0,
+		BattleTransitionRequest.CAUSE_NETWORK,
+		"contract:preflight",
+	)
+	var transition: PresentationHandle = battle.submit_transition(request)
+	await process_frame
+	_expect(
+		battle.state_ref.revision == 150 and not transition.is_completed(),
+		"Authoritative transition applied underneath the coordinator preflight",
+	)
+	preflight.finish()
+	await _wait_for_handle(transition, battle)
+	_expect(
+		battle.state_ref.revision == 151,
+		"Queued authoritative transition did not apply after the preflight",
+	)
+
+	var pending_drag := Control.new()
+	pending_drag.set_meta("drag_session_id", "contract:future-drag")
+	battle.effects.add_child(pending_drag)
+	battle.table._active_flyers.append(pending_drag)
+	var old_event_flyer := Control.new()
+	old_event_flyer.set_meta("motion_event_id", "contract:old-stadium")
+	battle.effects.add_child(old_event_flyer)
+	battle.table._active_flyers.append(old_event_flyer)
+	battle.table._clear_active_flyers_for_event("contract:old-stadium")
+	_expect(
+		is_instance_valid(pending_drag)
+		and pending_drag in battle.table._active_flyers
+		and not is_instance_valid(old_event_flyer),
+		"Finishing one event cleared the parked proxy owned by a later event",
+	)
+	battle.table._dispose_flyer(pending_drag)
+
+	var duplicate_snapshot: Dictionary = battle.capture_presentation_snapshot()
+	var duplicate_event := PresentationEvent.normalize({
+		"event_id": "contract:duplicate-only",
+		"event_type": "damage_dealt",
+		"actor": 0,
+		"target": {"player": 1, "slot": "active"},
+		"amount": 10,
+	}, 151, 0)
+	battle.director._seen_event_ids["contract:duplicate-only"] = true
+	var duplicate_view := BattleViewModel.capture(
+		battle.state_ref,
+		battle.view_player,
+		empty_rows,
+		"",
+		false,
+		"test",
+	)
+	var duplicate_transition := BattleTransitionRequest.create(
+		duplicate_view,
+		[duplicate_event],
+		0,
+		BattleTransitionRequest.CAUSE_NETWORK,
+		"contract:duplicate-only",
+	)
+	var duplicate_handle: PresentationHandle = battle.submit_transition(
+		duplicate_transition,
+	)
+	await _wait_for_handle(duplicate_handle, battle)
+	_expect(
+		battle.table._presentation_slot_covers.is_empty()
+		and battle.table._presentation_reveals.is_empty()
+		and battle.table._presentation_mask_counts.is_empty(),
+		"Duplicate-only batch left presentation staging without a sequence barrier",
+	)
+	battle.director._seen_event_ids.erase("contract:duplicate-only")
+
+
+func _run_startup_shuffle_contract(battle: Control) -> void:
+	battle._clear_transient_visuals()
+	var startup_state := UIPreviewStateFactory.battle_state(20260725)
+	startup_state.revision = 94
+	startup_state.players[0].hand = ["sv1-104", "sv1-ener-5"]
+	var empty_rows: Array[Dictionary] = []
+	battle.update_view(startup_state, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	battle.table._on_hand_drag_started(0)
+	await process_frame
+	_expect(
+		not battle.active_drag_context().is_empty(),
+		"Startup blocker fixture did not create a pending hand drag",
+	)
+	battle.set_startup_blocked(true)
+	_expect(
+		battle.table._startup_input_blocked
+		and battle.input_blocker.visible
+		and battle.active_drag_context().is_empty()
+		and not battle.hand_views[0].is_drag_masked(),
+		"Startup blocker did not atomically block input and clear the active drag",
+	)
+	battle.set_startup_blocked(false)
+	_expect(
+		not battle.table._startup_input_blocked
+		and not battle.input_blocker.visible,
+		"Startup blocker remained after choreography release",
+	)
+	var handle: MotionHandle = battle.play_startup_shuffle([2, 0])
+	await process_frame
+	await process_frame
+	var startup_cards := 0
+	var physical_pile_cards := 0
+	var physical_pile_geometry_exact := true
+	var mulligan_summary_found := false
+	for child in battle.effects.get_children():
+		var control := child as Control
+		if control == null:
+			continue
+		if bool(control.get_meta("startup_shuffle", false)):
+			if bool(control.get_meta("shuffle_card", false)):
+				startup_cards += 1
+				var source_zone := control.get_meta("shuffle_source_zone", null) as ZoneView
+				var start: Vector2 = control.get_meta("motion_start", Vector2.ZERO)
+				var finish: Vector2 = control.get_meta("motion_finish", Vector2.ZERO)
+				if (
+					bool(control.get_meta("shuffle_from_physical_pile", false))
+					and source_zone != null
+					and source_zone.is_stack_presentation_hidden()
+					and control.size.distance_to(source_zone.get_stack_face_size()) < 0.5
+					and start.distance_to(finish) < 0.1
+				):
+					physical_pile_cards += 1
+				else:
+					physical_pile_geometry_exact = false
+			elif control is Label and (control as Label).text == "再战 ×2":
+				mulligan_summary_found = true
+	var own_deck := battle.table.zones.get("own_deck") as ZoneView
+	var opponent_deck := battle.table.zones.get("opponent_deck") as ZoneView
+	_expect(
+		not handle.is_finished()
+		and startup_cards == battle.table._shuffle_card_count() * 2
+		and physical_pile_cards == startup_cards
+		and physical_pile_geometry_exact
+		and own_deck != null
+		and own_deck.is_stack_presentation_hidden()
+		and opponent_deck != null
+		and opponent_deck.is_stack_presentation_hidden()
+		and mulligan_summary_found,
+		"Startup choreography did not replace and shuffle both physical deck piles",
+	)
+	var deadline := Time.get_ticks_msec() + 2500
+	while not handle.is_finished() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	await process_frame
+	var leftover := false
+	for child in battle.effects.get_children():
+		if child is Control and bool(child.get_meta("startup_shuffle", false)):
+			leftover = true
+			break
+	_expect(
+		handle.is_finished()
+		and not leftover
+		and not own_deck.is_stack_presentation_hidden()
+		and not opponent_deck.is_stack_presentation_hidden()
+		and battle.table._shuffle_source_masks.is_empty(),
+		"Startup shuffle did not finish its MotionHandle or clear proxy nodes",
+	)
+	var cancelled_handle: MotionHandle = battle.play_startup_shuffle([])
+	await process_frame
+	battle.table._cancel_startup_shuffle()
+	_expect(
+		cancelled_handle.is_finished()
+		and not own_deck.is_stack_presentation_hidden()
+		and not opponent_deck.is_stack_presentation_hidden()
+		and battle.table._shuffle_source_masks.is_empty(),
+		"Cancelled startup shuffle did not restore the physical deck piles",
+	)
 
 
 func _draw_event(actor: int, card_ids: Array) -> Dictionary:
@@ -2476,6 +3266,144 @@ func _motion_entities(battle: Control) -> Array[Control]:
 		if bool(child.get_meta("card_motion_entity", false)) and child.visible:
 			result.append(child as Control)
 	return result
+
+
+func _dense_hand_geometry_snapshot(battle: Control, hand_count: int) -> Dictionary:
+	var positions: Array[Vector2] = []
+	var global_positions: Array[Vector2] = []
+	var rotations: Array[float] = []
+	for hand_index in range(hand_count):
+		var view := _visible_hand_view_at_index(battle, hand_index)
+		if view == null:
+			continue
+		positions.append(view.position)
+		global_positions.append(view.global_position)
+		rotations.append(view.rotation_degrees)
+	return {
+		"positions": positions,
+		"global_positions": global_positions,
+		"rotations": rotations,
+		"surface_minimum_width": battle.table.hand_surface.custom_minimum_size.x,
+		"surface_width": battle.table.hand_surface.size.x,
+		"scroll_horizontal": battle.table.hand_scroll.scroll_horizontal,
+	}
+
+
+func _dense_hand_geometry_matches(
+	battle: Control,
+	hand_count: int,
+	expected: Dictionary,
+) -> bool:
+	var positions: Array = expected.get("positions", [])
+	var global_positions: Array = expected.get("global_positions", [])
+	var rotations: Array = expected.get("rotations", [])
+	if (
+		positions.size() != hand_count
+		or global_positions.size() != hand_count
+		or rotations.size() != hand_count
+	):
+		return false
+	for hand_index in range(hand_count):
+		var view := _visible_hand_view_at_index(battle, hand_index)
+		if view == null:
+			return false
+		var expected_position: Vector2 = positions[hand_index]
+		var expected_global_position: Vector2 = global_positions[hand_index]
+		if (
+			view.position.distance_to(expected_position) > 0.01
+			or view.global_position.distance_to(expected_global_position) > 0.01
+			or absf(view.rotation_degrees - float(rotations[hand_index])) > 0.01
+		):
+			return false
+	return (
+		is_equal_approx(
+			battle.table.hand_surface.custom_minimum_size.x,
+			float(expected.get("surface_minimum_width", -1.0)),
+		)
+		and is_equal_approx(
+			battle.table.hand_surface.size.x,
+			float(expected.get("surface_width", -1.0)),
+		)
+		and battle.table.hand_scroll.scroll_horizontal
+		== int(expected.get("scroll_horizontal", -1))
+	)
+
+
+func _dense_hand_order_snapshot(battle: Control, hand_count: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for hand_index in range(hand_count):
+		var view := _visible_hand_view_at_index(battle, hand_index)
+		if view == null:
+			continue
+		result.append(Vector2i(view.z_index, view.get_index()))
+	return result
+
+
+func _dense_hand_is_canonical(battle: Control, hand_count: int) -> bool:
+	var previous_view: CardView
+	for hand_index in range(hand_count):
+		var view := _visible_hand_view_at_index(battle, hand_index)
+		if (
+			view == null
+			or view.get_parent() != battle.table.hand_surface
+			or view.get_index() != hand_index
+		):
+			return false
+		if previous_view != null and not _hand_view_draws_above(view, previous_view):
+			return false
+		previous_view = view
+	return true
+
+
+func _hand_view_draws_above(upper: CardView, lower: CardView) -> bool:
+	if upper == null or lower == null:
+		return false
+	return (
+		upper.z_index > lower.z_index
+		or (
+			upper.z_index == lower.z_index
+			and upper.get_index() > lower.get_index()
+		)
+	)
+
+
+func _selected_hand_is_topmost(
+	battle: Control,
+	hand_count: int,
+	selected_view: CardView,
+) -> bool:
+	if (
+		selected_view == null
+		or not selected_view.selected
+		or selected_view.get_index()
+		!= battle.table.hand_surface.get_child_count() - 1
+	):
+		return false
+	var previous_sibling_index := -1
+	for hand_index in range(hand_count):
+		var view := _visible_hand_view_at_index(battle, hand_index)
+		if view == null:
+			return false
+		if view == selected_view:
+			continue
+		if (
+			view.selected
+			or selected_view.z_index <= view.z_index
+			or view.get_index() <= previous_sibling_index
+		):
+			return false
+		previous_sibling_index = view.get_index()
+	return true
+
+
+func _card_hover_target_is_active(view: CardView) -> bool:
+	return (
+		view != null
+		and view._hovered
+		and view._interaction_target_offset.y < -0.01
+		and view._interaction_target_scale.x > 1.001
+		and view._interaction_target_scale.y > 1.001
+	)
 
 
 func _visible_hand_view_at_index(battle: Control, hand_index: int) -> CardView:

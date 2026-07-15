@@ -29,9 +29,19 @@ var connection_phase: ConnectionPhase = ConnectionPhase.CLOSED
 var deck_selection_sent := false
 var last_receive_msec := 0
 var last_send_msec := 0
+var reconnecting := false
+var reconnect_deadline_msec := 0
+var next_reconnect_attempt_msec := 0
+var transport_kind := ""
+var lan_address := ""
+var lan_port := 0
+var relay_url := ""
+var relay_resume_token := ""
 const HEARTBEAT_INTERVAL_MSEC := 15000
 const PENDING_SUBMISSION_TIMEOUT_MSEC := 10000
 const CONNECTION_TIMEOUT_MSEC := 45000
+const RECONNECT_GRACE_MSEC := 30000
+const RECONNECT_RETRY_MSEC := 1200
 var seed := -1
 var events: Array[Dictionary] = []
 
@@ -49,6 +59,8 @@ func host_lan(port: int, deck_key: String, match_seed: int = -1) -> Error:
 	local_deck_key = deck_key
 	seed = _resolved_match_seed(match_seed)
 	room_id = "lan-%08x" % (Time.get_unix_time_from_system() as int)
+	transport_kind = "lan"
+	lan_port = port
 	var enet := _new_enet_transport()
 	var error := enet.start_host(port)
 	if error == OK:
@@ -68,6 +80,9 @@ func join_lan(address: String, port: int, deck_key: String) -> Error:
 	host = false
 	player_idx = 1
 	local_deck_key = deck_key
+	transport_kind = "lan"
+	lan_address = address
+	lan_port = port
 	var enet := _new_enet_transport()
 	var error := enet.start_client(address, port)
 	if error == OK:
@@ -87,6 +102,8 @@ func host_relay(relay_url: String, deck_key: String, match_seed: int = -1) -> Er
 	player_idx = 0
 	local_deck_key = deck_key
 	seed = _resolved_match_seed(match_seed)
+	transport_kind = "relay"
+	self.relay_url = relay_url
 	var relay := _new_relay_transport()
 	var error := relay.start_host(relay_url)
 	if error == OK:
@@ -106,6 +123,8 @@ func join_relay(relay_url: String, target_room: String, deck_key: String) -> Err
 	player_idx = 1
 	local_deck_key = deck_key
 	room_id = target_room
+	transport_kind = "relay"
+	self.relay_url = relay_url
 	var relay := _new_relay_transport()
 	var error := relay.start_client(relay_url, target_room)
 	if error == OK:
@@ -118,6 +137,7 @@ func join_relay(relay_url: String, target_room: String, deck_key: String) -> Err
 
 
 func poll() -> Array[Dictionary]:
+	_poll_reconnect()
 	if connection_phase == ConnectionPhase.CLOSED:
 		return _drain_events()
 	if transport == null:
@@ -126,8 +146,13 @@ func poll() -> Array[Dictionary]:
 		match str(event.get("type", "")):
 			"room_created":
 				room_id = str(event.get("room_id", ""))
+				relay_resume_token = str(event.get("resume_token", relay_resume_token))
 				if host:
 					session = AuthoritativeSession.new(room_id, catalog)
+				events.append(event)
+			"room_joined", "room_resumed":
+				room_id = str(event.get("room_id", room_id))
+				relay_resume_token = str(event.get("resume_token", relay_resume_token))
 				events.append(event)
 			"connected":
 				if connection_phase != ConnectionPhase.CONNECTING:
@@ -145,6 +170,7 @@ func poll() -> Array[Dictionary]:
 						"player_idx": 1,
 						"rules_version": AppState.RULES_SCHEMA_VERSION,
 						"action_version": AppState.ACTION_SCHEMA_VERSION,
+						"resume": session != null and session.state != null,
 					})
 					events.append({"type": "connected", "player_idx": 0, "room_id": room_id})
 				else:
@@ -152,20 +178,26 @@ func poll() -> Array[Dictionary]:
 			"message":
 				_handle_message(event.get("message", {}))
 			"disconnected", "connection_failed":
-				connected = false
-				connection_phase = ConnectionPhase.CLOSED
-				_clear_pending_submission()
-				resync_in_progress = false
-				_discard_transport()
-				events.append(event)
+				if _can_reconnect_match():
+					_begin_reconnect(str(event.get("reason", event.get("type", "disconnected"))))
+				else:
+					connected = false
+					connection_phase = ConnectionPhase.CLOSED
+					_clear_pending_submission()
+					resync_in_progress = false
+					_discard_transport()
+					events.append(event)
 			"transport_error":
-				connected = false
-				connection_phase = ConnectionPhase.CLOSED
-				_clear_pending_submission()
-				resync_in_progress = false
-				_discard_transport()
-				events.append(event)
-				events.append({"type": "disconnected", "reason": "transport_error"})
+				if _can_reconnect_match():
+					_begin_reconnect("transport_error")
+				else:
+					connected = false
+					connection_phase = ConnectionPhase.CLOSED
+					_clear_pending_submission()
+					resync_in_progress = false
+					_discard_transport()
+					events.append(event)
+					events.append({"type": "disconnected", "reason": "transport_error"})
 	var now := Time.get_ticks_msec()
 	_check_pending_submission_timeout(now)
 	if (
@@ -179,18 +211,22 @@ func poll() -> Array[Dictionary]:
 		and connection_phase != ConnectionPhase.CLOSED
 		and now - last_receive_msec >= CONNECTION_TIMEOUT_MSEC
 	):
-		connected = false
-		connection_phase = ConnectionPhase.CLOSED
-		_clear_pending_submission()
-		resync_in_progress = false
-		_discard_transport()
-		events.append({"type": "disconnected", "reason": "timeout"})
+		if _can_reconnect_match():
+			_begin_reconnect("timeout")
+		else:
+			connected = false
+			connection_phase = ConnectionPhase.CLOSED
+			_clear_pending_submission()
+			resync_in_progress = false
+			_discard_transport()
+			events.append({"type": "disconnected", "reason": "timeout"})
 	return _drain_events()
 
 
 func needs_poll() -> bool:
 	return (
-		not events.is_empty()
+		reconnecting
+		or not events.is_empty()
 		or (transport != null and connection_phase != ConnectionPhase.CLOSED)
 	)
 
@@ -294,7 +330,12 @@ func request_resync() -> void:
 
 
 func submission_locked() -> bool:
-	return not pending_submission.is_empty() or resync_in_progress
+	return reconnecting or not pending_submission.is_empty() or resync_in_progress
+
+
+func begin_reconnect(reason: String = "connection_interrupted") -> void:
+	if _can_reconnect_match():
+		_begin_reconnect(reason)
 
 
 func get_revision() -> int:
@@ -318,11 +359,19 @@ func close() -> void:
 	current_revision = -1
 	_clear_pending_submission()
 	resync_in_progress = false
+	reconnecting = false
+	reconnect_deadline_msec = 0
+	next_reconnect_attempt_msec = 0
 	connected = false
 	connection_phase = ConnectionPhase.CLOSED
 	deck_selection_sent = false
 	last_receive_msec = 0
 	last_send_msec = 0
+	transport_kind = ""
+	lan_address = ""
+	lan_port = 0
+	relay_url = ""
+	relay_resume_token = ""
 	events.clear()
 
 
@@ -342,6 +391,13 @@ func _handle_message(message: Variant) -> void:
 	)
 	if not bool(validation.get("ok", false)):
 		var code := str(validation.get("code", "invalid_message"))
+		var recoverable_gap := code == "sequence_gap" and message is Dictionary
+		if recoverable_gap:
+			# The envelope has already passed all structural, room and sender
+			# validation before ProtocolV3 reports a gap.  Adopt its sequence as a
+			# recovery fence, discard its payload, and request a fresh snapshot.
+			# Otherwise every later RESYNC reply is rejected against the same gap.
+			receive_sequence = int(Dictionary(message).get("sequence", receive_sequence))
 		var origin_action_id := _envelope_identifier(message, "action_id")
 		var origin_request_id := _envelope_identifier(message, "request_id")
 		if host:
@@ -361,6 +417,8 @@ func _handle_message(message: Variant) -> void:
 			"origin_action_id": origin_action_id,
 			"origin_request_id": origin_request_id,
 		})
+		if recoverable_gap and not host:
+			request_resync()
 		return
 	var row: Dictionary = message
 	var message_type := str(row["message_type"])
@@ -435,6 +493,32 @@ func _handle_host_message(
 			if not catalog.decks.has(deck_key):
 				_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
 					"invalid_deck", "未知牌组。"))
+				return
+			var resume_requested := bool(payload.get("resume", false))
+			if session != null and session.state != null:
+				if not resume_requested or (
+					not remote_deck_key.is_empty() and deck_key != remote_deck_key
+				):
+					_reject("resume_mismatch", "恢复请求与当前对局不匹配。")
+					return
+				remote_deck_key = deck_key
+				reconnecting = false
+				resync_in_progress = false
+				connection_phase = ConnectionPhase.PLAYING
+				events.append({"type": "reconnected", "player_idx": 0})
+				events.append({
+					"type": "state",
+					"view": session.view_for(0),
+					"player_idx": 0,
+					"origin_action_id": "",
+					"origin_request_id": "",
+					"matched_pending": false,
+					"is_resync": true,
+				})
+				_send_state_to_client()
+				return
+			if resume_requested:
+				_reject("resume_unavailable", "房主已无法恢复该对局。")
 				return
 			remote_deck_key = deck_key
 			var result := session.start_match(local_deck_key, remote_deck_key, seed)
@@ -539,6 +623,7 @@ func _handle_client_message(
 					"deck_key": local_deck_key,
 					"rules_version": AppState.RULES_SCHEMA_VERSION,
 					"action_version": AppState.ACTION_SCHEMA_VERSION,
+					"resume": reconnecting or current_revision >= 0,
 				},
 			)
 			if not deck_selection_sent:
@@ -572,18 +657,26 @@ func _handle_client_message(
 				})
 				request_resync()
 				return
+			var was_reconnecting := reconnecting
+			var is_recovery_snapshot := resync_in_progress or was_reconnecting
 			var origins := _resolve_pending_state(row, next_revision)
 			current_revision = next_revision
 			resync_in_progress = false
+			reconnecting = false
+			reconnect_deadline_msec = 0
+			next_reconnect_attempt_msec = 0
 			connection_phase = (
 				ConnectionPhase.CLOSED
 				if str(state_payload.get("phase", "")) == "GAME_OVER"
 				else ConnectionPhase.PLAYING
 			)
+			if was_reconnecting:
+				events.append({"type": "reconnected", "player_idx": player_idx})
 			events.append({
 				"type": "state",
 				"view": payload,
 				"player_idx": player_idx,
+				"is_resync": is_recovery_snapshot,
 				"origin_action_id": str(origins.get("action_id", "")),
 				"origin_request_id": str(origins.get("request_id", "")),
 				"matched_pending": bool(origins.get("matched", false)),
@@ -878,6 +971,85 @@ func _discard_transport() -> void:
 	transport = null
 	if current_transport != null:
 		current_transport.close()
+
+
+func _can_reconnect_match() -> bool:
+	if transport_kind not in ["lan", "relay"]:
+		return false
+	if host:
+		return session != null and session.state != null and session.state.winner < 0
+	return (
+		current_revision >= 0
+		and connection_phase != ConnectionPhase.CLOSED
+	) or reconnecting
+
+
+func _begin_reconnect(reason: String) -> void:
+	var first_attempt := not reconnecting
+	connected = false
+	connection_phase = ConnectionPhase.CONNECTING
+	_clear_pending_submission()
+	resync_in_progress = not host
+	_discard_transport()
+	if first_attempt:
+		reconnecting = true
+		send_sequence = 0
+		receive_sequence = 0
+		deck_selection_sent = false
+		var now := Time.get_ticks_msec()
+		reconnect_deadline_msec = now + RECONNECT_GRACE_MSEC
+		next_reconnect_attempt_msec = now + 250
+		events.append({
+			"type": "reconnecting",
+			"reason": reason,
+			"deadline_msec": reconnect_deadline_msec,
+		})
+	else:
+		next_reconnect_attempt_msec = Time.get_ticks_msec() + RECONNECT_RETRY_MSEC
+
+
+func _poll_reconnect() -> void:
+	if not reconnecting:
+		return
+	var now := Time.get_ticks_msec()
+	if now >= reconnect_deadline_msec:
+		reconnecting = false
+		resync_in_progress = false
+		connection_phase = ConnectionPhase.CLOSED
+		_discard_transport()
+		events.append({"type": "disconnected", "reason": "reconnect_timeout"})
+		return
+	if transport != null or now < next_reconnect_attempt_msec:
+		return
+	var error := _start_reconnect_transport()
+	if error != OK:
+		_discard_transport()
+		next_reconnect_attempt_msec = now + RECONNECT_RETRY_MSEC
+
+
+func _start_reconnect_transport() -> Error:
+	if transport_kind == "lan":
+		var enet := _new_enet_transport()
+		var error := (
+			enet.start_host(lan_port)
+			if host
+			else enet.start_client(lan_address, lan_port)
+		)
+		if error == OK:
+			transport = enet
+		return error
+	if transport_kind == "relay":
+		var relay := _new_relay_transport()
+		var error := relay.resume_session(
+			relay_url,
+			room_id,
+			"p1" if host else "p2",
+			relay_resume_token,
+		)
+		if error == OK:
+			transport = relay
+		return error
+	return ERR_UNAVAILABLE
 
 
 func _new_enet_transport() -> EnetTransport:

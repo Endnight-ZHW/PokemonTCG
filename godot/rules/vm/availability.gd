@@ -89,9 +89,10 @@ func effects_have_legal_target(
 					return true
 			"arven":
 				saw_checked_effect = true
-				for card_id in player.deck:
-					if catalog.is_item(card_id) or catalog.is_tool(card_id):
-						return true
+				# A deck search may legally fail. Availability can use the public
+				# deck count, but must not inspect hidden card identities.
+				if not player.deck.is_empty():
+					return true
 			"shuffle_from_discard":
 				saw_checked_effect = true
 				if _zone_has_matching_cards(player.discard, params):
@@ -133,11 +134,7 @@ func effects_have_legal_target(
 					return true
 			"switch_opponent":
 				saw_checked_effect = true
-				if (
-					opponent.active != null
-					and opponent.bench_count() > 0
-					and not opponent.active.all_prevented_next_turn
-				):
+				if opponent.active != null and opponent.bench_count() > 0:
 					return true
 			"heal":
 				saw_checked_effect = true
@@ -167,7 +164,7 @@ func effects_have_legal_target(
 					return true
 			"status", "conditional_status", "attack_lock_basic", "dazzling_beam":
 				saw_checked_effect = true
-				if opponent.active != null and not opponent.active.all_prevented_next_turn:
+				if opponent.active != null:
 					return true
 			"damage_counter_self":
 				saw_checked_effect = true
@@ -304,6 +301,8 @@ func _search_has_target(
 	if destination == "bench_energy" and _energy_effect_target_slots(state, player_idx, params, "active").is_empty():
 		return false
 	var from_zone := str(params.get("from_zone", "deck"))
+	if from_zone == "deck":
+		return int(params.get("count", 1)) > 0 and not player.deck.is_empty()
 	var pool := _zone_cards(state, player_idx, from_zone, exclude_hand_index)
 	return _zone_has_matching_cards(pool, params)
 
@@ -313,24 +312,14 @@ func _look_top_has_target(state: GameState, player_idx: int, params: Dictionary)
 	if str(params.get("destination", "hand")) == "bench_energy":
 		if _energy_effect_target_slots(state, player_idx, params, "active").is_empty():
 			return false
-	var count: int = min(int(params.get("count", 1)), player.deck.size())
-	var pool: Array[String] = []
-	for offset in range(count):
-		pool.append(player.deck[player.deck.size() - 1 - offset])
-	return _zone_has_matching_cards(pool, params)
+	return int(params.get("count", 1)) > 0 and not player.deck.is_empty()
 
 
 func _look_top_attach_has_target(state: GameState, player_idx: int, params: Dictionary) -> bool:
 	var player := state.get_player(player_idx)
 	if not player.has_any_pokemon_in_play():
 		return false
-	var count: int = min(int(params.get("count", 5)), player.deck.size())
-	var filter_type := str(params.get("filter", "basic_energy"))
-	for offset in range(count):
-		var card_id := str(player.deck[player.deck.size() - 1 - offset])
-		if _energy_matches(card_id, filter_type):
-			return true
-	return false
+	return int(params.get("count", 5)) > 0 and not player.deck.is_empty()
 
 
 func _zone_has_matching_cards(card_ids: Array, params: Dictionary) -> bool:
@@ -406,14 +395,21 @@ func _energy_attach_has_target(
 	var player := state.get_player(player_idx)
 	var from_zone := str(params.get("from_zone", "deck"))
 	var filter_type := str(params.get("filter", params.get("energy_type", "any")))
+	var has_target := not _energy_effect_target_slots(
+		state, player_idx, params, source_slot).is_empty()
+	if not has_target:
+		return false
+	if from_zone == "deck":
+		return not player.deck.is_empty()
 	var source_cards: Array[String] = []
 	match from_zone:
 		"discard":
 			source_cards.assign(player.discard)
 		"hand":
 			source_cards = _zone_cards(state, player_idx, "hand", exclude_hand_index)
-			if include_deck:
-				source_cards.append_array(player.deck)
+			if include_deck and not player.deck.is_empty():
+				# Draw-and-attach effects can become live from an unknown draw.
+				return true
 		_:
 			source_cards.assign(player.deck)
 	var has_energy := false
@@ -423,7 +419,7 @@ func _energy_attach_has_target(
 			break
 	if not has_energy:
 		return false
-	return not _energy_effect_target_slots(state, player_idx, params, source_slot).is_empty()
+	return true
 
 
 func _energy_effect_target_slots(
@@ -536,8 +532,6 @@ func _energy_discard_has_target(
 	var owner := state.get_player(player_idx if from_target == "self" else 1 - player_idx)
 	var pokemon := owner.get_pokemon(source_slot) if from_target == "self" else owner.active
 	if pokemon == null:
-		return false
-	if from_target != "self" and pokemon.all_prevented_next_turn:
 		return false
 	var energy_type := str(params.get("filter", params.get("energy_type", "any")))
 	for energy_id in pokemon.energy_card_ids:
@@ -666,6 +660,6 @@ func _player_has_attached_energy(player: PlayerState) -> bool:
 func _player_has_effect_target_pokemon(player: PlayerState) -> bool:
 	for row in player.get_all_pokemon():
 		var pokemon: PokemonState = row["pokemon"]
-		if pokemon != null and not pokemon.all_prevented_next_turn:
+		if pokemon != null:
 			return true
 	return false

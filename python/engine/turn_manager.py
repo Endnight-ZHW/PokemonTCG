@@ -103,13 +103,13 @@ class TurnManager:
         # Reset turn flags
         self.state.get_active_player().reset_turn_flags()
 
-        # If the new active player has no active Pokemon, pause before draw
-        # so they can promote from bench first
+        # Any checkup KO must be promoted before the next turn draws.  The
+        # outgoing player can be KO'd by Poison/Burn even when the incoming
+        # player still has an Active Pokemon.
         player = self.state.get_active_player()
         self.state.phase = TurnPhase.DRAW
         self.state._log(f"—— {player.name}的回合 ——")
-        if player.active is None and self.state.pending_promotion_player >= 0:
-            # Pause: promotion needed before draw
+        if self.state.pending_promotions:
             return
         self._handle_draw_phase()
 
@@ -142,6 +142,21 @@ class TurnManager:
         )
         if result.success and bump_revision:
             self.state.revision = getattr(self.state, "revision", 0) + 1
+
+        # TurnManager is still a public execution boundary for the legacy UI,
+        # simulations, and a number of rule tests.  Refresh promotion requests
+        # after a completed effect can voluntarily remove its own Active
+        # Pokemon.  Actual KO triggers, prizes, and terminal checks stay in the
+        # transaction settlement layer so failures can still roll back cleanly.
+        if (
+            result.success
+            and result.pending_action is None
+            and self.state.phase != TurnPhase.SETUP
+            and action not in (PlayerAction.DECLARE_ATTACK, PlayerAction.END_TURN)
+        ):
+            from engine.commands.attack_frames import refresh_pending_promotions
+
+            refresh_pending_promotions(self.state)
 
         # After attack, stay in ATTACK phase until player clicks End Turn.
         # A final KO may already have moved the game to GAME_OVER.

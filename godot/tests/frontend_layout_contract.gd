@@ -257,18 +257,33 @@ func _check_shared_backdrop_contract() -> void:
 	root.add_child(backdrop)
 	backdrop.call("configure", "neutral")
 	await _settle_layout(3)
-	var card_fan := backdrop.get_node("%CardFan") as Control
 	_check(
-		card_fan != null and not card_fan.visible,
-		"Neutral secondary-page backdrop must not show decorative cards",
+		backdrop.get_node_or_null("%CardFan") == null,
+		"Shared frontend backdrop must not contain decorative card artwork",
 	)
 	backdrop.call("configure", "victory")
 	await _settle_layout(2)
 	_check(
-		card_fan != null and card_fan.visible,
-		"Victory backdrop lost its intentional celebration card fan",
+		backdrop.get_node_or_null("%CardFan") == null,
+		"Victory backdrop must not restore decorative card artwork",
 	)
 	backdrop.queue_free()
+	await _settle_layout(2)
+
+	var title_backdrop_scene := load(
+		"res://ui/frontend/title_backdrop.tscn"
+	) as PackedScene
+	_check(title_backdrop_scene != null, "Title backdrop scene is unavailable")
+	if title_backdrop_scene == null:
+		return
+	var title_backdrop := title_backdrop_scene.instantiate() as Control
+	root.add_child(title_backdrop)
+	await _settle_layout(2)
+	_check(
+		title_backdrop.get_node_or_null("%CardBackLayer") == null,
+		"Title and modal backdrops must not contain decorative edge cards",
+	)
+	title_backdrop.queue_free()
 	await _settle_layout(2)
 
 

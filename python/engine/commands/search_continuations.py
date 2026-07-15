@@ -8,10 +8,11 @@ from engine.commands.energy_continuations import (
 from engine.commands.choice_helpers import (
     attach_lightning_energy_to_bench,
     find_selected_card_in_zone,
+    partition_top_cards,
     peek_expected_top_cards,
     pop_expected_top_cards,
     resolve_board_choice,
-    return_top_cards_except_selected,
+    return_top_cards,
     selected_top_positions_from_request,
     take_selected_cards_from_zone,
 )
@@ -152,19 +153,71 @@ def resolve_trekking_shoes(stack, continuation: dict, choice):
     top_name = str(continuation.get("top_card_name", "") or "")
     if confirmed:
         if player.deck:
+            source_index = len(player.deck) - 1
             card = player.deck.pop()
+            target_index = len(player.hand)
             player.hand.append(card)
+            _emit_zone_event(
+                stack.state,
+                "card_moved",
+                actor=player_idx,
+                visibility="owner",
+                card_id=getattr(card, "api_id", ""),
+                source={"player": player_idx, "zone": "deck", "index": source_index},
+                target={"player": player_idx, "zone": "hand", "index": target_index},
+                amount=1,
+                player=player_idx,
+                card_ids=[getattr(card, "api_id", "")],
+                count=1,
+                source_zone="deck",
+                source_index=source_index,
+                target_zone="hand",
+                target_index=target_index,
+            )
             stack.state._log(f"{player.name}将牌库顶的「{card.name}」加入了手牌。")
         return ActionResult(True, "将牌库顶卡加入手牌。")
 
     if player.deck:
+        source_index = len(player.deck) - 1
         card = player.deck.pop()
+        target_index = len(player.discard)
         player.discard.append(card)
+        _emit_zone_event(
+            stack.state,
+            "cards_discarded",
+            actor=player_idx,
+            visibility="public",
+            card_id=getattr(card, "api_id", ""),
+            source={"player": player_idx, "zone": "deck", "index": source_index},
+            target={"player": player_idx, "zone": "discard", "index": target_index},
+            amount=1,
+            player=player_idx,
+            card_ids=[getattr(card, "api_id", "")],
+            count=1,
+            source_zone="deck",
+            source_index=source_index,
+            target_zone="discard",
+            target_index=target_index,
+        )
         stack.state._log(
             f"{player.name}丢弃了牌库顶的「{getattr(card, 'name', top_name)}」。"
         )
     drawn = player.draw_cards(1)
     if drawn:
+        _emit_zone_event(
+            stack.state,
+            "cards_drawn",
+            actor=player_idx,
+            visibility="owner",
+            source={"player": player_idx, "zone": "deck"},
+            target={"player": player_idx, "zone": "hand"},
+            amount=len(drawn),
+            player=player_idx,
+            card_ids=[getattr(card, "api_id", "") for card in drawn],
+            count=len(drawn),
+            source_zone="deck",
+            target_zone="hand",
+        )
         stack.state._log(f"{player.name}抽取了{len(drawn)}张卡。")
     return ActionResult(
         True,
@@ -233,35 +286,44 @@ def resolve_look_top_deck(stack, req, continuation: dict, choice):
         top_cards, error = pop_expected_top_cards(player, continuation)
         if error:
             return ActionResult(False, error)
-        selected_cards = return_top_cards_except_selected(
-            player,
-            top_cards,
-            selected_positions,
-            rest_bottom=bool(continuation.get("rest_bottom", True)),
-            shuffle_rest=bool(continuation.get("shuffle_rest", False)),
-        )
+        selected_cards, rest = partition_top_cards(top_cards, selected_positions)
         stack.state._log(
             f"{player.name}查看了牌库顶{len(top_cards)}张卡，选择了{len(selected_cards)}张。"
         )
-        return attach_lightning_energy_to_bench(
+        if selected_cards and not bench_pokes:
+            return_top_cards(
+                player,
+                top_cards,
+                rest_bottom=bool(continuation.get("rest_bottom", True)),
+                shuffle_rest=bool(continuation.get("shuffle_rest", False)),
+            )
+            return ActionResult(True, "备战区没有雷属性宝可梦可附着能量。")
+        result = attach_lightning_energy_to_bench(
             stack.state,
             player_idx,
             selected_cards,
         )
+        return_top_cards(
+            player,
+            rest,
+            rest_bottom=bool(continuation.get("rest_bottom", True)),
+            shuffle_rest=bool(continuation.get("shuffle_rest", False)),
+        )
+        return result
 
     top_cards, error = pop_expected_top_cards(player, continuation)
     if error:
         return ActionResult(False, error)
-    selected_cards = return_top_cards_except_selected(
-        player,
-        top_cards,
-        selected_positions,
-        rest_bottom=bool(continuation.get("rest_bottom", True)),
-        shuffle_rest=bool(continuation.get("shuffle_rest", False)),
-    )
+    selected_cards, rest = partition_top_cards(top_cards, selected_positions)
     for card in selected_cards:
         player.hand.append(card)
         stack.state._log(f"{player.name}将{card.name}加入手牌。")
+    return_top_cards(
+        player,
+        rest,
+        rest_bottom=bool(continuation.get("rest_bottom", True)),
+        shuffle_rest=bool(continuation.get("shuffle_rest", False)),
+    )
     stack.state._log(
         f"{player.name}查看了牌库顶{len(top_cards)}张卡，选择了{len(selected_cards)}张。"
     )
@@ -301,13 +363,7 @@ def resolve_look_top_bench_energy_distribution(stack, req, continuation: dict, c
         int(index)
         for index in continuation.get("selected_top_positions", []) or []
     ]
-    selected_cards = return_top_cards_except_selected(
-        player,
-        top_cards,
-        selected_positions,
-        rest_bottom=bool(continuation.get("rest_bottom", True)),
-        shuffle_rest=bool(continuation.get("shuffle_rest", False)),
-    )
+    selected_cards, rest = partition_top_cards(top_cards, selected_positions)
     source_cards = list(getattr(req, "card_list", []) or selected_cards)
     assignments = normalize_energy_assignments(choice)
     attached = 0
@@ -324,6 +380,15 @@ def resolve_look_top_bench_energy_distribution(stack, req, continuation: dict, c
         selected_cards.remove(card)
         attached += 1
         stack.state._log(f"将{card.name}附着于备战区{target.card.name}。")
+    # Invalid or omitted assignments return the detached cards to the deck;
+    # only successfully attached cards stay out of it.
+    rest.extend(selected_cards)
+    return_top_cards(
+        player,
+        rest,
+        rest_bottom=bool(continuation.get("rest_bottom", True)),
+        shuffle_rest=bool(continuation.get("shuffle_rest", False)),
+    )
     return ActionResult(True, f"附着了{attached}张能量。")
 
 
@@ -365,21 +430,18 @@ def resolve_look_top_attach_energy(stack, req, continuation: dict, choice):
     top_cards, error = pop_expected_top_cards(player, continuation)
     if error:
         return ActionResult(False, error)
-    selected_cards = return_top_cards_except_selected(
-        player,
-        top_cards,
-        selected_positions,
-        rest_bottom=False,
-        shuffle_rest=True,
-    )
+    selected_cards, rest = partition_top_cards(top_cards, selected_positions)
     if not selected_cards:
+        return_top_cards(player, rest, rest_bottom=False, shuffle_rest=True)
         stack.state._log(f"{player.name}查看了牌库顶{len(top_cards)}张卡，没有选择能量。")
         return ActionResult(True, "未选择能量。")
     if not targets:
-        return ActionResult(False, "没有宝可梦可附着能量。")
+        return_top_cards(player, top_cards, rest_bottom=False, shuffle_rest=True)
+        return ActionResult(True, "没有宝可梦可附着能量。")
     target = targets[0][1]
     for card in selected_cards:
         target.energy_cards.append(card)
+    return_top_cards(player, rest, rest_bottom=False, shuffle_rest=True)
     stack.state._log(f"将{len(selected_cards)}张能量附着于{target.card.name}。")
     return ActionResult(True, f"附着了{len(selected_cards)}张能量。")
 
@@ -400,17 +462,18 @@ def resolve_look_top_attach_target(stack, continuation: dict, choice):
         int(index)
         for index in continuation.get("selected_top_positions", []) or []
     ]
-    selected_cards = return_top_cards_except_selected(
-        player,
-        top_cards,
-        selected_positions,
-        rest_bottom=False,
-        shuffle_rest=True,
-    )
+    selected_cards, rest = partition_top_cards(top_cards, selected_positions)
     for card in selected_cards:
         target.energy_cards.append(card)
+    return_top_cards(player, rest, rest_bottom=False, shuffle_rest=True)
     stack.state._log(f"将{len(selected_cards)}张能量附着于{target.card.name}。")
     return ActionResult(True, f"附着了{len(selected_cards)}张能量。")
+
+
+def _emit_zone_event(state, event_type: str, **data) -> None:
+    from engine.events.game_events import GameEvent
+
+    state.event_stream.push(GameEvent(event_type, data))
 
 
 def resolve_search_any_and_switch(stack, continuation: dict, choice):
