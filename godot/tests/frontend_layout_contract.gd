@@ -302,7 +302,6 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	var body := page.find_child("Body", true, false) as HBoxContainer
 	var top_bar := page.find_child("TopBar", true, false) as HBoxContainer
 	var page_frame := page.get_node("%Page") as VBoxContainer
-	var lan_page_top := top_bar.global_position.y
 	var description := page.get_node("%KindDescription") as Label
 	var tip := page.get_node("%IntroTip") as Label
 	var kind_label := page.get_node("%KindLabel") as Label
@@ -373,14 +372,10 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	page.call("refresh_fields", 0)
 	await _settle_layout(3)
 	_check(
-		absf(top_bar.global_position.y - lan_page_top) <= 2.0
-		and _rect_inside(page_frame.get_global_rect(), Rect2(Vector2.ZERO, root.size)),
-		"LAN/Relay role changes shifted or clipped the wide network page "
-		+ "(lan_y=%.1f relay_host_y=%.1f page=%s root=%s)" % [
-			lan_page_top,
-			top_bar.global_position.y,
-			page_frame.get_global_rect(),
-			root.size,
+		_rect_inside(page_frame.get_global_rect(), Rect2(Vector2.ZERO, root.size)),
+		"LAN/Relay role changes clipped the wide network page "
+		+ "(relay_host_y=%.1f page=%s root=%s)" % [
+			top_bar.global_position.y, page_frame.get_global_rect(), root.size,
 		],
 	)
 	page.queue_free()
@@ -958,14 +953,42 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		"DeckSelect.deck_count must expose every release deck",
 	)
 	var first_player_option := page.get_node("%FirstPlayerOption") as OptionButton
-	first_player_option.select(2)
 	var ai_mode_option := page.get_node("%AIModeOption") as OptionButton
+	var matchup_toggle := page.get_node("%TypeMatchupToggle") as CheckButton
 	_check(
-		ai_mode_option.item_count == 2
+		ai_mode_option.item_count == 1
 		and str(ai_mode_option.get_item_metadata(0)) == "challenge"
-		and str(ai_mode_option.get_item_metadata(1)) == "deep",
-		"DeckSelect AIModeOption metadata changed",
+		and ai_mode_option.disabled,
+		"DeckSelect must expose only the Challenge AI release mode",
 	)
+	_check(
+		first_player_option.item_count == 1
+		and int(first_player_option.get_item_metadata(0)) == -1
+		and first_player_option.disabled,
+		"DeckSelect must defer turn order to the setup coin winner",
+	)
+	_check(
+		not matchup_toggle.button_pressed
+		and matchup_toggle.text.contains("已关闭")
+		and matchup_toggle.tooltip_text.contains("项目默认")
+		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
+			DesignTokens.TEXT_MUTED
+		),
+		"DeckSelect must present an explicit, visually distinct disabled matchup state",
+	)
+	matchup_toggle.set_pressed_no_signal(true)
+	matchup_toggle.toggled.emit(true)
+	_check(
+		matchup_toggle.text.contains("已开启")
+		and matchup_toggle.tooltip_text.contains("当前已开启")
+		and matchup_toggle.accessibility_name.contains("已开启")
+		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
+			DesignTokens.GREEN
+		),
+		"DeckSelect matchup toggle did not expose its enabled text, color, and accessible state",
+	)
+	matchup_toggle.set_pressed_no_signal(false)
+	matchup_toggle.toggled.emit(false)
 	var gallery_scroll := page.get_node("%GalleryScroll") as ScrollContainer
 	var detail_title := page.get_node("%DetailTitle") as Label
 	gallery_scroll.scroll_vertical = 37
@@ -977,10 +1000,8 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		"scroll": gallery_scroll.scroll_vertical,
 		"detail": detail_title.text,
 	}
-	ai_mode_option.select(1)
-	ai_mode_option.item_selected.emit(1)
 	_check(
-		str(page.get("mode")) == "deep"
+		str(page.get("mode")) == "challenge"
 		and page.call("selected_deck_key", 0) == preserved_state["first"]
 		and page.call("selected_deck_key", 1) == preserved_state["second"]
 		and page.get("_active_player_idx") == preserved_state["active"]
@@ -988,7 +1009,7 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 		and gallery_scroll.scroll_vertical == preserved_state["scroll"]
 		and detail_title.text == preserved_state["detail"]
 		and page.get_viewport().gui_get_focus_owner() == null,
-		"DeckSelect AI switch reset deck, slot, turn, scroll, detail, or created focus",
+		"DeckSelect release AI configuration reset deck, slot, turn, scroll, detail, or created focus",
 	)
 	_deck_start_payload.clear()
 	var callback := Callable(self, "_on_deck_start_requested")
@@ -997,7 +1018,7 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 	var start_button := page.get_node("%StartButton") as Button
 	start_button.pressed.emit()
 	_check(
-		_deck_start_payload == ["deep", deck_key, deck_key, 1],
+		_deck_start_payload == ["challenge", deck_key, deck_key, -1, false],
 		"DeckSelect.start_requested argument order/forced_first changed: %s" % [
 			_deck_start_payload,
 		],
@@ -1009,12 +1030,14 @@ func _on_deck_start_requested(
 	first_deck_key: String,
 	second_deck_key: String,
 	forced_first_player: int,
+	apply_type_matchups: bool,
 ) -> void:
 	_deck_start_payload = [
 		mode,
 		first_deck_key,
 		second_deck_key,
 		forced_first_player,
+		apply_type_matchups,
 	]
 
 
@@ -1026,6 +1049,29 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		return
 	var kind := "lan" if viewport_size.x in [1280, 2000] else "relay"
 	page.call("configure", catalog, kind, "wss://relay.example.test/a/very/long/path")
+	var matchup_toggle := page.get_node("%TypeMatchupToggle") as CheckButton
+	_check(
+		not matchup_toggle.button_pressed
+		and matchup_toggle.text.contains("已关闭")
+		and matchup_toggle.text.contains("房主可修改")
+		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
+			DesignTokens.TEXT_MUTED
+		),
+		"Network host must see the default disabled matchup state explicitly",
+	)
+	matchup_toggle.set_pressed_no_signal(true)
+	matchup_toggle.toggled.emit(true)
+	_check(
+		matchup_toggle.text.contains("已开启")
+		and matchup_toggle.accessibility_name.contains("已开启")
+		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
+			DesignTokens.GREEN
+		),
+		"Network host matchup toggle did not expose its enabled visual state",
+	)
+	if kind != "relay":
+		matchup_toggle.set_pressed_no_signal(false)
+		matchup_toggle.toggled.emit(false)
 	for control_name in [
 		"NetworkKindOption", "NetworkRoleOption", "NetworkAddressInput", "NetworkPortInput",
 		"NetworkRoomInput", "NetworkDeckOption",
@@ -1039,6 +1085,30 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		var role_option := page.get_node("%NetworkRoleOption") as OptionButton
 		role_option.select(1)
 		page.call("refresh_fields", 1)
+		_check(
+			matchup_toggle.disabled
+			and not matchup_toggle.button_pressed
+			and matchup_toggle.text.contains("等待房主同步")
+			and matchup_toggle.text.contains("只读"),
+			"Network challenger must see a distinct read-only pending state without a stale host value",
+		)
+		page.call("show_locked_rules_options", {"apply_type_matchups": true})
+		_check(
+			matchup_toggle.disabled
+			and matchup_toggle.button_pressed
+			and matchup_toggle.text.contains("已开启")
+			and matchup_toggle.text.contains("房主已锁定")
+			and matchup_toggle.get_theme_color(&"font_disabled_color").is_equal_approx(
+				DesignTokens.GREEN
+			),
+			"Network challenger must see the host-locked enabled matchup state explicitly",
+		)
+		page.call("set_connection_state", 1)
+		_check(
+			not matchup_toggle.button_pressed
+			and matchup_toggle.text.contains("等待房主同步"),
+			"Network challenger retry retained the previous room's locked matchup value",
+		)
 	page.call("set_connection_state", 5, "模拟连接错误")
 	var connect_button := page.get_node("%NetworkConnectButton") as Button
 	_check(
@@ -1234,6 +1304,17 @@ func _check_victory(viewport_size: Vector2i) -> void:
 	_check_named_non_overlapping(page, ["RematchButton", "TitleButton"], label)
 	_check_pointer_only_controls(page, label, _simulated_safe_rect(mounted.safe_host))
 	_check_no_horizontal_scroll(page, label)
+	page.call("configure", -1, 12, "", "", {
+		"mode": "challenge",
+		"result_status": GameState.RESULT_DRAW,
+	})
+	await _settle_layout()
+	_check(
+		(page.get_node("%WinnerLabel") as Label).text == "本局平局"
+		and (page.get_node("%ResultSubtitle") as Label).text.begins_with("DRAW")
+		and (page.get_node("%CardNameLabel") as Label).text.contains("无胜者"),
+		"Victory screen did not render DRAW as a distinct result without a winner",
+	)
 	_unmount(mounted)
 	await _settle_layout(2)
 

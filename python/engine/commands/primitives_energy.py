@@ -107,6 +107,8 @@ class EnergyAttach:
         filter_type = str(self.params.get("filter", "any") or "any")
         to_target = str(self.params.get("to", "self") or "self")
         optional = bool(self.params.get("optional", False))
+        select_source = bool(self.params.get("select_source", False))
+        same_target = bool(self.params.get("same_target", False))
         max_per_target = int(self.params.get("max_per_target", 99) or 99)
         bonus_applied = False
 
@@ -136,7 +138,10 @@ class EnergyAttach:
                     request_type="distribute_energy",
                     player=ctx.player_idx,
                     prompt=f"分配能量 — {zone_name}",
-                    card_list=list(energy_cards[:max_select]),
+                    # Expose every legal source entity.  ``max_select`` limits
+                    # how many may be attached; truncating this list silently
+                    # chose the first matching cards for the player.
+                    card_list=list(energy_cards),
                     target_info=targets_info,
                     distribute_mode="distribute",
                     min_select=min_select,
@@ -159,15 +164,14 @@ class EnergyAttach:
                 if optional:
                     return CommandResult.ok("无目标宝可梦。")
                 return CommandResult.fail("没有目标宝可梦。")
-            if optional_count:
+            if optional_count or select_source:
                 matching = self._matching_energy_cards(source_pool, filter_type)
-                energy_to_distribute = matching[:min(amount_to_attach, len(matching))]
                 target_slot = self._slot_for_pokemon(player, target)
                 return distribution(
-                    energy_to_distribute,
+                    matching,
                     [{"slot": target_slot, "name": target.card.name}],
                     min_select=min_attach,
-                    max_select=len(energy_to_distribute),
+                    max_select=min(amount_to_attach, len(matching)),
                     max_per_target=amount_to_attach,
                     same_target=True,
                 )
@@ -183,18 +187,31 @@ class EnergyAttach:
             if len(bench_slots) == 1:
                 target_slot = f"bench_{bench_slots[0][0]}"
                 target = player.get_pokemon(target_slot)
-                if optional_count:
+                if optional_count or select_source:
                     matching = self._matching_energy_cards(source_pool, filter_type)
-                    energy_to_distribute = matching[:min(min(amount, max_per_target), len(matching))]
                     return distribution(
-                        energy_to_distribute,
+                        matching,
                         [{"slot": target_slot, "name": target.card.name, "bench_idx": bench_slots[0][0]}],
                         min_select=min_attach,
-                        max_select=len(energy_to_distribute),
+                        max_select=min(amount, max_per_target, len(matching)),
                         max_per_target=max_per_target,
+                        same_target=True,
                     )
                 return attach_to_target(target, min(amount, max_per_target))
             if amount <= 1:
+                if select_source:
+                    matching = self._matching_energy_cards(source_pool, filter_type)
+                    return distribution(
+                        matching,
+                        [
+                            {"slot": f"bench_{index}", "name": pokemon.card.name, "bench_idx": index}
+                            for index, pokemon in bench_slots
+                        ],
+                        min_select=min_attach,
+                        max_select=min(amount, len(matching)),
+                        max_per_target=max_per_target,
+                        same_target=True,
+                    )
                 return CommandResult.ok(
                     "选择备战宝可梦附着能量。",
                     pending_choice=ActionRequest(
@@ -222,13 +239,13 @@ class EnergyAttach:
                 for index, pokemon in bench_slots
             ]
             capacity = max(0, len(targets_info) * max_per_target)
-            energy_to_distribute = matching[:min(amount, capacity)]
             return distribution(
-                energy_to_distribute,
+                matching,
                 targets_info,
-                min_select=min_attach if optional_count else len(energy_to_distribute),
-                max_select=len(energy_to_distribute),
+                min_select=min_attach if optional_count else min(amount, capacity, len(matching)),
+                max_select=min(amount, capacity, len(matching)),
                 max_per_target=max_per_target,
+                same_target=same_target,
             )
 
         if to_target in {"any", "self_basic"}:
@@ -244,14 +261,13 @@ class EnergyAttach:
                 return CommandResult.ok(message) if optional else CommandResult.fail(message)
             if len(candidates) == 1:
                 return attach_to_target(candidates[0][1], amount)
-            if optional_count:
+            if optional_count or select_source:
                 matching = self._matching_energy_cards(source_pool, filter_type)
-                energy_to_distribute = matching[:min(amount, len(matching))]
                 return distribution(
-                    energy_to_distribute,
+                    matching,
                     [{"slot": slot_name, "name": pokemon.card.name} for slot_name, pokemon in candidates],
                     min_select=min_attach,
-                    max_select=len(energy_to_distribute),
+                    max_select=min(amount, len(matching)),
                     max_per_target=amount,
                     same_target=True,
                 )
@@ -382,6 +398,8 @@ class AttachEnergyFromDiscard:
         target_spec = str(self.params.get("target", "self") or "self")
         target_pokemon_type = str(self.params.get("target_pokemon_type", "") or "")
         optional_count = bool("min_select" in self.params or self.params.get("optional", False))
+        select_source = bool(self.params.get("select_source", False))
+        same_target = bool(self.params.get("same_target", False))
 
         matching = self._matching_discard_energy(player.discard, energy_type)
         count = min(amount, len(matching))
@@ -409,7 +427,7 @@ class AttachEnergyFromDiscard:
                     request_type="distribute_energy",
                     player=ctx.player_idx,
                     prompt="分配能量 — 弃牌区",
-                    card_list=list(energy_cards[:max_select]),
+                    card_list=list(energy_cards),
                     target_info=targets_info,
                     distribute_mode="distribute",
                     min_select=min_select,
@@ -431,9 +449,9 @@ class AttachEnergyFromDiscard:
                 return CommandResult.fail("没有战斗宝可梦。")
             if not self._pokemon_matches_target_type(target_pokemon, target_pokemon_type):
                 return CommandResult.ok("没有符合条件的附着目标。")
-            if optional_count:
+            if optional_count or select_source or len(matching) > count:
                 return request_distribution(
-                    matching[:count],
+                    matching,
                     [{"slot": "active", "name": target_pokemon.card.name}],
                     min_select=min_attach,
                     max_select=count,
@@ -452,44 +470,26 @@ class AttachEnergyFromDiscard:
                 return CommandResult.ok("备战区无符合条件的宝可梦。")
             if len(bench_slots) == 1:
                 bench_index, target_pokemon = bench_slots[0]
-                if optional_count:
+                if optional_count or select_source or len(matching) > count:
                     return request_distribution(
-                        matching[:count],
+                        matching,
                         [{"slot": f"bench_{bench_index}", "name": target_pokemon.card.name, "bench_idx": bench_index}],
                         min_select=min_attach,
                         max_select=count,
                         max_per_target=count,
+                        same_target=True,
                     )
                 return self._attach_immediate(ctx, matching, count, target_pokemon, energy_type)
-            if count <= 1:
-                return CommandResult.ok(
-                    "选择备战宝可梦附着能量。",
-                    pending_choice=ActionRequest(
-                        request_type="select_own_bench_energy",
-                        player=ctx.player_idx,
-                        prompt="选择1只备战宝可梦附着能量。",
-                        min_select=0 if optional_count else 1,
-                        max_select=1,
-                        bench_indices=[index for index, _pokemon in bench_slots],
-                        can_cancel=optional_count,
-                        continuation={
-                            "kind": "attach_discard_energy_to_bench",
-                            "player_idx": ctx.player_idx,
-                            "count": count,
-                            "energy_type": energy_type,
-                        },
-                    ),
-                )
-            energy_to_distribute = matching[:count]
             targets_info = [
                 {"slot": f"bench_{index}", "name": pokemon.card.name, "bench_idx": index}
                 for index, pokemon in bench_slots
             ]
             return request_distribution(
-                energy_to_distribute,
+                matching,
                 targets_info,
-                min_select=min_attach if optional_count else len(energy_to_distribute),
-                max_select=len(energy_to_distribute),
+                min_select=min_attach if optional_count else count,
+                max_select=count,
+                same_target=same_target,
             )
 
         if target_spec == "self_or_bench":
@@ -501,9 +501,9 @@ class AttachEnergyFromDiscard:
                     all_pokemon.append((f"bench_{index}", pokemon))
             if not all_pokemon:
                 return CommandResult.fail("没有目标宝可梦。")
-            if optional_count:
+            if optional_count or select_source or len(matching) > count:
                 return request_distribution(
-                    matching[:count],
+                    matching,
                     [{"slot": slot_name, "name": pokemon.card.name} for slot_name, pokemon in all_pokemon],
                     min_select=min_attach,
                     max_select=count,

@@ -17,7 +17,7 @@
     "any_pokemon_damage": {
       "args": {
         "amount": 40,
-        "piercing_on_bench": true,
+        "bench_skips_type_matchups": true,
         "player": "opponent"
       },
       "branches": {},
@@ -41,6 +41,8 @@
         "amount": 2,
         "energy_type": "basic",
         "min_select": 0,
+        "same_target": true,
+        "select_source": true,
         "target": "bench"
       },
       "branches": {},
@@ -74,6 +76,15 @@
       "args": {},
       "branches": {},
       "op": "fail_attack"
+    },
+    "attack_flags": {
+      "args": {
+        "ignore_defender_damage_effects": true,
+        "ignore_resistance": true,
+        "ignore_weakness": true
+      },
+      "branches": {},
+      "op": "set_attack_flags"
     },
     "attack_lock_basic": {
       "args": {
@@ -226,7 +237,7 @@
     },
     "conditional_status": {
       "args": {
-        "condition": "ko_by_attack_last_turn",
+        "condition": "ko_by_attack_damage_last_turn",
         "status": "paralyzed",
         "target": "opponent_active"
       },
@@ -655,15 +666,6 @@
       "branches": {},
       "op": "mill_then_damage"
     },
-    "piercing_marker": {
-      "args": {
-        "ignore_effects": true,
-        "ignore_resistance": true,
-        "ignore_weakness": true
-      },
-      "branches": {},
-      "op": "set_attack_flags"
-    },
     "place_counters_and_self_ko": {
       "args": {
         "counters": 2,
@@ -834,7 +836,7 @@
       "effect_type": "any_pokemon_damage",
       "params": {
         "amount": 40,
-        "piercing_on_bench": true,
+        "bench_skips_type_matchups": true,
         "player": "opponent"
       }
     },
@@ -855,6 +857,8 @@
         "amount": 2,
         "energy_type": "basic",
         "min_select": 0,
+        "same_target": true,
+        "select_source": true,
         "target": "bench"
       }
     },
@@ -872,6 +876,14 @@
     "attack_fail": {
       "effect_type": "attack_fail",
       "params": {}
+    },
+    "attack_flags": {
+      "effect_type": "attack_flags",
+      "params": {
+        "ignore_defender_damage_effects": true,
+        "ignore_resistance": true,
+        "ignore_weakness": true
+      }
     },
     "attack_lock_basic": {
       "effect_type": "attack_lock_basic",
@@ -1002,7 +1014,7 @@
     "conditional_status": {
       "effect_type": "conditional_status",
       "params": {
-        "condition": "ko_by_attack_last_turn",
+        "condition": "ko_by_attack_damage_last_turn",
         "status": "paralyzed",
         "target": "opponent_active"
       }
@@ -1246,14 +1258,6 @@
         "mill_count": 5
       }
     },
-    "piercing_marker": {
-      "effect_type": "piercing_marker",
-      "params": {
-        "ignore_effects": true,
-        "ignore_resistance": true,
-        "ignore_weakness": true
-      }
-    },
     "place_counters_and_self_ko": {
       "effect_type": "place_counters_and_self_ko",
       "params": {
@@ -1383,6 +1387,7 @@
     "attach_from_discard",
     "attack_damage_formula",
     "attack_fail",
+    "attack_flags",
     "attack_lock_basic",
     "aura_damage_boost",
     "aura_damage_reduction",
@@ -1433,7 +1438,6 @@
     "look_top_attach_energy",
     "look_top_deck",
     "mill_and_damage_per_energy",
-    "piercing_marker",
     "place_counters_and_self_ko",
     "potion_heal",
     "prevent_all",
@@ -1472,11 +1476,11 @@
   "schema": {
     "encoder_version": 3,
     "godot_action_version": 3,
-    "godot_rules_version": 3,
+    "godot_rules_version": 4,
     "planner_version": 1,
-    "protocol_version": 3,
+    "protocol_version": 4,
     "python_action_version": 2,
-    "python_rules_version": 2
+    "python_rules_version": 3
   },
   "vm": {
     "command_shape": [
@@ -1484,9 +1488,9 @@
       "args",
       "branches"
     ],
-    "ir_version": 1,
+    "ir_version": 2,
     "legacy_effect_type_args_allowed": false,
     "runtime_effect_source": "compiled_effects"
   },
-  "vm_version": 1
+  "vm_version": 2
 }

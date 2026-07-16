@@ -45,6 +45,7 @@ from engine.effects.runtime_effects import (
     attack_runtime_effects,
     trainer_runtime_effects,
 )
+from engine.energy_view import EnergyView
 
 
 CARD_BUCKET_COUNT = 4096
@@ -944,8 +945,9 @@ class ActionStateEncoder:
         card = pokemon.card
         attacks = getattr(card, "attacks", []) or []
         status_count = len(getattr(pokemon, "status_conditions", []) or [])
-        available_energy = list(getattr(pokemon, "available_energy", []) or [])
-        energy_counts = [_norm(available_energy.count(t), 4.0) for t in ENERGY_TYPES]
+        energy_view = EnergyView.from_pokemon(pokemon)
+        available_energy = energy_view.available_types
+        energy_counts = [_norm(energy_view.count(t), 4.0) for t in ENERGY_TYPES]
         attack_missing = [self._missing_energy_count(pokemon, getattr(atk, "cost", []) or []) for atk in attacks]
         ready_attacks = sum(1 for missing in attack_missing if missing <= 0)
         best_missing = min(attack_missing or [0])
@@ -1215,19 +1217,7 @@ class ActionStateEncoder:
         return features
 
     def _missing_energy_count(self, pokemon, cost: list[str]) -> int:
-        available = list(getattr(pokemon, "available_energy", []) or [])
-        missing = 0
-        for required in cost:
-            if required == "Colorless":
-                continue
-            if required in available:
-                available.remove(required)
-            elif "Rainbow" in available:
-                available.remove("Rainbow")
-            else:
-                missing += 1
-        colorless = sum(1 for c in cost if c == "Colorless")
-        return missing + max(0, colorless - len(available))
+        return EnergyView.from_pokemon(pokemon).missing_count(cost)
 
     def _best_missing_energy(self, pokemon) -> int:
         if pokemon is None:

@@ -16,11 +16,13 @@ class EndScreen(Screen):
     """游戏结束画面."""
 
     def __init__(self, manager: ScreenManager, winner_idx: int,
-                 win_reason: str, prizes_taken: tuple[int, int]):
+                 win_reason: str, prizes_taken: tuple[int, int],
+                 *, result_status: str = "WIN"):
         super().__init__(manager)
         self.winner_idx = winner_idx
         self.win_reason = win_reason
         self.prizes_taken = prizes_taken
+        self.result_status = str(result_status or "WIN").upper()
         self.font_title = get_font("title_xl")
         self.font_body = get_font("subtitle")
         self.font_small = get_font("body_md")
@@ -36,7 +38,10 @@ class EndScreen(Screen):
         self.quit_hover = False
 
         self._time = 0.0
-        self.winner_color = PLAYER1_COLOR if winner_idx == 0 else PLAYER2_COLOR
+        if self.result_status == "DRAW":
+            self.winner_color = UI_TEXT_PRIMARY
+        else:
+            self.winner_color = PLAYER1_COLOR if winner_idx == 0 else PLAYER2_COLOR
 
         # Victory confetti particles (simple golden dots)
         self._particles = []
@@ -123,7 +128,11 @@ class EndScreen(Screen):
 
         # Winner text with scale bounce effect
         bounce_scale = 1.0 + 0.05 * math.sin(self._time * 3.0)
-        winner_text = f"玩家{self.winner_idx + 1} 获胜！"
+        winner_text = (
+            "本局平局"
+            if self.result_status == "DRAW"
+            else f"玩家{self.winner_idx + 1} 获胜！"
+        )
         title_font_size = int(64 * bounce_scale)
         try:
             title_font = get_font_size(title_font_size, bold=True)
@@ -140,14 +149,15 @@ class EndScreen(Screen):
         for dx, dy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2)]:
             surface.blit(glow_surf, glow_surf.get_rect(center=(SCREEN_WIDTH // 2 + dx, SCREEN_HEIGHT // 3 + dy)))
 
+        reason_label = "平局原因" if self.result_status == "DRAW" else "胜利方式"
         reason_txt = self.font_body.render(
-            f"胜利方式: {self.win_reason}", True, UI_TEXT_PRIMARY
+            f"{reason_label}: {self.win_reason}", True, UI_TEXT_PRIMARY
         )
         reason_rect = reason_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 60))
         surface.blit(reason_txt, reason_rect)
 
         prizes_txt = self.font_small.render(
-            f"奖品卡获得 - 玩家1: {self.prizes_taken[0]}张 | 玩家2: {self.prizes_taken[1]}张",
+            f"奖赏卡获得 - 玩家1: {self.prizes_taken[0]}张 | 玩家2: {self.prizes_taken[1]}张",
             True, UI_TEXT_PRIMARY
         )
         prizes_rect = prizes_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 100))

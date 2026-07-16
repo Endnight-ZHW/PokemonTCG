@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 from engine.rules_constants import MAX_BENCH_SIZE, PRIZE_CARDS
 from engine.enums import StatusType
+from engine.energy_view import EnergyView
 
 
 @dataclass
@@ -26,6 +27,8 @@ class PokemonInPlay:
     max_hp_modifiers: list[dict] = field(default_factory=list)
     used_abilities: set[str] = field(default_factory=set)
     paralyzed_since_turn: int = 0  # Track which turn paralysis was applied for correct duration
+    healed_this_turn: bool = False
+    pending_ko_cause: str = ""
 
     @property
     def current_hp(self) -> int:
@@ -41,25 +44,7 @@ class PokemonInPlay:
     @property
     def available_energy(self) -> list[str]:
         """All energy types provided by cards in energy_cards (unified list)."""
-        result = []
-        for card in self.energy_cards:
-            provided = list(card.provides_energy)
-            for effect in getattr(card, "energy_effects", []) or []:
-                if (
-                    effect.get("kind") == "provide_energy"
-                    and effect.get("downgrade_if_other_special")
-                ):
-                    has_other_special = any(
-                        other is not card and other.is_special_energy
-                        for other in self.energy_cards
-                    )
-                    if has_other_special:
-                        provided = [
-                            "Colorless" if energy == "Rainbow" else energy
-                            for energy in provided
-                        ]
-            result.extend(provided)
-        return result
+        return EnergyView.from_pokemon(self).available_types
 
     def has_special_energy(self, api_id: str) -> bool:
         """Check if a specific special energy card is attached."""
@@ -81,22 +66,23 @@ class PokemonInPlay:
         Colorless costs can be paid by any energy type.
         Rainbow providers can pay for any type. Provider-specific downgrade
         rules are applied by available_energy."""
-        available = self.available_energy
+        return EnergyView.from_pokemon(self).can_pay(cost)
 
-        # Match specific (non-Colorless) requirements first
-        for required in cost:
-            if required == "Colorless":
-                continue
-            if required in available:
-                available.remove(required)
-            elif "Rainbow" in available:
-                available.remove("Rainbow")
-            else:
-                return False
+    def clear_special_conditions_and_attack_effects(self) -> None:
+        """Clear effects removed by evolving or leaving the Active Spot.
 
-        # Remaining energy must cover Colorless requirements
-        colorless_count = sum(1 for c in cost if c == "Colorless")
-        return len(available) >= colorless_count
+        Damage, attached cards, evolution history, and once-per-turn ability
+        use are deliberately preserved.  Promotion from the Bench does not
+        call this method because it is not a move out of the Active Spot.
+        """
+        self.status_conditions.clear()
+        self.damage_prevented_next_turn = False
+        self.all_prevented_next_turn = False
+        self.outgoing_damage_reduction_next_turn = 0
+        self.attack_locked = False
+        self.attack_locked_names.clear()
+        self.dazzled = False
+        self.paralyzed_since_turn = 0
 
 
 class PlayerState:
@@ -124,6 +110,9 @@ class PlayerState:
 
         # Track if a Pokemon was KO'd by attack damage last turn (for 愤怒冷冻 etc.)
         self.was_ko_by_attack: bool = False
+        # Broader official condition used by cards which only say that one of
+        # your Pokemon was Knocked Out during the opponent's previous turn.
+        self.was_ko_last_turn: bool = False
 
         # Shuffle animation callback
         self.on_shuffle: callable = None
@@ -246,8 +235,9 @@ class PlayerState:
         old_active = self.active
         old_bench = self.bench[bench_idx]
 
-        # Clear status conditions on retreat
-        old_active.status_conditions.clear()
+        # Special Conditions and effects of attacks end when a Pokemon moves
+        # out of the Active Spot, whether by retreat or by another effect.
+        old_active.clear_special_conditions_and_attack_effects()
 
         # Swap
         self.bench[bench_idx] = old_active
@@ -307,14 +297,14 @@ class PlayerState:
         if active is None or retreat_cost <= 0:
             return
 
-        from engine.rules_validator import energy_card_units
+        energy_view = EnergyView.from_pokemon(active)
 
         if energy_indices is None:
             chosen: list[int] = []
             paid = 0
             for index in range(len(active.energy_cards) - 1, -1, -1):
                 chosen.append(index)
-                paid += energy_card_units(active.energy_cards[index], active)
+                paid += energy_view.card_unit_count(index)
                 if paid >= retreat_cost:
                     break
         else:
@@ -339,8 +329,8 @@ class PlayerState:
         old_card = target.card
         target.card = evolution_card
 
-        # Clear status conditions on evolution
-        target.status_conditions.clear()
+        # Evolution removes Special Conditions and effects of attacks.
+        target.clear_special_conditions_and_attack_effects()
 
         # Reset evolution flag
         target.can_evolve_this_turn = False
@@ -366,6 +356,7 @@ class PlayerState:
             pokemon.placed_this_turn = False
             pokemon.can_evolve_this_turn = True
             pokemon.used_abilities.clear()
+            pokemon.healed_this_turn = False
             # These effects protect this Pokemon during the opponent's next
             # turn. If they were not consumed, they expire when its controller
             # starts a new turn.

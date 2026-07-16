@@ -65,6 +65,7 @@
       "attach_from_discard": "attach_energy_from_discard",
       "attack_damage_formula": "deal_damage",
       "attack_fail": "fail_attack",
+      "attack_flags": "set_attack_flags",
       "attack_lock_basic": "apply_attack_lock_basic",
       "aura_damage_boost": "register_aura_damage_boost",
       "aura_damage_reduction": "register_aura_damage_reduction",
@@ -116,7 +117,6 @@
       "look_top_attach_energy": "look_top_attach_energy",
       "look_top_deck": "look_top_deck",
       "mill_and_damage_per_energy": "mill_then_damage",
-      "piercing_marker": "set_attack_flags",
       "place_counters_and_self_ko": "place_counters_then_self_ko",
       "potion_heal": "choose_heal_damage",
       "prevent_all": "prevent_all",
@@ -159,6 +159,7 @@
       "attach_from_discard",
       "attack_damage_formula",
       "attack_fail",
+      "attack_flags",
       "attack_lock_basic",
       "aura_damage_boost",
       "aura_damage_reduction",
@@ -210,7 +211,6 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_and_damage_per_energy",
-      "piercing_marker",
       "place_counters_and_self_ko",
       "potion_heal",
       "prevent_all",
@@ -321,6 +321,7 @@
       "attach_from_discard",
       "attack_damage_formula",
       "attack_fail",
+      "attack_flags",
       "attack_lock_basic",
       "aura_damage_boost",
       "aura_damage_reduction",
@@ -371,7 +372,6 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_and_damage_per_energy",
-      "piercing_marker",
       "place_counters_and_self_ko",
       "potion_heal",
       "prevent_all",
@@ -807,7 +807,7 @@
       "set_attack_flags": {
         "classification": "effect_compiler",
         "effect_types": [
-          "piercing_marker"
+          "attack_flags"
         ]
       },
       "shuffle_from_discard_to_deck": {
@@ -1260,6 +1260,7 @@
       "arven",
       "attach_from_discard",
       "attack_fail",
+      "attack_flags",
       "attack_lock_basic",
       "aura_damage_boost",
       "aura_damage_reduction",
@@ -1301,7 +1302,6 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_and_damage_per_energy",
-      "piercing_marker",
       "place_counters_and_self_ko",
       "prevent_all",
       "reactive_thorns",
@@ -1316,6 +1316,6 @@
       "trekking_shoes",
       "zinnia_resolve"
     ],
-    "transaction_step_count": 30
+    "transaction_step_count": 31
   }
 }

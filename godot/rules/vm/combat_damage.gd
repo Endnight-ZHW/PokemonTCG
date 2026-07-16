@@ -17,9 +17,14 @@ func deal_attack_or_effect_damage(
 	if (
 		bool(stack.context.get("finish_attack", false))
 		and target_player_idx == 1 - attacker_idx
-		and slot == "active"
 	):
-		stack.context["base_damage"] = int(stack.context.get("base_damage", 0)) + max(0, amount)
+		var packets: Array = stack.context.get("damage_packets", [])
+		packets.append({
+			"target_player": target_player_idx,
+			"target_slot": slot,
+			"amount": max(0, amount),
+		})
+		stack.context["damage_packets"] = packets
 		return VMResult.ok("攻击伤害已加入结算。")
 	return deal_damage(
 		state,
@@ -66,6 +71,17 @@ func deal_damage(
 		return VMResult.ok()
 	var applied_amount := applied_counters * DAMAGE_PER_COUNTER
 	pokemon.damage_counters += applied_counters
+	if stack != null:
+		var source_kind := str(stack.context.get("effect_source_kind", "effect"))
+		if bool(stack.context.get("finish_attack", false)):
+			source_kind = "attack_effect"
+		var causes: Dictionary = stack.context.get("knockout_causes", {})
+		causes["%d:%s" % [player_idx, slot]] = {
+			"source_kind": source_kind,
+			"cause_kind": "damage",
+			"source_player": source_player_idx,
+		}
+		stack.context["knockout_causes"] = causes
 	events.append({"event_type": "damage_dealt", "data": {
 		"player": player_idx, "slot": slot, "amount": applied_amount,
 	}})
@@ -88,6 +104,7 @@ func heal_pokemon(
 	pokemon.damage_counters -= healed
 	if healed > 0:
 		player.healed_this_turn = true
+		pokemon.healed_this_turn = true
 		events.append({"event_type": "healed", "data": {
 			"player": player_idx, "slot": slot, "amount": healed * DAMAGE_PER_COUNTER,
 		}})
@@ -105,10 +122,15 @@ func selected_target_damage(
 ) -> Dictionary:
 	if selected.is_empty():
 		return VMResult.fail("没有选择目标。")
-	return deal_damage(
-		state, target_player,
+	return deal_attack_or_effect_damage(
+		state,
+		stack,
+		source_player,
+		target_player,
 		str(selected[0].get("value", {}).get("slot", "")),
-		amount, events, true, stack, source_player)
+		amount,
+		events,
+	)
 
 
 func selected_bench_damage(
@@ -125,7 +147,6 @@ func selected_bench_damage(
 	for option in selected:
 		var slot := str(option.get("value", {}).get("slot", ""))
 		if slot.begins_with("bench_"):
-			deal_damage(
-				state, target_player, slot, amount, events,
-				true, stack, source_player)
+			deal_attack_or_effect_damage(
+				state, stack, source_player, target_player, slot, amount, events)
 	return VMResult.ok("备战伤害已结算。")

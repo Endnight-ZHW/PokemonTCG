@@ -94,7 +94,7 @@ def _award_prizes_for_effect_ko(state, knocked_player_idx: int, pokemon) -> None
         if prize_taker.prizes:
             prize_taker.take_prize()
             state._log(
-                f"{prize_taker.name}获得了奖品卡！"
+                f"{prize_taker.name}获得了奖赏卡！"
                 f"（剩余{len(prize_taker.prizes)}张）"
             )
 
@@ -107,8 +107,15 @@ def _set_promotion_or_game_over(state, player_idx: int) -> None:
     if player.active is not None:
         return
     if not player.has_any_pokemon_in_play():
-        state.winner = 1 - player_idx
-        state.phase = TurnPhase.GAME_OVER
+        state.set_result(
+            "WIN",
+            winner=1 - player_idx,
+            reason="RULE_CONDITIONS",
+            conditions=[
+                [] if index == 1 - player_idx else ["NO_POKEMON_IN_PLAY"]
+                for index in (0, 1)
+            ],
+        )
         state._log(f"{opponent.name}获胜——对手场上没有宝可梦了！")
         return
     state.pending_promotion_player = player_idx
@@ -128,6 +135,14 @@ def _handle_effect_ko_if_needed(
     knocked = _discard_pokemon_for_effect(state, player_idx, slot)
     if knocked is None:
         return
+    cause = str(getattr(knocked, "pending_ko_cause", "") or "attack_effect")
+    state.record_knockout_fact(
+        owner=player_idx,
+        cause=cause,
+        source_player=state.active_player_idx,
+        card_id=getattr(knocked.card, "api_id", ""),
+        slot=slot,
+    )
     ko_slots.append(f"p{player_idx}_{slot}")
     state._log(f"{state.get_player(player_idx).name}的{knocked.card.name}被击倒了！")
     _award_prizes_for_effect_ko(state, player_idx, knocked)
@@ -135,8 +150,7 @@ def _handle_effect_ko_if_needed(
 
     winner = check_win_condition(state)
     if winner is not None:
-        state.winner = winner
-        state.phase = TurnPhase.GAME_OVER
+        state.set_result("WIN", winner=winner, reason="RULE_CONDITIONS")
         state._log(f"{state.get_player(winner).name}获胜！")
         return
     if slot == "active":
@@ -152,8 +166,9 @@ def _queue_or_apply_opponent_active_damage(
     log_msg: str = "",
     result_msg: str = "",
     prevent_msg: str = "伤害被免疫。",
-    ignore_defender_effects: bool = False,
-    piercing: bool = False,
+    ignore_defender_damage_effects: bool = False,
+    ignore_weakness: bool = False,
+    ignore_resistance: bool = False,
     stack=None,
 ):
     from engine.game_state import ActionResult
@@ -168,8 +183,11 @@ def _queue_or_apply_opponent_active_damage(
         set_attack_damage_flags(
             state,
             stack=stack,
-            piercing=True if piercing else None,
-            ignore_defender_effects=True if ignore_defender_effects else None,
+            ignore_weakness=True if ignore_weakness else None,
+            ignore_resistance=True if ignore_resistance else None,
+            ignore_defender_damage_effects=(
+                True if ignore_defender_damage_effects else None
+            ),
         )
         if log_msg:
             state._log(log_msg)
@@ -177,7 +195,7 @@ def _queue_or_apply_opponent_active_damage(
 
     defender = opponent.active
     if (
-        not ignore_defender_effects
+        not ignore_defender_damage_effects
         and _consume_effect_damage_prevention(state, defender, stack=stack)
     ):
         return ActionResult(True, prevent_msg)
@@ -199,12 +217,15 @@ class DealDamage:
 
     target: 'opponent_active', 'opponent_bench', 'self', 'any_opponent'
     amount: fixed damage value (use formula for dynamic damage)
-    piercing: if True, ignores weakness/resistance/effects
+    ignore flags independently control Weakness, Resistance, and defensive
+    damage effects.
     spread_count: for bench/any targets, number of pokemon to hit
     """
     amount: int = 0
     target: str = "opponent_active"
-    piercing: bool = False
+    ignore_weakness: bool = False
+    ignore_resistance: bool = False
+    ignore_defender_damage_effects: bool = False
     spread_count: int = 1
     formula: str = ""
     formula_ast: Any = None
@@ -240,8 +261,9 @@ class DealDamage:
                 damage,
                 msg,
                 msg,
-                ignore_defender_effects=self.piercing,
-                piercing=self.piercing,
+                ignore_defender_damage_effects=self.ignore_defender_damage_effects,
+                ignore_weakness=self.ignore_weakness,
+                ignore_resistance=self.ignore_resistance,
                 stack=ctx.stack,
             )
             if action_result is None:
@@ -258,8 +280,11 @@ class DealDamage:
             slot = ctx.source_slot
             active = ctx.player.get_pokemon(slot) or ctx.player.active
             if active:
+                before_hp = active.current_hp
                 counters = damage // DAMAGE_PER_COUNTER
                 active.damage_counters += counters
+                if damage > 0 and before_hp > 0 and active.current_hp <= 0:
+                    active.pending_ko_cause = "attack_effect"
                 result.damage_dealt = damage
                 ctx.state._log(f"{active.card.name}自身受到{damage}点伤害。")
                 result.log_message = f"自身伤害: {damage}"
@@ -294,15 +319,8 @@ class DealDamage:
         return result
 
     def _consume_condition_if_needed(self, ctx: ResolutionContext) -> None:
-        condition = str(self.consume_condition or "")
-        if condition == "ko_by_attack_last_turn":
-            try:
-                from engine.commands.formula_ast import condition_applies
-
-                if condition_applies(condition, ctx):
-                    ctx.player.was_ko_by_attack = False
-            except ValueError:
-                return
+        # Previous-turn KO facts are immutable for the whole response turn.
+        return
 
 
 @dataclass
@@ -391,27 +409,23 @@ class DealDamageFormula:
         count_from = str(params.get("count_from", "self") or "self")
         energy_count = 0
         if count_from == "opponent_active":
-            energy_count = len(ctx.opponent.active.energy_cards) if ctx.opponent.active else 0
+            from engine.energy_view import EnergyView
+            energy_count = EnergyView.from_pokemon(ctx.opponent.active).total_units
         elif count_from == "all_opponent":
+            from engine.energy_view import EnergyView
             for _slot, pokemon in ctx.opponent.get_all_pokemon():
                 if pokemon is not None:
-                    energy_count += len(pokemon.energy_cards)
+                    energy_count += EnergyView.from_pokemon(pokemon).total_units
         else:
+            from engine.energy_view import EnergyView
             source = ctx.player.get_pokemon(ctx.source_slot) or ctx.player.active
-            energy_count = len(source.energy_cards) if source else 0
+            energy_count = EnergyView.from_pokemon(source).total_units
         return int(params.get("base", 0) or 0) + energy_count * int(params.get("per_energy", 0) or 0)
 
     @staticmethod
     def _count_matching_energy(pokemon, energy_type: str) -> int:
-        if pokemon is None:
-            return 0
-        if energy_type in {"", "any"}:
-            return len(pokemon.energy_cards)
-        return sum(
-            1
-            for card in pokemon.energy_cards
-            if any(str(provided).lower() == energy_type for provided in card.provides_energy)
-        )
+        from engine.energy_view import EnergyView
+        return EnergyView.from_pokemon(pokemon).count(energy_type)
 
 
 @dataclass
@@ -430,7 +444,9 @@ class SetAttackDamageFormula:
             return CommandResult.fail("没有目标。")
 
         total = self._compute_total(ctx, attacker, defender)
-        ignore_defender_effects = bool(self.params.get("ignore_defender_effects", False))
+        ignore_defender_damage_effects = bool(
+            self.params.get("ignore_defender_damage_effects", False)
+        )
         from engine.commands.attack_frames import set_attack_damage_total
 
         attack_ctx_updated = set_attack_damage_total(
@@ -439,14 +455,15 @@ class SetAttackDamageFormula:
             ctx.opponent,
             total,
             stack=ctx.stack,
-            piercing=bool(self.params.get("piercing", False)),
-            ignore_defender_effects=ignore_defender_effects,
+            ignore_weakness=bool(self.params.get("ignore_weakness", False)),
+            ignore_resistance=bool(self.params.get("ignore_resistance", False)),
+            ignore_defender_damage_effects=ignore_defender_damage_effects,
         )
         if attack_ctx_updated:
             return CommandResult.ok("攻击伤害公式已设置。")
 
         if (
-            not ignore_defender_effects
+            not ignore_defender_damage_effects
             and _consume_effect_damage_prevention(ctx.state, defender, stack=ctx.stack)
         ):
             return CommandResult.ok("伤害被免疫。")
@@ -458,8 +475,9 @@ class SetAttackDamageFormula:
             defender,
             total,
             attacker_type,
-            piercing=bool(self.params.get("piercing", False)),
-            ignore_defender_effects=ignore_defender_effects,
+            ignore_weakness=bool(self.params.get("ignore_weakness", False)),
+            ignore_resistance=bool(self.params.get("ignore_resistance", False)),
+            ignore_defender_damage_effects=ignore_defender_damage_effects,
         )
         for log_msg in mod_logs:
             ctx.state._log(log_msg)
@@ -492,18 +510,18 @@ class SetAttackDamageFormula:
             str(condition_bonus.get("condition", "") or ""),
         ):
             total += int(condition_bonus.get("bonus", 0) or 0)
-            if (
-                str(condition_bonus.get("condition", "") or "") == "ko_by_attack_last_turn"
-                and bool(condition_bonus.get("consume", True))
-            ):
-                ctx.player.was_ko_by_attack = False
 
         return total
 
     @staticmethod
     def _condition_applies(ctx: ResolutionContext, defender, condition: str) -> bool:
-        if condition == "ko_by_attack_last_turn":
-            return bool(ctx.player.was_ko_by_attack)
+        if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+            return ctx.state.had_knockout_last_opponent_turn(
+                ctx.player_idx,
+                causes={"attack_damage"},
+            )
+        if condition == "ko_last_opponent_turn":
+            return ctx.state.had_knockout_last_opponent_turn(ctx.player_idx)
         if condition == "own_bench_damaged":
             return any(poke is not None and poke.damage_counters > 0 for poke in ctx.player.bench)
         if condition == "opponent_active_evolved":
@@ -516,14 +534,8 @@ class SetAttackDamageFormula:
 
     @staticmethod
     def _count_attached_energy_of_type(pokemon, energy_type: str) -> int:
-        if pokemon is None:
-            return 0
-        energy_type = str(energy_type or "").lower()
-        return sum(
-            1
-            for card in pokemon.energy_cards
-            if any(str(provided).lower() == energy_type for provided in card.provides_energy)
-        )
+        from engine.energy_view import EnergyView
+        return EnergyView.from_pokemon(pokemon).count(energy_type)
 
 
 @dataclass
@@ -537,7 +549,8 @@ class ConditionalDamageHeal:
 
         base = int(self.params.get("base", 60) or 0)
         bonus = int(self.params.get("bonus", 90) or 0)
-        healed_flag = bool(getattr(ctx.player, "healed_this_turn", False))
+        source = ctx.player.get_pokemon(ctx.source_slot) or ctx.player.active
+        healed_flag = bool(getattr(source, "healed_this_turn", False))
         total = base + (bonus if healed_flag else 0)
 
         if ctx.opponent.active is None:
@@ -589,6 +602,7 @@ class DamageAndSelfHeal:
             actual = min(source.damage_counters, heal_counters)
             source.damage_counters -= actual
             ctx.state._log(f"{source.card.name}回复了{actual * DAMAGE_PER_COUNTER}点HP。")
+            source.healed_this_turn = True
             ctx.player.healed_this_turn = True
 
         dealt = damage_result.damage_dealt if damage_result is not None else 0
@@ -626,9 +640,11 @@ class ConditionalDamageBonus:
                     )
                 )
 
-        if condition == "ko_by_attack_last_turn":
-            if ctx.player.was_ko_by_attack:
-                ctx.player.was_ko_by_attack = False
+        if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+            if ctx.state.had_knockout_last_opponent_turn(
+                ctx.player_idx,
+                causes={"attack_damage"},
+            ):
                 if ctx.opponent.active:
                     return _command_result_from_action_result(
                         _queue_or_apply_opponent_active_damage(
@@ -664,8 +680,9 @@ class ConditionalDamageBonus:
             ctx.state._log("对手战斗宝可梦不是进化宝可梦，挥落追加伤害不触发。")
 
         if condition == "field_energy_ge_5":
+            from engine.energy_view import EnergyView
             total_energy = sum(
-                len(poke.energy_cards)
+                EnergyView.from_pokemon(poke).total_units
                 for _slot_name, poke in ctx.player.get_all_pokemon()
                 if poke is not None
             )
@@ -855,11 +872,26 @@ class BenchDamage:
             return CommandResult.ok("No bench targets.")
 
         def apply_to_indices(selected_indices):
-            counters = int(self.amount or 0) // DAMAGE_PER_COUNTER
             hits = 0
             for index in list(selected_indices)[:actual_count]:
                 if 0 <= index < len(target_state.bench) and target_state.bench[index]:
-                    target_state.bench[index].damage_counters += counters
+                    target = target_state.bench[index]
+                    attacker = ctx.player.get_pokemon(ctx.source_slot) or ctx.player.active
+                    if attacker is None:
+                        continue
+                    from engine.commands.attack_frames import apply_attack_damage
+
+                    packet_result = CommandResult.ok()
+                    apply_attack_damage(
+                        ctx.state,
+                        target,
+                        attacker,
+                        int(self.amount or 0),
+                        attacker.card.energy_types[0] if attacker.card.energy_types else "Colorless",
+                        packet_result,
+                        ignore_weakness=True,
+                        ignore_resistance=True,
+                    )
                     hits += 1
             ctx.state._log(f"对{target_state.name}的备战区造成了{hits}次{self.amount}点伤害。")
             return hits
@@ -916,16 +948,27 @@ class ChooseDamageTarget:
             return CommandResult.ok("对手场上没有宝可梦。")
 
         def apply_damage(target_poke):
-            if _consume_effect_damage_prevention(
+            attacker = ctx.player.get_pokemon(ctx.source_slot) or ctx.player.active
+            if attacker is None:
+                return False
+            target_slot = next(
+                (slot for slot, pokemon in target_state.get_all_pokemon() if pokemon is target_poke),
+                "",
+            )
+            from engine.commands.attack_frames import apply_attack_damage
+
+            packet_result = CommandResult.ok()
+            apply_attack_damage(
                 ctx.state,
                 target_poke,
-                stack=ctx.stack,
-            ):
-                return False
-            counters = int(self.amount or 0) // DAMAGE_PER_COUNTER
-            target_poke.damage_counters += counters
-            ctx.state._log(f"对{target_poke.card.name}造成了{self.amount}点伤害。")
-            return True
+                attacker,
+                int(self.amount or 0),
+                attacker.card.energy_types[0] if attacker.card.energy_types else "Colorless",
+                packet_result,
+                ignore_weakness=target_slot.startswith("bench_"),
+                ignore_resistance=target_slot.startswith("bench_"),
+            )
+            return packet_result.damage_dealt > 0
 
         if len(targets) == 1:
             _slot_name, target_poke = targets[0]
@@ -983,7 +1026,10 @@ class PlaceCountersThenSelfKo:
             return CommandResult.ok("对手场上没有宝可梦。")
 
         def do_effect(slot_name, target_poke):
+            before_hp = target_poke.current_hp
             target_poke.damage_counters += int(self.counters or 0)
+            if before_hp > 0 and target_poke.current_hp <= 0:
+                target_poke.pending_ko_cause = "damage_counters"
             ctx.state._log(f"在{target_poke.card.name}身上放置了{self.counters}个伤害指示物。")
             source = _discard_pokemon_for_effect(ctx.state, ctx.player_idx, ctx.source_slot)
             if source:

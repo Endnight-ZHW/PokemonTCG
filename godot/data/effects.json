@@ -353,7 +353,7 @@
           {
             "effect_type": "conditional_status",
             "params": {
-              "condition": "ko_by_attack_last_turn",
+              "condition": "ko_by_attack_damage_last_turn",
               "status": "paralyzed",
               "target": "opponent_active"
             }
@@ -493,7 +493,7 @@
             "effect_type": "any_pokemon_damage",
             "params": {
               "amount": 40,
-              "piercing_on_bench": true,
+              "bench_skips_type_matchups": true,
               "player": "opponent"
             }
           }
@@ -546,9 +546,9 @@
       "高速星星": {
         "effects": [
           {
-            "effect_type": "piercing_marker",
+            "effect_type": "attack_flags",
             "params": {
-              "ignore_effects": true,
+              "ignore_defender_damage_effects": true,
               "ignore_resistance": true,
               "ignore_weakness": true
             }
@@ -861,6 +861,8 @@
               "amount": 2,
               "energy_type": "basic",
               "min_select": 0,
+              "same_target": true,
+              "select_source": true,
               "target": "bench"
             }
           }
@@ -1194,7 +1196,7 @@
             "effect_type": "any_pokemon_damage",
             "params": {
               "amount": 60,
-              "piercing_on_bench": true
+              "bench_skips_type_matchups": true
             }
           }
         ]
@@ -1401,7 +1403,7 @@
             "effect_type": "conditional_damage_bonus",
             "params": {
               "bonus": 90,
-              "condition": "ko_by_attack_last_turn"
+              "condition": "ko_by_attack_damage_last_turn"
             }
           }
         ]
@@ -1661,7 +1663,7 @@
     "trainer_effect": {
       "effect_type": "conditional",
       "params": {
-        "condition": "ko_by_attack_last_turn",
+        "condition": "ko_last_opponent_turn",
         "cost": null,
         "on_pay": [
           {
@@ -2115,6 +2117,7 @@
               "from_zone": "deck",
               "max_per_target": 1,
               "min_select": 0,
+              "select_source": true,
               "to": "bench"
             }
           }
@@ -2173,6 +2176,7 @@
       "params": {
         "amount": 1,
         "energy_type": "basic_energy",
+        "select_source": true,
         "target": "bench"
       }
     }
@@ -2255,9 +2259,10 @@
             "effect_type": "attack_damage_formula",
             "params": {
               "base": 20,
-              "ignore_defender_effects": true,
-              "per_own_bench": 10,
-              "piercing": true
+              "ignore_defender_damage_effects": true,
+              "ignore_resistance": false,
+              "ignore_weakness": true,
+              "per_own_bench": 10
             }
           }
         ]
@@ -2291,7 +2296,7 @@
               "base": 100,
               "condition_bonus": {
                 "bonus": 120,
-                "condition": "ko_by_attack_last_turn"
+                "condition": "ko_last_opponent_turn"
               }
             }
           }

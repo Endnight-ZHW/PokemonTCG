@@ -22,6 +22,7 @@ from engine.random_source import RandomSource
 from engine.pending_continuation import (
     PendingContinuationError,
     rebuild_choice_request,
+    validate_resume_required_domain,
 )
 from engine.settlement import VMSettlementManager
 from engine.snapshot import clone_state
@@ -43,6 +44,42 @@ class GameEngine:
         self.choice_manager = choice_manager or VMChoiceManager()
         self.settlement_manager = settlement_manager or VMSettlementManager(self.choice_manager)
         self.availability = availability or VMActionAvailability()
+
+    def begin_game(
+        self,
+        state: GameState,
+        deck1: list[str],
+        deck2: list[str],
+        rng: RandomSource | None = None,
+    ) -> StepResult:
+        """Start official setup and publish the coin winner's turn-order choice."""
+        rng = rng or RandomSource()
+        checkpoint = self.transaction_manager.capture_transaction(state, rng)
+        try:
+            with rng.bind_state(state):
+                legacy = state.setup_game(deck1, deck2, rng=rng)
+            request = self.choice_manager.choice_request(state, legacy)
+            self.transaction_manager.persist_pending_choice(state, request)
+            return StepResult(
+                True,
+                "开局硬币已结算，等待选择先后攻。",
+                ActionResult(True, "开局硬币已结算。", pending_action=legacy),
+                pending_choice=request,
+                winner=state.winner,
+                terminal=state.is_terminal(),
+            )
+        except Exception as exc:
+            self.transaction_manager.rollback_transaction(state, rng, checkpoint)
+            return StepResult(
+                False,
+                str(exc),
+                error_code="setup_exception",
+                winner=state.winner,
+                terminal=state.is_terminal(),
+            )
+
+    # Naming alias for callers which use GameEngine as the sole public API.
+    setup_game = begin_game
 
     def legal_actions(
         self,
@@ -132,11 +169,55 @@ class GameEngine:
         if action.action == "NOOP":
             return StepResult(True, action_result=ActionResult(True, ""), winner=state.winner)
         if action.action == "SETUP_DONE":
-            return StepResult(True, "setup done", ActionResult(True, "setup done"), winner=state.winner)
+            checkpoint = self.transaction_manager.capture_transaction(state, rng)
+            try:
+                event_offset = len(getattr(state.event_stream, "_events", ()))
+                with rng.bind_state(state):
+                    result = TurnManager(state).setup_done(actor)
+                step = self.settlement_manager.step_from_action_result(
+                    state,
+                    result,
+                    events=self.settlement_manager.events_since(state, event_offset),
+                )
+                step = self._persist_and_resolve_pending_step(
+                    state,
+                    step,
+                    rng,
+                    auto_resolve=auto_resolve,
+                    choice_policy=choice_policy,
+                )
+                step.winner = state.winner
+                step.terminal = state.is_terminal()
+            except Exception as exc:
+                self.transaction_manager.rollback_transaction(state, rng, checkpoint)
+                return StepResult(
+                    False,
+                    str(exc),
+                    error_code="setup_action_exception",
+                    winner=state.winner,
+                    terminal=state.is_terminal(),
+                )
+            if not step.success:
+                return self.transaction_manager.rollback_failed_step(
+                    state,
+                    rng,
+                    checkpoint,
+                    step,
+                )
+            return step
         if action.action == "PROMOTE":
             checkpoint = self.transaction_manager.capture_transaction(state, rng)
             try:
                 step = self.settlement_manager.apply_promotion(state, actor, action, rng)
+                step = self._persist_and_resolve_pending_step(
+                    state,
+                    step,
+                    rng,
+                    auto_resolve=auto_resolve,
+                    choice_policy=choice_policy,
+                )
+                step.winner = state.winner
+                step.terminal = state.is_terminal()
             except Exception as exc:
                 self.transaction_manager.rollback_transaction(state, rng, checkpoint)
                 return StepResult(
@@ -180,27 +261,26 @@ class GameEngine:
                     and action.action == PlayerAction.PLAY_TRAINER
                 ):
                     self.transaction_manager.store_cancel_checkpoint(state, checkpoint)
-            if auto_resolve:
-                try:
-                    step = self._resolve_all_choices(state, step, rng, choice_policy)
-                except Exception as exc:
-                    self.transaction_manager.rollback_transaction(state, rng, checkpoint)
-                    return StepResult(
-                        False,
-                        str(exc),
-                        error_code="choice_policy_exception",
-                        winner=state.winner,
-                    )
 
+            # Card effects that Knock Out a Pokemon (for example Mystical
+            # Comet) enter the same staged trigger/discard/prize pipeline as
+            # attacks.  Queue that settlement before automatic choice
+            # handling so a newly-created prize choice is not skipped merely
+            # because the originating effect itself did not pause.
             if action.action not in {PlayerAction.DECLARE_ATTACK, PlayerAction.END_TURN}:
                 step = self.settlement_manager.resolve_non_attack_knockouts(state, step)
+                if step.pending_choice is not None:
+                    self.transaction_manager.persist_pending_choice(
+                        state,
+                        step.pending_choice,
+                    )
 
             if (
                 auto_finish_attack
                 and step.success
                 and action.action == PlayerAction.DECLARE_ATTACK
                 and bool(getattr(result, "attack_failed", False))
-                and state.winner is None
+                and not state.is_terminal()
                 and state.phase == TurnPhase.ATTACK
                 and step.pending_choice is None
             ):
@@ -220,15 +300,37 @@ class GameEngine:
                 auto_finish_attack
                 and step.success
                 and action.action == PlayerAction.DECLARE_ATTACK
-                and state.winner is None
+                and not state.is_terminal()
                 and state.phase == TurnPhase.ATTACK
                 and state.pending_promotion_player >= 0
                 and step.pending_choice is None
             ):
                 set_finish_attack_after_promotions(state, actor)
 
+            # A post-action settlement can itself reach another pausable rule
+            # boundary.  Examples include a failed attack entering Pokemon
+            # Checkup and a promotion resuming an attack whose Checkup then
+            # Knocks Out the opponent.  Publish every such choice through the
+            # same authoritative state path before returning it to callers.
+            try:
+                step = self._persist_and_resolve_pending_step(
+                    state,
+                    step,
+                    rng,
+                    auto_resolve=auto_resolve,
+                    choice_policy=choice_policy,
+                )
+            except Exception as exc:
+                self.transaction_manager.rollback_transaction(state, rng, checkpoint)
+                return StepResult(
+                    False,
+                    str(exc),
+                    error_code="choice_policy_exception",
+                    winner=state.winner,
+                )
+
             step.winner = state.winner
-            step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
+            step.terminal = state.is_terminal()
         except Exception as exc:
             self.transaction_manager.rollback_transaction(state, rng, checkpoint)
             return StepResult(
@@ -434,7 +536,7 @@ class GameEngine:
             elif (
                 step.success
                 and attack_actor in (0, 1)
-                and state.winner is None
+                and not state.is_terminal()
                 and state.phase == TurnPhase.ATTACK
                 and state.pending_promotion_player >= 0
             ):
@@ -444,8 +546,13 @@ class GameEngine:
                 self.transaction_manager.clear_pending_choice_stack(state)
                 if attack_actor not in (0, 1):
                     step = self.settlement_manager.resolve_non_attack_knockouts(state, step)
+                    if step.pending_choice is not None:
+                        self.transaction_manager.persist_pending_choice(
+                            state,
+                            step.pending_choice,
+                        )
             step.winner = state.winner
-            step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
+            step.terminal = state.is_terminal()
         except Exception as exc:
             self.transaction_manager.rollback_transaction(state, rng, checkpoint)
             return StepResult(False, str(exc), error_code="choice_exception", winner=state.winner)
@@ -473,6 +580,8 @@ class GameEngine:
                     "待处理攻击选择的玩家无效。",
                     error_code="invalid_pending_choice",
                 )
+        if isinstance(metadata, dict):
+            validate_resume_required_domain(metadata)
         continuation = metadata.get("continuation", {}) if isinstance(metadata, dict) else {}
         kind = (
             str(continuation.get("kind", "") or "")
@@ -556,6 +665,23 @@ class GameEngine:
             aggregate.message = "选择链超过安全上限。"
         return aggregate
 
+    def _persist_and_resolve_pending_step(
+        self,
+        state: GameState,
+        step: StepResult,
+        rng: RandomSource,
+        *,
+        auto_resolve: bool,
+        choice_policy: Callable[[GameState, ChoiceRequest], ChoiceResponse] | None,
+    ) -> StepResult:
+        """Make a returned pause state-authoritative, then optionally consume it."""
+        if step.pending_choice is None:
+            return step
+        self.transaction_manager.persist_pending_choice(state, step.pending_choice)
+        if not auto_resolve:
+            return step
+        return self._resolve_all_choices(state, step, rng, choice_policy)
+
     @staticmethod
     def _choice_target_limit_error(
         request: ChoiceRequest,
@@ -572,6 +698,7 @@ class GameEngine:
         except (TypeError, ValueError, OverflowError):
             return "分配目标上限无效。"
         counts: dict[str, int] = {}
+        seen_energy_indices: set[int] = set()
         for option in selected:
             value = option.value
             slot = (
@@ -581,6 +708,16 @@ class GameEngine:
             )
             if not slot:
                 return "分配目标无效。"
+            if (
+                request.metadata.get("continuation", {}).get("kind")
+                != "energy_relocate_distribution"
+            ):
+                if not isinstance(value, dict) or type(value.get("energy_index")) is not int:
+                    return "分配能量实体无效。"
+                energy_index = value["energy_index"]
+                if energy_index in seen_energy_indices:
+                    return "不能重复选择同一张能量卡。"
+                seen_energy_indices.add(energy_index)
             counts[slot] = counts.get(slot, 0) + 1
         effective_count = sum(
             min(count, max(0, max_per_target))

@@ -26,4 +26,4 @@ EFFECTS = {'svi-chim': {'attacks': {'火花': {'effects': [{'effect_type': 'ener
                                                            'min_select': 0}}]},
                           '嫉妒业火': {'effects': [{'effect_type': 'conditional_damage_bonus',
                                                 'params': {'bonus': 90,
-                                                           'condition': 'ko_by_attack_last_turn'}}]}}}}
+                                                           'condition': 'ko_by_attack_damage_last_turn'}}]}}}}

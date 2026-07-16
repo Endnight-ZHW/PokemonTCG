@@ -15,6 +15,16 @@ func can_play_basic(state: GameState, player_idx: int, card_id: String, target: 
 		return "只能在准备阶段或主要阶段打出基础宝可梦。"
 	if not catalog.is_basic_pokemon(card_id):
 		return "%s不是基础宝可梦。" % catalog.card_name(card_id)
+	if state.phase == "SETUP":
+		if player_idx != state.setup_actor_idx:
+			return "尚未轮到该玩家放置宝可梦。"
+		if state.setup_stage == GameState.SETUP_BONUS_PLACEMENT:
+			if target == "active":
+				return "再战奖励抽到的基础宝可梦只能放入备战区。"
+			if card_id not in state.setup_bonus_card_ids[player_idx]:
+				return "只能放置再战奖励抽到的基础宝可梦。"
+		elif state.setup_stage != GameState.SETUP_INITIAL_PLACEMENT:
+			return "当前准备阶段不能放置宝可梦。"
 	var player := state.get_player(player_idx)
 	if target == "active":
 		if state.phase != "SETUP":
@@ -77,7 +87,10 @@ func can_play_trainer(state: GameState, player_idx: int, card_id: String, target
 	elif catalog.is_stadium(card_id):
 		if player.stadium_played_this_turn:
 			return "本回合已经打出过竞技场。"
-		if state.stadium_card_id == card_id:
+		if (
+			not state.stadium_card_id.is_empty()
+			and catalog.card_name(state.stadium_card_id) == catalog.card_name(card_id)
+		):
 			return "不能打出与场上同名的竞技场。"
 	elif catalog.is_tool(card_id):
 		var target := player.get_pokemon(target_slot)
@@ -91,7 +104,23 @@ func can_play_trainer(state: GameState, player_idx: int, card_id: String, target
 func can_use_ability(state: GameState, player_idx: int, slot: String, ability_name: String) -> String:
 	if state.phase != "MAIN":
 		return "只能在主要阶段使用特性。"
-	var pokemon := state.get_player(player_idx).get_pokemon(slot)
+	var player := state.get_player(player_idx)
+	if slot.begins_with("discard_"):
+		var discard_index := slot.trim_prefix("discard_").to_int()
+		if discard_index < 0 or discard_index >= player.discard.size():
+			return "弃牌区来源已不存在。"
+		var card_id := str(player.discard[discard_index])
+		if not player.hand.is_empty() or player.find_empty_bench_slot() < 0:
+			return "紧急上浮条件不满足。"
+		for ability_value in catalog.get_card(card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			if str(ability.get("name", "")).to_lower() != ability_name.to_lower():
+				continue
+			for effect_value in VMRuntimeEffects.strict_ability_effects(ability):
+				if str(Dictionary(effect_value).get("op", "")) == "discard_then_revive":
+					return ""
+		return "该特性不能从弃牌区发动。"
+	var pokemon := player.get_pokemon(slot)
 	if pokemon == null:
 		return "目标位置没有宝可梦。"
 	for ability in catalog.get_card(pokemon.card_id).get("abilities", []):
@@ -131,12 +160,14 @@ func can_retreat(
 		if index < 0 or index >= player.active.energy_card_ids.size() or seen.has(index):
 			return "撤退费用包含无效能量。"
 		seen[index] = true
-		paid += max(1, catalog.provides_energy(player.active.energy_card_ids[index]).size())
+		paid += EnergyView.units_provided_by_card(
+			player.active.energy_card_ids, index, catalog)
 	if paid < retreat_cost:
 		return "所选能量不足以支付撤退费用。"
 	for raw_index in energy_indices:
 		var index := int(raw_index)
-		var units: int = max(1, catalog.provides_energy(player.active.energy_card_ids[index]).size())
+		var units := EnergyView.units_provided_by_card(
+			player.active.energy_card_ids, index, catalog)
 		if paid - units >= retreat_cost:
 			return "撤退费用不能包含多余能量。"
 	return ""
@@ -170,21 +201,38 @@ func effective_retreat_cost(state: GameState, player: PlayerState) -> int:
 
 
 func check_winner(state: GameState) -> int:
-	# Count each independent win condition before choosing a winner. This avoids
-	# player-index bias when a recoil/checkup packet satisfies both sides at once.
-	var scores: Array[int] = [0, 0]
+	var result := evaluate_result(state)
+	return int(result.get("winner", -1)) if str(result.get("status", "")) == GameState.RESULT_WIN else -1
+
+
+func evaluate_result(state: GameState) -> Dictionary:
+	# Every independent condition is retained in the public result. If both
+	# players satisfy the same number of conditions, the official result is a
+	# draw; the engine must not manufacture a winner from turn order.
+	var conditions: Array = [[], []]
 	if state.players[0].prizes.is_empty():
-		scores[0] += 1
+		conditions[0].append("prizes_empty")
 	if state.players[1].prizes.is_empty():
-		scores[1] += 1
+		conditions[1].append("prizes_empty")
 	if not state.players[1].has_any_pokemon_in_play():
-		scores[0] += 1
+		conditions[0].append("opponent_has_no_pokemon")
 	if not state.players[0].has_any_pokemon_in_play():
-		scores[1] += 1
+		conditions[1].append("opponent_has_no_pokemon")
+	var scores: Array[int] = [conditions[0].size(), conditions[1].size()]
 	if scores[0] == 0 and scores[1] == 0:
-		return -1
+		return {
+			"status": GameState.RESULT_ONGOING,
+			"winner": -1,
+			"conditions": conditions,
+		}
 	if scores[0] != scores[1]:
-		return 0 if scores[0] > scores[1] else 1
-	# The engine has no sudden-death phase. Use the current turn owner as the
-	# deterministic symmetric tie-break (renaming players also renames winner).
-	return state.active_player_idx
+		return {
+			"status": GameState.RESULT_WIN,
+			"winner": 0 if scores[0] > scores[1] else 1,
+			"conditions": conditions,
+		}
+	return {
+		"status": GameState.RESULT_DRAW,
+		"winner": -1,
+		"conditions": conditions,
+	}

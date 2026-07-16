@@ -8,6 +8,7 @@ signal start_requested(
 	first_deck_key: String,
 	second_deck_key: String,
 	forced_first_player: int,
+	apply_type_matchups: bool,
 )
 
 const DECK_TILE_SCENE := preload("res://ui/frontend/deck_gallery_tile.tscn")
@@ -51,6 +52,7 @@ var mode := MODE_LOCAL
 @onready var action_content: BoxContainer = %ActionContent
 @onready var ai_settings: GridContainer = %AISettings
 @onready var ai_mode_label: Label = %AIModeLabel
+@onready var matchup_toggle: CheckButton = %TypeMatchupToggle
 @onready var start_button: Button = %StartButton
 @onready var action_summary: Label = %ActionSummary
 @onready var action_margin: MarginContainer = %ActionMargin
@@ -81,6 +83,8 @@ func configure(p_catalog: CardCatalog, p_mode: String) -> void:
 	_active_player_idx = 0
 	_compact_detail_visible = false
 	_populate_ai_mode_options()
+	matchup_toggle.set_pressed_no_signal(false)
+	_refresh_matchup_toggle_presentation()
 	_refresh_mode_copy()
 	_populate_gallery()
 	_populate_first_player_options()
@@ -169,6 +173,10 @@ func _resolve_nodes() -> void:
 	ai_mode_label = get_node(
 		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/AISettings/AIModeLabel"
 	) as Label
+	matchup_toggle = get_node(
+		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/TypeMatchupToggle"
+	) as CheckButton
+	matchup_toggle.accessibility_name = "弱点与抗性规则"
 	start_button = get_node(
 		"ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent/StartButton"
 	) as Button
@@ -200,10 +208,51 @@ func _ensure_connections() -> void:
 		start_button.pressed.connect(_emit_start_requested)
 	if not ai_mode_option.item_selected.is_connected(_on_ai_mode_selected):
 		ai_mode_option.item_selected.connect(_on_ai_mode_selected)
+	if not matchup_toggle.toggled.is_connected(_on_matchup_toggled):
+		matchup_toggle.toggled.connect(_on_matchup_toggled)
 	if not resized.is_connected(_apply_responsive_layout):
 		resized.connect(_apply_responsive_layout)
 	if not detail_panel.resized.is_connected(_refresh_detail_columns):
 		detail_panel.resized.connect(_refresh_detail_columns)
+	_refresh_matchup_toggle_presentation()
+
+
+func _on_matchup_toggled(_enabled: bool) -> void:
+	_refresh_matchup_toggle_presentation()
+
+
+func _refresh_matchup_toggle_presentation() -> void:
+	if matchup_toggle == null:
+		return
+	var enabled := matchup_toggle.button_pressed
+	var state_copy := "已开启" if enabled else "已关闭"
+	var state_color := DesignTokens.GREEN if enabled else DesignTokens.TEXT_MUTED
+	matchup_toggle.text = "弱点/抗性：%s" % state_copy
+	matchup_toggle.tooltip_text = (
+		"当前已开启：攻击伤害会按中国大陆官方步骤计算弱点与抗性。点击可关闭。"
+		if enabled
+		else "当前已关闭（项目默认）：攻击伤害不计算弱点与抗性。点击可开启。"
+	)
+	matchup_toggle.accessibility_name = "弱点与抗性规则，%s" % state_copy
+	_apply_matchup_toggle_color(matchup_toggle, state_color)
+
+
+func _apply_matchup_toggle_color(toggle: CheckButton, color: Color) -> void:
+	for color_name in [
+		&"font_color",
+		&"font_hover_color",
+		&"font_hover_pressed_color",
+		&"font_focus_color",
+		&"font_pressed_color",
+		&"font_disabled_color",
+		&"icon_normal_color",
+		&"icon_hover_color",
+		&"icon_hover_pressed_color",
+		&"icon_focus_color",
+		&"icon_pressed_color",
+		&"icon_disabled_color",
+	]:
+		toggle.add_theme_color_override(color_name, color)
 
 
 func _emit_back_requested() -> void:
@@ -260,26 +309,18 @@ func _populate_gallery() -> void:
 
 func _populate_first_player_options() -> void:
 	first_player_option.clear()
-	for row in [
-		["先后手随机", -1],
-		["玩家 1 先攻", 0],
-		["%s 先攻" % _second_slot_name(), 1],
-	]:
-		first_player_option.add_item(str(row[0]))
-		first_player_option.set_item_metadata(first_player_option.item_count - 1, row[1])
+	first_player_option.add_item("由硬币胜者选择")
+	first_player_option.set_item_metadata(0, -1)
 	first_player_option.select(0)
+	first_player_option.disabled = true
 
 
 func _populate_ai_mode_options() -> void:
 	ai_mode_option.clear()
-	for row in [["Challenge AI", MODE_CHALLENGE], ["Deep AI", MODE_DEEP]]:
-		ai_mode_option.add_item(str(row[0]))
-		ai_mode_option.set_item_metadata(ai_mode_option.item_count - 1, row[1])
-	var target_mode := mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
-	for index in ai_mode_option.item_count:
-		if str(ai_mode_option.get_item_metadata(index)) == target_mode:
-			ai_mode_option.select(index)
-			break
+	ai_mode_option.add_item("Challenge AI")
+	ai_mode_option.set_item_metadata(0, MODE_CHALLENGE)
+	ai_mode_option.select(0)
+	ai_mode_option.disabled = true
 
 
 func _on_ai_mode_selected(index: int) -> void:
@@ -476,16 +517,12 @@ func _emit_deck_details_for_player(player_idx: int) -> void:
 func _emit_start_requested() -> void:
 	if start_button.disabled:
 		return
-	var forced_first := -1
-	if mode != MODE_LOCAL and first_player_option.item_count > 0:
-		forced_first = int(first_player_option.get_item_metadata(
-			first_player_option.selected
-		))
 	start_requested.emit(
 		mode,
 		_selected_keys[0],
 		_selected_keys[1],
-		forced_first,
+		-1,
+		matchup_toggle.button_pressed,
 	)
 
 

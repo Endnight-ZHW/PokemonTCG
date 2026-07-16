@@ -49,8 +49,11 @@ def _handle_heal(state, player, params):
 
     if target:
         counters = amount // DAMAGE_PER_COUNTER
+        before = target.damage_counters
         target.damage_counters = max(0, target.damage_counters - counters)
-        player.healed_this_turn = True
+        if target.damage_counters < before:
+            target.healed_this_turn = True
+            player.healed_this_turn = True
         state._log(f"回复了{target.card.name}的{amount}点伤害。")
         return ActionResult(True, f"回复了{amount}点。")
     return ActionResult(False, "没有回复目标。")
@@ -74,6 +77,7 @@ def _handle_potion_heal(state, player, player_idx, params):
         slot_name, poke = injured[0]
         counters = amount // DAMAGE_PER_COUNTER
         poke.damage_counters = max(0, poke.damage_counters - counters)
+        poke.healed_this_turn = True
         player.healed_this_turn = True
         state._log(f"{poke.card.name}回复了{amount}点HP。")
         return ActionResult(True, f"{poke.card.name}回复了{amount}点HP。")
@@ -105,6 +109,7 @@ def _handle_potion_heal(state, player, player_idx, params):
         slot_name, poke = injured[selected_idx]
         counters = amount // DAMAGE_PER_COUNTER
         poke.damage_counters = max(0, poke.damage_counters - counters)
+        poke.healed_this_turn = True
         player.healed_this_turn = True
         state._log(f"{poke.card.name}回复了{amount}点HP。")
 
@@ -275,12 +280,19 @@ def _handle_conditional(state, params, player_idx, source_slot):
     condition = params.get("condition", "")
 
     # Pre-condition check (e.g. 梅洛可: must have been KO'd last turn)
-    if condition == "ko_by_attack_last_turn":
+    if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
         player = state.get_player(player_idx)
-        if not player.was_ko_by_attack:
+        if not state.had_knockout_last_opponent_turn(
+            player_idx,
+            causes={"attack_damage"},
+        ):
             state._log(f"{player.name}上个对手回合没有宝可梦因招式伤害昏厥，无法使用此卡。")
             return ActionResult(False, "不满足使用条件，卡牌保留在手牌中。")
-        player.was_ko_by_attack = False
+    elif condition == "ko_last_opponent_turn":
+        player = state.get_player(player_idx)
+        if not state.had_knockout_last_opponent_turn(player_idx):
+            state._log(f"{player.name}上个对手回合没有宝可梦昏厥，无法使用此卡。")
+            return ActionResult(False, "不满足使用条件，卡牌保留在手牌中。")
 
     if cost:
         cost_result = _resolve_effects_with_vm(state, cost, player_idx, source_slot)
@@ -480,20 +492,22 @@ def _handle_return_to_hand(state, player_idx, params, source_slot):
     return ActionResult(True, f"{source.card.name}回到了手牌。", damage_dealt=0)
 
 
-def _handle_piercing_marker(state, params):
-    """Mark that the current attack should ignore weakness/resistance.
-    This sets a flag on the state that damage_calculator will check."""
+def _handle_attack_ignore_flags(state, params):
+    """Legacy compiler-boundary adapter for independent damage flags."""
     from engine.commands.attack_frames import set_attack_damage_flags
 
     set_attack_damage_flags(
         state,
-        piercing=(
+        ignore_weakness=bool(params.get("ignore_weakness", True)),
+        ignore_resistance=bool(params.get("ignore_resistance", True)),
+        ignore_defender_damage_effects=(
             True
-            if params.get("ignore_weakness", True)
-            or params.get("ignore_resistance", True)
+            if params.get(
+                "ignore_defender_damage_effects",
+                params.get("ignore_effects", False),
+            )
             else None
         ),
-        ignore_defender_effects=True if params.get("ignore_effects", False) else None,
     )
     return ActionResult(True, "穿透攻击标记已设置。")
 
@@ -764,6 +778,8 @@ def _handle_heal_all(state, player, params):
         if poke and poke.damage_counters > 0:
             actual = min(poke.damage_counters, counters)
             poke.damage_counters -= actual
+            if actual > 0:
+                poke.healed_this_turn = True
             healed.append(poke.card.name)
 
     if healed:

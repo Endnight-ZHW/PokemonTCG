@@ -319,7 +319,7 @@ func _show_inspector() -> void:
 
 
 func _show_zone() -> void:
-	preview_caption.text = "区域查看 · 公开弃牌与隐藏牌库/奖品"
+	preview_caption.text = "区域查看 · 公开弃牌与隐藏牌库/奖赏卡"
 	var panel := _centered_panel(Vector2(820, 620))
 	var content := ZONE_INSPECTOR_PANEL_SCENE.instantiate() as ZoneInspectorPanel
 	panel.add_child(content)
@@ -438,7 +438,9 @@ func _presentation_event(kind: String) -> Dictionary:
 				"event_type": "pokemon_ko",
 				"card_id": "sv2-keldeo",
 				"source": {"player": 1, "slot": "active"},
-				"target": {"player": 1, "zone": "discard"},
+				# KO declaration/trigger feedback still targets the in-play stack.
+				# The serialized ko_leave_play event owns the later discard move.
+				"target": {"player": 1, "slot": "active"},
 				"amount": 1,
 				"data": {
 					"player": 1,

@@ -8,7 +8,7 @@ from engine.enums import PlayerAction
 
 
 ACTION_SCHEMA_VERSION = 2
-RULES_SCHEMA_VERSION = 2
+RULES_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)

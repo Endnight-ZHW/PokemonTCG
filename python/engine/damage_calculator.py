@@ -11,19 +11,18 @@ def calculate_damage(
     defending_weaknesses: list[WeakRes],
     defending_resistances: list[WeakRes],
     active_effects: list = None,
-    piercing: bool = False,
+    ignore_weakness: bool = False,
+    ignore_resistance: bool = False,
 ) -> int:
     """Calculate final damage after weakness, resistance, and modifiers.
 
     Order:
     1. Start with base damage
-    2. Apply Weakness (usually x2)
-    3. Apply Resistance (usually -30 in modern era, or -20 in older cards)
-    4. Apply any other modifiers (abilities, tools, stadiums, etc.)
+    2. Apply attacker-side modifiers
+    3. Apply Weakness (usually x2)
+    4. Apply Resistance (usually -30 in modern era, or -20 in older cards)
     5. Minimum damage is 0 (before weakness/resistance can cause 0, but
        weakness doubles first, so damage is at least 0)
-
-    If piercing=True, weakness and resistance are skipped.
 
     Returns final damage (in HP units, not damage counters).
     """
@@ -32,23 +31,25 @@ def calculate_damage(
 
     damage = base_damage
 
-    if not piercing:
+    # This compatibility calculator receives attacker-side modifiers only;
+    # the event-driven production pipeline separately phases defender effects.
+    for effect in active_effects:
+        if hasattr(effect, 'modify_damage'):
+            damage = effect.modify_damage(damage)
+
+    if not ignore_weakness:
         # Apply Weakness: if defender has weakness to attacker's type
         for weak in defending_weaknesses:
             if weak.energy_type == attacking_type:
                 damage = apply_weakness(damage, weak.value)
                 break  # Only one weakness applies (rarely do Pokemon have multiple weaknesses)
 
+    if not ignore_resistance:
         # Apply Resistance: if defender has resistance to attacker's type
         for resist in defending_resistances:
             if resist.energy_type == attacking_type:
                 damage = apply_resistance(damage, resist.value)
                 break
-
-    # Apply active modifiers (from abilities, tools, stadiums)
-    for effect in active_effects:
-        if hasattr(effect, 'modify_damage'):
-            damage = effect.modify_damage(damage)
 
     return max(0, damage)
 

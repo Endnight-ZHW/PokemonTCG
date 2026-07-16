@@ -49,7 +49,15 @@ class VMChoiceManager:
                 else:
                     max_select = min(amount, max_select if max_select > 0 else amount)
                     min_select = min(max_select, min_select)
-                allow_duplicates = True
+                # Normal energy distribution options identify one concrete
+                # source entity and one target.  Repeating the same option
+                # would attach the same card twice.  Relocation keeps its
+                # older target-only shape because its source refs were chosen
+                # in the preceding select_attachment request.
+                allow_duplicates = (
+                    str((getattr(request, "continuation", {}) or {}).get("kind", ""))
+                    == "energy_relocate_distribution"
+                )
         can_cancel = min_select <= 0 or bool(getattr(request, "can_cancel", False))
         continuation = dict(getattr(request, "continuation", {}) or {})
         card_list_ids = [
@@ -57,6 +65,11 @@ class VMChoiceManager:
             for card in request.card_list
         ]
         metadata = {
+            "domain": str(continuation.get("domain", request.request_type) or request.request_type),
+            "continuation_frame_id": str(
+                continuation.get("frame_id", f"frame:{request_id}")
+                or f"frame:{request_id}"
+            ),
             "from_zone": request.from_zone,
             "target_player": request.target_player,
             "distribute_mode": request.distribute_mode,
@@ -220,10 +233,30 @@ class VMChoiceManager:
                 request.request_id,
                 tuple("coin:heads" if value else "coin:tails" for value in payload or []),
             )
-        if request.request_type == "confirm":
+        if request.request_type in {"confirm", "confirm_trigger"}:
             return ChoiceResponse(
                 request.request_id,
                 ("confirm:yes" if payload else "confirm:no",),
+            )
+        if request.request_type in {
+            "choose_turn_order",
+            "choose_mulligan_draw_count",
+            "select_prize",
+            "choose_trigger_order",
+        }:
+            selected_payload = (
+                payload[0]
+                if isinstance(payload, (list, tuple)) and payload
+                else payload
+            )
+            option = next(
+                (candidate for candidate in request.options
+                 if candidate.value == selected_payload),
+                None,
+            )
+            return ChoiceResponse(
+                request.request_id,
+                (option.option_id,) if option is not None else (),
             )
         if request.request_type == "evolve_skip_stage":
             selected_payload = (
@@ -340,14 +373,53 @@ class VMChoiceManager:
                     for _ in range(max(1, flip_count))
                 ]
             return ChoiceResponse(request.request_id, tuple(results))
-        if request.request_type == "distribute_energy" and request.allow_duplicates and request.options:
+        if request.request_type == "choose_turn_order":
+            option = next(
+                (candidate for candidate in request.options
+                 if candidate.value == "first"),
+                request.options[0] if request.options else None,
+            )
+            return ChoiceResponse(
+                request.request_id,
+                (option.option_id,) if option is not None else (),
+            )
+        if request.request_type == "choose_mulligan_draw_count":
+            option = max(
+                request.options,
+                key=lambda candidate: int(candidate.value),
+                default=None,
+            )
+            return ChoiceResponse(
+                request.request_id,
+                (option.option_id,) if option is not None else (),
+            )
+        if request.request_type == "select_prize":
+            option = min(
+                request.options,
+                key=lambda candidate: int(candidate.value),
+                default=None,
+            )
+            return ChoiceResponse(
+                request.request_id,
+                (option.option_id,) if option is not None else (),
+            )
+        if request.request_type == "distribute_energy" and request.options:
             count = max(request.min_select, request.max_select)
             max_per_target = int(request.metadata.get("max_per_target", 99) or 99)
             selected: list[str] = []
-            if max_per_target == 1:
-                selected = [option.option_id for option in request.options[:count]]
-            else:
-                selected = [request.options[0].option_id for _ in range(count)]
+            seen_energy: set[int] = set()
+            per_target: dict[str, int] = {}
+            for option in request.options:
+                value = option.value if isinstance(option.value, dict) else {}
+                energy_index = int(value.get("energy_index", len(seen_energy)))
+                slot = str(value.get("slot", "") or "")
+                if energy_index in seen_energy or per_target.get(slot, 0) >= max_per_target:
+                    continue
+                selected.append(option.option_id)
+                seen_energy.add(energy_index)
+                per_target[slot] = per_target.get(slot, 0) + 1
+                if len(selected) >= count:
+                    break
             return ChoiceResponse(request.request_id, tuple(selected))
         count = min(len(request.options), max(request.min_select, min(request.max_select, len(request.options))))
         return ChoiceResponse(request.request_id, tuple(option.option_id for option in request.options[:count]))
@@ -360,8 +432,15 @@ class VMChoiceManager:
     ):
         if request.request_type == "coin_flip":
             return [option_id == "coin:heads" for option_id in response.option_ids]
-        if request.request_type == "confirm":
+        if request.request_type in {"confirm", "confirm_trigger"}:
             return bool(selected and selected[0].value)
+        if request.request_type in {
+            "choose_turn_order",
+            "choose_mulligan_draw_count",
+            "select_prize",
+            "choose_trigger_order",
+        }:
+            return selected[0].value if selected else None
         if request.request_type == "evolve_skip_stage":
             return selected[0].value if selected else None
         if request.request_type in {"select_bench", "select_opponent_bench", "select_own_bench_energy"}:
@@ -386,7 +465,10 @@ class VMChoiceManager:
                         target_refs.append(dict(option.value))
                 return target_refs
             return [
-                (energy_idx, str(option.value.get("slot", "")))
+                (
+                    int(option.value.get("energy_index", energy_idx)),
+                    str(option.value.get("slot", "")),
+                )
                 for energy_idx, option in enumerate(selected)
             ]
         if request.request_type == "select_attachment":
@@ -427,6 +509,33 @@ class VMChoiceManager:
                 ChoiceOption("coin:heads", "正面", value=True),
                 ChoiceOption("coin:tails", "反面", value=False),
             ]
+        if request.request_type == "choose_turn_order":
+            return [
+                ChoiceOption("turn_order:first", "先攻", value="first"),
+                ChoiceOption("turn_order:second", "后攻", value="second"),
+            ]
+        if request.request_type == "choose_mulligan_draw_count":
+            maximum = int((request.continuation or {}).get("maximum", 0) or 0)
+            return [
+                ChoiceOption(
+                    f"mulligan_draw:{count}",
+                    f"抽{count}张",
+                    value=count,
+                )
+                for count in range(maximum + 1)
+            ]
+        if request.request_type == "select_prize":
+            # Never attach CardRef/card_id to a face-down prize option.  Only
+            # its current public position is selectable.
+            return [
+                ChoiceOption(
+                    f"prize:{int(item.get('index', index))}",
+                    str(item.get("label", f"奖赏卡 {index + 1}")),
+                    value=int(item.get("index", index)),
+                )
+                for index, item in enumerate(request.target_info or [])
+                if isinstance(item, dict)
+            ]
         if request.request_type in {"select_bench", "select_opponent_bench", "select_own_bench_energy"}:
             target_idx = self._choice_target_player_idx(state, request)
             player = state.get_player(target_idx)
@@ -455,10 +564,20 @@ class VMChoiceManager:
                 for idx in allowed
                 if 0 <= idx < len(player.bench) and (pokemon := player.bench[idx]) is not None
             ]
-        if request.request_type == "confirm":
+        if request.request_type in {"confirm", "confirm_trigger"}:
             return [
                 ChoiceOption("confirm:yes", "是", value=True),
                 ChoiceOption("confirm:no", "否", value=False),
+            ]
+        if request.request_type == "choose_trigger_order":
+            return [
+                ChoiceOption(
+                    f"trigger:{int(item.get('index', index))}",
+                    str(item.get("label", f"触发效果 {index + 1}")),
+                    value=int(item.get("index", index)),
+                )
+                for index, item in enumerate(request.target_info or [])
+                if isinstance(item, dict)
             ]
         if request.request_type == "evolve_skip_stage":
             options = []
@@ -479,12 +598,29 @@ class VMChoiceManager:
             return options
         if request.request_type == "distribute_energy":
             options = []
+            relocation_targets_only = (
+                str((request.continuation or {}).get("kind", ""))
+                == "energy_relocate_distribution"
+                or request.distribute_mode == "source_select"
+            )
             for target in request.target_info or []:
                 slot = str(target.get("slot", ""))
                 player_idx = int(target.get("player", request.player if request.player in (0, 1) else state.active_player_idx))
                 pokemon = state.get_player(player_idx).get_pokemon(slot)
                 ref = PokemonRef(player_idx, slot, pokemon.card.api_id if pokemon else "")
-                options.append(ChoiceOption(ref.ref_id, target.get("name", slot), ref, target))
+                if relocation_targets_only:
+                    options.append(ChoiceOption(ref.ref_id, target.get("name", slot), ref, target))
+                    continue
+                for energy_index, card in enumerate(request.card_list or []):
+                    value = dict(target)
+                    value["energy_index"] = energy_index
+                    value["energy_card_id"] = str(getattr(card, "api_id", "") or "")
+                    options.append(ChoiceOption(
+                        f"energy:{energy_index}:{value['energy_card_id']}->{ref.ref_id}",
+                        f"{getattr(card, 'name', value['energy_card_id'])} → {target.get('name', slot)}",
+                        ref,
+                        value,
+                    ))
             return options
         if request.request_type == "select_attachment":
             options = []

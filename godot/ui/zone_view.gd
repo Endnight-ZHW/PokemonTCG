@@ -2,6 +2,7 @@ class_name ZoneView
 extends Control
 
 signal activated(card_id: String)
+signal stack_index_activated(index: int)
 signal inspected(context: Dictionary)
 signal detail_requested(card_id: String)
 signal action_requested(action: GameAction)
@@ -515,10 +516,18 @@ func _finish_pointer_interaction(release_position: Vector2) -> void:
 	if held >= LONG_PRESS_MSEC and not card_id.is_empty():
 		detail_requested.emit(card_id)
 	elif moved < TAP_MOVE_THRESHOLD:
+		if stack_visual_mode == "prizes" and count > 0:
+			stack_index_activated.emit(_prize_index_at_point(release_position))
+			return
 		if not inspect_context.is_empty():
 			inspected.emit(inspect_context.duplicate(true))
 		elif not card_id.is_empty():
 			activated.emit(card_id)
+
+
+func _prize_index_at_point(point: Vector2) -> int:
+	var step_x := maxf(1.0, absf(_stack_step().x))
+	return clampi(int(floor(maxf(0.0, point.x) / step_x)), 0, maxi(0, count - 1))
 
 
 func _on_action_pressed() -> void:

@@ -56,9 +56,14 @@ def register_pokemon_modifiers(pokemon: PokemonInPlay, player_idx: int,
             _register_ability_modifier(ability, pokemon, player_idx, source_prefix, event_bus)
 
     # Register special energy modifiers
-    for sc in pokemon.energy_cards:
+    for energy_index, sc in enumerate(pokemon.energy_cards):
         if sc.is_special_energy:
-            _register_special_energy_modifier(sc, player_idx, source_prefix, event_bus)
+            _register_special_energy_modifier(
+                sc,
+                player_idx,
+                f"{source_prefix}:attachment:{energy_index}",
+                event_bus,
+            )
 
     # Register tool modifiers
     if pokemon.attached_tool:
@@ -128,11 +133,11 @@ def register_effect_modifier(
             defender = data.get("defender")
             if defender is not pokemon:
                 return None
-            if data.get("ignore_defender_effects"):
+            if data.get("ignore_defender_damage_effects"):
                 return None
             if requires_attached_energy and not pokemon.energy_cards:
                 return None
-            return {"delta": -reduction, "source": source_name}
+            return {"delta": -reduction, "source": source_name, "stage": "defender"}
 
         _register_mbf_hook(
             event_bus,
@@ -166,7 +171,7 @@ def register_effect_modifier(
                 return None
             if defender_type and defender_type not in getattr(defender.card, "energy_types", []):
                 return None
-            return {"delta": amount, "source": source_name}
+            return {"delta": amount, "source": source_name, "stage": "attacker"}
 
         _register_mbf_hook(
             event_bus,
@@ -187,8 +192,6 @@ def register_effect_modifier(
             defender = data.get("defender")
             attacker = data.get("attacker")
             state = data.get("state")
-            if data.get("ignore_defender_effects") and defender is pokemon:
-                return None
             if not (defender is pokemon and attacker is not None and state is not None):
                 return None
             owner = state.get_player(player_idx)
@@ -217,6 +220,7 @@ def register_effect_modifier(
                         attacker_ref[1],
                         thorn_counters,
                         source_name,
+                        str(getattr(attacker.card, "api_id", "") or ""),
                     )
                 ],
             }
@@ -238,10 +242,9 @@ def register_effect_modifier(
             active = data.get("pokemon")
             if active is not pokemon:
                 return None
-            if any(
-                any(str(provided).lower() == energy_type for provided in card.provides_energy)
-                for card in pokemon.energy_cards
-            ):
+            from engine.energy_view import EnergyView
+
+            if EnergyView.from_pokemon(pokemon).count(energy_type) > 0:
                 return {"set_cost": 0, "source": source_name}
             return None
 
@@ -301,12 +304,16 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                     holder = data.get("attacker")
                 elif scope == "attached_defender":
                     holder = data.get("defender")
-                    if data.get("ignore_defender_effects"):
+                    if data.get("ignore_defender_damage_effects"):
                         return None
                 else:
                     holder = data.get("attacker")
                 if holder is not None and sc in getattr(holder, "energy_cards", []):
-                    return {"delta": delta, "source": sc.name}
+                    return {
+                        "delta": delta,
+                        "source": sc.name,
+                        "stage": "defender" if scope == "attached_defender" else "attacker",
+                    }
                 return None
 
             _register_mbf_hook(
@@ -340,8 +347,6 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                     return None
                 if scope == "attached_defender":
                     holder = data.get("defender")
-                    if data.get("ignore_defender_effects"):
-                        return None
                 elif scope == "attached_attacker":
                     holder = data.get("attacker")
                 else:
@@ -370,7 +375,7 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
         def dtur_mod(data: dict) -> dict | None:
             attacker = data.get("attacker")
             if attacker is not None and sc in getattr(attacker, "energy_cards", []):
-                return {"delta": -20, "source": "双重涡轮能量"}
+                return {"delta": -20, "source": "双重涡轮能量", "stage": "attacker"}
             return None
         _register_mbf_hook(
             event_bus,
@@ -385,8 +390,6 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
         def mirc_react(data: dict) -> dict | None:
             defender = data.get("defender")
             state = data.get("state")
-            if data.get("ignore_defender_effects") and defender is not None and sc in getattr(defender, "energy_cards", []):
-                return None
             if defender and state:
                 # Check if this energy is attached to the defender
                 for scc in defender.energy_cards:
@@ -461,7 +464,7 @@ def register_tool_effect_modifier(
                 player = state.get_player(player_idx)
                 opponent = state.get_player(1 - player_idx)
                 if len(player.prizes) > len(opponent.prizes):
-                    return {"delta": 30, "source": source_name}
+                    return {"delta": 30, "source": source_name, "stage": "attacker"}
             return None
 
         _register_mbf_hook(
@@ -478,7 +481,7 @@ def register_tool_effect_modifier(
     if effect_name == "damage_boost_10":
         def vital_mod(data: dict) -> dict | None:
             if data.get("attacker") is pokemon:
-                return {"delta": 10, "source": source_name}
+                return {"delta": 10, "source": source_name, "stage": "attacker"}
             return None
 
         _register_mbf_hook(
@@ -499,11 +502,11 @@ def register_tool_effect_modifier(
             defender = data.get("defender")
             if defender is not pokemon:
                 return None
-            if data.get("ignore_defender_effects"):
+            if data.get("ignore_defender_damage_effects"):
                 return None
             if not getattr(pokemon.card, "is_stage1", False):
                 return None
-            return {"delta": -amount, "source": source_name}
+            return {"delta": -amount, "source": source_name, "stage": "defender"}
 
         _register_mbf_hook(
             event_bus,
@@ -521,44 +524,49 @@ def register_tool_effect_modifier(
                 return None
             if int(data.get("player_idx", -1)) != player_idx:
                 return None
+            if str(data.get("slot", "") or "") != "active":
+                return None
             knocked_out = data.get("knocked_out")
             if knocked_out is None or knocked_out is pokemon:
                 return None
-            for card in list(getattr(knocked_out, "energy_cards", [])):
-                if not getattr(card, "is_basic_energy", False):
-                    continue
-                state = data.get("state")
-                from_player_idx = int(data.get("player_idx", player_idx))
-                from_slot = str(data.get("slot", "active") or "active")
-                from engine.commands.trigger_commands import (
-                    pokemon_ref_for_state,
-                    trigger_move_basic_energy_spec,
-                )
+            if not any(
+                getattr(card, "is_basic_energy", False)
+                for card in list(getattr(knocked_out, "energy_cards", []))
+            ):
+                return None
+            state = data.get("state")
+            from_player_idx = int(data.get("player_idx", player_idx))
+            from_slot = str(data.get("slot", "active") or "active")
+            from engine.commands.trigger_commands import (
+                pokemon_ref_for_state,
+                trigger_move_basic_energy_spec,
+            )
 
-                source_ref = None
-                if state is not None:
-                    source = state.get_player(from_player_idx).get_pokemon(from_slot)
-                    if source is knocked_out:
-                        source_ref = (from_player_idx, from_slot)
-                    else:
-                        source_ref = pokemon_ref_for_state(state, knocked_out)
-                target_ref = pokemon_ref_for_state(state, pokemon)
-                if source_ref is None or target_ref is None:
-                    return None
-                return {
-                    "source": source_name,
-                    "exclusive_group": "tool_exp_share",
-                    "command_specs": [
-                        trigger_move_basic_energy_spec(
-                            source_ref[0],
-                            source_ref[1],
-                            target_ref[0],
-                            target_ref[1],
-                            source_name,
-                        )
-                    ],
-                }
-            return None
+            source_ref = None
+            if state is not None:
+                source_pokemon = state.get_player(from_player_idx).get_pokemon(from_slot)
+                if source_pokemon is knocked_out:
+                    source_ref = (from_player_idx, from_slot)
+                else:
+                    source_ref = pokemon_ref_for_state(state, knocked_out)
+            target_ref = pokemon_ref_for_state(state, pokemon)
+            if source_ref is None or target_ref is None:
+                return None
+            return {
+                "source": source_name,
+                "command_specs": [
+                    trigger_move_basic_energy_spec(
+                        source_ref[0],
+                        source_ref[1],
+                        target_ref[0],
+                        target_ref[1],
+                        source_name,
+                        select_source=True,
+                        optional=True,
+                        target_tool_id="svg2-exps",
+                    )
+                ],
+            }
 
         _register_mbf_hook(
             event_bus,

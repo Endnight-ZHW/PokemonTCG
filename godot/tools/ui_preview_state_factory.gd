@@ -8,6 +8,7 @@ static func battle_state(seed: int = DEFAULT_SEED) -> GameState:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var state := GameState.new()
+	state.setup_stage = GameState.SETUP_COMPLETE
 	state.phase = "MAIN"
 	state.turn_number = rng.randi_range(3, 5)
 	state.first_player_idx = 1
@@ -60,6 +61,7 @@ static func battle_state(seed: int = DEFAULT_SEED) -> GameState:
 
 static func setup_state(seed: int = DEFAULT_SEED) -> GameState:
 	var state := battle_state(seed)
+	state.setup_stage = GameState.SETUP_INITIAL_PLACEMENT
 	state.phase = "SETUP"
 	state.turn_number = 0
 	state.stadium_card_id = ""

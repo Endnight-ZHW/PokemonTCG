@@ -18,6 +18,10 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
 from card_data.effects import CARD_EFFECTS
+from card_data.consistency import (
+    assert_card_rules_consistent,
+    load_godot_vm_ops,
+)
 from data.card_models import Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import (
@@ -703,7 +707,7 @@ def _ai_encoder_fixture() -> dict[str, Any]:
 def _godot_pokemon_payload(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
     if snapshot is None:
         return None
-    return {
+    payload = {
         "card_id": str(snapshot.get("card_id", "")),
         "damage_counters": int(snapshot.get("damage_counters", 0)),
         "energy_card_ids": list(snapshot.get("energy_card_ids", [])),
@@ -713,6 +717,7 @@ def _godot_pokemon_payload(snapshot: dict[str, Any] | None) -> dict[str, Any] | 
         "can_evolve_this_turn": bool(snapshot.get("can_evolve_this_turn", True)),
         "placed_this_turn": bool(snapshot.get("placed_this_turn", True)),
         "used_abilities": sorted(snapshot.get("used_abilities", [])),
+        "healed_this_turn": bool(snapshot.get("healed_this_turn", False)),
         "damage_prevented_next_turn": bool(snapshot.get("damage_prevented", False)),
         "all_prevented_next_turn": bool(snapshot.get("all_prevented", False)),
         "outgoing_damage_reduction_next_turn": int(
@@ -723,6 +728,99 @@ def _godot_pokemon_payload(snapshot: dict[str, Any] | None) -> dict[str, Any] | 
         "dazzled": bool(snapshot.get("dazzled", False)),
         "paralyzed_since_turn": int(snapshot.get("paralyzed_since_turn", 0)),
     }
+    # Python snapshots retain serializable MAX_HP registrations separately,
+    # while PokemonState stores all persistent registrations in ``modifiers``.
+    # Adapt the only snapshot-backed modifier family to the Godot shape.  Like
+    # PokemonState.to_dict(), omit the key when no persistent modifier exists.
+    modifiers = []
+    for value in snapshot.get("max_hp_modifiers", []):
+        if not isinstance(value, dict):
+            continue
+        modifier_kind = str(
+            value.get("modifier_kind", value.get("effect_type", ""))
+        )
+        if not modifier_kind:
+            continue
+        params = dict(value.get("params", {}))
+        for key in ("energy_type", "threshold", "amount"):
+            if key in value and key not in params:
+                params[key] = value[key]
+        modifiers.append({
+            "source": str(value.get("source", modifier_kind)),
+            "source_player": int(value.get("source_player", -1)),
+            "source_slot": str(value.get("source_slot", "")),
+            "source_card_id": str(
+                value.get("source_card_id", snapshot.get("card_id", ""))
+            ),
+            "modifier_kind": modifier_kind,
+            "params": _json_value(params),
+        })
+    if modifiers:
+        payload["modifiers"] = modifiers
+    return payload
+
+
+def _godot_knockout_fact_payload(fact: Any) -> dict[str, Any] | None:
+    """Translate one Python TurnFactBook fact to GameState's fact contract."""
+    if not isinstance(fact, dict):
+        return None
+    defeated_player = int(fact.get("defeated_player", fact.get("owner", -1)))
+    source_kind = str(fact.get("source_kind", fact.get("cause", "rule")))
+    source_player_value = fact.get("source_player", -1)
+    source_player = (
+        int(source_player_value) if source_player_value in (0, 1) else -1
+    )
+    if source_kind == "attack_damage":
+        cause_kind = "damage"
+    elif source_kind in {"damage_counter", "damage_counters"}:
+        cause_kind = "damage_counters"
+    elif source_kind == "special_condition":
+        cause_kind = "special_condition"
+    else:
+        cause_kind = "effect"
+    return {
+        "defeated_player": defeated_player,
+        "slot": str(fact.get("slot", "")),
+        "card_id": str(fact.get("card_id", "")),
+        "source_player": source_player,
+        "source_kind": source_kind,
+        "cause_kind": str(fact.get("cause_kind", cause_kind)),
+        "cause_detail": _json_value(
+            fact.get("cause_detail", fact.get("cause_details", ""))
+        ),
+        "turn": int(fact.get("turn", fact.get("turn_number", 0))),
+    }
+
+
+def _godot_turn_fact_book_payload(snapshot: Any) -> dict[str, Any]:
+    """Return the two-window TurnFactBook shape used by Godot rules v4."""
+    source = snapshot if isinstance(snapshot, dict) else {}
+
+    def window(primary: str, fallback: str) -> dict[str, Any]:
+        value = source.get(primary, source.get(fallback, {}))
+        row = value if isinstance(value, dict) else {}
+        facts = [
+            mapped
+            for fact in row.get("knockouts", [])
+            if (mapped := _godot_knockout_fact_payload(fact)) is not None
+        ]
+        # Godot's authoritative fact book stores immutable KO facts in these
+        # windows. Python's window metadata is intentionally not copied: the
+        # Godot turn boundary owns window rotation and does not serialize it.
+        return {"knockouts": facts}
+
+    return {
+        "current_turn": window("current_turn", "current"),
+        "previous_turn": window("previous_turn", "previous"),
+    }
+
+
+def _godot_mulligan_bonus_max(snapshot: dict[str, Any]) -> int:
+    """Collapse Python's per-player maxima to Godot's single net maximum."""
+    value = snapshot.get("mulligan_bonus_max", (0, 0))
+    if isinstance(value, (list, tuple)):
+        return max((int(item) for item in value), default=0)
+    return int(value or 0)
 
 
 def _godot_player_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -750,6 +848,9 @@ def _godot_player_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 def _state_payload(state: GameState) -> dict[str, Any]:
     snapshot = canonical_state_payload(state)
+    apply_type_matchups = bool(snapshot.get("apply_type_matchups", False))
+    rules_options = dict(snapshot.get("rules_options", {}))
+    rules_options["apply_type_matchups"] = apply_type_matchups
     return {
         "players": [
             _godot_player_payload(snapshot["p1"]),
@@ -760,21 +861,49 @@ def _state_payload(state: GameState) -> dict[str, Any]:
         "turn_number": int(snapshot["turn_number"]),
         "first_player_idx": int(snapshot["first_player_idx"]),
         "stadium_card_id": str(snapshot.get("stadium_card_id") or ""),
+        "stadium_owner_idx": int(snapshot.get("stadium_owner_idx", -1)),
         "winner": -1 if snapshot.get("winner") is None else int(snapshot["winner"]),
+        "result_status": str(snapshot.get("result_status", "ONGOING")),
+        "result_reason": str(snapshot.get("result_reason", "")),
+        "result_conditions": _json_value(
+            snapshot.get("result_conditions", [[], []])
+        ),
         "revision": int(snapshot.get("revision", 0)),
         "choice_sequence": int(snapshot.get("choice_sequence", 0)),
         "public_deck_keys": [
             str(value or "")
             for value in snapshot.get("public_deck_keys", ("", ""))
         ],
-        "apply_type_matchups": bool(snapshot.get("apply_type_matchups", False)),
+        "apply_type_matchups": apply_type_matchups,
+        "rules_profile_id": str(
+            snapshot.get("rules_profile_id", "CN_MAINLAND_3_1_0")
+        ),
+        "rules_options": _json_value(rules_options),
         "action_log": [],
         "mulligan_count": list(snapshot.get("mulligan_count", (0, 0))),
         "extra_draws": list(snapshot.get("extra_draws", (0, 0))),
-        "setup_ready": [False, False],
+        "setup_ready": [
+            bool(value)
+            for value in snapshot.get("setup_initial_done", (False, False))
+        ],
+        "setup_stage": str(snapshot.get("setup_stage", "TURN_ORDER")),
+        "setup_actor_idx": int(snapshot.get("setup_actor_idx", -1)),
+        "opening_coin_winner_idx": int(
+            snapshot.get("opening_coin_winner_idx", -1)
+        ),
+        "mulligan_bonus_max": _godot_mulligan_bonus_max(snapshot),
+        # This is an authoritative full-state fixture. These setup-only card
+        # identities must never be reused in a player-view/network payload.
+        "setup_bonus_card_ids": [
+            list(row)
+            for row in snapshot.get("setup_bonus_card_ids", ([], []))
+        ],
         "pending_promotions": list(snapshot.get("pending_promotions", [])),
         "processed_action_ids": [],
         "resolution_stack": _json_value(snapshot.get("resolution_stack", {})),
+        "turn_fact_book": _godot_turn_fact_book_payload(
+            snapshot.get("turn_fact_book", {})
+        ),
     }
 
 
@@ -1269,6 +1398,7 @@ def _pending_choice_case(
     *,
     selected_option_ids: tuple[str, ...] = (),
     cancel_choice: bool = False,
+    followup_actions: tuple[dict[str, Any], ...] = (),
     portable_seed: int = 700,
 ) -> dict[str, Any]:
     """Execute one public-action sequence followed by exactly one choice.
@@ -1362,6 +1492,36 @@ def _pending_choice_case(
             ),
         },
     ))
+    for followup_index, action_row in enumerate(followup_actions):
+        before_action = _state_payload(state)
+        followup_result = engine.apply_action(
+            state,
+            GameAction(
+                _resolve_action_name(str(action_row["action"])),
+                dict(action_row.get("params", {})),
+                actor=int(action_row.get("actor", -1)),
+            ),
+            rng,
+            auto_resolve=False,
+        )
+        if not followup_result.success:
+            raise RuntimeError(
+                f"Golden follow-up action failed: {action_row}: "
+                f"{followup_result.message}"
+            )
+        if followup_result.pending_choice is not None:
+            raise RuntimeError(
+                f"Golden follow-up action unexpectedly paused: {action_row}"
+            )
+        trace.append(_trace_step(
+            state,
+            rng,
+            followup_result,
+            kind="action",
+            index=len(actions) + followup_index,
+            before=before_action,
+            operation={"kind": "action", **action_row},
+        ))
     return {
         "portable_seed": portable_seed,
         "initial_state": initial,
@@ -1397,6 +1557,7 @@ def _pending_choice_case(
             "selected_options": selected_option_semantics,
             "cancelled": response.cancelled,
         },
+        "followup_actions": list(followup_actions),
         "trace": trace,
         "expected": _state_summary(state),
         "expected_rng_state": rng.get_state(),
@@ -1427,7 +1588,9 @@ def _cobalion_attack_choice_case(
             "params": {"attack_idx": 0},
             "actor": 0,
         }],
-        selected_option_ids=("pokemon:0:bench_1:svm-zamazenta",),
+        selected_option_ids=(
+            "energy:0:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
+        ),
         cancel_choice=cancel_choice,
     )
 
@@ -1576,10 +1739,17 @@ def _golden_action_cases() -> dict[str, Any]:
     state.p2.bench[0] = PokemonInPlay(
         CardRegistry.get("sv1-104"), placed_this_turn=False
     )
-    add_case("ko_then_promote", state, [
-        {"action": "DECLARE_ATTACK", "params": {"attack_idx": 0}, "actor": 0},
-        {"action": "PROMOTE", "params": {"bench_idx": 0}, "actor": 1},
-    ])
+    cases["ko_then_promote"] = _pending_choice_case(
+        engine,
+        state,
+        [{"action": "DECLARE_ATTACK", "params": {"attack_idx": 0}, "actor": 0}],
+        selected_option_ids=("prize:0",),
+        followup_actions=({
+            "action": "PROMOTE",
+            "params": {"bench_idx": 0},
+            "actor": 1,
+        },),
+    )
 
     state = _base_golden_state()
     state.p1.active.damage_counters = 6
@@ -2064,6 +2234,15 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     cards = _card_payload(image_paths)
     decks = _deck_payload()
 
+    # Fail the authoritative export before writing derived assets when any
+    # printed rules segment lacks a runtime binding or either runtime exposes a
+    # VM operation the other side cannot execute.
+    card_rules_matrix = assert_card_rules_consistent(
+        peer_supported_ops=load_godot_vm_ops(
+            REPO_ROOT / "godot" / "rules" / "vm" / "vm_contract.gd"
+        )
+    )
+
     data_root = output / "data"
     _write_json(data_root / "cards.json", cards)
     _write_json(data_root / "effects.json", _json_value(CARD_EFFECTS))
@@ -2090,6 +2269,10 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     _write_json(
         output / "tests" / "fixtures" / "rules_coverage.json",
         _rules_coverage(golden_actions),
+    )
+    _write_json(
+        output / "tests" / "fixtures" / "card_rules_matrix.json",
+        card_rules_matrix,
     )
     return golden
 
@@ -2118,6 +2301,7 @@ def main() -> None:
                 Path("tests/fixtures/ai_encoder_golden.json"),
                 Path("tests/fixtures/rules_golden.json"),
                 Path("tests/fixtures/rules_coverage.json"),
+                Path("tests/fixtures/card_rules_matrix.json"),
             ]
             stale = [
                 str(path)

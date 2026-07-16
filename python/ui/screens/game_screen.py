@@ -32,6 +32,7 @@ from engine.actions import GameAction
 from engine.ai import ChallengeAI, DeepLearningAIConfig, create_ai_controller
 from engine.game_state import GameState, ActionRequest, ActionResult
 from engine.game_engine import DEFAULT_GAME_ENGINE
+from engine.random_source import RandomSource
 from engine.turn_manager import TurnManager
 from engine.rules_validator import (
     can_declare_attack,
@@ -141,7 +142,11 @@ class GameScreen(
         self._ai_action_future: Future | None = None
         self._ai_action_job_key: tuple | None = None
         self._ai_shutdown = False
-        self.setup_player_idx: int = 0
+        self.setup_player_idx: int = (
+            int(getattr(self.state, "setup_actor_idx", -1))
+            if int(getattr(self.state, "setup_actor_idx", -1)) in (0, 1)
+            else 0
+        )
         self.setup_pass_done: dict[int, bool] = {0: False, 1: False}
         self._suppress_action_particles: bool = False  # Suppress duplicate particles from result payloads
         self._suppress_result_draw_anim: bool = False
@@ -450,29 +455,20 @@ class GameScreen(
 
     def _init_setup(self):
         self._setup_initialized = True
-        self.setup_player_idx = 0
-        self.setup_pass_done = {0: False, 1: False}
-
-        first = self.state.first_player_idx
-        second = 1 - first
-        for pi in [first, second]:
-            mulligan_count = 0
-            player = self.state.get_player(pi)
-            opponent = self.state.get_player(1 - pi)
-            for _ in range(10):
-                if self.tm.needs_mulligan(pi):
-                    mulligan_count += 1
-                    self.state.do_mulligan(pi)
-                    if mulligan_count == 1:
-                        self.state._log(f"{player.name}的手牌中没有基础宝可梦，展示手牌后洗回牌库重抽7张！")
-                    self.state._log(f"{opponent.name}可选择多抽1张卡。")
-                else:
-                    break
-            if mulligan_count > 0:
-                self.state._log(f"{player.name}共再战{mulligan_count}次，{opponent.name}多抽1张。")
+        actor = int(getattr(self.state, "setup_actor_idx", -1))
+        self.setup_player_idx = actor if actor in (0, 1) else 0
+        initial_done = tuple(
+            getattr(self.state, "setup_initial_done", (False, False))
+        )
+        self.setup_pass_done = {
+            0: bool(initial_done[0]),
+            1: bool(initial_done[1]),
+        }
 
         self._build_action_buttons()
-        self.state._log("准备阶段开始！玩家1请放置基础宝可梦到战斗区。")
+        self.state._log(
+            f"准备阶段开始！玩家{self.setup_player_idx + 1}请放置基础宝可梦。"
+        )
 
     # ── Event Handling ──────────────────────────────────────────
 
@@ -1255,9 +1251,17 @@ class GameScreen(
         self._animating_hand_idx_player = captured_player_idx
 
         def on_animation_done():
-            result = self.tm.setup_place_basic(captured_player_idx, captured_hand_idx, captured_target)
-            if not result.success:
-                self.state._log(f"放置失败: {result.log_message}")
+            step = self.game_engine.apply_action(
+                self.state,
+                GameAction(
+                    PlayerAction.PLAY_BASIC,
+                    {"hand_idx": captured_hand_idx, "target": captured_target},
+                    actor=captured_player_idx,
+                ),
+            )
+            result = step.action_result or ActionResult(step.success, step.message)
+            if not step.success:
+                self.state._log(f"放置失败: {result.log_message or step.message}")
             self._clear_selection()
             self._animating_action = False
             self._animating_hand_idx = None
@@ -1276,33 +1280,53 @@ class GameScreen(
 
     def _setup_done(self, player_idx):
         player = self.state.get_player(player_idx)
-        if player.active is None:
+        if (
+            getattr(self.state, "setup_stage", "") == "INITIAL_PLACEMENT"
+            and player.active is None
+        ):
             self.state._log("请先放置一只基础宝可梦到战斗区！")
             return
 
-        self.setup_pass_done[player_idx] = True
-        self.state._log(f"玩家{player_idx + 1}准备好了。")
+        step = self.game_engine.apply_action(
+            self.state,
+            GameAction("SETUP_DONE", {}, terminal=True, actor=player_idx),
+        )
+        result = step.action_result or ActionResult(step.success, step.message)
+        if not step.success:
+            self.state._log(result.log_message or step.message)
+            return
 
-        if self.setup_pass_done[0] and self.setup_pass_done[1]:
-            result = self.tm.setup_finalize()
-            if result.success:
-                self.state._log(result.log_message)
-                self._refresh_interaction_controls()
-        else:
-            other = 1 - player_idx
-            self.setup_player_idx = other
-            self._clear_selection()
-            self._refresh_interaction_controls()
-            if self.challenge_mode:
-                self._ai_thinking_timer = self._ai_action_delay
-                return
-            from ui.screens.pass_screen import PassScreen
-            pass_screen = PassScreen(
-                self.manager, other,
-                on_continue=lambda: self.manager.pop_screen(SlideTransition(0.35, "right")),
-                game_state=self.state, turn_number=0
-            )
-            self.manager.push_screen(pass_screen)
+        initial_done = tuple(
+            getattr(self.state, "setup_initial_done", (False, False))
+        )
+        self.setup_pass_done = {
+            0: bool(initial_done[0]),
+            1: bool(initial_done[1]),
+        }
+        self.state._log(result.log_message or f"玩家{player_idx + 1}准备好了。")
+        self._clear_selection()
+        next_actor = int(getattr(self.state, "setup_actor_idx", -1))
+        if next_actor in (0, 1):
+            self.setup_player_idx = next_actor
+        self._refresh_interaction_controls()
+
+        if result.pending_action is not None:
+            self._handle_pending_action(result.pending_action)
+            return
+        if self.state.phase != TurnPhase.SETUP or next_actor not in (0, 1):
+            return
+        if self.challenge_mode:
+            self._ai_thinking_timer = self._ai_action_delay
+            return
+        if next_actor == player_idx:
+            return
+        from ui.screens.pass_screen import PassScreen
+        pass_screen = PassScreen(
+            self.manager, next_actor,
+            on_continue=lambda: self.manager.pop_screen(SlideTransition(0.35, "right")),
+            game_state=self.state, turn_number=0
+        )
+        self.manager.push_screen(pass_screen)
 
     def _handle_bench_click(self, player_idx, bench_idx):
         if self._awaiting_promotion:
@@ -2073,21 +2097,32 @@ class GameScreen(
     def _show_end_screen(self, custom_reason: str = None):
         from ui.screens.end_screen import EndScreen
         winner = self.state.winner
-        if winner is None:
+        result_status = str(getattr(self.state, "result_status", "ONGOING"))
+        if result_status not in {"WIN", "DRAW"}:
             return
-        if custom_reason:
+        if result_status == "DRAW":
+            reason = custom_reason or getattr(
+                self.state,
+                "result_reason",
+                "双方同时满足相同数量的胜利条件",
+            )
+        elif custom_reason:
             reason = custom_reason
         elif not self.state.get_player(1 - winner).has_any_pokemon_in_play():
             reason = "对手场上没有宝可梦"
         elif not self.state.get_player(1 - winner).deck:
             reason = "对手无法抽牌"
         else:
-            reason = "全部奖品卡获取完毕"
+            reason = "全部奖赏卡获取完毕"
         prizes1 = 6 - len(self.state.p1.prizes)
         prizes2 = 6 - len(self.state.p2.prizes)
 
         end_screen = EndScreen(
-            self.manager, winner, reason, (prizes1, prizes2),
+            self.manager,
+            winner,
+            reason,
+            (prizes1, prizes2),
+            result_status=result_status,
         )
         self.manager.replace_top(end_screen, FadeTransition(0.6))
 
@@ -2214,12 +2249,7 @@ class GameScreen(
                 self._save_undo("place_bench", self.state.active_player_idx,
                                 target="last_bench")
 
-        if result.success and (
-            self.state.winner is not None
-            or self.state.phase == TurnPhase.GAME_OVER
-        ):
-            if self.state.winner is not None:
-                self.state.phase = TurnPhase.GAME_OVER
+        if result.success and self.state.is_terminal():
             self._show_end_screen()
             return
 
@@ -2384,7 +2414,7 @@ class GameScreen(
 
     def _resolve_structured_pending(self, action_req: ActionRequest, payload):
         """Resolve one UI choice through the authoritative choice contract."""
-        structured = self.game_engine.choice_request(self.state, action_req)
+        structured = self._structured_pending_request(action_req)
         response = self.game_engine.choice_response_from_legacy(
             structured,
             payload,
@@ -2399,12 +2429,35 @@ class GameScreen(
             return result.pending_action
         return result
 
+    def _structured_pending_request(self, action_req: ActionRequest):
+        """Return the persisted request, including settlement-only metadata."""
+        structured = self.game_engine.pending_choice_request(self.state)
+        if structured is not None:
+            return structured
+        return self.game_engine.choice_request(self.state, action_req)
+
+    def _resolve_deterministic_pending(self, action_req: ActionRequest):
+        """Resolve debug-only choices that do not yet have bespoke Pygame UI."""
+        structured = self._structured_pending_request(action_req)
+        response = self.game_engine.choice_manager.default_choice_response(
+            structured,
+            RandomSource(20260716),
+        )
+        step = self.game_engine.apply_choice(self.state, structured, response)
+        result = step.action_result or ActionResult(step.success, step.message)
+        if result.pending_action:
+            return result.pending_action
+        return result
+
     def _dispatch_choice_result(self, result) -> None:
         """Route a structured choice result without calling legacy callbacks."""
         if isinstance(result, ActionRequest):
             self._handle_pending_action(result)
         elif result is not None:
             self._show_result(result)
+            setup_actor = int(getattr(self.state, "setup_actor_idx", -1))
+            if self.state.phase == TurnPhase.SETUP and setup_actor in (0, 1):
+                self.setup_player_idx = setup_actor
             if self._has_attacked and self.state.phase != TurnPhase.ATTACK:
                 self._pending_turn_end = max(self._pending_turn_end, 0.3)
 
@@ -2413,7 +2466,45 @@ class GameScreen(
             self._handle_ai_pending_action(action_req)
             return
 
-        if action_req.request_type in ("search_deck", "select_hand_to_discard"):
+        if action_req.request_type == "choose_turn_order":
+            self._dispatch_choice_result(
+                self._resolve_structured_pending(action_req, "first")
+            )
+        elif action_req.request_type == "choose_mulligan_draw_count":
+            maximum = int(
+                (getattr(action_req, "continuation", {}) or {}).get("maximum", 0)
+                or 0
+            )
+            self.state._log(f"本地调试客户端选择抽取全部{maximum}张再战奖励卡。")
+            self._dispatch_choice_result(
+                self._resolve_structured_pending(action_req, maximum)
+            )
+        elif action_req.request_type == "select_prize":
+            positions = [
+                int(item.get("index", index))
+                for index, item in enumerate(
+                    getattr(action_req, "target_info", []) or []
+                )
+                if isinstance(item, dict)
+            ]
+            selected = min(positions) if positions else 0
+            self._dispatch_choice_result(
+                self._resolve_structured_pending(action_req, selected)
+            )
+        elif action_req.request_type in {
+            "choose_trigger_order",
+            "confirm_trigger",
+            "select_attachment",
+            "select_energy_target",
+            "select_prize_energy_target",
+        }:
+            self.state._log(
+                f"本地调试客户端按确定性策略处理：{action_req.prompt}"
+            )
+            self._dispatch_choice_result(
+                self._resolve_deterministic_pending(action_req)
+            )
+        elif action_req.request_type in ("search_deck", "select_hand_to_discard"):
             from ui.screens.search_screen import SearchScreen
             def wrapped_callback(selected_cards):
                 player = self.state.get_player(action_req.player)
@@ -2775,7 +2866,11 @@ class GameScreen(
                 conceder = self.setup_player_idx
             else:
                 conceder = self.state.active_player_idx
-            self.state.winner = 1 - conceder
+            self.state.set_result(
+                "WIN",
+                winner=1 - conceder,
+                reason="CONCEDE",
+            )
             self._show_end_screen(custom_reason="对手认输")
 
         self._confirm_dialog = {

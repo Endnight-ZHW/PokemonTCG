@@ -27,10 +27,10 @@ func cmd_discard_then_revive(
 	args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
-	_source_slot: String,
+	source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	return ability_discard_revive(state, player_idx, args, events)
+	return ability_discard_revive(state, player_idx, source_slot, args, events)
 
 
 func cmd_evolve_skip_stage(
@@ -250,17 +250,30 @@ func search_any_and_switch(
 func ability_discard_revive(
 	state: GameState,
 	player_idx: int,
+	source_slot: String,
 	params: Dictionary,
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var revive_id := str(params.get("card_id", ""))
-	var discard_index := player.discard.find(revive_id)
+	var discard_index := (
+		source_slot.trim_prefix("discard_").to_int()
+		if source_slot.begins_with("discard_")
+		else player.discard.find(revive_id)
+	)
 	var bench_slot := player.find_empty_bench_slot()
-	if discard_index < 0 or not player.hand.is_empty() or bench_slot < 0:
+	if (
+		discard_index < 0
+		or discard_index >= player.discard.size()
+		or str(player.discard[discard_index]) != revive_id
+		or not player.hand.is_empty()
+		or bench_slot < 0
+	):
 		return VMResult.fail("紧急上浮条件不满足。")
 	player.discard.remove_at(discard_index)
-	player.place_bench(revive_id, bench_slot)
+	var revived := player.place_bench(revive_id, bench_slot)
+	if revived:
+		revived.used_abilities.append("紧急上浮")
 	events.append(VMZoneHelpers.card_moved_event(
 		player_idx,
 		[revive_id],

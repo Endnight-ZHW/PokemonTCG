@@ -41,12 +41,11 @@ class SnapshotSchemaTests(unittest.TestCase):
         restored = state_from_payload(payload)
         self.assertEqual(canonical_state_payload(restored), payload)
 
-    def test_pre_schema_payload_remains_readable(self):
+    def test_pre_schema_payload_is_rejected_explicitly(self):
         payload = canonical_state_payload(self._state())
         payload.pop("schema_version")
-        restored = state_from_payload(payload)
-        self.assertEqual(restored.revision, 7)
-        self.assertEqual(restored.p1.hand[0].api_id, "sv1-ener-2")
+        with self.assertRaisesRegex(ValueError, "incompatible_snapshot_rules"):
+            state_from_payload(payload)
 
     def test_canonical_payload_sorts_set_backed_fields(self):
         state = self._state()
@@ -70,7 +69,7 @@ class SnapshotSchemaTests(unittest.TestCase):
         payload = canonical_state_payload(self._state())
         future = copy.deepcopy(payload)
         future["schema_version"] = SNAPSHOT_SCHEMA_VERSION + 1
-        with self.assertRaisesRegex(ValueError, "Unsupported snapshot schema"):
+        with self.assertRaisesRegex(ValueError, "incompatible_snapshot_rules"):
             snapshot_from_dict(future)
 
         invalid = copy.deepcopy(payload)

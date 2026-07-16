@@ -39,6 +39,7 @@ from engine.effects.runtime_effects import (
     trainer_runtime_effects,
 )
 from engine.effect_runner import effect_replaces_base_damage as _effect_replaces_base_damage
+from engine.energy_view import EnergyView
 from engine.rules_validator import (
     can_attach_energy,
     can_declare_attack,
@@ -856,8 +857,13 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         try:
             sim = self._clone_state(state)
             result = self._apply_action_for_sim(sim, player_idx, action)
-            if result is None or not result.success or sim.winner == 1 - player_idx:
+            if result is None or not result.success:
                 return None
+            if sim.is_terminal():
+                if str(getattr(sim, "result_status", "")) == "DRAW":
+                    return 0.0
+                if sim.winner == 1 - player_idx:
+                    return None
             return self.evaluate_state(sim, player_idx)
         except Exception as exc:
             _logger.debug("search action scoring failed: %s %s -> %s", action.action, action.params, exc)
@@ -1011,6 +1017,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         if req.request_type == "confirm":
             return AIChoice(confirmed=self._confirm_pending(state, player_idx, req))
 
+        if req.request_type == "confirm_trigger":
+            return AIChoice(confirmed=True)
+
         if req.request_type == "coin_flip":
             if getattr(req, "until_tails", False):
                 results = []
@@ -1025,6 +1034,71 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             else:
                 results = [self.random.random() < 0.5 for _ in range(max(1, req.flip_count))]
             return AIChoice(coin_results=results)
+
+        if req.request_type == "choose_turn_order":
+            return AIChoice(option_ids=["turn_order:first"])
+
+        if req.request_type == "choose_mulligan_draw_count":
+            maximum = int((getattr(req, "continuation", {}) or {}).get("maximum", 0) or 0)
+            return AIChoice(option_ids=[f"mulligan_draw:{maximum}"])
+
+        if req.request_type == "select_prize":
+            positions = [
+                int(item.get("index", index))
+                for index, item in enumerate(getattr(req, "target_info", []) or [])
+                if isinstance(item, dict)
+            ]
+            selected = min(positions) if positions else 0
+            return AIChoice(option_ids=[f"prize:{selected}"])
+
+        if req.request_type == "choose_trigger_order":
+            positions = [
+                int(item.get("index", index))
+                for index, item in enumerate(getattr(req, "target_info", []) or [])
+                if isinstance(item, dict)
+            ]
+            selected = min(positions) if positions else 0
+            return AIChoice(option_ids=[f"trigger:{selected}"])
+
+        if req.request_type == "select_attachment":
+            from engine.actions import AttachmentRef
+
+            refs = [
+                AttachmentRef(
+                    int(item.get("player", player_idx)),
+                    str(item.get("slot", "")),
+                    str(item.get("attachment_type", "energy")),
+                    int(item.get("index", 0)),
+                    str(item.get("card_id", "")),
+                )
+                for item in (getattr(req, "target_info", []) or [])
+                if isinstance(item, dict)
+            ]
+            count = min(len(refs), max(int(req.min_select), int(req.max_select)))
+            return AIChoice(option_ids=[ref.ref_id for ref in refs[:count]])
+
+        if req.request_type == "select_prize_energy_target":
+            from engine.actions import PokemonRef
+
+            player = state.get_player(player_idx)
+            candidates = [
+                (slot, pokemon)
+                for slot, pokemon in player.get_all_pokemon()
+                if pokemon is not None
+            ]
+            if not candidates:
+                return AIChoice(option_ids=[])
+            slot, pokemon = max(
+                candidates,
+                key=lambda row: self._energy_target_value(
+                    state,
+                    player_idx,
+                    row[0],
+                ),
+            )
+            return AIChoice(
+                option_ids=[PokemonRef(player_idx, slot, pokemon.card.api_id).ref_id]
+            )
 
         if req.request_type == "distribute_energy":
             return AIChoice(assignments=self._choose_energy_assignments(state, player_idx, req))
@@ -1092,6 +1166,24 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         elif req.request_type == "coin_flip":
             if req.callback:
                 result = req.callback(choice.coin_results)
+
+        elif req.request_type == "choose_turn_order":
+            if req.callback:
+                result = req.callback("first")
+
+        elif req.request_type == "choose_mulligan_draw_count":
+            maximum = int((getattr(req, "continuation", {}) or {}).get("maximum", 0) or 0)
+            if req.callback:
+                result = req.callback(maximum)
+
+        elif req.request_type == "select_prize":
+            positions = [
+                int(item.get("index", index))
+                for index, item in enumerate(getattr(req, "target_info", []) or [])
+                if isinstance(item, dict)
+            ]
+            if req.callback:
+                result = req.callback(min(positions) if positions else 0)
 
         elif req.request_type == "distribute_energy":
             if req.callback:
@@ -1561,9 +1653,19 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         *,
         _depth: int,
     ) -> bool:
-        player = state.get_player(player_idx)
         condition = str(params.get("condition", "") or "")
-        if condition == "ko_by_attack_last_turn" and not player.was_ko_by_attack:
+        if (
+            condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}
+            and not state.had_knockout_last_opponent_turn(
+                player_idx,
+                causes={"attack_damage"},
+            )
+        ):
+            return False
+        if (
+            condition == "ko_last_opponent_turn"
+            and not state.had_knockout_last_opponent_turn(player_idx)
+        ):
             return False
 
         cost = params.get("cost")
@@ -1705,7 +1807,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             mapped = _map_legacy_choice(structured_request, legacy_choice)
             if mapped is not None:
                 return mapped
-            return DEFAULT_GAME_ENGINE._default_choice_response(
+            return DEFAULT_GAME_ENGINE.choice_manager.default_choice_response(
                 structured_request,
                 rng,
             )
@@ -1724,8 +1826,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return ActionResult(step.success, step.message)
 
     def _auto_promote_for_sim(self, state: GameState) -> None:
+        from engine.commands.attack_frames import finalize_game_over_if_needed
+
         guard = 0
-        while state.pending_promotions and guard < 4 and state.winner is None:
+        while state.pending_promotions and guard < 4 and not state.is_terminal():
             guard += 1
             player_idx = state.pop_pending_promotion()
             player = state.get_player(player_idx)
@@ -1734,8 +1838,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             candidates = [(i, p) for i, p in enumerate(player.bench) if p is not None]
             if not candidates:
                 if not player.has_any_pokemon_in_play():
-                    state.winner = 1 - player_idx
-                    state.phase = TurnPhase.GAME_OVER
+                    finalize_game_over_if_needed(state, reason="promotion")
                 continue
             bench_idx, _ = max(
                 candidates,
@@ -1745,15 +1848,14 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if state.phase == TurnPhase.DRAW:
                 TurnManager(state).continue_after_promotion()
             # continue loop if more promotions queued
-        if state.winner is not None:
+        if state.is_terminal():
             return
         for player_idx in (0, 1):
             player = state.get_player(player_idx)
             if player.active is not None:
                 continue
             if not player.has_any_pokemon_in_play():
-                state.winner = 1 - player_idx
-                state.phase = TurnPhase.GAME_OVER
+                finalize_game_over_if_needed(state, reason="promotion")
                 return
             state.pending_promotion_player = player_idx
             if guard < 4:
@@ -1772,20 +1874,30 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return actions[0]
 
     def _setup_actions(self, state: GameState, player_idx: int) -> list[AIAction]:
+        stage = str(getattr(state, "setup_stage", ""))
+        if player_idx != int(getattr(state, "setup_actor_idx", -1)):
+            return []
+        if stage not in {"INITIAL_PLACEMENT", "BONUS_PLACEMENT"}:
+            return []
         player = state.get_player(player_idx)
         actions: list[AIAction] = []
         seen: set[str] = set()
+        eligible_bonus = list(
+            getattr(state, "setup_bonus_card_ids", ([], []))[player_idx]
+        )
         for hand_idx, card in enumerate(player.hand):
             if not card.is_basic_pokemon or card.api_id in seen:
                 continue
+            if stage == "BONUS_PLACEMENT" and card.api_id not in eligible_bonus:
+                continue
             seen.add(card.api_id)
-            if player.active is None:
+            if stage == "INITIAL_PLACEMENT" and player.active is None:
                 actions.append(AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": hand_idx, "target": "active"}))
             elif player.bench_has_space():
                 empty = player.find_empty_bench_slot()
                 if empty is not None:
                     actions.append(AIAction(PlayerAction.PLAY_BASIC, {"hand_idx": hand_idx, "target": f"bench_{empty}"}))
-        if player.active is not None:
+        if player.active is not None or stage == "BONUS_PLACEMENT":
             actions.append(AIAction("SETUP_DONE", {}, terminal=True))
         return actions
 
@@ -2053,10 +2165,16 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _evaluate_state_impl(self, state: GameState, player_idx: int) -> float:
         opponent_idx = 1 - player_idx
+        if str(getattr(state, "result_status", "")) == "DRAW":
+            return 0.0
         if state.winner == player_idx:
             return 1_000_000
         if state.winner == opponent_idx:
             return -1_000_000
+        if state.is_terminal():
+            # A terminal state without a winner is a draw (including legacy
+            # GAME_OVER fixtures which predate result_status).
+            return 0.0
 
         player = state.get_player(player_idx)
         opponent = state.get_player(opponent_idx)
@@ -2211,7 +2329,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _field_energy_count(self, player: Any) -> int:
         return sum(
-            len(getattr(pokemon, "energy_cards", []) or [])
+            EnergyView.from_pokemon(pokemon).total_units
             for _, pokemon in player.get_all_pokemon()
             if pokemon is not None
         )
@@ -2405,8 +2523,11 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 elif condition == "opponent_active_evolved":
                     if opponent.active and not opponent.active.card.is_basic_pokemon:
                         damage += bonus
-                elif condition == "ko_by_attack_last_turn":
-                    if player.was_ko_by_attack:
+                elif condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+                    if state.had_knockout_last_opponent_turn(
+                        player_idx,
+                        causes={"attack_damage"},
+                    ):
                         damage += bonus
                 elif opponent.active.damage_counters > 0:
                     damage += bonus
@@ -2420,20 +2541,19 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     formula_damage += player.active.damage_counters * per_counter
                 energy_type = str(params.get("per_self_energy_type", "") or "").lower()
                 if energy_type:
-                    energy_count = sum(
-                        1 for c in player.active.energy_cards
-                        if energy_type in {
-                            str(e).lower()
-                            for e in getattr(c, "provides_energy", [])
-                        }
-                    )
+                    energy_count = EnergyView.from_pokemon(player.active).count(energy_type)
                     formula_damage += energy_count * int(params.get("per_energy", 0) or 0)
                 condition_bonus = params.get("condition_bonus") or {}
                 if isinstance(condition_bonus, dict):
                     condition = str(condition_bonus.get("condition", "") or "")
                     applies = False
-                    if condition == "ko_by_attack_last_turn":
-                        applies = player.was_ko_by_attack
+                    if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+                        applies = state.had_knockout_last_opponent_turn(
+                            player_idx,
+                            causes={"attack_damage"},
+                        )
+                    elif condition == "ko_last_opponent_turn":
+                        applies = state.had_knockout_last_opponent_turn(player_idx)
                     elif condition == "own_bench_damaged":
                         applies = any(p is not None and p.damage_counters > 0 for p in player.bench)
                     elif condition == "opponent_active_evolved":
@@ -2456,21 +2576,15 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                 damage = max(damage, base + (bonus if condition in ("self_damaged", "") and damaged_self else 0))
             elif etype in ("damage_per_self_energy", "damage_per_self_energy_type"):
                 energy_type = params.get("energy_type", params.get("energy_filter", "any"))
-                if energy_type and energy_type != "any":
-                    required = str(energy_type).lower()
-                    energy_count = sum(
-                        1 for c in player.active.energy_cards
-                        if required in {str(e).lower() for e in getattr(c, "provides_energy", [])}
-                    )
-                else:
-                    energy_count = len(player.active.energy_cards)
+                energy_count = EnergyView.from_pokemon(player.active).count(str(energy_type or "any"))
                 base = int(params.get("base", 0) or 0)
                 damage = max(damage, base + energy_count * int(params.get("per_energy", 20)))
             elif etype == "damage_per_energy":
                 count_from = params.get("count_from", "self")
                 source = player.active if count_from == "self" else opponent.active
                 base = int(params.get("base", 0) or 0)
-                damage = max(damage, base + len(source.energy_cards) * int(params.get("per_energy", 0)))
+                energy_count = EnergyView.from_pokemon(source).total_units
+                damage = max(damage, base + energy_count * int(params.get("per_energy", 0)))
             elif etype == "damage_plus_bench":
                 damage = max(damage, int(params.get("base", 0)) + player.bench_count() * int(params.get("per_bench", 20)))
             elif etype == "damage_per_hand_size":
@@ -2609,7 +2723,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             if etype == "damage":
                 damage += int(params.get("amount", 0) or 0)
             elif etype == "damage_per_self_energy":
-                damage += len(player.active.energy_cards) * int(params.get("per_energy", 20) or 20)
+                damage += EnergyView.from_pokemon(player.active).count(
+                    str(params.get("energy_filter", "any") or "any")
+                ) * int(params.get("per_energy", 20) or 20)
             elif etype == "energy_discard":
                 damage += 25 if opponent.active.energy_cards else 0
             elif etype == "attack_fail":
@@ -3554,35 +3670,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
         return best
 
     def _missing_energy_count_with_extra(self, pokemon, cost: list[str], energy_card: Any) -> int:
-        available = list(pokemon.available_energy)
-        available.extend(getattr(energy_card, "provides_energy", []) or [])
-        missing = 0
-        for required in cost:
-            if required == "Colorless":
-                continue
-            if required in available:
-                available.remove(required)
-            elif "Rainbow" in available:
-                available.remove("Rainbow")
-            else:
-                missing += 1
-        colorless = sum(1 for c in cost if c == "Colorless")
-        return missing + max(0, colorless - len(available))
+        return EnergyView.from_pokemon(pokemon).with_card(energy_card).missing_count(cost)
 
     def _missing_energy_count(self, pokemon, cost: list[str]) -> int:
-        available = list(pokemon.available_energy)
-        missing = 0
-        for required in cost:
-            if required == "Colorless":
-                continue
-            if required in available:
-                available.remove(required)
-            elif "Rainbow" in available:
-                available.remove("Rainbow")
-            else:
-                missing += 1
-        colorless = sum(1 for c in cost if c == "Colorless")
-        return missing + max(0, colorless - len(available))
+        return EnergyView.from_pokemon(pokemon).missing_count(cost)
 
     def _action_key(
         self, state: GameState, player_idx: int, action: AIAction, card_key: str = ""

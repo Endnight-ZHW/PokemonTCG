@@ -20,6 +20,7 @@ func start_match(
 	client_deck: String,
 	seed: int,
 	forced_first: int = -1,
+	rules_options: Dictionary = {"apply_type_matchups": false},
 ) -> StepResult:
 	if not catalog.decks.has(host_deck) or not catalog.decks.has(client_deck):
 		return StepResult.new(
@@ -34,6 +35,8 @@ func start_match(
 	deck_keys = [host_deck, client_deck]
 	state = GameState.new()
 	state.public_deck_keys = deck_keys.duplicate()
+	state.set_type_matchups_enabled(bool(rules_options.get(
+		"apply_type_matchups", false)))
 	rng = PortableRandomSource.new(seed)
 	var result := engine.setup_game(
 		state,
@@ -74,7 +77,7 @@ func submit_choice(player_idx: int, response_data: Dictionary) -> StepResult:
 func surrender(player_idx: int) -> StepResult:
 	if state == null or player_idx not in [0, 1]:
 		return StepResult.new(false, "无法投降。", null, [], -1, false, "invalid_actor")
-	if state.phase == "GAME_OVER" or state.winner >= 0:
+	if state.is_terminal():
 		return StepResult.new(
 			false,
 			"对局已经结束。",
@@ -85,8 +88,7 @@ func surrender(player_idx: int) -> StepResult:
 			"game_over",
 		)
 	state.revision += 1
-	state.winner = 1 - player_idx
-	state.phase = "GAME_OVER"
+	state.set_win(1 - player_idx, "surrender")
 	state.log_action("%s 投降。" % state.players[player_idx].name)
 	return StepResult.new(true, "玩家投降。", null, [{
 		"event_type": "game_over",
@@ -138,7 +140,7 @@ func view_for(
 		"legal_actions": legal,
 		"presentation_events": visible_events,
 		"choice_request": (
-			pending.to_dict()
+			_choice_payload(pending, state.revision)
 			if pending != null and pending.player == player_idx
 			else null
 		),
@@ -151,6 +153,18 @@ func view_for(
 			else null
 		),
 	}
+
+
+static func _choice_payload(request: ChoiceRequest, revision: int) -> Dictionary:
+	var payload := request.to_dict()
+	var metadata: Dictionary = Dictionary(payload.get("metadata", {})).duplicate(true)
+	if str(metadata.get("domain", "")).is_empty():
+		metadata["domain"] = "rules"
+	metadata["revision"] = revision
+	if str(metadata.get("continuation_frame_id", "")).is_empty():
+		metadata["continuation_frame_id"] = request.request_id
+	payload["metadata"] = metadata
+	return payload
 
 
 static func _coarse_choice_kind(request: ChoiceRequest) -> String:
@@ -174,5 +188,5 @@ func _current_actor() -> int:
 	if not state.pending_promotions.is_empty():
 		return int(state.pending_promotions[0])
 	if state.phase == "SETUP":
-		return 0 if not state.setup_ready[0] else 1
+		return state.setup_actor_idx
 	return state.active_player_idx

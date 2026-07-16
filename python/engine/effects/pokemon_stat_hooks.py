@@ -8,6 +8,7 @@ from engine.effects.runtime_effects import (
     strict_trainer_runtime_effects as trainer_runtime_effects,
 )
 from engine.rules_constants import DAMAGE_PER_COUNTER, TOOL_HP_BOOST
+from engine.energy_view import EnergyView
 
 
 def current_hp(pokemon) -> int:
@@ -73,11 +74,7 @@ def _conditional_hp_boost(pokemon, params: dict) -> dict | None:
     energy_type = str(params.get("energy_type", "") or "").lower()
     threshold = int(params.get("threshold", 0) or 0)
     amount = int(params.get("amount", 0) or 0)
-    matching = sum(
-        1
-        for card in pokemon.energy_cards
-        if any(str(provided).lower() == energy_type for provided in card.provides_energy)
-    )
+    matching = EnergyView.from_pokemon(pokemon).count(energy_type)
     if matching >= threshold:
         return {"delta": amount, "source": "conditional_hp_boost"}
     return None

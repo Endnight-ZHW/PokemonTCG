@@ -2070,6 +2070,75 @@ func _run_local_handoff_contract() -> void:
 	var ui := main_scene.instantiate()
 	root.add_child(ui)
 	ui.initialize_ui()
+	ui.game_mode = "local"
+
+	# Completing setup does not change active_player_idx: turn order was already
+	# chosen before opening hands were dealt. The first turn still needs the same
+	# privacy gate and pre-draw view as every later hot-seat handoff.
+	var opening_state := UIPreviewStateFactory.battle_state(20260719)
+	opening_state.revision = 79
+	opening_state.active_player_idx = 0
+	opening_state.first_player_idx = 0
+	opening_state.turn_number = 1
+	opening_state.phase = "MAIN"
+	opening_state.setup_stage = GameState.SETUP_COMPLETE
+	opening_state.players[0].hand = ["svi-chim", "sv1-151"]
+	opening_state.players[0].deck = ["sv1-ener-1", "sv1-ener-2"]
+	opening_state.action_log.append("—— 玩家 1的第1回合 ——")
+	ui.state = opening_state
+	ui.current_view_player = 1
+	var opening_events: Array[Dictionary] = [
+		{
+			"event_type": "setup_revealed",
+			"data": {"first_player": 0, "players": []},
+		},
+		{
+			"event_type": "turn_start",
+			"actor": 0,
+			"target": {"player": 0, "slot": "active"},
+			"data": {"player": 0, "turn": 1},
+		},
+		{
+			"event_type": "cards_drawn",
+			"actor": 0,
+			"card_id": "sv1-151",
+			"visibility": "owner",
+			"source": {"player": 0, "zone": "deck"},
+			"target": {"player": 0, "zone": "hand"},
+			"data": {
+				"player": 0,
+				"count": 1,
+				"card_ids": ["sv1-151"],
+				"purpose": "turn_draw",
+				"turn": 1,
+			},
+		},
+	]
+	var opening_plan: Dictionary = ui._build_local_handoff_plan(
+		opening_events,
+		0,
+		"SETUP",
+	)
+	var opening_incoming_view := opening_plan.get(
+		"incoming_view",
+	) as BattleViewModel
+	var opening_pre_draw := (
+		opening_incoming_view.state_for_render()
+		if opening_incoming_view != null
+		else null
+	) as GameState
+	_expect(
+		not opening_plan.is_empty()
+		and _event_types(opening_plan.get("prefix_events", []))
+		== ["setup_revealed"]
+		and _event_types(opening_plan.get("suffix_events", []))
+		== ["turn_start", "cards_drawn"]
+		and int(opening_plan.get("incoming_player", -1)) == 0
+		and opening_pre_draw != null
+		and opening_pre_draw.phase == "DRAW"
+		and opening_pre_draw.players[0].hand == ["svi-chim"],
+		"First SETUP-to-MAIN turn did not stage privacy, announcement, then draw",
+	)
 
 	var final_state := UIPreviewStateFactory.battle_state(20260720)
 	final_state.revision = 80
@@ -2080,22 +2149,22 @@ func _run_local_handoff_contract() -> void:
 	final_state.players[1].hand = ["svi-chim", "sv1-151"]
 	final_state.players[1].deck = ["sv1-ener-1", "sv1-ener-2"]
 	final_state.action_log.append("—— 玩家 2的第4回合 ——")
-	ui.game_mode = "local"
 	ui.state = final_state
 	ui.current_view_player = 0
 
 	var raw_events: Array[Dictionary] = [
 		{
-			"event_type": "turn_end",
+			"event_type": "promoted",
 			"actor": 0,
+			"source": {"player": 0, "slot": "bench_0"},
 			"target": {"player": 0, "slot": "active"},
-			"data": {"player": 0, "turn": 3},
+			"data": {"player": 0, "bench_idx": 0, "slot": "bench_0"},
 		},
 		{
-			"event_type": "checkup",
-			"actor": 0,
-			"target": {"player": 0, "slot": "active"},
-			"data": {"player": 0, "turn": 3},
+			"event_type": "turn_start",
+			"actor": 1,
+			"target": {"player": 1, "slot": "active"},
+			"data": {"player": 1, "turn": 4},
 		},
 		{
 			"event_type": "cards_drawn",
@@ -2108,28 +2177,34 @@ func _run_local_handoff_contract() -> void:
 				"player": 1,
 				"count": 1,
 				"card_ids": ["sv1-151"],
+				"purpose": "turn_draw",
+				"turn": 4,
 			},
 		},
-		{
-			"event_type": "turn_start",
-			"actor": 1,
-			"target": {"player": 1, "slot": "active"},
-			"data": {"player": 1, "turn": 4},
-		},
 	]
-	var plan: Dictionary = ui._build_local_handoff_plan(raw_events, 0)
+	# Simulate simultaneous checkup KOs: the incoming player was already made
+	# active before both promotions, and the outgoing player performs the second
+	# promotion while still holding the hot-seat view.
+	var plan: Dictionary = ui._build_local_handoff_plan(raw_events, 1, "DRAW")
 	var prefix_events: Array = plan.get("prefix_events", [])
 	var suffix_events: Array = plan.get("suffix_events", [])
 	var outgoing_view := plan.get("outgoing_view") as BattleViewModel
 	var incoming_view := plan.get("incoming_view") as BattleViewModel
+	var outgoing_pre_draw_view: GameState = (
+		outgoing_view.state_for_render() if outgoing_view != null else null
+	)
 	var pre_draw_state: GameState = (
 		incoming_view.state_for_render() if incoming_view != null else null
 	)
+	var authoritative_pre_draw: GameState = ui._state_before_handoff_draw(
+		suffix_events,
+		1,
+	)
 	_expect(
 		not plan.is_empty()
-		and _event_types(prefix_events) == ["turn_end", "checkup"]
-		and _event_types(suffix_events) == ["cards_drawn", "turn_start"],
-		"Local handoff plan did not split immediately before the incoming draw: prefix=%s suffix=%s"
+		and _event_types(prefix_events) == ["promoted"]
+		and _event_types(suffix_events) == ["turn_start", "cards_drawn"],
+		"Local handoff plan did not split before the incoming turn announcement: prefix=%s suffix=%s"
 		% [str(_event_types(prefix_events)), str(_event_types(suffix_events))],
 	)
 	_expect(
@@ -2137,15 +2212,28 @@ func _run_local_handoff_contract() -> void:
 		and incoming_view != null
 		and outgoing_view.view_player == 0
 		and incoming_view.view_player == 1
+		and authoritative_pre_draw != null
+		and authoritative_pre_draw.phase == "DRAW"
+		and authoritative_pre_draw.players[1].hand == ["svi-chim"]
+		and authoritative_pre_draw.players[1].deck == [
+			"sv1-ener-1", "sv1-ener-2", "sv1-151"
+		]
 		and pre_draw_state != null
 		and pre_draw_state.phase == "DRAW"
 		and pre_draw_state.players[1].hand == ["svi-chim"]
-		and pre_draw_state.players[1].deck == [
-			"sv1-ener-1", "sv1-ener-2", "sv1-151"
-		]
+		and pre_draw_state.players[1].deck.size() == 3
+		and pre_draw_state.players[1].deck.all(
+			func(card_id: String) -> bool: return card_id.is_empty())
+		and outgoing_pre_draw_view != null
+		and outgoing_pre_draw_view.players[1].hand.size() == 1
+		and outgoing_pre_draw_view.players[1].hand.all(
+			func(card_id: String) -> bool: return card_id.is_empty())
+		and outgoing_pre_draw_view.players[1].deck.size() == 3
+		and outgoing_pre_draw_view.players[1].deck.all(
+			func(card_id: String) -> bool: return card_id.is_empty())
 		and final_state.players[1].hand == ["svi-chim", "sv1-151"]
 		and final_state.players[1].deck == ["sv1-ener-1", "sv1-ener-2"],
-		"Local handoff pre-draw view did not restore the drawn card to the deck",
+		"Local handoff pre-draw state was not restored or its player views leaked",
 	)
 
 	ui._build_game_screen()
@@ -2157,6 +2245,10 @@ func _run_local_handoff_contract() -> void:
 	var started_callback := func(event: Dictionary) -> void:
 		started_types.append(str(event.get("event_type", "")))
 	ui.battle_screen.director.event_started.connect(started_callback)
+	var finished_types: Array[String] = []
+	var finished_callback := func(event: Dictionary) -> void:
+		finished_types.append(str(event.get("event_type", "")))
+	ui.battle_screen.director.event_finished.connect(finished_callback)
 	var suffix_submission := {"while_modal_visible": false}
 	var transition_started_callback := func(_handle: PresentationHandle) -> void:
 		suffix_submission["while_modal_visible"] = (
@@ -2167,8 +2259,8 @@ func _run_local_handoff_contract() -> void:
 	ui._open_local_handoff_gate(
 		step,
 		plan,
-		0,
-		"MAIN",
+		1,
+		"DRAW",
 		"contract:handoff",
 		"",
 		BattleTransitionRequest.CAUSE_LOCAL_ACTION,
@@ -2186,17 +2278,18 @@ func _run_local_handoff_contract() -> void:
 		gated_state != null
 		and ui.current_view_player == 1
 		and gated_state.players[1].hand == ["svi-chim"]
-		and gated_state.players[1].deck == [
-			"sv1-ener-1", "sv1-ener-2", "sv1-151"
-		],
+		and gated_state.players[1].deck.size() == 3
+		and gated_state.players[1].deck.all(
+			func(card_id: String) -> bool: return card_id.is_empty()),
 		"Local handoff gate did not stage the incoming pre-draw view",
 	)
 	await process_frame
 	await process_frame
 	_expect(
-		"cards_drawn" not in started_types
+		"turn_start" not in started_types
+		and "cards_drawn" not in started_types
 		and not ui.battle_screen.is_presentation_busy(),
-		"Incoming draw started before the privacy gate was confirmed",
+		"Incoming turn presentation started before the privacy gate was confirmed",
 	)
 
 	var gate_was_visible_before_confirm: bool = ui.modal_layer.visible
@@ -2214,21 +2307,134 @@ func _run_local_handoff_contract() -> void:
 		and not bool(suffix_submission["while_modal_visible"]),
 		"Privacy-gated suffix did not start strictly after ModalLayer became hidden",
 	)
+	await _wait_for_director_event(started_types, "turn_start")
+	var staged_turn_draw := _visible_hand_view_at_index(ui.battle_screen, 1)
+	_expect(
+		started_types == ["turn_start"]
+		and "cards_drawn" not in started_types
+		and finished_types.is_empty()
+		and staged_turn_draw != null
+		and staged_turn_draw.is_presentation_hidden(),
+		(
+			"Incoming draw became visible before the turn-start announcement finished "
+			+ "(started=%s finished=%s view=%s hidden=%s)"
+		) % [
+			str(started_types),
+			str(finished_types),
+			str(staged_turn_draw),
+			str(
+				staged_turn_draw.is_presentation_hidden()
+				if staged_turn_draw != null
+				else false
+			),
+		],
+	)
 	await _wait_for_director_event(started_types, "cards_drawn")
 	_expect(
-		started_types[0] == "cards_drawn"
+		started_types == ["turn_start", "cards_drawn"]
+		and "turn_start" in finished_types
 		and ui.battle_screen.table.state_ref.players[1].hand
 		== ["svi-chim", "sv1-151"],
-		"Local handoff suffix did not begin with the incoming draw target",
+		"Turn draw started before the turn-start announcement completion barrier",
 	)
 	await _wait_for_presentation_idle(ui.battle_screen)
+	var landed_turn_draw := _visible_hand_view_at_index(ui.battle_screen, 1)
 	_expect(
 		_event_types(suffix_events) == started_types
-		and not ui.battle_screen.hand_views[-1].is_presentation_hidden(),
-		"Local handoff suffix did not complete draw before turn-start presentation",
+		and landed_turn_draw != null
+		and not landed_turn_draw.is_presentation_hidden(),
+		"Local handoff suffix did not complete turn-start then draw presentation",
 	)
+
+	# A KO/Prize/trigger chain can hand the next Choice to the other player
+	# without producing a turn_start event. Both action settlement and the shared
+	# choice/cancel continuation must establish the same opaque handoff gate before
+	# rendering that owner's view or opening the secret Choice UI.
+	var chained_choice := ChoiceRequest.new(
+		"contract:chained-choice:p0",
+		"select_prize",
+		0,
+		"请选择1张奖赏卡。",
+		[{"option_id": "prize:0", "label": "奖赏卡 1"}],
+		1,
+		1,
+		false,
+		false,
+		{"domain": "knockout", "purpose": "select_prize"},
+	)
+	ui.current_view_player = 1
+	ui.active_request = null
+	ui.battle_screen.set_local_hand_privacy_hidden(false)
+	ui._continue_after_choice_transition(
+		StepResult.new(true, "继续选择。", chained_choice),
+		ui.state.active_player_idx,
+		ui.state.phase,
+	)
+	_expect(
+		ui.current_view_player == 0
+		and ui.modal_layer.visible
+		and float(ui.modal_shade.color.a) >= 0.99
+		and ui.modal_title.text == "规则选择"
+		and ui.active_request == null
+		and ui.battle_screen.table._local_hand_privacy_hidden
+		and not ui.battle_screen.table.hand_scroll.visible,
+		"Chained Choice owner change exposed the next player's view before its privacy gate",
+	)
+	await process_frame
+	_expect(
+		ui.active_request == null and ui.modal_title.text == "规则选择",
+		"Chained Choice UI opened before the pass-device gate was confirmed",
+	)
+	ui.modal_confirm.pressed.emit()
+	await create_timer(0.18).timeout
+	_expect(
+		ui.active_request == chained_choice
+		and not ui.battle_screen.table._local_hand_privacy_hidden,
+		"Confirmed chained Choice handoff did not open the new owner's request",
+	)
+	ui._close_modal()
+	await create_timer(0.18).timeout
+
+	var action_choice := ChoiceRequest.new(
+		"contract:action-choice:p1",
+		"confirm_trigger",
+		1,
+		"是否发动触发效果？",
+		[{"option_id": "trigger:yes", "label": "发动"}],
+		0,
+		1,
+		false,
+		true,
+		{"domain": "knockout", "purpose": "confirm_trigger"},
+	)
+	ui.current_view_player = 0
+	ui.active_request = null
+	ui._continue_after_player_transition(
+		StepResult.new(true, "等待触发。", action_choice),
+		ui.state.active_player_idx,
+		ui.state.phase,
+	)
+	_expect(
+		ui.current_view_player == 1
+		and ui.modal_layer.visible
+		and float(ui.modal_shade.color.a) >= 0.99
+		and ui.modal_title.text == "规则选择"
+		and ui.active_request == null
+		and ui.battle_screen.table._local_hand_privacy_hidden,
+		"Action-result Choice owner change bypassed the shared privacy gate",
+	)
+	ui.modal_confirm.pressed.emit()
+	await create_timer(0.18).timeout
+	_expect(
+		ui.active_request == action_choice,
+		"Action-result handoff did not open its Choice after gate confirmation",
+	)
+	ui._close_modal()
+	await create_timer(0.18).timeout
 	if ui.battle_screen.director.event_started.is_connected(started_callback):
 		ui.battle_screen.director.event_started.disconnect(started_callback)
+	if ui.battle_screen.director.event_finished.is_connected(finished_callback):
+		ui.battle_screen.director.event_finished.disconnect(finished_callback)
 	if ui.battle_screen.transition_started.is_connected(transition_started_callback):
 		ui.battle_screen.transition_started.disconnect(transition_started_callback)
 	ui.queue_free()

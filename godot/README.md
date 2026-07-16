@@ -1,18 +1,17 @@
 # Godot 4.7 客户端
 
-这是项目当前的发布版本，版本号为 0.3.2。客户端使用 Godot 4.7
+这是项目当前的发布版本，版本号为 0.4.0。客户端使用 Godot 4.7
 Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 ## 已实现
 
-- 本地双人、Challenge AI 和 Deep AI。
-- 10 套预组卡组和 10 个离线 FP32 ONNX 模型。
-- ENet LAN 与 WebSocket Relay 协议 v3 联机。
+- 本地双人和 Challenge AI；旧 Deep AI 入口暂时停用并回退 Challenge。
+- 10 套预组卡组；10 个旧 FP32 ONNX 模型保留为 rules v2 历史产物，不在 rules v3/v4 下运行。
+- ENet LAN 与 WebSocket Relay Protocol v4 联机。
 - 原生 GDScript 规则引擎和 C++ GDExtension ONNX Runtime 推理。
 - 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
 - 深色“午夜竞技场”全屏标题页，使用深海军蓝、青蓝舞台光、金色点缀和八种基础能量；
-  首页只保留本地对战、挑战 AI、联机对战三个主入口，Challenge/Deep 与 LAN/Relay
-  分别在牌组选择页和网络大厅中选择。
+  首页只保留本地对战、挑战 AI、联机对战三个主入口，LAN/Relay 在网络大厅中选择。
 - 前台导航仅支持鼠标与触控，交互目标仍遵循至少 48px 的触控尺寸；网络文本框可在点击或
   轻触后输入，Android 系统返回按钮/手势继续用于返回与打开对局菜单。
 - 标题页按 Wide、Compact landscape、Dense 三档响应式布局，三张展示卡会从可用宝可梦
@@ -73,15 +72,19 @@ Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
   `LocalTwoPlayerButton`、`AIButton`、`NetworkButton`，另保留 `SettingsButton`、`HelpButton`；
   标题页发出的默认模式分别为 `local`、`challenge` 和 `lan`。
 - `DeckSelectPage`：使用 `selected_deck_key(player_idx)`、`select_deck(player_idx, key)` 和
-  `deck_count()`；AI 对局通过 `AIModeOption` 在 `challenge` / `deep` 间选择，
-  `start_requested(mode, deck1, deck2, forced_first)` 的参数顺序不变。两个槽位允许选择同一牌组。
+  `deck_count()`；发布版 `AIModeOption` 固定为 `challenge`，先后攻由开局硬币胜者选择。
+  `start_requested(mode, deck1, deck2, forced_first, apply_type_matchups)` 中 `forced_first` 传 `-1`，
+  最后一个参数来自默认关闭的项目规则开关。
+  两个槽位允许选择同一牌组。
   画廊 tile 使用中性深蓝交互层级，属性色仅保留在徽章和卡图细边框中。
 - `NetworkLobbyPage`：使用 `ConnectionState` 的 `IDLE`、`VALIDATING`、`CONNECTING`、
   `WAITING`、`CONNECTED`、`ERROR`，通过 `NetworkKindOption` 选择 LAN / Relay，并通过
   `set_connection_state(state, message, room_code)` 更新固定状态区；`kind_changed(kind)` 只在
   `IDLE` / `ERROR` 可触发。wide 左栏会同步展示方式图标、连接特性、身份徽章与角色提示，
-  compact 下隐藏；`connect_requested(...)` 的协议参数保持不变。地址、端口和房间码只有在
-  点击或轻触文本框后才接收文字输入，页面不提供 Tab、方向键或手柄焦点导航。
+  compact 下隐藏；`connect_requested(...)` 最后一个参数为房主设置的
+  `apply_type_matchups`。地址、端口和房间码只有在
+  点击或轻触文本框后才接收文字输入，页面不提供 Tab、方向键或手柄焦点导航。房主还会在
+  开局前锁定弱点/抗性选项，挑战者只读确认。
 - 页面仍通过 `configure(...)` 接收数据、通过既有信号报告意图；规则与网络权威校验留在 `Main`。
 
 ## 测试与构建

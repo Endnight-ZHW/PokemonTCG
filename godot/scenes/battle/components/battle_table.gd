@@ -185,6 +185,7 @@ var _presentation_cover_tweens: Dictionary = {}
 var _presentation_slot_covers: Dictionary = {}
 var _presentation_slot_cover_states: Dictionary = {}
 var _presentation_slot_event_queues: Dictionary = {}
+var _presentation_deferred_ko_slots: Dictionary = {}
 var _presentation_event_hand_targets: Dictionary = {}
 var _presentation_hand_target_cursor: Dictionary = {}
 var _presentation_hand_removed_counts: Dictionary = {}
@@ -1170,6 +1171,10 @@ func _bind_scene_nodes() -> void:
 		zone.detail_requested.connect(_on_detail_requested)
 		zone.action_requested.connect(action_requested.emit)
 		zone.card_dropped.connect(_on_card_dropped)
+	(zones["own_prizes"] as ZoneView).stack_index_activated.connect(
+		_on_prize_index_activated.bind(true))
+	(zones["opponent_prizes"] as ZoneView).stack_index_activated.connect(
+		_on_prize_index_activated.bind(false))
 	header.initialize_ui()
 	header.menu_requested.connect(_on_menu_pressed)
 	hud.phase_action_requested.connect(action_requested.emit)
@@ -1486,13 +1491,13 @@ func _refresh_field_info(display_state: GameState) -> void:
 		return
 	var own := display_state.get_player(view_player)
 	var opponent := display_state.get_player(1 - view_player)
-	opponent_info.text = "%s　手牌 %d　牌库 %d　奖品 %d" % [
+	opponent_info.text = "%s　手牌 %d　牌库 %d　奖赏卡 %d" % [
 		opponent.name,
 		opponent.hand.size(),
 		opponent.deck.size(),
 		opponent.prizes.size(),
 	]
-	own_info.text = "%s　手牌 %d　牌库 %d　奖品 %d" % [
+	own_info.text = "%s　手牌 %d　牌库 %d　奖赏卡 %d" % [
 		own.name,
 		own.hand.size(),
 		own.deck.size(),
@@ -1517,7 +1522,7 @@ func _refresh_field_zones(own: PlayerState, opponent: PlayerState) -> void:
 		_zone_context(1 - view_player, "discard", opponent.discard, opponent.discard.size(), false),
 	)
 	(zones["opponent_prizes"] as ZoneView).configure(
-		"奖品",
+		"奖赏卡",
 		"",
 		opponent.prizes.size(),
 		true,
@@ -1538,7 +1543,7 @@ func _refresh_field_zones(own: PlayerState, opponent: PlayerState) -> void:
 		_zone_context(view_player, "discard", own.discard, own.discard.size(), false),
 	)
 	(zones["own_prizes"] as ZoneView).configure(
-		"奖品",
+		"奖赏卡",
 		"",
 		own.prizes.size(),
 		true,
@@ -1858,6 +1863,18 @@ func _refresh_target_hints() -> void:
 				stadium_highlighted = true
 				break
 	(zones["stadium"] as ZoneView).set_drop_highlight(stadium_highlighted)
+	for own_zone in [true, false]:
+		var zone_key := "own_prizes" if own_zone else "opponent_prizes"
+		var prize_player := view_player if own_zone else 1 - view_player
+		var prize_zone := zones[zone_key] as ZoneView
+		var has_choice := false
+		for index in range(prize_zone.count):
+			if choice_target_options.has(
+				"prize:%d:%d" % [prize_player, index]
+			):
+				has_choice = true
+				break
+		prize_zone.set_actionable(has_choice)
 
 
 func _configure_slot(
@@ -1867,10 +1884,17 @@ func _configure_slot(
 	slot_name: String,
 ) -> void:
 	slot_views["%d:%s" % [player, slot_name]] = view
+	var setup_hidden := (
+		pokemon != null
+		and state_ref != null
+		and state_ref.phase == "SETUP"
+		and state_ref.setup_stage != GameState.SETUP_COMPLETE
+		and player != view_player
+	)
 	view.configure(
-		pokemon.card_id if pokemon else "",
-		pokemon,
-		false,
+		pokemon.card_id if pokemon and not setup_hidden else "",
+		pokemon if not setup_hidden else null,
+		setup_hidden,
 		-1,
 		player,
 		slot_name,
@@ -3555,6 +3579,13 @@ func _on_card_activated(
 		pokemon_selected.emit(player, slot_name, card_id)
 
 
+func _on_prize_index_activated(index: int, own_zone: bool) -> void:
+	var player := view_player if own_zone else 1 - view_player
+	var key := "prize:%d:%d" % [player, index]
+	if choice_target_options.has(key):
+		choice_target_selected.emit(str(choice_target_options[key]))
+
+
 func _on_detail_requested(card_id: String) -> void:
 	detail_requested.emit(card_id)
 	if not card_id.is_empty():
@@ -4315,6 +4346,16 @@ func _stage_slot_visual_transactions(
 			if event_id not in queue:
 				queue.append(event_id)
 			event_queues[key] = queue
+			if (
+				PresentationEvent.canonical_event_type(
+					str(event.get("event_type", "")),
+				) == "pokemon_ko"
+				and bool(Dictionary(event.get("data", {})).get(
+					"defer_leave_play",
+					false,
+				))
+			):
+				_presentation_deferred_ko_slots[key] = true
 	var snapshot_slots: Dictionary = previous_snapshot.get("slots", {})
 	for key_value in event_queues.keys():
 		var key := str(key_value)
@@ -4431,10 +4472,24 @@ func _on_presentation_event_started(event: Dictionary) -> void:
 	var event_type := PresentationEvent.canonical_event_type(
 		str(event.get("event_type", "")),
 	)
+	var data: Dictionary = event.get("data", {})
 	var keys := _slot_visual_keys_for_event(event)
-	if event_type in ["card_moved", "promoted", "retreat", "switched"]:
+	if event_type == "card_moved":
+		for key in keys:
+			# Once a deferred KO has been declared, unrelated trigger movement
+			# must not remove its old rendered stack. Only the explicit serialized
+			# KO leave-play event is allowed to do that.
+			if (
+				not _presentation_deferred_ko_slots.has(key)
+				or bool(data.get("ko_leave_play", false))
+			):
+				_release_slot_state_cover(key)
+				_presentation_deferred_ko_slots.erase(key)
+		return
+	if event_type in ["promoted", "retreat", "switched"]:
 		for key in keys:
 			_release_slot_state_cover(key)
+			_presentation_deferred_ko_slots.erase(key)
 		return
 	# KO feedback must land on the old stack. Deferred KO declarations also keep
 	# that stack alive for intervening triggers such as Exp. Share; the later
@@ -4649,6 +4704,7 @@ func _clear_slot_visual_transactions() -> void:
 	_presentation_slot_covers.clear()
 	_presentation_slot_cover_states.clear()
 	_presentation_slot_event_queues.clear()
+	_presentation_deferred_ko_slots.clear()
 	_clear_effect_child_controls(["SlotStateCover"])
 
 
@@ -6179,7 +6235,8 @@ func _presentation_targets_for_event(event: Dictionary) -> Array[Control]:
 		"cards_drawn":
 			source = {"player": actor, "zone": "deck"}
 			target = {"player": actor, "zone": "hand"}
-			result.append_array(_hand_target_views_for_incoming(event))
+			if not _is_transient_opening_draw(event):
+				result.append_array(_hand_target_views_for_incoming(event))
 		"prize_taken":
 			source = {"player": actor, "zone": "prizes"}
 			target = {"player": actor, "zone": "hand"}
@@ -6351,6 +6408,8 @@ func _target_controls_for_endpoint(
 
 
 func _hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
+	if _is_transient_opening_draw(event):
+		return []
 	var event_id := str(event.get("event_id", ""))
 	if _presentation_event_hand_targets.has(event_id):
 		var cached: Array[Control] = []
@@ -6370,6 +6429,8 @@ func _hand_target_views_for_incoming(event: Dictionary) -> Array[Control]:
 
 
 func _precompute_hand_targets_for_event(event: Dictionary) -> void:
+	if _is_transient_opening_draw(event):
+		return
 	var event_type := str(event.get("event_type", ""))
 	var target := _event_target_endpoint(event)
 	var targets_hand := event_type in ["cards_drawn", "prize_taken"]
@@ -6531,6 +6592,8 @@ func _opponent_hand_target_views_for_incoming(
 	consume_cursor: bool = false,
 ) -> Array[Control]:
 	var result: Array[Control] = []
+	if _is_transient_opening_draw(event):
+		return result
 	var event_id := str(event.get("event_id", ""))
 	if _presentation_event_hand_targets.has(event_id):
 		for value in _presentation_event_hand_targets[event_id]:
@@ -6983,10 +7046,11 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		}
 		target = source.duplicate(true)
 	elif event_type == "cards_revealed":
-		source = {
-			"player": int(data.get("player", actor)),
-			"zone": "deck",
-		}
+		if str(source.get("zone", "")).is_empty():
+			source = {
+				"player": int(data.get("player", actor)),
+				"zone": "deck",
+			}
 		target = source.duplicate(true)
 		_spawn_reveal_motion(event, duration, motion_event_id)
 		_finish_event_motion_dispatch(motion_event_id)
@@ -7256,6 +7320,18 @@ func _event_card_ids(event: Dictionary) -> Array:
 	return result
 
 
+func _is_transient_opening_draw(event: Dictionary) -> bool:
+	if PresentationEvent.canonical_event_type(
+		str(event.get("event_type", "")),
+	) != "cards_drawn":
+		return false
+	var data: Dictionary = event.get("data", {})
+	return (
+		str(data.get("purpose", "")) in ["opening_hand", "mulligan_redraw"]
+		and not bool(data.get("final_opening_hand", false))
+	)
+
+
 func _reveal_rows(event: Dictionary) -> Array[Dictionary]:
 	var data: Dictionary = event.get("data", {})
 	var raw_value: Variant = data.get("cards", [])
@@ -7263,9 +7339,11 @@ func _reveal_rows(event: Dictionary) -> Array[Dictionary]:
 	if not raw_value is Array:
 		return result
 	for value in Array(raw_value):
-		if not value is Dictionary:
-			continue
-		var row := Dictionary(value).duplicate(true)
+		var row := (
+			Dictionary(value).duplicate(true)
+			if value is Dictionary
+			else {"card_id": str(value)}
+		)
 		if str(row.get("card_id", "")).is_empty():
 			continue
 		result.append(row)
@@ -8448,10 +8526,12 @@ func _spawn_reveal_motion(
 		"actor",
 		Dictionary(event.get("data", {})).get("player", view_player),
 	))
-	var deck_endpoint := {"player": actor, "zone": "deck"}
-	var deck_origin := _snapshot_endpoint_center(
-		deck_endpoint,
-		resolve_endpoint_center(deck_endpoint),
+	var source_endpoint := _event_source_endpoint(event)
+	if str(source_endpoint.get("zone", "")).is_empty():
+		source_endpoint = {"player": actor, "zone": "deck"}
+	var source_origin := _snapshot_endpoint_center(
+		source_endpoint,
+		resolve_endpoint_center(source_endpoint),
 	)
 	var card_back := _texture_for_card_id("")
 	if card_back == null and not rows.is_empty():
@@ -8476,7 +8556,7 @@ func _spawn_reveal_motion(
 		rows,
 		card_back,
 		face_textures,
-		deck_origin,
+		source_origin,
 		destination_points,
 		_reveal_content_rect(),
 		summary,
@@ -9315,7 +9395,7 @@ func _zone_title(zone_name: String) -> String:
 	return {
 		"deck": "牌库",
 		"discard": "弃牌",
-		"prizes": "奖品",
+		"prizes": "奖赏卡",
 		"stadium": "竞技场",
 	}.get(zone_name, zone_name)
 

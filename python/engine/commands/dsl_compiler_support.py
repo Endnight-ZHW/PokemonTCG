@@ -153,7 +153,10 @@ def make_search_any_and_switch(params: dict, **_kw):
 def make_ability_discard_revive(params: dict, **_kw):
     from engine.commands.primitives_recovery import AbilityDiscardRevive
 
-    return AbilityDiscardRevive(card_id=str(params.get("card_id", "") or ""))
+    return AbilityDiscardRevive(
+        card_id=str(params.get("card_id", "") or ""),
+        discard_idx=int(params.get("discard_idx", -1)),
+    )
 
 
 def make_evolve_skip_stage(params: dict, **_kw):

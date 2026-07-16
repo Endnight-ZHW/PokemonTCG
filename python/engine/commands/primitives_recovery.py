@@ -252,15 +252,25 @@ class AbilityDiscardRevive:
     """Revive a named Pokemon from discard when the player's hand is empty."""
 
     card_id: str = ""
+    discard_idx: int = -1
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult
 
         player = ctx.player
-        target_card = next(
-            (card for card in player.discard if getattr(card, "api_id", "") == self.card_id),
-            None,
-        )
+        target_card = None
+        if (
+            type(self.discard_idx) is int
+            and 0 <= self.discard_idx < len(player.discard)
+            and getattr(player.discard[self.discard_idx], "api_id", "") == self.card_id
+        ):
+            target_card = player.discard[self.discard_idx]
+        elif self.discard_idx < 0:
+            # Compatibility for directly constructed legacy commands.
+            target_card = next(
+                (card for card in player.discard if getattr(card, "api_id", "") == self.card_id),
+                None,
+            )
         if target_card is None:
             return CommandResult.fail("弃牌区中没有此卡。")
         if player.hand:

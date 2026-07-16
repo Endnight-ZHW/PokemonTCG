@@ -10,6 +10,7 @@ var evolution_stack_ids: Array[String] = []
 var can_evolve_this_turn := true
 var placed_this_turn := true
 var used_abilities: Array[String] = []
+var healed_this_turn := false
 var damage_prevented_next_turn := false
 var all_prevented_next_turn := false
 var outgoing_damage_reduction_next_turn := 0
@@ -33,36 +34,25 @@ func is_knocked_out(catalog: CardCatalog) -> bool:
 
 
 func available_energy(catalog: CardCatalog) -> Array[String]:
-	var result: Array[String] = []
-	for energy_id in energy_card_ids:
-		result.append_array(catalog.provides_energy(energy_id))
-	if "svg2-lume" in energy_card_ids:
-		for energy_id in energy_card_ids:
-			if energy_id != "svg2-lume" and catalog.is_special_energy(energy_id):
-				for index in range(result.size()):
-					if result[index] == "Rainbow":
-						result[index] = "Colorless"
-				break
-	return result
+	return EnergyView.units_for_cards(energy_card_ids, catalog)
 
 
 func has_enough_energy(cost: Array, catalog: CardCatalog) -> bool:
-	var available := available_energy(catalog)
-	for required_value in cost:
-		var required := str(required_value)
-		if required == "Colorless":
-			continue
-		var index := available.find(required)
-		if index < 0:
-			index = available.find("Rainbow")
-		if index < 0:
-			return false
-		available.remove_at(index)
-	var colorless_count := 0
-	for required_value in cost:
-		if str(required_value) == "Colorless":
-			colorless_count += 1
-	return available.size() >= colorless_count
+	return EnergyView.can_pay_cost(energy_card_ids, cost, catalog)
+
+
+func clear_special_conditions_and_attack_effects() -> void:
+	# Evolving or moving an Active Pokemon to the Bench removes Special
+	# Conditions and effects of attacks on that Pokemon. Card attachments,
+	# damage, the evolution stack and persistent card modifiers remain.
+	status_conditions.clear()
+	damage_prevented_next_turn = false
+	all_prevented_next_turn = false
+	outgoing_damage_reduction_next_turn = 0
+	attack_locked = false
+	attack_locked_names.clear()
+	dazzled = false
+	paralyzed_since_turn = 0
 
 
 func to_dict() -> Dictionary:
@@ -76,6 +66,7 @@ func to_dict() -> Dictionary:
 		"can_evolve_this_turn": can_evolve_this_turn,
 		"placed_this_turn": placed_this_turn,
 		"used_abilities": used_abilities.duplicate(),
+		"healed_this_turn": healed_this_turn,
 		"damage_prevented_next_turn": damage_prevented_next_turn,
 		"all_prevented_next_turn": all_prevented_next_turn,
 		"outgoing_damage_reduction_next_turn": outgoing_damage_reduction_next_turn,
@@ -99,6 +90,7 @@ func clone_state() -> PokemonState:
 	result.can_evolve_this_turn = can_evolve_this_turn
 	result.placed_this_turn = placed_this_turn
 	result.used_abilities.assign(used_abilities)
+	result.healed_this_turn = healed_this_turn
 	result.damage_prevented_next_turn = damage_prevented_next_turn
 	result.all_prevented_next_turn = all_prevented_next_turn
 	result.outgoing_damage_reduction_next_turn = outgoing_damage_reduction_next_turn
@@ -120,6 +112,7 @@ static func from_dict(data: Dictionary) -> PokemonState:
 	result.can_evolve_this_turn = bool(data.get("can_evolve_this_turn", true))
 	result.placed_this_turn = bool(data.get("placed_this_turn", true))
 	result.used_abilities.assign(data.get("used_abilities", []))
+	result.healed_this_turn = bool(data.get("healed_this_turn", false))
 	result.damage_prevented_next_turn = bool(data.get("damage_prevented_next_turn", false))
 	result.all_prevented_next_turn = bool(data.get("all_prevented_next_turn", false))
 	result.outgoing_damage_reduction_next_turn = int(data.get("outgoing_damage_reduction_next_turn", 0))

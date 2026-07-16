@@ -21,10 +21,13 @@ from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from data.card_models import AttackDef, Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK, expand_deck
+from engine.actions import ChoiceResponse, GameAction
 from engine.ai import AIAction, AIConfig, ChallengeAI
 from engine.enums import PlayerAction, TurnPhase
+from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.game_state import ActionRequest, GameState
 from engine.player_state import PokemonInPlay
+from engine.random_source import RandomSource
 from engine.rules_validator import (
     can_declare_attack,
     can_evolve,
@@ -73,32 +76,88 @@ class UiSmokeTests(unittest.TestCase):
     def _manager(self):
         return ScreenManager()
 
-    def _game(self):
+    def _begin_official_setup(self, *, first_player_idx=0):
+        """Enter INITIAL_PLACEMENT through the public setup contract."""
         state = GameState()
-        state.setup_game(expand_deck(FIRE_DECK), expand_deck(WATER_DECK))
-        tm = TurnManager(state)
-        for pi in (0, 1):
-            for _ in range(10):
-                if tm.needs_mulligan(pi):
-                    state.do_mulligan(pi)
-                else:
-                    break
-            player = state.get_player(pi)
-            basic_idx = next(i for i, c in enumerate(player.hand) if c.is_basic_pokemon)
-            tm.setup_place_basic(pi, basic_idx, "active")
-        tm.setup_finalize()
-        return state, tm
+        rng = RandomSource(20260716)
+        step = DEFAULT_GAME_ENGINE.begin_game(
+            state,
+            expand_deck(FIRE_DECK),
+            expand_deck(WATER_DECK),
+            rng,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNotNone(step.pending_choice)
+        winner = state.opening_coin_winner_idx
+        order = "first" if winner == first_player_idx else "second"
+        response = ChoiceResponse(
+            step.pending_choice.request_id,
+            (f"turn_order:{order}",),
+        )
+        step = DEFAULT_GAME_ENGINE.apply_choice(
+            state,
+            step.pending_choice,
+            response,
+            rng,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.setup_stage, "INITIAL_PLACEMENT")
+        self.assertEqual(state.setup_actor_idx, first_player_idx)
+        return state, TurnManager(state), rng
+
+    def _game(self):
+        """Build a playable game using the official serialized setup flow."""
+        state, tm, rng = self._begin_official_setup(first_player_idx=0)
+        guard = 0
+        while state.phase == TurnPhase.SETUP and guard < 16:
+            guard += 1
+            if state.setup_stage == "INITIAL_PLACEMENT":
+                actor = state.setup_actor_idx
+                actions = DEFAULT_GAME_ENGINE.legal_actions(state, actor)
+                place = next(
+                    action for action in actions
+                    if action.action == PlayerAction.PLAY_BASIC
+                    and action.params.get("target") == "active"
+                )
+                step = DEFAULT_GAME_ENGINE.apply_action(state, place, rng)
+                self.assertTrue(step.success, step.message)
+                step = DEFAULT_GAME_ENGINE.apply_action(
+                    state,
+                    GameAction("SETUP_DONE", {}, terminal=True, actor=actor),
+                    rng,
+                )
+                self.assertTrue(step.success, step.message)
+                continue
+            if state.setup_stage == "BONUS_DRAW":
+                request = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+                self.assertIsNotNone(request)
+                # UI fixtures keep their board shape stable by declining the
+                # optional mulligan bonus. The real client exposes 0..N.
+                step = DEFAULT_GAME_ENGINE.apply_choice(
+                    state,
+                    request,
+                    ChoiceResponse(request.request_id, ("mulligan_draw:0",)),
+                    rng,
+                )
+                self.assertTrue(step.success, step.message)
+                continue
+            if state.setup_stage == "BONUS_PLACEMENT":
+                actor = state.setup_actor_idx
+                step = DEFAULT_GAME_ENGINE.apply_action(
+                    state,
+                    GameAction("SETUP_DONE", {}, terminal=True, actor=actor),
+                    rng,
+                )
+                self.assertTrue(step.success, step.message)
+                continue
+            self.fail(f"unexpected setup stage: {state.setup_stage}")
+        self.assertLess(guard, 16)
+        self.assertEqual(state.setup_stage, "COMPLETE")
+        self.assertEqual(state.phase, TurnPhase.MAIN)
+        return state, TurnManager(state)
 
     def _setup_game(self):
-        state = GameState()
-        state.setup_game(expand_deck(FIRE_DECK), expand_deck(WATER_DECK))
-        tm = TurnManager(state)
-        for pi in (0, 1):
-            for _ in range(10):
-                if tm.needs_mulligan(pi):
-                    state.do_mulligan(pi)
-                else:
-                    break
+        state, tm, _rng = self._begin_official_setup(first_player_idx=0)
         return state, tm
 
     def _finish_fly_immediately(self, *args, **kwargs):
@@ -166,6 +225,10 @@ class UiSmokeTests(unittest.TestCase):
             HelpScreen(self._manager()),
             PassScreen(self._manager(), 1, lambda: None, state, state.turn_number),
             EndScreen(self._manager(), 0, "测试胜利", (1, 0)),
+            EndScreen(
+                self._manager(), -1, "双方同时满足胜利条件", (6, 6),
+                result_status="DRAW",
+            ),
         ]
 
         for screen in screens:
@@ -904,7 +967,6 @@ class UiSmokeTests(unittest.TestCase):
 
     def test_challenge_mode_keeps_human_bottom_and_ai_runs_setup(self):
         state, tm = self._setup_game()
-        state.first_player_idx = 1
         screen = GameScreen(
             self._manager(), state, tm,
             challenge_mode=True,
@@ -933,6 +995,89 @@ class UiSmokeTests(unittest.TestCase):
         self.assertIsNotNone(state.p2.active)
         self.assertNotEqual(state.phase, TurnPhase.SETUP)
         screen.draw(self.surface)
+
+    def test_debug_client_deterministically_resolves_new_choice_domains(self):
+        state, tm = self._game()
+        screen = GameScreen(self._manager(), state, tm)
+        player_idx = state.active_player_idx
+        player = state.get_player(player_idx)
+        energy = CardRegistry.get("sv1-ener-3")
+        player.active.energy_cards.append(energy)
+        payloads = {}
+
+        requests = [
+            ActionRequest(
+                "choose_trigger_order",
+                player_idx,
+                "选择触发顺序",
+                target_info=[
+                    {"index": 0, "label": "学习装置 A"},
+                    {"index": 1, "label": "学习装置 B"},
+                ],
+                callback=lambda value: payloads.__setitem__("order", value),
+            ),
+            ActionRequest(
+                "confirm_trigger",
+                player_idx,
+                "是否使用触发效果？",
+                callback=lambda value: payloads.__setitem__("confirm", value),
+            ),
+            ActionRequest(
+                "select_attachment",
+                player_idx,
+                "选择具体能量实体",
+                from_zone="field",
+                target_info=[{
+                    "player": player_idx,
+                    "slot": "active",
+                    "attachment_type": "energy",
+                    "index": 0,
+                    "card_id": energy.api_id,
+                    "label": energy.name,
+                }],
+                callback=lambda value: payloads.__setitem__("attachment", value),
+            ),
+            ActionRequest(
+                "select_prize_energy_target",
+                player_idx,
+                "选择宝藏能量附着目标",
+                min_select=0,
+                max_select=1,
+                from_zone="board",
+                target_player="self",
+                card_list=[player.active.card],
+                callback=lambda value: payloads.__setitem__("treasure", value),
+            ),
+        ]
+
+        for request in requests:
+            with self.subTest(request_type=request.request_type):
+                result = screen._resolve_deterministic_pending(request)
+                self.assertTrue(result.success, result.log_message)
+
+        self.assertEqual(payloads["order"], 0)
+        self.assertTrue(payloads["confirm"])
+        self.assertEqual(payloads["attachment"][0].index, 0)
+        self.assertEqual(payloads["attachment"][0].card_id, energy.api_id)
+        self.assertEqual(payloads["treasure"][0].slot, "active")
+
+    def test_draw_result_opens_draw_end_screen_without_winner(self):
+        state, tm = self._game()
+        state.set_result(
+            "DRAW",
+            winner=-1,
+            reason="双方同时满足相同数量的胜利条件",
+            conditions=[["NO_POKEMON"], ["NO_POKEMON"]],
+        )
+        manager = self._manager()
+        screen = GameScreen(manager, state, tm)
+        manager.push_screen(screen)
+
+        screen._show_end_screen()
+
+        self.assertIsInstance(manager.top, EndScreen)
+        self.assertEqual(manager.top.result_status, "DRAW")
+        self.assertEqual(manager.top.winner_idx, -1)
 
     def test_challenge_ai_attack_animates_correct_side_and_auto_ends(self):
         base = CardRegistry.get("sv2-delib")
@@ -1264,22 +1409,13 @@ class UiSmokeTests(unittest.TestCase):
         self.assertFalse(stadium_item["enabled"])
 
     def test_first_turn_draw_and_evolution_rules(self):
-        state = GameState()
-        state.setup_game(expand_deck(FIRE_DECK), expand_deck(WATER_DECK))
-        tm = TurnManager(state)
-        for pi in (0, 1):
-            for _ in range(10):
-                if tm.needs_mulligan(pi):
-                    state.do_mulligan(pi)
-                else:
-                    break
-            player = state.get_player(pi)
-            basic_idx = next(i for i, c in enumerate(player.hand) if c.is_basic_pokemon)
-            tm.setup_place_basic(pi, basic_idx, "active")
+        state, _tm = self._game()
         first = state.first_player_idx
-        before = len(state.get_player(first).hand)
-        tm.setup_finalize()
-        self.assertEqual(len(state.get_player(first).hand), before)
+        # Seven-card opening hand, one Active placement, then the normal turn
+        # one draw: the first player has seven cards again. The second player
+        # has not drawn for their first turn yet.
+        self.assertEqual(len(state.get_player(first).hand), 7)
+        self.assertEqual(len(state.get_player(1 - first).hand), 6)
 
         froakie = CardRegistry.get("sv2-38")
         frogadier = CardRegistry.get("sv2-39")

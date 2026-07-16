@@ -26,8 +26,12 @@ static func _register_modify_damage_hooks(
 	var defender: PokemonState = context.get("defender", null)
 	if attacker == null or defender == null:
 		return
-	var ignore_defender_effects := bool(context.get("ignore_defender_effects", false))
-	if not ignore_defender_effects:
+	var modifier_phase := str(context.get("modifier_phase", "all"))
+	var include_attacker := modifier_phase in ["all", "attacker"]
+	var include_defender := modifier_phase in ["all", "defender"]
+	var ignore_defender_damage_effects := bool(context.get(
+		"ignore_defender_damage_effects", context.get("ignore_defender_effects", false)))
+	if include_defender and not ignore_defender_damage_effects:
 		_register_card_effect_hooks(
 			manager,
 			catalog.get_card(defender.card_id).get("abilities", []),
@@ -44,6 +48,20 @@ static func _register_modify_damage_hooks(
 			1 - actor,
 			0,
 		)
+	if include_attacker:
+		_register_attacker_hooks(manager, state, catalog, context, actor, attacker)
+	if include_defender and not ignore_defender_damage_effects:
+		_register_defender_tool_hooks(manager, catalog, context, actor, defender)
+
+
+static func _register_attacker_hooks(
+	manager: VMModifierManager,
+	state: GameState,
+	catalog: CardCatalog,
+	_context: Dictionary,
+	actor: int,
+	attacker: PokemonState,
+) -> void:
 	for row in state.get_player(actor).get_all_pokemon():
 		var aura_source: PokemonState = row["pokemon"]
 		if aura_source == null:
@@ -103,26 +121,34 @@ static func _register_modify_damage_hooks(
 		0,
 		"tool",
 	)
-	if not ignore_defender_effects:
-		if not defender.attached_tool_id.is_empty():
-			_register_tool_effect_hooks(
-				manager,
-				catalog,
-				defender.attached_tool_id,
-				VMModifierManager.MODIFY_DAMAGE,
-				"defender_tool",
-				1 - actor,
-				0,
-			)
-		_register_pokemon_modifier_hooks(
+
+
+static func _register_defender_tool_hooks(
+	manager: VMModifierManager,
+	catalog: CardCatalog,
+	_context: Dictionary,
+	actor: int,
+	defender: PokemonState,
+) -> void:
+	if not defender.attached_tool_id.is_empty():
+		_register_tool_effect_hooks(
 			manager,
-			defender.modifiers,
+			catalog,
+			defender.attached_tool_id,
 			VMModifierManager.MODIFY_DAMAGE,
 			"defender_tool",
 			1 - actor,
 			0,
-			"tool",
 		)
+	_register_pokemon_modifier_hooks(
+		manager,
+		defender.modifiers,
+		VMModifierManager.MODIFY_DAMAGE,
+		"defender_tool",
+		1 - actor,
+		0,
+		"tool",
+	)
 
 
 static func _register_card_effect_hooks(
@@ -242,7 +268,6 @@ static func _apply_modify_damage_hook(
 		"energy_damage_reduction":
 			return damage - int(payload.get("amount", 0))
 		"outgoing_damage_reduction":
-			attacker.outgoing_damage_reduction_next_turn = 0
 			return damage - int(payload.get("amount", 0))
 		"attacker_tool":
 			var attacker_tool_effect := str(params.get("effect", ""))

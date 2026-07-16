@@ -25,7 +25,7 @@ class SetAttackFlags:
 
     ignore_weakness: bool = True
     ignore_resistance: bool = True
-    ignore_effects: bool = False
+    ignore_defender_damage_effects: bool = False
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.commands.base import CommandResult
@@ -34,8 +34,11 @@ class SetAttackFlags:
         set_attack_damage_flags(
             ctx.state,
             stack=ctx.stack,
-            piercing=True if self.ignore_weakness or self.ignore_resistance else None,
-            ignore_defender_effects=True if self.ignore_effects else None,
+            ignore_weakness=self.ignore_weakness,
+            ignore_resistance=self.ignore_resistance,
+            ignore_defender_damage_effects=(
+                True if self.ignore_defender_damage_effects else None
+            ),
         )
         return CommandResult.ok("穿透攻击标记已设置。")
 

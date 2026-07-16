@@ -8,6 +8,7 @@ from engine.effects.runtime_effects import (
     strict_trainer_runtime_effects as trainer_runtime_effects,
 )
 from engine.enums import EventType
+from engine.energy_view import EnergyView
 
 
 def effective_retreat_cost(state, player) -> int:
@@ -81,7 +82,4 @@ def _has_required_energy(pokemon, required_type: str) -> bool:
     required = required_type.lower()
     if not required:
         return True
-    return any(
-        any(str(provided).lower() == required for provided in card.provides_energy)
-        for card in pokemon.energy_cards
-    )
+    return EnergyView.from_pokemon(pokemon).count(required) > 0

@@ -5,7 +5,7 @@
   "inference_format": "onnx-fp32",
   "models": {
     "colorless": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "dc285218ebd79b69182e57cf590e7a1d2cfbf919ec9dd1b87b25d0785380a13b",
@@ -16,10 +16,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/colorless.pt",
-      "verified": true
+      "verified": false
     },
     "darkness": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "9f3fed9f69b4f6fcedd474e1e5e83f89f35b31b6c58356d23db2ef68d54806d3",
@@ -30,10 +30,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/darkness.pt",
-      "verified": true
+      "verified": false
     },
     "dragon": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "52b2db71e684d6955152e20ff7e4deea13130b9c8781e14e1646ac299c15d3b2",
@@ -44,10 +44,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/dragon.pt",
-      "verified": true
+      "verified": false
     },
     "fighting": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "257962c6fba11e29460046e0c24efa1dc5eafaebc6e951e2c5836919cd3afcce",
@@ -58,10 +58,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/fighting.pt",
-      "verified": true
+      "verified": false
     },
     "fire": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "4610e0dd4144da070622c18fce5820668f7145394764e28508de7734e2971e50",
@@ -72,10 +72,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/fire.pt",
-      "verified": true
+      "verified": false
     },
     "grass": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "397e4f3fcd5d1c27c80ff5b963045a15a48bda2e22702193b8082c8dccecb95c",
@@ -86,10 +86,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/grass.pt",
-      "verified": true
+      "verified": false
     },
     "lightning": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "2031cbb34f289b7937b514fb1180829ab97301016551a88c3fb65e17b0a15681",
@@ -100,10 +100,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/lightning.pt",
-      "verified": true
+      "verified": false
     },
     "psychic": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "a0588507222ab9473b25315ba0c3b892573efcf19b7f18da4623f4dcc43acb30",
@@ -114,10 +114,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/psychic.pt",
-      "verified": true
+      "verified": false
     },
     "steel": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "8d88cbd302f6d3a1f8131d14d0a3a1d2b90d13761abab965adba5148234386c0",
@@ -128,10 +128,10 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/steel.pt",
-      "verified": true
+      "verified": false
     },
     "water": {
-      "accepted": true,
+      "accepted": false,
       "action_version": 2,
       "checkpoint_exists": true,
       "checkpoint_sha256": "cf76708c4aa1a44b263e5190458141ad523224fad4d3fff8aee36c0f798b924c",
@@ -142,7 +142,7 @@
       "planner_version": 1,
       "rules_version": 2,
       "source_checkpoint": "python/data/ai_models/water.pt",
-      "verified": true
+      "verified": false
     }
   },
   "search_simulations": 64,

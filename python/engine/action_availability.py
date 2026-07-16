@@ -119,6 +119,17 @@ class VMActionAvailability:
             card = player.hand[hand_idx]
             return card, trainer_runtime_effects(card)
         if action.action == PlayerAction.USE_ABILITY:
+            if isinstance(action.source, CardRef) and action.source.zone == "discard":
+                if not (0 <= action.source.index < len(player.discard)):
+                    return None
+                card = player.discard[action.source.index]
+                ability_name = str(action.params.get("ability_name", "") or "")
+                ability = next(
+                    (candidate for candidate in card.abilities
+                     if candidate.name.lower() == ability_name.lower()),
+                    None,
+                )
+                return (card, ability_runtime_effects(ability)) if ability else None
             slot = str(action.params.get("slot", "") or "")
             ability_name = str(action.params.get("ability_name", "") or "")
             pokemon = player.get_pokemon(slot)
@@ -252,6 +263,31 @@ class VMActionAvailability:
                             source=PokemonRef(actor, slot, pokemon.card.api_id),
                         ))
 
+        # Zone-activated abilities are enumerated from their declared effect
+        # source rather than pretending the card is already in play.
+        if not player.hand and player.bench_has_space():
+            for discard_idx, card in enumerate(player.discard):
+                for ability in getattr(card, "abilities", []) or []:
+                    effects = ability_runtime_effects(ability)
+                    if not any(
+                        effect_type(effect) == "ability_discard_revive"
+                        for effect in effects
+                    ):
+                        continue
+                    if not effects_have_legal_target(state, actor, effects, source_slot="discard"):
+                        continue
+                    add(GameAction(
+                        PlayerAction.USE_ABILITY,
+                        {
+                            "slot": "discard",
+                            "discard_idx": discard_idx,
+                            "card_id": card.api_id,
+                            "ability_name": ability.name,
+                        },
+                        actor=actor,
+                        source=CardRef(actor, "discard", discard_idx, card.api_id),
+                    ))
+
         if self.stadium_is_activatable(state) and not player.stadium_used_this_turn:
             stadium = state.stadium_card
             effects = trainer_runtime_effects(stadium) if stadium is not None else []
@@ -285,14 +321,24 @@ class VMActionAvailability:
 
     @staticmethod
     def setup_actions(state: GameState, actor: int) -> list[GameAction]:
+        stage = str(getattr(state, "setup_stage", ""))
+        if actor != int(getattr(state, "setup_actor_idx", -1)):
+            return []
+        if stage not in {"INITIAL_PLACEMENT", "BONUS_PLACEMENT"}:
+            return []
         player = state.get_player(actor)
         actions: list[GameAction] = []
         empty_slots = [idx for idx, pokemon in enumerate(player.bench) if pokemon is None]
+        eligible_bonus_ids = list(
+            getattr(state, "setup_bonus_card_ids", ([], []))[actor]
+        )
         for hand_idx, card in enumerate(player.hand):
             if not card.is_basic_pokemon:
                 continue
+            if stage == "BONUS_PLACEMENT" and card.api_id not in eligible_bonus_ids:
+                continue
             source = CardRef(actor, "hand", hand_idx, card.api_id)
-            if player.active is None:
+            if stage == "INITIAL_PLACEMENT" and player.active is None:
                 actions.append(GameAction(
                     PlayerAction.PLAY_BASIC,
                     {"hand_idx": hand_idx, "target": "active"},
@@ -310,7 +356,10 @@ class VMActionAvailability:
                         source=source,
                         target=PokemonRef(actor, target, ""),
                     ))
-        if player.active is not None:
+        if (
+            (stage == "INITIAL_PLACEMENT" and player.active is not None)
+            or stage == "BONUS_PLACEMENT"
+        ):
             actions.append(GameAction("SETUP_DONE", {}, True, actor))
         return actions
 

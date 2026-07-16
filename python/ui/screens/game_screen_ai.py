@@ -142,7 +142,7 @@ class GameScreenAIMixin:
                 self._ai_action_job_key = None
                 self._ai_thinking_timer = 0.0
                 return
-            if self.state.winner is not None or self.state.phase == TurnPhase.GAME_OVER:
+            if self.state.is_terminal():
                 cancel = getattr(self.ai_controller, "cancel_search", None)
                 if callable(cancel):
                     cancel()
@@ -155,7 +155,7 @@ class GameScreenAIMixin:
             return
         if not self._is_ai_turn_context() or self.tm is None or self.ai_controller is None:
             return
-        if self.state.winner is not None or self.state.phase == TurnPhase.GAME_OVER:
+        if self.state.is_terminal():
             return
         if self._ai_animation_busy():
             return
@@ -203,11 +203,18 @@ class GameScreenAIMixin:
             if action != PlayerAction.PLAY_BASIC:
                 self._setup_done(self.ai_player_idx)
                 return
-            result = self.tm.setup_place_basic(
-                self.ai_player_idx,
-                params.get("hand_idx", 0),
-                params.get("target", "active"),
+            step = self.game_engine.apply_action(
+                self.state,
+                GameAction(
+                    PlayerAction.PLAY_BASIC,
+                    {
+                        "hand_idx": params.get("hand_idx", 0),
+                        "target": params.get("target", "active"),
+                    },
+                    actor=self.ai_player_idx,
+                ),
             )
+            result = step.action_result or ActionResult(step.success, step.message)
             self._show_result(result, action=PlayerAction.PLAY_BASIC)
             self._detect_field_changes(prev_snap)
             self._detect_state_changes()
@@ -276,15 +283,32 @@ class GameScreenAIMixin:
         self._ai_pending_action = None
         prev_snap = self._snapshot_field_state()
         self._sync_tracking_counts()
-        choice = self.ai_controller.resolve_pending_action(self.state, pending)
+        structured = self.game_engine.pending_choice_request(self.state)
+        if structured is None:
+            structured = self.game_engine.choice_request(self.state, pending)
+        legacy_pending = structured.legacy_request or pending
+        choice = self.ai_controller.resolve_pending_action(self.state, legacy_pending)
         from engine.ai.planner import _map_legacy_choice
 
-        structured = self.game_engine.choice_request(self.state, pending)
         response = _map_legacy_choice(structured, choice)
-        if response is None:
+        deterministic_fallback = {
+            "choose_trigger_order",
+            "confirm_trigger",
+            "select_attachment",
+            "select_energy_target",
+            "select_prize_energy_target",
+        }
+        if (
+            response is None
+            or (
+                getattr(response, "cancelled", False)
+                and structured.request_type in deterministic_fallback
+            )
+            or (getattr(response, "cancelled", False) and not structured.can_cancel)
+        ):
             from engine.random_source import RandomSource
 
-            response = self.game_engine._default_choice_response(
+            response = self.game_engine.choice_manager.default_choice_response(
                 structured,
                 RandomSource(getattr(
                     getattr(self.ai_controller, "config", None),

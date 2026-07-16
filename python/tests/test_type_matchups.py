@@ -67,38 +67,35 @@ class TypeMatchupRuleTests(unittest.TestCase):
             def replace_top(self, screen):
                 self.replaced = screen
 
-        class FakeGameState:
-            instances = []
-
-            def __init__(self):
-                self.apply_type_matchups = None
-                self.public_deck_keys = (None, None)
-                FakeGameState.instances.append(self)
-
-            def setup_game(self, deck1, deck2):
-                self.deck1 = deck1
-                self.deck2 = deck2
-
-        class FakeTurnManager:
-            def __init__(self, state):
-                self.state = state
-
         class FakeGameScreen:
             def __init__(self, *args, **kwargs):
                 self.args = args
                 self.kwargs = kwargs
 
+        sessions = []
+
+        def fake_session_create(deck1, deck2, *, apply_type_matchups=False):
+            state = SimpleNamespace(
+                apply_type_matchups=bool(apply_type_matchups),
+                public_deck_keys=(None, None),
+                deck1=deck1,
+                deck2=deck2,
+            )
+            session = SimpleNamespace(state=state, turn_manager=object())
+            sessions.append(session)
+            return session
+
         available_decks = {"fire": [("a", 1)], "water": [("b", 1)]}
         screen = DeckSelectScreen(FakeManager(), available_decks, mode="challenge")
 
-        with patch("ui.debug_match_session.GameState", FakeGameState), \
-             patch("ui.debug_match_session.TurnManager", FakeTurnManager), \
+        with patch("ui.debug_match_session.DebugMatchSession.create",
+                   side_effect=fake_session_create), \
              patch("ui.screens.game_screen.GameScreen", FakeGameScreen), \
              patch("data.deck_definitions.expand_deck", lambda deck: [deck[0][0]]):
             screen._start_battle()
 
-        self.assertFalse(FakeGameState.instances[-1].apply_type_matchups)
-        self.assertEqual(FakeGameState.instances[-1].public_deck_keys, ("fire", "water"))
+        self.assertFalse(sessions[-1].state.apply_type_matchups)
+        self.assertEqual(sessions[-1].state.public_deck_keys, ("fire", "water"))
 
     def test_local_deck_select_records_both_public_deck_keys(self):
         class FakeManager:
@@ -109,26 +106,23 @@ class TypeMatchupRuleTests(unittest.TestCase):
             def replace_top(self, screen):
                 self.replaced = screen
 
-        class FakeGameState:
-            instances = []
-
-            def __init__(self):
-                self.apply_type_matchups = None
-                self.public_deck_keys = (None, None)
-                FakeGameState.instances.append(self)
-
-            def setup_game(self, deck1, deck2):
-                self.deck1 = deck1
-                self.deck2 = deck2
-
-        class FakeTurnManager:
-            def __init__(self, state):
-                self.state = state
-
         class FakeGameScreen:
             def __init__(self, *args, **kwargs):
                 self.args = args
                 self.kwargs = kwargs
+
+        sessions = []
+
+        def fake_session_create(deck1, deck2, *, apply_type_matchups=False):
+            state = SimpleNamespace(
+                apply_type_matchups=bool(apply_type_matchups),
+                public_deck_keys=(None, None),
+                deck1=deck1,
+                deck2=deck2,
+            )
+            session = SimpleNamespace(state=state, turn_manager=object())
+            sessions.append(session)
+            return session
 
         manager = FakeManager()
         screen = DeckSelectScreen(
@@ -138,13 +132,13 @@ class TypeMatchupRuleTests(unittest.TestCase):
         # Same-deck selection remains legal and must preserve both positions.
         screen.p2_idx = 0
 
-        with patch("ui.debug_match_session.GameState", FakeGameState), \
-             patch("ui.debug_match_session.TurnManager", FakeTurnManager), \
+        with patch("ui.debug_match_session.DebugMatchSession.create",
+                   side_effect=fake_session_create), \
              patch("ui.screens.game_screen.GameScreen", FakeGameScreen), \
              patch("data.deck_definitions.expand_deck", lambda deck: [deck[0][0]]):
             screen._start_battle()
 
-        state = FakeGameState.instances[-1]
+        state = sessions[-1].state
         self.assertEqual(state.public_deck_keys, ("fire", "fire"))
         self.assertEqual(state.deck1, ["a"])
         self.assertEqual(state.deck2, ["a"])

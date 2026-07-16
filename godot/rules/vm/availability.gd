@@ -250,7 +250,7 @@ func _effect_is_always_usable(effect_type: String) -> bool:
 		"prevent_all",
 		"prevent_damage",
 		"prevent_effects",
-		"piercing_marker",
+		"attack_flags",
 		"tool",
 		"tool_exp_share",
 		"aura_damage_reduction",
@@ -502,8 +502,9 @@ func _energy_relocate_has_target(
 		if pokemon == null:
 			continue
 		var has_matching_energy := false
-		for energy_id in pokemon.energy_card_ids:
-			if _energy_matches(energy_id, energy_type):
+		for energy_index in range(pokemon.energy_card_ids.size()):
+			if _attached_energy_matches(
+				pokemon.energy_card_ids, energy_index, energy_type):
 				has_matching_energy = true
 				break
 		if not has_matching_energy:
@@ -534,8 +535,29 @@ func _energy_discard_has_target(
 	if pokemon == null:
 		return false
 	var energy_type := str(params.get("filter", params.get("energy_type", "any")))
-	for energy_id in pokemon.energy_card_ids:
-		if _energy_matches(energy_id, energy_type):
+	for energy_index in range(pokemon.energy_card_ids.size()):
+		if _attached_energy_matches(
+			pokemon.energy_card_ids, energy_index, energy_type):
+			return true
+	return false
+
+
+func _attached_energy_matches(
+	card_ids: Array[String],
+	card_index: int,
+	filter_type: String,
+) -> bool:
+	if card_index < 0 or card_index >= card_ids.size():
+		return false
+	var normalized := filter_type.to_lower()
+	if normalized in ["", "any", "energy"]:
+		return catalog.is_energy(card_ids[card_index])
+	if normalized in ["basic", "basic_energy"]:
+		return catalog.is_basic_energy(card_ids[card_index])
+	if normalized.ends_with("_energy"):
+		normalized = normalized.trim_suffix("_energy")
+	for provided in EnergyView.units_for_card_at(card_ids, card_index, catalog):
+		if str(provided).to_lower() in [normalized, "rainbow"]:
 			return true
 	return false
 
@@ -586,7 +608,14 @@ func _conditional_has_target(
 	depth: int,
 ) -> bool:
 	var player := state.get_player(player_idx)
-	if str(params.get("condition", "")) == "ko_by_attack_last_turn" and not player.was_ko_by_attack:
+	var condition := str(params.get("condition", ""))
+	if (
+		condition in [
+			"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"]
+		and not (state.had_attack_knockout_last_turn(player_idx) or player.was_ko_by_attack)
+	):
+		return false
+	if condition == "ko_last_opponent_turn" and not state.had_knockout_last_turn(player_idx):
 		return false
 	var cost: Variant = params.get("cost")
 	if cost != null and not _cost_is_payable(state, player_idx, cost, exclude_hand_index):

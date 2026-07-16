@@ -37,6 +37,7 @@ var lan_address := ""
 var lan_port := 0
 var relay_url := ""
 var relay_resume_token := ""
+var rules_options: Dictionary = {"apply_type_matchups": false}
 const HEARTBEAT_INTERVAL_MSEC := 15000
 const PENDING_SUBMISSION_TIMEOUT_MSEC := 10000
 const CONNECTION_TIMEOUT_MSEC := 45000
@@ -50,13 +51,19 @@ func _init(p_catalog: CardCatalog = null) -> void:
 	catalog = p_catalog if p_catalog != null else CardCatalog.shared()
 
 
-func host_lan(port: int, deck_key: String, match_seed: int = -1) -> Error:
+func host_lan(
+	port: int,
+	deck_key: String,
+	match_seed: int = -1,
+	apply_type_matchups: bool = false,
+) -> Error:
 	close()
 	if not catalog.decks.has(deck_key):
 		return ERR_INVALID_PARAMETER
 	host = true
 	player_idx = 0
 	local_deck_key = deck_key
+	rules_options = {"apply_type_matchups": apply_type_matchups}
 	seed = _resolved_match_seed(match_seed)
 	room_id = "lan-%08x" % (Time.get_unix_time_from_system() as int)
 	transport_kind = "lan"
@@ -94,13 +101,19 @@ func join_lan(address: String, port: int, deck_key: String) -> Error:
 	return error
 
 
-func host_relay(relay_url: String, deck_key: String, match_seed: int = -1) -> Error:
+func host_relay(
+	relay_url: String,
+	deck_key: String,
+	match_seed: int = -1,
+	apply_type_matchups: bool = false,
+) -> Error:
 	close()
 	if not catalog.decks.has(deck_key):
 		return ERR_INVALID_PARAMETER
 	host = true
 	player_idx = 0
 	local_deck_key = deck_key
+	rules_options = {"apply_type_matchups": apply_type_matchups}
 	seed = _resolved_match_seed(match_seed)
 	transport_kind = "relay"
 	self.relay_url = relay_url
@@ -166,13 +179,20 @@ func poll() -> Array[Dictionary]:
 				if host:
 					if session == null:
 						session = AuthoritativeSession.new(room_id, catalog)
-					_send(ProtocolV3.WELCOME, {
+					_send(ProtocolV4.WELCOME, {
 						"player_idx": 1,
 						"rules_version": AppState.RULES_SCHEMA_VERSION,
 						"action_version": AppState.ACTION_SCHEMA_VERSION,
+						"rules_profile_id": GameState.RULES_PROFILE_ID,
+						"rules_options": rules_options.duplicate(true),
 						"resume": session != null and session.state != null,
 					})
-					events.append({"type": "connected", "player_idx": 0, "room_id": room_id})
+					events.append({
+						"type": "connected",
+						"player_idx": 0,
+						"room_id": room_id,
+						"rules_options": rules_options.duplicate(true),
+					})
 				else:
 					events.append({"type": "transport_connected", "room_id": room_id})
 			"message":
@@ -205,7 +225,7 @@ func poll() -> Array[Dictionary]:
 		and connection_phase != ConnectionPhase.CLOSED
 		and now - last_send_msec >= HEARTBEAT_INTERVAL_MSEC
 	):
-		_send(ProtocolV3.PING, {}, get_revision())
+		_send(ProtocolV4.PING, {}, get_revision())
 	if (
 		connected
 		and connection_phase != ConnectionPhase.CLOSED
@@ -258,7 +278,7 @@ func submit_action(action: GameAction) -> bool:
 		return true
 	var base_revision := get_revision()
 	var sent := _send(
-		ProtocolV3.ACTION_SUBMIT,
+		ProtocolV4.ACTION_SUBMIT,
 		{"action": action.to_dict()},
 		get_revision(),
 		action.action_id,
@@ -290,7 +310,7 @@ func submit_choice(response: ChoiceResponse) -> bool:
 		return true
 	var base_revision := get_revision()
 	var sent := _send(
-		ProtocolV3.CHOICE_SUBMIT,
+		ProtocolV4.CHOICE_SUBMIT,
 		{"response": response.to_dict()},
 		get_revision(),
 		"",
@@ -318,7 +338,7 @@ func surrender() -> void:
 				return
 			_broadcast_state(step.events)
 	else:
-		_send(ProtocolV3.SURRENDER, {}, get_revision())
+		_send(ProtocolV4.SURRENDER, {}, get_revision())
 
 
 func request_resync() -> void:
@@ -326,7 +346,7 @@ func request_resync() -> void:
 		if resync_in_progress:
 			return
 		resync_in_progress = true
-		_send(ProtocolV3.RESYNC_REQUEST, {}, get_revision())
+		_send(ProtocolV4.RESYNC_REQUEST, {}, get_revision())
 
 
 func submission_locked() -> bool:
@@ -372,6 +392,7 @@ func close() -> void:
 	lan_port = 0
 	relay_url = ""
 	relay_resume_token = ""
+	rules_options = {"apply_type_matchups": false}
 	events.clear()
 
 
@@ -380,10 +401,10 @@ func _handle_message(message: Variant) -> void:
 		not host
 		and room_id.is_empty()
 		and message is Dictionary
-		and str(message.get("message_type", "")) == ProtocolV3.WELCOME
+		and str(message.get("message_type", "")) == ProtocolV4.WELCOME
 	):
 		room_id = str(message.get("room_id", ""))
-	var validation := ProtocolV3.validate(
+	var validation := ProtocolV4.validate(
 		message,
 		room_id,
 		1 if host else 0,
@@ -394,7 +415,7 @@ func _handle_message(message: Variant) -> void:
 		var recoverable_gap := code == "sequence_gap" and message is Dictionary
 		if recoverable_gap:
 			# The envelope has already passed all structural, room and sender
-			# validation before ProtocolV3 reports a gap.  Adopt its sequence as a
+			# validation before ProtocolV4 reports a gap.  Adopt its sequence as a
 			# recovery fence, discard its payload, and request a fresh snapshot.
 			# Otherwise every later RESYNC reply is rejected against the same gap.
 			receive_sequence = int(Dictionary(message).get("sequence", receive_sequence))
@@ -402,8 +423,8 @@ func _handle_message(message: Variant) -> void:
 		var origin_request_id := _envelope_identifier(message, "request_id")
 		if host:
 			_send(
-				ProtocolV3.ERROR,
-				ProtocolV3.error_payload(
+				ProtocolV4.ERROR,
+				ProtocolV4.error_payload(
 					code, str(validation.get("message", "消息无效。"))
 				),
 				get_revision(),
@@ -425,7 +446,7 @@ func _handle_message(message: Variant) -> void:
 	var payload: Dictionary = row["payload"]
 	receive_sequence = int(validation["sequence"])
 	last_receive_msec = Time.get_ticks_msec()
-	var payload_validation := ProtocolV3.validate_payload(message_type, payload)
+	var payload_validation := ProtocolV4.validate_payload(message_type, payload)
 	if not bool(payload_validation.get("ok", false)):
 		var code := str(payload_validation.get("code", "invalid_payload"))
 		var message_text := str(payload_validation.get("message", "消息内容无效。"))
@@ -433,14 +454,14 @@ func _handle_message(message: Variant) -> void:
 		var origin_request_id := str(row.get("request_id", ""))
 		if host:
 			_send(
-				ProtocolV3.ERROR,
-				ProtocolV3.error_payload(code, message_text),
+				ProtocolV4.ERROR,
+				ProtocolV4.error_payload(code, message_text),
 				get_revision(),
 				origin_action_id,
 				origin_request_id,
 			)
 		else:
-			if message_type == ProtocolV3.STATE_UPDATE:
+			if message_type == ProtocolV4.STATE_UPDATE:
 				request_resync()
 		events.append({
 			"type": "error",
@@ -451,7 +472,7 @@ func _handle_message(message: Variant) -> void:
 		})
 		return
 	if (
-		message_type == ProtocolV3.STATE_UPDATE
+		message_type == ProtocolV4.STATE_UPDATE
 		and int(row["state_revision"])
 		!= int(Dictionary(payload["state"]).get("revision", -1))
 	):
@@ -477,7 +498,7 @@ func _handle_host_message(
 	payload: Dictionary,
 ) -> void:
 	match message_type:
-		ProtocolV3.DECK_SELECT:
+		ProtocolV4.DECK_SELECT:
 			if connection_phase != ConnectionPhase.LOBBY:
 				_reject("invalid_phase", "牌组只能在大厅阶段选择。")
 				return
@@ -486,12 +507,19 @@ func _handle_host_message(
 				!= AppState.RULES_SCHEMA_VERSION
 				or int(payload.get("action_version", -1))
 				!= AppState.ACTION_SCHEMA_VERSION
+				or str(payload.get("rules_profile_id", ""))
+				!= GameState.RULES_PROFILE_ID
 			):
 				_reject("schema_mismatch", "规则或动作版本不兼容。")
 				return
+			var peer_rules_options: Dictionary = Dictionary(
+				payload.get("rules_options", {})).duplicate(true)
+			if peer_rules_options != rules_options:
+				_reject("rules_options_mismatch", "规则选项与房主锁定配置不一致。")
+				return
 			var deck_key := str(payload.get("deck_key", ""))
 			if not catalog.decks.has(deck_key):
-				_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
+				_send(ProtocolV4.ERROR, ProtocolV4.error_payload(
 					"invalid_deck", "未知牌组。"))
 				return
 			var resume_requested := bool(payload.get("resume", false))
@@ -521,14 +549,20 @@ func _handle_host_message(
 				_reject("resume_unavailable", "房主已无法恢复该对局。")
 				return
 			remote_deck_key = deck_key
-			var result := session.start_match(local_deck_key, remote_deck_key, seed)
+			var result := session.start_match(
+				local_deck_key,
+				remote_deck_key,
+				seed,
+				-1,
+				rules_options,
+			)
 			if not result.success:
-				_send(ProtocolV3.ERROR, ProtocolV3.error_payload(
+				_send(ProtocolV4.ERROR, ProtocolV4.error_payload(
 					result.error_code, result.message))
 				return
 			connection_phase = ConnectionPhase.PLAYING
 			_broadcast_state(result.events)
-		ProtocolV3.ACTION_SUBMIT:
+		ProtocolV4.ACTION_SUBMIT:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			if not _revision_matches(row):
@@ -546,7 +580,7 @@ func _handle_host_message(
 				str(row.get("action_id", "")),
 				str(row.get("request_id", "")),
 			)
-		ProtocolV3.CHOICE_SUBMIT:
+		ProtocolV4.CHOICE_SUBMIT:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			if not _revision_matches(row):
@@ -564,10 +598,10 @@ func _handle_host_message(
 				str(row.get("action_id", "")),
 				str(row.get("request_id", "")),
 			)
-		ProtocolV3.RESYNC_REQUEST:
+		ProtocolV4.RESYNC_REQUEST:
 			if _remote_message_allowed_while_playing(row):
 				_send_state_to_client()
-		ProtocolV3.SURRENDER:
+		ProtocolV4.SURRENDER:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			var step := session.surrender(1)
@@ -575,8 +609,8 @@ func _handle_host_message(
 				_reject(step.error_code, step.message, row)
 				return
 			_broadcast_state(step.events)
-		ProtocolV3.PING:
-			_send(ProtocolV3.PONG)
+		ProtocolV4.PING:
+			_send(ProtocolV4.PONG)
 		_:
 			_reject("unexpected_message", "房主不接受该消息。")
 
@@ -587,7 +621,7 @@ func _handle_client_message(
 	payload: Dictionary,
 ) -> void:
 	match message_type:
-		ProtocolV3.WELCOME:
+		ProtocolV4.WELCOME:
 			if (
 				connection_phase != ConnectionPhase.LOBBY
 				or deck_selection_sent
@@ -603,6 +637,8 @@ func _handle_client_message(
 				!= AppState.RULES_SCHEMA_VERSION
 				or int(payload.get("action_version", -1))
 				!= AppState.ACTION_SCHEMA_VERSION
+				or str(payload.get("rules_profile_id", ""))
+				!= GameState.RULES_PROFILE_ID
 			):
 				connected = false
 				connection_phase = ConnectionPhase.CLOSED
@@ -616,13 +652,16 @@ func _handle_client_message(
 				})
 				events.append({"type": "disconnected", "reason": "schema_mismatch"})
 				return
+			rules_options = Dictionary(payload.get("rules_options", {})).duplicate(true)
 			player_idx = int(payload.get("player_idx", 1))
 			deck_selection_sent = _send(
-				ProtocolV3.DECK_SELECT,
+				ProtocolV4.DECK_SELECT,
 				{
 					"deck_key": local_deck_key,
 					"rules_version": AppState.RULES_SCHEMA_VERSION,
 					"action_version": AppState.ACTION_SCHEMA_VERSION,
+					"rules_profile_id": GameState.RULES_PROFILE_ID,
+					"rules_options": rules_options.duplicate(true),
 					"resume": reconnecting or current_revision >= 0,
 				},
 			)
@@ -632,8 +671,13 @@ func _handle_client_message(
 					"code": "deck_select_send_failed",
 				})
 				return
-			events.append({"type": "connected", "player_idx": player_idx, "room_id": room_id})
-		ProtocolV3.STATE_UPDATE:
+			events.append({
+				"type": "connected",
+				"player_idx": player_idx,
+				"room_id": room_id,
+				"rules_options": rules_options.duplicate(true),
+			})
+		ProtocolV4.STATE_UPDATE:
 			if connection_phase not in [
 				ConnectionPhase.LOBBY,
 				ConnectionPhase.PLAYING,
@@ -683,7 +727,7 @@ func _handle_client_message(
 			})
 			if connection_phase == ConnectionPhase.CLOSED:
 				_clear_pending_submission()
-		ProtocolV3.ERROR:
+		ProtocolV4.ERROR:
 			var origins := _resolve_pending_error(row)
 			events.append({
 				"type": "error",
@@ -697,9 +741,9 @@ func _handle_client_message(
 				"stale_revision", "sequence_gap", "stale_sequence",
 			]:
 				request_resync()
-		ProtocolV3.PING:
-			_send(ProtocolV3.PONG)
-		ProtocolV3.PONG:
+		ProtocolV4.PING:
+			_send(ProtocolV4.PONG)
+		ProtocolV4.PONG:
 			pass
 		_:
 			events.append({
@@ -765,7 +809,7 @@ func _send_state_to_client(
 	if session == null or session.state == null:
 		return
 	_send(
-		ProtocolV3.STATE_UPDATE,
+		ProtocolV4.STATE_UPDATE,
 		session.view_for(1, presentation_events),
 		session.state.revision,
 		origin_action_id,
@@ -779,8 +823,8 @@ func _reject(
 	origin: Dictionary = {},
 ) -> void:
 	_send(
-		ProtocolV3.ERROR,
-		ProtocolV3.error_payload(code, message),
+		ProtocolV4.ERROR,
+		ProtocolV4.error_payload(code, message),
 		get_revision(),
 		str(origin.get("action_id", "")),
 		str(origin.get("request_id", "")),
@@ -874,7 +918,8 @@ func _resolve_pending_state(row: Dictionary, next_revision: int) -> Dictionary:
 		# uncorrelated snapshot releases the lock without attributing the action.
 		matched = true
 	elif next_revision > int(pending_submission.get("base_revision", -1)):
-		# Protocol V3 peers predating correlation echo sent an empty envelope.
+		# Uncorrelated recovery snapshots can still advance the authoritative
+		# revision. With one in-flight submission that advance is unambiguous.
 		# With one in-flight submission, a strict revision advance is unambiguous.
 		origins["action_id"] = pending_action_id
 		origins["request_id"] = pending_request_id
@@ -929,7 +974,7 @@ func _envelope_identifier(message: Variant, field: String) -> String:
 	if not value is String:
 		return ""
 	var identifier := str(value)
-	if identifier.to_utf8_buffer().size() > ProtocolV3.MAX_IDENTIFIER_BYTES:
+	if identifier.to_utf8_buffer().size() > ProtocolV4.MAX_IDENTIFIER_BYTES:
 		return ""
 	return identifier
 
@@ -944,7 +989,7 @@ func _send(
 	if transport == null or not transport.connected_state():
 		return false
 	var next_sequence := send_sequence + 1
-	var sent := transport.send(ProtocolV3.envelope(
+	var sent := transport.send(ProtocolV4.envelope(
 		message_type,
 		room_id,
 		0 if host else 1,
@@ -977,7 +1022,11 @@ func _can_reconnect_match() -> bool:
 	if transport_kind not in ["lan", "relay"]:
 		return false
 	if host:
-		return session != null and session.state != null and session.state.winner < 0
+		return (
+			session != null
+			and session.state != null
+			and not session.state.is_terminal()
+		)
 	return (
 		current_revision >= 0
 		and connection_phase != ConnectionPhase.CLOSED

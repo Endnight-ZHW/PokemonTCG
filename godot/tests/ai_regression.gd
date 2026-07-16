@@ -19,35 +19,26 @@ func _initialize() -> void:
 	var engine := GameEngine.new(catalog)
 	var worker := NativeChallengeAI.new()
 	var runtime := DeepAIRuntime.new()
-	var runtime_manifest_encoder := int(
-		Dictionary(runtime.manifest.get("compatibility_bridge", {})).get("python_encoder_version", 0)
-	)
-	var deep_runtime_current := (
-		runtime_manifest_encoder == runtime.expected_python_encoder_version
-	)
 	var summaries: Array[Dictionary] = []
 	for failure in _budget_contract_failures(catalog, engine, worker):
 		failures.append(failure)
-	for mode in ["challenge", "deep"]:
-		if mode == "deep" and not deep_runtime_current:
-			summaries.append({
-				"success": true,
-				"mode": "deep",
-				"skipped": true,
-				"reason": "python_encoder_version_mismatch",
-				"manifest_encoder_version": runtime_manifest_encoder,
-				"expected_encoder_version": runtime.expected_python_encoder_version,
-			})
-			continue
+	for failure in _new_choice_policy_contract_failures(worker):
+		failures.append(failure)
+	if runtime.runtime_enabled or runtime.is_available():
+		failures.append("legacy Deep runtime must remain disabled for rules v4")
+	if runtime.load_for_deck("fire") or runtime.last_error != "deep_runtime_disabled":
+		failures.append("disabled Deep runtime did not fail deterministically")
+	summaries.append({
+		"success": true,
+		"mode": "deep",
+		"skipped": true,
+		"reason": "deep_runtime_disabled",
+		"fallback": "challenge",
+	})
+	for mode in ["challenge"]:
 		for index in range(deck_keys.size()):
 			var deck_key := str(deck_keys[index])
 			var opponent_key := str(deck_keys[(index + 1) % deck_keys.size()])
-			var backend: Variant = null
-			if mode == "deep":
-				if not runtime.load_for_deck(deck_key):
-					failures.append("%s model load failed: %s" % [deck_key, runtime.last_error])
-					continue
-				backend = runtime.get_backend()
 			var game_started := Time.get_ticks_msec()
 			var summary := _play_game(
 				mode,
@@ -57,7 +48,7 @@ func _initialize() -> void:
 				catalog,
 				engine,
 				worker,
-				backend,
+				null,
 			)
 			summary["elapsed_ms"] = Time.get_ticks_msec() - game_started
 			summaries.append(summary)
@@ -105,6 +96,13 @@ func _load_release_deck_keys() -> Dictionary:
 		return {"ok": false, "error": "Release manifest has no release decks"}
 	if deck_keys.size() != int(manifest.get("model_count", -1)):
 		return {"ok": false, "error": "Release manifest model_count does not match release_decks"}
+	if (
+		bool(manifest.get("deep_runtime_enabled", true))
+		or str(manifest.get("deep_fallback", "")) != "challenge"
+		or int(manifest.get("compatible_model_count", -1)) != 0
+		or int(manifest.get("legacy_model_count", -1)) != deck_keys.size()
+	):
+		return {"ok": false, "error": "Release manifest Deep fallback contract is invalid"}
 	return {"ok": true, "value": deck_keys}
 
 
@@ -152,10 +150,33 @@ func _budget_contract_failures(
 	if not setup.success:
 		errors.append("budget contract setup failed: %s" % setup.message)
 		return errors
+	# Setup now begins with a serialized turn-order Choice. Action budgets are
+	# only meaningful after that pending decision has been consumed.
+	var setup_pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
+	if setup_pending != null:
+		var setup_choice := engine.apply_choice(
+			state, setup_pending, _automatic_choice(setup_pending), rng)
+		if not setup_choice.success:
+			errors.append(
+				"budget contract setup choice failed: %s" % setup_choice.message)
+			return errors
 	var actor := _actor(state)
 	var legal := engine.legal_actions(state, actor, true)
 	if legal.is_empty():
-		errors.append("budget contract has no legal action")
+		var budget_pending := ResolutionStack.from_dict(
+			state.resolution_stack).pending_request
+		errors.append(
+			(
+				"budget contract has no legal action phase=%s setup_stage=%s "
+				+ "actor=%d pending_type=%s pending_player=%d"
+			) % [
+				state.phase,
+				state.setup_stage,
+				actor,
+				budget_pending.request_type if budget_pending != null else "",
+				budget_pending.player if budget_pending != null else -1,
+			]
+		)
 		return errors
 	var single_actions: Array[GameAction] = []
 	single_actions.append(legal[0])
@@ -231,6 +252,142 @@ func _budget_contract_failures(
 	return errors
 
 
+func _new_choice_policy_contract_failures(
+	worker: NativeChallengeAI,
+) -> Array[String]:
+	var errors: Array[String] = []
+	var state := GameState.new()
+	state.public_deck_keys = ["fire", "water"]
+	var cases: Array[Dictionary] = [
+		{
+			"type": "choose_turn_order",
+			"options": ["turn:second", "turn:first"],
+			"expected": "turn:first",
+		},
+		{
+			"type": "choose_mulligan_draw_count",
+			"options": ["draw:0", "draw:2", "draw:1"],
+			"expected": "draw:2",
+		},
+		{
+			"type": "select_prize",
+			"options": ["prize:5", "prize:1", "prize:3"],
+			"expected": "prize:1",
+		},
+		{
+			"type": "confirm_trigger",
+			"options": ["trigger:yes", "trigger:no"],
+			"expected": "trigger:yes",
+		},
+		{
+			"type": "choose_trigger_order",
+			"options": ["trigger:2", "trigger:1"],
+			"expected": "",
+		},
+	]
+	for case_index in range(cases.size()):
+		var case: Dictionary = cases[case_index]
+		var options: Array[Dictionary] = []
+		for option_id in case["options"]:
+			options.append({"option_id": str(option_id), "label": str(option_id)})
+		var request := ChoiceRequest.new(
+			"new-choice:%d" % case_index,
+			str(case["type"]),
+			0,
+			"choice policy contract",
+			options,
+			1,
+			1,
+			false,
+			false,
+		)
+		var payload := {
+			"kind": "choice",
+			"state": state.snapshot(),
+			"choice": request.to_dict(),
+			"actor": 0,
+			"revision": state.revision,
+			"request_id": request.request_id,
+			"mode": "challenge",
+			"deck_key": "fire",
+			"seed": 20260716,
+			"deterministic": true,
+		}
+		var first := worker.decide(payload, func() -> bool: return false)
+		var second := worker.decide(payload, func() -> bool: return false)
+		if (
+			not bool(first.get("success", false))
+			or first.get("choice_response", {}) != second.get("choice_response", {})
+		):
+			errors.append("%s choice was not successful and deterministic" % case["type"])
+			continue
+		var response := ChoiceResponse.from_dict(first.get("choice_response", {}))
+		if response.option_ids.size() != 1 or response.option_ids[0] not in case["options"]:
+			errors.append("%s choice returned an illegal option" % case["type"])
+			continue
+		var expected := str(case["expected"])
+		if not expected.is_empty() and response.option_ids[0] != expected:
+			errors.append("%s choice policy returned %s, expected %s" % [
+				case["type"], response.option_ids[0], expected,
+			])
+
+	# Multi-energy effects such as Hawlucha's Display of Power require every
+	# selected Energy to use one target. Both Challenge AI and the deterministic
+	# opponent policy must repeat a single target option instead of spreading.
+	var same_target_options: Array[Dictionary] = [
+		{
+			"option_id": "pokemon:0:bench_0:first",
+			"value": {"player": 0, "slot": "bench_0", "card_id": "first"},
+		},
+	]
+	var same_target_request := ChoiceRequest.new(
+		"new-choice:same-target",
+		"distribute_energy",
+		0,
+		"same target policy contract",
+		same_target_options,
+		2,
+		2,
+		true,
+		false,
+		{"same_target": true, "max_per_target": 99},
+	)
+	var same_target_payload := {
+		"kind": "choice",
+		"state": state.snapshot(),
+		"choice": same_target_request.to_dict(),
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": same_target_request.request_id,
+		"mode": "challenge",
+		"deck_key": "fire",
+		"seed": 20260717,
+		"deterministic": true,
+	}
+	var same_target_first := worker.decide(
+		same_target_payload, func() -> bool: return false)
+	var same_target_second := worker.decide(
+		same_target_payload, func() -> bool: return false)
+	var challenge_same_target_ids: Array[String] = []
+	if bool(same_target_first.get("success", false)):
+		challenge_same_target_ids = ChoiceResponse.from_dict(
+			same_target_first.get("choice_response", {})).option_ids
+	var automatic_same_target_ids := _automatic_choice(
+		same_target_request).option_ids
+	if (
+		not bool(same_target_first.get("success", false))
+		or same_target_first.get("choice_response", {})
+		!= same_target_second.get("choice_response", {})
+		or challenge_same_target_ids.size() != 2
+		or challenge_same_target_ids[0] != challenge_same_target_ids[1]
+		or automatic_same_target_ids.size() != 2
+		or automatic_same_target_ids[0] != automatic_same_target_ids[1]
+	):
+		errors.append(
+			"same_target distribute_energy choice was illegal or nondeterministic")
+	return errors
+
+
 func _play_game(
 	mode: String,
 	deck_key: String,
@@ -255,7 +412,7 @@ func _play_game(
 	var actions_taken := 0
 	var decisions := 0
 	var choices := 0
-	while state.winner < 0 and actions_taken < 1200:
+	while not state.is_terminal() and actions_taken < 1200:
 		var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
 		if pending:
 			var response: ChoiceResponse
@@ -282,7 +439,24 @@ func _play_game(
 				response = _automatic_choice(pending)
 			var choice_step := engine.apply_choice(state, pending, response, rng)
 			if not choice_step.success:
-				return {"success": false, "error": "illegal choice: " + choice_step.message}
+				return {
+					"success": false,
+					"error": (
+						"illegal choice: %s phase=%s turn=%d actions=%d "
+						+ "request_type=%s request_player=%d metadata=%s "
+						+ "response=%s options=%s"
+					) % [
+						choice_step.message,
+						state.phase,
+						state.turn_number,
+						actions_taken,
+						pending.request_type,
+						pending.player,
+						JSON.stringify(pending.metadata),
+						JSON.stringify(response.to_dict()),
+						JSON.stringify(pending.options),
+					],
+				}
 			continue
 
 		var actor := _actor(state)
@@ -328,16 +502,17 @@ func _play_game(
 			return {"success": false, "error": "illegal action: " + step.message}
 		actions_taken += 1
 	return {
-		"success": state.winner >= 0,
+		"success": state.is_terminal(),
 		"mode": mode,
 		"deck": deck_key,
 		"opponent": opponent_key,
 		"winner": state.winner,
+		"result_status": state.result_status,
 		"actions": actions_taken,
 		"decisions": decisions,
 		"choices": choices,
 		"turns": state.turn_number,
-		"error": "" if state.winner >= 0 else "action guard exceeded",
+		"error": "" if state.is_terminal() else "action guard exceeded",
 	}
 
 
@@ -345,7 +520,7 @@ func _actor(state: GameState) -> int:
 	if not state.pending_promotions.is_empty():
 		return int(state.pending_promotions[0])
 	if state.phase == "SETUP":
-		return 0 if not state.setup_ready[0] else 1
+		return state.setup_actor_idx
 	return state.active_player_idx
 
 
@@ -396,13 +571,34 @@ func _is_repeatable_ability_action(
 func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [])
-	var count := mini(
-		request.options.size(),
-		maxi(request.min_select, request.max_select),
-	)
+	if request.request_type == "choose_turn_order":
+		return ChoiceResponse.new(request.request_id, ["turn:first"])
+	if request.request_type == "choose_mulligan_draw_count":
+		var best_draw := -1
+		for option in request.options:
+			var option_id := str(option.get("option_id", ""))
+			if option_id.begins_with("draw:"):
+				best_draw = maxi(best_draw, int(option_id.trim_prefix("draw:")))
+		return ChoiceResponse.new(request.request_id, ["draw:%d" % maxi(0, best_draw)])
+	if request.request_type == "select_prize":
+		var best_prize := 999
+		for option in request.options:
+			var option_id := str(option.get("option_id", ""))
+			if option_id.begins_with("prize:"):
+				best_prize = mini(best_prize, int(option_id.trim_prefix("prize:")))
+		return ChoiceResponse.new(request.request_id, [
+			"prize:%d" % (0 if best_prize == 999 else best_prize)
+		])
+	var count := maxi(request.min_select, request.max_select)
+	if not request.allow_duplicates:
+		count = mini(request.options.size(), count)
 	var selected: Array[String] = []
 	if request.allow_duplicates:
 		var max_per_target := int(request.metadata.get("max_per_target", 99))
+		if bool(request.metadata.get("same_target", false)):
+			for _index in range(mini(count, max_per_target)):
+				selected.append(str(request.options[0]["option_id"]))
+			return ChoiceResponse.new(request.request_id, selected)
 		var per_target: Dictionary = {}
 		for index in range(request.options.size()):
 			if selected.size() >= count:

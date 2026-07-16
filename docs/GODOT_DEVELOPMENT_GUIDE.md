@@ -104,13 +104,13 @@ flowchart TD
 |---|---|
 | 应用背景、标题全屏背景、安全区、弹窗和加载层 | `scenes/main/main.tscn` |
 | 标题字标、八种基本能量、轮换展示卡与三个主入口 | `scenes/title/title_page.tscn` |
-| 牌组选择与 Challenge/Deep 选择 | `scenes/decks/deck_select_page.tscn` |
+| 牌组选择与 Challenge AI 配置 | `scenes/decks/deck_select_page.tscn` |
 | 网络大厅与 LAN/Relay 选择 | `scenes/network/network_lobby_page.tscn` |
 | 战斗界面兼容门面 | `scenes/battle/battle_screen.tscn` |
 | 牌桌、固定牌位、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
 | 战斗顶部栏、卡牌交互、卡牌预览、系统按钮和日志 | `scenes/battle/components/` |
 | 单张卡牌的显示结构 | `ui/card_view.tscn` |
-| 牌库、弃牌和奖品区 | `ui/zone_view.tscn` |
+| 牌库、弃牌和奖赏区 | `ui/zone_view.tscn` |
 | 设置、选择、隐私与暂停弹窗 | `ui/dialogs/` |
 | 帮助、卡牌检查器、区域查看和牌组详情 | `ui/panels/` |
 | 前台专用主题 | `ui/frontend/front_end_theme.tres` |
@@ -280,7 +280,7 @@ Container 里的控件，不要主要依赖手工坐标；应修改：
 尺寸由 `BattleTable` 根节点 Inspector 中的 `Table Layout` 参数控制。竞技场底板始终铺满
 战斗视口；顶部信息和右侧 132px 命令轨作为悬浮层叠加，布局规划器只为交互内容预留安全边界，
 不会再用 `HBoxContainer` 从牌桌宽度中切出常驻侧栏。想改战斗宝可梦、备战宝可梦和手牌的
-尺寸时，先选 `BattleTable` 根节点改导出参数；只有想移动牌库、弃牌、奖品和竞技场的算法
+尺寸时，先选 `BattleTable` 根节点改导出参数；只有想移动牌库、弃牌、奖赏和竞技场的算法
 位置时，才进入 `_layout_board()` 和对应的牌区定位函数。
 
 ## 4. 第一个练习：修改标题页
@@ -410,11 +410,11 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 打开 `scenes/battle/components/battle_table.tscn`，可以直接看到：
 
 - 双方战斗区和五个备战位。
-- 双方横向重叠的六张奖品卡，以及显示左侧面和下侧面厚度的牌库、弃牌堆。
+- 双方横向重叠的六张奖赏卡，以及显示左侧面和下侧面厚度的牌库、弃牌堆。
 - 手牌滚动区域。
 - 顶部回合、玩家、阶段和当前任务提示。
 - 右侧 132px 悬浮命令轨，以及默认收起、按需向左展开的行动日志抽屉；卡牌动作不进入右栏。
-- 双方奖品卡之间靠左固定的 `BattleDetailPanel` 卡图与效果预览。
+- 双方奖赏卡之间靠左固定的 `BattleDetailPanel` 卡图与效果预览。
 
 顶部菜单是对局中的系统出口，必须在卡牌动作浮层、详情面板和表现动画输入遮罩存在时仍可点击。
 `BattleRoot`、`Body`、`BoardPanel`、`BoardCanvas` 以及 `CardActionPopover` 的全屏结构层均使用
@@ -457,7 +457,7 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 | 牌桌、牌位、牌区、手牌和表现层 | `scenes/battle/components/battle_table.tscn` |
 | 右侧 132px 悬浮命令轨 | `scenes/battle/components/battle_phase_hud.tscn` |
 | 默认收起、向左展开的行动日志抽屉 | `scenes/battle/components/battle_log_panel.tscn` |
-| 双方奖品卡之间靠左固定的卡图与效果预览 | `scenes/battle/components/battle_detail_panel.tscn` |
+| 双方奖赏卡之间靠左固定的卡图与效果预览 | `scenes/battle/components/battle_detail_panel.tscn` |
 | 卡牌动作索引与合法目标匹配 | `scenes/battle/components/card_interaction_router.gd` |
 | 贴卡动作浮层 | `scenes/battle/components/card_action_popover.tscn` |
 
@@ -467,8 +467,8 @@ card_view.configure(card_id, pokemon_state, hidden, hand_index, player, slot)
 轻点“行动日志”后才以 360px 抽屉向命令轨左侧展开，再次轻点、按关闭按钮或点击抽屉外区域时
 收起。不要向命令轨或日志加入卡牌详情、阶段格或卡牌动作入口；日志只展示结果，不提供规则操作。
 
-`DetailPanel` 位于 `battle_table.tscn` 根节点的 `OverlayPanels` 下。它固定使用双方奖品卡之间的
-左侧走廊，并以六张奖品的最大占位计算上下边界，因此奖品减少时不会漂向屏幕中央，也不会进入
+`DetailPanel` 位于 `battle_table.tscn` 根节点的 `OverlayPanels` 下。它固定使用双方奖赏卡之间的
+左侧走廊，并以六张奖赏的最大占位计算上下边界，因此奖赏减少时不会漂向屏幕中央，也不会进入
 主战斗区。标准布局为 372×312；走廊不足时回退到 188×196 的紧凑布局，仍不足时再在走廊内
 等比缩放。轻点手牌或场上宝可梦时显示卡图、卡文和实时状态；再次轻点同一来源或按关闭按钮时，
 详情与来源高亮一起清除。无论查看己方还是对方卡牌，预览都不得跟随来源移动到下方或竞技场中央。
@@ -505,7 +505,7 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 | `hand_bottom_padding` | 手牌与底部边缘的额外距离 |
 | `active_card_size` | 双方战斗宝可梦大小 |
 | `bench_card_size` | 双方备战宝可梦大小 |
-| `zone_size` | 牌库、弃牌、奖品和竞技场大小 |
+| `zone_size` | 牌库、弃牌、奖赏和竞技场大小 |
 | `bench_spacing` | 备战区卡牌间距 |
 | `hand_card_size` | 手牌卡牌大小 |
 | `hand_minimum_spacing` | 手牌最小重叠间距 |
@@ -516,9 +516,9 @@ UI 不得自行放宽目标条件。`CardActionPopover` 使用 200–260px 宽�
 
 双方 `ZoneView` 使用一致的实体堆叠语言：牌库和弃牌堆都以 `down_left` 方向露出左侧面与下侧面，
 并按实际卡牌数量增加可见厚度；渲染层数和总深度有上限，避免满牌库越出安全区。弃牌仍显示当前
-顶牌，隐藏牌库只显示卡背。奖品区使用 `prizes` / `fan_right` 模式，在固定托盘内最多横向重叠
-六张卡背；拿取奖品后从扇列边缘减少，并保留计数徽章。调整 `zone_size` 后必须同时检查牌面、
-左/下侧厚度、横向奖品最大边界和详情走廊，不能只看根 `Control` 的矩形。
+顶牌，隐藏牌库只显示卡背。奖赏区使用 `prizes` / `fan_right` 模式，在固定托盘内最多横向重叠
+六张卡背；拿取奖赏后从扇列边缘减少，并保留计数徽章。调整 `zone_size` 后必须同时检查牌面、
+左/下侧厚度、横向奖赏最大边界和详情走廊，不能只看根 `Control` 的矩形。
 
 ![固定种子的战斗预览](images/godot-guide/battle-preview.png)
 
@@ -643,7 +643,7 @@ page.select_deck(1, "water")
 | 卡牌选中呼吸 | `card_view.tscn` 的 `selected_pulse` | 复用组件固定状态 |
 | 合法目标闪烁 | `card_view.tscn` 的 `target_pulse` | 复用组件固定状态 |
 | 抽牌飞向手牌 | `BattlePresentationCoordinator` + `HandMotionController` | 旧手牌保持原位，到 55% 接触点才逐张插入 anchor |
-| 出牌、击倒、奖品飞牌 | `PresentationDirector` + `CardMotionLayer` | 同一个 `CardMotionEntity` 从真实源姿态连续移动 |
+| 出牌、击倒、奖赏飞牌 | `PresentationDirector` + `CardMotionLayer` | 同一个 `CardMotionEntity` 从真实源姿态连续移动 |
 | 镜头与动态落点 | `BattleCameraRig` + `BoardAnchorResolver` | 牌桌和 Effects 同步位移，resize 时重新解析目标 |
 
 减少动画模式下不要强制播放时间轴。前台优先使用共享策略：
@@ -735,15 +735,37 @@ UI 不能在调用规则前自行移动卡牌或扣除资源。
 新增效果时不要保存 Callable、匿名回调或节点引用。应保存字符串操作名、实体引用和
 普通 Dictionary/Array 数据。
 
+### 中国大陆规则配置的关键时序
+
+当前 `GameState.rules_profile_id` 固定为 `CN_MAINLAND_3_1_0`，`rules_options` 至少包含
+`apply_type_matchups`。弱点/抗性默认关闭是项目休闲规则特例；联机由房主开局前锁定，不能在
+对局中修改。
+
+- 开局阶段依次为 `TURN_ORDER → INITIAL_PLACEMENT → BONUS_DRAW → BONUS_PLACEMENT → COMPLETE`。
+  硬币获胜者先选择先攻/后攻，之后才发 7 张手牌。再战按轮相抵，设置 6 张奖赏卡后选择
+  奖励抽 `0..N`，奖励基础宝可梦只能追加到备战区。先攻第一回合照常抽牌，但不能通常进化、
+  使用支援者或攻击。
+- 每个攻击目标使用独立伤害包，顺序是“基础伤害/公式 → 攻击方修正 → 弱点 → 抗性 →
+  防守方修正/防止”。备战区只跳过弱点与抗性。放置伤害指示物和直接昏厥不能调用伤害接口伪装。
+- 多目标伤害先全部计算再同时落伤；招式其余效果结束后再统一处理受伤触发、昏厥触发、弃置、
+  逐张奖赏卡、胜负与晋升。双方条件数相同且大于 0 时写入 `DRAW` / `winner=-1`。
+- 进化、撤退和强制换位都必须调用统一清理入口，清除特殊状态与受到的临时招式效果，但保留
+  伤害、能量、道具和进化链。
+
+能量费用、撤退、公式与 AI 都通过 `EnergyView` 读取有效能量：双重涡轮提供两个无色单位；
+夜光能量仅在该宝可梦没有其他特殊能量时提供任意类型，第二张夜光也会令两张都降为无色。
+
 ### 隐藏信息
 
 `StateSerializer.for_player()` 负责玩家视角：
 
 - 自己的手牌身份可见。
 - 对手手牌只显示数量。
-- 双方牌库顺序和奖品身份不可见。
+- 双方牌库顺序和奖赏身份不可见。
+- 开局 `COMPLETE` 前，对手盖放宝可梦只能序列化为严格的 `{"hidden":true}`；不能附带
+  `card_id`、实体引用或可推断身份的日志/事件。
 
-表现事件还会经过 `PresentationEvent.for_player()`。新增抽牌、搜索或奖品动画时，
+表现事件还会经过 `PresentationEvent.for_player()`。新增抽牌、搜索或奖赏动画时，
 必须测试事件中没有泄漏隐藏卡牌 ID。
 
 ## 10. AI 与联机
@@ -752,19 +774,18 @@ AI 通过 `AICoordinator` 在线程中运行。主线程只提交可序列化请
 
 ```text
 Main -> AICoordinator.start(request)
-后台 Thread -> Challenge/Deep AI
+后台 Thread -> Challenge AI
 Main._process() -> poll_result()
 Main -> GameEngine.apply_action/apply_choice()
 ```
 
-不要把 Node、Texture 或其他 Godot 场景对象传入 AI 线程。Deep AI 模型不可用时，
-运行时会回退到 Challenge AI，并在 UI 中显示原因。
+不要把 Node、Texture 或其他 Godot 场景对象传入 AI 线程。0.4.0 的旧 Deep 模型仍绑定旧规则，
+`deep_runtime_enabled=false`；发布 UI 不显示 Deep 入口，历史调用稳定回退 Challenge。
 
 标题页只显示一个“挑战 AI”入口，并以 `challenge` 作为进入牌组页的默认模式。AI 类型由
-牌组选择页的 `AIModeOption` 决定，两个 item 的 metadata 固定为 `challenge` 和 `deep`；
-`configure(..., "challenge"|"deep")` 用于预选。切换类型只更新标题、说明和 AI 槽位文案，
-必须保留双方牌组、当前槽位、先后手、滚动位置与详情状态。最终仍通过
-`start_requested(mode, deck1, deck2, forced_first)` 把具体模式交给 `Main`，不要在 UI 内启动 AI。
+牌组选择页的 `AIModeOption` 固定为 `challenge`。`FirstPlayerOption` 只显示“由硬币胜者选择”，
+最终通过 `start_requested(mode, deck1, deck2, forced_first, apply_type_matchups)` 把
+`forced_first=-1` 和默认关闭的弱点/抗性选项交给 `Main`，不要在 UI 内提前决定先攻方或启动 AI。
 
 联机采用房主权威：
 
@@ -779,6 +800,8 @@ flowchart LR
 
 客户端不能提交伤害、抽牌结果、随机数或完整状态。UI 改造不得绕过
 `NetworkMatchController.submit_action()` 和 `submit_choice()`。
+Protocol v4 在欢迎/选牌/状态消息中携带规则配置。旧 Protocol v3 和 snapshot v0/v1 只能返回
+明确不兼容诊断，不做字段猜测或自动迁移。
 
 网络大厅的视觉状态由 `NetworkLobbyPage.ConnectionState` 表达：
 
@@ -800,7 +823,8 @@ wide 布局左侧的 `IntroPanel` 是只读的联机方式概览卡：`IntroIcon
 切换 LAN / Relay 时保留身份、牌组和两种方式各自的地址草稿，但要清除房间码、字段校验错误、
 旧状态消息和已生成的房间信息。状态区、字段锁定和 Relay 房间码统一通过
 `set_connection_state(state, message, room_code)` 更新；
-`connect_requested(kind, role, address, port, room_code, deck_key)` 的参数和房主权威校验保持不变。
+连接请求还携带房主的弱点/抗性选项；挑战者只读显示房主配置。页面信号参数有调整时，要同步
+`Main`、场景 contract 和网络 contract，不能绕过房主权威校验。
 页面先做字段级提示，`Main` 仍必须做第二层权威校验。离开网络路由后 `Main` 会清空页面引用，
 因此异步回调更新 UI 前必须同时确认当前路由和实例仍有效，不能缓存控件节点后跨页面写入。
 
@@ -900,9 +924,9 @@ battle transition、Workbench transition、网络协议和前台布局 contract�
 锁定和 transport 清理。布局 contract 是结构回归，仍需配合截图观察视觉层级、长文案与卡图构图。
 
 战斗布局 contract 还必须单独覆盖 1280×720、1600×900、2000×900、紧凑横屏和四边安全区。
-关键状态包括准备/空场、常规主阶段、满备战区、长手牌与重叠高亮、高弃牌数量、奖品减少、日志抽屉、AI 等待、
+关键状态包括准备/空场、常规主阶段、满备战区、长手牌与重叠高亮、高弃牌数量、奖赏减少、日志抽屉、AI 等待、
 己方/对方卡牌详情、动作/目标浮层和主要战斗表现。结构断言至少确认全屏 `BoardPanel`、132px
-悬浮命令轨、默认隐藏的日志、固定左侧详情走廊、六张横向奖品，以及牌库/弃牌完整左下厚度边界。
+悬浮命令轨、默认隐藏的日志、固定左侧详情走廊、六张横向奖赏，以及牌库/弃牌完整左下厚度边界。
 
 涉及 AI、规则或网络时执行：
 
@@ -933,7 +957,7 @@ battle transition、Workbench transition、网络协议和前台布局 contract�
 | `battle-empty.png`、`battle-setup.png`、`battle-setup-1280x720.png` | 空场与准备阶段构图、全屏竞技场、顶部信息和默认收起日志 |
 | `battle-main.png`、`battle-main-1280x720.png`、`battle-main-20x9.png`、`battle-main-compact.png` | 1600×900、1280×720、2000×900、900×540 主战斗构图；132px 命令轨不压缩牌桌 |
 | `battle-full-bench.png`、`battle-discard-stack-30.png` | 双方五个备战位满场，以及弃牌数量增加后的左/下侧厚度与安全边界 |
-| `battle-prizes-3.png` | 双方各三张奖品仍横向重叠，详情走廊不随数量漂移 |
+| `battle-prizes-3.png` | 双方各三张奖赏仍横向重叠，详情走廊不随数量漂移 |
 | `battle-overlapping-highlights.png` | 长手牌、卡牌父级顺序、选中框和合法目标不穿过相邻卡面 |
 | `battle-card-preview.png`、`battle-card-preview-1280x720.png`、`battle-card-preview-compact.png` | 己方卡牌详情固定在左侧走廊；紧凑尺寸和等比回退不侵入竞技场 |
 | `battle-card-preview-opponent.png` | 对方卡牌详情仍使用同一固定走廊，不跳到屏幕下方或中央 |
@@ -976,8 +1000,9 @@ Windows 与 Android 调试构建：
 - 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
 - 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
 
-本项目发布版包含 Godot 客户端、ONNX Runtime 原生库和 10 个离线 Deep AI 模型；不会打包
-Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
+0.4.0 发布版以 Godot 客户端和 Challenge AI 为运行基线。10 个旧 Deep AI 模型仍保留在仓库
+作为 rules v2 历史产物，manifest 明确标记兼容模型数为 0；构建冒烟不再要求旧模型推理成功。
+发布包不会包含 Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
 
 ### 第一次发布前准备
 
@@ -1006,14 +1031,13 @@ Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本�
 .\tools\test_godot_network.ps1
 ```
 
-如果刚改过卡牌、卡组或模型，也先确认生成数据和 ONNX 模型同步：
+如果刚改过卡牌或卡组，先确认生成数据同步：
 
 ```powershell
 .\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
-.\tools\export_onnx_models.ps1
 ```
 
-Deep AI GPU 训练使用精确锁定的 `DL` Conda 环境；发布 ONNX 的导出/校验则使用
+未来重新训练 Deep AI 时，GPU 训练使用精确锁定的 `DL` Conda 环境；ONNX 导出/校验使用
 `python/environment-export.yml` 或 `tools/setup_ai_toolchain.ps1` 创建的 CPU 环境。
 两种环境都固定禁用用户目录包：
 
@@ -1122,7 +1146,7 @@ Android 调试 APK 可以用 ADB 安装：
 1. `build_native_ai.ps1 -Target all -Configuration release`。
 2. `build_godot.ps1 -Target windows -Configuration release`。
 3. Windows release 冒烟启动。
-4. 复制 `PokemonTCG.exe`、`PokemonTCG.pck`、Windows Deep AI 原生库、ONNX Runtime DLL、发布说明和许可证。
+4. 复制 `PokemonTCG.exe`、`PokemonTCG.pck`、发布所需原生库、发布说明和许可证。
 5. 压缩为发布 ZIP。
 6. 写出 `SHA256SUMS.json`。
 
@@ -1130,7 +1154,7 @@ Android 调试 APK 可以用 ADB 安装：
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Windows-x86_64-0.3.2.zip` | 可分发 Windows ZIP |
+| `godot/dist/release/PokemonTCG-Windows-x86_64-0.4.0.zip` | 可分发 Windows ZIP |
 | `godot/dist/release/windows/PokemonTCG.exe` | 未压缩 Windows release 可执行文件 |
 | `godot/dist/release/windows/PokemonTCG.pck` | Godot 资源包 |
 | `godot/dist/release/SHA256SUMS.json` | ZIP、EXE、PCK、DLL 和模型校验清单 |
@@ -1152,14 +1176,14 @@ ONNX Runtime、许可证和 `BUILD_INFO.json`。
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Android-arm64-0.3.2-test.apk` | Android 9+ ARM64 测试签名 APK |
+| `godot/dist/release/PokemonTCG-Android-arm64-0.4.0-test.apk` | Android 9+ ARM64 测试签名 APK |
 | `godot/dist/release/android/PokemonTCG.apk` | Godot 导出的原始 release APK |
 | `godot/dist/release/SHA256SUMS.json` | 发布校验清单 |
 
 安装测试签名 APK：
 
 ```powershell
-.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.3.2-test.apk
+.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.4.0-test.apk
 ```
 
 查看设备是否连接：
@@ -1195,7 +1219,7 @@ $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = "your-keystore-password"
 正式签名输出文件名：
 
 ```text
-godot/dist/release/PokemonTCG-Android-arm64-0.3.2-production.apk
+godot/dist/release/PokemonTCG-Android-arm64-0.4.0-production.apk
 ```
 
 正式签名注意事项：
@@ -1203,7 +1227,7 @@ godot/dist/release/PokemonTCG-Android-arm64-0.3.2-production.apk
 - keystore 丢失后，应用商店同包名升级会非常麻烦，必须离线备份。
 - `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 当前同时作为 store password 和 key password 使用。
 - 不要把 keystore 放到 `godot/`、`docs/`、`tools/` 或任何会被提交的目录。
-- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=5`、`versionName=0.3.2`、仅 `arm64-v8a`。
+- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=6`、`versionName=0.4.0`、仅 `arm64-v8a`。
 
 ### 发布后校验
 
@@ -1216,11 +1240,11 @@ godot/dist/release/PokemonTCG-Android-arm64-0.3.2-production.apk
 它会检查：
 
 - Windows release 可执行文件能启动 release 冒烟测试。
-- Windows ZIP 中包含 `.exe`、`.pck`、Deep AI DLL、ONNX Runtime、发布说明和许可证。
+- Windows ZIP 中包含 `.exe`、`.pck`、发布清单要求的原生库、发布说明和许可证。
 - Windows ZIP 不包含 Python、PyTorch、测试、工具目录或 console exe。
 - Android APK 包名、版本号、SDK、ABI 正确。
 - Android APK 签名可验证。
-- Android APK 包含 manifest 指定的全部 10 个 ONNX 模型、`libpokemon_ai` 和 `libonnxruntime.so`。
+- Android APK 的资源与 manifest 一致，且 Deep 运行时保持关闭并声明 Challenge 回退。
 - `SHA256SUMS.json` 中每个文件的 SHA-256 与实际文件一致。
 
 `test_release.ps1` 从 `release_manifest.json` 读取版本和 Android versionCode，默认检查
@@ -1230,8 +1254,8 @@ godot/dist/release/PokemonTCG-Android-arm64-0.3.2-production.apk
 手工抽查校验值：
 
 ```powershell
-Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.3.2.zip -Algorithm SHA256
-Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.3.2-test.apk -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.4.0.zip -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.4.0-test.apk -Algorithm SHA256
 Get-Content .\godot\dist\release\SHA256SUMS.json
 ```
 
@@ -1241,7 +1265,7 @@ Get-Content .\godot\dist\release\SHA256SUMS.json
 .\.tools\android-sdk\build-tools\35.0.0\apksigner.bat verify `
   --verbose `
   --print-certs `
-  .\godot\dist\release\PokemonTCG-Android-arm64-0.3.2-production.apk
+  .\godot\dist\release\PokemonTCG-Android-arm64-0.4.0-production.apk
 ```
 
 如果本地 Build Tools 版本不是 `35.0.0`，以 `.tools/android-sdk/build-tools/` 下实际目录为准。
@@ -1252,15 +1276,16 @@ APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CH
 其中最重要的是：
 
 - 冷启动、横屏、安全区、系统返回手势/返回键和设置保存。
-- 本地双人、Challenge AI、Deep AI 离线对局。
-- 10 套 Deep AI 模型都必须完成真实 load+infer 冒烟，且不得出现 NaN/Inf 或静默 fallback。
+- 本地双人和 Challenge AI 离线对局；历史 Deep 入口不可见，旧调用稳定回退 Challenge。
+- 检查 `deep_runtime_enabled=false`、`deep_fallback=challenge`、兼容模型 0、历史模型 10；不把
+  旧模型 load+infer 当作 0.4.0 发布条件。
 - 标题和战斗音乐各保持前台至少 3 分钟，确认没有音频崩溃。
-- 抽牌、攻击、击倒、奖品、胜利演出在目标设备帧率可接受。
+- 抽牌、攻击、击倒、奖赏、胜利演出在目标设备帧率可接受。
 - 切后台、锁屏、恢复、断网、网络切换和覆盖安装。
 - Win↔Android、Android↔Android 的 LAN/Relay 对局，如果这次发布包含联网验收。
 
 记录设备型号、Android 版本、APK SHA-256、平均/最低 FPS、峰值内存、温度和复现步骤。
-截图或日志中不得出现对手手牌、牌库顺序或奖品身份。
+截图或日志中不得出现对手手牌、牌库顺序或奖赏身份。
 
 ### 常见打包问题
 
@@ -1349,12 +1374,12 @@ Godot UI 修改先判断节点属于哪一种布局：
    和卡图细边框，不要恢复每张 tile 顶部的全宽彩色横线。`AssignmentBadge` 只表示已分配槽位，
    pressed 仍只表示当前正在配置的槽位所选牌组，两种状态不能合并。
 4. 选择 `MasterDetail/DetailPanel`，调整选中牌组的摘要和最多四张核心卡。
-5. 选择 `ActionBar`，调整独立底部 CTA、`AIModeOption` 与 AI 先手选项，不要把它们放入
-   画廊滚动区。`AIModeOption` 的 item metadata 必须保持为 `challenge` / `deep`。
+5. 选择 `ActionBar`，调整独立底部 CTA、固定的 Challenge `AIModeOption` 与“由硬币胜者选择”
+   先后攻提示，不要把它们放入画廊滚动区。不要重新暴露旧 Deep 入口或手动指定先攻。
 6. wide 模式使用画廊/详情主从布局；compact 在全幅画廊与详情之间切换并恢复滚动位置。
    切换逻辑在 `deck_select_page.gd::_apply_responsive_layout()`。
 7. 按 `F6` 预览；再从标题页用 `F5` 分别进入本地和 AI 模式，验证两个槽位、同牌组选择、
-   Challenge/Deep 切换时的状态保留、先手参数和 `start_requested` 参数顺序。
+   Challenge 固定模式、`forced_first=-1` 和 `start_requested` 参数顺序。
 
 十套发布牌组的代表卡配置位于 `res://ui/frontend/deck_visual_catalog.gd`。新增发布牌组时优先
 在这里显式配置；缺失时才走稳定回退算法。不要在 `.tscn` 写死卡组列表，也不要读取隐藏的
@@ -1371,8 +1396,9 @@ Godot UI 修改先判断节点属于哪一种布局：
 4. 保持 `IDLE` / `ERROR` 可切换，`VALIDATING`、`CONNECTING`、`WAITING`、`CONNECTED` 锁定。
 5. 分别切换 LAN / Relay，确认身份、牌组和各自地址草稿保留，而房间码、字段错误和旧连接
    状态被清除。
-6. 按 `F6` 检查字段显隐，再从标题页按 `F5` 走 LAN 与 Relay 流程，确认
-   `connect_requested(kind, role, address, port, room_code, deck_key)` 参数顺序不变。
+6. 按 `F6` 检查字段显隐，再从标题页按 `F5` 走 LAN 与 Relay 流程，确认房主可在开局前设置
+   弱点/抗性，挑战者只能确认房主配置；信号参数为
+   `connect_requested(kind, role, address, port, room_code, deck_key, apply_type_matchups)`。
 
 ### 配方：修改战斗界面 HUD、卡位和手牌
 
@@ -1386,10 +1412,10 @@ Godot UI 修改先判断节点属于哪一种布局：
 7. 系统按钮外观在 `battle_phase_hud.tscn`，日志外观在 `battle_log_panel.tscn`；日志必须默认收起，
    展开时向左覆盖为抽屉，命令轨不得加入卡牌动作入口。
 8. 卡图与效果预览在 `battle_detail_panel.tscn` 调整；它必须继续挂在 `OverlayPanels`，固定在双方
-   奖品卡之间靠左的走廊，并保留 372×312 → 188×196 → 等比缩放的紧凑回退。
+   奖赏卡之间靠左的走廊，并保留 372×312 → 188×196 → 等比缩放的紧凑回退。
 9. 动作浮层尺寸、按钮高度、滚动数量和指向线在 `card_action_popover.tscn` 及同名脚本中调整。
 10. 选中与合法目标反馈在 `CardView` 的 `SelectionRing`、`TargetGlow`、`ActionableMarker` 和 `InteractionHint` 调整。
-11. 在 `ZoneView` 检查双方牌库和弃牌均露出左/下侧厚度，厚度随数量变化；双方奖品均为最多六张
+11. 在 `ZoneView` 检查双方牌库和弃牌均露出左/下侧厚度，厚度随数量变化；双方奖赏均为最多六张
     向右横向重叠的卡背，而不是单张厚牌堆。
 12. 按 `F6` 或在 Workbench 选择“战斗场景”，验证首次轻点选中、同一卡二次轻点同时清除高亮和
     详情、空白关闭浮层、350ms 长按，以及合法/非法拖放。
@@ -1413,16 +1439,16 @@ Godot UI 修改先判断节点属于哪一种布局：
    - `hand_rotation_degrees`：扇形旋转幅度。
 5. 按 `F6` 运行战斗场景或打开 Workbench 的“战斗场景”预览。
 
-如果想改牌库、弃牌、奖品的位置，不要只拖场景节点；应修改
+如果想改牌库、弃牌、奖赏的位置，不要只拖场景节点；应修改
 `BattleTable._layout_board()` 中对应的牌区定位。修改后检查 16:9 和 20:9 截图，并以
 `ZoneView.get_stack_visual_max_rect()` 的完整可视边界判断遮挡；根节点矩形不包含向左、向下伸出的
-全部纸边，也不能代表六张奖品卡的最大横向占位。
+全部纸边，也不能代表六张奖赏卡的最大横向占位。
 
 `BattleDetailPanel` 与 `CardActionPopover` 都位于牌桌根浮层，不参与 `Body` 或 `CardView`
 的最小尺寸计算。`BattleDetailPanel` 使用固定左侧走廊，不再跟随来源卡寻找候选位置；窗口收紧时
 只切换紧凑布局并在走廊内缩放。`CardActionPopover` 始终跟随来源卡牌的上方中心锚点，顶部
 空间不足时只允许切换到下方锚点，不再搜索竞技场中央或侧边空位；其安全区同时排除顶部菜单。
-调整浮层时要同时检查双方战斗位、五个备战位、全部手牌、奖品最大占位和安全区边缘。
+调整浮层时要同时检查双方战斗位、五个备战位、全部手牌、奖赏最大占位和安全区边缘。
 
 ### 配方：修改 CardView 卡牌组件
 
@@ -1458,7 +1484,7 @@ Godot UI 修改先判断节点属于哪一种布局：
 
 1. 打开 `res://ui/panels/help_panel.tscn` 修改快速开始、回合流程、卡牌与区域、联机四类内容。
 2. 打开 `res://ui/panels/card_inspector_panel.tscn` 修改卡牌检查器的大图、卡文和附属卡布局。
-3. 打开 `res://ui/panels/zone_inspector_panel.tscn` 修改弃牌/牌库/奖品/竞技场查看布局。
+3. 打开 `res://ui/panels/zone_inspector_panel.tscn` 修改弃牌/牌库/奖赏/竞技场查看布局。
 4. 打开 `res://ui/panels/deck_detail_panel.tscn` 修改牌组详情统计、核心卡和完整列表布局。
 5. `Main` 负责按 `ModalSpec` 打开通用 `ModalLayer`、设置标题和关闭按钮；面板只接收 context 并显示内容。
 6. 修改后在 Workbench 切换“帮助”“卡牌检查器”“区域查看”“牌组详情”四个预览页。
@@ -1729,17 +1755,17 @@ MY_FIRE_DECK = [
 
 - 帮助面板：标题页和暂停菜单进入，内容在 `ui/panels/help_panel.tscn`。
 - 卡牌检查器：长按卡牌至少 350ms 后由兼容信号 `detail_requested(card_id)` 进入，内容在 `ui/panels/card_inspector_panel.tscn`。
-- 区域查看：点击弃牌、牌库、奖品或竞技场进入，内容在 `ui/panels/zone_inspector_panel.tscn`，入口由 `ZoneView.inspect_context` 提供。
+- 区域查看：点击弃牌、牌库、奖赏或竞技场进入，内容在 `ui/panels/zone_inspector_panel.tscn`，入口由 `ZoneView.inspect_context` 提供。
 - 牌组详情：牌组选择页按钮进入，内容在 `ui/panels/deck_detail_panel.tscn`。
 
 隐藏信息规则很重要：
 
 - 弃牌区和竞技场可以传 `card_ids`。
-- 牌库和奖品只能传 `count` 与 `hidden=true`。
-- 联网视角中对手手牌、双方牌库和奖品不得出现真实卡牌 ID。
+- 牌库和奖赏只能传 `count` 与 `hidden=true`。
+- 联网视角中对手手牌、双方牌库和奖赏不得出现真实卡牌 ID。
 - 新增任何检查器字段前，先确认它来自公开状态还是当前玩家私有状态。
 
-如果你要新增“查看手牌”“查看奖品”等功能，先问清楚它是不是规则允许公开的内容。
+如果你要新增“查看手牌”“查看奖赏”等功能，先问清楚它是不是规则允许公开的内容。
 本地调试方便不等于发布版安全。
 
 ## 21. 常见排错扩展
@@ -1748,7 +1774,7 @@ MY_FIRE_DECK = [
 |---|---|---|
 | `%HelpButton` 为 null | 场景节点改名或不再 unique | 恢复节点名，或同步脚本中的 `%NodeName` |
 | 弃牌区点击没有反应 | `ZoneView.inspect_context` 为空 | 检查 `BattleTable._refresh_field()` 是否传入 context |
-| 牌库/奖品显示了真实卡 | context 中传入了 `card_ids` | 对隐藏区传空数组，只传 count |
+| 牌库/奖赏显示了真实卡 | context 中传入了 `card_ids` | 对隐藏区传空数组，只传 count |
 | 选择面板确认按钮灰掉 | 选择数量不在 min/max 范围 | 检查 `ChoiceRequest.min_select/max_select` 和 `selected_choice_ids` |
 | 分配能量提交错误 | option ID 被 UI 重写 | UI 只能重复已有 option ID，不要生成新 ID |
 | 动画在减少动画模式仍播放 | 没检查 `AppSettings.reduced_motion` | 跳过 Tween 或使用 reduced speed |

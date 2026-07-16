@@ -55,6 +55,19 @@ func _run_normalization_contract() -> void:
 		and str(counters.get("target", {}).get("slot", "")) == "active",
 		"damage counter event did not derive its target endpoint",
 	)
+	var direct_knockout := PresentationEvent.normalize({
+		"event_type": "knockout_effect_applied",
+		"actor": 0,
+		"target": {"player": 1, "slot": "active"},
+		"data": {"player": 1, "slot": "active", "direct_knockout": true},
+	}, 13, 0)
+	_expect(
+		str(direct_knockout.get("event_type", ""))
+		== "direct_knockout_applied"
+		and int(direct_knockout.get("amount", -1)) == 0
+		and str(direct_knockout.get("target", {}).get("slot", "")) == "active",
+		"legacy direct-KO effect did not normalize without acquiring damage semantics",
+	)
 
 	var selected := PresentationEvent.normalize(
 		VMZoneHelpers.cards_selected_event(
@@ -132,6 +145,52 @@ func _run_normalization_contract() -> void:
 		"discard event lost the source indices needed to disambiguate duplicate cards",
 	)
 
+	var turn_boundary := PresentationEvent.normalize_all([
+		{
+			"event_type": "cards_drawn",
+			"actor": 1,
+			"data": {
+				"player": 1,
+				"count": 1,
+				"card_ids": ["sv1-151"],
+				"purpose": "turn_draw",
+				"turn": 4,
+			},
+		},
+		{
+			"event_type": "turn_start",
+			"actor": 1,
+			"data": {"player": 1, "turn": 4},
+		},
+	], 16, 1)
+	_expect(
+		turn_boundary.size() == 2
+		and str(turn_boundary[0].get("event_type", "")) == "turn_start"
+		and str(turn_boundary[1].get("event_type", "")) == "cards_drawn",
+		"presentation normalization allowed a tagged turn draw before turn_start",
+	)
+	var setup_boundary := PresentationEvent.normalize_all([
+		{
+			"event_type": "cards_drawn",
+			"actor": 1,
+			"data": {
+				"player": 1,
+				"purpose": "mulligan_bonus",
+				"card_ids": ["sv1-104"],
+			},
+		},
+		turn_boundary[0],
+		turn_boundary[1],
+	], 17, 1)
+	_expect(
+		setup_boundary.size() == 3
+		and str(setup_boundary[0].get("data", {}).get("purpose", ""))
+		== "mulligan_bonus"
+		and str(setup_boundary[1].get("event_type", "")) == "turn_start"
+		and str(setup_boundary[2].get("event_type", "")) == "cards_drawn",
+		"turn ordering moved the earlier mulligan-bonus draw across setup",
+	)
+
 
 func _run_director_contract() -> void:
 	var director := PresentationDirector.new()
@@ -190,6 +249,7 @@ func _run_director_contract() -> void:
 	for event_type in [
 		"confusion_failed",
 		"damage_prevented",
+		"direct_knockout_applied",
 		"turn_end",
 		"checkup",
 		"turn_start",
@@ -210,6 +270,7 @@ func _run_director_contract() -> void:
 	var expected_feedback := {
 		"混乱 -30": "",
 		"伤害无效": "",
+		"直接昏厥": "",
 		"回合结束": PresentationDirector.FEEDBACK_CHANNEL_ANNOUNCEMENT,
 		"宝可梦检查": PresentationDirector.FEEDBACK_CHANNEL_ANNOUNCEMENT,
 		"第 3 回合": PresentationDirector.FEEDBACK_CHANNEL_ANNOUNCEMENT,
@@ -546,20 +607,181 @@ func _run_rule_event_regressions() -> void:
 	simultaneous_state.players[1].prizes = ["sv1-ener-6", "sv1-ener-6"]
 	var simultaneous_events: Array[Dictionary] = []
 	settlement.resolve_knockouts(simultaneous_state, 0, simultaneous_events, true)
+	var simultaneous_ko_count := 0
+	var simultaneous_leave_count := 0
 	var last_ko_index := -1
+	var first_ko_leave_index := simultaneous_events.size()
+	var last_ko_leave_index := -1
 	var first_prize_index := simultaneous_events.size()
 	for index in range(simultaneous_events.size()):
 		match str(simultaneous_events[index].get("event_type", "")):
 			"pokemon_ko":
+				simultaneous_ko_count += 1
 				last_ko_index = index
+			"card_moved":
+				if bool(simultaneous_events[index].get("data", {}).get(
+					"ko_leave_play", false)):
+					simultaneous_leave_count += 1
+					first_ko_leave_index = mini(first_ko_leave_index, index)
+					last_ko_leave_index = index
 			"prize_taken":
 				first_prize_index = mini(first_prize_index, index)
 	_expect(
-		last_ko_index >= 0
-		and first_prize_index < simultaneous_events.size()
-		and last_ko_index < first_prize_index,
-		"simultaneous KO settlement emitted a prize before every KO left play",
+		simultaneous_ko_count == 2
+		and simultaneous_leave_count == 2
+		and last_ko_index >= 0
+		and last_ko_index < first_ko_leave_index
+		and last_ko_leave_index < first_prize_index
+		and first_prize_index < simultaneous_events.size(),
+		"simultaneous Active KOs crossed the declare/leave-play/prize barriers",
 	)
+
+	var active_bench_state := GameState.new()
+	active_bench_state.phase = "ATTACK"
+	active_bench_state.active_player_idx = 1
+	active_bench_state.players[0].active = PokemonState.new("sv1-104")
+	active_bench_state.players[0].active.damage_counters = 100
+	active_bench_state.players[0].bench[0] = PokemonState.new("sv1-104")
+	active_bench_state.players[0].bench[0].damage_counters = 100
+	active_bench_state.players[0].prizes = ["sv1-ener-5", "sv1-ener-5"]
+	active_bench_state.players[1].active = PokemonState.new("sv1-104")
+	active_bench_state.players[1].prizes = [
+		"sv1-ener-6", "sv1-ener-6", "sv1-ener-6",
+	]
+	var active_bench_events: Array[Dictionary] = []
+	settlement.resolve_knockouts(active_bench_state, 1, active_bench_events, true)
+	var active_bench_ko_count := 0
+	var active_bench_leave_count := 0
+	var active_bench_last_ko := -1
+	var active_bench_first_leave := active_bench_events.size()
+	var active_bench_last_leave := -1
+	var active_bench_first_prize := active_bench_events.size()
+	for index in range(active_bench_events.size()):
+		var event: Dictionary = active_bench_events[index]
+		match str(event.get("event_type", "")):
+			"pokemon_ko":
+				active_bench_ko_count += 1
+				active_bench_last_ko = index
+			"card_moved":
+				if bool(event.get("data", {}).get("ko_leave_play", false)):
+					active_bench_leave_count += 1
+					active_bench_first_leave = mini(active_bench_first_leave, index)
+					active_bench_last_leave = index
+			"prize_taken":
+				active_bench_first_prize = mini(active_bench_first_prize, index)
+	_expect(
+		active_bench_ko_count == 2
+		and active_bench_leave_count == 2
+		and active_bench_last_ko < active_bench_first_leave
+		and active_bench_last_leave < active_bench_first_prize
+		and active_bench_first_prize < active_bench_events.size(),
+		"simultaneous Active/Bench KOs crossed the batch settlement barriers",
+	)
+
+	var pending_trigger_state := GameState.new()
+	pending_trigger_state.phase = "ATTACK"
+	pending_trigger_state.active_player_idx = 1
+	pending_trigger_state.players[0].active = PokemonState.new("svi-chim")
+	pending_trigger_state.players[0].active.damage_counters = 99
+	pending_trigger_state.players[0].active.energy_card_ids = ["sv1-ener-2"]
+	pending_trigger_state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	pending_trigger_state.players[0].bench[0].modifiers.append({
+		"modifier_kind": "tool_exp_share",
+	})
+	pending_trigger_state.players[0].prizes = ["sv1-ener-5", "sv1-ener-5"]
+	pending_trigger_state.players[1].active = PokemonState.new("sv1-104")
+	pending_trigger_state.players[1].active.damage_counters = 100
+	pending_trigger_state.players[1].prizes = ["sv1-ener-6", "sv1-ener-6"]
+	var pending_stack := ResolutionStack.new()
+	var pending_trigger_events: Array[Dictionary] = []
+	var pending_trigger_result := settlement.resolve_knockouts(
+		pending_trigger_state,
+		1,
+		pending_trigger_events,
+		true,
+		pending_stack,
+	)
+	var trigger_request: ChoiceRequest = pending_trigger_result.get(
+		"pending_choice", null)
+	var pending_ko_count := 0
+	var pending_leave_count := 0
+	for event in pending_trigger_events:
+		if str(event.get("event_type", "")) == "pokemon_ko":
+			pending_ko_count += 1
+		elif (
+			str(event.get("event_type", "")) == "card_moved"
+			and bool(event.get("data", {}).get("ko_leave_play", false))
+		):
+			pending_leave_count += 1
+	var restored_pending := GameState.from_snapshot(pending_trigger_state.snapshot())
+	var restored_pending_stack := ResolutionStack.from_dict(
+		restored_pending.resolution_stack)
+	var restored_batch: Dictionary = restored_pending_stack.context.get("ko_batch", {})
+	_expect(
+		trigger_request != null
+		and trigger_request.request_type == "confirm_trigger"
+		and pending_ko_count == 2
+		and pending_leave_count == 0
+		and pending_trigger_state.players[0].active != null
+		and pending_trigger_state.players[1].active != null
+		and restored_pending.players[0].active != null
+		and restored_pending.players[1].active != null
+		and str(restored_batch.get("stage", "")) == "triggers"
+		and int(restored_batch.get("trigger_index", -1)) == 0
+		and restored_pending_stack.pending_request != null,
+		"Learning Device paused before the full KO declaration barrier or after leave play",
+	)
+	if trigger_request != null:
+		var confirm_result := settlement.apply_ko_trigger_choice(
+			pending_trigger_state,
+			ChoiceResponse.new(trigger_request.request_id, [
+				str(trigger_request.options[0].get("option_id", "")),
+			]),
+			pending_stack,
+		)
+		var energy_request: ChoiceRequest = confirm_result.get("pending_choice", null)
+		_expect(
+			energy_request != null
+			and energy_request.request_type == "select_attachment"
+			and pending_trigger_state.players[0].active != null
+			and pending_trigger_state.players[1].active != null,
+			"Learning Device confirmation discarded a simultaneous KO early",
+		)
+		if energy_request != null:
+			var energy_result := settlement.apply_ko_trigger_choice(
+				pending_trigger_state,
+				ChoiceResponse.new(energy_request.request_id, [
+					str(energy_request.options[0].get("option_id", "")),
+				]),
+				pending_stack,
+			)
+			var resolved_events: Array = energy_result.get("events", [])
+			var energy_index := -1
+			var first_resolved_leave := resolved_events.size()
+			var resolved_leave_count := 0
+			for index in range(resolved_events.size()):
+				var event: Dictionary = resolved_events[index]
+				if str(event.get("event_type", "")) == "energy_attached":
+					energy_index = index
+				elif (
+					str(event.get("event_type", "")) == "card_moved"
+					and bool(event.get("data", {}).get("ko_leave_play", false))
+				):
+					resolved_leave_count += 1
+					first_resolved_leave = mini(first_resolved_leave, index)
+			var prize_request: ChoiceRequest = energy_result.get("pending_choice", null)
+			_expect(
+				energy_index >= 0
+				and resolved_leave_count == 2
+				and energy_index < first_resolved_leave
+				and pending_trigger_state.players[0].active == null
+				and pending_trigger_state.players[1].active == null
+				and pending_trigger_state.players[0].bench[0].energy_card_ids
+				== ["sv1-ener-2"]
+				and prize_request != null
+				and prize_request.request_type == "select_prize",
+				"Learning Device did not finish before the atomic KO leave-play batch",
+			)
 
 	var short_prize_state := GameState.new()
 	short_prize_state.phase = "ATTACK"

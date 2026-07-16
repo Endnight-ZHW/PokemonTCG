@@ -336,7 +336,7 @@ func _card_detail_bbcode(card: Dictionary, pokemon: PokemonState) -> String:
 		footer.append("弱点：%s" % weakness)
 	var resistance := _matchup_text(card.get("resistances", []))
 	if not resistance.is_empty():
-		footer.append("抵抗力：%s" % resistance)
+		footer.append("抗性：%s" % resistance)
 	if not footer.is_empty():
 		rows.append("[color=#9eb0ca]%s[/color]" % "　·　".join(footer))
 	if rows.is_empty():

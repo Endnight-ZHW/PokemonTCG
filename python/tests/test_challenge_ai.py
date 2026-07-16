@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.card_models import AbilityDef, AttackDef, Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK, expand_deck
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION, ChoiceResponse, GameAction
 from engine.ai import AIAction, AIChoice, AIConfig, ChallengeAI, create_challenge_ai, DECK_AI_PROFILES
 from engine.ai.profiles import load_policy_weights
 from engine.ai.training import (
@@ -37,7 +38,7 @@ from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.game_state import ActionRequest, ActionResult, GameState
 from engine.player_state import PokemonInPlay
-from engine.random_source import ScriptedRandomSource
+from engine.random_source import RandomSource, ScriptedRandomSource
 from engine.rules_validator import can_play_basic, can_play_stadium, can_use_ability
 from engine.snapshot import snapshot_state
 from engine.turn_manager import TurnManager
@@ -52,20 +53,53 @@ class ChallengeAITests(unittest.TestCase):
 
     def _started_game(self):
         state = GameState()
-        state.setup_game(expand_deck(FIRE_DECK), expand_deck(WATER_DECK))
-        tm = TurnManager(state)
-        for pi in (0, 1):
-            for _ in range(10):
-                if tm.needs_mulligan(pi):
-                    state.do_mulligan(pi)
-                else:
-                    break
-            player = state.get_player(pi)
-            basic_idx = next(i for i, c in enumerate(player.hand) if c.is_basic_pokemon)
-            result = tm.setup_place_basic(pi, basic_idx, "active")
-            self.assertTrue(result.success, result.log_message)
-        result = tm.setup_finalize()
-        self.assertTrue(result.success, result.log_message)
+        rng = RandomSource(20260716)
+        step = DEFAULT_GAME_ENGINE.begin_game(
+            state,
+            expand_deck(FIRE_DECK),
+            expand_deck(WATER_DECK),
+            rng,
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertIsNotNone(step.pending_choice)
+        step = DEFAULT_GAME_ENGINE.apply_choice(
+            state,
+            step.pending_choice,
+            ChoiceResponse(step.pending_choice.request_id, ("turn_order:first",)),
+            rng,
+        )
+        self.assertTrue(step.success, step.message)
+
+        guard = 0
+        while state.setup_stage != "COMPLETE" and guard < 64:
+            guard += 1
+            pending = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+            if pending is not None:
+                step = DEFAULT_GAME_ENGINE.apply_choice(
+                    state,
+                    pending,
+                    DEFAULT_GAME_ENGINE.choice_manager.default_choice_response(pending, rng),
+                    rng,
+                )
+                self.assertTrue(step.success, step.message)
+                continue
+            actor = state.setup_actor_idx
+            actions = DEFAULT_GAME_ENGINE.legal_actions(state, actor, validate_effects=False)
+            active = next(
+                (
+                    action for action in actions
+                    if action.action == PlayerAction.PLAY_BASIC
+                    and action.params.get("target") == "active"
+                ),
+                None,
+            )
+            action = active or next(
+                action for action in actions if action.action == "SETUP_DONE"
+            )
+            step = DEFAULT_GAME_ENGINE.apply_action(state, action, rng)
+            self.assertTrue(step.success, step.message)
+        self.assertLess(guard, 64)
+        self.assertEqual(state.setup_stage, "COMPLETE")
         return state
 
     def _simple_public_state(self):
@@ -132,6 +166,85 @@ class ChallengeAITests(unittest.TestCase):
         self.assertEqual(ai.legal_actions(state, 1), ai.enumerator.legal_actions(state, 1))
         self.assertEqual(ai.evaluate_state(state, 1), ai.evaluator.evaluate_state(state, 1))
 
+    def test_draw_evaluates_neutrally_for_both_players(self):
+        state = self._simple_public_state()
+        state.set_result("DRAW", winner=-1, reason="RULE_CONDITIONS")
+        ai = create_challenge_ai("fire", AIConfig(policy_path=None))
+
+        self.assertEqual(ai.evaluate_state(state, 0), 0.0)
+        self.assertEqual(ai.evaluate_state(state, 1), 0.0)
+
+    def test_new_rule_choices_are_deterministic_and_legal(self):
+        state = self._simple_public_state()
+        ai = create_challenge_ai("fire", AIConfig(policy_path=None))
+
+        turn_order = ai.resolve_pending_action(
+            state,
+            ActionRequest("choose_turn_order", 0, "选择先后攻"),
+        )
+        mulligan = ai.resolve_pending_action(
+            state,
+            ActionRequest(
+                "choose_mulligan_draw_count",
+                0,
+                "选择再战奖励抽牌数",
+                continuation={"maximum": 3},
+            ),
+        )
+        prize = ai.resolve_pending_action(
+            state,
+            ActionRequest(
+                "select_prize",
+                0,
+                "选择奖赏卡",
+                target_info=[{"index": 2}, {"index": 0}],
+            ),
+        )
+        trigger_order = ai.resolve_pending_action(
+            state,
+            ActionRequest(
+                "choose_trigger_order",
+                0,
+                "选择触发顺序",
+                target_info=[{"index": 1}, {"index": 0}],
+            ),
+        )
+        confirm_trigger = ai.resolve_pending_action(
+            state,
+            ActionRequest("confirm_trigger", 0, "是否使用触发效果"),
+        )
+        attachment = ai.resolve_pending_action(
+            state,
+            ActionRequest(
+                "select_attachment",
+                0,
+                "选择具体能量",
+                target_info=[{
+                    "player": 0,
+                    "slot": "active",
+                    "attachment_type": "energy",
+                    "index": 0,
+                    "card_id": "sv1-ener-3",
+                }],
+            ),
+        )
+        treasure_target = ai.resolve_pending_action(
+            state,
+            ActionRequest("select_prize_energy_target", 0, "选择宝藏能量目标"),
+        )
+
+        self.assertEqual(turn_order.option_ids, ["turn_order:first"])
+        self.assertEqual(mulligan.option_ids, ["mulligan_draw:3"])
+        self.assertEqual(prize.option_ids, ["prize:0"])
+        self.assertEqual(trigger_order.option_ids, ["trigger:0"])
+        self.assertTrue(confirm_trigger.confirmed)
+        self.assertEqual(
+            attachment.option_ids,
+            ["attachment:0:active:energy:0:sv1-ener-3"],
+        )
+        self.assertEqual(len(treasure_target.option_ids), 1)
+        self.assertTrue(treasure_target.option_ids[0].startswith("pokemon:0:"))
+
     def test_ai_config_defaults_to_expert_hybrid_budget(self):
         config = AIConfig(policy_path=None)
 
@@ -178,6 +291,8 @@ class ChallengeAITests(unittest.TestCase):
     def test_lightning_setup_keeps_pikachu_on_bench_when_pivot_available(self):
         state = GameState()
         state.phase = TurnPhase.SETUP
+        state.setup_stage = "INITIAL_PLACEMENT"
+        state.setup_actor_idx = 0
         state.p1.hand = [
             CardRegistry.get("svl-pikaex"),
             CardRegistry.get("svl-thun"),
@@ -192,6 +307,8 @@ class ChallengeAITests(unittest.TestCase):
     def test_fighting_setup_keeps_riolu_on_bench_when_pivot_available(self):
         state = GameState()
         state.phase = TurnPhase.SETUP
+        state.setup_stage = "INITIAL_PLACEMENT"
+        state.setup_actor_idx = 0
         state.p1.hand = [
             CardRegistry.get("svf-rio"),
             CardRegistry.get("svf-farf"),
@@ -206,6 +323,8 @@ class ChallengeAITests(unittest.TestCase):
     def test_psychic_setup_keeps_natu_and_latios_on_bench_when_pivot_available(self):
         state = GameState()
         state.phase = TurnPhase.SETUP
+        state.setup_stage = "INITIAL_PLACEMENT"
+        state.setup_actor_idx = 0
         state.p1.hand = [
             CardRegistry.get("sv1-107"),
             CardRegistry.get("sv1-111"),
@@ -231,7 +350,10 @@ class ChallengeAITests(unittest.TestCase):
     def test_policy_loader_rejects_bad_eval_candidate(self):
         payload = {
             "version": 2,
-            "schema": {"rules_version": 2, "action_version": 2},
+            "schema": {
+                "rules_version": RULES_SCHEMA_VERSION,
+                "action_version": ACTION_SCHEMA_VERSION,
+            },
             "policies": {
                 "water": {
                     "weights": {"core_in_play": 120.0},
@@ -263,7 +385,10 @@ class ChallengeAITests(unittest.TestCase):
     def test_policy_loader_rejects_benchmark_regression(self):
         payload = {
             "version": 2,
-            "schema": {"rules_version": 2, "action_version": 2},
+            "schema": {
+                "rules_version": RULES_SCHEMA_VERSION,
+                "action_version": ACTION_SCHEMA_VERSION,
+            },
             "policies": {
                 "lightning": {
                     "weights": {"core_in_play": 120.0},
@@ -296,7 +421,10 @@ class ChallengeAITests(unittest.TestCase):
     def test_policy_loader_rejects_low_global_benchmark_without_gain(self):
         payload = {
             "version": 2,
-            "schema": {"rules_version": 2, "action_version": 2},
+            "schema": {
+                "rules_version": RULES_SCHEMA_VERSION,
+                "action_version": ACTION_SCHEMA_VERSION,
+            },
             "policies": {
                 "lightning": {
                     "weights": {"core_in_play": 120.0},
@@ -2058,10 +2186,22 @@ class ChallengeAITests(unittest.TestCase):
         state.p1.prizes = [base] * 6
         state.p2.prizes = [base] * 6
 
-        result = TurnManager(state).declare_attack(1, 0)
+        result = DEFAULT_GAME_ENGINE.apply_action(
+            state,
+            GameAction(
+                PlayerAction.DECLARE_ATTACK,
+                {"attack_idx": 0},
+                terminal=True,
+                actor=1,
+            ),
+            RandomSource(17),
+            auto_resolve=True,
+            auto_finish_attack=True,
+        )
 
-        self.assertTrue(result.success, result.log_message)
+        self.assertTrue(result.success, result.message)
         self.assertEqual(state.winner, 1)
+        self.assertEqual(state.result_status, "WIN")
         self.assertEqual(state.phase, TurnPhase.GAME_OVER)
         self.assertFalse(state.p1.has_any_pokemon_in_play())
 

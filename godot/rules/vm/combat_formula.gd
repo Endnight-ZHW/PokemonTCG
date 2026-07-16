@@ -27,10 +27,8 @@ func attack_damage_formula(
 		total += player.bench_count() * per_own_bench
 	var per_self_energy_type := str(params.get("per_self_energy_type", ""))
 	if not per_self_energy_type.is_empty():
-		var energy_count := 0
-		for energy_id in source.energy_card_ids:
-			if energy_matches(energy_id, per_self_energy_type):
-				energy_count += 1
+		var energy_count := _formula_matching_energy_count(
+			source, per_self_energy_type.to_lower())
 		total += energy_count * int(params.get("per_energy", 0))
 	var per_self_damage_counter := int(params.get("per_self_damage_counter", 0))
 	if per_self_damage_counter > 0:
@@ -40,8 +38,10 @@ func attack_damage_formula(
 	var applies := false
 	var formula_opponent := state.get_player(1 - player_idx)
 	match condition:
-		"ko_by_attack_last_turn":
-			applies = player.was_ko_by_attack
+		"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn":
+			applies = state.had_attack_knockout_last_turn(player_idx)
+		"ko_last_opponent_turn":
+			applies = state.had_knockout_last_turn(player_idx)
 		"own_bench_damaged":
 			for bench_pokemon in player.bench:
 				if bench_pokemon and bench_pokemon.damage_counters > 0:
@@ -55,13 +55,16 @@ func attack_damage_formula(
 			applies = player.hand.is_empty()
 	if applies:
 		total += int(condition_bonus.get("bonus", 0))
-		if condition == "ko_by_attack_last_turn" and bool(condition_bonus.get("consume", true)):
-			player.was_ko_by_attack = false
 	stack.context["base_damage"] = total
-	if bool(params.get("piercing", false)):
-		stack.context["piercing"] = true
-	if bool(params.get("ignore_defender_effects", false)):
-		stack.context["ignore_defender_effects"] = true
+	if bool(params.get("ignore_weakness", false)):
+		stack.context["ignore_weakness"] = true
+	if bool(params.get("ignore_resistance", false)):
+		stack.context["ignore_resistance"] = true
+	if bool(params.get(
+		"ignore_defender_damage_effects",
+		params.get("ignore_defender_effects", false),
+	)):
+		stack.context["ignore_defender_damage_effects"] = true
 	return VMResult.ok()
 
 
@@ -88,15 +91,18 @@ func deal_damage_formula_spec(
 			var energy_count := 0
 			match str(args.get("count_from", "self")):
 				"opponent_active":
-					energy_count = opponent.active.energy_card_ids.size() if opponent.active else 0
+					energy_count = _formula_matching_energy_count(
+						opponent.active, "any") if opponent.active else 0
 				"all_opponent":
 					for row in opponent.get_all_pokemon():
 						var target_pokemon: PokemonState = row["pokemon"]
 						if target_pokemon:
-							energy_count += target_pokemon.energy_card_ids.size()
+							energy_count += _formula_matching_energy_count(
+								target_pokemon, "any")
 				_:
 					var energy_source := player.get_pokemon(source_slot)
-					energy_count = energy_source.energy_card_ids.size() if energy_source else 0
+					energy_count = _formula_matching_energy_count(
+						energy_source, "any") if energy_source else 0
 			total = int(args.get("base", 0)) + energy_count * int(args.get("per_energy", 0))
 		"per_evolved":
 			var evolved_count := 0
@@ -120,14 +126,8 @@ func deal_damage_formula_spec(
 			var filter := str(args.get("energy_filter", args.get("energy_type", default_filter))).to_lower()
 			var self_energy_count := 0
 			if self_source:
-				for energy_id in self_source.energy_card_ids:
-					if filter.is_empty() or filter == "any":
-						self_energy_count += 1
-					else:
-						for provided in catalog.provides_energy(energy_id):
-							if str(provided).to_lower() == filter:
-								self_energy_count += 1
-								break
+				self_energy_count = _formula_matching_energy_count(
+					self_source, filter)
 			total = int(args.get("base", 60)) + self_energy_count * int(args.get("per_energy", 20))
 		_:
 			return {"_handled": false}
@@ -287,8 +287,10 @@ func condition_applies(
 	var player := state.get_player(player_idx)
 	var opponent := state.get_player(1 - player_idx)
 	match condition:
-		"ko_by_attack_last_turn":
-			return player.was_ko_by_attack
+		"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn":
+			return state.had_attack_knockout_last_turn(player_idx)
+		"ko_last_opponent_turn":
+			return state.had_knockout_last_turn(player_idx)
 		"own_bench_damaged":
 			for bench_pokemon in player.bench:
 				if bench_pokemon and bench_pokemon.damage_counters > 0:
@@ -352,14 +354,13 @@ func _formula_energy_count(
 
 
 func _formula_matching_energy_count(pokemon: PokemonState, energy_type: String) -> int:
+	var units := EnergyView.units_for_cards(pokemon.energy_card_ids, catalog)
 	if energy_type.is_empty() or energy_type == "any":
-		return pokemon.energy_card_ids.size()
+		return units.size()
 	var count := 0
-	for energy_id in pokemon.energy_card_ids:
-		for provided in catalog.provides_energy(str(energy_id)):
-			if str(provided).to_lower() == energy_type:
-				count += 1
-				break
+	for provided in units:
+		if str(provided).to_lower() in [energy_type, "rainbow"]:
+			count += 1
 	return count
 
 

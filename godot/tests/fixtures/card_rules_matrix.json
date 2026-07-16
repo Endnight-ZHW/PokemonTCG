@@ -1,0 +1,5266 @@
+{
+  "card_count": 137,
+  "cards": {
+    "sv1-104": {
+      "name": "墓仔狗",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "sv1-106": {
+      "name": "墓扬犬",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_discard_psychic"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "扫墓",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成自己弃牌区中超宝可梦的张数×10伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "sv1-107": {
+      "name": "天然雀",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip_triple"
+              ],
+              "kind": "vm",
+              "ops": [
+                "flip_coin_repeat_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "三连突刺",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷3次硬币，造成正面次数×10伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "flip_coin_repeat_damage"
+      ]
+    },
+    "sv1-108": {
+      "name": "天然鸟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "draw",
+                "energy_attach"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy",
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "以太感知",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可以使用1次。选择自己手牌中的1张「基本超能量」，附着于备战宝可梦身上。然后，从自己牌库上方抽取2张卡牌。",
+          "trigger_zone": "manual",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy",
+        "draw_cards"
+      ]
+    },
+    "sv1-109": {
+      "name": "月石",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "discard_then_draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_then_draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "循环抽取",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取3张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_self_energy"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "月亮强念",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成这只宝可梦身上附有的超能量数量×30点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "discard_then_draw_cards"
+      ]
+    },
+    "sv1-110": {
+      "name": "拉帝亚斯",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_zero_retreat"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_conditional_zero_retreat"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "passive"
+          ],
+          "name": "薄雾飘浮",
+          "public_action": "AUTOMATIC",
+          "text": "如果这只宝可梦身上附着了超能量的话，则这只宝可梦撤退所需能量全部消除。",
+          "trigger_zone": "passive",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "register_conditional_zero_retreat"
+      ]
+    },
+    "sv1-111": {
+      "name": "拉帝欧斯",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity"
+              ],
+              "effect_types": [
+                "energy_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity"
+          ],
+          "hooks": [],
+          "name": "洁净光芒",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择这只宝可梦身上附着的3个能量，放于弃牌区。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "discard_energy"
+      ]
+    },
+    "sv1-112": {
+      "name": "代欧奇希斯",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_relocate"
+              ],
+              "kind": "vm",
+              "ops": [
+                "relocate_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "基因螺旋",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将这只宝可梦身上附着的所有能量，以任意方式转附于备战宝可梦身上。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "relocate_energy"
+      ]
+    },
+    "sv1-113": {
+      "name": "克雷色利亚",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_attach"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "新月生长",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己牌库中的1张超能量，附着于自己的宝可梦身上。并重洗牌库。如果是后攻玩家的最初回合的话，则可附着的张数变为最多3张，附着于自己的1只宝可梦身上。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_damage_bonus"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "光子镭射",
+          "public_action": "DECLARE_ATTACK",
+          "text": "如果自己场上有5个以上（包含5个）能量的话，则追加造成90点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy",
+        "conditional_damage"
+      ]
+    },
+    "sv1-114": {
+      "name": "咚咚鼠",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "小使者",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己的牌库中选择最多2张基本能量卡，展示后加入手牌。然后重洗牌库。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "pokemon_target"
+              ],
+              "effect_types": [
+                "switch_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "switch_pokemon"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "pokemon_target"
+          ],
+          "hooks": [],
+          "name": "旋转折返",
+          "public_action": "DECLARE_ATTACK",
+          "text": "若希望，可将这只宝可梦与备战宝可梦互换。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "search_cards",
+        "switch_pokemon"
+      ]
+    },
+    "sv1-150": {
+      "name": "宝可梦交替",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "pokemon_target"
+              ],
+              "effect_types": [
+                "switch_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "switch_pokemon"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "pokemon_target"
+          ],
+          "hooks": [],
+          "name": "宝可梦交替#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "将自己的战斗宝可梦与1只备战宝可梦互换。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "switch_pokemon"
+      ]
+    },
+    "sv1-151": {
+      "name": "巢穴球",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "巢穴球#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己的牌库中选择1张基础宝可梦卡，放置于备战区。然后重洗牌库。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "search_cards"
+      ]
+    },
+    "sv1-152": {
+      "name": "神奇糖果",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_and_pokemon_target"
+              ],
+              "effect_types": [
+                "evolve_skip_stage"
+              ],
+              "kind": "vm",
+              "ops": [
+                "evolve_skip_stage"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_and_pokemon_target"
+          ],
+          "hooks": [],
+          "name": "神奇糖果#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己场上的1只基础宝可梦。若手牌中有从那宝可梦进化而来的2阶进化卡，则将其置于该基础宝可梦身上完成进化。此卡无法在自己的第一回合使用，也无法对当回合上场的基础宝可梦使用。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "evolve_skip_stage"
+      ]
+    },
+    "sv1-153": {
+      "name": "高级球",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "conditional"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional",
+                "discard_cards",
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "高级球#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己的手牌丢弃2张卡。若如此做，从自己的牌库中选择1张宝可梦卡，展示后加入手牌。然后重洗牌库。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "conditional",
+        "discard_cards",
+        "search_cards"
+      ]
+    },
+    "sv1-170": {
+      "name": "电气发生器",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "confirm"
+              ],
+              "effect_types": [
+                "look_top_deck"
+              ],
+              "kind": "vm",
+              "ops": [
+                "look_top_deck"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "confirm"
+          ],
+          "hooks": [],
+          "name": "电气发生器#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "查看自己牌库上方的5张卡，从中选择最多2张基本雷能量卡，以任意方式附于备战区的雷宝可梦身上。将其他卡放回牌库并重洗。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "look_top_deck"
+      ]
+    },
+    "sv1-171": {
+      "name": "能量回收",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "能量回收#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己的弃牌区中选择最多2张基本能量卡加入手牌。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "search_cards"
+      ]
+    },
+    "sv1-176": {
+      "name": "裁判",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "judge"
+              ],
+              "kind": "vm",
+              "ops": [
+                "judge"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "裁判#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "双方玩家将所有手牌放回牌库并洗牌。然后，双方玩家各从牌库上方抽取4张卡。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "judge"
+      ]
+    },
+    "sv1-180": {
+      "name": "妮莫",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "妮莫#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己的牌库上方抽取3张卡。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "draw_cards"
+      ]
+    },
+    "sv1-189": {
+      "name": "博士的研究",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "discard_draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_then_draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "博士的研究#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "将自己的所有手牌丢弃，然后从牌库上方抽取7张卡。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "discard_then_draw_cards"
+      ]
+    },
+    "sv1-201": {
+      "name": "不服输头带",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "tool"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_tool_modifier"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "不服输头带#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "如果自己的剩余奖赏卡张数，比对手的剩余奖赏卡张数多的话，则身上放有这张卡牌的宝可梦所使用的招式，给对手的战斗宝可梦造成的伤害「+30」。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "register_tool_modifier"
+      ]
+    },
+    "sv1-202": {
+      "name": "勇气护符",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "tool"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_tool_modifier"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "勇气护符#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "身上放有这张卡牌的基础宝可梦的最大HP「+50」。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "register_tool_modifier"
+      ]
+    },
+    "sv1-203": {
+      "name": "克拉拉",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "discard_entities"
+              ],
+              "effect_types": [
+                "clara"
+              ],
+              "kind": "vm",
+              "ops": [
+                "recover_clara"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "discard_entities"
+          ],
+          "hooks": [],
+          "name": "克拉拉#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己弃牌区中最多2张宝可梦，和最多2张基本能量，在给对手看过之后，加入手牌。（可只选择宝可梦或只选择基本能量。）",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "recover_clara"
+      ]
+    },
+    "sv1-204": {
+      "name": "派帕",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entities"
+              ],
+              "effect_types": [
+                "arven"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_item_and_tool"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entities"
+          ],
+          "hooks": [],
+          "name": "派帕#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己牌库中「物品」和「宝可梦道具」各1张，在给对手看过之后，加入手牌。并重洗牌库。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "search_item_and_tool"
+      ]
+    },
+    "sv1-49": {
+      "name": "拉普拉斯",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_status"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional_status"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "愤怒冷冻",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在上一个对手的回合，如果因为招式的伤害，而导致自己的宝可梦昏厥的话，则使对手的战斗宝可梦陷入麻痹状态。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "conditional_status"
+      ]
+    },
+    "sv1-ener-1": {
+      "name": "草能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv1-ener-2": {
+      "name": "火能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv1-ener-3": {
+      "name": "水能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv1-ener-4": {
+      "name": "雷能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv1-ener-5": {
+      "name": "超能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv1-ener-6": {
+      "name": "斗能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv1-ener-7": {
+      "name": "恶能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv1-ener-8": {
+      "name": "钢能量",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "sv2-38": {
+      "name": "呱呱泡蛙",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip"
+              ],
+              "kind": "vm",
+              "ops": [
+                "fail_attack",
+                "flip_coin"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "跳一下",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷1次硬币如果为反面，则这个招式失败。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "fail_attack",
+        "flip_coin"
+      ]
+    },
+    "sv2-39": {
+      "name": "呱头蛙",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "pokemon_target"
+              ],
+              "effect_types": [
+                "switch_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "switch_pokemon"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "pokemon_target"
+          ],
+          "hooks": [],
+          "name": "折返瞬击",
+          "public_action": "DECLARE_ATTACK",
+          "text": "若希望，可将这只宝可梦与备战宝可梦互换。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "switch_pokemon"
+      ]
+    },
+    "sv2-cand": {
+      "name": "小菘",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "confirm"
+              ],
+              "effect_types": [
+                "look_top_deck"
+              ],
+              "kind": "vm",
+              "ops": [
+                "look_top_deck"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "confirm"
+          ],
+          "hooks": [],
+          "name": "小菘#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "查看自己牌库上方7张卡牌，选择其中任意数量的水宝可梦和水能量，在给对手看过之后，加入手牌。将剩余的卡牌放回牌库并重洗牌库。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "look_top_deck"
+      ]
+    },
+    "sv2-catch": {
+      "name": "宝可梦捕捉器",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result",
+                "pokemon_target"
+              ],
+              "effect_types": [
+                "coin_flip"
+              ],
+              "kind": "vm",
+              "ops": [
+                "flip_coin",
+                "switch_pokemon"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result",
+            "pokemon_target"
+          ],
+          "hooks": [],
+          "name": "宝可梦捕捉器#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "抛掷1次硬币如果为正面，则选择对手的1只备战宝可梦，将其与战斗宝可梦互换。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "flip_coin",
+        "switch_pokemon"
+      ]
+    },
+    "sv2-delib": {
+      "name": "信使鸟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "双重抽取",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "draw_cards"
+      ]
+    },
+    "sv2-glast": {
+      "name": "雪暴马",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_lock_basic"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_attack_lock_basic"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "冻结",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在下一个对手的回合，受到这个招式影响的基础宝可梦，无法使用招式。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "疯狂冲撞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成30点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_attack_lock_basic",
+        "place_damage_counters"
+      ]
+    },
+    "sv2-grex": {
+      "name": "甲贺忍蛙ex",
+      "segment_count": 3,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "pokemon_target"
+              ],
+              "effect_types": [
+                "any_pokemon_damage"
+              ],
+              "kind": "vm",
+              "ops": [
+                "choose_damage_target"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "pokemon_target"
+          ],
+          "hooks": [],
+          "name": "隐蔽手里剑",
+          "public_action": "DECLARE_ATTACK",
+          "text": "对对手的1只宝可梦造成40点伤害。（对备战宝可梦不计算弱点·抗性）",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_damage_bonus"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "激流斩",
+          "public_action": "DECLARE_ATTACK",
+          "text": "如果对手的战斗宝可梦身上有伤害指示物，则追加造成120点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "action": "prize_value",
+              "kind": "core_rule"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "甲贺忍蛙ex#1",
+          "public_action": "AUTOMATIC",
+          "text": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "trigger_zone": "core_rules",
+          "zone": "rule_box"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "choose_damage_target",
+        "conditional_damage"
+      ]
+    },
+    "sv2-keldeo": {
+      "name": "凯路迪欧",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_plus_bench"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "队列之力",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成自己备战宝可梦数量×20点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "sv2-starm": {
+      "name": "宝石海星",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "place_counters_and_self_ko"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_counters_then_self_ko"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "神秘彗星",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可以使用1次。给对手的1只宝可梦身上，放置2个伤害指示物。然后，将这只宝可梦，以及放于其身上的所有卡牌，放于弃牌区。",
+          "trigger_zone": "manual",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "place_counters_then_self_ko"
+      ]
+    },
+    "sv2-staryu": {
+      "name": "海星星",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_flags"
+              ],
+              "kind": "vm",
+              "ops": [
+                "set_attack_flags"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "高速星星",
+          "public_action": "DECLARE_ATTACK",
+          "text": "这个招式的伤害，不计算弱点、抗性以及对手战斗宝可梦身上所附加的效果。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "set_attack_flags"
+      ]
+    },
+    "sv2-tatsu": {
+      "name": "米立龙",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_attach"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "预先准备",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己牌库中最多2张「基本水能量」，附着于自己的1只基础宝可梦身上，并重洗牌库。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "return_to_hand"
+              ],
+              "kind": "vm",
+              "ops": [
+                "return_to_hand"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "上弓折返",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将这只宝可梦，以及放于其身上的所有卡牌，放回手牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy",
+        "return_to_hand"
+      ]
+    },
+    "sv2-young": {
+      "name": "短裤小子",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "shuffle_draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "shuffle_then_draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "短裤小子#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "将自己的手牌全部放回牌库并重洗牌库。然后，从牌库上方抽取5张卡牌。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "shuffle_then_draw_cards"
+      ]
+    },
+    "sv3-134": {
+      "name": "厉害钓竿",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "discard_entities"
+              ],
+              "effect_types": [
+                "shuffle_from_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "shuffle_from_discard_to_deck"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "discard_entities"
+          ],
+          "hooks": [],
+          "name": "厉害钓竿#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己的弃牌区选择宝可梦卡与基本能量卡合计最多3张，放回牌库并重洗。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "shuffle_from_discard_to_deck"
+      ]
+    },
+    "svd-absol": {
+      "name": "阿勃梭鲁",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "bench_damage"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_bench_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "漩涡灾祸",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给对手的所有宝可梦，各造成10点伤害。[备战宝可梦不计算弱点、抗性。]",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "深挖伤口",
+          "public_action": "DECLARE_ATTACK",
+          "text": "如果对手的战斗宝可梦身上放置有伤害指示物的话，则追加造成70点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_bench_damage",
+        "deal_damage"
+      ]
+    },
+    "svd-dark-patch": {
+      "name": "暗黑补丁",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "attach_from_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy_from_discard"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "暗黑补丁#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己弃牌区中的1张「基本恶能量」，附着于备战区的恶宝可梦身上。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "attach_energy_from_discard"
+      ]
+    },
+    "svd-darkrai": {
+      "name": "达克莱伊",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "status"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_status"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "恶梦",
+          "public_action": "DECLARE_ATTACK",
+          "text": "使对手的战斗宝可梦陷入睡眠状态。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "self_attack_lock"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_self_attack_lock"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "漆黑之刃",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在下一个自己的回合，这只宝可梦无法使用招式。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_self_attack_lock",
+        "apply_status"
+      ]
+    },
+    "svd-dodrio": {
+      "name": "嘟嘟利",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "愤怒之喙",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成这只宝可梦身上放置的伤害指示物数量×30伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self",
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards",
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "on_turn"
+          ],
+          "name": "暴走抽取",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可以使用1次。给这只宝可梦身上放置1个伤害指示物。然后，从自己牌库上方抽取1张卡牌。",
+          "trigger_zone": "on_turn",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "draw_cards",
+        "place_damage_counters"
+      ]
+    },
+    "svd-doduo": {
+      "name": "嘟嘟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "突击",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成10伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "place_damage_counters"
+      ]
+    },
+    "svd-hard-belt": {
+      "name": "坚硬束带",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "tool"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_tool_modifier"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "坚硬束带#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "身上放有这张卡牌的1阶进化宝可梦，受到对手宝可梦的招式的伤害「-30」。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "register_tool_modifier"
+      ]
+    },
+    "svd-mabosstiff-ex": {
+      "name": "獒教父ex",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "apply_outgoing_damage_reduction"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_outgoing_damage_reduction"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "恫吓",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在下一个对手的回合，受到这个招式影响的宝可梦所使用招式的伤害「-50」。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "自尊獠牙",
+          "public_action": "DECLARE_ATTACK",
+          "text": "如果自己的备战宝可梦身上放置有伤害指示物的话，则追加造成120伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_outgoing_damage_reduction",
+        "deal_damage"
+      ]
+    },
+    "svd-maschiff": {
+      "name": "偶叫獒",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svd-morpeko": {
+      "name": "莫鲁贝可",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "捡食",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己弃牌区中的1张物品，在给对手看过之后，加入手牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "空腹撞击",
+          "public_action": "DECLARE_ATTACK",
+          "text": "如果自己没有手牌的话，则追加造成90点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "search_cards"
+      ]
+    },
+    "svd-seviper": {
+      "name": "饭匙蛇",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "挥落",
+          "public_action": "DECLARE_ATTACK",
+          "text": "如果对手的战斗宝可梦为进化宝可梦的话，则追加造成50伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "svf-ensw2": {
+      "name": "能量转移",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_relocate"
+              ],
+              "kind": "vm",
+              "ops": [
+                "relocate_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "能量转移#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己场上宝可梦身上附着的1个基本能量，转附于自己其他宝可梦身上。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "relocate_energy"
+      ]
+    },
+    "svf-farf": {
+      "name": "大葱鸭",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "背来",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "draw_cards"
+      ]
+    },
+    "svf-hawl": {
+      "name": "摔跤鹰人",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "attach_from_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy_from_discard"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "展示姿态",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己弃牌区中最多2张基本能量，附着于1只备战宝可梦身上。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_damage_bonus"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "挥落",
+          "public_action": "DECLARE_ATTACK",
+          "text": "如果对手的战斗宝可梦为进化宝可梦的话，则追加造成30点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy_from_discard",
+        "conditional_damage"
+      ]
+    },
+    "svf-houb": {
+      "name": "凰檗",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "houb"
+              ],
+              "kind": "vm",
+              "ops": [
+                "hand_to_bottom_draw_until"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "凰檗#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己的1张手牌，放回牌库下方。然后，从牌库上方抽取卡牌，直到自己的手牌变为5张为止。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "houb"
+              ],
+              "kind": "vm",
+              "ops": [
+                "hand_to_bottom_draw_until"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "凰檗#2",
+          "public_action": "PLAY_TRAINER",
+          "text": "（如果自己的手牌仅有这1张卡牌的话，则无法使用这张卡牌。）",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "hand_to_bottom_draw_until"
+      ]
+    },
+    "svf-klea": {
+      "name": "劈斧螳螂",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip_double_ko"
+              ],
+              "kind": "vm",
+              "ops": [
+                "flip_coin_then_ko"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "大树切割",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷2次硬币，如果全部都是正面，则使对手的战斗宝可梦昏厥。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "暴走冲撞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成30点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "flip_coin_then_ko",
+        "place_damage_counters"
+      ]
+    },
+    "svf-luca": {
+      "name": "路卡利欧",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity"
+              ],
+              "effect_types": [
+                "discard_fighting_energy_damage"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_energy_then_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity"
+          ],
+          "hooks": [],
+          "name": "连续波导弹",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将附着于这只宝可梦身上的斗能量全部放于弃牌区，追加造成其张数×60点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "damage_counter_self",
+                "energy_attach"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy",
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "旺盛斗气",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可以使用1次。给这只宝可梦身上放置2个伤害指示物。然后，选择自己牌库中的1张斗能量卡，附着于这只宝可梦身上。并重洗牌库。",
+          "trigger_zone": "manual",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy",
+        "discard_energy_then_damage",
+        "place_damage_counters"
+      ]
+    },
+    "svf-pass": {
+      "name": "投掷猴",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_relocate"
+              ],
+              "kind": "vm",
+              "ops": [
+                "relocate_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "辅助传递",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择这只宝可梦身上附着的1个能量，转附于备战宝可梦身上。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "relocate_energy"
+      ]
+    },
+    "svf-potion": {
+      "name": "伤药",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "pokemon_target"
+              ],
+              "effect_types": [
+                "potion_heal"
+              ],
+              "kind": "vm",
+              "ops": [
+                "choose_heal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "pokemon_target"
+          ],
+          "hooks": [],
+          "name": "伤药#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己1只宝可梦回复「30」HP。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "choose_heal_damage"
+      ]
+    },
+    "svf-rio": {
+      "name": "利欧路",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "突击",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成20点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "place_damage_counters"
+      ]
+    },
+    "svf-scyt": {
+      "name": "飞天螳螂",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svf-terr": {
+      "name": "代拉基翁",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "prevent_damage",
+                "self_attack_lock"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_self_attack_lock",
+                "prevent_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "岩窟冲撞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在下一个对手的回合，这只宝可梦不会受到招式的伤害。在上一个自己的回合，如果自己的宝可梦使用了「岩窟冲撞」的话，则无法使用这个招式。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_self_attack_lock",
+        "prevent_damage"
+      ]
+    },
+    "svg-alt": {
+      "name": "七夕青鸟ex",
+      "segment_count": 3,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "prevent_effects"
+              ],
+              "kind": "vm",
+              "ops": [
+                "prevent_effects"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "光之波动",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在下一个对手的回合，这只宝可梦不受到对手宝可梦所使用招式的效果影响。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "heal_all"
+              ],
+              "kind": "vm",
+              "ops": [
+                "heal_all"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "on_turn"
+          ],
+          "name": "哼唱治愈",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可以使用1次。将自己所有宝可梦的HP，各回复「20」。",
+          "trigger_zone": "on_turn",
+          "zone": "ability"
+        },
+        {
+          "bindings": [
+            {
+              "action": "prize_value",
+              "kind": "core_rule"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "七夕青鸟ex#1",
+          "public_action": "AUTOMATIC",
+          "text": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "trigger_zone": "core_rules",
+          "zone": "rule_box"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "heal_all",
+        "prevent_effects"
+      ]
+    },
+    "svg-beri": {
+      "name": "贝里菈",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw_until_more"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_until_more_than_opponent"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "贝里菈#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己的牌库上方抽取卡牌，直到自己的手牌张数比对手的手牌张数多1张为止。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "draw_until_more_than_opponent"
+      ]
+    },
+    "svg-cast": {
+      "name": "飘浮泡泡",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "双重抽取",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_relocate"
+              ],
+              "kind": "vm",
+              "ops": [
+                "relocate_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "暴风",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择附着于这只宝可梦身上的1个基本能量，转附于备战宝可梦身上。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "draw_cards",
+        "relocate_energy"
+      ]
+    },
+    "svg-ceti": {
+      "name": "浩大鲸",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_self_penalty"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "扫除冲撞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "这个招式的伤害，会被减少相当于这只宝可梦身上放置的伤害指示物数量×20的数值。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "svg-ceto": {
+      "name": "走鲸",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svg-chef": {
+      "name": "西餐厨师",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "heal"
+              ],
+              "kind": "vm",
+              "ops": [
+                "heal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "西餐厨师#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "回复自己的战斗宝可梦「70」点HP。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "heal_damage"
+      ]
+    },
+    "svg-dram": {
+      "name": "老翁龙",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_self_damage"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "逆鳞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成这只宝可梦身上放置的伤害指示物数量×10伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "svg-milt": {
+      "name": "大奶罐",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_damage_heal"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional_damage_then_heal"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "活泼冲撞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在这个回合，如果回复了这只宝可梦的HP的话，则追加造成90伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "conditional_damage_then_heal"
+      ]
+    },
+    "svg-swa": {
+      "name": "青绵鸟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip_until_tails"
+              ],
+              "kind": "vm",
+              "ops": [
+                "flip_until_tails"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "连续旋转",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷硬币直到出现反面，造成正面次数×20点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "flip_until_tails"
+      ]
+    },
+    "svg-tatsu": {
+      "name": "米立龙",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search_any_and_switch"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_any_and_switch"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "生存战略",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己牌库中任意卡牌最多2张，加入手牌。并重洗牌库。若希望，可将这只宝可梦与备战宝可梦互换。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "search_any_and_switch"
+      ]
+    },
+    "svg2-brel": {
+      "name": "斗笠菇",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svg2-empo": {
+      "name": "帝王拿波",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "pokemon_target"
+              ],
+              "effect_types": [
+                "any_pokemon_damage"
+              ],
+              "kind": "vm",
+              "ops": [
+                "choose_damage_target"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "pokemon_target"
+          ],
+          "hooks": [],
+          "name": "水之矢",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给对手的1只宝可梦，造成60点伤害。[备战宝可梦不计算弱点、抗性。]",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "discard_entity"
+              ],
+              "effect_types": [
+                "ability_discard_revive"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_then_revive"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "discard_entity"
+          ],
+          "hooks": [
+            "on_turn"
+          ],
+          "name": "紧急上浮",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合，如果这张卡牌在弃牌区，且自己没有手牌的话，则可使用1次。将这张卡牌放于备战区。然后，从自己的牌库上方抽取3张卡牌。",
+          "trigger_zone": "on_turn",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "choose_damage_target",
+        "discard_then_revive"
+      ]
+    },
+    "svg2-exps": {
+      "name": "学习装置",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "tool_exp_share"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_tool_exp_share"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "学习装置#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "每当自己的战斗宝可梦，受到对手宝可梦的招式的伤害而昏厥时，可选择该战斗宝可梦身上附着的1张基本能量，转附于身上放有这张卡牌的宝可梦身上。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "register_tool_exp_share"
+      ]
+    },
+    "svg2-gard": {
+      "name": "菜种的活力",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "draw_and_attach_energy"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_and_attach_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "菜种的活力#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己牌库上方抽取2张卡牌。然后，选择自己手牌中最多2张G能量，附着于1只备战宝可梦身上。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "draw_and_attach_energy"
+      ]
+    },
+    "svg2-grot": {
+      "name": "树林龟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [
+            "on_turn"
+          ],
+          "name": "日光甲壳",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可以使用1次。选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。",
+          "trigger_zone": "on_turn",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "search_cards"
+      ]
+    },
+    "svg2-hamm": {
+      "name": "粉碎之锤",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_and_attachment_entity"
+              ],
+              "effect_types": [
+                "coin_flip_energy_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "flip_coin_then_discard_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_and_attachment_entity"
+          ],
+          "hooks": [],
+          "name": "粉碎之锤#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "抛掷1次硬币如果为正面，则选择对手场上宝可梦身上附着的1个能量，放于弃牌区。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "flip_coin_then_discard_energy"
+      ]
+    },
+    "svg2-lume": {
+      "name": "夜光能量",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "夜光能量#1",
+          "public_action": "ATTACH_ENERGY",
+          "text": "只要这张卡牌，被附着于宝可梦身上，就被视作1个所有属性的能量。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        },
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "夜光能量#2",
+          "public_action": "AUTOMATIC",
+          "text": "如果身上附着了这张卡牌的宝可梦，身上还附着了除这张卡牌以外的特殊能量的话，则这张卡牌被视作1个普通能量。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        }
+      ],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "svg2-shro": {
+      "name": "蘑蘑菇",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_and_self_heal"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage_then_heal"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "吸取",
+          "public_action": "DECLARE_ATTACK",
+          "text": "回复这只宝可梦「10」HP。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage_then_heal"
+      ]
+    },
+    "svg2-tort": {
+      "name": "土台龟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_evolved"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "进化压制",
+          "public_action": "DECLARE_ATTACK",
+          "text": "造成自己场上进化宝可梦数量×50点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "svg2-turt": {
+      "name": "草苗龟",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svg2-zaru": {
+      "name": "萨戮德",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "conditional_search_extra"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional_search"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "唤群之歌",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己牌库中的1张G宝可梦，在给对手看过之后，加入手牌。并重洗牌库。如果是后攻玩家的最初回合的话，则可加入手牌的G宝可梦的张数变为最多3张。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_self_energy_type"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "反复鞭挞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成这只宝可梦身上附有的G能量数量×20点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "conditional_search",
+        "deal_damage"
+      ]
+    },
+    "svi-aipo": {
+      "name": "长尾怪手",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "骗取",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己牌库上方抽取1张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "draw_cards"
+      ]
+    },
+    "svi-ambi": {
+      "name": "双尾怪手",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "招来",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_hand_size"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "长手抛掷",
+          "public_action": "DECLARE_ATTACK",
+          "text": "造成自己手牌张数×20伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "draw_cards"
+      ]
+    },
+    "svi-cait": {
+      "name": "嘉德丽雅",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "ordered_card_entities"
+              ],
+              "effect_types": [
+                "hand_to_bottom_draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "hand_to_bottom_then_draw"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "ordered_card_entities"
+          ],
+          "hooks": [],
+          "name": "嘉德丽雅#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己任意数量的手牌，以任意顺序重新排列，放回牌库下方。然后，从牌库上方抽取与放回牌库的卡牌数量相同张数的卡牌。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "hand_to_bottom_then_draw"
+      ]
+    },
+    "svi-chim": {
+      "name": "小火焰猴",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity"
+              ],
+              "effect_types": [
+                "energy_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity"
+          ],
+          "hooks": [],
+          "name": "火花",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "discard_energy"
+      ]
+    },
+    "svi-chiy": {
+      "name": "古玉鱼",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "attach_from_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy_from_discard"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "闪焰生成",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己弃牌区中最多2张基本火能量，附着于自己的1只宝可梦身上。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_damage_bonus"
+              ],
+              "kind": "vm",
+              "ops": [
+                "conditional_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "嫉妒业火",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在上一个对手的回合，如果因为招式的伤害而导致自己的宝可梦昏厥的话，则追加造成90伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy_from_discard",
+        "conditional_damage"
+      ]
+    },
+    "svi-dtur": {
+      "name": "双重涡轮能量",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "modify_damage",
+              "condition": {},
+              "hook": "MODIFY_DAMAGE",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "MODIFY_DAMAGE"
+          ],
+          "name": "双重涡轮能量#1",
+          "public_action": "ATTACH_ENERGY",
+          "text": "只要这张卡牌被附着于宝可梦身上，就被视作2个[C]能量。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        },
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "modify_damage",
+              "condition": {},
+              "hook": "MODIFY_DAMAGE",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "MODIFY_DAMAGE"
+          ],
+          "name": "双重涡轮能量#2",
+          "public_action": "AUTOMATIC",
+          "text": "身上附有这张卡牌的宝可梦所使用的招式，给对手的宝可梦造成的伤害「-20」。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        }
+      ],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "svi-enst": {
+      "name": "能量签",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "confirm"
+              ],
+              "effect_types": [
+                "look_top_deck"
+              ],
+              "kind": "vm",
+              "ops": [
+                "look_top_deck"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "confirm"
+          ],
+          "hooks": [],
+          "name": "能量签#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "查看自己牌库上方7张卡牌。选择其中1张能量，在给对手看过之后，加入手牌。将剩余的卡牌放回牌库并重洗牌库。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "look_top_deck"
+      ]
+    },
+    "svi-ente": {
+      "name": "炎帝",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_self_energy"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "火焰之球",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加这只宝可梦身上附着的火能量数量×20伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "aura_damage_reduction"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_aura_damage_reduction"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "passive"
+          ],
+          "name": "压迫感",
+          "public_action": "AUTOMATIC",
+          "text": "只要这只宝可梦在战斗场上，对手战斗宝可梦使用的招式伤害「-20」。",
+          "trigger_zone": "passive",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "register_aura_damage_reduction"
+      ]
+    },
+    "svi-erec": {
+      "name": "能量再利用",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "discard_entities"
+              ],
+              "effect_types": [
+                "shuffle_from_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "shuffle_from_discard_to_deck"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "discard_entities"
+          ],
+          "hooks": [],
+          "name": "能量再利用#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己弃牌区中最多5张基本能量，在给对手看过之后，放回牌库并重洗牌库。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "shuffle_from_discard_to_deck"
+      ]
+    },
+    "svi-flam": {
+      "name": "缠红鹤",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "俯冲",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成20伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "place_damage_counters"
+      ]
+    },
+    "svi-gree": {
+      "name": "藏饱栗鼠",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "招来",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "discard_hand_conditional_bonus"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_hand_then_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "倾倒一空",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将自己的手牌全部放于弃牌区。如果将5张以上放于弃牌区，则追加造成150点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "discard_hand_then_damage",
+        "draw_cards"
+      ]
+    },
+    "svi-hrot": {
+      "name": "加热洛托姆",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "高温冲撞",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成40伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "place_damage_counters"
+      ]
+    },
+    "svi-inde": {
+      "name": "爱管侍",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "招来",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_hand_size"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "妙手强念",
+          "public_action": "DECLARE_ATTACK",
+          "text": "造成自己手牌张数×10点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "draw_cards"
+      ]
+    },
+    "svi-infr": {
+      "name": "烈焰猴",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "mill_and_damage_per_energy"
+              ],
+              "kind": "vm",
+              "ops": [
+                "mill_then_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "螺旋业火",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将自己牌库上方5张翻到正面。造成其中能量张数×80伤害。正面朝上的能量放于弃牌区，剩余卡牌放回牌库并重洗。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity"
+              ],
+              "effect_types": [
+                "energy_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity"
+          ],
+          "hooks": [],
+          "name": "燃烧踢",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将附着于这只宝可梦身上的能量全部放于弃牌区。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "discard_energy",
+        "mill_then_damage"
+      ]
+    },
+    "svi-jete": {
+      "name": "喷射能量",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "switch_with_active",
+              "condition": {
+                "from_zone": "hand",
+                "target": "bench"
+              },
+              "hook": "ON_ATTACH",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "ON_ATTACH"
+          ],
+          "name": "喷射能量#1",
+          "public_action": "ATTACH_ENERGY",
+          "text": "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        },
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "switch_with_active",
+              "condition": {
+                "from_zone": "hand",
+                "target": "bench"
+              },
+              "hook": "ON_ATTACH",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "ON_ATTACH"
+          ],
+          "name": "喷射能量#2",
+          "public_action": "AUTOMATIC",
+          "text": "当将这张卡牌从手牌附着于备战宝可梦身上时，将该宝可梦与战斗宝可梦互换。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        }
+      ],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "svi-maus": {
+      "name": "一家鼠ex",
+      "segment_count": 3,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "贪婪门牙",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "reactive_thorns"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_reactive_thorns"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "on_damaged"
+          ],
+          "name": "团结一致",
+          "public_action": "AUTOMATIC",
+          "text": "当这只宝可梦在战斗场上受到对手宝可梦的招式的伤害时，将自己场上「一对鼠」和「一家鼠」的数量×3个伤害指示物，放置于使用了招式的宝可梦身上。",
+          "trigger_zone": "on_damaged",
+          "zone": "ability"
+        },
+        {
+          "bindings": [
+            {
+              "action": "prize_value",
+              "kind": "core_rule"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "一家鼠ex#1",
+          "public_action": "AUTOMATIC",
+          "text": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "trigger_zone": "core_rules",
+          "zone": "rule_box"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "draw_cards",
+        "register_reactive_thorns"
+      ]
+    },
+    "svi-mela": {
+      "name": "梅洛可",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "conditional"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy_from_discard",
+                "conditional",
+                "draw_until"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "梅洛可#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "这张卡牌，只有在上一个对手的回合，自己的宝可梦昏厥时才可使用。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "conditional"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy_from_discard",
+                "conditional",
+                "draw_until"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "梅洛可#2",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己弃牌区中的1张「基本火能量」，附着于自己的宝可梦身上。然后，从牌库上方抽取卡牌，直到自己的手牌变为6张为止。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "attach_energy_from_discard",
+        "conditional",
+        "draw_until"
+      ]
+    },
+    "svi-mirc": {
+      "name": "幸运能量",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "draw_cards",
+              "condition": {
+                "min_damage": 10,
+                "scope": "attached_defender"
+              },
+              "hook": "AFTER_DAMAGE",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "AFTER_DAMAGE"
+          ],
+          "name": "幸运能量#1",
+          "public_action": "ATTACH_ENERGY",
+          "text": "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        },
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "draw_cards",
+              "condition": {
+                "min_damage": 10,
+                "scope": "attached_defender"
+              },
+              "hook": "AFTER_DAMAGE",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "AFTER_DAMAGE"
+          ],
+          "name": "幸运能量#2",
+          "public_action": "AUTOMATIC",
+          "text": "身上附有这张卡牌的宝可梦，在战斗场上受到对手宝可梦的招式的伤害时，从自己的牌库上方抽取1张卡牌。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        }
+      ],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "svi-monf": {
+      "name": "猛火猴",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity"
+              ],
+              "effect_types": [
+                "energy_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity"
+          ],
+          "hooks": [],
+          "name": "喷射火焰",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择附着于这只宝可梦身上的1个能量，放于弃牌区。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "discard_energy"
+      ]
+    },
+    "svi-nemb": {
+      "name": "妮莫的背包",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "妮莫的背包#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己弃牌区中最多2张「妮莫」，在给对手看过之后，加入手牌。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "search_cards"
+      ]
+    },
+    "svi-popp": {
+      "name": "波琵",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_relocate"
+              ],
+              "kind": "vm",
+              "ops": [
+                "relocate_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "波琵#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己场上1只宝可梦身上附着的最多2个能量，转附于自己的1只其他宝可梦身上。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "relocate_energy"
+      ]
+    },
+    "svi-skwv": {
+      "name": "贪心栗鼠",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svi-sqwk": {
+      "name": "怒鹦哥",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "呼朋引伴",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己牌库中最多2张基础宝可梦，放于备战区。并重洗牌库。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip"
+              ],
+              "kind": "vm",
+              "ops": [
+                "fail_attack",
+                "flip_coin",
+                "prevent_all"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "飞翔",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷1次硬币如果为反面，则这个招式失败。如果为正面，则在下一个对手的回合，这只宝可梦不受到招式的伤害和效果影响。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "fail_attack",
+        "flip_coin",
+        "prevent_all",
+        "search_cards"
+      ]
+    },
+    "svi-stan": {
+      "name": "惊角鹿",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_per_energy"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "疯狂俯冲",
+          "public_action": "DECLARE_ATTACK",
+          "text": "造成对手战斗宝可梦身上附有的能量数量×30点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "svi-tand": {
+      "name": "一对鼠",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svi-trea": {
+      "name": "宝藏能量",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "attach_to_benched_pokemon",
+              "condition": {
+                "source_zone": "prizes"
+              },
+              "hook": "ON_PRIZE_REVEALED",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "ON_PRIZE_REVEALED"
+          ],
+          "name": "宝藏能量#1",
+          "public_action": "ATTACH_ENERGY",
+          "text": "只要这张卡牌被附着于宝可梦身上，就被视作1个[C]能量。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        },
+        {
+          "bindings": [
+            {
+              "action": "provide_energy",
+              "condition": {},
+              "hook": "",
+              "kind": "energy_hook"
+            },
+            {
+              "action": "attach_to_benched_pokemon",
+              "condition": {
+                "source_zone": "prizes"
+              },
+              "hook": "ON_PRIZE_REVEALED",
+              "kind": "energy_hook"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "ON_PRIZE_REVEALED"
+          ],
+          "name": "宝藏能量#2",
+          "public_action": "AUTOMATIC",
+          "text": "在自己的回合，当从反面朝上的自己的奖赏卡中拿取了这张卡牌时，在加入手牌前，可将这张卡牌附着于自己的宝可梦身上。",
+          "trigger_zone": "attached_or_prize",
+          "zone": "energy"
+        }
+      ],
+      "supertype": "Energy",
+      "used_vm_ops": []
+    },
+    "svl-chat": {
+      "name": "聒噪鸟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "discard_then_draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_then_draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "循环抽取",
+          "public_action": "DECLARE_ATTACK",
+          "text": "将自己的1张手牌放于弃牌区。然后，从自己牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "discard_then_draw_cards"
+      ]
+    },
+    "svl-chin": {
+      "name": "灯笼鱼",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svl-emol": {
+      "name": "电飞鼠",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_status",
+                "flip_coin"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "电击",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷1次硬币如果为正面，则使对手的战斗宝可梦陷入麻痹状态。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_status",
+        "flip_coin"
+      ]
+    },
+    "svl-ensw": {
+      "name": "能量输送",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "能量输送#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己牌库中的1张基本能量，在给对手看过之后，加入手牌。并重洗牌库。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "search_cards"
+      ]
+    },
+    "svl-flaa2": {
+      "name": "茸茸羊",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "attach_from_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy_from_discard"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "电气发电机",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可使用1次。选择自己弃牌区中的1张雷能量卡，附着于备战宝可梦身上。",
+          "trigger_zone": "manual",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy_from_discard"
+      ]
+    },
+    "svl-lant": {
+      "name": "电灯怪",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "dazzling_beam"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_dazzling_beam"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "炫目光束",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在下一个对手的回合，受到这个招式影响的宝可梦在使用招式时，对手将抛掷1次硬币。如果为反面则那个招式失败。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_dazzling_beam"
+      ]
+    },
+    "svl-mare2": {
+      "name": "咩利羊",
+      "segment_count": 0,
+      "segments": [],
+      "supertype": "Pokémon",
+      "used_vm_ops": []
+    },
+    "svl-pikaex": {
+      "name": "皮卡丘ex",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity",
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip"
+              ],
+              "kind": "vm",
+              "ops": [
+                "discard_energy",
+                "flip_coin"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity",
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "强劲伏特",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷1次硬币。如果是反面，则将这只宝可梦身上附着的能量全部放于弃牌区。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "action": "prize_value",
+              "kind": "core_rule"
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "皮卡丘ex#1",
+          "public_action": "AUTOMATIC",
+          "text": "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。",
+          "trigger_zone": "core_rules",
+          "zone": "rule_box"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "discard_energy",
+        "flip_coin"
+      ]
+    },
+    "svl-thun": {
+      "name": "雷电云",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_attach"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "辅助电光",
+          "public_action": "DECLARE_ATTACK",
+          "text": "若希望，可选择自己手牌中的1张雷能量卡，附着于备战宝可梦身上。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "打雷",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成30点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy",
+        "place_damage_counters"
+      ]
+    },
+    "svl-trks": {
+      "name": "健行鞋",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "confirm"
+              ],
+              "effect_types": [
+                "trekking_shoes"
+              ],
+              "kind": "vm",
+              "ops": [
+                "trekking_shoes"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "confirm"
+          ],
+          "hooks": [],
+          "name": "健行鞋#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "查看自己牌库上方1张卡牌，将那张卡牌加入手牌。或者，将那张卡牌放于弃牌区，从自己牌库上方抽取1张卡牌。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "trekking_shoes"
+      ]
+    },
+    "svl-vitb": {
+      "name": "活力头带",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "tool"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_tool_modifier"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "活力头带#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "身上放有这张卡牌的宝可梦所使用的招式，给对手的战斗宝可梦造成的伤害「+10」。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "register_tool_modifier"
+      ]
+    },
+    "svl-zera": {
+      "name": "捷拉奥拉",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "damage_counter_self"
+              ],
+              "kind": "vm",
+              "ops": [
+                "place_damage_counters"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "疯狂伏特",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给这只宝可梦也造成20点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "place_damage_counters"
+      ]
+    },
+    "svl-zinn": {
+      "name": "希嘉娜的决心",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "zinnia_resolve"
+              ],
+              "kind": "vm",
+              "ops": [
+                "zinnia_resolve"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "希嘉娜的决心#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "这张卡牌，只有将自己的2张手牌放于弃牌区后才可使用。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "zinnia_resolve"
+              ],
+              "kind": "vm",
+              "ops": [
+                "zinnia_resolve"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "希嘉娜的决心#2",
+          "public_action": "PLAY_TRAINER",
+          "text": "从自己的牌库上方抽取与对手场上宝可梦数量相同张数的卡牌。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "zinnia_resolve"
+      ]
+    },
+    "svm-bronzong": {
+      "name": "青铜钟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "attachment_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_relocate"
+              ],
+              "kind": "vm",
+              "ops": [
+                "relocate_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "attachment_entity_and_target"
+          ],
+          "hooks": [
+            "repeatable"
+          ],
+          "name": "金属转移",
+          "public_action": "USE_ABILITY",
+          "text": "在自己的回合可以使用任意次。选择附着于自己场上宝可梦身上的1个M能量，转附于自己其他宝可梦身上。",
+          "trigger_zone": "repeatable",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "relocate_energy"
+      ]
+    },
+    "svm-bronzor": {
+      "name": "铜镜怪",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "coin_result"
+              ],
+              "effect_types": [
+                "coin_flip"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_status",
+                "flip_coin"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "coin_result"
+          ],
+          "hooks": [],
+          "name": "金属压制",
+          "public_action": "DECLARE_ATTACK",
+          "text": "抛掷1次硬币如果为正面，则使对手的战斗宝可梦陷入麻痹状态。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_status",
+        "flip_coin"
+      ]
+    },
+    "svm-cobalion": {
+      "name": "勾帕路翁",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "energy_attach"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "跟进",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己最多2只备战宝可梦，各附着1张牌库中的基本能量。并重洗牌库。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "aura_damage_boost"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_aura_damage_boost"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "passive"
+          ],
+          "name": "正义法则",
+          "public_action": "AUTOMATIC",
+          "text": "只要这只宝可梦在场上，自己的基础宝可梦使用的招式，给对手战斗场上的D宝可梦造成的伤害「+30」。",
+          "trigger_zone": "passive",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "attach_energy",
+        "register_aura_damage_boost"
+      ]
+    },
+    "svm-dialga": {
+      "name": "帝牙卢卡",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "card_entity"
+              ],
+              "effect_types": [
+                "search"
+              ],
+              "kind": "vm",
+              "ops": [
+                "search_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "card_entity"
+          ],
+          "hooks": [],
+          "name": "时之逆流",
+          "public_action": "DECLARE_ATTACK",
+          "text": "选择自己弃牌区中任意1张卡牌，在给对手看过之后，加入手牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "金属爆破",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成这只宝可梦身上附有的M能量数量×20点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "search_cards"
+      ]
+    },
+    "svm-klefki": {
+      "name": "钥圈儿",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "draw"
+              ],
+              "kind": "vm",
+              "ops": [
+                "draw_cards"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "解锁",
+          "public_action": "DECLARE_ATTACK",
+          "text": "从自己的牌库上方抽取2张卡牌。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "draw_cards"
+      ]
+    },
+    "svm-marnie-pride": {
+      "name": "玛俐的自尊",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "energy_entity_and_target"
+              ],
+              "effect_types": [
+                "attach_from_discard"
+              ],
+              "kind": "vm",
+              "ops": [
+                "attach_energy_from_discard"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "energy_entity_and_target"
+          ],
+          "hooks": [],
+          "name": "玛俐的自尊#1",
+          "public_action": "PLAY_TRAINER",
+          "text": "选择自己弃牌区中的1张基本能量，附着于备战宝可梦身上。",
+          "trigger_zone": "hand",
+          "zone": "trainer"
+        }
+      ],
+      "supertype": "Trainer",
+      "used_vm_ops": [
+        "attach_energy_from_discard"
+      ]
+    },
+    "svm-orthworm": {
+      "name": "拖拖蚓",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "bench_damage"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_bench_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "刺穿",
+          "public_action": "DECLARE_ATTACK",
+          "text": "给对手的1只备战宝可梦，也造成30伤害。[备战宝可梦不计算弱点、抗性。]",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "conditional_hp_boost"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_conditional_hp_boost"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "passive"
+          ],
+          "name": "营养铁质",
+          "public_action": "AUTOMATIC",
+          "text": "如果这只宝可梦身上附着了3个及以上M能量的话，则这只宝可梦的最大HP「+100」。",
+          "trigger_zone": "passive",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_bench_damage",
+        "register_conditional_hp_boost"
+      ]
+    },
+    "svm-skarmory": {
+      "name": "盔甲鸟",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "self_attack_lock"
+              ],
+              "kind": "vm",
+              "ops": [
+                "apply_self_attack_lock"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "钢铁之刃",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在下一个自己的回合，这只宝可梦无法使用「钢铁之刃」。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "apply_self_attack_lock"
+      ]
+    },
+    "svm-smeargle": {
+      "name": "图图犬",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [
+                "confirm_and_target"
+              ],
+              "effect_types": [
+                "look_top_attach_energy"
+              ],
+              "kind": "vm",
+              "ops": [
+                "look_top_attach_energy"
+              ]
+            }
+          ],
+          "choice_constraints": [
+            "confirm_and_target"
+          ],
+          "hooks": [],
+          "name": "多彩调色盘",
+          "public_action": "DECLARE_ATTACK",
+          "text": "查看自己牌库上方5张卡牌，选择其中任意数量的基本能量，附着于自己的1只宝可梦身上。将剩余的卡牌放回牌库并重洗牌库。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "look_top_attach_energy"
+      ]
+    },
+    "svm-zacian": {
+      "name": "苍响",
+      "segment_count": 1,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "战斗军团",
+          "public_action": "DECLARE_ATTACK",
+          "text": "追加造成自己备战宝可梦数量×10点伤害。这个招式的伤害，不计算弱点、以及对手战斗宝可梦身上所附加的效果。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage"
+      ]
+    },
+    "svm-zamazenta": {
+      "name": "藏玛然特",
+      "segment_count": 2,
+      "segments": [
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "attack_damage_formula"
+              ],
+              "kind": "vm",
+              "ops": [
+                "deal_damage"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [],
+          "name": "报仇",
+          "public_action": "DECLARE_ATTACK",
+          "text": "在上一个对手的回合，如果自己的宝可梦昏厥的话，则追加造成120点伤害。",
+          "trigger_zone": "attack",
+          "zone": "attack"
+        },
+        {
+          "bindings": [
+            {
+              "choice_domains": [],
+              "effect_types": [
+                "aura_damage_reduction"
+              ],
+              "kind": "vm",
+              "ops": [
+                "register_aura_damage_reduction"
+              ]
+            }
+          ],
+          "choice_constraints": [],
+          "hooks": [
+            "passive"
+          ],
+          "name": "金属之盾",
+          "public_action": "AUTOMATIC",
+          "text": "如果这只宝可梦身上附有能量的话，则这只宝可梦所受到的招式的伤害「-30」。",
+          "trigger_zone": "passive",
+          "zone": "ability"
+        }
+      ],
+      "supertype": "Pokémon",
+      "used_vm_ops": [
+        "deal_damage",
+        "register_aura_damage_reduction"
+      ]
+    }
+  },
+  "errors": [],
+  "expected_card_count": 137,
+  "format_version": 1,
+  "peer_supported_ops": [
+    "apply_attack_lock_basic",
+    "apply_dazzling_beam",
+    "apply_outgoing_damage_reduction",
+    "apply_self_attack_lock",
+    "apply_status",
+    "attach_energy",
+    "attach_energy_from_discard",
+    "choose_damage_target",
+    "choose_heal_damage",
+    "conditional",
+    "conditional_damage",
+    "conditional_damage_then_heal",
+    "conditional_search",
+    "conditional_status",
+    "deal_bench_damage",
+    "deal_damage",
+    "deal_damage_per_discard_psychic",
+    "deal_damage_per_energy",
+    "deal_damage_per_evolved",
+    "deal_damage_per_hand_size",
+    "deal_damage_per_self_damage",
+    "deal_damage_per_self_energy",
+    "deal_damage_per_self_energy_type",
+    "deal_damage_plus_bench",
+    "deal_damage_then_heal",
+    "deal_damage_with_self_penalty",
+    "discard_cards",
+    "discard_energy",
+    "discard_energy_then_damage",
+    "discard_hand_then_damage",
+    "discard_then_draw_cards",
+    "discard_then_revive",
+    "draw_and_attach_energy",
+    "draw_cards",
+    "draw_until",
+    "draw_until_more_than_opponent",
+    "evolve_skip_stage",
+    "fail_attack",
+    "flip_coin",
+    "flip_coin_repeat_damage",
+    "flip_coin_then_discard_energy",
+    "flip_coin_then_ko",
+    "flip_until_tails",
+    "hand_to_bottom_draw_until",
+    "hand_to_bottom_then_draw",
+    "heal_all",
+    "heal_damage",
+    "judge",
+    "look_top_attach_energy",
+    "look_top_deck",
+    "mill_then_damage",
+    "place_counters_then_self_ko",
+    "place_damage_counters",
+    "prevent_all",
+    "prevent_damage",
+    "prevent_effects",
+    "recover_clara",
+    "register_aura_damage_boost",
+    "register_aura_damage_reduction",
+    "register_conditional_hp_boost",
+    "register_conditional_zero_retreat",
+    "register_reactive_thorns",
+    "register_tool_exp_share",
+    "register_tool_modifier",
+    "relocate_energy",
+    "return_to_hand",
+    "search_any_and_switch",
+    "search_cards",
+    "search_item_and_tool",
+    "set_attack_damage_formula",
+    "set_attack_flags",
+    "shuffle_from_discard_to_deck",
+    "shuffle_then_draw_cards",
+    "switch_pokemon",
+    "trekking_shoes",
+    "trigger_draw_cards",
+    "trigger_move_basic_energy",
+    "trigger_place_damage_counters",
+    "trigger_switch_with_active",
+    "zinnia_resolve"
+  ],
+  "python_supported_ops": [
+    "apply_attack_lock_basic",
+    "apply_dazzling_beam",
+    "apply_outgoing_damage_reduction",
+    "apply_self_attack_lock",
+    "apply_status",
+    "attach_energy",
+    "attach_energy_from_discard",
+    "choose_damage_target",
+    "choose_heal_damage",
+    "conditional",
+    "conditional_damage",
+    "conditional_damage_then_heal",
+    "conditional_search",
+    "conditional_status",
+    "deal_bench_damage",
+    "deal_damage",
+    "deal_damage_per_discard_psychic",
+    "deal_damage_per_energy",
+    "deal_damage_per_evolved",
+    "deal_damage_per_hand_size",
+    "deal_damage_per_self_damage",
+    "deal_damage_per_self_energy",
+    "deal_damage_per_self_energy_type",
+    "deal_damage_plus_bench",
+    "deal_damage_then_heal",
+    "deal_damage_with_self_penalty",
+    "discard_cards",
+    "discard_energy",
+    "discard_energy_then_damage",
+    "discard_hand_then_damage",
+    "discard_then_draw_cards",
+    "discard_then_revive",
+    "draw_and_attach_energy",
+    "draw_cards",
+    "draw_until",
+    "draw_until_more_than_opponent",
+    "evolve_skip_stage",
+    "fail_attack",
+    "flip_coin",
+    "flip_coin_repeat_damage",
+    "flip_coin_then_discard_energy",
+    "flip_coin_then_ko",
+    "flip_until_tails",
+    "hand_to_bottom_draw_until",
+    "hand_to_bottom_then_draw",
+    "heal_all",
+    "heal_damage",
+    "judge",
+    "look_top_attach_energy",
+    "look_top_deck",
+    "mill_then_damage",
+    "place_counters_then_self_ko",
+    "place_damage_counters",
+    "prevent_all",
+    "prevent_damage",
+    "prevent_effects",
+    "recover_clara",
+    "register_aura_damage_boost",
+    "register_aura_damage_reduction",
+    "register_conditional_hp_boost",
+    "register_conditional_zero_retreat",
+    "register_reactive_thorns",
+    "register_tool_exp_share",
+    "register_tool_modifier",
+    "relocate_energy",
+    "return_to_hand",
+    "search_any_and_switch",
+    "search_cards",
+    "search_item_and_tool",
+    "set_attack_damage_formula",
+    "set_attack_flags",
+    "shuffle_from_discard_to_deck",
+    "shuffle_then_draw_cards",
+    "switch_pokemon",
+    "trekking_shoes",
+    "trigger_draw_cards",
+    "trigger_move_basic_energy",
+    "trigger_place_damage_counters",
+    "trigger_switch_with_active",
+    "zinnia_resolve"
+  ],
+  "vm_ir_version": 2
+}

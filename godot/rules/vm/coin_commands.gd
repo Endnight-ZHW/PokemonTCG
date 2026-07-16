@@ -186,17 +186,24 @@ func resolve_coin(
 						ceili(float(target.current_hp(catalog)) / 10.0),
 					)
 					target.damage_counters += applied_counters
+					var causes: Dictionary = stack.context.get("knockout_causes", {})
+					causes["%d:active" % target_player_idx] = {
+						"source_kind": "attack_effect",
+						"cause_kind": "direct_knockout",
+						"source_player": player_idx,
+					}
+					stack.context["knockout_causes"] = causes
 					events.append({
-						"event_type": "damage_dealt",
+						"event_type": "direct_knockout_applied",
 						"actor": player_idx,
 						"source": {"player": player_idx, "slot": source_slot},
 						"target": {"player": 1 - player_idx, "slot": "active"},
-						"amount": applied_counters * 10,
+						"amount": 0,
 						"data": {
 							"player": 1 - player_idx,
 							"slot": "active",
-							"amount": applied_counters * 10,
 							"cause": "coin_double_ko",
+							"direct_knockout": true,
 						},
 					})
 		"until_tails":

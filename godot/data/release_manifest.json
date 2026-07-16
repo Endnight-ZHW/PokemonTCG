@@ -1,7 +1,11 @@
 {
-  "android_version_code": 5,
-  "format_version": 1,
+  "android_version_code": 6,
+  "compatible_model_count": 0,
+  "deep_fallback": "challenge",
+  "deep_runtime_enabled": false,
+  "format_version": 2,
   "godot_version": "4.7.stable",
+  "legacy_model_count": 10,
   "model_count": 10,
   "onnx": {
     "opset": 17,
@@ -30,13 +34,14 @@
     "checkpoint": 10,
     "encoder": 3,
     "godot_actions": 3,
-    "godot_rules": 3,
+    "godot_rules": 4,
     "planner": 1,
-    "protocol": 3,
+    "protocol": 4,
     "python_actions": 2,
-    "python_rules": 2,
+    "python_rules": 3,
     "rng": 1,
-    "vm_ir": 1
+    "snapshot": 2,
+    "vm_ir": 2
   },
-  "version": "0.3.2"
+  "version": "0.4.0"
 }

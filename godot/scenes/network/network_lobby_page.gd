@@ -14,6 +14,7 @@ signal connect_requested(
 	port: int,
 	room_code: String,
 	deck_key: String,
+	apply_type_matchups: bool,
 )
 
 enum ConnectionState {
@@ -41,6 +42,7 @@ var _address_drafts: Dictionary = {
 	"relay": "",
 }
 var _updating_kind_ui := false
+var _received_locked_rules_options := false
 
 @onready var page: VBoxContainer = %Page
 @onready var back_button: Button = %BackButton
@@ -82,6 +84,7 @@ var _updating_kind_ui := false
 @onready var room_input: LineEdit = %NetworkRoomInput
 @onready var deck_option: OptionButton = %NetworkDeckOption
 @onready var deck_label: Label = %DeckLabel
+@onready var matchup_toggle: CheckButton = %TypeMatchupToggle
 @onready var status_panel: PanelContainer = %StatusPanel
 @onready var status_dot: Label = %StatusDot
 @onready var status_label: Label = %NetworkStatusLabel
@@ -106,6 +109,8 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 	_ensure_connections()
 	_clear_room_code()
 	room_input.clear()
+	_received_locked_rules_options = false
+	matchup_toggle.set_pressed_no_signal(false)
 	kind = p_kind if p_kind in ["lan", "relay"] else "lan"
 	_address_drafts = {
 		"lan": "127.0.0.1",
@@ -178,6 +183,7 @@ func _resolve_nodes() -> void:
 	room_error = room_row.get_node("RoomError") as Label
 	deck_option = form.get_node("NetworkDeckOption") as OptionButton
 	deck_label = form.get_node("DeckLabel") as Label
+	matchup_toggle = form.get_node("TypeMatchupToggle") as CheckButton
 	for option in [kind_option, role_option, deck_option]:
 		option.get_popup().allow_search = false
 	status_panel = page.get_node("StatusPanel") as PanelContainer
@@ -193,6 +199,7 @@ func _resolve_nodes() -> void:
 	port_input.accessibility_name = "局域网端口"
 	room_input.accessibility_name = "Relay 房间码"
 	deck_option.accessibility_name = "联机牌组"
+	matchup_toggle.accessibility_name = "弱点与抗性规则"
 	room_code_display.accessibility_name = "当前房间码"
 	port_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
 
@@ -206,6 +213,8 @@ func _ensure_connections() -> void:
 		role_option.item_selected.connect(refresh_fields)
 	if not kind_option.item_selected.is_connected(_on_kind_selected):
 		kind_option.item_selected.connect(_on_kind_selected)
+	if not matchup_toggle.toggled.is_connected(_on_matchup_toggled):
+		matchup_toggle.toggled.connect(_on_matchup_toggled)
 	if not address_input.text_changed.is_connected(_on_address_text_changed):
 		address_input.text_changed.connect(_on_address_text_changed)
 	if not copy_room_button.pressed.is_connected(_copy_room_code):
@@ -314,9 +323,16 @@ func refresh_fields(_selected: int) -> void:
 		return
 	_clear_room_code()
 	var role := selected_role()
+	_received_locked_rules_options = false
+	if role != "host":
+		# A challenger has no local rule value before the host synchronizes one.
+		# Clear a stale checked state left behind when the user changes roles.
+		matchup_toggle.set_pressed_no_signal(false)
 	address_input.editable = not (kind == "lan" and role == "host")
 	room_row.visible = kind == "relay" and role == "client"
 	connect_button.text = "创建房间" if role == "host" else "加入房间"
+	matchup_toggle.disabled = role != "host"
+	_refresh_matchup_toggle_presentation()
 	_refresh_intro_role_copy()
 	_clear_validation()
 	_apply_compact_step_visibility()
@@ -353,6 +369,81 @@ func selected_deck_key() -> String:
 	return str(deck_option.get_item_metadata(deck_option.selected))
 
 
+func selected_type_matchups() -> bool:
+	return matchup_toggle != null and matchup_toggle.button_pressed
+
+
+func _on_matchup_toggled(_enabled: bool) -> void:
+	_refresh_matchup_toggle_presentation()
+
+
+func _refresh_matchup_toggle_presentation() -> void:
+	if matchup_toggle == null or role_option == null:
+		return
+	var host := selected_role() == "host"
+	var enabled := matchup_toggle.button_pressed
+	var state_copy := "已开启" if enabled else "已关闭"
+	var state_color := DesignTokens.GREEN if enabled else DesignTokens.TEXT_MUTED
+	var connection_locked := connection_state in [
+		ConnectionState.VALIDATING,
+		ConnectionState.CONNECTING,
+		ConnectionState.WAITING,
+		ConnectionState.CONNECTED,
+	]
+	if host:
+		matchup_toggle.text = "弱点与抗性：%s（%s）" % [
+			state_copy,
+			"房主已锁定" if connection_locked else "房主可修改",
+		]
+		matchup_toggle.tooltip_text = (
+			"当前已开启；开局后将按中国大陆官方步骤计算弱点与抗性。"
+			if enabled
+			else "当前已关闭（项目默认）；开局后将不计算弱点与抗性。"
+		)
+		matchup_toggle.accessibility_name = "弱点与抗性规则，%s，%s" % [
+			state_copy,
+			"房主已锁定" if connection_locked else "房主可修改",
+		]
+	elif _received_locked_rules_options:
+		matchup_toggle.text = "弱点与抗性：%s（房主已锁定 · 只读）" % state_copy
+		matchup_toggle.tooltip_text = "房主已将弱点与抗性设置为%s；挑战者不可修改。" % state_copy
+		matchup_toggle.accessibility_name = "弱点与抗性规则，%s，房主已锁定，只读" % state_copy
+	else:
+		matchup_toggle.text = "弱点与抗性：等待房主同步（只读）"
+		matchup_toggle.tooltip_text = "加入房间后将显示房主锁定的弱点与抗性设置。"
+		matchup_toggle.accessibility_name = "弱点与抗性规则，等待房主同步，只读"
+		state_color = DesignTokens.CYAN
+	_apply_matchup_toggle_color(matchup_toggle, state_color)
+
+
+func _apply_matchup_toggle_color(toggle: CheckButton, color: Color) -> void:
+	for color_name in [
+		&"font_color",
+		&"font_hover_color",
+		&"font_hover_pressed_color",
+		&"font_focus_color",
+		&"font_pressed_color",
+		&"font_disabled_color",
+		&"icon_normal_color",
+		&"icon_hover_color",
+		&"icon_hover_pressed_color",
+		&"icon_focus_color",
+		&"icon_pressed_color",
+		&"icon_disabled_color",
+	]:
+		toggle.add_theme_color_override(color_name, color)
+
+
+func show_locked_rules_options(options: Dictionary) -> void:
+	if matchup_toggle == null:
+		return
+	var enabled := bool(options.get("apply_type_matchups", false))
+	_received_locked_rules_options = true
+	matchup_toggle.set_pressed_no_signal(enabled)
+	matchup_toggle.disabled = true
+	_refresh_matchup_toggle_presentation()
+
+
 func set_connection_state(
 	state: ConnectionState,
 	message: String = "",
@@ -360,6 +451,15 @@ func set_connection_state(
 ) -> void:
 	var previous_state := connection_state
 	connection_state = state
+	if (
+		state == ConnectionState.VALIDATING
+		and previous_state in [ConnectionState.IDLE, ConnectionState.ERROR]
+		and selected_role() != "host"
+	):
+		# A retry may target a different room, so do not display or submit the
+		# previous host's locked option while the new host is still unknown.
+		_received_locked_rules_options = false
+		matchup_toggle.set_pressed_no_signal(false)
 	if state in [
 		ConnectionState.IDLE,
 		ConnectionState.VALIDATING,
@@ -381,6 +481,8 @@ func set_connection_state(
 	port_input.editable = not locked
 	room_input.editable = not locked
 	deck_option.disabled = locked
+	matchup_toggle.disabled = locked or selected_role() != "host"
+	_refresh_matchup_toggle_presentation()
 	connect_button.disabled = locked
 	compact_previous_button.disabled = locked
 	compact_next_button.disabled = locked
@@ -449,6 +551,7 @@ func _emit_connect_requested() -> void:
 		int(port_input.text),
 		room_input.text.strip_edges(),
 		selected_deck_key(),
+		selected_type_matchups(),
 	)
 
 

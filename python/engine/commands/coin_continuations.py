@@ -100,6 +100,7 @@ def resolve_coin_special(
             remaining = target.current_hp
             counters = max(1, (remaining + DAMAGE_PER_COUNTER - 1) // DAMAGE_PER_COUNTER)
             target.damage_counters += counters
+            target.pending_ko_cause = "attack_effect"
             stack.state._log(f"{target.card.name}被大树切割击倒！")
             return ActionResult(True, f"{target.card.name}被击倒！", pokemon_ko=["opponent_active"])
         stack.state._log("大树切割失败。")

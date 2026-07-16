@@ -3072,7 +3072,7 @@
         "compiled_effects": [
           {
             "args": {
-              "condition": "ko_by_attack_last_turn",
+              "condition": "ko_by_attack_damage_last_turn",
               "status": "paralyzed",
               "target": "opponent_active"
             },
@@ -3092,7 +3092,7 @@
           {
             "effect_type": "conditional_status",
             "params": {
-              "condition": "ko_by_attack_last_turn",
+              "condition": "ko_by_attack_damage_last_turn",
               "status": "paralyzed",
               "target": "opponent_active"
             }
@@ -4751,7 +4751,7 @@
           {
             "args": {
               "amount": 40,
-              "piercing_on_bench": true,
+              "bench_skips_type_matchups": true,
               "player": "opponent"
             },
             "branches": {},
@@ -4769,7 +4769,7 @@
             "effect_type": "any_pokemon_damage",
             "params": {
               "amount": 40,
-              "piercing_on_bench": true,
+              "bench_skips_type_matchups": true,
               "player": "opponent"
             }
           }
@@ -4830,7 +4830,7 @@
     "resistances": [],
     "retreat_cost": 1,
     "rules": [
-      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖品卡。"
+      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
     ],
     "set_id": "",
     "set_name": "",
@@ -5211,7 +5211,7 @@
         "compiled_effects": [
           {
             "args": {
-              "ignore_effects": true,
+              "ignore_defender_damage_effects": true,
               "ignore_resistance": true,
               "ignore_weakness": true
             },
@@ -5228,9 +5228,9 @@
         "damage_text": "30",
         "effects": [
           {
-            "effect_type": "piercing_marker",
+            "effect_type": "attack_flags",
             "params": {
-              "ignore_effects": true,
+              "ignore_defender_damage_effects": true,
               "ignore_resistance": true,
               "ignore_weakness": true
             }
@@ -7471,6 +7471,8 @@
               "amount": 2,
               "energy_type": "basic",
               "min_select": 0,
+              "same_target": true,
+              "select_source": true,
               "target": "bench"
             },
             "branches": {},
@@ -7490,6 +7492,8 @@
               "amount": 2,
               "energy_type": "basic",
               "min_select": 0,
+              "same_target": true,
+              "select_source": true,
               "target": "bench"
             }
           }
@@ -8757,7 +8761,7 @@
     "resistances": [],
     "retreat_cost": 1,
     "rules": [
-      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖品卡。"
+      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
     ],
     "set_id": "",
     "set_name": "",
@@ -10170,7 +10174,7 @@
           {
             "args": {
               "amount": 60,
-              "piercing_on_bench": true
+              "bench_skips_type_matchups": true
             },
             "branches": {},
             "op": "choose_damage_target"
@@ -10187,7 +10191,7 @@
             "effect_type": "any_pokemon_damage",
             "params": {
               "amount": 60,
-              "piercing_on_bench": true
+              "bench_skips_type_matchups": true
             }
           }
         ],
@@ -12029,7 +12033,7 @@
           {
             "args": {
               "bonus": 90,
-              "condition": "ko_by_attack_last_turn"
+              "condition": "ko_by_attack_damage_last_turn"
             },
             "branches": {},
             "op": "conditional_damage"
@@ -12047,7 +12051,7 @@
             "effect_type": "conditional_damage_bonus",
             "params": {
               "bonus": 90,
-              "condition": "ko_by_attack_last_turn"
+              "condition": "ko_by_attack_damage_last_turn"
             }
           }
         ],
@@ -13628,7 +13632,7 @@
     "resistances": [],
     "retreat_cost": 0,
     "rules": [
-      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖品卡。"
+      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
     ],
     "set_id": "",
     "set_name": "",
@@ -13711,7 +13715,7 @@
     "compiled_trainer_effects": [
       {
         "args": {
-          "condition": "ko_by_attack_last_turn"
+          "condition": "ko_last_opponent_turn"
         },
         "branches": {
           "on_pay": [
@@ -13767,7 +13771,7 @@
       {
         "effect_type": "conditional",
         "params": {
-          "condition": "ko_by_attack_last_turn",
+          "condition": "ko_last_opponent_turn",
           "cost": null,
           "on_pay": [
             {
@@ -16054,7 +16058,7 @@
     "resistances": [],
     "retreat_cost": 0,
     "rules": [
-      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖品卡。"
+      "宝可梦ex规则：当你的宝可梦ex被击倒时，对手获得2张奖赏卡。"
     ],
     "set_id": "",
     "set_name": "",
@@ -17051,6 +17055,7 @@
               "from_zone": "deck",
               "max_per_target": 1,
               "min_select": 0,
+              "select_source": true,
               "to": "bench"
             },
             "branches": {},
@@ -17073,6 +17078,7 @@
               "from_zone": "deck",
               "max_per_target": 1,
               "min_select": 0,
+              "select_source": true,
               "to": "bench"
             }
           }
@@ -17483,6 +17489,7 @@
         "args": {
           "amount": 1,
           "energy_type": "basic_energy",
+          "select_source": true,
           "target": "bench"
         },
         "branches": {},
@@ -17498,7 +17505,7 @@
     "image_path": "res://assets/cards/svm-marnie-pride.webp",
     "image_url_large": "",
     "image_url_small": "",
-    "name": "玛俐的骄傲",
+    "name": "玛俐的自尊",
     "number": "",
     "prize_value": 0,
     "provides_energy": [],
@@ -17521,6 +17528,7 @@
         "params": {
           "amount": 1,
           "energy_type": "basic_energy",
+          "select_source": true,
           "target": "bench"
         }
       }
@@ -18048,8 +18056,8 @@
                   }
                 ]
               },
-              "ignore_defender_effects": true,
-              "piercing": true
+              "ignore_defender_damage_effects": true,
+              "ignore_weakness": true
             },
             "branches": {},
             "op": "deal_damage"
@@ -18066,9 +18074,10 @@
             "effect_type": "attack_damage_formula",
             "params": {
               "base": 20,
-              "ignore_defender_effects": true,
-              "per_own_bench": 10,
-              "piercing": true
+              "ignore_defender_damage_effects": true,
+              "ignore_resistance": false,
+              "ignore_weakness": true,
+              "per_own_bench": 10
             }
           }
         ],
@@ -18213,7 +18222,6 @@
         "compiled_effects": [
           {
             "args": {
-              "consume_condition": "ko_by_attack_last_turn",
               "formula_ast": {
                 "op": "add",
                 "terms": [
@@ -18221,7 +18229,7 @@
                     "const": 100
                   },
                   {
-                    "condition": "ko_by_attack_last_turn",
+                    "condition": "ko_last_opponent_turn",
                     "else": {
                       "const": 0
                     },
@@ -18252,7 +18260,7 @@
               "base": 100,
               "condition_bonus": {
                 "bonus": 120,
-                "condition": "ko_by_attack_last_turn"
+                "condition": "ko_last_opponent_turn"
               }
             }
           }

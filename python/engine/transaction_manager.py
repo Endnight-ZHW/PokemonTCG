@@ -100,7 +100,7 @@ class VMTransactionManager:
         # transaction that did not commit.  Keep only the public failure text.
         step.action_result = ActionResult(False, step.message)
         step.winner = state.winner
-        step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
+        step.terminal = state.is_terminal()
         return step
 
     @staticmethod

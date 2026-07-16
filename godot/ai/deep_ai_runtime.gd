@@ -14,11 +14,13 @@ var expected_python_action_version := 0
 var expected_python_encoder_version := 0
 var expected_onnx_opset := 0
 var expected_onnx_runtime_version := ""
+var runtime_enabled := false
 
 
 func _init() -> void:
 	release_manifest = _read_json(RELEASE_MANIFEST_PATH, "release_manifest")
 	if not release_manifest.is_empty():
+		runtime_enabled = bool(release_manifest.get("deep_runtime_enabled", false))
 		var schemas: Dictionary = release_manifest.get("schemas", {})
 		var onnx: Dictionary = release_manifest.get("onnx", {})
 		expected_python_rules_version = int(schemas.get("python_rules", 0))
@@ -27,7 +29,9 @@ func _init() -> void:
 		expected_onnx_opset = int(onnx.get("opset", 0))
 		expected_onnx_runtime_version = str(onnx.get("runtime_version", ""))
 	manifest = _read_json(MANIFEST_PATH, "runtime_manifest")
-	if ClassDB.class_exists("OnnxInference"):
+	if not runtime_enabled:
+		last_error = "deep_runtime_disabled"
+	elif ClassDB.class_exists("OnnxInference"):
 		backend = ClassDB.instantiate("OnnxInference")
 	else:
 		last_error = "onnx_extension_unavailable"
@@ -35,7 +39,8 @@ func _init() -> void:
 
 func is_available() -> bool:
 	return (
-		backend != null
+		runtime_enabled
+		and backend != null
 		and not manifest.is_empty()
 		and not release_manifest.is_empty()
 	)
@@ -43,6 +48,9 @@ func is_available() -> bool:
 
 func load_for_deck(deck_key: String) -> bool:
 	unload()
+	if not runtime_enabled:
+		last_error = "deep_runtime_disabled"
+		return false
 	if not is_available():
 		return false
 	if (

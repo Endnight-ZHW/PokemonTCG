@@ -105,7 +105,7 @@ OP_BY_EFFECT_TYPE: dict[str, str] = {
     "look_top_attach_energy": "look_top_attach_energy",
     "look_top_deck": "look_top_deck",
     "mill_and_damage_per_energy": "mill_then_damage",
-    "piercing_marker": "set_attack_flags",
+    "attack_flags": "set_attack_flags",
     "place_counters_and_self_ko": "place_counters_then_self_ko",
     "potion_heal": "choose_heal_damage",
     "prevent_all": "prevent_all",
@@ -165,17 +165,12 @@ def _formula_args_for_effect(effect_type: str, params: dict[str, Any]) -> dict[s
     if "target" in params:
         args["target"] = params["target"]
     if effect_type == "attack_damage_formula":
-        if params.get("piercing", False):
-            args["piercing"] = True
-        if params.get("ignore_defender_effects", False):
-            args["ignore_defender_effects"] = True
-        condition_bonus = params.get("condition_bonus") or {}
-        if (
-            isinstance(condition_bonus, dict)
-            and str(condition_bonus.get("condition", "") or "") == "ko_by_attack_last_turn"
-            and bool(condition_bonus.get("consume", True))
-        ):
-            args["consume_condition"] = "ko_by_attack_last_turn"
+        if params.get("ignore_weakness", False):
+            args["ignore_weakness"] = True
+        if params.get("ignore_resistance", False):
+            args["ignore_resistance"] = True
+        if params.get("ignore_defender_damage_effects", False):
+            args["ignore_defender_damage_effects"] = True
     return args
 
 

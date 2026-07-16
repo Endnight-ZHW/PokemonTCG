@@ -71,12 +71,16 @@ class ApplyStatus:
         return CommandResult.ok(msg, status_applied=[status_key])
 
     def _check_condition(self, ctx: ResolutionContext) -> bool:
-        if self.condition == "ko_by_attack_last_turn":
-            if not ctx.player.was_ko_by_attack:
+        if self.condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+            if not ctx.state.had_knockout_last_opponent_turn(
+                ctx.player_idx,
+                causes={"attack_damage"},
+            ):
                 ctx.state._log(f"上个对手回合没有宝可梦因招式伤害昏厥，{self.status}效果不触发。")
                 return False
-            ctx.player.was_ko_by_attack = False
             return True
+        if self.condition == "ko_last_opponent_turn":
+            return ctx.state.had_knockout_last_opponent_turn(ctx.player_idx)
         return False
 
 

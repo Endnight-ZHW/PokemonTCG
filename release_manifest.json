@@ -1,19 +1,20 @@
 {
-  "format_version": 1,
+  "format_version": 2,
   "product_name": "PokemonTCG",
-  "version": "0.3.2",
-  "android_version_code": 5,
+  "version": "0.4.0",
+  "android_version_code": 6,
   "godot_version": "4.7.stable",
   "schemas": {
-    "protocol": 3,
-    "godot_rules": 3,
+    "protocol": 4,
+    "godot_rules": 4,
     "godot_actions": 3,
-    "python_rules": 2,
+    "python_rules": 3,
     "python_actions": 2,
     "encoder": 3,
     "checkpoint": 10,
+    "snapshot": 2,
     "planner": 1,
-    "vm_ir": 1,
+    "vm_ir": 2,
     "rng": 1
   },
   "rng": {
@@ -33,6 +34,10 @@
     "darkness"
   ],
   "model_count": 10,
+  "deep_runtime_enabled": false,
+  "deep_fallback": "challenge",
+  "compatible_model_count": 0,
+  "legacy_model_count": 10,
   "onnx": {
     "opset": 17,
     "runtime_version": "1.26.0",

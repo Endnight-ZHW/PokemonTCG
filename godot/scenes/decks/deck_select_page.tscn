@@ -334,6 +334,14 @@ custom_minimum_size = Vector2(180, 50)
 layout_mode = 2
 focus_mode = 0
 
+[node name="TypeMatchupToggle" type="CheckButton" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(236, 50)
+layout_mode = 2
+focus_mode = 0
+text = "弱点/抗性：已关闭"
+tooltip_text = "当前已关闭（项目默认）：攻击伤害不计算弱点与抗性。点击可开启。"
+
 [node name="StartButton" type="Button" parent="ContentMargin/PageContent/ActionBar/ActionMargin/ActionContent"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(192, 54)

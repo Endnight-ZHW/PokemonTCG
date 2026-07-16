@@ -21,7 +21,7 @@ EFFECTS = {
                         "params": {
                             "base": 100,
                             "condition_bonus": {
-                                "condition": "ko_by_attack_last_turn",
+                                "condition": "ko_last_opponent_turn",
                                 "bonus": 120,
                             },
                         },
@@ -39,8 +39,9 @@ EFFECTS = {
                         "params": {
                             "base": 20,
                             "per_own_bench": 10,
-                            "piercing": True,
-                            "ignore_defender_effects": True,
+                            "ignore_weakness": True,
+                            "ignore_resistance": False,
+                            "ignore_defender_damage_effects": True,
                         },
                     }
                 ]
@@ -145,6 +146,7 @@ EFFECTS = {
                             "to": "bench",
                             "max_per_target": 1,
                             "min_select": 0,
+                            "select_source": True,
                         },
                     }
                 ]

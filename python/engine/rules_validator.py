@@ -6,6 +6,7 @@ from engine.player_state import PlayerState, PokemonInPlay
 from engine.rules_constants import DECK_SIZE, MAX_BENCH_SIZE, MAX_COPIES_PER_CARD
 from engine.effects.availability import effect_params
 from engine.effects.runtime_effects import strict_trainer_runtime_effects as trainer_runtime_effects
+from engine.energy_view import EnergyView
 from data.card_models import Card
 
 
@@ -80,6 +81,19 @@ def can_play_basic(state: GameState, player_idx: int, card: Card,
         return False, f"{card.name}不是基础宝可梦。"
 
     player = state.get_player(player_idx)
+
+    if state.phase == TurnPhase.SETUP:
+        stage = str(getattr(state, "setup_stage", "INITIAL_PLACEMENT"))
+        if stage not in {"INITIAL_PLACEMENT", "BONUS_PLACEMENT"}:
+            return False, "当前开局阶段不能放置基础宝可梦。"
+        if int(getattr(state, "setup_actor_idx", -1)) != player_idx:
+            return False, "尚未轮到该玩家进行开局放置。"
+        if stage == "BONUS_PLACEMENT":
+            if target == "active":
+                return False, "再战奖励抽到的基础宝可梦只能追加到备战区。"
+            eligible = list(getattr(state, "setup_bonus_card_ids", ([], []))[player_idx])
+            if str(getattr(card, "api_id", "") or "") not in eligible:
+                return False, "只能放置本次再战奖励抽到的基础宝可梦。"
 
     if target == "active":
         if state.phase != TurnPhase.SETUP:
@@ -218,14 +232,19 @@ def can_play_tool(state: GameState, player_idx: int, target_slot: str) -> tuple[
 
 def energy_card_units(card: Card, pokemon=None) -> int:
     """Return how many retreat-payment energy units one attached card provides."""
-    provided = list(getattr(card, "provides_energy", []) or [])
-    return max(1, len(provided)) if getattr(card, "is_energy", False) else 0
+    if pokemon is not None:
+        view = EnergyView.from_pokemon(pokemon)
+        for index, attached in enumerate(view.cards):
+            if attached is card:
+                return view.card_unit_count(index)
+        for index, attached in enumerate(view.cards):
+            if attached == card:
+                return view.card_unit_count(index)
+    return EnergyView((card,)).total_units
 
 
 def attached_energy_units(pokemon) -> int:
-    if pokemon is None:
-        return 0
-    return sum(energy_card_units(card, pokemon) for card in pokemon.energy_cards)
+    return EnergyView.from_pokemon(pokemon).total_units
 
 
 def can_retreat(state: GameState, player_idx: int,
@@ -259,7 +278,8 @@ def can_retreat(state: GameState, player_idx: int,
         return False, f"备战区位置{bench_idx}没有宝可梦。"
 
     retreat_cost = effective_retreat_cost(state, player)
-    available_units = attached_energy_units(player.active)
+    energy_view = EnergyView.from_pokemon(player.active)
+    available_units = energy_view.total_units
     if available_units < retreat_cost:
         return False, (f"需要{retreat_cost}个能量才能撤退，"
                        f"当前只能提供{available_units}个。")
@@ -271,14 +291,11 @@ def can_retreat(state: GameState, player_idx: int,
         if any(not isinstance(index, int) or not (0 <= index < len(player.active.energy_cards))
                for index in indices):
             return False, "撤退费用包含无效的能量卡。"
-        paid_units = sum(
-            energy_card_units(player.active.energy_cards[index], player.active)
-            for index in indices
-        )
+        paid_units = energy_view.selected_unit_count(indices)
         if paid_units < retreat_cost:
             return False, f"所选能量只能提供{paid_units}个，无法支付{retreat_cost}点撤退费用。"
         for index in indices:
-            if paid_units - energy_card_units(player.active.energy_cards[index], player.active) >= retreat_cost:
+            if paid_units - energy_view.card_unit_count(index) >= retreat_cost:
                 return False, "撤退费用不能包含多余的能量卡。"
 
     return True, ""
@@ -356,24 +373,35 @@ def can_use_ability(state: GameState, player_idx: int,
     return True, ""
 
 
-def check_win_condition(state: GameState) -> int | None:
-    """Check if any player has won. Returns winning player_idx or None."""
-    scores = [0, 0]
+def result_condition_lists(state: GameState) -> list[list[str]]:
+    """Return the official simultaneous win conditions met by each player."""
+    conditions: list[list[str]] = [[], []]
     if len(state.p1.prizes) == 0:
-        scores[0] += 1
+        conditions[0].append("PRIZES_TAKEN")
     if len(state.p2.prizes) == 0:
-        scores[1] += 1
+        conditions[1].append("PRIZES_TAKEN")
     if not state.p2.has_any_pokemon_in_play():
-        scores[0] += 1
+        conditions[0].append("OPPONENT_NO_POKEMON")
     if not state.p1.has_any_pokemon_in_play():
-        scores[1] += 1
+        conditions[1].append("OPPONENT_NO_POKEMON")
+    return conditions
+
+
+def evaluate_game_result(state: GameState) -> tuple[str, int | None, list[list[str]]]:
+    """Evaluate a complete resolution batch as ONGOING, WIN, or DRAW."""
+    conditions = result_condition_lists(state)
+    scores = [len(conditions[0]), len(conditions[1])]
     if scores == [0, 0]:
-        return None
+        return "ONGOING", None, conditions
     if scores[0] != scores[1]:
-        return 0 if scores[0] > scores[1] else 1
-    # No sudden-death phase exists in this engine; the current turn owner is a
-    # deterministic tie-break that remains symmetric under player relabeling.
-    return int(state.active_player_idx)
+        return "WIN", (0 if scores[0] > scores[1] else 1), conditions
+    return "DRAW", -1, conditions
+
+
+def check_win_condition(state: GameState) -> int | None:
+    """Return the winner, or ``None`` for both ongoing games and true draws."""
+    status, winner, _conditions = evaluate_game_result(state)
+    return winner if status == "WIN" else None
 
 
 def is_ace_spec(card: Card) -> bool:
@@ -393,6 +421,9 @@ def validate_deck(deck: list[Card], deck_name: str = "") -> tuple[bool, str]:
 
     if len(deck) != DECK_SIZE:
         return False, f"{label}必须有{DECK_SIZE}张卡，当前有{len(deck)}张。"
+
+    if not any(card.is_basic_pokemon for card in deck):
+        return False, f"{label}必须至少包含1只基础宝可梦。"
 
     name_counts: dict[str, int] = {}
     for card in deck:

@@ -108,17 +108,19 @@ func energy_attach(
 	var zone := str(params.get("from_zone", "deck"))
 	var source: Array[String] = player.deck if zone == "deck" else player.hand
 	var filter := str(params.get("filter", "any")).to_lower()
-	var matching: Array[String] = []
-	for card_id in source:
+	var matching_refs: Array[Dictionary] = []
+	for index in range(source.size()):
+		var card_id := str(source[index])
 		if energy_matches(card_id, filter):
-			matching.append(card_id)
+			matching_refs.append(EntityRef.new(
+				"card", player_idx, zone, "", index, "", card_id).to_dict())
 	var amount := int(params.get("amount", 1))
 	var base_amount := amount
 	var bonus_applied := false
 	if state.active_player_idx != state.first_player_idx and state.is_player_first_turn(player_idx):
 		amount = max(amount, int(params.get("going_second_bonus", amount)))
 		bonus_applied = amount > base_amount
-	if matching.is_empty():
+	if matching_refs.is_empty():
 		if zone == "deck":
 			events.append(VMZoneHelpers.cards_selected_event(
 				player_idx, "deck", "field", [], 0))
@@ -143,12 +145,29 @@ func energy_attach(
 		for row in player.get_all_pokemon():
 			if row["pokemon"]:
 				target_slots.append(str(row["slot"]))
+	var attach_count: int = mini(amount, matching_refs.size())
+	var max_per_target := int(params.get("max_per_target", 99))
+	var same_target := bool(params.get(
+		"same_target", target_spec in ["self_basic", "any"]))
+	if bool(params.get("select_source", false)):
+		return request_energy_source_cards(
+			state, stack, player_idx, zone, matching_refs,
+			attach_count, target_slots, max_per_target,
+			min_select,
+			attach_count if optional_count else -1,
+			same_target)
 	return request_energy_target(
-		state, stack, player_idx, zone, matching.slice(0, min(amount, matching.size())),
-		target_slots, int(params.get("max_per_target", 99)),
+		state,
+		stack,
+		player_idx,
+		zone,
+		matching_refs.slice(0, attach_count),
+		target_slots,
+		max_per_target,
 		min_select,
-		min(amount, matching.size()) if optional_count else -1,
-		target_spec in ["self_basic", "any"])
+		attach_count if optional_count else -1,
+		same_target,
+	)
 
 
 func attach_from_discard(
@@ -161,20 +180,23 @@ func attach_from_discard(
 	var player := state.get_player(player_idx)
 	var energy_type := str(params.get("energy_type", "any")).to_lower()
 	var target_pokemon_type := str(params.get("target_pokemon_type", ""))
-	var matching: Array[String] = []
-	for card_id in player.discard:
+	var matching_refs: Array[Dictionary] = []
+	for index in range(player.discard.size()):
+		var card_id := str(player.discard[index])
 		if not catalog.is_basic_energy(card_id):
 			continue
 		if energy_type in ["any", "basic", "basic_energy"]:
-			matching.append(card_id)
+			matching_refs.append(EntityRef.new(
+				"card", player_idx, "discard", "", index, "", card_id).to_dict())
 		else:
 			for provided in catalog.provides_energy(card_id):
 				if str(provided).to_lower() == energy_type:
-					matching.append(card_id)
+					matching_refs.append(EntityRef.new(
+						"card", player_idx, "discard", "", index, "", card_id).to_dict())
 					break
-	if matching.is_empty():
+	if matching_refs.is_empty():
 		return VMResult.ok("弃牌区没有符合条件的能量。")
-	var amount: int = min(int(params.get("amount", 1)), matching.size())
+	var amount: int = min(int(params.get("amount", 1)), matching_refs.size())
 	var optional_count := bool(params.has("min_select") or params.get("optional", false))
 	var min_select := int(params.get("min_select", 0 if optional_count else -1))
 	var slots: Array[String] = []
@@ -191,14 +213,99 @@ func attach_from_discard(
 			for row in player.get_all_pokemon():
 				if row["pokemon"] and pokemon_matches_type(row["pokemon"], target_pokemon_type):
 					slots.append(str(row["slot"]))
+	var same_target := bool(params.get(
+		"same_target", str(params.get("target", "self")) == "self_or_bench"))
+	if bool(params.get("select_source", false)):
+		return request_energy_source_cards(
+			state, stack, player_idx, "discard",
+			matching_refs,
+			amount,
+			slots,
+			99,
+			min_select,
+			amount if optional_count else -1,
+			same_target)
 	return request_energy_target(
-		state, stack, player_idx, "discard",
-		matching.slice(0, amount),
+		state,
+		stack,
+		player_idx,
+		"discard",
+		matching_refs.slice(0, amount),
 		slots,
 		99,
 		min_select,
 		amount if optional_count else -1,
-		str(params.get("target", "self")) == "self_or_bench")
+		same_target,
+	)
+
+
+func request_energy_source_cards(
+	state: GameState,
+	stack: ResolutionStack,
+	player_idx: int,
+	source_zone: String,
+	matching_refs: Array[Dictionary],
+	amount: int,
+	target_slots: Array[String],
+	max_per_target: int = 99,
+	min_select: int = -1,
+	max_select: int = -1,
+	same_target: bool = false,
+) -> Dictionary:
+	var request_max := mini(amount, matching_refs.size())
+	if max_select >= 0:
+		request_max = mini(request_max, max_select)
+	var request_min := request_max if min_select < 0 else mini(request_max, maxi(0, min_select))
+	if matching_refs.size() == request_max and request_min == request_max:
+		return request_energy_target(
+			state, stack, player_idx, source_zone, matching_refs,
+			target_slots, max_per_target, -1, -1, same_target)
+	var options: Array[Dictionary] = []
+	for ref in matching_refs:
+		var card_id := str(ref.get("card_id", ""))
+		options.append({
+			"option_id": "card:%d:%s:%d:%s" % [
+				player_idx, source_zone, int(ref.get("index", -1)), card_id],
+			"label": catalog.card_name(card_id),
+			"ref": ref.duplicate(true),
+			"value": {
+				"player": player_idx,
+				"zone": source_zone,
+				"index": int(ref.get("index", -1)),
+				"card_id": card_id,
+			},
+		})
+	var frame_id := "effect:energy_sources:%d" % stack.sequence
+	stack.push_continuation("energy_attach_sources", {
+		"player_idx": player_idx,
+		"source_zone": source_zone,
+		"target_slots": target_slots.duplicate(),
+		"max_per_target": max_per_target,
+		"same_target": same_target,
+		"frame_id": frame_id,
+	})
+	stack.pending_request = ChoiceRequest.new(
+		stack.next_request_id(state, player_idx, "energy_attach_sources"),
+		"select_card",
+		player_idx,
+		"选择要附着的能量。",
+		options,
+		request_min,
+		request_max,
+		false,
+		request_min == 0,
+		{
+			"domain": "effect",
+			"purpose": "energy_attach_sources",
+			"revision": state.revision,
+			"continuation_frame_id": frame_id,
+			"source_player": player_idx,
+			"source_zone": source_zone,
+			"same_target": same_target,
+			"max_per_target": max_per_target,
+		},
+	)
+	return VMResult.ok()
 
 
 func pokemon_matches_type(pokemon: PokemonState, target_type: String) -> bool:
@@ -216,7 +323,7 @@ func request_energy_target(
 	stack: ResolutionStack,
 	player_idx: int,
 	source_zone: String,
-	card_ids: Array,
+	card_refs: Array,
 	target_slots: Array[String],
 	max_per_target: int = 99,
 	min_select: int = -1,
@@ -225,12 +332,18 @@ func request_energy_target(
 ) -> Dictionary:
 	if target_slots.is_empty():
 		return VMResult.ok("没有附能目标。")
-	var capped_card_ids := card_ids.duplicate()
+	var capped_card_refs := card_refs.duplicate(true)
 	var target_capacity: int = max(0, target_slots.size() * max_per_target)
-	if capped_card_ids.size() > target_capacity:
-		capped_card_ids = capped_card_ids.slice(0, target_capacity)
-	if capped_card_ids.is_empty():
+	if capped_card_refs.size() > target_capacity:
+		capped_card_refs = capped_card_refs.slice(0, target_capacity)
+	if capped_card_refs.is_empty():
 		return VMResult.ok("没有可附着的能量。")
+	var capped_card_ids: Array[String] = []
+	for ref_value in capped_card_refs:
+		if ref_value is Dictionary:
+			capped_card_ids.append(str(ref_value.get("card_id", "")))
+		else:
+			capped_card_ids.append(str(ref_value))
 	var options: Array[Dictionary] = []
 	for slot in target_slots:
 		var pokemon := state.get_player(player_idx).get_pokemon(slot)
@@ -253,6 +366,7 @@ func request_energy_target(
 	stack.push_continuation(operation, {
 		"player_idx": player_idx,
 		"source_zone": source_zone,
+		"card_refs": capped_card_refs,
 		"card_ids": capped_card_ids,
 		"max_per_target": max_per_target,
 		"same_target": same_target,
@@ -285,7 +399,7 @@ func attach_cards(
 	state: GameState,
 	player_idx: int,
 	source_zone: String,
-	card_ids: Array,
+	card_refs: Array,
 	target_slot: String,
 	events: Array[Dictionary],
 	rng: PortableRandomSource,
@@ -296,11 +410,20 @@ func attach_cards(
 	var target := player.get_pokemon(target_slot)
 	if target == null:
 		return VMResult.fail("附能目标不存在。")
-	for card_value in card_ids:
-		var card_id := str(card_value)
-		var index := source.find(card_id)
-		if index >= 0:
-			source.remove_at(index)
+	var normalized_refs := normalize_zone_card_refs(
+		player_idx, source_zone, source, card_refs)
+	if normalized_refs.size() != card_refs.size():
+		return VMResult.fail("选择的能量已不存在。", "stale_choice")
+	var removal_order := normalized_refs.duplicate(true)
+	removal_order.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left.get("index", -1)) > int(right.get("index", -1))
+	)
+	for ref in removal_order:
+		source.remove_at(int(ref.get("index", -1)))
+	for ref in normalized_refs:
+		var card_id := str(ref.get("card_id", ""))
+		var index := int(ref.get("index", -1))
+		if not card_id.is_empty():
 			target.energy_card_ids.append(card_id)
 			events.append({
 				"event_type": "energy_attached",
@@ -340,6 +463,42 @@ func attach_cards(
 	if source_zone == "deck":
 		VMZoneHelpers.shuffle_deck(state, rng, player_idx, events)
 	return VMResult.ok()
+
+
+func normalize_zone_card_refs(
+	player_idx: int,
+	source_zone: String,
+	source: Array[String],
+	values: Array,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var used_indices: Dictionary = {}
+	for value in values:
+		var ref: Dictionary = {}
+		if value is Dictionary:
+			ref = Dictionary(value).duplicate(true)
+		else:
+			var card_id := str(value)
+			for candidate_index in range(source.size()):
+				if not used_indices.has(candidate_index) and str(source[candidate_index]) == card_id:
+					ref = EntityRef.new(
+						"card", player_idx, source_zone, "", candidate_index, "", card_id
+					).to_dict()
+					break
+		var index := int(ref.get("index", -1))
+		if (
+			str(ref.get("kind", "")) != "card"
+			or int(ref.get("player", -1)) != player_idx
+			or str(ref.get("zone", "")) != source_zone
+			or index < 0
+			or index >= source.size()
+			or used_indices.has(index)
+			or str(source[index]) != str(ref.get("card_id", ""))
+		):
+			return []
+		used_indices[index] = true
+		result.append(ref)
+	return result
 
 
 func energy_relocate_request(
@@ -571,22 +730,31 @@ func attach_from_hand_to_bench(
 	min_select: int = -1,
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
-	var matching: Array[String] = []
-	for card_id in player.hand:
+	var matching_refs: Array[Dictionary] = []
+	for index in range(player.hand.size()):
+		var card_id := str(player.hand[index])
 		if catalog.is_basic_energy(card_id) and energy_type in catalog.provides_energy(card_id):
-			matching.append(card_id)
+			matching_refs.append(EntityRef.new(
+				"card", player_idx, "hand", "", index, "", card_id).to_dict())
 	var slots: Array[String] = []
 	for index in range(player.bench.size()):
 		if player.bench[index]:
 			slots.append("bench_%d" % index)
-	if matching.is_empty() or slots.is_empty():
+	if matching_refs.is_empty() or slots.is_empty():
 		return VMResult.ok()
+	var attach_count: int = mini(amount, matching_refs.size())
 	return request_energy_target(
-		state, stack, player_idx, "hand",
-		matching.slice(0, min(amount, matching.size())), slots, 99,
+		state,
+		stack,
+		player_idx,
+		"hand",
+		matching_refs.slice(0, attach_count),
+		slots,
+		99,
 		min_select,
-		min(amount, matching.size()) if min_select >= 0 else -1,
-		true)
+		attach_count if min_select >= 0 else -1,
+		true,
+	)
 
 
 func energy_matches(card_id: String, energy_type: String) -> bool:
@@ -758,7 +926,7 @@ func matching_energy_refs(
 	var result: Array[Dictionary] = []
 	for index in range(card_ids.size()):
 		var card_id := str(card_ids[index])
-		if energy_matches(card_id, energy_type):
+		if attached_energy_matches(card_ids, index, energy_type):
 			result.append(EntityRef.new(
 				"attachment", player_idx, "field", slot, index, "energy", card_id
 			).to_dict())
@@ -807,8 +975,28 @@ static func attachment_choice_metadata(
 
 func matching_energy_ids(card_ids: Array, energy_type: String) -> Array[String]:
 	var result: Array[String] = []
-	for card_value in card_ids:
-		var card_id := str(card_value)
-		if energy_matches(card_id, energy_type):
+	for index in range(card_ids.size()):
+		var card_id := str(card_ids[index])
+		if attached_energy_matches(card_ids, index, energy_type):
 			result.append(card_id)
 	return result
+
+
+func attached_energy_matches(card_ids: Array, card_index: int, energy_type: String) -> bool:
+	if card_index < 0 or card_index >= card_ids.size():
+		return false
+	var typed_ids: Array[String] = []
+	for card_value in card_ids:
+		typed_ids.append(str(card_value))
+	var card_id := typed_ids[card_index]
+	var normalized := energy_type.to_lower()
+	if normalized in ["", "any", "energy"]:
+		return catalog.is_energy(card_id)
+	if normalized in ["basic", "basic_energy"]:
+		return catalog.is_basic_energy(card_id)
+	if normalized.ends_with("_energy"):
+		normalized = normalized.trim_suffix("_energy")
+	for provided in EnergyView.units_for_card_at(typed_ids, card_index, catalog):
+		if str(provided).to_lower() in [normalized, "rainbow"]:
+			return true
+	return false

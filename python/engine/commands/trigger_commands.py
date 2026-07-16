@@ -58,6 +58,7 @@ def trigger_place_damage_counters_spec(
     slot: str,
     counters: int,
     source_name: str = "",
+    target_card_id: str = "",
 ) -> dict[str, Any]:
     return {
         "op": "trigger_place_damage_counters",
@@ -66,6 +67,12 @@ def trigger_place_damage_counters_spec(
             "slot": str(slot or "active"),
             "count": int(counters or 0),
             "source": str(source_name or ""),
+            "target_ref": {
+                "kind": "pokemon",
+                "player": int(player_idx),
+                "slot": str(slot or "active"),
+                "card_id": str(target_card_id or ""),
+            },
         },
         "branches": {},
     }
@@ -77,6 +84,10 @@ def trigger_move_basic_energy_spec(
     to_player_idx: int,
     to_slot: str,
     source_name: str = "",
+    *,
+    select_source: bool = False,
+    optional: bool = False,
+    target_tool_id: str = "",
 ) -> dict[str, Any]:
     return {
         "op": "trigger_move_basic_energy",
@@ -86,6 +97,9 @@ def trigger_move_basic_energy_spec(
             "to_player": int(to_player_idx),
             "to_slot": str(to_slot or "active"),
             "source": str(source_name or ""),
+            "select_source": bool(select_source),
+            "optional": bool(optional),
+            "target_tool_id": str(target_tool_id or ""),
         },
         "branches": {},
     }
@@ -190,9 +204,18 @@ class PlaceDamageCountersOnPokemon:
     log_message: str = ""
     player_idx: int | None = None
     slot: str = ""
+    expected_card_id: str = ""
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         pokemon = self.pokemon or _pokemon_from_ref(ctx.state, self.player_idx, self.slot)
+        if (
+            pokemon is not None
+            and self.expected_card_id
+            and str(getattr(pokemon.card, "api_id", "") or "") != self.expected_card_id
+        ):
+            # Never retarget a delayed reaction to a replacement that happens
+            # to occupy the old slot.
+            pokemon = None
         if pokemon is None or int(self.counters or 0) <= 0:
             return CommandResult.ok()
         counters = int(self.counters or 0)
@@ -228,6 +251,9 @@ class MoveBasicEnergyBetweenPokemon:
     from_slot: str = ""
     to_player_idx: int | None = None
     to_slot: str = ""
+    select_source: bool = False
+    optional: bool = False
+    target_tool_id: str = ""
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         source_pokemon = self.source_pokemon or _pokemon_from_ref(
@@ -242,6 +268,44 @@ class MoveBasicEnergyBetweenPokemon:
         )
         if source_pokemon is None or target_pokemon is None:
             return CommandResult.ok()
+        basic_energies = [
+            (index, card)
+            for index, card in enumerate(list(getattr(source_pokemon, "energy_cards", []) or []))
+            if getattr(card, "is_basic_energy", False)
+        ]
+        if not basic_energies:
+            return CommandResult.ok()
+        if self.select_source:
+            from engine.game_state import ActionRequest
+
+            source_card_id = str(getattr(source_pokemon.card, "api_id", "") or "")
+            target_card_id = str(getattr(target_pokemon.card, "api_id", "") or "")
+            continuation = {
+                "kind": "confirm_exp_share_trigger",
+                "domain": "trigger",
+                "frame_id": (
+                    f"trigger:exp_share:{self.from_player_idx}:{self.from_slot}:"
+                    f"{self.to_player_idx}:{self.to_slot}"
+                ),
+                "from_player": int(self.from_player_idx),
+                "from_slot": str(self.from_slot),
+                "from_card_id": source_card_id,
+                "to_player": int(self.to_player_idx),
+                "to_slot": str(self.to_slot),
+                "to_card_id": target_card_id,
+                "source_name": str(self.source_name or "学习装置"),
+                "target_tool_id": str(self.target_tool_id or ""),
+            }
+            return CommandResult.ok(
+                pending_choice=ActionRequest(
+                    request_type="confirm_trigger",
+                    player=int(self.to_player_idx),
+                    prompt=f"是否使用{self.source_name or '学习装置'}？",
+                    min_select=1,
+                    max_select=1,
+                    continuation=continuation,
+                )
+            )
         for card in list(getattr(source_pokemon, "energy_cards", []) or []):
             if not getattr(card, "is_basic_energy", False):
                 continue
@@ -252,6 +316,80 @@ class MoveBasicEnergyBetweenPokemon:
             ctx.state._log(message)
             return CommandResult.ok(message)
         return CommandResult.ok()
+
+
+@dataclass
+class TriggerOrderFrame:
+    """Let the trigger owner choose the next entity trigger to resolve."""
+
+    specs: list[dict[str, Any]]
+
+    def execute(self, ctx: ResolutionContext) -> CommandResult:
+        specs = [dict(spec) for spec in self.specs or []]
+        if not specs:
+            return CommandResult.ok()
+        grouped: dict[int, list[dict[str, Any]]] = {0: [], 1: []}
+        for spec in specs:
+            grouped[_trigger_owner(spec, ctx.player_idx)].append(spec)
+        if grouped[0] and grouped[1]:
+            ctx.stack.push_many([
+                TriggerOrderFrame(grouped[owner])
+                for owner in _trigger_group_order(ctx.state)
+                if grouped[owner]
+            ])
+            return CommandResult.ok()
+        if len(specs) == 1:
+            ctx.stack.push_many(_compile_trigger_command_items(specs))
+            return CommandResult.ok()
+
+        from engine.game_state import ActionRequest
+
+        chooser = _trigger_owner(specs[0], ctx.player_idx)
+        return CommandResult.ok(
+            pending_choice=ActionRequest(
+                request_type="choose_trigger_order",
+                player=chooser,
+                prompt="选择下一个要结算的触发效果。",
+                min_select=1,
+                max_select=1,
+                target_info=[
+                    {
+                        "index": index,
+                        "label": str(
+                            (spec.get("args", {}) or {}).get("source")
+                            or spec.get("op", "触发效果")
+                        ),
+                        "op": str(spec.get("op", "") or ""),
+                    }
+                    for index, spec in enumerate(specs)
+                ],
+                continuation={
+                    "kind": "choose_trigger_order",
+                    "domain": "trigger",
+                    "frame_id": "trigger:order",
+                    "specs": specs,
+                    "chooser": chooser,
+                },
+            )
+        )
+
+
+def _trigger_owner(spec: dict[str, Any], default: int = 0) -> int:
+    args = spec.get("args", {}) if isinstance(spec, dict) else {}
+    if not isinstance(args, dict):
+        return int(default if default in (0, 1) else 0)
+    value = args.get("to_player", args.get("player", args.get("player_idx", default)))
+    return int(value) if type(value) is int and value in (0, 1) else int(default)
+
+
+def _trigger_group_order(state: GameState) -> tuple[int, int]:
+    """Return APNAP order, using the incoming player during Checkup."""
+    from engine.enums import TurnPhase
+
+    turn_owner = int(state.active_player_idx)
+    if state.phase == TurnPhase.POKEMON_CHECKUP:
+        return 1 - turn_owner, turn_owner
+    return turn_owner, 1 - turn_owner
 
 
 @dataclass
@@ -299,6 +437,7 @@ def command_spec_from_trigger_payload(payload: Any) -> dict[str, Any]:
             str(payload.get("slot", "active") or "active"),
             int(payload.get("count", payload.get("counters", 0)) or 0),
             str(payload.get("source", payload.get("source_name", "")) or ""),
+            str(payload.get("target_card_id", "") or ""),
         )
     if op == "move_basic_energy":
         from_player = _as_int(payload.get("from_player", payload.get("player", 0)), 0)
@@ -368,7 +507,8 @@ def execute_trigger_commands(
 
     stack = ResolutionStack(state)
     try:
-        stack.push_many(_compile_trigger_command_items(commands))
+        normalized = _normalize_trigger_specs(commands)
+        stack.push(TriggerOrderFrame(normalized))
     except (KeyError, TypeError, ValueError) as exc:
         return CommandResult(success=False, log_message=str(exc))
     rr = stack.resolve_all(player_idx, source_slot)
@@ -386,9 +526,42 @@ def execute_trigger_commands(
 
 
 def push_trigger_command_specs(stack: Any, specs: Iterable[Any]) -> None:
-    commands = _compile_trigger_command_items(specs)
-    if commands:
-        stack.push_many(commands)
+    normalized = _normalize_trigger_specs(specs)
+    if normalized:
+        stack.push(TriggerOrderFrame(normalized))
+
+
+def retarget_pending_after_damage_entity(
+    stack: Any,
+    player_idx: int,
+    from_slot: str,
+    to_slot: str,
+    card_id: str,
+) -> None:
+    """Move serialized reactive targets when a known Pokemon changes slots."""
+    raw_specs = getattr(stack, "context", {}).get(
+        "pending_after_damage_trigger_specs", []
+    )
+    if not isinstance(raw_specs, list):
+        return
+    for spec in raw_specs:
+        if not isinstance(spec, dict) or spec.get("op") != "trigger_place_damage_counters":
+            continue
+        args = spec.get("args")
+        if not isinstance(args, dict):
+            continue
+        target_ref = args.get("target_ref")
+        if not isinstance(target_ref, dict):
+            continue
+        if (
+            target_ref.get("player") != int(player_idx)
+            or target_ref.get("slot") != str(from_slot)
+            or target_ref.get("card_id") != str(card_id)
+        ):
+            continue
+        target_ref["slot"] = str(to_slot)
+        args["player"] = int(player_idx)
+        args["slot"] = str(to_slot)
 
 
 def _compile_trigger_command_items(items: Iterable[Any]) -> list[ICommand]:
@@ -403,6 +576,16 @@ def _compile_trigger_command_items(items: Iterable[Any]) -> list[ICommand]:
             continue
         raise ValueError("Trigger payload must be a serializable VM command spec")
     return commands
+
+
+def _normalize_trigger_specs(items: Iterable[Any]) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    for item in items:
+        spec = command_spec_from_trigger_payload(item)
+        if not spec:
+            raise ValueError("Trigger payload must be a serializable VM command spec")
+        specs.append(_require_trigger_command_spec(spec))
+    return specs
 
 
 def _require_trigger_command_spec(spec: dict[str, Any]) -> dict[str, Any]:
@@ -433,12 +616,21 @@ def _make_trigger_place_damage_counters(args: dict[str, Any], _branches: dict[st
     log_message = str(args.get("log_message", "") or "")
     if not log_message and counters > 0:
         log_message = _source_log(source, f"放置了{counters}个伤害指示物！")
+    target_ref = args.get("target_ref", {})
+    if not isinstance(target_ref, dict):
+        target_ref = {}
+    player_idx = _as_int(
+        target_ref.get("player", args.get("player", args.get("player_idx", 0))),
+        0,
+    )
+    slot = str(target_ref.get("slot", args.get("slot", "active")) or "active")
     return PlaceDamageCountersOnPokemon(
         None,
         counters,
         log_message,
-        player_idx=int(args.get("player", args.get("player_idx", 0)) or 0),
-        slot=str(args.get("slot", "active") or "active"),
+        player_idx=player_idx,
+        slot=slot,
+        expected_card_id=str(target_ref.get("card_id", "") or ""),
     )
 
 
@@ -452,6 +644,9 @@ def _make_trigger_move_basic_energy(args: dict[str, Any], _branches: dict[str, A
         from_slot=str(args.get("from_slot", "active") or "active"),
         to_player_idx=_as_int(args.get("to_player", from_player), from_player),
         to_slot=str(args.get("to_slot", "active") or "active"),
+        select_source=bool(args.get("select_source", False)),
+        optional=bool(args.get("optional", False)),
+        target_tool_id=str(args.get("target_tool_id", "") or ""),
     )
 
 
@@ -477,6 +672,7 @@ __all__ = [
     "MoveBasicEnergyBetweenPokemon",
     "PlaceDamageCountersOnPokemon",
     "SwitchWithActiveForPlayer",
+    "TriggerOrderFrame",
     "TRIGGER_COMMAND_FACTORIES",
     "collect_on_attach_command_specs",
     "command_spec_from_trigger_payload",
@@ -484,6 +680,7 @@ __all__ = [
     "execute_trigger_commands",
     "pokemon_ref_for_state",
     "push_trigger_command_specs",
+    "retarget_pending_after_damage_entity",
     "trigger_draw_cards_spec",
     "trigger_move_basic_energy_spec",
     "trigger_place_damage_counters_spec",

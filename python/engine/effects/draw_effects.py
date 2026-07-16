@@ -120,10 +120,12 @@ def _handle_hand_to_bottom_draw(state, player, params):
     def caitlin_callback(selected_cards):
         count = len(selected_cards)
         # Remove selected from hand
+        moved = []
         for card in selected_cards:
             if card in player.hand:
                 player.hand.remove(card)
-                player.deck.insert(0, card)  # bottom of deck
+                moved.append(card)
+        player.deck[0:0] = moved
         state._log(f"{player.name}将{count}张手牌放回牌库底。")
         drawn = player.draw_cards(count)
         state._log(f"{player.name}抽取了{len(drawn)}张卡。")

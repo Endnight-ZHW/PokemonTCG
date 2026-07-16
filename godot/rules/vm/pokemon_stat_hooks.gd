@@ -108,9 +108,7 @@ static func _has_energy_threshold(
 	if threshold <= 0:
 		return true
 	var matching := 0
-	for energy_id in pokemon.energy_card_ids:
-		for provided in catalog.provides_energy(str(energy_id)):
-			if str(provided).to_lower() == required:
-				matching += 1
-				break
+	for provided in EnergyView.units_for_cards(pokemon.energy_card_ids, catalog):
+		if str(provided).to_lower() in [required, "rainbow"]:
+			matching += 1
 	return matching >= threshold

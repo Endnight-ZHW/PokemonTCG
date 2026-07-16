@@ -85,7 +85,10 @@ func is_blockable_opponent_attack_effect(
 		bool(context.get("finish_attack", false))
 		and int(context.get("actor", -1)) == source_player_idx
 		and target_player_idx != source_player_idx
-		and not bool(context.get("ignore_defender_effects", false))
+		and not bool(context.get(
+			"ignore_defender_damage_effects",
+			context.get("ignore_defender_effects", false),
+		))
 	)
 
 

@@ -995,7 +995,7 @@ func _play_match(
 	var rule_exceptions := 0
 	var terminal_reason := ""
 	var terminal_message := ""
-	while state.winner < 0 and actions_taken < max_actions:
+	while not state.is_terminal() and actions_taken < max_actions:
 		var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
 		if pending:
 			var choice_actor := _choice_actor(state, pending)
@@ -1137,7 +1137,7 @@ func _play_match(
 			break
 
 	if terminal_reason.is_empty():
-		terminal_reason = "game_over" if state.winner >= 0 else "max_actions"
+		terminal_reason = "game_over" if state.is_terminal() else "max_actions"
 	_perf_count(performance_profile, "matches")
 	_perf_count(performance_profile, "actions", actions_taken)
 	var winner := _winner_label(state.winner, strategy_a_player)
@@ -1447,6 +1447,8 @@ func _merge_diagnostic_counts(target: Dictionary, source: Dictionary) -> void:
 
 
 func _score_state(state: GameState, strategy_a_player: int, catalog: CardCatalog) -> float:
+	if state.result_status == GameState.RESULT_DRAW:
+		return 0.0
 	var base := 0.0
 	if state.winner == strategy_a_player:
 		base = 1_000_000.0

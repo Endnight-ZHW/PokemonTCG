@@ -57,7 +57,7 @@ func poll() -> Array[Dictionary]:
 	while peer.get_available_packet_count() > 0:
 		var sender_peer := peer.get_packet_peer()
 		var bytes := peer.get_packet()
-		if bytes.size() > ProtocolV3.MAX_MESSAGE_BYTES:
+		if bytes.size() > ProtocolV4.MAX_MESSAGE_BYTES:
 			events.append({
 				"type": "transport_error",
 				"code": "message_too_large",
@@ -79,7 +79,7 @@ func send(message: Dictionary) -> bool:
 	if peer == null or not connected:
 		return false
 	var bytes := JSON.stringify(message).to_utf8_buffer()
-	if bytes.size() > ProtocolV3.MAX_MESSAGE_BYTES:
+	if bytes.size() > ProtocolV4.MAX_MESSAGE_BYTES:
 		return false
 	if server:
 		peer.set_target_peer(remote_peer_id)

@@ -107,7 +107,7 @@ func promote_from_bench(index: int) -> bool:
 func switch_active_to_bench(index: int) -> bool:
 	if active == null or index < 0 or index >= bench.size() or bench[index] == null:
 		return false
-	active.status_conditions.clear()
+	active.clear_special_conditions_and_attack_effects()
 	var previous_active := active
 	active = bench[index]
 	bench[index] = previous_active
@@ -151,6 +151,7 @@ func reset_turn_flags() -> void:
 			pokemon.placed_this_turn = false
 			pokemon.can_evolve_this_turn = true
 			pokemon.used_abilities.clear()
+			pokemon.healed_this_turn = false
 			pokemon.damage_prevented_next_turn = false
 			pokemon.all_prevented_next_turn = false
 

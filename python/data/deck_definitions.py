@@ -366,7 +366,7 @@ STEEL_DECK = [
     ("sv2-young", 3),        # 短裤小子
     ("sv1-180", 4),          # 妮莫
     ("sv1-189", 2),          # 博士的研究
-    ("svm-marnie-pride", 2), # 玛俐的骄傲
+    ("svm-marnie-pride", 2), # 玛俐的自尊
 
     # Energy (15)
     ("sv1-ener-8", 15),      # 基本钢能量

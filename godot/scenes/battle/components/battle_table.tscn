@@ -137,7 +137,7 @@ offset_right = 902.0
 offset_bottom = 32.0
 theme_override_colors/font_color = Color(0.62, 0.69, 0.79, 1)
 theme_override_font_sizes/font_size = 13
-text = "玩家 2 · 手牌 7 · 牌库 46 · 奖品 6"
+text = "玩家 2 · 手牌 7 · 牌库 46 · 奖赏卡 6"
 
 [node name="OwnInfo" type="Label" parent="BattleRoot/Body/BoardPanel/BoardCanvas"]
 unique_name_in_owner = true
@@ -147,7 +147,7 @@ offset_right = 454.0
 offset_bottom = 446.0
 theme_override_colors/font_color = Color(0.86, 0.91, 0.98, 1)
 theme_override_font_sizes/font_size = 12
-text = "玩家 1 · 手牌 7 · 牌库 46 · 奖品 6"
+text = "玩家 1 · 手牌 7 · 牌库 46 · 奖赏卡 6"
 horizontal_alignment = 1
 vertical_alignment = 1
 

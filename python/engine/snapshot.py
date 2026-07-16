@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from data.card_models import Card
 
 
-SNAPSHOT_SCHEMA_VERSION = 1
+SNAPSHOT_SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -37,6 +37,7 @@ class PlayerSnapshot:
     healed: bool = False
     vstar_used: bool = False
     was_ko_by_attack: bool = False
+    was_ko_last_turn: bool = False
 
 
 @dataclass
@@ -59,6 +60,8 @@ class PokemonSnapshot:
     dazzled: bool = False
     max_hp_modifiers: list[dict] = field(default_factory=list)
     paralyzed_since_turn: int = 0
+    healed_this_turn: bool = False
+    pending_ko_cause: str = ""
 
 
 @dataclass
@@ -71,7 +74,30 @@ class GameSnapshot:
     p1: PlayerSnapshot
     p2: PlayerSnapshot
     stadium_card_id: Optional[str] = None
+    stadium_owner_idx: int = -1
     winner: Optional[int] = None
+    result_status: str = "ONGOING"
+    result_reason: str = "NONE"
+    result_conditions: list[list[str]] = field(default_factory=lambda: [[], []])
+    rules_profile_id: str = "CN_MAINLAND_3_1_0"
+    rules_options: dict = field(default_factory=lambda: {"apply_type_matchups": False})
+    rules_options_locked: bool = False
+    setup_stage: str = "TURN_ORDER"
+    setup_actor_idx: int = -1
+    opening_coin_winner_idx: int = -1
+    mulligan_bonus_max: tuple[int, int] = (0, 0)
+    setup_initial_done: tuple[bool, bool] = (False, False)
+    setup_bonus_draw_done: tuple[bool, bool] = (False, False)
+    setup_bonus_placement_done: tuple[bool, bool] = (False, False)
+    setup_bonus_draw_count: tuple[int, int] = (0, 0)
+    setup_bonus_card_ids: tuple[list[str], list[str]] = field(default_factory=lambda: ([], []))
+    starting_prize_count: int = 6
+    turn_knockout_facts: list[dict] = field(default_factory=list)
+    turn_fact_book: dict = field(default_factory=lambda: {
+        "version": 1,
+        "current": {"turn_number": 0, "turn_player": None, "knockouts": []},
+        "previous": {"turn_number": -1, "turn_player": None, "knockouts": []},
+    })
     apply_type_matchups: bool = False
     mulligan_bonus_given: list[int] = field(default_factory=list)
     pending_promotions: list[int] = field(default_factory=list)
@@ -160,7 +186,33 @@ def snapshot_state(state: GameState) -> GameSnapshot:
         p1=_snapshot_player(state.p1),
         p2=_snapshot_player(state.p2),
         stadium_card_id=state.stadium_card.api_id if state.stadium_card else None,
+        stadium_owner_idx=int(getattr(state, "stadium_owner_idx", -1)),
         winner=state.winner,
+        result_status=str(getattr(state, "result_status", "ONGOING")),
+        result_reason=str(getattr(state, "result_reason", "NONE")),
+        result_conditions=copy.deepcopy(getattr(state, "result_conditions", [[], []])),
+        rules_profile_id=str(getattr(state, "rules_profile_id", "CN_MAINLAND_3_1_0")),
+        rules_options={
+            **copy.deepcopy(getattr(state, "rules_options", {})),
+            "apply_type_matchups": bool(getattr(state, "apply_type_matchups", False)),
+        },
+        rules_options_locked=bool(getattr(state, "rules_options_locked", False)),
+        setup_stage=str(getattr(state, "setup_stage", "TURN_ORDER")),
+        setup_actor_idx=int(getattr(state, "setup_actor_idx", -1)),
+        opening_coin_winner_idx=int(getattr(state, "opening_coin_winner_idx", -1)),
+        mulligan_bonus_max=tuple(getattr(state, "mulligan_bonus_max", (0, 0))),
+        setup_initial_done=tuple(getattr(state, "setup_initial_done", (False, False))),
+        setup_bonus_draw_done=tuple(getattr(state, "setup_bonus_draw_done", (False, False))),
+        setup_bonus_placement_done=tuple(
+            getattr(state, "setup_bonus_placement_done", (False, False))
+        ),
+        setup_bonus_draw_count=tuple(getattr(state, "setup_bonus_draw_count", (0, 0))),
+        setup_bonus_card_ids=tuple(
+            list(row) for row in getattr(state, "setup_bonus_card_ids", ([], []))
+        ),
+        starting_prize_count=int(getattr(state, "starting_prize_count", 6)),
+        turn_knockout_facts=copy.deepcopy(getattr(state, "turn_knockout_facts", [])),
+        turn_fact_book=copy.deepcopy(getattr(state, "turn_fact_book", {})),
         apply_type_matchups=getattr(state, "apply_type_matchups", False),
         mulligan_bonus_given=sorted(state._mulligan_bonus_given),
         pending_promotions=list(state.pending_promotions),
@@ -200,7 +252,26 @@ def restore_state(
     state.active_player_idx = snap.active_player_idx
     state.first_player_idx = snap.first_player_idx
     state.winner = snap.winner
+    state.result_status = snap.result_status
+    state.result_reason = snap.result_reason
+    state.result_conditions = copy.deepcopy(snap.result_conditions)
+    state.rules_profile_id = snap.rules_profile_id
+    state.rules_options = copy.deepcopy(snap.rules_options)
+    state.rules_options_locked = bool(snap.rules_options_locked)
+    state.setup_stage = snap.setup_stage
+    state.setup_actor_idx = snap.setup_actor_idx
+    state.opening_coin_winner_idx = snap.opening_coin_winner_idx
+    state.mulligan_bonus_max = tuple(snap.mulligan_bonus_max)
+    state.setup_initial_done = tuple(snap.setup_initial_done)
+    state.setup_bonus_draw_done = tuple(snap.setup_bonus_draw_done)
+    state.setup_bonus_placement_done = tuple(snap.setup_bonus_placement_done)
+    state.setup_bonus_draw_count = tuple(snap.setup_bonus_draw_count)
+    state.setup_bonus_card_ids = tuple(list(row) for row in snap.setup_bonus_card_ids)
+    state.starting_prize_count = snap.starting_prize_count
+    state.turn_knockout_facts = copy.deepcopy(snap.turn_knockout_facts)
+    state.turn_fact_book = copy.deepcopy(snap.turn_fact_book)
     state.apply_type_matchups = snap.apply_type_matchups
+    state.rules_options["apply_type_matchups"] = bool(snap.apply_type_matchups)
     state.pending_promotions = list(snap.pending_promotions)
     state.revision = getattr(snap, "revision", 0)
     state.choice_sequence = getattr(snap, "choice_sequence", 0)
@@ -233,6 +304,7 @@ def restore_state(
     _restore_player(state.p2, snap.p2)
 
     state.stadium_card = _lookup_card(snap.stadium_card_id) if snap.stadium_card_id else None
+    state.stadium_owner_idx = int(snap.stadium_owner_idx)
     if rebuild_event_bus:
         rebuild_state_event_bus(state)
 
@@ -278,7 +350,26 @@ def snapshot_to_dict(snap: GameSnapshot) -> dict:
         "p1": _player_snapshot_to_dict(snap.p1),
         "p2": _player_snapshot_to_dict(snap.p2),
         "stadium_card_id": snap.stadium_card_id,
+        "stadium_owner_idx": int(snap.stadium_owner_idx),
         "winner": snap.winner,
+        "result_status": snap.result_status,
+        "result_reason": snap.result_reason,
+        "result_conditions": copy.deepcopy(snap.result_conditions),
+        "rules_profile_id": snap.rules_profile_id,
+        "rules_options": copy.deepcopy(snap.rules_options),
+        "rules_options_locked": bool(snap.rules_options_locked),
+        "setup_stage": snap.setup_stage,
+        "setup_actor_idx": int(snap.setup_actor_idx),
+        "opening_coin_winner_idx": int(snap.opening_coin_winner_idx),
+        "mulligan_bonus_max": list(snap.mulligan_bonus_max),
+        "setup_initial_done": list(snap.setup_initial_done),
+        "setup_bonus_draw_done": list(snap.setup_bonus_draw_done),
+        "setup_bonus_placement_done": list(snap.setup_bonus_placement_done),
+        "setup_bonus_draw_count": list(snap.setup_bonus_draw_count),
+        "setup_bonus_card_ids": [list(row) for row in snap.setup_bonus_card_ids],
+        "starting_prize_count": int(snap.starting_prize_count),
+        "turn_knockout_facts": copy.deepcopy(snap.turn_knockout_facts),
+        "turn_fact_book": copy.deepcopy(snap.turn_fact_book),
         "apply_type_matchups": bool(snap.apply_type_matchups),
         "mulligan_bonus_given": list(snap.mulligan_bonus_given),
         "pending_promotions": list(snap.pending_promotions),
@@ -300,10 +391,11 @@ def snapshot_from_dict(data: dict) -> GameSnapshot:
     schema_version = data.get("schema_version", 0)
     if type(schema_version) is not int:
         raise ValueError("Snapshot schema_version is invalid")
-    # Version 0 is the pre-schema JSON shape and remains readable. Future
-    # versions require an explicit migration instead of partial interpretation.
-    if schema_version not in (0, SNAPSHOT_SCHEMA_VERSION):
-        raise ValueError(f"Unsupported snapshot schema version: {schema_version}")
+    if schema_version != SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(
+            f"incompatible_snapshot_rules: expected schema "
+            f"{SNAPSHOT_SCHEMA_VERSION}, got {schema_version}"
+        )
     return GameSnapshot(
         turn_number=int(data.get("turn_number", 0)),
         phase=str(data.get("phase", "SETUP")),
@@ -312,7 +404,34 @@ def snapshot_from_dict(data: dict) -> GameSnapshot:
         p1=_player_snapshot_from_dict(dict(data.get("p1", {}))),
         p2=_player_snapshot_from_dict(dict(data.get("p2", {}))),
         stadium_card_id=data.get("stadium_card_id"),
+        stadium_owner_idx=int(data.get("stadium_owner_idx", -1)),
         winner=data.get("winner"),
+        result_status=str(data.get("result_status", "ONGOING")),
+        result_reason=str(data.get("result_reason", "NONE")),
+        result_conditions=copy.deepcopy(data.get("result_conditions", [[], []])),
+        rules_profile_id=str(data.get("rules_profile_id", "CN_MAINLAND_3_1_0")),
+        rules_options=copy.deepcopy(data.get("rules_options", {"apply_type_matchups": False})),
+        rules_options_locked=bool(data.get("rules_options_locked", False)),
+        setup_stage=str(data.get("setup_stage", "TURN_ORDER")),
+        setup_actor_idx=int(data.get("setup_actor_idx", -1)),
+        opening_coin_winner_idx=int(data.get("opening_coin_winner_idx", -1)),
+        mulligan_bonus_max=tuple(data.get("mulligan_bonus_max", [0, 0])),
+        setup_initial_done=tuple(data.get("setup_initial_done", [False, False])),
+        setup_bonus_draw_done=tuple(data.get("setup_bonus_draw_done", [False, False])),
+        setup_bonus_placement_done=tuple(
+            data.get("setup_bonus_placement_done", [False, False])
+        ),
+        setup_bonus_draw_count=tuple(data.get("setup_bonus_draw_count", [0, 0])),
+        setup_bonus_card_ids=tuple(
+            list(row) for row in data.get("setup_bonus_card_ids", [[], []])
+        ),
+        starting_prize_count=int(data.get("starting_prize_count", 6)),
+        turn_knockout_facts=copy.deepcopy(data.get("turn_knockout_facts", [])),
+        turn_fact_book=copy.deepcopy(data.get("turn_fact_book", {
+            "version": 1,
+            "current": {"turn_number": 0, "turn_player": None, "knockouts": []},
+            "previous": {"turn_number": -1, "turn_player": None, "knockouts": []},
+        })),
         apply_type_matchups=bool(data.get("apply_type_matchups", False)),
         mulligan_bonus_given=list(data.get("mulligan_bonus_given", [])),
         pending_promotions=list(data.get("pending_promotions", [])),
@@ -392,6 +511,7 @@ def _player_snapshot_to_dict(snap: PlayerSnapshot) -> dict:
         "healed": bool(snap.healed),
         "vstar_used": bool(snap.vstar_used),
         "was_ko_by_attack": bool(snap.was_ko_by_attack),
+        "was_ko_last_turn": bool(snap.was_ko_last_turn),
     }
 
 
@@ -422,6 +542,7 @@ def _player_snapshot_from_dict(data: dict) -> PlayerSnapshot:
         healed=bool(data.get("healed", False)),
         vstar_used=bool(data.get("vstar_used", False)),
         was_ko_by_attack=bool(data.get("was_ko_by_attack", False)),
+        was_ko_last_turn=bool(data.get("was_ko_last_turn", False)),
     )
 
 
@@ -446,6 +567,8 @@ def _pokemon_snapshot_to_dict(snap: PokemonSnapshot | None) -> dict | None:
         "dazzled": bool(snap.dazzled),
         "max_hp_modifiers": copy.deepcopy(snap.max_hp_modifiers),
         "paralyzed_since_turn": int(snap.paralyzed_since_turn),
+        "healed_this_turn": bool(snap.healed_this_turn),
+        "pending_ko_cause": str(snap.pending_ko_cause),
     }
 
 
@@ -468,6 +591,8 @@ def _pokemon_snapshot_from_dict(data: dict) -> PokemonSnapshot:
         dazzled=bool(data.get("dazzled", False)),
         max_hp_modifiers=copy.deepcopy(data.get("max_hp_modifiers", [])),
         paralyzed_since_turn=int(data.get("paralyzed_since_turn", 0)),
+        healed_this_turn=bool(data.get("healed_this_turn", False)),
+        pending_ko_cause=str(data.get("pending_ko_cause", "")),
     )
 
 
@@ -503,6 +628,7 @@ def _snapshot_player(player: PlayerState) -> PlayerSnapshot:
         healed=player.healed_this_turn,
         vstar_used=player.vstar_power_used,
         was_ko_by_attack=player.was_ko_by_attack,
+        was_ko_last_turn=player.was_ko_last_turn,
     )
 
 
@@ -522,6 +648,7 @@ def _restore_player(player: PlayerState, snap: PlayerSnapshot):
     player.healed_this_turn = snap.healed
     player.vstar_power_used = snap.vstar_used
     player.was_ko_by_attack = snap.was_ko_by_attack
+    player.was_ko_last_turn = snap.was_ko_last_turn
 
 
 def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
@@ -543,6 +670,8 @@ def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
         dazzled=p.dazzled,
         max_hp_modifiers=copy.deepcopy(getattr(p, "max_hp_modifiers", [])),
         paralyzed_since_turn=p.paralyzed_since_turn,
+        healed_this_turn=p.healed_this_turn,
+        pending_ko_cause=p.pending_ko_cause,
     )
 
 
@@ -567,6 +696,8 @@ def _restore_pokemon(snap: PokemonSnapshot) -> PokemonInPlay:
     pokemon.dazzled = snap.dazzled
     pokemon.max_hp_modifiers = copy.deepcopy(snap.max_hp_modifiers)
     pokemon.paralyzed_since_turn = snap.paralyzed_since_turn
+    pokemon.healed_this_turn = snap.healed_this_turn
+    pokemon.pending_ko_cause = snap.pending_ko_cause
     return pokemon
 
 

@@ -117,8 +117,9 @@ def resolve_hand_to_bottom_then_draw(
         choice,
         len(list(choice or [])),
     )
-    for card in selected:
-        player.deck.insert(0, card)
+    # Deck index 0 is the bottom. Preserve the order explicitly selected by
+    # the player instead of reversing it through repeated insert(0, ...).
+    player.deck[0:0] = selected
     stack.state._log(f"{player.name}将{len(selected)}张手牌放回牌库底。")
     drawn = player.draw_cards(len(selected))
     stack.state._log(f"{player.name}抽取了{len(drawn)}张卡。")

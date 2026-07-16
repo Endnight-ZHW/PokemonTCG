@@ -108,8 +108,18 @@ def resolve_switch_bench(stack, continuation: dict, choice):
         return ActionResult(False, "选择的备战宝可梦已不存在。")
 
     active_name = player.active.card.name
+    active_card_id = str(getattr(player.active.card, "api_id", "") or "")
     bench_name = player.bench[bench_idx].card.name
     player.switch_active_to_bench(bench_idx)
+    from engine.commands.trigger_commands import retarget_pending_after_damage_entity
+
+    retarget_pending_after_damage_entity(
+        stack,
+        target_player_idx,
+        "active",
+        f"bench_{bench_idx}",
+        active_card_id,
+    )
     stack.state._log(f"将{active_name}与{bench_name}互换了。")
     return ActionResult(True, "替换了战斗宝可梦。")
 
@@ -120,13 +130,13 @@ def resolve_bench_damage_targets(
     choice,
 ):
     from engine.game_state import ActionResult
-    from engine.rules_constants import DAMAGE_PER_COUNTER
+    from engine.commands.base import CommandResult
+    from engine.commands.attack_frames import apply_attack_damage
 
     target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
     target_state = stack.state.get_player(target_player_idx)
     amount = int(continuation.get("amount", 0) or 0)
     count = int(continuation.get("count", 1) or 1)
-    counters = amount // DAMAGE_PER_COUNTER
     allowed = {
         int(index)
         for index in continuation.get("bench_indices", []) or []
@@ -144,11 +154,20 @@ def resolve_bench_damage_targets(
             continue
         if 0 <= index < len(target_state.bench) and target_state.bench[index]:
             target = target_state.bench[index]
-            from engine.commands.primitives_combat import _consume_effect_damage_prevention
-
-            if _consume_effect_damage_prevention(stack.state, target, stack=stack):
+            attacker = stack.state.get_player(1 - target_player_idx).active
+            if attacker is None:
                 continue
-            target.damage_counters += counters
+            packet_result = CommandResult.ok()
+            apply_attack_damage(
+                stack.state,
+                target,
+                attacker,
+                amount,
+                attacker.card.energy_types[0] if attacker.card.energy_types else "Colorless",
+                packet_result,
+                ignore_weakness=True,
+                ignore_resistance=True,
+            )
             hits += 1
     stack.state._log(
         f"对{target_state.name}的备战区造成了{hits}次{amount}点伤害。"
@@ -162,8 +181,8 @@ def resolve_choose_damage_target(
     choice,
 ):
     from engine.game_state import ActionResult
-    from engine.rules_constants import DAMAGE_PER_COUNTER
-    from engine.commands.primitives_combat import _consume_effect_damage_prevention
+    from engine.commands.base import CommandResult
+    from engine.commands.attack_frames import apply_attack_damage
 
     target_player_idx = int(continuation.get("target_player_idx", 0) or 0)
     _slot_name, target_poke = resolve_board_choice(
@@ -173,13 +192,28 @@ def resolve_choose_damage_target(
     )
     if target_poke is None:
         return ActionResult(True, "")
-    if _consume_effect_damage_prevention(stack.state, target_poke, stack=stack):
+    attacker = stack.state.get_player(1 - target_player_idx).active
+    if attacker is None:
         return ActionResult(True, "")
 
     amount = int(continuation.get("amount", 0) or 0)
-    target_poke.damage_counters += amount // DAMAGE_PER_COUNTER
-    stack.state._log(f"对{target_poke.card.name}造成了{amount}点伤害。")
-    return ActionResult(True, "")
+    slot_name = next(
+        (slot for slot, pokemon in stack.state.get_player(target_player_idx).get_all_pokemon()
+         if pokemon is target_poke),
+        "",
+    )
+    packet_result = CommandResult.ok()
+    apply_attack_damage(
+        stack.state,
+        target_poke,
+        attacker,
+        amount,
+        attacker.card.energy_types[0] if attacker.card.energy_types else "Colorless",
+        packet_result,
+        ignore_weakness=slot_name.startswith("bench_"),
+        ignore_resistance=slot_name.startswith("bench_"),
+    )
+    return ActionResult(True, "", damage_dealt=packet_result.damage_dealt)
 
 
 def resolve_evolve_skip_stage(stack, continuation: dict, choice):
@@ -279,7 +313,10 @@ def resolve_place_counters_then_self_ko(
         return ActionResult(True, "神秘彗星没有选择目标。")
 
     counters = int(continuation.get("counters", 0) or 0)
+    before_hp = target_poke.current_hp
     target_poke.damage_counters += counters
+    if before_hp > 0 and target_poke.current_hp <= 0:
+        target_poke.pending_ko_cause = "damage_counters"
     stack.state._log(f"在{target_poke.card.name}身上放置了{counters}个伤害指示物。")
     source = _discard_pokemon_for_effect(
         stack.state,
@@ -314,7 +351,10 @@ def resolve_choose_heal_damage(
 
     amount = int(continuation.get("amount", 0) or 0)
     counters = amount // DAMAGE_PER_COUNTER
+    before = target_poke.damage_counters
     target_poke.damage_counters = max(0, target_poke.damage_counters - counters)
-    stack.state.get_player(target_player_idx).healed_this_turn = True
+    if target_poke.damage_counters < before:
+        target_poke.healed_this_turn = True
+        stack.state.get_player(target_player_idx).healed_this_turn = True
     stack.state._log(f"{target_poke.card.name}回复了{amount}点HP。")
     return ActionResult(True, f"{target_poke.card.name}回复了{amount}点HP。")

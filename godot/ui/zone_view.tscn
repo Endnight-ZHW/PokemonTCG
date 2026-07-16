@@ -42,7 +42,7 @@ corner_radius_bottom_left = 4
 custom_minimum_size = Vector2(82, 116)
 layout_mode = 3
 mouse_filter = 0
-editor_description = "牌库、弃牌区、奖品区或竞技场的统一组件。标题、计数徽章和动作按钮均可在场景中直接调整。"
+editor_description = "牌库、弃牌区、奖赏卡区或竞技场的统一组件。标题、计数徽章和动作按钮均可在场景中直接调整。"
 script = ExtResource("1_zone")
 
 [node name="Frame" type="Panel" parent="."]

@@ -173,7 +173,7 @@ def effects_have_legal_target(
             "prevent_all",
             "prevent_damage",
             "prevent_effects",
-            "piercing_marker",
+            "attack_flags",
             "tool",
             "tool_exp_share",
             "aura_damage_reduction",
@@ -292,7 +292,8 @@ def effects_have_legal_target(
             saw_checked_effect = True
             source = player.get_pokemon(source_slot or "active")
             amount = int(params.get("amount", 0) or 0)
-            if source is not None and source.current_hp > amount:
+            # Self-KO is permitted unless the card text explicitly forbids it.
+            if source is not None:
                 return True
         elif etype == "evolve_skip_stage":
             saw_checked_effect = True
@@ -606,7 +607,18 @@ def _conditional_has_target(
 ) -> bool:
     player = state.get_player(player_idx)
     condition = str(params.get("condition", "") or "")
-    if condition == "ko_by_attack_last_turn" and not player.was_ko_by_attack:
+    if (
+        condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}
+        and not state.had_knockout_last_opponent_turn(
+            player_idx,
+            causes={"attack_damage"},
+        )
+    ):
+        return False
+    if (
+        condition == "ko_last_opponent_turn"
+        and not state.had_knockout_last_opponent_turn(player_idx)
+    ):
         return False
     cost = params.get("cost")
     if cost and not _cost_is_payable(state, player_idx, cost, exclude_hand_index):

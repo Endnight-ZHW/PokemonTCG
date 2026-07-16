@@ -15,6 +15,7 @@ const PRE_HIT_ATTACK_OPS: Array[String] = [
 	"choose_damage_target",
 	"conditional_damage",
 	"conditional_damage_then_heal",
+	"deal_bench_damage",
 	"deal_damage_per_discard_psychic",
 	"deal_damage_per_energy",
 	"deal_damage_per_evolved",
@@ -167,43 +168,67 @@ func complete_attack_context(
 	var stage := str(finalize_frame.get("stage", "primary_hit"))
 	if stage == "settle_knockouts":
 		return settle_attack_knockouts_and_turn(state, stack, actor, rng)
+	if stage == "after_damage_triggers":
+		var trigger_specs: Array = stack.context.get("pending_after_damage_triggers", [])
+		stack.context.erase("pending_after_damage_triggers")
+		stack.push_finalize_attack(actor, "settle_knockouts")
+		stack.push_effects(trigger_specs, actor, "active")
+		var trigger_step := effect_engine.resolve(state, stack, rng)
+		if not trigger_step.success or trigger_step.pending_choice != null:
+			return trigger_step
+		if stack.has_finalize_attack_frame():
+			return _merge_steps(
+				trigger_step,
+				complete_attack_context(state, stack, rng),
+			)
+		return trigger_step
 
 	var events: Array[Dictionary] = []
 	if not bool(stack.context.get("attack_failed", false)):
 		var trigger_commands_to_resolve: Array[Dictionary] = []
-		apply_attack_damage(
-			state,
-			actor,
-			int(stack.context.get("base_damage", 0)),
-			str(stack.context.get("attacking_type", "Colorless")),
-			bool(stack.context.get("piercing", false)),
-			bool(stack.context.get("ignore_defender_effects", false)),
-			events,
-			trigger_commands_to_resolve,
-			str(stack.context.get("attacker_card_id", "")),
-			Dictionary(stack.context.get("attacker_snapshot", {})),
-		)
-		var trigger_result := trigger_command_runner.resolve_commands(
-			state,
-			actor,
-			trigger_commands_to_resolve,
-			events,
-			stack,
-		)
-		if not bool(trigger_result.get("success", false)):
+		var computed_packets: Array[Dictionary] = []
+		for packet in _merged_damage_packets(stack.context, actor):
+			var computed := compute_attack_damage_packet(
+				state,
+				actor,
+				int(packet.get("amount", 0)),
+				str(stack.context.get("attacking_type", "Colorless")),
+				bool(stack.context.get(
+					"ignore_defender_damage_effects",
+					stack.context.get("ignore_defender_effects", false),
+				)),
+				str(stack.context.get("attacker_card_id", "")),
+				Dictionary(stack.context.get("attacker_snapshot", {})),
+				bool(stack.context.get("ignore_weakness", false)),
+				bool(stack.context.get("ignore_resistance", false)),
+				int(packet.get("target_player", 1 - actor)),
+				str(packet.get("target_slot", "active")),
+			)
+			if not computed.is_empty():
+				computed_packets.append(computed)
+		# Every packet is fully calculated against the same pre-damage board.
+		# Only after that calculation barrier may counters be committed.
+		for computed in computed_packets:
+			commit_attack_damage_packet(
+				state, computed, events, trigger_commands_to_resolve, stack)
+		var normalized_triggers := trigger_command_runner.command_specs_from_payloads(
+			trigger_commands_to_resolve)
+		if not bool(normalized_triggers.get("success", false)):
 			return StepResult.new(
 				false,
-				str(trigger_result.get("message", "触发命令结算失败。")),
+				str(normalized_triggers.get("message", "触发命令无效。")),
 				null,
 				events,
 				state.winner,
 				false,
-				str(trigger_result.get("error_code", "trigger_command_failed")),
+				str(normalized_triggers.get("error_code", "invalid_trigger_payload")),
 			)
+		stack.context["pending_after_damage_triggers"] = (
+			normalized_triggers.get("commands", []))
 
 	# Conditional coin branches are selected while resolving the pre-hit frame.
 	# Their ordinary consequences join the authored post-hit effects and are run
-	# only now, after damage and reactive on-damage triggers.
+	# only now, after the simultaneous damage batch but before reactive triggers.
 	var post_hit_effects: Array = []
 	post_hit_effects.append_array(stack.context.get("conditional_post_hit_effects", []))
 	post_hit_effects.append_array(stack.context.get("post_hit_effects", []))
@@ -211,9 +236,9 @@ func complete_attack_context(
 	stack.context.erase("post_hit_effects")
 	if bool(stack.context.get("attack_failed", false)):
 		post_hit_effects.clear()
-	stack.push_finalize_attack(actor, "settle_knockouts")
+	stack.push_finalize_attack(actor, "after_damage_triggers")
 	stack.push_effects(post_hit_effects, actor, "active")
-	var hit_step := StepResult.new(true, "", null, events, state.winner, state.winner >= 0)
+	var hit_step := StepResult.new(true, "", null, events, state.winner, state.is_terminal())
 	var post_hit_step := effect_engine.resolve(state, stack, rng)
 	if not post_hit_step.success or post_hit_step.pending_choice != null:
 		return _merge_steps(hit_step, post_hit_step)
@@ -243,9 +268,28 @@ func settle_attack_knockouts_and_turn(
 			false,
 			str(ko_result.get("error_code", "trigger_command_failed")),
 		)
-	var damage_step := StepResult.new(true, "", null, events, state.winner, state.winner >= 0)
+	var prize_request: Variant = ko_result.get("pending_choice", null)
+	if prize_request is ChoiceRequest:
+		stack.context["finish_attack_after_prizes"] = true
+		stack.context["actor"] = actor
+		state.resolution_stack = stack.to_dict()
+		return StepResult.new(
+			true, "请选择奖赏卡。", prize_request, events, state.winner, false)
+	return finish_attack_after_prizes(state, stack, actor, rng, events)
+
+
+func finish_attack_after_prizes(
+	state: GameState,
+	stack: ResolutionStack,
+	actor: int,
+	rng: PortableRandomSource,
+	events: Array[Dictionary] = [],
+) -> StepResult:
+	var damage_step := StepResult.new(
+		true, "", null, events, state.winner, state.is_terminal())
 	knockout_settlement.resolve_empty_boards_and_promotions(state)
-	if state.winner >= 0:
+	if state.is_terminal():
+		knockout_settlement.append_game_over_event(damage_step.events, state)
 		state.resolution_stack = ResolutionStack.new().to_dict()
 		damage_step.winner = state.winner
 		damage_step.terminal = true
@@ -288,80 +332,217 @@ func apply_attack_damage(
 	actor: int,
 	base_damage: int,
 	attacking_type: String,
-	piercing: bool,
-	ignore_defender_effects: bool,
+	ignore_defender_damage_effects: bool,
 	events: Array[Dictionary],
 	trigger_commands: Array[Dictionary] = [],
 	attacker_card_id: String = "",
 	attacker_snapshot: Dictionary = {},
+	ignore_weakness: bool = false,
+	ignore_resistance: bool = false,
+	target_player_idx: int = -1,
+	target_slot: String = "active",
 ) -> void:
+	var packet := compute_attack_damage_packet(
+		state,
+		actor,
+		base_damage,
+		attacking_type,
+		ignore_defender_damage_effects,
+		attacker_card_id,
+		attacker_snapshot,
+		ignore_weakness,
+		ignore_resistance,
+		target_player_idx,
+		target_slot,
+	)
+	if not packet.is_empty():
+		commit_attack_damage_packet(state, packet, events, trigger_commands)
+
+
+func compute_attack_damage_packet(
+	state: GameState,
+	actor: int,
+	base_damage: int,
+	attacking_type: String,
+	ignore_defender_damage_effects: bool,
+	attacker_card_id: String = "",
+	attacker_snapshot: Dictionary = {},
+	ignore_weakness: bool = false,
+	ignore_resistance: bool = false,
+	target_player_idx: int = -1,
+	target_slot: String = "active",
+) -> Dictionary:
 	var attacker: PokemonState = null
 	if not attacker_snapshot.is_empty():
 		attacker = PokemonState.from_dict(attacker_snapshot)
 	else:
 		attacker = state.get_player(actor).active
-	var defender := state.get_player(1 - actor).active
+	if target_player_idx not in [0, 1]:
+		target_player_idx = 1 - actor
+	var defender := state.get_player(target_player_idx).get_pokemon(target_slot)
 	if attacker == null and not attacker_card_id.is_empty():
 		attacker = PokemonState.new(attacker_card_id)
 	if attacker == null or defender == null or base_damage <= 0:
-		return
-	if defender.damage_prevented_next_turn and not ignore_defender_effects:
-		events.append({
-			"event_type": "damage_prevented",
-			"actor": actor,
-			"source": {"player": actor, "slot": "active"},
-			"target": {"player": 1 - actor, "slot": "active"},
-			"data": {"player": 1 - actor, "slot": "active"},
-		})
-		return
+		return {}
 	var damage := base_damage
-	if state.apply_type_matchups and not piercing:
-		var defending_card := catalog.get_card(defender.card_id)
-		for weakness_value in defending_card.get("weaknesses", []):
-			var weakness: Dictionary = weakness_value
-			if str(weakness.get("energy_type", "")) == attacking_type:
-				var value := str(weakness.get("value", ""))
-				if value in ["×2", "x2"]:
-					damage *= 2
-				break
-		for resistance_value in defending_card.get("resistances", []):
-			var resistance: Dictionary = resistance_value
-			if str(resistance.get("energy_type", "")) == attacking_type:
-				damage -= abs(int(str(resistance.get("value", "0")).replace("-", "")))
-				break
 	var damage_context := {
 		"actor": actor,
 		"attacker": attacker,
 		"defender": defender,
+		"defender_player": target_player_idx,
+		"defender_slot": target_slot,
 		"damage": damage,
 		"attacking_type": attacking_type,
-		"piercing": piercing,
-		"ignore_defender_effects": ignore_defender_effects,
+		"ignore_weakness": ignore_weakness,
+		"ignore_resistance": ignore_resistance,
+		"ignore_defender_damage_effects": ignore_defender_damage_effects,
+		"modifier_phase": "attacker",
 	}
+	# Official damage order starts with effects on the attacking Pokemon.
+	damage = VMDamageModifierHooks.apply_modify_damage(state, catalog, damage_context)
+	ignore_weakness = ignore_weakness or target_slot != "active"
+	ignore_resistance = ignore_resistance or target_slot != "active"
+	if state.type_matchups_enabled():
+		var defending_card := catalog.get_card(defender.card_id)
+		if not ignore_weakness:
+			for weakness_value in defending_card.get("weaknesses", []):
+				var weakness: Dictionary = weakness_value
+				if str(weakness.get("energy_type", "")) == attacking_type:
+					var value := str(weakness.get("value", ""))
+					if value in ["×2", "x2"]:
+						damage *= 2
+					break
+		if not ignore_resistance:
+			for resistance_value in defending_card.get("resistances", []):
+				var resistance: Dictionary = resistance_value
+				if str(resistance.get("energy_type", "")) == attacking_type:
+					damage -= abs(int(str(resistance.get("value", "0")).replace("-", "")))
+					break
+	# Effects on the defending Pokemon are applied only after Weakness and
+	# Resistance. This matters for cards such as Double Turbo Energy.
+	damage_context["damage"] = damage
+	damage_context["modifier_phase"] = "defender"
 	damage = VMDamageModifierHooks.apply_modify_damage(state, catalog, damage_context)
 	damage_context["damage"] = damage
+	if defender.damage_prevented_next_turn and not ignore_defender_damage_effects:
+		return {
+			"actor": actor,
+			"target_player": target_player_idx,
+			"target_slot": target_slot,
+			"target_card_id": defender.card_id,
+			"prevented": true,
+			"applied_counters": 0,
+			"applied_amount": 0,
+			"after_damage_commands": [],
+		}
 	var applied_counters := int(float(damage) / 10.0)
 	var applied_amount := applied_counters * 10
-	defender.damage_counters += applied_counters
+	damage_context["damage"] = applied_amount
+	var after_damage_commands: Array[Dictionary] = []
 	if applied_amount > 0:
+		trigger_command_runner.collect_after_damage_commands(
+			state,
+			damage_context,
+			after_damage_commands,
+		)
+	return {
+		"actor": actor,
+		"target_player": target_player_idx,
+		"target_slot": target_slot,
+		"target_card_id": defender.card_id,
+		"prevented": false,
+		"applied_counters": applied_counters,
+		"applied_amount": applied_amount,
+		"after_damage_commands": after_damage_commands,
+	}
+
+
+func commit_attack_damage_packet(
+	state: GameState,
+	packet: Dictionary,
+	events: Array[Dictionary],
+	trigger_commands: Array[Dictionary] = [],
+	stack: ResolutionStack = null,
+) -> void:
+	var actor := int(packet.get("actor", -1))
+	var target_player_idx := int(packet.get("target_player", -1))
+	var target_slot := str(packet.get("target_slot", ""))
+	if target_player_idx not in [0, 1]:
+		return
+	var defender := state.get_player(target_player_idx).get_pokemon(target_slot)
+	if defender == null or defender.card_id != str(packet.get("target_card_id", "")):
+		return
+	if bool(packet.get("prevented", false)):
+		events.append({
+			"event_type": "damage_prevented",
+			"actor": actor,
+			"source": {"player": actor, "slot": "active"},
+			"target": {"player": target_player_idx, "slot": target_slot},
+			"data": {"player": target_player_idx, "slot": target_slot},
+		})
+		return
+	var applied_counters := int(packet.get("applied_counters", 0))
+	var applied_amount := int(packet.get("applied_amount", 0))
+	if applied_counters > 0:
+		defender.damage_counters += applied_counters
+		if stack != null:
+			var causes: Dictionary = stack.context.get("knockout_causes", {})
+			causes["%d:%s" % [target_player_idx, target_slot]] = {
+				"source_kind": "attack_damage",
+				"cause_kind": "damage",
+				"source_player": actor,
+			}
+			stack.context["knockout_causes"] = causes
 		events.append({
 			"event_type": "damage_dealt",
 			"actor": actor,
 			"source": {"player": actor, "slot": "active"},
-			"target": {"player": 1 - actor, "slot": "active"},
+			"target": {"player": target_player_idx, "slot": target_slot},
 			"amount": applied_amount,
 			"data": {
-				"player": 1 - actor,
-				"slot": "active",
+				"player": target_player_idx,
+				"slot": target_slot,
 				"amount": applied_amount,
 				"cause": "attack",
 			},
 		})
-	trigger_command_runner.collect_after_damage_commands(
-		state,
-		damage_context,
-		trigger_commands,
+	for command_value in packet.get("after_damage_commands", []):
+		trigger_commands.append(Dictionary(command_value).duplicate(true))
+
+
+func _merged_damage_packets(context: Dictionary, actor: int) -> Array[Dictionary]:
+	var by_target: Dictionary = {}
+	var base_damage := int(context.get("base_damage", 0))
+	if base_damage > 0:
+		by_target["%d:active" % (1 - actor)] = {
+			"target_player": 1 - actor,
+			"target_slot": "active",
+			"amount": base_damage,
+		}
+	for packet_value in context.get("damage_packets", []):
+		var packet: Dictionary = packet_value
+		var target_player := int(packet.get("target_player", 1 - actor))
+		var target_slot := str(packet.get("target_slot", "active"))
+		var key := "%d:%s" % [target_player, target_slot]
+		if not by_target.has(key):
+			by_target[key] = {
+				"target_player": target_player,
+				"target_slot": target_slot,
+				"amount": 0,
+			}
+		by_target[key]["amount"] = (
+			int(by_target[key]["amount"]) + int(packet.get("amount", 0)))
+	var result: Array[Dictionary] = []
+	for packet in by_target.values():
+		result.append(Dictionary(packet).duplicate(true))
+	result.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_player := int(left.get("target_player", -1))
+		var right_player := int(right.get("target_player", -1))
+		if left_player != right_player:
+			return left_player < right_player
+		return str(left.get("target_slot", "")) < str(right.get("target_slot", ""))
 	)
+	return result
 
 
 func partition_attack_effects(effects: Array) -> Dictionary:
@@ -423,8 +604,9 @@ func _complete_failed_attack_gate(
 	rng: PortableRandomSource,
 	message: String,
 ) -> StepResult:
+	var stack := ResolutionStack.new()
 	var ko_result := knockout_settlement.resolve_knockouts(
-		state, actor, events, false)
+		state, actor, events, false, stack)
 	if not bool(ko_result.get("success", false)):
 		return StepResult.new(
 			false,
@@ -435,24 +617,20 @@ func _complete_failed_attack_gate(
 			false,
 			str(ko_result.get("error_code", "trigger_command_failed")),
 		)
-	knockout_settlement.resolve_empty_boards_and_promotions(state)
-	var failed_step := StepResult.new(
-		true, message, null, events, state.winner, state.winner >= 0)
-	if state.winner >= 0:
-		return failed_step
-	if not state.pending_promotions.is_empty():
-		var promotion_stack := ResolutionStack.new()
-		promotion_stack.context = {
-			"finish_attack_after_promotions": true,
-			"actor": actor,
-		}
-		promotion_stack.push_finalize_attack_turn(actor)
-		state.resolution_stack = promotion_stack.to_dict()
-		return failed_step
-	var failed_stack := ResolutionStack.new()
-	failed_stack.push_finalize_attack_turn(actor)
+	var prize_request: Variant = ko_result.get("pending_choice", null)
+	if prize_request is ChoiceRequest:
+		# A failed attack is still an attack lifecycle.  Confusion recoil may knock
+		# out its user, but the opponent must choose each face-down Prize instead of
+		# the engine silently taking position zero.  These scalar flags survive a
+		# snapshot and let GameEngine resume the ordinary attack finalizer.
+		stack.context["finish_attack_after_prizes"] = true
+		stack.context["actor"] = actor
+		state.resolution_stack = stack.to_dict()
+		return StepResult.new(
+			true, message, prize_request, events, state.winner, false)
+	var failed_step := StepResult.new(true, message)
 	return _merge_steps(
-		failed_step, resolve_attack_turn_frame(state, failed_stack, rng))
+		failed_step, finish_attack_after_prizes(state, stack, actor, rng, events))
 
 
 func run_attack_effects(
@@ -499,6 +677,8 @@ func merge_attack_presentation(
 			declarations.append(event)
 		elif presentation_phase == "pre_hit" or event_type == "coin_flip":
 			pre_hit_events.append(event)
+		elif presentation_phase == "after_damage_trigger":
+			post_hit_events.append(event)
 		elif event_type in [
 			"confusion_failed",
 			"dazzled_failed",

@@ -17,11 +17,14 @@ func conditional_effect(
 	source_slot: String,
 	params: Dictionary,
 ) -> Dictionary:
-	var player := state.get_player(player_idx)
-	if params.get("condition", "") == "ko_by_attack_last_turn":
-		if not player.was_ko_by_attack:
+	var condition := str(params.get("condition", ""))
+	if condition in [
+		"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"]:
+		if not state.had_attack_knockout_last_turn(player_idx):
 			return VMResult.fail("条件未满足。")
-		player.was_ko_by_attack = false
+	elif condition == "ko_last_opponent_turn":
+		if not state.had_knockout_last_turn(player_idx):
+			return VMResult.fail("条件未满足。")
 	var on_pay: Variant = params.get("on_pay")
 	if on_pay is Dictionary:
 		stack.push_effect(on_pay, player_idx, source_slot)
@@ -49,9 +52,10 @@ func conditional_damage_bonus(
 	match condition:
 		"opponent_active_damaged":
 			applies = opponent.active != null and opponent.active.damage_counters > 0
-		"ko_by_attack_last_turn":
-			applies = player.was_ko_by_attack
-			player.was_ko_by_attack = false
+		"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn":
+			applies = state.had_attack_knockout_last_turn(player_idx)
+		"ko_last_opponent_turn":
+			applies = state.had_knockout_last_turn(player_idx)
 		"opponent_active_evolved":
 			applies = opponent.active != null and not catalog.is_basic_pokemon(opponent.active.card_id)
 		"field_energy_ge_5":

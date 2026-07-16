@@ -1,7 +1,7 @@
 class_name VMContract
 extends RefCounted
 
-const IR_VERSION := 1
+const IR_VERSION := 2
 const COMMAND_KEYS := ["op", "args", "branches"]
 const SUPPORTED_EFFECT_TYPES: Array[String] = [
 	"ability_discard_revive",
@@ -10,6 +10,7 @@ const SUPPORTED_EFFECT_TYPES: Array[String] = [
 	"apply_outgoing_damage_reduction",
 	"attach_from_discard",
 	"attack_fail",
+	"attack_flags",
 	"attack_damage_formula",
 	"attack_lock_basic",
 	"aura_damage_reduction",
@@ -62,7 +63,6 @@ const SUPPORTED_EFFECT_TYPES: Array[String] = [
 	"look_top_deck",
 	"look_top_attach_energy",
 	"mill_and_damage_per_energy",
-	"piercing_marker",
 	"place_counters_and_self_ko",
 	"potion_heal",
 	"prevent_all",

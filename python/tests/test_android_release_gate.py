@@ -57,9 +57,41 @@ class AndroidReleaseGateTests(unittest.TestCase):
         self.assertIn("ro.product.cpu.abi", source)
         self.assertIn("ro.dalvik.vm.native.bridge", source)
         self.assertIn("ANDROID_SMOKE_PAYLOAD_MATCH", source)
-        self.assertIn("ANDROID_RELEASE_MODELS_OK", source)
-        self.assertIn("finite=1", source)
+        self.assertIn("ANDROID_RELEASE_AI_OK", source)
+        self.assertIn("compatible_models=$ExpectedModels", source)
+        self.assertIn("onnx_assets=0", source)
+        self.assertIn("Assert-ReleaseDeepFallbackContract", source)
+        self.assertIn("ExpectedModels does not match release_manifest", source)
+        self.assertNotIn("ExpectedModels must be positive", source)
         self.assertNotIn("--esa command_line_params", source)
+
+    def test_disabled_deep_release_excludes_onnx_from_every_export(self):
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.optionxform = str
+        parser.read(REPO_ROOT / "godot" / "export_presets.cfg", encoding="utf-8")
+        presets = [
+            section
+            for section in parser.sections()
+            if section.startswith("preset.") and not section.endswith(".options")
+        ]
+        self.assertGreaterEqual(len(presets), 3)
+        for preset in presets:
+            with self.subTest(preset=parser.get(preset, "name")):
+                self.assertNotIn(
+                    "data/ai_models/*.onnx",
+                    parser.get(preset, "include_filter").strip('"'),
+                )
+                self.assertIn(
+                    "data/ai_models/*.onnx",
+                    parser.get(preset, "exclude_filter").strip('"'),
+                )
+
+        smoke_runner = (
+            REPO_ROOT / "godot" / "scenes" / "main" / "export_smoke_runner.gd"
+        ).read_text(encoding="utf-8")
+        self.assertIn("_legacy_onnx_assets_absent", smoke_runner)
+        self.assertIn("onnx_assets=0", smoke_runner)
+        self.assertIn('FileAccess.file_exists("res://data/ai_models/%s.onnx"', smoke_runner)
 
     def test_build_and_release_paths_include_the_smoke_artifact(self):
         build = (REPO_ROOT / "tools" / "build_godot.ps1").read_text(
@@ -81,6 +113,10 @@ class AndroidReleaseGateTests(unittest.TestCase):
         self.assertIn("$expectedManifestFiles", release_test)
         self.assertIn("Sort-Object -Unique", release_test)
         self.assertIn("Checksum manifest file set is missing", release_test)
+        self.assertIn("'.onnx'", release_test)
+        self.assertIn("deep_runtime_enabled", package)
+        self.assertIn("deep_fallback", package)
+        self.assertIn("Windows release staging contains legacy ONNX", package)
 
     def test_nightly_ci_builds_then_verifies_the_release_pair(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "verify.yml").read_text(

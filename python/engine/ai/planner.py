@@ -20,6 +20,13 @@ NEURAL_PRIOR_MIN_TOP_PROB = 0.45
 HEURISTIC_PRIOR_CLEAR_GAP = 0.12
 
 
+def terminal_outcome_value(state, perspective: int) -> float:
+    """Return a zero-sum terminal value without inventing a draw winner."""
+    if getattr(state, "result_status", "") == "DRAW":
+        return 0.0
+    return 1.0 if state.winner == perspective else -1.0
+
+
 class PolicyBackend(Protocol):
     def priors(self, state, actor: int, actions: list[GameAction]) -> list[float]: ...
     def value(self, state, perspective: int) -> float: ...
@@ -280,7 +287,7 @@ class AnytimePlanner:
         if not step.success:
             return -1.0
         if step.terminal:
-            return 1.0 if state.winner == perspective else -1.0
+            return terminal_outcome_value(state, perspective)
 
         depth = 1
         opponent_started = state.active_player_idx != perspective
@@ -317,7 +324,7 @@ class AnytimePlanner:
             if not step.success:
                 break
             if step.terminal:
-                return 1.0 if state.winner == perspective else -1.0
+                return terminal_outcome_value(state, perspective)
             depth += 1
             if opponent_started and opponent_actions > 0 and state.active_player_idx == perspective:
                 break
@@ -437,7 +444,7 @@ def _map_legacy_choice(request: ChoiceRequest, choice) -> ChoiceResponse | None:
     if request.request_type == "coin_flip":
         ids = ["coin:heads" if value else "coin:tails" for value in getattr(choice, "coin_results", [])]
         return ChoiceResponse(request.request_id, tuple(ids))
-    if request.request_type == "confirm":
+    if request.request_type in {"confirm", "confirm_trigger"}:
         option_id = "confirm:yes" if getattr(choice, "confirmed", False) else "confirm:no"
         return ChoiceResponse(request.request_id, (option_id,))
     selected_slot = getattr(choice, "selected_bench_slot", None)
@@ -457,12 +464,16 @@ def _map_legacy_choice(request: ChoiceRequest, choice) -> ChoiceResponse | None:
     assignments = list(getattr(choice, "assignments", []) or [])
     if assignments:
         ids = []
-        for _energy_idx, slot in assignments:
+        for energy_idx, slot in assignments:
             match = next(
                 (
                     option for option in request.options
                     if isinstance(option.value, dict)
                     and str(option.value.get("slot", "")) == str(slot)
+                    and (
+                        request.metadata.get("distribute_mode") == "source_select"
+                        or int(option.value.get("energy_index", -1)) == int(energy_idx)
+                    )
                 ),
                 None,
             )

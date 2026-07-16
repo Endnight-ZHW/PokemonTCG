@@ -327,7 +327,8 @@ class GameEngineRefactorTests(unittest.TestCase):
         state.p1.active.damage_counters = 3
         state.p1.active.status_conditions.add(StatusType.CONFUSED)
 
-        attack = GameEngine().apply_action(
+        engine = GameEngine()
+        attack = engine.apply_action(
             state,
             GameAction(
                 PlayerAction.DECLARE_ATTACK,
@@ -342,7 +343,18 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertEqual(state.pending_promotions, [0])
         self.assertEqual(state.phase, TurnPhase.ATTACK)
 
-        promotion = GameEngine().apply_action(
+        self.assertIsNotNone(attack.pending_choice)
+        prize = engine.apply_choice(
+            state,
+            attack.pending_choice,
+            ChoiceResponse(
+                attack.pending_choice.request_id,
+                (attack.pending_choice.options[0].option_id,),
+            ),
+        )
+        self.assertTrue(prize.success, prize.message)
+
+        promotion = engine.apply_action(
             state,
             GameAction("PROMOTE", {"bench_idx": 0}, actor=0),
         )
@@ -671,18 +683,18 @@ class GameEngineRefactorTests(unittest.TestCase):
                 callback=lambda payload: callback_payloads.append(payload),
             ),
         )
-        active_option = next(
+        active_options = [
             option
             for option in structured.options
             if option.value.get("slot") == "active"
-        )
+        ]
 
         result = engine.apply_choice(
             state,
             structured,
             ChoiceResponse(
                 structured.request_id,
-                (active_option.option_id, active_option.option_id),
+                (active_options[0].option_id, active_options[1].option_id),
             ),
         )
 

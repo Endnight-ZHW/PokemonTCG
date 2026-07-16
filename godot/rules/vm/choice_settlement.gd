@@ -61,7 +61,8 @@ func apply_choice(
 			attack_settlement.complete_attack_context(state, stack, rng),
 		)
 	elif step.pending_choice == null:
-		var ko_result := knockout_settlement.resolve_knockouts(state, request.player, step.events, false)
+		var ko_result := knockout_settlement.resolve_knockouts(
+			state, request.player, step.events, false, stack)
 		if not bool(ko_result.get("success", false)):
 			return transaction_manager.rollback_failed_step(
 				state,
@@ -77,6 +78,16 @@ func apply_choice(
 					str(ko_result.get("error_code", "trigger_command_failed")),
 				),
 			)
+		var prize_request: Variant = ko_result.get("pending_choice", null)
+		if prize_request is ChoiceRequest:
+			step.pending_choice = prize_request
+		else:
+			# Choice-driven effects may remove their own last Pokemon.  Evaluate only
+			# after target KOs have completed, and never before a Prize choice pauses.
+			knockout_settlement.resolve_empty_boards_and_promotions(state)
+			if state.is_terminal():
+				knockout_settlement.append_game_over_event(step.events, state)
+				state.resolution_stack = ResolutionStack.new().to_dict()
 	if step.pending_choice != null and bool(stack.context.get("finish_attack", false)):
 		var attack_actor := int(stack.context.get("actor", request.player))
 		step.pending_choice.metadata["finish_attack_actor"] = attack_actor
@@ -89,7 +100,7 @@ func apply_choice(
 		step.events = committed_events + step.events
 		state.resolution_stack = stack.to_dict()
 	step.winner = state.winner
-	step.terminal = state.winner >= 0 or state.phase == "GAME_OVER"
+	step.terminal = state.is_terminal()
 	if not step.success:
 		return transaction_manager.rollback_failed_step(state, rng, checkpoint, step)
 	return step

@@ -806,11 +806,14 @@ def _setup_match(
         deck1_key = deck_key if deck_a_player_idx == 0 else opponent_key
         deck2_key = opponent_key if deck_a_player_idx == 0 else deck_key
         setup_rng = RandomSource(seed)
-        state.setup_game(
+        setup_step = DEFAULT_GAME_ENGINE.begin_game(
+            state,
             expand_deck(DECK_SPECS[deck1_key]),
             expand_deck(DECK_SPECS[deck2_key]),
-            rng=setup_rng,
+            setup_rng,
         )
+        if not setup_step.success:
+            raise RuntimeError(setup_step.message)
         state.public_deck_keys = (deck1_key, deck2_key)
         tm = TurnManager(state)
         if rule_only:
@@ -823,7 +826,7 @@ def _setup_match(
             ai0 = _make_teacher(opponent_key, seed + 29, teacher_search_preset)
             ai1 = _make_teacher(deck_key, seed + 11, teacher_search_preset)
         with setup_rng.bind_state(state):
-            finish_setup(state, tm, [ai0, ai1])
+            finish_setup(state, tm, [ai0, ai1], setup_rng)
         return state, tm, [ai0, ai1], deck_a_player_idx, rng_state
     except Exception:
         random.setstate(rng_state)
@@ -965,7 +968,7 @@ def collect_bootstrap_examples(
         try:
             failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
             for _ in range(max_steps):
-                if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
+                if state.is_terminal():
                     break
                 if state.pending_promotion_player >= 0:
                     ais[state.pending_promotion_player]._auto_promote_for_sim(state)
@@ -1891,7 +1894,9 @@ class _RuleOnlySimulationAI:
             self._apply_action_for_sim(state, player_idx, actions[0])
 
     def evaluate_state(self, state, player_idx: int) -> float:
-        if state.winner is not None:
+        if state.is_terminal():
+            if getattr(state, "result_status", "") == "DRAW":
+                return 0.0
             return 1_000_000.0 if state.winner == player_idx else -1_000_000.0
         player = state.get_player(player_idx)
         opponent = state.get_player(1 - player_idx)
@@ -2097,7 +2102,7 @@ def _play_model_game(
         failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
         prev_player_idx: int | None = None
         for _ in range(max_steps):
-            if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
+            if state.is_terminal():
                 break
             if state.pending_promotion_player >= 0:
                 ais[state.pending_promotion_player]._auto_promote_for_sim(state)
@@ -2258,8 +2263,12 @@ def _play_model_game(
                 example.reward = step_r
                 examples.append(example)
 
-        if state.winner is not None:
-            logical_winner = 0 if state.winner == target_player_idx else 1
+        if state.is_terminal():
+            logical_winner = (
+                None
+                if state.result_status == "DRAW"
+                else 0 if state.winner == target_player_idx else 1
+            )
             score = terminal_training_score(state, target_player_idx)
         else:
             diagnostics["max_step_exhaustions"] = 1
@@ -2307,7 +2316,7 @@ def _play_challenge_baseline_game(
         failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
         prev_player_idx: int | None = None
         for _ in range(max_steps):
-            if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
+            if state.is_terminal():
                 break
             if state.pending_promotion_player >= 0:
                 ais[state.pending_promotion_player]._auto_promote_for_sim(state)
@@ -2352,8 +2361,12 @@ def _play_challenge_baseline_game(
             else:
                 failed_signatures[player_idx].clear()
 
-        if state.winner is not None:
-            logical_winner = 0 if state.winner == target_player_idx else 1
+        if state.is_terminal():
+            logical_winner = (
+                None
+                if state.result_status == "DRAW"
+                else 0 if state.winner == target_player_idx else 1
+            )
             score = terminal_training_score(state, target_player_idx)
         else:
             diagnostics["max_step_exhaustions"] = 1

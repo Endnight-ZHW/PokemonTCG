@@ -318,6 +318,7 @@ func _on_network_connect_requested(
 	port: int,
 	room_code: String,
 	deck_key: String,
+	apply_type_matchups: bool,
 ) -> void:
 	if (
 		current_screen != SCREEN_NETWORK
@@ -356,13 +357,15 @@ func _on_network_connect_requested(
 			)
 			return
 		if role == "host":
-			error = network_controller.host_lan(port, deck_key)
+			error = network_controller.host_lan(
+				port, deck_key, -1, apply_type_matchups)
 		else:
 			error = network_controller.join_lan(normalized_address, port, deck_key)
 	else:
 		AppSettings.set_relay_url(normalized_address)
 		if role == "host":
-			error = network_controller.host_relay(normalized_address, deck_key)
+			error = network_controller.host_relay(
+				normalized_address, deck_key, -1, apply_type_matchups)
 		else:
 			error = network_controller.join_relay(
 				normalized_address,
@@ -424,6 +427,13 @@ func _poll_network() -> void:
 				)
 			"connected":
 				network_player_idx = int(event.get("player_idx", network_player_idx))
+				if (
+					current_network_page != null
+					and is_instance_valid(current_network_page)
+					and event.get("rules_options") is Dictionary
+				):
+					current_network_page.show_locked_rules_options(
+						event["rules_options"])
 				_set_network_page_state(
 					NetworkLobbyPage.ConnectionState.CONNECTED,
 					"对手已连接，正在同步牌组和对局……",
@@ -617,7 +627,7 @@ func _continue_after_network_transition() -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
 	_refresh_game()
-	if state.winner >= 0:
+	if state.is_terminal():
 		return
 	if (
 		network_choice_request != null
@@ -633,7 +643,7 @@ func _network_view_is_fresh_match_start() -> bool:
 	return (
 		state != null
 		and state.phase == "SETUP"
-		and state.turn_number == 1
+		and state.turn_number in [0, 1]
 		and state.revision == 0
 		and state.setup_ready.size() >= 2
 		and not state.setup_ready[0]
@@ -642,8 +652,8 @@ func _network_view_is_fresh_match_start() -> bool:
 
 
 func _network_view_is_valid(view: Dictionary) -> bool:
-	return bool(ProtocolV3.validate_payload(
-		ProtocolV3.STATE_UPDATE,
+	return bool(ProtocolV4.validate_payload(
+		ProtocolV4.STATE_UPDATE,
 		view,
 	).get("ok", false))
 
@@ -704,16 +714,19 @@ func _on_match_start_requested(
 	first_key: String,
 	second_key: String,
 	forced_first: int,
+	apply_type_matchups: bool,
 ) -> void:
 	game_mode = mode
 	if mode == MODE_LOCAL:
-		start_local_match_for_test(first_key, second_key, -1, forced_first, true)
+		start_local_match_for_test(
+			first_key, second_key, -1, forced_first, true, apply_type_matchups)
 		return
 	if mode == MODE_DEEP:
 		_start_deep_match_with_loading(
 			first_key,
 			second_key,
 			forced_first,
+			apply_type_matchups,
 		)
 	else:
 		start_ai_match_for_test(
@@ -723,6 +736,7 @@ func _on_match_start_requested(
 			forced_first,
 			-1,
 			true,
+			apply_type_matchups,
 		)
 
 
@@ -730,6 +744,7 @@ func _start_deep_match_with_loading(
 	human_key: String,
 	opponent_key: String,
 	forced_first: int,
+	apply_type_matchups: bool = false,
 ) -> void:
 	_deep_start_generation += 1
 	var request_generation := _deep_start_generation
@@ -758,6 +773,7 @@ func _start_deep_match_with_loading(
 		forced_first,
 		-1,
 		true,
+		apply_type_matchups,
 	)
 	_hide_loading()
 
@@ -768,9 +784,17 @@ func start_local_match_for_test(
 	match_seed: int = -1,
 	forced_first: int = -1,
 	play_startup: bool = false,
+	apply_type_matchups: bool = false,
 ) -> bool:
 	game_mode = MODE_LOCAL
-	return _start_match(first_key, second_key, match_seed, forced_first, play_startup)
+	return _start_match(
+		first_key,
+		second_key,
+		match_seed,
+		forced_first,
+		play_startup,
+		apply_type_matchups,
+	)
 
 
 func start_ai_match_for_test(
@@ -780,6 +804,7 @@ func start_ai_match_for_test(
 	forced_first: int = -1,
 	match_seed: int = -1,
 	play_startup: bool = false,
+	apply_type_matchups: bool = false,
 ) -> bool:
 	game_mode = mode if mode in [MODE_CHALLENGE, MODE_DEEP] else MODE_CHALLENGE
 	ai_deck_key = opponent_key
@@ -789,6 +814,7 @@ func start_ai_match_for_test(
 		match_seed,
 		forced_first,
 		play_startup,
+		apply_type_matchups,
 	)
 
 
@@ -798,11 +824,13 @@ func _start_match(
 	match_seed: int,
 	forced_first: int,
 	play_startup: bool = true,
+	apply_type_matchups: bool = false,
 ) -> bool:
 	_play_click()
 	_stop_ai()
 	state = GameState.new()
 	state.public_deck_keys = [first_key, second_key]
+	state.set_type_matchups_enabled(apply_type_matchups)
 	var actual_seed := match_seed
 	if actual_seed < 0:
 		actual_seed = PortableRandomSource.fresh_seed()
@@ -851,15 +879,28 @@ func _start_match(
 func _continue_after_fresh_match_start() -> void:
 	if state == null or current_screen != SCREEN_GAME:
 		return
+	var pending := _step_pending_choice(null)
 	if game_mode == MODE_LOCAL:
+		var setup_player := pending.player if pending != null else state.setup_actor_idx
+		current_view_player = setup_player
+		_refresh_game()
 		_show_pass_overlay(
-			0,
-			"准备阶段",
-			"玩家 1 放置战斗宝可梦，可继续放置备战宝可梦。",
+			setup_player,
+			"开局选择" if pending != null else "准备阶段",
+			(
+				"硬币胜者请选择先攻或后攻。"
+				if pending != null
+				else "玩家 %d 放置战斗宝可梦，可继续放置备战宝可梦。" % (
+					setup_player + 1)
+			),
+			_show_choice_overlay.bind(pending) if pending != null else Callable(),
 		)
 	else:
 		_refresh_game()
-		_maybe_start_ai()
+		if pending != null and pending.player == 0:
+			_show_choice_overlay(pending)
+		else:
+			_maybe_start_ai()
 
 
 func _begin_startup_choreography(
@@ -881,9 +922,12 @@ func _begin_startup_choreography(
 		return
 	_startup_choreography_running = true
 	battle_screen.set_startup_blocked(true)
+	# This is only the one physical shuffle performed before the turn-order
+	# choice.  Mulligan counts do not exist yet; each later mulligan round is
+	# presented by the serialized reveal/return/shuffle/redraw event chain.
 	var handle: MotionHandle = battle_screen.call(
 		"play_startup_shuffle",
-		state.mulligan_count.duplicate(),
+		[],
 	) as MotionHandle
 	if handle == null or handle.is_finished():
 		_finish_startup_choreography(generation, completion, startup_events)
@@ -1024,18 +1068,10 @@ func _refresh_game() -> void:
 		return
 	_sanitize_battle_selection()
 	if battle_screen:
-		var rows := _current_action_rows()
-		battle_screen.update_view(
-			state,
-			current_view_player,
-			rows,
-			selected_entity_key,
-			ai_thinking,
-			game_mode,
-		)
+		_render_battle_view_model(_capture_battle_view_model())
 		_apply_network_wait_hint()
 	if (
-		state.winner >= 0
+		state.is_terminal()
 		and (battle_screen == null or not battle_screen.is_presentation_busy())
 	):
 		_show_end_screen()
@@ -1084,13 +1120,29 @@ func _capture_battle_view_model() -> BattleViewModel:
 	if state == null:
 		return null
 	_sanitize_battle_selection()
-	return BattleViewModel.capture(
+	return BattleViewModel.capture_player_view(
 		state,
 		current_view_player,
 		_current_action_rows(),
 		selected_entity_key,
 		ai_thinking,
 		game_mode,
+	)
+
+
+func _render_battle_view_model(view: BattleViewModel) -> void:
+	if view == null or battle_screen == null:
+		return
+	var render_state := view.state_for_render()
+	if render_state == null:
+		return
+	battle_screen.update_view(
+		render_state,
+		view.view_player,
+		view.action_rows,
+		view.selected_entity_key,
+		view.ai_thinking,
+		view.game_mode,
 	)
 
 
@@ -1460,6 +1512,7 @@ func _execute_action_now(action: GameAction) -> StepResult:
 	var local_handoff := _build_local_handoff_plan(
 		result.events,
 		previous_active,
+		previous_phase,
 	)
 	if not local_handoff.is_empty():
 		var prefix_handle := _submit_battle_transition_to_view(
@@ -1518,28 +1571,75 @@ func _continue_after_player_transition(
 	previous_active: int,
 	previous_phase: String,
 ) -> void:
+	if _route_step_pending_choice(result):
+		return
+	_after_step(previous_active, previous_phase)
+
+
+func _route_step_pending_choice(result: StepResult) -> bool:
 	var pending_choice := _step_pending_choice(result)
-	if pending_choice:
-		if game_mode != MODE_LOCAL and pending_choice.player == 1:
-			_schedule_ai_choice(pending_choice)
-		else:
-			_show_choice_overlay(pending_choice)
-	else:
-		_after_step(previous_active, previous_phase)
+	if pending_choice == null:
+		return false
+	if game_mode != MODE_LOCAL and pending_choice.player == 1:
+		_schedule_ai_choice(pending_choice)
+		return true
+	if game_mode == MODE_LOCAL and pending_choice.player != current_view_player:
+		current_view_player = pending_choice.player
+		# Establish the opaque privacy gate before rendering the next owner's view.
+		# Chained KO/Prize/trigger choices can change owner without a turn_start
+		# boundary, so every continuation path must use this same handoff barrier.
+		_show_pass_overlay(
+			pending_choice.player,
+			"规则选择",
+			"请将设备交给玩家 %d 完成选择。" % (pending_choice.player + 1),
+			_show_choice_overlay.bind(pending_choice),
+		)
+		_refresh_game()
+		return true
+	_show_choice_overlay(pending_choice)
+	return true
 
 
 func _build_local_handoff_plan(
 	raw_events: Array,
 	previous_active: int,
+	previous_phase: String = "",
 ) -> Dictionary:
+	var opening_turn_after_setup := (
+		previous_phase == "SETUP"
+		and state != null
+		and state.phase == "MAIN"
+	)
 	if (
 		game_mode != MODE_LOCAL
 		or state == null
-		or state.winner >= 0
-		or state.active_player_idx == previous_active
+		or state.is_terminal()
 	):
 		return {}
 	var incoming_player := state.active_player_idx
+	var presents_incoming_turn := false
+	for event_value in raw_events:
+		if not event_value is Dictionary:
+			continue
+		var event: Dictionary = event_value
+		var event_type := PresentationEvent.canonical_event_type(
+			str(event.get("event_type", "")),
+		)
+		var data: Dictionary = event.get("data", {})
+		var actor := int(event.get("actor", data.get("player", -1)))
+		if event_type == "turn_start" and actor == incoming_player:
+			presents_incoming_turn = true
+			break
+	var returning_view_to_incoming := (
+		presents_incoming_turn
+		and current_view_player != incoming_player
+	)
+	if (
+		state.active_player_idx == previous_active
+		and not opening_turn_after_setup
+		and not returning_view_to_incoming
+	):
+		return {}
 	var events: Array[Dictionary] = []
 	for index in range(raw_events.size()):
 		if not raw_events[index] is Dictionary:
@@ -1555,6 +1655,7 @@ func _build_local_handoff_plan(
 				event_type,
 			]
 		events.append(event)
+	events = PresentationEvent.order_for_presentation(events)
 	var boundary := -1
 	for index in range(events.size()):
 		var event: Dictionary = events[index]
@@ -1563,7 +1664,7 @@ func _build_local_handoff_plan(
 		)
 		var data: Dictionary = event.get("data", {})
 		var actor := int(event.get("actor", data.get("player", -1)))
-		if actor == incoming_player and event_type == "cards_drawn":
+		if actor == incoming_player and event_type == "turn_start":
 			boundary = index
 			break
 	if boundary < 0:
@@ -1574,7 +1675,7 @@ func _build_local_handoff_plan(
 			)
 			var data: Dictionary = event.get("data", {})
 			var actor := int(event.get("actor", data.get("player", -1)))
-			if actor == incoming_player and event_type == "turn_start":
+			if actor == incoming_player and event_type == "cards_drawn":
 				boundary = index
 				break
 	if boundary < 0:
@@ -1589,7 +1690,7 @@ func _build_local_handoff_plan(
 	var pre_draw_state := _state_before_handoff_draw(suffix_events, incoming_player)
 	if pre_draw_state == null:
 		return {}
-	var outgoing_view := BattleViewModel.capture(
+	var outgoing_view := BattleViewModel.capture_player_view(
 		pre_draw_state,
 		current_view_player,
 		[],
@@ -1597,7 +1698,7 @@ func _build_local_handoff_plan(
 		ai_thinking,
 		game_mode,
 	)
-	var incoming_view := BattleViewModel.capture(
+	var incoming_view := BattleViewModel.capture_player_view(
 		pre_draw_state,
 		incoming_player,
 		[],
@@ -1697,16 +1798,7 @@ func _open_local_handoff_gate(
 		false,
 	)
 	var incoming_view := plan.get("incoming_view") as BattleViewModel
-	if incoming_view != null and battle_screen != null:
-		var render_state := incoming_view.state_for_render()
-		battle_screen.update_view(
-			render_state,
-			incoming_view.view_player,
-			incoming_view.action_rows,
-			incoming_view.selected_entity_key,
-			incoming_view.ai_thinking,
-			incoming_view.game_mode,
-		)
+	_render_battle_view_model(incoming_view)
 	modal_confirm.disabled = false
 
 
@@ -1743,15 +1835,13 @@ func _continue_after_local_handoff(
 	_previous_active: int,
 	_previous_phase: String,
 ) -> void:
-	var pending_choice := _step_pending_choice(result)
-	if pending_choice:
-		_show_choice_overlay(pending_choice)
+	if _route_step_pending_choice(result):
 		return
 	_refresh_game()
 
 
 func _after_step(previous_active: int, previous_phase: String) -> void:
-	if state.winner >= 0:
+	if state.is_terminal():
 		_refresh_game()
 		return
 	if game_mode != MODE_LOCAL:
@@ -1761,8 +1851,8 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 			_schedule_ai_action()
 		return
 	if state.phase == "SETUP":
-		if state.setup_ready[current_view_player]:
-			var next_setup := 1 - current_view_player
+		var next_setup := state.setup_actor_idx
+		if next_setup in [0, 1] and next_setup != current_view_player:
 			current_view_player = next_setup
 			_refresh_game()
 			_show_pass_overlay(next_setup, "准备阶段", "轮到玩家 %d 放置宝可梦。" % (next_setup + 1))
@@ -2076,6 +2166,15 @@ func _choice_option_caption(option: Dictionary) -> String:
 
 func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
 	var result: Dictionary = {}
+	if request != null and request.request_type == "select_prize":
+		for option_value in request.options:
+			var option := Dictionary(option_value)
+			var option_id := str(option.get("option_id", ""))
+			if not option_id.begins_with("prize:"):
+				return {}
+			var prize_index := int(option_id.trim_prefix("prize:"))
+			result["prize:%d:%d" % [request.player, prize_index]] = option_id
+		return result
 	if request != null and request.request_type == "select_attachment":
 		return _choice_attachment_target_groups(request)
 	if (
@@ -2702,6 +2801,7 @@ func _submit_confirmed_choice(
 	var local_handoff := _build_local_handoff_plan(
 		presentation_events,
 		previous_active,
+		previous_phase,
 	)
 	if not local_handoff.is_empty():
 		var prefix_handle := _submit_battle_transition_to_view(
@@ -2770,15 +2870,10 @@ func _continue_after_choice_transition(
 	previous_active: int,
 	previous_phase: String,
 ) -> void:
-	var pending_choice := _step_pending_choice(result)
-	if pending_choice:
-		if game_mode != MODE_LOCAL and pending_choice.player == 1:
-			_schedule_ai_choice(pending_choice)
-		else:
-			_show_choice_overlay(pending_choice)
-	else:
-		_show_toast(result.message if not result.message.is_empty() else "选择已结算。")
-		_after_step(previous_active, previous_phase)
+	if _route_step_pending_choice(result):
+		return
+	_show_toast(result.message if not result.message.is_empty() else "选择已结算。")
+	_after_step(previous_active, previous_phase)
 
 
 func _cancel_choice() -> void:
@@ -2821,6 +2916,7 @@ func _submit_cancelled_choice(request: ChoiceRequest) -> void:
 	var local_handoff := _build_local_handoff_plan(
 		result.events,
 		previous_active,
+		previous_phase,
 	)
 	if not local_handoff.is_empty():
 		var prefix_handle := _submit_battle_transition_to_view(
@@ -3223,7 +3319,7 @@ func _save_settings_values(values: Dictionary) -> void:
 
 
 func _show_end_screen() -> void:
-	if state == null or state.winner < 0:
+	if state == null or not state.is_terminal():
 		return
 	if current_screen == SCREEN_END:
 		return
@@ -3232,8 +3328,14 @@ func _show_end_screen() -> void:
 		_close_modal()
 	battle_screen = null
 	var victory := _mount_screen(VICTORY_SCENE) as VictoryScreen
-	var winner_player := state.get_player(state.winner)
-	var winner_card_id := winner_player.active.card_id if winner_player.active else ""
+	var is_draw := state.result_status == GameState.RESULT_DRAW
+	var winner_player: PlayerState = (
+		null if is_draw else state.get_player(state.winner))
+	var winner_card_id := (
+		winner_player.active.card_id
+		if winner_player != null and winner_player.active
+		else ""
+	)
 	var winner_deck_key: String = str(
 		state.public_deck_keys[state.winner]
 		if state.winner >= 0 and state.winner < state.public_deck_keys.size()
@@ -3249,7 +3351,7 @@ func _show_end_screen() -> void:
 	victory.configure(
 		state.winner,
 		state.turn_number,
-		winner_player.name,
+		winner_player.name if winner_player != null else "",
 		winner_card_id,
 		{
 			"mode": game_mode,
@@ -3257,6 +3359,9 @@ func _show_end_screen() -> void:
 			"winner_deck": winner_deck_key,
 			"winner_deck_name": winner_deck.get("name", winner_deck_key),
 			"winner_card_name": catalog.card_name(winner_card_id),
+			"result_status": state.result_status,
+			"result_reason": state.result_reason,
+			"result_conditions": state.result_conditions.duplicate(true),
 		},
 	)
 	victory.rematch_requested.connect(func() -> void:
@@ -3778,6 +3883,11 @@ func _source_card_name(action: GameAction) -> String:
 func _choice_title(request: ChoiceRequest) -> String:
 	return {
 		"coin_flip": "硬币结算",
+		"choose_turn_order": "选择先后攻",
+		"choose_mulligan_draw_count": "选择再战奖励抽牌数",
+		"select_prize": "选择奖赏卡",
+		"choose_trigger_order": "选择效果结算顺序",
+		"confirm_trigger": "确认是否使用效果",
 		"confirm": "确认操作",
 		"discard_cards": "选择要丢弃的卡",
 		"discard_then_draw": "丢弃手牌后抽牌",
@@ -3866,6 +3976,8 @@ func _choice_request_has_card_options(request: ChoiceRequest) -> bool:
 
 
 func _choice_count_unit(request: ChoiceRequest) -> String:
+	if request.request_type == "select_prize":
+		return "张奖赏卡"
 	if request.request_type == "select_attachment":
 		return "个附着物"
 	if request.request_type in [
@@ -3900,9 +4012,7 @@ func _current_actor() -> int:
 	if not state.pending_promotions.is_empty():
 		return int(state.pending_promotions[0])
 	if state.phase == "SETUP":
-		if game_mode != MODE_LOCAL:
-			return 0 if not state.setup_ready[0] else 1
-		return current_view_player
+		return state.setup_actor_idx
 	return state.active_player_idx
 
 
@@ -3939,7 +4049,7 @@ func _schedule_ai_action() -> void:
 		dynamic_budget = {}
 	var request := {
 		"kind": "action",
-		"state": state.snapshot(),
+		"state": _ai_state_snapshot(1),
 		"actor": 1,
 		"revision": state.revision,
 		"request_id": active_ai_request_id,
@@ -3970,7 +4080,7 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 	active_ai_request_id = "ai-choice:%d:%d" % [state.revision, ai_request_sequence]
 	var payload := {
 		"kind": "choice",
-		"state": state.snapshot(),
+		"state": _ai_state_snapshot(1),
 		"choice": request.to_dict(),
 		"actor": 1,
 		"revision": state.revision,
@@ -3985,6 +4095,40 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 		_apply_ai_fallback_choice(request, "无法启动 AI 选择线程。")
 		return
 	_refresh_game()
+
+
+func _ai_state_snapshot(player_idx: int) -> Dictionary:
+	var snapshot := state.snapshot()
+	var player_rows: Array = snapshot.get("players", [])
+	for row_value in player_rows:
+		var row: Dictionary = row_value
+		var hidden_prizes: Array[String] = []
+		hidden_prizes.resize(Array(row.get("prizes", [])).size())
+		hidden_prizes.fill("__hidden_prize__")
+		row["prizes"] = hidden_prizes
+	if (
+		str(snapshot.get("setup_stage", GameState.SETUP_COMPLETE))
+		!= GameState.SETUP_COMPLETE
+		and player_idx in [0, 1]
+		and player_rows.size() == 2
+	):
+		var opponent: Dictionary = player_rows[1 - player_idx]
+		opponent["active"] = null
+		opponent["bench"] = []
+		var hidden_hand: Array[String] = []
+		hidden_hand.resize(Array(opponent.get("hand", [])).size())
+		hidden_hand.fill("__hidden_card__")
+		opponent["hand"] = hidden_hand
+		var hidden_deck: Array[String] = []
+		hidden_deck.resize(Array(opponent.get("deck", [])).size())
+		hidden_deck.fill("__hidden_card__")
+		opponent["deck"] = hidden_deck
+		var bonus_ids: Array = snapshot.get("setup_bonus_card_ids", [[], []])
+		if bonus_ids.size() == 2:
+			bonus_ids[1 - player_idx] = []
+			snapshot["setup_bonus_card_ids"] = bonus_ids
+	snapshot["players"] = player_rows
+	return snapshot
 
 
 func _apply_ai_result(result: Dictionary) -> void:
@@ -4153,6 +4297,15 @@ func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:
 func _fallback_choice_response(request: ChoiceRequest) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	if request.request_type == "choose_turn_order":
+		return ChoiceResponse.new(request.request_id, ["turn:first"])
+	if request.request_type == "choose_mulligan_draw_count":
+		return ChoiceResponse.new(
+			request.request_id,
+			["draw:%d" % maxi(0, request.options.size() - 1)],
+		)
+	if request.request_type == "select_prize":
+		return ChoiceResponse.new(request.request_id, ["prize:0"])
 	var count: int = maxi(request.min_select, request.max_select)
 	if not request.allow_duplicates:
 		count = mini(request.options.size(), count)
@@ -4172,7 +4325,7 @@ func _continue_after_ai_step(
 	_previous_phase: String,
 ) -> void:
 	current_view_player = 0
-	if state.winner >= 0:
+	if state.is_terminal():
 		_refresh_game()
 		return
 	var pending := _step_pending_choice(step)
@@ -4799,7 +4952,7 @@ func _zone_name(zone: String) -> String:
 		"hand": "手牌",
 		"deck": "牌库",
 		"discard": "弃牌区",
-		"prizes": "奖品区",
+		"prizes": "奖赏卡区",
 		"lost_zone": "放逐区",
 	}.get(zone, zone)
 

@@ -15,8 +15,9 @@ $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
+Assert-ReleaseDeepFallbackContract -Manifest $release
 $version = [string]$release.version
-$releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
+$compatibleModelCount = [int]$release.compatible_model_count
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
 $apkPath = Join-Path $distRoot "PokemonTCG-Android-arm64-$version-test.apk"
 $smokeApkPath = Join-Path $projectRoot 'dist\release\android\PokemonTCG-smoke.apk'
@@ -75,10 +76,31 @@ try {
             throw "Windows ZIP is missing $suffix"
         }
     }
-    foreach ($forbidden in @('.py', 'torch', '/tests/', '/tools/', 'console.exe')) {
+    foreach ($forbidden in @('.py', '.onnx', 'torch', '/tests/', '/tools/', 'console.exe')) {
         if ($entries | Where-Object { $_.ToLowerInvariant().Contains($forbidden) }) {
             throw "Windows ZIP contains forbidden release content: $forbidden"
         }
+    }
+    $buildInfoEntry = @(
+        $zip.Entries | Where-Object { $_.FullName.Replace('\', '/').EndsWith('/BUILD_INFO.json') }
+    ) | Select-Object -First 1
+    if ($null -eq $buildInfoEntry) {
+        throw 'Windows ZIP is missing BUILD_INFO.json.'
+    }
+    $reader = [System.IO.StreamReader]::new($buildInfoEntry.Open())
+    try {
+        $buildInfo = $reader.ReadToEnd() | ConvertFrom-Json
+    }
+    finally {
+        $reader.Dispose()
+    }
+    if (
+        [int]$buildInfo.onnx_models -ne $compatibleModelCount -or
+        [int]$buildInfo.legacy_models -ne [int]$release.legacy_model_count -or
+        [bool]$buildInfo.deep_runtime_enabled -or
+        [string]$buildInfo.deep_fallback -ne 'challenge'
+    ) {
+        throw 'Windows ZIP BUILD_INFO.json does not match the disabled Deep runtime contract.'
     }
 }
 finally {
@@ -106,11 +128,6 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Android release APK signature verification failed.'
 }
 $apkEntries = & $jar tf $apkPath
-foreach ($deckKey in $releaseDecks) {
-    if ("assets/data/ai_models/$deckKey.onnx" -notin $apkEntries) {
-        throw "Android release APK is missing $deckKey.onnx."
-    }
-}
 foreach ($nativeEntry in @(
     'lib/arm64-v8a/libpokemon_ai.android.template_release.arm64.so',
     'lib/arm64-v8a/libonnxruntime.so'
@@ -125,15 +142,15 @@ $actualApkModels = @(
         ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
         Sort-Object
 )
-if (Compare-Object @($releaseDecks | Sort-Object) $actualApkModels) {
-    throw 'Android release APK ONNX set does not exactly match release_manifest.json.'
+if ($actualApkModels.Count -ne $compatibleModelCount) {
+    throw "Android release APK contains $($actualApkModels.Count) compatible models; expected $compatibleModelCount."
 }
-Write-Host "ANDROID_RELEASE_APK_OK signing=test models=$($releaseDecks.Count) abi=arm64-v8a"
+Write-Host "ANDROID_RELEASE_APK_OK signing=test compatible_models=$compatibleModelCount abi=arm64-v8a"
 
 & (Join-Path $PSScriptRoot 'test_android_runtime.ps1') `
     -ApkPath $apkPath `
     -SmokeApkPath $smokeApkPath `
-    -ExpectedModels $releaseDecks.Count `
+    -ExpectedModels $compatibleModelCount `
     -RequireDevice:$RequireAndroidDevice `
     -AllowCleanInstall:$AllowAndroidCleanInstall
 if ($LASTEXITCODE -ne 0) {
@@ -154,9 +171,7 @@ $releaseTargets = @{
     'onnxruntime.dll' = (Join-Path $windowsRoot 'onnxruntime.dll')
     ([IO.Path]::GetFileName($apkPath)) = $apkPath
 }
-$expectedManifestFiles = @($releaseTargets.Keys) + @(
-    $releaseDecks | ForEach-Object { "models/$_.onnx" }
-)
+$expectedManifestFiles = @($releaseTargets.Keys)
 $actualManifestFiles = @($manifest | ForEach-Object { [string]$_.file })
 $uniqueManifestFiles = @($actualManifestFiles | Sort-Object -Unique)
 $manifestFileDifferences = @(
@@ -176,11 +191,7 @@ if (
     throw 'Checksum manifest file set is missing, duplicated, or unexpected.'
 }
 foreach ($row in $manifest) {
-    $path = if ($row.file.StartsWith('models/')) {
-        Join-Path $projectRoot ('data\ai_models\' + [IO.Path]::GetFileName($row.file))
-    } else {
-        $releaseTargets[[string]$row.file]
-    }
+    $path = $releaseTargets[[string]$row.file]
     if (-not $path -or -not (Test-Path -LiteralPath $path)) {
         throw "Checksum manifest target is missing: $($row.file)"
     }

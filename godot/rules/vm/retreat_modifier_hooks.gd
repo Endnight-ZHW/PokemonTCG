@@ -113,10 +113,9 @@ static func _has_required_energy(
 	var required := required_type.to_lower()
 	if required.is_empty():
 		return true
-	for energy_id in pokemon.energy_card_ids:
-		for provided in catalog.provides_energy(str(energy_id)):
-			if str(provided).to_lower() == required:
-				return true
+	for provided in EnergyView.units_for_cards(pokemon.energy_card_ids, catalog):
+		if str(provided).to_lower() in [required, "rainbow"]:
+			return true
 	return false
 
 

@@ -104,7 +104,7 @@ func resolve(
 				null,
 				events,
 				state.winner,
-				state.winner >= 0,
+				state.is_terminal(),
 			)
 		var frame := stack.pop_frame()
 		if frame.get("kind", "") == "continuation":
@@ -132,7 +132,7 @@ func resolve(
 				null,
 				events,
 				state.winner,
-				state.winner >= 0,
+				state.is_terminal(),
 				str(outcome.get("error_code", "effect_failed")),
 			)
 		if bool(outcome.get("attack_failed", false)):
@@ -145,7 +145,7 @@ func resolve(
 				stack.pending_request,
 				events,
 				state.winner,
-				state.winner >= 0,
+				state.is_terminal(),
 			)
 	state.resolution_stack = stack.to_dict()
 	return StepResult.new(
@@ -154,7 +154,7 @@ func resolve(
 		null,
 		events,
 		state.winner,
-		state.winner >= 0,
+		state.is_terminal(),
 	)
 
 
@@ -252,7 +252,7 @@ func apply_choice(
 			stack.pending_request,
 			events,
 			state.winner,
-			state.winner >= 0,
+			state.is_terminal(),
 		)
 	var resumed := resolve(state, stack, rng)
 	resumed.events = events + resumed.events

@@ -97,12 +97,14 @@ class SteelDeckRulesTests(unittest.TestCase):
 
         revenge = self._state("svm-zamazenta", defender_card=self._wall())
         revenge.p1.active.energy_cards = [self._energy()] * 3
-        revenge.p1.was_ko_by_attack = True
+        revenge.p1.was_ko_last_turn = True
         self._register_board(revenge)
         result = self._attack(revenge, attack_idx=0)
         self.assertTrue(result.success, result.message)
         self.assertEqual(result.action_result.damage_dealt, 220)
-        self.assertFalse(revenge.p1.was_ko_by_attack)
+        # The fact remained available for the whole response turn and expires
+        # only when that turn finishes after the attack.
+        self.assertFalse(revenge.p1.was_ko_last_turn)
 
     def test_zacian_battle_legion_ignores_weakness_and_defender_effects(self):
         weak_zamazenta = replace(
@@ -240,6 +242,13 @@ class SteelDeckRulesTests(unittest.TestCase):
             option
             for option in step.pending_choice.options
             if option.value.get("slot") == "bench_0"
+            and option.value.get("energy_index") == 0
+        )
+        bench_1 = next(
+            option
+            for option in step.pending_choice.options
+            if option.value.get("slot") == "bench_1"
+            and option.value.get("energy_index") == 1
         )
 
         result = engine.apply_choice(
@@ -247,14 +256,14 @@ class SteelDeckRulesTests(unittest.TestCase):
             step.pending_choice,
             ChoiceResponse(
                 step.pending_choice.request_id,
-                (bench_0.option_id, bench_0.option_id),
+                (bench_0.option_id, bench_1.option_id),
             ),
         )
 
         self.assertTrue(result.success, result.message)
         self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
-        self.assertEqual(len(state.p1.bench[1].energy_cards), 0)
-        self.assertEqual(sum(1 for card in state.p1.deck if card.api_id == "sv1-ener-8"), 1)
+        self.assertEqual(len(state.p1.bench[1].energy_cards), 1)
+        self.assertEqual(sum(1 for card in state.p1.deck if card.api_id == "sv1-ener-8"), 0)
 
         single = self._state("svm-cobalion")
         single.p1.active.energy_cards = [self._energy(), self._energy()]

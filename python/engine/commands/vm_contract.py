@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-VM_IR_VERSION = 1
+VM_IR_VERSION = 2
 COMMAND_SPEC_KEYS = frozenset({"op", "args", "branches"})
 BRANCH_KEYS = frozenset({
     "cost",

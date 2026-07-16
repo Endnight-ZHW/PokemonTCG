@@ -114,15 +114,33 @@ def _encode_command(command) -> dict[str, Any]:
         return copy.deepcopy(_json_safe(descriptor))
 
     from engine.commands.attack_frames import (
+        DiscardKnockoutBatch,
+        FinalizeAfterDamageTriggers,
         FinalizeAttackDamage,
         FinalizeAttackKoChecks,
         FinalizeAttackTurn,
+        FinalizeCheckupTurn,
+        FinalizeKnockoutBatch,
+        PrizeSelectionFrame,
     )
+    from engine.commands.trigger_commands import TriggerOrderFrame
 
     if isinstance(command, FinalizeAttackDamage):
         return {"kind": "finalize_attack_damage"}
+    if isinstance(command, FinalizeAfterDamageTriggers):
+        return {"kind": "finalize_after_damage_triggers"}
     if isinstance(command, FinalizeAttackKoChecks):
         return {"kind": "finalize_attack_ko_checks"}
+    if isinstance(command, TriggerOrderFrame):
+        return {"kind": "trigger_order", "specs": _json_safe(command.specs)}
+    if isinstance(command, DiscardKnockoutBatch):
+        return {"kind": "discard_knockout_batch", "entries": _json_safe(command.entries)}
+    if isinstance(command, PrizeSelectionFrame):
+        return {"kind": "prize_selection", "player_idx": int(command.player_idx)}
+    if isinstance(command, FinalizeKnockoutBatch):
+        return {"kind": "finalize_knockout_batch"}
+    if isinstance(command, FinalizeCheckupTurn):
+        return {"kind": "finalize_checkup_turn", "actor": int(command.actor)}
     if isinstance(command, FinalizeAttackTurn):
         return {"kind": "finalize_attack_turn", "actor": int(command.actor)}
     raise ContinuationStateError(f"Unsupported VM resume command: {type(command)!r}")
@@ -149,15 +167,45 @@ def _decode_command(payload: Any):
         return compile_effect({"effect_type": effect_type, "params": copy.deepcopy(params)})
 
     from engine.commands.attack_frames import (
+        DiscardKnockoutBatch,
+        FinalizeAfterDamageTriggers,
         FinalizeAttackDamage,
         FinalizeAttackKoChecks,
         FinalizeAttackTurn,
+        FinalizeCheckupTurn,
+        FinalizeKnockoutBatch,
+        PrizeSelectionFrame,
     )
+    from engine.commands.trigger_commands import TriggerOrderFrame
 
     if kind == "finalize_attack_damage":
         return FinalizeAttackDamage()
+    if kind == "finalize_after_damage_triggers":
+        return FinalizeAfterDamageTriggers()
     if kind == "finalize_attack_ko_checks":
         return FinalizeAttackKoChecks()
+    if kind == "trigger_order":
+        specs = payload.get("specs", [])
+        if not isinstance(specs, list):
+            raise ContinuationStateError("Trigger-order specs are invalid")
+        return TriggerOrderFrame(copy.deepcopy(specs))
+    if kind == "discard_knockout_batch":
+        entries = payload.get("entries", [])
+        if not isinstance(entries, list):
+            raise ContinuationStateError("Knockout-batch entries are invalid")
+        return DiscardKnockoutBatch(copy.deepcopy(entries))
+    if kind == "prize_selection":
+        player_idx = payload.get("player_idx", -1)
+        if type(player_idx) is not int or player_idx not in (0, 1):
+            raise ContinuationStateError("Prize-selection player is invalid")
+        return PrizeSelectionFrame(player_idx)
+    if kind == "finalize_knockout_batch":
+        return FinalizeKnockoutBatch()
+    if kind == "finalize_checkup_turn":
+        actor = payload.get("actor", -1)
+        if type(actor) is not int or actor not in (0, 1):
+            raise ContinuationStateError("Finalize-checkup actor is invalid")
+        return FinalizeCheckupTurn(actor)
     if kind == "finalize_attack_turn":
         actor = payload.get("actor", -1)
         if type(actor) is not int or actor not in (0, 1):

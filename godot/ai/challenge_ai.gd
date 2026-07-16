@@ -530,8 +530,9 @@ func _simulate(
 		_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
 		return -1.0
 	_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
-	if state.winner >= 0:
-		return 1.0 if state.winner == perspective else -1.0
+	if state.is_terminal():
+		return 0.0 if state.result_status == GameState.RESULT_DRAW else (
+			1.0 if state.winner == perspective else -1.0)
 	var opponent_rollout_lookahead_used := false
 	for _depth in range(max_depth):
 		var actor := _current_actor(state)
@@ -573,8 +574,9 @@ func _simulate(
 			_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
 			break
 		_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
-		if state.winner >= 0:
-			return 1.0 if state.winner == perspective else -1.0
+		if state.is_terminal():
+			return 0.0 if state.result_status == GameState.RESULT_DRAW else (
+				1.0 if state.winner == perspective else -1.0)
 		if state.active_player_idx == perspective and actor != perspective:
 			break
 	var evaluate_started := _profile_start(profile)
@@ -672,6 +674,27 @@ func _heuristic_choice(
 			[],
 			request.can_cancel and request.min_select <= 0,
 		)
+	if request.request_type == "choose_turn_order":
+		return ChoiceResponse.new(request.request_id, ["turn:first"])
+	if request.request_type == "choose_mulligan_draw_count":
+		var largest_draw := -1
+		for option in request.options:
+			var option_id := str(option.get("option_id", ""))
+			if option_id.begins_with("draw:"):
+				largest_draw = maxi(largest_draw, int(option_id.trim_prefix("draw:")))
+		return ChoiceResponse.new(request.request_id, ["draw:%d" % maxi(0, largest_draw)])
+	if request.request_type == "select_prize":
+		var lowest_prize := 999
+		for option in request.options:
+			var option_id := str(option.get("option_id", ""))
+			if option_id.begins_with("prize:"):
+				lowest_prize = mini(lowest_prize, int(option_id.trim_prefix("prize:")))
+		return ChoiceResponse.new(request.request_id, [
+			"prize:%d" % (0 if lowest_prize == 999 else lowest_prize)
+		])
+	if request.request_type == "confirm_trigger":
+		return ChoiceResponse.new(request.request_id, [str(
+			request.options[0].get("option_id", ""))])
 	var continuation := _pending_choice_continuation(state)
 	if request.request_type == "confirm":
 		var confirmed := _confirm_choice(state, request, continuation, deck_key, catalog)
@@ -1011,7 +1034,7 @@ func _option_score(
 			score += _promotion_value_for_state(
 				state, target_player, pokemon, deck_key, catalog)
 		else:
-			score += pokemon.energy_card_ids.size() * 12.0
+			score += _effective_energy_unit_count(pokemon, catalog) * 12.0
 			if slot == "active":
 				score += 20.0
 	return score
@@ -1487,7 +1510,7 @@ func _energy_source_choice_value(
 		and not AIDeckProfiles.contains(deck_key, "core", pokemon.card_id)
 	):
 		cost -= 35.0
-	if pokemon.energy_card_ids.size() >= 3 and after_missing == 0:
+	if _effective_energy_unit_count(pokemon, catalog) >= 3 and after_missing == 0:
 		cost -= 100.0
 	elif before_missing >= 2 and before_high_impact >= 2:
 		cost -= 45.0
@@ -1500,7 +1523,13 @@ func _matching_energy_index_for_type(
 	catalog: CardCatalog,
 ) -> int:
 	for index in range(pokemon.energy_card_ids.size()):
-		if _energy_card_matches_type(str(pokemon.energy_card_ids[index]), energy_type, catalog):
+		if _energy_card_matches_type(
+			str(pokemon.energy_card_ids[index]),
+			energy_type,
+			catalog,
+			pokemon.energy_card_ids,
+			index,
+		):
 			return index
 	return -1
 
@@ -1643,7 +1672,7 @@ func _target_priority(pokemon: PokemonState, catalog: CardCatalog) -> float:
 	return (
 		catalog.prize_value(pokemon.card_id) * 160.0
 		+ max(0, max_hp - pokemon.current_hp(catalog)) * 2.0
-		+ pokemon.energy_card_ids.size() * 26.0
+		+ _effective_energy_unit_count(pokemon, catalog) * 26.0
 		+ _best_pokemon_damage(pokemon, catalog) * 0.35
 		- pokemon.current_hp(catalog) * 0.45
 	)
@@ -2563,7 +2592,8 @@ func _development_action_value(
 			var evolve_target := player.get_pokemon(evolve_slot)
 			if evolve_target == null or card_id.is_empty():
 				return 0.0
-			var evolved_strength := _pokemon_card_strength(card_id, evolve_target.energy_card_ids.size(), catalog)
+			var evolved_strength := _pokemon_card_strength(
+				card_id, _effective_energy_unit_count(evolve_target, catalog), catalog)
 			var current_strength := _pokemon_strength(evolve_target, catalog)
 			var evolve_value: float = 145.0 + max(0.0, evolved_strength - current_strength) * 0.75
 			if AIDeckProfiles.contains(deck_key, "core", card_id):
@@ -2645,7 +2675,7 @@ func _active_side_core_evolve_blocking_penalty(
 		return 0.0
 	var before_retreat := int(catalog.get_card(evolve_target.card_id).get("retreat_cost", 0))
 	var after_retreat := int(catalog.get_card(evolved_card_id).get("retreat_cost", 0))
-	var attached_energy := evolve_target.energy_card_ids.size()
+	var attached_energy := _effective_energy_unit_count(evolve_target, catalog)
 	var penalty := 0.0
 	if after_retreat > before_retreat:
 		penalty += 115.0 + float(after_retreat - before_retreat) * 55.0
@@ -2665,7 +2695,7 @@ func _active_side_core_evolve_blocking_penalty(
 			bench_ready_damage >= max(80, evolved_ready_damage + 40)
 			or (
 				bench_pokemon.card_id in primary_ids
-				and (bench_pokemon.energy_card_ids.size() >= 1 or bench_missing <= 1)
+				and (_effective_energy_unit_count(bench_pokemon, catalog) >= 1 or bench_missing <= 1)
 			)
 		):
 			penalty += 115.0
@@ -2996,7 +3026,10 @@ func _semantic_energy_disruption_value(state: GameState, actor: int, catalog: Ca
 	if opponent.active == null or opponent.active.energy_card_ids.is_empty():
 		return -45.0
 	var before := _best_available_damage(state, 1 - actor, catalog)
-	var value := float(EFFECT_VALUE_WEIGHTS["disruption_base"]) + opponent.active.energy_card_ids.size() * 32.0
+	var value := (
+		float(EFFECT_VALUE_WEIGHTS["disruption_base"])
+		+ _effective_energy_unit_count(opponent.active, catalog) * 32.0
+	)
 	if state.get_player(actor).active != null and before >= state.get_player(actor).active.current_hp(catalog):
 		value += 78.0
 	return value
@@ -3275,8 +3308,9 @@ func _estimated_attack_damage(
 	var attack: Dictionary = attacks[attack_idx]
 	var effects: Array = attack.get("effects", [])
 	var full_damage := false
-	var ignore_defender_effects := false
-	var piercing := false
+	var ignore_weakness := false
+	var ignore_resistance := false
+	var ignore_defender_damage_effects := false
 	var flattened := _flatten_effects(effects)
 	for effect in flattened:
 		var effect_type := str(effect.get("effect_type", ""))
@@ -3302,13 +3336,27 @@ func _estimated_attack_damage(
 			"coin_flip_double_ko",
 		]:
 			full_damage = true
-		if effect_type == "attack_damage_formula":
-			var formula_params: Dictionary = effect.get("params", {})
-			ignore_defender_effects = (
-				ignore_defender_effects
-				or bool(formula_params.get("ignore_defender_effects", false))
-			)
-			piercing = piercing or bool(formula_params.get("piercing", false))
+		var effect_params: Dictionary = effect.get("params", {})
+		# Runtime damage packets use three independent flags. Accept the old
+		# compiler-boundary spellings here only so historical card data cannot
+		# make the AI evaluate a different attack from the rules engine.
+		var legacy_piercing := bool(effect_params.get("piercing", false))
+		ignore_weakness = (
+			ignore_weakness
+			or bool(effect_params.get("ignore_weakness", false))
+			or legacy_piercing
+		)
+		ignore_resistance = (
+			ignore_resistance
+			or bool(effect_params.get("ignore_resistance", false))
+			or legacy_piercing
+		)
+		ignore_defender_damage_effects = (
+			ignore_defender_damage_effects
+			or bool(effect_params.get("ignore_defender_damage_effects", false))
+			or bool(effect_params.get("ignore_defender_effects", false))
+			or bool(effect_params.get("ignore_effects", false))
+		)
 	var damage := 0 if full_damage else int(attack.get("damage", 0))
 	for effect in flattened:
 		var effect_type := str(effect.get("effect_type", ""))
@@ -3326,7 +3374,14 @@ func _estimated_attack_damage(
 		else:
 			damage = max(damage, estimate)
 	return _modified_attack_damage(
-		state, actor, damage, catalog, ignore_defender_effects, piercing)
+		state,
+		actor,
+		damage,
+		catalog,
+		ignore_weakness,
+		ignore_resistance,
+		ignore_defender_damage_effects,
+	)
 
 
 func _effect_damage_estimate(
@@ -3351,27 +3406,26 @@ func _effect_damage_estimate(
 			var filter := str(params.get("energy_filter", params.get("energy_type", ""))).to_lower()
 			var count := 0
 			if active:
-				for energy_id in active.energy_card_ids:
-					if filter.is_empty() or filter == "any":
+				for provided in EnergyView.units_for_cards(active.energy_card_ids, catalog):
+					if (
+						filter.is_empty()
+						or filter == "any"
+						or provided.to_lower() in [filter, "rainbow"]
+					):
 						count += 1
-					else:
-						for provided in catalog.provides_energy(energy_id):
-							if provided.to_lower() == filter:
-								count += 1
-								break
 			return int(params.get("base", 0)) + count * int(params.get("per_energy", 0))
 		"damage_per_energy":
 			var count := 0
 			match str(params.get("count_from", "self")):
 				"opponent_active":
-					count = opponent.active.energy_card_ids.size() if opponent.active else 0
+					count = _effective_energy_unit_count(opponent.active, catalog)
 				"all_opponent":
 					for row in opponent.get_all_pokemon():
 						var pokemon: PokemonState = row["pokemon"]
 						if pokemon:
-							count += pokemon.energy_card_ids.size()
+							count += _effective_energy_unit_count(pokemon, catalog)
 				_:
-					count = active.energy_card_ids.size() if active else 0
+					count = _effective_energy_unit_count(active, catalog)
 			return int(params.get("base", 0)) + count * int(params.get("per_energy", 0))
 		"damage_plus_bench":
 			return int(params.get("base", 0)) + player.bench_count() * int(params.get("per_bench", 0))
@@ -3380,10 +3434,8 @@ func _effect_damage_estimate(
 			total += player.bench_count() * int(params.get("per_own_bench", 0))
 			var per_self_energy_type := str(params.get("per_self_energy_type", ""))
 			if active and not per_self_energy_type.is_empty():
-				var energy_count := 0
-				for energy_id in active.energy_card_ids:
-					if _energy_card_matches_type(energy_id, per_self_energy_type, catalog):
-						energy_count += 1
+				var energy_count := _effective_energy_type_count(
+					active, per_self_energy_type, catalog)
 				total += energy_count * int(params.get("per_energy", 0))
 			if active:
 				total += active.damage_counters * int(params.get("per_self_damage_counter", 0))
@@ -3391,8 +3443,10 @@ func _effect_damage_estimate(
 			var condition := str(condition_bonus.get("condition", ""))
 			var applies := false
 			match condition:
-				"ko_by_attack_last_turn":
-					applies = player.was_ko_by_attack
+				"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn":
+					applies = state.had_attack_knockout_last_turn(actor)
+				"ko_last_opponent_turn":
+					applies = state.had_knockout_last_turn(actor)
 				"own_bench_damaged":
 					for bench_pokemon in player.bench:
 						if bench_pokemon and bench_pokemon.damage_counters > 0:
@@ -3434,7 +3488,11 @@ func _effect_damage_estimate(
 					evolved += 1
 			return evolved * int(params.get("per_evolved", 0))
 		"conditional_damage_heal":
-			return int(params.get("base", 0)) + (int(params.get("bonus", 0)) if player.healed_this_turn else 0)
+			return int(params.get("base", 0)) + (
+				int(params.get("bonus", 0))
+				if active != null and active.healed_this_turn
+				else 0
+			)
 		"damage_and_self_heal":
 			return int(params.get("damage", params.get("amount", 0)))
 		"any_pokemon_damage", "bench_damage", "place_counters_and_self_ko":
@@ -3477,12 +3535,14 @@ func _conditional_damage_bonus_applies(
 			for row in player.get_all_pokemon():
 				var pokemon: PokemonState = row["pokemon"]
 				if pokemon:
-					count += pokemon.energy_card_ids.size()
+					count += _effective_energy_unit_count(pokemon, _catalog)
 			return count >= 5
 		"opponent_active_evolved":
 			return opponent.active != null and not _catalog.is_basic_pokemon(opponent.active.card_id)
-		"ko_by_attack_last_turn":
-			return player.was_ko_by_attack
+		"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn":
+			return state.had_attack_knockout_last_turn(actor)
+		"ko_last_opponent_turn":
+			return state.had_knockout_last_turn(actor)
 		_:
 			return opponent.active != null and opponent.active.damage_counters > 0
 
@@ -3516,10 +3576,40 @@ func _branch_has_effect_type(branch: Variant, effect_type: String) -> bool:
 	return false
 
 
+func _effective_energy_unit_count(
+	pokemon: PokemonState,
+	catalog: CardCatalog,
+) -> int:
+	return (
+		0
+		if pokemon == null
+		else EnergyView.units_for_cards(pokemon.energy_card_ids, catalog).size()
+	)
+
+
+func _effective_energy_type_count(
+	pokemon: PokemonState,
+	energy_type: String,
+	catalog: CardCatalog,
+) -> int:
+	if pokemon == null:
+		return 0
+	var normalized := energy_type.to_lower()
+	if normalized in ["", "any", "energy"]:
+		return _effective_energy_unit_count(pokemon, catalog)
+	var result := 0
+	for provided in EnergyView.units_for_cards(pokemon.energy_card_ids, catalog):
+		if provided.to_lower() in [normalized, "rainbow"]:
+			result += 1
+	return result
+
+
 func _energy_card_matches_type(
 	card_id: String,
 	energy_type: String,
 	catalog: CardCatalog,
+	attached_card_ids: Array[String] = [],
+	card_index: int = -1,
 ) -> bool:
 	var normalized := energy_type.to_lower()
 	if normalized in ["", "any", "energy"]:
@@ -3528,7 +3618,12 @@ func _energy_card_matches_type(
 		return catalog.is_basic_energy(card_id)
 	if not catalog.is_energy(card_id):
 		return false
-	for provided in catalog.provides_energy(card_id):
+	var provided_types: Array[String] = []
+	if card_index >= 0 and card_index < attached_card_ids.size():
+		provided_types = EnergyView.units_for_card_at(attached_card_ids, card_index, catalog)
+	else:
+		provided_types.assign(catalog.provides_energy(card_id))
+	for provided in provided_types:
 		var provided_type := str(provided).to_lower()
 		if provided_type == normalized or provided_type == "rainbow":
 			return true
@@ -3540,27 +3635,16 @@ func _modified_attack_damage(
 	actor: int,
 	base_damage: int,
 	catalog: CardCatalog,
-	ignore_defender_effects: bool = false,
-	piercing: bool = false,
+	ignore_weakness: bool = false,
+	ignore_resistance: bool = false,
+	ignore_defender_damage_effects: bool = false,
 ) -> int:
 	var attacker := state.get_player(actor).active
 	var defender := state.get_player(1 - actor).active
 	if attacker == null or defender == null or base_damage <= 0:
 		return max(0, base_damage)
 	var damage := base_damage
-	if not ignore_defender_effects:
-		for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
-			var ability: Dictionary = ability_value
-			for effect_value in ability.get("effects", []):
-				var effect: Dictionary = effect_value
-				if str(effect.get("effect_type", "")) == "aura_damage_reduction":
-					var params: Dictionary = effect.get("params", {})
-					if (
-						bool(params.get("requires_attached_energy", false))
-						and defender.energy_card_ids.is_empty()
-					):
-						continue
-					damage -= int(params.get("reduction", 20))
+	# Attacker-side modifiers are applied before type matchups.
 	for row in state.get_player(actor).get_all_pokemon():
 		var aura_source: PokemonState = row["pokemon"]
 		if aura_source == null:
@@ -3603,7 +3687,51 @@ func _modified_attack_damage(
 				and state.get_player(actor).prizes.size() > state.get_player(1 - actor).prizes.size()
 			):
 				damage += 30
-	if not ignore_defender_effects and not defender.attached_tool_id.is_empty():
+	if damage <= 0:
+		return 0
+
+	# Weakness and Resistance are independent. Bench packets set both flags in
+	# the engine, while attacks such as Zacian's may ignore Weakness only.
+	if state.apply_type_matchups:
+		var attacking_type := "Colorless"
+		var attacking_card := catalog.get_card(attacker.card_id)
+		if not attacking_card.get("energy_types", []).is_empty():
+			attacking_type = str(attacking_card.get("energy_types", [])[0])
+		var defending_card := catalog.get_card(defender.card_id)
+		if not ignore_weakness:
+			for weakness_value in defending_card.get("weaknesses", []):
+				var weakness: Dictionary = weakness_value
+				if str(weakness.get("energy_type", "")) == attacking_type:
+					if str(weakness.get("value", "")) in ["x2", "×2"]:
+						damage *= 2
+					break
+		if not ignore_resistance:
+			for resistance_value in defending_card.get("resistances", []):
+				var resistance: Dictionary = resistance_value
+				if str(resistance.get("energy_type", "")) == attacking_type:
+					damage -= abs(int(str(resistance.get("value", "0")).replace("-", "")))
+					break
+	if damage <= 0:
+		return 0
+
+	# Defender-side modifiers and final prevention are last in the pipeline.
+	if not ignore_defender_damage_effects:
+		for ability_value in catalog.get_card(defender.card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			for effect_value in ability.get("effects", []):
+				var effect: Dictionary = effect_value
+				if str(effect.get("effect_type", "")) == "aura_damage_reduction":
+					var params: Dictionary = effect.get("params", {})
+					if (
+						bool(params.get("requires_attached_energy", false))
+						and defender.energy_card_ids.is_empty()
+					):
+						continue
+					damage -= int(params.get("reduction", 20))
+	if (
+		not ignore_defender_damage_effects
+		and not defender.attached_tool_id.is_empty()
+	):
 		for effect_value in catalog.get_card(defender.attached_tool_id).get("trainer_effects", []):
 			var effect: Dictionary = effect_value
 			if str(effect.get("effect_type", "")) != "tool":
@@ -3611,23 +3739,11 @@ func _modified_attack_damage(
 			var modifier := str(effect.get("params", {}).get("effect", ""))
 			if modifier == "damage_reduction_stage1" and catalog.is_stage1(defender.card_id):
 				damage -= int(effect.get("params", {}).get("amount", 30))
-	if state.apply_type_matchups and not piercing:
-		var attacking_type := "Colorless"
-		var attacking_card := catalog.get_card(attacker.card_id)
-		if not attacking_card.get("energy_types", []).is_empty():
-			attacking_type = str(attacking_card.get("energy_types", [])[0])
-		var defending_card := catalog.get_card(defender.card_id)
-		for weakness_value in defending_card.get("weaknesses", []):
-			var weakness: Dictionary = weakness_value
-			if str(weakness.get("energy_type", "")) == attacking_type:
-				if str(weakness.get("value", "")) in ["x2", "×2"]:
-					damage *= 2
-				break
-		for resistance_value in defending_card.get("resistances", []):
-			var resistance: Dictionary = resistance_value
-			if str(resistance.get("energy_type", "")) == attacking_type:
-				damage -= abs(int(str(resistance.get("value", "0")).replace("-", "")))
-				break
+	if (
+		not ignore_defender_damage_effects
+		and (defender.damage_prevented_next_turn or defender.all_prevented_next_turn)
+	):
+		return 0
 	return max(0, damage)
 
 
@@ -3807,7 +3923,7 @@ func _promotion_value_for_state(
 		value += 55.0 + _best_pokemon_damage(pokemon, catalog) * 0.20
 	else:
 		value -= min(120.0, missing * 35.0)
-	value += pokemon.energy_card_ids.size() * 18.0
+	value += _effective_energy_unit_count(pokemon, catalog) * 18.0
 	var opponent_damage := _best_available_damage_against_candidate(state, actor, pokemon, catalog)
 	var survives := opponent_damage <= 0 or opponent_damage < pokemon.current_hp(catalog)
 	if survives:
@@ -3815,7 +3931,7 @@ func _promotion_value_for_state(
 	else:
 		var asset_value := (
 			_card_priority(pokemon.card_id, deck_key, catalog)
-			+ pokemon.energy_card_ids.size() * 45.0
+			+ _effective_energy_unit_count(pokemon, catalog) * 45.0
 			+ pokemon.evolution_stack_ids.size() * 45.0
 			+ catalog.prize_value(pokemon.card_id) * 120.0
 		)
@@ -3975,8 +4091,9 @@ func _missing_energy_count_with_extra(
 ) -> int:
 	if pokemon == null:
 		return 99
-	var available := pokemon.available_energy(catalog)
-	available.append_array(catalog.provides_energy(energy_card_id))
+	var cards := pokemon.energy_card_ids.duplicate()
+	cards.append(energy_card_id)
+	var available := EnergyView.units_for_cards(cards, catalog)
 	return _missing_energy_count_from_available(available, cost)
 
 
@@ -4011,7 +4128,14 @@ func _best_pokemon_damage(pokemon: PokemonState, catalog: CardCatalog) -> int:
 				"damage_per_self_damage":
 					damage = max(damage, int(params.get("base", 0)) + pokemon.damage_counters * int(params.get("per_counter", 0)))
 				"damage_per_self_energy", "damage_per_self_energy_type":
-					damage = max(damage, int(params.get("base", 0)) + pokemon.energy_card_ids.size() * int(params.get("per_energy", 0)))
+					var energy_type := str(params.get(
+						"energy_filter", params.get("energy_type", "any")))
+					damage = max(
+						damage,
+						int(params.get("base", 0))
+						+ _effective_energy_type_count(pokemon, energy_type, catalog)
+						* int(params.get("per_energy", 0)),
+					)
 				"damage_plus_bench":
 					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
 				"damage_self_penalty":
@@ -4022,7 +4146,11 @@ func _best_pokemon_damage(pokemon: PokemonState, catalog: CardCatalog) -> int:
 					var formula_damage := int(params.get("base", 0))
 					formula_damage += int(params.get("per_own_bench", 0)) * 3
 					if not str(params.get("per_self_energy_type", "")).is_empty():
-						formula_damage += pokemon.energy_card_ids.size() * int(params.get("per_energy", 0))
+						formula_damage += _effective_energy_type_count(
+							pokemon,
+							str(params.get("per_self_energy_type", "any")),
+							catalog,
+						) * int(params.get("per_energy", 0))
 					var condition_bonus: Dictionary = params.get("condition_bonus", {})
 					formula_damage += int(condition_bonus.get("bonus", 0))
 					damage = max(damage, formula_damage)
@@ -4102,8 +4230,10 @@ func _energy_relocate_value(
 		var source_slot := str(source_row["slot"])
 		if source == null:
 			continue
-		for energy_id in source.energy_card_ids:
-			if not _energy_card_matches_type(energy_id, energy_type, catalog):
+		for energy_index in range(source.energy_card_ids.size()):
+			var energy_id := str(source.energy_card_ids[energy_index])
+			if not _energy_card_matches_type(
+				energy_id, energy_type, catalog, source.energy_card_ids, energy_index):
 				continue
 			for target_row in player.get_all_pokemon():
 				var target: PokemonState = target_row["pokemon"]
@@ -4245,7 +4375,14 @@ func _pokemon_strength_feature_row(pokemon: PokemonState, catalog: CardCatalog) 
 				"damage_plus_bench":
 					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
 				"damage_per_self_energy", "damage_per_self_energy_type":
-					damage = max(damage, int(params.get("base", 0)) + pokemon.energy_card_ids.size() * int(params.get("per_energy", 0)))
+					var energy_type := str(params.get(
+						"energy_filter", params.get("energy_type", "any")))
+					damage = max(
+						damage,
+						int(params.get("base", 0))
+						+ _effective_energy_type_count(pokemon, energy_type, catalog)
+						* int(params.get("per_energy", 0)),
+					)
 				"damage_self_penalty":
 					damage = max(damage, max(0, int(params.get("base", 0)) - pokemon.damage_counters * int(params.get("per_counter", 0))))
 				"conditional_damage_bonus":
@@ -4254,13 +4391,17 @@ func _pokemon_strength_feature_row(pokemon: PokemonState, catalog: CardCatalog) 
 					var formula_damage := int(params.get("base", 0))
 					formula_damage += int(params.get("per_own_bench", 0)) * 3
 					if not str(params.get("per_self_energy_type", "")).is_empty():
-						formula_damage += pokemon.energy_card_ids.size() * int(params.get("per_energy", 0))
+						formula_damage += _effective_energy_type_count(
+							pokemon,
+							str(params.get("per_self_energy_type", "any")),
+							catalog,
+						) * int(params.get("per_energy", 0))
 					formula_damage += int(Dictionary(params.get("condition_bonus", {})).get("bonus", 0))
 					damage = max(damage, formula_damage)
 		best_damage = max(best_damage, damage)
 	result[0] = float(pokemon.current_hp(catalog))
 	result[1] = float(best_damage)
-	result[2] = float(pokemon.energy_card_ids.size())
+	result[2] = float(_effective_energy_unit_count(pokemon, catalog))
 	return result
 
 
@@ -4361,7 +4502,7 @@ func _active_ko_risk_value(
 		return 0.0
 	var risk := float(SCORE_WEIGHTS["active_ko_risk"])
 	risk += catalog.prize_value(player.active.card_id) * 105.0
-	risk += player.active.energy_card_ids.size() * 30.0
+	risk += _effective_energy_unit_count(player.active, catalog) * 30.0
 	if AIDeckProfiles.contains(deck_key, "core", player.active.card_id):
 		risk += 70.0
 	return risk
@@ -4518,6 +4659,8 @@ func _evaluate(state: GameState, perspective: int, catalog: CardCatalog) -> floa
 
 
 func _evaluate_raw(state: GameState, perspective: int, catalog: CardCatalog) -> float:
+	if state.result_status == GameState.RESULT_DRAW:
+		return 0.0
 	if state.winner >= 0:
 		return 1800.0 if state.winner == perspective else -1800.0
 	var own := state.get_player(perspective)
@@ -4541,6 +4684,8 @@ func _evaluate_raw(state: GameState, perspective: int, catalog: CardCatalog) -> 
 
 
 func _evaluate_raw_gdscript(state: GameState, perspective: int, catalog: CardCatalog) -> float:
+	if state.result_status == GameState.RESULT_DRAW:
+		return 0.0
 	if state.winner >= 0:
 		return 1800.0 if state.winner == perspective else -1800.0
 	var own := state.get_player(perspective)
@@ -4675,11 +4820,21 @@ func _best_search_index(
 			best_average = average
 			best_prior = prior
 		elif count == best_visits:
-			if average > best_average:
+			# Zero simulations is the deterministic heuristic-only path used by
+			# setup and emergency fallback. There is no average to compare, so
+			# choose the strongest prior instead of preserving wire order.
+			if count == 0 and prior > best_prior:
+				best = index
+				best_prior = prior
+			elif count > 0 and average > best_average:
 				best = index
 				best_average = average
 				best_prior = prior
-			elif is_equal_approx(average, best_average) and prior > best_prior:
+			elif (
+				count > 0
+				and is_equal_approx(average, best_average)
+				and prior > best_prior
+			):
 				best = index
 				best_prior = prior
 	return best
@@ -4724,7 +4879,11 @@ func _current_actor(state: GameState) -> int:
 	if not state.pending_promotions.is_empty():
 		return int(state.pending_promotions[0])
 	if state.phase == "SETUP":
-		return 0 if not state.setup_ready[0] else 1
+		return (
+			state.setup_actor_idx
+			if state.setup_actor_idx in [0, 1]
+			else state.active_player_idx
+		)
 	return state.active_player_idx
 
 

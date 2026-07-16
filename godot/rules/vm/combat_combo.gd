@@ -51,7 +51,9 @@ func discard_fighting_energy_then_damage(
 	var discard_start := player.discard.size()
 	for index in range(source.energy_card_ids.size()):
 		var energy_id := source.energy_card_ids[index]
-		if "Fighting" in catalog.provides_energy(energy_id):
+		var units := EnergyView.units_for_card_at(
+			source.energy_card_ids, index, catalog)
+		if "Fighting" in units or "Rainbow" in units:
 			player.discard.append(energy_id)
 			discarded_ids.append(energy_id)
 			discarded_indices.append(index)

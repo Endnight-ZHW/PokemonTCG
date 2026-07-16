@@ -209,6 +209,7 @@ class HealDamage:
                         actual = min(poke.damage_counters, heal_counters)
                         poke.damage_counters -= actual
                     if actual > 0:
+                        poke.healed_this_turn = True
                         healed.append(poke.card.name)
             if healed:
                 ctx.player.healed_this_turn = True
@@ -226,11 +227,14 @@ class HealDamage:
             target = ctx.player.get_pokemon(ctx.source_slot) or ctx.player.active
         if not target:
             return CommandResult.fail("没有回复目标。")
+        before = target.damage_counters
         if self.amount == 0:
             target.damage_counters = 0
         else:
             target.damage_counters = max(0, target.damage_counters - self.amount // DAMAGE_PER_COUNTER)
-        ctx.player.healed_this_turn = True
+        if target.damage_counters < before:
+            target.healed_this_turn = True
+            ctx.player.healed_this_turn = True
         ctx.state._log(f"回复了{target.card.name}的{self.amount}点伤害。")
         return CommandResult.ok(f"回复了{self.amount}点。")
 
@@ -259,8 +263,11 @@ class ChooseHealDamage:
 
         def heal_target(_slot_name, pokemon):
             counters = int(self.amount or 0) // DAMAGE_PER_COUNTER
+            before = pokemon.damage_counters
             pokemon.damage_counters = max(0, pokemon.damage_counters - counters)
-            player.healed_this_turn = True
+            if pokemon.damage_counters < before:
+                pokemon.healed_this_turn = True
+                player.healed_this_turn = True
             ctx.state._log(f"{pokemon.card.name}回复了{self.amount}点HP。")
             return f"{pokemon.card.name}回复了{self.amount}点HP。"
 
@@ -376,8 +383,20 @@ class SwitchPokemon:
         if bench_idx < 0 or bench_idx >= len(player.bench) or player.bench[bench_idx] is None:
             return
         active_name = player.active.card.name if player.active else ""
+        active_card_id = str(
+            getattr(player.active.card, "api_id", "") or ""
+        ) if player.active else ""
         bench_name = player.bench[bench_idx].card.name
         player.switch_active_to_bench(bench_idx)
+        from engine.commands.trigger_commands import retarget_pending_after_damage_entity
+
+        retarget_pending_after_damage_entity(
+            ctx.stack,
+            ctx.player_idx if getattr(ctx, "player", None) is player else 1 - ctx.player_idx,
+            "active",
+            f"bench_{bench_idx}",
+            active_card_id,
+        )
         ctx.state._log(f"将{active_name}与{bench_name}互换了。")
 
 

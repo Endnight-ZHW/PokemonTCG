@@ -29,16 +29,105 @@ func setup_done(
 ) -> StepResult:
 	if state.phase != "SETUP":
 		return _error("当前不在准备阶段。", "invalid_phase", state)
+	if actor != state.setup_actor_idx:
+		return _error("尚未轮到该玩家完成准备。", "wrong_setup_actor", state)
+	if state.setup_stage == GameState.SETUP_BONUS_PLACEMENT:
+		return complete_setup(state, rng)
+	if state.setup_stage != GameState.SETUP_INITIAL_PLACEMENT:
+		return _error("当前准备阶段不能确认完成。", "invalid_setup_stage", state)
 	if state.get_player(actor).active == null:
 		return _error("必须先放置战斗宝可梦。", "missing_active", state)
 	state.setup_ready[actor] = true
 	if not state.setup_ready[0] or not state.setup_ready[1]:
+		state.setup_actor_idx = 1 - actor
 		return StepResult.new(true, "玩家%d已完成准备。" % (actor + 1))
 	state.set_prizes()
+	var bonus_player := -1
+	if state.mulligan_count[1] > state.mulligan_count[0]:
+		bonus_player = 0
+	elif state.mulligan_count[0] > state.mulligan_count[1]:
+		bonus_player = 1
+	if bonus_player >= 0 and state.mulligan_bonus_max > 0:
+		state.setup_stage = GameState.SETUP_BONUS_DRAW
+		state.setup_actor_idx = bonus_player
+		return _mulligan_draw_request(state, bonus_player)
+	return complete_setup(state, rng)
+
+
+func complete_setup(
+	state: GameState,
+	rng: PortableRandomSource,
+) -> StepResult:
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.setup_actor_idx = -1
+	state.setup_bonus_card_ids = [[], []]
 	state.active_player_idx = state.first_player_idx
 	state.phase = "DRAW"
-	state.log_action("准备完成。")
-	return turn_settlement.begin_turn(state, rng)
+	state.log_action("准备完成，双方同时翻开宝可梦。")
+	var reveal_event := {
+		"event_type": "setup_revealed",
+		"visibility": "public",
+		"data": {
+			"first_player": state.first_player_idx,
+			"players": [
+				_setup_board_payload(state.get_player(0)),
+				_setup_board_payload(state.get_player(1)),
+			],
+		},
+	}
+	var step := turn_settlement.begin_turn(state, rng)
+	step.events.push_front(reveal_event)
+	return step
+
+
+func _mulligan_draw_request(state: GameState, player_idx: int) -> StepResult:
+	var stack := ResolutionStack.new()
+	var frame_id := "setup:mulligan_bonus:%d" % state.choice_sequence
+	stack.push_continuation("setup_mulligan_draw", {
+		"kind": "setup_mulligan_draw",
+		"frame_id": frame_id,
+		"player_idx": player_idx,
+		"max_draw": state.mulligan_bonus_max,
+	})
+	var options: Array[Dictionary] = []
+	for amount in range(state.mulligan_bonus_max + 1):
+		options.append({
+			"option_id": "draw:%d" % amount,
+			"label": "抽%d张" % amount,
+			"value": {"count": amount},
+		})
+	stack.pending_request = ChoiceRequest.new(
+		stack.next_request_id(state, player_idx, "choose_mulligan_draw_count"),
+		"choose_mulligan_draw_count",
+		player_idx,
+		"可以抽取至多%d张再战奖励卡。" % state.mulligan_bonus_max,
+		options,
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": "setup",
+			"purpose": "choose_mulligan_draw_count",
+			"revision": state.revision,
+			"continuation_frame_id": frame_id,
+			"max_draw": state.mulligan_bonus_max,
+		},
+	)
+	state.resolution_stack = stack.to_dict()
+	return StepResult.new(
+		true, "请选择再战奖励抽牌数。", stack.pending_request, [], state.winner, false)
+
+
+func _setup_board_payload(player: PlayerState) -> Dictionary:
+	var bench_ids: Array[String] = []
+	for pokemon in player.bench:
+		if pokemon is PokemonState:
+			bench_ids.append(pokemon.card_id)
+	return {
+		"active": player.active.card_id if player.active else "",
+		"bench": bench_ids,
+	}
 
 
 func play_basic(
@@ -64,7 +153,16 @@ func play_basic(
 	if pokemon == null:
 		return _error("无法放置宝可梦。", "placement_failed", state)
 	pokemon.placed_this_turn = true
-	state.log_action("%s将%s放置到%s。" % [player.name, catalog.card_name(card_id), target])
+	if state.setup_stage == GameState.SETUP_BONUS_PLACEMENT:
+		var bonus_cards: Array = state.setup_bonus_card_ids[actor]
+		var bonus_index := bonus_cards.find(card_id)
+		if bonus_index >= 0:
+			bonus_cards.remove_at(bonus_index)
+		state.setup_bonus_card_ids[actor] = bonus_cards
+	if state.phase == "SETUP":
+		state.log_action("%s放置了一只暗置宝可梦。" % player.name)
+	else:
+		state.log_action("%s将%s放置到%s。" % [player.name, catalog.card_name(card_id), target])
 	var placement_event := {
 		"event_type": "pokemon_played",
 		"actor": actor,
@@ -84,14 +182,19 @@ func play_basic(
 			"card_id": card_id,
 		},
 	}
+	if state.phase == "SETUP":
+		placement_event["visibility"] = "owner"
 	var effects: Array = []
-	for ability_value in catalog.get_card(card_id).get("abilities", []):
-		var ability: Dictionary = ability_value
-		if str(ability.get("trigger", "")) == "on_enter_play":
-			effects.append_array(_ability_runtime_effects(ability))
+	if state.phase == "MAIN":
+		for ability_value in catalog.get_card(card_id).get("abilities", []):
+			var ability: Dictionary = ability_value
+			if str(ability.get("trigger", "")) == "on_enter_play":
+				effects.append_array(_ability_runtime_effects(ability))
 	if effects.is_empty():
 		return StepResult.new(true, "宝可梦已放置。", null, [placement_event])
-	var step := run_effects(state, effects, actor, target, rng)
+	var step := run_effects(state, effects, actor, target, rng, {
+		"effect_source_kind": "ability",
+	})
 	step.events.push_front(placement_event)
 	return step
 
@@ -114,7 +217,7 @@ func evolve(
 	player.hand.remove_at(hand_idx)
 	pokemon.evolution_stack_ids.append(pokemon.card_id)
 	pokemon.card_id = card_id
-	pokemon.status_conditions.clear()
+	pokemon.clear_special_conditions_and_attack_effects()
 	pokemon.can_evolve_this_turn = false
 	state.log_action("%s进化为%s。" % [player.name, catalog.card_name(card_id)])
 	var evolution_event := {
@@ -143,7 +246,9 @@ func evolve(
 			effects.append_array(_ability_runtime_effects(ability))
 	if effects.is_empty():
 		return StepResult.new(true, "进化完成。", null, [evolution_event])
-	var step := run_effects(state, effects, actor, slot, rng)
+	var step := run_effects(state, effects, actor, slot, rng, {
+		"effect_source_kind": "ability",
+	})
 	step.events.push_front(evolution_event)
 	return step
 
@@ -243,15 +348,20 @@ func play_trainer(
 	if catalog.is_stadium(card_id):
 		if not state.stadium_card_id.is_empty():
 			var replaced_stadium_id := state.stadium_card_id
-			var discard_index := player.discard.size()
-			player.discard.append(replaced_stadium_id)
+			var replaced_owner_idx := state.stadium_owner_idx
+			if replaced_owner_idx not in [0, 1]:
+				replaced_owner_idx = actor
+			var replaced_owner := state.get_player(replaced_owner_idx)
+			var discard_index := replaced_owner.discard.size()
+			replaced_owner.discard.append(replaced_stadium_id)
 			play_events.append(VMZoneHelpers.card_moved_event(
 				actor,
 				[replaced_stadium_id],
-				{"player": actor, "zone": "stadium", "index": 0},
-				{"player": actor, "zone": "discard", "index": discard_index},
+				{"player": replaced_owner_idx, "zone": "stadium", "index": 0},
+				{"player": replaced_owner_idx, "zone": "discard", "index": discard_index},
 			))
 		state.stadium_card_id = card_id
+		state.stadium_owner_idx = actor
 		player.stadium_played_this_turn = true
 		play_event["event_type"] = "stadium_changed"
 		play_event["target"] = {"player": actor, "zone": "stadium"}
@@ -264,7 +374,9 @@ func play_trainer(
 	var effects: Array = _trainer_runtime_effects(card_id)
 	if effects.is_empty():
 		return StepResult.new(true, "训练家卡已使用。", null, play_events)
-	var step := run_effects(state, effects, actor, "active", rng)
+	var step := run_effects(state, effects, actor, "active", rng, {
+		"effect_source_kind": "stadium" if catalog.is_stadium(card_id) else "trainer",
+	})
 	step.events = play_events + step.events
 	return step
 
@@ -279,15 +391,22 @@ func use_ability(
 	var reason := validator.can_use_ability(state, actor, slot, ability_name)
 	if not reason.is_empty():
 		return _error(reason, "illegal_ability", state)
-	var pokemon := state.get_player(actor).get_pokemon(slot)
-	for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
+	var player := state.get_player(actor)
+	var pokemon := player.get_pokemon(slot)
+	var source_card_id := pokemon.card_id if pokemon else ""
+	if slot.begins_with("discard_"):
+		var discard_index := slot.trim_prefix("discard_").to_int()
+		source_card_id = str(player.discard[discard_index])
+	for ability_value in catalog.get_card(source_card_id).get("abilities", []):
 		var ability: Dictionary = ability_value
 		if str(ability.get("name", "")).to_lower() != ability_name.to_lower():
 			continue
-		if str(ability.get("trigger", "")) != "repeatable":
+		if pokemon != null and str(ability.get("trigger", "")) != "repeatable":
 			pokemon.used_abilities.append(ability_name)
-		state.log_action("%s使用特性%s。" % [catalog.card_name(pokemon.card_id), ability_name])
-		return run_effects(state, _ability_runtime_effects(ability), actor, slot, rng)
+		state.log_action("%s使用特性%s。" % [catalog.card_name(source_card_id), ability_name])
+		return run_effects(
+			state, _ability_runtime_effects(ability), actor, slot, rng,
+			{"effect_source_kind": "ability"})
 	return _error("没有找到该特性。", "ability_not_found", state)
 
 
@@ -303,7 +422,9 @@ func use_stadium(
 		return _error("本回合已使用过竞技场效果。", "stadium_already_used", state)
 	player.stadium_used_this_turn = true
 	var effects: Array = _trainer_runtime_effects(state.stadium_card_id)
-	return run_effects(state, effects, actor, "active", rng)
+	return run_effects(
+		state, effects, actor, "active", rng,
+		{"effect_source_kind": "stadium"})
 
 
 func retreat(

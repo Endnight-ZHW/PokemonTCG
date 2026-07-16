@@ -1,6 +1,7 @@
 extends SceneTree
 
 const ACTION_GUARD := 1200
+const POLL_GUARD := 30000
 
 var failures: Array[String] = []
 
@@ -37,7 +38,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 		if error == OK:
 			error = client.join_lan("127.0.0.1", port, deck_key)
 	else:
-		error = host.host_relay(relay_url, deck_key, 20260621)
+		error = host.host_relay(relay_url, deck_key, 20260621, true)
 		if error == OK:
 			var room_id := ""
 			for _poll in range(10000):
@@ -68,7 +69,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 	var last_revision := -1
 	var same_deck_verified := false
 	var action_counts := {}
-	while actions < ACTION_GUARD and loops < 120000:
+	while actions < ACTION_GUARD and loops < POLL_GUARD:
 		loops += 1
 		var submitted := false
 		for event in host.poll():
@@ -106,7 +107,8 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 				continue
 			var state_payload: Dictionary = view.get("state", {})
 			var winner := int(state_payload.get("winner", -1))
-			if winner >= 0:
+			var result_status := str(state_payload.get("result_status", "ONGOING"))
+			if result_status != "ONGOING":
 				if not same_deck_verified:
 					host.close()
 					client.close()
@@ -115,6 +117,7 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 					"success": true,
 					"transport": transport_kind,
 					"winner": winner,
+					"result_status": result_status,
 					"turns": int(state_payload.get("turn_number", 0)),
 					"actions": actions,
 					"choices": choices,
@@ -169,6 +172,14 @@ func _capture_event(
 	match str(event.get("type", "")):
 		"state":
 			var view: Dictionary = event.get("view", {})
+			var protocol_validation := ProtocolV4.validate_payload(
+				ProtocolV4.STATE_UPDATE, view
+			)
+			if not bool(protocol_validation.get("ok", false)):
+				return {"error": "received a state outside the protocol v4 contract: %s events=%s" % [
+					JSON.stringify(protocol_validation),
+					JSON.stringify(view.get("presentation_events", [])),
+				]}
 			var state_payload: Dictionary = view.get("state", {})
 			var own: Dictionary = state_payload.get("your", {})
 			var opponent: Dictionary = state_payload.get("opponent", {})
@@ -180,6 +191,18 @@ func _capture_event(
 				or opponent.has("prizes")
 			):
 				return {"error": "hidden information leaked to player %d" % player_idx}
+			if (
+				str(state_payload.get("rules_profile_id", ""))
+				!= GameState.RULES_PROFILE_ID
+				or not state_payload.get("rules_options") is Dictionary
+				or Dictionary(state_payload["rules_options"]).keys()
+				!= ["apply_type_matchups"]
+			):
+				return {"error": "rules profile/options were not locked in the player view"}
+			if str(state_payload.get("setup_stage", "")) != GameState.SETUP_COMPLETE:
+				for pokemon_value in [opponent.get("active")] + Array(opponent.get("bench", [])):
+					if pokemon_value != null and pokemon_value != {"hidden": true}:
+						return {"error": "setup Pokemon identity leaked before reveal"}
 			latest_views[player_idx] = view
 		"error", "connection_failed", "transport_error", "disconnected":
 			return {"error": JSON.stringify(event)}

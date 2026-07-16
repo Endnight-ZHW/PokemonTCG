@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
+from engine.energy_view import EnergyView
 
 if TYPE_CHECKING:
     from engine.commands.base import ResolutionContext
@@ -105,8 +106,13 @@ def _eval_variable(op: str, ctx: ResolutionContext, node: dict[str, Any]) -> int
 
 def condition_applies(condition: str, ctx: ResolutionContext) -> bool:
     condition = str(condition or "")
-    if condition == "ko_by_attack_last_turn":
-        return bool(ctx.player.was_ko_by_attack)
+    if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+        return ctx.state.had_knockout_last_opponent_turn(
+            ctx.player_idx,
+            causes={"attack_damage"},
+        )
+    if condition == "ko_last_opponent_turn":
+        return ctx.state.had_knockout_last_opponent_turn(ctx.player_idx)
     if condition == "own_bench_damaged":
         return any(pokemon is not None and pokemon.damage_counters > 0 for pokemon in ctx.player.bench)
     if condition == "opponent_active_evolved":
@@ -151,13 +157,7 @@ def _energy_count(ctx: ResolutionContext, node: dict[str, Any]) -> int:
 
 
 def _matching_energy_count(pokemon, energy_type: str) -> int:
-    if energy_type in {"", "any"}:
-        return len(pokemon.energy_cards)
-    return sum(
-        1
-        for card in pokemon.energy_cards
-        if any(str(provided).lower() == energy_type for provided in card.provides_energy)
-    )
+    return EnergyView.from_pokemon(pokemon).count(energy_type)
 
 
 def _card_matches(card, filter_spec: Any) -> bool:

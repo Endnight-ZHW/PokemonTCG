@@ -13,7 +13,11 @@ def make_damage(params: dict, **_kw):
     return DealDamage(
         amount=params.get("amount", 0),
         target=params.get("target", "opponent_active"),
-        piercing=params.get("piercing", False),
+        ignore_weakness=bool(params.get("ignore_weakness", False)),
+        ignore_resistance=bool(params.get("ignore_resistance", False)),
+        ignore_defender_damage_effects=bool(
+            params.get("ignore_defender_damage_effects", False)
+        ),
         formula=str(formula or ""),
         formula_ast=formula_ast,
         consume_condition=str(params.get("consume_condition", "") or ""),

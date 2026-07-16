@@ -36,7 +36,9 @@ func apply_action(
 		and action.action not in ["DECLARE_ATTACK", "END_TURN"]
 		and str(checkpoint.get("state", {}).get("phase", "SETUP")) != "SETUP"
 	):
-		var ko_result := knockout_settlement.resolve_knockouts(state, actor, result.events, false)
+		var ko_stack := ResolutionStack.from_dict(state.resolution_stack)
+		var ko_result := knockout_settlement.resolve_knockouts(
+			state, actor, result.events, false, ko_stack)
 		if not bool(ko_result.get("success", false)):
 			return transaction_manager.rollback_failed_step(
 				state,
@@ -52,6 +54,17 @@ func apply_action(
 					str(ko_result.get("error_code", "trigger_command_failed")),
 				),
 			)
+		var prize_request: Variant = ko_result.get("pending_choice", null)
+		if prize_request is ChoiceRequest:
+			result.pending_choice = prize_request
+		else:
+			# Some effects remove their source from play without creating a KO row.
+			# Result evaluation belongs after the complete KO/prize batch, not inside
+			# the effect continuation that performed the removal.
+			knockout_settlement.resolve_empty_boards_and_promotions(state)
+			if state.is_terminal():
+				knockout_settlement.append_game_over_event(result.events, state)
+				state.resolution_stack = ResolutionStack.new().to_dict()
 	if (
 		result.pending_choice
 		and result.pending_choice.can_cancel
@@ -73,7 +86,7 @@ func apply_action(
 		if state.processed_action_ids.size() > 256:
 			state.processed_action_ids.pop_front()
 	result.winner = state.winner
-	result.terminal = state.winner >= 0 or state.phase == "GAME_OVER"
+	result.terminal = state.is_terminal()
 	return result
 
 

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from engine.commands.attack_frames import (
+    FinalizeAfterDamageTriggers,
     FinalizeAttackDamage,
     FinalizeAttackKoChecks,
     FinalizeAttackTurn,
+    FinalizeCheckupTurn,
     begin_attack_resolution_context,
     begin_attack_damage_context,
     apply_accumulated_attack_damage,
@@ -14,6 +16,7 @@ from engine.commands.attack_frames import (
     clear_attack_resolution_context,
     do_attack_ko_checks,
     handle_ko,
+    queue_knockout_batch,
 )
 from engine.commands.base import CommandResult
 from engine.commands.dsl_compiler import (
@@ -244,12 +247,44 @@ class VMEffectRunner:
             clear_attack_resolution_context(stack)
             return ActionResult(False, str(exc))
         commands = pre_hit_commands + [FinalizeAttackDamage()] + post_hit_commands
-        commands.append(FinalizeAttackKoChecks())
+        commands.extend([FinalizeAfterDamageTriggers(), FinalizeAttackKoChecks()])
         if finish_attack_in_stack:
             commands.append(FinalizeAttackTurn(player_idx))
         stack.push_many(commands)
         rr = stack.resolve_all(player_idx, source_slot)
         return self.resolution_result_to_action_result(rr)
+
+    def resolve_knockout_batch(
+        self,
+        *,
+        default_cause: str = "rule",
+        source_player: int | None = None,
+        finish_attack_actor: int | None = None,
+        finish_checkup_actor: int | None = None,
+    ) -> ActionResult:
+        """Run the shared KO trigger/discard/prize/finalize stack."""
+        if finish_attack_actor in (0, 1) and finish_checkup_actor in (0, 1):
+            return ActionResult(False, "昏厥结算不能同时结束招式与宝可梦检查。")
+
+        stack = ResolutionStack(self.state)
+        if finish_attack_actor in (0, 1):
+            stack.push(FinalizeAttackTurn(int(finish_attack_actor)))
+        elif finish_checkup_actor in (0, 1):
+            stack.push(FinalizeCheckupTurn(int(finish_checkup_actor)))
+
+        header = CommandResult.ok()
+        queue_knockout_batch(
+            self.state,
+            header,
+            stack,
+            default_cause=default_cause,
+            source_player=source_player,
+        )
+        rr = stack.resolve_all(self.state.active_player_idx, "active")
+        result = self.resolution_result_to_action_result(rr)
+        if header.pokemon_ko:
+            result.pokemon_ko = list(header.pokemon_ko) + list(result.pokemon_ko)
+        return result
 
     @staticmethod
     def resolution_result_to_action_result(rr) -> ActionResult:
@@ -280,8 +315,9 @@ class VMEffectRunner:
         attacker_type: str,
         result,
         *,
-        piercing: bool = False,
-        ignore_defender_effects: bool = False,
+        ignore_weakness: bool = False,
+        ignore_resistance: bool = False,
+        ignore_defender_damage_effects: bool = False,
     ):
         apply_attack_damage(
             self.state,
@@ -290,8 +326,9 @@ class VMEffectRunner:
             base_damage,
             attacker_type,
             result,
-            piercing=piercing,
-            ignore_defender_effects=ignore_defender_effects,
+            ignore_weakness=ignore_weakness,
+            ignore_resistance=ignore_resistance,
+            ignore_defender_damage_effects=ignore_defender_damage_effects,
         )
 
     def do_attack_ko_checks(self, result):

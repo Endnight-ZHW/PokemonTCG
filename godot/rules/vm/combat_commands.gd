@@ -123,11 +123,12 @@ func cmd_conditional_damage_then_heal(
 	args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
-	_source_slot: String,
+	source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
 	var total := int(args.get("base", 0))
-	if state.get_player(player_idx).healed_this_turn:
+	var source := state.get_player(player_idx).get_pokemon(source_slot)
+	if source != null and source.healed_this_turn:
 		total += int(args.get("bonus", 0))
 	return damage.deal_attack_or_effect_damage(
 		state, stack, player_idx, 1 - player_idx, "active", total, events)
@@ -187,19 +188,20 @@ func cmd_deal_damage(
 			}
 		amount = int(formula_result.get("value", 0))
 	if bool(stack.context.get("finish_attack", false)):
-		if bool(args.get("piercing", false)):
-			stack.context["piercing"] = true
-		if bool(args.get("ignore_defender_effects", false)):
-			stack.context["ignore_defender_effects"] = true
+		if bool(args.get("ignore_weakness", false)):
+			stack.context["ignore_weakness"] = true
+		if bool(args.get("ignore_resistance", false)):
+			stack.context["ignore_resistance"] = true
+		if bool(args.get(
+			"ignore_defender_damage_effects",
+			args.get("ignore_defender_effects", false),
+		)):
+			stack.context["ignore_defender_damage_effects"] = true
 	var target := str(args.get("target", "opponent_active"))
 	if target == "self":
 		return damage.deal_damage(state, player_idx, source_slot, amount, events)
 	var result := damage.deal_attack_or_effect_damage(
 		state, stack, player_idx, 1 - player_idx, "active", amount, events)
-	var consume_condition := str(args.get("consume_condition", ""))
-	if consume_condition == "ko_by_attack_last_turn":
-		if formula.condition_applies(state, player_idx, source_slot, consume_condition):
-			state.get_player(player_idx).was_ko_by_attack = false
 	return result
 
 
@@ -425,7 +427,7 @@ func cmd_mill_then_damage(
 
 func cmd_place_damage_counters(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -433,8 +435,35 @@ func cmd_place_damage_counters(
 	source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	return damage.deal_damage(
-		state, player_idx, source_slot, int(args.get("amount", 0)), events, false)
+	var pokemon := state.get_player(player_idx).get_pokemon(source_slot)
+	var counters := int(float(args.get("amount", 0)) / 10.0)
+	if pokemon == null or counters <= 0:
+		return VMResult.ok()
+	pokemon.damage_counters += counters
+	var causes: Dictionary = stack.context.get("knockout_causes", {})
+	causes["%d:%s" % [player_idx, source_slot]] = {
+		"source_kind": (
+			"attack_effect" if bool(stack.context.get("finish_attack", false))
+			else str(stack.context.get("effect_source_kind", "effect"))
+		),
+		"cause_kind": "damage_counters",
+		"source_player": player_idx,
+	}
+	stack.context["knockout_causes"] = causes
+	events.append({
+		"event_type": "damage_counters_placed",
+		"actor": player_idx,
+		"source": {"player": player_idx, "slot": source_slot},
+		"target": {"player": player_idx, "slot": source_slot},
+		"amount": counters * 10,
+		"data": {
+			"player": player_idx,
+			"slot": source_slot,
+			"count": counters,
+			"counter_count": counters,
+		},
+	})
+	return VMResult.ok()
 
 
 func cmd_place_counters_then_self_ko(

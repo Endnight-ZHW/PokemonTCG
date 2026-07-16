@@ -19,7 +19,9 @@ $adb = Join-Path $sdkRoot 'platform-tools\adb.exe'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
+Assert-ReleaseDeepFallbackContract -Manifest $release
 $releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
+$compatibleModelCount = [int]$release.compatible_model_count
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 $apksigner = Join-Path $sdkRoot "build-tools\$buildToolsVersion\apksigner.bat"
@@ -34,11 +36,11 @@ foreach ($requiredTool in @($adb, $aapt, $apksigner, $java)) {
         throw "Android verification tool is missing: $requiredTool"
     }
 }
-if ($ExpectedModels -le 0) {
-    throw 'ExpectedModels must be positive.'
+if ($ExpectedModels -lt 0) {
+    throw 'ExpectedModels cannot be negative.'
 }
-if ($ExpectedModels -ne $releaseDecks.Count) {
-    throw 'ExpectedModels does not match release_manifest.json.'
+if ($ExpectedModels -ne $compatibleModelCount) {
+    throw 'ExpectedModels does not match release_manifest compatible_model_count.'
 }
 
 function Install-AndroidPackage {
@@ -258,8 +260,8 @@ $apkModelKeys = @(
         ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
         Sort-Object
 )
-if (Compare-Object @($releaseDecks | Sort-Object) $apkModelKeys) {
-    throw 'Android runtime payload model set does not match release_manifest.json.'
+if ($ExpectedModels -gt 0 -and (Compare-Object @($releaseDecks | Sort-Object) $apkModelKeys)) {
+    throw 'Android runtime payload model set does not match release_manifest release decks.'
 }
 foreach ($requiredRuntimeInput in @(
     'assets/data/ai_models.json',
@@ -286,9 +288,10 @@ $sourcePayloads = [ordered]@{
     'assets/data/release_manifest.json' = Join-Path $repoRoot 'godot\data\release_manifest.json'
     'lib/arm64-v8a/libonnxruntime.so' = Join-Path $repoRoot 'godot\bin\android\libonnxruntime.so'
 }
-foreach ($deckKey in $releaseDecks) {
-    $sourcePayloads["assets/data/ai_models/$deckKey.onnx"] = `
-        Join-Path $repoRoot "godot\data\ai_models\$deckKey.onnx"
+foreach ($modelEntry in $modelFiles) {
+    $modelKey = [IO.Path]::GetFileNameWithoutExtension($modelEntry)
+    $sourcePayloads[$modelEntry] = `
+        Join-Path $repoRoot "godot\data\ai_models\$modelKey.onnx"
 }
 $nativeModelEntry = [string]$nativeModelLibraries[0]
 $sourcePayloads[$nativeModelEntry] = Join-Path `
@@ -384,7 +387,8 @@ do {
     $logText = $logRows -join "`n"
     if (
         $logText.Contains('PHASE6_EXPORT_RELEASE_OK') -and
-        $logText.Contains("models=$ExpectedModels")
+        $logText.Contains("compatible_models=$ExpectedModels") -and
+        $logText.Contains('onnx_assets=0')
     ) {
         break
     }
@@ -401,12 +405,13 @@ do {
 
 if (
     -not $logText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
-    -not $logText.Contains("models=$ExpectedModels")
+    -not $logText.Contains("compatible_models=$ExpectedModels") -or
+    -not $logText.Contains('onnx_assets=0')
 ) {
     $tail = (($logText -split "`n") | Select-Object -Last 120) -join "`n"
     throw "Android release model smoke timed out after $TimeoutSeconds seconds.`n$tail"
 }
-Write-Host "ANDROID_RELEASE_MODELS_OK serial=$serial models=$ExpectedModels finite=1"
+Write-Host "ANDROID_RELEASE_AI_OK serial=$serial compatible_models=$ExpectedModels onnx_assets=0"
 
 # The phase6 command intentionally exits. Relaunch normally and verify that the
 # packaged application also remains alive after startup.

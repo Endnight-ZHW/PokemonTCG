@@ -58,7 +58,7 @@ func resolve_commands(
 				"invalid_trigger_frame",
 			)
 		var spec: Dictionary = frame.get("effect", {})
-		var outcome := execute_trigger_spec(state, spec, events)
+		var outcome := execute_trigger_spec(state, spec, events, stack)
 		if not bool(outcome.get("success", true)):
 			return outcome
 	return VMResult.ok()
@@ -186,13 +186,14 @@ func execute_trigger_spec(
 	state: GameState,
 	spec: Dictionary,
 	events: Array[Dictionary],
+	stack: ResolutionStack = null,
 ) -> Dictionary:
 	var args: Dictionary = spec.get("args", {})
 	match str(spec.get("op", "")):
 		"trigger_draw_cards":
 			_execute_draw_cards(state, args, events)
 		"trigger_place_damage_counters":
-			_execute_place_damage_counters(state, args, events)
+			_execute_place_damage_counters(state, args, events, stack)
 		"trigger_move_basic_energy":
 			_execute_move_basic_energy(state, args, events)
 		"trigger_switch_with_active":
@@ -209,7 +210,7 @@ func collect_after_damage_commands(
 	context: Dictionary,
 	commands: Array[Dictionary],
 ) -> void:
-	if int(context.get("damage", 0)) <= 0 or bool(context.get("ignore_defender_effects", false)):
+	if int(context.get("damage", 0)) <= 0:
 		return
 	var manager := VMModifierManager.new()
 	_register_after_damage_hooks(manager, context)
@@ -226,11 +227,13 @@ func _register_after_damage_hooks(
 	var defender: PokemonState = context.get("defender", null)
 	if defender == null:
 		return
-	if "svi-mirc" in defender.energy_card_ids:
+	for energy_id in defender.energy_card_ids:
+		if energy_id != "svi-mirc":
+			continue
 		manager.register_hook(
 			VMModifierManager.AFTER_DAMAGE,
 			"svi-mirc",
-			1 - actor,
+			int(context.get("defender_player", 1 - actor)),
 			0,
 			{"kind": "miracle_energy_draw"},
 		)
@@ -307,12 +310,13 @@ func _append_after_damage_command(
 	var payload: Dictionary = hook.get("payload", {})
 	var kind := str(payload.get("kind", ""))
 	var actor := int(context.get("actor", 0))
+	var defender_player := int(context.get("defender_player", 1 - actor))
 	match kind:
 		"miracle_energy_draw":
 			commands.append({
 				"op": "trigger_draw_cards",
 				"args": {
-					"player": 1 - actor,
+					"player": defender_player,
 					"amount": 1,
 					"source": str(hook.get("source", "svi-mirc")),
 				},
@@ -322,7 +326,7 @@ func _append_after_damage_command(
 			var params: Dictionary = payload.get("params", {})
 			var names: Array = params.get("filter_names", [])
 			var count := 0
-			for row in state.get_player(1 - actor).get_all_pokemon():
+			for row in state.get_player(defender_player).get_all_pokemon():
 				var pokemon: PokemonState = row["pokemon"]
 				if pokemon and catalog.card_name(pokemon.card_id) in names:
 					count += 1
@@ -334,8 +338,20 @@ func _append_after_damage_command(
 					"args": {
 						"player": actor,
 						"slot": "active",
+						# Keep a serializable entity anchor.  Authored post-hit effects
+						# (notably self-switch) resolve before reactive triggers, so a
+						# bare "active" slot would otherwise hit the replacement Pokemon.
+						"target_ref": {
+							"kind": "pokemon",
+							"player": actor,
+							"slot": "active",
+							"card_id": attacker.card_id,
+						},
 						"count": counters,
 						"source": "reactive_thorns",
+						"source_player": defender_player,
+						"source_kind": "ability",
+						"presentation_phase": "after_damage_trigger",
 					},
 					"branches": {},
 				})
@@ -406,7 +422,6 @@ func _register_exp_share_ko_hooks(
 				"source": "exp_share",
 			},
 		)
-		return
 
 
 func _bench_pokemon_has_exp_share(bench_pokemon: PokemonState) -> bool:
@@ -540,7 +555,7 @@ func cmd_trigger_draw_cards(
 
 func cmd_trigger_place_damage_counters(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -548,7 +563,7 @@ func cmd_trigger_place_damage_counters(
 	_source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	_execute_place_damage_counters(state, args, events)
+	_execute_place_damage_counters(state, args, events, stack)
 	return VMResult.ok()
 
 
@@ -600,13 +615,33 @@ func _execute_place_damage_counters(
 	state: GameState,
 	args: Dictionary,
 	events: Array[Dictionary],
+	stack: ResolutionStack = null,
 ) -> void:
 	var target_player := int(args.get("player", 0))
 	var target_slot := str(args.get("slot", "active"))
+	var target_ref_value: Variant = args.get("target_ref", null)
+	var expected_card_id := ""
+	if target_ref_value is Dictionary and not target_ref_value.is_empty():
+		var target_ref: Dictionary = target_ref_value
+		target_player = int(target_ref.get("player", target_player))
+		target_slot = str(target_ref.get("slot", target_slot))
+		expected_card_id = str(target_ref.get("card_id", ""))
 	var target := state.get_player(target_player).get_pokemon(target_slot)
+	if target != null and not expected_card_id.is_empty() and target.card_id != expected_card_id:
+		# Never fall back to whichever Pokemon currently occupies the old slot.  A
+		# stale/missing anchor makes this optional reactive consequence a no-op.
+		target = null
 	var counters := int(args.get("count", 0))
 	if target and counters > 0:
 		target.damage_counters += counters
+		if stack != null:
+			var causes: Dictionary = stack.context.get("knockout_causes", {})
+			causes["%d:%s" % [target_player, target_slot]] = {
+				"source_kind": str(args.get("source_kind", "ability")),
+				"cause_kind": "damage_counters",
+				"source_player": int(args.get("source_player", target_player)),
+			}
+			stack.context["knockout_causes"] = causes
 		events.append({
 			"event_type": "damage_counters_placed",
 			"actor": int(args.get("source_player", target_player)),
@@ -618,8 +653,48 @@ func _execute_place_damage_counters(
 				"count": counters,
 				"counter_count": counters,
 				"source": str(args.get("source", "")),
+				"presentation_phase": str(args.get("presentation_phase", "")),
 			},
 		})
+
+
+static func retarget_pending_after_damage_entity(
+	stack: ResolutionStack,
+	player_idx: int,
+	from_slot: String,
+	to_slot: String,
+	card_id: String,
+) -> void:
+	"""Move serialized reactive targets when the referenced Pokemon changes slots."""
+	if stack == null or not stack.context.get("pending_after_damage_triggers", []) is Array:
+		return
+	var specs: Array = stack.context.get("pending_after_damage_triggers", [])
+	for index in range(specs.size()):
+		if not specs[index] is Dictionary:
+			continue
+		var spec: Dictionary = specs[index]
+		if str(spec.get("op", "")) != "trigger_place_damage_counters":
+			continue
+		var args: Dictionary = spec.get("args", {})
+		var target_ref_value: Variant = args.get("target_ref", null)
+		if not target_ref_value is Dictionary:
+			continue
+		var target_ref: Dictionary = target_ref_value
+		if (
+			int(target_ref.get("player", -1)) != player_idx
+			or str(target_ref.get("slot", "")) != from_slot
+			or str(target_ref.get("card_id", "")) != card_id
+		):
+			continue
+		target_ref["slot"] = to_slot
+		args["target_ref"] = target_ref
+		# Retain the legacy fields for event/debug readers; execution treats the
+		# entity reference as authoritative.
+		args["player"] = player_idx
+		args["slot"] = to_slot
+		spec["args"] = args
+		specs[index] = spec
+	stack.context["pending_after_damage_triggers"] = specs
 
 
 func _execute_move_basic_energy(

@@ -44,6 +44,26 @@ function Get-ReleaseManifest {
     return $manifest
 }
 
+function Assert-ReleaseDeepFallbackContract {
+    param([Parameter(Mandatory)] $Manifest)
+    $decks = @($Manifest.release_decks)
+    $modelCount = [int]$Manifest.model_count
+    $compatibleModelCount = [int]$Manifest.compatible_model_count
+    $legacyModelCount = [int]$Manifest.legacy_model_count
+    if ([bool]$Manifest.deep_runtime_enabled) {
+        throw 'Release manifest must keep the Deep runtime disabled for this rules release.'
+    }
+    if ([string]$Manifest.deep_fallback -ne 'challenge') {
+        throw 'Release manifest Deep fallback must be challenge.'
+    }
+    if ($compatibleModelCount -ne 0) {
+        throw 'Release manifest compatible_model_count must be zero while Deep is disabled.'
+    }
+    if ($legacyModelCount -ne $modelCount -or $legacyModelCount -ne $decks.Count) {
+        throw 'Release manifest legacy_model_count must match model_count and release_decks.'
+    }
+}
+
 function Assert-PathUnderRoot {
     param(
         [Parameter(Mandatory)] [string]$Root,

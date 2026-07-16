@@ -7,6 +7,7 @@ const PRIVATE := "private"
 
 const EVENT_TYPE_ALIASES := {
 	"card_discarded": "cards_discarded",
+	"knockout_effect_applied": "direct_knockout_applied",
 }
 const SUPPORTED_EVENT_TYPES: Array[String] = [
 	"attack_declared",
@@ -22,6 +23,7 @@ const SUPPORTED_EVENT_TYPES: Array[String] = [
 	"damage_counters_placed",
 	"damage_dealt",
 	"damage_prevented",
+	"direct_knockout_applied",
 	"deck_shuffled",
 	"deck_exhausted",
 	"energy_attached",
@@ -37,8 +39,10 @@ const SUPPORTED_EVENT_TYPES: Array[String] = [
 	"status_applied",
 	"status_removed",
 	"switched",
+	"setup_revealed",
 	"tool_attached",
 	"trainer_played",
+	"turn_order_chosen",
 	"turn_end",
 	"turn_start",
 ]
@@ -142,7 +146,63 @@ static func normalize_all(
 				fallback_actor,
 				index,
 			))
+	return order_for_presentation(result)
+
+
+## Keeps the visual turn boundary causal even when a transport or compatibility
+## caller supplies the tagged turn draw before its turn-start event. Rule
+## settlement still owns the draw and its state mutation; this only guarantees
+## that the serial presentation queue finishes the turn announcement first.
+static func order_for_presentation(
+	events: Array[Dictionary],
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = events.duplicate(true)
+	var start_index := 0
+	while start_index < result.size():
+		var start_event: Dictionary = result[start_index]
+		if canonical_event_type(str(start_event.get("event_type", ""))) != "turn_start":
+			start_index += 1
+			continue
+		var start_data := _dictionary_or_empty(start_event.get("data", {}))
+		var start_actor := int(start_event.get(
+			"actor",
+			start_data.get("player", -1),
+		))
+		var turn_number := int(start_data.get("turn", -1))
+		var draw_index := -1
+		for candidate_index in range(start_index):
+			if _is_matching_turn_draw(
+				result[candidate_index],
+				start_actor,
+				turn_number,
+			):
+				draw_index = candidate_index
+		if draw_index >= 0:
+			var draw_event: Dictionary = result.pop_at(draw_index)
+			start_index -= 1
+			result.insert(start_index + 1, draw_event)
+			start_index += 2
+		else:
+			start_index += 1
 	return result
+
+
+static func _is_matching_turn_draw(
+	event: Dictionary,
+	start_actor: int,
+	turn_number: int,
+) -> bool:
+	if canonical_event_type(str(event.get("event_type", ""))) != "cards_drawn":
+		return false
+	var data := _dictionary_or_empty(event.get("data", {}))
+	if str(data.get("purpose", "")) != "turn_draw":
+		return false
+	var draw_actor := int(event.get("actor", data.get("player", -1)))
+	var draw_turn := int(data.get("turn", -1))
+	return (
+		draw_actor == start_actor
+		and (turn_number < 0 or draw_turn < 0 or draw_turn == turn_number)
+	)
 
 
 static func for_player(event: Dictionary, player_idx: int) -> Dictionary:
@@ -240,7 +300,7 @@ static func _apply_endpoint_defaults(
 			if _has_endpoint_hint(raw_event, data, "source"):
 				_merge_endpoint_defaults(event, "source", player, "hand", "", int(data.get("source_index", -1)))
 			_merge_endpoint_defaults(event, "target", player, "stadium")
-		"damage_dealt", "damage_counters_placed", "healed", "status_applied", "status_removed", "damage_prevented":
+		"damage_dealt", "damage_counters_placed", "healed", "status_applied", "status_removed", "damage_prevented", "direct_knockout_applied":
 			_merge_endpoint_defaults(event, "target", player, "", slot if not slot.is_empty() else "active")
 		"confusion_failed", "dazzled_failed":
 			_merge_endpoint_defaults(event, "source", player, "", "active")

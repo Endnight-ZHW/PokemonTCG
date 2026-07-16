@@ -58,16 +58,9 @@ func bench_damage(
 				break
 			var bench_pokemon: PokemonState = state.get_player(target_idx).bench[index]
 			if bench_pokemon:
-				damage.deal_damage(
-					state,
-					target_idx,
-					"bench_%d" % index,
-					int(params.get("amount", 0)),
-					events,
-					true,
-					stack,
-					player_idx,
-				)
+				damage.deal_attack_or_effect_damage(
+					state, stack, player_idx, target_idx,
+					"bench_%d" % index, int(params.get("amount", 0)), events)
 				applied += 1
 		return VMResult.ok("备战伤害已结算。")
 	return board_commands.request_bench_target(

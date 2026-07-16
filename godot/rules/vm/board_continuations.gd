@@ -37,19 +37,31 @@ func register(interpreter: VMInterpreter) -> void:
 
 func continue_switch(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
 	events: Array[Dictionary],
 ) -> Dictionary:
-	var target_player := state.get_player(int(data["target_player"]))
+	var target_player_idx := int(data["target_player"])
+	var target_player := state.get_player(target_player_idx)
 	if selected.is_empty():
 		return VMResult.ok()
 	var slot := str(selected[0].get("value", {}).get("slot", ""))
-	target_player.switch_active_to_bench(slot.trim_prefix("bench_").to_int())
+	var bench_idx := slot.trim_prefix("bench_").to_int()
+	var outgoing_card_id := target_player.active.card_id if target_player.active else ""
+	if not target_player.switch_active_to_bench(bench_idx):
+		return VMResult.fail("换位目标已变化。", "stale_choice")
+	if not outgoing_card_id.is_empty():
+		VMTriggerCommands.retarget_pending_after_damage_entity(
+			stack,
+			target_player_idx,
+			"active",
+			"bench_%d" % bench_idx,
+			outgoing_card_id,
+		)
 	events.append({"event_type": "switched", "data": {
-		"player": int(data["target_player"]),
+		"player": target_player_idx,
 		"slot": slot,
 	}})
 	return VMResult.ok()
@@ -131,7 +143,7 @@ func continue_bench_damage_target(
 
 func continue_place_counters_self_ko(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	data: Dictionary,
 	selected: Array[Dictionary],
@@ -144,6 +156,17 @@ func continue_place_counters_self_ko(
 	if target:
 		var counter_count := int(data["counters"])
 		target.damage_counters += counter_count
+		var target_player := int(data["target_player"])
+		var causes: Dictionary = stack.context.get("knockout_causes", {})
+		causes["%d:%s" % [target_player, target_slot]] = {
+			"source_kind": (
+				"attack_effect" if bool(stack.context.get("finish_attack", false))
+				else str(stack.context.get("effect_source_kind", "ability"))
+			),
+			"cause_kind": "damage_counters",
+			"source_player": int(data.get("source_player", target_player)),
+		}
+		stack.context["knockout_causes"] = causes
 		events.append({
 			"event_type": "damage_counters_placed",
 			"actor": int(data.get("source_player", data["target_player"])),
@@ -185,9 +208,6 @@ func continue_place_counters_self_ko(
 		and source_player not in state.pending_promotions
 	):
 		state.pending_promotions.append(source_player)
-	elif not source_state.has_any_pokemon_in_play():
-		state.winner = 1 - source_player
-		state.phase = "GAME_OVER"
 	return VMResult.ok()
 
 
@@ -228,7 +248,7 @@ func resolve_evolve_skip_stage(
 	player.hand.remove_at(hand_index)
 	target.evolution_stack_ids.append(target.card_id)
 	target.card_id = stage2_id
-	target.status_conditions.clear()
+	target.clear_special_conditions_and_attack_effects()
 	target.can_evolve_this_turn = false
 	events.append({
 		"event_type": "pokemon_evolved",

@@ -9,13 +9,15 @@ from engine.commands.attack_frames import (
     clear_finish_attack_after_promotions,
     finish_attack_after_promotions_actor,
     FinalizeAttackTurn,
-    finalize_game_over_if_needed,
 )
 from engine.commands.resolution_stack import ResolutionStack
 from engine.enums import TurnPhase
 from engine.game_state import ActionResult, GameState
 from engine.random_source import RandomSource
-from engine.turn_manager import TurnManager
+from engine.turn_manager import (
+    TurnManager,
+    finish_checkup_after_promotions_actor,
+)
 
 
 class VMSettlementManager:
@@ -57,13 +59,13 @@ class VMSettlementManager:
             message,
             ActionResult(True, message),
             winner=state.winner,
-            terminal=state.winner is not None or state.phase == TurnPhase.GAME_OVER,
+            terminal=state.is_terminal(),
         )
         finish_actor = finish_attack_after_promotions_actor(state)
         if (
             finish_actor in (0, 1)
             and not state.pending_promotions
-            and state.winner is None
+            and not state.is_terminal()
             and state.phase == TurnPhase.ATTACK
         ):
             clear_finish_attack_after_promotions(state)
@@ -73,6 +75,20 @@ class VMSettlementManager:
                     state,
                     int(finish_actor),
                     rng,
+                ),
+            )
+        finish_checkup_actor = finish_checkup_after_promotions_actor(state)
+        if (
+            finish_checkup_actor in (0, 1)
+            and not state.pending_promotions
+            and not state.is_terminal()
+            and state.phase == TurnPhase.POKEMON_CHECKUP
+        ):
+            step = self.merge_steps(
+                step,
+                self.resolve_checkup_turn_frame(
+                    state,
+                    int(finish_checkup_actor),
                 ),
             )
         return step
@@ -105,6 +121,19 @@ class VMSettlementManager:
             events=self.events_since(state, event_offset),
         )
 
+    def resolve_checkup_turn_frame(
+        self,
+        state: GameState,
+        outgoing_actor: int,
+    ) -> StepResult:
+        event_offset = len(getattr(state.event_stream, "_events", ()))
+        result = TurnManager(state).finish_checkup_after_settlement(outgoing_actor)
+        return self.step_from_action_result(
+            state,
+            result,
+            events=self.events_since(state, event_offset),
+        )
+
     def step_from_action_result(
         self,
         state: GameState,
@@ -124,23 +153,29 @@ class VMSettlementManager:
             pending_choice=pending,
             events=events,
             winner=state.winner,
-            terminal=state.winner is not None or state.phase == TurnPhase.GAME_OVER,
+            terminal=state.is_terminal(),
         )
 
-    @staticmethod
-    def resolve_non_attack_knockouts(state: GameState, step: StepResult) -> StepResult:
+    def resolve_non_attack_knockouts(
+        self,
+        state: GameState,
+        step: StepResult,
+    ) -> StepResult:
         if (
             not step.success
             or step.pending_choice is not None
             or state.phase == TurnPhase.SETUP
+            or state.is_terminal()
         ):
             return step
         from engine.action_resolver import ActionResolver
 
         event_offset = len(getattr(state.event_stream, "_events", ()))
-        state._ko_from_attack = False
         try:
-            ko_slots = ActionResolver(state)._check_kos()
+            result = ActionResolver(state).resolve_knockout_batch(
+                default_cause="rule",
+                source_player=state.active_player_idx,
+            )
         except ValueError as exc:
             return StepResult(
                 False,
@@ -148,16 +183,15 @@ class VMSettlementManager:
                 action_result=step.action_result,
                 events=step.events,
                 winner=state.winner,
-                terminal=state.winner is not None or state.phase == TurnPhase.GAME_OVER,
+                terminal=state.is_terminal(),
                 error_code="ko_trigger_failed",
             )
-        if ko_slots and step.action_result is not None:
-            step.action_result.pokemon_ko.extend(ko_slots)
-        finalize_game_over_if_needed(state, reason="knockout")
-        step.events += VMSettlementManager.events_since(state, event_offset)
-        step.winner = state.winner
-        step.terminal = state.winner is not None or state.phase == TurnPhase.GAME_OVER
-        return step
+        batch = self.step_from_action_result(
+            state,
+            result,
+            events=self.events_since(state, event_offset),
+        )
+        return self.merge_steps(step, batch)
 
     @staticmethod
     def merge_steps(first: StepResult, second: StepResult) -> StepResult:

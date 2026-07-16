@@ -105,10 +105,17 @@ func cmd_conditional_status(
 	source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	if str(args.get("condition", "")) == "ko_by_attack_last_turn":
-		if not state.get_player(player_idx).was_ko_by_attack:
+	var condition := str(args.get("condition", ""))
+	if condition in [
+		"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"]:
+		if not (
+			state.had_attack_knockout_last_turn(player_idx)
+			or state.get_player(player_idx).was_ko_by_attack
+		):
 			return VMResult.ok("条件未满足。")
-		state.get_player(player_idx).was_ko_by_attack = false
+	elif condition == "ko_last_opponent_turn":
+		if not state.had_knockout_last_turn(player_idx):
+			return VMResult.ok("条件未满足。")
 	var target_player_idx := target_player_idx_for(player_idx, args)
 	var target_slot := target_slot_for(source_slot, args)
 	return apply_status(
@@ -329,10 +336,15 @@ func apply_status(
 
 
 func set_attack_flags(stack: ResolutionStack, params: Dictionary) -> void:
-	if bool(params.get("ignore_weakness", true)) or bool(params.get("ignore_resistance", true)):
-		stack.context["piercing"] = true
-	if bool(params.get("ignore_effects", false)):
-		stack.context["ignore_defender_effects"] = true
+	if bool(params.get("ignore_weakness", false)):
+		stack.context["ignore_weakness"] = true
+	if bool(params.get("ignore_resistance", false)):
+		stack.context["ignore_resistance"] = true
+	if bool(params.get(
+		"ignore_defender_damage_effects",
+		params.get("ignore_effects", params.get("ignore_defender_effects", false)),
+	)):
+		stack.context["ignore_defender_damage_effects"] = true
 
 
 func target_player_idx_for(player_idx: int, args: Dictionary) -> int:

@@ -89,6 +89,15 @@ func _connect_actions() -> void:
 
 
 func _refresh() -> void:
+	if _is_draw():
+		winner_label.text = "本局平局"
+		result_subtitle.text = "DRAW · MATCH COMPLETE"
+		mode_value.text = _mode_label()
+		deck_value.text = "双方牌组"
+		turn_value.text = "%d 回合" % maxi(0, turn_count)
+		summary_label.text = "双方在完整结算后达成相同数量的胜利条件，本局记为平局。"
+		_refresh_card()
+		return
 	var display_name := winner_name.strip_edges()
 	if display_name.is_empty():
 		display_name = "玩家 %d" % (winner + 1)
@@ -122,10 +131,16 @@ func _refresh_card() -> void:
 	var resolved_name := explicit_name
 	if resolved_name.is_empty():
 		resolved_name = str(card_data.get("name", "")).strip_edges()
-	if resolved_name.is_empty():
+	if resolved_name.is_empty() and _is_draw():
+		resolved_name = "平局 · 无胜者代表卡"
+	elif resolved_name.is_empty():
 		resolved_name = "本局未记录代表卡"
 	card_name_label.text = resolved_name
 	card_image.tooltip_text = resolved_name
+
+
+func _is_draw() -> bool:
+	return str(context.get("result_status", "")) == GameState.RESULT_DRAW or winner < 0
 
 
 func _mode_label() -> String:

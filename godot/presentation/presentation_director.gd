@@ -66,7 +66,13 @@ signal event_ignored(event: Dictionary)
 
 const FEEDBACK_CHANNEL_KEY := "feedback_channel"
 const FEEDBACK_CHANNEL_ANNOUNCEMENT := "announcement"
-const ANNOUNCEMENT_EVENT_TYPES := ["turn_end", "checkup", "turn_start"]
+const ANNOUNCEMENT_EVENT_TYPES := [
+	"turn_end",
+	"checkup",
+	"turn_start",
+	"turn_order_chosen",
+	"setup_revealed",
+]
 const ANNOUNCEMENT_DURATIONS := {
 	"cinematic": 0.46,
 	"standard": 0.37,
@@ -98,6 +104,7 @@ const EVENT_DURATIONS := {
 	"damage_dealt": 0.26,
 	"damage_counters_placed": 0.26,
 	"damage_prevented": 0.28,
+	"direct_knockout_applied": 0.34,
 	"healed": 0.30,
 	"status_applied": 0.28,
 	"status_removed": 0.28,
@@ -109,6 +116,8 @@ const EVENT_DURATIONS := {
 	"deck_shuffled": 1.20,
 	"deck_exhausted": 0.42,
 	"coin_flip": 0.50,
+	"turn_order_chosen": 0.42,
+	"setup_revealed": 0.54,
 	"turn_end": 0.20,
 	"checkup": 0.22,
 	"turn_start": 0.35,
@@ -381,6 +390,17 @@ func _dispatch(event: Dictionary) -> void:
 			audio_requested.emit("status")
 			floating_text_requested.emit("伤害无效", target, DesignTokens.CYAN)
 			burst_requested.emit("shield", target, DesignTokens.CYAN)
+		"direct_knockout_applied":
+			# This is an attack effect, not damage and not damage-counter placement.
+			# Keep it off the hit channel so AFTER_DAMAGE hooks remain rule-owned and
+			# the later pokemon_ko event remains the sole KO declaration.
+			audio_requested.emit("status")
+			camera_impulse_requested.emit(
+				0.48,
+				_bounded_camera_duration(event, 0.22),
+			)
+			floating_text_requested.emit("直接昏厥", target, DesignTokens.PURPLE)
+			burst_requested.emit("direct_ko", target, DesignTokens.PURPLE)
 		"healed":
 			audio_requested.emit("heal")
 			floating_text_requested.emit(
@@ -417,6 +437,11 @@ func _dispatch(event: Dictionary) -> void:
 			var ko_target := _ko_feedback_target(event, source, target)
 			floating_text_requested.emit("击倒", ko_target, DesignTokens.PURPLE)
 			burst_requested.emit("ko", ko_target, DesignTokens.PURPLE)
+			# A deferred KO event is only the public declaration/feedback window.
+			# It still enters the motion executor so that the executor can seal the
+			# event completion group after registering impact feedback. The
+			# serialized ko_leave_play card_moved event that follows it remains the
+			# sole owner of every physical departure from the old Pokemon stack.
 			card_motion_requested.emit(event, _duration_for(event))
 		"prize_taken":
 			audio_requested.emit("prize")
@@ -439,6 +464,32 @@ func _dispatch(event: Dictionary) -> void:
 				_feedback_target(source, FEEDBACK_CHANNEL_ANNOUNCEMENT),
 				DesignTokens.RED,
 			)
+		"turn_order_chosen":
+			audio_requested.emit("turn_change")
+			var first_player := int(data.get(
+				"first_player",
+				target.get("player", -1),
+			))
+			floating_text_requested.emit(
+				(
+					"玩家 %d 先攻" % (first_player + 1)
+					if first_player in [0, 1]
+					else "先攻已确定"
+				),
+				_feedback_target(
+					{"player": first_player},
+					FEEDBACK_CHANNEL_ANNOUNCEMENT,
+				),
+				DesignTokens.GOLD,
+			)
+		"setup_revealed":
+			audio_requested.emit("card_reveal")
+			floating_text_requested.emit(
+				"双方宝可梦公开",
+				_feedback_target({}, FEEDBACK_CHANNEL_ANNOUNCEMENT),
+				DesignTokens.CYAN,
+			)
+			_emit_setup_reveal_feedback(data)
 		"turn_start":
 			audio_requested.emit("turn_change")
 			floating_text_requested.emit(
@@ -463,6 +514,35 @@ func _dispatch(event: Dictionary) -> void:
 			audio_requested.emit("victory")
 		_:
 			event_ignored.emit(event)
+
+
+func _emit_setup_reveal_feedback(data: Dictionary) -> void:
+	var players_value: Variant = data.get("players", [])
+	if not players_value is Array:
+		return
+	var players: Array = players_value
+	for player_idx in range(mini(2, players.size())):
+		if not players[player_idx] is Dictionary:
+			continue
+		var player: Dictionary = players[player_idx]
+		if not str(player.get("active", "")).is_empty():
+			burst_requested.emit(
+				"setup_reveal",
+				{"player": player_idx, "slot": "active"},
+				DesignTokens.CYAN,
+			)
+		var bench_value: Variant = player.get("bench", [])
+		if not bench_value is Array:
+			continue
+		var bench: Array = bench_value
+		for bench_idx in range(mini(5, bench.size())):
+			if str(bench[bench_idx]).is_empty():
+				continue
+			burst_requested.emit(
+				"setup_reveal",
+				{"player": player_idx, "slot": "bench_%d" % bench_idx},
+				DesignTokens.CYAN,
+			)
 
 
 func _feedback_target(target: Dictionary, channel: String) -> Dictionary:

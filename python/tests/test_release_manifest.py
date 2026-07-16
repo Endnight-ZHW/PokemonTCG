@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
+from engine.commands.vm_contract import VM_IR_VERSION
+from engine.snapshot import SNAPSHOT_SCHEMA_VERSION
 from scripts.export_godot_data import DECKS
 
 
@@ -36,10 +38,52 @@ class ReleaseManifestTests(unittest.TestCase):
             sorted(decks),
         )
 
+    def test_release_040_metadata_and_deep_fallback_are_explicit(self):
+        self.assertEqual(self.manifest["format_version"], 2)
+        self.assertEqual(self.manifest["version"], "0.4.0")
+        self.assertEqual(self.manifest["android_version_code"], 6)
+        self.assertFalse(self.manifest["deep_runtime_enabled"])
+        self.assertEqual(self.manifest["deep_fallback"], "challenge")
+        self.assertEqual(self.manifest["compatible_model_count"], 0)
+        self.assertEqual(self.manifest["legacy_model_count"], 10)
+        self.assertEqual(self.manifest["model_count"], 10)
+
+        expected_schemas = {
+            "protocol": 4,
+            "godot_rules": 4,
+            "godot_actions": 3,
+            "python_rules": 3,
+            "python_actions": 2,
+            "snapshot": 2,
+            "encoder": 3,
+            "checkpoint": 10,
+            "planner": 1,
+            "vm_ir": 2,
+            "rng": 1,
+        }
+        self.assertEqual(self.manifest["schemas"], expected_schemas)
+
+    def test_legacy_deep_models_are_not_relabelled_for_new_rules(self):
+        runtime = json.loads(
+            (REPO_ROOT / "godot" / "data" / "ai_models_runtime.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        bridge = runtime["compatibility_bridge"]
+        self.assertEqual(bridge["python_rules_version"], 2)
+        self.assertEqual(bridge["godot_rules_version"], 3)
+        self.assertEqual(len(runtime["models"]), 10)
+        for deck_key, metadata in runtime["models"].items():
+            with self.subTest(deck=deck_key):
+                self.assertEqual(metadata["rules_version"], 2)
+                self.assertEqual(metadata["action_version"], 2)
+
     def test_schema_and_android_metadata_match_runtime(self):
         schemas = self.manifest["schemas"]
         self.assertEqual(schemas["python_rules"], RULES_SCHEMA_VERSION)
         self.assertEqual(schemas["python_actions"], ACTION_SCHEMA_VERSION)
+        self.assertEqual(schemas["snapshot"], SNAPSHOT_SCHEMA_VERSION)
+        self.assertEqual(schemas["vm_ir"], VM_IR_VERSION)
         app_state = (REPO_ROOT / "godot" / "autoload" / "app_state.gd").read_text(
             encoding="utf-8"
         )
@@ -51,6 +95,10 @@ class ReleaseManifestTests(unittest.TestCase):
             app_state,
             rf"ACTION_SCHEMA_VERSION\s*:=\s*{int(schemas['godot_actions'])}\b",
         )
+        protocol = (REPO_ROOT / "godot" / "network" / "protocol_v4.gd").read_text(
+            encoding="utf-8"
+        )
+        self.assertRegex(protocol, rf"const\s+VERSION\s*:=\s*{schemas['protocol']}\b")
         presets = (REPO_ROOT / "godot" / "export_presets.cfg").read_text(
             encoding="utf-8"
         )
@@ -79,6 +127,54 @@ class ReleaseManifestTests(unittest.TestCase):
                 str(self.manifest["version"]),
                 preset_name,
             )
+
+        for preset in (
+            section
+            for section in parsed_presets.sections()
+            if re.fullmatch(r"preset\.\d+", section)
+        ):
+            include_filter = parsed_presets.get(
+                preset, "include_filter", fallback=""
+            ).strip('"')
+            exclude_filter = parsed_presets.get(
+                preset, "exclude_filter", fallback=""
+            ).strip('"')
+            self.assertNotIn("data/ai_models/*.onnx", include_filter)
+            self.assertIn("data/ai_models/*.onnx", exclude_filter)
+
+    def test_release_pipeline_keeps_legacy_models_out_of_packages(self):
+        package_script = (
+            REPO_ROOT / "tools" / "package_release.ps1"
+        ).read_text(encoding="utf-8")
+        release_test = (
+            REPO_ROOT / "tools" / "test_release.ps1"
+        ).read_text(encoding="utf-8")
+        standard_test = (
+            REPO_ROOT / "tools" / "test_standard.ps1"
+        ).read_text(encoding="utf-8")
+        android_runtime_test = (
+            REPO_ROOT / "tools" / "test_android_runtime.ps1"
+        ).read_text(encoding="utf-8")
+        build_smoke = (
+            REPO_ROOT / "tools" / "smoke_godot_build.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn('file = "models/', package_script)
+        self.assertNotIn("export_onnx_models.py", package_script)
+        self.assertIn("compatible_model_count", release_test)
+        self.assertNotIn("export_onnx_models.ps1", standard_test)
+        for name, source in (
+            ("package_release.ps1", package_script),
+            ("test_release.ps1", release_test),
+            ("test_android_runtime.ps1", android_runtime_test),
+            ("smoke_godot_build.ps1", build_smoke),
+            ("test_standard.ps1", standard_test),
+        ):
+            with self.subTest(script=name):
+                self.assertIn("Assert-ReleaseDeepFallbackContract", source)
+        self.assertIn("-ExpectedModels $compatibleModelCount", release_test)
+        self.assertIn("-ExpectedModels $compatibleModelCount", build_smoke)
+        self.assertNotIn("-ExpectedModels 0", release_test)
+        self.assertNotIn("-ExpectedModels 0", build_smoke)
 
     def test_godot_runtime_release_metadata_is_manifest_driven(self):
         app_state = (REPO_ROOT / "godot" / "autoload" / "app_state.gd").read_text(

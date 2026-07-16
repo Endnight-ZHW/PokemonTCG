@@ -164,7 +164,7 @@ class DeepAITests(unittest.TestCase):
         metadata = _verification_metadata(0, True)
         self.assertFalse(metadata["verified"])
         self.assertEqual(metadata["verification_status"], "unverified_no_eval")
-        self.assertEqual(metadata["rules_version"], 2)
+        self.assertEqual(metadata["rules_version"], 3)
         self.assertEqual(metadata["action_version"], 2)
         self.assertEqual(metadata["encoder_version"], 3)
 
@@ -882,7 +882,7 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 2,
                         "planner_version": 1,
@@ -898,7 +898,7 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "planner_version": 1,
@@ -919,7 +919,7 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "planner_version": 1,
@@ -935,7 +935,7 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "planner_version": 1,
@@ -955,7 +955,7 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "planner_version": 1,
@@ -985,7 +985,7 @@ class DeepAITests(unittest.TestCase):
                     "metadata": {
                         "accepted": True,
                         "verified": True,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "planner_version": 1,
@@ -1313,7 +1313,7 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "planner_version": 1,
@@ -1403,7 +1403,7 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "planner_version": 1,
@@ -2073,7 +2073,7 @@ class DeepAITests(unittest.TestCase):
             with open(os.path.splitext(explicit_model)[0] + ".json", "w", encoding="utf-8") as fh:
                 json.dump({
                     "metadata": {
-                        "rules_version": 2,
+                        "rules_version": 3,
                         "action_version": 2,
                         "encoder_version": 3,
                         "summary": {

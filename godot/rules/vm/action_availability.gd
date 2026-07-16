@@ -158,6 +158,34 @@ func legal_actions(
 				):
 					_add_action(actions, seen, ability_action)
 
+	# Some Abilities explicitly originate from the discard pile. Keep the
+	# physical discard index in both the action slot and EntityRef so duplicate
+	# copies remain distinguishable and stale actions are rejected safely.
+	if player.hand.is_empty() and player.find_empty_bench_slot() >= 0:
+		for discard_index in range(player.discard.size()):
+			var discard_card_id := str(player.discard[discard_index])
+			for ability_value in catalog.get_card(discard_card_id).get("abilities", []):
+				var ability: Dictionary = ability_value
+				var effects := _ability_runtime_effects(ability)
+				var is_discard_ability := false
+				for effect_value in effects:
+					if str(Dictionary(effect_value).get("op", "")) == "discard_then_revive":
+						is_discard_ability = true
+						break
+				if not is_discard_ability:
+					continue
+				_add_action(actions, seen, GameAction.new(
+					"USE_ABILITY",
+					{
+						"slot": "discard_%d" % discard_index,
+						"ability_name": str(ability.get("name", "")),
+					},
+					false,
+					actor,
+					EntityRef.new(
+						"card", actor, "discard", "", discard_index, "", discard_card_id),
+				))
+
 	if availability.stadium_is_activatable(state) and not player.stadium_used_this_turn:
 		var stadium_action := GameAction.new("USE_STADIUM", {}, false, actor)
 		if (
@@ -204,15 +232,33 @@ func legal_actions(
 
 func setup_actions(state: GameState, actor: int) -> Array[GameAction]:
 	var actions: Array[GameAction] = []
-	if state.setup_ready[actor]:
+	if actor != state.setup_actor_idx:
+		return actions
+	if state.setup_stage not in [
+		GameState.SETUP_INITIAL_PLACEMENT,
+		GameState.SETUP_BONUS_PLACEMENT,
+	]:
+		return actions
+	if (
+		state.setup_stage == GameState.SETUP_INITIAL_PLACEMENT
+		and state.setup_ready[actor]
+	):
 		return actions
 	var player := state.get_player(actor)
 	for hand_idx in range(player.hand.size()):
 		var card_id := player.hand[hand_idx]
 		if not catalog.is_basic_pokemon(card_id):
 			continue
+		if (
+			state.setup_stage == GameState.SETUP_BONUS_PLACEMENT
+			and card_id not in state.setup_bonus_card_ids[actor]
+		):
+			continue
 		var source := EntityRef.new("card", actor, "hand", "", hand_idx, "", card_id)
-		if player.active == null:
+		if (
+			state.setup_stage == GameState.SETUP_INITIAL_PLACEMENT
+			and player.active == null
+		):
 			actions.append(GameAction.new(
 				"PLAY_BASIC",
 				{"hand_idx": hand_idx, "target": "active"},
@@ -221,7 +267,7 @@ func setup_actions(state: GameState, actor: int) -> Array[GameAction]:
 				source,
 				EntityRef.new("pokemon", actor, "", "active"),
 			))
-		else:
+		elif player.active != null:
 			for bench_idx in range(player.bench.size()):
 				if player.bench[bench_idx] == null:
 					var slot := "bench_%d" % bench_idx
@@ -233,7 +279,10 @@ func setup_actions(state: GameState, actor: int) -> Array[GameAction]:
 						source,
 						EntityRef.new("pokemon", actor, "", slot),
 					))
-	if player.active:
+	if (
+		state.setup_stage == GameState.SETUP_BONUS_PLACEMENT
+		or player.active != null
+	):
 		actions.append(GameAction.new("SETUP_DONE", {}, true, actor))
 	return actions
 
@@ -253,28 +302,46 @@ func retreat_payments(
 			result.append([])
 		return result
 	var count := player.active.energy_card_ids.size()
-	if count > 12:
-		return result
-	for mask in range(1, 1 << count):
-		var indices: Array[int] = []
-		var units := 0
-		for index in range(count):
-			if mask & (1 << index):
-				indices.append(index)
-				units += max(1, catalog.provides_energy(
-					player.active.energy_card_ids[index]).size())
-		if units < cost:
-			continue
-		var minimal := true
-		for index in indices:
-			var reduced: int = units - max(1, catalog.provides_energy(
-				player.active.energy_card_ids[index]).size())
-			if reduced >= cost:
-				minimal = false
-				break
-		if minimal and validator.can_retreat(state, actor, bench_idx, indices).is_empty():
-			result.append(indices)
+	_collect_retreat_payments(
+		state, actor, bench_idx, player.active.energy_card_ids,
+		cost, 0, [], 0, result)
 	return result
+
+
+func _collect_retreat_payments(
+	state: GameState,
+	actor: int,
+	bench_idx: int,
+	card_ids: Array[String],
+	cost: int,
+	start_index: int,
+	selected: Array[int],
+	units: int,
+	result: Array[Array],
+) -> void:
+	if units >= cost:
+		if validator.can_retreat(state, actor, bench_idx, selected).is_empty():
+			result.append(selected.duplicate())
+		return
+	# Each selected card provides at least one unit, so a minimal payment never
+	# needs more cards than the retreat cost. This avoids a 2^N bitmask and has
+	# no arbitrary attachment-count ceiling.
+	if selected.size() >= cost:
+		return
+	for index in range(start_index, card_ids.size()):
+		var next_selected := selected.duplicate()
+		next_selected.append(index)
+		_collect_retreat_payments(
+			state,
+			actor,
+			bench_idx,
+			card_ids,
+			cost,
+			index + 1,
+			next_selected,
+			units + EnergyView.units_provided_by_card(card_ids, index, catalog),
+			result,
+		)
 
 
 func simulated_action_succeeds(
@@ -331,11 +398,19 @@ func action_target_availability_error(
 				return "没有合法目标，不能使用。"
 		"USE_ABILITY":
 			var slot := str(action.params.get("slot", ""))
-			var pokemon := state.get_player(actor).get_pokemon(slot)
-			if pokemon == null:
-				return ""
+			var ability_card_id := ""
+			if slot.begins_with("discard_"):
+				var discard_index := slot.trim_prefix("discard_").to_int()
+				if discard_index < 0 or discard_index >= state.get_player(actor).discard.size():
+					return ""
+				ability_card_id = str(state.get_player(actor).discard[discard_index])
+			else:
+				var pokemon := state.get_player(actor).get_pokemon(slot)
+				if pokemon == null:
+					return ""
+				ability_card_id = pokemon.card_id
 			var ability_name := str(action.params.get("ability_name", "")).to_lower()
-			for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
+			for ability_value in catalog.get_card(ability_card_id).get("abilities", []):
 				var ability: Dictionary = ability_value
 				if str(ability.get("name", "")).to_lower() != ability_name:
 					continue

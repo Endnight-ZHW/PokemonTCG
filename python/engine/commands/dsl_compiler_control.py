@@ -141,7 +141,12 @@ def make_attack_flags(params: dict, **_kw):
     return SetAttackFlags(
         ignore_weakness=bool(params.get("ignore_weakness", True)),
         ignore_resistance=bool(params.get("ignore_resistance", True)),
-        ignore_effects=bool(params.get("ignore_effects", False)),
+        ignore_defender_damage_effects=bool(
+            params.get(
+                "ignore_defender_damage_effects",
+                params.get("ignore_effects", False),
+            )
+        ),
     )
 
 
@@ -323,7 +328,7 @@ CONTROL_EFFECT_FACTORIES = {
     "switch_opponent": make_switch_opponent,
     "coin_flip": make_coin_flip,
     "attack_fail": make_attack_fail,
-    "piercing_marker": make_attack_flags,
+    "attack_flags": make_attack_flags,
     "return_to_hand": make_return_to_hand,
     "dazzling_beam": make_dazzling_beam,
     "attack_lock_basic": make_attack_lock_basic,

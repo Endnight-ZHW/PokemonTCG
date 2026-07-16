@@ -55,11 +55,18 @@ def _handle_conditional_status(state, player, opponent, params):
     target_str = params.get("target", "opponent_active")
     condition = params.get("condition", "")
 
-    if condition == "ko_by_attack_last_turn":
-        if not player.was_ko_by_attack:
+    if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+        if not state.had_knockout_last_opponent_turn(
+            state.player_index(player),
+            causes={"attack_damage"},
+        ):
             state._log(f"上个对手回合没有宝可梦因招式伤害昏厥，{status_str}效果不触发。")
             return ActionResult(True, "条件未满足，不触发麻痹。")
-        player.was_ko_by_attack = False  # Consume the flag
+    elif (
+        condition == "ko_last_opponent_turn"
+        and not state.had_knockout_last_opponent_turn(state.player_index(player))
+    ):
+        return ActionResult(True, "条件未满足，不触发状态。")
 
     from engine.enums import StatusType
     status_map = {

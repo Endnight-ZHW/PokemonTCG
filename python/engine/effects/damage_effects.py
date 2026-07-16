@@ -5,6 +5,7 @@ from engine.enums import TurnPhase
 from engine.game_state import GameState, ActionResult, ActionRequest
 from engine.actions import PokemonRef, resolve_pokemon_ref
 from engine.commands.damage_pipeline import resolve_damage as event_damage_pipeline
+from engine.energy_view import EnergyView
 
 
 def _discard_pokemon_for_effect(state: GameState, player_idx: int, slot: str):
@@ -35,7 +36,7 @@ def _award_prizes_for_effect_ko(state: GameState, knocked_player_idx: int, pokem
         if prize_taker.prizes:
             prize_taker.take_prize()
             state._log(
-                f"{prize_taker.name}获得了奖品卡！"
+                f"{prize_taker.name}获得了奖赏卡！"
                 f"（剩余{len(prize_taker.prizes)}张）"
             )
 
@@ -46,8 +47,15 @@ def _set_promotion_or_game_over(state: GameState, player_idx: int) -> None:
     if player.active is not None:
         return
     if not player.has_any_pokemon_in_play():
-        state.winner = 1 - player_idx
-        state.phase = TurnPhase.GAME_OVER
+        state.set_result(
+            "WIN",
+            winner=1 - player_idx,
+            reason="RULE_CONDITIONS",
+            conditions=[
+                [] if index == 1 - player_idx else ["NO_POKEMON_IN_PLAY"]
+                for index in (0, 1)
+            ],
+        )
         state._log(f"{opponent.name}获胜——对手场上没有宝可梦了！")
         return
     state.pending_promotion_player = player_idx
@@ -65,6 +73,14 @@ def _handle_effect_ko_if_needed(
     knocked = _discard_pokemon_for_effect(state, player_idx, slot)
     if knocked is None:
         return
+    cause = str(getattr(knocked, "pending_ko_cause", "") or "attack_effect")
+    state.record_knockout_fact(
+        owner=player_idx,
+        cause=cause,
+        source_player=state.active_player_idx,
+        card_id=getattr(knocked.card, "api_id", ""),
+        slot=slot,
+    )
     ko_slots.append(f"p{player_idx}_{slot}")
     state._log(f"{state.get_player(player_idx).name}的{knocked.card.name}被击倒了！")
     _award_prizes_for_effect_ko(state, player_idx, knocked)
@@ -72,8 +88,7 @@ def _handle_effect_ko_if_needed(
 
     winner = check_win_condition(state)
     if winner is not None:
-        state.winner = winner
-        state.phase = TurnPhase.GAME_OVER
+        state.set_result("WIN", winner=winner, reason="RULE_CONDITIONS")
         state._log(f"{state.get_player(winner).name}获胜！")
         return
     if slot == "active":
@@ -117,7 +132,7 @@ def _queue_or_apply_opponent_active_damage(
     log_msg: str = "",
     result_msg: str = "",
     prevent_msg: str = "伤害被免疫。",
-    ignore_defender_effects: bool = False,
+    ignore_defender_damage_effects: bool = False,
 ) -> ActionResult | None:
     if opponent.active is None:
         return None
@@ -130,7 +145,7 @@ def _queue_or_apply_opponent_active_damage(
             state._log(log_msg)
         return ActionResult(True, result_msg or f"伤害: {damage}", damage_dealt=0)
     defender = opponent.active
-    if not ignore_defender_effects and _check_effect_damage_prevented(defender, state):
+    if not ignore_defender_damage_effects and _check_effect_damage_prevented(defender, state):
         return ActionResult(True, prevent_msg)
     defender.damage_counters += damage // DAMAGE_PER_COUNTER
     if log_msg:
@@ -157,14 +172,7 @@ def _handle_damage(state, player, opponent, params, source_slot):
 
 
 def _count_attached_energy_of_type(pokemon, energy_type: str) -> int:
-    if pokemon is None:
-        return 0
-    energy_type = str(energy_type or "").lower()
-    return sum(
-        1
-        for card in pokemon.energy_cards
-        if any(str(provided).lower() == energy_type for provided in card.provides_energy)
-    )
+    return EnergyView.from_pokemon(pokemon).count(energy_type)
 
 
 def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
@@ -194,8 +202,13 @@ def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
     if isinstance(condition_bonus, dict):
         condition = str(condition_bonus.get("condition", "") or "")
         applies = False
-        if condition == "ko_by_attack_last_turn":
-            applies = player.was_ko_by_attack
+        if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+            applies = state.had_knockout_last_opponent_turn(
+                state.player_index(player),
+                causes={"attack_damage"},
+            )
+        elif condition == "ko_last_opponent_turn":
+            applies = state.had_knockout_last_opponent_turn(state.player_index(player))
         elif condition == "own_bench_damaged":
             applies = any(
                 poke is not None and poke.damage_counters > 0
@@ -210,10 +223,15 @@ def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
 
         if applies:
             total += int(condition_bonus.get("bonus", 0) or 0)
-            if condition == "ko_by_attack_last_turn" and bool(condition_bonus.get("consume", True)):
-                player.was_ko_by_attack = False
 
-    ignore_defender_effects = bool(params.get("ignore_defender_effects", False))
+    ignore_weakness = bool(params.get("ignore_weakness", False))
+    ignore_resistance = bool(params.get("ignore_resistance", False))
+    ignore_defender_damage_effects = bool(
+        params.get(
+            "ignore_defender_damage_effects",
+            False,
+        )
+    )
     from engine.commands.attack_frames import set_attack_damage_total
 
     player_idx = 0 if player is state.p1 else 1
@@ -222,12 +240,13 @@ def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
         player_idx,
         opponent,
         total,
-        piercing=bool(params.get("piercing", False)),
-        ignore_defender_effects=ignore_defender_effects,
+        ignore_weakness=ignore_weakness,
+        ignore_resistance=ignore_resistance,
+        ignore_defender_damage_effects=ignore_defender_damage_effects,
     ):
         return ActionResult(True, "攻击伤害公式已设置。")
 
-    if not ignore_defender_effects and _check_effect_damage_prevented(defender, state):
+    if not ignore_defender_damage_effects and _check_effect_damage_prevented(defender, state):
         return ActionResult(True, "伤害被免疫。")
 
     attacker_type = attacker.card.energy_types[0] if attacker.card.energy_types else "Colorless"
@@ -237,8 +256,9 @@ def _handle_attack_damage_formula(state, player, opponent, params, source_slot):
         defender,
         total,
         attacker_type,
-        piercing=bool(params.get("piercing", False)),
-        ignore_defender_effects=ignore_defender_effects,
+        ignore_weakness=ignore_weakness,
+        ignore_resistance=ignore_resistance,
+        ignore_defender_damage_effects=ignore_defender_damage_effects,
     )
     for log_msg in mod_logs:
         state._log(log_msg)
@@ -340,7 +360,7 @@ def _handle_damage_per_prize(state, player, opponent, params):
     total = base_damage + per_prize * prizes_taken
 
     if opponent.active:
-        msg = f"对{opponent.active.card.name}造成{total}点伤害（基础{base_damage}+{per_prize}×{prizes_taken}张奖品卡）。"
+        msg = f"对{opponent.active.card.name}造成{total}点伤害（基础{base_damage}+{per_prize}×{prizes_taken}张奖赏卡）。"
         return _queue_or_apply_opponent_active_damage(
             state, player, opponent, total, msg, f"伤害: {total}")
     return ActionResult(False, "没有目标。")
@@ -359,14 +379,14 @@ def _handle_damage_per_energy(state, player, opponent, params):
     if count_from == "self":
         source = player.active
         if source:
-            energy_count = len(source.energy_cards)
+            energy_count = EnergyView.from_pokemon(source).total_units
     elif count_from == "opponent_active":
         if opponent.active:
-            energy_count = len(opponent.active.energy_cards)
+            energy_count = EnergyView.from_pokemon(opponent.active).total_units
     elif count_from == "all_opponent":
         for p in [opponent.active] + [b for b in opponent.bench if b is not None]:
             if p:
-                energy_count += len(p.energy_cards)
+                energy_count += EnergyView.from_pokemon(p).total_units
 
     total = base_damage + per_energy * energy_count
 
@@ -381,8 +401,6 @@ def _handle_any_pokemon_damage(state, player, opponent, params):
     """Damage to any ONE of the opponent's Pokemon (active or bench).
     If targeting bench, weakness/resistance is not calculated."""
     amount = params.get("amount", 0)
-    piercing_on_bench = params.get("piercing_on_bench", False)
-
     # Collect all valid targets (opponent active + benched Pokemon)
     targets = []
     if opponent.active:
@@ -457,9 +475,11 @@ def _handle_conditional_damage_bonus(state, player, opponent, params):
                 "追加伤害被免疫。",
             )
 
-    if condition == "ko_by_attack_last_turn":
-        if player.was_ko_by_attack:
-            player.was_ko_by_attack = False
+    if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+        if state.had_knockout_last_opponent_turn(
+            state.player_index(player),
+            causes={"attack_damage"},
+        ):
             if opponent.active:
                 return _queue_or_apply_opponent_active_damage(
                     state, player, opponent, bonus,
@@ -469,6 +489,16 @@ def _handle_conditional_damage_bonus(state, player, opponent, params):
                 )
         else:
             state._log("上个对手回合没有宝可梦因招式伤害昏厥，嫉妒业火追加伤害不触发。")
+
+    if (
+        condition == "ko_last_opponent_turn"
+        and state.had_knockout_last_opponent_turn(state.player_index(player))
+        and opponent.active
+    ):
+        return _queue_or_apply_opponent_active_damage(
+            state, player, opponent, bonus,
+            f"追加造成{bonus}点伤害！", f"追加{bonus}点伤害。",
+        )
 
     if condition == "opponent_active_evolved" and opponent.active:
         # 摔角鹰人 挥落: if opponent active is evolved +30
@@ -487,7 +517,7 @@ def _handle_conditional_damage_bonus(state, player, opponent, params):
         total_energy = 0
         for slot_name, poke in player.get_all_pokemon():
             if poke:
-                total_energy += len(poke.energy_cards)
+                total_energy += EnergyView.from_pokemon(poke).total_units
         if total_energy >= 5:
             if opponent.active:
                 return _queue_or_apply_opponent_active_damage(
@@ -644,9 +674,7 @@ def _handle_damage_per_self_energy(state, player, opponent, params):
     if not source:
         return ActionResult(False, "没有宝可梦。")
 
-    matching = sum(1 for c in source.energy_cards
-                   if energy_filter == "any" or
-                   any(et.lower() == energy_filter.lower() for et in c.provides_energy))
+    matching = EnergyView.from_pokemon(source).count(energy_filter)
     total = base + per_energy * matching
 
     if opponent.active:
@@ -859,7 +887,8 @@ def _handle_conditional_damage_heal(state, player, opponent, params):
     Used by 大奶罐 活泼冲撞: 60 + 90 if healed this turn."""
     base = params.get("base", 60)
     bonus = params.get("bonus", 90)
-    healed_flag = getattr(player, 'healed_this_turn', False)
+    source = player.active
+    healed_flag = bool(getattr(source, 'healed_this_turn', False))
 
     total = base + (bonus if healed_flag else 0)
 
@@ -907,9 +936,7 @@ def _handle_damage_per_self_energy_type(state, player, opponent, params):
 
     source = player.active
     if source:
-        type_energy_count = sum(1 for c in source.energy_cards
-                                if any(et.lower() == energy_type.lower()
-                                       for et in c.provides_energy))
+        type_energy_count = EnergyView.from_pokemon(source).count(energy_type)
 
         total = base + per_energy * type_energy_count
 
@@ -947,6 +974,7 @@ def _handle_damage_and_self_heal(state, player, opponent, params):
             source.damage_counters -= actual
             state._log(f"{source.card.name}回复了{actual * DAMAGE_PER_COUNTER}点HP。")
             # Track heal for 大奶罐 活泼冲撞
+            source.healed_this_turn = True
             player.healed_this_turn = True
 
     dealt = damage_result.damage_dealt if damage_result is not None else 0

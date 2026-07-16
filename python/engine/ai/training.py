@@ -388,34 +388,40 @@ def _make_ai(deck_key: str, weights: dict[str, float] | None, seed: int,
     return create_challenge_ai(deck_key, config)
 
 
-def finish_setup(state: GameState, tm: TurnManager, ais: list[Any]) -> None:
-    for player_idx, ai in enumerate(ais):
-        for _ in range(100):
-            if tm.needs_mulligan(player_idx):
-                state.do_mulligan(player_idx)
-            else:
-                break
-        for _ in range(8):
-            action = ai.choose_action(state, player_idx)
-            if action.action == "SETUP_DONE":
-                break
-            if action.action == PlayerAction.PLAY_BASIC:
-                result = tm.setup_place_basic(player_idx, **action.params)
-                if not result.success:
-                    break
-            else:
-                break
-    if state.p1.active is None:
-        _force_setup_basic(tm, 0)
-    if state.p2.active is None:
-        _force_setup_basic(tm, 1)
-    if state.p1.active is None or state.p2.active is None:
-        raise RuntimeError(
-            f"Setup failed: p1_active={state.p1.active is not None}, "
-            f"p2_active={state.p2.active is not None}. "
-            "Check deck definitions for basic Pokemon."
+def finish_setup(
+    state: GameState,
+    tm: TurnManager,
+    ais: list[Any],
+    rng: RandomSource | None = None,
+) -> None:
+    """Drive the same explicit setup choices/actions used by live matches."""
+    setup_rng = rng or RandomSource(0)
+    for _ in range(128):
+        if state.setup_stage == "COMPLETE":
+            return
+        pending = DEFAULT_GAME_ENGINE.pending_choice_request(state)
+        if pending is not None:
+            response = DEFAULT_GAME_ENGINE.choice_manager.default_choice_response(
+                pending,
+                setup_rng,
+            )
+            step = DEFAULT_GAME_ENGINE.apply_choice(state, pending, response, setup_rng)
+            if not step.success:
+                raise RuntimeError(f"Setup choice failed: {step.message}")
+            continue
+
+        player_idx = int(getattr(state, "setup_actor_idx", -1))
+        if player_idx not in (0, 1):
+            raise RuntimeError(f"Setup actor is invalid: {player_idx}")
+        action = ais[player_idx].choose_action(state, player_idx)
+        step = DEFAULT_GAME_ENGINE.apply_action(
+            state,
+            action.with_actor(player_idx) if action.actor is None else action,
+            setup_rng,
         )
-    tm.setup_finalize()
+        if not step.success:
+            raise RuntimeError(f"Setup action failed: {step.message}")
+    raise RuntimeError("Setup exceeded the 128-step safety limit.")
 
 
 def _force_setup_basic(tm: TurnManager, player_idx: int) -> None:
@@ -507,11 +513,14 @@ def _play_match_impl(
     deck1_key = deck_a if deck_a_player_idx == 0 else deck_b
     deck2_key = deck_b if deck_a_player_idx == 0 else deck_a
     setup_rng = RandomSource(seed)
-    state.setup_game(
+    setup_step = DEFAULT_GAME_ENGINE.begin_game(
+        state,
         expand_deck(DECK_SPECS[deck1_key]),
         expand_deck(DECK_SPECS[deck2_key]),
-        rng=setup_rng,
+        setup_rng,
     )
+    if not setup_step.success:
+        raise RuntimeError(setup_step.message)
     state.public_deck_keys = (deck1_key, deck2_key)
     tm = TurnManager(state)
     if deck_a_player_idx == 0:
@@ -522,7 +531,7 @@ def _play_match_impl(
         ai1 = _make_ai(deck_a, weights_a, seed + 11, search_preset, search_quality)
     ais = [ai0, ai1]
     with setup_rng.bind_state(state):
-        finish_setup(state, tm, ais)
+        finish_setup(state, tm, ais, setup_rng)
 
     failed_signatures: dict[int, set[tuple]] = {0: set(), 1: set()}
     prev_player_idx: int | None = None
@@ -535,7 +544,7 @@ def _play_match_impl(
     steps = 0
     for _ in range(max_steps):
         steps += 1
-        if state.winner is not None or state.phase == TurnPhase.GAME_OVER:
+        if state.is_terminal():
             break
         if state.pending_promotion_player >= 0:
             ais[state.pending_promotion_player]._auto_promote_for_sim(state)
@@ -588,8 +597,12 @@ def _play_match_impl(
         else:
             failed_signatures[player_idx].clear()
 
-    if state.winner is not None:
-        logical_winner = 0 if state.winner == deck_a_player_idx else 1
+    if state.is_terminal():
+        logical_winner = (
+            None
+            if state.result_status == "DRAW"
+            else 0 if state.winner == deck_a_player_idx else 1
+        )
         score = terminal_training_score(state, deck_a_player_idx)
         if return_diagnostics:
             return MatchDiagnostics(
@@ -644,9 +657,9 @@ def _looks_like_no_target_failure(message: str) -> bool:
 def _determine_soft_winner(state: GameState) -> int:
     """当 max_steps 耗尽且无明确胜负时，根据游戏状态判定胜者。
 
-    优先级：奖品卡数 > 场上宝可梦数 > 剩余牌库数 > 当前行动方判负。
+    优先级：奖赏卡数 > 场上宝可梦数 > 剩余牌库数 > 当前行动方判负。
     """
-    # 第一优先级：已拿取的奖品卡数量
+    # 第一优先级：已拿取的奖赏卡数量
     p1_prizes = 6 - len(state.p1.prizes)
     p2_prizes = 6 - len(state.p2.prizes)
     if p1_prizes > p2_prizes:
@@ -673,6 +686,8 @@ def _determine_soft_winner(state: GameState) -> int:
 
 
 def terminal_training_score(state: GameState, candidate_player_idx: int) -> float:
+    if getattr(state, "result_status", "") == "DRAW":
+        return 0.0
     candidate = state.get_player(candidate_player_idx)
     opponent = state.get_player(1 - candidate_player_idx)
     candidate_won = state.winner == candidate_player_idx
@@ -705,7 +720,6 @@ def _score_game(winner: int | None, eval_score: float) -> tuple[float, dict[str,
         score -= 10000.0
     else:
         local["draws"] = 1
-        score -= 2000.0  # 惩罚：平局比慢慢输掉更差
     return score, local
 
 
@@ -987,7 +1001,7 @@ def _rate(stats: dict[str, Any], key: str = "wins") -> float:
     if games <= 0:
         return 0.0
     if key == "points":
-        points = int(stats.get("wins", 0)) + int(stats.get("draws", 0)) * 0.25
+        points = int(stats.get("wins", 0)) + int(stats.get("draws", 0)) * 0.5
         return round(points / games, 4)
     return round(int(stats.get(key, 0)) / games, 4)
 
@@ -1005,7 +1019,7 @@ def _finalize_stats(stats: dict[str, Any], score_total: float = 0.0) -> dict[str
     }
     if games > 0:
         result["win_rate"] = round(result["wins"] / games, 4)
-        result["point_rate"] = round((result["wins"] + result["draws"] * 0.25) / games, 4)
+        result["point_rate"] = round((result["wins"] + result["draws"] * 0.5) / games, 4)
         result["avg_score"] = round(score_total / games, 3)
         draw_rate = round(result["draws"] / games, 4)
         if draw_rate > 0.20:

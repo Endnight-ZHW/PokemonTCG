@@ -16,8 +16,9 @@ $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $lock = Get-ToolchainLock -RepoRoot $repoRoot
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
-$releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
-$expectedOnnxRuntime = [string]$release.onnx.runtime_version
+Assert-ReleaseDeepFallbackContract -Manifest $release
+$compatibleModelCount = [int]$release.compatible_model_count
+$legacyModelCount = [int]$release.legacy_model_count
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
@@ -72,12 +73,13 @@ $aiSmokeText = $aiSmoke -join "`n"
 if (
     $LASTEXITCODE -ne 0 -or
     -not $aiSmokeText.Contains('PHASE4_EXPORT_AI_OK') -or
-    -not $aiSmokeText.Contains('provider=CPUExecutionProvider') -or
-    -not $aiSmokeText.Contains("runtime=$expectedOnnxRuntime")
+    -not $aiSmokeText.Contains('deep=disabled') -or
+    -not $aiSmokeText.Contains('fallback=challenge') -or
+    -not $aiSmokeText.Contains('onnx_assets=0')
 ) {
-    throw "Exported Windows Deep AI smoke test failed.`n$aiSmokeText"
+    throw "Exported Windows AI fallback smoke test failed.`n$aiSmokeText"
 }
-Write-Host "WINDOWS_DEEP_AI_OK provider=CPUExecutionProvider runtime=$expectedOnnxRuntime"
+Write-Host 'WINDOWS_AI_FALLBACK_OK deep=disabled fallback=challenge onnx_assets=0'
 
 $networkSmoke = & $windowsConsole -- --phase5-network-smoke 2>&1
 $networkSmokeText = $networkSmoke -join "`n"
@@ -87,28 +89,25 @@ if (
 ) {
     throw "Exported Windows network smoke test failed.`n$networkSmokeText"
 }
-Write-Host 'WINDOWS_NETWORK_OK protocol=3 transports=enet,websocket'
+Write-Host 'WINDOWS_NETWORK_OK protocol=4 transports=enet,websocket'
 
 $releaseSmoke = & $windowsConsole -- --phase6-release-smoke 2>&1
 $releaseSmokeText = $releaseSmoke -join "`n"
 if (
     $LASTEXITCODE -ne 0 -or
     -not $releaseSmokeText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
-    -not $releaseSmokeText.Contains("models=$($releaseDecks.Count)")
+    -not $releaseSmokeText.Contains("compatible_models=$compatibleModelCount") -or
+    -not $releaseSmokeText.Contains("legacy_models=$legacyModelCount") -or
+    -not $releaseSmokeText.Contains('onnx_assets=0')
 ) {
     throw "Exported Windows release model smoke test failed.`n$releaseSmokeText"
 }
-Write-Host "WINDOWS_RELEASE_MODELS_OK models=$($releaseDecks.Count) finite=1"
+Write-Host "WINDOWS_RELEASE_AI_OK compatible_models=$compatibleModelCount legacy_models=$legacyModelCount onnx_assets=0"
 
 $jar = Join-Path $jdkRoot 'bin\jar.exe'
 $apkEntries = & $jar tf $androidApk
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to list Android APK contents.'
-}
-foreach ($deckKey in $releaseDecks) {
-    if ("assets/data/ai_models/$deckKey.onnx" -notin $apkEntries) {
-        throw "Android APK is missing the $deckKey ONNX model."
-    }
 }
 foreach ($nativeEntry in @(
     'lib/arm64-v8a/libonnxruntime.so',
@@ -124,15 +123,15 @@ $actualApkModels = @(
         ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
         Sort-Object
 )
-if (Compare-Object @($releaseDecks | Sort-Object) $actualApkModels) {
-    throw 'Android APK ONNX set does not exactly match release_manifest.json.'
+if ($actualApkModels.Count -ne $compatibleModelCount) {
+    throw "Android APK contains $($actualApkModels.Count) models; expected $compatibleModelCount."
 }
-Write-Host "ANDROID_AI_ASSETS_OK models=$($releaseDecks.Count) abi=arm64-v8a"
+Write-Host "ANDROID_AI_ASSETS_OK compatible_models=$compatibleModelCount abi=arm64-v8a"
 
 & (Join-Path $PSScriptRoot 'test_android_runtime.ps1') `
     -ApkPath $androidApk `
     -SmokeApkPath $androidSmokeApk `
-    -ExpectedModels $releaseDecks.Count `
+    -ExpectedModels $compatibleModelCount `
     -RequireDevice:$RequireAndroidDevice `
     -AllowCleanInstall:$AllowAndroidCleanInstall
 if ($LASTEXITCODE -ne 0) {

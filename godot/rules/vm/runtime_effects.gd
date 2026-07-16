@@ -62,7 +62,7 @@ const OP_ALIASES := {
 	"search_cards": "search",
 	"search_item_and_tool": "arven",
 	"set_attack_damage_formula": "attack_damage_formula",
-	"set_attack_flags": "piercing_marker",
+	"set_attack_flags": "attack_flags",
 	"shuffle_from_discard_to_deck": "shuffle_from_discard",
 	"shuffle_then_draw_cards": "shuffle_draw",
 	"switch_pokemon": "switch_self",
@@ -256,9 +256,7 @@ static func availability_effect_kind(effect: Dictionary) -> String:
 		return raw_type
 	var op := str(effect.get("op", ""))
 	if op == "set_attack_flags":
-		if bool(availability_effect_params(effect).get("piercing", false)):
-			return "piercing_marker"
-		return ""
+		return "attack_flags"
 	if op == "switch_pokemon":
 		if str(availability_effect_params(effect).get("target", "self")) == "opponent":
 			return "switch_opponent"

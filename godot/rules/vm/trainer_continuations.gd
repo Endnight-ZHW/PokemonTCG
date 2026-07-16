@@ -82,13 +82,57 @@ func continue_hand_bottom_draw(
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
 	var source_indices := VMZoneHelpers.selected_source_indices(selected)
-	var moved: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "hand", selected, false)
-	for card_id in moved:
-		player.deck.push_front(card_id)
+	var removal := _remove_hand_cards_in_response_order(player, selected)
+	if not bool(removal.get("success", false)):
+		return removal
+	var moved: Array[String] = []
+	moved.assign(removal.get("cards", []))
+	# Deck index 0 is the bottom. Insert in reverse so the first option submitted
+	# by the player remains the first (bottom-most) card in the chosen order.
+	for moved_index in range(moved.size() - 1, -1, -1):
+		player.deck.push_front(moved[moved_index])
 	if not moved.is_empty():
 		events.append(VMZoneHelpers.cards_selected_event(
-			int(data["player_idx"]), "hand", "deck", moved, -1, source_indices, [0]))
+			int(data["player_idx"]), "hand", "deck", moved, -1,
+			source_indices, range(moved.size())))
 	return VMZoneHelpers.draw_available(state, int(data["player_idx"]), moved.size(), events)
+
+
+func _remove_hand_cards_in_response_order(
+	player: PlayerState,
+	selected: Array[Dictionary],
+) -> Dictionary:
+	# Choice options identify card entities by their original hand index. Remove
+	# indices from high to low so shifting cannot swap same-ID copies, but return
+	# cards in response order because that order is a rule-significant decision.
+	var ordered_rows: Array[Dictionary] = []
+	var removal_indices: Array[int] = []
+	var seen_indices: Dictionary = {}
+	for option in selected:
+		var value: Dictionary = option.get("value", {})
+		var hand_index := int(value.get("index", -1))
+		var expected_card_id := str(value.get("card_id", ""))
+		if (
+			hand_index < 0
+			or hand_index >= player.hand.size()
+			or seen_indices.has(hand_index)
+			or str(player.hand[hand_index]) != expected_card_id
+		):
+			return VMResult.fail("选择的手牌实体已不存在。", "stale_choice")
+		seen_indices[hand_index] = true
+		removal_indices.append(hand_index)
+		ordered_rows.append({
+			"index": hand_index,
+			"card_id": expected_card_id,
+		})
+	removal_indices.sort()
+	removal_indices.reverse()
+	for hand_index in removal_indices:
+		player.hand.pop_at(hand_index)
+	var cards: Array[String] = []
+	for row in ordered_rows:
+		cards.append(str(row.get("card_id", "")))
+	return {"success": true, "cards": cards}
 
 
 func continue_houb(

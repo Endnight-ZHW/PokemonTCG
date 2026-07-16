@@ -17,7 +17,12 @@ from engine.action_codec import (
     serialize_choice_response,
 )
 from engine.actions import ChoiceOption, ChoiceRequest, ChoiceResponse, PokemonRef
-from relay_server import PROTOCOL_V3, _parse_control_message, _valid_forward_message
+from relay_server import (
+    PROTOCOL_V3,
+    PROTOCOL_V4,
+    _parse_control_message,
+    _valid_forward_message,
+)
 from ui.screens.deck_select import DECK_OPTIONS_BY_KEY, DeckSelectScreen
 from ui.screens.game_screen import GameScreen
 from ui.screens.title_screen import TitleScreen
@@ -143,9 +148,9 @@ class PythonToolBoundaryTests(unittest.TestCase):
             response,
         )
 
-    def test_relay_accepts_only_protocol_v3_frames(self):
+    def test_relay_accepts_only_protocol_v4_frames(self):
         frame = {
-            "protocol_version": PROTOCOL_V3,
+            "protocol_version": PROTOCOL_V4,
             "message_type": "ping",
             "room_id": "1234",
             "sender": 0,
@@ -156,8 +161,10 @@ class PythonToolBoundaryTests(unittest.TestCase):
             "payload": {},
         }
         self.assertEqual(_valid_forward_message(frame, "1234", 0), (True, ""))
-        frame["protocol_version"] = 2
-        self.assertFalse(_valid_forward_message(frame, "1234", 0)[0])
+        frame["protocol_version"] = PROTOCOL_V3
+        valid, error = _valid_forward_message(frame, "1234", 0)
+        self.assertFalse(valid)
+        self.assertIn("旧 v3 房间不能恢复", error)
 
         parsed, error = _parse_control_message(json.dumps({"type": "create_room"}))
         self.assertEqual(parsed, {"type": "create_room"})

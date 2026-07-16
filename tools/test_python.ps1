@@ -35,6 +35,8 @@ if ($Tier -eq 'core') {
         'tests.test_evaluation_stats',
         'tests.test_pending_continuations',
         'tests.test_snapshot_schema',
+        'tests.test_deck_contract',
+        'tests.test_draw_ai_semantics',
         'tests.test_game_screen_input',
         'tests.test_python_tool_boundary',
         'tests.test_relay_server',

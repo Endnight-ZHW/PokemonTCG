@@ -1,4 +1,5 @@
 """Action resolver - executes game actions and mutates GameState."""
+import copy
 import random
 from engine.rules_constants import COIN_FLIP_THRESHOLD
 from engine.enums import TurnPhase, StatusType, PlayerAction
@@ -142,6 +143,16 @@ class ActionResolver:
             return ActionResult(False, reason)
 
         player.hand.pop(hand_idx)
+
+        if (
+            self.state.phase == TurnPhase.SETUP
+            and getattr(self.state, "setup_stage", "") == "BONUS_PLACEMENT"
+        ):
+            eligible = self.state.setup_bonus_card_ids[player_idx]
+            card_id = str(getattr(card, "api_id", "") or "")
+            # Validation above proves one matching bonus-drawn entity exists.
+            # Remove exactly one occurrence so duplicate IDs remain usable.
+            eligible.remove(card_id)
 
         if target == "active":
             pokemon = player.place_active(card)
@@ -336,8 +347,12 @@ class ActionResolver:
 
         if card.is_trainer_stadium:
             if self.state.stadium_card:
-                player.discard.append(self.state.stadium_card)
+                previous_owner = getattr(self.state, "stadium_owner_idx", -1)
+                if previous_owner not in (0, 1):
+                    previous_owner = player_idx
+                self.state.get_player(previous_owner).discard.append(self.state.stadium_card)
             self.state.stadium_card = card
+            self.state.stadium_owner_idx = player_idx
             player.stadium_played_this_turn = True
 
         # The card moves to discard as part of PLAY_TRAINER itself, before a
@@ -354,6 +369,8 @@ class ActionResolver:
 
     def _use_ability(self, player_idx: int, slot: str,
                      ability_name: str, **params) -> ActionResult:
+        if slot == "discard":
+            return self._use_discard_ability(player_idx, ability_name, **params)
         ok, reason = can_use_ability(
             self.state, player_idx, slot, ability_name
         )
@@ -381,6 +398,53 @@ class ActionResolver:
                 return result
 
         return ActionResult(False, f"未找到特性'{ability_name}'。")
+
+    def _use_discard_ability(
+        self,
+        player_idx: int,
+        ability_name: str,
+        discard_idx: int = -1,
+        card_id: str = "",
+        **_params,
+    ) -> ActionResult:
+        """Resolve an ability whose source card is in the discard pile."""
+        if self.state.phase != TurnPhase.MAIN or self.state.active_player_idx != player_idx:
+            return ActionResult(False, "只能在自己的主要阶段使用该特性。")
+        player = self.state.get_player(player_idx)
+        if type(discard_idx) is not int or not (0 <= discard_idx < len(player.discard)):
+            return ActionResult(False, "弃牌区中的特性来源已失效。")
+        card = player.discard[discard_idx]
+        if card_id and card.api_id != card_id:
+            return ActionResult(False, "弃牌区中的特性来源已变化。")
+        ability = next(
+            (candidate for candidate in card.abilities
+             if candidate.name.lower() == ability_name.lower()),
+            None,
+        )
+        if ability is None:
+            return ActionResult(False, f"未找到特性'{ability_name}'。")
+        if player.hand:
+            return ActionResult(False, "手牌不为空，无法使用紧急上浮。")
+        if not player.bench_has_space():
+            return ActionResult(False, "备战区已满。")
+
+        effects = copy.deepcopy(ability_runtime_effects(ability))
+        found_zone_effect = False
+        for effect in effects:
+            if not isinstance(effect, dict):
+                continue
+            op = str(effect.get("op", "") or "")
+            effect_kind = str(effect.get("effect_type", "") or "")
+            if op == "discard_then_revive" or effect_kind == "ability_discard_revive":
+                args = effect.setdefault("args" if op else "params", {})
+                args["discard_idx"] = discard_idx
+                args["card_id"] = card.api_id
+                found_zone_effect = True
+        if not found_zone_effect:
+            return ActionResult(False, "该特性不能从弃牌区发动。")
+
+        self.state._log(f"{player.name}从弃牌区使用了{card.name}的特性{ability.name}。")
+        return self._execute_effects(effects, player_idx, "discard")
 
     def _retreat(
         self,
@@ -436,20 +500,26 @@ class ActionResolver:
                 "player": player_idx, "results": [coin == "heads"], "purpose": "confusion",
             }))
             if coin == "tails":
+                before_hp = attacker.current_hp
                 attacker.damage_counters += 3
+                if before_hp > 0 and attacker.current_hp <= 0:
+                    attacker.pending_ko_cause = "special_condition"
                 self.state.event_stream.push(GameEvent("confusion_failed", {
                     "player": player_idx, "slot": "active", "self_damage": 30,
                 }))
                 msg = (f"{player.name}的{attacker.card.name}处于混乱状态！"
                        f"掷出反面。攻击失败，自身放置3个伤害指示物。")
                 self.state._log(msg)
-                ko_results = self._check_kos()
                 result = ActionResult(True, msg, attack_failed=True)
-                if ko_results:
-                    result.pokemon_ko.extend(ko_results)
-                from engine.commands.attack_frames import finalize_game_over_if_needed
-
-                finalize_game_over_if_needed(self.state, reason="knockout")
+                if attacker.is_knocked_out:
+                    ko_result = self.resolve_knockout_batch(
+                        default_cause="special_condition",
+                        source_player=None,
+                        finish_attack_actor=(
+                            player_idx if finish_attack_in_stack else None
+                        ),
+                    )
+                    merge_action_results(result, ko_result)
                 return result
 
         # Check dazzling_beam marker (炫目光束 effect)
@@ -481,8 +551,9 @@ class ActionResolver:
             "attacker": attacker,
             "base_damage": 0 if replace_base_damage else int(attack.damage or 0),
             "attacker_type": attacker_type,
-            "piercing": False,
-            "ignore_defender_effects": False,
+            "ignore_weakness": False,
+            "ignore_resistance": False,
+            "ignore_defender_damage_effects": False,
         }
 
         # Execute all attack effects and the final damage/KO frame in one VM
@@ -533,6 +604,22 @@ class ActionResolver:
 
     # ---- KO Checking ----
 
+    def resolve_knockout_batch(
+        self,
+        *,
+        default_cause: str = "rule",
+        source_player: int | None = None,
+        finish_attack_actor: int | None = None,
+        finish_checkup_actor: int | None = None,
+    ) -> ActionResult:
+        """Resolve every currently Knocked Out Pokemon through one VM batch."""
+        return self._effect_runner().resolve_knockout_batch(
+            default_cause=default_cause,
+            source_player=source_player,
+            finish_attack_actor=finish_attack_actor,
+            finish_checkup_actor=finish_checkup_actor,
+        )
+
     def _check_kos(self) -> list[str]:
         return self._effect_runner().check_kos()
 
@@ -546,7 +633,7 @@ class ActionResolver:
 
     # ---- Pokemon Checkup ----
 
-    def resolve_checkup(self):
+    def resolve_checkup(self) -> tuple[list[str], ActionResult]:
         results = []
 
         # Pokemon Checkup is resolved by condition for both Active Pokemon:
@@ -558,6 +645,8 @@ class ActionResolver:
                 active = player.active
                 name = active.card.name
                 if StatusType.POISONED in active.status_conditions:
+                    if active.current_hp <= 10:
+                        active.pending_ko_cause = "special_condition"
                     active.damage_counters += 1
                     results.append(f"{name}因中毒受到1个伤害指示物。")
 
@@ -567,6 +656,8 @@ class ActionResolver:
                 active = player.active
                 name = active.card.name
                 if StatusType.BURNED in active.status_conditions:
+                    if active.current_hp <= 20:
+                        active.pending_ko_cause = "special_condition"
                     active.damage_counters += 2
                     source = getattr(self.state, "random_source", None)
                     roll = source.random() if source else random.random()
@@ -607,13 +698,14 @@ class ActionResolver:
         for message in results:
             self.state._log(message)
 
-        ko_slots = self._check_kos()
+        settlement = self.resolve_knockout_batch(
+            default_cause="special_condition",
+            source_player=None,
+            finish_checkup_actor=self.state.active_player_idx,
+        )
+        ko_slots = list(settlement.pokemon_ko)
         if ko_slots:
             ko_summary = f"击倒: {', '.join(ko_slots)}"
             results.append(ko_summary)
             self.state._log(ko_summary)
-
-        from engine.commands.attack_frames import finalize_game_over_if_needed
-
-        finalize_game_over_if_needed(self.state, reason="pokemon_checkup")
-        return results
+        return results, settlement

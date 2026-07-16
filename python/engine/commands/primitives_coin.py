@@ -83,11 +83,19 @@ class Conditional:
 
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         condition = str(self.params.get("condition", "") or "")
-        if condition == "ko_by_attack_last_turn":
-            if not ctx.player.was_ko_by_attack:
+        if condition in {"ko_by_attack_last_turn", "ko_by_attack_damage_last_turn"}:
+            if not ctx.state.had_knockout_last_opponent_turn(
+                ctx.player_idx,
+                causes={"attack_damage"},
+            ):
                 ctx.state._log(f"{ctx.player.name}上个对手回合没有宝可梦因招式伤害昏厥，无法使用此卡。")
                 return CommandResult.fail("不满足使用条件，卡牌保留在手牌中。")
-            ctx.player.was_ko_by_attack = False
+        elif (
+            condition == "ko_last_opponent_turn"
+            and not ctx.state.had_knockout_last_opponent_turn(ctx.player_idx)
+        ):
+            ctx.state._log(f"{ctx.player.name}上个对手回合没有宝可梦昏厥，无法使用此卡。")
+            return CommandResult.fail("不满足使用条件，卡牌保留在手牌中。")
 
         sequence = list(self.cost or []) + list(self.on_pay or [])
         if sequence:

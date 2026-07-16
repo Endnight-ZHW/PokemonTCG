@@ -209,7 +209,7 @@ def draw_opponent_side(gs, surface, hide_cards=False):
     # Info bar
     if gs.state.phase != TurnPhase.SETUP:
         info_txt = gs.font_small.render(
-            f"{opponent.name} | 牌库:{len(opponent.deck)} | 手牌:{opponent.hand_count} | 奖品:{len(opponent.prizes)}",
+            f"{opponent.name} | 牌库:{len(opponent.deck)} | 手牌:{opponent.hand_count} | 奖赏卡:{len(opponent.prizes)}",
             True, UI_TEXT_SECONDARY
         )
         surface.blit(info_txt, (layout.opponent_info.x, layout.opponent_info.y))
@@ -261,7 +261,7 @@ def draw_player_side(gs, surface):
 
     # Player info
     info_txt = gs.font_small.render(
-        f"{player.name} | 奖品:{len(player.prizes)}",
+        f"{player.name} | 奖赏卡:{len(player.prizes)}",
         True, UI_TEXT_PRIMARY
     )
     surface.blit(info_txt, (layout.player_info.x, layout.player_info.y))

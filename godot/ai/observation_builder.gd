@@ -5,6 +5,10 @@ extends RefCounted
 static func build(state: GameState, perspective: int) -> Dictionary:
 	var own := state.get_player(perspective)
 	var opponent := state.get_player(1 - perspective)
+	var setup_board_hidden: bool = (
+		state.phase == "SETUP"
+		and state.setup_stage != GameState.SETUP_COMPLETE
+	)
 	var board: Array = []
 	for player_idx in [0, 1]:
 		var player := state.get_player(player_idx)
@@ -13,14 +17,15 @@ static func build(state: GameState, perspective: int) -> Dictionary:
 			if pokemon == null:
 				board.append([player_idx, str(row["slot"]), "", 0, [], [], ""])
 				continue
+			var hide_identity: bool = setup_board_hidden and player_idx != perspective
 			board.append([
 				player_idx,
 				str(row["slot"]),
-				pokemon.card_id,
-				pokemon.damage_counters,
-				pokemon.energy_card_ids.duplicate(),
-				pokemon.status_conditions.duplicate(),
-				pokemon.attached_tool_id,
+				"" if hide_identity else pokemon.card_id,
+				0 if hide_identity else pokemon.damage_counters,
+				[] if hide_identity else pokemon.energy_card_ids.duplicate(),
+				[] if hide_identity else pokemon.status_conditions.duplicate(),
+				"" if hide_identity else pokemon.attached_tool_id,
 			])
 	return {
 		"perspective": perspective,
@@ -69,6 +74,12 @@ static func _determinize_mutable(
 	catalog: CardCatalog,
 ) -> GameState:
 	var rng := PortableRandomSource.new(determinize_seed)
+	var setup_board_hidden: bool = (
+		state.phase == "SETUP"
+		and state.setup_stage != GameState.SETUP_COMPLETE
+	)
+	if setup_board_hidden:
+		_mask_setup_board_identity(state.get_player(1 - perspective))
 	var own := state.get_player(perspective)
 	var own_unknown: Array = own.deck.duplicate()
 	own_unknown.append_array(own.prizes)
@@ -103,10 +114,10 @@ static func _determinize_mutable(
 			var index := pool.find(card_id)
 			if index >= 0:
 				pool.remove_at(index)
-	else:
+	elif not setup_board_hidden:
 		pool.assign(opponent.hand + opponent.deck + opponent.prizes)
 	while pool.size() < hidden_count:
-		pool.append("sv1-ener-1")
+		pool.append("" if setup_board_hidden else "sv1-ener-1")
 	pool.resize(hidden_count)
 	rng.shuffle(pool)
 	var hand_count := opponent.hand.size()
@@ -115,3 +126,11 @@ static func _determinize_mutable(
 	opponent.deck.assign(pool.slice(hand_count, hand_count + deck_count))
 	opponent.prizes.assign(pool.slice(hand_count + deck_count))
 	return state
+
+
+static func _mask_setup_board_identity(player: PlayerState) -> void:
+	if player.active != null:
+		player.active = PokemonState.new("")
+	for index in range(player.bench.size()):
+		if player.bench[index] is PokemonState:
+			player.bench[index] = PokemonState.new("")

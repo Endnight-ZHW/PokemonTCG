@@ -15,8 +15,9 @@ $stagingRoot = Join-Path $repoRoot '.tools\release-staging'
 $jdkRoot = Join-Path $repoRoot '.tools\jdk-17'
 . (Join-Path $PSScriptRoot 'toolchain_common.ps1')
 $release = Get-ReleaseManifest -RepoRoot $repoRoot
+Assert-ReleaseDeepFallbackContract -Manifest $release
 $version = [string]$release.version
-$releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
+$compatibleModelCount = [int]$release.compatible_model_count
 
 $releaseInputs = @(
     (Join-Path $repoRoot 'docs\RELEASE_NOTES.md'),
@@ -32,9 +33,6 @@ $releaseInputs = @(
     (Join-Path $projectRoot 'third_party\onnxruntime\LICENSE'),
     (Join-Path $projectRoot 'third_party\onnxruntime\ThirdPartyNotices.txt')
 )
-$releaseInputs += @($releaseDecks | ForEach-Object {
-    Join-Path $projectRoot "data\ai_models\$_.onnx"
-})
 foreach ($required in $releaseInputs) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing release input: $required"
@@ -49,14 +47,6 @@ $env:PYTHONNOUSERSITE = '1'
     --check --skip-images
 if ($LASTEXITCODE -ne 0) {
     throw 'Godot generated data preflight failed.'
-}
-& $pythonExe -B (Join-Path $repoRoot 'python\scripts\validate_ai_models.py')
-if ($LASTEXITCODE -ne 0) {
-    throw 'Release checkpoint identity or evaluation gate failed.'
-}
-& $pythonExe -B (Join-Path $repoRoot 'python\scripts\export_onnx_models.py') --check
-if ($LASTEXITCODE -ne 0) {
-    throw 'Release ONNX parity preflight failed.'
 }
 
 function Set-TestSigningEnvironment {
@@ -202,13 +192,24 @@ $buildInfo = [ordered]@{
     action_schema = [int]$release.schemas.godot_actions
     rng_schema = [int]$release.schemas.rng
     onnx_runtime = [string]$release.onnx.runtime_version
-    onnx_models = $releaseDecks.Count
+    onnx_models = $compatibleModelCount
+    legacy_models = [int]$release.legacy_model_count
+    deep_runtime_enabled = [bool]$release.deep_runtime_enabled
+    deep_fallback = [string]$release.deep_fallback
     windows_arch = 'x86_64'
     android_arch = if ($AndroidSigning -eq 'none') { $null } else { 'arm64-v8a' }
     android_signing = $AndroidSigning
 }
 $buildInfo | ConvertTo-Json | Set-Content `
     -LiteralPath (Join-Path $packageRoot 'BUILD_INFO.json') -Encoding UTF8
+
+$stagedOnnxFiles = @(
+    Get-ChildItem -LiteralPath $packageRoot -Recurse -File |
+        Where-Object { $_.Extension -ieq '.onnx' }
+)
+if ($stagedOnnxFiles.Count -ne 0) {
+    throw 'Windows release staging contains legacy ONNX models.'
+}
 
 $zipPath = Join-Path $distRoot "PokemonTCG-Windows-x86_64-$version.zip"
 if (Test-Path -LiteralPath $zipPath) {
@@ -241,24 +242,6 @@ $manifestRows = foreach ($path in $releaseFiles) {
         file = $item.Name
         size = $item.Length
         sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-    }
-}
-$modelRoot = Join-Path $projectRoot 'data\ai_models'
-$actualModelKeys = @(
-    Get-ChildItem -LiteralPath $modelRoot -Filter '*.onnx' -File |
-        ForEach-Object { $_.BaseName } |
-        Sort-Object
-)
-$expectedModelKeys = @($releaseDecks | Sort-Object)
-if (Compare-Object $expectedModelKeys $actualModelKeys) {
-    throw "Release ONNX set does not exactly match release_manifest.json."
-}
-foreach ($deckKey in $releaseDecks) {
-    $model = Get-Item -LiteralPath (Join-Path $modelRoot "$deckKey.onnx")
-    $manifestRows += [ordered]@{
-        file = "models/$deckKey.onnx"
-        size = $model.Length
-        sha256 = (Get-FileHash -LiteralPath $model.FullName -Algorithm SHA256).Hash
     }
 }
 $manifestPath = Join-Path $distRoot 'SHA256SUMS.json'

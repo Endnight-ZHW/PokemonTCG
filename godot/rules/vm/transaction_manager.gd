@@ -11,6 +11,10 @@ func capture_transaction(state: GameState, rng: PortableRandomSource) -> Diction
 	}
 
 
+func capture_choice_transaction(state: GameState, rng: PortableRandomSource) -> Dictionary:
+	return capture_transaction(state, rng)
+
+
 func store_cancel_action_checkpoint(stack: ResolutionStack, checkpoint: Dictionary) -> void:
 	stack.context["cancel_action_checkpoint"] = {
 		"state": checkpoint["state"],
@@ -160,8 +164,24 @@ func rollback_failed_step(
 	step.pending_choice = null
 	step.events = []
 	step.winner = state.winner
-	step.terminal = state.winner >= 0 or state.phase == "GAME_OVER"
+	step.terminal = state.is_terminal()
 	return step
+
+
+func rollback_choice_failure(
+	state: GameState,
+	rng: PortableRandomSource,
+	checkpoint: Dictionary,
+	message: String,
+	error_code: String,
+) -> StepResult:
+	return rollback_failed_step(
+		state,
+		rng,
+		checkpoint,
+		StepResult.new(
+			false, message, null, [], state.winner, false, error_code),
+	)
 
 
 func restore_state(state: GameState, snapshot: Dictionary) -> void:
@@ -172,16 +192,28 @@ func restore_state(state: GameState, snapshot: Dictionary) -> void:
 	state.turn_number = restored.turn_number
 	state.first_player_idx = restored.first_player_idx
 	state.stadium_card_id = restored.stadium_card_id
+	state.stadium_owner_idx = restored.stadium_owner_idx
 	state.winner = restored.winner
+	state.result_status = restored.result_status
+	state.result_reason = restored.result_reason
+	state.result_conditions = restored.result_conditions.duplicate(true)
 	state.revision = restored.revision
 	state.choice_sequence = restored.choice_sequence
 	state.public_deck_keys = restored.public_deck_keys
 	state.apply_type_matchups = restored.apply_type_matchups
+	state.rules_profile_id = restored.rules_profile_id
+	state.rules_options = restored.rules_options.duplicate(true)
 	state.action_log = restored.action_log
 	state.mulligan_count = restored.mulligan_count
 	state.extra_draws = restored.extra_draws
 	state.setup_ready = restored.setup_ready
+	state.setup_stage = restored.setup_stage
+	state.setup_actor_idx = restored.setup_actor_idx
+	state.opening_coin_winner_idx = restored.opening_coin_winner_idx
+	state.mulligan_bonus_max = restored.mulligan_bonus_max
+	state.setup_bonus_card_ids = restored.setup_bonus_card_ids.duplicate(true)
 	state.pending_promotions = restored.pending_promotions
 	state.processed_action_ids = restored.processed_action_ids
 	state.resolution_stack = restored.resolution_stack
+	state.turn_fact_book = restored.turn_fact_book.duplicate(true)
 	state.event_stream = GameEventStream.new()

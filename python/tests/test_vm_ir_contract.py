@@ -260,7 +260,7 @@ class VmIrContractTests(unittest.TestCase):
         errors = validate_command_spec(invalid, supported_ops=supported)
         self.assertTrue(any("effect_type" in error for error in errors))
         self.assertTrue(any("unknown" in error for error in errors))
-        self.assertEqual(VM_IR_VERSION, 1)
+        self.assertEqual(VM_IR_VERSION, 2)
 
     def test_foundational_vm_ops_are_registry_backed(self):
         for op in ("deal_damage", "draw_cards", "apply_status", "draw_until"):
@@ -1481,8 +1481,9 @@ class VmIrContractTests(unittest.TestCase):
             "attacker": state.p1.active,
             "base_damage": 0,
             "attacker_type": "Fire",
-            "piercing": False,
-            "ignore_defender_effects": False,
+            "ignore_weakness": False,
+            "ignore_resistance": False,
+            "ignore_defender_damage_effects": False,
         }
 
         result = ActionResolver(state)._execute_attack_effects(
@@ -1977,7 +1978,7 @@ class VmIrContractTests(unittest.TestCase):
             "switch_opponent",
             "coin_flip",
             "attack_fail",
-            "piercing_marker",
+            "attack_flags",
             "return_to_hand",
             "dazzling_beam",
             "attack_lock_basic",
@@ -2030,8 +2031,9 @@ class VmIrContractTests(unittest.TestCase):
             "attacker": state.p1.active,
             "base_damage": 0,
             "attacker_type": "Fire",
-            "piercing": False,
-            "ignore_defender_effects": False,
+            "ignore_weakness": False,
+            "ignore_resistance": False,
+            "ignore_defender_damage_effects": False,
         })
         stack.push(compile_command_spec({
             "op": "deal_damage",
@@ -2049,8 +2051,9 @@ class VmIrContractTests(unittest.TestCase):
                     ],
                 },
                 "consume_condition": "ko_by_attack_last_turn",
-                "piercing": True,
-                "ignore_defender_effects": True,
+                "ignore_weakness": True,
+                "ignore_resistance": True,
+                "ignore_defender_damage_effects": True,
             },
             "branches": {},
         }))
@@ -2058,9 +2061,12 @@ class VmIrContractTests(unittest.TestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(attack_context["base_damage"], 220)
-        self.assertTrue(attack_context["piercing"])
-        self.assertTrue(attack_context["ignore_defender_effects"])
-        self.assertFalse(state.p1.was_ko_by_attack)
+        self.assertTrue(attack_context["ignore_weakness"])
+        self.assertTrue(attack_context["ignore_resistance"])
+        self.assertTrue(attack_context["ignore_defender_damage_effects"])
+        # Turn facts are immutable throughout the response turn; one card may
+        # not consume the fact before another card checks it.
+        self.assertTrue(state.p1.was_ko_by_attack)
         self.assertEqual(state.p2.active.damage_counters, 0)
 
     def test_deal_damage_formula_ast_covers_discard_evolved_and_arithmetic(self):
@@ -2079,7 +2085,7 @@ class VmIrContractTests(unittest.TestCase):
         stack.push(compile_command_spec({
             "op": "deal_damage",
             "args": {
-                "piercing": True,
+                "ignore_weakness": True,
                 "formula_ast": {
                     "op": "add",
                     "terms": [
@@ -2634,10 +2640,22 @@ class VmIrContractTests(unittest.TestCase):
             "energy_attach_distribution",
         )
         self.assertEqual(request.min_select, 0)
+        choices = (
+            next(
+                option.option_id for option in request.options
+                if option.value.get("energy_index") == 0
+                and option.value.get("slot") == "bench_0"
+            ),
+            next(
+                option.option_id for option in request.options
+                if option.value.get("energy_index") == 1
+                and option.value.get("slot") == "bench_1"
+            ),
+        )
         step = engine.apply_choice(
             state,
             request,
-            ChoiceResponse(request.request_id, tuple(option.option_id for option in request.options[:2])),
+            ChoiceResponse(request.request_id, choices),
         )
         self.assertTrue(step.success, step.message)
         self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
@@ -2676,8 +2694,16 @@ class VmIrContractTests(unittest.TestCase):
             "energy_attach_distribution",
         )
         self.assertEqual(request.max_select, 3)
-        active_target = next(option.option_id for option in request.options if getattr(option.ref, "slot", "") == "active")
-        step = engine.apply_choice(state, request, ChoiceResponse(request.request_id, (active_target, active_target, active_target)))
+        active_targets = tuple(
+            option.option_id
+            for option in request.options
+            if getattr(option.ref, "slot", "") == "active"
+        )
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, active_targets),
+        )
         self.assertTrue(step.success, step.message)
         self.assertEqual(len(state.p1.active.energy_cards), 3)
         self.assertEqual(state.p1.deck, [])
@@ -2706,11 +2732,17 @@ class VmIrContractTests(unittest.TestCase):
             request.metadata.get("continuation", {}).get("kind"),
             "energy_attach_distribution",
         )
-        self.assertEqual([getattr(option.ref, "slot", "") for option in request.options], ["bench_0"])
+        self.assertEqual(
+            [getattr(option.ref, "slot", "") for option in request.options],
+            ["bench_0", "bench_0"],
+        )
         step = engine.apply_choice(
             state,
             request,
-            ChoiceResponse(request.request_id, (request.options[0].option_id, request.options[0].option_id)),
+            ChoiceResponse(
+                request.request_id,
+                tuple(option.option_id for option in request.options),
+            ),
         )
         self.assertTrue(step.success, step.message)
         self.assertEqual(len(state.p1.bench[0].energy_cards), 2)
@@ -2749,15 +2781,21 @@ class VmIrContractTests(unittest.TestCase):
         self.assertFalse(result.pending_choice._resolution_stack_had_callback)
         self.assertEqual(
             result.pending_choice.continuation.get("kind"),
-            "attach_discard_energy_to_bench",
+            "attach_discard_energy_distribution",
         )
         request = engine.choice_request(state, result.pending_choice)
-        self.assertEqual(request.request_type, "select_own_bench_energy")
+        self.assertEqual(request.request_type, "distribute_energy")
         self.assertEqual(
             request.metadata.get("continuation", {}).get("kind"),
-            "attach_discard_energy_to_bench",
+            "attach_discard_energy_distribution",
         )
-        bench_one = next(option.option_id for option in request.options if getattr(option.ref, "slot", "") == "bench_1")
+        bench_one = next(
+            option.option_id
+            for option in request.options
+            if isinstance(option.value, dict)
+            and option.value.get("slot") == "bench_1"
+            and option.value.get("energy_index") == 0
+        )
         step = engine.apply_choice(state, request, ChoiceResponse(request.request_id, (bench_one,)))
         self.assertTrue(step.success, step.message)
         self.assertEqual([card.api_id for card in state.p1.bench[1].energy_cards], ["sv1-ener-7"])
@@ -2821,10 +2859,22 @@ class VmIrContractTests(unittest.TestCase):
             "attach_discard_energy_distribution",
         )
         self.assertEqual(request.min_select, 0)
+        selected = (
+            next(
+                option.option_id for option in request.options
+                if option.value.get("energy_index") == 0
+                and option.value.get("slot") == "bench_0"
+            ),
+            next(
+                option.option_id for option in request.options
+                if option.value.get("energy_index") == 1
+                and option.value.get("slot") == "bench_1"
+            ),
+        )
         step = engine.apply_choice(
             state,
             request,
-            ChoiceResponse(request.request_id, tuple(option.option_id for option in request.options[:2])),
+            ChoiceResponse(request.request_id, selected),
         )
         self.assertTrue(step.success, step.message)
         self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
@@ -3206,10 +3256,22 @@ class VmIrContractTests(unittest.TestCase):
             request.metadata.get("continuation", {}).get("kind"),
             "look_top_bench_energy_distribution",
         )
+        distributed = (
+            next(
+                option.option_id for option in request.options
+                if option.value.get("energy_index") == 0
+                and option.value.get("slot") == "bench_0"
+            ),
+            next(
+                option.option_id for option in request.options
+                if option.value.get("energy_index") == 1
+                and option.value.get("slot") == "bench_1"
+            ),
+        )
         step = engine.apply_choice(
             state,
             request,
-            ChoiceResponse(request.request_id, tuple(option.option_id for option in request.options[:2])),
+            ChoiceResponse(request.request_id, distributed),
         )
         self.assertTrue(step.success, step.message)
         self.assertEqual(len(state.p1.bench[0].energy_cards), 1)
@@ -3390,7 +3452,7 @@ class VmIrContractTests(unittest.TestCase):
         }))
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
-        self.assertFalse(state.p1.was_ko_by_attack)
+        self.assertTrue(state.p1.was_ko_by_attack)
         self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-1"])
 
         state = GameState()
@@ -3758,11 +3820,11 @@ class VmIrContractTests(unittest.TestCase):
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
 
-        from engine.action_resolver import ActionResolver
-
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
         state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-2")]
+        state.p1.active.damage_counters = 99
+        state.p1.active.pending_ko_cause = "attack_damage"
         state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
         state.p1.bench[0].attached_tool = CardRegistry.get("svg2-exps")
         state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
@@ -3774,12 +3836,16 @@ class VmIrContractTests(unittest.TestCase):
         }))
         result = stack.resolve_all(0, "bench_0")
         self.assertTrue(result.success)
-        state._ko_from_attack = True
-        ActionResolver(state)._handle_ko(0, "active")
-        state._ko_from_attack = False
-        self.assertIsNone(state.p1.active)
-        self.assertEqual([card.api_id for card in state.p1.bench[0].energy_cards], ["sv1-ener-2"])
-        self.assertNotIn("sv1-ener-2", [card.api_id for card in state.p1.discard])
+        from engine.commands.attack_frames import FinalizeAttackKoChecks
+
+        ko_stack = ResolutionStack(state)
+        ko_stack.push(FinalizeAttackKoChecks())
+        ko_result = ko_stack.resolve_all(1, "active")
+        self.assertEqual(ko_result.pending_choice.request_type, "confirm_trigger")
+        # The KO entity remains authoritative until its optional trigger is
+        # confirmed and the exact basic-energy entity is selected.
+        self.assertIsNotNone(state.p1.active)
+        self.assertEqual(state.p1.bench[0].energy_cards, [])
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -3830,12 +3896,12 @@ class VmIrContractTests(unittest.TestCase):
         self.assertEqual(len(trigger_results), 2)
         self.assertEqual(
             [result.get("exclusive_group") for result in trigger_results],
-            ["tool_exp_share", "tool_exp_share"],
+            [None, None],
         )
         self.assertEqual(len(observed_payloads), 1)
         self.assertNotIn("exp_share_used", observed_payloads[0])
         trigger_specs = command_specs_from_trigger_results(trigger_results)
-        self.assertEqual(len(trigger_specs), 1)
+        self.assertEqual(len(trigger_specs), 2)
         self.assertEqual(trigger_specs[0]["op"], "trigger_move_basic_energy")
         self.assertEqual(
             trigger_specs[0]["args"],
@@ -3845,8 +3911,13 @@ class VmIrContractTests(unittest.TestCase):
                 "to_player": 0,
                 "to_slot": "bench_0",
                 "source": "学习装置",
+                "select_source": True,
+                "optional": True,
+                "target_tool_id": "svg2-exps",
             },
         )
+        self.assertEqual(trigger_specs[1]["op"], "trigger_move_basic_energy")
+        self.assertEqual(trigger_specs[1]["args"]["to_slot"], "bench_1")
         trigger_result = execute_trigger_commands(
             state,
             trigger_specs,
@@ -3854,9 +3925,9 @@ class VmIrContractTests(unittest.TestCase):
             source_slot="active",
         )
         self.assertTrue(trigger_result.success)
-        self.assertEqual(state.p1.active.energy_cards, [])
+        self.assertEqual(trigger_result.pending_choice.request_type, "choose_trigger_order")
         self.assertEqual(
-            [card.api_id for card in state.p1.bench[0].energy_cards],
+            [card.api_id for card in state.p1.active.energy_cards],
             ["sv1-ener-2"],
         )
 
@@ -4607,8 +4678,9 @@ class VmIrContractTests(unittest.TestCase):
             "attacker": state.p1.active,
             "base_damage": 30,
             "attacker_type": "Fire",
-            "piercing": False,
-            "ignore_defender_effects": False,
+            "ignore_weakness": False,
+            "ignore_resistance": False,
+            "ignore_defender_damage_effects": False,
         })
         stack.push(compile_command_spec({
             "op": "conditional_damage",
@@ -4634,7 +4706,9 @@ class VmIrContractTests(unittest.TestCase):
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertEqual(state.p2.active.damage_counters, 9)
-        self.assertFalse(state.p1.was_ko_by_attack)
+        # Previous-turn KO facts remain readable by every later card/effect
+        # during the response turn; checking one effect never consumes them.
+        self.assertTrue(state.p1.was_ko_by_attack)
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -4700,7 +4774,7 @@ class VmIrContractTests(unittest.TestCase):
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
-        state.p1.healed_this_turn = True
+        state.p1.active.healed_this_turn = True
         state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
         stack = ResolutionStack(state)
         stack.push(compile_command_spec({
@@ -4832,8 +4906,9 @@ class VmIrContractTests(unittest.TestCase):
             "attacker": state.p1.active,
             "base_damage": 0,
             "attacker_type": "Fire",
-            "piercing": False,
-            "ignore_defender_effects": False,
+            "ignore_weakness": False,
+            "ignore_resistance": False,
+            "ignore_defender_damage_effects": False,
         })
         stack.push(compile_command_spec({
             "op": "set_attack_damage_formula",
@@ -4848,8 +4923,9 @@ class VmIrContractTests(unittest.TestCase):
                     "bonus": 50,
                     "consume": False,
                 },
-                "piercing": True,
-                "ignore_defender_effects": True,
+                "ignore_weakness": True,
+                "ignore_resistance": True,
+                "ignore_defender_damage_effects": True,
             },
             "branches": {},
         }))
@@ -4857,8 +4933,9 @@ class VmIrContractTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertIs(attack_damage_context(state, stack), attack_context)
         self.assertEqual(attack_context["base_damage"], 240)
-        self.assertTrue(attack_context["piercing"])
-        self.assertTrue(attack_context["ignore_defender_effects"])
+        self.assertTrue(attack_context["ignore_weakness"])
+        self.assertTrue(attack_context["ignore_resistance"])
+        self.assertTrue(attack_context["ignore_defender_damage_effects"])
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -4870,8 +4947,9 @@ class VmIrContractTests(unittest.TestCase):
             "attacker": state.p1.active,
             "base_damage": 0,
             "attacker_type": "Fire",
-            "piercing": False,
-            "ignore_defender_effects": False,
+            "ignore_weakness": False,
+            "ignore_resistance": False,
+            "ignore_defender_damage_effects": False,
         })
         stack.push(compile_command_spec({"op": "deal_damage", "args": {"amount": 30}}))
         stack.push(compile_command_spec({
@@ -4883,8 +4961,9 @@ class VmIrContractTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertIs(attack_damage_context(state, stack), attack_context)
         self.assertEqual(attack_context["base_damage"], 30)
-        self.assertTrue(attack_context["piercing"])
-        self.assertTrue(attack_context["ignore_defender_effects"])
+        self.assertTrue(attack_context["ignore_weakness"])
+        self.assertTrue(attack_context["ignore_resistance"])
+        self.assertTrue(attack_context["ignore_defender_damage_effects"])
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("sv2-tatsu"))

@@ -323,7 +323,7 @@ class GameScreenAnimationMixin:
         if result.cards_drawn:
             return f"对手抽了{len(result.cards_drawn)}张卡"
         if result.prize_taken:
-            return "对手拿取了奖品卡"
+            return "对手拿取了奖赏卡"
         if result.status_applied:
             return f"对手施加了状态:{','.join(result.status_applied)}"
         if result.log_message:

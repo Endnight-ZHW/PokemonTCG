@@ -3,9 +3,9 @@ extends Node
 signal status_changed(message: String)
 
 const RELEASE_MANIFEST_PATH := "res://data/release_manifest.json"
-const RULES_SCHEMA_VERSION := 3
+const RULES_SCHEMA_VERSION := 4
 const ACTION_SCHEMA_VERSION := 3
-const PROTOCOL_VERSION := 3
+const PROTOCOL_VERSION := 4
 
 var APP_VERSION := ""
 var startup_checks: Dictionary = {}

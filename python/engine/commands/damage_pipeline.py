@@ -20,65 +20,73 @@ def resolve_damage(
     defender: PokemonInPlay,
     base_damage: int,
     attacker_type: str,
-    piercing: bool = False,
-    ignore_defender_effects: bool = False,
+    ignore_weakness: bool = False,
+    ignore_resistance: bool = False,
+    ignore_defender_damage_effects: bool = False,
     trigger_commands: list | None = None,
 ) -> tuple[int, list[str]]:
-    """Run the full damage pipeline and return (final_damage, log_messages).
-
-    Pipeline:
-    1. Apply weakness/resistance (unless piercing)
-    2. Emit DAMAGE_ABOUT_TO_BE_DEALT — modifiers add/subtract afterward
-    3. Emit DAMAGE_DEALT — reactive effects (draw, thorns, etc.)
-    """
+    """Run the official phased damage calculation."""
     logs: list[str] = []
-    current = base_damage
+    current = max(0, int(base_damage or 0))
 
-    # Step 1: Weakness & resistance (unless piercing or disabled by match rules)
-    if (not piercing and getattr(state, "apply_type_matchups", False)
-            and defender and defender.card):
-        for weakness in defender.card.weaknesses or []:
-            if weakness.energy_type == attacker_type:
-                if weakness.value in ("×2", "x2"):
-                    current *= 2
-                break
-        for resistance in defender.card.resistances or []:
-            if resistance.energy_type == attacker_type:
-                try:
-                    current -= abs(int(str(resistance.value).replace("-", "")))
-                except ValueError:
-                    pass
-                break
-
-    # Step 2: Modifier hooks
+    # Gather all hooks once, then apply their deltas in the phase declared by
+    # the hook. This keeps defender reductions after Weakness/Resistance.
     mod_results = state.event_bus.emit(
         EventType.DAMAGE_ABOUT_TO_BE_DEALT,
         base_damage=current,
         attacker=attacker,
         defender=defender,
         state=state,
-        ignore_defender_effects=ignore_defender_effects,
+        ignore_defender_damage_effects=ignore_defender_damage_effects,
     )
-    for mod in mod_results:
-        if isinstance(mod, dict):
-            delta = mod.get("delta", 0)
-            source = mod.get("source", "")
-            if delta != 0:
-                current += delta
-                logs.append(f"{source}效果：伤害{delta:+d}。")
+    attacker_mods = [
+        mod for mod in mod_results
+        if isinstance(mod, dict) and str(mod.get("stage", "attacker")) != "defender"
+    ]
+    defender_mods = [
+        mod for mod in mod_results
+        if isinstance(mod, dict) and str(mod.get("stage", "attacker")) == "defender"
+    ]
 
     outgoing_reduction = int(
         getattr(attacker, "outgoing_damage_reduction_next_turn", 0) or 0
     )
     if outgoing_reduction > 0:
-        current -= outgoing_reduction
+        attacker_mods.append({"delta": -outgoing_reduction, "source": "恫吓"})
         attacker.outgoing_damage_reduction_next_turn = 0
-        logs.append(f"恫吓效果：伤害-{outgoing_reduction}。")
+
+    current = _apply_modifiers(current, attacker_mods, logs)
+
+    if (getattr(state, "apply_type_matchups", False)
+            and defender and defender.card):
+        if not ignore_weakness:
+            for weakness in defender.card.weaknesses or []:
+                if weakness.energy_type == attacker_type:
+                    if weakness.value in ("×2", "x2"):
+                        current *= 2
+                    break
+            current = max(0, current)
+        if not ignore_resistance:
+            for resistance in defender.card.resistances or []:
+                if resistance.energy_type == attacker_type:
+                    try:
+                        current -= abs(int(str(resistance.value).replace("-", "")))
+                    except ValueError:
+                        pass
+                    break
+            current = max(0, current)
+
+    if not ignore_defender_damage_effects:
+        current = _apply_modifiers(current, defender_mods, logs)
+        if getattr(defender, "damage_prevented_next_turn", False):
+            current = 0
+            logs.append(f"{defender.card.name}免疫了所有伤害！")
 
     current = max(0, current)
 
-    # Step 3: Reactive hooks. "Took damage" effects only fire when damage
-    # actually lands after all modifiers.
+    # Reactions are not defensive damage modifiers. Attacks that ignore
+    # effects on the Defending Pokemon still allow Lucky Energy and similar
+    # after-damage triggers to observe damage that actually landed.
     react_results = []
     if current > 0:
         react_results = state.event_bus.emit(
@@ -87,7 +95,7 @@ def resolve_damage(
             attacker=attacker,
             defender=defender,
             state=state,
-            ignore_defender_effects=ignore_defender_effects,
+            ignore_defender_damage_effects=ignore_defender_damage_effects,
         )
     for react in react_results:
         if isinstance(react, dict):
@@ -113,3 +121,13 @@ def resolve_damage(
             )
 
     return current, logs
+
+
+def _apply_modifiers(current: int, modifiers: list[dict], logs: list[str]) -> int:
+    for mod in modifiers:
+        delta = int(mod.get("delta", 0) or 0)
+        source = str(mod.get("source", "") or "")
+        if delta:
+            current += delta
+            logs.append(f"{source}效果：伤害{delta:+d}。")
+    return max(0, current)

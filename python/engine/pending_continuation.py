@@ -29,6 +29,23 @@ class PendingContinuationError(ValueError):
         self.error_code = error_code
 
 
+def validate_resume_required_domain(metadata: dict[str, Any]) -> None:
+    """Fail closed when a prize/trigger pause loses its remaining VM frames."""
+    continuation = metadata.get("continuation", {})
+    if not isinstance(continuation, dict):
+        return
+    kind = str(continuation.get("kind", "") or "")
+    domain = str(continuation.get("domain", "") or "")
+    if not kind or domain not in {"prize", "trigger"}:
+        return
+    resume = continuation.get("_resume")
+    if not isinstance(resume, dict) or "version" not in resume:
+        raise PendingContinuationError(
+            "奖赏或触发选择缺少完整的 VM 恢复状态。",
+            error_code="unsupported_continuation_state",
+        )
+
+
 def rebuild_choice_request(
     state: GameState,
     payload: dict[str, Any],
@@ -70,6 +87,7 @@ def rebuild_choice_request(
             "待处理选择 revision 无效。",
             error_code="invalid_pending_choice",
         )
+    validate_resume_required_domain(metadata)
 
     options_payload = payload.get("options", [])
     if not isinstance(options_payload, list):

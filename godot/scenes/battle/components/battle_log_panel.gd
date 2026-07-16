@@ -164,8 +164,8 @@ func _escape_bbcode(text: String) -> String:
 func _entry_category(text: String) -> String:
 	if "回合" in text or "准备" in text or "游戏开始" in text:
 		return "回合"
-	if "奖品" in text:
-		return "奖品"
+	if "奖赏卡" in text:
+		return "奖赏卡"
 	if "气绝" in text or "KO" in text:
 		return "气绝"
 	if "伤害" in text or "受到" in text:
@@ -185,7 +185,7 @@ func _entry_category(text: String) -> String:
 func _category_color(category: String) -> String:
 	return {
 		"回合": "#f4c84a",
-		"奖品": "#c38cff",
+		"奖赏卡": "#c38cff",
 		"气绝": "#ff6b7a",
 		"伤害": "#ff9a62",
 		"状态": "#e88cff",

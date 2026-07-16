@@ -5,6 +5,34 @@ from engine.action_resolver import ActionResolver
 from engine.rules_validator import check_win_condition
 
 
+FINISH_CHECKUP_AFTER_PROMOTIONS_KEY = "finish_checkup_after_promotions"
+
+
+def _resolution_stack_context(state: GameState) -> dict:
+    stack = getattr(state, "resolution_stack", None)
+    if not isinstance(stack, dict):
+        stack = {}
+        state.resolution_stack = stack
+    context = stack.get("context")
+    if not isinstance(context, dict):
+        context = {}
+        stack["context"] = context
+    return context
+
+
+def set_finish_checkup_after_promotions(state: GameState, actor: int) -> None:
+    _resolution_stack_context(state)[FINISH_CHECKUP_AFTER_PROMOTIONS_KEY] = int(actor)
+
+
+def finish_checkup_after_promotions_actor(state: GameState) -> int | None:
+    value = _resolution_stack_context(state).get(FINISH_CHECKUP_AFTER_PROMOTIONS_KEY)
+    return int(value) if type(value) is int and value in (0, 1) else None
+
+
+def clear_finish_checkup_after_promotions(state: GameState) -> None:
+    _resolution_stack_context(state).pop(FINISH_CHECKUP_AFTER_PROMOTIONS_KEY, None)
+
+
 class TurnManager:
     """Manages turn phases and action validation/execution."""
 
@@ -24,57 +52,68 @@ class TurnManager:
         current = self.state.phase
 
         if current == TurnPhase.SETUP:
-            self._handle_setup_phase()
+            return self._handle_setup_phase()
         elif current == TurnPhase.DRAW:
-            self._handle_draw_phase()
+            return self._handle_draw_phase()
         elif current == TurnPhase.POKEMON_CHECKUP:
-            self._handle_checkup_phase()
+            return self._handle_checkup_phase()
+        return None
 
     def _handle_setup_phase(self):
-        """Setup phase: mulligans, place basics, set prizes."""
-        # Check both players have placed basics and set prizes
-        if self.state.p1.active is None or self.state.p2.active is None:
-            # Need to prompt for active placement
-            return
-
-        if not self.state.p1.prizes or not self.state.p2.prizes:
-            self.state.set_prizes()
-
-        self.setup_complete = True
-        # Move to first turn - draw and then main
-        self.state.active_player_idx = self.state.first_player_idx
-        self.state.phase = TurnPhase.DRAW
-        self.state._log(f"准备完成。{self.state.get_active_player().name}的第1回合开始。")
-        self._handle_draw_phase()
+        """Setup progresses only through explicit player actions/choices."""
+        self.setup_complete = self.state.setup_stage == "COMPLETE"
 
     def _handle_draw_phase(self):
-        """Draw phase: active player draws 1 card.
-        Per official PTCG rules, the player who goes first does NOT draw on
-        their first turn. The second player draws normally on their first turn."""
+        """Draw one card, including on the first player's first turn."""
         player = self.state.get_active_player()
 
-        if self.state.is_first_turn():
-            self.state._log(f"{player.name}先攻第一回合不抽卡。（第1回合）")
-        else:
-            drawn = player.draw_cards(1)
-            if not drawn:
-                opponent_idx = 1 - self.state.active_player_idx
-                self.state.winner = opponent_idx
-                self.state.phase = TurnPhase.GAME_OVER
-                self.state._log(f"{player.name}没有卡可抽了！"
-                                f"{self.state.get_player(opponent_idx).name}获胜！")
-                return
-            self.state._log(f"{player.name}抽了1张卡。（第{self.state.turn_number}回合）")
+        drawn = player.draw_cards(1)
+        if not drawn:
+            opponent_idx = 1 - self.state.active_player_idx
+            conditions = [[], []]
+            conditions[opponent_idx] = ["OPPONENT_CANNOT_DRAW"]
+            self.state.set_result(
+                "WIN",
+                winner=opponent_idx,
+                reason="RULE_CONDITIONS",
+                conditions=conditions,
+            )
+            self.state._log(f"{player.name}没有卡可抽了！"
+                            f"{self.state.get_player(opponent_idx).name}获胜！")
+            return
+        self.state._log(f"{player.name}抽了1张卡。（第{self.state.turn_number}回合）")
 
         self.state.phase = TurnPhase.MAIN
 
-    def _handle_checkup_phase(self):
+    def _handle_checkup_phase(self) -> ActionResult:
         """Pokemon Checkup: status conditions, KO checks between turns."""
-        self.resolver.resolve_checkup()
+        _rows, settlement = self.resolver.resolve_checkup()
+        # The serialized FinalizeCheckupTurn frame is part of the same stack,
+        # so a prize/trigger pause cannot advance the turn early or lose the
+        # eventual transition after snapshot recovery.
+        return settlement
 
-        # Check win after checkup
-        if self.state.phase == TurnPhase.GAME_OVER:
-            return
+    def finish_checkup_after_settlement(self, outgoing_actor: int) -> ActionResult:
+        """Wait for required promotions, then begin and draw the next turn."""
+        if self.state.is_terminal():
+            clear_finish_checkup_after_promotions(self.state)
+            return ActionResult(True, "")
+        if (
+            outgoing_actor not in (0, 1)
+            or self.state.phase != TurnPhase.POKEMON_CHECKUP
+            or self.state.active_player_idx != outgoing_actor
+        ):
+            return ActionResult(False, "宝可梦检查结算状态无效。")
+        if self.state.pending_promotions:
+            set_finish_checkup_after_promotions(self.state, outgoing_actor)
+            return ActionResult(True, "等待双方完成晋升。")
+
+        clear_finish_checkup_after_promotions(self.state)
+        self._complete_checkup_transition()
+        return ActionResult(True, "宝可梦检查结算完毕。")
+
+    def _complete_checkup_transition(self) -> None:
+        """Begin the incoming turn only after the entire checkup batch."""
 
         # Clear attack locks. The outgoing player (whose turn just ended):
         # - attack_locked (bool): set by opponent, prevented attacks this turn.
@@ -92,13 +131,13 @@ class TurnManager:
                            if self.state.turn_number >= t + 2]
                 for name in expired:
                     del poke.attack_locked_names[name]
-        # A KO caused during the opponent's attack remains available throughout
-        # this player's response turn, then expires as that turn ends.
-        outgoing.was_ko_by_attack = False
-
         # Switch active player for next turn
         self.state.active_player_idx = 1 - self.state.active_player_idx
         self.state.turn_number += 1
+        self.state.begin_turn_fact_window(
+            self.state.active_player_idx,
+            self.state.turn_number,
+        )
 
         # Reset turn flags
         self.state.get_active_player().reset_turn_flags()
@@ -109,8 +148,6 @@ class TurnManager:
         player = self.state.get_active_player()
         self.state.phase = TurnPhase.DRAW
         self.state._log(f"—— {player.name}的回合 ——")
-        if self.state.pending_promotions:
-            return
         self._handle_draw_phase()
 
     # ---- Action Handling ----
@@ -130,7 +167,12 @@ class TurnManager:
             if player_idx != self.state.active_player_idx:
                 return ActionResult(False, "不是你的回合。")
 
-        # During setup, only PLAY_BASIC is allowed
+        # During setup, placement actions belong to the current setup actor.
+        if (
+            self.state.phase == TurnPhase.SETUP
+            and player_idx != int(getattr(self.state, "setup_actor_idx", -1))
+        ):
+            return ActionResult(False, "尚未轮到该玩家进行开局放置。")
         if self.state.phase == TurnPhase.SETUP and action != PlayerAction.PLAY_BASIC:
             return ActionResult(False, "Only place Basics during Setup.")
 
@@ -162,7 +204,7 @@ class TurnManager:
         # A final KO may already have moved the game to GAME_OVER.
         if action == PlayerAction.DECLARE_ATTACK and result.success:
             if (
-                self.state.winner is None
+                not self.state.is_terminal()
                 and self.state.phase == TurnPhase.MAIN
                 and self.state.active_player_idx == player_idx
             ):
@@ -171,7 +213,11 @@ class TurnManager:
         elif action == PlayerAction.END_TURN and result.success:
             if self.state.phase in (TurnPhase.MAIN, TurnPhase.ATTACK):
                 self.state.phase = TurnPhase.POKEMON_CHECKUP
-                self.advance_phase()
+                phase_result = self.advance_phase()
+                if isinstance(phase_result, ActionResult):
+                    from engine.effect_runner import merge_action_results
+
+                    merge_action_results(result, phase_result)
 
         return result
 
@@ -207,14 +253,62 @@ class TurnManager:
         )
 
     def setup_finalize(self):
-        """Finalize setup: set prizes and start the game."""
-        if self.state.p1.active is None or self.state.p2.active is None:
-            return ActionResult(False, "Both players must place Active Pokemon.")
-        # Guard: only set prizes once (may already be set by _handle_setup_phase)
-        if not self.state.p1.prizes or not self.state.p2.prizes:
-            self.state.set_prizes()
-        self.advance_phase()
+        """Compatibility query; official setup cannot be force-finalized."""
+        if self.state.setup_stage != "COMPLETE":
+            return ActionResult(False, "必须依次完成开局放置与再战奖励选择。")
         return ActionResult(True, "Setup complete. Game begins!")
+
+    def setup_done(self, player_idx: int) -> ActionResult:
+        """Commit the current player's initial/bonus placement."""
+        if self.state.phase != TurnPhase.SETUP:
+            return ActionResult(False, "当前不在开局阶段。")
+        if player_idx != int(getattr(self.state, "setup_actor_idx", -1)):
+            return ActionResult(False, "尚未轮到该玩家完成开局放置。")
+
+        stage = str(getattr(self.state, "setup_stage", ""))
+        if stage == "INITIAL_PLACEMENT":
+            player = self.state.get_player(player_idx)
+            if player.active is None:
+                return ActionResult(False, "必须先放置战斗宝可梦。")
+            done = list(self.state.setup_initial_done)
+            if done[player_idx]:
+                return ActionResult(False, "该玩家已完成初始放置。")
+            done[player_idx] = True
+            self.state.setup_initial_done = tuple(done)
+            self.state.revision = getattr(self.state, "revision", 0) + 1
+
+            other = 1 - player_idx
+            if not done[other]:
+                self.state.setup_actor_idx = other
+                return ActionResult(True, "初始放置完成，交由另一位玩家放置。")
+
+            from engine.commands.setup_continuations import finish_initial_placement
+
+            try:
+                pending = finish_initial_placement(self.state)
+            except ValueError as exc:
+                return ActionResult(False, str(exc))
+            return ActionResult(
+                True,
+                "双方初始放置完成并设置奖赏卡。",
+                pending_action=pending,
+            )
+
+        if stage == "BONUS_PLACEMENT":
+            from engine.commands.setup_continuations import finish_bonus_placement
+
+            try:
+                pending = finish_bonus_placement(self.state, player_idx)
+            except ValueError as exc:
+                return ActionResult(False, str(exc))
+            self.state.revision = getattr(self.state, "revision", 0) + 1
+            return ActionResult(
+                True,
+                "再战奖励宝可梦放置完成。",
+                pending_action=pending,
+            )
+
+        return ActionResult(False, "当前阶段不能结束放置。")
 
     # ---- Status queries ----
 
@@ -228,7 +322,8 @@ class TurnManager:
         available = []
 
         if self.state.phase == TurnPhase.SETUP:
-            available.append(PlayerAction.PLAY_BASIC)
+            if player_idx == int(getattr(self.state, "setup_actor_idx", -1)):
+                available.append(PlayerAction.PLAY_BASIC)
             return available
 
         if self.state.phase == TurnPhase.MAIN:
