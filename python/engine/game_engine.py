@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from engine.action_codec import serialize_choice_request
 from engine.actions import (
     AttachmentRef,
     CardRef,
@@ -11,6 +12,7 @@ from engine.actions import (
     ChoiceResponse,
     GameAction,
     PokemonRef,
+    SlotRef,
     StepResult,
 )
 from engine.action_availability import VMActionAvailability
@@ -157,7 +159,11 @@ class GameEngine:
                 error_code="pending_choice",
                 winner=state.winner,
             )
-        reference_error = self.availability.validate_action_references(state, action)
+        reference_error = self.availability.validate_action_references(
+            state,
+            action,
+            actor,
+        )
         if reference_error:
             return StepResult(
                 False,
@@ -258,7 +264,10 @@ class GameEngine:
                 self.transaction_manager.persist_pending_choice(state, step.pending_choice)
                 if (
                     step.pending_choice.can_cancel
-                    and action.action == PlayerAction.PLAY_TRAINER
+                    and action.action in {
+                        PlayerAction.PLAY_TRAINER,
+                        PlayerAction.RETREAT,
+                    }
                 ):
                     self.transaction_manager.store_cancel_checkpoint(state, checkpoint)
 
@@ -346,19 +355,55 @@ class GameEngine:
     def apply_choice(
         self,
         state: GameState,
-        request: ChoiceRequest,
-        response: ChoiceResponse,
+        request_or_response: ChoiceRequest | ChoiceResponse,
+        response: ChoiceResponse | RandomSource | None = None,
         rng: RandomSource | None = None,
     ) -> StepResult:
+        """Apply a state-authoritative choice response.
+
+        Action schema v3 callers submit ``apply_choice(state, response, rng)``.
+        The old ``(state, request, response, rng)`` form remains as a local
+        compatibility adapter; its request is compared only through the public
+        codec and is never used as continuation state.
+        """
+        submitted_request: ChoiceRequest | None
+        submitted_response: ChoiceResponse | None
+        response_only = isinstance(request_or_response, ChoiceResponse)
+        if response_only:
+            submitted_request = None
+            submitted_response = request_or_response
+            if isinstance(response, RandomSource):
+                if rng is not None:
+                    return StepResult(
+                        False,
+                        "随机源参数重复。",
+                        error_code="invalid_choice_response",
+                        winner=state.winner,
+                    )
+                rng = response
+            elif response is not None:
+                return StepResult(
+                    False,
+                    "选择响应格式无效。",
+                    error_code="invalid_choice_response",
+                    winner=state.winner,
+                )
+        else:
+            submitted_request = request_or_response
+            submitted_response = response if isinstance(response, ChoiceResponse) else None
+
         rng = rng or RandomSource()
-        if not isinstance(request, ChoiceRequest):
+        if not response_only and not isinstance(submitted_request, ChoiceRequest):
             return StepResult(
                 False,
                 "选择请求格式无效。",
                 error_code="invalid_choice_request",
                 winner=state.winner,
             )
-        request_structure_error = self._choice_request_structure_error(request)
+        if submitted_request is not None:
+            request_structure_error = self._choice_request_structure_error(submitted_request)
+        else:
+            request_structure_error = ""
         if request_structure_error:
             return StepResult(
                 False,
@@ -366,7 +411,7 @@ class GameEngine:
                 error_code="invalid_choice_request",
                 winner=state.winner,
             )
-        if not isinstance(response, ChoiceResponse):
+        if not isinstance(submitted_response, ChoiceResponse):
             return StepResult(
                 False,
                 "选择响应格式无效。",
@@ -374,10 +419,11 @@ class GameEngine:
                 winner=state.winner,
             )
         if (
-            not isinstance(response.request_id, str)
-            or not isinstance(response.option_ids, (tuple, list))
-            or not all(isinstance(option_id, str) for option_id in response.option_ids)
-            or type(response.cancelled) is not bool
+            not isinstance(submitted_response.request_id, str)
+            or not submitted_response.request_id
+            or not isinstance(submitted_response.option_ids, (tuple, list))
+            or not all(isinstance(option_id, str) and option_id for option_id in submitted_response.option_ids)
+            or type(submitted_response.cancelled) is not bool
         ):
             return StepResult(
                 False,
@@ -385,7 +431,7 @@ class GameEngine:
                 error_code="invalid_choice_response",
                 winner=state.winner,
             )
-        if not self._is_valid_actor(request.player):
+        if submitted_request is not None and not self._is_valid_actor(submitted_request.player):
             return StepResult(
                 False,
                 "玩家索引无效。",
@@ -400,9 +446,12 @@ class GameEngine:
                 error_code="no_pending_choice",
                 winner=state.winner,
             )
-        if response.request_id != request.request_id:
+        if (
+            submitted_request is not None
+            and submitted_response.request_id != submitted_request.request_id
+        ):
             return StepResult(False, "选择请求已过期。", error_code="stale_choice")
-        if str(authoritative.get("request_id", "")) != request.request_id:
+        if str(authoritative.get("request_id", "")) != submitted_response.request_id:
             return StepResult(False, "局面已变化，选择请求已过期。", error_code="stale_choice")
         authoritative_metadata = authoritative.get("metadata", {})
         authoritative_revision = (
@@ -418,22 +467,6 @@ class GameEngine:
         )
         if not revision_matches:
             return StepResult(False, "局面已变化，选择请求已过期。", error_code="stale_choice")
-        try:
-            request_payload = self.transaction_manager.choice_request_to_dict(request)
-        except (TypeError, ValueError, AttributeError, OverflowError):
-            return StepResult(
-                False,
-                "选择请求格式无效。",
-                error_code="invalid_choice_request",
-                winner=state.winner,
-            )
-        if request_payload != authoritative:
-            return StepResult(
-                False,
-                "选择请求与当前待处理请求不一致。",
-                error_code="stale_choice",
-                winner=state.winner,
-            )
         try:
             # Resolve exclusively from state-owned data.  The caller's
             # ``legacy_request`` is intentionally ignored so an otherwise
@@ -455,6 +488,25 @@ class GameEngine:
                 error_code="no_pending_choice",
                 winner=state.winner,
             )
+        if submitted_request is not None:
+            try:
+                submitted_public = serialize_choice_request(submitted_request)
+                authoritative_public = serialize_choice_request(request)
+            except (TypeError, ValueError, AttributeError, OverflowError):
+                return StepResult(
+                    False,
+                    "选择请求格式无效。",
+                    error_code="invalid_choice_request",
+                    winner=state.winner,
+                )
+            if submitted_public != authoritative_public:
+                return StepResult(
+                    False,
+                    "选择请求与当前待处理请求不一致。",
+                    error_code="stale_choice",
+                    winner=state.winner,
+                )
+        response = submitted_response
         choice_cancelled = False
         if response.cancelled:
             if not request.can_cancel:
@@ -657,7 +709,7 @@ class GameEngine:
                 if choice_policy is not None
                 else self.choice_manager.default_choice_response(request, rng)
             )
-            next_step = self.apply_choice(state, request, response, rng)
+            next_step = self.apply_choice(state, response, rng)
             aggregate = self.settlement_manager.merge_steps(aggregate, next_step)
         if guard >= 32 and aggregate.pending_choice is not None:
             aggregate.success = False
@@ -758,6 +810,27 @@ class GameEngine:
             for option in request.options
         ):
             return "选择请求包含无效实体引用。"
+        if request.request_type == "coin_flip":
+            results = request.metadata.get("predetermined_flips")
+            continuation = request.metadata.get("continuation", {})
+            continuation_results = (
+                continuation.get("results")
+                if isinstance(continuation, dict)
+                else None
+            )
+            if (
+                request.options
+                or request.min_select != 0
+                or request.max_select != 0
+                or request.allow_duplicates
+                or request.can_cancel
+                or not isinstance(results, list)
+                or not results
+                or len(results) > 32
+                or not all(type(result) is bool for result in results)
+                or continuation_results != results
+            ):
+                return "硬币请求缺少权威结果。"
         return ""
 
     @staticmethod
@@ -778,6 +851,13 @@ class GameEngine:
                 and ref.player in (0, 1)
                 and isinstance(ref.slot, str)
                 and isinstance(ref.card_id, str)
+            )
+        if isinstance(ref, SlotRef):
+            return (
+                type(ref.player) is int
+                and ref.player in (0, 1)
+                and isinstance(ref.slot, str)
+                and bool(ref.slot)
             )
         if isinstance(ref, AttachmentRef):
             return (

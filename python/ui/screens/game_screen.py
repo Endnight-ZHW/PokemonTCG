@@ -2421,7 +2421,6 @@ class GameScreen(
         )
         step = self.game_engine.apply_choice(
             self.state,
-            structured,
             response,
         )
         result = step.action_result or ActionResult(step.success, step.message)
@@ -2443,7 +2442,7 @@ class GameScreen(
             structured,
             RandomSource(20260716),
         )
-        step = self.game_engine.apply_choice(self.state, structured, response)
+        step = self.game_engine.apply_choice(self.state, response)
         result = step.action_result or ActionResult(step.success, step.message)
         if result.pending_action:
             return result.pending_action
@@ -2631,6 +2630,11 @@ class GameScreen(
                 flip_count=getattr(action_req, 'flip_count', 1),
                 on_result=on_flip_done,
                 until_tails=getattr(action_req, 'until_tails', False),
+                predetermined=list(
+                    (getattr(action_req, "continuation", {}) or {}).get(
+                        "results", []
+                    )
+                ),
             )
         elif action_req.request_type == "confirm":
             # Wrap callbacks to handle pending trainer card discard

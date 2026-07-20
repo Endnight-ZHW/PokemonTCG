@@ -5,6 +5,8 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
+from engine.actions import ACTION_SCHEMA_VERSION
+
 from engine.ai.dl.rules_migration import (
     canonical_payload_sha256,
     evidence_gate_errors,
@@ -194,7 +196,10 @@ class RulesMigrationEvidenceTests(unittest.TestCase):
         result = _result([1.0, 0.0])
         checkpoint = {"version": 10}
         metadata = {"deck": "fire", "seed": 17, "summary": {"fire": {"eval_seed": 900017}}}
-        schema = {"rules_version": 2, "action_version": 2}
+        schema = {
+            "rules_version": 2,
+            "action_version": ACTION_SCHEMA_VERSION,
+        }
         with tempfile.TemporaryDirectory() as temporary, mock.patch.object(
             evaluator,
             "_load_source",

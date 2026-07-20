@@ -152,19 +152,22 @@ func _budget_contract_failures(
 		return errors
 	# Setup now begins with a serialized turn-order Choice. Action budgets are
 	# only meaningful after that pending decision has been consumed.
-	var setup_pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
+	var setup_pending := engine.query_pending_choice(state, 0)
+	if setup_pending == null:
+		setup_pending = engine.query_pending_choice(state, 1)
 	if setup_pending != null:
-		var setup_choice := engine.apply_choice(
-			state, setup_pending, _automatic_choice(setup_pending), rng)
+		var setup_choice := engine.apply_choice_response(
+			state, _automatic_choice(setup_pending), rng)
 		if not setup_choice.success:
 			errors.append(
 				"budget contract setup choice failed: %s" % setup_choice.message)
 			return errors
 	var actor := _actor(state)
-	var legal := engine.legal_actions(state, actor, true)
+	var legal := RulesTestHarness.legal_actions(engine, state, actor, true)
 	if legal.is_empty():
-		var budget_pending := ResolutionStack.from_dict(
-			state.resolution_stack).pending_request
+		var budget_pending := engine.query_pending_choice(state, 0)
+		if budget_pending == null:
+			budget_pending = engine.query_pending_choice(state, 1)
 		errors.append(
 			(
 				"budget contract has no legal action phase=%s setup_stage=%s "
@@ -211,15 +214,16 @@ func _budget_contract_failures(
 		var applied_state := state.clone_state()
 		var selected := GameAction.from_dict(single_decision["action"])
 		selected.action_id = "budget-contract:%d" % state.revision
-		var step := engine.apply_action(applied_state, selected, rng)
+		var step := _apply_test_action(engine, applied_state, selected, rng)
 		if not step.success:
 			errors.append("single-action budget decision produced illegal action: %s" % step.message)
 
 	var choice_options: Array[Dictionary] = []
-	choice_options.append({"option_id": "a"})
-	choice_options.append({"option_id": "b"})
-	var choice_request := ChoiceRequest.new(
+	choice_options.append({"option_id": "a", "label": "a"})
+	choice_options.append({"option_id": "b", "label": "b"})
+	var choice_request := ChoiceView.new(
 		"budget-choice",
+		state.revision,
 		"select",
 		actor,
 		"Budget choice",
@@ -272,7 +276,7 @@ func _new_choice_policy_contract_failures(
 		{
 			"type": "select_prize",
 			"options": ["prize:5", "prize:1", "prize:3"],
-			"expected": "prize:1",
+			"expected": "prize:0",
 		},
 		{
 			"type": "confirm_trigger",
@@ -290,8 +294,9 @@ func _new_choice_policy_contract_failures(
 		var options: Array[Dictionary] = []
 		for option_id in case["options"]:
 			options.append({"option_id": str(option_id), "label": str(option_id)})
-		var request := ChoiceRequest.new(
+		var request := ChoiceView.new(
 			"new-choice:%d" % case_index,
+			state.revision,
 			str(case["type"]),
 			0,
 			"choice policy contract",
@@ -322,7 +327,10 @@ func _new_choice_policy_contract_failures(
 			errors.append("%s choice was not successful and deterministic" % case["type"])
 			continue
 		var response := ChoiceResponse.from_dict(first.get("choice_response", {}))
-		if response.option_ids.size() != 1 or response.option_ids[0] not in case["options"]:
+		var public_option_ids: Array[String] = []
+		for option in request.options:
+			public_option_ids.append(str(option.get("option_id", "")))
+		if response.option_ids.size() != 1 or response.option_ids[0] not in public_option_ids:
 			errors.append("%s choice returned an illegal option" % case["type"])
 			continue
 		var expected := str(case["expected"])
@@ -337,11 +345,14 @@ func _new_choice_policy_contract_failures(
 	var same_target_options: Array[Dictionary] = [
 		{
 			"option_id": "pokemon:0:bench_0:first",
-			"value": {"player": 0, "slot": "bench_0", "card_id": "first"},
+			"label": "first",
+			"ref": EntityRef.new(
+				"pokemon", 0, "", "bench_0", -1, "", "first").to_dict(),
 		},
 	]
-	var same_target_request := ChoiceRequest.new(
+	var same_target_request := ChoiceView.new(
 		"new-choice:same-target",
+		state.revision,
 		"distribute_energy",
 		0,
 		"same target policy contract",
@@ -385,6 +396,63 @@ func _new_choice_policy_contract_failures(
 	):
 		errors.append(
 			"same_target distribute_energy choice was illegal or nondeterministic")
+
+	# The production worker accepts only the public v2 envelope. A legacy
+	# authoritative request and any option-level private payload must fail closed.
+	var legacy_request := ChoiceRequest.new(
+		"legacy-choice", "select", 0, "legacy", [{"option_id": "a", "label": "a"}])
+	var legacy_result := worker.decide({
+		"kind": "choice",
+		"state": state.snapshot(),
+		"choice": legacy_request.to_dict(),
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": legacy_request.request_id,
+		"mode": "challenge",
+		"deck_key": "fire",
+		"seed": 20260718,
+	}, func() -> bool: return false)
+	if (
+		bool(legacy_result.get("success", false))
+		or str(legacy_result.get("error", "")) != "invalid_choice_view"
+	):
+		errors.append("Challenge AI accepted a legacy authoritative ChoiceRequest")
+	var private_payload := same_target_request.to_dict()
+	private_payload["options"][0]["value"] = {"slot": "bench_0"}
+	var private_result := worker.decide({
+		"kind": "choice",
+		"state": state.snapshot(),
+		"choice": private_payload,
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": same_target_request.request_id,
+		"mode": "challenge",
+		"deck_key": "fire",
+		"seed": 20260719,
+	}, func() -> bool: return false)
+	if (
+		bool(private_result.get("success", false))
+		or str(private_result.get("error", "")) != "private_choice_field"
+	):
+		errors.append("Challenge AI accepted a private option value payload")
+	var private_presentation := same_target_request.to_dict()
+	private_presentation["presentation"]["continuation"] = {"op": "draw"}
+	var private_presentation_result := worker.decide({
+		"kind": "choice",
+		"state": state.snapshot(),
+		"choice": private_presentation,
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": same_target_request.request_id,
+		"mode": "challenge",
+		"deck_key": "fire",
+		"seed": 20260720,
+	}, func() -> bool: return false)
+	if (
+		bool(private_presentation_result.get("success", false))
+		or str(private_presentation_result.get("error", "")) != "invalid_choice_view"
+	):
+		errors.append("Challenge AI accepted private presentation continuation data")
 	return errors
 
 
@@ -413,7 +481,9 @@ func _play_game(
 	var decisions := 0
 	var choices := 0
 	while not state.is_terminal() and actions_taken < 1200:
-		var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
+		var pending := engine.query_pending_choice(state, 0)
+		if pending == null:
+			pending = engine.query_pending_choice(state, 1)
 		if pending:
 			var response: ChoiceResponse
 			if pending.player == 0:
@@ -436,14 +506,14 @@ func _play_game(
 				response = ChoiceResponse.from_dict(choice_result["choice_response"])
 				choices += 1
 			else:
-				response = _automatic_choice(pending)
-			var choice_step := engine.apply_choice(state, pending, response, rng)
+				response = _automatic_choice(pending, state, catalog)
+			var choice_step := engine.apply_choice_response(state, response, rng)
 			if not choice_step.success:
 				return {
 					"success": false,
 					"error": (
 						"illegal choice: %s phase=%s turn=%d actions=%d "
-						+ "request_type=%s request_player=%d metadata=%s "
+						+ "request_type=%s request_player=%d presentation=%s "
 						+ "response=%s options=%s"
 					) % [
 						choice_step.message,
@@ -452,7 +522,7 @@ func _play_game(
 						actions_taken,
 						pending.request_type,
 						pending.player,
-						JSON.stringify(pending.metadata),
+						JSON.stringify(pending.presentation),
 						JSON.stringify(response.to_dict()),
 						JSON.stringify(pending.options),
 					],
@@ -460,7 +530,7 @@ func _play_game(
 			continue
 
 		var actor := _actor(state)
-		var legal := engine.legal_actions(state, actor, true)
+		var legal := RulesTestHarness.legal_actions(engine, state, actor, true)
 		if legal.is_empty():
 			return {
 				"success": false,
@@ -497,9 +567,17 @@ func _play_game(
 		else:
 			action = _automatic_action(legal, state, catalog)
 		action.action_id = "regression:%d:%d" % [state.revision, actions_taken]
-		var step := engine.apply_action(state, action, rng)
+		var step := _apply_test_action(engine, state, action, rng)
 		if not step.success:
-			return {"success": false, "error": "illegal action: " + step.message}
+			return {
+				"success": false,
+				"error": "illegal action: %s actor=%d action=%s hand=%s" % [
+					step.message,
+					actor,
+					JSON.stringify(action.to_dict()),
+					JSON.stringify(state.get_player(actor).hand),
+				],
+			}
 		actions_taken += 1
 	return {
 		"success": state.is_terminal(),
@@ -568,7 +646,11 @@ func _is_repeatable_ability_action(
 	return false
 
 
-func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:
+func _automatic_choice(
+	request: ChoiceView,
+	state: GameState = null,
+	catalog: CardCatalog = null,
+) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [])
 	if request.request_type == "choose_turn_order":
@@ -589,13 +671,15 @@ func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:
 		return ChoiceResponse.new(request.request_id, [
 			"prize:%d" % (0 if best_prize == 999 else best_prize)
 		])
+	if request.request_type == "select_retreat_payment" and state != null and catalog != null:
+		return NativeChallengeAI.retreat_payment_response(state, request, catalog)
 	var count := maxi(request.min_select, request.max_select)
 	if not request.allow_duplicates:
 		count = mini(request.options.size(), count)
 	var selected: Array[String] = []
 	if request.allow_duplicates:
-		var max_per_target := int(request.metadata.get("max_per_target", 99))
-		if bool(request.metadata.get("same_target", false)):
+		var max_per_target := int(request.presentation.get("max_per_target", 99))
+		if bool(request.presentation.get("same_target", false)):
 			for _index in range(mini(count, max_per_target)):
 				selected.append(str(request.options[0]["option_id"]))
 			return ChoiceResponse.new(request.request_id, selected)
@@ -622,13 +706,25 @@ func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:
 
 
 func _automatic_choice_target_key(option: Dictionary) -> String:
-	var value_variant: Variant = option.get("value", {})
-	if value_variant is Dictionary:
-		var value: Dictionary = value_variant
-		var slot := str(value.get("slot", ""))
-		if not slot.is_empty():
-			return slot
 	var ref_variant: Variant = option.get("ref", {})
 	if ref_variant is Dictionary:
-		return str(Dictionary(ref_variant).get("slot", ""))
+		var slot := str(Dictionary(ref_variant).get("slot", ""))
+		if not slot.is_empty():
+			return slot
+	var parts := str(option.get("option_id", "")).split(":")
+	if parts.size() >= 3:
+		return str(parts[2])
 	return ""
+
+
+func _apply_test_action(
+	engine: GameEngine,
+	state: GameState,
+	action: GameAction,
+	rng: PortableRandomSource,
+) -> StepResult:
+	var strict_action := action
+	if action != null and action.is_legacy_constructed():
+		var actor := state.active_player_idx if action.actor < 0 else action.actor
+		strict_action = engine._canonicalize_action(state, action, actor)
+	return engine.apply_action(state, strict_action, rng)

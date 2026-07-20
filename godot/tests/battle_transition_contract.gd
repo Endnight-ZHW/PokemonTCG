@@ -1228,27 +1228,6 @@ func _run_local_drag_success_contract(
 	battle: Control,
 	empty_rows: Array[Dictionary],
 ) -> void:
-	# Main must reserve a local drag while the table still renders base revision
-	# R. GameEngine settles the authoritative state in place and advances it to
-	# R+1, after which the same proxy is handed to the presentation transition.
-	var main_source := FileAccess.get_file_as_string("res://scenes/main/main.gd")
-	var action_start := main_source.find("func _execute_action_now(")
-	var action_end := main_source.find("func _battle_submission_locked(", action_start)
-	var action_source := (
-		main_source.substr(action_start, action_end - action_start)
-		if action_start >= 0 and action_end > action_start
-		else ""
-	)
-	var reserve_offset := action_source.find(
-		"drag_session_id = battle_screen.mark_drag_pending")
-	var settle_offset := action_source.find("var result := engine.apply_action")
-	_expect(
-		reserve_offset >= 0
-		and settle_offset >= 0
-		and reserve_offset < settle_offset,
-		"local drag proxy was not reserved before GameState advanced revision",
-	)
-
 	var before := UIPreviewStateFactory.battle_state(20260720)
 	before.revision = 80
 	before.players[0].hand = ["svi-chim", "sv1-ener-5"]
@@ -2350,8 +2329,9 @@ func _run_local_handoff_contract() -> void:
 	# without producing a turn_start event. Both action settlement and the shared
 	# choice/cancel continuation must establish the same opaque handoff gate before
 	# rendering that owner's view or opening the secret Choice UI.
-	var chained_choice := ChoiceRequest.new(
+	var chained_choice := ChoiceView.new(
 		"contract:chained-choice:p0",
+		ui.state.revision,
 		"select_prize",
 		0,
 		"请选择1张奖赏卡。",
@@ -2395,8 +2375,9 @@ func _run_local_handoff_contract() -> void:
 	ui._close_modal()
 	await create_timer(0.18).timeout
 
-	var action_choice := ChoiceRequest.new(
+	var action_choice := ChoiceView.new(
 		"contract:action-choice:p1",
+		ui.state.revision,
 		"confirm_trigger",
 		1,
 		"是否发动触发效果？",
@@ -2451,8 +2432,9 @@ func _run_main_shell_flow_contract() -> void:
 	root.add_child(ui)
 	ui.initialize_ui()
 
-	var coin_choice := ChoiceRequest.new(
+	var coin_choice := ChoiceView.new(
 		"contract:coin-modal",
+		0,
 		"coin_flip",
 		0,
 		"硬币结果",

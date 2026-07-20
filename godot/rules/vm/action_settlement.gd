@@ -25,7 +25,7 @@ func apply_action(
 	var result: StepResult = dispatch_action.call(state, action, actor, rng)
 	if not result.success:
 		return transaction_manager.rollback_failed_step(state, rng, checkpoint, result)
-	if result.pending_choice and action.action == "DECLARE_ATTACK":
+	if result.pending_choice != null and action.action == "DECLARE_ATTACK":
 		var attack_stack := ResolutionStack.from_dict(state.resolution_stack)
 		_mark_attack_pending_choice(result.pending_choice, attack_stack, actor)
 		if attack_stack.pending_request != null:
@@ -38,7 +38,7 @@ func apply_action(
 	):
 		var ko_stack := ResolutionStack.from_dict(state.resolution_stack)
 		var ko_result := knockout_settlement.resolve_knockouts(
-			state, actor, result.events, false, ko_stack)
+			state, actor, result.events, false, ko_stack, rng)
 		if not bool(ko_result.get("success", false)):
 			return transaction_manager.rollback_failed_step(
 				state,
@@ -68,7 +68,7 @@ func apply_action(
 	if (
 		result.pending_choice
 		and result.pending_choice.can_cancel
-		and action.action == "PLAY_TRAINER"
+		and action.action in ["PLAY_TRAINER", "RETREAT"]
 	):
 		var cancellable_stack := ResolutionStack.from_dict(state.resolution_stack)
 		result.pending_choice.metadata["cancels_action"] = true

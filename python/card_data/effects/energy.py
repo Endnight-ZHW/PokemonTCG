@@ -41,6 +41,7 @@ EFFECTS = {
                 "hook": "ON_PRIZE_REVEALED",
                 "condition": {"source_zone": "prizes"},
                 "effect": {"op": "attach_to_benched_pokemon"},
+                "optional": True,
                 "priority": 20,
             },
         ],

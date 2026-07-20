@@ -8,6 +8,125 @@ if TYPE_CHECKING:
     from engine.commands.base import CommandResult, ResolutionContext
 
 
+def _register_attack_modifier(
+    ctx,
+    target,
+    *,
+    target_player_idx: int,
+    hook: str,
+    layer: str,
+    duration: str,
+    condition: dict,
+    operation: dict,
+    stacking: str = "replace_same_source",
+) -> None:
+    from engine.effects.modifier_manager import (
+        build_modifier_descriptor,
+        register_serialized_modifier,
+    )
+
+    source = ctx.player.get_pokemon(ctx.source_slot)
+    if source is None or target is None:
+        return
+    descriptor = build_modifier_descriptor(
+        hook=hook,
+        layer=layer,
+        controller=target_player_idx,
+        source_ref={
+            "kind": "pokemon",
+            "player": int(ctx.player_idx),
+            "slot": str(ctx.source_slot),
+            "card_id": str(source.card.api_id),
+        },
+        scope="self",
+        duration=duration,
+        stacking=stacking,
+        condition=condition,
+        operation=operation,
+    )
+    register_serialized_modifier(target, descriptor)
+
+
+def _register_persistent_modifier(ctx, pokemon, modifier_kind: str, params: dict) -> bool:
+    from engine.effects.modifier_manager import (
+        build_modifier_descriptor,
+        register_serialized_modifier,
+    )
+
+    hook = layer = ""
+    scope = "self"
+    condition: dict = {}
+    operation: dict = {}
+    if modifier_kind == "aura_damage_boost":
+        hook, layer, scope = "MODIFY_DAMAGE", "attacker_adjust", "allied_board"
+        condition = {
+            "attacker_subtype": str(params.get("attacker_subtype", "")),
+            "defender_type": str(params.get("defender_type", "")),
+        }
+        operation = {"kind": "damage_delta", "amount": int(params.get("amount", 0))}
+    elif modifier_kind == "aura_damage_reduction":
+        hook, layer = "MODIFY_DAMAGE", "defender_adjust"
+        condition = {
+            "requires_attached_energy": bool(params.get("requires_attached_energy", False)),
+        }
+        operation = {
+            "kind": "damage_delta",
+            "amount": -abs(int(params.get("reduction", 20))),
+        }
+    elif modifier_kind == "conditional_hp_boost":
+        hook, layer = "MAX_HP", "add"
+        condition = {
+            "energy_type": str(params.get("energy_type", "")),
+            "threshold": int(params.get("threshold", 0)),
+        }
+        operation = {"kind": "hp_delta", "amount": int(params.get("amount", 0))}
+    elif modifier_kind == "conditional_zero_retreat":
+        hook, layer = "CAN_RETREAT", "set"
+        condition = {"energy_type": str(params.get("energy_type", ""))}
+        operation = {"kind": "retreat_set", "value": 0}
+    elif modifier_kind == "tool":
+        effect = str(params.get("effect", ""))
+        if effect == "damage_boost_10":
+            hook, layer, scope = "MODIFY_DAMAGE", "attacker_adjust", "attached_attacker"
+            operation = {"kind": "damage_delta", "amount": 10}
+        elif effect == "damage_boost_when_behind":
+            hook, layer, scope = "MODIFY_DAMAGE", "attacker_adjust", "attached_attacker"
+            condition = {"behind_on_prizes": True}
+            operation = {"kind": "damage_delta", "amount": 30}
+        elif effect == "damage_reduction_stage1":
+            hook, layer, scope = "MODIFY_DAMAGE", "defender_adjust", "attached_defender"
+            condition = {"target_stage": "stage1"}
+            operation = {
+                "kind": "damage_delta",
+                "amount": -abs(int(params.get("amount", 30))),
+            }
+        elif effect == "hp_boost_basic":
+            hook, layer = "MAX_HP", "add"
+            condition = {"target_basic": True}
+            operation = {"kind": "hp_delta", "amount": int(params.get("amount", 50))}
+    if not operation:
+        return False
+    descriptor = build_modifier_descriptor(
+        hook=hook,
+        layer=layer,
+        priority=int(params.get("priority", 0)),
+        controller=ctx.player_idx,
+        source_ref={
+            "kind": "pokemon",
+            "player": int(ctx.player_idx),
+            "slot": str(ctx.source_slot),
+            "card_id": str(pokemon.card.api_id),
+        },
+        scope=scope,
+        duration="until_leave_play",
+        stacking="replace_same_source",
+        condition=condition,
+        operation=operation,
+    )
+    register_serialized_modifier(pokemon, descriptor)
+    return True
+
+
 @dataclass
 class AttackFail:
     """Mark the current attack as failed."""
@@ -56,14 +175,21 @@ class ReturnToHand:
             return CommandResult.fail("没有宝可梦。")
 
         source_card = source.card
+        # Preserve the shared cross-runtime zone order: Pokemon card, lower
+        # evolution stages, Energy, then Tool.  The rules do not let a caller
+        # choose an order here, so both runtimes must produce one deterministic
+        # hand sequence for snapshots, replays, and action encoders.
+        returned_cards = [
+            source_card,
+            *source.evolution_stack,
+            *source.energy_cards,
+        ]
         if source.attached_tool:
-            player.hand.append(source.attached_tool)
-            source.attached_tool = None
-        player.hand.extend(source.evolution_stack)
+            returned_cards.append(source.attached_tool)
+        source.attached_tool = None
         source.evolution_stack.clear()
-        player.hand.extend(source.energy_cards)
         source.energy_cards.clear()
-        player.hand.append(source_card)
+        player.hand.extend(returned_cards)
 
         if ctx.source_slot == "active":
             player.active = None
@@ -95,8 +221,28 @@ class SetPrevention:
         if target:
             if self.damage:
                 target.damage_prevented_next_turn = True
+                _register_attack_modifier(
+                    ctx,
+                    target,
+                    target_player_idx=ctx.player_idx,
+                    hook="MODIFY_DAMAGE",
+                    layer="prevent",
+                    duration="until_end_of_opponents_next_turn",
+                    condition={"expires_after_turn": ctx.state.turn_number + 1},
+                    operation={"kind": "prevent_damage"},
+                )
             if self.effects:
                 target.all_prevented_next_turn = True
+                _register_attack_modifier(
+                    ctx,
+                    target,
+                    target_player_idx=ctx.player_idx,
+                    hook="PREVENT_EFFECTS",
+                    layer="prevent",
+                    duration="until_end_of_opponents_next_turn",
+                    condition={"expires_after_turn": ctx.state.turn_number + 1},
+                    operation={"kind": "prevent_effects"},
+                )
             ctx.state._log(self.log_template.format(pokemon=target.card.name))
         return CommandResult.ok(self.result_message)
 
@@ -122,6 +268,17 @@ class DazzlingBeam:
             ctx.state._log(f"{target.card.name}免疫了炫目光束的效果！")
             return CommandResult.ok("免疫了效果。")
         target.dazzled = True
+        target_player_idx = 1 - ctx.player_idx if self.target == "opponent_active" else ctx.player_idx
+        _register_attack_modifier(
+            ctx,
+            target,
+            target_player_idx=target_player_idx,
+            hook="CAN_ATTACK",
+            layer="gate",
+            duration="until_next_attack",
+            condition={"expires_after_turn": ctx.state.turn_number + 1},
+            operation={"kind": "attack_gate_coin", "reason": "dazzled"},
+        )
         ctx.state._log(f"{target.card.name}被炫目光束命中！下次使用招式时将掷硬币。")
         return CommandResult.ok(f"{target.card.name}被炫目光束命中。")
 
@@ -148,6 +305,20 @@ class AttackLockBasic:
             return CommandResult.ok("免疫了效果。")
         if target.card.is_basic_pokemon:
             target.attack_locked = True
+            target_player_idx = 1 - ctx.player_idx if self.target == "opponent_active" else ctx.player_idx
+            _register_attack_modifier(
+                ctx,
+                target,
+                target_player_idx=target_player_idx,
+                hook="CAN_ATTACK",
+                layer="permission",
+                duration="until_end_of_turn",
+                condition={
+                    "target_basic": True,
+                    "expires_after_turn": ctx.state.turn_number + 1,
+                },
+                operation={"kind": "attack_lock", "attack_name": "__all__"},
+            )
             ctx.state._log(f"{target.card.name}在下一个回合无法使用招式！")
             return CommandResult.ok(f"{target.card.name}被封锁了招式。")
         ctx.state._log(f"{target.card.name}不是基础宝可梦，冻结无效。")
@@ -180,6 +351,21 @@ class OutgoingDamageReduction:
             int(getattr(target, "outgoing_damage_reduction_next_turn", 0) or 0),
             amount,
         )
+        target_player_idx = 1 - ctx.player_idx if self.target == "opponent_active" else ctx.player_idx
+        _register_attack_modifier(
+            ctx,
+            target,
+            target_player_idx=target_player_idx,
+            hook="MODIFY_DAMAGE",
+            layer="attacker_adjust",
+            duration="until_end_of_turn",
+            stacking="maximum",
+            condition={
+                "expires_after_turn": ctx.state.turn_number
+                + (1 if target_player_idx != ctx.player_idx else 0),
+            },
+            operation={"kind": "damage_delta", "amount": -amount},
+        )
         ctx.state._log(f"{target.card.name}下次使用招式的伤害-{amount}。")
         return CommandResult.ok(f"{target.card.name}被恫吓。")
 
@@ -198,6 +384,16 @@ class SelfAttackLock:
         lock_key = "__all__" if str(self.scope).lower() == "all" else self.attack_name
         if target and lock_key:
             target.attack_locked_names[lock_key] = ctx.state.turn_number
+            _register_attack_modifier(
+                ctx,
+                target,
+                target_player_idx=ctx.player_idx,
+                hook="CAN_ATTACK",
+                layer="permission",
+                duration="until_end_of_opponents_next_turn",
+                condition={"expires_after_turn": ctx.state.turn_number + 2},
+                operation={"kind": "attack_lock", "attack_name": lock_key},
+            )
             if lock_key == "__all__":
                 ctx.state._log(f"{target.card.name}下回合无法使用招式。")
                 return CommandResult.ok("下回合无法使用招式。")
@@ -245,6 +441,7 @@ class RegisterModifier:
             event_bus=ctx.state.event_bus,
             source_name=pokemon.card.name,
         )
+        _register_persistent_modifier(ctx, pokemon, modifier_kind, self.params)
         return CommandResult.ok("效果已注册。" if registered else "")
 
 
@@ -272,6 +469,7 @@ class RegisterToolModifier:
             event_bus=ctx.state.event_bus,
             source_name=effect_name,
         )
+        _register_persistent_modifier(ctx, pokemon, "tool", self.params)
         return CommandResult.ok("道具效果已注册。" if registered else "")
 
 

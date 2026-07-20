@@ -2,7 +2,7 @@ class_name GameState
 extends RefCounted
 
 const RULES_PROFILE_ID := "CN_MAINLAND_3_1_0"
-const SNAPSHOT_SCHEMA_VERSION := 2
+const SNAPSHOT_SCHEMA_VERSION := 3
 const RESULT_ONGOING := "ONGOING"
 const RESULT_WIN := "WIN"
 const RESULT_DRAW := "DRAW"
@@ -46,6 +46,7 @@ var turn_fact_book: Dictionary = {
 	"previous_turn": {"knockouts": []},
 }
 var resolution_stack: Dictionary = {
+	"schema_version": 3,
 	"frames": [],
 	"pending_request": null,
 	"sequence": 0,
@@ -185,6 +186,7 @@ func setup_game(
 	pending_promotions.clear()
 	processed_action_ids.clear()
 	resolution_stack = {
+		"schema_version": 3,
 		"frames": [],
 		"pending_request": null,
 		"sequence": 0,
@@ -258,14 +260,22 @@ func to_dict() -> Dictionary:
 
 
 func snapshot() -> Dictionary:
-	var payload := to_dict().duplicate(true)
+	# ``to_dict`` already owns every mutable branch it returns (players create
+	# fresh rows and the remaining collection fields are duplicated below).
+	# Deep-copying the complete payload a second time made every transaction pay
+	# for two full snapshots without improving rollback isolation.
+	var payload := to_dict()
+	payload["action_log"] = action_log.duplicate(true)
+	payload["rules_options"] = rules_options.duplicate(true)
+	payload["rules_options"]["apply_type_matchups"] = apply_type_matchups
 	payload["snapshot_version"] = SNAPSHOT_SCHEMA_VERSION
 	return payload
 
 
 static func from_snapshot(data: Dictionary) -> GameState:
-	var version := int(data.get("snapshot_version", 0))
-	if version != SNAPSHOT_SCHEMA_VERSION:
+	var compatibility_error := snapshot_compatibility_error(data)
+	if not compatibility_error.is_empty():
+		var version := int(data.get("snapshot_version", 0))
 		push_error(
 			"Unsupported GameState snapshot version %d; expected %d. " % [
 				version, SNAPSHOT_SCHEMA_VERSION]
@@ -273,6 +283,16 @@ static func from_snapshot(data: Dictionary) -> GameState:
 		)
 		return null
 	return from_dict(data)
+
+
+static func snapshot_compatibility_error(data: Dictionary) -> String:
+	if not data.get("snapshot_version") is int:
+		return "incompatible_snapshot"
+	return (
+		""
+		if int(data["snapshot_version"]) == SNAPSHOT_SCHEMA_VERSION
+		else "incompatible_snapshot"
+	)
 
 
 func clone_state() -> GameState:
@@ -368,7 +388,13 @@ static func from_dict(data: Dictionary) -> GameState:
 	result.processed_action_ids.assign(data.get("processed_action_ids", []))
 	result.resolution_stack = Dictionary(data.get(
 		"resolution_stack",
-		{"frames": [], "pending_request": null, "sequence": 0, "context": {}},
+		{
+			"schema_version": 3,
+			"frames": [],
+			"pending_request": null,
+			"sequence": 0,
+			"context": {},
+		},
 	)).duplicate(true)
 	result.turn_fact_book = Dictionary(data.get("turn_fact_book", {
 		"current_turn": {"knockouts": []},

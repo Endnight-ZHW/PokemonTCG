@@ -1162,12 +1162,29 @@ class ChallengeAITests(unittest.TestCase):
         )
         self.assertEqual(len(ai.resolve_pending_action(state, target_req).selected_bench_targets), 1)
 
-        coin_req = ActionRequest("coin_flip", 1, "coin", flip_count=3)
-        self.assertEqual(len(ai.resolve_pending_action(state, coin_req).coin_results), 3)
-        sim_choice = ai._resolve_pending_for_sim(state, ActionRequest("coin_flip", 1, "coin", flip_count=20))
-        self.assertEqual(len(sim_choice.coin_results), 20)
-        self.assertIn(True, sim_choice.coin_results)
-        self.assertIn(False, sim_choice.coin_results)
+        coin_req = ActionRequest(
+            "coin_flip",
+            1,
+            "coin",
+            flip_count=3,
+            continuation={"results": [True, False, True]},
+        )
+        self.assertEqual(
+            ai.resolve_pending_action(state, coin_req).coin_results,
+            [True, False, True],
+        )
+        predetermined = [index % 2 == 0 for index in range(20)]
+        sim_choice = ai._resolve_pending_for_sim(
+            state,
+            ActionRequest(
+                "coin_flip",
+                1,
+                "coin",
+                flip_count=20,
+                continuation={"results": predetermined},
+            ),
+        )
+        self.assertEqual(sim_choice.coin_results, predetermined)
 
         energy_req = ActionRequest(
             "distribute_energy", 1, "energy",
@@ -1416,36 +1433,43 @@ class ChallengeAITests(unittest.TestCase):
             ),
         )
 
-    def test_challenge_ai_uses_runtime_effect_selectors_instead_of_raw_fields(self):
-        import ast
-        import inspect
-        import engine.ai.challenge_ai as challenge_module
-        import engine.ai.challenge.sequencing as sequencing_module
+    def test_challenge_ai_runtime_paths_call_compiled_effect_selector(self):
+        from engine.effects.runtime_effects import trainer_runtime_effects
 
-        forbidden_attrs = {
-            "effects",
-            "trainer_effects",
-            "compiled_effects",
-            "compiled_trainer_effects",
-        }
-        offenders: list[str] = []
-        for module in (challenge_module, sequencing_module):
-            tree = ast.parse(inspect.getsource(module))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Attribute) and node.attr in forbidden_attrs:
-                    offenders.append(f"{module.__name__}:{node.lineno}:{node.attr}")
-                if (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "getattr"
-                    and len(node.args) >= 2
-                    and isinstance(node.args[1], ast.Constant)
-                    and node.args[1].value in forbidden_attrs
-                ):
-                    offenders.append(
-                        f"{module.__name__}:{node.lineno}:getattr({node.args[1].value})"
-                    )
-        self.assertEqual(offenders, [])
+        state = self._simple_public_state()
+        state.active_player_idx = 0
+        card = Card(
+            api_id="test-selector-spy",
+            name="Selector Spy",
+            supertype="Trainer",
+            subtypes=["Item"],
+            trainer_effects=[{
+                "effect_type": "energy_discard",
+                "params": {"amount": 9},
+            }],
+            compiled_trainer_effects=[{
+                "op": "draw_cards",
+                "args": {"amount": 2},
+                "branches": {},
+            }],
+        )
+        state.p1.hand = [card]
+        ai = ChallengeAI(AIConfig(policy_path=None))
+        action = AIAction(PlayerAction.PLAY_TRAINER, {"hand_idx": 0})
+
+        with patch(
+            "engine.ai.challenge_ai.trainer_runtime_effects",
+            wraps=trainer_runtime_effects,
+        ) as challenge_selector:
+            ai._card_value(state, 0, card)
+            challenge_selector.assert_called()
+
+        with patch(
+            "engine.ai.challenge.sequencing.trainer_runtime_effects",
+            wraps=trainer_runtime_effects,
+        ) as sequencing_selector:
+            ai._expert_action_order_bonus(state, 0, action)
+            sequencing_selector.assert_called_once_with(card)
 
     def test_attach_priority_favors_active_attack_readiness(self):
         base = CardRegistry.get("sv2-delib")

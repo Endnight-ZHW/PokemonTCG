@@ -7,8 +7,8 @@ from typing import Any
 from engine.enums import PlayerAction
 
 
-ACTION_SCHEMA_VERSION = 2
-RULES_SCHEMA_VERSION = 3
+ACTION_SCHEMA_VERSION = 3
+RULES_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,18 @@ class PokemonRef:
 
 
 @dataclass(frozen=True)
+class SlotRef:
+    """Reference to an empty board destination rather than a Pokemon."""
+
+    player: int
+    slot: str
+
+    @property
+    def ref_id(self) -> str:
+        return f"slot:{self.player}:{self.slot}"
+
+
+@dataclass(frozen=True)
 class AttachmentRef:
     player: int
     slot: str
@@ -50,7 +62,7 @@ class AttachmentRef:
         )
 
 
-EntityRef = CardRef | PokemonRef | AttachmentRef
+EntityRef = CardRef | PokemonRef | SlotRef | AttachmentRef
 
 
 def resolve_pokemon_ref(state, ref: PokemonRef):

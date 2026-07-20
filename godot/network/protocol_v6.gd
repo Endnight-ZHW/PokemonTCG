@@ -1,7 +1,7 @@
-class_name ProtocolV4
+class_name ProtocolV6
 extends RefCounted
 
-const VERSION := 4
+const VERSION := 6
 const MAX_MESSAGE_BYTES := 262144
 const MAX_IDENTIFIER_BYTES := 128
 const MAX_TEXT_BYTES := 2048
@@ -17,11 +17,6 @@ const MAX_JSON_DEPTH := 12
 
 const GAME_PHASES: Array[String] = [
 	"SETUP", "DRAW", "MAIN", "ATTACK", "POKEMON_CHECKUP", "GAME_OVER",
-]
-const GAME_ACTIONS: Array[String] = [
-	"PLAY_BASIC", "EVOLVE", "ATTACH_ENERGY", "PLAY_TRAINER",
-	"USE_ABILITY", "USE_STADIUM", "RETREAT", "DECLARE_ATTACK",
-	"PROMOTE", "SETUP_DONE", "END_TURN",
 ]
 const STATUS_CONDITIONS: Array[String] = [
 	"POISONED", "BURNED", "ASLEEP", "PARALYZED", "CONFUSED",
@@ -106,7 +101,14 @@ static func validate(
 	if not _is_integer_number(row["protocol_version"]):
 		return _invalid("invalid_field_type", "协议版本字段类型错误。")
 	if int(row.get("protocol_version", -1)) != VERSION:
-		return _invalid("protocol_mismatch", "联机协议版本不兼容。")
+		var received := int(row.get("protocol_version", -1))
+		var legacy_hint := "；旧 v5 房间不能恢复" if received == 5 else ""
+		return _invalid(
+			"protocol_mismatch",
+			"联机协议 v%d 与当前 v%d 不兼容%s。" % [
+				received, VERSION, legacy_hint,
+			],
+		)
 	if not row["message_type"] is String:
 		return _invalid("invalid_field_type", "消息类型字段类型错误。")
 	var message_type: String = row["message_type"]
@@ -230,8 +232,14 @@ static func _has_integer(row: Dictionary, field: String) -> bool:
 static func _validate_state_update_payload(payload: Dictionary) -> Dictionary:
 	if not payload.get("state") is Dictionary:
 		return _invalid("invalid_payload", "状态同步消息缺少局面对象。")
-	if payload.has("legal_actions") and not payload["legal_actions"] is Array:
-		return _invalid("invalid_payload", "合法动作列表类型错误。")
+	if payload.has("legal_actions"):
+		return _invalid("invalid_payload", "Protocol v6 不接受展开式合法动作。")
+	if not payload.get("legal_action_groups", []) is Array:
+		return _invalid("invalid_payload", "合法动作分组类型错误。")
+	if not _bounded_string(
+		payload.get("legal_action_error", ""), MAX_IDENTIFIER_BYTES
+	):
+		return _invalid("invalid_payload", "合法动作错误码无效。")
 	if payload.has("presentation_events") and not payload["presentation_events"] is Array:
 		return _invalid("invalid_payload", "表现事件列表类型错误。")
 	if payload.has("choice_request") and payload["choice_request"] != null:
@@ -248,15 +256,15 @@ static func _validate_state_update_payload(payload: Dictionary) -> Dictionary:
 	var state_validation := _validate_state_payload(state)
 	if not bool(state_validation.get("ok", false)):
 		return state_validation
-	var legal_actions: Array = payload.get("legal_actions", [])
-	if legal_actions.size() > MAX_LEGAL_ACTIONS:
+	var legal_groups: Array = payload.get("legal_action_groups", [])
+	if legal_groups.size() > MAX_LEGAL_ACTIONS:
 		return _invalid("invalid_payload", "合法动作数量超过限制。")
-	for action_value in legal_actions:
-		if not action_value is Dictionary:
-			return _invalid("invalid_payload", "合法动作必须是对象。")
-		var action_validation := _validate_action(action_value, false)
-		if not bool(action_validation.get("ok", false)):
-			return action_validation
+	for group_value in legal_groups:
+		var group_validation := _validate_legal_action_group(group_value)
+		if not bool(group_validation.get("ok", false)):
+			return group_validation
+		if int(Dictionary(group_value).get("base_revision", -1)) != int(state["revision"]):
+			return _invalid("invalid_payload", "合法动作分组版本与局面不一致。")
 	var presentation_events: Array = payload.get("presentation_events", [])
 	if presentation_events.size() > MAX_PRESENTATION_EVENTS:
 		return _invalid("invalid_payload", "表现事件数量超过限制。")
@@ -267,6 +275,9 @@ static func _validate_state_update_payload(payload: Dictionary) -> Dictionary:
 		var choice_validation := _validate_choice_request(payload["choice_request"])
 		if not bool(choice_validation.get("ok", false)):
 			return choice_validation
+		if int(Dictionary(payload["choice_request"]).get(
+			"base_revision", -1)) != int(state["revision"]):
+			return _invalid("invalid_payload", "选择视图版本与局面不一致。")
 	return {"ok": true}
 
 
@@ -404,6 +415,15 @@ static func _validate_pokemon(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false
 	var pokemon: Dictionary = value
+	var allowed_fields := [
+		"card_id", "damage_counters", "energy_card_ids", "attached_tool_id",
+		"status_conditions", "evolution_stack_ids", "can_evolve_this_turn",
+		"placed_this_turn", "used_abilities", "healed_this_turn",
+		"paralyzed_since_turn", "modifiers",
+	]
+	for key_value in pokemon.keys():
+		if str(key_value) not in allowed_fields:
+			return false
 	if (
 		not _bounded_string(pokemon.get("card_id"), MAX_IDENTIFIER_BYTES)
 		or str(pokemon.get("card_id", "")).is_empty()
@@ -426,52 +446,95 @@ static func _validate_pokemon(value: Variant) -> bool:
 	for status_value in statuses:
 		if not status_value is String or str(status_value) not in STATUS_CONDITIONS:
 			return false
-	if not pokemon.get("attack_locked_names", {}) is Dictionary:
-		return false
-	if Dictionary(pokemon.get("attack_locked_names", {})).size() > 32:
-		return false
 	if not pokemon.get("modifiers", []) is Array or Array(pokemon.get("modifiers", [])).size() > 32:
 		return false
 	for modifier_value in pokemon.get("modifiers", []):
-		if not modifier_value is Dictionary or not _json_tree_is_bounded(modifier_value):
+		if (
+			not modifier_value is Dictionary
+			or not _json_tree_is_bounded(modifier_value)
+			or not PokemonState.modifier_wire_validation_error(
+				modifier_value).is_empty()
+		):
 			return false
 	for flag in [
-		"can_evolve_this_turn", "placed_this_turn", "damage_prevented_next_turn",
-		"all_prevented_next_turn", "attack_locked", "dazzled", "healed_this_turn",
+		"can_evolve_this_turn", "placed_this_turn", "healed_this_turn",
 	]:
 		if pokemon.has(flag) and not pokemon[flag] is bool:
 			return false
-	for integer_field in [
-		"outgoing_damage_reduction_next_turn", "paralyzed_since_turn",
-	]:
+	for integer_field in ["paralyzed_since_turn"]:
 		if pokemon.has(integer_field) and not _is_integer_number(pokemon[integer_field]):
 			return false
 	return true
 
 
 static func _validate_action(value: Variant, require_action_id: bool) -> Dictionary:
+	if value is Dictionary:
+		var action: Dictionary = value
+		if (
+			not _bounded_string(action.get("action_id", ""), MAX_IDENTIFIER_BYTES)
+			or not _bounded_string(action.get("kind", ""), 64)
+		):
+			return _invalid("invalid_payload", "动作标识字段无效。")
+	var validation := GameAction.validate_wire_dict(value, require_action_id)
+	if not bool(validation.get("ok", false)):
+		return _invalid(
+			str(validation.get("code", "invalid_payload")),
+			str(validation.get("message", "动作字段无效。")),
+		)
+	return {"ok": true}
+
+
+static func _validate_legal_action_group(value: Variant) -> Dictionary:
 	if not value is Dictionary:
-		return _invalid("invalid_payload", "动作必须是对象。")
-	var action: Dictionary = value
+		return _invalid("invalid_payload", "合法动作分组必须是对象。")
+	var group: Dictionary = value
+	var fields := [
+		"group_id", "base_revision", "actor", "kind", "source", "payload", "targets",
+	]
+	if group.size() != fields.size():
+		return _invalid("invalid_payload", "合法动作分组包含缺失或多余字段。")
+	for field in fields:
+		if not group.has(field):
+			return _invalid("invalid_payload", "合法动作分组缺少字段。")
 	if (
-		not _bounded_string(action.get("action"), 64)
-		or str(action.get("action", "")) not in GAME_ACTIONS
-		or not action.get("params") is Dictionary
-		or not action.get("terminal") is bool
-		or not _bounded_int(action, "actor", 0, 1)
-		or not _bounded_string(action.get("action_id", ""), MAX_IDENTIFIER_BYTES)
+		not _bounded_string(group.get("group_id", ""), MAX_IDENTIFIER_BYTES)
+		or str(group.get("group_id", "")).is_empty()
+		or not _bounded_int(group, "base_revision", 0, 2147483647)
+		or not _bounded_int(group, "actor", 0, 1)
+		or not _bounded_string(group.get("kind", ""), 64)
+		or not group.get("payload") is Dictionary
+		or not group.get("targets") is Array
+		or Array(group["targets"]).size() > MAX_CHOICE_OPTIONS
 	):
-		return _invalid("invalid_payload", "动作字段无效。")
-	if require_action_id and str(action.get("action_id", "")).is_empty():
-		return _invalid("invalid_payload", "动作缺少唯一 ID。")
-	if not _json_tree_is_bounded(action["params"]):
-		return _invalid("invalid_payload", "动作参数无效。")
-	if not _validate_action_params(action["params"]):
-		return _invalid("invalid_payload", "动作参数字段类型无效。")
-	for ref_field in ["source", "target"]:
-		var ref_value: Variant = action.get(ref_field)
-		if ref_value != null and not _validate_entity_ref(ref_value):
-			return _invalid("invalid_payload", "动作实体引用无效。")
+		return _invalid("invalid_payload", "合法动作分组字段无效。")
+	if group["source"] != null and not _validate_entity_ref(group["source"]):
+		return _invalid("invalid_payload", "合法动作来源引用无效。")
+	var targets: Array = group["targets"]
+	var probe_targets: Array = targets if not targets.is_empty() else [null]
+	var seen_targets: Dictionary = {}
+	for target_value in probe_targets:
+		if target_value != null:
+			if not _validate_entity_ref(target_value):
+				return _invalid("invalid_payload", "合法动作目标引用无效。")
+			var signature := JSON.stringify(target_value)
+			if seen_targets.has(signature):
+				return _invalid("invalid_payload", "合法动作目标重复。")
+			seen_targets[signature] = true
+		var action := GameAction.create(
+			str(group["kind"]),
+			Dictionary(group["payload"]),
+			int(group["actor"]),
+			EntityRef.from_dict(group["source"]) if group["source"] is Dictionary else null,
+			EntityRef.from_dict(target_value) if target_value is Dictionary else null,
+			"",
+			int(group["base_revision"]),
+		)
+		var action_validation := GameAction.validate_instance(action, true)
+		if not bool(action_validation.get("ok", false)):
+			return _invalid(
+				str(action_validation.get("code", "invalid_payload")),
+				str(action_validation.get("message", "合法动作分组无效。")),
+			)
 	return {"ok": true}
 
 
@@ -504,24 +567,19 @@ static func _validate_action_params(params: Dictionary) -> bool:
 
 
 static func _validate_entity_ref(value: Variant) -> bool:
-	if not value is Dictionary:
-		return false
-	var ref: Dictionary = value
-	return (
-		_bounded_string(ref.get("kind", ""), 32)
-		and _bounded_int(ref, "player", -1, 1)
-		and _bounded_string(ref.get("zone", ""), 32)
-		and _bounded_string(ref.get("slot", ""), 32)
-		and _bounded_int(ref, "index", -1, MAX_DECK_CARDS)
-		and _bounded_string(ref.get("attachment_type", ""), 32)
-		and _bounded_string(ref.get("card_id", ""), MAX_IDENTIFIER_BYTES)
-	)
+	return EntityRef.validate_dict(value).is_empty()
 
 
 static func _validate_choice_response(value: Variant) -> Dictionary:
 	if not value is Dictionary:
 		return _invalid("invalid_payload", "选择响应必须是对象。")
 	var response: Dictionary = value
+	if response.size() != 3 or not (
+		response.has("request_id")
+		and response.has("option_ids")
+		and response.has("cancelled")
+	):
+		return _invalid("invalid_payload", "选择响应包含缺失或多余字段。")
 	if (
 		not _bounded_string(response.get("request_id"), MAX_IDENTIFIER_BYTES)
 		or str(response.get("request_id", "")).is_empty()
@@ -537,10 +595,23 @@ static func _validate_choice_request(value: Variant) -> Dictionary:
 	if not value is Dictionary:
 		return _invalid("invalid_payload", "选择请求必须是对象。")
 	var request: Dictionary = value
+	var required_fields: Array[String] = [
+		"schema_version", "request_id", "base_revision", "player",
+		"request_type", "prompt", "options", "min_select", "max_select",
+		"allow_duplicates", "can_cancel", "presentation",
+	]
+	if request.size() != required_fields.size():
+		return _invalid("invalid_payload", "ChoiceView 包含缺失或多余字段。")
+	for field in required_fields:
+		if not request.has(field):
+			return _invalid("invalid_payload", "ChoiceView 缺少字段：%s" % field)
 	if (
-		not _bounded_string(request.get("request_id"), MAX_IDENTIFIER_BYTES)
+		not _bounded_int(request, "schema_version", ChoiceView.SCHEMA_VERSION, ChoiceView.SCHEMA_VERSION)
+		or not _bounded_string(request.get("request_id"), MAX_IDENTIFIER_BYTES)
 		or str(request.get("request_id", "")).is_empty()
+		or not _bounded_int(request, "base_revision", 0, 2147483647)
 		or not _bounded_string(request.get("request_type"), 64)
+		or str(request.get("request_type", "")).is_empty()
 		or not _bounded_int(request, "player", 0, 1)
 		or not _bounded_string(request.get("prompt", ""), MAX_TEXT_BYTES)
 		or not _bounded_int(request, "min_select", 0, MAX_CHOICE_OPTIONS)
@@ -548,13 +619,25 @@ static func _validate_choice_request(value: Variant) -> Dictionary:
 		or not request.get("allow_duplicates") is bool
 		or not request.get("can_cancel") is bool
 		or not request.get("options") is Array
-		or not request.get("metadata", {}) is Dictionary
+		or not request.get("presentation") is Dictionary
 	):
-		return _invalid("invalid_payload", "选择请求字段无效。")
+		return _invalid("invalid_payload", "ChoiceView 字段无效。")
 	if int(request["min_select"]) > int(request["max_select"]):
 		return _invalid("invalid_payload", "选择数量范围无效。")
-	if not _validate_choice_metadata(request.get("metadata", {})):
-		return _invalid("invalid_payload", "选择请求 metadata 字段无效。")
+	if not _validate_choice_presentation(request["presentation"]):
+		return _invalid("invalid_payload", "ChoiceView presentation 字段无效。")
+	var is_hidden_prize_choice := str(request["request_type"]) == "select_prize"
+	if is_hidden_prize_choice:
+		var prize_presentation: Dictionary = request["presentation"]
+		for identity_field in [
+			"card_ids", "revealed_card_ids", "top_card_id", "attachment_refs",
+			"source_card_id", "card_id", "labels",
+		]:
+			if prize_presentation.has(identity_field):
+				return _invalid(
+					"invalid_payload",
+					"Prize ChoiceView 不得公开卡牌身份。",
+				)
 	var options: Array = request["options"]
 	if options.size() > MAX_CHOICE_OPTIONS:
 		return _invalid("invalid_payload", "选择项数量超过限制。")
@@ -562,6 +645,11 @@ static func _validate_choice_request(value: Variant) -> Dictionary:
 		if not option_value is Dictionary:
 			return _invalid("invalid_payload", "选择项必须是对象。")
 		var option: Dictionary = option_value
+		if option.size() not in [2, 3] or not option.has("option_id") or not option.has("label"):
+			return _invalid("invalid_payload", "选择项包含缺失或多余字段。")
+		for option_field in option:
+			if option_field not in ["option_id", "label", "ref"]:
+				return _invalid("invalid_payload", "选择项包含非公开字段。")
 		if (
 			not _bounded_string(option.get("option_id"), MAX_IDENTIFIER_BYTES)
 			or str(option.get("option_id", "")).is_empty()
@@ -570,103 +658,97 @@ static func _validate_choice_request(value: Variant) -> Dictionary:
 		):
 			return _invalid("invalid_payload", "选择项字段无效。")
 		if option.has("ref") and option["ref"] != null:
+			if is_hidden_prize_choice:
+				return _invalid(
+					"invalid_payload",
+					"Prize ChoiceView 不得公开实体引用。",
+				)
 			if not _validate_entity_ref(option["ref"]):
 				return _invalid("invalid_payload", "选择项实体引用无效。")
-		if option.has("value") and not _validate_choice_option_value(option["value"]):
-			return _invalid("invalid_payload", "选择项 value 字段无效。")
 	return {"ok": true}
 
 
-static func _validate_choice_metadata(metadata: Dictionary) -> bool:
-	if not _json_tree_is_bounded(metadata):
+static func _validate_choice_presentation(presentation: Dictionary) -> bool:
+	if not _json_tree_is_bounded(presentation):
 		return false
-	if (
-		not _bounded_string(metadata.get("domain", ""), 64)
-		or str(metadata.get("domain", "")).is_empty()
-		or not _bounded_int(metadata, "revision", 0, 2147483647)
-		or not _bounded_string(
-			metadata.get("continuation_frame_id", ""), MAX_IDENTIFIER_BYTES
-		)
-		or str(metadata.get("continuation_frame_id", "")).is_empty()
+	for field in presentation:
+		if not field is String or str(field) not in ChoiceView.PRESENTATION_FIELDS:
+			return false
+	if presentation.has("max_per_target") and not _bounded_int(
+		presentation, "max_per_target", 0, 2147483647
 	):
 		return false
-	if metadata.has("max_per_target") and not _bounded_int(
-		metadata, "max_per_target", 0, 2147483647
-	):
-		return false
-	if metadata.has("purpose") and not _bounded_string(
-		metadata["purpose"], 64
-	):
-		return false
-	if metadata.has("source_player") and not _bounded_int(
-		metadata, "source_player", -1, 1
-	):
-		return false
-	if metadata.has("finish_attack_actor") and not _bounded_int(
-		metadata, "finish_attack_actor", -1, 1
-	):
-		return false
-	for source_field in ["source_slot", "source_zone"]:
-		if metadata.has(source_field) and not _bounded_string(
-			metadata[source_field], 32
+	for field in ["domain", "purpose", "decision_mode", "cancel_mode", "hook"]:
+		if presentation.has(field) and not _bounded_string(
+			presentation[field], 64
+		):
+			return false
+	for field in ["source_player", "target_player", "owner"]:
+		if presentation.has(field) and not _bounded_int(
+			presentation, field, -1, 1
+		):
+			return false
+	for source_field in ["source_slot", "source_zone", "target_slot", "energy_type"]:
+		if presentation.has(source_field) and not _bounded_string(
+			presentation[source_field], MAX_IDENTIFIER_BYTES
 		):
 			return false
 	for flag in ["same_source", "same_target", "cancels_action"]:
-		if metadata.has(flag) and not metadata[flag] is bool:
+		if presentation.has(flag) and not presentation[flag] is bool:
 			return false
-	if metadata.has("card_ids") and not _bounded_string_array(
-		metadata["card_ids"], MAX_CHOICE_OPTIONS, MAX_IDENTIFIER_BYTES
-	):
-		return false
-	if metadata.has("attachment_refs"):
-		var refs: Variant = metadata["attachment_refs"]
+	for count_field in [
+		"required_units", "pokemon_count", "energy_count", "amount", "count",
+	]:
+		if presentation.has(count_field) and not _bounded_int(
+			presentation, count_field, 0, 2147483647
+		):
+			return false
+	for id_field in ["top_card_id", "source_card_id", "card_id", "trigger_id"]:
+		if presentation.has(id_field) and not _bounded_string(
+			presentation[id_field], MAX_IDENTIFIER_BYTES
+		):
+			return false
+	for ids_field in [
+		"card_ids", "revealed_card_ids", "target_slots", "trigger_ids", "labels",
+	]:
+		if presentation.has(ids_field) and not _bounded_string_array(
+			presentation[ids_field], MAX_CHOICE_OPTIONS, MAX_TEXT_BYTES
+		):
+			return false
+	if presentation.has("attachment_refs"):
+		var refs: Variant = presentation["attachment_refs"]
 		if not refs is Array or Array(refs).size() > MAX_CHOICE_OPTIONS:
 			return false
 		for ref in refs:
 			if not _validate_entity_ref(ref):
 				return false
-	if metadata.has("top_card_id") and not _bounded_string(
-		metadata["top_card_id"], MAX_IDENTIFIER_BYTES
-	):
-		return false
-	if metadata.has("revealed_card_ids") and not _bounded_string_array(
-		metadata["revealed_card_ids"], MAX_DECK_CARDS, MAX_IDENTIFIER_BYTES
-	):
-		return false
-	if metadata.has("predetermined_flips"):
-		var flips: Variant = metadata["predetermined_flips"]
+	if presentation.has("predetermined_flips"):
+		var flips: Variant = presentation["predetermined_flips"]
 		if not flips is Array or Array(flips).size() > MAX_CHOICE_OPTIONS:
 			return false
 		for flip in flips:
 			if not flip is bool:
 				return false
-	return true
-
-
-static func _validate_choice_option_value(value: Variant) -> bool:
-	if not value is Dictionary:
-		return (
-			value == null
-			or value is bool
-			or value is int
-			or (value is float and is_finite(value))
-			or value is String
-		)
-	var row: Dictionary = value
-	if row.has("index") and not _bounded_int(row, "index", -1, MAX_DECK_CARDS):
+	if presentation.has("category_limits"):
+		if not presentation["category_limits"] is Dictionary:
+			return false
+		var limits: Dictionary = presentation["category_limits"]
+		if limits.size() > MAX_CHOICE_OPTIONS:
+			return false
+		for category in limits:
+			if (
+				not category is String
+				or not _bounded_string(category, MAX_IDENTIFIER_BYTES)
+				or not _is_integer_number(limits[category])
+				or int(limits[category]) < 0
+				or int(limits[category]) > MAX_CHOICE_OPTIONS
+			):
+				return false
+	if presentation.has("selection_mode") and not _bounded_string(
+		presentation["selection_mode"], 64
+	):
 		return false
-	for field in ["player", "target_player"]:
-		if row.has(field) and not _bounded_int(row, field, -1, 1):
-			return false
-	for field in ["slot", "card_id", "attachment_type"]:
-		if row.has(field) and not _bounded_string(row[field], MAX_IDENTIFIER_BYTES):
-			return false
-	for field in ["base_name", "evolution_name"]:
-		if row.has(field) and not _bounded_string(row[field], MAX_TEXT_BYTES):
-			return false
 	return true
-
-
 static func _validate_presentation_event(value: Variant) -> bool:
 	if not value is Dictionary:
 		return false

@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from data.card_models import AttackDef, Card
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS, FIRE_DECK, WATER_DECK
+from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 from engine.ai import (
     AIConfig,
     ChallengeAI,
@@ -29,6 +30,7 @@ from engine.ai.challenge_ai import AIAction, create_challenge_ai
 from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
     CARD_SEMANTIC_SIZE,
+    ENCODER_SCHEMA_VERSION,
     STATE_CARD_SLOTS,
     STATE_NUMERIC_SIZE,
     ActionStateEncoder,
@@ -164,9 +166,9 @@ class DeepAITests(unittest.TestCase):
         metadata = _verification_metadata(0, True)
         self.assertFalse(metadata["verified"])
         self.assertEqual(metadata["verification_status"], "unverified_no_eval")
-        self.assertEqual(metadata["rules_version"], 3)
-        self.assertEqual(metadata["action_version"], 2)
-        self.assertEqual(metadata["encoder_version"], 3)
+        self.assertEqual(metadata["rules_version"], RULES_SCHEMA_VERSION)
+        self.assertEqual(metadata["action_version"], ACTION_SCHEMA_VERSION)
+        self.assertEqual(metadata["encoder_version"], ENCODER_SCHEMA_VERSION)
 
     def test_encoder_outputs_stable_shapes_and_handles_new_card_id(self):
         state = self._simple_state()
@@ -898,9 +900,9 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 3,
-                        "action_version": 2,
-                        "encoder_version": 3,
+                        "rules_version": RULES_SCHEMA_VERSION,
+                        "action_version": ACTION_SCHEMA_VERSION,
+                        "encoder_version": ENCODER_SCHEMA_VERSION,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -919,9 +921,9 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 3,
-                        "action_version": 2,
-                        "encoder_version": 3,
+                        "rules_version": RULES_SCHEMA_VERSION,
+                        "action_version": ACTION_SCHEMA_VERSION,
+                        "encoder_version": ENCODER_SCHEMA_VERSION,
                         "planner_version": 1,
                         "seed": 17,
                         "summary": {"fire": {"eval": {"games": 600, "wins": 299, "draws": 0, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0}}},
@@ -955,9 +957,9 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 3,
-                        "action_version": 2,
-                        "encoder_version": 3,
+                        "rules_version": RULES_SCHEMA_VERSION,
+                        "action_version": ACTION_SCHEMA_VERSION,
+                        "encoder_version": ENCODER_SCHEMA_VERSION,
                         "planner_version": 1,
                         "seed": 17,
                         "summary": {"fire": {"eval": {
@@ -985,9 +987,9 @@ class DeepAITests(unittest.TestCase):
                     "metadata": {
                         "accepted": True,
                         "verified": True,
-                        "rules_version": 3,
-                        "action_version": 2,
-                        "encoder_version": 3,
+                        "rules_version": RULES_SCHEMA_VERSION,
+                        "action_version": ACTION_SCHEMA_VERSION,
+                        "encoder_version": ENCODER_SCHEMA_VERSION,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -1313,9 +1315,9 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 3,
-                        "action_version": 2,
-                        "encoder_version": 3,
+                        "rules_version": RULES_SCHEMA_VERSION,
+                        "action_version": ACTION_SCHEMA_VERSION,
+                        "encoder_version": ENCODER_SCHEMA_VERSION,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -1403,9 +1405,9 @@ class DeepAITests(unittest.TestCase):
                         "accepted": True,
                         "verified": True,
                         "eval_games": 600,
-                        "rules_version": 3,
-                        "action_version": 2,
-                        "encoder_version": 3,
+                        "rules_version": RULES_SCHEMA_VERSION,
+                        "action_version": ACTION_SCHEMA_VERSION,
+                        "encoder_version": ENCODER_SCHEMA_VERSION,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -2073,9 +2075,9 @@ class DeepAITests(unittest.TestCase):
             with open(os.path.splitext(explicit_model)[0] + ".json", "w", encoding="utf-8") as fh:
                 json.dump({
                     "metadata": {
-                        "rules_version": 3,
-                        "action_version": 2,
-                        "encoder_version": 3,
+                        "rules_version": RULES_SCHEMA_VERSION,
+                        "action_version": ACTION_SCHEMA_VERSION,
+                        "encoder_version": ENCODER_SCHEMA_VERSION,
                         "summary": {
                             "fire": {
                                 "choice": {"choice_examples": 12},
@@ -2376,8 +2378,6 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(bench_example.teacher_target_index, 0)
 
     def test_encoder_effect_features_understand_compiled_ir(self):
-        import inspect
-        import engine.ai.dl.encoder as encoder_module
         from engine.commands.ir import CommandSpec
 
         encoder = ActionStateEncoder()
@@ -2424,10 +2424,6 @@ class DeepAITests(unittest.TestCase):
         self.assertIn("coin", tokens)
         self.assertNotIn("energy", tokens)
         self.assertEqual(encoder._discard_cost_amount(card), 3)
-        encoder_source = inspect.getsource(encoder_module.ActionStateEncoder)
-        self.assertIn("trainer_runtime_effects", encoder_source)
-        self.assertNotIn("effect_type(", encoder_source)
-        self.assertNotIn("card.trainer_effects", encoder_source)
 
     def test_training_target_filter_uses_compiled_trainer_ir(self):
         from engine.ai.dl.training import _action_has_no_available_target

@@ -31,19 +31,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svd-dodrio",
               "damage_counters": 1,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -87,19 +81,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -195,19 +183,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svd-dodrio",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -248,19 +230,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -372,19 +348,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svd-dodrio",
                   "damage_counters": 1,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -428,19 +398,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -550,19 +514,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -604,19 +562,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -712,19 +664,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -765,19 +711,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -888,19 +828,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -942,19 +876,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -1082,21 +1010,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-5"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -1104,19 +1026,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svi-chim",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": true,
                 "status_conditions": [],
@@ -1155,19 +1071,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 1,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -1264,19 +1174,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -1320,19 +1224,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -1443,19 +1341,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -1463,19 +1355,13 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svi-chim",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": true,
                     "status_conditions": [],
@@ -1516,19 +1402,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -1632,21 +1512,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-5"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -1654,19 +1528,13 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svi-chim",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": true,
                     "status_conditions": [],
@@ -1705,19 +1573,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -1826,21 +1688,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-5"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -1848,19 +1704,13 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svi-chim",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": true,
                     "status_conditions": [],
@@ -1899,19 +1749,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 1,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -2026,22 +1870,16 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg-milt",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-5",
                 "sv1-ener-5"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -2082,19 +1920,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 6,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -2191,22 +2023,16 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg-milt",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-5",
                 "sv1-ener-5"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -2247,19 +2073,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -2375,22 +2195,16 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svg-milt",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-5",
                     "sv1-ener-5"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -2431,19 +2245,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv2-grex",
                   "damage_counters": 6,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -2558,15 +2366,10 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-49",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-3",
                 "sv1-ener-3",
@@ -2574,7 +2377,6 @@
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -2615,19 +2417,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 11,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 3,
               "placed_this_turn": false,
               "status_conditions": [
@@ -2726,15 +2522,10 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-49",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-3",
                 "sv1-ener-3",
@@ -2742,7 +2533,6 @@
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -2783,19 +2573,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -2912,15 +2696,10 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-49",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-3",
                     "sv1-ener-3",
@@ -2928,7 +2707,6 @@
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -2969,19 +2747,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv2-grex",
                   "damage_counters": 11,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 3,
                   "placed_this_turn": false,
                   "status_conditions": [
@@ -3098,21 +2870,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svi-chim",
               "damage_counters": 3,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-2"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [
@@ -3155,19 +2921,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -3264,21 +3024,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svi-chim",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-2"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [
@@ -3321,19 +3075,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -3450,21 +3198,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svi-chim",
                   "damage_counters": 3,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-2"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [
@@ -3507,19 +3249,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -3636,21 +3372,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg2-shro",
               "damage_counters": 1,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-1"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": true,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -3691,19 +3421,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 1,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -3800,21 +3524,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg2-shro",
               "damage_counters": 2,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-1"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -3855,19 +3573,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -3984,21 +3696,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svg2-shro",
                   "damage_counters": 1,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-1"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": true,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -4039,19 +3745,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv2-grex",
                   "damage_counters": 1,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -4142,17 +3842,31 @@
           "action": "RETREAT",
           "actor": 0,
           "params": {
-            "bench_idx": 0,
-            "energy_indices": [
-              0
-            ]
+            "bench_idx": 0
           }
         }
       ],
+      "choice_response": {
+        "cancelled": false,
+        "option_ids": [
+          "retreat:energy:0"
+        ],
+        "request_id": "choice:1:0:select_retreat_payment:0",
+        "selected_options": [
+          {
+            "attachment_type": "energy",
+            "card_id": "svi-dtur",
+            "index": 0,
+            "kind": "attachment",
+            "player": 0,
+            "slot": "active"
+          }
+        ]
+      },
       "expected": {
         "active_player_idx": 0,
         "apply_type_matchups": false,
-        "choice_sequence": 0,
+        "choice_sequence": 1,
         "extra_draws": [
           0,
           0
@@ -4169,19 +3883,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svi-chim",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -4189,19 +3897,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -4242,19 +3944,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -4304,7 +4000,7 @@
         ],
         "result_reason": "NONE",
         "result_status": "ONGOING",
-        "revision": 1,
+        "revision": 2,
         "rules_options": {
           "apply_type_matchups": false
         },
@@ -4329,6 +4025,7 @@
         "winner": -1
       },
       "expected_rng_state": 700,
+      "followup_actions": [],
       "initial_state": {
         "action_log": [],
         "active_player_idx": 0,
@@ -4350,21 +4047,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "svi-dtur"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -4372,19 +4063,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svi-chim",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -4423,19 +4108,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -4520,17 +4199,210 @@
         "turn_number": 3,
         "winner": -1
       },
+      "pending_after_action": {
+        "expected": {
+          "active_player_idx": 0,
+          "apply_type_matchups": false,
+          "choice_sequence": 1,
+          "extra_draws": [
+            0,
+            0
+          ],
+          "first_player_idx": 0,
+          "mulligan_bonus_max": 0,
+          "mulligan_count": [
+            0,
+            0
+          ],
+          "opening_coin_winner_idx": -1,
+          "pending_promotions": [],
+          "phase": "MAIN",
+          "players": [
+            {
+              "active": {
+                "attached_tool_id": "",
+                "can_evolve_this_turn": true,
+                "card_id": "sv1-104",
+                "damage_counters": 0,
+                "energy_card_ids": [
+                  "svi-dtur"
+                ],
+                "evolution_stack_ids": [],
+                "healed_this_turn": false,
+                "paralyzed_since_turn": 0,
+                "placed_this_turn": false,
+                "status_conditions": [],
+                "used_abilities": []
+              },
+              "bench": [
+                {
+                  "attached_tool_id": "",
+                  "can_evolve_this_turn": true,
+                  "card_id": "svi-chim",
+                  "damage_counters": 0,
+                  "energy_card_ids": [],
+                  "evolution_stack_ids": [],
+                  "healed_this_turn": false,
+                  "paralyzed_since_turn": 0,
+                  "placed_this_turn": false,
+                  "status_conditions": [],
+                  "used_abilities": []
+                },
+                null,
+                null,
+                null,
+                null
+              ],
+              "deck": [
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5"
+              ],
+              "discard": [],
+              "energy_attached_this_turn": false,
+              "hand": [],
+              "healed_this_turn": false,
+              "name": "玩家1",
+              "prizes": [
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5"
+              ],
+              "retreated_this_turn": false,
+              "stadium_played_this_turn": false,
+              "stadium_used_this_turn": false,
+              "supporter_played_this_turn": false,
+              "vstar_power_used": false,
+              "was_ko_by_attack": false
+            },
+            {
+              "active": {
+                "attached_tool_id": "",
+                "can_evolve_this_turn": true,
+                "card_id": "sv1-104",
+                "damage_counters": 0,
+                "energy_card_ids": [],
+                "evolution_stack_ids": [],
+                "healed_this_turn": false,
+                "paralyzed_since_turn": 0,
+                "placed_this_turn": false,
+                "status_conditions": [],
+                "used_abilities": []
+              },
+              "bench": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "deck": [
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5"
+              ],
+              "discard": [],
+              "energy_attached_this_turn": false,
+              "hand": [],
+              "healed_this_turn": false,
+              "name": "玩家2",
+              "prizes": [
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5",
+                "sv1-ener-5"
+              ],
+              "retreated_this_turn": false,
+              "stadium_played_this_turn": false,
+              "stadium_used_this_turn": false,
+              "supporter_played_this_turn": false,
+              "vstar_power_used": false,
+              "was_ko_by_attack": false
+            }
+          ],
+          "public_deck_keys": [
+            "",
+            ""
+          ],
+          "result_conditions": [
+            [],
+            []
+          ],
+          "result_reason": "NONE",
+          "result_status": "ONGOING",
+          "revision": 1,
+          "rules_options": {
+            "apply_type_matchups": false
+          },
+          "rules_profile_id": "CN_MAINLAND_3_1_0",
+          "setup_actor_idx": -1,
+          "setup_bonus_card_ids": [
+            [],
+            []
+          ],
+          "setup_stage": "TURN_ORDER",
+          "stadium_card_id": "",
+          "stadium_owner_idx": -1,
+          "turn_fact_book": {
+            "current_turn": {
+              "knockouts": []
+            },
+            "previous_turn": {
+              "knockouts": []
+            }
+          },
+          "turn_number": 3,
+          "winner": -1
+        },
+        "request": {
+          "allow_duplicates": false,
+          "can_cancel": true,
+          "max_select": 1,
+          "metadata": {
+            "continuation_kind": "retreat_payment"
+          },
+          "min_select": 1,
+          "options": [
+            {
+              "attachment_type": "energy",
+              "card_id": "svi-dtur",
+              "index": 0,
+              "kind": "attachment",
+              "player": 0,
+              "slot": "active"
+            }
+          ],
+          "player": 0,
+          "request_type": "select_retreat_payment"
+        },
+        "stack": {
+          "continuation_data_kinds": [
+            "retreat_payment"
+          ],
+          "continuation_operations": [
+            "retreat_payment"
+          ],
+          "frame_kinds": [
+            "continuation"
+          ],
+          "pending_request_type": "select_retreat_payment"
+        }
+      },
       "portable_seed": 700,
       "trace": [
         {
-          "event_types": [
-            "cards_discarded",
-            "retreat"
-          ],
+          "event_types": [],
           "expected": {
             "active_player_idx": 0,
             "apply_type_matchups": false,
-            "choice_sequence": 0,
+            "choice_sequence": 1,
             "extra_draws": [
               0,
               0
@@ -4547,19 +4419,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
-                  "card_id": "svi-chim",
+                  "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
-                  "energy_card_ids": [],
+                  "energy_card_ids": [
+                    "svi-dtur"
+                  ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -4567,19 +4435,13 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
-                    "card_id": "sv1-104",
+                    "card_id": "svi-chim",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -4596,9 +4458,7 @@
                   "sv1-ener-5",
                   "sv1-ener-5"
                 ],
-                "discard": [
-                  "svi-dtur"
-                ],
+                "discard": [],
                 "energy_attached_this_turn": false,
                 "hand": [],
                 "healed_this_turn": false,
@@ -4611,7 +4471,7 @@
                   "sv1-ener-5",
                   "sv1-ener-5"
                 ],
-                "retreated_this_turn": true,
+                "retreated_this_turn": false,
                 "stadium_played_this_turn": false,
                 "stadium_used_this_turn": false,
                 "supporter_played_this_turn": false,
@@ -4620,19 +4480,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -4708,6 +4562,204 @@
           },
           "index": 0,
           "kind": "action",
+          "pending": {
+            "allow_duplicates": false,
+            "can_cancel": true,
+            "continuation_operations": [
+              "retreat_payment"
+            ],
+            "frame_kinds": [
+              "continuation"
+            ],
+            "max_select": 1,
+            "metadata": {
+              "continuation_kind": "retreat_payment"
+            },
+            "min_select": 1,
+            "options": [
+              {
+                "attachment_type": "energy",
+                "card_id": "svi-dtur",
+                "index": 0,
+                "kind": "attachment",
+                "player": 0,
+                "slot": "active"
+              }
+            ],
+            "player": 0,
+            "request_type": "select_retreat_payment"
+          },
+          "python_step_event_types": [],
+          "rng_state": 700
+        },
+        {
+          "event_types": [
+            "cards_discarded",
+            "retreat"
+          ],
+          "expected": {
+            "active_player_idx": 0,
+            "apply_type_matchups": false,
+            "choice_sequence": 1,
+            "extra_draws": [
+              0,
+              0
+            ],
+            "first_player_idx": 0,
+            "mulligan_bonus_max": 0,
+            "mulligan_count": [
+              0,
+              0
+            ],
+            "opening_coin_winner_idx": -1,
+            "pending_promotions": [],
+            "phase": "MAIN",
+            "players": [
+              {
+                "active": {
+                  "attached_tool_id": "",
+                  "can_evolve_this_turn": true,
+                  "card_id": "svi-chim",
+                  "damage_counters": 0,
+                  "energy_card_ids": [],
+                  "evolution_stack_ids": [],
+                  "healed_this_turn": false,
+                  "paralyzed_since_turn": 0,
+                  "placed_this_turn": false,
+                  "status_conditions": [],
+                  "used_abilities": []
+                },
+                "bench": [
+                  {
+                    "attached_tool_id": "",
+                    "can_evolve_this_turn": true,
+                    "card_id": "sv1-104",
+                    "damage_counters": 0,
+                    "energy_card_ids": [],
+                    "evolution_stack_ids": [],
+                    "healed_this_turn": false,
+                    "paralyzed_since_turn": 0,
+                    "placed_this_turn": false,
+                    "status_conditions": [],
+                    "used_abilities": []
+                  },
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "deck": [
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5"
+                ],
+                "discard": [
+                  "svi-dtur"
+                ],
+                "energy_attached_this_turn": false,
+                "hand": [],
+                "healed_this_turn": false,
+                "name": "玩家1",
+                "prizes": [
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5"
+                ],
+                "retreated_this_turn": true,
+                "stadium_played_this_turn": false,
+                "stadium_used_this_turn": false,
+                "supporter_played_this_turn": false,
+                "vstar_power_used": false,
+                "was_ko_by_attack": false
+              },
+              {
+                "active": {
+                  "attached_tool_id": "",
+                  "can_evolve_this_turn": true,
+                  "card_id": "sv1-104",
+                  "damage_counters": 0,
+                  "energy_card_ids": [],
+                  "evolution_stack_ids": [],
+                  "healed_this_turn": false,
+                  "paralyzed_since_turn": 0,
+                  "placed_this_turn": false,
+                  "status_conditions": [],
+                  "used_abilities": []
+                },
+                "bench": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "deck": [
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5"
+                ],
+                "discard": [],
+                "energy_attached_this_turn": false,
+                "hand": [],
+                "healed_this_turn": false,
+                "name": "玩家2",
+                "prizes": [
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5",
+                  "sv1-ener-5"
+                ],
+                "retreated_this_turn": false,
+                "stadium_played_this_turn": false,
+                "stadium_used_this_turn": false,
+                "supporter_played_this_turn": false,
+                "vstar_power_used": false,
+                "was_ko_by_attack": false
+              }
+            ],
+            "public_deck_keys": [
+              "",
+              ""
+            ],
+            "result_conditions": [
+              [],
+              []
+            ],
+            "result_reason": "NONE",
+            "result_status": "ONGOING",
+            "revision": 2,
+            "rules_options": {
+              "apply_type_matchups": false
+            },
+            "rules_profile_id": "CN_MAINLAND_3_1_0",
+            "setup_actor_idx": -1,
+            "setup_bonus_card_ids": [
+              [],
+              []
+            ],
+            "setup_stage": "TURN_ORDER",
+            "stadium_card_id": "",
+            "stadium_owner_idx": -1,
+            "turn_fact_book": {
+              "current_turn": {
+                "knockouts": []
+              },
+              "previous_turn": {
+                "knockouts": []
+              }
+            },
+            "turn_number": 3,
+            "winner": -1
+          },
+          "index": 0,
+          "kind": "choice",
           "pending": {},
           "python_step_event_types": [],
           "rng_state": 700
@@ -4742,19 +4794,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -4795,19 +4841,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -4904,19 +4944,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -4957,19 +4991,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -5083,19 +5111,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -5136,19 +5158,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -5262,21 +5278,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": false,
               "card_id": "svf-luca",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [
                 "svf-rio"
               ],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -5317,19 +5327,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -5425,19 +5429,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svf-rio",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -5480,19 +5478,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -5603,21 +5595,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": false,
                   "card_id": "svf-luca",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [
                     "svf-rio"
                   ],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -5658,19 +5644,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -5782,21 +5762,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svd-dodrio",
               "damage_counters": 1,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-5"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -5837,19 +5811,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 4,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -5946,21 +5914,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svd-dodrio",
               "damage_counters": 1,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-5"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -6001,19 +5963,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -6129,21 +6085,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svd-dodrio",
                   "damage_counters": 1,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-5"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -6184,19 +6134,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv2-grex",
                   "damage_counters": 4,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -6312,19 +6256,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg-alt",
               "damage_counters": 1,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": true,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -6334,19 +6272,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svi-chim",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": true,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -6385,19 +6317,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -6493,19 +6419,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg-alt",
               "damage_counters": 3,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -6513,19 +6433,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svi-chim",
                 "damage_counters": 2,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -6564,19 +6478,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -6688,19 +6596,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svg-alt",
                   "damage_counters": 1,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": true,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -6710,19 +6612,13 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svi-chim",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": true,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -6761,19 +6657,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -6885,19 +6775,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": true,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -6940,19 +6824,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -7048,19 +6926,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 6,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -7103,19 +6975,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -7227,19 +7093,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": true,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -7282,19 +7142,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -7419,19 +7273,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svi-chim",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -7475,19 +7323,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -7606,21 +7448,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svi-chim",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-2"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -7661,19 +7497,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 4,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -7681,19 +7511,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -7799,19 +7623,13 @@
           "players": [
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svi-chim",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -7856,19 +7674,13 @@
               "active": null,
               "bench": [
                 {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -8037,19 +7849,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svi-chim",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -8094,19 +7900,13 @@
                 "active": null,
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "sv1-104",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -8269,19 +8069,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svi-chim",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -8327,19 +8121,13 @@
                 "active": null,
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "sv1-104",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -8458,19 +8246,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svi-chim",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -8514,19 +8296,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -8658,22 +8434,16 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svm-cobalion",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-8",
                 "sv1-ener-8"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -8681,38 +8451,26 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zacian",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
                 "used_abilities": []
               },
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zamazenta",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -8748,19 +8506,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 3,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -8858,22 +8610,16 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svm-cobalion",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-8",
                 "sv1-ener-8"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -8881,38 +8627,26 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zacian",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
                 "used_abilities": []
               },
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zamazenta",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -8948,19 +8682,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -9066,22 +8794,16 @@
           "players": [
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-cobalion",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [
                   "sv1-ener-8",
                   "sv1-ener-8"
                 ],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -9089,38 +8811,26 @@
               },
               "bench": [
                 {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-zacian",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
                   "used_abilities": []
                 },
                 {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-zamazenta",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -9156,19 +8866,13 @@
             },
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
                 "damage_counters": 3,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -9321,22 +9025,16 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-cobalion",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-8",
                     "sv1-ener-8"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -9344,38 +9042,26 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zacian",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
                     "used_abilities": []
                   },
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zamazenta",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -9411,19 +9097,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 3,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -9577,22 +9257,16 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-cobalion",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-8",
                     "sv1-ener-8"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -9600,38 +9274,26 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zacian",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
                     "used_abilities": []
                   },
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zamazenta",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -9667,19 +9329,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 3,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -9807,22 +9463,16 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svm-cobalion",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-8",
                 "sv1-ener-8"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -9830,40 +9480,28 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zacian",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
                 "used_abilities": []
               },
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zamazenta",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [
                   "sv1-ener-8"
                 ],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -9898,19 +9536,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 3,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -10008,22 +9640,16 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svm-cobalion",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-8",
                 "sv1-ener-8"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -10031,38 +9657,26 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zacian",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
                 "used_abilities": []
               },
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-zamazenta",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -10098,19 +9712,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -10216,22 +9824,16 @@
           "players": [
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svm-cobalion",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [
                   "sv1-ener-8",
                   "sv1-ener-8"
                 ],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -10239,38 +9841,26 @@
               },
               "bench": [
                 {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-zacian",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
                   "used_abilities": []
                 },
                 {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-zamazenta",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -10306,19 +9896,13 @@
             },
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
                 "damage_counters": 3,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -10471,22 +10055,16 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-cobalion",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-8",
                     "sv1-ener-8"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -10494,38 +10072,26 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zacian",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
                     "used_abilities": []
                   },
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zamazenta",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -10561,19 +10127,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 3,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -10728,22 +10288,16 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svm-cobalion",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-8",
                     "sv1-ener-8"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -10751,40 +10305,28 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zacian",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
                     "used_abilities": []
                   },
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svm-zamazenta",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [
                       "sv1-ener-8"
                     ],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -10819,19 +10361,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 3,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -10959,19 +10495,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 2,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -10979,19 +10509,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svi-chim",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": true,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -11032,19 +10556,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -11141,19 +10659,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 2,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -11161,19 +10673,13 @@
             },
             "bench": [
               {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "svi-chim",
                 "damage_counters": 1,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -11214,19 +10720,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -11332,19 +10832,13 @@
           "players": [
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
                 "damage_counters": 2,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -11352,19 +10846,13 @@
               },
               "bench": [
                 {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svi-chim",
                   "damage_counters": 1,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -11405,19 +10893,13 @@
             },
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -11555,19 +11037,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 2,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -11575,19 +11051,13 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svi-chim",
                     "damage_counters": 1,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": false,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -11628,19 +11098,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -11774,19 +11238,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 2,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -11794,19 +11252,13 @@
                 },
                 "bench": [
                   {
-                    "all_prevented_next_turn": false,
                     "attached_tool_id": "",
-                    "attack_locked": false,
-                    "attack_locked_names": {},
                     "can_evolve_this_turn": true,
                     "card_id": "svi-chim",
                     "damage_counters": 0,
-                    "damage_prevented_next_turn": false,
-                    "dazzled": false,
                     "energy_card_ids": [],
                     "evolution_stack_ids": [],
                     "healed_this_turn": true,
-                    "outgoing_damage_reduction_next_turn": 0,
                     "paralyzed_since_turn": 0,
                     "placed_this_turn": false,
                     "status_conditions": [],
@@ -11847,19 +11299,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -11971,17 +11417,10 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {
-                "岩窟冲撞": 3
-              },
               "can_evolve_this_turn": true,
               "card_id": "svf-terr",
               "damage_counters": 0,
-              "damage_prevented_next_turn": true,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-6",
                 "sv1-ener-6",
@@ -11989,7 +11428,53 @@
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
+              "modifiers": [
+                {
+                  "condition": {
+                    "expires_after_turn": 4
+                  },
+                  "conflict_policy": "commutative",
+                  "controller": 0,
+                  "duration": "until_end_of_opponents_next_turn",
+                  "hook": "MODIFY_DAMAGE",
+                  "layer": "prevent",
+                  "operation": {
+                    "kind": "prevent_damage"
+                  },
+                  "priority": 0,
+                  "scope": "self",
+                  "source_ref": {
+                    "card_id": "svf-terr",
+                    "kind": "pokemon",
+                    "player": 0,
+                    "slot": "active"
+                  },
+                  "stacking": "replace_same_source"
+                },
+                {
+                  "condition": {
+                    "expires_after_turn": 5
+                  },
+                  "conflict_policy": "commutative",
+                  "controller": 0,
+                  "duration": "until_end_of_opponents_next_turn",
+                  "hook": "CAN_ATTACK",
+                  "layer": "permission",
+                  "operation": {
+                    "attack_name": "岩窟冲撞",
+                    "kind": "attack_lock"
+                  },
+                  "priority": 0,
+                  "scope": "self",
+                  "source_ref": {
+                    "card_id": "svf-terr",
+                    "kind": "pokemon",
+                    "player": 0,
+                    "slot": "active"
+                  },
+                  "stacking": "replace_same_source"
+                }
+              ],
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12030,19 +11515,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 12,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12139,15 +11618,10 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svf-terr",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-6",
                 "sv1-ener-6",
@@ -12155,7 +11629,6 @@
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12196,19 +11669,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12324,17 +11791,10 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {
-                    "岩窟冲撞": 3
-                  },
                   "can_evolve_this_turn": true,
                   "card_id": "svf-terr",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": true,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-6",
                     "sv1-ener-6",
@@ -12342,7 +11802,53 @@
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
+                  "modifiers": [
+                    {
+                      "condition": {
+                        "expires_after_turn": 4
+                      },
+                      "conflict_policy": "commutative",
+                      "controller": 0,
+                      "duration": "until_end_of_opponents_next_turn",
+                      "hook": "MODIFY_DAMAGE",
+                      "layer": "prevent",
+                      "operation": {
+                        "kind": "prevent_damage"
+                      },
+                      "priority": 0,
+                      "scope": "self",
+                      "source_ref": {
+                        "card_id": "svf-terr",
+                        "kind": "pokemon",
+                        "player": 0,
+                        "slot": "active"
+                      },
+                      "stacking": "replace_same_source"
+                    },
+                    {
+                      "condition": {
+                        "expires_after_turn": 5
+                      },
+                      "conflict_policy": "commutative",
+                      "controller": 0,
+                      "duration": "until_end_of_opponents_next_turn",
+                      "hook": "CAN_ATTACK",
+                      "layer": "permission",
+                      "operation": {
+                        "attack_name": "岩窟冲撞",
+                        "kind": "attack_lock"
+                      },
+                      "priority": 0,
+                      "scope": "self",
+                      "source_ref": {
+                        "card_id": "svf-terr",
+                        "kind": "pokemon",
+                        "player": 0,
+                        "slot": "active"
+                      },
+                      "stacking": "replace_same_source"
+                    }
+                  ],
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -12383,19 +11889,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv2-grex",
                   "damage_counters": 12,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -12510,22 +12010,40 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": true,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg-alt",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-3",
                 "sv1-ener-8"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
+              "modifiers": [
+                {
+                  "condition": {
+                    "expires_after_turn": 4
+                  },
+                  "conflict_policy": "commutative",
+                  "controller": 0,
+                  "duration": "until_end_of_opponents_next_turn",
+                  "hook": "PREVENT_EFFECTS",
+                  "layer": "prevent",
+                  "operation": {
+                    "kind": "prevent_effects"
+                  },
+                  "priority": 0,
+                  "scope": "self",
+                  "source_ref": {
+                    "card_id": "svg-alt",
+                    "kind": "pokemon",
+                    "player": 0,
+                    "slot": "active"
+                  },
+                  "stacking": "replace_same_source"
+                }
+              ],
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12566,19 +12084,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 14,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12675,22 +12187,16 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "svg-alt",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-3",
                 "sv1-ener-8"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12731,19 +12237,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv2-grex",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -12859,22 +12359,40 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": true,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "svg-alt",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-3",
                     "sv1-ener-8"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
+                  "modifiers": [
+                    {
+                      "condition": {
+                        "expires_after_turn": 4
+                      },
+                      "conflict_policy": "commutative",
+                      "controller": 0,
+                      "duration": "until_end_of_opponents_next_turn",
+                      "hook": "PREVENT_EFFECTS",
+                      "layer": "prevent",
+                      "operation": {
+                        "kind": "prevent_effects"
+                      },
+                      "priority": 0,
+                      "scope": "self",
+                      "source_ref": {
+                        "card_id": "svg-alt",
+                        "kind": "pokemon",
+                        "player": 0,
+                        "slot": "active"
+                      },
+                      "stacking": "replace_same_source"
+                    }
+                  ],
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -12915,19 +12433,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv2-grex",
                   "damage_counters": 14,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -13032,12 +12544,14 @@
         "selected_options": [
           {
             "card_id": "sv1-ener-5",
+            "index": 0,
             "kind": "card",
             "player": 0,
             "zone": "deck"
           },
           {
             "card_id": "sv1-ener-4",
+            "index": 1,
             "kind": "card",
             "player": 0,
             "zone": "deck"
@@ -13064,21 +12578,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-114",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-5"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -13120,19 +12628,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -13230,21 +12732,15 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-114",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [
                 "sv1-ener-5"
               ],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -13285,19 +12781,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -13403,21 +12893,15 @@
           "players": [
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-114",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [
                   "sv1-ener-5"
                 ],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -13458,19 +12942,13 @@
             },
             {
               "active": {
-                "all_prevented_next_turn": false,
                 "attached_tool_id": "",
-                "attack_locked": false,
-                "attack_locked_names": {},
                 "can_evolve_this_turn": true,
                 "card_id": "sv1-104",
                 "damage_counters": 0,
-                "damage_prevented_next_turn": false,
-                "dazzled": false,
                 "energy_card_ids": [],
                 "evolution_stack_ids": [],
                 "healed_this_turn": false,
-                "outgoing_damage_reduction_next_turn": 0,
                 "paralyzed_since_turn": 0,
                 "placed_this_turn": false,
                 "status_conditions": [],
@@ -13556,18 +13034,21 @@
           "options": [
             {
               "card_id": "sv1-ener-5",
+              "index": 0,
               "kind": "card",
               "player": 0,
               "zone": "deck"
             },
             {
               "card_id": "sv1-ener-4",
+              "index": 1,
               "kind": "card",
               "player": 0,
               "zone": "deck"
             },
             {
               "card_id": "sv1-ener-2",
+              "index": 3,
               "kind": "card",
               "player": 0,
               "zone": "deck"
@@ -13616,21 +13097,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-114",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-5"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -13671,19 +13146,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -13778,18 +13247,21 @@
             "options": [
               {
                 "card_id": "sv1-ener-5",
+                "index": 0,
                 "kind": "card",
                 "player": 0,
                 "zone": "deck"
               },
               {
                 "card_id": "sv1-ener-4",
+                "index": 1,
                 "kind": "card",
                 "player": 0,
                 "zone": "deck"
               },
               {
                 "card_id": "sv1-ener-2",
+                "index": 3,
                 "kind": "card",
                 "player": 0,
                 "zone": "deck"
@@ -13832,21 +13304,15 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-114",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [
                     "sv1-ener-5"
                   ],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -13888,19 +13354,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -14013,19 +13473,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14073,19 +13527,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14181,19 +13629,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14240,19 +13682,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14366,19 +13802,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -14426,19 +13856,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -14550,19 +13974,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14606,19 +14024,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14714,19 +14126,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14769,19 +14175,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -14893,19 +14293,13 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -14949,19 +14343,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -15074,19 +14462,36 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "svl-vitb",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
+              "modifiers": [
+                {
+                  "condition": {},
+                  "conflict_policy": "commutative",
+                  "controller": 0,
+                  "duration": "until_leave_play",
+                  "hook": "MODIFY_DAMAGE",
+                  "layer": "attacker_adjust",
+                  "operation": {
+                    "amount": 10,
+                    "kind": "damage_delta"
+                  },
+                  "priority": 0,
+                  "scope": "attached_attacker",
+                  "source_ref": {
+                    "card_id": "sv1-104",
+                    "kind": "pokemon",
+                    "player": 0,
+                    "slot": "active"
+                  },
+                  "stacking": "replace_same_source"
+                }
+              ],
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -15127,19 +14532,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -15235,19 +14634,13 @@
         "players": [
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -15290,19 +14683,13 @@
           },
           {
             "active": {
-              "all_prevented_next_turn": false,
               "attached_tool_id": "",
-              "attack_locked": false,
-              "attack_locked_names": {},
               "can_evolve_this_turn": true,
               "card_id": "sv1-104",
               "damage_counters": 0,
-              "damage_prevented_next_turn": false,
-              "dazzled": false,
               "energy_card_ids": [],
               "evolution_stack_ids": [],
               "healed_this_turn": false,
-              "outgoing_damage_reduction_next_turn": 0,
               "paralyzed_since_turn": 0,
               "placed_this_turn": false,
               "status_conditions": [],
@@ -15413,19 +14800,36 @@
             "players": [
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "svl-vitb",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
+                  "modifiers": [
+                    {
+                      "condition": {},
+                      "conflict_policy": "commutative",
+                      "controller": 0,
+                      "duration": "until_leave_play",
+                      "hook": "MODIFY_DAMAGE",
+                      "layer": "attacker_adjust",
+                      "operation": {
+                        "amount": 10,
+                        "kind": "damage_delta"
+                      },
+                      "priority": 0,
+                      "scope": "attached_attacker",
+                      "source_ref": {
+                        "card_id": "sv1-104",
+                        "kind": "pokemon",
+                        "player": 0,
+                        "slot": "active"
+                      },
+                      "stacking": "replace_same_source"
+                    }
+                  ],
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -15466,19 +14870,13 @@
               },
               {
                 "active": {
-                  "all_prevented_next_turn": false,
                   "attached_tool_id": "",
-                  "attack_locked": false,
-                  "attack_locked_names": {},
                   "can_evolve_this_turn": true,
                   "card_id": "sv1-104",
                   "damage_counters": 0,
-                  "damage_prevented_next_turn": false,
-                  "dazzled": false,
                   "energy_card_ids": [],
                   "evolution_stack_ids": [],
                   "healed_this_turn": false,
-                  "outgoing_damage_reduction_next_turn": 0,
                   "paralyzed_since_turn": 0,
                   "placed_this_turn": false,
                   "status_conditions": [],
@@ -15582,6 +14980,7 @@
     "name": "canonical-pending-semantics-v1"
   },
   "rng_algorithm": "xorshift32-v1",
+  "rng_schema_version": 2,
   "test_cards": {
     "fixture-activatable-stadium": {
       "api_id": "fixture-activatable-stadium",

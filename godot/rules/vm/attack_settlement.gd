@@ -8,36 +8,6 @@ var turn_settlement: VMTurnSettlement
 var trigger_command_runner: VMTriggerCommands
 var knockout_settlement: VMKnockoutSettlement
 
-# These commands determine whether/how the primary hit is applied. Everything
-# else is an attack consequence and must resolve only after the hit and its
-# on-damage triggers, but before KO settlement.
-const PRE_HIT_ATTACK_OPS: Array[String] = [
-	"choose_damage_target",
-	"conditional_damage",
-	"conditional_damage_then_heal",
-	"deal_bench_damage",
-	"deal_damage_per_discard_psychic",
-	"deal_damage_per_energy",
-	"deal_damage_per_evolved",
-	"deal_damage_per_hand_size",
-	"deal_damage_per_self_damage",
-	"deal_damage_per_self_energy",
-	"deal_damage_per_self_energy_type",
-	"deal_damage_plus_bench",
-	"deal_damage_with_self_penalty",
-	"discard_energy_then_damage",
-	"discard_hand_then_damage",
-	"fail_attack",
-	"flip_coin",
-	"flip_coin_repeat_damage",
-	"flip_coin_then_ko",
-	"flip_until_tails",
-	"mill_then_damage",
-	"set_attack_damage_formula",
-	"set_attack_flags",
-]
-
-
 func _init(
 	p_catalog: CardCatalog,
 	p_validator: RulesValidator,
@@ -52,6 +22,7 @@ func _init(
 		knockout_settlement = p_knockout_settlement
 	else:
 		knockout_settlement = VMKnockoutSettlement.new(catalog, validator, trigger_command_runner)
+	knockout_settlement.effect_engine = effect_engine
 
 
 func set_trigger_command_runner(p_trigger_command_runner: VMTriggerCommands) -> void:
@@ -105,8 +76,8 @@ func declare_attack(
 			gate_events.push_front(attack_event)
 			return _complete_failed_attack_gate(
 				state, actor, gate_events, rng, "混乱判定失败，攻击未生效。")
-	if attacker.dazzled:
-		attacker.dazzled = false
+	if attacker.has_attack_gate("dazzled"):
+		attacker.consume_modifier_operation("attack_gate_coin", "dazzled")
 		var dazzled_heads := rng.coin()
 		gate_events.append(_attack_gate_coin_event(actor, dazzled_heads, "dazzled"))
 		if not dazzled_heads:
@@ -135,6 +106,7 @@ func declare_attack(
 	var context := {
 		"finish_attack": true,
 		"actor": actor,
+		"attacker_slot": "active",
 		"attacker_card_id": attacker.card_id,
 		"attacker_snapshot": attacker.to_dict(),
 		"base_damage": 0 if replace_base else int(attack.get("damage", 0)),
@@ -145,7 +117,7 @@ func declare_attack(
 	var step := run_attack_effects(
 		state, phased_effects["pre_hit"], actor, "active", rng, context)
 	step.events = gate_events + step.events
-	if not step.success or step.pending_choice:
+	if not step.success or step.pending_choice != null:
 		step.events.push_front(attack_event)
 		return step
 	var stack := ResolutionStack.from_dict(state.resolution_stack)
@@ -169,10 +141,28 @@ func complete_attack_context(
 	if stage == "settle_knockouts":
 		return settle_attack_knockouts_and_turn(state, stack, actor, rng)
 	if stage == "after_damage_triggers":
-		var trigger_specs: Array = stack.context.get("pending_after_damage_triggers", [])
+		var trigger_candidates: Array[Dictionary] = []
+		trigger_candidates.assign(stack.context.get("pending_after_damage_triggers", []))
 		stack.context.erase("pending_after_damage_triggers")
 		stack.push_finalize_attack(actor, "settle_knockouts")
-		stack.push_effects(trigger_specs, actor, "active")
+		var queued := trigger_command_runner.queue_candidates(
+			stack,
+			trigger_candidates,
+			VMModifierManager.AFTER_DAMAGE,
+			actor,
+			"apnap",
+			"effect",
+		)
+		if not bool(queued.get("success", false)):
+			return StepResult.new(
+				false,
+				str(queued.get("message", "触发批无效。")),
+				null,
+				[],
+				state.winner,
+				false,
+				str(queued.get("error_code", "invalid_trigger_batch")),
+			)
 		var trigger_step := effect_engine.resolve(state, stack, rng)
 		if not trigger_step.success or trigger_step.pending_choice != null:
 			return trigger_step
@@ -185,7 +175,7 @@ func complete_attack_context(
 
 	var events: Array[Dictionary] = []
 	if not bool(stack.context.get("attack_failed", false)):
-		var trigger_commands_to_resolve: Array[Dictionary] = []
+		var trigger_candidates_to_resolve: Array[Dictionary] = []
 		var computed_packets: Array[Dictionary] = []
 		for packet in _merged_damage_packets(stack.context, actor):
 			var computed := compute_attack_damage_packet(
@@ -203,6 +193,7 @@ func complete_attack_context(
 				bool(stack.context.get("ignore_resistance", false)),
 				int(packet.get("target_player", 1 - actor)),
 				str(packet.get("target_slot", "active")),
+				str(stack.context.get("attacker_slot", "active")),
 			)
 			if not computed.is_empty():
 				computed_packets.append(computed)
@@ -210,21 +201,8 @@ func complete_attack_context(
 		# Only after that calculation barrier may counters be committed.
 		for computed in computed_packets:
 			commit_attack_damage_packet(
-				state, computed, events, trigger_commands_to_resolve, stack)
-		var normalized_triggers := trigger_command_runner.command_specs_from_payloads(
-			trigger_commands_to_resolve)
-		if not bool(normalized_triggers.get("success", false)):
-			return StepResult.new(
-				false,
-				str(normalized_triggers.get("message", "触发命令无效。")),
-				null,
-				events,
-				state.winner,
-				false,
-				str(normalized_triggers.get("error_code", "invalid_trigger_payload")),
-			)
-		stack.context["pending_after_damage_triggers"] = (
-			normalized_triggers.get("commands", []))
+				state, computed, events, trigger_candidates_to_resolve, stack)
+		stack.context["pending_after_damage_triggers"] = trigger_candidates_to_resolve
 
 	# Conditional coin branches are selected while resolving the pre-hit frame.
 	# Their ordinary consequences join the authored post-hit effects and are run
@@ -257,7 +235,8 @@ func settle_attack_knockouts_and_turn(
 	rng: PortableRandomSource,
 ) -> StepResult:
 	var events: Array[Dictionary] = []
-	var ko_result := knockout_settlement.resolve_knockouts(state, actor, events, true, stack)
+	var ko_result := knockout_settlement.resolve_knockouts(
+		state, actor, events, true, stack, rng)
 	if not bool(ko_result.get("success", false)):
 		return StepResult.new(
 			false,
@@ -334,13 +313,14 @@ func apply_attack_damage(
 	attacking_type: String,
 	ignore_defender_damage_effects: bool,
 	events: Array[Dictionary],
-	trigger_commands: Array[Dictionary] = [],
+	trigger_candidates: Array[Dictionary] = [],
 	attacker_card_id: String = "",
 	attacker_snapshot: Dictionary = {},
 	ignore_weakness: bool = false,
 	ignore_resistance: bool = false,
 	target_player_idx: int = -1,
 	target_slot: String = "active",
+	attacker_slot: String = "active",
 ) -> void:
 	var packet := compute_attack_damage_packet(
 		state,
@@ -354,9 +334,10 @@ func apply_attack_damage(
 		ignore_resistance,
 		target_player_idx,
 		target_slot,
+		attacker_slot,
 	)
 	if not packet.is_empty():
-		commit_attack_damage_packet(state, packet, events, trigger_commands)
+		commit_attack_damage_packet(state, packet, events, trigger_candidates)
 
 
 func compute_attack_damage_packet(
@@ -371,6 +352,7 @@ func compute_attack_damage_packet(
 	ignore_resistance: bool = false,
 	target_player_idx: int = -1,
 	target_slot: String = "active",
+	attacker_slot: String = "active",
 ) -> Dictionary:
 	var attacker: PokemonState = null
 	if not attacker_snapshot.is_empty():
@@ -387,6 +369,7 @@ func compute_attack_damage_packet(
 	var damage := base_damage
 	var damage_context := {
 		"actor": actor,
+		"attacker_slot": attacker_slot,
 		"attacker": attacker,
 		"defender": defender,
 		"defender_player": target_player_idx,
@@ -424,7 +407,7 @@ func compute_attack_damage_packet(
 	damage_context["modifier_phase"] = "defender"
 	damage = VMDamageModifierHooks.apply_modify_damage(state, catalog, damage_context)
 	damage_context["damage"] = damage
-	if defender.damage_prevented_next_turn and not ignore_defender_damage_effects:
+	if defender.prevents_damage() and not ignore_defender_damage_effects:
 		return {
 			"actor": actor,
 			"target_player": target_player_idx,
@@ -433,17 +416,17 @@ func compute_attack_damage_packet(
 			"prevented": true,
 			"applied_counters": 0,
 			"applied_amount": 0,
-			"after_damage_commands": [],
+			"after_damage_triggers": [],
 		}
 	var applied_counters := int(float(damage) / 10.0)
 	var applied_amount := applied_counters * 10
 	damage_context["damage"] = applied_amount
-	var after_damage_commands: Array[Dictionary] = []
+	var after_damage_triggers: Array[Dictionary] = []
 	if applied_amount > 0:
-		trigger_command_runner.collect_after_damage_commands(
+		trigger_command_runner.collect_after_damage_triggers(
 			state,
 			damage_context,
-			after_damage_commands,
+			after_damage_triggers,
 		)
 	return {
 		"actor": actor,
@@ -453,7 +436,7 @@ func compute_attack_damage_packet(
 		"prevented": false,
 		"applied_counters": applied_counters,
 		"applied_amount": applied_amount,
-		"after_damage_commands": after_damage_commands,
+		"after_damage_triggers": after_damage_triggers,
 	}
 
 
@@ -461,7 +444,7 @@ func commit_attack_damage_packet(
 	state: GameState,
 	packet: Dictionary,
 	events: Array[Dictionary],
-	trigger_commands: Array[Dictionary] = [],
+	trigger_candidates: Array[Dictionary] = [],
 	stack: ResolutionStack = null,
 ) -> void:
 	var actor := int(packet.get("actor", -1))
@@ -506,8 +489,8 @@ func commit_attack_damage_packet(
 				"cause": "attack",
 			},
 		})
-	for command_value in packet.get("after_damage_commands", []):
-		trigger_commands.append(Dictionary(command_value).duplicate(true))
+	for candidate_value in packet.get("after_damage_triggers", []):
+		trigger_candidates.append(Dictionary(candidate_value).duplicate(true))
 
 
 func _merged_damage_packets(context: Dictionary, actor: int) -> Array[Dictionary]:
@@ -580,7 +563,9 @@ func _is_pre_hit_attack_effect(effect: Dictionary) -> bool:
 	if op == "deal_damage":
 		return str(Dictionary(effect.get("args", {})).get(
 			"target", "opponent_active")) != "self"
-	return op in PRE_HIT_ATTACK_OPS
+	return VMContract.command_attack_timing(op) in [
+		"pre_damage", "damage", "replace_damage",
+	]
 
 
 func _attack_gate_coin_event(actor: int, heads: bool, purpose: String) -> Dictionary:
@@ -606,7 +591,7 @@ func _complete_failed_attack_gate(
 ) -> StepResult:
 	var stack := ResolutionStack.new()
 	var ko_result := knockout_settlement.resolve_knockouts(
-		state, actor, events, false, stack)
+		state, actor, events, false, stack, rng)
 	if not bool(ko_result.get("success", false)):
 		return StepResult.new(
 			false,
@@ -722,7 +707,7 @@ func _merge_steps(first: StepResult, second: StepResult) -> StepResult:
 	return StepResult.new(
 		first.success and second.success,
 		message,
-		second.pending_choice if second.pending_choice else first.pending_choice,
+		second.pending_choice if second.pending_choice != null else first.pending_choice,
 		first.events + second.events,
 		second.winner if second.winner >= 0 else first.winner,
 		first.terminal or second.terminal,

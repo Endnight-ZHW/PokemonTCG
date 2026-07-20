@@ -13,6 +13,8 @@ static func effective_retreat_cost(
 	var manager := VMModifierManager.new()
 	_register_can_retreat_hooks(manager, state, catalog, player)
 	var cost := base_cost
+	for descriptor in manager.descriptors_for(VMModifierManager.CAN_RETREAT):
+		cost = _apply_descriptor(catalog, player, cost, descriptor)
 	for hook_value in manager.hooks_for(VMModifierManager.CAN_RETREAT):
 		var hook: Dictionary = hook_value
 		cost = _apply_can_retreat_hook(state, catalog, player, cost, hook)
@@ -47,6 +49,10 @@ static func _register_can_retreat_hooks(
 			)
 	for modifier_value in active.modifiers:
 		var modifier: Dictionary = modifier_value
+		if VMModifierDescriptorRegistry.shared().validation_error(modifier).is_empty():
+			if str(modifier.get("hook", "")) == VMModifierManager.CAN_RETREAT:
+				manager.register_descriptor(modifier)
+			continue
 		if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) != "conditional_zero_retreat":
 			continue
 		manager.register_hook(
@@ -102,6 +108,28 @@ static func _apply_can_retreat_hook(
 				return 0
 		"stadium_reduce_retreat_cost_basics":
 			return max(0, cost - int(payload.get("amount", 1)))
+	return cost
+
+
+static func _apply_descriptor(
+	catalog: CardCatalog,
+	player: PlayerState,
+	cost: int,
+	descriptor: Dictionary,
+) -> int:
+	var active := player.active
+	if active == null:
+		return cost
+	var condition: Dictionary = descriptor.get("condition", {})
+	var required_energy := str(condition.get("energy_type", ""))
+	if not required_energy.is_empty() and not _has_required_energy(active, catalog, required_energy):
+		return cost
+	var operation: Dictionary = descriptor.get("operation", {})
+	match str(operation.get("kind", "")):
+		"retreat_delta":
+			return cost + int(operation.get("amount", 0))
+		"retreat_set":
+			return int(operation.get("value", cost))
 	return cost
 
 

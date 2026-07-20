@@ -18,6 +18,8 @@ class CommandRegistry:
     ) -> None:
         if not op:
             raise ValueError("VM op name must be non-empty")
+        if op in self._factories:
+            raise ValueError(f"Duplicate VM op registration: {op}")
         self._factories[op] = factory
 
     def supports(self, op: str) -> bool:

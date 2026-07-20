@@ -201,11 +201,18 @@ func apply_dazzling_beam(
 	var target := state.get_player(target_player_idx).active
 	if target:
 		if (
-			target.all_prevented_next_turn
+			target.prevents_effects()
 			and stack.is_blockable_opponent_attack_effect(player_idx, target_player_idx)
 		):
 			return VMResult.ok("炫目效果被免疫。")
-		target.dazzled = true
+		var error := _register_transient_modifier(
+			state, player_idx, "active", target_player_idx, "active",
+			VMModifierManager.CAN_ATTACK, "gate", "until_next_attack",
+			{"expires_after_turn": state.turn_number + 1},
+			{"kind": "attack_gate_coin", "reason": "dazzled"},
+		)
+		if not error.is_empty():
+			return VMResult.fail(error, "invalid_modifier_descriptor")
 	return VMResult.ok("目标被施加炫目效果。")
 
 
@@ -219,12 +226,19 @@ func apply_attack_lock_basic(
 	var target := state.get_player(target_player_idx).active
 	if target:
 		if (
-			target.all_prevented_next_turn
+			target.prevents_effects()
 			and stack.is_blockable_opponent_attack_effect(player_idx, target_player_idx)
 		):
 			return VMResult.ok("攻击封锁被免疫。")
 		if catalog.is_basic_pokemon(target.card_id):
-			target.attack_locked = true
+			var error := _register_transient_modifier(
+				state, player_idx, "active", target_player_idx, "active",
+				VMModifierManager.CAN_ATTACK, "permission", "until_end_of_turn",
+				{"target_basic": true, "expires_after_turn": state.turn_number + 1},
+				{"kind": "attack_lock", "attack_name": "__all__"},
+			)
+			if not error.is_empty():
+				return VMResult.fail(error, "invalid_modifier_descriptor")
 	return VMResult.ok()
 
 
@@ -240,14 +254,20 @@ func apply_outgoing_damage_reduction(
 		"active" if target_player_idx != player_idx else source_slot)
 	if target:
 		if (
-			target.all_prevented_next_turn
+			target.prevents_effects()
 			and stack.is_blockable_opponent_attack_effect(player_idx, target_player_idx)
 		):
 			return VMResult.ok("恫吓效果被免疫。")
-		target.outgoing_damage_reduction_next_turn = maxi(
-			target.outgoing_damage_reduction_next_turn,
-			int(args.get("amount", 0)),
+		var target_slot := "active" if target_player_idx != player_idx else source_slot
+		var error := _register_transient_modifier(
+			state, player_idx, source_slot, target_player_idx, target_slot,
+			VMModifierManager.MODIFY_DAMAGE, "attacker_adjust", "until_end_of_turn",
+			{"expires_after_turn": state.turn_number + (1 if target_player_idx != player_idx else 0)},
+			{"kind": "damage_delta", "amount": -abs(int(args.get("amount", 0)))},
+			"maximum",
 		)
+		if not error.is_empty():
+			return VMResult.fail(error, "invalid_modifier_descriptor")
 	return VMResult.ok()
 
 
@@ -262,7 +282,15 @@ func apply_self_attack_lock(
 		var scope := str(args.get("scope", "attack")).to_lower()
 		var lock_key := "__all__" if scope == "all" else str(args.get("attack_name", ""))
 		if not lock_key.is_empty():
-			target.attack_locked_names[lock_key] = state.turn_number
+			var error := _register_transient_modifier(
+				state, player_idx, source_slot, player_idx, source_slot,
+				VMModifierManager.CAN_ATTACK, "permission",
+				"until_end_of_opponents_next_turn",
+				{"expires_after_turn": state.turn_number + 2},
+				{"kind": "attack_lock", "attack_name": lock_key},
+			)
+			if not error.is_empty():
+				return VMResult.fail(error, "invalid_modifier_descriptor")
 	return VMResult.ok()
 
 
@@ -276,10 +304,58 @@ func apply_prevention(
 	var target := state.get_player(player_idx).get_pokemon(source_slot)
 	if target:
 		if prevent_damage:
-			target.damage_prevented_next_turn = true
+			var damage_error := _register_transient_modifier(
+				state, player_idx, source_slot, player_idx, source_slot,
+				VMModifierManager.MODIFY_DAMAGE, "prevent",
+				"until_end_of_opponents_next_turn",
+				{"expires_after_turn": state.turn_number + 1},
+				{"kind": "prevent_damage"},
+			)
+			if not damage_error.is_empty():
+				return VMResult.fail(damage_error, "invalid_modifier_descriptor")
 		if prevent_effects:
-			target.all_prevented_next_turn = true
+			var effect_error := _register_transient_modifier(
+				state, player_idx, source_slot, player_idx, source_slot,
+				VMModifierManager.PREVENT_EFFECTS, "prevent",
+				"until_end_of_opponents_next_turn",
+				{"expires_after_turn": state.turn_number + 1},
+				{"kind": "prevent_effects"},
+			)
+			if not effect_error.is_empty():
+				return VMResult.fail(effect_error, "invalid_modifier_descriptor")
 	return VMResult.ok()
+
+
+static func _register_transient_modifier(
+	state: GameState,
+	source_player_idx: int,
+	source_slot: String,
+	target_player_idx: int,
+	target_slot: String,
+	hook: String,
+	layer: String,
+	duration: String,
+	condition: Dictionary,
+	operation: Dictionary,
+	stacking: String = "replace_same_source",
+) -> String:
+	var source := state.get_player(source_player_idx).get_pokemon(source_slot)
+	var target := state.get_player(target_player_idx).get_pokemon(target_slot)
+	if source == null or target == null:
+		return "Modifier来源或目标不存在。"
+	return target.register_modifier(VMModifierManager.descriptor(
+		hook,
+		layer,
+		0,
+		target_player_idx,
+		VMModifierManager.source_pokemon_ref(
+			source_player_idx, source_slot, source.card_id),
+		"self",
+		duration,
+		stacking,
+		condition,
+		operation,
+	))
 
 
 func apply_status(
@@ -295,7 +371,7 @@ func apply_status(
 	if pokemon == null:
 		return VMResult.fail("没有状态目标。")
 	if (
-		pokemon.all_prevented_next_turn
+		pokemon.prevents_effects()
 		and stack.is_blockable_opponent_attack_effect(source_player_idx, target_player_idx)
 	):
 		return VMResult.ok("状态效果被免疫。")

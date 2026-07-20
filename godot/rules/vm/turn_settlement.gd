@@ -60,7 +60,7 @@ func end_turn(
 		checkup_causes[key] = existing
 	stack.context["knockout_causes"] = checkup_causes
 	var ko_result := knockout_settlement.resolve_knockouts(
-		state, actor, events, false, stack)
+		state, actor, events, false, stack, rng)
 	if not bool(ko_result.get("success", false)):
 		return StepResult.new(
 			false,
@@ -97,19 +97,20 @@ func finish_end_turn_after_knockouts(
 		knockout_settlement.append_game_over_event(events, state)
 		state.resolution_stack = ResolutionStack.new().to_dict()
 		return StepResult.new(true, "对局结束。", null, events, state.winner, true)
+	# Descriptor lifetimes are evaluated at a single transaction boundary for
+	# both players. This prevents effects on the incoming player from lingering
+	# one extra turn merely because only the outgoing board was traversed. This
+	# loop also includes the outgoing board, so it must not be traversed once
+	# separately above and then a second time here.
+	for player_idx in range(state.players.size()):
+		var board := state.get_player(player_idx)
+		if board.active != null:
+			board.active.expire_modifiers_at_turn(state.turn_number)
+		for pokemon_value in board.bench:
+			var pokemon: PokemonState = pokemon_value
+			if pokemon != null:
+				pokemon.expire_modifiers_at_turn(state.turn_number)
 	var outgoing := state.get_player(actor)
-	for row in outgoing.get_all_pokemon():
-		var pokemon: PokemonState = row["pokemon"]
-		if pokemon:
-			pokemon.outgoing_damage_reduction_next_turn = 0
-			pokemon.dazzled = false
-			pokemon.attack_locked = false
-			var expired: Array[String] = []
-			for attack_name in pokemon.attack_locked_names:
-				if state.turn_number >= int(pokemon.attack_locked_names[attack_name]) + 2:
-					expired.append(str(attack_name))
-			for attack_name in expired:
-				pokemon.attack_locked_names.erase(attack_name)
 	outgoing.was_ko_by_attack = false
 	state.advance_turn_facts()
 	state.active_player_idx = 1 - actor

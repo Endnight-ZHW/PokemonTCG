@@ -3,7 +3,8 @@ import copy
 import random
 from engine.rules_constants import COIN_FLIP_THRESHOLD
 from engine.enums import TurnPhase, StatusType, PlayerAction
-from engine.game_state import GameState, ActionResult
+from engine.game_state import GameState, ActionRequest, ActionResult
+from engine.actions import AttachmentRef
 from engine.events.game_events import GameEvent
 from engine.rules_validator import (
     can_play_basic, can_evolve, can_attach_energy, can_play_supporter,
@@ -452,7 +453,104 @@ class ActionResolver:
         bench_idx: int,
         energy_indices: list[int] | tuple[int, ...] | None = None,
     ) -> ActionResult:
-        ok, reason = can_retreat(self.state, player_idx, bench_idx, energy_indices)
+        # Public RETREAT is an intent.  The authoritative engine exposes the
+        # attached Energy entities only after the intent has passed preflight;
+        # a caller can no longer smuggle a payment through action params.
+        ok, reason = can_retreat(self.state, player_idx, bench_idx)
+        if not ok:
+            return ActionResult(False, reason)
+
+        player = self.state.get_player(player_idx)
+        from engine.rules_validator import _get_effective_retreat_cost
+        retreat_cost = _get_effective_retreat_cost(self.state, player)
+        if retreat_cost > 0 and energy_indices is None:
+            from engine.rules_validator import energy_card_units
+
+            active = player.active
+            frame_id = (
+                f"retreat:{getattr(self.state, 'revision', 0)}:"
+                f"{player_idx}:{bench_idx}"
+            )
+            targets = [
+                {
+                    "player": player_idx,
+                    "slot": "active",
+                    "attachment_type": "energy",
+                    "index": index,
+                    "card_id": card.api_id,
+                    "label": card.name,
+                    "units": energy_card_units(card, active),
+                }
+                for index, card in enumerate(active.energy_cards)
+            ]
+            continuation = {
+                "kind": "retreat_payment",
+                "domain": "action",
+                "purpose": "retreat_payment",
+                "frame_id": frame_id,
+                "actor": player_idx,
+                "bench_idx": bench_idx,
+                "required_units": retreat_cost,
+                "source_player": player_idx,
+                "source_slot": "active",
+                "source_zone": "field",
+                "same_source": True,
+            }
+            request = ActionRequest(
+                "select_retreat_payment",
+                player_idx,
+                "请选择用于支付撤退费用的能量。",
+                min_select=1,
+                max_select=len(targets),
+                callback=lambda selected: self._complete_retreat_payment(
+                    player_idx,
+                    bench_idx,
+                    selected,
+                ),
+                target_info=targets,
+                can_cancel=True,
+                continuation=continuation,
+            )
+            return ActionResult(True, "请选择撤退费用。", pending_action=request)
+
+        return self._complete_retreat(player_idx, bench_idx, energy_indices or ())
+
+    def _complete_retreat_payment(
+        self,
+        player_idx: int,
+        bench_idx: int,
+        selected,
+    ) -> ActionResult:
+        player = self.state.get_player(player_idx)
+        active = player.active
+        if active is None or not isinstance(selected, (list, tuple)):
+            return ActionResult(False, "撤退支付选择无效。")
+        indices: list[int] = []
+        for ref in selected:
+            if (
+                not isinstance(ref, AttachmentRef)
+                or ref.player != player_idx
+                or ref.slot != "active"
+                or ref.attachment_type != "energy"
+                or not (0 <= ref.index < len(active.energy_cards))
+                or active.energy_cards[ref.index].api_id != ref.card_id
+            ):
+                return ActionResult(False, "撤退支付包含已失效的能量引用。")
+            indices.append(ref.index)
+        return self._complete_retreat(player_idx, bench_idx, indices)
+
+    def _complete_retreat(
+        self,
+        player_idx: int,
+        bench_idx: int,
+        energy_indices: list[int] | tuple[int, ...],
+    ) -> ActionResult:
+        ok, reason = can_retreat(
+            self.state,
+            player_idx,
+            bench_idx,
+            energy_indices,
+        )
         if not ok:
             return ActionResult(False, reason)
 
@@ -525,6 +623,7 @@ class ActionResolver:
         # Check dazzling_beam marker (炫目光束 effect)
         if attacker.dazzled:
             attacker.dazzled = False
+            attacker.consume_modifier_operation("attack_gate_coin", "dazzled")
             source = getattr(self.state, "random_source", None)
             coin = ("heads" if source.coin() else "tails") if source else random.choice(["heads", "tails"])
             self.state.event_stream.push(GameEvent("coin_flip", {

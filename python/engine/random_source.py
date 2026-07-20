@@ -8,6 +8,12 @@ from typing import Iterable, MutableSequence, TypeVar
 T = TypeVar("T")
 
 
+# Version of the authoritative RNG consumption contract.  The xorshift32
+# bitstream remains algorithm v1; v2 moves coin outcomes into rule execution
+# before the display acknowledgement is published.
+RNG_SCHEMA_VERSION = 2
+
+
 class RandomSource:
     """Legacy MT19937 source used by existing Python training checkpoints."""
 

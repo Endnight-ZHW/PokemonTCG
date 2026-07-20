@@ -105,6 +105,27 @@ class PendingContinuationTests(unittest.TestCase):
         self.assertEqual(len(state.p1.discard), 0)
         self.assertIsNotNone(state.resolution_stack["pending_request"])
 
+    def test_tampered_pending_card_ref_fails_closed_without_mutation(self):
+        engine, state, request = self._state_with_pending_discard()
+        payload = snapshot_to_dict(snapshot_state(state))
+        pending = payload["resolution_stack"]["pending_request"]
+        pending["options"][0]["ref"]["index"] = 1
+        restored = state_from_snapshot(snapshot_from_dict(payload))
+        rng = ScriptedRandomSource([True, False], seed=19)
+        before = snapshot_state(restored)
+        before_rng = rng.getstate()
+
+        result = engine.apply_choice(
+            restored,
+            ChoiceResponse(request.request_id, (request.options[0].option_id,)),
+            rng,
+        )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error_code, "invalid_pending_choice")
+        self.assertEqual(snapshot_state(restored), before)
+        self.assertEqual(rng.getstate(), before_rng)
+
     def test_attack_snapshot_restores_remaining_damage_and_turn_frames(self):
         state = GameState()
         state.phase = TurnPhase.MAIN

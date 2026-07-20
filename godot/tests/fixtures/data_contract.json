@@ -1461,6 +1461,7 @@
   "fixture_version": 2,
   "portable_rng": {
     "algorithm": "xorshift32",
+    "schema_version": 2,
     "seed": 20260620,
     "uint32": [
       524962086,
@@ -1474,13 +1475,14 @@
     ]
   },
   "schema": {
-    "encoder_version": 3,
-    "godot_action_version": 3,
-    "godot_rules_version": 4,
+    "encoder_version": 5,
+    "godot_action_version": 4,
+    "godot_rules_version": 6,
     "planner_version": 1,
-    "protocol_version": 4,
-    "python_action_version": 2,
-    "python_rules_version": 3
+    "protocol_version": 6,
+    "python_action_version": 3,
+    "python_rules_version": 5,
+    "rng_version": 2
   },
   "vm": {
     "command_shape": [
@@ -1488,9 +1490,9 @@
       "args",
       "branches"
     ],
-    "ir_version": 2,
+    "ir_version": 3,
     "legacy_effect_type_args_allowed": false,
     "runtime_effect_source": "compiled_effects"
   },
-  "vm_version": 2
+  "vm_version": 3
 }

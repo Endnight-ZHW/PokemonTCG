@@ -370,46 +370,6 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                 priority=priority,
             )
 
-    # Backward-compatible fallbacks for cards created outside CardRegistry.
-    if sc.api_id == "svi-dtur" and not getattr(sc, "energy_effects", None):
-        def dtur_mod(data: dict) -> dict | None:
-            attacker = data.get("attacker")
-            if attacker is not None and sc in getattr(attacker, "energy_cards", []):
-                return {"delta": -20, "source": "双重涡轮能量", "stage": "attacker"}
-            return None
-        _register_mbf_hook(
-            event_bus,
-            MODIFY_DAMAGE,
-            dtur_mod,
-            source=source,
-            owner_player=player_idx,
-            priority=30,
-        )
-
-    if sc.api_id == "svi-mirc" and not getattr(sc, "energy_effects", None):
-        def mirc_react(data: dict) -> dict | None:
-            defender = data.get("defender")
-            state = data.get("state")
-            if defender and state:
-                # Check if this energy is attached to the defender
-                for scc in defender.energy_cards:
-                    if scc is sc:
-                        from engine.commands.trigger_commands import trigger_draw_cards_spec
-
-                        return {
-                            "source": "幸运能量",
-                            "command_specs": [trigger_draw_cards_spec(player_idx, 1, "幸运能量")],
-                        }
-            return None
-        _register_mbf_hook(
-            event_bus,
-            AFTER_DAMAGE,
-            mirc_react,
-            source=source,
-            owner_player=player_idx,
-            priority=20,
-        )
-
     # 喷射能量 (Jet Energy): switch on attach to bench
     # Handled separately in energy attach flow — event-based registration
     # not needed since it's an on-attach trigger, not a damage modifier.
@@ -563,7 +523,14 @@ def register_tool_effect_modifier(
                         source_name,
                         select_source=True,
                         optional=True,
-                        target_tool_id="svg2-exps",
+                        target_tool_id=str(
+                            getattr(
+                                getattr(pokemon, "attached_tool", None),
+                                "api_id",
+                                "",
+                            )
+                            or ""
+                        ),
                     )
                 ],
             }

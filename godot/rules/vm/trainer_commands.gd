@@ -278,7 +278,12 @@ func recover_from_discard_request(
 				"energy_count": energy_count,
 			},
 			0, min(clara_available.size(), pokemon_count + energy_count),
-			"选择弃牌区中的宝可梦和基本能量。", true)
+			"选择弃牌区中的宝可梦和基本能量。", true,
+			{
+				"pokemon_count": pokemon_count,
+				"energy_count": energy_count,
+			},
+		)
 
 	var available := catalog.filter_cards(
 		player.discard,

@@ -15,8 +15,8 @@ def register_coin_continuations(registry, stack) -> None:
     )
     registry.register(
         "coin_energy_discard",
-        lambda _req, _cont, choice, player_idx, _slot:
-            resolve_coin_energy_discard(stack, choice, player_idx),
+        lambda _req, cont, choice, player_idx, _slot:
+            resolve_coin_energy_discard(stack, cont, choice, player_idx),
     )
     registry.register(
         "discard_attachment",
@@ -34,7 +34,8 @@ def continue_flip_coin_branch(
 ):
     from engine.game_state import ActionResult
 
-    results = [bool(item) for item in (choice or [])]
+    results = _coin_results(continuation, choice)
+    _emit_coin_event(stack, results)
     is_heads = bool(results and results[0])
     cn = "正面" if is_heads else "反面"
     stack.state._log(f"掷硬币: {cn}!")
@@ -83,7 +84,8 @@ def resolve_coin_special(
         _queue_or_apply_opponent_active_damage,
     )
 
-    results = [bool(item) for item in (choice or [])]
+    results = _coin_results(continuation, choice)
+    _emit_coin_event(stack, results)
     heads = sum(1 for result in results if result)
     coin_kind = str(continuation.get("coin_kind", "repeat_damage") or "repeat_damage")
     params = dict(continuation.get("params", {}) or {})
@@ -100,7 +102,9 @@ def resolve_coin_special(
             remaining = target.current_hp
             counters = max(1, (remaining + DAMAGE_PER_COUNTER - 1) // DAMAGE_PER_COUNTER)
             target.damage_counters += counters
-            target.pending_ko_cause = "attack_effect"
+            # Preserve the direct-KO cause through shared settlement so the
+            # exported TurnFactBook matches the Godot VM descriptor.
+            target.pending_ko_cause = "direct_knockout"
             stack.state._log(f"{target.card.name}被大树切割击倒！")
             return ActionResult(True, f"{target.card.name}被击倒！", pokemon_ko=["opponent_active"])
         stack.state._log("大树切割失败。")
@@ -124,6 +128,7 @@ def resolve_coin_special(
             total,
             "",
             f"硬币伤害: {total}。",
+            stack=stack,
         )
         if result is not None:
             return result
@@ -132,12 +137,14 @@ def resolve_coin_special(
 
 def resolve_coin_energy_discard(
     stack,
+    continuation: dict,
     choice,
     player_idx: int,
 ):
     from engine.game_state import ActionRequest, ActionResult
 
-    results = [bool(item) for item in (choice or [])]
+    results = _coin_results(continuation, choice)
+    _emit_coin_event(stack, results)
     is_heads = bool(results and results[0])
     cn = "正面" if is_heads else "反面"
     stack.state._log(f"掷硬币: {cn}!")
@@ -194,3 +201,22 @@ def resolve_discard_attachment(stack, choice):
     stack.state.get_player(ref.player).discard.append(discarded_energy)
     stack.state._log(f"从{target_poke.card.name}身上丢弃了{discarded_energy.name}。")
     return ActionResult(True, f"粉碎之锤：丢弃了{target_poke.card.name}的1个能量。")
+
+
+def _coin_results(continuation: dict, _choice) -> list[bool]:
+    """Read only command-authored outcomes; choice payload is an ack."""
+    raw = continuation.get("results", []) if isinstance(continuation, dict) else []
+    if (
+        not isinstance(raw, list)
+        or not raw
+        or len(raw) > 32
+        or not all(type(item) is bool for item in raw)
+    ):
+        raise ValueError("coin continuation lacks authoritative results")
+    return list(raw)
+
+
+def _emit_coin_event(stack, results: list[bool]) -> None:
+    from engine.events.game_events import GameEvent
+
+    stack.state.event_stream.push(GameEvent("coin_flip", {"results": list(results)}))

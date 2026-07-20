@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-import re
+import json
 from typing import Any
 
 from data.card_registry import CardRegistry
@@ -351,18 +351,14 @@ def assert_card_rules_consistent(
     return matrix
 
 
-def load_godot_vm_ops(vm_contract_path: str | Path) -> frozenset[str]:
-    """Read ``NATIVE_COMMAND_OPS`` from Godot's checked-in VM contract."""
-    path = Path(vm_contract_path)
-    text = path.read_text(encoding="utf-8")
-    match = re.search(
-        r"const\s+NATIVE_COMMAND_OPS[^=]*=\s*\[(.*?)\]\s*const\s+BRANCH_KEYS",
-        text,
-        flags=re.DOTALL,
-    )
-    if match is None:
-        raise ValueError(f"Unable to locate NATIVE_COMMAND_OPS in {path}")
-    ops = frozenset(re.findall(r'"([^"]+)"', match.group(1)))
+def load_godot_vm_ops(descriptor_path: str | Path) -> frozenset[str]:
+    """Read the generated descriptor inventory consumed by Godot."""
+    path = Path(descriptor_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    descriptors = payload.get("descriptors")
+    if not isinstance(descriptors, dict):
+        raise ValueError(f"Godot VM descriptor payload is invalid in {path}")
+    ops = frozenset(str(op) for op in descriptors)
     if not ops:
         raise ValueError(f"Godot VM op inventory is empty in {path}")
     return ops

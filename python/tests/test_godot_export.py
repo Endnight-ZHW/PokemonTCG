@@ -19,10 +19,81 @@ from scripts.export_godot_data import (
     _validate_image_mapping,
     export,
 )
+from engine.actions import ChoiceOption
+from engine.ai.dl.encoder import ActionStateEncoder, card_bucket
+from engine.ai.observation import Observation
 from engine.game_state import GameState
+from engine.commands.descriptors import descriptor_export_payload
+from engine.commands.vm_contract import VM_IR_VERSION
 
 
 class GodotDataExportTests(unittest.TestCase):
+    def test_choice_encoder_uses_only_choice_view_v2_public_identity(self):
+        observation = Observation(
+            perspective=1,
+            turn_number=1,
+            phase="MAIN",
+            active_player=1,
+            winner=None,
+            own_hand=(),
+            own_discard=(),
+            own_deck_count=0,
+            own_prize_count=0,
+            opponent_hand_count=0,
+            opponent_discard=(),
+            opponent_deck_count=0,
+            opponent_prize_count=0,
+            board=(),
+            stadium_id="",
+            public_deck_keys=(None, None),
+            apply_type_matchups=False,
+        )
+        encoder = ActionStateEncoder()
+        known_card = object()
+
+        def lookup(card_id):
+            return known_card if card_id == "sv2-cand" else None
+
+        with mock.patch(
+            "engine.ai.dl.encoder.CardRegistry.get",
+            side_effect=lookup,
+        ):
+            private_value = encoder.encode_choice_option(
+                observation,
+                "select_card",
+                ChoiceOption(
+                    "opaque-option",
+                    "private value must stay private",
+                    value={"card_id": "sv2-cand"},
+                ),
+            )
+            malformed_ref = encoder.encode_choice_option(
+                observation,
+                "select_pokemon",
+                ChoiceOption(
+                    "opaque-ref",
+                    "legacy seven-field ref",
+                    ref={
+                        "kind": "pokemon",
+                        "player": 1,
+                        "zone": "",
+                        "slot": "bench_0",
+                        "index": -1,
+                        "attachment_type": "",
+                        "card_id": "sv2-cand",
+                    },
+                ),
+            )
+            option_id_fallback = encoder.encode_choice_option(
+                observation,
+                "select_card",
+                ChoiceOption("card:hand:1:sv2-cand", "known public ID"),
+            )
+
+        self.assertEqual(private_value.card_id, 0)
+        self.assertEqual(malformed_ref.card_id, 0)
+        self.assertEqual(option_id_fallback.card_id, card_bucket("sv2-cand"))
+
     def test_state_adapter_covers_rules_v4_and_snapshot_v2_fields(self):
         state = GameState()
         state.stadium_owner_idx = 1
@@ -209,6 +280,23 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(len(first_contract["effect_examples"]), 77)
             self.assertEqual(len(first_contract["compiled_effect_examples"]), 77)
             self.assertTrue(all(size == 60 for size in first_contract["deck_sizes"].values()))
+            first_descriptors = json.loads(
+                (first / "data" / "vm_command_descriptors.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            second_descriptors = json.loads(
+                (second / "data" / "vm_command_descriptors.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(first_descriptors, second_descriptors)
+            self.assertEqual(
+                first_descriptors,
+                descriptor_export_payload(VM_IR_VERSION),
+            )
+            self.assertEqual(len(first_descriptors["descriptors"]), 80)
+            self.assertEqual(len(first_descriptors["descriptor_digest"]), 64)
             rules = json.loads(
                 (first / "tests" / "fixtures" / "rules_golden.json").read_text(
                     encoding="utf-8"
@@ -239,7 +327,28 @@ class GodotDataExportTests(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
-            self.assertEqual(coverage["coverage_version"], 2)
+            self.assertEqual(coverage["coverage_version"], 3)
+            descriptor_contract = coverage["vm_descriptor_contract"]
+            self.assertEqual(
+                descriptor_contract["descriptor_digest"],
+                first_descriptors["descriptor_digest"],
+            )
+            self.assertEqual(
+                descriptor_contract["descriptor_ops"],
+                descriptor_contract["handler_ops"],
+            )
+            self.assertEqual(
+                descriptor_contract["descriptor_ops"],
+                descriptor_contract["preflight_ops"],
+            )
+            self.assertEqual(
+                descriptor_contract["descriptor_ops"],
+                descriptor_contract["golden_ops"],
+            )
+            self.assertEqual(
+                descriptor_contract["descriptor_ops"],
+                descriptor_contract["executed_ops"],
+            )
             self.assertEqual(
                 coverage["counts"],
                 {
@@ -251,23 +360,40 @@ class GodotDataExportTests(unittest.TestCase):
                     "public_player_actions": 9,
                     "traced_public_player_actions": 9,
                     "semantic_release_effect_types": 16,
-                    "semantic_registered_vm_ops": 16,
+                    "semantic_registered_vm_ops": 80,
                 },
             )
             semantic_inventory = coverage["semantic_trace_inventory"]
             self.assertEqual(semantic_inventory["case_count"], 23)
-            self.assertEqual(semantic_inventory["transaction_step_count"], 31)
+            self.assertEqual(semantic_inventory["transaction_step_count"], 32)
+            self.assertEqual(semantic_inventory["native_vm_case_count"], 80)
+            self.assertEqual(
+                semantic_inventory["native_vm_fixture"],
+                "vm_native_golden.json",
+            )
             self.assertEqual(
                 len(semantic_inventory["release_effect_types_not_executed"]),
                 61,
             )
             self.assertEqual(
                 len(semantic_inventory["registered_vm_ops_not_executed"]),
-                64,
+                0,
             )
             self.assertEqual(
-                semantic_inventory["known_cross_runtime_semantic_gaps"][0]["family"],
-                "coin",
+                len(semantic_inventory["registered_vm_ops_executed"]),
+                80,
+            )
+            self.assertEqual(
+                semantic_inventory["registered_vm_ops_executed"],
+                sorted(semantic_inventory["registered_vm_ops_executed"]),
+            )
+            semantic_gaps = semantic_inventory[
+                "known_cross_runtime_semantic_gaps"
+            ]
+            self.assertEqual(len(semantic_gaps), 1)
+            self.assertEqual(
+                (semantic_gaps[0]["op"], semantic_gaps[0]["field"]),
+                ("attach_energy_from_discard", "pending"),
             )
             self.assertEqual(
                 semantic_inventory["release_effect_types_executed"],
@@ -306,11 +432,43 @@ class GodotDataExportTests(unittest.TestCase):
             )
             self.assertEqual(
                 coverage["semantic_trace_inventory"]["explicitly_not_claimed"],
-                [
-                    "all_release_effect_semantics",
-                    "all_registered_vm_op_semantics",
-                ],
+                ["all_release_effect_semantics"],
             )
+            native_vm = json.loads(
+                (first / "tests" / "fixtures" / "vm_native_golden.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(native_vm["fixture_version"], 2)
+            self.assertEqual(
+                native_vm["contract"]["name"],
+                "native-vm-semantic-parity-v2",
+            )
+            self.assertEqual(
+                native_vm["counts"],
+                {
+                    "registered_ops": 80,
+                    "executed_ops": 80,
+                    "successful_ops": 80,
+                    "pending_ops": 28,
+                    "continued_ops": 27,
+                    "choice_rounds": 33,
+                },
+            )
+            self.assertEqual(len(native_vm["cases"]), 80)
+            self.assertEqual(native_vm["registered_ops"], native_vm["executed_ops"])
+            self.assertEqual(
+                native_vm["executed_ops"],
+                semantic_inventory["registered_vm_ops_executed"],
+            )
+            self.assertEqual(
+                native_vm["known_cross_runtime_semantic_gaps"],
+                semantic_gaps,
+            )
+            for op, vm_case in native_vm["cases"].items():
+                self.assertEqual(vm_case["command_spec"]["op"], op)
+                self.assertEqual(vm_case["descriptor"]["op"], op)
+                self.assertTrue(vm_case["expected"]["success"])
             potion_case = rules["cases"]["potion_heal_choice"]
             self.assertEqual(
                 potion_case["trace"][0]["expected"]["players"][0]["discard"],
@@ -356,6 +514,46 @@ class GodotDataExportTests(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
+            self.assertEqual(encoder_fixture["fixture_version"], 2)
+            choice_view = encoder_fixture["choice"]
+            self.assertEqual(
+                set(choice_view),
+                {
+                    "schema_version",
+                    "request_id",
+                    "base_revision",
+                    "player",
+                    "request_type",
+                    "prompt",
+                    "options",
+                    "min_select",
+                    "max_select",
+                    "allow_duplicates",
+                    "can_cancel",
+                    "presentation",
+                },
+            )
+            self.assertEqual(choice_view["schema_version"], 2)
+            self.assertGreaterEqual(choice_view["base_revision"], 0)
+            for option in choice_view["options"]:
+                self.assertNotIn("value", option)
+                ref = option.get("ref")
+                if ref is None:
+                    continue
+                expected_ref_fields = {
+                    "card": {"kind", "player", "zone", "index", "card_id"},
+                    "pokemon": {"kind", "player", "slot", "card_id"},
+                    "slot": {"kind", "player", "slot"},
+                    "attachment": {
+                        "kind",
+                        "player",
+                        "slot",
+                        "attachment_type",
+                        "index",
+                        "card_id",
+                    },
+                }
+                self.assertEqual(set(ref), expected_ref_fields[ref["kind"]])
             self.assertEqual(len(encoder_fixture["expected"]["state_numeric"]), 960)
             self.assertEqual(len(encoder_fixture["expected"]["state_cards"]), 96)
             self.assertTrue(

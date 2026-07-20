@@ -164,7 +164,7 @@ func continue_energy_attach_distribution(
 	)
 	for row in removal_order:
 		source.remove_at(int(row.get("source_index", -1)))
-	var trigger_commands_to_resolve: Array[Dictionary] = []
+	var trigger_candidates: Array[Dictionary] = []
 	for row in plan:
 		var energy_id := str(row.get("card_id", ""))
 		var source_index := int(row.get("source_index", -1))
@@ -173,6 +173,7 @@ func continue_energy_attach_distribution(
 		if target == null:
 			return VMResult.fail("附能目标已不存在。", "stale_choice")
 		target.energy_card_ids.append(energy_id)
+		var attachment_index := target.energy_card_ids.size() - 1
 		events.append({
 				"event_type": "energy_attached",
 				"actor": player_idx,
@@ -194,20 +195,22 @@ func continue_energy_attach_distribution(
 					"source_index": source_index,
 				},
 			})
-		trigger_commands.collect_on_attach_commands(
+		trigger_commands.collect_on_attach_triggers(
 			energy_id,
 			player_idx,
 			target_slot,
 			zone,
-			trigger_commands_to_resolve,
+			trigger_candidates,
+			attachment_index,
 		)
-	var trigger_result := trigger_commands.resolve_commands(
-		state,
-		player_idx,
-		trigger_commands_to_resolve,
-		events,
+	var trigger_result := trigger_commands.queue_candidates(
 		stack,
-	)
+		trigger_candidates,
+		VMModifierManager.ON_ATTACH,
+		state.active_player_idx,
+		"apnap",
+		"effect",
+	) if not trigger_candidates.is_empty() else VMResult.ok()
 	if not bool(trigger_result.get("success", false)):
 		return trigger_result
 	if zone == "deck":

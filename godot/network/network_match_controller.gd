@@ -179,7 +179,7 @@ func poll() -> Array[Dictionary]:
 				if host:
 					if session == null:
 						session = AuthoritativeSession.new(room_id, catalog)
-					_send(ProtocolV4.WELCOME, {
+					_send(ProtocolV6.WELCOME, {
 						"player_idx": 1,
 						"rules_version": AppState.RULES_SCHEMA_VERSION,
 						"action_version": AppState.ACTION_SCHEMA_VERSION,
@@ -225,7 +225,7 @@ func poll() -> Array[Dictionary]:
 		and connection_phase != ConnectionPhase.CLOSED
 		and now - last_send_msec >= HEARTBEAT_INTERVAL_MSEC
 	):
-		_send(ProtocolV4.PING, {}, get_revision())
+		_send(ProtocolV6.PING, {}, get_revision())
 	if (
 		connected
 		and connection_phase != ConnectionPhase.CLOSED
@@ -263,6 +263,8 @@ func submit_action(action: GameAction) -> bool:
 			send_sequence + 1,
 		]
 	action.actor = player_idx
+	action.base_revision = get_revision()
+	action.schema_version = GameAction.SCHEMA_VERSION
 	if host:
 		var step := session.submit_action(0, action.to_dict())
 		if not step.success:
@@ -278,7 +280,7 @@ func submit_action(action: GameAction) -> bool:
 		return true
 	var base_revision := get_revision()
 	var sent := _send(
-		ProtocolV4.ACTION_SUBMIT,
+		ProtocolV6.ACTION_SUBMIT,
 		{"action": action.to_dict()},
 		get_revision(),
 		action.action_id,
@@ -310,7 +312,7 @@ func submit_choice(response: ChoiceResponse) -> bool:
 		return true
 	var base_revision := get_revision()
 	var sent := _send(
-		ProtocolV4.CHOICE_SUBMIT,
+		ProtocolV6.CHOICE_SUBMIT,
 		{"response": response.to_dict()},
 		get_revision(),
 		"",
@@ -338,7 +340,7 @@ func surrender() -> void:
 				return
 			_broadcast_state(step.events)
 	else:
-		_send(ProtocolV4.SURRENDER, {}, get_revision())
+		_send(ProtocolV6.SURRENDER, {}, get_revision())
 
 
 func request_resync() -> void:
@@ -346,7 +348,7 @@ func request_resync() -> void:
 		if resync_in_progress:
 			return
 		resync_in_progress = true
-		_send(ProtocolV4.RESYNC_REQUEST, {}, get_revision())
+		_send(ProtocolV6.RESYNC_REQUEST, {}, get_revision())
 
 
 func submission_locked() -> bool:
@@ -401,10 +403,10 @@ func _handle_message(message: Variant) -> void:
 		not host
 		and room_id.is_empty()
 		and message is Dictionary
-		and str(message.get("message_type", "")) == ProtocolV4.WELCOME
+		and str(message.get("message_type", "")) == ProtocolV6.WELCOME
 	):
 		room_id = str(message.get("room_id", ""))
-	var validation := ProtocolV4.validate(
+	var validation := ProtocolV6.validate(
 		message,
 		room_id,
 		1 if host else 0,
@@ -415,7 +417,7 @@ func _handle_message(message: Variant) -> void:
 		var recoverable_gap := code == "sequence_gap" and message is Dictionary
 		if recoverable_gap:
 			# The envelope has already passed all structural, room and sender
-			# validation before ProtocolV4 reports a gap.  Adopt its sequence as a
+			# validation before ProtocolV6 reports a gap.  Adopt its sequence as a
 			# recovery fence, discard its payload, and request a fresh snapshot.
 			# Otherwise every later RESYNC reply is rejected against the same gap.
 			receive_sequence = int(Dictionary(message).get("sequence", receive_sequence))
@@ -423,8 +425,8 @@ func _handle_message(message: Variant) -> void:
 		var origin_request_id := _envelope_identifier(message, "request_id")
 		if host:
 			_send(
-				ProtocolV4.ERROR,
-				ProtocolV4.error_payload(
+				ProtocolV6.ERROR,
+				ProtocolV6.error_payload(
 					code, str(validation.get("message", "消息无效。"))
 				),
 				get_revision(),
@@ -446,22 +448,25 @@ func _handle_message(message: Variant) -> void:
 	var payload: Dictionary = row["payload"]
 	receive_sequence = int(validation["sequence"])
 	last_receive_msec = Time.get_ticks_msec()
-	var payload_validation := ProtocolV4.validate_payload(message_type, payload)
+	var payload_validation := ProtocolV6.validate_payload(message_type, payload)
 	if not bool(payload_validation.get("ok", false)):
 		var code := str(payload_validation.get("code", "invalid_payload"))
 		var message_text := str(payload_validation.get("message", "消息内容无效。"))
+		if message_type == ProtocolV6.STATE_UPDATE:
+			message_text += " groups=%s" % JSON.stringify(
+				payload.get("legal_action_groups", []))
 		var origin_action_id := str(row.get("action_id", ""))
 		var origin_request_id := str(row.get("request_id", ""))
 		if host:
 			_send(
-				ProtocolV4.ERROR,
-				ProtocolV4.error_payload(code, message_text),
+				ProtocolV6.ERROR,
+				ProtocolV6.error_payload(code, message_text),
 				get_revision(),
 				origin_action_id,
 				origin_request_id,
 			)
 		else:
-			if message_type == ProtocolV4.STATE_UPDATE:
+			if message_type == ProtocolV6.STATE_UPDATE:
 				request_resync()
 		events.append({
 			"type": "error",
@@ -472,7 +477,7 @@ func _handle_message(message: Variant) -> void:
 		})
 		return
 	if (
-		message_type == ProtocolV4.STATE_UPDATE
+		message_type == ProtocolV6.STATE_UPDATE
 		and int(row["state_revision"])
 		!= int(Dictionary(payload["state"]).get("revision", -1))
 	):
@@ -498,7 +503,7 @@ func _handle_host_message(
 	payload: Dictionary,
 ) -> void:
 	match message_type:
-		ProtocolV4.DECK_SELECT:
+		ProtocolV6.DECK_SELECT:
 			if connection_phase != ConnectionPhase.LOBBY:
 				_reject("invalid_phase", "牌组只能在大厅阶段选择。")
 				return
@@ -519,7 +524,7 @@ func _handle_host_message(
 				return
 			var deck_key := str(payload.get("deck_key", ""))
 			if not catalog.decks.has(deck_key):
-				_send(ProtocolV4.ERROR, ProtocolV4.error_payload(
+				_send(ProtocolV6.ERROR, ProtocolV6.error_payload(
 					"invalid_deck", "未知牌组。"))
 				return
 			var resume_requested := bool(payload.get("resume", false))
@@ -557,13 +562,20 @@ func _handle_host_message(
 				rules_options,
 			)
 			if not result.success:
-				_send(ProtocolV4.ERROR, ProtocolV4.error_payload(
+				_send(ProtocolV6.ERROR, ProtocolV6.error_payload(
 					result.error_code, result.message))
 				return
 			connection_phase = ConnectionPhase.PLAYING
 			_broadcast_state(result.events)
-		ProtocolV4.ACTION_SUBMIT:
+		ProtocolV6.ACTION_SUBMIT:
 			if not _remote_message_allowed_while_playing(row):
+				return
+			if (
+				not str(row.get("action_id", "")).is_empty()
+				and str(row.get("action_id", "")) in session.state.processed_action_ids
+			):
+				_reject("duplicate_action", "动作已处理。", row)
+				_send_state_to_client()
 				return
 			if not _revision_matches(row):
 				return
@@ -580,7 +592,7 @@ func _handle_host_message(
 				str(row.get("action_id", "")),
 				str(row.get("request_id", "")),
 			)
-		ProtocolV4.CHOICE_SUBMIT:
+		ProtocolV6.CHOICE_SUBMIT:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			if not _revision_matches(row):
@@ -598,10 +610,10 @@ func _handle_host_message(
 				str(row.get("action_id", "")),
 				str(row.get("request_id", "")),
 			)
-		ProtocolV4.RESYNC_REQUEST:
+		ProtocolV6.RESYNC_REQUEST:
 			if _remote_message_allowed_while_playing(row):
 				_send_state_to_client()
-		ProtocolV4.SURRENDER:
+		ProtocolV6.SURRENDER:
 			if not _remote_message_allowed_while_playing(row):
 				return
 			var step := session.surrender(1)
@@ -609,8 +621,8 @@ func _handle_host_message(
 				_reject(step.error_code, step.message, row)
 				return
 			_broadcast_state(step.events)
-		ProtocolV4.PING:
-			_send(ProtocolV4.PONG)
+		ProtocolV6.PING:
+			_send(ProtocolV6.PONG)
 		_:
 			_reject("unexpected_message", "房主不接受该消息。")
 
@@ -621,7 +633,7 @@ func _handle_client_message(
 	payload: Dictionary,
 ) -> void:
 	match message_type:
-		ProtocolV4.WELCOME:
+		ProtocolV6.WELCOME:
 			if (
 				connection_phase != ConnectionPhase.LOBBY
 				or deck_selection_sent
@@ -655,7 +667,7 @@ func _handle_client_message(
 			rules_options = Dictionary(payload.get("rules_options", {})).duplicate(true)
 			player_idx = int(payload.get("player_idx", 1))
 			deck_selection_sent = _send(
-				ProtocolV4.DECK_SELECT,
+				ProtocolV6.DECK_SELECT,
 				{
 					"deck_key": local_deck_key,
 					"rules_version": AppState.RULES_SCHEMA_VERSION,
@@ -677,7 +689,7 @@ func _handle_client_message(
 				"room_id": room_id,
 				"rules_options": rules_options.duplicate(true),
 			})
-		ProtocolV4.STATE_UPDATE:
+		ProtocolV6.STATE_UPDATE:
 			if connection_phase not in [
 				ConnectionPhase.LOBBY,
 				ConnectionPhase.PLAYING,
@@ -727,7 +739,7 @@ func _handle_client_message(
 			})
 			if connection_phase == ConnectionPhase.CLOSED:
 				_clear_pending_submission()
-		ProtocolV4.ERROR:
+		ProtocolV6.ERROR:
 			var origins := _resolve_pending_error(row)
 			events.append({
 				"type": "error",
@@ -741,9 +753,9 @@ func _handle_client_message(
 				"stale_revision", "sequence_gap", "stale_sequence",
 			]:
 				request_resync()
-		ProtocolV4.PING:
-			_send(ProtocolV4.PONG)
-		ProtocolV4.PONG:
+		ProtocolV6.PING:
+			_send(ProtocolV6.PONG)
+		ProtocolV6.PONG:
 			pass
 		_:
 			events.append({
@@ -809,7 +821,7 @@ func _send_state_to_client(
 	if session == null or session.state == null:
 		return
 	_send(
-		ProtocolV4.STATE_UPDATE,
+		ProtocolV6.STATE_UPDATE,
 		session.view_for(1, presentation_events),
 		session.state.revision,
 		origin_action_id,
@@ -823,8 +835,8 @@ func _reject(
 	origin: Dictionary = {},
 ) -> void:
 	_send(
-		ProtocolV4.ERROR,
-		ProtocolV4.error_payload(code, message),
+		ProtocolV6.ERROR,
+		ProtocolV6.error_payload(code, message),
 		get_revision(),
 		str(origin.get("action_id", "")),
 		str(origin.get("request_id", "")),
@@ -974,7 +986,7 @@ func _envelope_identifier(message: Variant, field: String) -> String:
 	if not value is String:
 		return ""
 	var identifier := str(value)
-	if identifier.to_utf8_buffer().size() > ProtocolV4.MAX_IDENTIFIER_BYTES:
+	if identifier.to_utf8_buffer().size() > ProtocolV6.MAX_IDENTIFIER_BYTES:
 		return ""
 	return identifier
 
@@ -989,7 +1001,7 @@ func _send(
 	if transport == null or not transport.connected_state():
 		return false
 	var next_sequence := send_sequence + 1
-	var sent := transport.send(ProtocolV4.envelope(
+	var sent := transport.send(ProtocolV6.envelope(
 		message_type,
 		room_id,
 		0 if host else 1,

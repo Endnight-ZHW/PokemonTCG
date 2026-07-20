@@ -52,6 +52,10 @@ func to_dict() -> Dictionary:
 	}
 
 
+func to_public_dict(base_revision: int = -1) -> Dictionary:
+	return ChoiceView.from_request(self, base_revision).to_dict()
+
+
 static func from_dict(data: Dictionary) -> ChoiceRequest:
 	var raw_options: Array[Dictionary] = []
 	for option in data.get("options", []):

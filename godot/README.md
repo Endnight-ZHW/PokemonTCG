@@ -1,13 +1,13 @@
 # Godot 4.7 客户端
 
-这是项目当前的发布版本，版本号为 0.4.0。客户端使用 Godot 4.7
+这是项目当前的发布版本，版本号为 0.6.0。客户端使用 Godot 4.7
 Compatibility 渲染器，支持 Windows x86_64 和 Android 9+ ARM64。
 
 ## 已实现
 
 - 本地双人和 Challenge AI；旧 Deep AI 入口暂时停用并回退 Challenge。
-- 10 套预组卡组；10 个旧 FP32 ONNX 模型保留为 rules v2 历史产物，不在 rules v3/v4 下运行。
-- ENet LAN 与 WebSocket Relay Protocol v4 联机。
+- 10 套预组卡组；10 个旧 FP32 ONNX 模型保留为历史产物，不在 Godot Rules v6 下运行。
+- ENet LAN 与 WebSocket Relay Protocol v6 联机；旧 Protocol 5 房间明确拒绝且不提供桥接。
 - 原生 GDScript 规则引擎和 C++ GDExtension ONNX Runtime 推理。
 - 响应式实体牌桌、卡图、动画、音频和移动端画质分档。
 - 深色“午夜竞技场”全屏标题页，使用深海军蓝、青蓝舞台光、金色点缀和八种基础能量；

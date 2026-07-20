@@ -9,6 +9,7 @@ const TRIGGER_COMMAND_OPS := [
 ]
 
 var catalog: CardCatalog
+var vm_interpreter: VMInterpreter
 
 
 func _init(p_catalog: CardCatalog) -> void:
@@ -16,6 +17,7 @@ func _init(p_catalog: CardCatalog) -> void:
 
 
 func register(interpreter: VMInterpreter) -> void:
+	vm_interpreter = interpreter
 	var registrations := {
 		"trigger_draw_cards": Callable(self, "cmd_trigger_draw_cards"),
 		"trigger_place_damage_counters": Callable(self, "cmd_trigger_place_damage_counters"),
@@ -24,44 +26,53 @@ func register(interpreter: VMInterpreter) -> void:
 	}
 	for op in registrations:
 		interpreter.register_command_handler(str(op), registrations[op])
+	interpreter.register_continuation(
+		"trigger_move_basic_energy",
+		Callable(self, "continue_trigger_move_basic_energy"),
+	)
 
 
-func resolve_commands(
-	state: GameState,
-	actor: int,
-	commands: Array[Dictionary],
-	events: Array[Dictionary],
-	active_stack: ResolutionStack = null,
+func queue_candidates(
+	stack: ResolutionStack,
+	candidates: Array[Dictionary],
+	hook: String,
+	active_player: int,
+	order_policy: String = "apnap",
+	choice_domain: String = "effect",
 ) -> Dictionary:
-	var normalized := command_specs_from_payloads(commands)
-	if not bool(normalized.get("success", false)):
-		return normalized
-	var specs: Array[Dictionary] = []
-	for spec_value in normalized.get("commands", []):
-		var spec: Dictionary = spec_value
-		specs.append(spec.duplicate(true))
-	if specs.is_empty():
-		return VMResult.ok()
-	var stack := active_stack if active_stack != null else ResolutionStack.new()
-	var frame_floor := stack.frames.size()
-	stack.push_effects(specs, actor, "active")
-	while stack.frames.size() > frame_floor:
-		if stack.pending_request != null:
-			return VMResult.fail(
-				"触发命令不能暂停等待选择。",
-				"trigger_choice_unsupported",
-			)
-		var frame := stack.pop_frame()
-		if str(frame.get("kind", "")) != "effect":
-			return VMResult.fail(
-				"触发结算栈帧不是效果命令。",
-				"invalid_trigger_frame",
-			)
-		var spec: Dictionary = frame.get("effect", {})
-		var outcome := execute_trigger_spec(state, spec, events, stack)
-		if not bool(outcome.get("success", true)):
-			return outcome
-	return VMResult.ok()
+	if vm_interpreter == null:
+		return VMResult.fail("触发调度器未绑定VM解释器。", "vm_registry_not_ready")
+	return vm_interpreter.trigger_scheduler.queue_batch(
+		stack, candidates, hook, active_player, order_policy, choice_domain)
+
+
+func make_candidate(
+	trigger_id: String,
+	hook: String,
+	controller: int,
+	priority: int,
+	source_ref: Dictionary,
+	optional: bool,
+	liveness: Dictionary,
+	guards: Array,
+	commands: Array,
+) -> Dictionary:
+	var command_specs: Array[Dictionary] = []
+	for command_value in commands:
+		command_specs.append(Dictionary(command_value).duplicate(true))
+	return {
+		"trigger_id": trigger_id,
+		"hook": hook,
+		"controller": controller,
+		"priority": priority,
+		"source_ref": source_ref.duplicate(true),
+		"optional": optional,
+		"liveness": liveness.duplicate(true),
+		"guards": guards.duplicate(true),
+		"commands": command_specs,
+		"parent_trigger_id": "",
+		"depth": 1,
+	}
 
 
 func command_specs_from_payloads(commands: Array[Dictionary]) -> Dictionary:
@@ -205,125 +216,62 @@ func execute_trigger_spec(
 	return VMResult.ok()
 
 
-func collect_after_damage_commands(
+func collect_after_damage_triggers(
 	state: GameState,
 	context: Dictionary,
-	commands: Array[Dictionary],
+	candidates: Array[Dictionary],
 ) -> void:
 	if int(context.get("damage", 0)) <= 0:
 		return
-	var manager := VMModifierManager.new()
-	_register_after_damage_hooks(manager, context)
-	for hook_value in manager.hooks_for(VMModifierManager.AFTER_DAMAGE):
-		var hook: Dictionary = hook_value
-		_append_after_damage_command(state, context, hook, commands)
-
-
-func _register_after_damage_hooks(
-	manager: VMModifierManager,
-	context: Dictionary,
-) -> void:
 	var actor := int(context.get("actor", 0))
+	var defender_player := int(context.get("defender_player", 1 - actor))
+	var defender_slot := str(context.get("defender_slot", "active"))
 	var defender: PokemonState = context.get("defender", null)
 	if defender == null:
 		return
-	for energy_id in defender.energy_card_ids:
-		if energy_id != "svi-mirc":
-			continue
-		manager.register_hook(
-			VMModifierManager.AFTER_DAMAGE,
-			"svi-mirc",
-			int(context.get("defender_player", 1 - actor)),
-			0,
-			{"kind": "miracle_energy_draw"},
-		)
-	_register_after_damage_card_hooks(
-		manager,
-		catalog.get_card(defender.card_id).get("abilities", []),
-		"reactive_thorns",
-		1 - actor,
-		0,
-	)
-	_register_after_damage_modifier_hooks(
-		manager,
-		defender.modifiers,
-		"reactive_thorns",
-		1 - actor,
-		0,
-	)
-
-
-func _register_after_damage_card_hooks(
-	manager: VMModifierManager,
-	effect_groups: Array,
-	effect_kind: String,
-	owner_player: int,
-	priority: int,
-) -> void:
-	for group_value in effect_groups:
-		var group: Dictionary = group_value
-		for effect_value in VMRuntimeEffects.strict_ability_effects(group):
-			var effect: Dictionary = effect_value
-			if not VMRuntimeEffects.effect_matches(effect, effect_kind):
+	for energy_index in range(defender.energy_card_ids.size()):
+		var energy_id := str(defender.energy_card_ids[energy_index])
+		for effect_value in catalog.get_card(energy_id).get("energy_effects", []):
+			var descriptor: Dictionary = effect_value
+			if (
+				str(descriptor.get("kind", "")) != "trigger"
+				or str(descriptor.get("hook", "")) != VMModifierManager.AFTER_DAMAGE
+			):
 				continue
-			manager.register_hook(
+			var condition: Dictionary = descriptor.get("condition", {})
+			if int(context.get("damage", 0)) < int(condition.get("min_damage", 1)):
+				continue
+			var effect_spec := command_spec_from_payload(
+				Dictionary(descriptor.get("effect", {})))
+			if effect_spec.is_empty():
+				continue
+			var effect_args: Dictionary = effect_spec.get("args", {})
+			effect_args["player"] = defender_player
+			effect_args["source"] = energy_id
+			effect_spec["args"] = effect_args
+			var source_ref := EntityRef.new(
+				"attachment", defender_player, "field", defender_slot,
+				energy_index, "energy", energy_id).to_dict()
+			candidates.append(make_candidate(
+				"after_damage:%d:%s:energy:%d:%s" % [
+					defender_player, defender_slot, energy_index, energy_id],
 				VMModifierManager.AFTER_DAMAGE,
-				effect_kind,
-				owner_player,
-				priority,
-				{
-					"kind": effect_kind,
-					"params": VMRuntimeEffects.effect_args(effect),
-				},
-			)
-
-
-func _register_after_damage_modifier_hooks(
-	manager: VMModifierManager,
-	modifiers: Array[Dictionary],
-	payload_kind: String,
-	owner_player: int,
-	priority: int,
-) -> void:
-	for modifier_value in modifiers:
-		var modifier: Dictionary = modifier_value
-		if str(modifier.get("modifier_kind", modifier.get("effect_type", ""))) != payload_kind:
-			continue
-		manager.register_hook(
-			VMModifierManager.AFTER_DAMAGE,
-			str(modifier.get("source", payload_kind)),
-			owner_player,
-			priority,
-			{
-				"kind": payload_kind,
-				"params": Dictionary(modifier.get("params", {})).duplicate(true),
-			},
-		)
-
-
-func _append_after_damage_command(
-	state: GameState,
-	context: Dictionary,
-	hook: Dictionary,
-	commands: Array[Dictionary],
-) -> void:
-	var payload: Dictionary = hook.get("payload", {})
-	var kind := str(payload.get("kind", ""))
-	var actor := int(context.get("actor", 0))
-	var defender_player := int(context.get("defender_player", 1 - actor))
-	match kind:
-		"miracle_energy_draw":
-			commands.append({
-				"op": "trigger_draw_cards",
-				"args": {
-					"player": defender_player,
-					"amount": 1,
-					"source": str(hook.get("source", "svi-mirc")),
-				},
-				"branches": {},
-			})
-		"reactive_thorns":
-			var params: Dictionary = payload.get("params", {})
+				defender_player,
+				int(descriptor.get("priority", 0)),
+				source_ref,
+				bool(descriptor.get("optional", false)),
+				{"kind": "source_exists"},
+				[],
+				[effect_spec],
+			))
+	for ability_index in range(catalog.get_card(defender.card_id).get("abilities", []).size()):
+		var ability: Dictionary = catalog.get_card(defender.card_id).get(
+			"abilities", [])[ability_index]
+		for effect_value in VMRuntimeEffects.strict_ability_effects(ability):
+			var effect: Dictionary = effect_value
+			if not VMRuntimeEffects.effect_matches(effect, "reactive_thorns"):
+				continue
+			var params := VMRuntimeEffects.effect_args(effect)
 			var names: Array = params.get("filter_names", [])
 			var count := 0
 			for row in state.get_player(defender_player).get_all_pokemon():
@@ -333,7 +281,7 @@ func _append_after_damage_command(
 			var counters := count * int(params.get("per_pokemon", 3))
 			var attacker := state.get_player(actor).active
 			if attacker and counters > 0:
-				commands.append({
+				var command := {
 					"op": "trigger_place_damage_counters",
 					"args": {
 						"player": actor,
@@ -354,50 +302,31 @@ func _append_after_damage_command(
 						"presentation_phase": "after_damage_trigger",
 					},
 					"branches": {},
-				})
-
-
-func collect_pokemon_ko_commands(
-	state: GameState,
-	defeated_idx: int,
-	source_slot: String,
-	knocked_out: PokemonState,
-	from_attack: bool,
-	attack_actor: int,
-	commands: Array[Dictionary],
-) -> void:
-	var manager := VMModifierManager.new()
-	_register_exp_share_ko_hooks(
-		manager,
-		state,
-		defeated_idx,
-		source_slot,
-		knocked_out,
-		from_attack,
-		attack_actor,
-	)
-	for hook_value in manager.hooks_for(VMModifierManager.POKEMON_KO):
-		var hook: Dictionary = hook_value
-		var payload: Dictionary = hook.get("payload", {})
-		match str(payload.get("kind", "")):
-			"tool_exp_share":
-				commands.append(_move_basic_energy_trigger_spec(
-					int(payload.get("from_player", defeated_idx)),
-					str(payload.get("from_slot", source_slot)),
-					int(payload.get("to_player", defeated_idx)),
-					str(payload.get("to_slot", "active")),
-					str(payload.get("source", "exp_share")),
+				}
+				candidates.append(make_candidate(
+					"after_damage:%d:%s:ability:%d:%s" % [
+						defender_player, defender_slot, ability_index, defender.card_id],
+					VMModifierManager.AFTER_DAMAGE,
+					defender_player,
+					int(effect.get("priority", 0)),
+					EntityRef.new(
+						"pokemon", defender_player, "field", defender_slot,
+						-1, "", defender.card_id).to_dict(),
+					bool(effect.get("optional", false)),
+					{"kind": "source_exists"},
+					[],
+					[command],
 				))
 
 
-func _register_exp_share_ko_hooks(
-	manager: VMModifierManager,
+func collect_pokemon_ko_triggers(
 	state: GameState,
 	defeated_idx: int,
 	source_slot: String,
 	knocked_out: PokemonState,
 	from_attack: bool,
 	attack_actor: int,
+	candidates: Array[Dictionary],
 ) -> void:
 	if not from_attack or defeated_idx == attack_actor:
 		return
@@ -408,32 +337,39 @@ func _register_exp_share_ko_hooks(
 		var bench_pokemon: PokemonState = player.bench[bench_index]
 		if not _bench_pokemon_has_exp_share(bench_pokemon):
 			continue
-		manager.register_hook(
+		var target_slot := "bench_%d" % bench_index
+		var tool_id := bench_pokemon.attached_tool_id
+		var tool_ref := EntityRef.new(
+			"attachment", defeated_idx, "field", target_slot,
+			0, "tool", tool_id).to_dict()
+		var knocked_out_ref := EntityRef.new(
+			"pokemon", defeated_idx, "field", source_slot,
+			-1, "", knocked_out.card_id).to_dict()
+		candidates.append(make_candidate(
+			"pokemon_ko:%d:%s:tool:%s" % [defeated_idx, target_slot, tool_id],
 			VMModifierManager.POKEMON_KO,
-			"exp_share",
 			defeated_idx,
-			0,
-			{
-				"kind": "tool_exp_share",
-				"from_player": defeated_idx,
-				"from_slot": source_slot,
-				"to_player": defeated_idx,
-				"to_slot": "bench_%d" % bench_index,
-				"source": "exp_share",
-			},
-		)
+			20,
+			tool_ref,
+			true,
+			{"kind": "source_exists"},
+			[{"kind": "ref_exists", "ref": knocked_out_ref}],
+			[_move_basic_energy_trigger_spec(
+				defeated_idx,
+				source_slot,
+				defeated_idx,
+				target_slot,
+				"exp_share",
+				tool_id,
+			)],
+		))
 
 
 func _bench_pokemon_has_exp_share(bench_pokemon: PokemonState) -> bool:
 	return (
 		bench_pokemon is PokemonState
-		and (
-			(
-				not bench_pokemon.attached_tool_id.is_empty()
-				and tool_has_effect(bench_pokemon.attached_tool_id, "tool_exp_share")
-			)
-			or pokemon_has_modifier(bench_pokemon, "tool_exp_share")
-		)
+		and not bench_pokemon.attached_tool_id.is_empty()
+		and tool_has_effect(bench_pokemon.attached_tool_id, "tool_exp_share")
 	)
 
 
@@ -450,6 +386,7 @@ func _move_basic_energy_trigger_spec(
 	to_player: int,
 	to_slot: String,
 	source: String,
+	target_tool_id: String = "",
 ) -> Dictionary:
 	return {
 		"op": "trigger_move_basic_energy",
@@ -459,39 +396,77 @@ func _move_basic_energy_trigger_spec(
 			"to_player": to_player,
 			"to_slot": to_slot,
 			"source": source,
+			"select_source": true,
+			"optional": false,
+			"target_tool_id": target_tool_id,
 		},
 		"branches": {},
 	}
 
 
-func collect_on_attach_commands(
+func collect_on_prize_revealed_triggers(
+	card_id: String,
+	player_idx: int,
+	prize_index: int,
+	candidates: Array[Dictionary],
+) -> Dictionary:
+	var source_ref := EntityRef.new(
+		"card", player_idx, "prizes", "", prize_index, "", card_id).to_dict()
+	var effect_index := 0
+	for effect_value in catalog.get_card(card_id).get("energy_effects", []):
+		if not effect_value is Dictionary:
+			return VMResult.fail(
+				"奖赏卡触发描述符必须是对象。", "invalid_trigger_payload")
+		var descriptor: Dictionary = effect_value
+		if (
+			str(descriptor.get("kind", "")) != "trigger"
+			or str(descriptor.get("hook", "")) != "ON_PRIZE_REVEALED"
+		):
+			effect_index += 1
+			continue
+		var condition_value: Variant = descriptor.get("condition", {})
+		var effect_spec_value: Variant = descriptor.get("effect", {})
+		if not condition_value is Dictionary or not effect_spec_value is Dictionary:
+			return VMResult.fail(
+				"奖赏卡触发 condition/effect 必须是对象。",
+				"invalid_trigger_payload",
+			)
+		var condition: Dictionary = condition_value
+		if str(condition.get("source_zone", "")) != "prizes":
+			effect_index += 1
+			continue
+		var compiled_value: Variant = descriptor.get("compiled_commands", null)
+		if not compiled_value is Array or compiled_value.is_empty():
+			return VMResult.fail(
+				"奖赏卡触发缺少编译后的VM命令。", "invalid_trigger_payload")
+		var commands: Array[Dictionary] = []
+		for command_value in compiled_value:
+			if not command_value is Dictionary:
+				return VMResult.fail(
+					"奖赏卡触发编译命令必须是对象。", "invalid_trigger_payload")
+			commands.append(Dictionary(command_value).duplicate(true))
+		candidates.append(make_candidate(
+			"on_prize_revealed:%d:%d:%d" % [player_idx, prize_index, effect_index],
+			"ON_PRIZE_REVEALED",
+			player_idx,
+			int(descriptor.get("priority", 0)),
+			source_ref,
+			bool(descriptor.get("optional", false)),
+			{"kind": "source_exists"},
+			[],
+			commands,
+		))
+		effect_index += 1
+	return VMResult.ok()
+
+
+func collect_on_attach_triggers(
 	card_id: String,
 	player_idx: int,
 	target_slot: String,
 	source_zone: String,
-	commands: Array[Dictionary],
-) -> void:
-	var manager := VMModifierManager.new()
-	_register_energy_on_attach_hooks(manager, card_id, player_idx, target_slot, source_zone)
-	for hook_value in manager.hooks_for(VMModifierManager.ON_ATTACH):
-		var hook: Dictionary = hook_value
-		var payload: Dictionary = hook.get("payload", {})
-		match str(payload.get("kind", "")):
-			"switch_with_active":
-				commands.append(_switch_with_active_trigger_spec(
-					int(payload.get("player", player_idx)),
-					int(payload.get("bench_idx", -1)),
-					str(payload.get("source", card_id)),
-					str(payload.get("slot", target_slot)),
-				))
-
-
-func _register_energy_on_attach_hooks(
-	manager: VMModifierManager,
-	card_id: String,
-	player_idx: int,
-	target_slot: String,
-	source_zone: String,
+	candidates: Array[Dictionary],
+	attachment_index: int = 0,
 ) -> void:
 	for effect_value in catalog.get_card(card_id).get("energy_effects", []):
 		var effect: Dictionary = effect_value
@@ -506,19 +481,24 @@ func _register_energy_on_attach_hooks(
 			continue
 		var effect_spec: Dictionary = effect.get("effect", {})
 		if str(effect_spec.get("op", "")) == "switch_with_active":
-			manager.register_hook(
+			candidates.append(make_candidate(
+				"on_attach:%d:%s:%s" % [player_idx, target_slot, card_id],
 				VMModifierManager.ON_ATTACH,
-				card_id,
 				player_idx,
 				int(effect.get("priority", 0)),
-				{
-					"kind": "switch_with_active",
-					"player": player_idx,
-					"bench_idx": target_slot.trim_prefix("bench_").to_int(),
-					"source": card_id,
-					"slot": target_slot,
-				},
-			)
+				EntityRef.new(
+					"attachment", player_idx, "field", target_slot,
+					attachment_index, "energy", card_id).to_dict(),
+				bool(effect.get("optional", false)),
+				{"kind": "source_exists"},
+				[],
+				[_switch_with_active_trigger_spec(
+					player_idx,
+					target_slot.trim_prefix("bench_").to_int(),
+					card_id,
+					target_slot,
+				)],
+			))
 
 
 func _switch_with_active_trigger_spec(
@@ -569,7 +549,7 @@ func cmd_trigger_place_damage_counters(
 
 func cmd_trigger_move_basic_energy(
 	state: GameState,
-	_stack: ResolutionStack,
+	stack: ResolutionStack,
 	_rng: PortableRandomSource,
 	args: Dictionary,
 	_branches: Dictionary,
@@ -577,8 +557,87 @@ func cmd_trigger_move_basic_energy(
 	_source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	_execute_move_basic_energy(state, args, events)
-	return VMResult.ok()
+	var from_player := int(args.get("from_player", -1))
+	var from_slot := str(args.get("from_slot", ""))
+	var source := state.get_player(from_player).get_pokemon(from_slot)
+	var target := state.get_player(int(args.get("to_player", from_player))).get_pokemon(
+		str(args.get("to_slot", "")))
+	if source == null or target == null:
+		return VMResult.ok("触发来源或目标已失效。")
+	var target_tool_id := str(args.get("target_tool_id", ""))
+	if not target_tool_id.is_empty() and target.attached_tool_id != target_tool_id:
+		return VMResult.ok("触发来源道具已失效。")
+	var options: Array[Dictionary] = []
+	for index in range(source.energy_card_ids.size()):
+		var energy_id := str(source.energy_card_ids[index])
+		if not catalog.is_basic_energy(energy_id):
+			continue
+		var ref := EntityRef.new(
+			"attachment", from_player, "field", from_slot,
+			index, "energy", energy_id).to_dict()
+		options.append({
+			"option_id": "attachment:%d:%s:energy:%d:%s" % [
+				from_player, from_slot, index, energy_id],
+			"label": catalog.card_name(energy_id),
+			"ref": ref,
+			"value": ref.duplicate(true),
+		})
+	if options.is_empty():
+		return VMResult.ok("没有可移动的基础能量。")
+	if not bool(args.get("select_source", false)):
+		return _move_selected_basic_energy(
+			state,
+			args,
+			Dictionary(options[0].get("ref", {})),
+			events,
+		)
+	var frame_id := "trigger:move_basic_energy:%d" % stack.sequence
+	stack.push_continuation("trigger_move_basic_energy", {
+		"kind": "trigger_move_basic_energy",
+		"frame_id": frame_id,
+		"args": args.duplicate(true),
+	})
+	var domain := vm_interpreter.trigger_scheduler.choice_domain_for_current_trigger(stack)
+	stack.pending_request = ChoiceRequest.new(
+		stack.next_request_id(state, from_player, "select_attachment"),
+		"select_attachment",
+		from_player,
+		"请选择要移动的基础能量。",
+		options,
+		1,
+		1,
+		false,
+		false,
+		{
+			"domain": domain,
+			"purpose": "trigger_move_basic_energy",
+			"revision": state.revision,
+			"continuation_frame_id": frame_id,
+			"trigger_id": stack.current_trigger_id(),
+		},
+	)
+	return VMResult.ok("请选择要移动的基础能量。")
+
+
+func continue_trigger_move_basic_energy(
+	state: GameState,
+	_stack: ResolutionStack,
+	_rng: PortableRandomSource,
+	data: Dictionary,
+	selected: Array[Dictionary],
+	events: Array[Dictionary],
+) -> Dictionary:
+	if selected.size() != 1:
+		return VMResult.fail("必须选择1张基础能量。", "choice_count")
+	var ref_value: Variant = selected[0].get("ref", selected[0].get("value", {}))
+	if not ref_value is Dictionary:
+		return VMResult.fail("基础能量引用无效。", "invalid_choice")
+	return _move_selected_basic_energy(
+		state,
+		Dictionary(data.get("args", {})),
+		Dictionary(ref_value),
+		events,
+	)
 
 
 func cmd_trigger_switch_with_active(
@@ -668,33 +727,38 @@ static func retarget_pending_after_damage_entity(
 	"""Move serialized reactive targets when the referenced Pokemon changes slots."""
 	if stack == null or not stack.context.get("pending_after_damage_triggers", []) is Array:
 		return
-	var specs: Array = stack.context.get("pending_after_damage_triggers", [])
-	for index in range(specs.size()):
-		if not specs[index] is Dictionary:
+	var candidates: Array = stack.context.get("pending_after_damage_triggers", [])
+	for candidate_index in range(candidates.size()):
+		if not candidates[candidate_index] is Dictionary:
 			continue
-		var spec: Dictionary = specs[index]
-		if str(spec.get("op", "")) != "trigger_place_damage_counters":
-			continue
-		var args: Dictionary = spec.get("args", {})
-		var target_ref_value: Variant = args.get("target_ref", null)
-		if not target_ref_value is Dictionary:
-			continue
-		var target_ref: Dictionary = target_ref_value
-		if (
-			int(target_ref.get("player", -1)) != player_idx
-			or str(target_ref.get("slot", "")) != from_slot
-			or str(target_ref.get("card_id", "")) != card_id
-		):
-			continue
-		target_ref["slot"] = to_slot
-		args["target_ref"] = target_ref
-		# Retain the legacy fields for event/debug readers; execution treats the
-		# entity reference as authoritative.
-		args["player"] = player_idx
-		args["slot"] = to_slot
-		spec["args"] = args
-		specs[index] = spec
-	stack.context["pending_after_damage_triggers"] = specs
+		var candidate: Dictionary = candidates[candidate_index]
+		var commands: Array = candidate.get("commands", [])
+		for command_index in range(commands.size()):
+			if not commands[command_index] is Dictionary:
+				continue
+			var spec: Dictionary = commands[command_index]
+			if str(spec.get("op", "")) != "trigger_place_damage_counters":
+				continue
+			var args: Dictionary = spec.get("args", {})
+			var target_ref_value: Variant = args.get("target_ref", null)
+			if not target_ref_value is Dictionary:
+				continue
+			var target_ref: Dictionary = target_ref_value
+			if (
+				int(target_ref.get("player", -1)) != player_idx
+				or str(target_ref.get("slot", "")) != from_slot
+				or str(target_ref.get("card_id", "")) != card_id
+			):
+				continue
+			target_ref["slot"] = to_slot
+			args["target_ref"] = target_ref
+			args["player"] = player_idx
+			args["slot"] = to_slot
+			spec["args"] = args
+			commands[command_index] = spec
+		candidate["commands"] = commands
+		candidates[candidate_index] = candidate
+	stack.context["pending_after_damage_triggers"] = candidates
 
 
 func _execute_move_basic_energy(
@@ -717,6 +781,46 @@ func _execute_move_basic_energy(
 			break
 	if basic_energy_index < 0:
 		return
+	_move_selected_basic_energy(
+		state,
+		args,
+		EntityRef.new(
+			"attachment", from_player, "field", from_slot,
+			basic_energy_index, "energy",
+			str(source.energy_card_ids[basic_energy_index])).to_dict(),
+		events,
+	)
+
+
+func _move_selected_basic_energy(
+	state: GameState,
+	args: Dictionary,
+	ref: Dictionary,
+	events: Array[Dictionary],
+) -> Dictionary:
+	var from_player := int(args.get("from_player", -1))
+	var from_slot := str(args.get("from_slot", ""))
+	var to_player := int(args.get("to_player", from_player))
+	var to_slot := str(args.get("to_slot", ""))
+	var source := state.get_player(from_player).get_pokemon(from_slot)
+	var target := state.get_player(to_player).get_pokemon(to_slot)
+	var target_tool_id := str(args.get("target_tool_id", ""))
+	var basic_energy_index := int(ref.get("index", -1))
+	var expected_id := str(ref.get("card_id", ""))
+	if (
+		source == null
+		or target == null
+		or (not target_tool_id.is_empty() and target.attached_tool_id != target_tool_id)
+		or str(ref.get("kind", "")) != "attachment"
+		or int(ref.get("player", -1)) != from_player
+		or str(ref.get("slot", "")) != from_slot
+		or str(ref.get("attachment_type", "")) != "energy"
+		or basic_energy_index < 0
+		or basic_energy_index >= source.energy_card_ids.size()
+		or str(source.energy_card_ids[basic_energy_index]) != expected_id
+		or not catalog.is_basic_energy(expected_id)
+	):
+		return VMResult.fail("选择的基础能量已不存在。", "stale_choice")
 	var energy_id: String = source.energy_card_ids.pop_at(basic_energy_index)
 	var target_index := target.energy_card_ids.size()
 	target.energy_card_ids.append(energy_id)
@@ -752,6 +856,7 @@ func _execute_move_basic_energy(
 			"target_index": target_index,
 		},
 	})
+	return VMResult.ok("基础能量已移动。")
 
 
 func _execute_switch_with_active(

@@ -685,9 +685,7 @@ func _run_rule_event_regressions() -> void:
 	pending_trigger_state.players[0].active.damage_counters = 99
 	pending_trigger_state.players[0].active.energy_card_ids = ["sv1-ener-2"]
 	pending_trigger_state.players[0].bench[0] = PokemonState.new("sv2-delib")
-	pending_trigger_state.players[0].bench[0].modifiers.append({
-		"modifier_kind": "tool_exp_share",
-	})
+	pending_trigger_state.players[0].bench[0].attached_tool_id = "svg2-exps"
 	pending_trigger_state.players[0].prizes = ["sv1-ener-5", "sv1-ener-5"]
 	pending_trigger_state.players[1].active = PokemonState.new("sv1-104")
 	pending_trigger_state.players[1].active.damage_counters = 100
@@ -726,8 +724,7 @@ func _run_rule_event_regressions() -> void:
 		and pending_trigger_state.players[1].active != null
 		and restored_pending.players[0].active != null
 		and restored_pending.players[1].active != null
-		and str(restored_batch.get("stage", "")) == "triggers"
-		and int(restored_batch.get("trigger_index", -1)) == 0
+		and str(restored_batch.get("stage", "")) == "trigger_resolving"
 		and restored_pending_stack.pending_request != null,
 		"Learning Device paused before the full KO declaration barrier or after leave play",
 	)

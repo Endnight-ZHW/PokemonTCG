@@ -137,7 +137,9 @@ def compile_effect_to_spec(effect_def: Any) -> CommandSpec:
     effect_type, params = _effect_parts(effect_def)
     formula_args = _formula_args_for_effect(effect_type, params)
     if formula_args is not None:
-        return CommandSpec(op="deal_damage", args=_json_safe(formula_args), branches={})
+        return _validated_spec(CommandSpec(
+            op="deal_damage", args=_json_safe(formula_args), branches={}
+        ))
 
     op = OP_BY_EFFECT_TYPE.get(effect_type)
     if op is None:
@@ -154,7 +156,21 @@ def compile_effect_to_spec(effect_def: Any) -> CommandSpec:
             args[key] = _json_safe(value)
     if op == "switch_pokemon" and "target" not in args:
         args["target"] = "opponent" if effect_type == "switch_opponent" else "self"
-    return CommandSpec(op=op, args=args, branches=branches)
+    return _validated_spec(CommandSpec(op=op, args=args, branches=branches))
+
+
+def _validated_spec(spec: CommandSpec) -> CommandSpec:
+    # Local imports avoid making the immutable IR dataclass depend on runtime
+    # factory initialization while still enforcing the authoritative schema at
+    # the DSL boundary.
+    from engine.commands.descriptors import VM_COMMAND_DESCRIPTORS
+    from engine.commands.vm_contract import assert_command_spec
+
+    assert_command_spec(
+        spec.to_dict(),
+        supported_ops=frozenset(VM_COMMAND_DESCRIPTORS),
+    )
+    return spec
 
 
 def _formula_args_for_effect(effect_type: str, params: dict[str, Any]) -> dict[str, Any] | None:

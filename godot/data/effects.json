@@ -1844,6 +1844,7 @@
         },
         "hook": "ON_PRIZE_REVEALED",
         "kind": "trigger",
+        "optional": true,
         "priority": 20
       }
     ]

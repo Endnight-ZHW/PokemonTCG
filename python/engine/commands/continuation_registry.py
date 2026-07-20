@@ -9,6 +9,7 @@ from engine.commands.hand_continuations import register_hand_continuations
 from engine.commands.recovery_continuations import register_recovery_continuations
 from engine.commands.search_continuations import register_search_continuations
 from engine.commands.prize_continuations import register_prize_continuations
+from engine.commands.retreat_continuations import register_retreat_continuations
 from engine.commands.setup_continuations import register_setup_continuations
 from engine.commands.trigger_continuations import register_trigger_continuations
 
@@ -23,6 +24,7 @@ def build_resolution_stack_continuation_registry(stack) -> ContinuationRegistry:
     register_search_continuations(registry, stack)
     register_energy_continuations(registry, stack)
     register_prize_continuations(registry, stack)
+    register_retreat_continuations(registry, stack)
     register_setup_continuations(registry, stack)
     register_trigger_continuations(registry, stack)
     return registry

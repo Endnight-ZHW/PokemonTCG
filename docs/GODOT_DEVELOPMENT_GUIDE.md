@@ -779,7 +779,7 @@ Main._process() -> poll_result()
 Main -> GameEngine.apply_action/apply_choice()
 ```
 
-不要把 Node、Texture 或其他 Godot 场景对象传入 AI 线程。0.4.0 的旧 Deep 模型仍绑定旧规则，
+不要把 Node、Texture 或其他 Godot 场景对象传入 AI 线程。0.6.0 的旧 Deep 模型仍绑定旧规则，
 `deep_runtime_enabled=false`；发布 UI 不显示 Deep 入口，历史调用稳定回退 Challenge。
 
 标题页只显示一个“挑战 AI”入口，并以 `challenge` 作为进入牌组页的默认模式。AI 类型由
@@ -800,7 +800,7 @@ flowchart LR
 
 客户端不能提交伤害、抽牌结果、随机数或完整状态。UI 改造不得绕过
 `NetworkMatchController.submit_action()` 和 `submit_choice()`。
-Protocol v4 在欢迎/选牌/状态消息中携带规则配置。旧 Protocol v3 和 snapshot v0/v1 只能返回
+Protocol v6 在欢迎/选牌/状态消息中携带规则配置、合法动作分组与 ChoiceView v2。旧 Protocol v5 和 Snapshot 2 只能返回
 明确不兼容诊断，不做字段猜测或自动迁移。
 
 网络大厅的视觉状态由 `NetworkLobbyPage.ConnectionState` 表达：
@@ -1000,7 +1000,7 @@ Windows 与 Android 调试构建：
 - 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
 - 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
 
-0.4.0 发布版以 Godot 客户端和 Challenge AI 为运行基线。10 个旧 Deep AI 模型仍保留在仓库
+0.6.0 发布版以 Godot 客户端和 Challenge AI 为运行基线。10 个旧 Deep AI 模型仍保留在仓库
 作为 rules v2 历史产物，manifest 明确标记兼容模型数为 0；构建冒烟不再要求旧模型推理成功。
 发布包不会包含 Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
 
@@ -1154,7 +1154,7 @@ Android 调试 APK 可以用 ADB 安装：
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Windows-x86_64-0.4.0.zip` | 可分发 Windows ZIP |
+| `godot/dist/release/PokemonTCG-Windows-x86_64-0.6.0.zip` | 可分发 Windows ZIP |
 | `godot/dist/release/windows/PokemonTCG.exe` | 未压缩 Windows release 可执行文件 |
 | `godot/dist/release/windows/PokemonTCG.pck` | Godot 资源包 |
 | `godot/dist/release/SHA256SUMS.json` | ZIP、EXE、PCK、DLL 和模型校验清单 |
@@ -1176,14 +1176,14 @@ ONNX Runtime、许可证和 `BUILD_INFO.json`。
 
 | 文件 | 用途 |
 |---|---|
-| `godot/dist/release/PokemonTCG-Android-arm64-0.4.0-test.apk` | Android 9+ ARM64 测试签名 APK |
+| `godot/dist/release/PokemonTCG-Android-arm64-0.6.0-test.apk` | Android 9+ ARM64 测试签名 APK |
 | `godot/dist/release/android/PokemonTCG.apk` | Godot 导出的原始 release APK |
 | `godot/dist/release/SHA256SUMS.json` | 发布校验清单 |
 
 安装测试签名 APK：
 
 ```powershell
-.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.4.0-test.apk
+.\.tools\android-sdk\platform-tools\adb.exe install -r .\godot\dist\release\PokemonTCG-Android-arm64-0.6.0-test.apk
 ```
 
 查看设备是否连接：
@@ -1219,7 +1219,7 @@ $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD = "your-keystore-password"
 正式签名输出文件名：
 
 ```text
-godot/dist/release/PokemonTCG-Android-arm64-0.4.0-production.apk
+godot/dist/release/PokemonTCG-Android-arm64-0.6.0-production.apk
 ```
 
 正式签名注意事项：
@@ -1227,7 +1227,7 @@ godot/dist/release/PokemonTCG-Android-arm64-0.4.0-production.apk
 - keystore 丢失后，应用商店同包名升级会非常麻烦，必须离线备份。
 - `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 当前同时作为 store password 和 key password 使用。
 - 不要把 keystore 放到 `godot/`、`docs/`、`tools/` 或任何会被提交的目录。
-- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=6`、`versionName=0.4.0`、仅 `arm64-v8a`。
+- 正式包仍然固定包名 `com.pokemontcg.game`、`versionCode=8`、`versionName=0.6.0`、仅 `arm64-v8a`。
 
 ### 发布后校验
 
@@ -1254,8 +1254,8 @@ godot/dist/release/PokemonTCG-Android-arm64-0.4.0-production.apk
 手工抽查校验值：
 
 ```powershell
-Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.4.0.zip -Algorithm SHA256
-Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.4.0-test.apk -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Windows-x86_64-0.6.0.zip -Algorithm SHA256
+Get-FileHash .\godot\dist\release\PokemonTCG-Android-arm64-0.6.0-test.apk -Algorithm SHA256
 Get-Content .\godot\dist\release\SHA256SUMS.json
 ```
 
@@ -1265,7 +1265,7 @@ Get-Content .\godot\dist\release\SHA256SUMS.json
 .\.tools\android-sdk\build-tools\35.0.0\apksigner.bat verify `
   --verbose `
   --print-certs `
-  .\godot\dist\release\PokemonTCG-Android-arm64-0.4.0-production.apk
+  .\godot\dist\release\PokemonTCG-Android-arm64-0.6.0-production.apk
 ```
 
 如果本地 Build Tools 版本不是 `35.0.0`，以 `.tools/android-sdk/build-tools/` 下实际目录为准。
@@ -1278,7 +1278,7 @@ APK 构建成功不等于 Android 发布完成。至少按 `docs/ANDROID_TEST_CH
 - 冷启动、横屏、安全区、系统返回手势/返回键和设置保存。
 - 本地双人和 Challenge AI 离线对局；历史 Deep 入口不可见，旧调用稳定回退 Challenge。
 - 检查 `deep_runtime_enabled=false`、`deep_fallback=challenge`、兼容模型 0、历史模型 10；不把
-  旧模型 load+infer 当作 0.4.0 发布条件。
+  旧模型 load+infer 当作 0.6.0 发布条件。
 - 标题和战斗音乐各保持前台至少 3 分钟，确认没有音频崩溃。
 - 抽牌、攻击、击倒、奖赏、胜利演出在目标设备帧率可接受。
 - 切后台、锁屏、恢复、断网、网络切换和覆盖安装。

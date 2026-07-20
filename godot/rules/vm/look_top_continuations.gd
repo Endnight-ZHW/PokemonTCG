@@ -178,6 +178,7 @@ func resolve_look_top(
 				true,
 				false,
 				{
+					"domain": "effect",
 					"revision": state.revision,
 					"purpose": "detached_energy_distribution",
 					"card_ids": selected_cards.duplicate(),
@@ -383,6 +384,7 @@ func resolve_look_top_attach_energy(
 		false,
 		false,
 		{
+			"domain": "effect",
 			"revision": state.revision,
 			"purpose": "look_top_attach_target",
 			"card_ids": selected_cards.duplicate(),

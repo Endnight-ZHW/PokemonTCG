@@ -28,6 +28,14 @@ func supports_continuation(operation: String) -> bool:
 	return runtime.supports_continuation(operation)
 
 
+func is_ready() -> bool:
+	return runtime != null and runtime.is_ready()
+
+
+func trigger_commands() -> VMTriggerCommands:
+	return runtime.trigger_commands
+
+
 func resolve(
 	state: GameState,
 	stack: ResolutionStack,

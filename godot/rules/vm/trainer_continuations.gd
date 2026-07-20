@@ -166,7 +166,11 @@ func continue_zinnia(
 ) -> Dictionary:
 	var player := state.get_player(int(data["player_idx"]))
 	var source_indices := VMZoneHelpers.selected_source_indices(selected)
-	var discarded: Array[String] = VMZoneHelpers.remove_selected_from_zone(player, "hand", selected, true)
+	var discarded: Array[String] = VMZoneHelpers.remove_selected_from_zone(
+		player, "hand", selected, false)
+	# Preserve the response/source order in the discard pile. Removal still
+	# happens high-to-low internally, but that detail must not reverse semantics.
+	player.discard.append_array(discarded)
 	if not discarded.is_empty():
 		events.append(VMZoneHelpers.discard_event(
 			int(data["player_idx"]), "hand", discarded, discarded.size(), source_indices))

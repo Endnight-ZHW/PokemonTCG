@@ -1,58 +1,33 @@
-# PokemonTCG Godot 0.4.0
+# PokemonTCG Godot 0.6.0
 
-Godot 4.7 是唯一发布客户端。本版以中国大陆官方玩法规则和《进阶玩家向规则指南
-Ver.3.1.0》为裁决依据，同时更新 Godot 客户端、Python 参考引擎、联机协议、AI 和现有
-137 张卡牌数据。
+Godot 4.7 是唯一发布客户端。0.6.0 在 0.5.0 的严格动作信封和事务管线之上，补齐 VM 描述符、可挂起触发栈、持续 Modifier 和规则/表现边界。该版本是原子破坏性升级，不提供 Protocol 5 或 Snapshot 2 桥接。
 
-## 规则对齐
+## 规则公开边界
 
-- 开局硬币获胜者在查看初始手牌前选择先攻或后攻；先攻玩家第一回合照常抽牌，但不能使用
-  支援者、攻击或通常进化。
-- 再战按同一轮双方次数相抵，设置奖赏卡后由奖励方选择额外抽 `0..N` 张；奖励抽到的基础
-  宝可梦只能追加到备战区。双方设置完成前，对手只看到 `{"hidden":true}` 卡背占位。
-- 攻击伤害固定按“基础伤害 → 攻击方修正 → 弱点 → 抗性 → 防守方修正/防止”计算；备战区
-  目标只跳过弱点和抗性。伤害、伤害指示物和直接昏厥使用独立语义。
-- 多目标伤害先全部计算再同时落伤。效果完成后批量处理昏厥、实体触发、弃置和逐张奖赏卡，
-  之后才判定胜负；需要双方晋升时，由下一回合玩家先选择。
-- 同批次双方达成相同数量且大于 0 的胜利条件时记录 `DRAW`，`winner=-1`，不产生软胜者。
-- 进化、撤退和强制换位统一清除特殊状态与该宝可梦受到的临时招式效果，同时保留伤害、能量、
-  道具和进化链。
-- 竞技场记录所有者并按名称判重。引擎/网络入口检查 60 张、基础宝可梦、未知 ID、同名 4 张、
-  基本能量例外以及特殊卡数量限制。
+- `query_legal_action_groups()` 返回结构化 `LegalActionQueryResult`。普通非法候选只被过滤；VM schema、描述符或预检合同错误会终止查询，不返回部分结果，也不会写入缓存。
+- `ChoiceView` v2 是唯一公开选择结构，只包含请求 ID、revision、玩家、类型、公开选项、约束和白名单 presentation。continuation、guard、command、checkpoint 与事务快照只保留在权威 `GameState`。
+- UI、Challenge AI、LAN 与 Relay 只调用 `GameEngine` 的查询、动作提交和 Choice response 接口；展示状态不再依赖 `resolution_stack`。
 
-## 卡牌与结算基础设施
+## VM 与触发结算
 
-- 新增统一有效能量视图：双重涡轮提供两个无色单位；夜光能量只有在不存在其他特殊能量时
-  提供任意类型，第二张夜光也会令其降为无色。
-- 可暂停结算使用可序列化 continuation/resolution 数据；snapshot v2 能在选择、伤害、触发、
-  昏厥、奖赏卡和晋升等暂停点往返，不保存回调或场景对象。
-- 修复宝藏能量、每张幸运能量、多个学习装置、帝王拿波“紧急上浮”及同名实体索引。
-- 甲贺忍蛙 ex、帝王拿波、阿勃梭鲁、拖拖蚓等多目标伤害进入统一伤害管线；苍响与海星星按
-  各自卡文分别忽略弱点、抗性或防守伤害效果，且不会关闭受到伤害后触发。
-- 修正梅洛可、古玉鱼、藏玛然特、拉普拉斯的上个对手回合昏厥事实，以及大奶罐按自身实际
-  回复 HP 判定的语义。
-- 勾帕路翁、摔跤鹰人、玛俐的自尊先选择具体能量实体再分配；嘉德丽雅保留玩家指定的牌库底
-  顺序。劈斧螳螂直接昏厥不伪装为伤害；路卡利欧、嘟嘟利等自昏厥特性仍可合法发动。
+- Python 的冻结 VM command descriptor 文件是 80 个发布 op 的权威合同，逐 op 约束参数、分支、执行上下文、时序、挂起和替换伤害属性。Godot 启动时校验 descriptor、handler、preflight 与 golden 集合严格一致。
+- 查询和执行共用纯 preflight；未知 op、额外/缺失参数、非法分支、内部 op 外泄与未知 evaluator 均 fail-closed。查询不复制事务快照、不执行动作、不读取 RNG。
+- Snapshot 3 使用 `command / continuation / trigger_batch / trigger / barrier` 严格帧联合，并限制 64 帧/触发深度、4096 总步骤、256 个同批触发和 1 MiB 序列化大小。
+- AFTER_DAMAGE、POKEMON_KO、ON_ATTACH、ON_PRIZE_REVEALED 与学习装置进入统一 TriggerScheduler。可选触发和同优先级排序可通过 Choice 挂起，恢复后继续保留步骤预算和 trigger origin。
 
-## 联机、UI 与 AI
+## Modifier 与数据驱动规则
 
-- Protocol v4 携带 `CN_MAINLAND_3_1_0`、锁定的规则选项、开局阶段、平局结果和竞技场所有者。
-  Protocol v3 房间及 snapshot v0/v1 只提供明确不兼容诊断，不执行猜测性迁移。
-- 联机弱点/抗性由房主开局前设置，挑战者只读确认；默认关闭属于项目自定义特例，不是官方规则。
-- UI 增加先后攻、再战奖励数、暗置卡背、奖赏卡位置选择、触发顺序和平局结果；本地热座也使用
-  玩家视图隔离暗置信息。
-- Challenge AI 对新增选择采用确定策略，并且只读取当前玩家视图。旧 Deep v10 模型仍绑定
-  Python rules v2 / Godot rules v3，未重新盖章；发布版记录 `deep_runtime_enabled=false`、
-  `deep_fallback=challenge`、0 个兼容模型和 10 个历史模型。
+- 持续修正由冻结的 `ModifierDescriptorRegistry` 管理，伤害、HP、撤退、攻击许可和效果防止使用固定层级、优先级、scope、duration、stacking 与 conflict policy。
+- 防伤、效果防止、输出减伤、招式锁定和炫目等临时效果迁为有期限 Modifier，并在换位、进化、回合结束或来源离场时统一清理。
+- 高级球与四种特殊能量均由 compiled cost/modifier/trigger descriptor 驱动；规则端不再按卡牌 ID 分支。拥有相同描述符的克隆卡具有相同行为。
+- Judge、Clara 等现有复合 op 保留并标记为严格 `native_composite`；新增规则不得使用卡名式 op。
 
-## 发布合同
+## AI 与发布合同
 
-- 产品版本 `0.4.0`；Android `versionCode=6`、`versionName=0.4.0`。
-- Manifest format 2；Protocol 4；Godot rules/actions 4/3；Python rules/actions 3/2；
-  snapshot 2；VM IR 2；encoder/checkpoint 3/10；planner 1；portable RNG 1。
-- 保留 10 套休闲预组：fire、water、psychic、lightning、fighting、colorless、dragon、
-  grass、steel、darkness。本版不强制标准赛 G/H/I 轮换标记。
-- 基本能量为草、火、水、雷、超、斗、恶、钢；无色不是基本能量，也不存在龙基本能量。
+- AI 决策种子由比赛 seed、revision、actor、请求类型与请求 ID 稳定派生，不推进规则 RNG；过期 worker 结果被丢弃并回退 Challenge AI。
+- Deep runtime 继续关闭，10 个旧模型保持 legacy，本轮不重新训练。
+- 产品 `0.6.0`，Android `versionCode=8`；Protocol 6、Godot Rules 6、Python Rules 5、VM IR 3、Snapshot 3、Encoder 5。
+- Godot Actions 4、Python Actions 3、Checkpoint 10、Planner 1、RNG 2 保持不变。
 
 ## 验证顺序
 
@@ -60,11 +35,10 @@ Ver.3.1.0》为裁决依据，同时更新 Godot 客户端、Python 参考引擎
 .\tools\test_fast.ps1
 .\tools\test_standard.ps1
 .\tools\test_godot_network.ps1
-.\tools\build_native_ai.ps1 -Target all -Configuration debug
+.\tools\test_godot_ai.ps1
 .\tools\build_godot.ps1 -Target all -Configuration debug
 .\tools\smoke_godot_build.ps1
 .\tools\test_release.ps1
 ```
 
-Android 正式商店签名和目标真机矩阵仍需在发布环境中执行。本版不发布 Python 客户端，也不支持
-旧协议房间恢复、房主迁移或一奖赏卡抢分赛。
+Android 正式商店签名和目标真机矩阵仍需在发布环境执行。本版不发布 Python 客户端，也不支持旧协议房间恢复或房主迁移。

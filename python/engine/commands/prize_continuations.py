@@ -38,17 +38,19 @@ def resolve_select_prize(stack, continuation: dict, choice):
         return ActionResult(False, "所选奖赏卡位置已失效。")
     card = player.prizes[prize_idx]
 
-    if getattr(card, "api_id", "") == "svi-trea":
+    trigger = _prize_attachment_trigger(card)
+    if trigger is not None:
         targets = [
             (slot, pokemon)
             for slot, pokemon in player.get_all_pokemon()
-            if pokemon is not None
+            if pokemon is not None and str(slot).startswith("bench_")
         ]
         if targets:
+            card_name = str(getattr(card, "name", "奖赏能量") or "奖赏能量")
             return ActionRequest(
                 request_type="select_prize_energy_target",
                 player=player_idx,
-                prompt="可将宝藏能量附着于自己的1只宝可梦；也可以放弃。",
+                prompt=f"可将{card_name}附着于自己的1只备战宝可梦；也可以放弃。",
                 min_select=0,
                 max_select=1,
                 can_cancel=True,
@@ -60,7 +62,9 @@ def resolve_select_prize(stack, continuation: dict, choice):
                     "domain": "prize",
                     "player_idx": player_idx,
                     "prize_index": prize_idx,
-                    "card_id": "svi-trea",
+                    "card_id": str(getattr(card, "api_id", "") or ""),
+                    "trigger_hook": str(trigger.get("hook", "")),
+                    "trigger_op": str((trigger.get("effect") or {}).get("op", "")),
                 },
             )
 
@@ -82,8 +86,15 @@ def resolve_treasure_prize_target(stack, continuation: dict, choice):
     if not (0 <= prize_idx < len(player.prizes)):
         return ActionResult(False, "宝藏能量的奖赏卡位置已失效。")
     card = player.prizes[prize_idx]
-    if getattr(card, "api_id", "") != expected_id or expected_id != "svi-trea":
-        return ActionResult(False, "宝藏能量实体已失效。")
+    trigger = _prize_attachment_trigger(card)
+    if (
+        getattr(card, "api_id", "") != expected_id
+        or trigger is None
+        or str(trigger.get("hook", "")) != str(continuation.get("trigger_hook", ""))
+        or str((trigger.get("effect") or {}).get("op", ""))
+        != str(continuation.get("trigger_op", ""))
+    ):
+        return ActionResult(False, "奖赏能量实体或触发描述符已失效。")
 
     selected = list(choice or [])
     target = None
@@ -105,6 +116,29 @@ def resolve_treasure_prize_target(stack, continuation: dict, choice):
         message = f"{player.name}将奖赏卡中的宝藏能量附着于{target.card.name}。"
     stack.state._log(f"{message}（剩余{len(player.prizes)}张）")
     return ActionResult(True, message, prize_taken=True)
+
+
+def _prize_attachment_trigger(card) -> dict | None:
+    """Return the authoritative data-defined prize attachment trigger.
+
+    Card identity is intentionally irrelevant: cloned cards with the same
+    descriptor have identical rules behavior, while a familiar ID without the
+    descriptor receives no privileged path.
+    """
+    for value in getattr(card, "energy_effects", ()) or ():
+        if not isinstance(value, dict):
+            continue
+        effect = value.get("effect") or {}
+        condition = value.get("condition") or {}
+        if (
+            value.get("kind") == "trigger"
+            and value.get("hook") == "ON_PRIZE_REVEALED"
+            and condition.get("source_zone") == "prizes"
+            and isinstance(effect, dict)
+            and effect.get("op") == "attach_to_benched_pokemon"
+        ):
+            return dict(value)
+    return None
 
 
 __all__ = [

@@ -102,7 +102,14 @@ func look_top_request(
 		take,
 		false,
 		true,
-		{"revision": state.revision, "zone": "deck"},
+		{
+			"domain": "effect",
+			"purpose": "look_top",
+			"revision": state.revision,
+			"revealed_card_ids": top_cards.duplicate(),
+			"source_player": player_idx,
+			"source_zone": "deck",
+		},
 	)
 	return VMResult.ok()
 
@@ -155,7 +162,14 @@ func look_top_attach_request(
 		min(take, options.size()),
 		false,
 		true,
-		{"revision": state.revision},
+		{
+			"domain": "effect",
+			"purpose": "look_top_attach_energy",
+			"revision": state.revision,
+			"revealed_card_ids": top_card_ids.duplicate(),
+			"source_player": player_idx,
+			"source_zone": "deck",
+		},
 	)
 	return VMResult.ok()
 

@@ -48,6 +48,7 @@ class FailingStartController:
 
 func _initialize() -> void:
 	_run_protocol_boundaries()
+	_run_modifier_wire_number_contract()
 	_run_direct_knockout_protocol_contract()
 	_run_setup_hidden_information_contract()
 	_run_mulligan_presentation_contract()
@@ -67,16 +68,23 @@ func _initialize() -> void:
 
 
 func _run_protocol_boundaries() -> void:
-	var envelope := ProtocolV4.envelope(ProtocolV4.PING, "contract", 0, 1)
+	var envelope := ProtocolV6.envelope(ProtocolV6.PING, "contract", 0, 1)
 	var legacy_envelope: Dictionary = envelope.duplicate(true)
-	legacy_envelope["protocol_version"] = ProtocolV3.VERSION
-	var legacy_validation := ProtocolV4.validate(legacy_envelope)
+	legacy_envelope["protocol_version"] = 4
+	var legacy_validation := ProtocolV6.validate(legacy_envelope)
 	_expect(
 		not bool(legacy_validation.get("ok", false))
-		and str(legacy_validation.get("code", "")) == "protocol_mismatch"
-		and str(ProtocolV3.diagnostic_error().get("code", ""))
-		== ProtocolV3.INCOMPATIBILITY_CODE,
-		"protocol v3 did not fail with an explicit incompatibility diagnostic",
+		and str(legacy_validation.get("code", "")) == "protocol_mismatch",
+		"protocol v4 did not fail with an explicit incompatibility diagnostic",
+	)
+	var protocol_five_envelope: Dictionary = envelope.duplicate(true)
+	protocol_five_envelope["protocol_version"] = 5
+	var protocol_five_validation := ProtocolV6.validate(protocol_five_envelope)
+	_expect(
+		not bool(protocol_five_validation.get("ok", false))
+		and str(protocol_five_validation.get("code", "")) == "protocol_mismatch"
+		and "旧 v5 房间不能恢复" in str(protocol_five_validation.get("message", "")),
+		"protocol v5 did not fail with the explicit no-bridge diagnostic",
 	)
 	for row in [
 		{"field": "protocol_version", "value": {}},
@@ -88,7 +96,7 @@ func _run_protocol_boundaries() -> void:
 		var malformed: Dictionary = envelope.duplicate(true)
 		malformed[row["field"]] = row["value"]
 		_expect(
-			not bool(ProtocolV4.validate(malformed).get("ok", false)),
+			not bool(ProtocolV6.validate(malformed).get("ok", false)),
 			"envelope accepted malformed %s" % row["field"],
 		)
 
@@ -99,14 +107,14 @@ func _run_protocol_boundaries() -> void:
 		return
 	var view := session.view_for(0)
 	_expect(
-		bool(ProtocolV4.validate_payload(ProtocolV4.STATE_UPDATE, view).get("ok", false)),
+		bool(ProtocolV6.validate_payload(ProtocolV6.STATE_UPDATE, view).get("ok", false)),
 		"authoritative fixture view is not protocol-valid",
 	)
 	var hidden_view: Dictionary = view.duplicate(true)
 	hidden_view["state"]["opponent"]["active"] = {"hidden": true}
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, hidden_view
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, hidden_view
 		).get("ok", false)),
 		"strict hidden setup placeholder was rejected",
 	)
@@ -135,8 +143,8 @@ func _run_protocol_boundaries() -> void:
 	var complete_visible_view: Dictionary = visible_setup_view.duplicate(true)
 	complete_visible_view["state"]["setup_stage"] = GameState.SETUP_COMPLETE
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE,
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE,
 			complete_visible_view,
 		).get("ok", false)),
 		"visible opponent Pokemon was rejected after setup completion",
@@ -164,8 +172,8 @@ func _run_protocol_boundaries() -> void:
 		and str(Dictionary(setup_events[0]).get("event_type", "")) == "coin_flip"
 		and str(Dictionary(setup_events[0]).get("data", {}).get("purpose", ""))
 		== "setup_turn_order"
-		and bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE,
+		and bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE,
 			random_view,
 		).get("ok", false)),
 		"random setup coin was not public and protocol-valid",
@@ -177,8 +185,8 @@ func _run_protocol_boundaries() -> void:
 	draw_view["state"]["result_status"] = "DRAW"
 	draw_view["state"]["result_reason"] = "equal_win_conditions"
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, draw_view
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, draw_view
 		).get("ok", false)),
 		"DRAW with winner=-1 was rejected",
 	)
@@ -186,24 +194,24 @@ func _run_protocol_boundaries() -> void:
 	inconsistent_terminal["state"]["result_status"] = "WIN"
 	_expect_invalid_state(inconsistent_terminal, "WIN terminal state without winner")
 
-	var malformed_action := GameAction.new(
+	var malformed_action := GameAction.create(
 		"END_TURN",
 		{"hand_idx": {}},
-		true,
 		0,
 		null,
 		null,
 		"malformed-action",
+		int(view["state"]["revision"]),
 	).to_dict()
 	_expect(
-		not bool(ProtocolV4.validate_payload(
-			ProtocolV4.ACTION_SUBMIT,
+		not bool(ProtocolV6.validate_payload(
+			ProtocolV6.ACTION_SUBMIT,
 			{"action": malformed_action},
 		).get("ok", false)),
 		"action payload accepted a non-integer hand index",
 	)
 
-	var choice_request := ChoiceRequest.new(
+	var internal_choice_request := ChoiceRequest.new(
 		"choice:contract",
 		"select_card",
 		0,
@@ -225,32 +233,67 @@ func _run_protocol_boundaries() -> void:
 			"revealed_card_ids": [],
 			"source_zone": "deck",
 		},
-	).to_dict()
+	)
+	var choice_request := ChoiceView.from_request(
+		internal_choice_request, int(view["state"]["revision"])).to_dict()
 	var choice_view: Dictionary = view.duplicate(true)
 	choice_view["choice_request"] = choice_request
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, choice_view
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, choice_view
 		).get("ok", false)),
 		"valid choice request fixture was rejected",
 	)
 	var malformed_choice_ref: Dictionary = choice_view.duplicate(true)
 	malformed_choice_ref["choice_request"]["options"][0]["ref"]["index"] = {}
 	_expect_invalid_state(malformed_choice_ref, "malformed choice entity reference")
+	var leaked_choice_value: Dictionary = choice_view.duplicate(true)
+	leaked_choice_value["choice_request"]["options"][0]["value"] = {"private": true}
+	_expect_invalid_state(leaked_choice_value, "private choice option value")
 	var malformed_choice_metadata: Dictionary = choice_view.duplicate(true)
-	malformed_choice_metadata["choice_request"]["metadata"]["predetermined_flips"] = {}
+	malformed_choice_metadata["choice_request"]["presentation"]["predetermined_flips"] = {}
 	_expect_invalid_state(malformed_choice_metadata, "malformed choice metadata")
 	var malformed_source_zone: Dictionary = choice_view.duplicate(true)
-	malformed_source_zone["choice_request"]["metadata"]["source_zone"] = {}
+	malformed_source_zone["choice_request"]["presentation"]["source_zone"] = {}
 	_expect_invalid_state(malformed_source_zone, "non-string choice source_zone")
 	var source_zone_choice: Dictionary = choice_view.duplicate(true)
-	source_zone_choice["choice_request"]["metadata"]["source_zone"] = "hand"
+	source_zone_choice["choice_request"]["presentation"]["source_zone"] = "hand"
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, source_zone_choice
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, source_zone_choice
 		).get("ok", false)),
 		"valid choice metadata source_zone was rejected",
 	)
+	var prize_choice_view: Dictionary = view.duplicate(true)
+	prize_choice_view["choice_request"] = ChoiceView.new(
+		"choice:prize-contract",
+		int(view["state"]["revision"]),
+		"select_prize",
+		0,
+		"选择奖赏卡",
+		[{"option_id": "prize:0", "label": "奖赏卡 1"}],
+		1,
+		1,
+		false,
+		false,
+		{"domain": "knockout", "purpose": "select_prize"},
+	).to_dict()
+	_expect(
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, prize_choice_view
+		).get("ok", false)),
+		"identity-free Prize ChoiceView was rejected",
+	)
+	var leaked_prize_identity: Dictionary = prize_choice_view.duplicate(true)
+	leaked_prize_identity["choice_request"]["presentation"]["card_ids"] = [
+		"secret-prize-card",
+	]
+	_expect_invalid_state(leaked_prize_identity, "Prize presentation card identity")
+	var leaked_prize_ref: Dictionary = prize_choice_view.duplicate(true)
+	leaked_prize_ref["choice_request"]["options"][0]["ref"] = EntityRef.new(
+		"card", 0, "prizes", "", 0, "", "secret-prize-card"
+	).to_dict()
+	_expect_invalid_state(leaked_prize_ref, "Prize option identity reference")
 
 
 	var attachment_ref := EntityRef.new(
@@ -306,10 +349,10 @@ func _run_protocol_boundaries() -> void:
 		"non-chooser did not receive the coarse attachment wait context",
 	)
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, waiting_view
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, waiting_view
 		).get("ok", false)),
-		"coarse attachment wait context was rejected by ProtocolV4",
+		"coarse attachment wait context was rejected by ProtocolV6",
 	)
 	var malformed_wait_view: Dictionary = waiting_view.duplicate(true)
 	malformed_wait_view["wait_context"]["card_ids"] = ["sv1-ener-2"]
@@ -325,8 +368,8 @@ func _run_protocol_boundaries() -> void:
 	var presentation_view: Dictionary = view.duplicate(true)
 	presentation_view["presentation_events"] = [presentation_event]
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, presentation_view
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, presentation_view
 		).get("ok", false)),
 		"valid presentation event fixture was rejected",
 	)
@@ -350,8 +393,8 @@ func _run_protocol_boundaries() -> void:
 		},
 	}, int(view["state"]["revision"]))]
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, reveal_view
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, reveal_view
 		).get("ok", false)),
 		"valid structured public reveal event was rejected",
 	)
@@ -369,8 +412,8 @@ func _run_protocol_boundaries() -> void:
 	}
 	empty_reveal["presentation_events"][0]["amount"] = 0
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, empty_reveal
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, empty_reveal
 		).get("ok", false)),
 		"valid zero-card public reveal event was rejected",
 	)
@@ -433,7 +476,7 @@ func _run_direct_knockout_protocol_contract() -> void:
 	session.rng = PortableRandomSource.new(2) # First two flips are both heads.
 
 	var attack_action: GameAction = null
-	for candidate in session.engine.legal_actions(direct_state, 0, true):
+	for candidate in RulesTestHarness.legal_actions(session.engine, direct_state, 0, true):
 		if (
 			candidate.action == "DECLARE_ATTACK"
 			and int(candidate.params.get("attack_idx", -1)) == 0
@@ -527,10 +570,10 @@ func _collect_direct_ko_view_events(
 	for player_idx in [0, 1]:
 		var view := session.view_for(player_idx, step.events)
 		_expect(
-			bool(ProtocolV4.validate_payload(
-				ProtocolV4.STATE_UPDATE, view
+			bool(ProtocolV6.validate_payload(
+				ProtocolV6.STATE_UPDATE, view
 			).get("ok", false)),
-			"direct-KO state update was not Protocol v4-valid for player %d"
+			"direct-KO state update was not Protocol v6-valid for player %d"
 			% player_idx,
 		)
 		var actual: Array = causal_types_by_player[player_idx]
@@ -568,22 +611,22 @@ func _run_setup_hidden_information_contract() -> void:
 	if not turn_order.success:
 		return
 	var actor := session.state.first_player_idx
-	var actor_actions: Array = session.view_for(actor).get("legal_actions", [])
-	var placement: Dictionary = {}
-	for action_value in actor_actions:
-		var action_row: Dictionary = action_value
+	var actor_actions := _concrete_actions(
+		session.view_for(actor).get("legal_action_groups", []))
+	var placement: GameAction = null
+	for action_row in actor_actions:
 		if (
-			str(action_row.get("action", "")) == "PLAY_BASIC"
-			and str(Dictionary(action_row.get("params", {})).get("target", ""))
-			== "active"
+			action_row.kind == "PLAY_BASIC"
+			and action_row.target != null
+			and action_row.target.slot == "active"
 		):
 			placement = action_row
 			break
-	_expect(not placement.is_empty(), "setup fixture had no active Basic placement")
-	if placement.is_empty():
+	_expect(placement != null, "setup fixture had no active Basic placement")
+	if placement == null:
 		return
-	placement["action_id"] = "setup-hidden-placement"
-	var placed := session.submit_action(actor, placement)
+	placement.action_id = "setup-hidden-placement"
+	var placed := session.submit_action(actor, placement.to_dict())
 	_expect(placed.success, "setup Basic placement failed")
 	if not placed.success:
 		return
@@ -596,10 +639,10 @@ func _run_setup_hidden_information_contract() -> void:
 		"opponent setup Pokemon was not serialized as the strict placeholder",
 	)
 	_expect(
-		bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, opponent_view
+		bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, opponent_view
 		).get("ok", false)),
-		"actual hidden setup view was not Protocol v4 valid",
+		"actual hidden setup view was not Protocol v6 valid",
 	)
 	_expect(
 		not JSON.stringify(opponent_view.get("presentation_events", [])).contains(
@@ -715,11 +758,11 @@ func _run_mulligan_presentation_contract() -> void:
 	for perspective in [0, 1]:
 		var view := session.view_for(perspective, started.events)
 		_expect(
-			bool(ProtocolV4.validate_payload(
-				ProtocolV4.STATE_UPDATE,
+			bool(ProtocolV6.validate_payload(
+				ProtocolV6.STATE_UPDATE,
 				view,
 			).get("ok", false)),
-			"mulligan presentation view was not Protocol v4-valid for player %d"
+			"mulligan presentation view was not Protocol v6-valid for player %d"
 			% perspective,
 		)
 		var privacy_is_correct := true
@@ -765,8 +808,8 @@ func _run_setup_stage_recovery_contract() -> void:
 			)
 			var has_board := state.get_player(1 - perspective).active != null
 			_expect(
-				bool(ProtocolV4.validate_payload(
-					ProtocolV4.STATE_UPDATE,
+				bool(ProtocolV6.validate_payload(
+					ProtocolV6.STATE_UPDATE,
 					view,
 				).get("ok", false))
 				and (
@@ -790,8 +833,8 @@ func _run_setup_stage_recovery_contract() -> void:
 		var complete_view := _state_update_payload(complete_state, perspective)
 		var opponent: Dictionary = complete_view["state"]["opponent"]
 		_expect(
-			bool(ProtocolV4.validate_payload(
-				ProtocolV4.STATE_UPDATE,
+			bool(ProtocolV6.validate_payload(
+				ProtocolV6.STATE_UPDATE,
 				complete_view,
 			).get("ok", false))
 			and opponent.get("active") is Dictionary
@@ -828,7 +871,8 @@ func _setup_recovery_state(stage: String) -> GameState:
 func _state_update_payload(state: GameState, perspective: int) -> Dictionary:
 	return {
 		"state": StateSerializer.for_player(state, perspective),
-		"legal_actions": [],
+		"legal_action_groups": [],
+		"legal_action_error": "",
 		"presentation_events": [],
 		"choice_request": null,
 		"wait_context": null,
@@ -859,12 +903,22 @@ func _run_final_setup_publication_contract() -> void:
 		{"actor": 1, "action": "PLAY_BASIC", "params": {"hand_idx": 0, "target": "active"}},
 		{"actor": 1, "action": "SETUP_DONE", "params": {}},
 	]:
-		var action := GameAction.new(
-			str(row["action"]),
-			Dictionary(row["params"]),
-			str(row["action"]) == "SETUP_DONE",
-			int(row["actor"]),
-		)
+		var action: GameAction = null
+		for candidate in _concrete_actions(
+			session.view_for(int(row["actor"])).get("legal_action_groups", [])
+		):
+			if candidate.kind != str(row["action"]):
+				continue
+			if (
+				candidate.kind == "PLAY_BASIC"
+				and (candidate.target == null or candidate.target.slot != "active")
+			):
+				continue
+			action = candidate
+			break
+		if action == null:
+			steps.append(StepResult.new(false, "missing legal setup action"))
+			continue
 		action.action_id = "final-setup:%d" % steps.size()
 		steps.append(session.submit_action(int(row["actor"]), action.to_dict()))
 	var all_steps_succeeded := steps.all(
@@ -886,8 +940,8 @@ func _run_final_setup_publication_contract() -> void:
 		var draw_ids: Array = Dictionary(draw_event.get("data", {})).get(
 			"card_ids", [])
 		_expect(
-			bool(ProtocolV4.validate_payload(
-				ProtocolV4.STATE_UPDATE,
+			bool(ProtocolV6.validate_payload(
+				ProtocolV6.STATE_UPDATE,
 				view,
 			).get("ok", false))
 			and session.state.setup_stage == GameState.SETUP_COMPLETE
@@ -969,8 +1023,8 @@ func _run_terminal_state_contract() -> void:
 	)
 	_expect(not client.needs_poll(), "closed client kept polling an idle transport")
 
-	var remote_repeat := ProtocolV4.envelope(
-		ProtocolV4.SURRENDER,
+	var remote_repeat := ProtocolV6.envelope(
+		ProtocolV6.SURRENDER,
 		"terminal-contract",
 		1,
 		1,
@@ -992,7 +1046,8 @@ func _run_submission_correlation_contract() -> void:
 		return
 	_advance_setup_to_remote_actor(session)
 	var remote_view := session.view_for(1)
-	var legal_actions: Array = remote_view.get("legal_actions", [])
+	var legal_actions := _concrete_actions(
+		remote_view.get("legal_action_groups", []))
 	_expect(not legal_actions.is_empty(), "remote correlation fixture has no legal action")
 	if legal_actions.is_empty():
 		return
@@ -1006,11 +1061,11 @@ func _run_submission_correlation_contract() -> void:
 	host_controller.transport = host_transport
 	host_controller.session = session
 	host_controller.connection_phase = NetworkMatchController.ConnectionPhase.PLAYING
-	var remote_action := GameAction.from_dict(legal_actions[0])
+	var remote_action: GameAction = legal_actions[0]
 	remote_action.action_id = "remote-action:success"
 	remote_action.actor = 1
-	host_controller._handle_message(ProtocolV4.envelope(
-		ProtocolV4.ACTION_SUBMIT,
+	host_controller._handle_message(ProtocolV6.envelope(
+		ProtocolV6.ACTION_SUBMIT,
 		"correlation-contract",
 		1,
 		1,
@@ -1021,7 +1076,7 @@ func _run_submission_correlation_contract() -> void:
 	))
 	_expect(
 		not host_transport.sent_messages.is_empty()
-		and host_transport.sent_messages[-1]["message_type"] == ProtocolV4.STATE_UPDATE
+		and host_transport.sent_messages[-1]["message_type"] == ProtocolV6.STATE_UPDATE
 		and host_transport.sent_messages[-1]["action_id"] == remote_action.action_id,
 		"successful authoritative state did not echo action_id",
 	)
@@ -1033,8 +1088,8 @@ func _run_submission_correlation_contract() -> void:
 
 	var rejected_action := remote_action.to_dict()
 	rejected_action["action_id"] = "remote-action:rejected"
-	host_controller._handle_message(ProtocolV4.envelope(
-		ProtocolV4.ACTION_SUBMIT,
+	host_controller._handle_message(ProtocolV6.envelope(
+		ProtocolV6.ACTION_SUBMIT,
 		"correlation-contract",
 		1,
 		2,
@@ -1046,14 +1101,14 @@ func _run_submission_correlation_contract() -> void:
 	var rejection_index := host_transport.sent_messages.size() - 2
 	_expect(
 		rejection_index >= 0
-		and host_transport.sent_messages[rejection_index]["message_type"] == ProtocolV4.ERROR
+		and host_transport.sent_messages[rejection_index]["message_type"] == ProtocolV6.ERROR
 		and host_transport.sent_messages[rejection_index]["action_id"]
 		== rejected_action["action_id"],
 		"authoritative rejection did not echo action_id",
 	)
 
 	var client := _new_correlation_client(session)
-	var submitted_action := GameAction.from_dict(legal_actions[0])
+	var submitted_action: GameAction = legal_actions[0]
 	submitted_action.action_id = "client-action:pending"
 	_expect(client.submit_action(submitted_action), "client action submission failed")
 	_expect(
@@ -1132,8 +1187,10 @@ func _run_submission_correlation_contract() -> void:
 	)
 	var advanced_view := session.view_for(1)
 	advanced_view["state"]["revision"] = session.state.revision + 1
-	legacy_client._handle_message(ProtocolV4.envelope(
-		ProtocolV4.STATE_UPDATE,
+	advanced_view["legal_action_groups"] = []
+	advanced_view["legal_action_error"] = ""
+	legacy_client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.STATE_UPDATE,
 		"correlation-contract",
 		0,
 		2,
@@ -1153,15 +1210,15 @@ func _run_submission_correlation_contract() -> void:
 	error_client._begin_pending_submission(
 		"action", "rejected-client-action", "", session.state.revision
 	)
-	error_client._handle_message(ProtocolV4.envelope(
-		ProtocolV4.ERROR,
+	error_client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"rejected-client-action",
 		"",
-		ProtocolV4.error_payload("illegal_action", "rejected"),
+		ProtocolV6.error_payload("illegal_action", "rejected"),
 	))
 	var error_events := error_client._drain_events()
 	_expect(
@@ -1177,15 +1234,15 @@ func _run_submission_correlation_contract() -> void:
 	nonmatching_error_client._begin_pending_submission(
 		"action", "still-pending-action", "", session.state.revision
 	)
-	nonmatching_error_client._handle_message(ProtocolV4.envelope(
-		ProtocolV4.ERROR,
+	nonmatching_error_client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"different-action",
 		"",
-		ProtocolV4.error_payload("illegal_action", "unrelated"),
+		ProtocolV6.error_payload("illegal_action", "unrelated"),
 	))
 	var nonmatching_error_events := nonmatching_error_client._drain_events()
 	_expect(
@@ -1221,15 +1278,15 @@ func _run_submission_correlation_contract() -> void:
 	rejected_request_client._begin_pending_submission(
 		"choice", "", "choice-request:rejected", session.state.revision
 	)
-	rejected_request_client._handle_message(ProtocolV4.envelope(
-		ProtocolV4.ERROR,
+	rejected_request_client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"",
 		"choice-request:rejected",
-		ProtocolV4.error_payload("illegal_choice", "rejected"),
+		ProtocolV6.error_payload("illegal_choice", "rejected"),
 	))
 	var rejected_request_events := rejected_request_client._drain_events()
 	_expect(
@@ -1266,7 +1323,7 @@ func _run_submission_correlation_contract() -> void:
 	_expect(
 		timeout_transport.sent_messages.size() == 1
 		and timeout_transport.sent_messages[0]["message_type"]
-		== ProtocolV4.RESYNC_REQUEST,
+		== ProtocolV6.RESYNC_REQUEST,
 		"pending timeout did not request exactly one resync",
 	)
 	_expect(
@@ -1274,15 +1331,15 @@ func _run_submission_correlation_contract() -> void:
 		and timeout_transport.sent_messages.size() == 1,
 		"pending timeout emitted repeatedly before resync completed",
 	)
-	timeout_client._handle_message(ProtocolV4.envelope(
-		ProtocolV4.ERROR,
+	timeout_client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.ERROR,
 		"correlation-contract",
 		0,
 		1,
 		session.state.revision,
 		"timed-out-action",
 		"",
-		ProtocolV4.error_payload("illegal_action", "late rejection"),
+		ProtocolV6.error_payload("illegal_action", "late rejection"),
 	))
 	_expect(
 		timeout_client.submission_locked()
@@ -1316,20 +1373,19 @@ func _new_correlation_client(
 
 func _advance_setup_to_remote_actor(session: AuthoritativeSession) -> void:
 	for step_index in range(16):
-		if not session.view_for(1).get("legal_actions", []).is_empty():
+		if not session.view_for(1).get("legal_action_groups", []).is_empty():
 			return
-		var host_actions: Array = session.view_for(0).get("legal_actions", [])
+		var host_actions := _concrete_actions(
+			session.view_for(0).get("legal_action_groups", []))
 		if host_actions.is_empty():
 			return
-		var selected: Dictionary = host_actions[0]
-		for action_value in host_actions:
-			var action_row: Dictionary = action_value
-			if str(action_row.get("action", "")) == "SETUP_DONE":
+		var selected: GameAction = host_actions[0]
+		for action_row in host_actions:
+			if action_row.kind == "SETUP_DONE":
 				selected = action_row
 				break
-		var action := GameAction.from_dict(selected)
-		action.action_id = "contract-host-setup:%d" % step_index
-		var result := session.submit_action(0, action.to_dict())
+		selected.action_id = "contract-host-setup:%d" % step_index
+		var result := session.submit_action(0, selected.to_dict())
 		if not result.success:
 			return
 
@@ -1348,8 +1404,12 @@ func _state_envelope(
 	)
 	var view := session.view_for(1)
 	view["state"]["revision"] = revision
-	return ProtocolV4.envelope(
-		ProtocolV4.STATE_UPDATE,
+	# Synthetic correlation packets may override the state revision. Do not carry
+	# groups tied to the authoritative revision into those deliberately stale views.
+	view["legal_action_groups"] = []
+	view["legal_action_error"] = ""
+	return ProtocolV6.envelope(
+		ProtocolV6.STATE_UPDATE,
 		"correlation-contract",
 		0,
 		sequence,
@@ -1358,6 +1418,17 @@ func _state_envelope(
 		request_id,
 		view,
 	)
+
+
+func _concrete_actions(group_rows: Array) -> Array[GameAction]:
+	var actions: Array[GameAction] = []
+	for value in group_rows:
+		if not value is Dictionary:
+			continue
+		var group := LegalActionGroup.from_dict(value)
+		for action in group.concrete_actions():
+			actions.append(action)
+	return actions
 
 
 func _has_origin_event(
@@ -1426,8 +1497,8 @@ func _run_recovery_contract() -> void:
 	client.transport = FakeNetworkTransport.new()
 	# A structurally valid gap establishes a new receive fence and sends one
 	# RESYNC request.  The following reply can then be accepted at sequence 4.
-	client._handle_message(ProtocolV4.envelope(
-		ProtocolV4.PING,
+	client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.PING,
 		"recovery-room",
 		0,
 		3,
@@ -1442,11 +1513,11 @@ func _run_recovery_contract() -> void:
 		transport != null
 		and transport.sent_messages.size() == 1
 		and str(transport.sent_messages[0].get("message_type", ""))
-		== ProtocolV4.RESYNC_REQUEST,
+		== ProtocolV6.RESYNC_REQUEST,
 		"sequence gap did not request exactly one recovery snapshot",
 	)
-	client._handle_message(ProtocolV4.envelope(
-		ProtocolV4.STATE_UPDATE,
+	client._handle_message(ProtocolV6.envelope(
+		ProtocolV6.STATE_UPDATE,
 		"recovery-room",
 		0,
 		4,
@@ -1477,7 +1548,7 @@ func _run_recovery_contract() -> void:
 	host.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
 	host.reconnecting = true
 	var revision_before := session.state.revision
-	host._handle_host_message({}, ProtocolV4.DECK_SELECT, {
+	host._handle_host_message({}, ProtocolV6.DECK_SELECT, {
 		"deck_key": "water",
 		"rules_version": AppState.RULES_SCHEMA_VERSION,
 		"action_version": AppState.ACTION_SCHEMA_VERSION,
@@ -1520,7 +1591,7 @@ func _run_recovery_contract() -> void:
 	locked_rules_host.session = AuthoritativeSession.new("rules-lock-contract")
 	locked_rules_host.transport = FakeNetworkTransport.new()
 	locked_rules_host.connection_phase = NetworkMatchController.ConnectionPhase.LOBBY
-	locked_rules_host._handle_host_message({}, ProtocolV4.DECK_SELECT, {
+	locked_rules_host._handle_host_message({}, ProtocolV6.DECK_SELECT, {
 		"deck_key": "water",
 		"rules_version": AppState.RULES_SCHEMA_VERSION,
 		"action_version": AppState.ACTION_SCHEMA_VERSION,
@@ -1534,11 +1605,56 @@ func _run_recovery_contract() -> void:
 		and locked_rules_host.remote_deck_key.is_empty()
 		and not locked_transport.sent_messages.is_empty()
 		and str(locked_transport.sent_messages[-1].get("message_type", ""))
-		== ProtocolV4.ERROR
+		== ProtocolV6.ERROR
 		and str(Dictionary(locked_transport.sent_messages[-1].get(
 			"payload", {})).get("code", "")) == "rules_options_mismatch",
 		"challenger was able to change the host-locked matchup option",
 	)
+
+
+func _run_modifier_wire_number_contract() -> void:
+	var session := AuthoritativeSession.new("modifier-wire-contract")
+	var started := session.start_match("steel", "steel", 20260720, 0)
+	_expect(started.success, "modifier wire fixture did not start")
+	if not started.success:
+		return
+	var pokemon := PokemonState.new("svm-zamazenta")
+	var descriptor := {
+		"hook": "MODIFY_DAMAGE",
+		"layer": "attacker_adjust",
+		"priority": 0,
+		"controller": 0,
+		"source_ref": {
+			"kind": "pokemon",
+			"player": 0,
+			"slot": "bench_0",
+			"card_id": "svm-zamazenta",
+		},
+		"scope": "attached_attacker",
+		"duration": "until_leave_play",
+		"stacking": "replace_same_source",
+		"conflict_policy": "commutative",
+		"condition": {"expires_after_turn": 2},
+		"operation": {"kind": "damage_delta", "amount": 10},
+	}
+	_expect(
+		pokemon.register_modifier(descriptor).is_empty(),
+		"valid modifier fixture was rejected before serialization",
+	)
+	var view := session.view_for(0)
+	view["state"]["your"]["bench"][0] = pokemon.to_dict()
+	var relay_roundtrip: Variant = JSON.parse_string(JSON.stringify(view))
+	_expect(
+		relay_roundtrip is Dictionary
+		and bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, relay_roundtrip).get("ok", false)),
+		"relay JSON roundtrip rejected integral Modifier descriptor numbers",
+	)
+	if not relay_roundtrip is Dictionary:
+		return
+	var fractional: Dictionary = Dictionary(relay_roundtrip).duplicate(true)
+	fractional["state"]["your"]["bench"][0]["modifiers"][0]["operation"]["amount"] = 10.5
+	_expect_invalid_state(fractional, "fractional Modifier integer field")
 
 
 func _run_start_failure_contract() -> void:
@@ -1620,8 +1736,8 @@ func _controller_is_reset(controller: NetworkMatchController) -> bool:
 
 func _expect_invalid_state(view: Dictionary, label: String) -> void:
 	_expect(
-		not bool(ProtocolV4.validate_payload(
-			ProtocolV4.STATE_UPDATE, view
+		not bool(ProtocolV6.validate_payload(
+			ProtocolV6.STATE_UPDATE, view
 		).get("ok", false)),
 		"state payload accepted %s" % label,
 	)

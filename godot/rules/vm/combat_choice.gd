@@ -30,6 +30,9 @@ func request_injured_target(
 			options.append({
 				"option_id": "pokemon:%d:%s:%s" % [player_idx, slot, pokemon.card_id],
 				"label": catalog.card_name(pokemon.card_id),
+				"ref": EntityRef.new(
+					"pokemon", player_idx, "", slot, -1, "", pokemon.card_id
+				).to_dict(),
 				"value": {"slot": slot, "card_id": pokemon.card_id},
 			})
 	if options.is_empty():
@@ -38,7 +41,13 @@ func request_injured_target(
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, player_idx, "heal_target"),
 		"select_heal_target", player_idx, "选择回复目标。",
-		options, 1, 1)
+		options, 1, 1, false, false, {
+			"domain": "effect",
+			"purpose": "heal_target",
+			"revision": state.revision,
+			"target_player": player_idx,
+			"amount": amount,
+		})
 	return VMResult.ok()
 
 

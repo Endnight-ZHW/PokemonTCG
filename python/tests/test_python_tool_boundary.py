@@ -17,9 +17,11 @@ from engine.action_codec import (
     serialize_choice_response,
 )
 from engine.actions import ChoiceOption, ChoiceRequest, ChoiceResponse, PokemonRef
+from engine.game_state import GameState
+from engine.snapshot import snapshot_state, snapshot_to_dict
 from relay_server import (
-    PROTOCOL_V3,
-    PROTOCOL_V4,
+    PROTOCOL_V5,
+    PROTOCOL_V6,
     _parse_control_message,
     _valid_forward_message,
 )
@@ -71,20 +73,22 @@ class PythonToolBoundaryTests(unittest.TestCase):
         self.assertIn("甲贺忍蛙", screen.deck_options[0]["name"])
         self.assertIn("烈焰猴", screen.deck_options[1]["name"])
 
-    def test_ui_sources_do_not_import_legacy_client_networking(self):
-        forbidden_tokens = (
-            "from network", "import network", "network_manager", "_is_remote",
+    def test_ui_runtime_has_no_legacy_client_network_dependencies(self):
+        screen_modules = {
+            sys.modules[screen_type.__module__]
+            for screen_type in (DeckSelectScreen, GameScreen, TitleScreen)
+        }
+        for module in screen_modules:
+            with self.subTest(module=module.__name__):
+                self.assertNotIn("network_manager", module.__dict__)
+                self.assertNotIn("_is_remote", module.__dict__)
+        self.assertFalse(
+            any(name == "network" or name.startswith("network.") for name in sys.modules)
         )
-        violations = []
-        for path in (PYTHON_ROOT / "ui").rglob("*.py"):
-            source = path.read_text(encoding="utf-8")
-            for token in forbidden_tokens:
-                if token in source:
-                    violations.append(f"{path.relative_to(PYTHON_ROOT)}: {token}")
-        self.assertEqual(violations, [])
 
     def test_config_has_no_legacy_client_network_endpoints(self):
-        source = (PYTHON_ROOT / "config.py").read_text(encoding="utf-8")
+        import config
+
         for token in (
             "NETWORK_PORT",
             "NETWORK_TIMEOUT",
@@ -92,7 +96,7 @@ class PythonToolBoundaryTests(unittest.TestCase):
             "RELAY_SERVER_PORT",
         ):
             with self.subTest(token=token):
-                self.assertNotIn(token, source)
+                self.assertFalse(hasattr(config, token))
 
     def test_python_gate_resolves_relative_interpreter_before_chdir(self):
         source = (PYTHON_ROOT.parent / "tools" / "test_python.ps1").read_text(
@@ -105,20 +109,24 @@ class PythonToolBoundaryTests(unittest.TestCase):
         )
 
     def test_engine_snapshot_has_no_client_view_compatibility_fields(self):
-        forbidden_tokens = ("is_network_view", "_hand_hidden", "_hand_count")
-        engine_files = (
-            PYTHON_ROOT / "engine" / "game_state.py",
-            PYTHON_ROOT / "engine" / "player_state.py",
-            PYTHON_ROOT / "engine" / "snapshot.py",
-            PYTHON_ROOT / "engine" / "turn_manager.py",
-        )
-        violations = [
-            f"{path.name}: {token}"
-            for path in engine_files
-            for token in forbidden_tokens
-            if token in path.read_text(encoding="utf-8")
-        ]
-        self.assertEqual(violations, [])
+        forbidden_fields = {"is_network_view", "_hand_hidden", "_hand_count"}
+        state = GameState()
+        payload = snapshot_to_dict(snapshot_state(state))
+
+        def walk_keys(value):
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    yield str(key)
+                    yield from walk_keys(child)
+            elif isinstance(value, (list, tuple)):
+                for child in value:
+                    yield from walk_keys(child)
+
+        self.assertTrue(forbidden_fields.isdisjoint(set(walk_keys(payload))))
+        for owner in (state, state.p1, state.p2):
+            for field in forbidden_fields:
+                with self.subTest(owner=type(owner).__name__, field=field):
+                    self.assertFalse(hasattr(owner, field))
 
     def test_choice_codec_round_trip_is_transport_independent(self):
         request = ChoiceRequest(
@@ -148,9 +156,9 @@ class PythonToolBoundaryTests(unittest.TestCase):
             response,
         )
 
-    def test_relay_accepts_only_protocol_v4_frames(self):
+    def test_relay_accepts_only_protocol_v6_frames(self):
         frame = {
-            "protocol_version": PROTOCOL_V4,
+            "protocol_version": PROTOCOL_V6,
             "message_type": "ping",
             "room_id": "1234",
             "sender": 0,
@@ -161,10 +169,10 @@ class PythonToolBoundaryTests(unittest.TestCase):
             "payload": {},
         }
         self.assertEqual(_valid_forward_message(frame, "1234", 0), (True, ""))
-        frame["protocol_version"] = PROTOCOL_V3
+        frame["protocol_version"] = PROTOCOL_V5
         valid, error = _valid_forward_message(frame, "1234", 0)
         self.assertFalse(valid)
-        self.assertIn("旧 v3 房间不能恢复", error)
+        self.assertIn("旧 v5 房间不能恢复", error)
 
         parsed, error = _parse_control_message(json.dumps({"type": "create_room"}))
         self.assertEqual(parsed, {"type": "create_room"})

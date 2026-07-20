@@ -75,9 +75,12 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 		for event in host.poll():
 			var processed := _capture_event(event, latest_views, 0)
 			if processed.has("error"):
+				var diagnostic := _board_contract_diagnostic(host)
 				host.close()
 				client.close()
-				return _failed(transport_kind, processed["error"])
+				return _failed(transport_kind, "%s board=%s" % [
+					processed["error"], diagnostic,
+				])
 			if event.get("type", "") == "state" and not same_deck_verified:
 				var state_view: Dictionary = event.get("view", {}).get("state", {})
 				if state_view.get("public_deck_keys", []) != [deck_key, deck_key]:
@@ -97,9 +100,12 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 		for event in client.poll():
 			var processed := _capture_event(event, latest_views, 1)
 			if processed.has("error"):
+				var diagnostic := _board_contract_diagnostic(host)
 				host.close()
 				client.close()
-				return _failed(transport_kind, processed["error"])
+				return _failed(transport_kind, "%s board=%s" % [
+					processed["error"], diagnostic,
+				])
 
 		for player_idx in [0, 1]:
 			var view: Dictionary = latest_views[player_idx]
@@ -139,11 +145,16 @@ func _play_network_game(transport_kind: String, relay_url: String) -> Dictionary
 					submitted = true
 					last_revision = revision
 					break
-			var legal: Array = view.get("legal_actions", [])
-			if not legal.is_empty() and revision != last_revision:
+			var legal_groups: Array = view.get("legal_action_groups", [])
+			if not legal_groups.is_empty() and revision != last_revision:
 				var candidates: Array[GameAction] = []
-				for row in legal:
-					candidates.append(GameAction.from_dict(row))
+				for row in legal_groups:
+					if not row is Dictionary:
+						continue
+					for action in LegalActionGroup.from_dict(row).concrete_actions():
+						candidates.append(action)
+				if candidates.is_empty():
+					continue
 				var action := _automatic_action(candidates)
 				if controller.submit_action(action):
 					actions += 1
@@ -172,12 +183,13 @@ func _capture_event(
 	match str(event.get("type", "")):
 		"state":
 			var view: Dictionary = event.get("view", {})
-			var protocol_validation := ProtocolV4.validate_payload(
-				ProtocolV4.STATE_UPDATE, view
+			var protocol_validation := ProtocolV6.validate_payload(
+				ProtocolV6.STATE_UPDATE, view
 			)
 			if not bool(protocol_validation.get("ok", false)):
-				return {"error": "received a state outside the protocol v4 contract: %s events=%s" % [
+				return {"error": "received a state outside the protocol v6 contract: %s groups=%s events=%s" % [
 					JSON.stringify(protocol_validation),
+					JSON.stringify(view.get("legal_action_groups", [])),
 					JSON.stringify(view.get("presentation_events", [])),
 				]}
 			var state_payload: Dictionary = view.get("state", {})
@@ -220,6 +232,25 @@ func _automatic_action(actions: Array[GameAction]) -> GameAction:
 			if action.action == action_name:
 				return action
 	return actions[0]
+
+
+func _board_contract_diagnostic(host: NetworkMatchController) -> String:
+	if host == null or host.session == null or host.session.state == null:
+		return "unavailable"
+	var board: Array[Dictionary] = []
+	for player_idx in [0, 1]:
+		var player := host.session.state.players[player_idx]
+		var slots: Array[Dictionary] = []
+		if player.active != null:
+			slots.append({"slot": "active", "pokemon": player.active.to_dict()})
+		for bench_idx in range(player.bench.size()):
+			if player.bench[bench_idx] != null:
+				slots.append({
+					"slot": "bench_%d" % bench_idx,
+					"pokemon": player.bench[bench_idx].to_dict(),
+				})
+		board.append({"player": player_idx, "slots": slots})
+	return JSON.stringify(board)
 
 
 func _automatic_choice(request: ChoiceRequest) -> ChoiceResponse:

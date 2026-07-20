@@ -15,7 +15,9 @@ from engine.commands.vm_contract import VM_IR_VERSION
 class CardRulesConsistencyTests(unittest.TestCase):
     def test_all_137_cards_have_registered_printed_text_bindings(self):
         root = Path(__file__).resolve().parents[2]
-        godot_ops = load_godot_vm_ops(root / "godot/rules/vm/vm_contract.gd")
+        godot_ops = load_godot_vm_ops(
+            root / "godot/data/vm_command_descriptors.json"
+        )
         matrix = assert_card_rules_consistent(peer_supported_ops=godot_ops)
 
         self.assertEqual(matrix["card_count"], 137)
@@ -31,7 +33,9 @@ class CardRulesConsistencyTests(unittest.TestCase):
 
     def test_unknown_or_one_sided_vm_op_fails_closed(self):
         root = Path(__file__).resolve().parents[2]
-        godot_ops = set(load_godot_vm_ops(root / "godot/rules/vm/vm_contract.gd"))
+        godot_ops = set(load_godot_vm_ops(
+            root / "godot/data/vm_command_descriptors.json"
+        ))
         godot_ops.remove(next(iter(godot_ops)))
         matrix = build_card_rules_matrix(peer_supported_ops=godot_ops)
         self.assertTrue(any("Python-only VM ops" in error for error in matrix["errors"]))

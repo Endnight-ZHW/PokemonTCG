@@ -1,5 +1,5 @@
 {
-  "android_version_code": 6,
+  "android_version_code": 8,
   "compatible_model_count": 0,
   "deep_fallback": "challenge",
   "deep_runtime_enabled": false,
@@ -32,16 +32,16 @@
   },
   "schemas": {
     "checkpoint": 10,
-    "encoder": 3,
-    "godot_actions": 3,
-    "godot_rules": 4,
+    "encoder": 5,
+    "godot_actions": 4,
+    "godot_rules": 6,
     "planner": 1,
-    "protocol": 4,
-    "python_actions": 2,
-    "python_rules": 3,
-    "rng": 1,
-    "snapshot": 2,
-    "vm_ir": 2
+    "protocol": 6,
+    "python_actions": 3,
+    "python_rules": 5,
+    "rng": 2,
+    "snapshot": 3,
+    "vm_ir": 3
   },
-  "version": "0.4.0"
+  "version": "0.6.0"
 }

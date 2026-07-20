@@ -126,6 +126,9 @@ func can_use_ability(state: GameState, player_idx: int, slot: String, ability_na
 	for ability in catalog.get_card(pokemon.card_id).get("abilities", []):
 		if str(ability.get("name", "")).to_lower() != ability_name.to_lower():
 			continue
+		for effect_value in VMRuntimeEffects.strict_ability_effects(ability):
+			if str(Dictionary(effect_value).get("op", "")) == "discard_then_revive":
+				return "该特性只能从弃牌区发动。"
 		var trigger := str(ability.get("trigger", ""))
 		if trigger in ["passive", "on_enter_play", "on_damaged"]:
 			return "该特性不能手动发动。"
@@ -173,6 +176,29 @@ func can_retreat(
 	return ""
 
 
+func can_start_retreat(
+	state: GameState,
+	player_idx: int,
+	bench_idx: int,
+) -> String:
+	if state.phase != "MAIN":
+		return "只能在主要阶段撤退。"
+	var player := state.get_player(player_idx)
+	if player.retreated_this_turn:
+		return "本回合已经撤退过了。"
+	if player.active == null:
+		return "没有战斗宝可梦。"
+	if "ASLEEP" in player.active.status_conditions or "PARALYZED" in player.active.status_conditions:
+		return "当前状态不能撤退。"
+	if bench_idx < 0 or bench_idx >= player.bench.size() or player.bench[bench_idx] == null:
+		return "无效的备战目标。"
+	var available_units := EnergyView.units_for_cards(
+		player.active.energy_card_ids, catalog).size()
+	if available_units < effective_retreat_cost(state, player):
+		return "所附能量不足以支付撤退费用。"
+	return ""
+
+
 func can_attack(state: GameState, player_idx: int, attack_idx: int) -> String:
 	if state.phase != "MAIN":
 		return "只能在主要阶段攻击。"
@@ -181,16 +207,14 @@ func can_attack(state: GameState, player_idx: int, attack_idx: int) -> String:
 	var active := state.get_player(player_idx).active
 	if active == null:
 		return "没有战斗宝可梦。"
-	if "ASLEEP" in active.status_conditions or "PARALYZED" in active.status_conditions or active.attack_locked:
+	if "ASLEEP" in active.status_conditions or "PARALYZED" in active.status_conditions:
 		return "当前状态不能攻击。"
 	var attacks: Array = catalog.get_card(active.card_id).get("attacks", [])
 	if attack_idx < 0 or attack_idx >= attacks.size():
 		return "无效的攻击序号。"
 	var attack: Dictionary = attacks[attack_idx]
-	if active.attack_locked_names.has("__all__"):
-		return "这只宝可梦无法使用招式。"
-	if active.attack_locked_names.has(attack.get("name", "")):
-		return "该招式不能连续使用。"
+	if active.attack_is_locked(str(attack.get("name", ""))):
+		return "该宝可梦或招式当前被封锁。"
 	if not active.has_enough_energy(attack.get("cost", []), catalog):
 		return "能量不足。"
 	return ""

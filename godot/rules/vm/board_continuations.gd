@@ -328,7 +328,7 @@ func resolve_discard_attachment(
 	if (
 		stack != null
 		and
-		target.all_prevented_next_turn
+		target.prevents_effects()
 		and stack.is_blockable_opponent_attack_effect(source_player, target_player)
 	):
 		return VMResult.ok("能量丢弃效果被免疫。")

@@ -54,9 +54,24 @@ func start_match(
 func submit_action(player_idx: int, action_data: Dictionary) -> StepResult:
 	if state == null:
 		return StepResult.new(false, "对局尚未开始。", null, [], -1, false, "not_started")
+	# Authenticate the connection identity before interpreting refs or payload.
+	# This keeps actor forgery distinguishable from an otherwise malformed action.
+	if action_data.get("actor") is int and int(action_data["actor"]) != player_idx:
+		return StepResult.new(false, "动作玩家与连接身份不匹配。", null, [], state.winner, false, "unauthorized_actor")
+	var schema := GameAction.validate_wire_dict(action_data, true)
+	if not bool(schema.get("ok", false)):
+		return StepResult.new(
+			false,
+			str(schema.get("message", "动作结构无效。")),
+			null,
+			[],
+			state.winner,
+			false,
+			str(schema.get("code", "invalid_schema")),
+		)
 	var action := GameAction.from_dict(action_data)
 	if action.actor != player_idx:
-		return StepResult.new(false, "动作玩家与连接身份不匹配。", null, [], state.winner, false, "wrong_actor")
+		return StepResult.new(false, "动作玩家与连接身份不匹配。", null, [], state.winner, false, "unauthorized_actor")
 	if action.action_id.is_empty():
 		return StepResult.new(false, "动作缺少唯一 ID。", null, [], state.winner, false, "missing_action_id")
 	return engine.apply_action(state, action, rng)
@@ -65,13 +80,25 @@ func submit_action(player_idx: int, action_data: Dictionary) -> StepResult:
 func submit_choice(player_idx: int, response_data: Dictionary) -> StepResult:
 	if state == null:
 		return StepResult.new(false, "对局尚未开始。", null, [], -1, false, "not_started")
-	var request := ResolutionStack.from_dict(state.resolution_stack).pending_request
+	var request := engine.query_pending_choice(state, player_idx)
 	if request == null:
+		if engine.query_pending_choice(state, 1 - player_idx) != null:
+			return StepResult.new(false, "该选择不属于当前玩家。", null, [], state.winner, false, "wrong_actor")
 		return StepResult.new(false, "当前没有待处理选择。", null, [], state.winner, false, "stale_choice")
-	if request.player != player_idx:
-		return StepResult.new(false, "该选择不属于当前玩家。", null, [], state.winner, false, "wrong_actor")
+	var schema := ProtocolV6.validate_payload(
+		ProtocolV6.CHOICE_SUBMIT, {"response": response_data})
+	if not bool(schema.get("ok", false)):
+		return StepResult.new(
+			false,
+			str(schema.get("message", "选择响应结构无效。")),
+			null,
+			[],
+			state.winner,
+			false,
+			"invalid_choice",
+		)
 	var response := ChoiceResponse.from_dict(response_data)
-	return engine.apply_choice(state, request, response, rng)
+	return engine.apply_choice_response(state, response, rng)
 
 
 func surrender(player_idx: int) -> StepResult:
@@ -106,24 +133,21 @@ func view_for(
 ) -> Dictionary:
 	if state == null:
 		return {}
-	var stack := ResolutionStack.from_dict(state.resolution_stack)
-	var pending := stack.pending_request
-	var render_state := state
-	var hide_cancellable_transaction := false
-	if pending != null and pending.player != player_idx:
-		var checkpoint: Variant = stack.context.get("cancel_action_checkpoint")
-		if checkpoint is Dictionary and Dictionary(checkpoint).get("state") is Dictionary:
-			# A cancellable Trainer is provisional until its final choice commits.
-			# The chooser must see the working state, while the opponent keeps the
-			# pre-action board and only learns that a generic choice is pending.
-			render_state = GameState.from_dict(Dictionary(checkpoint)["state"])
-			render_state.revision = state.revision
-			render_state.choice_sequence = state.choice_sequence
-			hide_cancellable_transaction = true
-	var legal: Array = []
-	if pending == null and _current_actor() == player_idx:
-		for action in engine.legal_actions(state, player_idx, true):
-			legal.append(action.to_dict())
+	var public_view := engine.query_state_view(state, player_idx)
+	var pending := engine.query_pending_choice(state, player_idx)
+	var hide_cancellable_transaction := bool(public_view.get(
+		"hides_provisional_action", false))
+	var legal_groups: Array = []
+	var legal_query := LegalActionQueryResult.ok(state.revision, [])
+	if (
+		public_view.get("choice_request") == null
+		and public_view.get("wait_context") == null
+		and _current_actor() == player_idx
+	):
+		legal_query = engine.query_legal_action_groups(state, player_idx)
+		if legal_query.success:
+			for group in legal_query.groups:
+				legal_groups.append(group.to_dict())
 	var visible_events: Array[Dictionary] = []
 	if not hide_cancellable_transaction:
 		var normalized := PresentationEvent.normalize_all(
@@ -136,50 +160,13 @@ func view_for(
 			if not visible.is_empty():
 				visible_events.append(visible)
 	return {
-		"state": StateSerializer.for_player(render_state, player_idx),
-		"legal_actions": legal,
+		"state": public_view.get("state", {}),
+		"legal_action_groups": legal_groups,
+		"legal_action_error": legal_query.code,
 		"presentation_events": visible_events,
-		"choice_request": (
-			_choice_payload(pending, state.revision)
-			if pending != null and pending.player == player_idx
-			else null
-		),
-		"wait_context": (
-			{
-				"waiting_for_player": pending.player,
-				"choice_kind": _coarse_choice_kind(pending),
-			}
-			if pending != null and pending.player != player_idx
-			else null
-		),
+		"choice_request": public_view.get("choice_request"),
+		"wait_context": public_view.get("wait_context"),
 	}
-
-
-static func _choice_payload(request: ChoiceRequest, revision: int) -> Dictionary:
-	var payload := request.to_dict()
-	var metadata: Dictionary = Dictionary(payload.get("metadata", {})).duplicate(true)
-	if str(metadata.get("domain", "")).is_empty():
-		metadata["domain"] = "rules"
-	metadata["revision"] = revision
-	if str(metadata.get("continuation_frame_id", "")).is_empty():
-		metadata["continuation_frame_id"] = request.request_id
-	payload["metadata"] = metadata
-	return payload
-
-
-static func _coarse_choice_kind(request: ChoiceRequest) -> String:
-	if request == null:
-		return ""
-	if request.request_type == "select_attachment":
-		return "attachment"
-	if request.request_type in [
-		"distribute_energy", "select_energy_source", "select_energy_target",
-		"select_own_bench_energy",
-	]:
-		return "energy"
-	if request.request_type == "coin_flip":
-		return "coin"
-	return "choice"
 
 
 func _current_actor() -> int:

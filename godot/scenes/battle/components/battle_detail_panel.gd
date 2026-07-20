@@ -348,9 +348,9 @@ func _append_pokemon_state(rows: Array[String], pokemon: PokemonState) -> void:
 	var states: Array[String] = []
 	for status in pokemon.status_conditions:
 		states.append(str(STATUS_NAMES.get(str(status).to_upper(), status)))
-	if pokemon.attack_locked:
+	if pokemon.attack_is_locked():
 		states.append("无法攻击")
-	if pokemon.dazzled:
+	if pokemon.has_attack_gate("dazzled"):
 		states.append("受幻惑影响")
 	rows.append("[color=#9eb0ca]特殊状态[/color]  %s" % (
 		"、".join(states) if not states.is_empty() else "无"

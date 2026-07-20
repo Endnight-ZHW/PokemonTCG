@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import configparser
+import hashlib
 import json
 import re
 import unittest
@@ -13,6 +14,14 @@ from scripts.export_godot_data import DECKS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class ReleaseManifestTests(unittest.TestCase):
@@ -38,10 +47,10 @@ class ReleaseManifestTests(unittest.TestCase):
             sorted(decks),
         )
 
-    def test_release_040_metadata_and_deep_fallback_are_explicit(self):
+    def test_release_060_metadata_and_deep_fallback_are_explicit(self):
         self.assertEqual(self.manifest["format_version"], 2)
-        self.assertEqual(self.manifest["version"], "0.4.0")
-        self.assertEqual(self.manifest["android_version_code"], 6)
+        self.assertEqual(self.manifest["version"], "0.6.0")
+        self.assertEqual(self.manifest["android_version_code"], 8)
         self.assertFalse(self.manifest["deep_runtime_enabled"])
         self.assertEqual(self.manifest["deep_fallback"], "challenge")
         self.assertEqual(self.manifest["compatible_model_count"], 0)
@@ -49,17 +58,17 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(self.manifest["model_count"], 10)
 
         expected_schemas = {
-            "protocol": 4,
-            "godot_rules": 4,
-            "godot_actions": 3,
-            "python_rules": 3,
-            "python_actions": 2,
-            "snapshot": 2,
-            "encoder": 3,
+            "protocol": 6,
+            "godot_rules": 6,
+            "godot_actions": 4,
+            "python_rules": 5,
+            "python_actions": 3,
+            "snapshot": 3,
+            "encoder": 5,
             "checkpoint": 10,
             "planner": 1,
-            "vm_ir": 2,
-            "rng": 1,
+            "vm_ir": 3,
+            "rng": 2,
         }
         self.assertEqual(self.manifest["schemas"], expected_schemas)
 
@@ -69,14 +78,88 @@ class ReleaseManifestTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        exported = json.loads(
+            (REPO_ROOT / "godot" / "data" / "ai_models.json").read_text(
+                encoding="utf-8"
+            )
+        )
         bridge = runtime["compatibility_bridge"]
-        self.assertEqual(bridge["python_rules_version"], 2)
-        self.assertEqual(bridge["godot_rules_version"], 3)
-        self.assertEqual(len(runtime["models"]), 10)
+        self.assertEqual(
+            bridge,
+            {
+                "version": 1,
+                "python_rules_version": 2,
+                "python_action_version": 2,
+                "python_encoder_version": 3,
+                "godot_rules_version": 3,
+                "godot_action_version": 3,
+            },
+        )
+        release_decks = set(self.manifest["release_decks"])
+        self.assertEqual(set(runtime["models"]), release_decks)
+        self.assertEqual(set(exported["models"]), release_decks)
+        self.assertEqual(len(runtime["models"]), self.manifest["legacy_model_count"])
+        self.assertEqual(self.manifest["compatible_model_count"], 0)
+
+        current_schema = (
+            self.manifest["schemas"]["python_rules"],
+            self.manifest["schemas"]["python_actions"],
+            self.manifest["schemas"]["encoder"],
+        )
         for deck_key, metadata in runtime["models"].items():
             with self.subTest(deck=deck_key):
-                self.assertEqual(metadata["rules_version"], 2)
-                self.assertEqual(metadata["action_version"], 2)
+                exported_metadata = exported["models"][deck_key]
+                legacy_schema = (
+                    metadata["rules_version"],
+                    metadata["action_version"],
+                    metadata["encoder_version"],
+                )
+                self.assertEqual(legacy_schema, (2, 2, 3))
+                self.assertNotEqual(legacy_schema, current_schema)
+                self.assertEqual(
+                    legacy_schema,
+                    (
+                        bridge["python_rules_version"],
+                        bridge["python_action_version"],
+                        bridge["python_encoder_version"],
+                    ),
+                )
+                self.assertFalse(exported_metadata["accepted"])
+                self.assertFalse(exported_metadata["verified"])
+                self.assertEqual(
+                    (
+                        exported_metadata["rules_version"],
+                        exported_metadata["action_version"],
+                        exported_metadata["encoder_version"],
+                    ),
+                    legacy_schema,
+                )
+
+                expected_onnx_path = f"res://data/ai_models/{deck_key}.onnx"
+                self.assertEqual(metadata["onnx_path"], expected_onnx_path)
+                self.assertEqual(exported_metadata["onnx_path"], expected_onnx_path)
+                onnx_path = (
+                    REPO_ROOT / "godot" / "data" / "ai_models" / f"{deck_key}.onnx"
+                )
+                self.assertTrue(onnx_path.is_file())
+                self.assertEqual(onnx_path.stat().st_size, metadata["onnx_size"])
+                self.assertEqual(_sha256(onnx_path), metadata["onnx_sha256"])
+
+                expected_checkpoint = f"python/data/ai_models/{deck_key}.pt"
+                self.assertEqual(
+                    exported_metadata["source_checkpoint"], expected_checkpoint
+                )
+                checkpoint_path = REPO_ROOT / expected_checkpoint
+                self.assertTrue(checkpoint_path.is_file())
+                self.assertEqual(
+                    checkpoint_path.stat().st_size,
+                    exported_metadata["checkpoint_size"],
+                )
+                checkpoint_sha256 = _sha256(checkpoint_path)
+                self.assertEqual(
+                    checkpoint_sha256, exported_metadata["checkpoint_sha256"]
+                )
+                self.assertEqual(checkpoint_sha256, metadata["checkpoint_sha256"])
 
     def test_schema_and_android_metadata_match_runtime(self):
         schemas = self.manifest["schemas"]
@@ -95,7 +178,7 @@ class ReleaseManifestTests(unittest.TestCase):
             app_state,
             rf"ACTION_SCHEMA_VERSION\s*:=\s*{int(schemas['godot_actions'])}\b",
         )
-        protocol = (REPO_ROOT / "godot" / "network" / "protocol_v4.gd").read_text(
+        protocol = (REPO_ROOT / "godot" / "network" / "protocol_v6.gd").read_text(
             encoding="utf-8"
         )
         self.assertRegex(protocol, rf"const\s+VERSION\s*:=\s*{schemas['protocol']}\b")

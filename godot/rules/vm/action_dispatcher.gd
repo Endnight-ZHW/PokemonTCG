@@ -6,6 +6,7 @@ var promotion_settlement: VMPromotionSettlement
 var attack_settlement: VMAttackSettlement
 var turn_settlement: VMTurnSettlement
 var _handlers: Dictionary = {}
+var _frozen := false
 
 
 func _init(
@@ -13,22 +14,31 @@ func _init(
 	p_promotion_settlement: VMPromotionSettlement,
 	p_attack_settlement: VMAttackSettlement,
 	p_turn_settlement: VMTurnSettlement,
+	action_registry: ActionDefinitionRegistry,
 ) -> void:
 	action_executor = p_action_executor
 	promotion_settlement = p_promotion_settlement
 	attack_settlement = p_attack_settlement
 	turn_settlement = p_turn_settlement
-	_register_defaults()
+	_frozen = _register_from_registry(action_registry)
 
 
-func register_action(action_name: String, handler: Callable) -> void:
-	if action_name.is_empty():
+func register_action(action_name: String, handler: Callable) -> bool:
+	if _frozen:
+		push_error("VM action dispatcher is frozen: %s" % action_name)
+		return false
+	if action_name.is_empty() or _handlers.has(action_name):
 		push_error("VM action name must be non-empty")
-		return
+		return false
 	if not handler.is_valid():
 		push_error("VM action handler must be valid: %s" % action_name)
-		return
+		return false
 	_handlers[action_name] = handler
+	return true
+
+
+func is_frozen() -> bool:
+	return _frozen
 
 
 func supports_action(action_name: String) -> bool:
@@ -53,19 +63,18 @@ func dispatch(
 	return handler.call(state, action, actor, rng)
 
 
-func _register_defaults() -> void:
-	register_action("NOOP", Callable(self, "_dispatch_noop"))
-	register_action("SETUP_DONE", Callable(self, "_dispatch_setup_done"))
-	register_action("PROMOTE", Callable(self, "_dispatch_promote"))
-	register_action("PLAY_BASIC", Callable(self, "_dispatch_play_basic"))
-	register_action("EVOLVE", Callable(self, "_dispatch_evolve"))
-	register_action("ATTACH_ENERGY", Callable(self, "_dispatch_attach_energy"))
-	register_action("PLAY_TRAINER", Callable(self, "_dispatch_play_trainer"))
-	register_action("USE_ABILITY", Callable(self, "_dispatch_use_ability"))
-	register_action("USE_STADIUM", Callable(self, "_dispatch_use_stadium"))
-	register_action("RETREAT", Callable(self, "_dispatch_retreat"))
-	register_action("DECLARE_ATTACK", Callable(self, "_dispatch_declare_attack"))
-	register_action("END_TURN", Callable(self, "_dispatch_end_turn"))
+func _register_from_registry(action_registry: ActionDefinitionRegistry) -> bool:
+	if action_registry == null:
+		return false
+	for action_name in action_registry.all_kinds():
+		var definition := action_registry.definition(action_name)
+		var method_name := str(definition.get("executor_method", ""))
+		var handler := Callable(self, method_name)
+		if method_name.is_empty() or not handler.is_valid():
+			return false
+		if not register_action(action_name, handler):
+			return false
+	return true
 
 
 func _dispatch_noop(
@@ -122,11 +131,11 @@ func _dispatch_attach_energy(
 	state: GameState,
 	action: GameAction,
 	actor: int,
-	_rng: PortableRandomSource,
+	rng: PortableRandomSource,
 ) -> StepResult:
 	return action_executor.attach_energy(
 		state, actor, int(action.params.get("hand_idx", -1)),
-		str(action.params.get("target_slot", "")))
+		str(action.params.get("target_slot", "")), rng)
 
 
 func _dispatch_play_trainer(
@@ -166,9 +175,14 @@ func _dispatch_retreat(
 	actor: int,
 	_rng: PortableRandomSource,
 ) -> StepResult:
-	return action_executor.retreat(
-		state, actor, int(action.params.get("bench_idx", -1)),
-		Array(action.params.get("energy_indices", [])))
+	var bench_idx := int(action.params.get("bench_idx", -1))
+	var player := state.get_player(actor)
+	if (
+		player.active != null
+		and action_executor.validator.effective_retreat_cost(state, player) > 0
+	):
+		return action_executor.request_retreat_payment(state, actor, bench_idx)
+	return action_executor.retreat(state, actor, bench_idx, [])
 
 
 func _dispatch_declare_attack(

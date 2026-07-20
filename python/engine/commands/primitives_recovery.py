@@ -283,6 +283,10 @@ class AbilityDiscardRevive:
         pokemon = player.place_bench(target_card, bench_slot)
         if pokemon is not None:
             pokemon.placed_this_turn = True
+            # The ability has already been consumed to enter play.  Persist
+            # that fact on the revived instance so it cannot be activated a
+            # second time during the same turn after another zone cycle.
+            pokemon.used_abilities.add("紧急上浮")
         ctx.state._log(f"{player.name}使用紧急上浮将{target_card.name}放置于备战区。")
         drawn = player.draw_cards(3)
         ctx.state._log(f"{player.name}抽取了{len(drawn)}张卡。")

@@ -258,6 +258,7 @@ func attach_energy(
 	actor: int,
 	hand_idx: int,
 	target_slot: String,
+	rng: PortableRandomSource,
 ) -> StepResult:
 	var player := state.get_player(actor)
 	if hand_idx < 0 or hand_idx >= player.hand.size():
@@ -269,6 +270,7 @@ func attach_energy(
 	var target := player.get_pokemon(target_slot)
 	player.hand.remove_at(hand_idx)
 	target.energy_card_ids.append(card_id)
+	var attachment_index := target.energy_card_ids.size() - 1
 	player.energy_attached_this_turn = true
 	var events: Array[Dictionary] = [{
 		"event_type": "energy_attached",
@@ -278,26 +280,37 @@ func attach_energy(
 		"target": {"player": actor, "slot": target_slot},
 		"data": {"player": actor, "slot": target_slot, "card_id": card_id},
 	}]
-	var trigger_commands_to_resolve: Array[Dictionary] = []
-	effect_engine.runtime.trigger_commands.collect_on_attach_commands(
+	var trigger_candidates: Array[Dictionary] = []
+	effect_engine.trigger_commands().collect_on_attach_triggers(
 		card_id,
 		actor,
 		target_slot,
 		"hand",
-		trigger_commands_to_resolve,
+		trigger_candidates,
+		attachment_index,
 	)
-	var trigger_result := effect_engine.runtime.trigger_commands.resolve_commands(
-		state,
-		actor,
-		trigger_commands_to_resolve,
-		events,
-	)
-	if not bool(trigger_result.get("success", false)):
-		return _error(
-			str(trigger_result.get("message", "触发命令结算失败。")),
-			str(trigger_result.get("error_code", "trigger_command_failed")),
-			state,
+	if not trigger_candidates.is_empty():
+		var stack := ResolutionStack.new()
+		var queued := effect_engine.trigger_commands().queue_candidates(
+			stack,
+			trigger_candidates,
+			VMModifierManager.ON_ATTACH,
+			state.active_player_idx,
+			"apnap",
+			"effect",
 		)
+		if not bool(queued.get("success", false)):
+			return _error(
+				str(queued.get("message", "触发批无效。")),
+				str(queued.get("error_code", "invalid_trigger_batch")),
+				state,
+			)
+		var trigger_step := effect_engine.resolve(state, stack, rng)
+		trigger_step.events = events + trigger_step.events
+		if not trigger_step.success:
+			return trigger_step
+		state.log_action("%s附着了%s。" % [player.name, catalog.card_name(card_id)])
+		return trigger_step
 	state.log_action("%s附着了%s。" % [player.name, catalog.card_name(card_id)])
 	return StepResult.new(true, "能量已附着。", null, events)
 
@@ -318,13 +331,22 @@ func play_trainer(
 	var reason := validator.can_play_trainer(state, actor, card_id, target_slot)
 	if not reason.is_empty():
 		return _error(reason, "illegal_trainer", state)
-	if card_id == "sv1-153" and player.hand.size() - 1 < 2:
-		return _error("高级球需要丢弃2张其他手牌。", "cost_not_payable", state)
+	var runtime_effects := _trainer_runtime_effects(card_id)
+	var cost_preflight := availability.preflight_costs(
+		state, actor, runtime_effects, hand_idx, "trainer")
+	if not bool(cost_preflight.get("ok", false)):
+		return _error(
+			str(cost_preflight.get("message", "VM代价预检失败。")),
+			str(cost_preflight.get("error_code", "vm_error")),
+			state,
+		)
+	if not bool(cost_preflight.get("legal", false)):
+		return _error("无法支付训练家卡代价。", "cost_not_payable", state)
 	player.hand.remove_at(hand_idx)
 	if catalog.is_tool(card_id):
 		var tool_target := player.get_pokemon(target_slot)
 		tool_target.attached_tool_id = card_id
-		return StepResult.new(true, "宝可梦道具已附着。", null, [{
+		var tool_events: Array[Dictionary] = [{
 			"event_type": "tool_attached",
 			"actor": actor,
 			"card_id": card_id,
@@ -335,7 +357,19 @@ func play_trainer(
 				"slot": target_slot,
 				"card_id": card_id,
 			},
-		}])
+		}]
+		if runtime_effects.is_empty():
+			return StepResult.new(true, "宝可梦道具已附着。", null, tool_events)
+		var tool_step := run_effects(
+			state,
+			runtime_effects,
+			actor,
+			target_slot,
+			rng,
+			{"effect_source_kind": "trainer"},
+		)
+		tool_step.events = tool_events + tool_step.events
+		return tool_step
 	var play_event := {
 		"event_type": "trainer_played",
 		"actor": actor,
@@ -472,6 +506,61 @@ func retreat(
 		"data": {"player": actor, "bench_idx": bench_idx},
 	})
 	return StepResult.new(true, "撤退完成。", null, events)
+
+
+func request_retreat_payment(
+	state: GameState,
+	actor: int,
+	bench_idx: int,
+) -> StepResult:
+	var reason := validator.can_start_retreat(state, actor, bench_idx)
+	if not reason.is_empty():
+		return _error(reason, "illegal_retreat", state)
+	var player := state.get_player(actor)
+	var cost := validator.effective_retreat_cost(state, player)
+	if cost <= 0:
+		return retreat(state, actor, bench_idx, [])
+	var stack := ResolutionStack.new()
+	var frame_id := "retreat:%d:%d:%d" % [state.revision, actor, bench_idx]
+	stack.push_continuation("retreat_payment", {
+		"kind": "retreat_payment",
+		"frame_id": frame_id,
+		"actor": actor,
+		"bench_idx": bench_idx,
+		"required_units": cost,
+	})
+	var options: Array[Dictionary] = []
+	for index in range(player.active.energy_card_ids.size()):
+		var card_id := player.active.energy_card_ids[index]
+		var ref := EntityRef.new(
+			"attachment", actor, "", "active", index, "energy", card_id)
+		options.append({
+			"option_id": "retreat:energy:%d" % index,
+			"label": catalog.card_name(card_id),
+			"ref": ref.to_dict(),
+		})
+	var request := ChoiceRequest.new(
+		stack.next_request_id(state, actor, "select_retreat_payment"),
+		"select_retreat_payment",
+		actor,
+		"请选择用于支付撤退费用的能量。",
+		options,
+		1,
+		options.size(),
+		false,
+		true,
+		{
+			"domain": "action",
+			"purpose": "retreat_payment",
+			"revision": state.revision,
+			"continuation_frame_id": frame_id,
+			"required_units": cost,
+			"cancels_action": true,
+		},
+	)
+	stack.pending_request = request
+	state.resolution_stack = stack.to_dict()
+	return StepResult.new(true, "请选择撤退费用。", request, [], state.winner, false)
 
 
 func run_effects(

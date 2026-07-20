@@ -32,11 +32,11 @@ class VMChoiceManager:
         max_select = max(0, int(request.max_select))
         allow_duplicates = bool(request.allow_duplicates)
         if request.request_type == "coin_flip":
-            if request.until_tails:
-                min_select, max_select = 1, 32
-            else:
-                min_select = max_select = max(1, int(request.flip_count or 1))
-            allow_duplicates = True
+            # Coin outcomes were consumed by the command under the bound
+            # transaction RNG.  This request is an animation/display
+            # acknowledgement and contains no player-selectable options.
+            min_select = max_select = 0
+            allow_duplicates = False
         elif request.request_type == "distribute_energy":
             if request.distribute_mode == "source_select":
                 min_select = max_select = 1
@@ -58,7 +58,15 @@ class VMChoiceManager:
                     str((getattr(request, "continuation", {}) or {}).get("kind", ""))
                     == "energy_relocate_distribution"
                 )
-        can_cancel = min_select <= 0 or bool(getattr(request, "can_cancel", False))
+        # Coin outcomes are already authoritative and consumed from the rule
+        # RNG.  The zero-selection request is only an acknowledgement for the
+        # animation layer; treating its zero bound as cancellable would expose
+        # a second, caller-controlled outcome path.
+        can_cancel = (
+            False
+            if request.request_type == "coin_flip"
+            else min_select <= 0 or bool(getattr(request, "can_cancel", False))
+        )
         continuation = dict(getattr(request, "continuation", {}) or {})
         card_list_ids = [
             str(getattr(card, "api_id", card) or "")
@@ -88,6 +96,24 @@ class VMChoiceManager:
             "revision": getattr(state, "revision", 0),
             "continuation": continuation,
         }
+        if request.request_type == "coin_flip":
+            raw_results = continuation.get("results", [])
+            if (
+                not isinstance(raw_results, list)
+                or not raw_results
+                or len(raw_results) > 32
+                or not all(type(result) is bool for result in raw_results)
+            ):
+                raise ValueError("coin_flip request lacks authoritative results")
+            metadata["predetermined_flips"] = list(raw_results)
+        if request.request_type == "select_retreat_payment":
+            required_units = continuation.get("required_units", 0)
+            if type(required_units) is not int or required_units <= 0:
+                raise ValueError("retreat payment request lacks required units")
+            metadata["domain"] = "action"
+            metadata["purpose"] = "retreat_payment"
+            metadata["required_units"] = required_units
+            metadata["cancels_action"] = True
         if request.request_type in {"distribute_energy", "select_energy_target"}:
             continuation_card_ids = continuation.get("card_ids")
             metadata["card_ids"] = (
@@ -229,10 +255,7 @@ class VMChoiceManager:
         if cancelled:
             return ChoiceResponse(request.request_id, (), True)
         if request.request_type == "coin_flip":
-            return ChoiceResponse(
-                request.request_id,
-                tuple("coin:heads" if value else "coin:tails" for value in payload or []),
-            )
+            return ChoiceResponse(request.request_id, ())
         if request.request_type in {"confirm", "confirm_trigger"}:
             return ChoiceResponse(
                 request.request_id,
@@ -319,7 +342,7 @@ class VMChoiceManager:
                 if match is not None:
                     option_ids.append(match.option_id)
             return ChoiceResponse(request.request_id, tuple(option_ids))
-        if request.request_type == "select_attachment":
+        if request.request_type in {"select_attachment", "select_retreat_payment"}:
             option_ids = []
             for selected in payload or []:
                 selected_id = getattr(selected, "ref_id", str(selected))
@@ -358,21 +381,7 @@ class VMChoiceManager:
         rng: RandomSource,
     ) -> ChoiceResponse:
         if request.request_type == "coin_flip":
-            flip_count = int(request.metadata.get("flip_count", 1) or 1)
-            until_tails = bool(request.metadata.get("until_tails", False))
-            results: list[str] = []
-            if until_tails:
-                for _ in range(32):
-                    option_id = "coin:heads" if rng.coin() else "coin:tails"
-                    results.append(option_id)
-                    if option_id.endswith("tails"):
-                        break
-            else:
-                results = [
-                    "coin:heads" if rng.coin() else "coin:tails"
-                    for _ in range(max(1, flip_count))
-                ]
-            return ChoiceResponse(request.request_id, tuple(results))
+            return ChoiceResponse(request.request_id, ())
         if request.request_type == "choose_turn_order":
             option = next(
                 (candidate for candidate in request.options
@@ -421,6 +430,24 @@ class VMChoiceManager:
                 if len(selected) >= count:
                     break
             return ChoiceResponse(request.request_id, tuple(selected))
+        if request.request_type == "select_retreat_payment":
+            required_units = int(
+                request.metadata.get("required_units", 0)
+                or (request.metadata.get("continuation", {}) or {}).get(
+                    "required_units", 0
+                )
+                or 0
+            )
+            paid_units = 0
+            selected_ids: list[str] = []
+            for option in request.options:
+                value = option.value if isinstance(option.value, dict) else {}
+                units = int(value.get("units", 1) or 1)
+                selected_ids.append(option.option_id)
+                paid_units += max(1, units)
+                if paid_units >= required_units:
+                    break
+            return ChoiceResponse(request.request_id, tuple(selected_ids))
         count = min(len(request.options), max(request.min_select, min(request.max_select, len(request.options))))
         return ChoiceResponse(request.request_id, tuple(option.option_id for option in request.options[:count]))
 
@@ -431,7 +458,15 @@ class VMChoiceManager:
         response: ChoiceResponse,
     ):
         if request.request_type == "coin_flip":
-            return [option_id == "coin:heads" for option_id in response.option_ids]
+            results = (request.continuation or {}).get("results", [])
+            if (
+                not isinstance(results, list)
+                or not results
+                or len(results) > 32
+                or not all(type(result) is bool for result in results)
+            ):
+                raise ValueError("coin_flip continuation lacks authoritative results")
+            return list(results)
         if request.request_type in {"confirm", "confirm_trigger"}:
             return bool(selected and selected[0].value)
         if request.request_type in {
@@ -471,7 +506,7 @@ class VMChoiceManager:
                 )
                 for energy_idx, option in enumerate(selected)
             ]
-        if request.request_type == "select_attachment":
+        if request.request_type in {"select_attachment", "select_retreat_payment"}:
             return [option.ref for option in selected if isinstance(option.ref, AttachmentRef)]
         pokemon_refs = [option.ref for option in selected if isinstance(option.ref, PokemonRef)]
         if pokemon_refs:
@@ -505,10 +540,7 @@ class VMChoiceManager:
 
     def _choice_options(self, state: GameState, request: ActionRequest) -> list[ChoiceOption]:
         if request.request_type == "coin_flip":
-            return [
-                ChoiceOption("coin:heads", "正面", value=True),
-                ChoiceOption("coin:tails", "反面", value=False),
-            ]
+            return []
         if request.request_type == "choose_turn_order":
             return [
                 ChoiceOption("turn_order:first", "先攻", value="first"),
@@ -622,7 +654,7 @@ class VMChoiceManager:
                         value,
                     ))
             return options
-        if request.request_type == "select_attachment":
+        if request.request_type in {"select_attachment", "select_retreat_payment"}:
             options = []
             for target in request.target_info or []:
                 player_idx = int(target.get("player", request.player))
@@ -632,7 +664,12 @@ class VMChoiceManager:
                 card_id = str(target.get("card_id", ""))
                 ref = AttachmentRef(player_idx, slot, attachment_type, index, card_id)
                 label = str(target.get("label") or target.get("name") or card_id)
-                options.append(ChoiceOption(ref.ref_id, label, ref, target))
+                option_id = (
+                    f"retreat:energy:{index}"
+                    if request.request_type == "select_retreat_payment"
+                    else ref.ref_id
+                )
+                options.append(ChoiceOption(option_id, label, ref, target))
             return options
 
         refs = self._card_list_refs(state, request)
@@ -646,10 +683,104 @@ class VMChoiceManager:
             return self._board_card_refs(state, request)
         player_idx = request.player if request.player in (0, 1) else state.active_player_idx
         zone = request.from_zone or "choices"
+        physical_zone_name = {
+            "deck": "deck",
+            "discard": "discard",
+            "hand": "hand",
+            "prize": "prizes",
+            "prizes": "prizes",
+        }.get(zone)
+        if physical_zone_name is not None:
+            player = state.get_player(player_idx)
+            physical_zone = getattr(player, physical_zone_name, None)
+            if not isinstance(physical_zone, list):
+                raise ValueError(f"choice source zone is unavailable: {zone}")
+            indices = self._physical_card_indices(physical_zone, request)
+            return [
+                (CardRef(player_idx, zone, index, getattr(card, "api_id", "")), card)
+                for index, card in zip(indices, request.card_list)
+            ]
         return [
             (CardRef(player_idx, zone, idx, getattr(card, "api_id", "")), card)
             for idx, card in enumerate(request.card_list)
         ]
+
+    @staticmethod
+    def _physical_card_indices(physical_zone: list, request: ActionRequest) -> list[int]:
+        """Bind choice candidates to their revision-scoped physical indices.
+
+        Search requests usually expose a filtered view of a zone.  Enumerating
+        that view creates references which point at different cards in the
+        authoritative state.  Top-deck requests additionally expose cards in
+        top-first order, the reverse of the stored deck order, so their
+        continuation positions are the only unambiguous binding when a deck
+        contains duplicate card IDs.
+        """
+        candidates = list(request.card_list or [])
+        continuation = request.continuation or {}
+        kind = str(continuation.get("kind", "") or "")
+        if request.from_zone == "deck" and kind in {
+            "look_top_deck",
+            "look_top_attach_energy",
+        }:
+            raw_positions = continuation.get("display_top_positions", [])
+            raw_top_ids = continuation.get("top_card_ids", [])
+            if (
+                not isinstance(raw_positions, list)
+                or len(raw_positions) != len(candidates)
+                or any(type(position) is not int for position in raw_positions)
+                or not isinstance(raw_top_ids, list)
+                or not raw_top_ids
+                or any(not isinstance(card_id, str) or not card_id for card_id in raw_top_ids)
+                or len(raw_top_ids) > len(physical_zone)
+            ):
+                raise ValueError("top-deck choice lacks exact physical positions")
+            actual_top_ids = [
+                str(getattr(physical_zone[-1 - position], "api_id", "") or "")
+                for position in range(len(raw_top_ids))
+            ]
+            if actual_top_ids != raw_top_ids:
+                raise ValueError("top-deck choice no longer matches the top window")
+            indices = [len(physical_zone) - 1 - position for position in raw_positions]
+            if len(set(indices)) != len(indices):
+                raise ValueError("top-deck choice contains duplicate physical positions")
+            for position, index, candidate in zip(raw_positions, indices, candidates):
+                if position < 0 or position >= len(raw_top_ids):
+                    raise ValueError("top-deck choice position is outside the deck")
+                expected_id = str(getattr(candidate, "api_id", "") or "")
+                if not expected_id or raw_top_ids[position] != expected_id:
+                    raise ValueError("top-deck choice no longer matches the deck")
+            return indices
+
+        unused = set(range(len(physical_zone)))
+        indices: list[int] = []
+        for candidate in candidates:
+            candidate_id = str(getattr(candidate, "api_id", "") or "")
+            matched = next(
+                (
+                    index
+                    for index, zone_card in enumerate(physical_zone)
+                    if index in unused and zone_card is candidate
+                ),
+                -1,
+            )
+            if matched < 0 and candidate_id:
+                matched = next(
+                    (
+                        index
+                        for index, zone_card in enumerate(physical_zone)
+                        if index in unused
+                        and str(getattr(zone_card, "api_id", "") or "") == candidate_id
+                    ),
+                    -1,
+                )
+            if matched < 0:
+                raise ValueError(
+                    f"choice candidate is absent from authoritative {request.from_zone}"
+                )
+            unused.remove(matched)
+            indices.append(matched)
+        return indices
 
     def _board_card_refs(self, state: GameState, request: ActionRequest):
         candidate_ids = [getattr(card, "api_id", "") for card in request.card_list]

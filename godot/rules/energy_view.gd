@@ -1,9 +1,6 @@
 class_name EnergyView
 extends RefCounted
 
-const LUMINOUS_ENERGY_ID := "svg2-lume"
-
-
 static func units_for_cards(card_ids: Array[String], catalog: CardCatalog) -> Array[String]:
 	var result: Array[String] = []
 	for card_index in range(card_ids.size()):
@@ -21,15 +18,28 @@ static func units_for_card_at(
 	var card_id := card_ids[card_index]
 	var provided: Array[String] = []
 	provided.assign(catalog.provides_energy(card_id))
-	if card_id != LUMINOUS_ENERGY_ID:
+	var downgrade_if_other_special := false
+	for effect_value in catalog.get_card(card_id).get("energy_effects", []):
+		var effect: Dictionary = effect_value
+		if (
+			str(effect.get("kind", "")) == "provide_energy"
+			and bool(effect.get("downgrade_if_other_special", false))
+		):
+			downgrade_if_other_special = true
+			break
+	if not downgrade_if_other_special:
 		return provided
-	# Luminous Energy provides every type only while it is the sole Special
-	# Energy attached. A second Luminous Energy therefore disables both.
+	# Data-defined wildcard providers can downgrade when another Special Energy
+	# is attached. Compare attachment positions so duplicate physical cards are
+	# handled independently.
 	for other_index in range(card_ids.size()):
 		if other_index == card_index:
 			continue
 		if catalog.is_special_energy(card_ids[other_index]):
-			return ["Colorless"]
+			var downgraded: Array[String] = []
+			for energy_type in provided:
+				downgraded.append("Colorless" if energy_type == "Rainbow" else energy_type)
+			return downgraded
 	return provided
 
 

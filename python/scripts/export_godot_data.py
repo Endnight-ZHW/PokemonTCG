@@ -20,7 +20,6 @@ if str(PYTHON_ROOT) not in sys.path:
 from card_data.effects import CARD_EFFECTS
 from card_data.consistency import (
     assert_card_rules_consistent,
-    load_godot_vm_ops,
 )
 from data.card_models import Card
 from data.card_registry import CardRegistry
@@ -37,6 +36,7 @@ from data.deck_definitions import (
     STEEL_DECK,
     WATER_DECK,
 )
+from engine.action_codec import serialize_entity_ref, serialize_game_action
 from engine.actions import (
     ACTION_SCHEMA_VERSION,
     RULES_SCHEMA_VERSION,
@@ -64,12 +64,20 @@ from engine.commands.dsl_compiler import (
     compile_effects_to_payload,
 )
 from engine.commands.ir import OP_BY_EFFECT_TYPE, SUPPORTED_EFFECT_TYPES
-from engine.commands.vm_contract import VM_IR_VERSION
+from engine.commands.descriptors import (
+    VM_COMMAND_DESCRIPTORS,
+    descriptor_export_payload,
+)
+from engine.commands.vm_contract import (
+    VM_IR_VERSION,
+    iter_command_specs,
+    validate_command_spec,
+)
 from engine.enums import PlayerAction, StatusType, TurnPhase
 from engine.game_engine import GameEngine
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
-from engine.random_source import PortableRandomSourceV1
+from engine.random_source import RNG_SCHEMA_VERSION, PortableRandomSourceV1
 from engine.snapshot import canonical_state_payload
 
 DEFAULT_OUTPUT = REPO_ROOT / "godot"
@@ -388,6 +396,20 @@ def _add_compiled_effects(payload: dict[str, Any]) -> None:
     payload["compiled_trainer_effects"] = compile_effects_to_payload(
         payload.get("trainer_effects", [])
     )
+    for descriptor in payload.get("energy_effects", []):
+        if not isinstance(descriptor, dict) or descriptor.get("kind") != "trigger":
+            continue
+        effect = descriptor.get("effect") or {}
+        if (
+            descriptor.get("hook") == "ON_PRIZE_REVEALED"
+            and isinstance(effect, dict)
+            and effect.get("op") == "attach_to_benched_pokemon"
+        ):
+            descriptor["compiled_commands"] = [{
+                "op": "attach_energy",
+                "args": {"amount": 1, "from_zone": "prizes", "to": "any"},
+                "branches": {},
+            }]
 
 
 def _deck_payload() -> dict[str, dict[str, Any]]:
@@ -519,6 +541,7 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
             "protocol_version": int(release_schemas["protocol"]),
             "encoder_version": ENCODER_SCHEMA_VERSION,
             "planner_version": PLANNER_SCHEMA_VERSION,
+            "rng_version": RNG_SCHEMA_VERSION,
         },
         "counts": {
             "cards": len(cards),
@@ -543,6 +566,7 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
             )
         },
         "portable_rng": {
+            "schema_version": RNG_SCHEMA_VERSION,
             "algorithm": "xorshift32",
             "seed": 20260620,
             "uint32": _portable_rng_sequence(20260620, 8),
@@ -551,39 +575,35 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
 
 
 def _ref_payload(ref: Any) -> dict[str, Any] | None:
-    if isinstance(ref, CardRef):
-        return {
-            "kind": "card",
-            "player": ref.player,
-            "zone": ref.zone,
-            "slot": "",
-            "index": ref.index,
-            "attachment_type": "",
-            "card_id": ref.card_id,
-        }
-    if isinstance(ref, PokemonRef):
-        return {
-            "kind": "pokemon",
-            "player": ref.player,
-            "zone": "",
-            "slot": ref.slot,
-            "index": -1,
-            "attachment_type": "",
-            "card_id": ref.card_id,
-        }
-    return None
+    return serialize_entity_ref(ref)
+
+
+def _public_ref_payload(ref: Any) -> dict[str, Any] | None:
+    """Project a Python entity ref to Protocol 6's strict tagged union."""
+    payload = serialize_entity_ref(ref)
+    if payload is None:
+        return None
+    fields_by_kind = {
+        "card": ("kind", "player", "zone", "index", "card_id"),
+        "pokemon": ("kind", "player", "slot", "card_id"),
+        "slot": ("kind", "player", "slot"),
+        "attachment": (
+            "kind",
+            "player",
+            "slot",
+            "attachment_type",
+            "index",
+            "card_id",
+        ),
+    }
+    fields = fields_by_kind.get(str(payload.get("kind", "")))
+    if fields is None:
+        raise ValueError("reference has an unsupported public kind")
+    return {field: payload[field] for field in fields}
 
 
 def _action_payload(action: GameAction) -> dict[str, Any]:
-    return {
-        "action": action.action.name if isinstance(action.action, PlayerAction) else str(action.action),
-        "params": _json_value(action.params),
-        "terminal": action.terminal,
-        "actor": action.actor if action.actor is not None else -1,
-        "source": _ref_payload(action.source),
-        "target": _ref_payload(action.target),
-        "action_id": action.action_id,
-    }
+    return serialize_game_action(action)
 
 
 def _ai_encoder_fixture() -> dict[str, Any]:
@@ -665,12 +685,14 @@ def _ai_encoder_fixture() -> dict[str, Any]:
         for index, option in enumerate(choice.options)
     ]
     return {
-        "fixture_version": 1,
+        "fixture_version": 2,
         "deck_key": "water",
         "observation": _json_value(observation),
         "actions": [_action_payload(action) for action in actions],
         "choice": {
+            "schema_version": 2,
             "request_id": choice.request_id,
+            "base_revision": 7,
             "request_type": choice.request_type,
             "player": choice.player,
             "prompt": choice.prompt,
@@ -678,8 +700,7 @@ def _ai_encoder_fixture() -> dict[str, Any]:
                 {
                     "option_id": option.option_id,
                     "label": option.label,
-                    "ref": _ref_payload(option.ref),
-                    "value": {},
+                    "ref": _public_ref_payload(option.ref),
                 }
                 for option in choice.options
             ],
@@ -687,7 +708,7 @@ def _ai_encoder_fixture() -> dict[str, Any]:
             "max_select": choice.max_select,
             "allow_duplicates": choice.allow_duplicates,
             "can_cancel": choice.can_cancel,
-            "metadata": {},
+            "presentation": {},
         },
         "expected": {
             "state_numeric": encoded_state.numeric,
@@ -718,21 +739,17 @@ def _godot_pokemon_payload(snapshot: dict[str, Any] | None) -> dict[str, Any] | 
         "placed_this_turn": bool(snapshot.get("placed_this_turn", True)),
         "used_abilities": sorted(snapshot.get("used_abilities", [])),
         "healed_this_turn": bool(snapshot.get("healed_this_turn", False)),
-        "damage_prevented_next_turn": bool(snapshot.get("damage_prevented", False)),
-        "all_prevented_next_turn": bool(snapshot.get("all_prevented", False)),
-        "outgoing_damage_reduction_next_turn": int(
-            snapshot.get("outgoing_damage_reduction", 0)
-        ),
-        "attack_locked": bool(snapshot.get("attack_locked", False)),
-        "attack_locked_names": dict(snapshot.get("attack_locked_names", {})),
-        "dazzled": bool(snapshot.get("dazzled", False)),
         "paralyzed_since_turn": int(snapshot.get("paralyzed_since_turn", 0)),
     }
     # Python snapshots retain serializable MAX_HP registrations separately,
     # while PokemonState stores all persistent registrations in ``modifiers``.
     # Adapt the only snapshot-backed modifier family to the Godot shape.  Like
     # PokemonState.to_dict(), omit the key when no persistent modifier exists.
-    modifiers = []
+    modifiers = [
+        _json_value(value)
+        for value in snapshot.get("modifiers", [])
+        if isinstance(value, dict)
+    ]
     for value in snapshot.get("max_hp_modifiers", []):
         if not isinstance(value, dict):
             continue
@@ -740,6 +757,15 @@ def _godot_pokemon_payload(snapshot: dict[str, Any] | None) -> dict[str, Any] | 
             value.get("modifier_kind", value.get("effect_type", ""))
         )
         if not modifier_kind:
+            continue
+        if (
+            modifier_kind == "conditional_hp_boost"
+            and any(
+                isinstance(row, dict)
+                and (row.get("operation") or {}).get("kind") == "hp_delta"
+                for row in modifiers
+            )
+        ):
             continue
         params = dict(value.get("params", {}))
         for key in ("energy_type", "threshold", "amount"):
@@ -772,6 +798,9 @@ def _godot_knockout_fact_payload(fact: Any) -> dict[str, Any] | None:
     )
     if source_kind == "attack_damage":
         cause_kind = "damage"
+    elif source_kind == "direct_knockout":
+        source_kind = "attack_effect"
+        cause_kind = "direct_knockout"
     elif source_kind in {"damage_counter", "damage_counters"}:
         cause_kind = "damage_counters"
     elif source_kind == "special_condition":
@@ -943,6 +972,7 @@ def _canonical_pending_option(option: dict[str, Any]) -> dict[str, Any]:
         }
         if kind == "card":
             result["zone"] = str(ref.get("zone", ""))
+            result["index"] = int(ref.get("index", -1))
         else:
             result["slot"] = str(ref.get("slot", ""))
         if kind == "attachment":
@@ -1142,7 +1172,22 @@ def _canonical_transaction_event_types(
     events: list[str] = []
 
     if kind == "choice":
-        if str(operation.get("request_type", "")) == "search_deck" and any(
+        request_type = str(operation.get("request_type", ""))
+        if request_type == "select_retreat_payment":
+            if (
+                _pokemon_energy_count(after_players[actor])
+                < _pokemon_energy_count(before_players[actor])
+            ):
+                events.append("cards_discarded")
+            before_active = before_players[actor].get("active")
+            after_active = after_players[actor].get("active")
+            if (
+                isinstance(before_active, dict)
+                and isinstance(after_active, dict)
+                and before_active.get("card_id") != after_active.get("card_id")
+            ):
+                events.append("retreat")
+        if request_type == "search_deck" and any(
             len(after_players[player_index].get("deck", []))
             < len(before_players[player_index].get("deck", []))
             for player_index in (0, 1)
@@ -1154,7 +1199,7 @@ def _canonical_transaction_event_types(
             for index in (0, 1)
         ):
             events.append("energy_attached")
-        if str(operation.get("request_type", "")) == "distribute_energy":
+        if request_type == "distribute_energy":
             events.append("deck_shuffled")
         opponent = 1 - actor
         if (
@@ -1183,12 +1228,19 @@ def _canonical_transaction_event_types(
     elif action_name == "ATTACH_ENERGY":
         events.append("energy_attached")
     elif action_name == "RETREAT":
+        before_active = before_players[actor].get("active")
+        after_active = after_players[actor].get("active")
         if (
-            _pokemon_energy_count(after_players[actor])
-            < _pokemon_energy_count(before_players[actor])
+            isinstance(before_active, dict)
+            and isinstance(after_active, dict)
+            and before_active.get("card_id") != after_active.get("card_id")
         ):
-            events.append("cards_discarded")
-        events.append("retreat")
+            if (
+                _pokemon_energy_count(after_players[actor])
+                < _pokemon_energy_count(before_players[actor])
+            ):
+                events.append("cards_discarded")
+            events.append("retreat")
     elif action_name == "PROMOTE":
         events.append("promoted")
     elif action_name == "PLAY_TRAINER":
@@ -1391,6 +1443,835 @@ def _base_golden_state() -> GameState:
     return state
 
 
+_VM_SEMANTIC_RUNTIME_SPECS: dict[str, dict[str, Any]] = {
+    # These operations are intentionally registered for runtime compatibility
+    # even though release effect compilation lowers the corresponding printed
+    # effect to a generic formula node.  Keep one real direct-VM specimen for
+    # every such descriptor so registry coverage cannot be confused with
+    # execution coverage.
+    "deal_damage_per_discard_psychic": {
+        "base": 80,
+        "per_card": 10,
+    },
+    "deal_damage_per_energy": {
+        "base": 0,
+        "per_energy": 30,
+        "count_from": "opponent_active",
+        "target": "opponent_active",
+    },
+    "deal_damage_per_evolved": {"per_evolved": 50},
+    "deal_damage_per_hand_size": {"per": 20},
+    "deal_damage_per_self_damage": {"base": 60, "per_counter": 10},
+    "deal_damage_per_self_energy": {
+        "base": 60,
+        "per_energy": 20,
+        "energy_filter": "fire",
+    },
+    "deal_damage_per_self_energy_type": {
+        "base": 60,
+        "per_energy": 20,
+        "energy_type": "Grass",
+    },
+    "deal_damage_plus_bench": {
+        "base": 10,
+        "per_bench": 20,
+        "count_own_bench": True,
+    },
+    "deal_damage_with_self_penalty": {"base": 200, "per_counter": 20},
+    "set_attack_damage_formula": {
+        "base": 100,
+        "condition_bonus": {
+            "condition": "own_bench_damaged",
+            "bonus": 120,
+            "consume": False,
+        },
+    },
+    "trigger_draw_cards": {
+        "player": 0,
+        "amount": 1,
+        "source": "vm-golden",
+    },
+    "trigger_place_damage_counters": {
+        "player": 1,
+        "slot": "active",
+        "count": 2,
+        "source": "vm-golden",
+        "target_ref": {
+            "kind": "pokemon",
+            "player": 1,
+            "slot": "active",
+            "card_id": "sv1-104",
+        },
+    },
+    "trigger_move_basic_energy": {
+        "from_player": 0,
+        "from_slot": "active",
+        "to_player": 0,
+        "to_slot": "bench_0",
+        "source": "vm-golden",
+        "select_source": False,
+        "optional": False,
+    },
+    "trigger_switch_with_active": {
+        "player": 0,
+        "bench_idx": 0,
+        "source": "vm-golden",
+        "slot": "bench_0",
+    },
+}
+
+_VM_SEMANTIC_MODIFIER_KINDS = {
+    "register_aura_damage_boost": "aura_damage_boost",
+    "register_aura_damage_reduction": "aura_damage_reduction",
+    "register_conditional_hp_boost": "conditional_hp_boost",
+    "register_conditional_zero_retreat": "conditional_zero_retreat",
+    "register_reactive_thorns": "reactive_thorns",
+    "register_tool_exp_share": "tool_exp_share",
+    "register_tool_modifier": "tool",
+}
+
+_VM_SEMANTIC_PARITY_ALLOWLIST: dict[str, dict[str, str]] = {
+    "attach_energy_from_discard": {
+        "pending": (
+            "Python publishes one source-target distribution request while "
+            "Godot first selects concrete discard attachments and then targets; "
+            "both are authoritative, bounded continuations but their first "
+            "pending envelopes are intentionally different until the shared "
+            "multi-round choice manifest replaces the legacy Python shape."
+        ),
+    },
+}
+
+_VM_SEMANTIC_CHOICE_TOPOLOGY_GAPS = frozenset({
+    "attach_energy_from_discard",
+})
+
+_VM_SEMANTIC_CHOICE_EVENT_TYPES: dict[tuple[str, int], list[str]] = {
+    ("choose_damage_target", 0): ["damage_dealt"],
+    ("choose_heal_damage", 0): ["healed"],
+    ("conditional", 0): ["cards_discarded"],
+    ("conditional", 1): ["cards_selected", "deck_shuffled"],
+    ("conditional_search", 0): ["cards_selected", "deck_shuffled"],
+    ("discard_cards", 0): ["cards_discarded"],
+    ("discard_energy", 0): ["cards_discarded"],
+    ("draw_and_attach_energy", 0): ["energy_attached", "energy_attached"],
+    ("evolve_skip_stage", 0): ["pokemon_evolved"],
+    # The coin continuation only updates the suspended attack's accumulated
+    # damage.  ``damage_dealt`` is emitted by the later attack-damage barrier.
+    ("flip_coin_repeat_damage", 0): ["coin_flip"],
+    ("flip_coin_then_ko", 0): [
+        "coin_flip",
+        "direct_knockout_applied",
+        "pokemon_ko",
+        "card_moved",
+    ],
+    ("flip_coin_then_ko", 1): ["prize_taken"],
+    ("hand_to_bottom_draw_until", 0): ["cards_selected"],
+    ("hand_to_bottom_then_draw", 0): ["cards_selected", "cards_drawn"],
+    ("look_top_attach_energy", 0): ["cards_selected"],
+    ("look_top_attach_energy", 1): [
+        "energy_attached",
+        "energy_attached",
+        "energy_attached",
+        "deck_shuffled",
+    ],
+    ("look_top_deck", 0): ["cards_selected", "deck_shuffled"],
+    ("place_counters_then_self_ko", 0): [
+        "damage_counters_placed",
+        "cards_discarded",
+    ],
+    ("recover_clara", 0): ["cards_selected"],
+    ("relocate_energy", 1): ["energy_attached"],
+    ("search_any_and_switch", 0): ["cards_selected", "deck_shuffled"],
+    ("search_any_and_switch", 2): ["switched"],
+    ("search_cards", 0): ["card_moved", "card_moved", "deck_shuffled"],
+    ("search_item_and_tool", 0): ["cards_selected", "deck_shuffled"],
+    ("shuffle_from_discard_to_deck", 0): ["card_moved", "deck_shuffled"],
+    ("switch_pokemon", 0): ["switched"],
+    ("zinnia_resolve", 0): ["cards_discarded", "cards_drawn"],
+}
+
+
+def _vm_semantic_command_specs() -> dict[str, dict[str, Any]]:
+    """Return one JSON-safe, executable command spec per native VM op."""
+    specs: dict[str, dict[str, Any]] = {}
+    examples = _effect_examples(CARD_EFFECTS)
+    for effect_type in sorted(examples):
+        spec = compile_effect_to_spec(examples[effect_type])
+        specs.setdefault(spec.op, spec.to_dict())
+    for op, args in _VM_SEMANTIC_RUNTIME_SPECS.items():
+        specs[op] = {
+            "op": op,
+            "args": _json_value(args),
+            "branches": {},
+        }
+    registered = set(DEFAULT_COMMAND_REGISTRY.supported_ops)
+    if set(specs) != registered:
+        raise RuntimeError(
+            "VM semantic specs must cover every registered op exactly once; "
+            f"missing={sorted(registered - set(specs))} "
+            f"extra={sorted(set(specs) - registered)}"
+        )
+    return {op: specs[op] for op in sorted(specs)}
+
+
+def _vm_semantic_state(variant: str = "rich") -> GameState:
+    """Build a deterministic board that exercises direct VM primitives.
+
+    The fixture deliberately contains damaged/evolved Pokemon, basic energy,
+    tools, and searchable cards in every relevant zone.  Two small variants
+    satisfy printed preconditions which are mutually exclusive with the rich
+    hand: Rare Candy and Emergency Surfacing.
+    """
+    state = _base_golden_state()
+    state.turn_number = 3
+    state.first_player_idx = 1
+    state.active_player_idx = 0
+    state.p1.active.damage_counters = 2
+    state.p2.active.damage_counters = 2
+    state.p1.active.energy_cards = [
+        CardRegistry.get("sv1-ener-2"),
+        CardRegistry.get("sv1-ener-5"),
+        CardRegistry.get("sv1-ener-6"),
+    ]
+    state.p2.active.energy_cards = [
+        CardRegistry.get("sv1-ener-2"),
+        CardRegistry.get("sv1-ener-5"),
+    ]
+    state.p1.active.attached_tool = CardRegistry.get("sv1-201")
+    state.p2.active.attached_tool = CardRegistry.get("sv1-202")
+    state.p1.bench[0] = PokemonInPlay(
+        CardRegistry.get("sv2-38"),
+        damage_counters=1,
+        energy_cards=[CardRegistry.get("sv1-ener-5")],
+        placed_this_turn=False,
+    )
+    state.p1.bench[1] = PokemonInPlay(
+        CardRegistry.get("sv1-106"),
+        damage_counters=1,
+        energy_cards=[CardRegistry.get("sv1-ener-6")],
+        evolution_stack=[CardRegistry.get("sv1-104")],
+        placed_this_turn=False,
+    )
+    state.p2.bench[0] = PokemonInPlay(
+        CardRegistry.get("sv2-38"),
+        damage_counters=1,
+        energy_cards=[CardRegistry.get("sv1-ener-3")],
+        placed_this_turn=False,
+    )
+    state.p2.bench[1] = PokemonInPlay(
+        CardRegistry.get("sv1-106"),
+        damage_counters=1,
+        energy_cards=[CardRegistry.get("sv1-ener-5")],
+        evolution_stack=[CardRegistry.get("sv1-104")],
+        placed_this_turn=False,
+    )
+
+    hand_ids = [
+        "sv1-104",
+        "sv1-106",
+        "sv1-150",
+        "sv1-151",
+        "sv1-201",
+        "sv1-ener-5",
+        "sv1-ener-6",
+    ]
+    # The end of a Python deck is its top.  Keep the top window deliberately
+    # diverse so draw/mill/look-top operations all perform observable work.
+    deck_ids = [
+        "sv1-104",
+        "sv1-106",
+        "sv1-150",
+        "sv1-151",
+        "sv1-201",
+        "sv1-ener-6",
+        "svf-scyt",
+        "sv2-38",
+        "sv1-ener-3",
+        "sv1-ener-1",
+        "sv1-ener-1",
+    ]
+    state.p1.hand = [CardRegistry.get(card_id) for card_id in hand_ids]
+    state.p2.hand = [
+        CardRegistry.get(card_id)
+        for card_id in [
+            "sv1-150",
+            "sv1-151",
+            "sv1-201",
+            "sv1-ener-5",
+            "sv2-38",
+            "sv1-104",
+        ]
+    ]
+    state.p1.deck = [CardRegistry.get(card_id) for card_id in deck_ids * 2]
+    state.p2.deck = [CardRegistry.get(card_id) for card_id in reversed(deck_ids * 2)]
+    state.p1.discard = [
+        CardRegistry.get(card_id)
+        for card_id in [
+            "sv1-ener-1",
+            "sv1-ener-5",
+            "sv1-ener-6",
+            "sv1-104",
+            "svg2-empo",
+            "sv1-201",
+        ]
+    ]
+    state.p2.discard = [
+        CardRegistry.get("sv1-ener-5"),
+        CardRegistry.get("sv1-104"),
+        CardRegistry.get("sv1-202"),
+    ]
+    state.p1.prizes = [CardRegistry.get("sv1-ener-5")] * 6
+    state.p2.prizes = [CardRegistry.get("sv1-ener-5")] * 6
+    state.p1.was_ko_by_attack = True
+    state.p1.was_ko_last_turn = True
+
+    if variant == "rare_candy":
+        state.p1.hand.append(CardRegistry.get("sv2-grex"))
+    elif variant == "empty_hand":
+        state.p1.hand = []
+    elif variant != "rich":
+        raise ValueError(f"Unknown VM semantic state variant: {variant}")
+    return state
+
+
+def _vm_state_projection(state: GameState) -> dict[str, Any]:
+    """Canonical state projection, excluding runtime-specific hook storage."""
+    payload = _state_summary(state)
+    for player in payload.get("players", []):
+        rows = [player.get("active"), *player.get("bench", [])]
+        for pokemon in rows:
+            if isinstance(pokemon, dict):
+                # Python retains callback-backed hooks in EventBus while Godot
+                # serializes the equivalent descriptor on PokemonState.  A
+                # separate modifier probe below compares their semantics.
+                pokemon.pop("modifiers", None)
+    return payload
+
+
+def _vm_pending_projection(state: GameState, op: str) -> dict[str, Any]:
+    pending = _pending_trace(state)
+    if not pending:
+        return {}
+    metadata = pending.get("metadata", {})
+    continuation_kind = str(metadata.get("continuation_kind", ""))
+    continuation_kind = {
+        "choose_damage_target": "damage_target",
+        "discard_hand_cards": "discard_cards",
+        "flip_coin_branch": "coin",
+        "coin_energy_discard": "coin",
+        "coin_special": "coin",
+        "hand_to_bottom_draw_until": "houb",
+        "hand_to_bottom_then_draw": "hand_bottom_draw",
+        "look_top_deck": "look_top",
+        "place_counters_then_self_ko": "place_counters_self_ko",
+        "recover_clara": "clara",
+        "recover_from_discard_to_deck": "shuffle_from_discard",
+        "search_any_and_switch": "search_any_switch",
+        "search_item_and_tool": "arven",
+        "switch_bench": "switch",
+        "zinnia_resolve": "zinnia",
+    }.get(continuation_kind, continuation_kind)
+    request_type = str(pending.get("request_type", ""))
+    request_type = {
+        "damage_target": "damage_target",
+        "discard_cards": "discard_cards",
+        "houb": "houb",
+        "hand_bottom_draw": "hand_bottom_draw",
+        "look_top_attach_energy": "look_top_attach_energy",
+        "look_top": "look_top",
+        "place_counters_self_ko": "place_counters_self_ko",
+        "clara": "clara",
+        "search_any_switch": "search_any_switch",
+        "arven": "arven",
+        "shuffle_from_discard": "shuffle_from_discard",
+        "switch": "select_opponent_bench",
+        "zinnia": "zinnia",
+    }.get(continuation_kind, request_type)
+    options = list(pending.get("options", []))
+    allow_duplicates = bool(pending.get("allow_duplicates", False))
+    if continuation_kind == "look_top_attach_target":
+        request_type = "select_energy_target"
+    elif continuation_kind == "energy_relocate_distribution":
+        continuation_kind = "energy_relocate_target"
+        request_type = "select_energy_target"
+        allow_duplicates = False
+    if op == "draw_and_attach_energy":
+        continuation_kind = "draw_attach_distribution"
+        allow_duplicates = True
+        unique_options: list[dict[str, Any]] = []
+        for option in options:
+            if option not in unique_options:
+                unique_options.append(option)
+        options = unique_options
+    return {
+        "request_type": request_type,
+        "player": int(pending.get("player", -1)),
+        "min_select": int(pending.get("min_select", 0)),
+        "max_select": int(pending.get("max_select", 0)),
+        "allow_duplicates": allow_duplicates,
+        "can_cancel": bool(pending.get("can_cancel", False)),
+        "options": options,
+        "continuation_kind": continuation_kind,
+    }
+
+
+def _vm_context_projection(context: dict[str, Any]) -> dict[str, Any]:
+    attack = context.get("attack_damage", {})
+    if not isinstance(attack, dict):
+        attack = {}
+    if not attack:
+        attack = context
+    result: dict[str, Any] = {}
+    for key in (
+        "base_damage",
+        "ignore_weakness",
+        "ignore_resistance",
+        "ignore_defender_damage_effects",
+        "attack_failed",
+    ):
+        if key in attack:
+            value = _json_value(attack[key])
+            if key.startswith("ignore_") and value is False:
+                continue
+            result[key] = value
+    return result
+
+
+def _vm_modifier_probe(
+    state: GameState,
+    op: str,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    modifier_kind = _VM_SEMANTIC_MODIFIER_KINDS.get(op, "")
+    if not modifier_kind:
+        return {}
+    # Reactive thorns and Exp. Share are authoritative trigger descriptors,
+    # not continuous modifiers.  Keep the golden probe explicit so the two
+    # registries cannot silently collapse back into one another.
+    if modifier_kind in {"reactive_thorns", "tool_exp_share"}:
+        return {"registered": False}
+    pokemon = state.p1.active
+    registered = False
+    if modifier_kind == "conditional_hp_boost":
+        registered = any(
+            row.get("modifier_kind") == modifier_kind
+            for row in pokemon.max_hp_modifiers
+        )
+    else:
+        listeners = [
+            listener
+            for rows in state.event_bus._listeners.values()
+            for listener in rows
+            if listener.active
+        ]
+        registered = bool(listeners)
+    if not registered:
+        raise RuntimeError(f"VM modifier op did not register a hook: {op}")
+    return {
+        "registered": True,
+        "modifier_kind": modifier_kind,
+        "player": 0,
+        "slot": "active",
+        "card_id": str(pokemon.card.api_id),
+        "params": _json_value(args),
+    }
+
+
+def _vm_semantic_event_types(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    op: str,
+) -> list[str]:
+    """Derive the same public event vocabulary used by Godot VM handlers."""
+    events: list[str] = []
+    before_players = before.get("players", [])
+    after_players = after.get("players", [])
+    for player_idx in range(min(len(before_players), len(after_players))):
+        before_rows = _pokemon_by_slot(before_players[player_idx])
+        after_rows = _pokemon_by_slot(after_players[player_idx])
+        for slot, before_pokemon in before_rows.items():
+            after_pokemon = after_rows.get(slot)
+            if not isinstance(after_pokemon, dict):
+                continue
+            if before_pokemon.get("card_id") != after_pokemon.get("card_id"):
+                continue
+            before_damage = int(before_pokemon.get("damage_counters", 0))
+            after_damage = int(after_pokemon.get("damage_counters", 0))
+            if after_damage > before_damage:
+                events.append(
+                    "damage_counters_placed"
+                    if op in {
+                        "place_damage_counters",
+                        "trigger_place_damage_counters",
+                    }
+                    else "damage_dealt"
+                )
+            elif after_damage < before_damage:
+                events.append("healed")
+            new_statuses = set(after_pokemon.get("status_conditions", [])) - set(
+                before_pokemon.get("status_conditions", [])
+            )
+            events.extend("status_applied" for _status in sorted(new_statuses))
+    if op in {"draw_cards", "trigger_draw_cards"}:
+        if any(
+            len(after_players[index].get("hand", []))
+            > len(before_players[index].get("hand", []))
+            for index in range(min(len(before_players), len(after_players)))
+        ):
+            events.append("cards_drawn")
+    if op == "attach_energy":
+        before_energy = _pokemon_energy_count(before_players[0])
+        after_energy = _pokemon_energy_count(after_players[0])
+        events.extend("energy_attached" for _index in range(
+            max(0, after_energy - before_energy)
+        ))
+        if after_energy > before_energy:
+            events.append("deck_shuffled")
+    if op in {"draw_and_attach_energy", "discard_then_revive"}:
+        if len(after_players[0].get("hand", [])) > len(
+            before_players[0].get("hand", [])
+        ):
+            events.append("cards_drawn")
+    if op == "deal_damage_then_heal":
+        events.sort(key=lambda event: 0 if event == "damage_dealt" else 1)
+    if op in {"discard_energy_then_damage", "discard_hand_then_damage"}:
+        events.insert(0, "cards_discarded")
+    if op == "discard_then_draw_cards":
+        events = ["cards_discarded", "cards_drawn"]
+    if op == "discard_then_revive":
+        events.insert(0, "card_moved")
+    if op == "judge":
+        events = [
+            "card_moved",
+            "deck_shuffled",
+            "cards_drawn",
+            "card_moved",
+            "deck_shuffled",
+            "cards_drawn",
+        ]
+    if op == "mill_then_damage":
+        events = ["cards_revealed", "deck_shuffled", *events]
+    if op == "return_to_hand":
+        events.append("card_moved")
+    if op == "shuffle_then_draw_cards":
+        events = ["card_moved", "deck_shuffled", "cards_drawn"]
+    if op == "trigger_move_basic_energy":
+        events.append("energy_attached")
+    if op == "trigger_switch_with_active":
+        events.append("switched")
+    return events
+
+
+def _vm_semantic_choice_response(request: ChoiceRequest) -> ChoiceResponse:
+    """Return a deterministic, non-cancelling response without consuming RNG."""
+    if request.request_type == "coin_flip":
+        return ChoiceResponse(request.request_id, ())
+    if request.request_type == "distribute_energy" and request.options:
+        count = max(request.min_select, request.max_select)
+        max_per_target = int(request.metadata.get("max_per_target", 99) or 99)
+        selected_ids: list[str] = []
+        seen_energy: set[int] = set()
+        per_target: dict[str, int] = {}
+        for option in request.options:
+            value = option.value if isinstance(option.value, dict) else {}
+            energy_index = int(value.get("energy_index", len(seen_energy)))
+            slot = str(value.get("slot", "") or "")
+            if (
+                energy_index in seen_energy
+                or per_target.get(slot, 0) >= max_per_target
+            ):
+                continue
+            selected_ids.append(option.option_id)
+            seen_energy.add(energy_index)
+            per_target[slot] = per_target.get(slot, 0) + 1
+            if len(selected_ids) >= count:
+                break
+        return ChoiceResponse(request.request_id, tuple(selected_ids))
+    count = min(
+        len(request.options),
+        max(request.min_select, min(request.max_select, len(request.options))),
+    )
+    return ChoiceResponse(
+        request.request_id,
+        tuple(option.option_id for option in request.options[:count]),
+    )
+
+
+def _vm_semantic_choice_event_types(
+    op: str,
+    choice_index: int,
+    emitted_events: tuple[dict[str, Any], ...],
+) -> list[str]:
+    """Canonicalize legacy Python continuation events to the public VM set."""
+    explicit = _VM_SEMANTIC_CHOICE_EVENT_TYPES.get((op, choice_index))
+    if explicit is not None:
+        return list(explicit)
+    return [str(event.get("event_type", "")) for event in emitted_events]
+
+
+def _vm_semantic_golden_fixture() -> dict[str, Any]:
+    """Execute every native Python VM command and export its replay oracle."""
+    from engine.choice_manager import VMChoiceManager
+    from engine.commands.attack_frames import (
+        begin_attack_damage_context,
+        begin_attack_resolution_context,
+    )
+    from engine.commands.dsl_compiler import compile_command_spec
+    from engine.commands.resolution_stack import ResolutionStack
+    from engine.transaction_manager import VMTransactionManager
+
+    specs = _vm_semantic_command_specs()
+    descriptor_payload = descriptor_export_payload(VM_IR_VERSION)
+    cases: dict[str, Any] = {}
+    choice_manager = VMChoiceManager()
+    transaction_manager = VMTransactionManager()
+    game_engine = GameEngine(
+        transaction_manager=transaction_manager,
+        choice_manager=choice_manager,
+    )
+    for index, (op, spec) in enumerate(specs.items()):
+        variant = (
+            "rare_candy" if op == "evolve_skip_stage"
+            else "empty_hand" if op == "discard_then_revive"
+            else "rich"
+        )
+        state = _vm_semantic_state(variant)
+        initial_state = _state_payload(state)
+        before = _vm_state_projection(state)
+        seed = 1701 + index
+        rng = PortableRandomSourceV1(seed)
+        state.random_source = rng
+        state.p1.random_source = rng
+        state.p2.random_source = rng
+        stack = ResolutionStack(state)
+        allowed_contexts: set[str] | None = None
+        for nested_spec in iter_command_specs(spec):
+            nested_op = str(nested_spec.get("op", "") or "")
+            nested_contexts = set(
+                descriptor_payload["descriptors"][nested_op]["allowed_contexts"]
+            )
+            allowed_contexts = (
+                nested_contexts
+                if allowed_contexts is None
+                else allowed_contexts & nested_contexts
+            )
+        allowed_contexts = allowed_contexts or set()
+        # Execute each golden in a context that its frozen descriptor actually
+        # permits.  Treating every non-attack command as an ability used to
+        # make trainer-only commands pass Python generation but fail closed in
+        # the Godot interpreter.
+        if "attack" in allowed_contexts and "ability" not in allowed_contexts:
+            context_mode = "attack"
+        elif "ability" in allowed_contexts:
+            context_mode = "ability"
+        elif "trainer" in allowed_contexts:
+            context_mode = "trainer"
+        elif "trigger" in allowed_contexts:
+            context_mode = "trigger"
+        elif "test" in allowed_contexts:
+            context_mode = "test"
+        else:
+            raise RuntimeError(f"VM semantic case has no executable context: {op}")
+        if context_mode == "attack":
+            begin_attack_damage_context(
+                state,
+                stack,
+                {
+                    "active": True,
+                    "player_idx": 0,
+                    "base_damage": 30,
+                },
+            )
+            begin_attack_resolution_context(stack, 0)
+        elif context_mode in {"ability", "trainer"}:
+            stack.context["effect_source_kind"] = context_mode
+        stack.push(compile_command_spec(spec))
+        result = stack.resolve_all(0, "active")
+        if not result.success:
+            raise RuntimeError(
+                f"VM semantic command failed instead of executing: {op}: "
+                f"{' '.join(result.log_messages)}"
+            )
+        if result.pending_choice is not None:
+            request = game_engine.choice_request(state, result.pending_choice)
+        else:
+            request = None
+        after = _vm_state_projection(state)
+        context_projection = _vm_context_projection(stack.context)
+        if result.attack_failed:
+            context_projection["attack_failed"] = True
+        primary_expected = {
+            "success": True,
+            "error_code": "",
+            "revision": int(state.revision),
+            "rng_state": int(rng.get_state()),
+            "event_types": _vm_semantic_event_types(before, after, op),
+            "pending": _vm_pending_projection(state, op),
+            "state": after,
+            "context": context_projection,
+            "modifier": _vm_modifier_probe(
+                state,
+                op,
+                dict(spec.get("args", {})),
+            ),
+        }
+        choice_trace: list[dict[str, Any]] = []
+        # The sole allowlisted first-envelope mismatch cannot share a response
+        # manifest yet: Python combines source+target in one request while
+        # Godot intentionally uses two bounded requests.  Every other pending
+        # native op is resumed to completion below, including two/three-round
+        # continuations, using the same deterministic maximal-first policy.
+        if request is not None and op not in _VM_SEMANTIC_CHOICE_TOPOLOGY_GAPS:
+            for choice_index in range(64):
+                if request is None:
+                    break
+                pending_before = _vm_pending_projection(state, op)
+                request_payload = transaction_manager.choice_request_to_dict(request)
+                response = _vm_semantic_choice_response(request)
+                known_ids = {
+                    str(option.option_id) for option in request.options
+                }
+                unknown_ids = set(response.option_ids) - known_ids
+                if unknown_ids:
+                    raise RuntimeError(
+                        f"VM semantic choice policy selected an unknown option: "
+                        f"{op}[{choice_index}]: {sorted(unknown_ids)}"
+                    )
+                serialized_option_by_id = {
+                    str(option.get("option_id", "")): option
+                    for option in request_payload.get("options", [])
+                }
+                selected_options = [
+                    _canonical_pending_option(
+                        serialized_option_by_id[str(option_id)]
+                    )
+                    for option_id in response.option_ids
+                ]
+                choice_result = game_engine.apply_choice(state, response, rng)
+                if not choice_result.success:
+                    raise RuntimeError(
+                        f"VM semantic choice failed instead of executing: "
+                        f"{op}[{choice_index}]: {choice_result.error_code}: "
+                        f"{choice_result.message}"
+                    )
+                request = game_engine.pending_choice_request(state)
+                choice_after = _vm_state_projection(state)
+                choice_context = _vm_context_projection(stack.context)
+                if stack.attack_failed:
+                    choice_context["attack_failed"] = True
+                choice_trace.append({
+                    "request": pending_before,
+                    "response": {
+                        "selected_options": selected_options,
+                        "cancelled": False,
+                    },
+                    "expected": {
+                        "success": True,
+                        "error_code": "",
+                        "revision": int(state.revision),
+                        "rng_state": int(rng.get_state()),
+                        "event_types": _vm_semantic_choice_event_types(
+                            op,
+                            choice_index,
+                            choice_result.events,
+                        ),
+                        "pending": _vm_pending_projection(state, op),
+                        "state": choice_after,
+                        "context": choice_context,
+                        "modifier": _vm_modifier_probe(
+                            state,
+                            op,
+                            dict(spec.get("args", {})),
+                        ),
+                    },
+                })
+            if request is not None:
+                raise RuntimeError(
+                    f"VM semantic choice chain exceeded 64 rounds: {op}"
+                )
+        cases[op] = {
+            "descriptor": descriptor_payload["descriptors"][op],
+            "command_spec": spec,
+            "actor": 0,
+            "source_slot": "active",
+            "context_mode": context_mode,
+            "portable_seed": seed,
+            "initial_state": initial_state,
+            "expected": primary_expected,
+            "parity_allowlist": dict(
+                _VM_SEMANTIC_PARITY_ALLOWLIST.get(op, {})
+            ),
+            "choice_trace": choice_trace,
+        }
+    registered = sorted(DEFAULT_COMMAND_REGISTRY.supported_ops)
+    executed = sorted(cases)
+    if executed != registered:
+        raise RuntimeError("Generated VM semantic cases differ from registry")
+    return {
+        "fixture_version": 2,
+        "vm_ir_version": VM_IR_VERSION,
+        "rng_algorithm": "xorshift32-v1",
+        "contract": {
+            "name": "native-vm-semantic-parity-v2",
+            "fields": [
+                "success",
+                "error_code",
+                "revision",
+                "rng_state",
+                "event_types",
+                "pending",
+                "state",
+                "context",
+                "modifier",
+            ],
+            "choice_fields": [
+                "success",
+                "error_code",
+                "revision",
+                "rng_state",
+                "event_types",
+                "pending",
+                "state",
+                "context",
+                "modifier",
+            ],
+            "choice_policy": "deterministic-maximal-first-v1",
+            "execution": (
+                "compile_command_spec+ResolutionStack+deterministic-choice-loop"
+            ),
+        },
+        "registered_ops": registered,
+        "executed_ops": executed,
+        "known_cross_runtime_semantic_gaps": [
+            {
+                "op": op,
+                "field": field,
+                "reason": reason,
+            }
+            for op, fields in sorted(_VM_SEMANTIC_PARITY_ALLOWLIST.items())
+            for field, reason in sorted(fields.items())
+        ],
+        "cases": cases,
+        "counts": {
+            "registered_ops": len(registered),
+            "executed_ops": len(executed),
+            "successful_ops": sum(
+                bool(row["expected"]["success"]) for row in cases.values()
+            ),
+            "pending_ops": sum(
+                bool(row["expected"]["pending"]) for row in cases.values()
+            ),
+            "continued_ops": sum(
+                bool(row["choice_trace"]) for row in cases.values()
+            ),
+            "choice_rounds": sum(
+                len(row["choice_trace"]) for row in cases.values()
+            ),
+        },
+    }
+
+
 def _pending_choice_case(
     engine: GameEngine,
     state: GameState,
@@ -1467,12 +2348,7 @@ def _pending_choice_case(
         if option.get("option_id") in response.option_ids
     ]
     before_choice = _state_payload(state)
-    result = engine.apply_choice(
-        state,
-        step.pending_choice,
-        response,
-        rng,
-    )
+    result = engine.apply_choice(state, response, rng)
     if not result.success:
         raise RuntimeError(f"Golden pending attack choice failed: {result.message}")
     trace.append(_trace_step(
@@ -1638,10 +2514,15 @@ def _golden_action_cases() -> dict[str, Any]:
     state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svi-chim"), placed_this_turn=False)
     actions = [{
         "action": "RETREAT",
-        "params": {"bench_idx": 0, "energy_indices": [0]},
+        "params": {"bench_idx": 0},
         "actor": 0,
     }]
-    add_case("double_turbo_retreat", state, actions)
+    cases["double_turbo_retreat"] = _pending_choice_case(
+        engine,
+        state,
+        actions,
+        selected_option_ids=("retreat:energy:0",),
+    )
 
     state = _base_golden_state()
     state.turn_number = 3
@@ -1911,6 +2792,7 @@ def _golden_action_cases() -> dict[str, Any]:
 
     return {
         "fixture_version": 3,
+        "rng_schema_version": RNG_SCHEMA_VERSION,
         "rng_algorithm": "xorshift32-v1",
         "event_contract": {
             "name": "canonical-state-transition-events-v1",
@@ -1969,7 +2851,12 @@ _TRACE_SEMANTICS: dict[str, dict[str, list[str]]] = {
     "double_turbo_retreat": {
         "effect_types": [],
         "vm_ops": [],
-        "features": ["special_energy_retreat", "retreat"],
+        "features": [
+            "special_energy_retreat",
+            "retreat",
+            "pending_choice",
+            "retreat_payment",
+        ],
     },
     "evolution_preserves_attachments": {
         "effect_types": [],
@@ -2079,7 +2966,10 @@ _TRACE_SEMANTICS: dict[str, dict[str, list[str]]] = {
 }
 
 
-def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
+def _rules_coverage(
+    golden_actions: dict[str, Any],
+    vm_semantic_golden: dict[str, Any],
+) -> dict[str, Any]:
     """Build a strict mapping inventory without overstating semantic coverage."""
     release_effects = set(_effect_types(CARD_EFFECTS))
     registered_effects = set(SUPPORTED_EFFECT_TYPES)
@@ -2090,9 +2980,20 @@ def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
         for effect_type, example in effect_examples.items()
     })
     registered_ops = set(DEFAULT_COMMAND_REGISTRY.supported_ops)
+    descriptor_payload = descriptor_export_payload(VM_IR_VERSION)
+    descriptor_ops = set(descriptor_payload["descriptors"])
     produced_ops = set(effect_to_op.values())
     runtime_only_ops = registered_ops - produced_ops
     cases = dict(golden_actions.get("cases", {}))
+    vm_cases = dict(vm_semantic_golden.get("cases", {}))
+    vm_executed_ops = set(vm_semantic_golden.get("executed_ops", []))
+
+    if descriptor_ops != registered_ops:
+        raise RuntimeError(
+            "VM descriptors and Python handlers must be 1:1; "
+            f"missing_handlers={sorted(descriptor_ops - registered_ops)} "
+            f"missing_descriptors={sorted(registered_ops - descriptor_ops)}"
+        )
 
     if release_effects - registered_effects:
         raise RuntimeError(
@@ -2116,6 +3017,25 @@ def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
             f"missing={sorted(set(cases) - set(_TRACE_SEMANTICS))} "
             f"stale={sorted(set(_TRACE_SEMANTICS) - set(cases))}"
         )
+    if (
+        int(vm_semantic_golden.get("fixture_version", 0)) != 2
+        or vm_executed_ops != registered_ops
+        or set(vm_cases) != registered_ops
+    ):
+        raise RuntimeError(
+            "Native VM semantic fixture must execute every registered op; "
+            f"missing={sorted(registered_ops - vm_executed_ops)} "
+            f"extra={sorted(vm_executed_ops - registered_ops)}"
+        )
+    for op, row in vm_cases.items():
+        if (
+            str(row.get("descriptor", {}).get("op", "")) != op
+            or str(row.get("command_spec", {}).get("op", "")) != op
+            or not bool(row.get("expected", {}).get("success", False))
+        ):
+            raise RuntimeError(
+                f"VM semantic case is not a successful direct execution: {op}"
+            )
 
     action_to_cases: dict[str, list[str]] = {action.name: [] for action in PlayerAction}
     for case_name, row in cases.items():
@@ -2146,9 +3066,10 @@ def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
         for row in _TRACE_SEMANTICS.values()
         for effect_type in row["effect_types"]
     })
-    semantic_ops = sorted({
+    public_semantic_ops = sorted({
         op for row in _TRACE_SEMANTICS.values() for op in row["vm_ops"]
     })
+    semantic_ops = sorted(set(public_semantic_ops) | vm_executed_ops)
     if not set(semantic_effects).issubset(release_effects):
         raise RuntimeError("Semantic trace effect labels must be release effect types")
     if not set(semantic_ops).issubset(registered_ops):
@@ -2156,7 +3077,7 @@ def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
 
     step_count = sum(len(row.get("trace", [])) for row in cases.values())
     return {
-        "coverage_version": 2,
+        "coverage_version": 3,
         "mapping_inventory": {
             "release_effect_types": sorted(release_effects),
             "registered_effect_types": sorted(registered_effects),
@@ -2171,10 +3092,27 @@ def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
             "public_player_actions": sorted(action_to_cases),
             "action_to_trace_cases": action_to_cases,
         },
+        "vm_descriptor_contract": {
+            "descriptor_schema_version": descriptor_payload[
+                "descriptor_schema_version"
+            ],
+            "descriptor_digest": descriptor_payload["descriptor_digest"],
+            "descriptor_ops": sorted(descriptor_ops),
+            "handler_ops": sorted(registered_ops),
+            "preflight_ops": sorted(
+                op for op, descriptor in descriptor_payload["descriptors"].items()
+                if str(descriptor.get("preflight_evaluator", ""))
+            ),
+            "golden_ops": sorted(vm_cases),
+            "executed_ops": sorted(vm_executed_ops),
+        },
         "semantic_trace_inventory": {
             "case_count": len(cases),
             "transaction_step_count": step_count,
+            "native_vm_case_count": len(vm_cases),
             "case_semantics": _TRACE_SEMANTICS,
+            "native_vm_fixture": "vm_native_golden.json",
+            "public_trace_vm_ops_executed": public_semantic_ops,
             "release_effect_types_executed": semantic_effects,
             "registered_vm_ops_executed": semantic_ops,
             "release_effect_types_not_executed": sorted(
@@ -2183,30 +3121,13 @@ def _rules_coverage(golden_actions: dict[str, Any]) -> dict[str, Any]:
             "registered_vm_ops_not_executed": sorted(
                 registered_ops - set(semantic_ops)
             ),
-            "known_cross_runtime_semantic_gaps": [{
-                "family": "coin",
-                "effect_types": [
-                    "coin_flip",
-                    "coin_flip_double_ko",
-                    "coin_flip_energy_discard",
-                    "coin_flip_triple",
-                    "coin_flip_until_tails",
-                ],
-                "vm_ops": [
-                    "flip_coin",
-                    "flip_coin_repeat_damage",
-                    "flip_coin_then_discard_energy",
-                    "flip_coin_then_ko",
-                    "flip_until_tails",
-                ],
-                "reason": (
-                    "Godot consumes portable RNG before exposing a zero-option result "
-                    "request; Python still exposes heads/tails as selectable options."
-                ),
-            }],
+            "known_cross_runtime_semantic_gaps": list(
+                vm_semantic_golden.get(
+                    "known_cross_runtime_semantic_gaps", []
+                )
+            ),
             "explicitly_not_claimed": [
                 "all_release_effect_semantics",
-                "all_registered_vm_op_semantics",
             ],
         },
         "counts": {
@@ -2233,14 +3154,28 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     image_hashes = _image_hashes(image_mapping)
     cards = _card_payload(image_paths)
     decks = _deck_payload()
+    descriptor_payload = descriptor_export_payload(VM_IR_VERSION)
+    descriptor_ops = set(descriptor_payload["descriptors"])
+
+    for spec_index, spec in enumerate(iter_command_specs(cards)):
+        errors = validate_command_spec(
+            spec,
+            supported_ops=descriptor_ops,
+            descriptors=VM_COMMAND_DESCRIPTORS,
+            allow_internal=False,
+            path=f"$.cards.command_specs[{spec_index}]",
+        )
+        if errors:
+            raise RuntimeError(
+                "Compiled release card VM contract is invalid: "
+                + "; ".join(errors)
+            )
 
     # Fail the authoritative export before writing derived assets when any
     # printed rules segment lacks a runtime binding or either runtime exposes a
     # VM operation the other side cannot execute.
     card_rules_matrix = assert_card_rules_consistent(
-        peer_supported_ops=load_godot_vm_ops(
-            REPO_ROOT / "godot" / "rules" / "vm" / "vm_contract.gd"
-        )
+        peer_supported_ops=descriptor_ops,
     )
 
     data_root = output / "data"
@@ -2255,6 +3190,7 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     )
     _write_json(data_root / "ai_models.json", _model_manifest())
     _write_json(data_root / "release_manifest.json", _release_manifest())
+    _write_json(data_root / "vm_command_descriptors.json", descriptor_payload)
     golden = _golden_contract(cards, decks)
     _write_json(output / "tests" / "fixtures" / "data_contract.json", golden)
     _write_json(
@@ -2266,9 +3202,14 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
         output / "tests" / "fixtures" / "rules_golden.json",
         golden_actions,
     )
+    vm_semantic_golden = _vm_semantic_golden_fixture()
+    _write_json(
+        output / "tests" / "fixtures" / "vm_native_golden.json",
+        vm_semantic_golden,
+    )
     _write_json(
         output / "tests" / "fixtures" / "rules_coverage.json",
-        _rules_coverage(golden_actions),
+        _rules_coverage(golden_actions, vm_semantic_golden),
     )
     _write_json(
         output / "tests" / "fixtures" / "card_rules_matrix.json",
@@ -2297,9 +3238,11 @@ def main() -> None:
                 Path("data/card_buckets.json"),
                 Path("data/ai_models.json"),
                 Path("data/release_manifest.json"),
+                Path("data/vm_command_descriptors.json"),
                 Path("tests/fixtures/data_contract.json"),
                 Path("tests/fixtures/ai_encoder_golden.json"),
                 Path("tests/fixtures/rules_golden.json"),
+                Path("tests/fixtures/vm_native_golden.json"),
                 Path("tests/fixtures/rules_coverage.json"),
                 Path("tests/fixtures/card_rules_matrix.json"),
             ]

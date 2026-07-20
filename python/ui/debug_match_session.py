@@ -47,7 +47,6 @@ class DebugMatchSession:
         )
         resolved = DEFAULT_GAME_ENGINE.apply_choice(
             state,
-            setup.pending_choice,
             response,
             rng,
         )

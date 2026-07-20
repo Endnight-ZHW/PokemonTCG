@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import copy
+import math
 from typing import Any
 
+from engine.action_codec import (
+    serialize_choice_option_internal,
+    serialize_choice_request_internal,
+    serialize_entity_ref,
+)
 from engine.actions import (
-    AttachmentRef,
-    CardRef,
     ChoiceOption,
     ChoiceRequest,
-    PokemonRef,
     StepResult,
 )
 from engine.enums import TurnPhase
@@ -243,64 +246,22 @@ class VMTransactionManager:
 
     @classmethod
     def choice_request_to_dict(cls, request: ChoiceRequest) -> dict[str, Any]:
-        return {
-            "request_id": request.request_id,
-            "request_type": request.request_type,
-            "player": int(request.player),
-            "prompt": request.prompt,
-            "options": [cls.choice_option_to_dict(option) for option in request.options],
-            "min_select": int(request.min_select),
-            "max_select": int(request.max_select),
-            "allow_duplicates": bool(request.allow_duplicates),
-            "can_cancel": bool(request.can_cancel),
-            "metadata": cls.json_safe(request.metadata),
-        }
+        return serialize_choice_request_internal(request)
 
     @classmethod
     def choice_option_to_dict(cls, option: ChoiceOption) -> dict[str, Any]:
-        return {
-            "option_id": option.option_id,
-            "label": option.label,
-            "ref": cls.entity_ref_to_dict(option.ref) if option.ref is not None else None,
-            "value": cls.json_safe(option.value),
-        }
+        return serialize_choice_option_internal(option)
 
     @staticmethod
     def entity_ref_to_dict(ref) -> dict[str, Any]:
-        if isinstance(ref, CardRef):
-            return {
-                "kind": "card",
-                "player": int(ref.player),
-                "zone": ref.zone,
-                "slot": "",
-                "index": int(ref.index),
-                "attachment_type": "",
-                "card_id": ref.card_id,
-            }
-        if isinstance(ref, PokemonRef):
-            return {
-                "kind": "pokemon",
-                "player": int(ref.player),
-                "zone": "",
-                "slot": ref.slot,
-                "index": -1,
-                "attachment_type": "",
-                "card_id": ref.card_id,
-            }
-        if isinstance(ref, AttachmentRef):
-            return {
-                "kind": "attachment",
-                "player": int(ref.player),
-                "zone": "",
-                "slot": ref.slot,
-                "index": int(ref.index),
-                "attachment_type": ref.attachment_type,
-                "card_id": ref.card_id,
-            }
-        return {}
+        payload = serialize_entity_ref(ref)
+        return payload if payload is not None else {}
 
     @classmethod
     def json_safe(cls, value):
+        # Transaction checkpoints also contain Python MT19937 state arrays
+        # larger than the public protocol's generic-container bound.  They are
+        # local snapshot data, not action/choice wire payloads.
         if hasattr(value, "api_id"):
             return getattr(value, "api_id")
         if isinstance(value, dict):
@@ -309,6 +270,8 @@ class VMTransactionManager:
             return [cls.json_safe(item) for item in value]
         if isinstance(value, set):
             return sorted(cls.json_safe(item) for item in value)
+        if type(value) is float and not math.isfinite(value):
+            raise ValueError("transaction checkpoint numbers must be finite")
         if isinstance(value, (str, int, float, bool)) or value is None:
             return value
         return str(value)

@@ -131,6 +131,10 @@ class TurnManager:
                            if self.state.turn_number >= t + 2]
                 for name in expired:
                     del poke.attack_locked_names[name]
+        for player_idx in (0, 1):
+            for _, poke in self.state.get_player(player_idx).get_all_pokemon():
+                if poke:
+                    poke.expire_modifiers_at_turn(self.state.turn_number)
         # Switch active player for next turn
         self.state.active_player_idx = 1 - self.state.active_player_idx
         self.state.turn_number += 1

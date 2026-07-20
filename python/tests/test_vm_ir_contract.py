@@ -1,7 +1,5 @@
-import ast
+from copy import deepcopy
 import json
-import inspect
-import importlib.util
 import sys
 import tempfile
 import unittest
@@ -19,6 +17,7 @@ from engine.commands.dsl_compiler import (
     compile_effect_to_spec,
     missing_ir_effect_types,
 )
+from engine.commands.descriptors import VM_COMMAND_DESCRIPTORS
 from engine.commands.attack_frames import (
     FinalizeAttackDamage,
     attack_damage_context,
@@ -32,12 +31,13 @@ from engine.commands.trigger_commands import (
     command_specs_from_trigger_results,
     execute_trigger_commands,
 )
-from engine.effects.modifier_manager import MAX_HP, MODIFY_DAMAGE
+from engine.effects.modifier_manager import AFTER_DAMAGE, CAN_RETREAT, MAX_HP, MODIFY_DAMAGE
 from engine.actions import ChoiceResponse
 from engine.enums import EventType, PlayerAction, StatusType, TurnPhase
 from engine.game_engine import GameEngine
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
+from engine.random_source import ScriptedRandomSource
 from engine.snapshot import clone_state, restore_state, snapshot_state
 from scripts.export_godot_data import export
 
@@ -82,33 +82,28 @@ class VmIrContractTests(unittest.TestCase):
                 self.assertNativeCommandModule(command)
 
     def test_attack_state_bridge_fields_are_not_used_by_production_code(self):
-        import engine.commands.attack_frames as attack_frames
-        import engine.commands.primitives_attack as primitives_attack
-        import engine.commands.primitives_combat as primitives_combat
-        import engine.effects.damage_effects as damage_effects
-        import engine.effects.special_effects as special_effects
-        import engine.game_state as game_state
-        import engine.snapshot as snapshot
-
         forbidden = (
-            "._attack_damage_context",
-            "._piercing_attack",
-            "._attack_ignore_defender_effects",
+            "_attack_damage_context",
+            "_piercing_attack",
+            "_attack_ignore_defender_effects",
         )
-        modules = (
-            primitives_attack,
-            primitives_combat,
-            damage_effects,
-            special_effects,
-            attack_frames,
-            game_state,
-            snapshot,
-        )
-        for module in modules:
-            source = inspect.getsource(module)
-            for token in forbidden:
-                with self.subTest(module=module.__name__, token=token):
-                    self.assertNotIn(token, source)
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        stack = ResolutionStack(state)
+        context = begin_attack_damage_context(state, stack, {
+            "active": True,
+            "player_idx": 0,
+            "attacker": state.p1.active,
+            "base_damage": 20,
+        })
+
+        self.assertIs(attack_damage_context(state, stack), context)
+        for field in forbidden:
+            with self.subTest(field=field):
+                self.assertFalse(hasattr(state, field))
+                self.assertFalse(hasattr(clone_state(state), field))
+        self.assertIs(stack.context["attack_damage"], context)
 
     def test_immediate_marker_effects_compile_to_explicit_ops(self):
         expected_ops = {
@@ -260,7 +255,7 @@ class VmIrContractTests(unittest.TestCase):
         errors = validate_command_spec(invalid, supported_ops=supported)
         self.assertTrue(any("effect_type" in error for error in errors))
         self.assertTrue(any("unknown" in error for error in errors))
-        self.assertEqual(VM_IR_VERSION, 2)
+        self.assertEqual(VM_IR_VERSION, 3)
 
     def test_foundational_vm_ops_are_registry_backed(self):
         for op in ("deal_damage", "draw_cards", "apply_status", "draw_until"):
@@ -310,69 +305,70 @@ class VmIrContractTests(unittest.TestCase):
                 self.assertEqual(type(command).__module__, "engine.commands.trigger_commands")
 
     def test_on_attach_jet_energy_collects_switch_trigger_spec(self):
-        from engine.commands import trigger_commands as trigger_module
+        jet = CardRegistry.get("svi-jete")
+        cloned_jet = deepcopy(jet)
+        cloned_jet.api_id = "clone-jet-energy"
 
-        self.assertIn(
-            "ModifierManager",
-            inspect.getsource(collect_on_attach_command_specs),
-        )
-        self.assertNotIn('"svi-jete"', inspect.getsource(trigger_module))
-        self.assertNotIn("'svi-jete'", inspect.getsource(trigger_module))
-        specs = collect_on_attach_command_specs(
-            CardRegistry.get("svi-jete"),
-            0,
-            "bench_0",
-            "hand",
-        )
-        self.assertEqual(len(specs), 1)
-        self.assertEqual(specs[0]["op"], "trigger_switch_with_active")
-        self.assertEqual(
-            specs[0]["args"],
-            {
-                "player": 0,
-                "bench_idx": 0,
-                "source": "喷射能量",
-                "slot": "bench_0",
-            },
-        )
-        self.assertEqual(
-            collect_on_attach_command_specs(CardRegistry.get("svi-jete"), 0, "active", "hand"),
-            [],
-        )
-        self.assertEqual(
-            collect_on_attach_command_specs(CardRegistry.get("svi-jete"), 0, "bench_0", "deck"),
-            [],
-        )
+        for card in (jet, cloned_jet):
+            with self.subTest(card_id=card.api_id):
+                specs = collect_on_attach_command_specs(
+                    card,
+                    0,
+                    "bench_0",
+                    "hand",
+                )
+                self.assertEqual(len(specs), 1)
+                self.assertEqual(specs[0]["op"], "trigger_switch_with_active")
+                self.assertEqual(
+                    specs[0]["args"],
+                    {
+                        "player": 0,
+                        "bench_idx": 0,
+                        "source": "喷射能量",
+                        "slot": "bench_0",
+                    },
+                )
+                self.assertEqual(
+                    collect_on_attach_command_specs(card, 0, "active", "hand"),
+                    [],
+                )
+                self.assertEqual(
+                    collect_on_attach_command_specs(card, 0, "bench_0", "deck"),
+                    [],
+                )
 
     def test_public_jet_energy_attach_resolves_switch_through_trigger_vm_op(self):
         from engine.action_resolver import ActionResolver
 
-        self.assertIsNone(importlib.util.find_spec("engine.effects.modifier_registry"))
-        self.assertNotIn(
-            "get_special_energy_attach_effect",
-            inspect.getsource(ActionResolver._attach_energy),
-        )
+        jet = CardRegistry.get("svi-jete")
+        cloned_jet = deepcopy(jet)
+        cloned_jet.api_id = "clone-jet-energy"
 
-        state = GameState()
-        state.phase = TurnPhase.MAIN
-        state.active_player_idx = 0
-        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
-        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
-        state.p1.hand = [CardRegistry.get("svi-jete")]
-        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        for card in (jet, cloned_jet):
+            with self.subTest(card_id=card.api_id):
+                state = GameState()
+                state.phase = TurnPhase.MAIN
+                state.active_player_idx = 0
+                state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+                state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
+                state.p1.hand = [card]
+                state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
 
-        result = ActionResolver(state).resolve(
-            PlayerAction.ATTACH_ENERGY,
-            player_idx=0,
-            hand_idx=0,
-            target_slot="bench_0",
-        )
+                result = ActionResolver(state).resolve(
+                    PlayerAction.ATTACH_ENERGY,
+                    player_idx=0,
+                    hand_idx=0,
+                    target_slot="bench_0",
+                )
 
-        self.assertTrue(result.success, result.log_message)
-        self.assertEqual(state.p1.active.card.api_id, "sv2-delib")
-        self.assertEqual([card.api_id for card in state.p1.active.energy_cards], ["svi-jete"])
-        self.assertEqual(state.p1.bench[0].card.api_id, "svi-chim")
-        self.assertIn("喷射能量", result.log_message)
+                self.assertTrue(result.success, result.log_message)
+                self.assertEqual(state.p1.active.card.api_id, "sv2-delib")
+                self.assertEqual(
+                    [energy.api_id for energy in state.p1.active.energy_cards],
+                    [card.api_id],
+                )
+                self.assertEqual(state.p1.bench[0].card.api_id, "svi-chim")
+                self.assertIn("喷射能量", result.log_message)
 
     def test_vm_jet_energy_direct_attach_resolves_on_attach_trigger(self):
         state = GameState()
@@ -392,7 +388,9 @@ class VmIrContractTests(unittest.TestCase):
             },
             "branches": {},
         }))
-        result = stack.resolve_all(0, "active")
+        coin_rng = ScriptedRandomSource([True, False, True])
+        with coin_rng.bind_state(state):
+            result = stack.resolve_all(0, "active")
 
         self.assertTrue(result.success, result.log_messages)
         self.assertIsNone(result.pending_choice)
@@ -850,6 +848,87 @@ class VmIrContractTests(unittest.TestCase):
         self.assertEqual(fallback.metadata["card_ids"], [energy.api_id])
         self.assertEqual(fallback.metadata["card_list_ids"], [energy.api_id])
 
+    def test_choice_card_refs_bind_authoritative_physical_zone_indices(self):
+        from engine.choice_manager import VMChoiceManager
+        from engine.game_state import ActionRequest
+
+        state = GameState()
+        state.p1.deck = [
+            CardRegistry.get("sv1-ener-1"),
+            CardRegistry.get("svf-potion"),
+            CardRegistry.get("sv1-ener-2"),
+            CardRegistry.get("sv2-delib"),
+        ]
+        manager = VMChoiceManager()
+
+        filtered = manager.choice_request(
+            state,
+            ActionRequest(
+                request_type="search_deck",
+                player=0,
+                prompt="filtered",
+                from_zone="deck",
+                card_list=[state.p1.deck[1], state.p1.deck[3]],
+            ),
+        )
+        self.assertEqual(
+            [option.ref.index for option in filtered.options],
+            [1, 3],
+        )
+
+        top_first = manager.choice_request(
+            state,
+            ActionRequest(
+                request_type="search_deck",
+                player=0,
+                prompt="top",
+                from_zone="deck",
+                card_list=[state.p1.deck[3], state.p1.deck[1]],
+                continuation={
+                    "kind": "look_top_deck",
+                    "top_card_ids": [
+                        state.p1.deck[3].api_id,
+                        state.p1.deck[2].api_id,
+                        state.p1.deck[1].api_id,
+                    ],
+                    "display_top_positions": [0, 2],
+                },
+            ),
+        )
+        self.assertEqual(
+            [option.ref.index for option in top_first.options],
+            [3, 1],
+        )
+
+        with self.assertRaisesRegex(ValueError, "top window"):
+            manager.choice_request(
+                state,
+                ActionRequest(
+                    request_type="search_deck",
+                    player=0,
+                    prompt="stale top",
+                    from_zone="deck",
+                    card_list=[state.p1.deck[3]],
+                    continuation={
+                        "kind": "look_top_deck",
+                        "top_card_ids": [state.p1.deck[2].api_id],
+                        "display_top_positions": [0],
+                    },
+                ),
+            )
+
+        with self.assertRaisesRegex(ValueError, "absent from authoritative deck"):
+            manager.choice_request(
+                state,
+                ActionRequest(
+                    request_type="search_deck",
+                    player=0,
+                    prompt="stale",
+                    from_zone="deck",
+                    card_list=[CardRegistry.get("sv1-ener-3")],
+                ),
+            )
+
     def test_energy_relocation_duplicate_ids_use_exact_attachment_index(self):
         import copy
 
@@ -1254,128 +1333,81 @@ class VmIrContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "broken-modifier.*broken modifier"):
             state.modifier_manager.emit(MODIFY_DAMAGE, state=state)
 
-    def test_python_stat_and_retreat_hooks_own_mbf_logic(self):
-        import engine.effects.pokemon_stat_hooks as pokemon_stat_hooks
-        import engine.effects.retreat_modifier_hooks as retreat_modifier_hooks
-        import engine.player_state as player_state
+    def test_python_stat_and_retreat_public_apis_delegate_to_mbf_hooks(self):
+        from unittest.mock import patch
+
         import engine.rules_validator as rules_validator
 
-        player_state_source = Path(player_state.__file__).read_text(encoding="utf-8")
-        rules_validator_source = Path(rules_validator.__file__).read_text(encoding="utf-8")
-        stat_hook_source = Path(pokemon_stat_hooks.__file__).read_text(encoding="utf-8")
-        retreat_hook_source = Path(retreat_modifier_hooks.__file__).read_text(encoding="utf-8")
+        pokemon = PokemonInPlay(CardRegistry.get("svi-chim"))
+        with patch(
+            "engine.effects.pokemon_stat_hooks.current_hp",
+            return_value=137,
+        ) as current_hp:
+            self.assertEqual(pokemon.current_hp, 137)
+            current_hp.assert_called_once_with(pokemon)
 
-        self.assertIn("pokemon_stat_hooks import current_hp", player_state_source)
-        self.assertNotIn("conditional_hp_boost", player_state_source)
-        self.assertNotIn("hp_boost_basic", player_state_source)
-        self.assertIn("retreat_modifier_hooks import effective_retreat_cost", rules_validator_source)
-        self.assertNotIn("conditional_zero_retreat", rules_validator_source)
-        self.assertNotIn("EventType.CAN_RETREAT", rules_validator_source)
-        self.assertIn("ModifierManager", stat_hook_source)
-        self.assertIn("MAX_HP", stat_hook_source)
-        self.assertIn("CAN_RETREAT", retreat_hook_source)
-        self.assertIn("modifier_manager", retreat_hook_source)
+        state = GameState()
+        state.p1.active = pokemon
+        with patch(
+            "engine.effects.retreat_modifier_hooks.effective_retreat_cost",
+            return_value=2,
+        ) as retreat_cost:
+            self.assertEqual(rules_validator.effective_retreat_cost(state, state.p1), 2)
+            retreat_cost.assert_called_once_with(state, state.p1)
+
+        state.modifier_manager.register(
+            CAN_RETREAT,
+            lambda data: (
+                {"set_cost": 0, "source": "runtime-test"}
+                if data.get("pokemon") is pokemon
+                else None
+            ),
+            source="runtime-test",
+            owner_player=0,
+        )
+        self.assertEqual(rules_validator.effective_retreat_cost(state, state.p1), 0)
 
     def test_python_modifier_hooks_register_through_modifier_manager(self):
-        import engine.commands.modifier_registration as modifier_registration
+        from engine.commands.modifier_registration import register_pokemon_modifiers
 
-        source = Path(modifier_registration.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        legacy_trigger_payload_keys = []
-        command_specs_keys = 0
-        trigger_callback_names = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_register_mbf_hook":
-                if len(node.args) >= 3 and isinstance(node.args[1], ast.Name):
-                    if node.args[1].id in {"AFTER_DAMAGE", "POKEMON_KO"}:
-                        callback = node.args[2]
-                        if isinstance(callback, ast.Name):
-                            trigger_callback_names.add(callback.id)
-            if not isinstance(node, ast.Dict):
-                continue
-            for key in node.keys:
-                if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
-                    continue
-                if key.value in {"command", "commands"}:
-                    legacy_trigger_payload_keys.append((key.value, node.lineno))
-                if key.value == "command_specs":
-                    command_specs_keys += 1
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("svi-maus"))
+        register_pokemon_modifiers(
+            state.p2.active,
+            1,
+            "active",
+            event_bus=state.event_bus,
+        )
+        before_attacker_damage = state.p1.active.damage_counters
+        before_defender_damage = state.p2.active.damage_counters
 
-        function_defs = {
-            node.name: node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef)
-        }
-        mutation_methods = {
-            "add",
-            "append",
-            "clear",
-            "discard",
-            "extend",
-            "insert",
-            "pop",
-            "popitem",
-            "remove",
-            "reverse",
-            "sort",
-            "update",
-        }
-        board_roots = {
-            "attacker",
-            "data",
-            "defender",
-            "holder",
-            "knocked_out",
-            "owner",
-            "player",
-            "pokemon",
-            "source",
-            "state",
-            "target",
-        }
+        results = state.modifier_manager.emit(
+            AFTER_DAMAGE,
+            final_damage=20,
+            attacker=state.p1.active,
+            defender=state.p2.active,
+            state=state,
+        )
 
-        def root_name(expr):
-            if isinstance(expr, ast.Name):
-                return expr.id
-            if isinstance(expr, ast.Attribute):
-                return root_name(expr.value)
-            if isinstance(expr, ast.Subscript):
-                return root_name(expr.value)
-            if isinstance(expr, ast.Call):
-                return root_name(expr.func)
-            return None
+        self.assertTrue(results)
+        self.assertTrue(all("command_specs" in row for row in results))
+        self.assertTrue(all("command" not in row and "commands" not in row for row in results))
+        self.assertEqual(state.p1.active.damage_counters, before_attacker_damage)
+        self.assertEqual(state.p2.active.damage_counters, before_defender_damage)
 
-        direct_mutations = []
-        for callback_name in sorted(trigger_callback_names):
-            callback = function_defs.get(callback_name)
-            self.assertIsNotNone(callback, callback_name)
-            for node in ast.walk(callback):
-                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-                    targets = [node.target] if hasattr(node, "target") else list(node.targets)
-                    for target in targets:
-                        if isinstance(target, (ast.Attribute, ast.Subscript)):
-                            root = root_name(target)
-                            if root in board_roots:
-                                direct_mutations.append((callback_name, root, node.lineno))
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                    root = root_name(node.func.value)
-                    if root in board_roots and node.func.attr in mutation_methods:
-                        direct_mutations.append((callback_name, root, node.lineno))
+        specs = command_specs_from_trigger_results(results)
+        self.assertTrue(specs)
+        self.assertTrue(all(spec["op"] in VM_COMMAND_DESCRIPTORS for spec in specs))
+        executed = execute_trigger_commands(
+            state,
+            specs,
+            player_idx=1,
+            source_slot="active",
+        )
 
-        self.assertIn("ModifierManager", source)
-        self.assertIn("MODIFY_DAMAGE", source)
-        self.assertIn("CAN_RETREAT", source)
-        self.assertIn("AFTER_DAMAGE", source)
-        self.assertIn("POKEMON_KO", source)
-        self.assertIn("_register_mbf_hook", source)
-        self.assertNotIn("EventType", source)
-        self.assertNotIn("event_bus.register(", source)
-        self.assertNotIn("exp_share_used", source)
-        self.assertNotIn("团结一致", source)
-        self.assertGreater(command_specs_keys, 0)
-        self.assertEqual(legacy_trigger_payload_keys, [])
-        self.assertGreater(len(trigger_callback_names), 0)
-        self.assertEqual(direct_mutations, [])
+        self.assertTrue(executed.success, executed.log_message)
+        self.assertGreater(state.p1.active.damage_counters, before_attacker_damage)
 
     def test_migrated_native_commands_do_not_reuse_effect_type_fields(self):
         from engine.commands.primitives_coin import CoinFlipSpecial
@@ -1597,82 +1629,59 @@ class VmIrContractTests(unittest.TestCase):
 
         self.assertEqual(offenders, [])
 
-    def test_runtime_and_ai_use_runtime_effect_selectors_instead_of_effect_fields(self):
-        checked_files = [
-            Path("engine/action_resolver.py"),
-            Path("engine/game_engine.py"),
-            Path("engine/ai/challenge_ai.py"),
-            Path("engine/ai/dl/encoder.py"),
-            Path("engine/ai/challenge/sequencing.py"),
-            Path("engine/ai/dl/training.py"),
-            Path("engine/effects/pokemon_stat_hooks.py"),
-            Path("engine/effects/retreat_modifier_hooks.py"),
-            Path("engine/commands/modifier_registration.py"),
-        ]
-        forbidden = (
-            ".trainer_effects",
-            ".compiled_trainer_effects",
-            ".compiled_effects",
-            'getattr(card, "trainer_effects"',
-            'getattr(card, "compiled_trainer_effects"',
-            'getattr(attack, "effects"',
-            'getattr(attack, "compiled_effects"',
-            'getattr(ability, "effects"',
-            'getattr(ability, "compiled_effects"',
-            "card.compiled_trainer_effects",
-            "attack.compiled_effects",
-            "ability.compiled_effects",
-            "attack.effects",
-            "ability.effects",
-            "atk.effects",
-        )
-        offenders = []
-        for relative in checked_files:
-            path = Path(__file__).resolve().parents[1] / relative
-            source = path.read_text(encoding="utf-8")
-            for token in forbidden:
-                if token in source:
-                    offenders.append(f"{relative}:{token}")
-        self.assertEqual(offenders, [])
+    def test_runtime_effect_selectors_prefer_compiled_registered_ir(self):
+        from types import SimpleNamespace
 
-        ai_files = [
-            Path("engine/ai/challenge_ai.py"),
-            Path("engine/ai/challenge/sequencing.py"),
-            Path("engine/ai/dl/encoder.py"),
-            Path("engine/ai/dl/training.py"),
-        ]
-        raw_effect_type_offenders = []
-        for relative in ai_files:
-            path = Path(__file__).resolve().parents[1] / relative
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Attribute) and node.attr == "effect_type":
-                    raw_effect_type_offenders.append(f"{relative}:{node.lineno}:attr")
-                if (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "getattr"
-                    and len(node.args) >= 2
-                    and isinstance(node.args[1], ast.Constant)
-                    and node.args[1].value == "effect_type"
-                ):
-                    raw_effect_type_offenders.append(f"{relative}:{node.lineno}:getattr")
-                if (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "get"
-                    and node.args
-                    and isinstance(node.args[0], ast.Constant)
-                    and node.args[0].value == "effect_type"
-                ):
-                    raw_effect_type_offenders.append(f"{relative}:{node.lineno}:dict-get")
-                if (
-                    isinstance(node, ast.Subscript)
-                    and isinstance(node.slice, ast.Constant)
-                    and node.slice.value == "effect_type"
-                ):
-                    raw_effect_type_offenders.append(f"{relative}:{node.lineno}:subscript")
-        self.assertEqual(raw_effect_type_offenders, [])
+        from engine.effects.runtime_effects import (
+            ability_runtime_effects,
+            attack_runtime_effects,
+            strict_ability_runtime_effects,
+            strict_attack_runtime_effects,
+            strict_trainer_runtime_effects,
+            trainer_runtime_effects,
+        )
+
+        compiled = [{
+            "op": "draw_cards",
+            "args": {"amount": 1},
+            "branches": {},
+        }]
+        raw = [{"effect_type": "energy_discard", "params": {"amount": 9}}]
+        ability = SimpleNamespace(name="ability", effects=raw, compiled_effects=compiled)
+        attack = SimpleNamespace(name="attack", effects=raw, compiled_effects=compiled)
+        trainer = SimpleNamespace(
+            api_id="trainer",
+            trainer_effects=raw,
+            compiled_trainer_effects=compiled,
+        )
+
+        for selector, owner in (
+            (ability_runtime_effects, ability),
+            (attack_runtime_effects, attack),
+            (trainer_runtime_effects, trainer),
+            (strict_ability_runtime_effects, ability),
+            (strict_attack_runtime_effects, attack),
+            (strict_trainer_runtime_effects, trainer),
+        ):
+            with self.subTest(selector=selector.__name__):
+                self.assertEqual(selector(owner), compiled)
+
+        errors = validate_command_spec(
+            compiled[0],
+            supported_ops=set(VM_COMMAND_DESCRIPTORS),
+            descriptors=VM_COMMAND_DESCRIPTORS,
+        )
+        self.assertEqual(errors, [])
+
+        raw_only = SimpleNamespace(
+            api_id="raw-only",
+            trainer_effects=raw,
+            compiled_trainer_effects=[],
+        )
+        self.assertEqual(
+            strict_trainer_runtime_effects(raw_only)[0]["op"],
+            "__missing_compiled_effect__",
+        )
 
     def test_compiled_only_static_modifier_payloads_drive_hooks(self):
         from data.card_models import AbilityDef, Card
@@ -2002,18 +2011,17 @@ class VmIrContractTests(unittest.TestCase):
     def test_set_attack_damage_formula_is_native_primitive(self):
         from engine.commands.primitives_combat import SetAttackDamageFormula
 
-        execute_source = inspect.getsource(SetAttackDamageFormula.execute)
-        self.assertNotIn("_handle_attack_damage_formula", execute_source)
-
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
         state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
         stack = ResolutionStack(state)
-        stack.push(compile_command_spec({
+        command = compile_command_spec({
             "op": "set_attack_damage_formula",
             "args": {"base": 30},
             "branches": {},
-        }))
+        })
+        self.assertIsInstance(command, SetAttackDamageFormula)
+        stack.push(command)
         result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertEqual(result.damage_dealt, 30)
@@ -2207,12 +2215,14 @@ class VmIrContractTests(unittest.TestCase):
         )
         self.assertEqual(state.p2.active.damage_counters, 0)
 
-    def test_primitives_do_not_import_legacy_effect_module(self):
+    def test_native_registry_is_complete_and_exposes_no_legacy_dispatcher(self):
         import engine.commands.primitives as primitives
 
-        source = Path(primitives.__file__).read_text(encoding="utf-8")
-        self.assertNotIn("engine.effects", source)
-        self.assertNotIn("execute_effect(", source)
+        self.assertEqual(
+            DEFAULT_COMMAND_REGISTRY.supported_ops,
+            frozenset(VM_COMMAND_DESCRIPTORS),
+        )
+        self.assertFalse(hasattr(primitives, "execute_effect"))
         self.assertFalse(hasattr(primitives, "NoOp"))
 
     def test_engine_effects_package_does_not_expose_dispatcher(self):
@@ -3534,18 +3544,16 @@ class VmIrContractTests(unittest.TestCase):
             "args": {"flips": 3, "damage_per_head": 10},
             "branches": {},
         }))
-        result = stack.resolve_all(0, "active")
+        coin_rng = ScriptedRandomSource([True, False, True])
+        with coin_rng.bind_state(state):
+            result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertFalse(result.pending_choice._resolution_stack_had_callback)
         self.assertEqual(result.pending_choice.continuation.get("kind"), "coin_special")
         self.assertEqual(result.pending_choice.continuation.get("coin_kind"), "repeat_damage")
         request = engine.choice_request(state, result.pending_choice)
         self.assertEqual(request.metadata.get("continuation", {}).get("kind"), "coin_special")
-        step = engine.apply_choice(
-            state,
-            request,
-            ChoiceResponse(request.request_id, ("coin:heads", "coin:tails", "coin:heads")),
-        )
+        step = engine.apply_choice(state, ChoiceResponse(request.request_id, ()))
         self.assertTrue(step.success, step.message)
         self.assertEqual(state.p2.active.damage_counters, 2)
 
@@ -3558,17 +3566,15 @@ class VmIrContractTests(unittest.TestCase):
             "args": {"per_head": 20},
             "branches": {},
         }))
-        result = stack.resolve_all(0, "active")
+        coin_rng = ScriptedRandomSource([True, True, False])
+        with coin_rng.bind_state(state):
+            result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertFalse(result.pending_choice._resolution_stack_had_callback)
         self.assertEqual(result.pending_choice.continuation.get("kind"), "coin_special")
         self.assertEqual(result.pending_choice.continuation.get("coin_kind"), "until_tails")
         request = engine.choice_request(state, result.pending_choice)
-        step = engine.apply_choice(
-            state,
-            request,
-            ChoiceResponse(request.request_id, ("coin:heads", "coin:heads", "coin:tails")),
-        )
+        step = engine.apply_choice(state, ChoiceResponse(request.request_id, ()))
         self.assertTrue(step.success, step.message)
         self.assertEqual(state.p2.active.damage_counters, 4)
 
@@ -3577,17 +3583,15 @@ class VmIrContractTests(unittest.TestCase):
         state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
         stack = ResolutionStack(state)
         stack.push(compile_command_spec({"op": "flip_coin_then_ko", "args": {}, "branches": {}}))
-        result = stack.resolve_all(0, "active")
+        coin_rng = ScriptedRandomSource([True, True])
+        with coin_rng.bind_state(state):
+            result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertFalse(result.pending_choice._resolution_stack_had_callback)
         self.assertEqual(result.pending_choice.continuation.get("kind"), "coin_special")
         self.assertEqual(result.pending_choice.continuation.get("coin_kind"), "double_ko")
         request = engine.choice_request(state, result.pending_choice)
-        step = engine.apply_choice(
-            state,
-            request,
-            ChoiceResponse(request.request_id, ("coin:heads", "coin:heads")),
-        )
+        step = engine.apply_choice(state, ChoiceResponse(request.request_id, ()))
         self.assertTrue(step.success, step.message)
         self.assertTrue(state.p2.active.is_knocked_out)
 
@@ -3783,7 +3787,9 @@ class VmIrContractTests(unittest.TestCase):
             "args": {},
             "branches": {},
         }))
-        result = stack.resolve_all(0, "active")
+        coin_rng = ScriptedRandomSource([True])
+        with coin_rng.bind_state(state):
+            result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertIsNotNone(result.pending_choice)
         self.assertFalse(result.pending_choice._resolution_stack_had_callback)
@@ -3793,7 +3799,7 @@ class VmIrContractTests(unittest.TestCase):
             request.metadata.get("continuation", {}).get("kind"),
             "coin_energy_discard",
         )
-        step = engine.apply_choice(state, request, ChoiceResponse(request.request_id, ("coin:heads",)))
+        step = engine.apply_choice(state, ChoiceResponse(request.request_id, ()))
         self.assertTrue(step.success, step.message)
         self.assertIsNotNone(step.pending_choice)
         request = step.pending_choice
@@ -3913,7 +3919,10 @@ class VmIrContractTests(unittest.TestCase):
                 "source": "学习装置",
                 "select_source": True,
                 "optional": True,
-                "target_tool_id": "svg2-exps",
+                # A native registration command has no physical Tool identity.
+                # Real card registrations derive this from the attached card,
+                # never from the historical Learning Device card ID.
+                "target_tool_id": "",
             },
         )
         self.assertEqual(trigger_specs[1]["op"], "trigger_move_basic_energy")
@@ -4357,7 +4366,9 @@ class VmIrContractTests(unittest.TestCase):
                 "on_tails": [{"op": "fail_attack", "args": {}}],
             },
         }))
-        result = stack.resolve_all(0, "active")
+        coin_rng = ScriptedRandomSource([True])
+        with coin_rng.bind_state(state):
+            result = stack.resolve_all(0, "active")
         self.assertTrue(result.success)
         self.assertIsNotNone(result.pending_choice)
         self.assertFalse(result.pending_choice._resolution_stack_had_callback)
@@ -4371,11 +4382,7 @@ class VmIrContractTests(unittest.TestCase):
             request.metadata.get("continuation", {}).get("kind"),
             "flip_coin_branch",
         )
-        step = engine.apply_choice(
-            state,
-            request,
-            ChoiceResponse(request.request_id, ("coin:heads",)),
-        )
+        step = engine.apply_choice(state, ChoiceResponse(request.request_id, ()))
         self.assertTrue(step.success, step.message)
         self.assertEqual(state.p2.active.damage_counters, 1)
         self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-2"])
@@ -4981,7 +4988,7 @@ class VmIrContractTests(unittest.TestCase):
         self.assertIsNone(state.p1.active)
         self.assertEqual(
             [card.api_id for card in state.p1.hand],
-            ["svl-vitb", "sv2-38", "sv1-ener-3", "sv2-tatsu"],
+            ["sv2-tatsu", "sv2-38", "sv1-ener-3", "svl-vitb"],
         )
 
         state = GameState()

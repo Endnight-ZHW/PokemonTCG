@@ -838,6 +838,8 @@ func _distill_action_row(
 	var action_cards: Array[int] = []
 	for action in actions:
 		var encoded := encoder.encode_action(observation, action, deck_key)
+		if encoded.has("error"):
+			return {}
 		action_numeric.append(encoded["numeric"])
 		action_cards.append(int(encoded["card_id"]))
 	return {
@@ -887,6 +889,8 @@ func _distill_choice_row(
 	var choice_cards: Array[int] = []
 	for index in range(request.options.size()):
 		var encoded := encoder.encode_choice(observation, request, request.options[index], index)
+		if encoded.has("error"):
+			return {}
 		choice_numeric.append(encoded["numeric"])
 		choice_cards.append(int(encoded["card_id"]))
 	return {
@@ -996,7 +1000,9 @@ func _play_match(
 	var terminal_reason := ""
 	var terminal_message := ""
 	while not state.is_terminal() and actions_taken < max_actions:
-		var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
+		var pending := engine.query_pending_choice(state, 0)
+		if pending == null:
+			pending = engine.query_pending_choice(state, 1)
 		if pending:
 			var choice_actor := _choice_actor(state, pending)
 			var choice_strategy := strategy_a if choice_actor == strategy_a_player else strategy_b
@@ -1037,7 +1043,7 @@ func _play_match(
 			var response := ChoiceResponse.from_dict(choice_result["choice_response"])
 			_perf_count(performance_profile, "choices")
 			var choice_apply_started := _perf_start(performance_profile)
-			var choice_step := engine.apply_choice(state, pending, response, rng)
+			var choice_step := engine.apply_choice_response(state, response, rng)
 			_perf_add_elapsed(performance_profile, "runner_apply_choice_ms", choice_apply_started)
 			choices += 1
 			if not choice_step.success:
@@ -1049,8 +1055,13 @@ func _play_match(
 
 		var actor := _current_actor(state)
 		var legal_started := _perf_start(performance_profile)
-		var legal := engine.legal_actions(state, actor, true)
+		var legal_query := engine.query_legal_action_groups(state, actor)
 		_perf_add_elapsed(performance_profile, "runner_legal_actions_ms", legal_started)
+		if not legal_query.success:
+			terminal_reason = "legal_query_failed"
+			terminal_message = "%s: %s" % [legal_query.code, legal_query.message]
+			break
+		var legal := legal_query.concrete_actions()
 		if legal.is_empty():
 			terminal_reason = "no_legal_action"
 			terminal_message = "No legal action for actor=%d phase=%s" % [actor, state.phase]

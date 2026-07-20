@@ -9,7 +9,7 @@
 
 | 目录 | 定位 | 状态 |
 |---|---|---|
-| [`godot/`](godot/) | 当前发布客户端 | Godot 4.7，版本 0.4.0 |
+| [`godot/`](godot/) | 当前发布客户端 | Godot 4.7，版本 0.6.0 |
 | [`python/`](python/) | Pygame 本地调试、规则对照、AI 训练与数据/卡图导出 | 开发工具，不发布、不提供客户端联机 |
 | [`tools/`](tools/) | 测试、模型导出、Godot 构建和发布脚本 | 由根目录 manifest 驱动 |
 | [`docs/`](docs/) | 规则、开发手册、发布说明和 AI rollout | 项目文档 |
@@ -60,8 +60,8 @@ GPU 训练使用精确锁定的 `python/environment.yml`；发布 ONNX 使用
 
 ### Relay 服务
 
-Relay 仅验证并转发 Godot Protocol v4 消息，不承载 Python 客户端协议；旧 v3 房间会收到
-明确的不兼容诊断，不能恢复为 v4 对局：
+Relay 仅验证并转发 Godot Protocol v6 消息，不承载 Python 客户端协议；旧 Protocol 5 房间会收到
+明确的不兼容诊断，不能恢复为 v6 对局：
 
 ```powershell
 .\.tools\python311\python.exe .\python\relay_server.py --host 0.0.0.0 --port 8766

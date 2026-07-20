@@ -4,6 +4,7 @@ extends RefCounted
 var catalog: CardCatalog
 var validator: RulesValidator
 var trigger_command_runner: VMTriggerCommands
+var effect_engine: EffectEngine
 
 
 func _init(
@@ -16,7 +17,8 @@ func _init(
 	if p_trigger_command_runner != null:
 		trigger_command_runner = p_trigger_command_runner
 	else:
-		trigger_command_runner = VMTriggerCommands.new(catalog)
+		effect_engine = EffectEngine.new(catalog)
+		trigger_command_runner = effect_engine.trigger_commands()
 
 
 func resolve_knockouts(
@@ -25,6 +27,7 @@ func resolve_knockouts(
 	events: Array[Dictionary],
 	from_attack: bool,
 	active_stack: ResolutionStack = null,
+	rng: PortableRandomSource = null,
 ) -> Dictionary:
 	# Engine-owned settlement always supplies a stack so every Prize card remains
 	# an explicit player choice.  Keep the historical low-level ATTACK entry point
@@ -33,24 +36,21 @@ func resolve_knockouts(
 	var settle_synchronously := active_stack == null and state.phase == "ATTACK"
 	var stack := active_stack if active_stack != null else ResolutionStack.new()
 	if stack.context.get("ko_batch") is Dictionary:
-		var continued := _continue_knockout_batch(state, stack, events)
+		var continued := _continue_knockout_batch(state, stack, events, rng)
 		return (
-			_settle_synchronous_prize_choices(state, stack, events, continued)
+			_settle_synchronous_prize_choices(state, stack, events, continued, rng)
 			if settle_synchronously
 			else continued
 		)
 	var knockouts: Array[Dictionary] = []
 	for player_idx in [0, 1]:
-		for row in state.get_player(player_idx).get_all_pokemon():
-			var pokemon: PokemonState = row["pokemon"]
-			if pokemon and pokemon.is_knocked_out(catalog):
-				knockouts.append({
-					"player": player_idx,
-					"slot": str(row["slot"]),
-					"card_id": pokemon.card_id,
-					"prizes": catalog.prize_value(pokemon.card_id),
-					"stage": "declare",
-				})
+		var player := state.get_player(player_idx)
+		_append_knockout_candidate(knockouts, player.active, player_idx, "active")
+		for bench_idx in range(player.bench.size()):
+			var pokemon: PokemonState = player.bench[bench_idx]
+			if pokemon != null:
+				_append_knockout_candidate(
+					knockouts, pokemon, player_idx, "bench_%d" % bench_idx)
 	if knockouts.is_empty():
 		return VMResult.ok()
 	stack.context["ko_batch"] = {
@@ -61,12 +61,29 @@ func resolve_knockouts(
 		"stage": "declare",
 		"trigger_index": 0,
 	}
-	var result := _continue_knockout_batch(state, stack, events)
+	var result := _continue_knockout_batch(state, stack, events, rng)
 	return (
-		_settle_synchronous_prize_choices(state, stack, events, result)
+		_settle_synchronous_prize_choices(state, stack, events, result, rng)
 		if settle_synchronously
 		else result
 	)
+
+
+func _append_knockout_candidate(
+	knockouts: Array[Dictionary],
+	pokemon: PokemonState,
+	player_idx: int,
+	slot: String,
+) -> void:
+	if pokemon == null or not pokemon.is_knocked_out(catalog):
+		return
+	knockouts.append({
+		"player": player_idx,
+		"slot": slot,
+		"card_id": pokemon.card_id,
+		"prizes": catalog.prize_value(pokemon.card_id),
+		"stage": "declare",
+	})
 
 
 func _settle_synchronous_prize_choices(
@@ -74,6 +91,7 @@ func _settle_synchronous_prize_choices(
 	stack: ResolutionStack,
 	events: Array[Dictionary],
 	initial_result: Dictionary,
+	rng: PortableRandomSource = null,
 ) -> Dictionary:
 	"""Drain low-level prize choices without bypassing canonical event creation."""
 	var result := initial_result
@@ -90,14 +108,7 @@ func _settle_synchronous_prize_choices(
 				request,
 				ChoiceResponse.new(request.request_id, ["prize:0"]),
 				stack,
-			)
-		elif str(request.metadata.get("purpose", "")) == "treasure_energy_attach":
-			# The Treasure Energy attachment is optional; a non-interactive event
-			# consumer deterministically declines it, then resumes remaining prizes.
-			choice_result = apply_treasure_energy_choice(
-				state,
-				ChoiceResponse.new(request.request_id, [], true),
-				stack,
+				rng,
 			)
 		else:
 			# Trigger order/confirmation still needs a player and must remain paused.
@@ -125,6 +136,7 @@ func _continue_knockout_batch(
 	state: GameState,
 	stack: ResolutionStack,
 	events: Array[Dictionary],
+	rng: PortableRandomSource = null,
 ) -> Dictionary:
 	var batch: Dictionary = stack.context.get("ko_batch", {})
 	var knockouts: Array = batch.get("knockouts", [])
@@ -134,6 +146,7 @@ func _continue_knockout_batch(
 		# optional trigger against the same complete pre-discard board before any
 		# trigger can pause settlement or any Pokemon can leave play.
 		var live_knockouts: Array = []
+		var trigger_candidates: Array[Dictionary] = []
 		for knockout_value in knockouts:
 			var knockout: Dictionary = knockout_value
 			var defeated_idx := int(knockout.get("player", -1))
@@ -146,69 +159,63 @@ func _continue_knockout_batch(
 			var knockout_cause := _knockout_cause_for(
 				stack, batch, defeated_idx, defeated_slot)
 			knockout["cause"] = knockout_cause
-			knockout["triggers"] = _collect_exp_share_triggers(
+			trigger_command_runner.collect_pokemon_ko_triggers(
 				state,
-				defeated_idx,
-				defeated_slot,
-				knocked_out,
-				knockout_cause,
-			)
-			knockout["current_trigger"] = {}
-			live_knockouts.append(knockout)
-		knockouts = live_knockouts
-		batch["knockouts"] = knockouts
-		batch["stage"] = "triggers"
-		batch["trigger_index"] = 0
-		stack.context["ko_batch"] = batch
-
-		# The current card pool has only Learning Device in the KO hook domain;
-		# keep the generic immediate-hook path after the global declaration and
-		# collection barrier so future registered commands cannot cause an early
-		# leave-play mutation.
-		for knockout_value in knockouts:
-			var knockout: Dictionary = knockout_value
-			var defeated_idx := int(knockout.get("player", -1))
-			var defeated_slot := str(knockout.get("slot", ""))
-			var knocked_out := state.get_player(defeated_idx).get_pokemon(defeated_slot)
-			if knocked_out == null or knocked_out.card_id != str(knockout.get("card_id", "")):
-				continue
-			var knockout_cause: Dictionary = knockout.get("cause", {})
-			var non_exp_share_result := _resolve_non_exp_share_ko_triggers(
-				state,
-				stack,
-				events,
 				defeated_idx,
 				defeated_slot,
 				knocked_out,
 				_is_opponent_attack_damage(knockout_cause, defeated_idx),
 				int(knockout_cause.get("source_player", -1)),
+				trigger_candidates,
 			)
-			if not bool(non_exp_share_result.get("success", false)):
-				return non_exp_share_result
-		stage = "triggers"
+			live_knockouts.append(knockout)
+		knockouts = live_knockouts
+		batch["knockouts"] = knockouts
+		batch["trigger_candidates"] = trigger_candidates
+		batch["stage"] = "trigger_schedule"
+		stack.context["ko_batch"] = batch
+		stage = "trigger_schedule"
 
-	if stage == "triggers":
-		var trigger_index := int(batch.get("trigger_index", 0))
-		while trigger_index < knockouts.size():
-			var knockout: Dictionary = knockouts[trigger_index]
-			var triggers: Array = knockout.get("triggers", [])
-			if (
-				not triggers.is_empty()
-				or not Dictionary(knockout.get("current_trigger", {})).is_empty()
-			):
-				var trigger_request := _request_next_ko_trigger(state, stack)
-				if trigger_request != null:
-					var pending_trigger := VMResult.ok()
-					pending_trigger["pending_choice"] = trigger_request
-					return pending_trigger
-			trigger_index += 1
-			batch = stack.context.get("ko_batch", {})
-			batch["trigger_index"] = trigger_index
+	if stage == "trigger_schedule":
+		var trigger_candidates: Array[Dictionary] = []
+		trigger_candidates.assign(batch.get("trigger_candidates", []))
+		if not trigger_candidates.is_empty():
+			if effect_engine == null:
+				return VMResult.fail("KO触发缺少VM解释器。", "missing_effect_engine")
+			var order_player := state.active_player_idx
+			var order_policy := "apnap"
+			if bool(stack.context.get("finish_end_turn_after_knockouts", false)):
+				order_player = 1 - int(stack.context.get(
+					"end_turn_actor", state.active_player_idx))
+				order_policy = "incoming_first"
+			var queued := trigger_command_runner.queue_candidates(
+				stack,
+				trigger_candidates,
+				VMModifierManager.POKEMON_KO,
+				order_player,
+				order_policy,
+				"knockout",
+			)
+			if not bool(queued.get("success", false)):
+				return queued
+			batch["stage"] = "trigger_resolving"
 			stack.context["ko_batch"] = batch
+			var trigger_rng := rng if rng != null else PortableRandomSource.new(0)
+			var trigger_step := effect_engine.resolve(state, stack, trigger_rng)
+			events.append_array(trigger_step.events)
+			if not trigger_step.success:
+				return VMResult.fail(trigger_step.message, trigger_step.error_code)
+			if trigger_step.pending_choice != null:
+				var pending_trigger := VMResult.ok(trigger_step.message)
+				pending_trigger["pending_choice"] = trigger_step.pending_choice
+				return pending_trigger
 		batch = stack.context.get("ko_batch", {})
 		batch["stage"] = "discard"
 		stack.context["ko_batch"] = batch
 		stage = "discard"
+
+	if stage == "trigger_resolving":
+		return VMResult.fail("KO触发仍在等待续体。", "missing_choice")
 
 	if stage == "discard":
 		# No choice may occur in this phase. Sequential mutations are emitted in
@@ -241,44 +248,6 @@ func _continue_knockout_batch(
 	return VMResult.ok()
 
 
-func _resolve_non_exp_share_ko_triggers(
-	state: GameState,
-	stack: ResolutionStack,
-	events: Array[Dictionary],
-	defeated_idx: int,
-	defeated_slot: String,
-	knocked_out: PokemonState,
-	from_attack: bool,
-	attack_actor: int,
-) -> Dictionary:
-	var commands: Array[Dictionary] = []
-	trigger_command_runner.collect_pokemon_ko_commands(
-		state,
-		defeated_idx,
-		defeated_slot,
-		knocked_out,
-		from_attack,
-		attack_actor,
-		commands,
-	)
-	var normalized := trigger_command_runner.command_specs_from_payloads(commands)
-	if not bool(normalized.get("success", false)):
-		return normalized
-	var immediate: Array[Dictionary] = []
-	for spec_value in normalized.get("commands", []):
-		var spec: Dictionary = spec_value
-		# Learning Device is optional and needs entity/order/energy choices, so it
-		# is handled by the serializable KO trigger queue below.
-		if str(spec.get("op", "")) == "trigger_move_basic_energy":
-			continue
-		immediate.append(spec.duplicate(true))
-	if immediate.is_empty():
-		return VMResult.ok()
-	var trigger_result := trigger_command_runner.resolve_commands(
-		state, attack_actor, immediate, events, stack)
-	return trigger_result
-
-
 func _append_knockout_declared_event(
 	events: Array[Dictionary],
 	knockout: Dictionary,
@@ -308,58 +277,6 @@ func _append_knockout_declared_event(
 			"presentation_phase": "knockout",
 		}, true),
 	})
-
-
-func _collect_exp_share_triggers(
-	state: GameState,
-	defeated_idx: int,
-	defeated_slot: String,
-	knocked_out: PokemonState,
-	knockout_cause: Dictionary,
-) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	# Learning Device only sees the owner's Active Pokemon being Knocked Out by
-	# damage from the opponent's attack. Direct-KO/effect/checkup paths do not
-	# satisfy that condition.
-	if (
-		not _is_opponent_attack_damage(knockout_cause, defeated_idx)
-		or defeated_slot != "active"
-		or not trigger_command_runner.pokemon_has_basic_energy(knocked_out)
-	):
-		return result
-	var player := state.get_player(defeated_idx)
-	for bench_index in range(player.bench.size()):
-		var target: PokemonState = player.bench[bench_index]
-		if target == null:
-			continue
-		var target_slot := "bench_%d" % bench_index
-		var tool_id := target.attached_tool_id
-		var modifier_index := -1
-		if tool_id.is_empty() or not trigger_command_runner.tool_has_effect(
-			tool_id, "tool_exp_share"):
-			tool_id = ""
-			for index in range(target.modifiers.size()):
-				if str(target.modifiers[index].get(
-					"modifier_kind", target.modifiers[index].get("effect_type", ""))) == "tool_exp_share":
-					modifier_index = index
-					break
-			if modifier_index < 0:
-				continue
-		var entity_suffix := tool_id if not tool_id.is_empty() else "modifier_%d" % modifier_index
-		result.append({
-			"trigger_id": "exp_share:%d:%s:%s" % [defeated_idx, target_slot, entity_suffix],
-			"kind": "tool_exp_share",
-			"owner": defeated_idx,
-			"source_player": defeated_idx,
-			"source_slot": defeated_slot,
-			"source_card_id": knocked_out.card_id,
-			"target_player": defeated_idx,
-			"target_slot": target_slot,
-			"target_card_id": target.card_id,
-			"tool_card_id": tool_id,
-			"modifier_index": modifier_index,
-		})
-	return result
 
 
 func _knockout_cause_for(
@@ -415,357 +332,43 @@ func _is_opponent_attack_damage(cause: Dictionary, defeated_idx: int) -> bool:
 	)
 
 
-func _request_next_ko_trigger(
-	state: GameState,
-	stack: ResolutionStack,
-) -> ChoiceRequest:
-	var batch: Dictionary = stack.context.get("ko_batch", {})
-	var knockouts: Array = batch.get("knockouts", [])
-	var trigger_index := int(batch.get("trigger_index", 0))
-	if trigger_index < 0 or trigger_index >= knockouts.size():
-		return null
-	var knockout: Dictionary = knockouts[trigger_index]
-	var current: Dictionary = knockout.get("current_trigger", {})
-	if not current.is_empty():
-		return _request_exp_share_confirmation(state, stack, current)
-	var triggers: Array = knockout.get("triggers", [])
-	if triggers.is_empty():
-		return null
-	if triggers.size() == 1:
-		current = Dictionary(triggers.pop_front()).duplicate(true)
-		knockout["triggers"] = triggers
-		knockout["current_trigger"] = current
-		knockouts[trigger_index] = knockout
-		batch["knockouts"] = knockouts
-		stack.context["ko_batch"] = batch
-		return _request_exp_share_confirmation(state, stack, current)
-	var options: Array[Dictionary] = []
-	for trigger_value in triggers:
-		var trigger: Dictionary = trigger_value
-		var trigger_id := str(trigger.get("trigger_id", ""))
-		options.append({
-			"option_id": "trigger:%s" % trigger_id,
-			"label": "%s上的学习装置" % catalog.card_name(str(trigger.get("target_card_id", ""))),
-			"value": {"trigger_id": trigger_id},
-		})
-	var owner := int(triggers[0].get("owner", -1))
-	var frame_id := "knockout:trigger_order:%d" % stack.sequence
-	stack.pending_request = ChoiceRequest.new(
-		stack.next_request_id(state, owner, "choose_trigger_order"),
-		"choose_trigger_order",
-		owner,
-		"请选择下一个要结算的学习装置。",
-		options,
-		1,
-		1,
-		false,
-		false,
-		{
-			"domain": "knockout",
-			"purpose": "exp_share_trigger_order",
-			"revision": state.revision,
-			"continuation_frame_id": frame_id,
-		},
-	)
-	state.resolution_stack = stack.to_dict()
-	return stack.pending_request
-
-
-func _request_exp_share_confirmation(
-	state: GameState,
-	stack: ResolutionStack,
-	trigger: Dictionary,
-) -> ChoiceRequest:
-	var trigger_id := str(trigger.get("trigger_id", ""))
-	var owner := int(trigger.get("owner", -1))
-	var frame_id := "knockout:trigger_confirm:%d" % stack.sequence
-	stack.pending_request = ChoiceRequest.new(
-		stack.next_request_id(state, owner, "confirm_trigger"),
-		"confirm_trigger",
-		owner,
-		"要发动这张学习装置吗？",
-		[{
-			"option_id": "trigger:%s" % trigger_id,
-			"label": "发动学习装置",
-			"value": {"trigger_id": trigger_id},
-		}],
-		0,
-		1,
-		false,
-		true,
-		{
-			"domain": "knockout",
-			"purpose": "exp_share_confirm",
-			"revision": state.revision,
-			"continuation_frame_id": frame_id,
-			"trigger_id": trigger_id,
-		},
-	)
-	state.resolution_stack = stack.to_dict()
-	return stack.pending_request
-
-
-func _request_exp_share_energy(
-	state: GameState,
-	stack: ResolutionStack,
-	trigger: Dictionary,
-) -> ChoiceRequest:
-	var source_player := int(trigger.get("source_player", -1))
-	var source_slot := str(trigger.get("source_slot", ""))
-	var source := state.get_player(source_player).get_pokemon(source_slot)
-	if source == null:
-		return null
-	var options: Array[Dictionary] = []
-	for index in range(source.energy_card_ids.size()):
-		var energy_id := str(source.energy_card_ids[index])
-		if not catalog.is_basic_energy(energy_id):
-			continue
-		options.append({
-			"option_id": "attachment:%d:%s:energy:%d:%s" % [
-				source_player, source_slot, index, energy_id],
-			"label": catalog.card_name(energy_id),
-			"ref": EntityRef.new(
-				"attachment", source_player, "field", source_slot, index,
-				"energy", energy_id).to_dict(),
-			"value": {
-				"player": source_player,
-				"slot": source_slot,
-				"index": index,
-				"attachment_type": "energy",
-				"card_id": energy_id,
-			},
-		})
-	if options.is_empty():
-		return null
-	var owner := int(trigger.get("owner", -1))
-	var frame_id := "knockout:exp_share_energy:%d" % stack.sequence
-	stack.pending_request = ChoiceRequest.new(
-		stack.next_request_id(state, owner, "select_attachment"),
-		"select_attachment",
-		owner,
-		"选择要移动到学习装置宝可梦上的基础能量。",
-		options,
-		1,
-		1,
-		false,
-		false,
-		{
-			"domain": "knockout",
-			"purpose": "exp_share_energy",
-			"revision": state.revision,
-			"continuation_frame_id": frame_id,
-			"trigger_id": str(trigger.get("trigger_id", "")),
-		},
-	)
-	state.resolution_stack = stack.to_dict()
-	return stack.pending_request
-
-
 func apply_ko_trigger_choice(
 	state: GameState,
 	response: ChoiceResponse,
 	stack: ResolutionStack,
+	rng: PortableRandomSource = null,
 ) -> Dictionary:
 	var pending := stack.pending_request
 	if pending == null:
 		return VMResult.fail("昏厥触发选择已过期。", "stale_choice")
-	match str(pending.metadata.get("purpose", "")):
-		"exp_share_trigger_order":
-			return _apply_exp_share_order_choice(state, response, stack)
-		"exp_share_confirm":
-			return _apply_exp_share_confirmation(state, response, stack)
-		"exp_share_energy":
-			return _apply_exp_share_energy_choice(state, response, stack)
-	return VMResult.fail("未知的昏厥触发选择。", "unknown_knockout_choice")
-
-
-func _apply_exp_share_order_choice(
-	state: GameState,
-	response: ChoiceResponse,
-	stack: ResolutionStack,
-) -> Dictionary:
-	if response.cancelled or response.option_ids.size() != 1:
-		return VMResult.fail("必须选择下一个触发。", "choice_count")
-	var selected_id := response.option_ids[0].trim_prefix("trigger:")
-	var batch: Dictionary = stack.context.get("ko_batch", {})
-	var knockouts: Array = batch.get("knockouts", [])
-	var trigger_index := int(batch.get("trigger_index", 0))
-	if trigger_index < 0 or trigger_index >= knockouts.size():
-		return VMResult.fail("昏厥批次已结束。", "stale_choice")
-	var knockout: Dictionary = knockouts[trigger_index]
-	var triggers: Array = knockout.get("triggers", [])
-	var selected_index := -1
-	for index in range(triggers.size()):
-		if str(triggers[index].get("trigger_id", "")) == selected_id:
-			selected_index = index
-			break
-	if selected_index < 0:
-		return VMResult.fail("触发顺序选择无效。", "invalid_choice")
-	var trigger: Dictionary = triggers.pop_at(selected_index)
-	knockout["triggers"] = triggers
-	knockout["current_trigger"] = trigger.duplicate(true)
-	knockouts[trigger_index] = knockout
-	batch["knockouts"] = knockouts
-	stack.context["ko_batch"] = batch
-	stack.pending_request = null
-	var next_request := _request_exp_share_confirmation(state, stack, trigger)
-	var result := VMResult.ok("已选择下一个学习装置。")
-	result["pending_choice"] = next_request
-	return result
-
-
-func _apply_exp_share_confirmation(
-	state: GameState,
-	response: ChoiceResponse,
-	stack: ResolutionStack,
-) -> Dictionary:
-	var trigger := _current_ko_trigger(stack)
-	if trigger.is_empty():
-		return VMResult.fail("学习装置触发已过期。", "stale_choice")
-	if response.option_ids.size() > 1:
-		return VMResult.fail("学习装置确认选择无效。", "choice_count")
-	var accepted := not response.cancelled and not response.option_ids.is_empty()
-	if accepted and response.option_ids[0] != "trigger:%s" % str(trigger.get("trigger_id", "")):
-		return VMResult.fail("学习装置确认项无效。", "invalid_choice")
-	stack.pending_request = null
-	if accepted and _exp_share_trigger_is_live(state, trigger):
-		var energy_request := _request_exp_share_energy(state, stack, trigger)
-		if energy_request != null:
-			var pending_result := VMResult.ok("请选择基础能量。")
-			pending_result["pending_choice"] = energy_request
-			return pending_result
-	_clear_current_ko_trigger(stack)
+	if effect_engine == null:
+		return VMResult.fail("KO触发缺少VM解释器。", "missing_effect_engine")
+	var trigger_rng := rng if rng != null else PortableRandomSource.new(0)
+	var step := effect_engine.apply_choice(state, stack, response, trigger_rng)
+	if not step.success:
+		return VMResult.fail(step.message, step.error_code)
 	var events: Array[Dictionary] = []
-	var continued := _continue_knockout_batch(state, stack, events)
-	continued["events"] = events
-	return continued
-
-
-func _apply_exp_share_energy_choice(
-	state: GameState,
-	response: ChoiceResponse,
-	stack: ResolutionStack,
-) -> Dictionary:
-	if response.cancelled or response.option_ids.size() != 1:
-		return VMResult.fail("必须选择1张基础能量。", "choice_count")
-	var trigger := _current_ko_trigger(stack)
-	if trigger.is_empty() or not _exp_share_trigger_is_live(state, trigger):
-		return VMResult.fail("学习装置触发已失效。", "stale_choice")
-	var selected: Dictionary = {}
-	for option in stack.pending_request.options:
-		if str(option.get("option_id", "")) == response.option_ids[0]:
-			selected = option
-			break
-	if selected.is_empty() or not selected.get("ref") is Dictionary:
-		return VMResult.fail("基础能量选择无效。", "invalid_choice")
-	var ref: Dictionary = selected["ref"]
-	var source_player := int(trigger.get("source_player", -1))
-	var source_slot := str(trigger.get("source_slot", ""))
-	var source := state.get_player(source_player).get_pokemon(source_slot)
-	var source_index := int(ref.get("index", -1))
-	var energy_id := str(ref.get("card_id", ""))
-	if (
-		source == null
-		or str(ref.get("kind", "")) != "attachment"
-		or int(ref.get("player", -1)) != source_player
-		or str(ref.get("slot", "")) != source_slot
-		or str(ref.get("attachment_type", "")) != "energy"
-		or source_index < 0
-		or source_index >= source.energy_card_ids.size()
-		or str(source.energy_card_ids[source_index]) != energy_id
-		or not catalog.is_basic_energy(energy_id)
-	):
-		return VMResult.fail("选择的基础能量已不存在。", "stale_choice")
-	var target_player := int(trigger.get("target_player", -1))
-	var target_slot := str(trigger.get("target_slot", ""))
-	var target := state.get_player(target_player).get_pokemon(target_slot)
-	if target == null:
-		return VMResult.fail("学习装置宝可梦已不存在。", "stale_choice")
-	source.energy_card_ids.remove_at(source_index)
-	var target_index := target.energy_card_ids.size()
-	target.energy_card_ids.append(energy_id)
-	var events: Array[Dictionary] = [{
-		"event_type": "energy_attached",
-		"actor": target_player,
-		"card_id": energy_id,
-		"source": {
-			"player": source_player,
-			"slot": source_slot,
-			"attachment_type": "energy",
-			"index": source_index,
-		},
-		"target": {
-			"player": target_player,
-			"slot": target_slot,
-			"attachment_type": "energy",
-			"index": target_index,
-		},
-		"data": {
-			"player": target_player,
-			"slot": target_slot,
-			"card_id": energy_id,
-			"presentation_phase": "knockout",
-			"source": "exp_share",
-			"source_player": source_player,
-			"source_slot": source_slot,
-			"source_index": source_index,
-			"target_player": target_player,
-			"target_slot": target_slot,
-			"target_index": target_index,
-		},
-	}]
-	stack.pending_request = null
-	_clear_current_ko_trigger(stack)
-	var continued := _continue_knockout_batch(state, stack, events)
-	continued["events"] = events
-	return continued
-
-
-func _current_ko_trigger(stack: ResolutionStack) -> Dictionary:
+	events.append_array(step.events)
+	if step.pending_choice != null:
+		var pending_result := VMResult.ok(step.message)
+		pending_result["events"] = events
+		pending_result["pending_choice"] = step.pending_choice
+		return pending_result
+	if stack.has_finalize_prize_revealed_frame():
+		var finalized_prize := _complete_prize_revealed(state, stack)
+		if not bool(finalized_prize.get("success", false)):
+			return finalized_prize
+		events.append_array(finalized_prize.get("events", []))
+		finalized_prize["events"] = events
+		return finalized_prize
 	var batch: Dictionary = stack.context.get("ko_batch", {})
-	var knockouts: Array = batch.get("knockouts", [])
-	var trigger_index := int(batch.get("trigger_index", 0))
-	if trigger_index < 0 or trigger_index >= knockouts.size():
-		return {}
-	return Dictionary(knockouts[trigger_index].get("current_trigger", {})).duplicate(true)
-
-
-func _clear_current_ko_trigger(stack: ResolutionStack) -> void:
-	var batch: Dictionary = stack.context.get("ko_batch", {})
-	var knockouts: Array = batch.get("knockouts", [])
-	var trigger_index := int(batch.get("trigger_index", 0))
-	if trigger_index < 0 or trigger_index >= knockouts.size():
-		return
-	var knockout: Dictionary = knockouts[trigger_index]
-	knockout["current_trigger"] = {}
-	knockouts[trigger_index] = knockout
-	batch["knockouts"] = knockouts
+	if str(batch.get("stage", "")) != "trigger_resolving":
+		return VMResult.fail("KO触发批状态无效。", "invalid_trigger_batch")
+	batch["stage"] = "discard"
 	stack.context["ko_batch"] = batch
-
-
-func _exp_share_trigger_is_live(state: GameState, trigger: Dictionary) -> bool:
-	var source := state.get_player(int(trigger.get("source_player", -1))).get_pokemon(
-		str(trigger.get("source_slot", "")))
-	var target := state.get_player(int(trigger.get("target_player", -1))).get_pokemon(
-		str(trigger.get("target_slot", "")))
-	if (
-		source == null
-		or target == null
-		or source.card_id != str(trigger.get("source_card_id", ""))
-		or target.card_id != str(trigger.get("target_card_id", ""))
-	):
-		return false
-	var tool_id := str(trigger.get("tool_card_id", ""))
-	if not tool_id.is_empty():
-		return target.attached_tool_id == tool_id and trigger_command_runner.tool_has_effect(
-			tool_id, "tool_exp_share")
-	var modifier_index := int(trigger.get("modifier_index", -1))
-	return (
-		modifier_index >= 0
-		and modifier_index < target.modifiers.size()
-		and str(target.modifiers[modifier_index].get(
-			"modifier_kind", target.modifiers[modifier_index].get("effect_type", ""))) == "tool_exp_share"
-	)
+	var continued := _continue_knockout_batch(state, stack, events, trigger_rng)
+	continued["events"] = events
+	return continued
 
 
 func _finalize_current_knockout(
@@ -920,6 +523,7 @@ func apply_prize_choice(
 	request: ChoiceRequest,
 	response: ChoiceResponse,
 	stack: ResolutionStack,
+	rng: PortableRandomSource = null,
 ) -> Dictionary:
 	if response.cancelled or response.option_ids.size() != 1:
 		return VMResult.fail("必须选择1张奖赏卡。", "choice_count")
@@ -937,22 +541,48 @@ func apply_prize_choice(
 		return VMResult.fail("选择的奖赏卡已不存在。", "stale_choice")
 	_pop_knockout_choice_frame(stack, "select_prize")
 	var card_id := str(player.prizes[source_index])
-	if card_id == "svi-trea":
-		# Treasure Energy resolves while the exact card is still in the Prize zone.
-		# Keeping the entity anchored here makes every pause/snapshot authoritative:
-		# declining moves it to the hand, accepting moves it directly to a Pokemon.
-		stack.context["pending_treasure_energy"] = {
-			"player": player_idx,
-			"prize_index": source_index,
-			"card_id": card_id,
-		}
+	var trigger_candidates: Array[Dictionary] = []
+	var collected := trigger_command_runner.collect_on_prize_revealed_triggers(
+		card_id, player_idx, source_index, trigger_candidates)
+	if not bool(collected.get("success", false)):
+		return collected
+	if not trigger_candidates.is_empty():
+		if effect_engine == null:
+			return VMResult.fail("奖赏卡触发缺少VM解释器。", "missing_effect_engine")
+		var source_ref := EntityRef.new(
+			"card", player_idx, "prizes", "", source_index, "", card_id).to_dict()
+		stack.push_finalize_prize_revealed(source_ref)
+		if not stack.validation_error.is_empty():
+			return stack.validation_result()
+		var queued := trigger_command_runner.queue_candidates(
+			stack,
+			trigger_candidates,
+			"ON_PRIZE_REVEALED",
+			state.active_player_idx,
+			"apnap",
+			"knockout",
+		)
+		if not bool(queued.get("success", false)):
+			return queued
 		stack.pending_request = null
-		var treasure_request := request_treasure_energy_attachment(state, stack)
-		var treasure_result := VMResult.ok("宝藏能量触发等待结算。")
-		treasure_result["events"] = []
-		treasure_result["pending_choice"] = treasure_request
-		treasure_result["finished"] = false
-		return treasure_result
+		var trigger_rng := rng if rng != null else PortableRandomSource.new(0)
+		var step := effect_engine.resolve(state, stack, trigger_rng)
+		if not step.success:
+			return VMResult.fail(step.message, step.error_code)
+		var trigger_result := VMResult.ok(step.message)
+		trigger_result["events"] = step.events
+		if step.pending_choice != null:
+			trigger_result["pending_choice"] = step.pending_choice
+			trigger_result["finished"] = false
+			return trigger_result
+		var finalized := _complete_prize_revealed(state, stack)
+		if not bool(finalized.get("success", false)):
+			return finalized
+		var finalized_events: Array[Dictionary] = []
+		finalized_events.append_array(step.events)
+		finalized_events.append_array(finalized.get("events", []))
+		finalized["events"] = finalized_events
+		return finalized
 	var hand_index := player.hand.size()
 	card_id = player.take_prize(source_index)
 	_consume_current_prize_award(stack)
@@ -979,134 +609,44 @@ func apply_prize_choice(
 	return result
 
 
-func request_treasure_energy_attachment(
+func _complete_prize_revealed(
 	state: GameState,
-	stack: ResolutionStack,
-) -> ChoiceRequest:
-	var pending: Dictionary = stack.context.get("pending_treasure_energy", {})
-	var player_idx := int(pending.get("player", -1))
-	if player_idx not in [0, 1]:
-		return request_next_prize(state, stack)
-	var options: Array[Dictionary] = []
-	for row in state.get_player(player_idx).get_all_pokemon():
-		var pokemon: PokemonState = row["pokemon"]
-		if pokemon == null:
-			continue
-		var slot := str(row["slot"])
-		options.append({
-			"option_id": "pokemon:%d:%s:%s" % [player_idx, slot, pokemon.card_id],
-			"label": catalog.card_name(pokemon.card_id),
-			"value": {"player": player_idx, "slot": slot, "card_id": pokemon.card_id},
-		})
-	var frame_id := "knockout:treasure:%d" % stack.sequence
-	stack.push_continuation("treasure_energy_attach", {
-		"kind": "treasure_energy_attach",
-		"frame_id": frame_id,
-		"player_idx": player_idx,
-	})
-	stack.pending_request = ChoiceRequest.new(
-		stack.next_request_id(state, player_idx, "confirm_trigger"),
-		"confirm_trigger",
-		player_idx,
-		"可以将宝藏能量附于自己的1只宝可梦。",
-		options,
-		0,
-		1,
-		false,
-		true,
-		{
-			"domain": "knockout",
-			"purpose": "treasure_energy_attach",
-			"revision": state.revision,
-			"continuation_frame_id": frame_id,
-		},
-	)
-	state.resolution_stack = stack.to_dict()
-	return stack.pending_request
-
-
-func apply_treasure_energy_choice(
-	state: GameState,
-	response: ChoiceResponse,
 	stack: ResolutionStack,
 ) -> Dictionary:
-	var pending: Dictionary = stack.context.get("pending_treasure_energy", {})
-	var player_idx := int(pending.get("player", -1))
-	if player_idx not in [0, 1]:
-		return VMResult.fail("宝藏能量触发已过期。", "stale_choice")
-	var player := state.get_player(player_idx)
-	var prize_index := int(pending.get("prize_index", -1))
-	var expected_id := str(pending.get("card_id", ""))
+	var data := stack.pop_finalize_prize_revealed()
+	var source_ref_value: Variant = data.get("source_ref", {})
+	if not source_ref_value is Dictionary:
+		return VMResult.fail("奖赏卡触发收口帧无效。", "invalid_stack_barrier")
+	var source_ref: Dictionary = source_ref_value
+	var player_idx := int(source_ref.get("player", -1))
+	var prize_index := int(source_ref.get("index", -1))
+	var card_id := str(source_ref.get("card_id", ""))
 	if (
-		prize_index < 0
-		or prize_index >= player.prizes.size()
-		or str(player.prizes[prize_index]) != expected_id
-		or expected_id != "svi-trea"
+		str(source_ref.get("kind", "")) != "card"
+		or str(source_ref.get("zone", "")) != "prizes"
+		or player_idx not in [0, 1]
+		or prize_index < 0
 	):
-		return VMResult.fail("宝藏能量奖赏卡已变化。", "stale_choice")
-	if response.option_ids.size() > 1:
-		return VMResult.fail("宝藏能量最多选择1个目标。", "choice_count")
+		return VMResult.fail("奖赏卡触发来源引用无效。", "invalid_trigger_ref")
+	var player := state.get_player(player_idx)
+	var resolved: Dictionary = stack.context.get("resolved_prize_reveals", {})
+	var resolved_key := VMEnergyCommands._prize_ref_key(player_idx, prize_index, card_id)
+	var was_attached := str(resolved.get(resolved_key, "")) == "attached"
 	var events: Array[Dictionary] = []
-	var accepted := not response.cancelled and not response.option_ids.is_empty()
-	var selected_slot := ""
-	var selected_target: PokemonState = null
-	if not response.cancelled and not response.option_ids.is_empty():
-		var option_id := response.option_ids[0]
-		var selected_option: Dictionary = {}
-		if stack.pending_request != null:
-			for option in stack.pending_request.options:
-				if str(option.get("option_id", "")) == option_id:
-					selected_option = option
-					break
-		if selected_option.is_empty():
-			return VMResult.fail("宝藏能量目标无效。", "invalid_choice")
-		selected_slot = str(selected_option.get("value", {}).get("slot", ""))
-		selected_target = player.get_pokemon(selected_slot)
-		if (
-			selected_target == null
-			or selected_target.card_id
-			!= str(selected_option.get("value", {}).get("card_id", ""))
-		):
-			return VMResult.fail("宝藏能量或目标已变化。", "stale_choice")
-	var card_id := str(player.prizes.pop_at(prize_index))
-	if accepted:
-		# The authoritative entity moves Prize -> Pokemon directly. Presentation
-		# retains the familiar Prize -> Hand -> Pokemon motion as one atomic event
-		# group; no intervening state or action window ever exposes it in hand.
-		var hand_index := player.hand.size()
-		var target_index := selected_target.energy_card_ids.size()
-		selected_target.energy_card_ids.append(card_id)
-		events.append({
-			"event_type": "prize_taken",
-			"actor": player_idx,
-			"visibility": "public",
-			"card_id": card_id,
-			"source": {"player": player_idx, "zone": "prizes", "index": prize_index},
-			"target": {"player": player_idx, "zone": "hand", "index": hand_index},
-			"data": {
-				"player": player_idx,
-				"count": 1,
-				"card_id": card_id,
-				"source_index": prize_index,
-				"target_index": hand_index,
-			},
-		})
-		events.append({
-			"event_type": "energy_attached",
-			"actor": player_idx,
-			"card_id": card_id,
-			"source": {"player": player_idx, "zone": "hand", "index": hand_index},
-			"target": {"player": player_idx, "slot": selected_slot, "index": target_index},
-			"data": {
-				"player": player_idx,
-				"slot": selected_slot,
-				"card_id": card_id,
-				"source": "prize_trigger",
-			},
-		})
+	if was_attached:
+		resolved.erase(resolved_key)
+		if resolved.is_empty():
+			stack.context.erase("resolved_prize_reveals")
+		else:
+			stack.context["resolved_prize_reveals"] = resolved
+	elif (
+		prize_index >= player.prizes.size()
+		or str(player.prizes[prize_index]) != card_id
+	):
+		return VMResult.fail("奖赏卡触发来源已变化。", "stale_choice")
 	else:
 		var hand_index := player.hand.size()
-		player.hand.append(card_id)
+		player.hand.append(str(player.prizes.pop_at(prize_index)))
 		events.append({
 			"event_type": "prize_taken",
 			"actor": player_idx,
@@ -1115,19 +655,14 @@ func apply_treasure_energy_choice(
 			"source": {"player": player_idx, "zone": "prizes", "index": prize_index},
 			"target": {"player": player_idx, "zone": "hand", "index": hand_index},
 			"data": {
-				"player": player_idx,
-				"count": 1,
-				"card_id": card_id,
-				"source_index": prize_index,
-				"target_index": hand_index,
+				"player": player_idx, "count": 1, "card_id": card_id,
+				"source_index": prize_index, "target_index": hand_index,
 			},
 		})
 	_consume_current_prize_award(stack)
-	_pop_knockout_choice_frame(stack, "treasure_energy_attach")
-	stack.context.erase("pending_treasure_energy")
 	stack.pending_request = null
 	var next_request := request_next_prize(state, stack)
-	var result := VMResult.ok("宝藏能量触发已结算。")
+	var result := VMResult.ok("奖赏卡触发已结算。")
 	result["events"] = events
 	result["pending_choice"] = next_request
 	result["finished"] = next_request == null

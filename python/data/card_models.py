@@ -150,10 +150,6 @@ class Card:
             for effect in self.energy_effects:
                 if effect.get("kind") == "provide_energy":
                     return list(effect.get("types") or [])
-            if self.api_id == "svi-dtur":
-                return ["Colorless", "Colorless"]  # Backward-compatible fallback.
-            if self.api_id == "svg2-lume":
-                return ["Rainbow"]
             return ["Colorless"]
         return []
 

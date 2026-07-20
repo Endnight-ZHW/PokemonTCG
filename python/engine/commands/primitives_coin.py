@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from engine.commands.base import CommandResult, ResolutionContext
+from engine.random_source import RandomSource
 
 
 @dataclass
@@ -32,18 +33,26 @@ class CoinFlipSpecial:
             prompt = f"掷{flip_count}次硬币"
             until_tails = False
 
+        results = _authoritative_coin_results(
+            ctx,
+            flip_count=flip_count,
+            until_tails=until_tails,
+        )
         return CommandResult.ok(
             "掷硬币中...",
             pending_choice=ActionRequest(
                 request_type="coin_flip",
                 player=ctx.player_idx,
                 prompt=prompt,
-                flip_count=flip_count,
+                min_select=0,
+                max_select=0,
+                flip_count=len(results),
                 until_tails=until_tails,
                 continuation={
                     "kind": "coin_special",
                     "coin_kind": coin_kind,
                     "params": params,
+                    "results": results,
                 },
             ),
         )
@@ -61,14 +70,20 @@ class CoinFlipEnergyDiscard:
         if not any(pokemon and pokemon.energy_cards for _slot, pokemon in opponent.get_all_pokemon()):
             return CommandResult.ok("对手场上没有能量可丢弃。")
 
+        results = _authoritative_coin_results(ctx, flip_count=1)
         return CommandResult.ok(
             "掷硬币中...",
             pending_choice=ActionRequest(
                 request_type="coin_flip",
                 player=ctx.player_idx,
                 prompt="掷1次硬币（粉碎之锤）",
+                min_select=0,
+                max_select=0,
                 flip_count=1,
-                continuation={"kind": "coin_energy_discard"},
+                continuation={
+                    "kind": "coin_energy_discard",
+                    "results": results,
+                },
             ),
         )
 
@@ -114,20 +129,49 @@ class FlipCoin:
     def execute(self, ctx: ResolutionContext) -> CommandResult:
         from engine.game_state import ActionRequest
 
+        results = _authoritative_coin_results(ctx, flip_count=1)
         return CommandResult.ok(
             "掷硬币中...",
             pending_choice=ActionRequest(
                 request_type="coin_flip",
                 player=ctx.player_idx,
                 prompt="掷1次硬币",
+                min_select=0,
+                max_select=0,
                 flip_count=1,
                 continuation={
                     "kind": "flip_coin_branch",
                     "on_heads": _branch_payload(self.on_heads),
                     "on_tails": _branch_payload(self.on_tails),
+                    "results": results,
                 },
             ),
         )
+
+
+def _authoritative_coin_results(
+    ctx: ResolutionContext,
+    *,
+    flip_count: int,
+    until_tails: bool = False,
+) -> list[bool]:
+    """Consume rule RNG before publishing the display acknowledgement."""
+    rng = getattr(ctx.state, "random_source", None)
+    if rng is None or not callable(getattr(rng, "coin", None)):
+        # Direct command tests and legacy local tools can execute a stack
+        # outside GameEngine's bind_state context.  The outcome is still
+        # produced by the command rather than supplied by its caller.
+        rng = RandomSource()
+    results: list[bool] = []
+    if until_tails:
+        for _ in range(32):
+            result = bool(rng.coin())
+            results.append(result)
+            if not result:
+                break
+    else:
+        results = [bool(rng.coin()) for _ in range(max(1, int(flip_count)))]
+    return results
 
 
 def _branch_payload(items):
@@ -162,6 +206,7 @@ __all__ = [
     "CoinFlipEnergyDiscard",
     "Conditional",
     "FlipCoin",
+    "_authoritative_coin_results",
     "_branch_payload",
     "_build_branch_command",
 ]

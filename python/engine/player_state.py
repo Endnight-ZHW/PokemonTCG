@@ -24,6 +24,7 @@ class PokemonInPlay:
     attack_locked: bool = False  # For attack_lock_basic effect (雪暴马 冻结)
     attack_locked_names: dict = field(default_factory=dict)  # attack_name → turn_applied (岩窟冲撞 self-lock)
     dazzled: bool = False  # For dazzling_beam (炫目光束): next attack requires coin flip
+    modifiers: list[dict] = field(default_factory=list)
     max_hp_modifiers: list[dict] = field(default_factory=list)
     used_abilities: set[str] = field(default_factory=set)
     paralyzed_since_turn: int = 0  # Track which turn paralysis was applied for correct duration
@@ -82,7 +83,42 @@ class PokemonInPlay:
         self.attack_locked = False
         self.attack_locked_names.clear()
         self.dazzled = False
+        # Attack-created modifiers are removed on evolution or when leaving the
+        # Active Spot; persistent card/attachment modifiers remain data-derived.
+        self.modifiers = [
+            row for row in self.modifiers
+            if row.get("duration") in {"persistent", "until_leave_play"}
+        ]
         self.paralyzed_since_turn = 0
+
+    def consume_modifier_operation(self, operation_kind: str, value: str = "") -> bool:
+        for index, descriptor in enumerate(self.modifiers):
+            operation = descriptor.get("operation", {})
+            if operation.get("kind") != operation_kind:
+                continue
+            current = operation.get("attack_name", operation.get("reason", ""))
+            if value and current not in {value, "__all__"}:
+                continue
+            self.modifiers.pop(index)
+            return True
+        return False
+
+    def expire_modifiers_at_turn(self, turn_number: int) -> None:
+        timed = {
+            "until_end_of_turn",
+            "until_end_of_opponents_next_turn",
+            "until_next_attack",
+        }
+        self.modifiers = [
+            descriptor
+            for descriptor in self.modifiers
+            if not (
+                descriptor.get("duration") in timed
+                and int(descriptor.get("condition", {}).get(
+                    "expires_after_turn", 2**31 - 1
+                )) <= turn_number
+            )
+        ]
 
 
 class PlayerState:

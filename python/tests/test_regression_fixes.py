@@ -691,7 +691,6 @@ class TestCardEffectAccuracy(unittest.TestCase):
     def _choose(self, engine, state, request, option_ids=()):
         return engine.apply_choice(
             state,
-            request,
             ChoiceResponse(request.request_id, tuple(option_ids)),
         )
 
@@ -944,8 +943,13 @@ class TestCardEffectAccuracy(unittest.TestCase):
             ScriptedRandomSource([True]),
             auto_resolve=False,
         )
-        heads = next(option for option in step.pending_choice.options if option.value is True)
-        target_step = self._choose(engine, state, step.pending_choice, (heads.option_id,))
+        self.assertEqual(step.pending_choice.request_type, "coin_flip")
+        self.assertEqual(step.pending_choice.options, ())
+        self.assertEqual(
+            step.pending_choice.metadata["predetermined_flips"],
+            [True],
+        )
+        target_step = self._choose(engine, state, step.pending_choice)
         self.assertTrue(target_step.success, target_step.message)
         self.assertEqual(target_step.pending_choice.request_type, "select_attachment")
         bench_energy = next(

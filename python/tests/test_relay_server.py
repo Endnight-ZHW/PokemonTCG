@@ -1,4 +1,4 @@
-"""Directed concurrency and control-handshake tests for the v4 Relay server."""
+"""Directed concurrency and control-handshake tests for the v6 relay server."""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -220,7 +220,7 @@ class RelayServerTests(unittest.TestCase):
 
     def test_forward_validation_rejects_bool_sender_and_out_of_range_numbers(self):
         frame = {
-            "protocol_version": relay.PROTOCOL_V4,
+            "protocol_version": relay.PROTOCOL_V6,
             "message_type": "ping",
             "room_id": "1234",
             "sender": 1,
@@ -244,9 +244,9 @@ class RelayServerTests(unittest.TestCase):
                     relay._valid_forward_message(malformed, "1234", 1)[0]
                 )
 
-    def test_forward_validation_rejects_legacy_protocol_v3_explicitly(self):
+    def test_forward_validation_rejects_legacy_protocol_v5_explicitly(self):
         frame = {
-            "protocol_version": relay.PROTOCOL_V3,
+            "protocol_version": relay.PROTOCOL_V5,
             "message_type": "ping",
             "room_id": "1234",
             "sender": 0,
@@ -260,12 +260,12 @@ class RelayServerTests(unittest.TestCase):
         valid, error = relay._valid_forward_message(frame, "1234", 0)
 
         self.assertFalse(valid)
-        self.assertIn("旧 v3 房间不能恢复", error)
-        self.assertEqual(relay.PROTOCOL_V4, 4)
+        self.assertIn("旧 v5 房间不能恢复", error)
+        self.assertEqual(relay.PROTOCOL_V6, 6)
 
     def test_forward_validation_rejects_non_utf8_identifier_without_raising(self):
         frame = {
-            "protocol_version": relay.PROTOCOL_V4,
+            "protocol_version": relay.PROTOCOL_V6,
             "message_type": "ping",
             "room_id": "1234",
             "sender": 0,

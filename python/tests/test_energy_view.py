@@ -62,6 +62,32 @@ def _luminous() -> Card:
 
 
 class EnergyViewTests(unittest.TestCase):
+    def test_energy_semantics_follow_descriptor_not_card_id(self):
+        clone_turbo = _double_turbo()
+        clone_turbo.api_id = "clone-double-turbo"
+        clone_luminous = _luminous()
+        clone_luminous.api_id = "clone-luminous"
+
+        self.assertEqual(EnergyView([clone_turbo]).available_types, [
+            "Colorless", "Colorless",
+        ])
+        self.assertEqual(EnergyView([clone_luminous]).available_types, ["Rainbow"])
+        self.assertEqual(
+            EnergyView([clone_luminous, clone_turbo]).available_types,
+            ["Colorless", "Colorless", "Colorless"],
+        )
+
+        legacy_id_without_descriptor = Card(
+            api_id="svi-dtur",
+            name="无描述符同名测试能量",
+            supertype="Energy",
+            subtypes=["Special"],
+        )
+        self.assertEqual(
+            EnergyView([legacy_id_without_descriptor]).available_types,
+            ["Colorless"],
+        )
+
     def test_double_turbo_is_two_colorless_units_for_cost_and_count(self):
         view = EnergyView([_double_turbo()])
 

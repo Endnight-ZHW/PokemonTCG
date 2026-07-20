@@ -15,6 +15,7 @@ static func request_cards(
 	max_select: int,
 	prompt: String,
 	can_cancel: bool = false,
+	presentation: Dictionary = {},
 ) -> Dictionary:
 	var source: Array[String] = VMZoneHelpers.zone(state.get_player(player_idx), zone)
 	var occurrence: Dictionary = {}
@@ -34,6 +35,18 @@ static func request_cards(
 	if options.is_empty():
 		return VMResult.ok("没有可选卡牌。")
 	stack.push_continuation(operation, data)
+	var request_metadata := {
+		"domain": "effect",
+		"purpose": operation,
+		"revision": state.revision,
+		"source_player": player_idx,
+		"source_zone": zone,
+	}
+	# Call sites must opt in to every additional presentation hint. Do not infer
+	# them from continuation data, which can contain hidden zone identities.
+	for field in ChoiceView.PRESENTATION_FIELDS:
+		if presentation.has(field):
+			request_metadata[field] = presentation[field]
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, player_idx, operation),
 		operation,
@@ -44,7 +57,7 @@ static func request_cards(
 		max_select,
 		false,
 		can_cancel,
-		{"revision": state.revision, "zone": zone},
+		request_metadata,
 	)
 	return VMResult.ok()
 
@@ -63,6 +76,10 @@ static func confirm_request(
 		{"option_id": "confirm:no", "label": "否", "value": false},
 	]
 	var request_metadata := metadata.duplicate(true)
+	if not request_metadata.has("domain"):
+		request_metadata["domain"] = "effect"
+	if not request_metadata.has("purpose"):
+		request_metadata["purpose"] = operation
 	if not request_metadata.has("revision"):
 		request_metadata["revision"] = state.revision
 	stack.push_continuation(operation, data)

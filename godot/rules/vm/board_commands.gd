@@ -122,13 +122,23 @@ func request_board_target(
 		stack.push_continuation(operation, data)
 		var synthetic := ChoiceRequest.new(
 			stack.next_request_id(state, chooser, operation), operation, chooser, prompt,
-			options, 1, 1)
+			options, 1, 1, false, false, {
+				"domain": "effect",
+				"purpose": operation,
+				"revision": state.revision,
+				"target_player": target_player,
+			})
 		stack.pending_request = synthetic
 		return VMResult.ok()
 	stack.push_continuation(operation, data)
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, chooser, operation), operation, chooser, prompt,
-		options, 1, 1, false, false, {"revision": state.revision})
+		options, 1, 1, false, false, {
+			"domain": "effect",
+			"purpose": operation,
+			"revision": state.revision,
+			"target_player": target_player,
+		})
 	return VMResult.ok()
 
 
@@ -169,7 +179,12 @@ func request_bench_target(
 		actual_count,
 		false,
 		false,
-		{"revision": state.revision},
+		{
+			"domain": "effect",
+			"purpose": operation,
+			"revision": state.revision,
+			"target_player": target_player,
+		},
 	)
 	return VMResult.ok()
 
@@ -186,7 +201,7 @@ func switch_request(
 	if (
 		target_player_idx != chooser
 		and target_player.active
-		and target_player.active.all_prevented_next_turn
+		and target_player.active.prevents_effects()
 		and stack.is_blockable_opponent_attack_effect(chooser, target_player_idx)
 	):
 		return VMResult.ok("替换效果被免疫。")
@@ -207,14 +222,25 @@ func switch_request(
 		return VMChoiceRequests.confirm_request(
 			state, stack, chooser, "confirm_switch",
 			{"chooser": chooser, "target_player": target_player_idx},
-			"是否替换战斗宝可梦？")
+			"是否替换战斗宝可梦？",
+			{
+				"domain": "effect",
+				"purpose": "confirm_switch",
+				"target_player": target_player_idx,
+			},
+		)
 	stack.push_continuation("switch", {"target_player": target_player_idx})
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, chooser, "switch"),
 		"select_opponent_bench" if target_player_idx != chooser else "select_bench",
 		chooser if you_choose or target_player_idx == chooser else target_player_idx,
 		"选择替换上场的宝可梦。",
-		options, 1, 1, false, false, {"revision": state.revision})
+		options, 1, 1, false, false, {
+			"domain": "effect",
+			"purpose": "switch",
+			"revision": state.revision,
+			"target_player": target_player_idx,
+		})
 	return VMResult.ok()
 
 
@@ -336,7 +362,13 @@ func rare_candy(
 		1,
 		false,
 		false,
-		{"revision": state.revision},
+		{
+			"domain": "effect",
+			"purpose": "evolve_skip_stage",
+			"revision": state.revision,
+			"source_player": player_idx,
+			"source_zone": "hand",
+		},
 	)
 	return VMResult.ok("选择神奇糖果进化目标。")
 

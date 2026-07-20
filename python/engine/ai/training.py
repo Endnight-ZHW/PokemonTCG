@@ -405,7 +405,7 @@ def finish_setup(
                 pending,
                 setup_rng,
             )
-            step = DEFAULT_GAME_ENGINE.apply_choice(state, pending, response, setup_rng)
+            step = DEFAULT_GAME_ENGINE.apply_choice(state, response, setup_rng)
             if not step.success:
                 raise RuntimeError(f"Setup choice failed: {step.message}")
             continue

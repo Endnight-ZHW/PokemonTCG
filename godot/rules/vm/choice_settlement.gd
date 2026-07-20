@@ -19,21 +19,26 @@ func _init(
 	transaction_manager = p_transaction_manager
 
 
-func apply_choice(
+func apply_choice_response(
 	state: GameState,
-	request: ChoiceRequest,
 	response: ChoiceResponse,
 	rng: PortableRandomSource,
 ) -> StepResult:
 	var stack := ResolutionStack.from_dict(state.resolution_stack)
 	if stack.pending_request == null:
 		return _error("当前没有待处理选择。", "stale_choice", state)
-	if stack.pending_request.request_id != request.request_id:
+	var request := stack.pending_request
+	if request.request_id != response.request_id:
 		return _error("选择请求已过期。", "stale_choice", state)
 	if int(request.metadata.get("revision", state.revision)) != state.revision:
 		return _error("局面已变化，选择请求已过期。", "stale_choice", state)
 	var cancel_checkpoint := transaction_manager.cancel_action_checkpoint(stack)
-	if response.cancelled and request.can_cancel and not cancel_checkpoint.is_empty():
+	if (
+		response.cancelled
+		and request.can_cancel
+		and str(request.metadata.get("purpose", "")) != "trigger_confirm"
+		and not cancel_checkpoint.is_empty()
+	):
 		var rollback_event := transaction_manager.cancelled_trainer_return_event(
 			stack, request.player)
 		var cancelled_step := transaction_manager.restore_cancelled_action(
@@ -62,7 +67,7 @@ func apply_choice(
 		)
 	elif step.pending_choice == null:
 		var ko_result := knockout_settlement.resolve_knockouts(
-			state, request.player, step.events, false, stack)
+			state, request.player, step.events, false, stack, rng)
 		if not bool(ko_result.get("success", false)):
 			return transaction_manager.rollback_failed_step(
 				state,
@@ -106,6 +111,15 @@ func apply_choice(
 	return step
 
 
+func apply_choice(
+	state: GameState,
+	_request: ChoiceRequest,
+	response: ChoiceResponse,
+	rng: PortableRandomSource,
+) -> StepResult:
+	return apply_choice_response(state, response, rng)
+
+
 func _merge_steps(first: StepResult, second: StepResult) -> StepResult:
 	var message := first.message
 	if not second.message.is_empty():
@@ -113,7 +127,7 @@ func _merge_steps(first: StepResult, second: StepResult) -> StepResult:
 	return StepResult.new(
 		first.success and second.success,
 		message,
-		second.pending_choice if second.pending_choice else first.pending_choice,
+		second.pending_choice if second.pending_choice != null else first.pending_choice,
 		first.events + second.events,
 		second.winner if second.winner >= 0 else first.winner,
 		first.terminal or second.terminal,

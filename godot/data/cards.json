@@ -14948,6 +14948,17 @@
         ]
       },
       {
+        "compiled_commands": [
+          {
+            "args": {
+              "amount": 1,
+              "from_zone": "prizes",
+              "to": "any"
+            },
+            "branches": {},
+            "op": "attach_energy"
+          }
+        ],
         "condition": {
           "source_zone": "prizes"
         },
@@ -14956,6 +14967,7 @@
         },
         "hook": "ON_PRIZE_REVEALED",
         "kind": "trigger",
+        "optional": true,
         "priority": 20
       }
     ],

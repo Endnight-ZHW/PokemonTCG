@@ -92,6 +92,21 @@ const EFFECT_VALUE_WEIGHTS := {
 const SEMANTIC_CHOICE_LOOKAHEAD_MAX_OPTIONS := 8
 const ROLLOUT_LOOKAHEAD_MAX_ACTIONS := 8
 const ROLLOUT_LOOKAHEAD_TOP_N := 2
+const MODIFY_DAMAGE_HOOK := "MODIFY_DAMAGE"
+const CHOICE_VIEW_FIELDS := [
+	"schema_version",
+	"request_id",
+	"base_revision",
+	"player",
+	"request_type",
+	"prompt",
+	"options",
+	"min_select",
+	"max_select",
+	"allow_duplicates",
+	"can_cancel",
+	"presentation",
+]
 
 var _catalog_cache: CardCatalog = null
 var _engine_cache: GameEngine = null
@@ -247,17 +262,26 @@ func decide(
 	var result: Dictionary
 	if str(request.get("kind", "action")) == "choice":
 		var choice_started := _profile_start(profile)
-		result = _choose_request(
-			state,
-			ChoiceRequest.from_dict(request["choice"]),
-			actor,
-			str(request.get("deck_key", "")),
-			catalog,
-			engine,
-			int(request.get("seed", 17)),
-			inference,
-			str(request.get("mode", "challenge")),
-		)
+		var decoded := _decode_choice_view(request.get("choice"))
+		if not bool(decoded.get("ok", false)):
+			result = {
+				"success": false,
+				"kind": "choice",
+				"error": str(decoded.get("error", "invalid_choice_view")),
+				"simulations": 0,
+			}
+		else:
+			result = _choose_request(
+				state,
+				decoded["view"],
+				actor,
+				str(request.get("deck_key", "")),
+				catalog,
+				engine,
+				int(request.get("seed", 17)),
+				inference,
+				str(request.get("mode", "challenge")),
+			)
 		_profile_add_elapsed(profile, "choice_ms", choice_started)
 	else:
 		result = _search_action(
@@ -296,7 +320,10 @@ func _search_action(
 	for row in request.get("actions", []):
 		actions.append(GameAction.from_dict(row))
 	if actions.is_empty():
-		actions = engine.legal_actions(state, actor, false)
+		var query := engine.query_legal_action_groups(state, actor)
+		if not query.success:
+			return {"success": false, "error": "legal_query_failed:%s" % query.code}
+		actions = query.concrete_actions()
 	_profile_add_elapsed(profile, "decode_actions_ms", decode_started)
 	if actions.is_empty():
 		return {"success": false, "error": "no_legal_action"}
@@ -537,8 +564,11 @@ func _simulate(
 	for _depth in range(max_depth):
 		var actor := _current_actor(state)
 		var legal_started := _profile_start(profile)
-		var actions := engine.legal_actions(state, actor, false)
+		var query := engine.query_legal_action_groups(state, actor)
 		_profile_add_elapsed(profile, "rollout_legal_actions_ms", legal_started)
+		if not query.success:
+			return -1.0
+		var actions := query.concrete_actions()
 		if actions.is_empty():
 			break
 		_profile_count(profile, "rollout_depth_steps")
@@ -595,7 +625,9 @@ func _resolve_choices(
 	rng: PortableRandomSource,
 ) -> bool:
 	for _guard in range(32):
-		var request := ResolutionStack.from_dict(state.resolution_stack).pending_request
+		var request := engine.query_pending_choice(state, 0)
+		if request == null:
+			request = engine.query_pending_choice(state, 1)
 		if request == null:
 			return true
 		var response := _heuristic_choice(
@@ -604,7 +636,7 @@ func _resolve_choices(
 			_deck_key_for_actor(state, request.player, deck_key),
 			catalog,
 		)
-		var step := engine.apply_choice(state, request, response, rng)
+		var step := engine.apply_choice_response(state, response, rng)
 		if not step.success:
 			return false
 	return false
@@ -612,7 +644,7 @@ func _resolve_choices(
 
 func _choose_request(
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	actor: int,
 	deck_key: String,
 	catalog: CardCatalog,
@@ -627,7 +659,7 @@ func _choose_request(
 		# Attachment choices carry exact, revision-bound indices that were not
 		# part of the released choice-head training schema. Keep the model
 		# dimensions stable and resolve these choices with the shared heuristic.
-		if request.request_type == "select_attachment":
+		if request.request_type in ["select_attachment", "select_retreat_payment"]:
 			deep_error = "attachment_choice_heuristic"
 		elif inference == null:
 			deep_error = "runtime_unavailable"
@@ -661,7 +693,7 @@ func _choose_request(
 
 func _heuristic_choice(
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	deck_key: String,
 	catalog: CardCatalog,
 	engine: GameEngine = null,
@@ -692,22 +724,24 @@ func _heuristic_choice(
 		return ChoiceResponse.new(request.request_id, [
 			"prize:%d" % (0 if lowest_prize == 999 else lowest_prize)
 		])
+	if request.request_type == "select_retreat_payment":
+		return retreat_payment_response(state, request, catalog)
 	if request.request_type == "confirm_trigger":
 		return ChoiceResponse.new(request.request_id, [str(
 			request.options[0].get("option_id", ""))])
-	var continuation := _pending_choice_continuation(state)
+	var presentation := _choice_presentation(request)
 	if request.request_type == "confirm":
-		var confirmed := _confirm_choice(state, request, continuation, deck_key, catalog)
+		var confirmed := _confirm_choice(state, request, presentation, deck_key, catalog)
 		return ChoiceResponse.new(
 			request.request_id,
 			["confirm:yes" if confirmed else "confirm:no"],
 		)
-	if _is_arven_choice(request, continuation):
+	if _is_arven_choice(request, presentation):
 		return ChoiceResponse.new(
 			request.request_id,
 			_arven_choice_option_ids(state, request, deck_key, catalog),
 		)
-	var mode := _choice_score_mode(request, continuation)
+	var mode := _choice_score_mode(request, presentation)
 	if enable_lookahead and _semantic_v2_enabled() and engine != null:
 		var lookahead := _semantic_lookahead_choice(
 			state, request, deck_key, catalog, engine, seed, mode)
@@ -751,9 +785,82 @@ func _heuristic_choice(
 	)
 
 
+static func retreat_payment_response(
+	state: GameState,
+	request: ChoiceView,
+	catalog: CardCatalog,
+) -> ChoiceResponse:
+	var required_units := maxi(0, int(request.presentation.get("required_units", 0)))
+	if required_units <= 0:
+		return ChoiceResponse.new(request.request_id, [])
+	if state == null or request.player not in [0, 1]:
+		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	var player: PlayerState = state.get_player(request.player)
+	var active: PokemonState = player.active if player != null else null
+	if active == null:
+		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	var candidates: Array[Dictionary] = []
+	for option_order in range(request.options.size()):
+		var option: Dictionary = request.options[option_order]
+		var ref_value: Variant = option.get("ref")
+		if not ref_value is Dictionary:
+			continue
+		var ref: Dictionary = ref_value
+		var attachment_index := int(ref.get("index", -1))
+		if (
+			str(ref.get("kind", "")) != "attachment"
+			or str(ref.get("attachment_type", "")) != "energy"
+			or int(ref.get("player", -1)) != request.player
+			or str(ref.get("slot", "")) != "active"
+			or attachment_index < 0
+			or attachment_index >= active.energy_card_ids.size()
+			or str(ref.get("card_id", "")) != active.energy_card_ids[attachment_index]
+		):
+			continue
+		var units := EnergyView.units_provided_by_card(
+			active.energy_card_ids, attachment_index, catalog)
+		if units <= 0:
+			continue
+		candidates.append({
+			"option_id": str(option.get("option_id", "")),
+			"units": units,
+			"index": attachment_index,
+			"order": option_order,
+		})
+	# Prefer fewer discarded cards. Stable attachment index ordering keeps the
+	# choice reproducible when multiple payments provide the same units.
+	candidates.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		if int(left["units"]) != int(right["units"]):
+			return int(left["units"]) > int(right["units"])
+		if int(left["index"]) != int(right["index"]):
+			return int(left["index"]) < int(right["index"])
+		return int(left["order"]) < int(right["order"])
+	)
+	var selected: Array[Dictionary] = []
+	var paid_units := 0
+	for candidate in candidates:
+		selected.append(candidate)
+		paid_units += int(candidate["units"])
+		if paid_units >= required_units:
+			break
+	if paid_units < required_units:
+		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	# Defensive inclusion-minimal pass: no selected card may be removable while
+	# the remaining cards still cover the retreat cost.
+	for index in range(selected.size() - 1, -1, -1):
+		var units := int(selected[index]["units"])
+		if paid_units - units >= required_units:
+			paid_units -= units
+			selected.remove_at(index)
+	var option_ids: Array[String] = []
+	for candidate in selected:
+		option_ids.append(str(candidate["option_id"]))
+	return ChoiceResponse.new(request.request_id, option_ids)
+
+
 func _semantic_lookahead_choice(
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	deck_key: String,
 	catalog: CardCatalog,
 	engine: GameEngine,
@@ -801,7 +908,7 @@ func _semantic_lookahead_choice(
 		var response := ChoiceResponse.new(request.request_id, option_ids, false)
 		var simulation := state.clone_state()
 		var rng := PortableRandomSource.new(seed + candidate_offset * 7919 + anchor * 101)
-		var step := engine.apply_choice(simulation, request, response, rng)
+		var step := engine.apply_choice_response(simulation, response, rng)
 		if not step.success:
 			continue
 		if not _resolve_choices(simulation, request.player, deck_key, catalog, engine, rng):
@@ -838,68 +945,57 @@ func _semantic_choice_option_weight(mode: String) -> float:
 	return 0.08
 
 
-func _choice_request_matches_pending(state: GameState, request: ChoiceRequest) -> bool:
-	var pending := ResolutionStack.from_dict(state.resolution_stack).pending_request
-	return pending != null and pending.request_id == request.request_id
+func _choice_request_matches_pending(state: GameState, request: ChoiceView) -> bool:
+	if request == null or request.player not in [0, 1]:
+		return false
+	return request.base_revision == state.revision
 
 
-func _pending_choice_continuation(state: GameState) -> Dictionary:
-	var stack := ResolutionStack.from_dict(state.resolution_stack)
-	if stack.frames.is_empty():
-		return {}
-	var frame: Dictionary = stack.frames[-1]
-	if str(frame.get("kind", "")) != "continuation":
-		return {}
-	return frame
+func _choice_presentation(
+	request: ChoiceView = null,
+) -> Dictionary:
+	return request.presentation.duplicate(true) if request != null else {}
 
 
-func _choice_max_count(request: ChoiceRequest) -> int:
+func _choice_max_count(request: ChoiceView) -> int:
 	var max_count: int = max(0, request.max_select)
 	if not request.allow_duplicates:
 		max_count = mini(request.options.size(), max_count)
 	return max_count
 
 
-func _choice_score_mode(request: ChoiceRequest, continuation: Dictionary) -> String:
-	var operation := str(continuation.get("operation", ""))
-	var prompt := request.prompt.to_lower()
+func _choice_score_mode(request: ChoiceView, presentation: Dictionary) -> String:
+	var purpose := str(presentation.get("purpose", ""))
 	if request.request_type == "select_attachment":
 		return (
 			"energy"
-			if str(request.metadata.get("purpose", "")).begins_with("relocate_energy")
+			if str(request.presentation.get("purpose", "")).begins_with("relocate_energy")
 			else "discard"
 		)
-	if operation in ["discard_then_draw", "discard_cards", "hand_bottom_draw", "houb", "zinnia"]:
+	if purpose in ["discard_then_draw", "discard_cards", "hand_bottom_draw", "houb", "zinnia"]:
 		return "discard"
-	if request.request_type == "select_energy_source" or operation == "energy_relocate_source":
+	if request.request_type == "select_energy_source" or purpose == "energy_relocate_source":
 		return "energy_source"
 	if request.request_type in ["select_energy_target", "distribute_energy", "look_top_attach_energy"]:
 		return "energy"
-	if request.request_type in ["select_heal_target"] or "heal" in prompt or "回复" in request.prompt:
+	if request.request_type == "select_heal_target" or purpose == "heal":
 		return "heal"
 	if request.request_type in ["select_opponent_bench", "bench_damage_target", "damage_target", "place_counters_self_ko"]:
 		return "target"
-	if request.request_type == "select_bench" and operation == "switch":
+	if request.request_type == "select_bench" and purpose == "switch":
 		return "self_switch"
-	if (
-		"discard" in prompt
-		or "bottom" in prompt
-		or "丢" in request.prompt
-		or "弃" in request.prompt
-		or "放回" in request.prompt
-		or "牌库底" in request.prompt
-	):
+	if purpose in ["discard", "discard_cost", "bottom_deck"]:
 		return "discard"
 	return "search"
 
 
-func _is_arven_choice(request: ChoiceRequest, continuation: Dictionary) -> bool:
-	return request.request_type == "arven" or str(continuation.get("operation", "")) == "arven"
+func _is_arven_choice(request: ChoiceView, presentation: Dictionary) -> bool:
+	return request.request_type == "arven" or str(presentation.get("purpose", "")) == "arven"
 
 
 func _arven_choice_option_ids(
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	deck_key: String,
 	catalog: CardCatalog,
 ) -> Array[String]:
@@ -909,7 +1005,7 @@ func _arven_choice_option_ids(
 	var best_tool_score := -INF
 	for index in range(request.options.size()):
 		var option: Dictionary = request.options[index]
-		var card_id := _choice_option_card_id(option)
+		var card_id := _choice_option_card_id(option, catalog)
 		var score := _card_keep_value(state, request.player, card_id, deck_key, catalog)
 		if catalog.is_item(card_id) and score > best_item_score:
 			best_item = index
@@ -926,9 +1022,9 @@ func _arven_choice_option_ids(
 		var fallback := 0
 		for index in range(1, request.options.size()):
 			if _card_keep_value(
-				state, request.player, _choice_option_card_id(request.options[index]), deck_key, catalog
+				state, request.player, _choice_option_card_id(request.options[index], catalog), deck_key, catalog
 			) > _card_keep_value(
-				state, request.player, _choice_option_card_id(request.options[fallback]), deck_key, catalog
+				state, request.player, _choice_option_card_id(request.options[fallback], catalog), deck_key, catalog
 			):
 				fallback = index
 		selected.append(str(request.options[fallback]["option_id"]))
@@ -936,7 +1032,7 @@ func _arven_choice_option_ids(
 
 
 func _ranked_choice_option_ids(
-	request: ChoiceRequest,
+	request: ChoiceView,
 	ranked: Array[int],
 	count: int,
 ) -> Array[String]:
@@ -947,7 +1043,7 @@ func _ranked_choice_option_ids(
 		for index in ranked.slice(0, count):
 			selected.append(str(request.options[index]["option_id"]))
 		return selected
-	var max_per_target := int(request.metadata.get("max_per_target", 99))
+	var max_per_target := int(request.presentation.get("max_per_target", 99))
 	if max_per_target >= count:
 		for _index in range(count):
 			selected.append(str(request.options[ranked[0]]["option_id"]))
@@ -972,16 +1068,9 @@ func _choice_target_key(option: Dictionary) -> String:
 	var player := -1
 	var ref_variant: Variant = option.get("ref", {})
 	if ref_variant is Dictionary:
-		player = int(Dictionary(ref_variant).get("player", -1))
-	var value_variant: Variant = option.get("value", {})
-	if value_variant is Dictionary:
-		var value: Dictionary = value_variant
-		player = int(value.get("player", player))
-		var slot := str(value.get("slot", ""))
-		if not slot.is_empty():
-			return "%d:%s" % [player, slot]
-	if ref_variant is Dictionary:
-		var ref_slot := str(Dictionary(ref_variant).get("slot", ""))
+		var ref: Dictionary = ref_variant
+		player = int(ref.get("player", -1))
+		var ref_slot := str(ref.get("slot", ""))
 		if not ref_slot.is_empty():
 			return "%d:%s" % [player, ref_slot]
 	var option_parts := str(option.get("option_id", "")).split(":")
@@ -992,22 +1081,22 @@ func _choice_target_key(option: Dictionary) -> String:
 
 func _option_score(
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	option: Dictionary,
 	deck_key: String,
 	catalog: CardCatalog,
 	mode: String = "search",
 ) -> float:
-	var card_id := _choice_option_card_id(option)
+	var card_id := _choice_option_card_id(option, catalog)
 	if mode == "discard":
 		return _discard_choice_score(state, request.player, card_id, deck_key, catalog)
-	var continuation := _pending_choice_continuation(state)
+	var presentation := _choice_presentation(request)
 	if mode == "energy_source":
 		return _energy_source_choice_value(
 			state,
 			_choice_option_player(option, request.player),
 			_choice_option_slot(option),
-			continuation,
+			presentation,
 			deck_key,
 			catalog,
 		)
@@ -1026,7 +1115,7 @@ func _option_score(
 				state,
 				target_player,
 				slot,
-				_choice_energy_card_id(continuation, catalog),
+				_choice_energy_card_id(presentation, catalog),
 				deck_key,
 				catalog,
 			)
@@ -1040,17 +1129,18 @@ func _option_score(
 	return score
 
 
-func _choice_option_card_id(option: Dictionary) -> String:
+func _choice_option_card_id(option: Dictionary, catalog: CardCatalog) -> String:
 	var ref_variant: Variant = option.get("ref", {})
 	if ref_variant is Dictionary:
 		var ref: Dictionary = ref_variant
 		var card_id := str(ref.get("card_id", ""))
 		if not card_id.is_empty():
 			return card_id
-	var value_variant: Variant = option.get("value", {})
-	if value_variant is Dictionary:
-		var value: Dictionary = value_variant
-		return str(value.get("card_id", ""))
+	var option_parts := str(option.get("option_id", "")).split(":")
+	if option_parts.size() >= 2:
+		var candidate := str(option_parts[-1])
+		if not catalog.get_card(candidate).is_empty():
+			return candidate
 	return ""
 
 
@@ -1061,9 +1151,6 @@ func _choice_option_slot(option: Dictionary) -> String:
 		var slot := str(ref.get("slot", ""))
 		if not slot.is_empty():
 			return slot
-	var value_variant: Variant = option.get("value", {})
-	if value_variant is Dictionary:
-		return str(Dictionary(value_variant).get("slot", ""))
 	var option_parts := str(option.get("option_id", "")).split(":")
 	if option_parts.size() >= 3 and option_parts[0] in ["pokemon", "attachment"]:
 		return str(option_parts[2])
@@ -1076,23 +1163,18 @@ func _choice_option_player(option: Dictionary, fallback: int) -> int:
 		var ref: Dictionary = ref_variant
 		if ref.has("player"):
 			return int(ref["player"])
-	var value_variant: Variant = option.get("value", {})
-	if value_variant is Dictionary:
-		var value: Dictionary = value_variant
-		if value.has("player"):
-			return int(value["player"])
 	var option_parts := str(option.get("option_id", "")).split(":")
 	if option_parts.size() >= 2 and option_parts[0] in ["pokemon", "attachment"]:
 		return int(option_parts[1])
 	return fallback
 
 
-func _choice_energy_card_id(continuation: Dictionary, catalog: CardCatalog) -> String:
-	for value in continuation.get("card_ids", []):
+func _choice_energy_card_id(presentation: Dictionary, catalog: CardCatalog) -> String:
+	for value in presentation.get("card_ids", []):
 		var card_id := str(value)
 		if catalog.is_energy(card_id):
 			return card_id
-	var card_id := str(continuation.get("card_id", ""))
+	var card_id := str(presentation.get("card_id", ""))
 	if catalog.is_energy(card_id):
 		return card_id
 	return ""
@@ -1461,14 +1543,14 @@ func _energy_source_choice_value(
 	state: GameState,
 	actor: int,
 	slot: String,
-	continuation: Dictionary,
+	presentation: Dictionary,
 	deck_key: String,
 	catalog: CardCatalog,
 ) -> float:
 	var pokemon := state.get_player(actor).get_pokemon(slot)
 	if pokemon == null:
 		return -INF
-	var energy_type := str(continuation.get("energy_type", "any"))
+	var energy_type := str(presentation.get("energy_type", "any"))
 	var energy_index := _matching_energy_index_for_type(pokemon, energy_type, catalog)
 	if energy_index < 0:
 		return -INF
@@ -1680,31 +1762,28 @@ func _target_priority(pokemon: PokemonState, catalog: CardCatalog) -> float:
 
 func _confirm_choice(
 	state: GameState,
-	request: ChoiceRequest,
-	continuation: Dictionary,
+	request: ChoiceView,
+	presentation: Dictionary,
 	deck_key: String,
 	catalog: CardCatalog,
 ) -> bool:
-	var data: Dictionary = Dictionary(continuation.get("data", {}))
-	var operation := str(continuation.get("operation", data.get("kind", "")))
-	if operation == "trekking_shoes":
-		var top_card_id := str(data.get("card_id", ""))
+	var purpose := str(presentation.get("purpose", ""))
+	if purpose == "trekking_shoes" or not str(
+		presentation.get("top_card_id", "")).is_empty():
+		var top_card_id := str(presentation.get(
+			"top_card_id", presentation.get("card_id", "")))
 		if top_card_id.is_empty() and not state.get_player(request.player).deck.is_empty():
 			top_card_id = state.get_player(request.player).deck[-1]
 		return _should_keep_top_deck_card(state, request.player, top_card_id, deck_key, catalog)
-	if operation == "confirm_switch":
-		var chooser := int(data.get("chooser", request.player))
-		var target_player := int(data.get("target_player", request.player))
+	if purpose == "confirm_switch":
+		var chooser := int(presentation.get("source_player", request.player))
+		var target_player := int(presentation.get("target_player", request.player))
 		if target_player == chooser:
 			return _switch_self_has_good_target(state, chooser, deck_key, catalog)
 		return _switch_opponent_has_good_target(state, chooser, target_player, catalog)
-	if "牌库顶" in request.prompt:
-		var top_id := state.get_player(request.player).deck[-1] if not state.get_player(request.player).deck.is_empty() else ""
-		return _should_keep_top_deck_card(state, request.player, top_id, deck_key, catalog)
-	var prompt_l := request.prompt.to_lower()
-	if "switch" in prompt_l or "替换" in request.prompt or "交换" in request.prompt:
+	if purpose == "switch":
 		return _switch_self_has_good_target(state, request.player, deck_key, catalog)
-	if "heal" in prompt_l or "回复" in request.prompt:
+	if purpose == "heal":
 		for row in state.get_player(request.player).get_all_pokemon():
 			var pokemon: PokemonState = row["pokemon"]
 			if pokemon and pokemon.damage_counters > 0:
@@ -2407,8 +2486,6 @@ func _action_first_choice_cancelled(
 	if not step.success:
 		return false
 	var request := step.pending_choice
-	if request == null:
-		request = ResolutionStack.from_dict(simulation.resolution_stack).pending_request
 	if request == null or request.player != actor:
 		return false
 	var response := _heuristic_choice(simulation, request, deck_key, catalog)
@@ -3078,7 +3155,7 @@ func _semantic_status_effect_value(
 		var opponent_damage := _best_available_damage(state, 1 - actor, catalog)
 		if opponent_damage >= state.get_player(actor).active.current_hp(catalog):
 			value += 86.0
-	if not opponent.active.status_conditions.is_empty() or opponent.active.attack_locked:
+	if not opponent.active.status_conditions.is_empty() or opponent.active.attack_is_locked():
 		value -= 35.0
 	return value
 
@@ -3670,10 +3747,8 @@ func _modified_attack_damage(
 					continue
 				damage += int(params.get("amount", 0))
 	for energy_id in attacker.energy_card_ids:
-		if energy_id == "svi-dtur":
-			damage -= 20
-	if attacker.outgoing_damage_reduction_next_turn > 0:
-		damage -= attacker.outgoing_damage_reduction_next_turn
+		damage += _energy_damage_delta(catalog.get_card(energy_id), "attached_attacker")
+	damage += attacker.modifier_operation_sum("damage_delta")
 	if not attacker.attached_tool_id.is_empty():
 		for effect_value in catalog.get_card(attacker.attached_tool_id).get("trainer_effects", []):
 			var effect: Dictionary = effect_value
@@ -3741,7 +3816,7 @@ func _modified_attack_damage(
 				damage -= int(effect.get("params", {}).get("amount", 30))
 	if (
 		not ignore_defender_damage_effects
-		and (defender.damage_prevented_next_turn or defender.all_prevented_next_turn)
+		and (defender.prevents_damage() or defender.prevents_effects())
 	):
 		return 0
 	return max(0, damage)
@@ -4618,9 +4693,9 @@ func _status_lock_state_value(
 		value += 35.0
 	if "PARALYZED" in pokemon.status_conditions:
 		value += float(SCORE_WEIGHTS["status_lock"])
-	if pokemon.attack_locked or pokemon.attack_locked_names.has("__all__"):
+	if pokemon.attack_is_locked():
 		value += float(SCORE_WEIGHTS["status_lock"])
-	if pokemon.dazzled:
+	if pokemon.has_attack_gate("dazzled"):
 		value += 45.0
 	if value > 0.0:
 		value += min(70.0, _best_available_damage(state, actor, catalog) * 0.18)
@@ -4631,13 +4706,91 @@ func _protection_state_value(pokemon: PokemonState, catalog: CardCatalog) -> flo
 	if pokemon == null:
 		return 0.0
 	var value := 0.0
-	if pokemon.all_prevented_next_turn:
+	if pokemon.prevents_effects():
 		value += float(SCORE_WEIGHTS["protection"]) + pokemon.current_hp(catalog) * 0.18
-	elif pokemon.damage_prevented_next_turn:
+	elif pokemon.prevents_damage():
 		value += 78.0 + pokemon.current_hp(catalog) * 0.12
-	if pokemon.outgoing_damage_reduction_next_turn > 0:
-		value -= min(80.0, pokemon.outgoing_damage_reduction_next_turn * 1.5)
+	var outgoing_reduction := maxi(0, -pokemon.modifier_operation_sum("damage_delta"))
+	if outgoing_reduction > 0:
+		value -= min(80.0, outgoing_reduction * 1.5)
 	return value
+
+
+func _energy_damage_delta(card: Dictionary, scope: String) -> int:
+	var result := 0
+	for effect_value in card.get("energy_effects", []):
+		if not effect_value is Dictionary:
+			continue
+		var effect: Dictionary = effect_value
+		if (
+			str(effect.get("kind", "")) != "modifier"
+			or str(effect.get("hook", "")) != MODIFY_DAMAGE_HOOK
+			or str(effect.get("scope", "")) != scope
+		):
+			continue
+		var operation: Variant = effect.get("effect", {})
+		if operation is Dictionary and Dictionary(operation).get("delta") is int:
+			result += int(Dictionary(operation)["delta"])
+	return result
+
+
+static func _decode_choice_view(value: Variant) -> Dictionary:
+	if not value is Dictionary:
+		return {"ok": false, "error": "invalid_choice_view"}
+	var row: Dictionary = value
+	if row.size() != CHOICE_VIEW_FIELDS.size():
+		return {"ok": false, "error": "invalid_choice_view"}
+	for field in CHOICE_VIEW_FIELDS:
+		if not row.has(field):
+			return {"ok": false, "error": "invalid_choice_view"}
+	if (
+		not row["schema_version"] is int
+		or int(row["schema_version"]) != ChoiceView.SCHEMA_VERSION
+		or not row["base_revision"] is int
+		or int(row["base_revision"]) < 0
+		or not row["player"] is int
+		or int(row["player"]) not in [0, 1]
+		or not row["request_id"] is String
+		or str(row["request_id"]).is_empty()
+		or not row["request_type"] is String
+		or str(row["request_type"]).is_empty()
+		or not row["prompt"] is String
+		or not row["options"] is Array
+		or not row["min_select"] is int
+		or not row["max_select"] is int
+		or int(row["min_select"]) < 0
+		or int(row["max_select"]) < int(row["min_select"])
+		or not row["allow_duplicates"] is bool
+		or not row["can_cancel"] is bool
+		or not row["presentation"] is Dictionary
+	):
+		return {"ok": false, "error": "invalid_choice_view"}
+	for option_value in row["options"]:
+		if not option_value is Dictionary:
+			return {"ok": false, "error": "invalid_choice_view"}
+		var option: Dictionary = option_value
+		for option_field in option:
+			if option_field not in ["option_id", "label", "ref"]:
+				return {"ok": false, "error": "private_choice_field"}
+		if option.size() not in [2, 3] or not option.has("option_id") or not option.has("label"):
+			return {"ok": false, "error": "invalid_choice_view"}
+		if (
+			not option["option_id"] is String
+			or str(option["option_id"]).is_empty()
+			or not option["label"] is String
+		):
+			return {"ok": false, "error": "invalid_choice_view"}
+		if option.has("ref") and (
+			not option["ref"] is Dictionary
+			or not EntityRef.validate_dict(option["ref"]).is_empty()
+		):
+			return {"ok": false, "error": "invalid_choice_ref"}
+	var view := ChoiceView.from_dict(row)
+	# Round-tripping through ChoiceView enforces the presentation whitelist and
+	# prize/privacy projection in addition to the explicit envelope checks above.
+	if view.to_dict() != row:
+		return {"ok": false, "error": "invalid_choice_view"}
+	return {"ok": true, "view": view}
 
 
 func _deck_pressure_penalty(player: PlayerState) -> float:
@@ -4910,6 +5063,8 @@ func _neural_action_priors(
 	var action_cards: Array[int] = []
 	for action in actions:
 		var encoded := encoder.encode_action(observation, action, deck_key)
+		if encoded.has("error"):
+			return {"success": false, "error": str(encoded["error"])}
 		action_numeric.append_array(encoded["numeric"])
 		action_cards.append(int(encoded["card_id"]))
 	var outputs: Dictionary = inference.call(
@@ -4931,7 +5086,7 @@ func _neural_action_priors(
 
 func _neural_choice(
 	state: GameState,
-	request: ChoiceRequest,
+	request: ChoiceView,
 	actor: int,
 	deck_key: String,
 	catalog: CardCatalog,
@@ -4945,6 +5100,8 @@ func _neural_choice(
 	for index in range(request.options.size()):
 		var encoded := encoder.encode_choice(
 			observation, request, request.options[index], index)
+		if encoded.has("error"):
+			return {"success": false, "error": str(encoded["error"])}
 		choice_numeric.append_array(encoded["numeric"])
 		choice_cards.append(int(encoded["card_id"]))
 	var outputs: Dictionary = inference.call(

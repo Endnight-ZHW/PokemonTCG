@@ -106,14 +106,34 @@ func energy_attach(
 ) -> Dictionary:
 	var player := state.get_player(player_idx)
 	var zone := str(params.get("from_zone", "deck"))
-	var source: Array[String] = player.deck if zone == "deck" else player.hand
+	var source: Array[String] = VMZoneHelpers.zone(player, zone)
 	var filter := str(params.get("filter", "any")).to_lower()
 	var matching_refs: Array[Dictionary] = []
-	for index in range(source.size()):
-		var card_id := str(source[index])
-		if energy_matches(card_id, filter):
-			matching_refs.append(EntityRef.new(
-				"card", player_idx, zone, "", index, "", card_id).to_dict())
+	if zone == "prizes":
+		var trigger_source := (
+			trigger_commands.vm_interpreter.trigger_scheduler
+			.source_ref_for_current_trigger(stack)
+		)
+		var trigger_index := int(trigger_source.get("index", -1))
+		var trigger_card_id := str(trigger_source.get("card_id", ""))
+		if (
+			str(trigger_source.get("kind", "")) != "card"
+			or int(trigger_source.get("player", -1)) != player_idx
+			or str(trigger_source.get("zone", "")) != "prizes"
+			or trigger_index < 0
+			or trigger_index >= source.size()
+			or str(source[trigger_index]) != trigger_card_id
+		):
+			return VMResult.fail(
+				"奖赏卡附能缺少有效的触发来源引用。", "invalid_trigger_origin")
+		if energy_matches(trigger_card_id, filter):
+			matching_refs.append(trigger_source)
+	else:
+		for index in range(source.size()):
+			var card_id := str(source[index])
+			if energy_matches(card_id, filter):
+				matching_refs.append(EntityRef.new(
+					"card", player_idx, zone, "", index, "", card_id).to_dict())
 	var amount := int(params.get("amount", 1))
 	var base_amount := amount
 	var bonus_applied := false
@@ -156,6 +176,21 @@ func energy_attach(
 			min_select,
 			attach_count if optional_count else -1,
 			same_target)
+	# A mandatory attachment to one already-determined target has no player
+	# decision.  Resolve it immediately so direct VM execution, public action
+	# execution, and the Python rules runtime share the same transaction/RNG
+	# boundary instead of publishing a redundant one-option choice.
+	if target_slots.size() == 1 and not optional_count:
+		return attach_cards(
+			state,
+			player_idx,
+			zone,
+			matching_refs.slice(0, attach_count),
+			target_slots[0],
+			events,
+			rng,
+			stack,
+		)
 	return request_energy_target(
 		state,
 		stack,
@@ -295,7 +330,7 @@ func request_energy_source_cards(
 		false,
 		request_min == 0,
 		{
-			"domain": "effect",
+			"domain": _choice_domain(stack),
 			"purpose": "energy_attach_sources",
 			"revision": state.revision,
 			"continuation_frame_id": frame_id,
@@ -351,6 +386,9 @@ func request_energy_target(
 			options.append({
 				"option_id": "pokemon:%d:%s:%s" % [player_idx, slot, pokemon.card_id],
 				"label": catalog.card_name(pokemon.card_id),
+				"ref": EntityRef.new(
+					"pokemon", player_idx, "field", slot, -1, "", pokemon.card_id
+				).to_dict(),
 				"value": {"slot": slot, "card_id": pokemon.card_id},
 			})
 	var operation := (
@@ -382,6 +420,7 @@ func request_energy_target(
 		capped_card_ids.size() > 1,
 		request_min <= 0,
 		{
+			"domain": _choice_domain(stack),
 			"revision": state.revision,
 			"purpose": operation,
 			"card_ids": capped_card_ids.duplicate(),
@@ -420,20 +459,45 @@ func attach_cards(
 	)
 	for ref in removal_order:
 		source.remove_at(int(ref.get("index", -1)))
+	var trigger_candidates: Array[Dictionary] = []
 	for ref in normalized_refs:
 		var card_id := str(ref.get("card_id", ""))
 		var index := int(ref.get("index", -1))
 		if not card_id.is_empty():
+			var hand_index := player.hand.size()
+			if source_zone == "prizes":
+				events.append({
+					"event_type": "prize_taken",
+					"actor": player_idx,
+					"visibility": "public",
+					"card_id": card_id,
+					"source": {
+						"player": player_idx, "zone": "prizes", "index": index,
+					},
+					"target": {
+						"player": player_idx, "zone": "hand", "index": hand_index,
+					},
+					"data": {
+						"player": player_idx, "count": 1, "card_id": card_id,
+						"source_index": index, "target_index": hand_index,
+					},
+				})
+				if active_stack != null:
+					var resolved: Dictionary = active_stack.context.get(
+						"resolved_prize_reveals", {})
+					resolved[_prize_ref_key(player_idx, index, card_id)] = "attached"
+					active_stack.context["resolved_prize_reveals"] = resolved
 			target.energy_card_ids.append(card_id)
+			var attachment_index := target.energy_card_ids.size() - 1
 			events.append({
 				"event_type": "energy_attached",
 				"actor": player_idx,
 				"card_id": card_id,
-				"source": {
-					"player": player_idx,
-					"zone": source_zone,
-					"index": index,
-				},
+				"source": (
+					{"player": player_idx, "zone": "hand", "index": hand_index}
+					if source_zone == "prizes"
+					else {"player": player_idx, "zone": source_zone, "index": index}
+				),
 				"target": {"player": player_idx, "slot": target_slot},
 				"data": {
 					"player": player_idx,
@@ -443,26 +507,49 @@ func attach_cards(
 					"source_index": index,
 				},
 			})
-			var trigger_commands_to_resolve: Array[Dictionary] = []
-			trigger_commands.collect_on_attach_commands(
+			trigger_commands.collect_on_attach_triggers(
 				card_id,
 				player_idx,
 				target_slot,
 				source_zone,
-				trigger_commands_to_resolve,
+				trigger_candidates,
+				attachment_index,
 			)
-			var trigger_result := trigger_commands.resolve_commands(
-				state,
-				player_idx,
-				trigger_commands_to_resolve,
-				events,
-				active_stack,
-			)
-			if not bool(trigger_result.get("success", false)):
-				return trigger_result
+	if not trigger_candidates.is_empty():
+		var stack := active_stack if active_stack != null else ResolutionStack.new()
+		var trigger_result := trigger_commands.queue_candidates(
+			stack,
+			trigger_candidates,
+			VMModifierManager.ON_ATTACH,
+			state.active_player_idx,
+			"apnap",
+			_choice_domain(stack),
+		)
+		if not bool(trigger_result.get("success", false)):
+			return trigger_result
+		if active_stack == null:
+			var trigger_step := trigger_commands.vm_interpreter.resolve(state, stack, rng)
+			events.append_array(trigger_step.events)
+			if not trigger_step.success:
+				return VMResult.fail(trigger_step.message, trigger_step.error_code)
+			if trigger_step.pending_choice != null:
+				var pending := VMResult.ok(trigger_step.message)
+				pending["pending_choice"] = trigger_step.pending_choice
+				return pending
 	if source_zone == "deck":
 		VMZoneHelpers.shuffle_deck(state, rng, player_idx, events)
 	return VMResult.ok()
+
+
+func _choice_domain(stack: ResolutionStack) -> String:
+	if stack == null or stack.current_trigger_id().is_empty():
+		return "effect"
+	return trigger_commands.vm_interpreter.trigger_scheduler.choice_domain_for_current_trigger(
+		stack)
+
+
+static func _prize_ref_key(player_idx: int, index: int, card_id: String) -> String:
+	return "%d:%d:%s" % [player_idx, index, card_id]
 
 
 func normalize_zone_card_refs(
@@ -557,6 +644,7 @@ func energy_relocate_request(
 		false,
 		false,
 		{
+			"domain": "effect",
 			"revision": state.revision,
 			"purpose": "relocate_energy_source",
 			"source_player": player_idx,
@@ -787,7 +875,7 @@ func discard_energy(
 		return VMResult.fail("没有能量来源。")
 	if (
 		from_opponent
-		and source.all_prevented_next_turn
+		and source.prevents_effects()
 		and stack.is_blockable_opponent_attack_effect(player_idx, owner_idx)
 	):
 		return VMResult.ok("能量丢弃效果被免疫。")
@@ -961,6 +1049,7 @@ static func attachment_choice_metadata(
 	max_per_target: int,
 ) -> Dictionary:
 	return {
+		"domain": "effect",
 		"revision": state.revision,
 		"purpose": purpose,
 		"attachment_refs": attachment_refs.duplicate(true),

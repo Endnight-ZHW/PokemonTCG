@@ -18,6 +18,14 @@ func deal_attack_or_effect_damage(
 		bool(stack.context.get("finish_attack", false))
 		and target_player_idx == 1 - attacker_idx
 	):
+		# Opponent-active damage belongs to the accumulated primary hit.  Keeping
+		# it in base_damage matches the Python VM contract and lets descriptor
+		# replacement ops start from zero while ordinary damage ops add to the
+		# authored attack damage.  Non-active targets remain explicit packets.
+		if slot == "active":
+			stack.context["base_damage"] = (
+				int(stack.context.get("base_damage", 0)) + max(0, amount))
+			return VMResult.ok("攻击伤害已加入结算。")
 		var packets: Array = stack.context.get("damage_packets", [])
 		packets.append({
 			"target_player": target_player_idx,
@@ -55,7 +63,7 @@ func deal_damage(
 		stack != null
 		and stack.is_blockable_opponent_attack_effect(source_player_idx, player_idx)
 	)
-	if from_blockable_attack and pokemon.damage_prevented_next_turn:
+	if from_blockable_attack and pokemon.prevents_damage():
 		events.append({
 			"event_type": "damage_prevented",
 			"target": {"player": player_idx, "slot": slot},

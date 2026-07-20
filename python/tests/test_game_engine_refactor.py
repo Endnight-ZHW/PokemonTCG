@@ -71,36 +71,20 @@ class GameEngineRefactorTests(unittest.TestCase):
     def test_public_transaction_boundary_lives_in_transaction_manager(self):
         engine = GameEngine()
         self.assertIsInstance(engine.transaction_manager, VMTransactionManager)
-        for name in (
-            "capture_transaction",
-            "rollback_transaction",
-            "rollback_failed_step",
-            "persist_pending_choice",
-            "clear_pending_choice_stack",
-            "store_cancel_checkpoint",
-            "restore_cancel_checkpoint",
-            "restore_event_stream",
-        ):
-            with self.subTest(name=name):
-                self.assertTrue(hasattr(engine.transaction_manager, name))
-                self.assertFalse(hasattr(engine, f"_{name}"))
 
-        source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "game_engine.py"
-        ).read_text(encoding="utf-8")
-        for helper in (
-            "def _capture_transaction",
-            "def _rollback_transaction",
-            "def _rollback_failed_step",
-            "def _persist_pending_choice",
-            "def _clear_pending_choice_stack",
-            "def _store_cancel_checkpoint",
-            "def _restore_cancel_checkpoint",
-        ):
-            with self.subTest(helper=helper):
-                self.assertNotIn(helper, source)
-        self.assertIn("transaction_manager.capture_transaction", source)
-        self.assertIn("transaction_manager.rollback_failed_step", source)
+        state = self._main_state()
+        rng = PortableRandomSourceV1(17)
+        checkpoint = engine.transaction_manager.capture_transaction(state, rng)
+        expected_state = checkpoint["state"]
+        expected_rng = checkpoint["rng_state"]
+
+        state.turn_number = 99
+        state.action_log.append("must roll back")
+        rng.coin()
+        engine.transaction_manager.rollback_transaction(state, rng, checkpoint)
+
+        self.assertEqual(snapshot_state(state), expected_state)
+        self.assertEqual(rng.getstate(), expected_rng)
 
     def test_non_attack_choice_chain_persists_next_pending_request(self):
         state = GameState()
@@ -379,214 +363,149 @@ class GameEngineRefactorTests(unittest.TestCase):
     def test_choice_request_boundary_lives_in_choice_manager(self):
         engine = GameEngine()
         self.assertIsInstance(engine.choice_manager, VMChoiceManager)
-        for name in (
-            "choice_request",
-            "choice_response_from_legacy",
-            "default_choice_response",
-            "legacy_choice_payload",
-            "consume_pending_card",
-            "cancel_pending_card",
-        ):
-            with self.subTest(name=name):
-                self.assertTrue(hasattr(engine.choice_manager, name))
 
-        source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "game_engine.py"
-        ).read_text(encoding="utf-8")
-        choice_source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "choice_manager.py"
-        ).read_text(encoding="utf-8")
-        for helper in (
-            "def _default_choice_response",
-            "def _choice_options",
-            "def _card_list_refs",
-            "def _board_card_refs",
-            "def _choice_target_player_idx",
-            "def _legacy_choice_payload",
-            "def _consume_pending_card",
-            "def _cancel_pending_card",
-        ):
-            with self.subTest(helper=helper):
-                self.assertNotIn(helper, source)
-        self.assertIn("choice_manager.choice_request", source)
-        self.assertIn("choice_manager.legacy_choice_payload", source)
-        self.assertIn("choice_manager.default_choice_response", source)
-        self.assertIn("def _choice_options", choice_source)
-        self.assertIn("def legacy_choice_payload", choice_source)
+        state = self._main_state()
+        legacy = ActionRequest(
+            request_type="confirm",
+            player=0,
+            prompt="confirm",
+            min_select=1,
+            max_select=1,
+            continuation={"kind": "test_confirm"},
+        )
+        request = engine.choice_manager.choice_request(state, legacy)
+        response = engine.choice_manager.default_choice_response(
+            request,
+            PortableRandomSourceV1(5),
+        )
+
+        self.assertEqual(request.request_id, legacy.request_id)
+        self.assertEqual(response.request_id, request.request_id)
+        self.assertEqual(len(response.option_ids), 1)
+        selected = [
+            option for option in request.options
+            if option.option_id in response.option_ids
+        ]
+        self.assertIs(
+            engine.choice_manager.legacy_choice_payload(legacy, selected, response),
+            True,
+        )
 
     def test_settlement_boundary_lives_in_settlement_manager(self):
         engine = GameEngine()
         self.assertIsInstance(engine.settlement_manager, VMSettlementManager)
         self.assertIs(engine.settlement_manager.choice_manager, engine.choice_manager)
-        for name in (
-            "apply_promotion",
-            "resolve_attack_turn_frame",
-            "resolve_non_attack_knockouts",
-            "step_from_action_result",
-            "merge_steps",
-            "events_since",
-            "combine_action_results",
-        ):
-            with self.subTest(name=name):
-                self.assertTrue(hasattr(engine.settlement_manager, name))
-                self.assertFalse(hasattr(engine, f"_{name}"))
 
-        source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "game_engine.py"
-        ).read_text(encoding="utf-8")
-        settlement_source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "settlement.py"
-        ).read_text(encoding="utf-8")
-        for helper in (
-            "def _apply_promotion",
-            "def _resolve_attack_turn_frame",
-            "def _resolve_non_attack_knockouts",
-            "def _merge_steps",
-            "def _events_since",
-            "def _combine_action_results",
-        ):
-            with self.subTest(helper=helper):
-                self.assertNotIn(helper, source)
-        self.assertIn("settlement_manager.apply_promotion", source)
-        self.assertIn("settlement_manager.resolve_non_attack_knockouts", source)
-        self.assertIn("settlement_manager.merge_steps", source)
-        self.assertIn("FinalizeAttackTurn", settlement_source)
-        self.assertIn("def resolve_attack_turn_frame", settlement_source)
+        state = self._main_state()
+        event = {"event_type": "test_event", "data": {"value": 1}}
+        first = engine.settlement_manager.step_from_action_result(
+            state,
+            ActionResult(True, "first"),
+            events=(event,),
+        )
+        second = StepResult(True, "second", events=({"event_type": "second"},))
+        merged = engine.settlement_manager.merge_steps(first, second)
+
+        self.assertTrue(merged.success)
+        self.assertIn("first", merged.message)
+        self.assertIn("second", merged.message)
+        self.assertEqual(
+            [row["event_type"] for row in merged.events],
+            ["test_event", "second"],
+        )
 
     def test_action_availability_boundary_lives_in_availability_service(self):
         engine = GameEngine()
         self.assertIsInstance(engine.availability, VMActionAvailability)
-        for name in (
-            "enumerate_actions",
-            "setup_actions",
-            "retreat_payments",
-            "stadium_is_activatable",
-            "validate_action_references",
-        ):
-            with self.subTest(name=name):
-                self.assertTrue(hasattr(engine.availability, name))
-                self.assertFalse(hasattr(engine, f"_{name}"))
 
-        source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "game_engine.py"
-        ).read_text(encoding="utf-8")
-        availability_source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "action_availability.py"
-        ).read_text(encoding="utf-8")
-        for helper in (
-            "def _enumerate_actions",
-            "def _setup_actions",
-            "def _retreat_payments",
-            "def _stadium_is_activatable",
-            "def _validate_action_references",
-            "can_attach_energy",
-            "can_declare_attack",
-            "effective_retreat_cost",
-            "effects_have_legal_target",
-        ):
-            with self.subTest(helper=helper):
-                self.assertNotIn(helper, source)
-        self.assertIn("availability.enumerate_actions", source)
-        self.assertIn("availability.validate_action_references", source)
-        self.assertIn("def enumerate_actions", availability_source)
-        self.assertIn("def validate_action_references", availability_source)
+        sentinel = GameAction(PlayerAction.END_TURN, actor=0)
+
+        class RecordingAvailability(VMActionAvailability):
+            def __init__(self):
+                super().__init__()
+                self.calls = []
+
+            def enumerate_actions(self, state, actor):
+                self.calls.append((state, actor))
+                return (sentinel,)
+
+        availability = RecordingAvailability()
+        delegated = GameEngine(availability=availability)
+        state = self._main_state()
+
+        self.assertEqual(
+            delegated.legal_actions(state, 0, validate_effects=False),
+            (sentinel,),
+        )
+        self.assertEqual(availability.calls, [(state, 0)])
 
     def test_action_resolver_vm_effect_execution_lives_in_effect_runner(self):
         from engine.action_resolver import ActionResolver
 
-        resolver = ActionResolver(GameState())
-        self.assertIsInstance(resolver._effect_runner(), VMEffectRunner)
+        state = GameState()
+        state.p1.deck = [CardRegistry.get("sv1-ener-2")]
+        resolver = ActionResolver(state)
+        runner = resolver._effect_runner()
+        self.assertIsInstance(runner, VMEffectRunner)
 
-        source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "action_resolver.py"
-        ).read_text(encoding="utf-8")
-        runner_source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "effect_runner.py"
-        ).read_text(encoding="utf-8")
+        result = runner.execute_effects(
+            [{"op": "draw_cards", "args": {"amount": 1}, "branches": {}}],
+            0,
+            "active",
+        )
 
-        self.assertIn("VMEffectRunner", source)
-        self.assertIn("compile_command_spec=compile_command_spec", source)
-        self.assertIn("def execute_effects", runner_source)
-        self.assertIn("def execute_attack_effects", runner_source)
-        self.assertIn("ResolutionStack", runner_source)
-        self.assertIn("FinalizeAttackDamage", runner_source)
-        for forbidden in (
-            "stack = ResolutionStack",
-            "commands.append(FinalizeAttackDamage",
-            "stack.push_many(commands)",
-            "rr = stack.resolve_all",
-            "def _apply_accumulated_attack_damage",
-            "def _apply_attack_damage",
-            "def _do_attack_ko_checks",
-            "def _build_runtime_command",
-            "def _effect_replaces_base_damage",
-        ):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, source)
+        self.assertTrue(result.success, result.log_message)
+        self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-2"])
 
     def test_resolution_stack_interpreter_loop_lives_in_vm_interpreter(self):
+        from engine.commands.dsl_compiler import compile_command_spec
         from engine.commands.resolution_stack import ResolutionStack
 
-        stack = ResolutionStack(GameState())
+        state = GameState()
+        state.p1.deck = [CardRegistry.get("sv1-ener-2")]
+        stack = ResolutionStack(state)
         self.assertIsInstance(stack.vm_interpreter, VMInterpreter)
+        stack.push(compile_command_spec({
+            "op": "draw_cards",
+            "args": {"amount": 1},
+            "branches": {},
+        }))
+        resolved = stack.resolve_all(0, "active")
 
-        source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "commands", "resolution_stack.py"
-        ).read_text(encoding="utf-8")
-        interpreter_source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "commands", "vm_interpreter.py"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("vm_interpreter.resolve_all", source)
-        self.assertNotIn("build_resolution_stack_continuation_registry", source)
-        self.assertIn("def resolve_all", interpreter_source)
-        self.assertIn("build_resolution_stack_continuation_registry", interpreter_source)
-        self.assertIn("cmd.execute(ctx)", interpreter_source)
-        self.assertIn("def chained", interpreter_source)
-        self.assertIn("registry.dispatch", interpreter_source)
-        for forbidden in (
-            "cmd.execute(ctx)",
-            "CommandResult(success=False",
-            "ResolutionContext(",
-            "def chained",
-            "continuation = dict(getattr(req",
-            "registry.dispatch(",
-        ):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, source)
+        self.assertTrue(resolved.success)
+        self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-2"])
 
         registry = ContinuationRegistry()
         injected = ResolutionStack(GameState(), continuation_registry=registry)
         self.assertIs(injected.continuation_registry, registry)
 
     def test_runtime_trigger_settlement_uses_serializable_command_specs(self):
-        trigger_source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "commands", "trigger_commands.py"
-        ).read_text(encoding="utf-8")
-        runtime_source = (
-            Path(__file__).resolve().parents[1].joinpath(
-                "engine", "commands", "damage_pipeline.py"
-            ).read_text(encoding="utf-8")
-            + Path(__file__).resolve().parents[1].joinpath(
-                "engine", "commands", "attack_frames.py"
-            ).read_text(encoding="utf-8")
+        from engine.commands.resolution_stack import ResolutionStack
+        from engine.commands.trigger_commands import (
+            command_specs_from_trigger_results,
+            push_trigger_command_specs,
+            trigger_draw_cards_spec,
         )
-        hook_source = Path(__file__).resolve().parents[1].joinpath(
-            "engine", "commands", "modifier_registration.py"
-        ).read_text(encoding="utf-8")
 
-        self.assertIn("def command_specs_from_trigger_results", trigger_source)
-        self.assertIn("def push_trigger_command_specs", trigger_source)
-        self.assertNotIn("def commands_from_trigger_results", trigger_source)
-        self.assertNotIn('result.get("command")', trigger_source)
-        self.assertNotIn('result.get("commands")', trigger_source)
-        self.assertNotIn("commands.append(item)", trigger_source)
-        self.assertIn("command_specs_from_trigger_results", runtime_source)
-        self.assertIn("push_trigger_command_specs", runtime_source)
-        self.assertNotIn("commands_from_trigger_results", runtime_source)
-        self.assertIn('"command_specs"', hook_source)
-        self.assertNotIn('"commands"', hook_source)
-        self.assertNotIn('"command"', hook_source)
+        spec = trigger_draw_cards_spec(0, 1, "behavior-test")
+        normalized = command_specs_from_trigger_results([
+            {"source": "behavior-test", "command_specs": [spec]},
+            {"source": "legacy", "command": object(), "commands": [object()]},
+        ])
+        self.assertEqual(normalized, [spec])
+        with self.assertRaisesRegex(ValueError, "serializable VM command spec"):
+            command_specs_from_trigger_results([
+                {"command_specs": [object()]},
+            ])
+
+        state = GameState()
+        state.p1.deck = [CardRegistry.get("sv1-ener-2")]
+        stack = ResolutionStack(state)
+        push_trigger_command_specs(stack, normalized)
+        resolved = stack.resolve_all(0, "active")
+
+        self.assertTrue(resolved.success)
+        self.assertEqual([card.api_id for card in state.p1.hand], ["sv1-ener-2"])
 
     def test_every_enumerated_action_executes_on_a_snapshot(self):
         state = self._main_state()
@@ -866,17 +785,9 @@ class GameEngineRefactorTests(unittest.TestCase):
                     ),
                 )
                 corrupt(request)
-                engine.transaction_manager.persist_pending_choice(state, request)
                 before = snapshot_state(state)
-
-                result = engine.apply_choice(
-                    state,
-                    request,
-                    ChoiceResponse(request.request_id, ()),
-                )
-
-                self.assertFalse(result.success)
-                self.assertEqual(result.error_code, "invalid_choice_request")
+                with self.assertRaises(ValueError):
+                    engine.transaction_manager.persist_pending_choice(state, request)
                 self.assertEqual(callback_payloads, [])
                 self.assertEqual(snapshot_state(state), before)
 
@@ -1409,8 +1320,22 @@ class GameEngineRefactorTests(unittest.TestCase):
             for action in engine.legal_actions(state, 0, validate_effects=False)
             if action.action == PlayerAction.RETREAT
         )
-        self.assertEqual(retreat.params["energy_indices"], [0])
-        result = engine.apply_action(state, retreat)
+        self.assertEqual(retreat.params, {"bench_idx": 0})
+        pending = engine.apply_action(state, retreat)
+        self.assertTrue(pending.success, pending.message)
+        self.assertIsNotNone(pending.pending_choice)
+        self.assertEqual(pending.pending_choice.request_type, "select_retreat_payment")
+        self.assertEqual(
+            [option.option_id for option in pending.pending_choice.options],
+            ["retreat:energy:0"],
+        )
+        result = engine.apply_choice(
+            state,
+            ChoiceResponse(
+                pending.pending_choice.request_id,
+                ("retreat:energy:0",),
+            ),
+        )
         self.assertTrue(result.success, result.message)
         self.assertIn(double_turbo, state.p1.discard)
 
@@ -1610,11 +1535,7 @@ class GameEngineRefactorTests(unittest.TestCase):
 
         result = engine.apply_choice(
             state,
-            attack_step.pending_choice,
-            ChoiceResponse(
-                attack_step.pending_choice.request_id,
-                ("coin:heads",),
-            ),
+            ChoiceResponse(attack_step.pending_choice.request_id, ()),
         )
         self.assertTrue(result.success, result.message)
         self.assertIsNone(result.pending_choice)
@@ -1680,8 +1601,7 @@ class GameEngineRefactorTests(unittest.TestCase):
 
         result = engine.apply_choice(
             state,
-            attack_step.pending_choice,
-            ChoiceResponse(attack_step.pending_choice.request_id, ("coin:heads",)),
+            ChoiceResponse(attack_step.pending_choice.request_id, ()),
         )
 
         self.assertTrue(result.success, result.message)

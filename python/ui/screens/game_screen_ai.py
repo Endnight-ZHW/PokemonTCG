@@ -318,7 +318,6 @@ class GameScreenAIMixin:
             )
         step = self.game_engine.apply_choice(
             self.state,
-            structured,
             response,
         )
         result = step.action_result or ActionResult(step.success, step.message)

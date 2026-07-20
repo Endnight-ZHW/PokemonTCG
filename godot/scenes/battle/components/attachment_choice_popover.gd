@@ -265,7 +265,7 @@ func _option_icon(option: Dictionary) -> Texture2D:
 
 
 func _attachment_ref(option: Dictionary) -> Dictionary:
-	var ref_value: Variant = option.get("ref", option.get("value", {}))
+	var ref_value: Variant = option.get("ref")
 	return Dictionary(ref_value) if ref_value is Dictionary else {}
 
 

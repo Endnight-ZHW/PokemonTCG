@@ -442,8 +442,9 @@ def _map_legacy_choice(request: ChoiceRequest, choice) -> ChoiceResponse | None:
     if getattr(choice, "cancelled", False):
         return ChoiceResponse(request.request_id, (), True)
     if request.request_type == "coin_flip":
-        ids = ["coin:heads" if value else "coin:tails" for value in getattr(choice, "coin_results", [])]
-        return ChoiceResponse(request.request_id, tuple(ids))
+        # The command already consumed RNG and stored the result in its
+        # continuation.  The public choice only acknowledges the display.
+        return ChoiceResponse(request.request_id, ())
     if request.request_type in {"confirm", "confirm_trigger"}:
         option_id = "confirm:yes" if getattr(choice, "confirmed", False) else "confirm:no"
         return ChoiceResponse(request.request_id, (option_id,))

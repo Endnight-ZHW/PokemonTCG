@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from data.card_models import Card
 
 
-SNAPSHOT_SCHEMA_VERSION = 2
+SNAPSHOT_SCHEMA_VERSION = 3
 
 
 @dataclass
@@ -58,6 +58,7 @@ class PokemonSnapshot:
     attack_locked: bool = False
     attack_locked_names: dict = field(default_factory=dict)
     dazzled: bool = False
+    modifiers: list[dict] = field(default_factory=list)
     max_hp_modifiers: list[dict] = field(default_factory=list)
     paralyzed_since_turn: int = 0
     healed_this_turn: bool = False
@@ -565,6 +566,7 @@ def _pokemon_snapshot_to_dict(snap: PokemonSnapshot | None) -> dict | None:
         "attack_locked": bool(snap.attack_locked),
         "attack_locked_names": copy.deepcopy(snap.attack_locked_names),
         "dazzled": bool(snap.dazzled),
+        "modifiers": copy.deepcopy(snap.modifiers),
         "max_hp_modifiers": copy.deepcopy(snap.max_hp_modifiers),
         "paralyzed_since_turn": int(snap.paralyzed_since_turn),
         "healed_this_turn": bool(snap.healed_this_turn),
@@ -589,6 +591,7 @@ def _pokemon_snapshot_from_dict(data: dict) -> PokemonSnapshot:
         attack_locked=bool(data.get("attack_locked", False)),
         attack_locked_names=copy.deepcopy(data.get("attack_locked_names", {})),
         dazzled=bool(data.get("dazzled", False)),
+        modifiers=copy.deepcopy(data.get("modifiers", [])),
         max_hp_modifiers=copy.deepcopy(data.get("max_hp_modifiers", [])),
         paralyzed_since_turn=int(data.get("paralyzed_since_turn", 0)),
         healed_this_turn=bool(data.get("healed_this_turn", False)),
@@ -668,6 +671,7 @@ def _snapshot_pokemon(p: PokemonInPlay) -> PokemonSnapshot:
         attack_locked=p.attack_locked,
         attack_locked_names=dict(p.attack_locked_names),
         dazzled=p.dazzled,
+        modifiers=copy.deepcopy(getattr(p, "modifiers", [])),
         max_hp_modifiers=copy.deepcopy(getattr(p, "max_hp_modifiers", [])),
         paralyzed_since_turn=p.paralyzed_since_turn,
         healed_this_turn=p.healed_this_turn,
@@ -694,6 +698,7 @@ def _restore_pokemon(snap: PokemonSnapshot) -> PokemonInPlay:
     pokemon.attack_locked = snap.attack_locked
     pokemon.attack_locked_names = dict(snap.attack_locked_names)
     pokemon.dazzled = snap.dazzled
+    pokemon.modifiers = copy.deepcopy(snap.modifiers)
     pokemon.max_hp_modifiers = copy.deepcopy(snap.max_hp_modifiers)
     pokemon.paralyzed_since_turn = snap.paralyzed_since_turn
     pokemon.healed_this_turn = snap.healed_this_turn

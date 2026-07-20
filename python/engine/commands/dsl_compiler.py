@@ -28,6 +28,8 @@ from engine.commands.dsl_compiler_support import (
     SUPPORT_EFFECT_FACTORIES,
 )
 from engine.commands.trigger_commands import TRIGGER_COMMAND_FACTORIES
+from engine.commands.descriptors import VM_COMMAND_DESCRIPTORS
+from engine.commands.vm_contract import validate_command_spec
 from engine.commands.vm_registry import DEFAULT_COMMAND_REGISTRY
 
 if TYPE_CHECKING:
@@ -85,21 +87,28 @@ def compile_command_spec(spec) -> ICommand:
     This bypasses effect_type dispatch entirely for migrated atomic ops.
     """
     if isinstance(spec, CommandSpec):
-        op = spec.op
-        args = dict(spec.args)
-        branches = {key: list(value) for key, value in spec.branches.items()}
+        spec_payload = spec.to_dict()
     elif isinstance(spec, dict):
-        op = str(spec.get("op", "") or "")
-        args = dict(spec.get("args", {}) or {})
-        branches = dict(spec.get("branches", {}) or {})
+        spec_payload = dict(spec)
     else:
         raise ValueError(f"Invalid command spec: {spec!r}")
 
-    if "effect_type" in args:
+    op = str(spec_payload.get("op", "") or "")
+    raw_args = spec_payload.get("args", {})
+    if isinstance(raw_args, dict) and "effect_type" in raw_args:
         raise ValueError("VM command specs must not carry legacy effect_type args")
 
     if not DEFAULT_COMMAND_REGISTRY.supports_op(op):
         raise ValueError(f"No native ICommand registered for VM op={op!r}")
+    spec_errors = validate_command_spec(
+        spec_payload,
+        supported_ops=set(DEFAULT_COMMAND_REGISTRY.supported_ops),
+        descriptors=VM_COMMAND_DESCRIPTORS,
+    )
+    if spec_errors:
+        raise ValueError("Invalid VM command spec: " + "; ".join(spec_errors))
+    args = dict(spec_payload.get("args", {}))
+    branches = dict(spec_payload.get("branches", {}))
     command = DEFAULT_COMMAND_REGISTRY.build(op, args, branches)
     from engine.commands.continuation_state import tag_command_spec
 
@@ -157,3 +166,11 @@ def _register_foundational_command_ops() -> None:
 
 
 _register_foundational_command_ops()
+
+_descriptor_ops = frozenset(VM_COMMAND_DESCRIPTORS)
+if DEFAULT_COMMAND_REGISTRY.supported_ops != _descriptor_ops:
+    raise RuntimeError(
+        "Python VM handlers and descriptors must be 1:1; "
+        f"missing_handlers={sorted(_descriptor_ops - DEFAULT_COMMAND_REGISTRY.supported_ops)} "
+        f"missing_descriptors={sorted(DEFAULT_COMMAND_REGISTRY.supported_ops - _descriptor_ops)}"
+    )

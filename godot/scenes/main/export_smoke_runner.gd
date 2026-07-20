@@ -40,11 +40,11 @@ func _run_phase_four(deep_runtime: DeepAIRuntime) -> Dictionary:
 
 
 func _run_phase_five() -> Dictionary:
-	var probe := ProtocolV4.envelope(ProtocolV4.PING, "smoke", 0, 1)
-	var validation := ProtocolV4.validate(probe, "smoke", 0, 0)
+	var probe := ProtocolV6.envelope(ProtocolV6.PING, "smoke", 0, 1)
+	var validation := ProtocolV6.validate(probe, "smoke", 0, 0)
 	if not bool(validation.get("ok", false)):
-		return _failure(3, "PHASE5_EXPORT_NETWORK_FAILED")
-	return _success("PHASE5_EXPORT_NETWORK_OK protocol=4 transports=enet,websocket")
+		return _failure(3, "PHASE6_EXPORT_NETWORK_FAILED")
+	return _success("PHASE6_EXPORT_NETWORK_OK protocol=6 transports=enet,websocket")
 
 
 func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictionary:

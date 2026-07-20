@@ -7,6 +7,7 @@ var trainer_continuations: VMTrainerContinuations
 var board_continuations: VMBoardContinuations
 var energy_continuations: VMEnergyContinuations
 var look_top_continuations: VMLookTopContinuations
+var modifier_continuations: VMModifierContinuations
 var draw_commands: VMDrawCommands
 var trainer_commands: VMTrainerCommands
 var modifier_commands: VMModifierCommands
@@ -37,9 +38,13 @@ func _init(p_catalog: CardCatalog) -> void:
 		catalog, board_commands, coin_commands, combat_commands.damage)
 	energy_continuations = VMEnergyContinuations.new(energy_commands, trigger_commands)
 	look_top_continuations = VMLookTopContinuations.new(catalog)
-	vm_interpreter.register_command_ops(VMContract.native_command_ops())
+	modifier_continuations = VMModifierContinuations.new()
+	vm_interpreter.register_command_descriptors(VMContract.native_command_descriptors())
 	_register_command_handlers()
 	_register_continuations()
+	var registry_errors := vm_interpreter.freeze(VMContract.native_command_ops())
+	if not registry_errors.is_empty():
+		push_error("VM runtime registry is incomplete: %s" % "; ".join(registry_errors))
 
 
 func supports_effect_type(effect_type: String) -> bool:
@@ -60,6 +65,10 @@ func native_command_ops() -> Array[String]:
 
 func supports_continuation(operation: String) -> bool:
 	return vm_interpreter.supports_continuation(operation)
+
+
+func is_ready() -> bool:
+	return vm_interpreter.is_ready()
 
 
 func resolve(
@@ -97,3 +106,4 @@ func _register_continuations() -> void:
 	board_continuations.register(vm_interpreter)
 	energy_continuations.register(vm_interpreter)
 	look_top_continuations.register(vm_interpreter)
+	modifier_continuations.register(vm_interpreter)

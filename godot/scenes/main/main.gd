@@ -104,6 +104,7 @@ var _toast_generation := 0
 var _deep_start_generation := 0
 var _presented_coin_request_ids: Dictionary = {}
 var _pending_ai_resume_revision := -1
+var _pending_ai_runtime_unload := false
 var _startup_choreography_generation := 0
 var _startup_choreography_running := false
 
@@ -166,10 +167,11 @@ func _finish_export_smoke(result: Dictionary) -> void:
 func _process(_delta: float) -> void:
 	if network_controller.needs_poll():
 		_poll_network()
-	if ai_thinking:
+	if ai_coordinator.needs_poll():
 		var result := ai_coordinator.poll_result()
-		if not result.is_empty():
+		if ai_thinking and not result.is_empty():
 			_apply_ai_result(result)
+	_finalize_ai_runtime_unload_if_idle()
 	_refresh_process_state()
 
 
@@ -568,12 +570,13 @@ func _apply_network_view(
 	state = StateSerializer.from_player_view(state_payload, player)
 	var incoming_presentation_events: Array = view.get("presentation_events", [])
 	network_legal_actions.clear()
-	var legal_rows: Array = view.get("legal_actions", [])
+	var legal_rows: Array = view.get("legal_action_groups", [])
 	for row in legal_rows:
 		if row is Dictionary:
-			network_legal_actions.append(GameAction.from_dict(row))
+			var group := LegalActionGroup.from_dict(row)
+			network_legal_actions.append_array(group.concrete_actions())
 	network_choice_request = (
-		ChoiceRequest.from_dict(view["choice_request"])
+		ChoiceView.from_dict(view["choice_request"])
 		if view.get("choice_request") is Dictionary
 		else null
 	)
@@ -652,8 +655,8 @@ func _network_view_is_fresh_match_start() -> bool:
 
 
 func _network_view_is_valid(view: Dictionary) -> bool:
-	return bool(ProtocolV4.validate_payload(
-		ProtocolV4.STATE_UPDATE,
+	return bool(ProtocolV6.validate_payload(
+		ProtocolV6.STATE_UPDATE,
 		view,
 	).get("ok", false))
 
@@ -836,6 +839,7 @@ func _start_match(
 		actual_seed = PortableRandomSource.fresh_seed()
 	last_match_seed = actual_seed
 	rng = PortableRandomSource.new(actual_seed)
+	ai_request_sequence = 0
 	var result := engine.setup_game(
 		state,
 		catalog.expand_deck(first_key),
@@ -850,12 +854,17 @@ func _start_match(
 		state.players[0].name = "玩家 1"
 		state.players[1].name = "Deep AI" if game_mode == MODE_DEEP else "Challenge AI"
 		if game_mode == MODE_DEEP:
-			if deep_runtime.load_for_deck(second_key):
+			if _pending_ai_runtime_unload:
+				# A cancelled native worker may still own the previous backend. Do
+				# not mutate it; this match safely uses the Challenge fallback.
+				ai_inference = null
+			elif deep_runtime.load_for_deck(second_key):
 				ai_inference = deep_runtime.get_backend()
 			else:
 				ai_inference = null
 		else:
-			deep_runtime.unload()
+			if not _pending_ai_runtime_unload:
+				deep_runtime.unload()
 			ai_inference = null
 	current_view_player = 0
 	selected_entity_key = ""
@@ -1279,7 +1288,9 @@ func _current_action_rows() -> Array[Dictionary]:
 		if actor == network_player_idx:
 			actions = network_legal_actions
 	elif game_mode == MODE_LOCAL or actor == 0:
-		actions = engine.legal_actions(state, actor, true)
+		var query := engine.query_legal_action_groups(state, actor)
+		if query.success:
+			actions = query.concrete_actions()
 	for action in actions:
 		rows.append({
 			"action": action,
@@ -1984,7 +1995,7 @@ func _show_coin_flip_choice(request: ChoiceRequest) -> void:
 		ModalSpec.battle(Vector2(680, 500)),
 	)
 	modal_title.text = "硬币结算"
-	var results: Array = request.metadata.get("predetermined_flips", [])
+	var results: Array = _choice_presentation(request).get("predetermined_flips", [])
 	var showcase := COIN_SHOWCASE.new() as CoinShowcase
 	showcase.name = "CoinShowcase"
 	showcase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2063,11 +2074,6 @@ func _choice_modal_size(has_preview: bool, compact_empty: bool = false) -> Vecto
 
 
 func _choice_option_card_id(option: Dictionary) -> String:
-	var value_variant: Variant = option.get("value")
-	if value_variant is Dictionary:
-		var value: Dictionary = value_variant
-		if not str(value.get("card_id", "")).is_empty():
-			return str(value["card_id"])
 	var ref_variant: Variant = option.get("ref")
 	if ref_variant is Dictionary:
 		return str(Dictionary(ref_variant).get("card_id", ""))
@@ -2075,12 +2081,9 @@ func _choice_option_card_id(option: Dictionary) -> String:
 
 
 func _choice_option_owner(option: Dictionary, fallback_player: int) -> int:
-	var ref := _choice_attachment_ref(option)
-	if not ref.is_empty():
-		return int(ref.get("player", fallback_player))
-	var value_variant: Variant = option.get("value")
-	if value_variant is Dictionary:
-		return int(Dictionary(value_variant).get("player", fallback_player))
+	var ref_value: Variant = option.get("ref")
+	if ref_value is Dictionary:
+		return int(Dictionary(ref_value).get("player", fallback_player))
 	return fallback_player
 
 
@@ -2093,26 +2096,11 @@ func _choice_attachment_ref(option: Dictionary) -> Dictionary:
 			or not str(ref.get("attachment_type", "")).is_empty()
 		):
 			return ref
-	var value_variant: Variant = option.get("value")
-	if value_variant is Dictionary:
-		var value := Dictionary(value_variant).duplicate(true)
-		if (
-			value.has("slot")
-			and value.has("index")
-			and value.has("card_id")
-		):
-			value["kind"] = "attachment"
-			value["attachment_type"] = str(value.get("attachment_type", "energy"))
-			return value
 	return {}
 
 
 func _choice_option_caption(option: Dictionary) -> String:
 	var label_text := str(option.get("label", ""))
-	var value_variant: Variant = option.get("value")
-	var value_data: Dictionary = {}
-	if value_variant is Dictionary:
-		value_data = value_variant
 	var ref_variant: Variant = option.get("ref")
 	var ref_data: Dictionary = {}
 	if ref_variant is Dictionary:
@@ -2122,12 +2110,10 @@ func _choice_option_caption(option: Dictionary) -> String:
 		or str(option.get("option_id", "")).begins_with("attachment:")
 	)
 	if is_attachment:
-		var attachment_player := int(value_data.get(
-			"player",
-			ref_data.get("player", active_request.player if active_request else current_view_player),
-		))
-		var attachment_slot := str(value_data.get("slot", ref_data.get("slot", "")))
-		var attachment_index := int(value_data.get("index", ref_data.get("index", -1)))
+		var attachment_player := int(ref_data.get(
+			"player", active_request.player if active_request else current_view_player))
+		var attachment_slot := str(ref_data.get("slot", ""))
+		var attachment_index := int(ref_data.get("index", -1))
 		var attachment_label := label_text.replace(" - ", " · ")
 		if attachment_label.is_empty() and catalog != null:
 			attachment_label = catalog.card_name(_choice_option_card_id(option))
@@ -2140,13 +2126,11 @@ func _choice_option_caption(option: Dictionary) -> String:
 		if attachment_index >= 0:
 			attachment_parts.append("第%d张" % (attachment_index + 1))
 		return " · ".join(attachment_parts)
-	var value_slot := str(value_data.get("slot", ""))
-	var base_name := str(value_data.get("base_name", ""))
-	var evolution_name := str(value_data.get("evolution_name", ""))
-	if not value_slot.is_empty() and not base_name.is_empty() and not evolution_name.is_empty():
-		return "%s · %s → %s" % [_slot_name(value_slot), base_name, evolution_name]
-	if not value_slot.is_empty():
-		return _slot_name(value_slot)
+	var option_id := str(option.get("option_id", ""))
+	if option_id.begins_with("rare_candy:"):
+		var parts := option_id.split(":")
+		if parts.size() >= 2:
+			return "%s · %s" % [_slot_name(str(parts[1])), label_text]
 	if not ref_data.is_empty():
 		var ref: Dictionary = ref_data
 		var ref_slot := str(ref.get("slot", ""))
@@ -2159,8 +2143,6 @@ func _choice_option_caption(option: Dictionary) -> String:
 			if index >= 0:
 				return "%s %d" % [zone_text, index + 1]
 			return zone_text
-	if value_variant is Dictionary and value_data.has("index"):
-		return "#%d" % (int(value_data.get("index", -1)) + 1)
 	return label_text
 
 
@@ -2195,11 +2177,6 @@ func _choice_field_target_options(request: ChoiceRequest) -> Dictionary:
 			if str(ref.get("kind", "")) == "pokemon":
 				player_idx = int(ref.get("player", player_idx))
 				slot = str(ref.get("slot", ""))
-		var option_value: Variant = option.get("value")
-		if slot.is_empty() and option_value is Dictionary:
-			var value := option_value as Dictionary
-			player_idx = int(value.get("player", player_idx))
-			slot = str(value.get("slot", ""))
 		if (
 			option_id.is_empty()
 			or player_idx not in [0, 1]
@@ -2273,10 +2250,11 @@ func _choice_field_prompt(request: ChoiceRequest) -> String:
 		return "请选择目标"
 	if request.request_type not in ["select_energy_target", "distribute_energy"]:
 		return request.prompt
-	var source_slot := str(request.metadata.get("source_slot", ""))
-	var source_player := int(request.metadata.get("source_player", request.player))
+	var presentation := _choice_presentation(request)
+	var source_slot := str(presentation.get("source_slot", ""))
+	var source_player := int(presentation.get("source_player", request.player))
 	var card_names: Array[String] = []
-	for value in request.metadata.get("card_ids", []):
+	for value in presentation.get("card_ids", []):
 		var card_name := catalog.card_name(str(value)) if catalog != null else str(value)
 		if not card_name.is_empty() and card_name not in card_names:
 			card_names.append(card_name)
@@ -2308,12 +2286,13 @@ func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
 	var result: Array[String] = []
 	if request == null or request.request_type not in ["distribute_energy", "select_energy_target"]:
 		return result
-	for value in request.metadata.get("card_ids", []):
+	var presentation := _choice_presentation(request)
+	for value in presentation.get("card_ids", []):
 		var metadata_card_id := str(value)
 		if not metadata_card_id.is_empty():
 			result.append(metadata_card_id)
 	if result.is_empty():
-		for ref_value in request.metadata.get("attachment_refs", []):
+		for ref_value in presentation.get("attachment_refs", []):
 			if not ref_value is Dictionary:
 				continue
 			var ref_card_id := str(Dictionary(ref_value).get("card_id", ""))
@@ -2321,31 +2300,6 @@ func _choice_energy_cards(request: ChoiceRequest) -> Array[String]:
 				result.append(ref_card_id)
 	if not result.is_empty():
 		return result
-	if game_mode == MODE_NETWORK:
-		return result
-	if state == null or state.resolution_stack.is_empty():
-		return result
-	var stack := ResolutionStack.from_dict(state.resolution_stack)
-	if stack.frames.is_empty():
-		return result
-	var frame: Dictionary = stack.frames[-1]
-	var data: Dictionary = frame.get("data", {})
-	for value in data.get("card_ids", []):
-		var card_id := str(value)
-		if not card_id.is_empty():
-			result.append(card_id)
-	if not result.is_empty():
-		return result
-	var source_slot := str(data.get("source_slot", ""))
-	var player_idx := int(data.get("player_idx", request.player))
-	var amount := int(data.get("amount", 0))
-	if source_slot.is_empty() or amount <= 0:
-		return result
-	var pokemon := state.get_player(player_idx).get_pokemon(source_slot)
-	if pokemon == null:
-		return result
-	for index in range(mini(amount, pokemon.energy_card_ids.size())):
-		result.append(pokemon.energy_card_ids[index])
 	return result
 
 
@@ -2444,12 +2398,13 @@ func _choice_revealed_cards(request: ChoiceRequest) -> Array[String]:
 	var result: Array[String] = []
 	if request == null:
 		return result
-	for value in request.metadata.get("revealed_card_ids", []):
+	var presentation := _choice_presentation(request)
+	for value in presentation.get("revealed_card_ids", []):
 		var card_id := str(value)
 		if not card_id.is_empty():
 			result.append(card_id)
 	if result.is_empty():
-		var top_card_id := str(request.metadata.get("top_card_id", ""))
+		var top_card_id := str(presentation.get("top_card_id", ""))
 		if not top_card_id.is_empty():
 			result.append(top_card_id)
 	return result
@@ -2465,48 +2420,23 @@ func _choice_option_by_id(request: ChoiceRequest, option_id: String) -> Dictiona
 	return {}
 
 
-func _choice_continuation_data() -> Dictionary:
-	# Network player views intentionally omit the private resolution stack. Every
-	# modern ChoiceRequest therefore carries its UI constraints in metadata; the
-	# continuation only fills fields for legacy/local requests.
-	var result: Dictionary = (
-		active_request.metadata.duplicate(true)
-		if active_request != null
-		else {}
-	)
-	if game_mode == MODE_NETWORK:
-		return result
-	if state == null or state.resolution_stack.is_empty():
-		return result
-	var stack := ResolutionStack.from_dict(state.resolution_stack)
-	for index in range(stack.frames.size() - 1, -1, -1):
-		var frame: Dictionary = stack.frames[index]
-		if str(frame.get("kind", "")) != "continuation":
-			continue
-		var data_value: Variant = frame.get("data", {})
-		if data_value is Dictionary:
-			for key in Dictionary(data_value).keys():
-				if not result.has(key):
-					result[key] = Dictionary(data_value)[key]
-		break
-	return result
+func _choice_presentation(request: ChoiceRequest = null) -> Dictionary:
+	# Production UI consumes only ChoiceView v2. A raw authoritative
+	# ChoiceRequest intentionally carries no presentation contract here.
+	var source := request if request != null else active_request
+	if source is ChoiceView:
+		return (source as ChoiceView).presentation.duplicate(true)
+	return {}
 
 
 func _choice_has_cancel_action_checkpoint(request: ChoiceRequest = null) -> bool:
 	# Player views deliberately omit the private resolution stack. The request
 	# metadata is the authoritative, protocol-safe way to describe whether
 	# cancelling rewinds the enclosing card/action.
-	if request != null and bool(request.metadata.get("cancels_action", false)):
+	if request != null and bool(_choice_presentation(request).get(
+		"cancels_action", false)):
 		return true
-	if game_mode == MODE_NETWORK:
-		return false
-	if state == null or state.resolution_stack.is_empty():
-		return false
-	var stack := ResolutionStack.from_dict(state.resolution_stack)
-	var checkpoint: Variant = stack.context.get("cancel_action_checkpoint")
-	if checkpoint is Dictionary and not Dictionary(checkpoint).is_empty():
-		return true
-	return stack.context.get("cancel_action_snapshot") is Dictionary
+	return false
 
 
 func _choice_cancel_cta(request: ChoiceRequest) -> String:
@@ -2585,21 +2515,17 @@ func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) 
 		return ""
 
 	var category := _choice_option_category(option)
+	var presentation := _choice_presentation(request)
 	if request.request_type == "arven":
 		if category == "item" and _choice_selected_category_count(request, "item") >= 1:
 			return "物品和宝可梦道具各最多选择1张，请先取消已选物品卡"
 		if category == "tool" and _choice_selected_category_count(request, "tool") >= 1:
 			return "物品和宝可梦道具各最多选择1张，请先取消已选宝可梦道具"
 	elif request.request_type == "clara":
-		var clara_data := _choice_continuation_data()
-		var pokemon_limit := int(request.metadata.get(
-			"pokemon_count",
-			clara_data.get("pokemon_count", request.max_select),
-		))
-		var energy_limit := int(request.metadata.get(
-			"energy_count",
-			clara_data.get("energy_count", request.max_select),
-		))
+		var pokemon_limit := int(presentation.get(
+			"pokemon_count", request.max_select))
+		var energy_limit := int(presentation.get(
+			"energy_count", request.max_select))
 		if (
 			category == "pokemon"
 			and _choice_selected_category_count(request, "pokemon") >= pokemon_limit
@@ -2611,24 +2537,17 @@ func _choice_addition_blocked_reason(request: ChoiceRequest, option_id: String) 
 		):
 			return "基本能量最多选择%d张，请先取消一张基本能量" % energy_limit
 	elif request.request_type == "distribute_energy":
-		var distribution_data := _choice_continuation_data()
 		if (
-			bool(request.metadata.get(
-				"same_target",
-				distribution_data.get("same_target", false),
-			))
+			bool(presentation.get("same_target", false))
 			and not selected_choice_ids.is_empty()
 			and option_id != selected_choice_ids[0]
 		):
 			return "此效果要求所有能量分配到同一目标"
-		var max_per_target := int(request.metadata.get(
-			"max_per_target",
-			distribution_data.get("max_per_target", 99),
-		))
+		var max_per_target := int(presentation.get("max_per_target", 99))
 		if _choice_selected_option_count(option_id) >= max_per_target:
 			return "该目标最多可分配 %d张能量" % max_per_target
 	elif request.request_type == "select_attachment":
-		var same_source := bool(request.metadata.get("same_source", false))
+		var same_source := bool(presentation.get("same_source", false))
 		if same_source and not selected_choice_ids.is_empty():
 			var candidate_ref := _choice_attachment_ref(option)
 			var selected_ref := _choice_attachment_ref(
@@ -2786,9 +2705,8 @@ func _submit_confirmed_choice(
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var result := engine.apply_choice(
+	var result := engine.apply_choice_response(
 		state,
-		request,
 		ChoiceResponse.new(request.request_id, confirmed_ids),
 		rng,
 	)
@@ -2903,9 +2821,8 @@ func _submit_cancelled_choice(request: ChoiceRequest) -> void:
 		return
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var result := engine.apply_choice(
+	var result := engine.apply_choice_response(
 		state,
-		request,
 		ChoiceResponse.new(request.request_id, [], true),
 		rng,
 	)
@@ -2962,9 +2879,14 @@ func _submit_cancelled_choice(request: ChoiceRequest) -> void:
 func _step_pending_choice(result: StepResult) -> ChoiceRequest:
 	if result != null and result.pending_choice != null:
 		return result.pending_choice
-	if state == null or state.resolution_stack.is_empty():
+	return _query_any_pending_choice()
+
+
+func _query_any_pending_choice() -> ChoiceView:
+	if state == null or engine == null:
 		return null
-	return ResolutionStack.from_dict(state.resolution_stack).pending_request
+	var player_zero := engine.query_pending_choice(state, 0)
+	return player_zero if player_zero != null else engine.query_pending_choice(state, 1)
 
 
 func _show_pass_overlay(
@@ -3008,7 +2930,7 @@ func _complete_pass_overlay(confirmed: Callable) -> void:
 
 func _show_pause_overlay() -> void:
 	if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
-		ai_coordinator.cancel_and_wait()
+		ai_coordinator.cancel_request()
 		ai_thinking = false
 		_refresh_game()
 	_open_modal("对局菜单", "继续对局", "返回标题", true)
@@ -3918,8 +3840,9 @@ func _choice_title(request: ChoiceRequest) -> String:
 
 
 func _choice_metadata_text(request: ChoiceRequest) -> String:
+	var presentation := _choice_presentation(request)
 	if request.request_type == "coin_flip":
-		var results: Array = request.metadata.get("predetermined_flips", [])
+		var results: Array = presentation.get("predetermined_flips", [])
 		var labels: Array[String] = []
 		for result in results:
 			labels.append("正面" if bool(result) else "反面")
@@ -3939,16 +3862,9 @@ func _choice_metadata_text(request: ChoiceRequest) -> String:
 				request.min_select,
 				request.max_select,
 			])
-		var distribution_data := _choice_continuation_data()
-		if bool(request.metadata.get(
-			"same_target",
-			distribution_data.get("same_target", false),
-		)):
+		if bool(presentation.get("same_target", false)):
 			distribution_lines.append("所有能量必须分配到同一目标。")
-		var max_per_target := int(request.metadata.get(
-			"max_per_target",
-			distribution_data.get("max_per_target", 99),
-		))
+		var max_per_target := int(presentation.get("max_per_target", 99))
 		if max_per_target < 99:
 			distribution_lines.append(
 				"每个目标最多可分配 %d 张能量。" % max_per_target
@@ -4028,7 +3944,11 @@ func _schedule_ai_action() -> void:
 	if _defer_ai_until_presentation_idle():
 		return
 	_pending_ai_resume_revision = -1
-	var actions := engine.legal_actions(state, 1, true)
+	var query := engine.query_legal_action_groups(state, 1)
+	if not query.success:
+		_show_toast("AI 合法动作查询失败：%s" % query.code, true)
+		return
+	var actions := query.concrete_actions()
 	if actions.is_empty():
 		_show_toast("AI 没有合法动作。", true)
 		return
@@ -4055,7 +3975,13 @@ func _schedule_ai_action() -> void:
 		"request_id": active_ai_request_id,
 		"mode": game_mode,
 		"deck_key": ai_deck_key,
-		"seed": int(rng.next_u32()),
+		"seed": AIDecisionSeed.derive(
+			last_match_seed,
+			state.revision,
+			1,
+			"action",
+			active_ai_request_id,
+		),
 		"simulation_budget": simulation_budget,
 		"seconds": seconds,
 		"max_depth": max_depth,
@@ -4065,7 +3991,8 @@ func _schedule_ai_action() -> void:
 	ai_thinking = ai_coordinator.start_request(request, ai_inference)
 	_refresh_process_state()
 	if not ai_thinking:
-		_apply_ai_fallback_action("无法启动 AI 后台线程。")
+		_apply_ai_fallback_action(
+			"无法启动 AI 后台线程（%s）。" % ai_coordinator.last_start_error)
 		return
 	_refresh_game()
 
@@ -4087,18 +4014,30 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 		"request_id": active_ai_request_id,
 		"mode": game_mode,
 		"deck_key": ai_deck_key,
-		"seed": int(rng.next_u32()),
+		"seed": AIDecisionSeed.derive(
+			last_match_seed,
+			state.revision,
+			1,
+			request.request_type,
+			active_ai_request_id,
+		),
 	}
 	ai_thinking = ai_coordinator.start_request(payload, ai_inference)
 	_refresh_process_state()
 	if not ai_thinking:
-		_apply_ai_fallback_choice(request, "无法启动 AI 选择线程。")
+		_apply_ai_fallback_choice(
+			request,
+			"无法启动 AI 选择线程（%s）。" % ai_coordinator.last_start_error,
+		)
 		return
 	_refresh_game()
 
 
 func _ai_state_snapshot(player_idx: int) -> Dictionary:
 	var snapshot := state.snapshot()
+	# Challenge AI receives the same rules-facing state boundary as UI/network.
+	# Rollout-generated stacks are private to its cloned simulation thereafter.
+	snapshot.erase("resolution_stack")
 	var player_rows: Array = snapshot.get("players", [])
 	for row_value in player_rows:
 		var row: Dictionary = row_value
@@ -4145,8 +4084,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 		_maybe_start_ai()
 		return
 	if not bool(result.get("success", false)):
-		var pending_on_failure := ResolutionStack.from_dict(
-			state.resolution_stack).pending_request
+		var pending_on_failure := engine.query_pending_choice(state, 1)
 		if pending_on_failure != null and pending_on_failure.player == 1:
 			_apply_ai_fallback_choice(
 				pending_on_failure,
@@ -4167,7 +4105,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 	var origin_action_id := ""
 	var origin_request_id := ""
 	if str(result.get("kind", "")) == "choice":
-		var stack_request := ResolutionStack.from_dict(state.resolution_stack).pending_request
+		var stack_request := engine.query_pending_choice(state, 1)
 		if stack_request == null:
 			_maybe_start_ai()
 			return
@@ -4175,7 +4113,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 		if response.request_id != stack_request.request_id:
 			_maybe_start_ai()
 			return
-		step = engine.apply_choice(state, stack_request, response, rng)
+		step = engine.apply_choice_response(state, response, rng)
 		origin_request_id = response.request_id
 	else:
 		var action := GameAction.from_dict(result["action"])
@@ -4184,8 +4122,7 @@ func _apply_ai_result(result: Dictionary) -> void:
 		origin_action_id = action.action_id
 		step = engine.apply_action(state, action, rng)
 	if not step.success:
-		var pending_after_reject := ResolutionStack.from_dict(
-			state.resolution_stack).pending_request
+		var pending_after_reject := engine.query_pending_choice(state, 1)
 		if pending_after_reject != null and pending_after_reject.player == 1:
 			_apply_ai_fallback_choice(
 				pending_after_reject,
@@ -4212,7 +4149,12 @@ func _apply_ai_result(result: Dictionary) -> void:
 func _apply_ai_fallback_action(reason: String) -> void:
 	if state == null or current_screen != SCREEN_GAME or _current_actor() != 1:
 		return
-	var actions := engine.legal_actions(state, 1, true)
+	var query := engine.query_legal_action_groups(state, 1)
+	if not query.success:
+		_show_toast("%s 合法动作查询失败：%s" % [reason, query.code], true)
+		_refresh_game()
+		return
+	var actions := query.concrete_actions()
 	if actions.is_empty():
 		_show_toast("%s AI 没有合法动作。" % reason, true)
 		_refresh_game()
@@ -4273,7 +4215,7 @@ func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:
 	var response := _fallback_choice_response(request)
 	var previous_active := state.active_player_idx
 	var previous_phase := state.phase
-	var step := engine.apply_choice(state, request, response, rng)
+	var step := engine.apply_choice_response(state, response, rng)
 	if not step.success:
 		_show_toast("%s AI 兜底选择被规则拒绝：%s" % [reason, step.message], true)
 		_refresh_game()
@@ -4297,6 +4239,8 @@ func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:
 func _fallback_choice_response(request: ChoiceRequest) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(request.request_id, [], request.can_cancel)
+	if request.request_type == "select_retreat_payment":
+		return NativeChallengeAI.retreat_payment_response(state, request, catalog)
 	if request.request_type == "choose_turn_order":
 		return ChoiceResponse.new(request.request_id, ["turn:first"])
 	if request.request_type == "choose_mulligan_draw_count":
@@ -4391,13 +4335,21 @@ func _resume_ai_after_presentation(expected_revision: int) -> void:
 
 
 func _stop_ai() -> void:
-	ai_coordinator.cancel_and_wait()
-	deep_runtime.unload()
-	ai_inference = null
+	ai_coordinator.cancel_request()
+	_pending_ai_runtime_unload = true
+	_finalize_ai_runtime_unload_if_idle()
 	ai_thinking = false
 	active_ai_request_id = ""
 	_pending_ai_resume_revision = -1
 	_refresh_process_state()
+
+
+func _finalize_ai_runtime_unload_if_idle() -> void:
+	if not _pending_ai_runtime_unload or ai_coordinator.needs_poll():
+		return
+	deep_runtime.unload()
+	ai_inference = null
+	_pending_ai_runtime_unload = false
 
 
 func _show_toast(message: String, is_error: bool = false) -> void:
@@ -4838,7 +4790,7 @@ func _notification(what: int) -> void:
 		if game_mode in [MODE_CHALLENGE, MODE_DEEP]:
 			if battle_screen:
 				battle_screen.clear_presentation_for_resync()
-			ai_coordinator.cancel_and_wait()
+			ai_coordinator.cancel_request()
 			ai_thinking = false
 			_refresh_process_state()
 		elif (
@@ -4922,7 +4874,11 @@ func _disconnect_button(button: Button) -> void:
 
 
 func _refresh_process_state() -> void:
-	set_process(ai_thinking or network_controller.needs_poll())
+	set_process(
+		ai_thinking
+		or ai_coordinator.needs_poll()
+		or network_controller.needs_poll()
+	)
 
 
 func _free_children_immediate(parent: Node) -> void:

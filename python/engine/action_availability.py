@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from itertools import combinations
 
-from engine.actions import AttachmentRef, CardRef, GameAction, PokemonRef
+from engine.actions import AttachmentRef, CardRef, GameAction, PokemonRef, SlotRef
 from engine.enums import PlayerAction, TurnPhase
 from engine.effects.availability import (
     effect_params,
@@ -196,7 +196,7 @@ class VMActionAvailability:
                         {"hand_idx": hand_idx, "target": target_slot},
                         actor=actor,
                         source=source,
-                        target=PokemonRef(actor, target_slot, ""),
+                        target=SlotRef(actor, target_slot),
                     ))
             elif card.is_stage1 or card.is_stage2:
                 for slot, pokemon in player.get_all_pokemon():
@@ -297,10 +297,10 @@ class VMActionAvailability:
         for bench_idx, pokemon in enumerate(player.bench):
             if pokemon is None:
                 continue
-            for payment in self.retreat_payments(state, actor, bench_idx):
+            if can_retreat(state, actor, bench_idx)[0]:
                 add(GameAction(
                     PlayerAction.RETREAT,
-                    {"bench_idx": bench_idx, "energy_indices": list(payment)},
+                    {"bench_idx": bench_idx},
                     actor=actor,
                     target=PokemonRef(actor, f"bench_{bench_idx}", pokemon.card.api_id),
                 ))
@@ -344,7 +344,7 @@ class VMActionAvailability:
                     {"hand_idx": hand_idx, "target": "active"},
                     actor=actor,
                     source=source,
-                    target=PokemonRef(actor, "active", ""),
+                    target=SlotRef(actor, "active"),
                 ))
             elif empty_slots:
                 for bench_idx in empty_slots:
@@ -354,7 +354,7 @@ class VMActionAvailability:
                         {"hand_idx": hand_idx, "target": target},
                         actor=actor,
                         source=source,
-                        target=PokemonRef(actor, target, ""),
+                        target=SlotRef(actor, target),
                     ))
         if (
             (stage == "INITIAL_PLACEMENT" and player.active is not None)
@@ -402,7 +402,12 @@ class VMActionAvailability:
         )
 
     @staticmethod
-    def validate_action_references(state: GameState, action: GameAction) -> str:
+    def validate_action_references(
+        state: GameState,
+        action: GameAction,
+        actor: int | None = None,
+    ) -> str:
+        actor = action.actor if actor is None else actor
         for ref in (action.source, action.target):
             if ref is None:
                 continue
@@ -436,6 +441,13 @@ class VMActionAvailability:
                     continue
                 if ref.card_id and pokemon.card.api_id != ref.card_id:
                     return "宝可梦引用与当前局面不一致。"
+            elif isinstance(ref, SlotRef):
+                if type(ref.player) is not int or ref.player not in (0, 1):
+                    return "位置引用的玩家无效。"
+                if not isinstance(ref.slot, str) or not ref.slot:
+                    return "位置引用格式无效。"
+                if state.get_player(ref.player).get_pokemon(ref.slot) is not None:
+                    return "动作目标位置已被占用。"
             elif isinstance(ref, AttachmentRef):
                 if type(ref.player) is not int or ref.player not in (0, 1):
                     return "附着卡引用的玩家无效。"
@@ -460,4 +472,50 @@ class VMActionAvailability:
                     return "附着卡引用与当前局面不一致。"
             else:
                 return "动作引用类型无效。"
+            if actor in (0, 1) and ref.player != actor:
+                return "动作引用的玩家与动作执行者不一致。"
+
+        params = action.params if isinstance(action.params, dict) else {}
+        action_name = (
+            action.action.name
+            if isinstance(action.action, PlayerAction)
+            else str(action.action)
+        )
+        source = action.source
+        target = action.target
+
+        if isinstance(source, CardRef):
+            if action_name in {
+                "PLAY_BASIC", "EVOLVE", "ATTACH_ENERGY", "PLAY_TRAINER",
+            }:
+                if source.zone != "hand" or params.get("hand_idx") != source.index:
+                    return "动作来源引用与手牌参数不一致。"
+            elif action_name == "USE_ABILITY":
+                if (
+                    params.get("slot") != "discard"
+                    or source.zone != "discard"
+                    or params.get("discard_idx") != source.index
+                    or params.get("card_id") != source.card_id
+                ):
+                    return "弃牌区能力来源引用与动作参数不一致。"
+        elif isinstance(source, PokemonRef):
+            if action_name == "USE_ABILITY" and params.get("slot") != source.slot:
+                return "能力来源引用与动作参数不一致。"
+            if action_name == "DECLARE_ATTACK" and source.slot != "active":
+                return "攻击来源必须是战斗宝可梦。"
+
+        if isinstance(target, (PokemonRef, SlotRef)):
+            expected_slot = None
+            if action_name == "PLAY_BASIC":
+                expected_slot = params.get("target")
+            elif action_name == "EVOLVE":
+                expected_slot = params.get("slot")
+            elif action_name in {"ATTACH_ENERGY", "PLAY_TRAINER"}:
+                expected_slot = params.get("target_slot")
+            elif action_name in {"RETREAT", "PROMOTE"}:
+                bench_idx = params.get("bench_idx")
+                if type(bench_idx) is int:
+                    expected_slot = f"bench_{bench_idx}"
+            if expected_slot is not None and target.slot != expected_slot:
+                return "动作目标引用与动作参数不一致。"
         return ""

@@ -30,16 +30,16 @@ MAX_MESSAGES_PER_SECOND = 60
 MAX_CONTROL_HANDSHAKES_PER_SECOND = 60
 MAX_JSON_DEPTH = 32
 RATE_LIMIT_WINDOW_SECONDS = 1.0
-# v3 is retained as a diagnostic marker only.  New rooms are strict v4 rooms;
-# accepting a v3 frame would silently drop the v4 hidden-information contract.
-PROTOCOL_V3 = 3
-PROTOCOL_V4 = 4
+# v5 is retained as a diagnostic marker only. New rooms are strict v6 rooms;
+# accepting an older frame would bypass ChoiceView v2 and Snapshot v3 contracts.
+PROTOCOL_V5 = 5
+PROTOCOL_V6 = 6
 MAX_WIRE_INTEGER = 2_147_483_647
 MSG_ERROR = "error"
 MSG_OPPONENT_DISCONNECTED = "opponent_disconnected"
 ROOM_CODE_PATTERN = re.compile(r"^[0-9]{4}$")
 RESUME_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
-V4_MESSAGE_TYPES = {
+V6_MESSAGE_TYPES = {
     "welcome",
     "deck_select",
     "lobby_update",
@@ -62,7 +62,7 @@ def _send_error(websocket, message: str):
     websocket.send(json.dumps({
         "type": MSG_ERROR,
         "message": message,
-        "expected_version": PROTOCOL_V4,
+        "expected_version": PROTOCOL_V6,
     }, ensure_ascii=False))
 
 
@@ -116,19 +116,19 @@ def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bo
         "state_revision", "action_id", "request_id", "payload",
     }
     if not required_fields.issubset(message):
-        return False, "协议 v4 消息缺少必要字段。"
-    if message.get("protocol_version") != PROTOCOL_V4:
-        return False, "协议版本不兼容；旧 v3 房间不能恢复，请双方更新到协议 v4。"
+        return False, "协议 v6 消息缺少必要字段。"
+    if message.get("protocol_version") != PROTOCOL_V6:
+        return False, "协议版本不兼容；旧 v5 房间不能恢复，请双方更新到协议 v6。"
     if not isinstance(message.get("room_id"), str) or message.get("room_id") != room_id:
         return False, "消息房间号不匹配。"
     if not _is_wire_integer(message.get("sender")) or message.get("sender") != sender:
         return False, "消息发送方与连接身份不匹配。"
     if not isinstance(message.get("message_type"), str) or (
-        message["message_type"] not in V4_MESSAGE_TYPES
+        message["message_type"] not in V6_MESSAGE_TYPES
     ):
-        return False, "未知协议 v4 消息类型。"
+        return False, "未知协议 v6 消息类型。"
     if not isinstance(message.get("payload"), dict):
-        return False, "协议 v4 payload 必须是对象。"
+        return False, "协议 v6 payload 必须是对象。"
     if (
         not _is_wire_integer(message.get("sequence"))
         or message["sequence"] <= 0
@@ -137,11 +137,11 @@ def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bo
         or message["state_revision"] < -1
         or message["state_revision"] > MAX_WIRE_INTEGER
     ):
-        return False, "协议 v4 序号或局面版本无效。"
+        return False, "协议 v6 序号或局面版本无效。"
     if not isinstance(message.get("action_id"), str) or not isinstance(
         message.get("request_id"), str
     ):
-        return False, "协议 v4 标识符必须是字符串。"
+        return False, "协议 v6 标识符必须是字符串。"
     action_id_size = _utf8_size(message["action_id"])
     request_id_size = _utf8_size(message["request_id"])
     if (
@@ -150,7 +150,7 @@ def _valid_forward_message(message: dict, room_id: str, sender: int) -> tuple[bo
         or action_id_size > 128
         or request_id_size > 128
     ):
-        return False, "协议 v4 标识符编码无效或过长。"
+        return False, "协议 v6 标识符编码无效或过长。"
     return True, ""
 
 
@@ -516,7 +516,7 @@ def handle_client(websocket):
 
             forwarded, parse_error = _load_json_object(
                 raw,
-                object_error="协议 v4 消息必须是对象。",
+                object_error="协议 v6 消息必须是对象。",
             )
             if forwarded is None:
                 _send_error(websocket, parse_error)

@@ -126,6 +126,56 @@ Invoke-GodotCheckedScript `
     -ContractName 'Network protocol contract'
 
 Invoke-GodotCheckedScript `
+    -Script 'res://tests/rules_public_boundary_contract.gd' `
+    -SuccessMarker 'RULES_PUBLIC_BOUNDARY_CONTRACT_OK' `
+    -ContractName 'Rules public query and ChoiceView boundary contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/action_v5_contract.gd' `
+    -SuccessMarker 'ACTION_V5_CONTRACT_TESTS_OK' `
+    -ContractName 'Action v5 registry, grouping, and rollback contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/action_transaction_contract.gd' `
+    -SuccessMarker 'ACTION_TRANSACTION_CONTRACT_OK' `
+    -ContractName 'Action v5 transaction and authoritative Choice contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/vm_native_golden_test.gd' `
+    -SuccessMarker 'VM_NATIVE_GOLDEN_OK' `
+    -ContractName '80-op Python/Godot native VM semantic golden'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/vm_fail_closed_test.gd' `
+    -SuccessMarker 'VM_FAIL_CLOSED_TESTS_OK' `
+    -ContractName 'Frozen VM registry and rollback fail-closed contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/trigger_stack_contract.gd' `
+    -SuccessMarker 'TRIGGER_STACK_CONTRACT_OK' `
+    -ContractName 'Serializable nested trigger stack contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/prize_trigger_contract.gd' `
+    -SuccessMarker 'PRIZE_TRIGGER_CONTRACT_OK' `
+    -ContractName 'Data-driven Prize trigger, privacy, and Snapshot contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/vm_descriptor_contract_test.gd' `
+    -SuccessMarker 'VM_DESCRIPTOR_CONTRACT_OK' `
+    -ContractName 'VM descriptor, preflight, and negative-schema contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/modifier_descriptor_contract.gd' `
+    -SuccessMarker 'MODIFIER_DESCRIPTOR_CONTRACT_OK' `
+    -ContractName 'Modifier descriptor layering and lifetime contract'
+
+Invoke-GodotCheckedScript `
+    -Script 'res://tests/action_performance_test.gd' `
+    -SuccessMarker 'ACTION_PERFORMANCE_OK' `
+    -ContractName 'Action v5 strict-query performance contract'
+
+Invoke-GodotCheckedScript `
     -Script 'res://tests/frontend_layout_contract.gd' `
     -SuccessMarker 'FRONTEND_LAYOUT_CONTRACT_OK' `
     -ContractName 'Frontend layout contract'

@@ -31,6 +31,7 @@ from engine.actions import (
     ChoiceOption,
     GameAction,
     PokemonRef,
+    SlotRef,
 )
 from engine.ai.effect_features import (
     effect_feature_names,
@@ -53,12 +54,9 @@ STATE_NUMERIC_SIZE = 960  # +32 for tactical situation features (v8)
 STATE_CARD_SLOTS = 96
 ACTION_NUMERIC_SIZE = 178  # +16 for action feasibility/context features (v8)
 CARD_SEMANTIC_SIZE = 53
-ENCODER_SCHEMA_VERSION = 3
+ENCODER_SCHEMA_VERSION = 5
 
 ACTION_TYPES = [
-    "NOOP",
-    "SETUP_DONE",
-    "PROMOTE",
     PlayerAction.PLAY_BASIC.name,
     PlayerAction.EVOLVE.name,
     PlayerAction.ATTACH_ENERGY.name,
@@ -67,22 +65,68 @@ ACTION_TYPES = [
     PlayerAction.USE_STADIUM.name,
     PlayerAction.RETREAT.name,
     PlayerAction.DECLARE_ATTACK.name,
+    "PROMOTE",
+    "SETUP_DONE",
     PlayerAction.END_TURN.name,
 ]
 
 CHOICE_TYPES = [
-    "search_deck",
-    "select_hand_to_discard",
-    "select_bench",
-    "select_opponent_bench",
-    "select_own_bench_energy",
-    "select_bench_targets",
+    "select_card",
+    "select_pokemon",
+    "select_attachment",
     "distribute_energy",
     "confirm",
+    "select_prize",
+    "setup",
+    "coin_flip",
+    "order",
 ]
 CHOICE_TYPE_ALIASES = {
-    "evolve_skip_stage": "search_deck",
+    "arven": "select_card",
+    "clara": "select_card",
+    "discard_cards": "select_card",
+    "discard_then_draw": "select_card",
+    "evolve_skip_stage": "select_card",
+    "hand_bottom_draw": "select_card",
+    "houb": "select_card",
+    "look_top": "select_card",
+    "look_top_attach_energy": "select_card",
+    "resolve_empty": "select_card",
+    "search": "select_card",
+    "search_deck": "select_card",
+    "search_move": "select_card",
+    "select": "select_card",
+    "select_card": "select_card",
+    "select_hand_to_discard": "select_card",
+    "shuffle_from_discard": "select_card",
+    "zinnia": "select_card",
+    "bench_damage_target": "select_pokemon",
+    "damage_target": "select_pokemon",
+    "place_counters_self_ko": "select_pokemon",
+    "select_bench": "select_pokemon",
+    "select_bench_targets": "select_pokemon",
+    "select_energy_source": "select_pokemon",
+    "select_energy_target": "select_pokemon",
+    "select_heal_target": "select_pokemon",
+    "select_opponent_bench": "select_pokemon",
+    "select_own_bench_energy": "select_pokemon",
+    "select_attachment": "select_attachment",
+    "select_retreat_payment": "select_attachment",
+    "distribute_energy": "distribute_energy",
+    "confirm": "confirm",
+    "confirm_trigger": "confirm",
+    "select_prize": "select_prize",
+    "choose_mulligan_draw_count": "setup",
+    "choose_turn_order": "setup",
+    "coin_flip": "coin_flip",
+    "choose_trigger_order": "order",
 }
+
+TARGET_SLOTS = ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]
+REF_KINDS = ["card", "pokemon", "slot", "attachment"]
+REF_ZONES = ["hand", "deck", "discard", "prizes", "active", "bench", "field", "stadium"]
+ATTACHMENT_TYPES = ["energy", "tool"]
+TERMINAL_ACTIONS = frozenset({"DECLARE_ATTACK", "SETUP_DONE", "END_TURN"})
 
 ENERGY_TYPES = [
     "Grass",
@@ -176,10 +220,9 @@ def _one_hot(index: int, size: int) -> list[float]:
 
 def _choice_type_one_hot(request_type: str) -> list[float]:
     encoded_type = CHOICE_TYPE_ALIASES.get(str(request_type), str(request_type))
-    return (
-        _one_hot(CHOICE_TYPES.index(encoded_type), len(CHOICE_TYPES))
-        if encoded_type in CHOICE_TYPES else [0.0] * len(CHOICE_TYPES)
-    )
+    if encoded_type not in CHOICE_TYPES:
+        raise ValueError(f"unknown_choice_type:{request_type}")
+    return _one_hot(CHOICE_TYPES.index(encoded_type), len(CHOICE_TYPES))
 
 
 def _norm(value: float, divisor: float) -> float:
@@ -190,6 +233,209 @@ def _norm(value: float, divisor: float) -> float:
 
 def _card_id(card: Any) -> str:
     return str(getattr(card, "api_id", "") or "")
+
+
+def _ref_dict(ref: Any) -> dict[str, Any]:
+    if ref is None:
+        return {}
+    if isinstance(ref, dict):
+        return dict(ref)
+    if isinstance(ref, CardRef):
+        return {
+            "kind": "card", "player": ref.player, "zone": ref.zone,
+            "slot": "", "index": ref.index, "attachment_type": "",
+            "card_id": ref.card_id,
+        }
+    if isinstance(ref, PokemonRef):
+        return {
+            "kind": "pokemon", "player": ref.player, "zone": "",
+            "slot": ref.slot, "index": -1, "attachment_type": "",
+            "card_id": ref.card_id,
+        }
+    if isinstance(ref, SlotRef):
+        return {
+            "kind": "slot", "player": ref.player, "zone": "",
+            "slot": ref.slot, "index": -1, "attachment_type": "",
+            "card_id": "",
+        }
+    if isinstance(ref, AttachmentRef):
+        return {
+            "kind": "attachment", "player": ref.player, "zone": "",
+            "slot": ref.slot, "index": ref.index,
+            "attachment_type": ref.attachment_type, "card_id": ref.card_id,
+        }
+    return {}
+
+
+_CHOICE_REF_FIELDS = {
+    "card": frozenset({"kind", "player", "zone", "index", "card_id"}),
+    "pokemon": frozenset({"kind", "player", "slot", "card_id"}),
+    "slot": frozenset({"kind", "player", "slot"}),
+    "attachment": frozenset({
+        "kind", "player", "slot", "attachment_type", "index", "card_id",
+    }),
+}
+
+
+def _valid_choice_slot(value: Any) -> bool:
+    if value == "active":
+        return True
+    if not isinstance(value, str) or not value.startswith("bench_"):
+        return False
+    suffix = value.removeprefix("bench_")
+    return suffix.isdigit() and 0 <= int(suffix) < 5
+
+
+def _choice_ref(option: ChoiceOption, _request_player: int) -> dict[str, Any]:
+    """Return only a validated ChoiceView-v2 tagged-union reference.
+
+    Choice option values belong to the authoritative continuation and are never
+    an identity fallback for the public encoder.
+    """
+    ref = option.ref
+    if isinstance(ref, CardRef):
+        payload = {
+            "kind": "card",
+            "player": ref.player,
+            "zone": ref.zone,
+            "index": ref.index,
+            "card_id": ref.card_id,
+        }
+    elif isinstance(ref, PokemonRef):
+        payload = {
+            "kind": "pokemon",
+            "player": ref.player,
+            "slot": ref.slot,
+            "card_id": ref.card_id,
+        }
+    elif isinstance(ref, SlotRef):
+        payload = {"kind": "slot", "player": ref.player, "slot": ref.slot}
+    elif isinstance(ref, AttachmentRef):
+        payload = {
+            "kind": "attachment",
+            "player": ref.player,
+            "slot": ref.slot,
+            "attachment_type": ref.attachment_type,
+            "index": ref.index,
+            "card_id": ref.card_id,
+        }
+    elif isinstance(ref, dict):
+        payload = dict(ref)
+    else:
+        return {}
+
+    kind = payload.get("kind")
+    expected_fields = _CHOICE_REF_FIELDS.get(kind)
+    if expected_fields is None or set(payload) != expected_fields:
+        return {}
+    if type(payload.get("player")) is not int or payload["player"] not in (0, 1):
+        return {}
+    if kind == "card":
+        if (
+            payload.get("zone") not in {"deck", "hand", "discard", "prizes", "stadium"}
+            or type(payload.get("index")) is not int
+            or payload["index"] < 0
+            or not isinstance(payload.get("card_id"), str)
+            or not payload["card_id"]
+        ):
+            return {}
+    elif kind == "pokemon":
+        if (
+            not _valid_choice_slot(payload.get("slot"))
+            or not isinstance(payload.get("card_id"), str)
+            or not payload["card_id"]
+        ):
+            return {}
+    elif kind == "slot":
+        if not _valid_choice_slot(payload.get("slot")):
+            return {}
+    elif (
+        not _valid_choice_slot(payload.get("slot"))
+        or payload.get("attachment_type") not in {"energy", "tool"}
+        or type(payload.get("index")) is not int
+        or payload["index"] < 0
+        or not isinstance(payload.get("card_id"), str)
+        or not payload["card_id"]
+    ):
+        return {}
+    return payload
+
+
+def _card_id_from_option_id(option_id: str) -> str:
+    parts = str(option_id).split(":")
+    if len(parts) < 2:
+        return ""
+    candidate = parts[-1]
+    return candidate if CardRegistry.get(candidate) is not None else ""
+
+
+def _decision_seed(domain: str, value: str) -> int:
+    """Match Godot ``AIDecisionSeed.derive(0, 0, 0, domain, value)``."""
+    result = 2166136261
+
+    def mix_byte(current: int, byte: int) -> int:
+        return ((current ^ byte) * 16777619) & 0xFFFFFFFF
+
+    def mix_int(current: int, number: int) -> int:
+        normalized = number & 0xFFFFFFFF
+        for shift in (0, 8, 16, 24):
+            current = mix_byte(current, (normalized >> shift) & 0xFF)
+        return mix_byte(current, 0xFF)
+
+    def mix_string(current: int, text: str) -> int:
+        for byte in text.encode("utf-8"):
+            current = mix_byte(current, byte)
+        return mix_byte(current, 0xFF)
+
+    for number in (0, 0, 0):
+        result = mix_int(result, number)
+    result = mix_string(result, domain)
+    result = mix_string(result, value)
+    return result or 0x6D2B79F5
+
+
+def _stable_string_feature(value: str) -> float:
+    return (
+        _decision_seed("encoder-option", value) / 4294967296.0
+        if value
+        else 0.0
+    )
+
+
+def _stable_card_identity(card_id: str) -> float:
+    return (
+        _decision_seed("encoder-card", card_id) / 4294967296.0
+        if card_id
+        else 0.0
+    )
+
+
+def _ref_features(ref: Any, perspective: int) -> list[float]:
+    row = _ref_dict(ref)
+    present = bool(row)
+    player = row.get("player", -1)
+    kind = str(row.get("kind", "") or "")
+    zone = str(row.get("zone", "") or "")
+    slot = str(row.get("slot", "") or "")
+    attachment_type = str(row.get("attachment_type", "") or "")
+    index = row.get("index", -1)
+    values = [
+        _bool(present),
+        _bool(present and player == perspective),
+        _bool(present and player in (0, 1) and player != perspective),
+        _bool(present and player not in (0, 1)),
+    ]
+    values.extend(_one_hot(REF_KINDS.index(kind), len(REF_KINDS)) if kind in REF_KINDS else [0.0] * len(REF_KINDS))
+    values.extend(_one_hot(REF_ZONES.index(zone), len(REF_ZONES)) if zone in REF_ZONES else [0.0] * len(REF_ZONES))
+    values.extend(_one_hot(TARGET_SLOTS.index(slot), len(TARGET_SLOTS)) if slot in TARGET_SLOTS else [0.0] * len(TARGET_SLOTS))
+    values.extend(
+        _one_hot(ATTACHMENT_TYPES.index(attachment_type), len(ATTACHMENT_TYPES))
+        if attachment_type in ATTACHMENT_TYPES
+        else [0.0] * len(ATTACHMENT_TYPES)
+    )
+    values.append(_norm(index + 1 if type(index) is int and present else 0, 64.0))
+    values.append(_stable_card_identity(str(row.get("card_id", "") or "")))
+    return values
 
 
 class ActionStateEncoder:
@@ -304,41 +550,54 @@ class ActionStateEncoder:
             if isinstance(action.action, PlayerAction)
             else str(action.action)
         )
+        if action_name not in ACTION_TYPES:
+            raise ValueError(f"unknown_action_type:{action_name}")
         numeric: list[float] = []
-        numeric.extend(
-            _one_hot(ACTION_TYPES.index(action_name), len(ACTION_TYPES))
-            if action_name in ACTION_TYPES else [0.0] * len(ACTION_TYPES)
-        )
+        numeric.extend(_one_hot(ACTION_TYPES.index(action_name), len(ACTION_TYPES)))
         numeric.extend([
-            _bool(action.terminal),
+            _bool(action_name in TERMINAL_ACTIONS),
             _bool(action.actor in (None, observation.perspective)),
         ])
 
         params = dict(action.params or {})
+        source = _ref_dict(action.source)
+        target = _ref_dict(action.target)
         slot_name = (
-            getattr(action.target, "slot", None)
+            target.get("slot")
             or params.get("target_slot")
             or params.get("target")
             or params.get("slot")
         )
-        target_slots = ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]
         numeric.extend(
-            _one_hot(target_slots.index(slot_name), len(target_slots))
-            if slot_name in target_slots else [0.0] * len(target_slots)
+            _one_hot(TARGET_SLOTS.index(slot_name), len(TARGET_SLOTS))
+            if slot_name in TARGET_SLOTS else [0.0] * len(TARGET_SLOTS)
         )
+        hand_idx = params.get("hand_idx")
+        if hand_idx is None and source.get("zone") == "hand":
+            hand_idx = source.get("index")
+        attack_idx = params.get("attack_index", params.get("attack_idx"))
+        bench_idx = params.get("bench_idx")
+        if bench_idx is None and isinstance(slot_name, str) and slot_name.startswith("bench_"):
+            suffix = slot_name.removeprefix("bench_")
+            bench_idx = int(suffix) if suffix.isdigit() else None
+        energy_indices = list(params.get("energy_indices", []) or [])
+        if not energy_indices:
+            for value in params.get("attachments", params.get("payment", [])) or []:
+                attachment = _ref_dict(value)
+                if type(attachment.get("index")) is int:
+                    energy_indices.append(attachment["index"])
         numeric.extend([
-            _norm(params.get("hand_idx", -1) + 1 if isinstance(params.get("hand_idx"), int) else 0, 12.0),
-            _norm(params.get("attack_idx", -1) + 1 if isinstance(params.get("attack_idx"), int) else 0, 4.0),
-            _norm(params.get("bench_idx", -1) + 1 if isinstance(params.get("bench_idx"), int) else 0, 5.0),
-            _norm(len(params.get("energy_indices", []) or []), 6.0),
+            _norm(hand_idx + 1 if type(hand_idx) is int else 0, 12.0),
+            _norm(attack_idx + 1 if type(attack_idx) is int else 0, 4.0),
+            _norm(bench_idx + 1 if type(bench_idx) is int else 0, 5.0),
+            _norm(len(energy_indices), 6.0),
             _norm(sum(1 for row in observation.board if row[2]), 12.0),
             _norm(sum(1 for row in observation.board if row[0] != observation.perspective and row[2]), 6.0),
         ])
 
-        card_id = getattr(action.source, "card_id", "")
+        card_id = str(source.get("card_id", "") or "")
         if not card_id:
-            hand_idx = params.get("hand_idx")
-            if isinstance(hand_idx, int) and 0 <= hand_idx < len(observation.own_hand):
+            if type(hand_idx) is int and 0 <= hand_idx < len(observation.own_hand):
                 card_id = observation.own_hand[hand_idx]
         card = CardRegistry.get(card_id) if card_id else None
         numeric.extend(self._card_semantic_features(card))
@@ -348,6 +607,14 @@ class ActionStateEncoder:
             if observation.perspective < len(observation.public_deck_keys)
             else None
         ))
+        numeric.extend(_ref_features(target, observation.perspective))
+        numeric.extend(_ref_features(source, observation.perspective))
+        for index in range(4):
+            numeric.append(
+                _norm(energy_indices[index] + 1, 64.0)
+                if index < len(energy_indices) and type(energy_indices[index]) is int
+                else 0.0
+            )
         return EncodedAction(
             numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
             card_id=card_bucket(card_id),
@@ -362,25 +629,27 @@ class ActionStateEncoder:
     ) -> EncodedAction:
         numeric: list[float] = []
         numeric.extend(_choice_type_one_hot(request_type))
-        ref = option.ref
+        ref = _choice_ref(option, observation.perspective)
+        kind = str(ref.get("kind", "") or "")
         numeric.extend([
             _norm(index + 1, 64.0),
-            _bool(isinstance(ref, CardRef)),
-            _bool(isinstance(ref, PokemonRef)),
-            _bool(isinstance(ref, AttachmentRef)),
-            _bool(getattr(ref, "player", observation.perspective) == observation.perspective),
+            _bool(kind == "card"),
+            _bool(kind == "pokemon"),
+            _bool(kind == "attachment"),
+            _bool(ref.get("player", observation.perspective) == observation.perspective),
         ])
-        slot = getattr(ref, "slot", "")
-        target_slots = ["active", "bench_0", "bench_1", "bench_2", "bench_3", "bench_4"]
+        slot = str(ref.get("slot", "") or "")
         numeric.extend(
-            _one_hot(target_slots.index(slot), len(target_slots))
-            if slot in target_slots else [0.0] * len(target_slots)
+            _one_hot(TARGET_SLOTS.index(slot), len(TARGET_SLOTS))
+            if slot in TARGET_SLOTS else [0.0] * len(TARGET_SLOTS)
         )
-        card_id = getattr(ref, "card_id", "")
+        card_id = str(ref.get("card_id", "") or "")
         if not card_id:
-            card_id = getattr(option.value, "api_id", "")
+            card_id = _card_id_from_option_id(option.option_id)
         card = CardRegistry.get(card_id) if card_id else None
         numeric.extend(self._card_semantic_features(card))
+        numeric.extend(_ref_features(ref, observation.perspective))
+        numeric.append(_stable_string_feature(option.option_id))
         return EncodedAction(
             numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
             card_id=card_bucket(card_id),

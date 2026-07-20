@@ -2,7 +2,7 @@
 
 ## 当前发布状态
 
-0.4.0 已升级到 Python rules v3 / Godot rules v4。仓库中的 10 个 checkpoint v10、encoder v3
+0.6.0 已升级到 Python rules v5 / Godot rules v6、encoder v5。仓库中的 10 个 checkpoint v10、encoder v3
 模型仍由 sidecar 如实标记为 Python rules v2、Godot rules v3；没有重新训练、重新评估，也没有
 修改 metadata 冒充兼容。
 
@@ -19,7 +19,7 @@
 
 发布 UI 不显示 Deep 入口，`DeepAIRuntime.load_for_deck(...)` 稳定返回
 `deep_runtime_disabled`，需要 AI 的路径由 Challenge AI 接管。旧 ONNX、checkpoint、sidecar 和
-`ai_models_runtime.json` 仅作为历史/迁移输入保留；常规 0.4.0 冒烟不要求它们完成推理。
+`ai_models_runtime.json` 仅作为历史/迁移输入保留；常规 0.6.0 冒烟不要求它们完成推理。
 
 ## 为什么不能直接启用旧模型
 
@@ -58,6 +58,6 @@ conda run -n DL python -B .\python\scripts\verify_dl_environment.py
 .\tools\test_godot_ai.ps1
 ```
 
-`-RequireDeepRuntime` 只应在产生并准备提升一套当前规则兼容的新模型后使用，不属于 0.4.0
+`-RequireDeepRuntime` 只应在产生并准备提升一套当前规则兼容的新模型后使用，不属于 0.6.0
 发布基线。正式提升仍必须使用项目现有 staging、哈希校验、持久 journal、rollback 与原生设备
 验证流程，不能直接覆盖 live artifact。

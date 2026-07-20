@@ -1021,18 +1021,9 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             return AIChoice(confirmed=True)
 
         if req.request_type == "coin_flip":
-            if getattr(req, "until_tails", False):
-                results = []
-                max_flips = max(2, min(16, int(self.config.coin_sample_count) * 2))
-                for _ in range(max_flips):
-                    head = self.random.random() < 0.5
-                    results.append(head)
-                    if not head:
-                        break
-                if results and all(results):
-                    results.append(False)
-            else:
-                results = [self.random.random() < 0.5 for _ in range(max(1, req.flip_count))]
+            results = list(
+                (getattr(req, "continuation", {}) or {}).get("results", [])
+            )
             return AIChoice(coin_results=results)
 
         if req.request_type == "choose_turn_order":
@@ -1907,19 +1898,10 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
 
     def _resolve_pending_for_sim(self, state: GameState, req: ActionRequest) -> AIChoice:
         if req.request_type == "coin_flip":
-            if getattr(req, "until_tails", False):
-                results = []
-                max_flips = max(2, min(16, int(self.config.coin_sample_count) * 2))
-                for _ in range(max_flips):
-                    head = self.random.random() < 0.5
-                    results.append(head)
-                    if not head:
-                        break
-                if results and all(results):
-                    results.append(False)
-                return AIChoice(coin_results=results)
-            flips = max(1, req.flip_count)
-            return AIChoice(coin_results=[self.random.random() < 0.5 for _ in range(flips)])
+            results = list(
+                (getattr(req, "continuation", {}) or {}).get("results", [])
+            )
+            return AIChoice(coin_results=results)
         return self.resolve_pending_action(state, req)
 
     def _choose_evolve_skip_stage_candidate(

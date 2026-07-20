@@ -127,7 +127,13 @@ func coin_request(
 		stack.next_request_id(state, player_idx, "coin_flip"),
 		"coin_flip", player_idx, "硬币结果",
 		[], 0, 0, false, false,
-		{"revision": state.revision, "predetermined_flips": results})
+		{
+			"domain": "effect",
+			"purpose": "coin_flip",
+			"revision": state.revision,
+			"source_player": player_idx,
+			"predetermined_flips": results,
+		})
 	return VMResult.ok("正在掷硬币。")
 
 
@@ -176,7 +182,7 @@ func resolve_coin(
 				var target := state.get_player(target_player_idx).active
 				if target:
 					if (
-						target.all_prevented_next_turn
+						target.prevents_effects()
 						and stack.is_blockable_opponent_attack_effect(
 							player_idx, target_player_idx)
 					):
@@ -222,7 +228,7 @@ func resolve_coin(
 					if pokemon == null:
 						continue
 					if (
-						pokemon.all_prevented_next_turn
+						pokemon.prevents_effects()
 						and stack.is_blockable_opponent_attack_effect(
 							player_idx, opponent_idx)
 					):
@@ -260,6 +266,7 @@ func resolve_coin(
 					false,
 					false,
 					{
+						"domain": "effect",
 						"revision": state.revision,
 						"purpose": "discard_energy",
 						"attachment_refs": attachment_refs,
@@ -279,27 +286,6 @@ func _branch_effect_is_pre_hit(effect: Dictionary) -> bool:
 	if op == "deal_damage":
 		return str(Dictionary(effect.get("args", {})).get(
 			"target", "opponent_active")) != "self"
-	return op in [
-		"choose_damage_target",
-		"conditional_damage",
-		"conditional_damage_then_heal",
-		"deal_damage_per_discard_psychic",
-		"deal_damage_per_energy",
-		"deal_damage_per_evolved",
-		"deal_damage_per_hand_size",
-		"deal_damage_per_self_damage",
-		"deal_damage_per_self_energy",
-		"deal_damage_per_self_energy_type",
-		"deal_damage_plus_bench",
-		"deal_damage_with_self_penalty",
-		"discard_energy_then_damage",
-		"discard_hand_then_damage",
-		"fail_attack",
-		"flip_coin",
-		"flip_coin_repeat_damage",
-		"flip_coin_then_ko",
-		"flip_until_tails",
-		"mill_then_damage",
-		"set_attack_damage_formula",
-		"set_attack_flags",
+	return VMContract.command_attack_timing(op) in [
+		"pre_damage", "damage", "replace_damage",
 	]

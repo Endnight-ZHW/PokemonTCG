@@ -17,6 +17,7 @@ from engine.actions import (
     ChoiceOption,
     ChoiceRequest,
     PokemonRef,
+    SlotRef,
 )
 from engine.game_state import ActionRequest, GameState
 
@@ -321,13 +322,7 @@ def _choice_option_from_dict(state: GameState, payload: Any) -> ChoiceOption:
     ref = _entity_ref_from_dict(payload.get("ref"))
     value = copy.deepcopy(payload.get("value"))
     if isinstance(ref, CardRef):
-        value = _lookup_card_for_choice(
-            state,
-            ref.player,
-            ref.zone,
-            ref.index,
-            ref.card_id,
-        )
+        value = _resolve_exact_card_ref_for_choice(state, ref)
     return ChoiceOption(
         option_id=option_id,
         label=label,
@@ -378,6 +373,14 @@ def _entity_ref_from_dict(payload: Any):
                 error_code="invalid_pending_choice",
             )
         return PokemonRef(player, slot, card_id)
+    if kind == "slot":
+        slot = payload.get("slot", "")
+        if not isinstance(slot, str) or not slot:
+            raise PendingContinuationError(
+                "选择位置引用无效。",
+                error_code="invalid_pending_choice",
+            )
+        return SlotRef(player, slot)
     if kind == "attachment":
         slot = payload.get("slot", "")
         attachment_type = payload.get("attachment_type", "")
@@ -423,6 +426,35 @@ def _lookup_card_for_choice(
 
         return CardRegistry.get(card_id)
     return None
+
+
+def _resolve_exact_card_ref_for_choice(state: GameState, ref: CardRef):
+    """Resolve a serialized physical card reference without ID fallbacks."""
+    zone_name = {
+        "deck": "deck",
+        "discard": "discard",
+        "hand": "hand",
+        "prize": "prizes",
+        "prizes": "prizes",
+    }.get(ref.zone)
+    if zone_name is None:
+        raise PendingContinuationError(
+            f"选择引用区域无效：{ref.zone}",
+            error_code="invalid_pending_choice",
+        )
+    zone = getattr(state.get_player(ref.player), zone_name, None)
+    if not isinstance(zone, list) or ref.index < 0 or ref.index >= len(zone):
+        raise PendingContinuationError(
+            "选择引用索引已失效。",
+            error_code="invalid_pending_choice",
+        )
+    card = zone[ref.index]
+    if not ref.card_id or getattr(card, "api_id", "") != ref.card_id:
+        raise PendingContinuationError(
+            "选择引用与当前卡牌不一致。",
+            error_code="invalid_pending_choice",
+        )
+    return card
 
 
 def _bench_index(slot: str) -> int:

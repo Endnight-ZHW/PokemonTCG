@@ -21,12 +21,132 @@ const TARGET_DAMAGE_EFFECT_TYPES: Array[String] = [
 	"coin_flip_until_tails",
 	"attack_damage_formula",
 ]
+const PREFLIGHT_EVALUATORS := {
+	"always": true,
+	"attach_from_discard": true,
+	"clara": true,
+	"coin_branches": true,
+	"conditional": true,
+	"damage_or_heal": true,
+	"damaged_pokemon": true,
+	"deck_nonempty": true,
+	"discard_cost": true,
+	"discard_revive": true,
+	"discard_search": true,
+	"draw_attach": true,
+	"energy_attach": true,
+	"energy_discard": true,
+	"energy_relocate": true,
+	"hand_nonempty": true,
+	"hand_two": true,
+	"heal_target": true,
+	"look_top": true,
+	"look_top_attach": true,
+	"opponent_active": true,
+	"opponent_bench": true,
+	"opponent_energy": true,
+	"opponent_pokemon": true,
+	"rare_candy": true,
+	"search": true,
+	"self_survives_counter": true,
+	"switch": true,
+	"trigger_energy": true,
+	"trigger_target": true,
+}
 
 var catalog: CardCatalog
+var command_descriptors: Dictionary
+var supported_command_ops: Dictionary
 
 
 func _init(p_catalog: CardCatalog) -> void:
 	catalog = p_catalog
+	command_descriptors = VMContract.native_command_descriptors()
+	supported_command_ops = {}
+	for op_value in command_descriptors:
+		supported_command_ops[str(op_value)] = true
+
+
+func preflight_evaluator_names() -> Array[String]:
+	var result: Array[String] = []
+	for evaluator_value in PREFLIGHT_EVALUATORS:
+		result.append(str(evaluator_value))
+	result.sort()
+	return result
+
+
+func _supports_preflight_evaluator(evaluator: String) -> bool:
+	return PREFLIGHT_EVALUATORS.has(evaluator)
+
+
+func _preflight_result(legal: bool) -> Dictionary:
+	return {
+		"ok": true,
+		"legal": legal,
+		"error_code": "",
+		"message": "",
+	}
+
+
+func _preflight_contract_error(error_code: String, message: String) -> Dictionary:
+	return {
+		"ok": false,
+		"legal": false,
+		"error_code": error_code,
+		"message": message,
+	}
+
+
+func preflight_effects(
+	state: GameState,
+	player_idx: int,
+	effects: Variant,
+	source_slot: String = "active",
+	exclude_hand_index: int = -1,
+	depth: int = 0,
+	execution_context: String = "",
+) -> Dictionary:
+	if depth > 8:
+		return _preflight_contract_error(
+			"vm_preflight_depth", "VM preflight recursion exceeded 8 levels.")
+	var effect_list := VMRuntimeEffects.effect_list(effects)
+	if effect_list.is_empty():
+		return _preflight_result(true)
+	for index in range(effect_list.size()):
+		var effect_value: Variant = effect_list[index]
+		if not effect_value is Dictionary:
+			return _preflight_contract_error(
+				"invalid_vm_spec", "VM effect %d must be a dictionary." % index)
+		var effect := Dictionary(effect_value)
+		if str(effect.get("op", "")) == "__missing_compiled_effect__":
+			return _preflight_contract_error(
+				"unsupported_vm_op",
+				"Card data has authored effects but no compiled VM IR.",
+			)
+		var errors := VMContract.validate_command_spec(
+			effect,
+			supported_command_ops,
+			"$[%d]" % index,
+			command_descriptors,
+			execution_context,
+		)
+		if not errors.is_empty():
+			return _preflight_contract_error(
+				"invalid_vm_spec", "; ".join(errors))
+		var internal_op := _first_internal_op(effect)
+		if not internal_op.is_empty():
+			return _preflight_contract_error(
+				"internal_vm_op", "Internal VM op cannot appear in card data: %s" % internal_op)
+		var descriptor := Dictionary(command_descriptors[str(effect.get("op", ""))])
+		if not _supports_preflight_evaluator(str(
+			descriptor.get("preflight_evaluator", ""))):
+			return _preflight_contract_error(
+				"unknown_preflight_evaluator",
+				"VM preflight evaluator is not registered: %s" % descriptor.get(
+					"preflight_evaluator", ""),
+			)
+	return _preflight_result(_effects_have_legal_target_impl(
+		state, player_idx, effect_list, source_slot, exclude_hand_index, depth))
 
 
 func effects_have_legal_target(
@@ -37,11 +157,20 @@ func effects_have_legal_target(
 	exclude_hand_index: int = -1,
 	depth: int = 0,
 ) -> bool:
-	if depth > 8:
-		return false
+	var result := preflight_effects(
+		state, player_idx, effects, source_slot, exclude_hand_index, depth)
+	return bool(result.get("ok", false)) and bool(result.get("legal", false))
+
+
+func _effects_have_legal_target_impl(
+	state: GameState,
+	player_idx: int,
+	effects: Variant,
+	source_slot: String,
+	exclude_hand_index: int,
+	depth: int,
+) -> bool:
 	var effect_list := VMRuntimeEffects.effect_list(effects)
-	if effect_list.is_empty():
-		return true
 	var player := state.get_player(player_idx)
 	var opponent := state.get_player(1 - player_idx)
 	var saw_checked_effect := false
@@ -51,11 +180,12 @@ func effects_have_legal_target(
 		var effect: Dictionary = effect_value
 		var effect_type := VMRuntimeEffects.availability_effect_kind(effect)
 		if effect_type.is_empty():
-			continue
+			return false
 		var params := VMRuntimeEffects.availability_effect_params(effect)
 		if effect_type in TARGET_DAMAGE_EFFECT_TYPES:
 			return opponent.active != null
-		if _effect_is_always_usable(effect_type):
+		if VMContract.command_preflight_evaluator(
+			str(effect.get("op", ""))) == "always":
 			return true
 		match effect_type:
 			"hand_to_bottom_draw", "houb":
@@ -196,7 +326,7 @@ func effects_have_legal_target(
 				if _coin_has_target(state, player_idx, params, source_slot, exclude_hand_index, depth):
 					return true
 			_:
-				return true
+				return false
 	return not saw_checked_effect
 
 
@@ -205,61 +335,107 @@ func effects_cost_is_payable(
 	player_idx: int,
 	effects: Variant,
 	exclude_hand_index: int,
+	execution_context: String = "",
+) -> bool:
+	var result := preflight_costs(
+		state, player_idx, effects, exclude_hand_index, execution_context)
+	return bool(result.get("ok", false)) and bool(result.get("legal", false))
+
+
+func preflight_costs(
+	state: GameState,
+	player_idx: int,
+	effects: Variant,
+	exclude_hand_index: int,
+	execution_context: String = "",
+) -> Dictionary:
+	var effect_list := VMRuntimeEffects.effect_list(effects)
+	for index in range(effect_list.size()):
+		var effect_value: Variant = effect_list[index]
+		if not effect_value is Dictionary:
+			return _preflight_contract_error(
+				"invalid_vm_spec", "VM effect %d must be a dictionary." % index)
+		if str(Dictionary(effect_value).get("op", "")) == "__missing_compiled_effect__":
+			return _preflight_contract_error(
+				"unsupported_vm_op",
+				"Card data has authored effects but no compiled VM IR.",
+			)
+		var errors := VMContract.validate_command_spec(
+			Dictionary(effect_value), supported_command_ops, "$[%d]" % index,
+			command_descriptors, execution_context)
+		if not errors.is_empty():
+			return _preflight_contract_error("invalid_vm_spec", "; ".join(errors))
+		var internal_op := _first_internal_op(Dictionary(effect_value))
+		if not internal_op.is_empty():
+			return _preflight_contract_error(
+				"internal_vm_op", "Internal VM op cannot appear in card data: %s" % internal_op)
+	return _preflight_result(_effects_cost_is_payable_impl(
+		state, player_idx, effect_list, exclude_hand_index))
+
+
+func _effects_cost_is_payable_impl(
+	state: GameState,
+	player_idx: int,
+	effects: Variant,
+	exclude_hand_index: int,
 ) -> bool:
 	for effect_value in VMRuntimeEffects.effect_list(effects):
 		if not (effect_value is Dictionary):
-			continue
+			return false
 		var effect: Dictionary = effect_value
 		var effect_type := VMRuntimeEffects.availability_effect_kind(effect)
 		if effect_type == "discard":
 			if not _cost_is_payable(state, player_idx, effect, exclude_hand_index):
 				return false
 		elif effect_type == "conditional":
-			var cost: Variant = VMRuntimeEffects.availability_effect_params(effect).get("cost")
+			var cost: Variant = Dictionary(effect.get("branches", {})).get("cost")
 			if cost != null and not _cost_is_payable(state, player_idx, cost, exclude_hand_index):
 				return false
 	return true
 
 
+func _first_internal_op(spec: Dictionary) -> String:
+	var op := str(spec.get("op", ""))
+	if command_descriptors.has(op) and bool(Dictionary(
+		command_descriptors[op]).get("internal", false)):
+		return op
+	var branches: Variant = spec.get("branches", {})
+	if not branches is Dictionary:
+		return ""
+	for branch_value in Dictionary(branches).values():
+		if not branch_value is Array:
+			continue
+		for child_value in Array(branch_value):
+			if not child_value is Dictionary:
+				continue
+			var nested := _first_internal_op(Dictionary(child_value))
+			if not nested.is_empty():
+				return nested
+	return ""
+
+
 func stadium_is_activatable(state: GameState) -> bool:
+	var result := preflight_stadium_activation(state)
+	return bool(result.get("ok", false)) and bool(result.get("legal", false))
+
+
+func preflight_stadium_activation(state: GameState) -> Dictionary:
 	if state.stadium_card_id.is_empty():
-		return false
+		return _preflight_result(false)
 	var card := catalog.get_card(state.stadium_card_id)
 	var effects := VMRuntimeEffects.strict_trainer_effects(
 		card, "trainer:%s" % state.stadium_card_id)
+	var contract := preflight_effects(
+		state, state.active_player_idx, effects, "active", -1, 0, "trainer")
+	if not bool(contract.get("ok", false)):
+		return contract
 	for effect_value in effects:
 		if not (effect_value is Dictionary):
-			continue
+			return _preflight_contract_error(
+				"invalid_vm_spec", "Stadium VM effect must be a dictionary.")
 		if str(VMRuntimeEffects.availability_effect_params(effect_value).get("stadium_type", "")) == "activatable":
-			return true
-	return false
-
-
-func _effect_is_always_usable(effect_type: String) -> bool:
-	return effect_type in [
-		"draw",
-		"shuffle_draw",
-		"discard_draw",
-		"discard_then_draw",
-		"draw_until",
-		"draw_until_more",
-		"judge",
-		"trekking_shoes",
-		"return_to_hand",
-		"self_attack_lock",
-		"prevent_all",
-		"prevent_damage",
-		"prevent_effects",
-		"attack_flags",
-		"tool",
-		"tool_exp_share",
-		"aura_damage_reduction",
-		"aura_damage_boost",
-		"conditional_hp_boost",
-		"conditional_zero_retreat",
-		"reactive_thorns",
-		"apply_outgoing_damage_reduction",
-	]
+			return _preflight_result(true)
+	return _preflight_result(false)
 
 
 func _available_hand_count(player: PlayerState, exclude_hand_index: int) -> int:
@@ -617,9 +793,9 @@ func _conditional_has_target(
 		return false
 	if condition == "ko_last_opponent_turn" and not state.had_knockout_last_turn(player_idx):
 		return false
-	var cost: Variant = params.get("cost")
-	if cost != null and not _cost_is_payable(state, player_idx, cost, exclude_hand_index):
-		return false
+	# Target legality and cost legality are separate preflight phases.  Keeping
+	# the conditional cost out of this evaluator preserves the precise
+	# ``cost_not_payable`` result and lets query/execution share preflight_costs.
 	var on_pay: Variant = params.get("on_pay", [])
 	return effects_have_legal_target(
 		state, player_idx, on_pay, source_slot, exclude_hand_index, depth + 1
