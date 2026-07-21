@@ -7705,12 +7705,11 @@ func _run_visual_upgrade_tests() -> void:
 		)
 		_check(
 			active_energy != null and active_energy.visible
-			and active_energy.get_child_count() >= 3,
+			and active_energy.get_child_count() == 2,
 			"Active Pokemon energy row did not render grouped energy badges",
 		)
 		var textured_energy_badges := 0
-		var has_grouped_count_badge := false
-		var has_luminous_energy_badge := false
+		var has_colorless_special_stack := false
 		if active_energy:
 			for badge_value in active_energy.get_children():
 				var badge := badge_value as Control
@@ -7719,21 +7718,23 @@ func _run_visual_upgrade_tests() -> void:
 				var icon := badge.find_child("Icon", true, false) as TextureRect
 				if icon and icon.texture:
 					textured_energy_badges += 1
-				if badge.tooltip_text.begins_with("夜光能量"):
-					has_luminous_energy_badge = icon != null and icon.texture != null
 				var count_badge := badge.find_child(
 					"CountBadge", true, false
 				) as Control
 				if (
-					count_badge
+					str(badge.get_meta("energy_group_key", ""))
+					== "energy:type:Colorless"
+					and badge.get_meta("energy_card_ids", [])
+					== ["svi-mirc", "svg2-lume"]
+					and int(badge.get_meta("provided_unit_count", 0)) == 2
+					and badge.find_child("SpecialMarker", true, false) == null
+					and count_badge
 					and str(count_badge.get_meta("count_text", "")) == "2"
 				):
-					has_grouped_count_badge = true
+					has_colorless_special_stack = true
 		_check(
-			textured_energy_badges >= 3
-			and has_grouped_count_badge
-			and has_luminous_energy_badge,
-			"Attached energies did not render icons with a grouped count badge",
+			textured_energy_badges == 2 and has_colorless_special_stack,
+			"Colorless Special Energy did not render one effective-unit stack",
 		)
 		var fallback_energy_badge: Control = battle.own_active._new_energy_badge(
 			"Special", 2
@@ -10217,13 +10218,20 @@ func _run_local_ui_playout(ui: Node) -> void:
 			if ui.modal_confirm.disabled:
 				await process_frame
 				continue
+			var gate_generation: int = ui._modal_generation
 			ui.modal_confirm.pressed.emit()
+			var close_generation := gate_generation + 1
 			var modal_close_guard := 0
-			while ui.modal_layer.visible and modal_close_guard < 120:
+			while (
+				ui.modal_layer.visible
+				and ui._modal_generation == close_generation
+				and modal_close_guard < 120
+			):
 				modal_close_guard += 1
 				await process_frame
 			_check(
-				not ui.modal_layer.visible,
+				not ui.modal_layer.visible
+				or ui._modal_generation > close_generation,
 				"Local UI privacy gate did not finish closing",
 			)
 			await process_frame

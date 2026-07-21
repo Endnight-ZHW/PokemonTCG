@@ -11,6 +11,7 @@ func _run() -> void:
 	var settings := root.get_node_or_null("AppSettings")
 	var previous_mode := str(settings.get("animation_mode"))
 	var previous_reduced := bool(settings.get("reduced_motion"))
+	var previous_quality := str(settings.get("quality_profile"))
 	settings.set("animation_mode", "cinematic")
 	settings.set("reduced_motion", false)
 
@@ -137,6 +138,7 @@ func _run() -> void:
 
 	await _run_multi_draw_contract(battle, empty_rows)
 	await _run_professor_snapshot_proxy_contract(battle, empty_rows)
+	await _run_caitlin_full_hand_batch_contract(battle, empty_rows, settings)
 	await _run_opponent_judge_hand_contract(battle, empty_rows)
 	await _run_hidden_opponent_draw_contract(battle, empty_rows)
 	await _run_queued_revision_contract(battle, empty_rows)
@@ -249,6 +251,7 @@ func _run() -> void:
 		await process_frame
 	settings.set("animation_mode", previous_mode)
 	settings.set("reduced_motion", previous_reduced)
+	settings.set("quality_profile", previous_quality)
 	if failures.is_empty():
 		print("BATTLE_TRANSITION_CONTRACT_OK")
 		quit(0)
@@ -1648,6 +1651,185 @@ func _run_cards_selected_hand_contract(
 	)
 
 
+func _run_caitlin_full_hand_batch_contract(
+	battle: Control,
+	empty_rows: Array[Dictionary],
+	settings: Node,
+) -> void:
+	var previous_quality := str(settings.get("quality_profile"))
+	settings.set("quality_profile", "low")
+	battle.table._apply_runtime_settings()
+	var returned_ids: Array[String] = [
+		"sv1-104",
+		"sv1-ener-1",
+		"sv1-ener-2",
+		"sv1-ener-3",
+		"sv1-ener-4",
+		"sv1-ener-5",
+		"sv1-ener-6",
+		"sv1-ener-7",
+		"sv1-ener-8",
+	]
+	var drawn_ids: Array[String] = [
+		"sv1-151",
+		"svf-potion",
+		"sv1-ener-8",
+		"sv1-ener-7",
+		"sv1-ener-6",
+		"sv1-ener-5",
+		"sv1-ener-4",
+		"sv1-ener-3",
+		"sv1-ener-2",
+	]
+	var all_indices: Array[int] = []
+	for index in range(returned_ids.size()):
+		all_indices.append(index)
+	var before := UIPreviewStateFactory.battle_state(20260728)
+	before.revision = 102
+	before.players[0].hand.assign(returned_ids)
+	before.players[0].deck.assign(drawn_ids)
+	battle.update_view(before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+
+	var after := before.clone_state()
+	after.revision = 103
+	after.players[0].hand.assign(drawn_ids)
+	after.players[0].deck.assign(returned_ids)
+	var return_event_id := "contract:caitlin-return-all"
+	var draw_event_id := "contract:caitlin-redraw-all"
+	var return_event := VMZoneHelpers.cards_selected_event(
+		0,
+		"hand",
+		"deck",
+		returned_ids,
+		returned_ids.size(),
+		all_indices,
+		all_indices,
+	)
+	return_event["event_id"] = return_event_id
+	var draw_event := _draw_event(0, drawn_ids)
+	draw_event["event_id"] = draw_event_id
+	var target_view := BattleViewModel.capture(
+		after, 0, empty_rows, "", false, "test")
+	var handle: PresentationHandle = battle.submit_transition(
+		BattleTransitionRequest.create(
+			target_view,
+			[return_event, draw_event],
+			0,
+			BattleTransitionRequest.CAUSE_CHOICE,
+		)
+	)
+
+	var seen_return_ordinals: Dictionary = {}
+	var seen_draw_ordinals: Dictionary = {}
+	var peak_active := 0
+	var observed_rolling_queue := false
+	var draw_started_before_return_complete := false
+	for _frame in range(960):
+		peak_active = maxi(peak_active, battle.table._active_flyers.size())
+		if not battle.table._card_motion_batches.is_empty():
+			observed_rolling_queue = true
+		for flyer_value in battle.table._active_flyers:
+			var flyer := flyer_value as Control
+			if flyer == null or not flyer.has_meta("motion_batch_ordinal"):
+				continue
+			var ordinal := int(flyer.get_meta("motion_batch_ordinal"))
+			var event_id := str(flyer.get_meta("motion_event_id", ""))
+			if event_id == return_event_id:
+				seen_return_ordinals[ordinal] = true
+			elif event_id == draw_event_id:
+				seen_draw_ordinals[ordinal] = true
+		if (
+			battle.table._active_presentation_event_id == draw_event_id
+			and seen_return_ordinals.size() < returned_ids.size()
+		):
+			draw_started_before_return_complete = true
+		if handle.is_completed():
+			break
+		await process_frame
+
+	_expect(
+		observed_rolling_queue
+		and seen_return_ordinals.size() == returned_ids.size()
+		and seen_draw_ordinals.size() == drawn_ids.size(),
+		"Caitlin full-hand motion omitted a returned or redrawn card: return=%s draw=%s"
+		% [str(seen_return_ordinals.keys()), str(seen_draw_ordinals.keys())],
+	)
+	_expect(
+		peak_active <= battle.table._max_active_flyers()
+		and not draw_started_before_return_complete,
+		"Caitlin rolling batch exceeded its quality budget or released the event barrier early",
+	)
+	_expect(
+		handle.status == PresentationHandle.COMPLETED
+		and battle.table._card_motion_batches.is_empty()
+		and battle.table._presentation_hand_source_proxies.is_empty()
+		and _count_motion_entities(battle) == 0
+		and battle.table.state_ref.players[0].hand == drawn_ids,
+		"Caitlin full-hand transition did not reconcile or left queued proxies behind",
+	)
+	if not handle.is_completed():
+		battle.cancel_presentations("caitlin_batch_contract_cleanup", target_view)
+		await process_frame
+
+	# A resync can arrive while the ninth proxy is still queued. It must cancel
+	# the coordinator before active-handle cancellation tries to refill the queue.
+	var cancel_before: GameState = battle.table.state_ref.clone_state()
+	var cancel_after: GameState = cancel_before.clone_state()
+	cancel_after.revision = cancel_before.revision + 1
+	cancel_after.players[0].hand.clear()
+	cancel_after.players[0].deck.append_array(drawn_ids)
+	var cancel_event := VMZoneHelpers.cards_selected_event(
+		0,
+		"hand",
+		"deck",
+		drawn_ids,
+		drawn_ids.size(),
+		all_indices,
+		all_indices,
+	)
+	cancel_event["event_id"] = "contract:caitlin-return-cancelled"
+	var cancel_target := BattleViewModel.capture(
+		cancel_after, 0, empty_rows, "", false, "test")
+	var cancel_handle: PresentationHandle = battle.submit_transition(
+		BattleTransitionRequest.create(
+			cancel_target,
+			[cancel_event],
+			0,
+			BattleTransitionRequest.CAUSE_CHOICE,
+		)
+	)
+	await process_frame
+	await process_frame
+	_expect(
+		not battle.table._card_motion_batches.is_empty(),
+		"Caitlin cancellation contract did not reach an oversized queued batch",
+	)
+	battle.cancel_presentations("caitlin_batch_cancelled", cancel_target)
+	await process_frame
+	await process_frame
+	_expect(
+		cancel_handle.status == PresentationHandle.SNAPPED
+		and battle.table._card_motion_batches.is_empty()
+		and battle.table._event_motion_completions.is_empty()
+		and battle.table._active_flyers.is_empty()
+		and battle.effects.find_children(
+			"SnapshotHandProxy", "", true, false).is_empty(),
+		"Cancelling Caitlin's queued full-hand motion left state behind: status=%s batches=%d barriers=%d flyers=%d proxies=%d"
+		% [
+			cancel_handle.status,
+			battle.table._card_motion_batches.size(),
+			battle.table._event_motion_completions.size(),
+			battle.table._active_flyers.size(),
+			battle.effects.find_children(
+				"SnapshotHandProxy", "", true, false).size(),
+		],
+	)
+	settings.set("quality_profile", previous_quality)
+	battle.table._apply_runtime_settings()
+
+
 func _run_attachment_motion_contract(
 	battle: Control,
 	empty_rows: Array[Dictionary],
@@ -1895,13 +2077,13 @@ func _run_attachment_motion_contract(
 	)
 	landing_probe.free()
 
-	# Every slot attachment proxy uses descriptor semantics, including visuals
-	# that have no dedicated icon.  Their short marker must survive the compact
-	# badge representation instead of becoming an anonymous neutral square.
+	# Every slot attachment proxy uses descriptor semantics. Unknown/tool visuals
+	# retain a readable fallback marker, while Colorless-providing Special Energy
+	# deliberately uses the shared Colorless icon without a card-specific marker.
 	var descriptor_rows := [
-		{"type": "tool", "card_id": "sv1-202", "expected": "道"},
-		{"type": "energy", "card_id": "missing-energy", "expected": "?"},
-		{"type": "energy", "card_id": "svi-mirc", "expected": ""},
+		{"type": "tool", "card_id": "sv1-202", "expected": "道", "marker": true},
+		{"type": "energy", "card_id": "missing-energy", "expected": "?", "marker": true},
+		{"type": "energy", "card_id": "svi-mirc", "expected": "", "marker": false},
 	]
 	for descriptor_index in range(descriptor_rows.size()):
 		var descriptor_row: Dictionary = descriptor_rows[descriptor_index]
@@ -1912,8 +2094,7 @@ func _run_attachment_motion_contract(
 			battle.table.catalog,
 		)
 		var expected_marker := str(descriptor_row.get("expected", ""))
-		if expected_marker.is_empty():
-			expected_marker = descriptor.marker
+		var expects_marker := bool(descriptor_row.get("marker", true))
 		var badge_texture: Texture2D = (
 			descriptor.icon
 			if descriptor.icon != null
@@ -1928,14 +2109,27 @@ func _run_attachment_motion_contract(
 		badge_proxy.set_meta("attachment_badge_proxy", true)
 		battle.table._configure_attachment_badge_marker(badge_proxy, descriptor)
 		var marker := badge_proxy.get_node_or_null("AttachmentBadgeMarker") as Label
-		_expect(
+		var marker_matches := (
 			marker != null
 			and marker.visible
-			and not expected_marker.is_empty()
 			and marker.text == expected_marker
-			and bool(badge_proxy.get_meta("attachment_badge_proxy", false)),
-			"%s attachment motion lost its descriptor marker" % descriptor.card_id,
+			if expects_marker
+			else marker == null or not marker.visible
 		)
+		_expect(
+			marker_matches
+			and bool(badge_proxy.get_meta("attachment_badge_proxy", false)),
+			"%s attachment motion did not match its descriptor marker policy"
+			% descriptor.card_id,
+		)
+		if str(descriptor_row.get("card_id", "")) == "svi-mirc":
+			_expect(
+				descriptor.group_key == "energy:type:Colorless"
+				and descriptor.energy_type == "Colorless"
+				and descriptor.icon != null
+				and descriptor.marker.is_empty(),
+				"Colorless Special Energy motion retained a card-specific visual",
+			)
 		badge_proxy.free()
 
 
@@ -2465,6 +2659,60 @@ func _run_attachment_batch_anchor_contract(
 		"attachment batch left a retained cover or half-transparent target",
 	)
 	battle.table._clear_transient_visuals()
+
+	# Attachment staging used to apply the same 12/8 cap before the generic card
+	# motion path even saw the batch. Keep all physical indices so a large discard
+	# or transfer can use the rolling scheduler instead of silently losing one.
+	var dense_attachment_state := UIPreviewStateFactory.battle_state(20260814)
+	dense_attachment_state.revision = 146
+	dense_attachment_state.players[0].active = PokemonState.new("sv1-104")
+	var dense_energy_ids: Array[String] = []
+	var dense_indices: Array[int] = []
+	for index in range(13):
+		dense_energy_ids.append("sv1-ener-%d" % (index % 8 + 1))
+		dense_indices.append(index)
+	dense_attachment_state.players[0].active.energy_card_ids.assign(
+		dense_energy_ids,
+	)
+	battle.update_view(
+		dense_attachment_state, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var dense_attachment_event := {
+		"event_id": "contract:attachment-overflow-batch",
+		"event_type": "cards_discarded",
+		"actor": 0,
+		"source": {
+			"player": 0,
+			"slot": "active",
+			"attachment_type": "energy",
+			"index": 0,
+		},
+		"target": {"player": 0, "zone": "discard"},
+		"amount": dense_energy_ids.size(),
+		"data": {
+			"player": 0,
+			"card_ids": dense_energy_ids,
+			"source_indices": dense_indices,
+		},
+	}
+	var dense_attachment_events: Array[Dictionary] = [dense_attachment_event]
+	battle.table._stage_attachment_source_proxies(dense_attachment_events)
+	var dense_specs: Array = battle.table._presentation_attachment_source_specs.get(
+		"contract:attachment-overflow-batch",
+		[],
+	)
+	battle.table._activate_attachment_source_proxies(dense_attachment_event)
+	var dense_proxies: Array = battle.table._presentation_attachment_source_proxies.get(
+		"contract:attachment-overflow-batch",
+		[],
+	)
+	_expect(
+		dense_specs.size() == dense_energy_ids.size()
+		and dense_proxies.size() == dense_energy_ids.size(),
+		"Oversized attachment batch was truncated before entering the rolling scheduler",
+	)
+	battle.table._clear_attachment_source_proxies()
 
 
 func _start_staged_event_motion(
@@ -3213,6 +3461,73 @@ func _run_local_handoff_contract() -> void:
 	root.add_child(ui)
 	ui.initialize_ui()
 	ui.game_mode = "local"
+
+	# The first SETUP_DONE only changes setup ownership and deliberately emits no
+	# presentation event.  The handoff must therefore be atomic: never render the
+	# ready player on an inert "waiting for opponent" screen while a deferred empty
+	# transition is expected to open the privacy gate later.  Exercise player 2 as
+	# the first player because that is the asymmetric field/view arrangement that
+	# exposed the live regression.
+	var ready_state := GameState.new()
+	ready_state.revision = 78
+	ready_state.phase = "SETUP"
+	ready_state.turn_number = 1
+	ready_state.first_player_idx = 1
+	ready_state.active_player_idx = 1
+	ready_state.setup_stage = GameState.SETUP_INITIAL_PLACEMENT
+	ready_state.setup_actor_idx = 1
+	ready_state.setup_ready = [false, false]
+	ready_state.players[1].active = PokemonState.new("svi-chim")
+	ready_state.players[0].hand = ["sv1-ener-1"]
+	ready_state.players[1].hand = ["sv1-ener-2"]
+	ui.state = ready_state
+	ui.current_view_player = 1
+	ui._build_game_screen()
+	var ready_result: StepResult = ui._execute_action_now(
+		GameAction.create("SETUP_DONE", {}, 1, null, null, "", 78),
+	)
+	_expect(
+		ready_result.success
+		and ready_result.events.is_empty()
+		and ui.state.setup_ready == [false, true]
+		and ui.state.setup_actor_idx == 0
+		and ui.current_view_player == 0
+		and ui.modal_layer.visible
+		and ui.modal_title.text == "准备阶段"
+		and not ui.modal_confirm.disabled
+		and ui.battle_screen.table._local_hand_privacy_hidden
+		and not ui.battle_screen.table.hand_scroll.visible
+		and not ui.battle_screen.is_presentation_busy(),
+		(
+			"Eventless player-2 setup completion exposed or stranded the ready player's waiting view "
+			+ "success=%s message=%s events=%d ready=%s actor=%d view=%d modal=%s title=%s "
+			+ "confirm_disabled=%s privacy=%s hand=%s busy=%s"
+		) % [
+			str(ready_result.success),
+			ready_result.message,
+			ready_result.events.size(),
+			str(ui.state.setup_ready),
+			ui.state.setup_actor_idx,
+			ui.current_view_player,
+			str(ui.modal_layer.visible),
+			ui.modal_title.text,
+			str(ui.modal_confirm.disabled),
+			str(ui.battle_screen.table._local_hand_privacy_hidden),
+			str(ui.battle_screen.table.hand_scroll.visible),
+			str(ui.battle_screen.is_presentation_busy()),
+		],
+	)
+	ui.modal_confirm.pressed.emit()
+	await create_timer(0.18).timeout
+	_expect(
+		not ui.modal_layer.visible
+		and not ui.battle_screen.table._local_hand_privacy_hidden,
+		"Eventless setup handoff privacy gate did not release to the next player modal=%s privacy=%s"
+		% [
+			str(ui.modal_layer.visible),
+			str(ui.battle_screen.table._local_hand_privacy_hidden),
+		],
+	)
 
 	# Completing setup does not change active_player_idx: turn order was already
 	# chosen before opening hands were dealt. The first turn still needs the same

@@ -17,15 +17,15 @@ func _run() -> void:
 		"sv1-ener-2",
 		"svi-mirc",
 		"svi-dtur",
+		"svi-jete",
+		"svi-trea",
 		"svg2-lume",
 		"missing-energy",
 	]
 	var grouped: Array = ATTACHMENT_VISUALS.grouped_energy(energy_ids, catalog)
-	_check(grouped.size() == 5, "Energy descriptors did not preserve exact special identities")
+	_check(grouped.size() == 3, "Colorless-providing Special Energy did not share one stack")
 	var fire = _descriptor_for(grouped, "energy:type:Fire")
-	var lucky = _descriptor_for(grouped, "energy:card:svi-mirc")
-	var turbo = _descriptor_for(grouped, "energy:card:svi-dtur")
-	var luminous = _descriptor_for(grouped, "energy:card:svg2-lume")
+	var colorless = _descriptor_for(grouped, "energy:type:Colorless")
 	var unknown = _descriptor_for(grouped, "energy:card:missing-energy")
 	_check(
 		fire != null
@@ -35,20 +35,46 @@ func _run() -> void:
 		"Basic energy did not group by provided type with every physical index",
 	)
 	_check(
-		lucky != null
-		and turbo != null
-		and lucky.group_key != turbo.group_key
-		and lucky.icon != null
-		and turbo.icon != null
-		and not lucky.marker.is_empty()
-		and not turbo.marker.is_empty()
-		and turbo.provided_energy_units == ["Colorless", "Colorless"]
-		and turbo.provided_unit_count() == 2,
-		"Special energy fallback symbols lost exact card identity or provided units",
+		colorless != null
+		and colorless.count == 5
+		and colorless.physical_indices == [2, 3, 4, 5, 6]
+		and colorless.card_ids == [
+			"svi-mirc",
+			"svi-dtur",
+			"svi-jete",
+			"svi-trea",
+			"svg2-lume",
+		]
+		and colorless.provided_energy_units == [
+			"Colorless",
+			"Colorless",
+			"Colorless",
+			"Colorless",
+			"Colorless",
+			"Colorless",
+		]
+		and colorless.provided_unit_count() == 6
+		and colorless.visual_count() == 6
+		and colorless.energy_type == "Colorless"
+		and colorless.display_name == "无色能量"
+		and colorless.icon != null
+		and colorless.marker.is_empty(),
+		"Colorless Special Energy did not stack by effective provided units",
+	)
+	var lone_luminous_groups: Array = ATTACHMENT_VISUALS.grouped_energy(
+		["svg2-lume"],
+		catalog,
+	)
+	var lone_luminous = _descriptor_for(
+		lone_luminous_groups,
+		"energy:card:svg2-lume",
 	)
 	_check(
-		luminous != null and luminous.icon != null and luminous.marker.is_empty(),
-		"Dedicated special-energy art was not preferred over a fallback marker",
+		lone_luminous != null
+		and lone_luminous.energy_type == "Rainbow"
+		and lone_luminous.icon != null
+		and lone_luminous.marker.is_empty(),
+		"A Special Energy that is not currently Colorless lost its exact visual",
 	)
 	_check(
 		unknown != null
@@ -98,13 +124,31 @@ func _run() -> void:
 
 	var energy_row := card.find_child("EnergyRow", true, false) as HBoxContainer
 	var overflow := card.find_child("EnergyOverflowBadge", true, false) as Control
+	var colorless_badge := _badge_for_group(energy_row, "energy:type:Colorless")
+	var colorless_count_badge := (
+		colorless_badge.find_child("CountBadge", true, false) as Control
+		if colorless_badge != null
+		else null
+	)
 	_check(
 		energy_row != null
-		and energy_row.get_child_count() == 4
-		and overflow != null
-		and overflow.get_meta("energy_indices", []) == [4, 5]
-		and overflow.get_meta("energy_card_ids", []) == ["svg2-lume", "missing-energy"],
-		"Overflow badge did not preserve every hidden card identity and physical index",
+		and energy_row.get_child_count() == 3
+		and overflow == null
+		and colorless_badge != null
+		and colorless_badge.find_child("SpecialMarker", true, false) == null
+		and colorless_badge.get_meta("energy_indices", []) == [2, 3, 4, 5, 6]
+		and colorless_badge.get_meta("energy_card_ids", []) == [
+			"svi-mirc",
+			"svi-dtur",
+			"svi-jete",
+			"svi-trea",
+			"svg2-lume",
+		]
+		and int(colorless_badge.get_meta("provided_unit_count", 0)) == 6
+		and int(colorless_badge.get_meta("physical_card_count", 0)) == 5
+		and colorless_count_badge != null
+		and str(colorless_count_badge.get_meta("count_text", "")) == "6",
+		"CardView did not render one marker-free Colorless badge with the effective unit count",
 	)
 	var fire_badge := _badge_for_group(energy_row, "energy:type:Fire")
 	var fire_plate := (
@@ -140,17 +184,59 @@ func _run() -> void:
 		"Energy count badge was too small, low contrast, or clipped outside its icon",
 	)
 
-	var overflow_rect := card.attachment_visual_global_rect(
-		"energy", "missing-energy", 5
+	var overflow_card := scene.instantiate() as CardView
+	root.add_child(overflow_card)
+	overflow_card.position = Vector2(20, 440)
+	overflow_card.size = Vector2(130, 180)
+	overflow_card.set_catalog(catalog)
+	var overflow_pokemon := PokemonState.new("sv1-104")
+	overflow_pokemon.energy_card_ids.assign([
+		"sv1-ener-2",
+		"sv1-ener-2",
+		"sv1-ener-1",
+		"sv1-ener-3",
+		"sv1-ener-4",
+		"svg2-lume",
+		"missing-energy",
+	])
+	overflow_card.configure("sv1-104", overflow_pokemon, false, -1, 0, "active")
+	await process_frame
+	await process_frame
+	var overflow_row := overflow_card.find_child("EnergyRow", true, false) as HBoxContainer
+	var overflow_badge := overflow_card.find_child(
+		"EnergyOverflowBadge",
+		true,
+		false,
+	) as Control
+	_check(
+		overflow_row != null
+		and overflow_row.get_child_count() == 4
+		and overflow_badge != null
+		and overflow_badge.get_meta("energy_indices", []) == [4, 5, 6]
+		and overflow_badge.get_meta("energy_card_ids", []) == [
+			"sv1-ener-4",
+			"svg2-lume",
+			"missing-energy",
+		],
+		"Overflow badge did not preserve every hidden card identity and physical index",
 	)
-	var legacy_center := card.attachment_anchor_global("energy", "missing-energy", 5)
+	var overflow_rect := overflow_card.attachment_visual_global_rect(
+		"energy", "missing-energy", 6
+	)
+	var legacy_center := overflow_card.attachment_anchor_global(
+		"energy",
+		"missing-energy",
+		6,
+	)
 	_check(
 		overflow_rect.size.x > 0.0
-		and overflow_rect.is_equal_approx(card._control_visual_global_rect(overflow))
+		and overflow_rect.is_equal_approx(
+			overflow_card._control_visual_global_rect(overflow_badge)
+		)
 		and legacy_center.is_equal_approx(overflow_rect.get_center()),
 		"Attachment rect/legacy center did not resolve a hidden overflow energy",
 	)
-	var turbo_badge := _badge_for_group(energy_row, "energy:card:svi-dtur")
+	var turbo_badge := _badge_for_group(energy_row, "energy:type:Colorless")
 	var mismatched_index_rect := card.attachment_visual_global_rect(
 		"energy", "svi-dtur", 0
 	)
@@ -316,12 +402,13 @@ func _run() -> void:
 	_check(
 		turbo_button != null
 		and turbo_button.icon != null
+		and turbo_button.text.begins_with("双重涡轮能量")
 		and int(turbo_button.get_meta("attachment_index", -1)) == 3
 		and str(turbo_button.get_meta("attachment_group_key", ""))
-		== "energy:card:svi-dtur"
+		== "energy:type:Colorless"
 		and turbo_button.get_meta("provided_energy_units", [])
 		== ["Colorless", "Colorless"],
-		"Attachment popover did not consume the canonical special-energy descriptor",
+		"Attachment popover did not retain the exact Colorless Special Energy option",
 	)
 	_check(
 		unknown_button != null
@@ -333,6 +420,7 @@ func _run() -> void:
 	popover.queue_free()
 	unknown_card.queue_free()
 	count_card.queue_free()
+	overflow_card.queue_free()
 	card.queue_free()
 	await process_frame
 	_finish()

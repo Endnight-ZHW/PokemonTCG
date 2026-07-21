@@ -176,6 +176,8 @@ var _board_origin := Vector2.ZERO
 var _initialized := false
 var _active_flyers: Array[Control] = []
 var _flyer_tweens: Dictionary = {}
+var _card_motion_batches: Dictionary = {}
+var _card_motion_batch_sequence := 0
 var _neutral_public_motion_texture: Texture2D
 var _event_motion_completions: Dictionary = {}
 var _presentation_snapshot: Dictionary = {}
@@ -5356,7 +5358,7 @@ func _stage_attachment_source_proxies(events: Array[Dictionary]) -> void:
 		if card_ids.is_empty():
 			continue
 		var specs: Array[Dictionary] = []
-		for index in range(mini(card_ids.size(), _max_active_flyers())):
+		for index in range(card_ids.size()):
 			var card_id := str(card_ids[index])
 			var attachment_index := _endpoint_attachment_index(source, index)
 			var raw_indices: Variant = Dictionary(event.get("data", {})).get(
@@ -6954,7 +6956,7 @@ func _activate_attachment_source_proxies(event: Dictionary) -> void:
 			"source_indices",
 			[],
 		)
-		for ordinal in range(mini(card_ids.size(), _max_active_flyers())):
+		for ordinal in range(card_ids.size()):
 			var attachment_index := _endpoint_attachment_index(source, ordinal)
 			if raw_indices is Array and ordinal < Array(raw_indices).size():
 				attachment_index = int(Array(raw_indices)[ordinal])
@@ -7229,11 +7231,11 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		"amount",
 		data.get("count", card_ids.size()),
 	)))
-	# MotionPolicy already caps concurrent entities at 12/8 by quality. Do not
-	# impose a second hard-coded five-card ceiling: large draws/returns otherwise
-	# change the visible card count and appear to teleport their remainder.
-	var visible_limit := _max_active_flyers()
-	var visible_count := mini(visible_limit, maxi(amount, card_ids.size()))
+	# The quality limit is a concurrency budget, not a semantic-card limit. Every
+	# moved card receives a motion entity; oversized batches are fed through a
+	# rolling queue below so low quality never drops the ninth card (and high
+	# quality never drops the thirteenth).
+	var motion_count := maxi(amount, card_ids.size())
 	if event_type == "cards_drawn":
 		source = {"player": actor, "zone": "deck"}
 		target = {"player": actor, "zone": "hand"}
@@ -7323,37 +7325,37 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 	var starts := _source_points_for_event(
 		source,
 		card_ids,
-		visible_count,
+		motion_count,
 		base_start,
 	)
 	var finishes := _target_points_for_event(
 		target,
 		card_ids,
-		visible_count,
+		motion_count,
 		base_finish,
 		event,
 	)
 	var start_sizes := _source_sizes_for_event(
 		source,
 		card_ids,
-		visible_count,
+		motion_count,
 		base_size,
 	)
 	var finish_sizes := _target_sizes_for_event(
 		target,
-		visible_count,
+		motion_count,
 		base_size,
 		event,
 	)
 	var start_rotations := _source_rotations_for_event(
 		source,
 		card_ids,
-		visible_count,
+		motion_count,
 		0.0,
 	)
 	var finish_rotations := _target_rotations_for_event(
 		target,
-		visible_count,
+		motion_count,
 		0.0,
 		event,
 	)
@@ -7361,7 +7363,8 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		str(event.get("event_id", "")),
 		[],
 	)
-	for index in range(visible_count):
+	var motion_specs: Array[Dictionary] = []
+	for index in range(motion_count):
 		var existing_flyer: Control
 		if index < staged_source_proxies.size():
 			existing_flyer = staged_source_proxies[index]
@@ -7414,7 +7417,7 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			continue
 		var start := starts[index] if index < starts.size() else base_start
 		var finish := finishes[index] if index < finishes.size() else base_finish
-		var timing := _flying_card_timing(index, visible_count, duration)
+		var timing := _flying_card_timing(index, motion_count, duration)
 		if not bool(timing.get("spawn", false)):
 			_dispose_snapshot_hand_source(existing_flyer)
 			_landing_burst(finish, event_type)
@@ -7431,37 +7434,42 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			landing_view,
 			card_id,
 			index,
-			visible_count,
+			motion_count,
 		)
-		_spawn_flying_card(
-			texture,
-			start,
-			finish,
-			float(timing.get("duration", 0.0)),
-			float(timing.get("delay", 0.0)),
-			event_type,
-			index,
-			start_sizes[index] if index < start_sizes.size() else base_size,
-			finish_sizes[index] if index < finish_sizes.size() else base_size,
-			start_rotations[index] if index < start_rotations.size() else 0.0,
-			finish_rotations[index] if index < finish_rotations.size() else 0.0,
-			landing_view,
-			existing_flyer,
-			motion_event_id,
-			landing_attachment_type,
-			(
-				card_id
-				if not landing_attachment_type.is_empty()
-				else ""
+		motion_specs.append({
+			"texture": texture,
+			"start": start,
+			"finish": finish,
+			"duration": float(timing.get("duration", 0.0)),
+			"delay": float(timing.get("delay", 0.0)),
+			"event_type": event_type,
+			"ordinal": index,
+			"start_size": (
+				start_sizes[index] if index < start_sizes.size() else base_size
 			),
-			landing_attachment_index,
-			flip_texture,
-			(
+			"finish_size": (
+				finish_sizes[index] if index < finish_sizes.size() else base_size
+			),
+			"start_rotation": (
+				start_rotations[index] if index < start_rotations.size() else 0.0
+			),
+			"finish_rotation": (
+				finish_rotations[index] if index < finish_rotations.size() else 0.0
+			),
+			"landing_view": landing_view,
+			"existing_flyer": existing_flyer,
+			"landing_attachment_type": landing_attachment_type,
+			"landing_attachment_card_id": (
+				card_id if not landing_attachment_type.is_empty() else ""
+			),
+			"landing_attachment_index": landing_attachment_index,
+			"flip_texture": flip_texture,
+			"stage_opponent_hand_landing": (
 				str(target.get("zone", "")) == "hand"
 				and int(target.get("player", actor)) == 1 - view_player
 				and not _presentation_opponent_hand_event_ids.is_empty()
 			),
-			(
+			"opponent_hand_stage_count_delta": (
 				0
 				if (
 					str(source.get("zone", "")) == "hand"
@@ -7469,14 +7477,246 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 				)
 				else 1
 			),
-		)
+		})
 		if index == 0 and str(source.get("zone", "")) == "hand":
 			_presentation_drag_proxy = null
-	for index in range(visible_count, staged_source_proxies.size()):
+	for index in range(motion_count, staged_source_proxies.size()):
 		_dispose_snapshot_hand_source(staged_source_proxies[index])
-	for index in range(visible_count, staged_attachment_proxies.size()):
+	for index in range(motion_count, staged_attachment_proxies.size()):
 		_dispose_flyer(staged_attachment_proxies[index])
+	_spawn_card_motion_batch(motion_specs, motion_event_id)
 	_finish_event_motion_dispatch(motion_event_id)
+
+
+func _spawn_card_motion_batch(
+	specs: Array[Dictionary],
+	event_id: String,
+) -> void:
+	if specs.is_empty():
+		return
+	var concurrency_limit := maxi(1, _max_active_flyers())
+	if specs.size() <= concurrency_limit:
+		for spec in specs:
+			_spawn_card_motion_spec(spec, event_id, "")
+		return
+
+	_card_motion_batch_sequence += 1
+	var batch_key := "%s#%d" % [
+		event_id if not event_id.is_empty() else "local-card-motion",
+		_card_motion_batch_sequence,
+	]
+	var coordinator := MotionHandle.new()
+	_card_motion_batches[batch_key] = {
+		"event_id": event_id,
+		"specs": specs.duplicate(true),
+		"cursor": 0,
+		"active": 0,
+		"limit": concurrency_limit,
+		"coordinator": coordinator,
+	}
+	_register_event_motion_handle(event_id, coordinator)
+	coordinator.completed.connect(
+		_on_card_motion_batch_coordinator_completed.bind(
+			batch_key,
+			coordinator,
+		),
+		CONNECT_ONE_SHOT,
+	)
+	_fill_card_motion_batch(batch_key)
+
+
+func _fill_card_motion_batch(batch_key: String) -> void:
+	if not _card_motion_batches.has(batch_key):
+		return
+	var row: Dictionary = _card_motion_batches[batch_key]
+	var specs: Array = row.get("specs", [])
+	var cursor := int(row.get("cursor", 0))
+	var active := int(row.get("active", 0))
+	var concurrency_limit := maxi(1, int(row.get("limit", 1)))
+	var event_id := str(row.get("event_id", ""))
+	while cursor < specs.size() and active < concurrency_limit:
+		var spec := Dictionary(specs[cursor]).duplicate(true)
+		# Waiting for an earlier entity already supplies the stagger for queued
+		# cards. Reapplying the original absolute index delay would introduce a
+		# multi-second dead gap for large hands.
+		if cursor >= concurrency_limit:
+			spec["delay"] = 0.0
+		spec["visual_index"] = cursor % concurrency_limit
+		cursor += 1
+		row["cursor"] = cursor
+		_card_motion_batches[batch_key] = row
+		var flying := _spawn_card_motion_spec(spec, event_id, batch_key)
+		if flying == null:
+			_dispose_queued_card_motion_spec(spec)
+			continue
+		var handle := flying.get_meta("motion_handle", null) as MotionHandle
+		if handle == null or handle.is_finished():
+			_dispose_card_motion_batch_flyer(flying, batch_key)
+			continue
+		active += 1
+		row["active"] = active
+		_card_motion_batches[batch_key] = row
+		handle.completed.connect(
+			_on_card_motion_batch_item_completed.bind(
+				batch_key,
+				flying,
+				handle,
+			),
+			CONNECT_ONE_SHOT,
+		)
+	if cursor >= specs.size() and active <= 0:
+		_complete_card_motion_batch(batch_key)
+
+
+func _spawn_card_motion_spec(
+	spec: Dictionary,
+	event_id: String,
+	batch_key: String,
+) -> Control:
+	var texture := spec.get("texture") as Texture2D
+	if texture == null:
+		return null
+	var flying := _spawn_flying_card(
+		texture,
+		_vector_or_default(spec.get("start"), Vector2.ZERO),
+		_vector_or_default(spec.get("finish"), Vector2.ZERO),
+		float(spec.get("duration", 0.0)),
+		float(spec.get("delay", 0.0)),
+		str(spec.get("event_type", "")),
+		int(spec.get("visual_index", spec.get("ordinal", 0))),
+		_vector_or_default(spec.get("start_size"), Vector2.ZERO),
+		_vector_or_default(spec.get("finish_size"), Vector2.ZERO),
+		float(spec.get("start_rotation", 0.0)),
+		float(spec.get("finish_rotation", 0.0)),
+		_valid_control(spec.get("landing_view")),
+		_valid_control(spec.get("existing_flyer")),
+		event_id,
+		str(spec.get("landing_attachment_type", "")),
+		str(spec.get("landing_attachment_card_id", "")),
+		int(spec.get("landing_attachment_index", -1)),
+		spec.get("flip_texture") as Texture2D,
+		bool(spec.get("stage_opponent_hand_landing", false)),
+		int(spec.get("opponent_hand_stage_count_delta", 0)),
+	)
+	if flying != null and not batch_key.is_empty():
+		flying.set_meta("motion_batch_ordinal", int(spec.get("ordinal", 0)))
+		flying.set_meta("motion_batch_key", batch_key)
+	return flying
+
+
+func _on_card_motion_batch_item_completed(
+	_completed_handle: MotionHandle,
+	batch_key: String,
+	flying: Control,
+	expected_handle: MotionHandle,
+) -> void:
+	if not _card_motion_batches.has(batch_key):
+		return
+	var row: Dictionary = _card_motion_batches[batch_key]
+	if flying != null and is_instance_valid(flying):
+		var actual_handle := flying.get_meta("motion_handle", null) as MotionHandle
+		if actual_handle == expected_handle:
+			_dispose_card_motion_batch_flyer(flying, batch_key)
+	row["active"] = maxi(0, int(row.get("active", 0)) - 1)
+	_card_motion_batches[batch_key] = row
+	_fill_card_motion_batch(batch_key)
+
+
+func _dispose_card_motion_batch_flyer(
+	flying: Control,
+	batch_key: String,
+) -> void:
+	if flying == null or not is_instance_valid(flying):
+		return
+	if str(flying.get_meta("motion_batch_key", "")) != batch_key:
+		return
+	flying.remove_meta("motion_batch_key")
+	if flying.has_meta("motion_batch_ordinal"):
+		flying.remove_meta("motion_batch_ordinal")
+	# Opponent-hand arrivals are adopted as stationary hidden-hand proxies by
+	# _finish_flyer(). They no longer belong to CardMotionLayer and must survive
+	# until the opponent-hand transaction itself reconciles.
+	if bool(flying.get_meta("card_motion_entity", false)):
+		_dispose_flyer(flying)
+	else:
+		if flying.has_meta("motion_handle"):
+			flying.remove_meta("motion_handle")
+		if flying.has_meta("motion_event_id"):
+			flying.remove_meta("motion_event_id")
+
+
+func _complete_card_motion_batch(batch_key: String) -> void:
+	if not _card_motion_batches.has(batch_key):
+		return
+	var row: Dictionary = _card_motion_batches[batch_key]
+	_card_motion_batches.erase(batch_key)
+	var coordinator := row.get("coordinator") as MotionHandle
+	if coordinator != null and not coordinator.is_finished():
+		coordinator.finish()
+
+
+func _on_card_motion_batch_coordinator_completed(
+	_completed_handle: MotionHandle,
+	batch_key: String,
+	expected_handle: MotionHandle,
+) -> void:
+	if (
+		expected_handle.status == MotionHandle.CANCELLED
+		and _card_motion_batches.has(batch_key)
+		and Dictionary(_card_motion_batches[batch_key]).get("coordinator")
+		== expected_handle
+	):
+		_cancel_card_motion_batch(batch_key, false, true)
+
+
+func _dispose_queued_card_motion_spec(spec: Dictionary) -> void:
+	var proxy := _valid_control(spec.get("existing_flyer"))
+	if proxy == null:
+		return
+	if proxy.has_meta("snapshot_hand_key"):
+		_dispose_snapshot_hand_source(proxy)
+	else:
+		_dispose_flyer(proxy)
+
+
+func _cancel_card_motion_batch(
+	batch_key: String,
+	cancel_coordinator: bool = true,
+	dispose_active: bool = true,
+) -> void:
+	if not _card_motion_batches.has(batch_key):
+		return
+	var row: Dictionary = _card_motion_batches[batch_key]
+	_card_motion_batches.erase(batch_key)
+	var specs: Array = row.get("specs", [])
+	for index in range(int(row.get("cursor", 0)), specs.size()):
+		_dispose_queued_card_motion_spec(Dictionary(specs[index]))
+	if dispose_active:
+		for flying in _active_flyers.duplicate():
+			if (
+				flying != null
+				and is_instance_valid(flying)
+				and str(flying.get_meta("motion_batch_key", "")) == batch_key
+			):
+				_dispose_flyer(flying)
+	var coordinator := row.get("coordinator") as MotionHandle
+	if cancel_coordinator and coordinator != null and not coordinator.is_finished():
+		coordinator.cancel()
+
+
+func _clear_card_motion_batches() -> void:
+	for batch_key_value in _card_motion_batches.keys().duplicate():
+		_cancel_card_motion_batch(str(batch_key_value), true, true)
+
+
+func _clear_card_motion_batches_for_event(event_id: String) -> void:
+	if event_id.is_empty():
+		return
+	for batch_key_value in _card_motion_batches.keys().duplicate():
+		var batch_key := str(batch_key_value)
+		var row: Dictionary = _card_motion_batches.get(batch_key, {})
+		if str(row.get("event_id", "")) == event_id:
+			_cancel_card_motion_batch(batch_key, true, true)
 
 
 func _register_event_motion(
@@ -7484,27 +7724,25 @@ func _register_event_motion(
 	event_id: String,
 	tween: Tween,
 ) -> void:
-	if (
-		event_id.is_empty()
-		or flying == null
-		or not is_instance_valid(flying)
-		or not _event_motion_completions.has(event_id)
-	):
-		return
-	var row: Dictionary = _event_motion_completions.get(event_id, {})
-	var group := row.get("group") as MotionGroup
-	if group == null:
+	if flying == null or not is_instance_valid(flying):
 		return
 	var handle := MotionHandle.new()
 	handle.bind_tween(tween)
-	group.add(handle)
-	if _hand_transition_sequences.has(event_id):
-		var hand_row: Dictionary = _hand_transition_sequences[event_id]
-		var flight_handles: Array = hand_row.get("flight_handles", [])
-		flight_handles.append(handle)
-		hand_row["flight_handles"] = flight_handles
-		_hand_transition_sequences[event_id] = hand_row
-	flying.set_meta("motion_event_id", event_id)
+	if not event_id.is_empty() and _event_motion_completions.has(event_id):
+		var row: Dictionary = _event_motion_completions.get(event_id, {})
+		var group := row.get("group") as MotionGroup
+		if group != null:
+			group.add(handle)
+		if _hand_transition_sequences.has(event_id):
+			var hand_row: Dictionary = _hand_transition_sequences[event_id]
+			var flight_handles: Array = hand_row.get("flight_handles", [])
+			flight_handles.append(handle)
+			hand_row["flight_handles"] = flight_handles
+			_hand_transition_sequences[event_id] = hand_row
+	if not event_id.is_empty():
+		flying.set_meta("motion_event_id", event_id)
+	elif flying.has_meta("motion_event_id"):
+		flying.remove_meta("motion_event_id")
 	flying.set_meta("motion_handle", handle)
 
 
@@ -8230,14 +8468,16 @@ func _opponent_hand_points(
 
 
 func _stack_offset(index: int, visible_count: int, hand_target: bool) -> Vector2:
+	var lane_count := mini(maxi(1, visible_count), maxi(1, _max_active_flyers()))
+	var lane_index := posmod(index, lane_count)
 	if hand_target:
 		return Vector2(
-			(float(index) - float(visible_count - 1) * 0.5) * 34.0,
+			(float(lane_index) - float(lane_count - 1) * 0.5) * 34.0,
 			18.0,
 		)
 	return Vector2(
-		(float(index) - float(visible_count - 1) * 0.5) * 7.0,
-		-float(index) * 3.0,
+		(float(lane_index) - float(lane_count - 1) * 0.5) * 7.0,
+		-float(lane_index) * 3.0,
 	)
 
 
@@ -8266,7 +8506,8 @@ func _zone_motion_offset(
 		var zone_transform := zone.get_global_transform_with_canvas()
 		var step_origin := _effects_local(zone_transform * Vector2.ZERO)
 		step = _effects_local(zone_transform * step) - step_origin
-	var clamped_index := clampi(index, 0, maxi(0, visible_count - 1))
+	var lane_count := mini(maxi(1, visible_count), maxi(1, _max_active_flyers()))
+	var clamped_index := posmod(index, lane_count)
 	if zone_name == "prizes":
 		var stack_count := zone.count if zone else visible_count
 		if leaving_stack:
@@ -8305,7 +8546,7 @@ func _zone_motion_offset(
 	if zone_name == "discard" and not leaving_stack:
 		spread = 12.0
 	var fan := axis * (
-		(float(clamped_index) - float(visible_count - 1) * 0.5) * spread
+		(float(clamped_index) - float(lane_count - 1) * 0.5) * spread
 	)
 	return stack_bias + fan
 
@@ -9647,7 +9888,7 @@ func _spawn_flying_card(
 	flip_texture: Texture2D = null,
 	stage_opponent_hand_landing: bool = false,
 	opponent_hand_stage_count_delta: int = 0,
-) -> void:
+) -> Control:
 	_prune_flyers()
 	while existing_flyer == null and _active_flyers.size() >= _max_active_flyers():
 		var oldest: Control = _active_flyers.pop_front()
@@ -9805,6 +10046,7 @@ func _spawn_flying_card(
 			)
 		tween.tween_interval(landing_wait)
 	_register_event_motion(flying, motion_event_id, tween)
+	return flying
 
 
 func _update_flyer(
@@ -9986,6 +10228,10 @@ func _prune_flyers() -> void:
 
 
 func _clear_active_flyers() -> void:
+	# Cancel the rolling queues first. Otherwise cancelling an active item can
+	# synchronously refill its newly freed slot while a resync is clearing the
+	# presentation tree.
+	_clear_card_motion_batches()
 	for tween_value in _flyer_tweens.values():
 		var tween := tween_value as Tween
 		if tween and tween.is_valid():
@@ -10007,6 +10253,7 @@ func _clear_active_flyers() -> void:
 func _clear_active_flyers_for_event(event_id: String) -> void:
 	if event_id.is_empty():
 		return
+	_clear_card_motion_batches_for_event(event_id)
 	for flyer in _active_flyers.duplicate():
 		if (
 			is_instance_valid(flyer)

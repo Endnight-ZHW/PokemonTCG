@@ -532,7 +532,13 @@ func _render_previews() -> void:
 	demo.players[0].active = PokemonState.new("svi-hrot")
 	demo.players[0].active.placed_this_turn = false
 	demo.players[0].active.energy_card_ids.assign([
-		"sv1-ener-2", "sv1-ener-2", "svi-mirc", "svg2-lume",
+		"sv1-ener-2",
+		"sv1-ener-2",
+		"svi-mirc",
+		"svi-dtur",
+		"svi-jete",
+		"svi-trea",
+		"svg2-lume",
 	])
 	demo.players[0].active.damage_counters = 2
 	demo.players[0].active.attached_tool_id = "sv1-202"
@@ -569,6 +575,31 @@ func _render_previews() -> void:
 	ui._build_game_screen()
 	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
 	await _settle_rendered(4)
+	var special_stack_card: CardView = ui.battle_screen.table.get_slot_view(0, "active")
+	var special_colorless_badge := _energy_badge_for_group(
+		special_stack_card,
+		"energy:type:Colorless",
+	)
+	var special_colorless_count := (
+		special_colorless_badge.find_child("CountBadge", true, false) as Control
+		if special_colorless_badge != null
+		else null
+	)
+	if (
+		special_colorless_badge == null
+		or special_colorless_badge.find_child("SpecialMarker", true, false) != null
+		or special_colorless_badge.get_meta("energy_card_ids", [])
+		!= ["svi-mirc", "svi-dtur", "svi-jete", "svi-trea", "svg2-lume"]
+		or int(special_colorless_badge.get_meta("provided_unit_count", 0)) != 6
+		or special_colorless_count == null
+		or str(special_colorless_count.get_meta("count_text", "")) != "6"
+	):
+		push_error("Colorless Special Energy preview did not render one unit-counted stack")
+		_finish(1)
+		return
+	if not _capture("battle-colorless-special-stack.png"):
+		_finish(1)
+		return
 	if not _capture("battle-populated.png"):
 		_finish(1)
 		return
@@ -2086,6 +2117,19 @@ func _energy_count_badge_is_readable(card: CardView, expected: String) -> bool:
 			Rect2(count_badge.position, count_badge.size)
 		)
 	)
+
+
+func _energy_badge_for_group(card: CardView, group_key: String) -> Control:
+	if card == null:
+		return null
+	var row := card.find_child("EnergyRow", true, false) as HBoxContainer
+	if row == null:
+		return null
+	for child_value in row.get_children():
+		var child := child_value as Control
+		if child != null and str(child.get_meta("energy_group_key", "")) == group_key:
+			return child
+	return null
 
 
 func _settle_rendered(frame_count := 3) -> void:

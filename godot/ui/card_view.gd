@@ -1612,7 +1612,10 @@ func _refresh_energy_badges() -> void:
 		var row_value: Variant = grouped[index]
 		var row: Dictionary = row_value
 		var energy_type := str(row.get("type", "Colorless"))
-		var count := int(row.get("count", 1))
+		# Badge numerals describe effective energy units. This differs from the
+		# number of physical attachments for cards such as Double Turbo Energy and
+		# for a shared stack of several Colorless-providing Special Energy cards.
+		var count := int(row.get("visual_count", row.get("count", 1)))
 		var badge := _new_energy_badge(
 			energy_type,
 			count,
@@ -1631,6 +1634,8 @@ func _refresh_energy_badges() -> void:
 			"provided_energy_units",
 			row.get("provided_energy_units", []).duplicate(),
 		)
+		badge.set_meta("provided_unit_count", int(row.get("provided_unit_count", 0)))
+		badge.set_meta("physical_card_count", int(row.get("count", 1)))
 		energy_row.add_child(badge)
 	if has_overflow:
 		var overflow_count := 0
@@ -1912,7 +1917,7 @@ func _refresh_accessibility_summary(energy_groups: Array[Dictionary] = []) -> vo
 					))
 				energy_parts.append("%s ×%d" % [
 					display_name,
-					int(row.get("count", 1)),
+					int(row.get("visual_count", row.get("count", 1))),
 				])
 			if not energy_parts.is_empty():
 				parts.append("附加能量：%s" % "、".join(energy_parts))

@@ -1199,6 +1199,22 @@ func _submit_battle_transition_to_view(
 ) -> PresentationHandle:
 	if battle_screen == null or target_view == null:
 		return null
+	# A transition without presentation events has no visual barrier to wait for.
+	# Applying it through the deferred coordinator briefly renders the committed
+	# state before its flow continuation runs.  In local setup that intermediate
+	# state is the outgoing player marked ready with every action disabled; if the
+	# deferred pump/continuation is interrupted, hot-seat play is stranded on the
+	# "waiting for opponent" surface.  Commit idle, non-drag views synchronously so
+	# ownership handoffs and pending-choice routing happen in the same call stack.
+	# Busy transitions and drag sessions still use the coordinator to preserve
+	# ordering and proxy cleanup.
+	if (
+		events.is_empty()
+		and drag_session_id.is_empty()
+		and not battle_screen.is_presentation_busy()
+	):
+		_render_battle_view_model(target_view)
+		return null
 	var request := BattleTransitionRequest.create(
 		target_view,
 		events,
@@ -1874,7 +1890,6 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 		var next_setup := state.setup_actor_idx
 		if next_setup in [0, 1] and next_setup != current_view_player:
 			current_view_player = next_setup
-			_refresh_game()
 			_show_pass_overlay(next_setup, "准备阶段", "轮到玩家 %d 放置宝可梦。" % (next_setup + 1))
 			return
 	elif (
@@ -1882,7 +1897,6 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 		or (previous_phase == "SETUP" and state.phase == "MAIN")
 	):
 		current_view_player = state.active_player_idx
-		_refresh_game()
 		_show_pass_overlay(
 			current_view_player,
 			"回合交接",
@@ -1893,7 +1907,6 @@ func _after_step(previous_active: int, previous_phase: String) -> void:
 		var promote_actor := int(state.pending_promotions[0])
 		if promote_actor != current_view_player:
 			current_view_player = promote_actor
-			_refresh_game()
 			_show_pass_overlay(promote_actor, "晋升", "请选择新的战斗宝可梦。")
 			return
 	_refresh_game()
