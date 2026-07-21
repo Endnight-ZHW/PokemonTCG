@@ -25,6 +25,7 @@ const VIEWPORT_CASES: Array[Vector2i] = [
 	Vector2i(1280, 720),
 	Vector2i(1600, 900),
 	Vector2i(1024, 768),
+	Vector2i(1024, 600),
 	Vector2i(2000, 900),
 ]
 const TITLE_PORTRAIT_CASES: Array[Vector2i] = [
@@ -67,9 +68,11 @@ func _run_contract() -> void:
 	await _check_main_shell_contract()
 	await _check_shared_backdrop_contract()
 	await _check_network_intro_contract(catalog)
+	await _check_network_scrollbar_width_contract(catalog)
 	await _check_deck_tile_visual_contract(catalog)
 	await _check_same_instance_resize(catalog)
 	await _check_battle_canvas_resize()
+	await _check_compact_battle_detail_layout()
 	await _check_workbench_compact()
 	for viewport_size in VIEWPORT_CASES:
 		await _check_viewport(viewport_size, catalog)
@@ -100,17 +103,26 @@ func _check_main_shell_contract() -> void:
 	await _settle_layout(3)
 	_check(not main.modal_scroll.follow_focus,
 		"Main modal scroll must not follow disabled keyboard navigation")
-	_check(
-		main.modal_host_controller._resolved_size(
-			Vector2(900, 760), Vector2(1000, 700), true
-		) == Vector2(976, 676),
-		"Compact frontend modal must fill the available safe area",
+	var fill_spec := ModalSpec.frontend(
+		Vector2(900, 760), ModalSpec.SizeMode.FILL_SAFE
 	)
 	_check(
-		main.modal_host_controller._resolved_size(
-			Vector2(720, 620), Vector2(1000, 700), false
-		) == Vector2(720, 620),
-		"Compact battle modal size semantics changed with frontend fill behavior",
+		main.modal_host_controller._resolved_size(fill_spec, Vector2(1000, 700))
+		== Vector2(976, 676),
+		"FILL_SAFE modal must fill the available safe area",
+	)
+	var fit_spec := ModalSpec.battle(
+		Vector2(720, 400), false, ModalSpec.SizeMode.FIT_CONTENT
+	)
+	_check(
+		main.modal_host_controller._resolved_size(fit_spec, Vector2(1000, 700))
+		== Vector2(720, 400),
+		"FIT_CONTENT modal must preserve its compact target within safe bounds",
+	)
+	_check(
+		fit_spec.confirm_role == ModalSpec.ButtonRole.PRIMARY
+		and fit_spec.cancel_role == ModalSpec.ButtonRole.SECONDARY,
+		"ModalSpec semantic button-role defaults changed",
 	)
 	await _check_pointer_only_input_contract(main)
 	main.show_deck_select("challenge")
@@ -140,6 +152,19 @@ func _check_main_shell_contract() -> void:
 	_check(
 		scaled_insets.is_equal_approx(Vector4(40, 20, 40, 20)),
 		"Main safe-area conversion failed for a scaled secondary display",
+	)
+	_check(
+		main._responsive_content_scale_size(Vector2i(900, 540))
+		== Vector2i(900, 540)
+		and main._responsive_content_scale_size(Vector2i(1024, 600))
+		== Vector2i(1024, 600)
+		and main._responsive_content_scale_size(Vector2i(1280, 720))
+		== Vector2i(1280, 720)
+		and main._responsive_content_scale_size(Vector2i(1600, 900))
+		== Vector2i(1600, 900)
+		and main._responsive_content_scale_size(Vector2i(2560, 1080))
+		== Vector2i(1600, 900),
+		"Main responsive canvas must prevent UI downsampling on supported compact displays",
 	)
 	main.show_network_setup("relay")
 	await _settle_layout(3)
@@ -213,6 +238,23 @@ func _check_main_shell_contract() -> void:
 		)
 	main._close_modal()
 	main._finish_modal_close(main._modal_generation)
+	main._show_pause_overlay()
+	await _settle_layout(3)
+	var pause_help := main.modal_body.find_child("HelpButton", true, false) as Button
+	_check(
+		main.modal_host_controller.active_spec.size_mode
+		== ModalSpec.SizeMode.FIT_CONTENT
+		and main.modal_panel.custom_minimum_size == Vector2(720, 400)
+		and main.modal_scroll.custom_minimum_size.y == 0.0
+		and main.modal_confirm.theme_type_variation == &"BattlePrimaryButton"
+		and main.modal_cancel.theme_type_variation == &"BattleDangerButton"
+		and pause_help != null
+		and pause_help.theme_type_variation == &"BattleSecondaryButton",
+		"Pause modal must use 720x400 FIT_CONTENT and Primary/Secondary/Danger roles",
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+	await _check_open_modal_resize(main)
 	main.queue_free()
 	await _settle_layout(2)
 
@@ -245,6 +287,75 @@ func _check_pointer_only_input_contract(main: Control) -> void:
 		and not main.modal_layer.visible,
 		"Keyboard/controller input must not focus, activate, or reroute the UI",
 	)
+
+
+func _check_open_modal_resize(main: Control) -> void:
+	var resize_host := Control.new()
+	resize_host.name = "OpenModalResizeHost"
+	resize_host.size = Vector2(1600, 900)
+	root.add_child(resize_host)
+	main.reparent(resize_host)
+	main.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await _settle_layout(3)
+	main._apply_safe_area()
+	main._show_settings()
+	await _settle_layout(4)
+	var wide_scroll_floor: float = main.modal_scroll.custom_minimum_size.y
+	resize_host.size = Vector2(1024, 600)
+	await _settle_layout(2)
+	main._apply_safe_area()
+	await _settle_layout(5)
+	var modal_center := main.get_node("ModalLayer/Center") as Control
+	_check(
+		_rect_inside(main.modal_panel.get_global_rect(), modal_center.get_global_rect())
+		and main.modal_panel.size.x <= modal_center.size.x + EPSILON
+		and main.modal_panel.size.y <= modal_center.size.y + EPSILON
+		and main.modal_scroll.custom_minimum_size.y < wide_scroll_floor
+		and main.modal_scroll.get_global_rect().size.y
+		<= main.modal_panel.get_global_rect().size.y,
+		"Open PREFERRED modal retained its wide scroll floor or escaped the resized safe center: panel=%s min=%s center=%s scroll_min=%.1f/%.1f scroll=%s" % [
+			main.modal_panel.get_global_rect(), main.modal_panel.custom_minimum_size,
+			modal_center.get_global_rect(), main.modal_scroll.custom_minimum_size.y,
+			wide_scroll_floor, main.modal_scroll.get_global_rect(),
+		],
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+
+	resize_host.size = Vector2(1600, 900)
+	await _settle_layout(2)
+	main._apply_safe_area()
+	var fill_spec := ModalSpec.frontend(
+		Vector2(900, 760), ModalSpec.SizeMode.FILL_SAFE
+	)
+	main._open_modal("安全区填充测试", "确认", "取消", false, fill_spec)
+	var tall_body := Control.new()
+	tall_body.custom_minimum_size = Vector2(0, 900)
+	main.modal_body.add_child(tall_body)
+	await _settle_layout(4)
+	var fill_wide_scroll_floor: float = main.modal_scroll.custom_minimum_size.y
+	resize_host.size = Vector2(1024, 600)
+	await _settle_layout(2)
+	main._apply_safe_area()
+	await _settle_layout(5)
+	_check(
+		_rect_inside(main.modal_panel.get_global_rect(), modal_center.get_global_rect())
+		and main.modal_panel.size.x <= modal_center.size.x + EPSILON
+		and main.modal_panel.size.y <= modal_center.size.y + EPSILON
+		and main.modal_scroll.custom_minimum_size.y < fill_wide_scroll_floor
+		and main.modal_scroll.get_v_scroll_bar().visible,
+		"Open FILL_SAFE modal did not rebudget its scroll body inside the resized safe center: panel=%s min=%s center=%s scroll_min=%.1f/%.1f vbar=%s" % [
+			main.modal_panel.get_global_rect(), main.modal_panel.custom_minimum_size,
+			modal_center.get_global_rect(), main.modal_scroll.custom_minimum_size.y,
+			fill_wide_scroll_floor, main.modal_scroll.get_v_scroll_bar().visible,
+		],
+	)
+	main._close_modal()
+	main._finish_modal_close(main._modal_generation)
+	main.reparent(root)
+	main.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	resize_host.queue_free()
+	await _settle_layout(3)
 
 
 func _check_shared_backdrop_contract() -> void:
@@ -308,6 +419,7 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	var kind_code := page.get_node("%KindCode") as Label
 	var intro_icon := page.get_node("%IntroIcon") as TextureRect
 	var role_badge := page.get_node("%RoleBadgeLabel") as Label
+	_check_network_wide_first_screen(page, "LAN idle")
 	_check(
 		intro_panel.visible and not bool(page.get("_compact")),
 		"1600x900 network lobby must expose the wide connection overview",
@@ -371,6 +483,7 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 	role_option.select(0)
 	page.call("refresh_fields", 0)
 	await _settle_layout(3)
+	_check_network_wide_first_screen(page, "Relay idle")
 	_check(
 		_rect_inside(page_frame.get_global_rect(), Rect2(Vector2.ZERO, root.size)),
 		"LAN/Relay role changes clipped the wide network page "
@@ -378,7 +491,125 @@ func _check_network_intro_contract(catalog: CardCatalog) -> void:
 			top_bar.global_position.y, page_frame.get_global_rect(), root.size,
 		],
 	)
+	page.call(
+		"set_connection_state",
+		NetworkLobbyPage.ConnectionState.WAITING,
+		"房间已创建，等待挑战者加入。",
+		"ROOM42",
+	)
+	await _settle_layout(3)
+	_check_network_wide_first_screen(page, "Relay waiting")
+	page.call("set_connection_state", NetworkLobbyPage.ConnectionState.ERROR,
+		"连接失败：无法到达指定设备。请确认双方处于同一局域网、系统防火墙允许当前端口，并核对房主地址后重新尝试。")
+	await _settle_layout(3)
+	_check_network_wide_first_screen(page, "Relay long error")
 	page.queue_free()
+	await _settle_layout(2)
+
+
+func _check_network_wide_first_screen(page: NetworkLobbyPage, label: String) -> void:
+	var scroll := page.page_scroll
+	_check(scroll != null, "%s: network scroll host is missing" % label)
+	if scroll == null:
+		return
+	var viewport_rect := scroll.get_global_rect()
+	var page_rect := page.page.get_global_rect()
+	var scrollbar := scroll.get_v_scroll_bar()
+	_check(
+		scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED
+		and not scroll.follow_focus
+		and not scrollbar.visible
+		and scroll.scroll_vertical == 0,
+		"1600x900 %s must be top-aligned without scrollbars (scroll=%d max=%.1f visible=%s)" % [
+			label, scroll.scroll_vertical, scrollbar.max_value, scrollbar.visible,
+		],
+	)
+	var left_gutter := page_rect.position.x - viewport_rect.position.x
+	var right_gutter := viewport_rect.end.x - page_rect.end.x
+	var top_gutter := page_rect.position.y - viewport_rect.position.y
+	_check(
+		left_gutter >= -EPSILON
+		and right_gutter >= -EPSILON
+		and absf(left_gutter - right_gutter) <= 2.0
+		and absf(page_rect.get_center().x - viewport_rect.get_center().x) <= 1.0
+		and absf(top_gutter) <= 1.0
+		and page.page.get_parent() == page.page_center,
+		"1600x900 %s must top-align and horizontally center the network page (left=%.1f right=%.1f top=%.1f page=%s viewport=%s)" % [
+			label, left_gutter, right_gutter, top_gutter, page_rect, viewport_rect,
+		],
+	)
+	for node_name in [
+		"Page", "TopBar", "Steps", "Body", "FormPanel", "StatusPanel",
+		"NetworkConnectButton",
+	]:
+		var control := page.find_child(node_name, true, false) as Control
+		_check(control != null, "%s: missing %s" % [label, node_name])
+		if control == null or not control.is_visible_in_tree():
+			continue
+		_check(
+			_rect_inside(control.get_global_rect(), viewport_rect),
+			"1600x900 %s clipped %s: rect=%s viewport=%s" % [
+				label, node_name, control.get_global_rect(), viewport_rect,
+			],
+		)
+	_check(
+		page.connect_button.get_global_rect().size.y >= MIN_TARGET_SIZE,
+		"1600x900 %s reduced the primary action below 48px" % label,
+	)
+
+
+func _check_network_scrollbar_width_contract(catalog: CardCatalog) -> void:
+	var mounted := await _mount(PAGE_SCENES.network, Vector2i(1024, 600))
+	var page := mounted.page as NetworkLobbyPage
+	if page == null:
+		_unmount(mounted)
+		return
+	page.configure(catalog, "lan", "wss://relay.example.test")
+	page._set_compact_step(2)
+	page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.ERROR,
+		"连接失败：请确认房主地址、端口、防火墙和局域网连接状态后重新尝试。",
+	)
+	await _settle_layout(5)
+	var scroll := page.page_scroll
+	var scrollbar := scroll.get_v_scroll_bar()
+	# Keep this fixture deterministic across display-driver stretch behavior and
+	# font metric changes: its purpose is the fallback's scrollbar geometry, so
+	# explicitly make the content taller than the available viewport.
+	if not scrollbar.visible:
+		page.page.custom_minimum_size.y = scroll.size.y + 96.0
+		await _settle_layout(3)
+	_check(
+		scrollbar.visible
+		and scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED,
+		"1024x600 compact network fixture must exercise the vertical-scroll fallback (scroll=%s page=%s minimum=%s max=%.1f)" % [
+			scroll.get_global_rect(), page.page.get_global_rect(),
+			page.page.get_combined_minimum_size(), scrollbar.max_value,
+		],
+	)
+	var visible_rect := scroll.get_global_rect()
+	var visible_right := (
+		minf(visible_rect.end.x, scrollbar.get_global_rect().position.x)
+		if scrollbar.visible
+		else visible_rect.end.x
+	)
+	for node_name in [
+		"Page", "FormPanel", "RuleRow", "NetworkDeckOption", "NetworkConnectButton",
+	]:
+		var control := page.find_child(node_name, true, false) as Control
+		_check(control != null, "Compact network scrollbar fixture lacks %s" % node_name)
+		if control == null or not control.is_visible_in_tree():
+			continue
+		var rect := control.get_global_rect()
+		_check(
+			rect.position.x >= visible_rect.position.x - EPSILON
+			and rect.end.x <= visible_right + EPSILON,
+			"Vertical scrollbar clips compact network content horizontally: %s rect=%s viewport=%s" % [
+				node_name, rect, visible_rect,
+			],
+		)
+	_check_no_horizontal_scroll(page, "network-scrollbar-1024x600")
+	_unmount(mounted)
 	await _settle_layout(2)
 
 
@@ -625,6 +856,56 @@ func _check_battle_canvas_resize() -> void:
 	)
 	_check_no_navigation_controls(battle, "battle-live-resize")
 	battle.queue_free()
+	await _settle_layout(2)
+
+
+func _check_compact_battle_detail_layout() -> void:
+	var battle_scene := load("res://scenes/battle/battle_screen.tscn") as PackedScene
+	_check(battle_scene != null,
+		"Battle screen is unavailable for compact detail checks")
+	if battle_scene == null:
+		return
+	var host := Control.new()
+	host.name = "CompactBattleHost"
+	host.size = Vector2(900, 540)
+	root.add_child(host)
+	var battle := battle_scene.instantiate() as BattleScreen
+	host.add_child(battle)
+	battle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	battle.initialize_ui()
+	await _settle_layout(5)
+	battle.show_card_detail("sv1-104")
+	await _settle_layout(4)
+	var detail := battle.detail_panel as BattleDetailPanel
+	var board_rect := battle.board_panel.get_global_rect()
+	var detail_rect := detail.get_global_rect() if detail else Rect2()
+	var close_rect := (
+		detail.close_button.get_global_rect()
+		if detail and detail.close_button
+		else Rect2()
+	)
+	_check(
+		detail != null
+		and detail.visible
+		and detail.is_compact_layout()
+		and detail.scale.is_equal_approx(Vector2.ONE)
+		and detail.size.is_equal_approx(BattleDetailPanel.COMPACT_PANEL_SIZE)
+		and detail_rect.position.y >= board_rect.position.y + board_rect.size.y * 0.4
+		and detail_rect.end.y <= board_rect.end.y + EPSILON,
+		"900x540 battle detail must use the unscaled 560x240 bottom layout: detail=%s board=%s" % [
+			detail_rect, board_rect,
+		],
+	)
+	_check(
+		close_rect.size.x + EPSILON >= MIN_TARGET_SIZE
+		and close_rect.size.y + EPSILON >= MIN_TARGET_SIZE,
+		"Compact battle detail close target is below 48x48: %s" % close_rect,
+	)
+	_check(
+		detail != null and detail.detail_text.scroll_active,
+		"Compact battle detail must keep its body internally scrollable",
+	)
+	host.queue_free()
 	await _settle_layout(2)
 
 
@@ -969,23 +1250,33 @@ func _check_deck_public_api(page: Control, catalog: CardCatalog) -> void:
 	)
 	_check(
 		not matchup_toggle.button_pressed
+		and matchup_toggle.theme_type_variation == &"FrontRuleToggle"
 		and matchup_toggle.text.contains("已关闭")
 		and matchup_toggle.tooltip_text.contains("项目默认")
 		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
 			DesignTokens.TEXT_MUTED
 		),
-		"DeckSelect must present an explicit, visually distinct disabled matchup state",
+		"DeckSelect must use the dedicated rule-toggle style and present an explicit disabled state",
 	)
 	matchup_toggle.set_pressed_no_signal(true)
 	matchup_toggle.toggled.emit(true)
+	var enabled_hover_style := (
+		matchup_toggle.get_theme_stylebox(&"hover_pressed") as StyleBoxFlat
+	)
 	_check(
 		matchup_toggle.text.contains("已开启")
 		and matchup_toggle.tooltip_text.contains("当前已开启")
 		and matchup_toggle.accessibility_name.contains("已开启")
+		and enabled_hover_style != null
+		and enabled_hover_style.get_border_width(SIDE_LEFT) >= 2
+		and enabled_hover_style.get_border_width(SIDE_TOP) >= 2
+		and enabled_hover_style.get_border_width(SIDE_RIGHT) >= 2
+		and enabled_hover_style.get_border_width(SIDE_BOTTOM) >= 2
+		and enabled_hover_style.border_color.a >= 0.9
 		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
 			DesignTokens.GREEN
 		),
-		"DeckSelect matchup toggle did not expose its enabled text, color, and accessible state",
+		"DeckSelect matchup toggle did not expose a bordered enabled-hover state",
 	)
 	matchup_toggle.set_pressed_no_signal(false)
 	matchup_toggle.toggled.emit(false)
@@ -1050,11 +1341,14 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	var kind := "lan" if viewport_size.x in [1280, 2000] else "relay"
 	page.call("configure", catalog, kind, "wss://relay.example.test/a/very/long/path")
 	var matchup_toggle := page.get_node("%TypeMatchupToggle") as CheckButton
+	var rule_status_badge := page.get_node("%RuleStatusBadge") as Label
 	_check(
 		not matchup_toggle.button_pressed
-		and matchup_toggle.text.contains("已关闭")
-		and matchup_toggle.text.contains("房主可修改")
-		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
+		and matchup_toggle.text == "启用弱点与抗性"
+		and matchup_toggle.theme_type_variation == &"FrontRuleToggle"
+		and rule_status_badge.text.contains("已关闭")
+		and rule_status_badge.text.contains("可修改")
+		and rule_status_badge.get_theme_color(&"font_color").is_equal_approx(
 			DesignTokens.TEXT_MUTED
 		),
 		"Network host must see the default disabled matchup state explicitly",
@@ -1062,13 +1356,28 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 	matchup_toggle.set_pressed_no_signal(true)
 	matchup_toggle.toggled.emit(true)
 	_check(
-		matchup_toggle.text.contains("已开启")
+		rule_status_badge.text.contains("已开启")
+		and matchup_toggle.get_draw_mode() in [
+			BaseButton.DRAW_PRESSED, BaseButton.DRAW_HOVER_PRESSED,
+		]
 		and matchup_toggle.accessibility_name.contains("已开启")
-		and matchup_toggle.get_theme_color(&"font_color").is_equal_approx(
+		and rule_status_badge.get_theme_color(&"font_color").is_equal_approx(
 			DesignTokens.GREEN
 		),
 		"Network host matchup toggle did not expose its enabled visual state",
 	)
+	page.call("set_connection_state", 3, "规则已经随房间锁定。", "RULE42")
+	_check(
+		matchup_toggle.disabled
+		and matchup_toggle.button_pressed
+		and matchup_toggle.get_draw_mode() == BaseButton.DRAW_DISABLED
+		and rule_status_badge.text.contains("已开启")
+		and rule_status_badge.text.contains("已锁定")
+		and matchup_toggle.get_theme_color(&"icon_disabled_color").a
+		< matchup_toggle.get_theme_color(&"icon_normal_color").a,
+		"Network host locked matchup state must preserve its value without looking interactive",
+	)
+	page.call("set_connection_state", 0)
 	if kind != "relay":
 		matchup_toggle.set_pressed_no_signal(false)
 		matchup_toggle.toggled.emit(false)
@@ -1088,17 +1397,20 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		_check(
 			matchup_toggle.disabled
 			and not matchup_toggle.button_pressed
-			and matchup_toggle.text.contains("等待房主同步")
-			and matchup_toggle.text.contains("只读"),
+			and rule_status_badge.text.contains("等待同步")
+			and rule_status_badge.text.contains("只读"),
 			"Network challenger must see a distinct read-only pending state without a stale host value",
 		)
 		page.call("show_locked_rules_options", {"apply_type_matchups": true})
 		_check(
 			matchup_toggle.disabled
 			and matchup_toggle.button_pressed
-			and matchup_toggle.text.contains("已开启")
-			and matchup_toggle.text.contains("房主已锁定")
-			and matchup_toggle.get_theme_color(&"font_disabled_color").is_equal_approx(
+			and rule_status_badge.text.contains("已开启")
+			and rule_status_badge.text.contains("房主锁定")
+			and rule_status_badge.get_theme_color(&"font_color").is_equal_approx(
+				DesignTokens.GREEN
+			)
+			and not matchup_toggle.get_theme_color(&"font_disabled_color").is_equal_approx(
 				DesignTokens.GREEN
 			),
 			"Network challenger must see the host-locked enabled matchup state explicitly",
@@ -1106,7 +1418,7 @@ func _check_network(viewport_size: Vector2i, catalog: CardCatalog) -> void:
 		page.call("set_connection_state", 1)
 		_check(
 			not matchup_toggle.button_pressed
-			and matchup_toggle.text.contains("等待房主同步"),
+			and rule_status_badge.text.contains("等待同步"),
 			"Network challenger retry retained the previous room's locked matchup value",
 		)
 	page.call("set_connection_state", 5, "模拟连接错误")
@@ -1144,15 +1456,22 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 	var role_option := page.get_node("%NetworkRoleOption") as OptionButton
 	var address_input := page.get_node("%NetworkAddressInput") as LineEdit
 	var deck_option := page.get_node("%NetworkDeckOption") as OptionButton
+	var rule_row := page.get_node("%RuleRow") as HBoxContainer
+	var matchup_toggle := page.get_node("%TypeMatchupToggle") as CheckButton
+	var rule_status_badge := page.get_node("%RuleStatusBadge") as Label
 	var copy_button := page.get_node("%CopyRoomButton") as Button
 	_check(
-		step_bar.visible and kind_option.visible and role_option.visible,
+		step_bar.visible
+		and kind_option.visible
+		and role_option.visible
+		and not rule_row.visible,
 		"Network compact flow must start at network kind and identity",
 	)
 	next_button.pressed.emit()
 	await _settle_layout()
 	_check(
 		address_input.is_visible_in_tree()
+		and not rule_row.is_visible_in_tree()
 		and address_input.focus_mode == Control.FOCUS_CLICK
 		and page.get_viewport().gui_get_focus_owner() == null,
 		"Network compact flow must expose click-only connection information",
@@ -1161,17 +1480,24 @@ func _check_network_compact_pointer_flow(page: Control) -> void:
 	await _settle_layout()
 	_check(
 		deck_option.is_visible_in_tree()
+		and rule_row.is_visible_in_tree()
 		and deck_option.focus_mode == Control.FOCUS_NONE
 		and page.get_viewport().gui_get_focus_owner() == null,
 		"Network compact flow must expose pointer-only deck selection",
 	)
+	page.call("show_locked_rules_options", {"apply_type_matchups": true})
 	page.call("set_connection_state", 3, "等待测试玩家", "ROOM42")
 	await _settle_layout()
 	_check(
 		copy_button.is_visible_in_tree()
+		and matchup_toggle.is_visible_in_tree()
+		and matchup_toggle.disabled
+		and matchup_toggle.button_pressed
+		and matchup_toggle.get_global_rect().size.y >= MIN_TARGET_SIZE
+		and rule_status_badge.text.contains("房主锁定")
 		and copy_button.focus_mode == Control.FOCUS_NONE
 		and page.get_viewport().gui_get_focus_owner() == null,
-		"Network waiting state must expose a pointer-only room-code copy action",
+		"Network compact waiting state must expose its locked rule and pointer-only copy action",
 	)
 	page.call("set_connection_state", 0)
 	await _settle_layout()
@@ -1623,6 +1949,7 @@ func _check_theme_contract() -> void:
 		"FrontSecondaryButton": "Button",
 		"FrontGhostButton": "Button",
 		"FrontDangerButton": "Button",
+		"FrontRuleToggle": "CheckButton",
 		"FrontModeTileButton": "Button",
 		"FrontSectionPanel": "PanelContainer",
 		"FrontRaisedPanel": "PanelContainer",
@@ -1641,6 +1968,73 @@ func _check_theme_contract() -> void:
 				variation, expected_variations[variation],
 			],
 		)
+	for variation in [
+		&"FrontSecondaryButton", &"FrontGhostButton",
+		&"FrontDangerButton", &"FrontCategoryButton",
+	]:
+		_check_button_state_geometry(theme, variation)
+	_check_button_state_geometry(theme, &"FrontRuleToggle")
+	var rule_toggle_normal := (
+		theme.get_stylebox(&"normal", &"FrontRuleToggle") as StyleBoxFlat
+	)
+	var rule_toggle_hover := (
+		theme.get_stylebox(&"hover", &"FrontRuleToggle") as StyleBoxFlat
+	)
+	var rule_toggle_pressed := (
+		theme.get_stylebox(&"pressed", &"FrontRuleToggle") as StyleBoxFlat
+	)
+	var rule_toggle_hover_pressed := (
+		theme.get_stylebox(&"hover_pressed", &"FrontRuleToggle") as StyleBoxFlat
+	)
+	var rule_toggle_disabled := (
+		theme.get_stylebox(&"disabled", &"FrontRuleToggle") as StyleBoxFlat
+	)
+	var rule_toggle_on := theme.get_icon(&"checked", &"FrontRuleToggle")
+	var rule_toggle_off := theme.get_icon(&"unchecked", &"FrontRuleToggle")
+	_check(
+		rule_toggle_on != null
+		and rule_toggle_off != null
+		and rule_toggle_on.get_size().x >= 40.0
+		and rule_toggle_on.get_size().y >= 24.0
+		and rule_toggle_off.get_size() == rule_toggle_on.get_size(),
+		"Rule toggle must use a legible, size-stable switch track in both states",
+	)
+	_check(
+		rule_toggle_normal != null
+		and rule_toggle_hover != null
+		and rule_toggle_pressed != null
+		and rule_toggle_hover_pressed != null
+		and rule_toggle_disabled != null
+		and not rule_toggle_hover.bg_color.is_equal_approx(rule_toggle_normal.bg_color)
+		and not rule_toggle_pressed.bg_color.is_equal_approx(rule_toggle_normal.bg_color)
+		and rule_toggle_disabled.bg_color.a < rule_toggle_normal.bg_color.a
+		and theme.get_color(&"icon_disabled_color", &"FrontRuleToggle").a
+		< theme.get_color(&"icon_normal_color", &"FrontRuleToggle").a,
+		"Rule toggle needs distinct hover/on states and a visibly subdued locked state",
+	)
+	if (
+		rule_toggle_normal != null
+		and rule_toggle_pressed != null
+		and rule_toggle_hover_pressed != null
+	):
+		for state_style in [
+			rule_toggle_normal, rule_toggle_pressed, rule_toggle_hover_pressed,
+		]:
+			for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+				_check(
+					state_style.get_border_width(side)
+					== rule_toggle_normal.get_border_width(side)
+					and state_style.get_border_width(side) >= 2,
+					"Rule toggle normal/on/enabled-hover borders must remain visible and size-stable",
+				)
+			_check(
+				state_style.border_color.a >= 0.9
+				and absf(
+					state_style.border_color.get_luminance()
+					- state_style.bg_color.get_luminance()
+				) >= 0.12,
+				"Rule toggle normal/on/enabled-hover border color blends into its background",
+			)
 	_check(
 		theme.has_stylebox(&"normal", &"FrontPrimaryButton")
 		and theme.has_stylebox(&"hover", &"FrontPrimaryButton")
@@ -1681,6 +2075,49 @@ func _check_theme_contract() -> void:
 			"Frontend heading weight must remain Bold 700: %s" % heading_type,
 		)
 	_check_frontend_contrast(theme)
+	var battle_theme := load(GAME_THEME_PATH) as Theme
+	_check(battle_theme != null, "Battle theme must load for semantic button checks")
+	if battle_theme:
+		for variation in [
+			&"BattlePrimaryButton", &"BattleSecondaryButton", &"BattleDangerButton",
+		]:
+			_check(
+				battle_theme.get_type_variation_base(variation) == &"Button"
+				and battle_theme.has_stylebox(&"normal", variation)
+				and battle_theme.has_stylebox(&"hover", variation)
+				and battle_theme.has_stylebox(&"pressed", variation)
+				and battle_theme.has_stylebox(&"disabled", variation),
+				"Battle semantic button variation is incomplete: %s" % variation,
+			)
+
+
+func _check_button_state_geometry(theme: Theme, variation: StringName) -> void:
+	var states := [&"normal", &"hover", &"pressed", &"hover_pressed", &"disabled"]
+	var styles: Array[StyleBoxFlat] = []
+	for state in states:
+		var style := theme.get_stylebox(state, variation) as StyleBoxFlat
+		_check(style != null, "%s lacks %s style" % [variation, state])
+		if style:
+			styles.append(style)
+	_check(theme.has_stylebox(&"focus", variation), "%s lacks focus style" % variation)
+	if styles.size() != states.size():
+		return
+	var reference := styles[0]
+	for style in styles.slice(1):
+		for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+			_check(
+				is_equal_approx(
+					reference.get_content_margin(side),
+					style.get_content_margin(side),
+				)
+				and reference.get_border_width(side) == style.get_border_width(side),
+				"%s changes padding or border width between pointer states" % variation,
+			)
+		for corner in [CORNER_TOP_LEFT, CORNER_TOP_RIGHT, CORNER_BOTTOM_RIGHT, CORNER_BOTTOM_LEFT]:
+			_check(
+				reference.get_corner_radius(corner) == style.get_corner_radius(corner),
+				"%s changes corner radius between pointer states" % variation,
+			)
 
 
 func _check_frontend_contrast(theme: Theme) -> void:

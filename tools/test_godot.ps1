@@ -196,6 +196,11 @@ Invoke-GodotCheckedScript `
     -ContractName 'Card view layers contract'
 
 Invoke-GodotCheckedScript `
+    -Script 'res://tests/attachment_visual_contract.gd' `
+    -SuccessMarker 'ATTACHMENT_VISUAL_CONTRACT_OK' `
+    -ContractName 'Attachment visual descriptor and badge contract'
+
+Invoke-GodotCheckedScript `
     -Script 'res://tests/battle_transition_contract.gd' `
     -SuccessMarker 'BATTLE_TRANSITION_CONTRACT_OK' `
     -ContractName 'Battle transition contract'

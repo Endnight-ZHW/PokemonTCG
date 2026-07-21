@@ -146,6 +146,8 @@ func _run() -> void:
 	await _run_bench_search_anchor_contract(battle, empty_rows)
 	await _run_cards_selected_hand_contract(battle, empty_rows)
 	await _run_attachment_motion_contract(battle, empty_rows)
+	await _run_tool_attachment_landing_contract(battle, empty_rows)
+	await _run_attachment_batch_anchor_contract(battle, empty_rows)
 	await _run_slot_visual_transaction_contract(battle, empty_rows)
 	await _run_prize_stack_transaction_contract(battle, empty_rows)
 	await _run_public_coin_contract(battle)
@@ -1147,6 +1149,152 @@ func _run_reduced_transition_contract(
 	if not handle.is_completed():
 		battle.cancel_presentations("reduced_contract_cleanup", target_view)
 		await process_frame
+
+	var switch_before: GameState = battle.table.state_ref.clone_state()
+	switch_before.players[0].active = PokemonState.new("sv1-104")
+	switch_before.players[0].active.energy_card_ids.assign([
+		"sv1-ener-2",
+		"sv1-ener-2",
+	])
+	switch_before.players[0].bench[0] = PokemonState.new("svi-chim")
+	battle.update_view(switch_before, 0, empty_rows, "", false, "test")
+	await process_frame
+	var switch_after: GameState = switch_before.clone_state()
+	switch_after.revision = switch_before.revision + 1
+	var old_active := switch_after.players[0].active
+	switch_after.players[0].active = switch_after.players[0].bench[0]
+	switch_after.players[0].bench[0] = old_active
+	var reduced_switch_view := BattleViewModel.capture(
+		switch_after, 0, empty_rows, "", false, "test",
+	)
+	var reduced_switch: PresentationHandle = battle.submit_transition(
+		BattleTransitionRequest.create(
+			reduced_switch_view,
+			[{
+				"event_id": "contract:reduced-switch",
+				"event_type": "switched",
+				"actor": 0,
+				"data": {"player": 0, "slot": "bench_0"},
+			}],
+			0,
+			BattleTransitionRequest.CAUSE_LOCAL_ACTION,
+		)
+	)
+	await process_frame
+	await process_frame
+	var reduced_active: CardView = battle.table.get_slot_view(0, "active")
+	var reduced_bench: CardView = battle.table.get_slot_view(0, "bench_0")
+	_expect(
+		reduced_switch.status == PresentationHandle.COMPLETED
+		and _count_motion_entities(battle) == 0
+		and battle.table._presentation_slot_covers.is_empty()
+		and reduced_active != null
+		and reduced_bench != null
+		and not reduced_active.is_presentation_hidden()
+		and not reduced_bench.is_presentation_hidden(),
+		"reduced switch left a tween, composite cover, or masked landing view",
+	)
+
+	# Reduced motion still has to preserve the incoming Pokemon as the staged
+	# active stack when later events in the same revision mutate that slot.  The
+	# two swap sources must be claimed before either destination is retained.
+	var reduced_tail_before := UIPreviewStateFactory.battle_state(20260810)
+	reduced_tail_before.revision = 62
+	reduced_tail_before.players[0].active = PokemonState.new("sv1-104")
+	reduced_tail_before.players[0].bench[0] = PokemonState.new("svi-chim")
+	reduced_tail_before.players[0].discard = ["sv1-ener-2"]
+	battle.update_view(reduced_tail_before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var reduced_tail_snapshot: Dictionary = battle.capture_presentation_snapshot()
+	var reduced_tail_after := reduced_tail_before.clone_state()
+	reduced_tail_after.revision = 63
+	var reduced_tail_old_active := reduced_tail_after.players[0].active
+	reduced_tail_after.players[0].active = reduced_tail_after.players[0].bench[0]
+	reduced_tail_after.players[0].bench[0] = reduced_tail_old_active
+	reduced_tail_after.players[0].active.damage_counters = 3
+	reduced_tail_after.players[0].active.energy_card_ids.append("sv1-ener-2")
+	reduced_tail_after.players[0].discard.clear()
+	var reduced_tail_events: Array[Dictionary] = PresentationEvent.normalize_all([
+		{
+			"event_id": "contract:reduced-switch-tail",
+			"event_type": "switched",
+			"actor": 0,
+			"data": {"player": 0, "slot": "bench_0"},
+		},
+		{
+			"event_id": "contract:reduced-switch-damage",
+			"event_type": "damage_dealt",
+			"actor": 1,
+			"amount": 30,
+			"target": {"player": 0, "slot": "active"},
+			"data": {"player": 0, "slot": "active", "amount": 30},
+		},
+		{
+			"event_id": "contract:reduced-switch-attach",
+			"event_type": "energy_attached",
+			"actor": 0,
+			"card_id": "sv1-ener-2",
+			"source": {"player": 0, "zone": "discard", "index": 0},
+			"target": {"player": 0, "slot": "active"},
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_ids": ["sv1-ener-2"],
+			},
+		},
+	], 63, 0)
+	battle.update_view(reduced_tail_after, 0, empty_rows, "", false, "test")
+	battle.table._stage_presentation_targets(
+		reduced_tail_events,
+		reduced_tail_snapshot,
+	)
+	var expected_incoming_cover := battle.table._presentation_slot_covers.get(
+		"0:bench_0",
+	) as CardView
+	battle.table._on_presentation_event_started(reduced_tail_events[0])
+	battle.table._spawn_slot_transition(
+		reduced_tail_events[0],
+		0.0,
+		str(reduced_tail_events[0].get("event_id", "")),
+	)
+	var reduced_tail_cover := battle.table._presentation_slot_covers.get(
+		"0:active",
+	) as CardView
+	var live_slot_covers := 0
+	for child in battle.table.effects.find_children("*", "CardView", true, false):
+		if (
+			str(child.get_meta("battle_transient_kind", "")) == "SlotStateCover"
+			and not child.is_queued_for_deletion()
+		):
+			live_slot_covers += 1
+	_expect(
+		reduced_tail_cover == expected_incoming_cover
+		and reduced_tail_cover != null
+		and reduced_tail_cover.pokemon != null
+		and reduced_tail_cover.pokemon.card_id == "svi-chim"
+		and live_slot_covers == 1
+		and battle.table._active_flyers.is_empty(),
+		"reduced switch replaced the incoming staged Pokemon or orphaned a source cover",
+	)
+	battle.table._on_presentation_event_finished(reduced_tail_events[0])
+	for tail_index in range(1, reduced_tail_events.size()):
+		battle.table._on_presentation_event_started(reduced_tail_events[tail_index])
+		battle.table._on_presentation_event_finished(reduced_tail_events[tail_index])
+	await process_frame
+	var reduced_tail_active: CardView = battle.table.get_slot_view(0, "active")
+	_expect(
+		battle.table._presentation_slot_covers.is_empty()
+		and battle.table._presentation_mask_counts.is_empty()
+		and reduced_tail_active != null
+		and reduced_tail_active.pokemon != null
+		and reduced_tail_active.pokemon.card_id == "svi-chim"
+		and reduced_tail_active.pokemon.damage_counters == 3
+		and reduced_tail_active.pokemon.energy_card_ids == ["sv1-ener-2"]
+		and not reduced_tail_active.is_presentation_hidden()
+		and reduced_tail_active.modulate.a > 0.99,
+		"reduced switch mutation tail left the wrong identity, mask, or cover",
+	)
 	settings.set("animation_mode", "cinematic")
 	settings.set("reduced_motion", false)
 
@@ -1611,14 +1759,20 @@ func _run_attachment_motion_contract(
 	})
 	var motion_start := Vector2.ZERO
 	var motion_finish := Vector2.ZERO
+	var attachment_motion_image: TextureRect
 	if not entities.is_empty():
 		motion_start = entities[0].get_meta("motion_start", Vector2.ZERO)
 		motion_finish = entities[0].get_meta("motion_finish", Vector2.ZERO)
+		attachment_motion_image = entities[0].get_node_or_null("PaperImage") as TextureRect
 	_expect(
 		entities.size() == 1
 		and motion_start.distance_to(source_badge) < 0.1
 		and motion_start.distance_to(source_card_center) > 4.0
-		and motion_start.distance_to(own_hand_center) > 4.0,
+		and motion_start.distance_to(own_hand_center) > 4.0
+		and attachment_motion_image != null
+		and attachment_motion_image.texture == EnergyIconCatalog.texture_for("Psychic")
+		and entities[0].get_meta("motion_flip_texture", null)
+		== battle.table._public_motion_texture_for_card_id("sv1-ener-5"),
 		"opponent attachment discard did not start at its snapshot energy badge",
 	)
 	_expect(
@@ -1644,7 +1798,10 @@ func _run_attachment_motion_contract(
 	# badge positions instead of caching the Pokemon card centre.
 	var badge_state := before.clone_state()
 	badge_state.revision = 112
-	badge_state.players[0].active.energy_card_ids = ["sv1-ener-5"]
+	badge_state.players[0].active.energy_card_ids = [
+		"sv1-ener-5",
+		"sv1-ener-2",
+	]
 	badge_state.players[0].active.attached_tool_id = "sv1-202"
 	battle.update_view(badge_state, 0, empty_rows, "", false, "test")
 	await process_frame
@@ -1692,7 +1849,644 @@ func _run_attachment_motion_contract(
 			"%s attachment landing did not follow its live badge anchor" % attachment_type,
 		)
 		anchor_control.position = original_position
+	var indexed_expected: Vector2 = battle.table._effects_local(
+		target_view_node.attachment_anchor_global("energy", "sv1-ener-2", 1),
+	)
+	var canonical_indexed := {
+		"player": 0,
+		"slot": "active",
+		"attachment_type": "energy",
+		"attachment_card_id": "sv1-ener-2",
+		"index": 1,
+	}
+	var legacy_indexed := canonical_indexed.duplicate(true)
+	legacy_indexed["attachment_index"] = legacy_indexed["index"]
+	legacy_indexed.erase("index")
+	_expect(
+		battle.resolve_endpoint_center(canonical_indexed).distance_to(
+			indexed_expected,
+		) < 0.1
+		and battle.resolve_endpoint_center(legacy_indexed).distance_to(
+			indexed_expected,
+		) < 0.1,
+		"canonical attachment index or legacy attachment_index fallback resolved the wrong badge",
+	)
+	var inferred_fire_index: int = battle.table._landing_attachment_index_for_event(
+		{
+			"player": 0,
+			"slot": "active",
+			"attachment_type": "energy",
+		},
+		target_view_node,
+		"sv1-ener-2",
+		0,
+		1,
+	)
+	landing_probe.set_meta("motion_landing_attachment_type", "energy")
+	landing_probe.set_meta("motion_landing_attachment_card_id", "sv1-ener-2")
+	landing_probe.set_meta("motion_landing_attachment_index", inferred_fire_index)
+	_expect(
+		inferred_fire_index == 1
+		and battle.table._motion_entity_finish(
+			landing_probe,
+			card_center,
+		).distance_to(indexed_expected) < 0.1,
+		"new Fire energy landed on the existing first energy badge when target index was omitted",
+	)
 	landing_probe.free()
+
+	# Every slot attachment proxy uses descriptor semantics, including visuals
+	# that have no dedicated icon.  Their short marker must survive the compact
+	# badge representation instead of becoming an anonymous neutral square.
+	var descriptor_rows := [
+		{"type": "tool", "card_id": "sv1-202", "expected": "道"},
+		{"type": "energy", "card_id": "missing-energy", "expected": "?"},
+		{"type": "energy", "card_id": "svi-mirc", "expected": ""},
+	]
+	for descriptor_index in range(descriptor_rows.size()):
+		var descriptor_row: Dictionary = descriptor_rows[descriptor_index]
+		var descriptor := AttachmentVisualDescriptor.resolve(
+			str(descriptor_row.get("type", "")),
+			str(descriptor_row.get("card_id", "")),
+			descriptor_index,
+			battle.table.catalog,
+		)
+		var expected_marker := str(descriptor_row.get("expected", ""))
+		if expected_marker.is_empty():
+			expected_marker = descriptor.marker
+		var badge_texture: Texture2D = (
+			descriptor.icon
+			if descriptor.icon != null
+			else battle.table._neutral_public_card_texture()
+		)
+		var badge_proxy: Control = battle.table._create_paper_card_token(
+			badge_texture,
+			Vector2(24.0, 24.0),
+			"ContractAttachmentBadge",
+			1,
+		)
+		badge_proxy.set_meta("attachment_badge_proxy", true)
+		battle.table._configure_attachment_badge_marker(badge_proxy, descriptor)
+		var marker := badge_proxy.get_node_or_null("AttachmentBadgeMarker") as Label
+		_expect(
+			marker != null
+			and marker.visible
+			and not expected_marker.is_empty()
+			and marker.text == expected_marker
+			and bool(badge_proxy.get_meta("attachment_badge_proxy", false)),
+			"%s attachment motion lost its descriptor marker" % descriptor.card_id,
+		)
+		badge_proxy.free()
+
+
+func _run_tool_attachment_landing_contract(
+	battle: Control,
+	empty_rows: Array[Dictionary],
+) -> void:
+	var before := UIPreviewStateFactory.battle_state(20260814)
+	before.revision = 146
+	before.players[0].active = PokemonState.new("sv1-104")
+	before.players[0].hand = ["sv1-202"]
+	battle.update_view(before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var snapshot: Dictionary = battle.capture_presentation_snapshot()
+
+	var after := before.clone_state()
+	after.revision = 147
+	after.players[0].hand.clear()
+	after.players[0].active.attached_tool_id = "sv1-202"
+	var events: Array[Dictionary] = PresentationEvent.normalize_all([{
+		"event_id": "contract:attachment:tool-landing",
+		"event_type": "tool_attached",
+		"actor": 0,
+		"card_id": "sv1-202",
+		"source": {"player": 0, "zone": "hand", "index": 0},
+		"target": {"player": 0, "slot": "active"},
+		"data": {
+			"player": 0,
+			"slot": "active",
+			"card_id": "sv1-202",
+		},
+	}], 147, 0)
+	battle.update_view(after, 0, empty_rows, "", false, "test")
+	battle.table._stage_presentation_targets(events, snapshot)
+	var event: Dictionary = events[0]
+	var cover := battle.table._presentation_slot_covers.get(
+		"0:active",
+	) as CardView
+	var authoritative_target: CardView = battle.table.get_slot_view(0, "active")
+	_expect(
+		cover != null
+		and authoritative_target != null
+		and not cover.tool_badge.visible,
+		"Tool-attach tween fixture did not stage its pre-event CardView",
+	)
+	if cover == null or authoritative_target == null:
+		battle.table._clear_transient_visuals()
+		return
+
+	var prospective_rect := cover.prospective_attachment_visual_global_rect(
+		"tool",
+		"sv1-202",
+	)
+	var prospective_center: Vector2 = battle.table._effects_local(
+		prospective_rect.get_center()
+	)
+	var staged_card_center: Vector2 = battle.table._effects_local(
+		cover.global_center()
+	)
+	var completion := _start_staged_event_motion(battle, event, 0.46)
+	await process_frame
+	var flyer := _event_motion_entity(
+		battle,
+		"contract:attachment:tool-landing",
+	)
+	var dynamic_finish: Vector2 = (
+		battle.table._motion_entity_finish(flyer, Vector2.ZERO)
+		if flyer != null
+		else Vector2.ZERO
+	)
+	_expect(
+		flyer != null
+		and flyer.get_meta("motion_landing_view", null) == cover
+		and prospective_rect.size.x > 0.0
+		and prospective_rect.size.y > 0.0
+		and not cover.tool_badge.visible
+		and dynamic_finish.distance_to(prospective_center) < 0.2
+		and dynamic_finish.distance_to(staged_card_center) > 4.0,
+		"Tool-attach tween targeted the Pokemon centre instead of its future badge",
+	)
+	if not completion.is_finished():
+		await completion.completed
+	var landed_center := (
+		flyer.position + flyer.size * 0.5
+		if flyer != null and is_instance_valid(flyer)
+		else Vector2.ZERO
+	)
+	_expect(
+		flyer != null
+		and is_instance_valid(flyer)
+		and bool(flyer.get_meta("motion_completed", false))
+		and not cover.tool_badge.visible
+		and landed_center.distance_to(prospective_center) < 0.2,
+		"Tool-attach tween did not finish on the prospective badge geometry",
+	)
+
+	battle.table._on_presentation_event_finished(event)
+	await process_frame
+	var rendered_tool_rect := authoritative_target.attachment_visual_global_rect(
+		"tool",
+		"sv1-202",
+	)
+	var rendered_tool_center: Vector2 = battle.table._effects_local(
+		rendered_tool_rect.get_center()
+	)
+	_expect(
+		authoritative_target.tool_badge.visible
+		and not authoritative_target.is_presentation_hidden()
+		and rendered_tool_rect.size.x > 0.0
+		and rendered_tool_center.distance_to(landed_center) < 0.2
+		and rendered_tool_center.distance_to(
+			battle.table._effects_local(authoritative_target.global_center())
+		) > 4.0
+		and not battle.table._presentation_slot_covers.has("0:active")
+		and _event_motion_entity(
+			battle,
+			"contract:attachment:tool-landing",
+		) == null,
+		"Tool badge jumped at handoff or left staged motion state behind",
+	)
+	battle.table._clear_transient_visuals()
+
+
+func _run_attachment_batch_anchor_contract(
+	battle: Control,
+	empty_rows: Array[Dictionary],
+) -> void:
+	# Attach -> switch: the attachment must contact the staged old-active stack,
+	# while the authoritative final active CardView remains masked for the later
+	# switch. Advance the real flyer far enough to prove this is not a metadata-
+	# only endpoint check.
+	var attach_before := UIPreviewStateFactory.battle_state(20260812)
+	attach_before.revision = 142
+	attach_before.players[0].active = PokemonState.new("sv1-104")
+	attach_before.players[0].active.energy_card_ids.assign(["sv1-ener-5"])
+	attach_before.players[0].bench[0] = PokemonState.new("svi-chim")
+	attach_before.players[0].discard = ["sv1-ener-2"]
+	battle.update_view(attach_before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var attach_snapshot: Dictionary = battle.capture_presentation_snapshot()
+	var attach_after := attach_before.clone_state()
+	attach_after.revision = 143
+	attach_after.players[0].discard.clear()
+	attach_after.players[0].active.energy_card_ids.append("sv1-ener-2")
+	var attached_old_active := attach_after.players[0].active
+	attach_after.players[0].active = attach_after.players[0].bench[0]
+	attach_after.players[0].bench[0] = attached_old_active
+	var attach_events: Array[Dictionary] = PresentationEvent.normalize_all([
+		{
+			"event_id": "contract:batch-anchor:attach",
+			"event_type": "energy_attached",
+			"actor": 0,
+			"card_id": "sv1-ener-2",
+			"source": {"player": 0, "zone": "discard", "index": 0},
+			"target": {"player": 0, "slot": "active"},
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_ids": ["sv1-ener-2"],
+			},
+		},
+		{
+			"event_id": "contract:batch-anchor:switch",
+			"event_type": "switched",
+			"actor": 0,
+			"data": {"player": 0, "slot": "bench_0"},
+		},
+	], 143, 0)
+	battle.update_view(attach_after, 0, empty_rows, "", false, "test")
+	battle.table._stage_presentation_targets(attach_events, attach_snapshot)
+	var attach_real_active: CardView = battle.table.get_slot_view(0, "active")
+	var attach_cover := battle.table._presentation_slot_covers.get(
+		"0:active",
+	) as CardView
+	var real_active_mask_before := int(
+		battle.table._presentation_mask_counts.get(
+			attach_real_active.get_instance_id(),
+			0,
+		)
+	)
+	var attach_completion := _start_staged_event_motion(
+		battle,
+		attach_events[0],
+		0.46,
+	)
+	await process_frame
+	var attach_flyer := _event_motion_entity(
+		battle,
+		"contract:batch-anchor:attach",
+	)
+	var attach_start := (
+		Vector2(attach_flyer.get_meta("motion_start", Vector2.ZERO))
+		if attach_flyer != null
+		else Vector2.ZERO
+	)
+	var prospective_fire_anchor: Vector2 = (
+		battle.table._effects_local(
+			attach_cover.prospective_attachment_visual_global_rect(
+				"energy",
+				"sv1-ener-2",
+				1,
+			).get_center()
+		)
+		if attach_cover != null
+		else Vector2.ZERO
+	)
+	var existing_psychic_anchor: Vector2 = (
+		battle.table._effects_local(attach_cover.attachment_anchor_global(
+			"energy",
+			"sv1-ener-5",
+			0,
+		))
+		if attach_cover != null
+		else Vector2.ZERO
+	)
+	var attach_dynamic_finish: Vector2 = (
+		battle.table._motion_entity_finish(attach_flyer, Vector2.ZERO)
+		if attach_flyer != null
+		else Vector2.ZERO
+	)
+	_expect(
+		attach_flyer != null
+		and attach_cover != null
+		and attach_flyer.get_meta("motion_landing_view", null) == attach_cover
+		and attach_dynamic_finish.distance_to(prospective_fire_anchor) < 0.2
+		and attach_dynamic_finish.distance_to(existing_psychic_anchor) > 8.0
+		and attach_real_active.is_presentation_hidden()
+		and real_active_mask_before > 0,
+		"attach-before-switch did not bind its prospective badge to the staged composite",
+	)
+	await create_timer(0.18).timeout
+	_expect(
+		attach_flyer != null
+		and is_instance_valid(attach_flyer)
+		and (attach_flyer.position + attach_flyer.size * 0.5).distance_to(
+			attach_start,
+		) > 5.0,
+		"attach-before-switch flyer did not actually advance",
+	)
+	if not attach_completion.is_finished():
+		await attach_completion.completed
+	_expect(
+		attach_real_active.is_presentation_hidden()
+		and int(battle.table._presentation_mask_counts.get(
+			attach_real_active.get_instance_id(),
+			0,
+		)) == real_active_mask_before,
+		"attachment landing consumed the later switch mask",
+	)
+	battle.table._on_presentation_event_finished(attach_events[0])
+	var switch_completion := _start_staged_event_motion(
+		battle,
+		attach_events[1],
+		0.46,
+	)
+	await process_frame
+	var attached_switch_mover: CardView
+	for mover in _slot_composite_movers(battle):
+		if str(mover.get_meta("slot_composite_from", "")) == "active":
+			attached_switch_mover = mover
+			break
+	_expect(
+		attached_switch_mover != null
+		and attached_switch_mover.pokemon != null
+		and attached_switch_mover.pokemon.energy_card_ids == [
+			"sv1-ener-5",
+			"sv1-ener-2",
+		],
+		"attach-before-switch did not carry the contacted badge in its composite",
+	)
+	if not switch_completion.is_finished():
+		await switch_completion.completed
+	battle.table._on_presentation_event_finished(attach_events[1])
+	battle.table._clear_transient_visuals()
+
+	# Switch -> discard -> transfer: later source proxies must resolve from the
+	# remapped retained cover. Discarding the first energy also moves Fire from the
+	# second group to the first, so the transfer catches any stale batch anchor.
+	var chain_before := UIPreviewStateFactory.battle_state(20260813)
+	chain_before.revision = 144
+	chain_before.players[0].active = PokemonState.new("sv1-104")
+	chain_before.players[0].bench[0] = PokemonState.new("svi-chim")
+	chain_before.players[0].bench[0].energy_card_ids.assign([
+		"sv1-ener-5",
+		"sv1-ener-2",
+	])
+	battle.update_view(chain_before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var chain_snapshot: Dictionary = battle.capture_presentation_snapshot()
+	var chain_after := chain_before.clone_state()
+	chain_after.revision = 145
+	var old_chain_active := chain_after.players[0].active
+	chain_after.players[0].active = chain_after.players[0].bench[0]
+	chain_after.players[0].bench[0] = old_chain_active
+	chain_after.players[0].active.energy_card_ids.clear()
+	chain_after.players[0].bench[0].energy_card_ids.assign(["sv1-ener-2"])
+	chain_after.players[0].discard = ["sv1-ener-5"]
+	var chain_events: Array[Dictionary] = PresentationEvent.normalize_all([
+		{
+			"event_id": "contract:batch-anchor:switch-first",
+			"event_type": "switched",
+			"actor": 0,
+			"data": {"player": 0, "slot": "bench_0"},
+		},
+		{
+			"event_id": "contract:batch-anchor:discard-psychic",
+			"event_type": "cards_discarded",
+			"actor": 0,
+			"source": {
+				"player": 0,
+				"slot": "active",
+				"attachment_type": "energy",
+				"index": 0,
+			},
+			"target": {"player": 0, "zone": "discard"},
+			"data": {
+				"player": 0,
+				"card_ids": ["sv1-ener-5"],
+				"source_indices": [0],
+			},
+		},
+		{
+			"event_id": "contract:batch-anchor:transfer-fire",
+			"event_type": "energy_attached",
+			"actor": 0,
+			"source": {
+				"player": 0,
+				"slot": "active",
+				"attachment_type": "energy",
+				"index": 0,
+			},
+			"target": {"player": 0, "slot": "bench_0"},
+			"data": {
+				"player": 0,
+				"card_ids": ["sv1-ener-2"],
+				"source_indices": [0],
+			},
+		},
+	], 145, 0)
+	battle.update_view(chain_after, 0, empty_rows, "", false, "test")
+	battle.table._stage_presentation_targets(chain_events, chain_snapshot)
+	var chain_switch_completion := _start_staged_event_motion(
+		battle,
+		chain_events[0],
+		0.46,
+	)
+	if not chain_switch_completion.is_finished():
+		await chain_switch_completion.completed
+	battle.table._on_presentation_event_finished(chain_events[0])
+	var retained_active := battle.table._presentation_slot_covers.get(
+		"0:active",
+	) as CardView
+	var retained_bench := battle.table._presentation_slot_covers.get(
+		"0:bench_0",
+	) as CardView
+	var fire_anchor_before_discard: Vector2 = (
+		battle.table._effects_local(
+			retained_active.attachment_layout_visual_global_rect(
+				"energy",
+				"sv1-ener-2",
+				1,
+			).get_center()
+		)
+		if retained_active != null
+		else Vector2.ZERO
+	)
+	var psychic_anchor_before_discard: Vector2 = (
+		battle.table._effects_local(
+			retained_active.attachment_layout_visual_global_rect(
+				"energy",
+				"sv1-ener-5",
+				0,
+			).get_center()
+		)
+		if retained_active != null
+		else Vector2.ZERO
+	)
+	var real_chain_active: CardView = battle.table.get_slot_view(0, "active")
+	var chain_active_mask := int(battle.table._presentation_mask_counts.get(
+		real_chain_active.get_instance_id(),
+		0,
+	))
+	var discard_completion := _start_staged_event_motion(
+		battle,
+		chain_events[1],
+		0.46,
+	)
+	await process_frame
+	var discard_flyer := _event_motion_entity(
+		battle,
+		"contract:batch-anchor:discard-psychic",
+	)
+	var discard_start := (
+		Vector2(discard_flyer.get_meta("motion_start", Vector2.ZERO))
+		if discard_flyer != null
+		else Vector2.ZERO
+	)
+	_expect(
+		retained_active != null
+		and discard_flyer != null
+		and discard_start.distance_to(psychic_anchor_before_discard) < 0.2,
+		"post-switch discard did not launch from the retained composite badge",
+	)
+	await create_timer(0.18).timeout
+	_expect(
+		discard_flyer != null
+		and is_instance_valid(discard_flyer)
+		and (discard_flyer.position + discard_flyer.size * 0.5).distance_to(
+			discard_start,
+		) > 5.0,
+		"post-switch discard flyer did not actually advance",
+	)
+	if not discard_completion.is_finished():
+		await discard_completion.completed
+	battle.table._on_presentation_event_finished(chain_events[1])
+	retained_active = battle.table._presentation_slot_covers.get(
+		"0:active",
+	) as CardView
+	var shifted_fire_anchor: Vector2 = (
+		battle.table._effects_local(
+			retained_active.attachment_layout_visual_global_rect(
+				"energy",
+				"sv1-ener-2",
+				0,
+			).get_center()
+		)
+		if retained_active != null
+		else Vector2.ZERO
+	)
+	_expect(
+		shifted_fire_anchor.distance_to(fire_anchor_before_discard) > 8.0
+		and real_chain_active.is_presentation_hidden()
+		and int(battle.table._presentation_mask_counts.get(
+			real_chain_active.get_instance_id(),
+			0,
+		)) == chain_active_mask,
+		"discard did not preserve the switch barrier or reflow the remaining badge",
+	)
+	var real_chain_bench: CardView = battle.table.get_slot_view(0, "bench_0")
+	var chain_bench_mask := int(battle.table._presentation_mask_counts.get(
+		real_chain_bench.get_instance_id(),
+		0,
+	))
+	var transfer_completion := _start_staged_event_motion(
+		battle,
+		chain_events[2],
+		0.46,
+	)
+	await process_frame
+	var transfer_flyer := _event_motion_entity(
+		battle,
+		"contract:batch-anchor:transfer-fire",
+	)
+	var transfer_start := (
+		Vector2(transfer_flyer.get_meta("motion_start", Vector2.ZERO))
+		if transfer_flyer != null
+		else Vector2.ZERO
+	)
+	var transfer_landing := (
+		transfer_flyer.get_meta("motion_landing_view", null) as CardView
+		if transfer_flyer != null
+		else null
+	)
+	var prospective_transfer_anchor: Vector2 = (
+		battle.table._effects_local(
+			retained_bench.prospective_attachment_visual_global_rect(
+				"energy",
+				"sv1-ener-2",
+				0,
+			).get_center()
+		)
+		if retained_bench != null
+		else Vector2.ZERO
+	)
+	var transfer_finish: Vector2 = (
+		battle.table._motion_entity_finish(transfer_flyer, Vector2.ZERO)
+		if transfer_flyer != null
+		else Vector2.ZERO
+	)
+	_expect(
+		transfer_flyer != null
+		and transfer_start.distance_to(shifted_fire_anchor) < 0.2
+		and transfer_start.distance_to(fire_anchor_before_discard) > 8.0
+		and transfer_landing == retained_bench
+		and transfer_finish.distance_to(prospective_transfer_anchor) < 0.2,
+		(
+			"post-discard transfer used a stale source or final-slot landing anchor "
+			+ "(start=%s shifted=%s old=%s landing=%s retained=%s finish=%s expected=%s)"
+		) % [
+			transfer_start,
+			shifted_fire_anchor,
+			fire_anchor_before_discard,
+			transfer_landing,
+			retained_bench,
+			transfer_finish,
+			prospective_transfer_anchor,
+		],
+	)
+	await create_timer(0.18).timeout
+	_expect(
+		transfer_flyer != null
+		and is_instance_valid(transfer_flyer)
+		and (transfer_flyer.position + transfer_flyer.size * 0.5).distance_to(
+			transfer_start,
+		) > 5.0,
+		"post-discard transfer flyer did not actually advance",
+	)
+	if not transfer_completion.is_finished():
+		await transfer_completion.completed
+	_expect(
+		real_chain_bench.is_presentation_hidden()
+		and int(battle.table._presentation_mask_counts.get(
+			real_chain_bench.get_instance_id(),
+			0,
+		)) == chain_bench_mask,
+		"transfer landing consumed the retained switch mask before its barrier",
+	)
+	battle.table._on_presentation_event_finished(chain_events[2])
+	_expect(
+		battle.table._presentation_slot_covers.is_empty()
+		and battle.table._presentation_mask_counts.is_empty()
+		and not real_chain_active.is_presentation_hidden()
+		and not real_chain_bench.is_presentation_hidden(),
+		"attachment batch left a retained cover or half-transparent target",
+	)
+	battle.table._clear_transient_visuals()
+
+
+func _start_staged_event_motion(
+	battle: Control,
+	event: Dictionary,
+	duration: float,
+) -> PresentationDirector.EventCompletion:
+	battle.table._on_presentation_event_started(event)
+	var completion := PresentationDirector.EventCompletion.new(duration)
+	battle.table._on_presentation_event_completion_requested(event, completion)
+	battle.table._on_card_motion_requested(event, duration)
+	return completion
+
+
+func _event_motion_entity(battle: Control, event_id: String) -> Control:
+	for entity in _motion_entities(battle):
+		if (
+			str(entity.get_meta("motion_event_id", "")) == event_id
+			and not bool(entity.get_meta("slot_composite_motion", false))
+		):
+			return entity
+	return null
 
 
 func _run_slot_visual_transaction_contract(
@@ -1789,9 +2583,9 @@ func _run_slot_visual_transaction_contract(
 	)
 	battle.table._on_presentation_event_started(events[2])
 	_expect(
-		not battle.table._presentation_slot_covers.has("0:active")
-		and not battle.table._presentation_slot_covers.has("0:bench_0"),
-		"retreat did not transfer visual ownership at movement start",
+		battle.table._presentation_slot_covers.has("0:active")
+		and battle.table._presentation_slot_covers.has("0:bench_0"),
+		"retreat released its composite slot covers before motion claimed them",
 	)
 	var retreat_flyer_start_count: int = battle.table._active_flyers.size()
 	var retreat_spawned: bool = battle.table._spawn_slot_transition(
@@ -1807,11 +2601,116 @@ func _run_slot_visual_transaction_contract(
 		"paid retreat energy was launched again as a ghost attachment (%d flyers)"
 		% retreat_flyer_count,
 	)
+	var retreat_movers := _slot_composite_movers(battle)
+	var retreat_active_mover: CardView
+	var retreat_z: Dictionary = {}
+	var retreat_is_composite := retreat_movers.size() == 2
+	for mover in retreat_movers:
+		retreat_is_composite = (
+			retreat_is_composite
+			and mover.get_node_or_null("PaperImage") == null
+			and mover.pokemon != null
+		)
+		retreat_z[mover.z_index] = true
+		if str(mover.get_meta("slot_composite_from", "")) == "active":
+			retreat_active_mover = mover
+	_expect(
+		retreat_is_composite
+		and retreat_z.size() == 2
+		and retreat_active_mover != null
+		and retreat_active_mover.pokemon.energy_card_ids.is_empty(),
+		"retreat did not move two complete, uniquely layered Pokemon stacks",
+	)
+	if retreat_movers.size() == 2:
+		var first_start := Vector2(retreat_movers[0].get_meta("motion_start"))
+		var first_finish := Vector2(retreat_movers[0].get_meta("motion_finish"))
+		var second_start := Vector2(retreat_movers[1].get_meta("motion_start"))
+		var second_finish := Vector2(retreat_movers[1].get_meta("motion_finish"))
+		var first_control: Vector2 = battle.table._slot_composite_control_point(
+			first_start,
+			first_finish,
+			float(retreat_movers[0].get_meta("slot_composite_lane_offset", 0.0)),
+		)
+		var second_control: Vector2 = battle.table._slot_composite_control_point(
+			second_start,
+			second_finish,
+			float(retreat_movers[1].get_meta("slot_composite_lane_offset", 0.0)),
+		)
+		_expect(
+			first_control.distance_to(second_control) > 50.0,
+			"bidirectional retreat movers still shared the same collision lane",
+		)
+		for mover in retreat_movers:
+			battle.table._update_slot_composite_motion(
+				0.5,
+				mover,
+				Vector2(mover.get_meta("motion_start")),
+				Vector2(mover.get_meta("motion_finish")),
+				float(mover.get_meta("slot_composite_lane_offset", 0.0)),
+				float(mover.get_meta("slot_composite_start_rotation", 0.0)),
+			)
+		var first_midpoint_bounds := retreat_movers[0].visual_global_bounds()
+		var second_midpoint_bounds := retreat_movers[1].visual_global_bounds()
+		_expect(
+			not first_midpoint_bounds.intersects(second_midpoint_bounds),
+			(
+				"bidirectional retreat composite bounds overlapped at 50%% "
+				+ "(%s vs %s)"
+			) % [first_midpoint_bounds, second_midpoint_bounds],
+		)
+		var retarget_probe := retreat_movers[0]
+		var retarget_view := retarget_probe.get_meta(
+			"motion_landing_view",
+			null,
+		) as CardView
+		if retarget_view != null:
+			var original_target_position: Vector2 = retarget_view.position
+			battle.table._update_slot_composite_motion(
+				0.5,
+				retarget_probe,
+				Vector2(retarget_probe.get_meta("motion_start")),
+				Vector2(retarget_probe.get_meta("motion_finish")),
+				float(retarget_probe.get_meta("slot_composite_lane_offset", 0.0)),
+				float(retarget_probe.get_meta("slot_composite_start_rotation", 0.0)),
+			)
+			var center_before_retarget: Vector2 = retarget_probe.position + retarget_probe.size * 0.5
+			retarget_view.position += Vector2(40.0, 0.0)
+			battle.table._update_slot_composite_motion(
+				0.5,
+				retarget_probe,
+				Vector2(retarget_probe.get_meta("motion_start")),
+				Vector2(retarget_probe.get_meta("motion_finish")),
+				float(retarget_probe.get_meta("slot_composite_lane_offset", 0.0)),
+				float(retarget_probe.get_meta("slot_composite_start_rotation", 0.0)),
+			)
+			var center_after_retarget: Vector2 = retarget_probe.position + retarget_probe.size * 0.5
+			retarget_view.position = original_target_position
+			_expect(
+				center_after_retarget.distance_to(center_before_retarget) > 8.0,
+				"slot composite kept a stale landing point after target layout moved",
+			)
+	_expect(
+		retreat_movers.is_empty()
+		or _maximum_visible_canvas_z(retreat_movers[0])
+		< _effective_canvas_z(battle.world_feedback),
+		"slot composite rendered above world feedback",
+	)
 	battle.table._clear_transient_visuals()
 
 	var attach_switch_before := UIPreviewStateFactory.battle_state(20260807)
 	attach_switch_before.revision = 134
 	attach_switch_before.players[0].active = PokemonState.new("sv1-104")
+	attach_switch_before.players[0].active.energy_card_ids.assign([
+		"sv1-ener-1",
+		"sv1-ener-2",
+		"sv1-ener-3",
+		"sv1-ener-4",
+		"sv1-ener-5",
+		"sv1-ener-6",
+		"sv1-ener-7",
+		"sv1-ener-8",
+	])
+	attach_switch_before.players[0].active.attached_tool_id = "sv1-202"
 	attach_switch_before.players[0].bench[0] = PokemonState.new("svi-chim")
 	attach_switch_before.players[0].discard = ["sv1-ener-5"]
 	battle.update_view(attach_switch_before, 0, empty_rows, "", false, "test")
@@ -1857,11 +2756,18 @@ func _run_slot_visual_transaction_contract(
 	var attached_source_row: Dictionary = battle.table._snapshot_slot_row(0, "active")
 	var attached_source_state: Dictionary = attached_source_row.get("pokemon", {})
 	_expect(
-		Array(attached_source_state.get("energy_card_ids", []))
-		== ["sv1-ener-5"],
+		Array(attached_source_state.get("energy_card_ids", [])).size() == 9
+		and Array(attached_source_state.get("energy_card_ids", [])).count(
+			"sv1-ener-5",
+		) == 2,
 		"attached energy was not committed to the next movement source snapshot",
 	)
 	battle.table._on_presentation_event_started(attach_switch_events[1])
+	_expect(
+		battle.table._presentation_slot_covers.has("0:active")
+		and battle.table._presentation_slot_covers.has("0:bench_0"),
+		"switch released the attached composite before its motion request",
+	)
 	var switch_flyer_start_count: int = battle.table._active_flyers.size()
 	var switch_spawned: bool = battle.table._spawn_slot_transition(
 		attach_switch_events[1],
@@ -1872,9 +2778,258 @@ func _run_slot_visual_transaction_contract(
 		battle.table._active_flyers.size() - switch_flyer_start_count
 	)
 	_expect(
-		switch_spawned and switch_flyer_count == 3,
-		"energy attached earlier in the batch did not travel with its Pokemon (%d flyers)"
+		switch_spawned and switch_flyer_count == 2,
+		"switch split an attached energy into a paper-card flyer (%d movers)"
 		% switch_flyer_count,
+	)
+	var switch_movers := _slot_composite_movers(battle)
+	var attached_composite_found := false
+	var switch_contains_paper_attachment := false
+	for mover in switch_movers:
+		if mover.get_node_or_null("PaperImage") != null:
+			switch_contains_paper_attachment = true
+		if (
+			str(mover.get_meta("slot_composite_from", "")) == "active"
+			and mover.pokemon != null
+			and mover.pokemon.energy_card_ids.size() == 9
+			and mover.pokemon.energy_card_ids.count("sv1-ener-5") == 2
+			and mover.pokemon.attached_tool_id == "sv1-202"
+		):
+			attached_composite_found = true
+	_expect(
+		switch_movers.size() == 2
+		and attached_composite_found
+		and not switch_contains_paper_attachment,
+		"energy attached earlier in the batch did not remain a badge on its composite Pokemon",
+	)
+	battle.table._clear_transient_visuals()
+
+	var promotion_before := UIPreviewStateFactory.battle_state(20260808)
+	promotion_before.revision = 136
+	promotion_before.players[0].active = null
+	promotion_before.players[0].bench[0] = PokemonState.new("svi-chim")
+	promotion_before.players[0].bench[0].energy_card_ids.assign(["sv1-ener-2"])
+	promotion_before.players[0].discard = ["sv1-ener-5"]
+	battle.update_view(promotion_before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var promotion_snapshot: Dictionary = battle.capture_presentation_snapshot()
+	var promotion_after := promotion_before.clone_state()
+	promotion_after.revision = 137
+	promotion_after.players[0].active = promotion_after.players[0].bench[0]
+	promotion_after.players[0].bench[0] = null
+	promotion_after.players[0].active.damage_counters = 3
+	promotion_after.players[0].active.energy_card_ids.append("sv1-ener-5")
+	promotion_after.players[0].discard.clear()
+	var promotion_events: Array[Dictionary] = PresentationEvent.normalize_all([
+		{
+			"event_id": "contract:slot:promotion-composite",
+			"event_type": "promoted",
+			"actor": 0,
+			"data": {"player": 0, "bench_idx": 0, "slot": "bench_0"},
+		},
+		{
+			"event_id": "contract:slot:damage-after-promotion",
+			"event_type": "damage_dealt",
+			"actor": 1,
+			"amount": 30,
+			"target": {"player": 0, "slot": "active"},
+			"data": {"player": 0, "slot": "active", "amount": 30},
+		},
+		{
+			"event_id": "contract:slot:attach-after-promotion",
+			"event_type": "energy_attached",
+			"actor": 0,
+			"card_id": "sv1-ener-5",
+			"source": {"player": 0, "zone": "discard", "index": 0},
+			"target": {"player": 0, "slot": "active"},
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_ids": ["sv1-ener-5"],
+			},
+		},
+	], 137, 0)
+	var promotion_event: Dictionary = promotion_events[0]
+	battle.update_view(promotion_after, 0, empty_rows, "", false, "test")
+	battle.table._stage_presentation_targets(promotion_events, promotion_snapshot)
+	battle.table._on_presentation_event_started(promotion_event)
+	var promotion_start_count: int = battle.table._active_flyers.size()
+	var promotion_spawned: bool = battle.table._spawn_slot_transition(
+		promotion_event,
+		0.46,
+		str(promotion_event.get("event_id", "")),
+	)
+	var promotion_movers := _slot_composite_movers(battle)
+	_expect(
+		promotion_spawned
+		and battle.table._active_flyers.size() - promotion_start_count == 1
+		and promotion_movers.size() == 1
+		and promotion_movers[0].pokemon != null
+		and promotion_movers[0].pokemon.energy_card_ids == ["sv1-ener-2"]
+		and promotion_movers[0].get_node_or_null("PaperImage") == null
+		and Array(promotion_movers[0].get_meta(
+			"slot_composite_remaining_queue",
+			[],
+		)).size() == 2,
+		"promotion did not use exactly one complete Pokemon composite",
+	)
+	if not promotion_movers.is_empty():
+		var promotion_tween := battle.table._flyer_tweens.get(
+			promotion_movers[0].get_instance_id(),
+		) as Tween
+		if promotion_tween != null and promotion_tween.is_valid():
+			promotion_tween.kill()
+		battle.table._finish_retained_slot_composite(
+			promotion_movers[0],
+			promotion_movers[0].get_meta("motion_landing_view") as CardView,
+			"0:active",
+			Array(promotion_movers[0].get_meta("slot_composite_remaining_queue", [])),
+			Vector2(promotion_movers[0].get_meta("motion_finish")),
+			"promoted",
+		)
+	battle.table._on_presentation_event_finished(promotion_events[0])
+	var promoted_cover_state := battle.table._presentation_slot_cover_states.get(
+		"0:active",
+	) as PokemonState
+	_expect(
+		promoted_cover_state != null
+		and promoted_cover_state.damage_counters == 0
+		and promoted_cover_state.energy_card_ids == ["sv1-ener-2"],
+		"empty active destination lost its planned post-promotion mutation queue",
+	)
+	battle.table._on_presentation_event_started(promotion_events[1])
+	battle.table._on_presentation_event_finished(promotion_events[1])
+	battle.table._on_presentation_event_started(promotion_events[2])
+	battle.table._on_presentation_event_finished(promotion_events[2])
+	var promoted_real_view: CardView = battle.table.get_slot_view(0, "active")
+	_expect(
+		not battle.table._presentation_slot_covers.has("0:active")
+		and promoted_real_view != null
+		and not promoted_real_view.is_presentation_hidden(),
+		"promotion mutation tail did not release the final active CardView",
+	)
+	battle.table._clear_transient_visuals()
+
+	var chained_before := UIPreviewStateFactory.battle_state(20260809)
+	chained_before.revision = 138
+	chained_before.players[0].active = PokemonState.new("sv1-104")
+	chained_before.players[0].bench[0] = PokemonState.new("svi-chim")
+	chained_before.players[0].discard = ["sv1-ener-2"]
+	battle.update_view(chained_before, 0, empty_rows, "", false, "test")
+	await process_frame
+	await process_frame
+	var chained_snapshot: Dictionary = battle.capture_presentation_snapshot()
+	var chained_after := chained_before.clone_state()
+	chained_after.revision = 139
+	var chained_old_active := chained_after.players[0].active
+	chained_after.players[0].active = chained_after.players[0].bench[0]
+	chained_after.players[0].bench[0] = chained_old_active
+	chained_after.players[0].active.damage_counters = 3
+	chained_after.players[0].active.energy_card_ids.append("sv1-ener-2")
+	chained_after.players[0].discard.clear()
+	var chained_events: Array[Dictionary] = PresentationEvent.normalize_all([
+		{
+			"event_id": "contract:slot:switch-before-mutations",
+			"event_type": "switched",
+			"actor": 0,
+			"data": {"player": 0, "slot": "bench_0"},
+		},
+		{
+			"event_id": "contract:slot:damage-after-switch",
+			"event_type": "damage_dealt",
+			"actor": 1,
+			"amount": 30,
+			"target": {"player": 0, "slot": "active"},
+			"data": {"player": 0, "slot": "active", "amount": 30},
+		},
+		{
+			"event_id": "contract:slot:attach-after-switch",
+			"event_type": "energy_attached",
+			"actor": 0,
+			"card_id": "sv1-ener-2",
+			"source": {"player": 0, "zone": "discard", "index": 0},
+			"target": {"player": 0, "slot": "active"},
+			"data": {
+				"player": 0,
+				"slot": "active",
+				"card_id": "sv1-ener-2",
+				"card_ids": ["sv1-ener-2"],
+			},
+		},
+	], 139, 0)
+	battle.update_view(chained_after, 0, empty_rows, "", false, "test")
+	battle.table._stage_presentation_targets(chained_events, chained_snapshot)
+	battle.table._on_presentation_event_started(chained_events[0])
+	battle.table._spawn_slot_transition(
+		chained_events[0],
+		0.46,
+		str(chained_events[0].get("event_id", "")),
+	)
+	var chained_active_mover: CardView
+	for mover in _slot_composite_movers(battle):
+		if str(mover.get_meta("slot_composite_to", "")) == "active":
+			chained_active_mover = mover
+			break
+	_expect(
+		chained_active_mover != null
+		and Array(chained_active_mover.get_meta(
+			"slot_composite_remaining_queue",
+			[],
+		)).size() == 2,
+		"switch did not preserve the destination slot's later mutation queue",
+	)
+	if chained_active_mover != null:
+		var chained_tween := battle.table._flyer_tweens.get(
+			chained_active_mover.get_instance_id(),
+		) as Tween
+		if chained_tween != null and chained_tween.is_valid():
+			chained_tween.kill()
+		battle.table._finish_retained_slot_composite(
+			chained_active_mover,
+			chained_active_mover.get_meta("motion_landing_view") as CardView,
+			"0:active",
+			Array(chained_active_mover.get_meta("slot_composite_remaining_queue", [])),
+			Vector2(chained_active_mover.get_meta("motion_finish")),
+			"switched",
+		)
+	battle.table._on_presentation_event_finished(chained_events[0])
+	var chained_cover_state := battle.table._presentation_slot_cover_states.get(
+		"0:active",
+	) as PokemonState
+	var chained_snapshot_state: Dictionary = battle.table._snapshot_slot_row(
+		0,
+		"active",
+	).get("pokemon", {})
+	_expect(
+		chained_cover_state != null
+		and chained_cover_state.card_id == "svi-chim"
+		and chained_cover_state.damage_counters == 0
+		and chained_cover_state.energy_card_ids.is_empty()
+		and str(chained_snapshot_state.get("card_id", "")) == "svi-chim",
+		"switch landing did not remap the incoming Pokemon cover/snapshot before later mutations",
+	)
+	battle.table._on_presentation_event_started(chained_events[1])
+	_expect(
+		chained_cover_state != null
+		and chained_cover_state.damage_counters == 3
+		and battle.table.get_slot_view(0, "active").is_presentation_hidden(),
+		"post-switch damage bypassed the retained incoming-Pokemon cover",
+	)
+	battle.table._on_presentation_event_finished(chained_events[1])
+	_expect(
+		battle.table._presentation_slot_covers.has("0:active"),
+		"post-switch cover released before the later attachment event",
+	)
+	battle.table._on_presentation_event_started(chained_events[2])
+	battle.table._on_presentation_event_finished(chained_events[2])
+	var chained_real_view: CardView = battle.table.get_slot_view(0, "active")
+	_expect(
+		not battle.table._presentation_slot_covers.has("0:active")
+		and chained_real_view != null
+		and not chained_real_view.is_presentation_hidden()
+		and chained_real_view.modulate.a > 0.99,
+		"post-switch mutation queue did not hand off its final state cleanly",
 	)
 	battle.table._clear_transient_visuals()
 
@@ -1967,8 +3122,16 @@ func _run_slot_visual_transaction_contract(
 		and component_points[3].distance_to(
 			attachment_centers.get("energy:sv1-ener-5", Vector2.ZERO)) < 0.1
 		and component_sizes[1].y < component_sizes[0].y
-		and component_sizes[2].y < component_sizes[0].y,
+		and component_sizes[2].y < component_sizes[0].y
+		and absf(component_sizes[1].x - component_sizes[1].y) < 0.1
+		and absf(component_sizes[2].x - component_sizes[2].y) < 0.1,
 		"KO components did not leave from their rendered badges at attachment size",
+	)
+	_expect(
+		battle.table._public_motion_texture_for_card_id(
+			"contract-missing-public-attachment",
+		) != battle.table._texture_for_card_id(""),
+		"public missing attachment art still masqueraded as a concealed card back",
 	)
 	battle.table._on_presentation_event_started(ko_events[0])
 	battle.table._on_presentation_event_finished(ko_events[0])
@@ -3453,6 +4616,19 @@ func _motion_entities(battle: Control) -> Array[Control]:
 	for child in battle.effects.get_children():
 		if bool(child.get_meta("card_motion_entity", false)) and child.visible:
 			result.append(child as Control)
+	return result
+
+
+func _slot_composite_movers(battle: Control) -> Array[CardView]:
+	var result: Array[CardView] = []
+	for value in battle.table._active_flyers:
+		var mover := value as CardView
+		if (
+			mover != null
+			and is_instance_valid(mover)
+			and bool(mover.get_meta("slot_composite_motion", false))
+		):
+			result.append(mover)
 	return result
 
 

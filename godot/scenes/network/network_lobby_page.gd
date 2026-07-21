@@ -36,6 +36,7 @@ var kind := "lan"
 var connection_state := ConnectionState.IDLE
 var _current_room_code := ""
 var _compact := false
+var _dense_wide := false
 var _compact_step := 0
 var _address_drafts: Dictionary = {
 	"lan": "127.0.0.1",
@@ -45,6 +46,8 @@ var _updating_kind_ui := false
 var _received_locked_rules_options := false
 
 @onready var page: VBoxContainer = %Page
+@onready var page_scroll: ScrollContainer = get_node("PageMargin/Center") as ScrollContainer
+@onready var page_center: HBoxContainer = page_scroll.get_node("PageCenter") as HBoxContainer
 @onready var back_button: Button = %BackButton
 @onready var intro_panel: PanelContainer = %IntroPanel
 @onready var form_panel: PanelContainer = %FormPanel
@@ -84,7 +87,10 @@ var _received_locked_rules_options := false
 @onready var room_input: LineEdit = %NetworkRoomInput
 @onready var deck_option: OptionButton = %NetworkDeckOption
 @onready var deck_label: Label = %DeckLabel
+@onready var rules_label: Label = %RulesLabel
+@onready var rule_row: HBoxContainer = %RuleRow
 @onready var matchup_toggle: CheckButton = %TypeMatchupToggle
+@onready var rule_status_badge: Label = %RuleStatusBadge
 @onready var status_panel: PanelContainer = %StatusPanel
 @onready var status_dot: Label = %StatusDot
 @onready var status_label: Label = %NetworkStatusLabel
@@ -140,7 +146,9 @@ func configure(p_catalog: CardCatalog, p_kind: String, relay_url: String) -> voi
 
 
 func _resolve_nodes() -> void:
-	page = get_node("PageMargin/Center/Page") as VBoxContainer
+	page = get_node("%Page") as VBoxContainer
+	page_scroll = get_node("PageMargin/Center") as ScrollContainer
+	page_center = page_scroll.get_node("PageCenter") as HBoxContainer
 	back_button = page.get_node("TopBar/BackButton") as Button
 	intro_panel = page.get_node("Body/IntroPanel") as PanelContainer
 	steps = page.get_node("Steps") as HBoxContainer
@@ -183,7 +191,10 @@ func _resolve_nodes() -> void:
 	room_error = room_row.get_node("RoomError") as Label
 	deck_option = form.get_node("NetworkDeckOption") as OptionButton
 	deck_label = form.get_node("DeckLabel") as Label
-	matchup_toggle = form.get_node("TypeMatchupToggle") as CheckButton
+	rules_label = form.get_node("RulesLabel") as Label
+	rule_row = form.get_node("RuleRow") as HBoxContainer
+	matchup_toggle = rule_row.get_node("TypeMatchupToggle") as CheckButton
+	rule_status_badge = rule_row.get_node("RuleStatusBadge") as Label
 	for option in [kind_option, role_option, deck_option]:
 		option.get_popup().allow_search = false
 	status_panel = page.get_node("StatusPanel") as PanelContainer
@@ -378,7 +389,7 @@ func _on_matchup_toggled(_enabled: bool) -> void:
 
 
 func _refresh_matchup_toggle_presentation() -> void:
-	if matchup_toggle == null or role_option == null:
+	if matchup_toggle == null or role_option == null or rule_status_badge == null:
 		return
 	var host := selected_role() == "host"
 	var enabled := matchup_toggle.button_pressed
@@ -390,10 +401,10 @@ func _refresh_matchup_toggle_presentation() -> void:
 		ConnectionState.WAITING,
 		ConnectionState.CONNECTED,
 	]
+	matchup_toggle.text = "启用弱点与抗性"
 	if host:
-		matchup_toggle.text = "弱点与抗性：%s（%s）" % [
-			state_copy,
-			"房主已锁定" if connection_locked else "房主可修改",
+		rule_status_badge.text = "%s · %s" % [
+			state_copy, "已锁定" if connection_locked else "可修改",
 		]
 		matchup_toggle.tooltip_text = (
 			"当前已开启；开局后将按中国大陆官方步骤计算弱点与抗性。"
@@ -405,18 +416,20 @@ func _refresh_matchup_toggle_presentation() -> void:
 			"房主已锁定" if connection_locked else "房主可修改",
 		]
 	elif _received_locked_rules_options:
-		matchup_toggle.text = "弱点与抗性：%s（房主已锁定 · 只读）" % state_copy
+		rule_status_badge.text = "%s · 房主锁定" % state_copy
 		matchup_toggle.tooltip_text = "房主已将弱点与抗性设置为%s；挑战者不可修改。" % state_copy
 		matchup_toggle.accessibility_name = "弱点与抗性规则，%s，房主已锁定，只读" % state_copy
 	else:
-		matchup_toggle.text = "弱点与抗性：等待房主同步（只读）"
+		rule_status_badge.text = "等待同步 · 只读"
 		matchup_toggle.tooltip_text = "加入房间后将显示房主锁定的弱点与抗性设置。"
 		matchup_toggle.accessibility_name = "弱点与抗性规则，等待房主同步，只读"
 		state_color = DesignTokens.CYAN
-	_apply_matchup_toggle_color(matchup_toggle, state_color)
+	_apply_matchup_status_color(state_color)
 
 
-func _apply_matchup_toggle_color(toggle: CheckButton, color: Color) -> void:
+func _apply_matchup_status_color(color: Color) -> void:
+	if matchup_toggle == null or rule_status_badge == null:
+		return
 	for color_name in [
 		&"font_color",
 		&"font_hover_color",
@@ -431,7 +444,13 @@ func _apply_matchup_toggle_color(toggle: CheckButton, color: Color) -> void:
 		&"icon_pressed_color",
 		&"icon_disabled_color",
 	]:
-		toggle.add_theme_color_override(color_name, color)
+		matchup_toggle.remove_theme_color_override(color_name)
+	rule_status_badge.add_theme_color_override(&"font_color", color)
+	var badge_style := rule_status_badge.get_theme_stylebox(&"normal").duplicate() as StyleBoxFlat
+	if badge_style:
+		badge_style.border_color = Color(color.r, color.g, color.b, 0.78)
+		badge_style.bg_color = Color(color.r, color.g, color.b, 0.12)
+		rule_status_badge.add_theme_stylebox_override(&"normal", badge_style)
 
 
 func show_locked_rules_options(options: Dictionary) -> void:
@@ -624,20 +643,70 @@ func _apply_responsive_layout() -> void:
 		or size.x < COMPACT_WIDTH
 		or size.x / maxf(size.y, 1.0) < COMPACT_ASPECT
 	)
+	_dense_wide = not _compact and size.y < 980.0
 	intro_panel.visible = not _compact
-	form_panel.custom_minimum_size.y = 0.0 if _compact else 580.0
+	form_panel.custom_minimum_size.y = (
+		0.0 if _compact else 568.0 if _dense_wide else 620.0
+	)
 	steps.visible = not _compact
 	compact_step_bar.visible = _compact
-	page.custom_minimum_size.x = (
-		minf(1040.0, maxf(620.0, size.x - 40.0))
-		if _compact
-		else 1120.0
-	)
 	var margin := 20 if _compact else 32
 	var page_margin := get_node("PageMargin") as MarginContainer
 	for side in ["left", "right"]:
 		page_margin.add_theme_constant_override("margin_" + side, margin)
+	# A resize notification can arrive before MarginContainer has propagated its
+	# new side margins into PageScroll. Never let that one-frame stale width make
+	# the centered Page wider than the current compact viewport.
+	var current_margin_width := maxf(1.0, size.x - margin * 2.0)
+	var scroll_width := current_margin_width
+	if page_scroll and page_scroll.size.x > 1.0:
+		scroll_width = minf(scroll_width, page_scroll.size.x)
+	var compact_available_width := maxf(
+		1.0,
+		scroll_width - _vertical_scrollbar_reserve(),
+	)
+	page.custom_minimum_size.x = (
+		minf(1040.0, maxf(620.0, compact_available_width))
+		if _compact
+		else 1120.0
+	)
+	var vertical_margin := 18 if _compact else 10 if _dense_wide else 18
+	for side in ["top", "bottom"]:
+		page_margin.add_theme_constant_override("margin_" + side, vertical_margin)
+	# Room-code controls keep a real 48 px target when a room is locked. One
+	# pixel less between the five dense sections keeps that expanded status row
+	# inside a 1600×900 safe viewport without shrinking any interactive target.
+	page.add_theme_constant_override("separation", 5 if _dense_wide else 12)
+	steps.custom_minimum_size.y = 30.0 if _dense_wide else 36.0
+	status_panel.custom_minimum_size.y = 60.0 if _dense_wide else 68.0
+	connect_button.custom_minimum_size.y = 54.0 if _dense_wide else 58.0
+	var status_margin := status_panel.get_node("StatusMargin") as MarginContainer
+	for side in ["top", "bottom"]:
+		status_margin.add_theme_constant_override(
+			"margin_" + side,
+			4 if _dense_wide else 8,
+		)
+	var form_margin := form_panel.get_node("FormMargin") as MarginContainer
+	for side in ["top", "bottom"]:
+		form_margin.add_theme_constant_override(
+			"margin_" + side,
+			10 if _dense_wide else 24,
+		)
+	var form := form_margin.get_node("Form") as VBoxContainer
+	form.add_theme_constant_override("separation", 6 if _dense_wide else 10)
+	var field_height := 48.0 if _dense_wide else 54.0
+	for field in [kind_option, role_option, address_input, port_input, room_input, deck_option]:
+		field.custom_minimum_size.y = field_height
 	_apply_compact_step_visibility()
+
+
+func _vertical_scrollbar_reserve() -> float:
+	if page_scroll == null:
+		return 16.0
+	var scrollbar := page_scroll.get_v_scroll_bar()
+	if scrollbar == null:
+		return 16.0
+	return maxf(16.0, scrollbar.get_combined_minimum_size().x)
 
 
 func handle_back() -> bool:
@@ -680,13 +749,15 @@ func _apply_compact_step_visibility() -> void:
 	)
 	deck_label.visible = not _compact or _compact_step == 2
 	deck_option.visible = not _compact or _compact_step == 2
+	rules_label.visible = not _compact or _compact_step == 2
+	rule_row.visible = not _compact or _compact_step == 2
 	connect_button.visible = not _compact or _compact_step == 2
 	if not _compact:
 		return
 	compact_step_label.text = [
 		"01 / 03  联机方式与身份",
 		"02 / 03  连接信息",
-		"03 / 03  选择牌组",
+		"03 / 03  规则与牌组",
 	][_compact_step]
 	compact_previous_button.visible = _compact_step > 0
 	compact_next_button.visible = _compact_step < 2

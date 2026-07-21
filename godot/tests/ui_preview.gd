@@ -90,17 +90,145 @@ func _render_previews() -> void:
 	if not _capture("help.png"):
 		_finish(1)
 		return
+	var help_turn_category := ui.modal_body.find_child(
+		"TurnCategory", true, false
+	) as Button
+	var help_mouse_pressed := await _begin_mouse_press(help_turn_category)
+	if not help_mouse_pressed:
+		push_error("Help Category did not enter a real mouse-pressed draw state")
+		_finish(1)
+		return
+	if not _capture("help-category-mouse-pressed.png"):
+		_finish(1)
+		return
+	await _cancel_mouse_press(help_turn_category)
+	var help_board_category := ui.modal_body.find_child(
+		"BoardCategory", true, false
+	) as Button
+	var help_touch_pressed := await _begin_touch_press(help_board_category)
+	if not help_touch_pressed:
+		push_error("Help Category did not enter a real touch-pressed draw state")
+		_finish(1)
+		return
+	if not _capture("help-category-touch-pressed.png"):
+		_finish(1)
+		return
+	await _cancel_touch_press()
+	if (
+		not _captures_differ("help.png", "help-category-mouse-pressed.png")
+		or not _captures_differ("help.png", "help-category-touch-pressed.png")
+	):
+		push_error("Help Category pressed fixtures are visually identical to normal")
+		_finish(1)
+		return
 	ui._close_modal()
 	await _settle_frontend(2)
 
 	ui.show_network_setup("lan")
 	await _settle_frontend()
+	Input.warp_mouse(Vector2(4, 4))
+	var network_reset_hover := InputEventMouseMotion.new()
+	network_reset_hover.position = Vector2(4, 4)
+	network_reset_hover.global_position = Vector2(4, 4)
+	Input.parse_input_event(network_reset_hover)
+	await _settle_frontend(2)
+	if not _assert_network_first_screen(ui.current_network_page, "LAN idle"):
+		_finish(1)
+		return
 	if not _capture("network-lan.png"):
 		_finish(1)
 		return
+	var network_rule_toggle := (
+		ui.current_network_page.matchup_toggle as CheckButton
+	)
+	await _move_pointer_to_control(network_rule_toggle)
+	await RenderingServer.frame_post_draw
+	if network_rule_toggle.get_draw_mode() != BaseButton.DRAW_HOVER:
+		push_error("Network rule toggle did not enter a real hover draw state")
+		_finish(1)
+		return
+	if not _capture("network-rule-hover.png"):
+		_finish(1)
+		return
+	var network_rule_pressed := await _begin_mouse_press(network_rule_toggle)
+	if not network_rule_pressed:
+		push_error("Network rule toggle did not enter a real pressed draw state")
+		_finish(1)
+		return
+	if not _capture("network-rule-pressed.png"):
+		_finish(1)
+		return
+	await _cancel_mouse_press(network_rule_toggle)
+	await _click_control(network_rule_toggle)
+	await _settle_frontend(2)
+	await RenderingServer.frame_post_draw
+	var enabled_hover_style := (
+		network_rule_toggle.get_theme_stylebox(&"hover_pressed") as StyleBoxFlat
+	)
+	if (
+		not network_rule_toggle.button_pressed
+		or network_rule_toggle.get_draw_mode() != BaseButton.DRAW_HOVER_PRESSED
+		or enabled_hover_style == null
+		or enabled_hover_style.get_border_width(SIDE_LEFT) < 2
+		or enabled_hover_style.border_color.a < 0.9
+	):
+		push_error(
+			"Network rule toggle did not resolve its visible hover_pressed state after pointer input"
+		)
+		_finish(1)
+		return
+	if not _capture("network-rule-enabled-hover.png"):
+		_finish(1)
+		return
+	Input.warp_mouse(Vector2(4, 4))
+	var network_enabled_leave := InputEventMouseMotion.new()
+	network_enabled_leave.position = Vector2(4, 4)
+	network_enabled_leave.global_position = Vector2(4, 4)
+	Input.parse_input_event(network_enabled_leave)
+	await _settle_frontend(2)
+	await RenderingServer.frame_post_draw
+	if network_rule_toggle.get_draw_mode() != BaseButton.DRAW_PRESSED:
+		push_error("Network rule toggle did not return to its non-hover enabled draw state")
+		_finish(1)
+		return
+	if not _capture("network-rule-enabled.png"):
+		_finish(1)
+		return
+	ui.current_network_page.set_connection_state(
+		NetworkLobbyPage.ConnectionState.WAITING,
+		"规则已经随房间锁定。",
+		"RULE42",
+	)
+	await _settle_frontend(5)
+	if (
+		not _assert_network_first_screen(ui.current_network_page, "LAN locked")
+		or not network_rule_toggle.disabled
+		or not network_rule_toggle.button_pressed
+	):
+		push_error("Network rule locked fixture lost its enabled value or remained interactive")
+		_finish(1)
+		return
+	if not _capture("network-rule-locked.png"):
+		_finish(1)
+		return
+	if (
+		not _captures_differ("network-lan.png", "network-rule-hover.png")
+		or not _captures_differ("network-rule-hover.png", "network-rule-pressed.png")
+		or not _captures_differ("network-rule-pressed.png", "network-rule-enabled-hover.png")
+		or not _captures_differ("network-rule-enabled-hover.png", "network-rule-enabled.png")
+		or not _captures_differ("network-rule-enabled.png", "network-rule-locked.png")
+	):
+		push_error("Network rule toggle fixtures do not distinguish all pointer and lock states")
+		_finish(1)
+		return
+	Input.warp_mouse(Vector2(4, 4))
+	await _settle_frontend(2)
 
 	ui.show_network_setup("relay")
 	await _settle_frontend()
+	if not _assert_network_first_screen(ui.current_network_page, "Relay idle"):
+		_finish(1)
+		return
 	if not _capture("network.png"):
 		_finish(1)
 		return
@@ -110,6 +238,9 @@ func _render_previews() -> void:
 		"ROOM42",
 	)
 	await _settle_frontend()
+	if not _assert_network_first_screen(ui.current_network_page, "Relay waiting"):
+		_finish(1)
+		return
 	if not _capture("network-waiting.png"):
 		_finish(1)
 		return
@@ -118,6 +249,9 @@ func _render_previews() -> void:
 		"连接中断：无法联系 Relay 服务，请检查网络地址后重新尝试。",
 	)
 	await _settle_frontend()
+	if not _assert_network_first_screen(ui.current_network_page, "Relay error"):
+		_finish(1)
+		return
 	if not _capture("network-error.png"):
 		_finish(1)
 		return
@@ -126,6 +260,22 @@ func _render_previews() -> void:
 	ui.show_settings()
 	await _settle_frontend()
 	if not _capture("settings.png"):
+		_finish(1)
+		return
+	var settings_reset := ui.modal_body.find_child(
+		"ResetDefaultsButton", true, false
+	) as Button
+	var settings_touch_pressed := await _begin_touch_press(settings_reset)
+	if not settings_touch_pressed:
+		push_error("Settings Ghost action did not enter a real touch-pressed state")
+		_finish(1)
+		return
+	if not _capture("settings-ghost-touch-pressed.png"):
+		_finish(1)
+		return
+	await _cancel_touch_press()
+	if not _captures_differ("settings.png", "settings-ghost-touch-pressed.png"):
+		push_error("Settings Ghost touch fixture is visually identical to normal")
 		_finish(1)
 		return
 	ui.modal_scroll.scroll_vertical = int(ui.modal_scroll.get_v_scroll_bar().max_value)
@@ -141,6 +291,63 @@ func _render_previews() -> void:
 	if not _capture("decks.png"):
 		_finish(1)
 		return
+	var deck_page := (
+		ui.screen_host.get_child(0) as DeckSelectPage
+		if ui.screen_host != null and ui.screen_host.get_child_count() > 0
+		else null
+	)
+	var deck_matchup_toggle := (
+		deck_page.get_node("%TypeMatchupToggle") as CheckButton
+		if deck_page != null
+		else null
+	)
+	if deck_matchup_toggle == null:
+		push_error("Deck matchup toggle preview fixture is unavailable")
+		_finish(1)
+		return
+	await _click_control(deck_matchup_toggle)
+	await _settle_frontend(2)
+	await RenderingServer.frame_post_draw
+	var deck_enabled_hover_style := (
+		deck_matchup_toggle.get_theme_stylebox(&"hover_pressed") as StyleBoxFlat
+	)
+	if (
+		not deck_matchup_toggle.button_pressed
+		or deck_matchup_toggle.theme_type_variation != &"FrontRuleToggle"
+		or deck_matchup_toggle.get_draw_mode() != BaseButton.DRAW_HOVER_PRESSED
+		or deck_enabled_hover_style == null
+		or deck_enabled_hover_style.get_border_width(SIDE_LEFT) < 2
+		or deck_enabled_hover_style.border_color.a < 0.9
+	):
+		push_error("Deck matchup toggle did not render its bordered enabled-hover state")
+		_finish(1)
+		return
+	if not _capture("decks-matchup-enabled-hover.png"):
+		_finish(1)
+		return
+	Input.warp_mouse(Vector2(4, 4))
+	var deck_toggle_leave := InputEventMouseMotion.new()
+	deck_toggle_leave.position = Vector2(4, 4)
+	deck_toggle_leave.global_position = Vector2(4, 4)
+	Input.parse_input_event(deck_toggle_leave)
+	await _settle_frontend(2)
+	await RenderingServer.frame_post_draw
+	if deck_matchup_toggle.get_draw_mode() != BaseButton.DRAW_PRESSED:
+		push_error("Deck matchup toggle did not retain its bordered enabled state after hover")
+		_finish(1)
+		return
+	if not _capture("decks-matchup-enabled.png"):
+		_finish(1)
+		return
+	if not _captures_differ(
+		"decks-matchup-enabled-hover.png",
+		"decks-matchup-enabled.png",
+	):
+		push_error("Deck matchup enabled-hover fixture is visually identical to enabled")
+		_finish(1)
+		return
+	deck_matchup_toggle.set_pressed_no_signal(false)
+	deck_matchup_toggle.toggled.emit(false)
 	ui._show_deck_details("fire")
 	await _settle_frontend()
 	if not _capture("deck-detail.png"):
@@ -177,12 +384,45 @@ func _render_previews() -> void:
 	ui.current_network_page.role_option.select(1)
 	ui.current_network_page.refresh_fields(1)
 	await _settle_frontend()
+	if not _assert_physical_touch_targets([
+		ui.current_network_page.back_button,
+		ui.current_network_page.compact_next_button,
+		ui.current_network_page.kind_option,
+		ui.current_network_page.role_option,
+	], "network compact"):
+		_finish(1)
+		return
 	if not _capture("network-compact.png"):
+		_finish(1)
+		return
+	ui.current_network_page.call("_set_compact_step", 2)
+	ui.current_network_page.show_locked_rules_options({"apply_type_matchups": true})
+	await _settle_frontend(3)
+	var compact_rule_toggle := ui.current_network_page.matchup_toggle as CheckButton
+	if (
+		not compact_rule_toggle.is_visible_in_tree()
+		or not compact_rule_toggle.disabled
+		or not compact_rule_toggle.button_pressed
+		or not _assert_physical_touch_targets(
+			[compact_rule_toggle], "network compact locked rule"
+		)
+	):
+		push_error("Network compact rule step does not expose a legible locked toggle")
+		_finish(1)
+		return
+	if not _capture("network-compact-rule-locked.png"):
 		_finish(1)
 		return
 	ui.show_title()
 	ui.show_settings()
 	await _settle_frontend()
+	if not _assert_physical_touch_targets([
+		ui.modal_confirm,
+		ui.modal_cancel,
+		ui.modal_body.find_child("ResetDefaultsButton", true, false),
+	], "settings compact"):
+		_finish(1)
+		return
 	if not _capture("settings-compact.png"):
 		_finish(1)
 		return
@@ -190,6 +430,15 @@ func _render_previews() -> void:
 	await _settle_frontend(2)
 	ui._show_help()
 	await _settle_frontend()
+	if not _assert_physical_touch_targets([
+		ui.modal_confirm,
+		ui.modal_body.find_child("QuickStartCategory", true, false),
+		ui.modal_body.find_child("TurnCategory", true, false),
+		ui.modal_body.find_child("BoardCategory", true, false),
+		ui.modal_body.find_child("NetworkCategory", true, false),
+	], "help compact"):
+		_finish(1)
+		return
 	if not _capture("help-compact.png"):
 		_finish(1)
 		return
@@ -342,6 +591,52 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	root.size = Vector2i(1600, 900)
+	await _settle_rendered(4)
+	var energy_count_demo := demo.clone_state()
+	energy_count_demo.players[0].active.energy_card_ids.clear()
+	energy_count_demo.players[0].bench[0].energy_card_ids.clear()
+	for _energy_index in range(12):
+		energy_count_demo.players[0].active.energy_card_ids.append("sv1-ener-2")
+	for _energy_index in range(10):
+		energy_count_demo.players[0].bench[0].energy_card_ids.append("sv1-ener-2")
+	_update_battle_preview(
+		ui,
+		energy_count_demo,
+		UIPreviewStateFactory.action_rows(energy_count_demo),
+	)
+	await _settle_rendered(4)
+	if (
+		not _energy_count_badge_is_readable(
+			ui.battle_screen.table.get_slot_view(0, "active"), "12"
+		)
+		or not _energy_count_badge_is_readable(
+			ui.battle_screen.table.get_slot_view(0, "bench_0"), "10"
+		)
+	):
+		push_error("Standard battle energy count badges are unreadable or clipped")
+		_finish(1)
+		return
+	if not _capture("battle-energy-counts.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(900, 540)
+	await _settle_rendered(4)
+	if (
+		not _energy_count_badge_is_readable(
+			ui.battle_screen.table.get_slot_view(0, "active"), "12"
+		)
+		or not _energy_count_badge_is_readable(
+			ui.battle_screen.table.get_slot_view(0, "bench_0"), "10"
+		)
+	):
+		push_error("Compact battle energy count badges are unreadable or clipped")
+		_finish(1)
+		return
+	if not _capture("battle-energy-counts-compact.png"):
+		_finish(1)
+		return
+	root.size = Vector2i(1600, 900)
+	_update_battle_preview(ui, demo, UIPreviewStateFactory.action_rows(demo))
 	await _settle_rendered(4)
 	var full_bench_demo := demo.clone_state()
 	var bench_cards := [
@@ -546,6 +841,27 @@ func _render_previews() -> void:
 		return
 	root.size = Vector2i(900, 540)
 	await _settle_rendered(4)
+	var compact_detail := ui.battle_screen.detail_panel as BattleDetailPanel
+	if (
+		compact_detail == null
+		or not compact_detail.is_compact_layout()
+		or not compact_detail.scale.is_equal_approx(Vector2.ONE)
+		or not compact_detail.size.is_equal_approx(
+			BattleDetailPanel.COMPACT_PANEL_SIZE
+		)
+		or not _physical_control_rect(compact_detail).size.is_equal_approx(
+			BattleDetailPanel.COMPACT_PANEL_SIZE
+		)
+		or not _assert_physical_touch_targets(
+			[compact_detail.close_button],
+			"battle detail compact",
+		)
+	):
+		push_error(
+			"Compact battle detail did not use an unscaled 560x240 bottom surface"
+		)
+		_finish(1)
+		return
 	if not _capture("battle-card-preview-compact.png"):
 		_finish(1)
 		return
@@ -636,6 +952,24 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	if not _capture("battle-menu-open.png"):
+		_finish(1)
+		return
+	var danger_mouse_pressed := await _begin_mouse_press(ui.modal_cancel)
+	if not danger_mouse_pressed:
+		push_error("Battle Danger action did not enter a real pressed draw state")
+		_finish(1)
+		return
+	if not _capture("battle-menu-danger-pressed.png"):
+		_finish(1)
+		return
+	await _cancel_mouse_press(ui.modal_cancel)
+	if (
+		not ui.modal_layer.visible
+		or not _captures_differ(
+			"battle-menu-open.png", "battle-menu-danger-pressed.png"
+		)
+	):
+		push_error("Battle Danger pressed fixture did not remain visible and distinct")
 		_finish(1)
 		return
 	ui._close_modal()
@@ -940,6 +1274,8 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
+	_set_preview_motion("standard", "high")
+	await _settle_rendered(2)
 
 	var energy_snapshot: Dictionary = ui.battle_screen.capture_presentation_snapshot()
 	if not demo.players[0].hand.is_empty():
@@ -966,6 +1302,64 @@ func _render_previews() -> void:
 		_finish(1)
 		return
 	ui.battle_screen.clear_presentation_for_resync()
+	await _settle_rendered(2)
+
+	# Capture the complete stack during a real switch. The outgoing active has
+	# both an attached Tool and the energy added above, so any regression to
+	# independent paper-card attachment flyers is visible and asserted here.
+	var switch_snapshot: Dictionary = ui.battle_screen.capture_presentation_snapshot()
+	var outgoing_active: PokemonState = demo.players[0].active
+	var incoming_bench: PokemonState = demo.players[0].bench[0]
+	if outgoing_active == null or incoming_bench == null:
+		push_error("Switch preview fixture requires an active and bench Pokemon")
+		_finish(1)
+		return
+	demo.players[0].active = incoming_bench
+	demo.players[0].bench[0] = outgoing_active
+	ui._refresh_game()
+	await process_frame
+	ui.battle_screen.play_presentation([{
+		"event_type": "switched",
+		"actor": 0,
+		"source": {"player": 0, "slot": "active"},
+		"target": {"player": 0, "slot": "bench_0"},
+		"data": {"player": 0, "slot": "bench_0"},
+	}], demo.revision + 121, 0, switch_snapshot)
+	await create_timer(0.08).timeout
+	var switch_movers: Array[Control] = []
+	for flyer_value in ui.battle_screen.table._active_flyers:
+		var flyer := flyer_value as Control
+		if flyer != null and bool(flyer.get_meta("slot_composite_motion", false)):
+			switch_movers.append(flyer)
+	if switch_movers.size() != 2:
+		push_error(
+			"Switch preview expected two Pokemon composites, got %d"
+			% switch_movers.size()
+		)
+		_finish(1)
+		return
+	for mover in switch_movers:
+		if mover.get_node_or_null("PaperImage") != null:
+			push_error("Switch preview regressed to a paper-card attachment flyer")
+			_finish(1)
+			return
+	if not _capture("battle-switch-25.png"):
+		_finish(1)
+		return
+	await create_timer(0.11).timeout
+	if not _capture("battle-switch-50.png"):
+		_finish(1)
+		return
+	await create_timer(0.11).timeout
+	if not _capture("battle-switch-75.png"):
+		_finish(1)
+		return
+	await create_timer(0.34).timeout
+	ui.battle_screen.clear_presentation_for_resync()
+	demo.players[0].active = outgoing_active
+	demo.players[0].bench[0] = incoming_bench
+	ui._refresh_game()
+	await _settle_rendered(2)
 
 	var evolution_card_id := "svi-infr"
 	demo.players[0].hand.append(evolution_card_id)
@@ -1012,16 +1406,37 @@ func _render_previews() -> void:
 			{
 				"option_id": "card:deck:0:sv1-104",
 				"label": "墓仔狗",
+				"ref": {
+					"kind": "card",
+					"player": 0,
+					"zone": "deck",
+					"index": 0,
+					"card_id": "sv1-104",
+				},
 				"value": {"index": 0, "card_id": "sv1-104"},
 			},
 			{
 				"option_id": "card:deck:1:sv1-151",
 				"label": "高级球",
+				"ref": {
+					"kind": "card",
+					"player": 0,
+					"zone": "deck",
+					"index": 1,
+					"card_id": "sv1-151",
+				},
 				"value": {"index": 1, "card_id": "sv1-151"},
 			},
 			{
 				"option_id": "card:deck:2:svf-potion",
 				"label": "伤药",
+				"ref": {
+					"kind": "card",
+					"player": 0,
+					"zone": "deck",
+					"index": 2,
+					"card_id": "svf-potion",
+				},
 				"value": {"index": 2, "card_id": "svf-potion"},
 			},
 		],
@@ -1031,6 +1446,10 @@ func _render_previews() -> void:
 	ui.show_choice(choice)
 	await process_frame
 	await create_timer(0.25).timeout
+	if ui.active_choice_panel == null or ui.active_choice_panel.card_option_count() != 3:
+		push_error("Choice preview fixture did not render its card options")
+		_finish(1)
+		return
 	if not _capture("choice.png"):
 		_finish(1)
 		return
@@ -1056,6 +1475,13 @@ func _render_previews() -> void:
 	await process_frame
 	await create_timer(0.18).timeout
 	if not _capture("choice-switched.png"):
+		_finish(1)
+		return
+	if (
+		not _captures_differ("choice.png", "choice-selected.png")
+		or not _captures_differ("choice-selected.png", "choice-switched.png")
+	):
+		push_error("Choice preview state captures are unexpectedly identical")
 		_finish(1)
 		return
 	root.size = Vector2i(560, 720)
@@ -1086,6 +1512,13 @@ func _render_previews() -> void:
 		multi_options.append({
 			"option_id": "card:deck:%d:%s" % [index, card_id],
 			"label": ui.catalog.card_name(card_id),
+			"ref": {
+				"kind": "card",
+				"player": 0,
+				"zone": "deck",
+				"index": index,
+				"card_id": card_id,
+			},
 			"value": {"index": index, "card_id": card_id},
 		})
 	var multi_choice := ChoiceRequest.new(
@@ -1190,9 +1623,19 @@ func _render_previews() -> void:
 		},
 	)
 	ui.show_choice(energy_choice)
+	await process_frame
+	await create_timer(0.25).timeout
+	if not ui.selected_choice_ids.is_empty():
+		push_error("Energy distribution preview did not start at 0/2")
+		_finish(1)
+		return
+	if not _capture("choice-energy.png"):
+		_finish(1)
+		return
 	ui._toggle_choice("pokemon:0:active:svi-hrot")
 	await _settle_rendered(4)
-	if not _capture("choice-energy.png"):
+	if ui.selected_choice_ids.size() != 1:
+		push_error("Energy distribution preview did not advance to 1/2")
 		_finish(1)
 		return
 	if not _capture("choice-energy-progress.png"):
@@ -1200,7 +1643,20 @@ func _render_previews() -> void:
 		return
 	ui._toggle_choice("pokemon:0:active:svi-hrot")
 	await _settle_rendered(4)
+	if ui.selected_choice_ids.size() != 2:
+		push_error("Energy distribution preview did not advance to 2/2")
+		_finish(1)
+		return
 	if not _capture("choice-energy-complete.png"):
+		_finish(1)
+		return
+	if (
+		not _captures_differ("choice-energy.png", "choice-energy-progress.png")
+		or not _captures_differ(
+			"choice-energy-progress.png", "choice-energy-complete.png"
+		)
+	):
+		push_error("Energy distribution preview states are unexpectedly identical")
 		_finish(1)
 		return
 	ui._close_modal()
@@ -1249,6 +1705,19 @@ func _render_previews() -> void:
 	ui.battle_screen.table._on_card_activated(
 		demo.players[0].active.card_id, -1, 0, "active")
 	await _settle_rendered(4)
+	var attachment_source_card: CardView = (
+		ui.battle_screen.table.get_slot_view(0, "active")
+	)
+	if (
+		attachment_source_card == null
+		or attachment_source_card.interaction_hint.visible
+		or not attachment_source_card.target_glow.visible
+	):
+		push_error(
+			"Attachment source preview did not keep the outline while hiding its inline hint"
+		)
+		_finish(1)
+		return
 	if not _capture("choice-attachment-source.png"):
 		_finish(1)
 		return
@@ -1263,6 +1732,15 @@ func _render_previews() -> void:
 	ui.battle_screen.table._on_card_activated(
 		demo.players[0].active.card_id, -1, 0, "active")
 	await _settle_rendered(4)
+	attachment_source_card = ui.battle_screen.table.get_slot_view(0, "active")
+	if (
+		attachment_source_card == null
+		or attachment_source_card.interaction_hint.visible
+		or not attachment_source_card.target_glow.visible
+	):
+		push_error("Compact attachment source preview restored the inline hint")
+		_finish(1)
+		return
 	if not _capture("choice-attachment-compact.png"):
 		_finish(1)
 		return
@@ -1349,7 +1827,7 @@ func _click_control(control: Control) -> void:
 	if control == null:
 		return
 	await _move_pointer_to_control(control)
-	var pointer_position := control.get_global_rect().get_center()
+	var pointer_position := _physical_control_rect(control).get_center()
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
@@ -1369,13 +1847,138 @@ func _click_control(control: Control) -> void:
 func _move_pointer_to_control(control: Control) -> void:
 	if control == null:
 		return
-	var pointer_position := control.get_global_rect().get_center()
+	var pointer_position := _physical_control_rect(control).get_center()
 	Input.warp_mouse(pointer_position)
 	var motion := InputEventMouseMotion.new()
 	motion.position = pointer_position
 	motion.global_position = pointer_position
 	Input.parse_input_event(motion)
 	await process_frame
+
+
+func _begin_mouse_press(control: Control) -> bool:
+	if control == null:
+		return false
+	await _move_pointer_to_control(control)
+	var pointer_position := _physical_control_rect(control).get_center()
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = pointer_position
+	press.global_position = pointer_position
+	Input.parse_input_event(press)
+	await process_frame
+	await RenderingServer.frame_post_draw
+	return _is_pressed_draw_mode(control)
+
+
+func _cancel_mouse_press(guard_button: BaseButton = null) -> void:
+	var restore_disabled := false
+	if guard_button != null:
+		restore_disabled = guard_button.disabled
+		guard_button.disabled = true
+	var release_position := Vector2(4.0, 4.0)
+	Input.warp_mouse(release_position)
+	var motion := InputEventMouseMotion.new()
+	motion.position = release_position
+	motion.global_position = release_position
+	Input.parse_input_event(motion)
+	await process_frame
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = release_position
+	release.global_position = release_position
+	Input.parse_input_event(release)
+	await process_frame
+	if guard_button != null and is_instance_valid(guard_button):
+		guard_button.disabled = restore_disabled
+
+
+func _begin_touch_press(control: Control, touch_index := 0) -> bool:
+	if control == null:
+		return false
+	await _move_pointer_to_control(control)
+	var pointer_position := _physical_control_rect(control).get_center()
+	var touch := InputEventScreenTouch.new()
+	touch.index = touch_index
+	touch.pressed = true
+	touch.position = pointer_position
+	Input.parse_input_event(touch)
+	# Synthetic ScreenTouch events do not pass through the platform's mouse-from-
+	# touch translator on desktop. Feed the companion mouse event Godot emits on
+	# Android as well; the preceding ScreenTouch keeps this distinct from the
+	# ordinary mouse-only fixture above.
+	var emulated_press := InputEventMouseButton.new()
+	emulated_press.button_index = MOUSE_BUTTON_LEFT
+	emulated_press.pressed = true
+	emulated_press.position = pointer_position
+	emulated_press.global_position = pointer_position
+	Input.parse_input_event(emulated_press)
+	await process_frame
+	await RenderingServer.frame_post_draw
+	return _is_pressed_draw_mode(control)
+
+
+func _cancel_touch_press(touch_index := 0) -> void:
+	var release_position := Vector2(4.0, 4.0)
+	var release := InputEventScreenTouch.new()
+	release.index = touch_index
+	release.pressed = false
+	release.position = release_position
+	Input.parse_input_event(release)
+	var emulated_release := InputEventMouseButton.new()
+	emulated_release.button_index = MOUSE_BUTTON_LEFT
+	emulated_release.pressed = false
+	emulated_release.position = release_position
+	emulated_release.global_position = release_position
+	Input.parse_input_event(emulated_release)
+	await process_frame
+
+
+func _is_pressed_draw_mode(control: Control) -> bool:
+	if not control is BaseButton:
+		return false
+	return (control as BaseButton).get_draw_mode() in [
+		BaseButton.DRAW_PRESSED,
+		BaseButton.DRAW_HOVER_PRESSED,
+	]
+
+
+func _physical_control_rect(control: Control) -> Rect2:
+	if control == null:
+		return Rect2()
+	var logical_rect := control.get_global_rect()
+	var final_transform := root.get_final_transform()
+	var physical_start := final_transform * logical_rect.position
+	var physical_end := final_transform * logical_rect.end
+	return Rect2(physical_start, physical_end - physical_start).abs()
+
+
+func _assert_physical_touch_targets(controls: Array, label: String) -> bool:
+	var viewport_rect := Rect2(Vector2.ZERO, Vector2(root.size))
+	for value in controls:
+		var control := value as Control
+		if control == null or not control.is_visible_in_tree():
+			push_error("%s is missing a visible touch target" % label)
+			return false
+		var rect := _physical_control_rect(control)
+		if rect.size.x < 48.0 or rect.size.y < 48.0:
+			push_error("%s target %s is below physical 48x48: %s" % [
+				label,
+				control.get_path(),
+				rect,
+			])
+			return false
+		if not viewport_rect.encloses(rect):
+			push_error("%s target %s escapes the physical viewport: %s / %s" % [
+				label,
+				control.get_path(),
+				rect,
+				viewport_rect,
+			])
+			return false
+	return true
 
 
 func _move_pointer_to_hand_card_exposed_edge(card: CardView) -> bool:
@@ -1402,9 +2005,9 @@ func _move_pointer_to_hand_card_exposed_edge(card: CardView) -> bool:
 
 
 func _move_pointer_to_position(pointer_position: Vector2) -> void:
-	# Window stretch keeps a 1600×900 logical battle canvas at compact capture
-	# sizes. Warp/parsed mouse coordinates are physical Window coordinates, so
-	# map the logical Control point through the Viewport's final transform first.
+	# Parsed input uses physical Window coordinates. Map logical Control points
+	# through the final transform; compact UI normally resolves to a 1:1 transform,
+	# while large/ultrawide captures can still scale the design canvas upward.
 	var window_position := root.get_final_transform() * pointer_position
 	Input.warp_mouse(window_position)
 	var motion := InputEventMouseMotion.new()
@@ -1462,6 +2065,27 @@ func _wait_until_hidden(control: Control, maximum_frames := 45) -> void:
 		if not control.visible:
 			return
 		await process_frame
+
+
+func _energy_count_badge_is_readable(card: CardView, expected: String) -> bool:
+	if card == null:
+		return false
+	var badge := card.find_child("EnergyBadge", true, false) as Control
+	var count_badge := (
+		badge.find_child("CountBadge", true, false) as Control
+		if badge != null
+		else null
+	)
+	if count_badge == null:
+		return false
+	return (
+		str(count_badge.get_meta("count_text", "")) == expected
+		and int(count_badge.get_meta("font_size", 0)) >= 9
+		and count_badge.size.x > count_badge.size.y
+		and Rect2(Vector2.ZERO, badge.size).encloses(
+			Rect2(count_badge.position, count_badge.size)
+		)
+	)
 
 
 func _settle_rendered(frame_count := 3) -> void:
@@ -1586,3 +2210,66 @@ func _capture(filename: String) -> bool:
 		push_error("Unable to save preview %s" % filename)
 		return false
 	return true
+
+
+func _captures_differ(first_filename: String, second_filename: String) -> bool:
+	var first_path := ProjectSettings.globalize_path(
+		"%s/%s" % [OUTPUT_ROOT, first_filename]
+	)
+	var second_path := ProjectSettings.globalize_path(
+		"%s/%s" % [OUTPUT_ROOT, second_filename]
+	)
+	return FileAccess.get_file_as_bytes(first_path) != FileAccess.get_file_as_bytes(
+		second_path
+	)
+
+
+func _assert_network_first_screen(page: NetworkLobbyPage, label: String) -> bool:
+	if page == null or page.page_scroll == null or page.connect_button == null:
+		push_error("%s preview is missing its network layout controls" % label)
+		return false
+	var scroll := page.page_scroll
+	var viewport_rect := scroll.get_global_rect()
+	var button_rect := page.connect_button.get_global_rect()
+	var page_rect := page.page.get_global_rect()
+	var top_bar := page.page.get_node("TopBar") as Control
+	var steps := page.page.get_node("Steps") as Control
+	var top_bar_rect := top_bar.get_global_rect()
+	var steps_rect := steps.get_global_rect()
+	var scrollbar := scroll.get_v_scroll_bar()
+	var left_gutter := page_rect.position.x - viewport_rect.position.x
+	var right_gutter := viewport_rect.end.x - page_rect.end.x
+	var top_gutter := page_rect.position.y - viewport_rect.position.y
+	var fits := (
+		not scrollbar.visible
+		and scroll.scroll_vertical == 0
+		and viewport_rect.encloses(page_rect)
+		and viewport_rect.encloses(top_bar_rect)
+		and viewport_rect.encloses(steps_rect)
+		and viewport_rect.encloses(button_rect)
+		and left_gutter >= -0.5
+		and right_gutter >= -0.5
+		and absf(left_gutter - right_gutter) <= 2.0
+		and absf(page_rect.get_center().x - viewport_rect.get_center().x) <= 1.0
+		and absf(top_gutter) <= 1.0
+		and page.page.get_parent() == page.page_center
+	)
+	if not fits:
+		push_error(
+			"%s must fit, top-align and remain horizontally centered at 1600x900 without vertical scrolling: viewport=%s page=%s top=%s steps=%s button=%s gutters=%.1f/%.1f/%.1f scroll=%d max=%.1f visible=%s"
+			% [
+				label,
+				viewport_rect,
+				page_rect,
+				top_bar_rect,
+				steps_rect,
+				button_rect,
+				left_gutter,
+				right_gutter,
+				top_gutter,
+				scroll.scroll_vertical,
+				scrollbar.max_value,
+				scrollbar.visible,
+			]
+		)
+	return fits

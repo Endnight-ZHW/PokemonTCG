@@ -402,7 +402,7 @@ static func _endpoint(
 	if explicit_value is Dictionary and not explicit_value.is_empty():
 		for key in Dictionary(explicit_value):
 			endpoint[key] = explicit_value[key]
-		return endpoint
+		return _canonical_endpoint(endpoint)
 	endpoint["zone"] = str(data.get(
 		"source_zone" if source else "target_zone",
 		"",
@@ -415,7 +415,17 @@ static func _endpoint(
 		"source_index" if source else "target_index",
 		-1,
 	))
-	return endpoint
+	return _canonical_endpoint(endpoint)
+
+
+static func _canonical_endpoint(endpoint: Dictionary) -> Dictionary:
+	var result := endpoint.duplicate(true)
+	var index := int(result.get("index", -1))
+	if index < 0 and result.has("attachment_index"):
+		index = int(result.get("attachment_index", -1))
+	result["index"] = index
+	result.erase("attachment_index")
+	return result
 
 
 static func _normalized_amount(

@@ -17,4 +17,5 @@ focus_mode = 0
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
+theme_type_variation = &"BattleSecondaryButton"
 text = "查看规则与操作帮助"

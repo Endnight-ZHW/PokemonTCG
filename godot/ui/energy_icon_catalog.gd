@@ -29,6 +29,38 @@ const SPECIAL_ICON_PATHS := {
 	"svg2-lume": "res://assets/ui/energy/luminous.png",
 }
 
+const DISPLAY_NAMES := {
+	"Grass": "草能量",
+	"Fire": "火能量",
+	"Water": "水能量",
+	"Lightning": "雷能量",
+	"Psychic": "超能能量",
+	"Fighting": "斗能量",
+	"Darkness": "恶能量",
+	"Metal": "钢能量",
+	"Dragon": "龙能量",
+	"Colorless": "无色能量",
+	"Rainbow": "彩虹能量",
+	"Special": "特殊能量",
+	"Unknown": "未知能量",
+}
+
+const SHORT_LABELS := {
+	"Grass": "G",
+	"Fire": "F",
+	"Water": "W",
+	"Lightning": "L",
+	"Psychic": "P",
+	"Fighting": "F",
+	"Darkness": "D",
+	"Metal": "M",
+	"Dragon": "D",
+	"Colorless": "C",
+	"Rainbow": "R",
+	"Special": "SP",
+	"Unknown": "?",
+}
+
 static var _texture_cache: Dictionary = {}
 
 
@@ -50,6 +82,17 @@ static func texture_for(energy_type: String) -> Texture2D:
 
 static func texture_for_card_id(card_id: String) -> Texture2D:
 	return _texture_at(path_for_card_id(card_id))
+
+
+static func display_name_for(energy_type: String, fallback := "") -> String:
+	return str(DISPLAY_NAMES.get(
+		energy_type,
+		fallback if not str(fallback).is_empty() else energy_type,
+	))
+
+
+static func short_label_for(energy_type: String) -> String:
+	return str(SHORT_LABELS.get(energy_type, "?"))
 
 
 static func _texture_at(path: String) -> Texture2D:

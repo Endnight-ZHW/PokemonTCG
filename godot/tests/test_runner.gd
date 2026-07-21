@@ -7466,13 +7466,14 @@ func _run_visual_upgrade_tests() -> void:
 				floating_detail.is_compact_layout()
 				and floating_detail.layout_size()
 				== BattleDetailPanel.COMPACT_PANEL_SIZE
+				and floating_detail.scale.is_equal_approx(Vector2.ONE)
 				and floating_detail.close_button.custom_minimum_size
 				== Vector2(48.0, 48.0)
-				and not compact_preview_rect.intersects(compact_stadium_bounds)
-				and not compact_preview_rect.intersects(preview_opponent_prize_bounds)
-				and not compact_preview_rect.intersects(preview_own_prize_bounds)
+				and floating_detail.close_button.get_global_rect().size.x >= 48.0
+				and floating_detail.close_button.get_global_rect().size.y >= 48.0
+				and preview_board_rect.encloses(floating_detail.get_global_rect())
 			),
-			"Constrained detail corridor did not switch to a safe compact layout",
+			"Constrained detail corridor did not switch to a 1:1 bottom layout",
 		)
 		preview_stadium.position = stadium_position_before_compact
 		battle.update_view(
@@ -7722,8 +7723,11 @@ func _run_visual_upgrade_tests() -> void:
 					has_luminous_energy_badge = icon != null and icon.texture != null
 				var count_badge := badge.find_child(
 					"CountBadge", true, false
-				) as Label
-				if count_badge and count_badge.text == "2":
+				) as Control
+				if (
+					count_badge
+					and str(count_badge.get_meta("count_text", "")) == "2"
+				):
 					has_grouped_count_badge = true
 		_check(
 			textured_energy_badges >= 3

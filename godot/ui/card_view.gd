@@ -20,8 +20,69 @@ const TOUCH_DRAG_THRESHOLD := 12.0
 const TOUCH_SCROLL_AXIS_RATIO := 1.25
 const MINIMUM_TOUCH_TARGET := 48.0
 const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
+const ATTACHMENT_VISUALS := preload("res://ui/attachment_visual_descriptor.gd")
+const ENERGY_COUNT_FONT := preload("res://assets/ui/fonts/noto_sans_cjk_sc_bold.tres")
 const MIN_CARD_CORNER_RADIUS := 3
 const MAX_CARD_CORNER_RADIUS := 6
+
+
+class EnergyCountBadgeVisual:
+	extends Control
+
+	var _count_text := ""
+	var _draw_font: Font
+	var _draw_font_size := 10
+
+
+	func configure(value: String, draw_font: Font, draw_font_size: int) -> void:
+		_count_text = value
+		_draw_font = draw_font
+		_draw_font_size = draw_font_size
+		set_meta("count_text", value)
+		set_meta("font_size", draw_font_size)
+		set_meta("outline_size", 1)
+		queue_redraw()
+
+
+	func _draw() -> void:
+		var background := get_theme_stylebox("normal")
+		if background != null:
+			draw_style_box(background, Rect2(Vector2.ZERO, size))
+		if _draw_font == null or _count_text.is_empty():
+			return
+		var text_width := _draw_font.get_string_size(
+			_count_text,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			_draw_font_size,
+		).x
+		var baseline := (
+			(size.y - _draw_font.get_height(_draw_font_size)) * 0.5
+			+ _draw_font.get_ascent(_draw_font_size)
+		)
+		var origin := Vector2((size.x - text_width) * 0.5, baseline)
+		for outline_offset in [
+			Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1),
+		]:
+			draw_string(
+				_draw_font,
+				origin + outline_offset,
+				_count_text,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				-1,
+				_draw_font_size,
+				Color(0, 0, 0, 0.98),
+			)
+		draw_string(
+			_draw_font,
+			origin,
+			_count_text,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			_draw_font_size,
+			Color.WHITE,
+		)
+
 
 @export_category("Card Layout")
 @export var selected_lift := 12.0
@@ -61,7 +122,7 @@ const ENERGY_DISPLAY_NAMES := {
 }
 
 const MAXIMUM_ENERGY_BADGES := 4
-const MINIMUM_ENERGY_BADGE_SIZE := 18.0
+const MINIMUM_ENERGY_BADGE_SIZE := 16.0
 const DEFAULT_ENERGY_BADGE_SIZE := 24.0
 const ENERGY_BADGE_SEPARATION := 2.0
 
@@ -112,6 +173,7 @@ var _pending_action_rows: Array[Dictionary] = []
 var _pending_action_hint := ""
 var _disabled_reason := ""
 var _legal_target_hint := ""
+var _show_inline_target_hint := true
 var _target_accent := DesignTokens.CYAN
 var _allowed_drop_hand_indices: Array[int] = []
 var _dragging := false
@@ -253,12 +315,14 @@ func set_interaction_state(
 	disabled_reason := "",
 	legal_target_hint := "",
 	allowed_hand_indices: Array = [],
+	show_inline_target_hint := true,
 ) -> void:
 	# Read-only presentation state supplied by the interaction router. CardView
 	# visualizes legality but never derives or executes a game action itself.
 	actionable = p_actionable
 	_disabled_reason = disabled_reason
 	_legal_target_hint = legal_target_hint
+	_show_inline_target_hint = show_inline_target_hint
 	_replace_allowed_drop_hand_indices(allowed_hand_indices)
 	set_targetable(
 		not _legal_target_hint.is_empty()
@@ -314,6 +378,7 @@ func clear_interaction_state() -> void:
 	actionable = false
 	_disabled_reason = ""
 	_legal_target_hint = ""
+	_show_inline_target_hint = true
 	_allowed_drop_hand_indices.clear()
 	set_targetable(false)
 	_refresh_interaction_visuals()
@@ -331,6 +396,7 @@ func set_targetable(value: bool) -> void:
 	targetable = value
 	if not value:
 		_legal_target_hint = ""
+		_show_inline_target_hint = true
 		_allowed_drop_hand_indices.clear()
 		_target_accent = DesignTokens.CYAN
 	if target_glow:
@@ -501,11 +567,23 @@ func attachment_anchor_global(
 	attachment_card_id: String = "",
 	attachment_index: int = -1,
 ) -> Vector2:
+	return attachment_visual_global_rect(
+		attachment_type,
+		attachment_card_id,
+		attachment_index,
+	).get_center()
+
+
+func attachment_visual_global_rect(
+	attachment_type: String,
+	attachment_card_id: String = "",
+	attachment_index: int = -1,
+) -> Rect2:
 	# Attachments are summarized as badges on a Pokemon card. Motion that starts
 	# at the Pokemon's centre makes it look as if the Pokemon itself moved, and is
 	# especially ambiguous when an opponent chooses one of several bench slots.
-	# Expose the rendered badge position so the presentation layer can preserve a
-	# stable, semantically correct source/landing point.
+	# Expose the complete rendered badge bounds so presentation can preserve its
+	# visual footprint as well as a stable source/landing point.
 	var anchor: Control
 	match attachment_type:
 		"energy":
@@ -520,13 +598,24 @@ func attachment_anchor_global(
 					if child == null:
 						continue
 					energy_badges.append(child)
+					var physical_indices: Array = child.get_meta("energy_indices", [])
 					var card_ids: Array = child.get_meta("energy_card_ids", [])
 					if (
-						not attachment_card_id.is_empty()
-						and attachment_card_id in card_ids
+						attachment_index >= 0
+						and attachment_index in physical_indices
+						and (
+							attachment_card_id.is_empty()
+							or attachment_card_id in card_ids
+						)
 					):
 						anchor = child
 						break
+					if (
+						anchor == energy_row
+						and not attachment_card_id.is_empty()
+						and attachment_card_id in card_ids
+					):
+						anchor = child
 				if (
 					anchor == energy_row
 					and attachment_index >= 0
@@ -538,8 +627,183 @@ func attachment_anchor_global(
 		"tool":
 			anchor = tool_badge
 	if anchor != null and is_instance_valid(anchor) and anchor.visible:
-		return anchor.get_global_transform_with_canvas() * (anchor.size * 0.5)
-	return global_center()
+		return _control_visual_global_rect(anchor)
+	return Rect2(global_center(), Vector2.ZERO)
+
+
+func prospective_attachment_visual_global_rect(
+	attachment_type: String,
+	attachment_card_id: String = "",
+	attachment_index: int = -1,
+) -> Rect2:
+	# A serialized attach event lands before its target CardView is updated.  The
+	# moving badge still needs the geometry of the group that will exist at
+	# contact, especially when a new energy type creates/reorders a badge or falls
+	# into overflow.  Keep that prediction beside the rendering algorithm so both
+	# paths share the same capacity and sizing rules.
+	if attachment_type == "tool" and pokemon != null:
+		_resolve_scene_nodes()
+		if tool_badge != null and tool_badge.visible:
+			return _control_visual_global_rect(tool_badge)
+		var overlay_parent := content_root if content_root != null else self
+		return _local_control_rect_global_bounds(
+			overlay_parent,
+			_tool_badge_layout_rect(),
+		)
+	if (
+		attachment_type != "energy"
+		or pokemon == null
+		or attachment_card_id.is_empty()
+	):
+		return attachment_visual_global_rect(
+			attachment_type,
+			attachment_card_id,
+			attachment_index,
+		)
+	_resolve_scene_nodes()
+	if energy_row == null:
+		return Rect2(global_center(), Vector2.ZERO)
+	var prospective_ids: Array = pokemon.energy_card_ids.duplicate()
+	var target_index := attachment_index
+	if (
+		target_index >= 0
+		and target_index < prospective_ids.size()
+		and str(prospective_ids[target_index]) == attachment_card_id
+	):
+		return attachment_visual_global_rect(
+			attachment_type,
+			attachment_card_id,
+			target_index,
+		)
+	if target_index >= 0 and target_index < prospective_ids.size():
+		prospective_ids.insert(target_index, attachment_card_id)
+	else:
+		target_index = prospective_ids.size()
+		prospective_ids.append(attachment_card_id)
+	var grouped := ATTACHMENT_VISUALS.grouped_energy(prospective_ids, catalog)
+	if grouped.is_empty():
+		return Rect2(global_center(), Vector2.ZERO)
+	return _energy_group_layout_global_rect(
+		grouped,
+		target_index,
+		attachment_card_id,
+		attachment_index,
+	)
+
+
+func attachment_layout_visual_global_rect(
+	attachment_type: String,
+	attachment_card_id: String = "",
+	attachment_index: int = -1,
+) -> Rect2:
+	# Newly-created batch covers can be queried before BoxContainer has received
+	# its first sort notification. Resolve current energy geometry from the same
+	# deterministic layout math instead of briefly treating every child as x=0.
+	if attachment_type != "energy" or pokemon == null:
+		return attachment_visual_global_rect(
+			attachment_type,
+			attachment_card_id,
+			attachment_index,
+		)
+	_resolve_scene_nodes()
+	if energy_row == null:
+		return Rect2(global_center(), Vector2.ZERO)
+	var target_index := attachment_index
+	if (
+		target_index < 0
+		or target_index >= pokemon.energy_card_ids.size()
+		or (
+			not attachment_card_id.is_empty()
+			and str(pokemon.energy_card_ids[target_index]) != attachment_card_id
+		)
+	):
+		target_index = -1
+		if not attachment_card_id.is_empty():
+			for index in range(pokemon.energy_card_ids.size()):
+				if str(pokemon.energy_card_ids[index]) == attachment_card_id:
+					target_index = index
+					break
+	if target_index < 0:
+		return attachment_visual_global_rect(
+			attachment_type,
+			attachment_card_id,
+			attachment_index,
+		)
+	var grouped := ATTACHMENT_VISUALS.grouped_energy(
+		pokemon.energy_card_ids,
+		catalog,
+	)
+	return _energy_group_layout_global_rect(
+		grouped,
+		target_index,
+		attachment_card_id,
+		attachment_index,
+	)
+
+
+func _energy_group_layout_global_rect(
+	grouped: Array,
+	target_index: int,
+	attachment_card_id: String,
+	attachment_index: int,
+) -> Rect2:
+	var layout := _energy_badge_layout(grouped)
+	var capacity := int(layout.get("capacity", 1))
+	var visible_group_count := int(layout.get("visible_group_count", 0))
+	var badge_ordinal := -1
+	for group_index in range(grouped.size()):
+		var descriptor := grouped[group_index] as AttachmentVisualDescriptor
+		if descriptor != null and target_index in descriptor.physical_indices:
+			badge_ordinal = (
+				mini(group_index, capacity - 1)
+				if group_index >= visible_group_count
+				else group_index
+			)
+			break
+	if badge_ordinal < 0:
+		return attachment_visual_global_rect(
+			"energy",
+			attachment_card_id,
+			attachment_index,
+		)
+	var badge_size := float(layout.get("badge_size", DEFAULT_ENERGY_BADGE_SIZE))
+	var local_rect := Rect2(
+		Vector2(float(badge_ordinal) * (badge_size + ENERGY_BADGE_SEPARATION), 0.0),
+		Vector2(badge_size, badge_size),
+	)
+	return _local_control_rect_global_bounds(energy_row, local_rect)
+
+
+func _control_visual_global_rect(control: Control) -> Rect2:
+	var transform := control.get_global_transform_with_canvas()
+	var corners := PackedVector2Array([
+		transform * Vector2.ZERO,
+		transform * Vector2(control.size.x, 0.0),
+		transform * control.size,
+		transform * Vector2(0.0, control.size.y),
+	])
+	var minimum := corners[0]
+	var maximum := corners[0]
+	for corner in corners:
+		minimum = minimum.min(corner)
+		maximum = maximum.max(corner)
+	return Rect2(minimum, maximum - minimum)
+
+
+func _local_control_rect_global_bounds(control: Control, local_rect: Rect2) -> Rect2:
+	var transform := control.get_global_transform_with_canvas()
+	var corners := PackedVector2Array([
+		transform * local_rect.position,
+		transform * Vector2(local_rect.end.x, local_rect.position.y),
+		transform * local_rect.end,
+		transform * Vector2(local_rect.position.x, local_rect.end.y),
+	])
+	var minimum := corners[0]
+	var maximum := corners[0]
+	for corner in corners:
+		minimum = minimum.min(corner)
+		maximum = maximum.max(corner)
+	return Rect2(minimum, maximum - minimum)
 
 
 func _has_point(point: Vector2) -> bool:
@@ -1157,7 +1421,12 @@ func _refresh_interaction_visuals() -> void:
 	elif selected and not actionable and not _disabled_reason.is_empty():
 		hint_text = _disabled_reason
 	if interaction_hint:
-		interaction_hint.visible = not hint_text.is_empty()
+		# Attachment-source choices already expose their instruction in the battle
+		# task header and in the anchored popover. Repeating it as an opaque strip
+		# over the Pokemon makes the card bottom and its badges harder to read.
+		interaction_hint.visible = (
+			_show_inline_target_hint and not hint_text.is_empty()
+		)
 		interaction_hint.add_theme_stylebox_override(
 			"panel",
 			DesignTokens.panel_style(
@@ -1303,6 +1572,7 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 				0,
 			),
 		)
+	_layout_battle_overlay()
 	_refresh_energy_badges()
 	if not pokemon.attached_tool_id.is_empty():
 		tool_badge.visible = true
@@ -1320,11 +1590,12 @@ func _refresh_battle_overlay(card: Dictionary, border_color: Color) -> void:
 				0,
 			),
 		)
-	_layout_battle_overlay()
 
 
 func _refresh_energy_badges() -> void:
 	_clear_energy_badges()
+	var badge_scale := clampf(size.x / 130.0, 0.68, 1.06)
+	energy_row.size = Vector2(maxf(0.0, size.x - 10.0), 25.0 * badge_scale)
 	if pokemon == null:
 		_set_energy_summary([])
 		return
@@ -1332,26 +1603,11 @@ func _refresh_energy_badges() -> void:
 	_set_energy_summary(grouped)
 	if grouped.is_empty():
 		return
-	var available_width := maxf(0.0, size.x - 10.0)
-	var capacity := clampi(
-		int(floor(
-			(available_width + ENERGY_BADGE_SEPARATION)
-			/ (MINIMUM_ENERGY_BADGE_SIZE + ENERGY_BADGE_SEPARATION)
-		)),
-		1,
-		MAXIMUM_ENERGY_BADGES,
-	)
-	var has_overflow := grouped.size() > capacity
-	var visible_group_count := capacity - 1 if has_overflow else grouped.size()
-	var slot_count := capacity if has_overflow else visible_group_count
-	var badge_size := minf(
-		DEFAULT_ENERGY_BADGE_SIZE,
-		floor(
-			(available_width - ENERGY_BADGE_SEPARATION * float(maxi(0, slot_count - 1)))
-			/ float(maxi(1, slot_count))
-		),
-	)
-	badge_size = maxf(MINIMUM_ENERGY_BADGE_SIZE, badge_size)
+	var layout := _energy_badge_layout(grouped)
+	var capacity := int(layout.get("capacity", 1))
+	var has_overflow := bool(layout.get("has_overflow", false))
+	var visible_group_count := int(layout.get("visible_group_count", 0))
+	var badge_size := float(layout.get("badge_size", DEFAULT_ENERGY_BADGE_SIZE))
 	for index in range(visible_group_count):
 		var row_value: Variant = grouped[index]
 		var row: Dictionary = row_value
@@ -1363,15 +1619,70 @@ func _refresh_energy_badges() -> void:
 			str(row.get("icon_card_id", "")),
 			str(row.get("display_name", "")),
 			badge_size,
+			str(row.get("marker", "")),
+			row.get("icon") as Texture2D,
+			str(row.get("fallback_label", "?")),
 		)
 		badge.set_meta("energy_type", energy_type)
+		badge.set_meta("energy_group_key", str(row.get("group_key", "")))
 		badge.set_meta("energy_card_ids", row.get("card_ids", []).duplicate())
+		badge.set_meta("energy_indices", row.get("indices", []).duplicate())
+		badge.set_meta(
+			"provided_energy_units",
+			row.get("provided_energy_units", []).duplicate(),
+		)
 		energy_row.add_child(badge)
 	if has_overflow:
 		var overflow_count := 0
+		var overflow_card_ids: Array = []
+		var overflow_indices: Array = []
+		var overflow_group_keys: Array[String] = []
 		for index in range(visible_group_count, grouped.size()):
-			overflow_count += int((grouped[index] as Dictionary).get("count", 1))
-		energy_row.add_child(_new_energy_overflow_badge(overflow_count, badge_size))
+			var overflow_row := grouped[index] as Dictionary
+			overflow_count += int(overflow_row.get("count", 1))
+			overflow_card_ids.append_array(overflow_row.get("card_ids", []))
+			overflow_indices.append_array(overflow_row.get("indices", []))
+			overflow_group_keys.append(str(overflow_row.get("group_key", "")))
+		var overflow_badge := _new_energy_overflow_badge(overflow_count, badge_size)
+		overflow_badge.set_meta("energy_card_ids", overflow_card_ids)
+		overflow_badge.set_meta("energy_indices", overflow_indices)
+		overflow_badge.set_meta("energy_group_keys", overflow_group_keys)
+		energy_row.add_child(overflow_badge)
+
+
+func _energy_badge_layout(grouped: Array) -> Dictionary:
+	# Derive the badge budget from CardView, not EnergyRow's current minimum.
+	# Otherwise old 24px children can keep a just-resized bench row artificially
+	# large and make the next generation of badges perpetuate that overflow.
+	var badge_scale := clampf(size.x / 130.0, 0.68, 1.06)
+	var available_width := maxf(0.0, size.x - 10.0)
+	var available_height := maxf(1.0, 25.0 * badge_scale)
+	var maximum_badge_size := minf(DEFAULT_ENERGY_BADGE_SIZE, floor(available_height))
+	var minimum_badge_size := minf(MINIMUM_ENERGY_BADGE_SIZE, maximum_badge_size)
+	var capacity := clampi(
+		int(floor(
+			(available_width + ENERGY_BADGE_SEPARATION)
+			/ (minimum_badge_size + ENERGY_BADGE_SEPARATION)
+		)),
+		1,
+		MAXIMUM_ENERGY_BADGES,
+	)
+	var has_overflow := grouped.size() > capacity
+	var visible_group_count := capacity - 1 if has_overflow else grouped.size()
+	var slot_count := capacity if has_overflow else visible_group_count
+	var badge_size := minf(
+		maximum_badge_size,
+		floor(
+			(available_width - ENERGY_BADGE_SEPARATION * float(maxi(0, slot_count - 1)))
+			/ float(maxi(1, slot_count))
+		),
+	)
+	return {
+		"capacity": capacity,
+		"has_overflow": has_overflow,
+		"visible_group_count": visible_group_count,
+		"badge_size": maxf(minimum_badge_size, badge_size),
+	}
 
 
 func _new_energy_badge(
@@ -1380,11 +1691,15 @@ func _new_energy_badge(
 	icon_card_id := "",
 	display_name := "",
 	badge_size := DEFAULT_ENERGY_BADGE_SIZE,
+	marker := "",
+	texture_override: Texture2D = null,
+	fallback_label := "?",
 ) -> Control:
 	var badge := Control.new()
 	badge.name = "EnergyBadge"
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.custom_minimum_size = Vector2(badge_size, badge_size)
+	badge.size = badge.custom_minimum_size
 	var accessible_name := (
 		display_name
 		if not display_name.is_empty()
@@ -1393,27 +1708,35 @@ func _new_energy_badge(
 	badge.tooltip_text = "%s x%d" % [accessible_name, count]
 	badge.accessibility_name = badge.tooltip_text
 
+	var texture: Texture2D = texture_override
+	if texture == null:
+		texture = (
+			ENERGY_ICONS.texture_for_card_id(icon_card_id)
+			if not icon_card_id.is_empty()
+			else ENERGY_ICONS.texture_for(energy_type)
+		)
+
 	var plate := Panel.new()
 	plate.name = "Plate"
 	plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	plate.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	plate.add_theme_stylebox_override(
-		"panel",
-		DesignTokens.panel_style(
-			Color(0.025, 0.055, 0.09, 0.92),
-			4,
-			_energy_color(energy_type).lightened(0.28),
-			1,
-			0,
+	var plate_style := DesignTokens.panel_style(
+		(
+			Color(0.018, 0.038, 0.065, 0.14)
+			if texture != null
+			else Color(0.09, 0.115, 0.15, 0.82)
 		),
+		int(round(badge_size * 0.5)),
+		_energy_color(energy_type).lightened(0.38),
+		1,
+		0,
 	)
+	plate_style.shadow_color = Color(0.0, 0.0, 0.0, 0.32)
+	plate_style.shadow_size = 1
+	plate_style.shadow_offset = Vector2(0, 1)
+	plate.add_theme_stylebox_override("panel", plate_style)
 	badge.add_child(plate)
 
-	var texture: Texture2D = (
-		ENERGY_ICONS.texture_for_card_id(icon_card_id)
-		if not icon_card_id.is_empty()
-		else ENERGY_ICONS.texture_for(energy_type)
-	)
 	if texture == null:
 		var fallback := Label.new()
 		fallback.name = "FallbackLabel"
@@ -1421,53 +1744,86 @@ func _new_energy_badge(
 		fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		fallback.text = _energy_label(energy_type, count)
-		fallback.add_theme_font_size_override("font_size", 10)
+		fallback.text = fallback_label
+		fallback.add_theme_font_size_override(
+			"font_size",
+			maxi(8, int(round(badge_size * 0.42))),
+		)
 		fallback.add_theme_color_override("font_color", DesignTokens.TEXT)
 		fallback.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.72))
 		fallback.add_theme_constant_override("outline_size", 2)
 		badge.add_child(fallback)
-		return badge
+	else:
+		var icon := TextureRect.new()
+		icon.name = "Icon"
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var icon_inset := maxf(1.0, round(badge_size * 0.07))
+		icon.offset_left = icon_inset
+		icon.offset_top = icon_inset
+		icon.offset_right = -icon_inset
+		icon.offset_bottom = -icon_inset
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.texture = texture
+		badge.add_child(icon)
 
-	var icon := TextureRect.new()
-	icon.name = "Icon"
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	icon.offset_left = 2.0
-	icon.offset_top = 2.0
-	icon.offset_right = -2.0
-	icon.offset_bottom = -2.0
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.texture = texture
-	badge.add_child(icon)
+		if not marker.is_empty():
+			var marker_size := clampf(round(badge_size * 0.45), 8.0, 11.0)
+			var marker_badge := Label.new()
+			marker_badge.name = "SpecialMarker"
+			marker_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			marker_badge.position = Vector2(-1.0, -1.0)
+			marker_badge.size = Vector2(marker_size, marker_size)
+			marker_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			marker_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			marker_badge.text = marker
+			marker_badge.add_theme_font_size_override(
+				"font_size",
+				maxi(7, int(round(badge_size * 0.30))),
+			)
+			marker_badge.add_theme_color_override("font_color", Color.WHITE)
+			marker_badge.add_theme_stylebox_override(
+				"normal",
+				DesignTokens.panel_style(
+					Color(0.075, 0.10, 0.145, 0.90),
+					int(round(marker_size * 0.5)),
+					_energy_color(energy_type).lightened(0.42),
+					1,
+					0,
+				),
+			)
+			badge.add_child(marker_badge)
 
 	if count > 1:
-		var count_badge := Label.new()
+		var count_text := str(count)
+		var count_height := clampf(round(badge_size * 0.62), 11.0, 15.0)
+		var extra_digit_width := float(maxi(0, count_text.length() - 1)) * 4.0
+		var count_width := minf(badge_size, count_height + extra_digit_width)
+		var count_badge := EnergyCountBadgeVisual.new()
 		count_badge.name = "CountBadge"
 		count_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		count_badge.anchor_left = 1.0
-		count_badge.anchor_top = 1.0
-		count_badge.anchor_right = 1.0
-		count_badge.anchor_bottom = 1.0
-		count_badge.offset_left = -14.0
-		count_badge.offset_top = -14.0
-		count_badge.offset_right = 1.0
-		count_badge.offset_bottom = 1.0
-		count_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		count_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		count_badge.text = str(count)
-		count_badge.add_theme_font_size_override("font_size", 9)
-		count_badge.add_theme_color_override("font_color", Color.WHITE)
+		count_badge.position = Vector2(
+			badge_size - count_width,
+			badge_size - count_height,
+		)
+		count_badge.size = Vector2(count_width, count_height)
+		count_badge.custom_minimum_size = count_badge.size
+		count_badge.z_index = 4
 		count_badge.add_theme_stylebox_override(
 			"normal",
 			DesignTokens.panel_style(
-				Color(0.02, 0.04, 0.075, 0.98),
-				3,
-				Color(1, 1, 1, 0.82),
+				Color(0.012, 0.028, 0.055, 0.98),
+				int(round(count_height * 0.5)),
+				Color(0.94, 0.975, 1.0, 0.98),
 				1,
 				0,
 			),
+		)
+		count_badge.configure(
+			count_text,
+			ENERGY_COUNT_FONT,
+			clampi(int(round(badge_size * 0.50)), 9, 12),
 		)
 		badge.add_child(count_badge)
 	return badge
@@ -1478,6 +1834,7 @@ func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 	badge.name = "EnergyOverflowBadge"
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.custom_minimum_size = Vector2(badge_size, badge_size)
+	badge.size = badge.custom_minimum_size
 	badge.tooltip_text = "另有 %d 张附加能量" % count
 	badge.accessibility_name = badge.tooltip_text
 
@@ -1488,8 +1845,8 @@ func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 	plate.add_theme_stylebox_override(
 		"panel",
 		DesignTokens.panel_style(
-			Color(0.025, 0.055, 0.09, 0.94),
-			4,
+			Color(0.055, 0.075, 0.105, 0.74),
+			int(round(badge_size * 0.5)),
 			DesignTokens.GOLD.lightened(0.12),
 			1,
 			0,
@@ -1504,7 +1861,10 @@ func _new_energy_overflow_badge(count: int, badge_size: float) -> Control:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.text = "+%d" % count
-	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_font_size_override(
+		"font_size",
+		maxi(8, int(round(badge_size * 0.38))),
+	)
 	label.add_theme_color_override("font_color", Color.WHITE)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.72))
 	label.add_theme_constant_override("outline_size", 2)
@@ -1575,49 +1935,16 @@ func _clear_energy_badges() -> void:
 
 
 func _attached_energy_groups() -> Array[Dictionary]:
-	var counts := {}
-	for energy_id in pokemon.energy_card_ids:
-		var provided := catalog.provides_energy(energy_id) if catalog else []
-		var card := catalog.get_card(energy_id) if catalog else {}
-		var energy_type := "Special" if "Special" in card.get("subtypes", []) else "Colorless"
-		if not provided.is_empty():
-			energy_type = str(provided[0])
-		var icon_card_id := (
-			energy_id
-			if not ENERGY_ICONS.path_for_card_id(energy_id).is_empty()
-			else ""
-		)
-		var group_key := (
-			"card:%s" % icon_card_id
-			if not icon_card_id.is_empty()
-			else "type:%s" % energy_type
-		)
-		if not counts.has(group_key):
-			counts[group_key] = {
-				"type": energy_type,
-				"count": 0,
-				"icon_card_id": icon_card_id,
-				"display_name": (
-					str(card.get("name", energy_type))
-					if not icon_card_id.is_empty()
-					else ""
-				),
-				"card_ids": [],
-			}
-		counts[group_key]["count"] = int(counts[group_key].get("count", 0)) + 1
-		(counts[group_key]["card_ids"] as Array).append(str(energy_id))
 	var result: Array[Dictionary] = []
-	for group_key in counts:
-		result.append(counts[group_key] as Dictionary)
-	result.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
-		var left_key := "%s:%s" % [
-			str(left.get("type", "")), str(left.get("icon_card_id", "")),
-		]
-		var right_key := "%s:%s" % [
-			str(right.get("type", "")), str(right.get("icon_card_id", "")),
-		]
-		return left_key < right_key
-	)
+	if pokemon == null:
+		return result
+	for descriptor_value in ATTACHMENT_VISUALS.grouped_energy(
+		pokemon.energy_card_ids,
+		catalog,
+	):
+		var descriptor := descriptor_value as AttachmentVisualDescriptor
+		if descriptor != null:
+			result.append(descriptor.to_dictionary())
 	return result
 
 
@@ -1667,8 +1994,23 @@ func _layout_battle_overlay() -> void:
 	damage_badge.add_theme_font_size_override("font_size", int(14 * badge_scale))
 	energy_row.position = Vector2(5.0, size.y - 26.0 * badge_scale)
 	energy_row.size = Vector2(size.x - 10.0, 25.0 * badge_scale)
-	tool_badge.position = Vector2(5.0, 5.0)
-	tool_badge.size = Vector2(42.0 * badge_scale, 20.0 * badge_scale)
+	if interaction_hint != null:
+		interaction_hint.offset_left = 5.0
+		interaction_hint.offset_right = -5.0
+		if energy_row.visible:
+			# Source-selection hints used to sit on the same bottom strip as the
+			# attachment badges. Reserve the energy row and keep the hint directly
+			# above it so every physical attachment remains readable and anchorable.
+			var hint_bottom := -26.0 * badge_scale - 2.0
+			var hint_height := clampf(27.0 * badge_scale, 20.0, 29.0)
+			interaction_hint.offset_bottom = hint_bottom
+			interaction_hint.offset_top = hint_bottom - hint_height
+		else:
+			interaction_hint.offset_top = -34.0
+			interaction_hint.offset_bottom = -5.0
+	var tool_rect := _tool_badge_layout_rect()
+	tool_badge.position = tool_rect.position
+	tool_badge.size = tool_rect.size
 	tool_badge.add_theme_font_size_override("font_size", int(10 * badge_scale))
 	status_row.offset_left = -6.0
 	status_row.offset_top = 6.0
@@ -1676,6 +2018,14 @@ func _layout_battle_overlay() -> void:
 	if top_gloss:
 		top_gloss.position = Vector2(3.0, 3.0)
 		top_gloss.size = Vector2(maxf(0.0, size.x - 6.0), maxf(3.0, size.y * 0.14))
+
+
+func _tool_badge_layout_rect() -> Rect2:
+	var badge_scale := clampf(size.x / 130.0, 0.68, 1.06)
+	return Rect2(
+		Vector2(5.0, 5.0),
+		Vector2(42.0, 20.0) * badge_scale,
+	)
 
 
 func _card_corner_radius() -> int:

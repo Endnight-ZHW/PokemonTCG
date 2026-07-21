@@ -7,7 +7,7 @@ signal confirmed
 signal cancelled
 signal dismissed
 
-const ENERGY_ICONS := preload("res://ui/energy_icon_catalog.gd")
+const ATTACHMENT_VISUALS := preload("res://ui/attachment_visual_descriptor.gd")
 const WIDE_WIDTH := 326.0
 const COMPACT_INSET := 12.0
 const ROW_HEIGHT := 52.0
@@ -196,14 +196,24 @@ func _rebuild_rows() -> void:
 		button.focus_mode = Control.FOCUS_NONE
 		button.toggle_mode = _max_select > 1 or _min_select == 0
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.text = _option_label(option)
+		var descriptor: AttachmentVisualDescriptor = _attachment_descriptor(option)
+		button.text = _option_label(option, descriptor)
 		button.tooltip_text = str(_disabled_reasons.get(option_id, ""))
 		button.accessibility_name = "%s；来源：%s" % [button.text, _source_label_text]
 		button.add_theme_font_size_override("font_size", 13)
-		var icon := _option_icon(option)
+		var icon: Texture2D = descriptor.icon if descriptor != null else null
 		if icon != null:
 			button.icon = icon
 			button.expand_icon = true
+		if descriptor != null:
+			button.set_meta("attachment_card_id", descriptor.card_id)
+			button.set_meta("attachment_index", descriptor.first_physical_index())
+			button.set_meta("attachment_group_key", descriptor.group_key)
+			button.set_meta(
+				"provided_energy_units",
+				descriptor.provided_energy_units.duplicate(),
+			)
+			button.set_meta("attachment_fallback_label", descriptor.fallback_label)
 		button.pressed.connect(_on_option_pressed.bind(option_id))
 		_option_rows.add_child(button)
 		_button_by_id[option_id] = button
@@ -240,33 +250,40 @@ func _on_option_pressed(option_id: String) -> void:
 	option_toggled.emit(option_id)
 
 
-func _option_label(option: Dictionary) -> String:
-	var ref := _attachment_ref(option)
-	var card_id := str(ref.get("card_id", ""))
-	var energy_name := (
-		_catalog.card_name(card_id)
-		if _catalog != null and not card_id.is_empty()
-		else str(option.get("label", "能量"))
+func _option_label(
+	option: Dictionary,
+	descriptor: AttachmentVisualDescriptor = null,
+) -> String:
+	if descriptor == null:
+		descriptor = _attachment_descriptor(option)
+	var fallback_name: String = str(option.get("label", "能量"))
+	var energy_name: String = (
+		descriptor.display_name
+		if descriptor != null and descriptor.has_known_identity
+		else fallback_name
 	)
-	var index := int(ref.get("index", -1))
+	var index: int = descriptor.first_physical_index() if descriptor != null else -1
 	return "%s · 第%d张" % [energy_name, index + 1] if index >= 0 else energy_name
 
 
 func _option_icon(option: Dictionary) -> Texture2D:
-	var ref := _attachment_ref(option)
-	var card_id := str(ref.get("card_id", ""))
-	var special := ENERGY_ICONS.texture_for_card_id(card_id)
-	if special != null:
-		return special
-	if _catalog == null or card_id.is_empty():
-		return null
-	var provided: Array = _catalog.provides_energy(card_id)
-	return ENERGY_ICONS.texture_for(str(provided[0])) if not provided.is_empty() else null
+	var descriptor: AttachmentVisualDescriptor = _attachment_descriptor(option)
+	return descriptor.icon if descriptor != null else null
+
+
+func _attachment_descriptor(option: Dictionary) -> AttachmentVisualDescriptor:
+	var ref: Dictionary = _attachment_ref(option)
+	return ATTACHMENT_VISUALS.resolve(
+		str(ref.get("attachment_type", ref.get("type", "energy"))),
+		str(ref.get("card_id", "")),
+		int(ref.get("index", -1)),
+		_catalog,
+	)
 
 
 func _attachment_ref(option: Dictionary) -> Dictionary:
 	var ref_value: Variant = option.get("ref")
-	return Dictionary(ref_value) if ref_value is Dictionary else {}
+	return ATTACHMENT_VISUALS.canonical_ref(ref_value)
 
 
 func _reposition() -> void:

@@ -145,6 +145,40 @@ func _run_normalization_contract() -> void:
 		"discard event lost the source indices needed to disambiguate duplicate cards",
 	)
 
+	# Old recordings identify a physical attachment with `attachment_index`.
+	# `_endpoint()` also seeds the canonical field with -1, so compatibility must
+	# prefer the valid legacy value even when both keys are present.  Index 1 is
+	# intentionally the second copy of the same card identity.
+	var legacy_duplicate_attachment := PresentationEvent.normalize({
+		"event_type": "cards_discarded",
+		"actor": 0,
+		"card_id": "sv1-ener-2",
+		"source": {
+			"player": 0,
+			"slot": "active",
+			"attachment_type": "energy",
+			"attachment_card_id": "sv1-ener-2",
+			"index": -1,
+			"attachment_index": 1,
+		},
+		"target": {"player": 0, "zone": "discard"},
+		"data": {
+			"player": 0,
+			"card_id": "sv1-ener-2",
+			"attachment_card_ids": ["sv1-ener-2", "sv1-ener-2"],
+		},
+	}, 15, 0)
+	var legacy_duplicate_source: Dictionary = legacy_duplicate_attachment.get(
+		"source",
+		{},
+	)
+	_expect(
+		int(legacy_duplicate_source.get("index", -1)) == 1
+		and not legacy_duplicate_source.has("attachment_index"),
+		"legacy attachment endpoint did not retain the exact physical duplicate "
+		+ "as canonical index-only output",
+	)
+
 	var turn_boundary := PresentationEvent.normalize_all([
 		{
 			"event_type": "cards_drawn",

@@ -339,6 +339,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(236, 50)
 layout_mode = 2
 focus_mode = 0
+theme_type_variation = &"FrontRuleToggle"
 text = "弱点/抗性：已关闭"
 tooltip_text = "当前已关闭（项目默认）：攻击伤害不计算弱点与抗性。点击可开启。"
 

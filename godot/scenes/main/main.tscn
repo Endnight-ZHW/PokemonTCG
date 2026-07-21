@@ -259,7 +259,7 @@ horizontal_alignment = 1
 
 [node name="Scroll" type="ScrollContainer" parent="ModalLayer/Center/ModalPanel/Margin/Content" unique_id=359460659]
 focus_mode = 0
-custom_minimum_size = Vector2(0, 420)
+custom_minimum_size = Vector2(0, 0)
 layout_mode = 2
 size_flags_vertical = 3
 follow_focus = false

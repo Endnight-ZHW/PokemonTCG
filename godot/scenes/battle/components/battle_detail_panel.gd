@@ -42,7 +42,7 @@ const STATUS_NAMES := {
 	"CONFUSED": "混乱",
 }
 const NORMAL_PANEL_SIZE := Vector2(372.0, 312.0)
-const COMPACT_PANEL_SIZE := Vector2(188.0, 196.0)
+const COMPACT_PANEL_SIZE := Vector2(560.0, 240.0)
 
 @onready var detail_image: TextureRect = %DetailImage
 @onready var detail_title: Label = %DetailTitle
@@ -191,20 +191,20 @@ func set_compact_layout(value: bool) -> void:
 	if body:
 		body.add_theme_constant_override("separation", 6 if value else 10)
 	if image_column:
-		image_column.custom_minimum_size.x = 56.0 if value else 126.0
+		image_column.custom_minimum_size.x = 96.0 if value else 126.0
 	if image_frame:
 		image_frame.custom_minimum_size = (
-			Vector2(56.0, 78.0) if value else Vector2(126.0, 176.0)
+			Vector2(96.0, 134.0) if value else Vector2(126.0, 176.0)
 		)
 	if detail_text:
-		detail_text.custom_minimum_size.x = 92.0 if value else 212.0
-		detail_text.add_theme_font_size_override("normal_font_size", 11 if value else 12)
+		detail_text.custom_minimum_size.x = 340.0 if value else 212.0
+		detail_text.add_theme_font_size_override("normal_font_size", 12)
 	if detail_title:
-		detail_title.add_theme_font_size_override("font_size", 15 if value else 17)
+		detail_title.add_theme_font_size_override("font_size", 17)
 	if detail_meta:
-		detail_meta.add_theme_font_size_override("font_size", 10 if value else 11)
+		detail_meta.add_theme_font_size_override("font_size", 11)
 	if context_label:
-		context_label.add_theme_font_size_override("font_size", 10 if value else 12)
+		context_label.add_theme_font_size_override("font_size", 12)
 	if close_button:
 		close_button.custom_minimum_size = Vector2(48.0, 48.0)
 

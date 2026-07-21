@@ -28,6 +28,8 @@ const ATTACHMENT_POPOVER := preload(
 )
 const MIN_FLYING_CARD_DURATION := 0.06
 const FLYING_CARD_FINISH_PAD := 0.0
+const SLOT_COMPOSITE_LIFT_SCALE := 0.08
+const SLOT_COMPOSITE_CLEARANCE := 8.0
 const MAX_ACTIVE_FLYERS_HIGH := 12
 const MAX_ACTIVE_FLYERS_LOW := 8
 const PAPER_CARD_BASE_SIZE := Vector2(94, 132)
@@ -174,6 +176,7 @@ var _board_origin := Vector2.ZERO
 var _initialized := false
 var _active_flyers: Array[Control] = []
 var _flyer_tweens: Dictionary = {}
+var _neutral_public_motion_texture: Texture2D
 var _event_motion_completions: Dictionary = {}
 var _presentation_snapshot: Dictionary = {}
 var _presentation_reveals: Dictionary = {}
@@ -185,6 +188,7 @@ var _presentation_cover_tweens: Dictionary = {}
 var _presentation_slot_covers: Dictionary = {}
 var _presentation_slot_cover_states: Dictionary = {}
 var _presentation_slot_event_queues: Dictionary = {}
+var _presentation_slot_event_plans: Dictionary = {}
 var _presentation_deferred_ko_slots: Dictionary = {}
 var _presentation_event_hand_targets: Dictionary = {}
 var _presentation_hand_target_cursor: Dictionary = {}
@@ -202,6 +206,7 @@ var _presentation_hand_proxy_by_key: Dictionary = {}
 var _presentation_hand_snapshot_rows: Dictionary = {}
 var _presentation_hand_virtual_keys: Array[String] = []
 var _presentation_attachment_source_proxies: Dictionary = {}
+var _presentation_attachment_source_specs: Dictionary = {}
 var _presentation_zone_states: Dictionary = {}
 var _presentation_hud_state: GameState
 var _presentation_actions_suppressed := false
@@ -1006,6 +1011,16 @@ func resolve_endpoint_center(endpoint: Dictionary) -> Vector2:
 	return anchor_resolver.resolve(endpoint)
 
 
+func _endpoint_attachment_index(endpoint: Dictionary, fallback: int = -1) -> int:
+	# `index` is the canonical endpoint field emitted by the rules layer.  Keep
+	# accepting the presentation-only legacy name while old recordings remain
+	# loadable.
+	var value := int(endpoint.get("index", -1))
+	if value < 0:
+		value = int(endpoint.get("attachment_index", -1))
+	return fallback if value < 0 and fallback >= 0 else value
+
+
 func _resolve_endpoint_center_direct(endpoint: Dictionary) -> Vector2:
 	var player := int(endpoint.get("player", view_player))
 	var slot := str(endpoint.get("slot", ""))
@@ -1026,7 +1041,7 @@ func _resolve_endpoint_center_direct(endpoint: Dictionary) -> Vector2:
 					card_view.attachment_anchor_global(
 						attachment_type,
 						attachment_card_id,
-						int(endpoint.get("attachment_index", -1)),
+						_endpoint_attachment_index(endpoint),
 					)
 				)
 			return _effects_local(card_view.global_center())
@@ -1824,13 +1839,13 @@ func _refresh_target_hints() -> void:
 			else ""
 		)
 		var target_hint := str(selected_target_labels.get(target_key, ""))
+		var slot_choice_value: Variant = choice_target_options.get(target_key)
+		var is_attachment_source := (
+			slot_choice_value is Dictionary
+			and str(Dictionary(slot_choice_value).get("kind", ""))
+			== "attachment_group"
+		)
 		if view.has_method("set_target_accent"):
-			var slot_choice_value: Variant = choice_target_options.get(target_key)
-			var is_attachment_source := (
-				slot_choice_value is Dictionary
-				and str(Dictionary(slot_choice_value).get("kind", ""))
-				== "attachment_group"
-			)
 			view.call(
 				"set_target_accent",
 				DesignTokens.GOLD if is_attachment_source else DesignTokens.CYAN,
@@ -1840,6 +1855,7 @@ func _refresh_target_hints() -> void:
 			disabled_reason,
 			target_hint,
 			allowed_hand_indices,
+			not is_attachment_source,
 		)
 		if target_hint.is_empty():
 			view.set_targetable(false)
@@ -2450,11 +2466,12 @@ func _layout_detail_panel() -> void:
 	var available_width := maxf(1.0, maximum_detail_right - minimum_fixed_x)
 	var available_height := maxf(1.0, corridor_bottom - corridor_top)
 	var component := detail_panel as BattleDetailPanel
+	var use_bottom_layout := (
+		available_width < BattleDetailPanel.NORMAL_PANEL_SIZE.x
+		or available_height < BattleDetailPanel.NORMAL_PANEL_SIZE.y
+	)
 	if component:
-		component.set_compact_layout(
-			available_width < BattleDetailPanel.NORMAL_PANEL_SIZE.x
-			or available_height < BattleDetailPanel.NORMAL_PANEL_SIZE.y
-		)
+		component.set_compact_layout(use_bottom_layout)
 	var base_panel_size := (
 		component.layout_size()
 		if component
@@ -2462,17 +2479,25 @@ func _layout_detail_panel() -> void:
 	)
 	if base_panel_size.x <= 1.0 or base_panel_size.y <= 1.0:
 		base_panel_size = BattleDetailPanel.NORMAL_PANEL_SIZE
-	var panel_scale := minf(
-		1.0,
-		minf(
-			available_width / base_panel_size.x,
-			available_height / base_panel_size.y,
-		),
-	)
-	panel_scale = maxf(0.1, panel_scale)
-	var panel_size := base_panel_size * panel_scale
 	detail_panel.pivot_offset = Vector2.ZERO
-	detail_panel.scale = Vector2.ONE * panel_scale
+	detail_panel.scale = Vector2.ONE
+	if use_bottom_layout:
+		# A narrow prize corridor must not make text and touch targets microscopic.
+		# Dock the preview at the bottom of the safe board instead; DetailText owns
+		# its vertical scrolling while the header and 48 px close action stay fixed.
+		var bottom_size := Vector2(
+			minf(base_panel_size.x, safe_rect.size.x - detail_halo * 2.0),
+			minf(base_panel_size.y, safe_rect.size.y - detail_halo * 2.0),
+		)
+		bottom_size.x = maxf(1.0, bottom_size.x)
+		bottom_size.y = maxf(1.0, bottom_size.y)
+		detail_panel.position = Vector2(
+			roundf(safe_rect.position.x + (safe_rect.size.x - bottom_size.x) * 0.5),
+			roundf(safe_rect.end.y - bottom_size.y - detail_halo),
+		)
+		detail_panel.size = bottom_size
+		return
+	var panel_size := base_panel_size
 
 	var maximum_fixed_x := maximum_detail_right - panel_size.x
 	var fixed_x := clampf(
@@ -4356,6 +4381,11 @@ func _stage_slot_visual_transactions(
 				))
 			):
 				_presentation_deferred_ko_slots[key] = true
+	for key_value in event_queues.keys():
+		var key := str(key_value)
+		_presentation_slot_event_plans[key] = Array(
+			event_queues.get(key, []),
+		).duplicate()
 	var snapshot_slots: Dictionary = previous_snapshot.get("slots", {})
 	for key_value in event_queues.keys():
 		var key := str(key_value)
@@ -4469,6 +4499,11 @@ func _spawn_slot_state_cover(
 
 func _on_presentation_event_started(event: Dictionary) -> void:
 	_active_presentation_event_id = str(event.get("event_id", ""))
+	# Attachment covers are mutable across a serialized batch (attach, switch,
+	# discard and transfer can all target the same physical stack). Create their
+	# source visual at takeoff, before this event mutates the cover, so it peels
+	# from the badge that is actually visible now rather than the batch snapshot.
+	_activate_attachment_source_proxies(event)
 	var event_type := PresentationEvent.canonical_event_type(
 		str(event.get("event_type", "")),
 	)
@@ -4488,7 +4523,10 @@ func _on_presentation_event_started(event: Dictionary) -> void:
 		return
 	if event_type in ["promoted", "retreat", "switched"]:
 		for key in keys:
-			_release_slot_state_cover(key)
+			# Slot movement claims the staged CardView itself.  Keeping this cover
+			# alive until the motion request means HP, status, energy and tool
+			# overlays travel as one physical stack instead of being rebuilt as
+			# unrelated paper-card flyers.
 			_presentation_deferred_ko_slots.erase(key)
 		return
 	# KO feedback must land on the old stack. Deferred KO declarations also keep
@@ -4566,8 +4604,10 @@ func _apply_event_to_slot_cover(
 					and
 					int(target.get("player", -99)) == key_player
 					and str(target.get("slot", "")) == key_slot
-					and card_id not in state.energy_card_ids
 				):
+					# Physical energy cards are not a set. Attaching a second copy of
+					# the same basic/special card must survive into the staged stack so
+					# a later switch carries both badges/counts.
 					state.energy_card_ids.append(card_id)
 		"tool_attached":
 			var card_ids := _event_card_ids(event)
@@ -4672,6 +4712,14 @@ func _finish_slot_visual_event(event: Dictionary) -> void:
 		str(event.get("event_type", "")),
 	)
 	for key in _slot_visual_keys_for_event(event):
+		var planned_queue: Array = Array(
+			_presentation_slot_event_plans.get(key, []),
+		).duplicate()
+		planned_queue.erase(event_id)
+		if planned_queue.is_empty():
+			_presentation_slot_event_plans.erase(key)
+		else:
+			_presentation_slot_event_plans[key] = planned_queue
 		if not _presentation_slot_event_queues.has(key):
 			continue
 		if event_type in [
@@ -4694,8 +4742,35 @@ func _release_slot_state_cover(key: String) -> void:
 	_presentation_slot_cover_states.erase(key)
 	_presentation_slot_event_queues.erase(key)
 	if cover != null:
+		if bool(cover.get_meta("retained_slot_cover", false)):
+			_release_retained_slot_target_mask(key)
 		cover.visible = false
 		cover.queue_free()
+
+
+func _claim_slot_state_cover(key: String) -> CardView:
+	var cover := _valid_card_view(_presentation_slot_covers.get(key))
+	if cover != null and bool(cover.get_meta("retained_slot_cover", false)):
+		# This cover's outstanding mask is replaced by the new slot-movement
+		# event's mask. Retire exactly one count without exposing a destination
+		# that is still reserved by the new event.
+		_release_retained_slot_target_mask(key)
+	_presentation_slot_covers.erase(key)
+	_presentation_slot_cover_states.erase(key)
+	_presentation_slot_event_queues.erase(key)
+	_presentation_deferred_ko_slots.erase(key)
+	return cover
+
+
+func _release_retained_slot_target_mask(key: String) -> void:
+	var parts := key.split(":")
+	if parts.size() < 2:
+		return
+	var target := get_slot_view(int(parts[0]), str(parts[1]))
+	if target == null:
+		return
+	_reveal_presentation_node(target, false, 0.0)
+	target.modulate.a = 1.0
 
 
 func _clear_slot_visual_transactions() -> void:
@@ -4704,6 +4779,7 @@ func _clear_slot_visual_transactions() -> void:
 	_presentation_slot_covers.clear()
 	_presentation_slot_cover_states.clear()
 	_presentation_slot_event_queues.clear()
+	_presentation_slot_event_plans.clear()
 	_presentation_deferred_ko_slots.clear()
 	_clear_effect_child_controls(["SlotStateCover"])
 
@@ -5267,8 +5343,6 @@ func _reposition_opponent_hand_proxies() -> void:
 
 func _stage_attachment_source_proxies(events: Array[Dictionary]) -> void:
 	_clear_attachment_source_proxies()
-	if effects == null:
-		return
 	for event in events:
 		var event_id := str(event.get("event_id", ""))
 		var source := _event_source_endpoint(event)
@@ -5281,50 +5355,23 @@ func _stage_attachment_source_proxies(events: Array[Dictionary]) -> void:
 		var card_ids := _event_card_ids(event)
 		if card_ids.is_empty():
 			continue
-		var proxy_size := _snapshot_endpoint_size(
-			source,
-			_flying_card_size(str(event.get("event_type", ""))),
-		)
-		var rotation := _snapshot_endpoint_rotation(source, 0.0)
-		var proxies: Array[Control] = []
+		var specs: Array[Dictionary] = []
 		for index in range(mini(card_ids.size(), _max_active_flyers())):
 			var card_id := str(card_ids[index])
-			var exact_source := source.duplicate(true)
-			exact_source["attachment_card_id"] = card_id
-			var attachment_index := int(source.get("index", index))
+			var attachment_index := _endpoint_attachment_index(source, index)
 			var raw_indices: Variant = Dictionary(event.get("data", {})).get(
 				"source_indices",
 				[],
 			)
 			if raw_indices is Array and index < Array(raw_indices).size():
 				attachment_index = int(Array(raw_indices)[index])
-			exact_source["attachment_index"] = attachment_index
-			var base_center := _snapshot_endpoint_center(
-				exact_source,
-				resolve_endpoint_center(exact_source),
-			)
-			var texture := _texture_for_card_id(card_id)
-			if texture == null:
-				continue
-			var proxy := _create_paper_card_token(
-				texture,
-				proxy_size,
-				"AttachmentSourceProxy",
-				94 + index,
-				_motion_depth_for_point(base_center),
-			)
-			var center := base_center + Vector2(
-				float(index) * 2.0,
-				-float(index) * 1.5,
-			)
-			proxy.position = center - proxy.size * 0.5
-			proxy.rotation_degrees = rotation
-			proxy.set_meta("motion_start", center)
-			proxy.set_meta("attachment_source_event_id", event_id)
-			effects.add_child(proxy)
-			proxies.append(proxy)
-		if not proxies.is_empty():
-			_presentation_attachment_source_proxies[event_id] = proxies
+			specs.append({
+				"card_id": card_id,
+				"index": attachment_index,
+				"ordinal": index,
+			})
+		if not specs.is_empty():
+			_presentation_attachment_source_specs[event_id] = specs
 
 
 func _select_virtual_hand_source_rows(
@@ -6353,10 +6400,14 @@ func _event_source_endpoint(event: Dictionary) -> Dictionary:
 	if (
 		str(event.get("event_type", "")) == "energy_attached"
 		and not str(source.get("slot", "")).is_empty()
-		and str(source.get("zone", "")).is_empty()
-		and str(source.get("attachment_type", "")).is_empty()
 	):
-		source["attachment_type"] = "energy"
+		# PresentationEvent's compatibility default for a normal attach source is
+		# `hand`. A slot-bearing source is already a complete location and denotes
+		# an attachment transfer, so that fallback must not win over the slot or
+		# stage an unrelated hand-card proxy.
+		source["zone"] = ""
+		if str(source.get("attachment_type", "")).is_empty():
+			source["attachment_type"] = "energy"
 	return source
 
 
@@ -6884,14 +6935,113 @@ func _clear_snapshot_hand_sources() -> void:
 	_presentation_hand_virtual_keys.clear()
 
 
+func _activate_attachment_source_proxies(event: Dictionary) -> void:
+	if effects == null:
+		return
+	var event_id := str(event.get("event_id", ""))
+	if event_id.is_empty() or _presentation_attachment_source_proxies.has(event_id):
+		return
+	var source := _event_source_endpoint(event)
+	if (
+		str(source.get("slot", "")).is_empty()
+		or str(source.get("attachment_type", "")).is_empty()
+	):
+		return
+	var specs: Array = _presentation_attachment_source_specs.get(event_id, [])
+	if specs.is_empty():
+		var card_ids := _event_card_ids(event)
+		var raw_indices: Variant = Dictionary(event.get("data", {})).get(
+			"source_indices",
+			[],
+		)
+		for ordinal in range(mini(card_ids.size(), _max_active_flyers())):
+			var attachment_index := _endpoint_attachment_index(source, ordinal)
+			if raw_indices is Array and ordinal < Array(raw_indices).size():
+				attachment_index = int(Array(raw_indices)[ordinal])
+			specs.append({
+				"card_id": str(card_ids[ordinal]),
+				"index": attachment_index,
+				"ordinal": ordinal,
+			})
+	if specs.is_empty():
+		return
+	var player := int(source.get("player", view_player))
+	var slot_name := str(source.get("slot", ""))
+	var source_key := "%d:%s" % [player, slot_name]
+	var source_view := _valid_card_view(_presentation_slot_covers.get(source_key))
+	if source_view == null:
+		source_view = get_slot_view(player, slot_name)
+	var fallback_size := _flying_card_size(str(event.get("event_type", "")))
+	var proxy_size := (
+		_attachment_motion_size(source_view.size, fallback_size)
+		if source_view != null
+		else _current_endpoint_size(source, fallback_size)
+	)
+	var rotation := source_view.rotation_degrees if source_view != null else 0.0
+	var proxies: Array[Control] = []
+	for spec_value in specs:
+		var spec := spec_value as Dictionary
+		var card_id := str(spec.get("card_id", ""))
+		var attachment_index := int(spec.get("index", -1))
+		var ordinal := int(spec.get("ordinal", proxies.size()))
+		var exact_source := source.duplicate(true)
+		exact_source["attachment_card_id"] = card_id
+		exact_source["index"] = attachment_index
+		var center := (
+			_effects_local(
+				source_view.attachment_layout_visual_global_rect(
+					str(source.get("attachment_type", "")),
+					card_id,
+					attachment_index,
+				).get_center()
+			)
+			if source_view != null
+			else resolve_endpoint_center(exact_source)
+		)
+		var descriptor := AttachmentVisualDescriptor.resolve(
+			str(source.get("attachment_type", "")),
+			card_id,
+			attachment_index,
+			catalog,
+		)
+		var texture := (
+			descriptor.icon
+			if descriptor.icon != null
+			else _neutral_public_card_texture()
+		)
+		if texture == null:
+			continue
+		var proxy := _create_paper_card_token(
+			texture,
+			proxy_size,
+			"AttachmentSourceProxy",
+			94 + ordinal,
+			_motion_depth_for_point(center),
+		)
+		proxy.position = center - proxy.size * 0.5
+		proxy.rotation_degrees = rotation
+		proxy.visible = true
+		proxy.set_meta("motion_start", center)
+		proxy.set_meta("attachment_source_event_id", event_id)
+		proxy.set_meta("attachment_badge_proxy", true)
+		proxy.set_meta("attachment_source_index", attachment_index)
+		_configure_attachment_badge_marker(proxy, descriptor)
+		effects.add_child(proxy)
+		proxies.append(proxy)
+	if not proxies.is_empty():
+		_presentation_attachment_source_proxies[event_id] = proxies
+
+
 func _claim_attachment_source_proxies(event: Dictionary) -> Array[Control]:
 	var event_id := str(event.get("event_id", ""))
+	_activate_attachment_source_proxies(event)
 	var result: Array[Control] = []
 	for proxy_value in _presentation_attachment_source_proxies.get(event_id, []):
 		var proxy := _valid_control(proxy_value)
 		if proxy != null:
 			result.append(proxy)
 	_presentation_attachment_source_proxies.erase(event_id)
+	_presentation_attachment_source_specs.erase(event_id)
 	return result
 
 
@@ -6902,6 +7052,7 @@ func _clear_attachment_source_proxies() -> void:
 			if proxy != null:
 				_dispose_flyer(proxy)
 	_presentation_attachment_source_proxies.clear()
+	_presentation_attachment_source_specs.clear()
 
 
 func _clear_all_presentation_nodes() -> void:
@@ -6953,6 +7104,22 @@ func _motion_landing_control(
 		var staged := _valid_control(staged_hand_nodes[index])
 		if staged != null:
 			return staged
+	# Authoritative slot CardViews already contain the final state of the whole
+	# batch. An attachment that precedes a switch must land on the currently
+	# staged Pokemon stack, otherwise contact both targets the wrong identity and
+	# consumes the later switch's mask.
+	if not str(target.get("attachment_type", "")).is_empty():
+		var slot_name := str(target.get("slot", ""))
+		if not slot_name.is_empty():
+			var staged_key := "%d:%s" % [
+				int(target.get("player", view_player)),
+				slot_name,
+			]
+			var staged_slot := _valid_card_view(
+				_presentation_slot_covers.get(staged_key),
+			)
+			if staged_slot != null:
+				return staged_slot
 	var slot_view := _slot_view_for_endpoint(target)
 	if slot_view != null:
 		return slot_view
@@ -6969,6 +7136,53 @@ func _motion_landing_control(
 	return _zone_view_for_endpoint(target)
 
 
+func _landing_attachment_index_for_event(
+	target: Dictionary,
+	landing_view: Control,
+	card_id: String,
+	ordinal: int,
+	visible_count: int,
+) -> int:
+	var attachment_type := str(target.get("attachment_type", ""))
+	if attachment_type != "energy":
+		return _endpoint_attachment_index(target, -1)
+	var inferred := maxi(0, ordinal)
+	var card_view := landing_view as CardView
+	if card_view != null and card_view.pokemon != null:
+		var energy_ids := card_view.pokemon.energy_card_ids
+		if (
+			card_view in _presentation_slot_covers.values()
+			and _endpoint_attachment_index(target, -1) < 0
+		):
+			# The staged cover still represents the pre-contact state.  Predict the
+			# append index; CardView will resolve the corresponding prospective badge
+			# without exposing that badge before the flyer arrives.
+			return energy_ids.size() + ordinal
+		# Energy attachment/transfer commands append their physical cards to the
+		# destination list. Infer from that appended tail when the event endpoint
+		# has no explicit index; this avoids ordinal zero snapping a new Fire badge
+		# onto an existing Water badge.
+		var appended_start := maxi(0, energy_ids.size() - maxi(1, visible_count))
+		var candidate := mini(energy_ids.size() - 1, appended_start + ordinal)
+		if (
+			candidate >= 0
+			and (
+				card_id.is_empty()
+				or str(energy_ids[candidate]) == card_id
+			)
+		):
+			inferred = candidate
+		elif not card_id.is_empty():
+			# Compatibility events can describe a non-appending target. Prefer the
+			# last matching physical copy, which is the newly attached copy for the
+			# normal append path.
+			for index in range(energy_ids.size() - 1, -1, -1):
+				if str(energy_ids[index]) == card_id:
+					inferred = index
+					break
+	return _endpoint_attachment_index(target, inferred)
+
+
 func _motion_entity_finish(flying: Control, fallback: Vector2) -> Vector2:
 	if flying == null or not flying.has_meta("motion_landing_view"):
 		return fallback
@@ -6981,11 +7195,11 @@ func _motion_entity_finish(flying: Control, fallback: Vector2) -> Vector2:
 	))
 	if landing_view is CardView and not attachment_type.is_empty():
 		return _effects_local(
-			(landing_view as CardView).attachment_anchor_global(
+			(landing_view as CardView).prospective_attachment_visual_global_rect(
 				attachment_type,
 				str(flying.get_meta("motion_landing_attachment_card_id", "")),
 				int(flying.get_meta("motion_landing_attachment_index", -1)),
-			)
+			).get_center()
 		)
 	return anchor_resolver.control_center(landing_view)
 
@@ -7076,6 +7290,11 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			_dispose_snapshot_hand_source(proxy)
 		for proxy in staged_attachment_proxies:
 			_dispose_flyer(proxy)
+		if event_type in ["promoted", "retreat", "switched"]:
+			# Reuse the slot transaction path with a zero duration. It performs an
+			# immediate visual handoff while still remapping any later same-batch
+			# mutations to the Pokemon that just entered each destination slot.
+			_spawn_slot_transition(event, 0.0, motion_event_id)
 		var reduced_feedback: Dictionary = _presentation_landing_feedbacks.get(
 			motion_event_id,
 			{},
@@ -7155,10 +7374,41 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 		var card_id := str(card_ids[index]) if index < card_ids.size() else event_card_id
 		var source_hidden := _endpoint_hidden_from_view(source)
 		var target_hidden := _endpoint_hidden_from_view(target)
-		var texture := _texture_for_card_id("" if source_hidden else card_id)
+		var texture := (
+			_texture_for_card_id("")
+			if source_hidden
+			else _public_motion_texture_for_card_id(card_id)
+		)
 		var flip_texture: Texture2D
 		if source_hidden != target_hidden and not card_id.is_empty():
-			flip_texture = _texture_for_card_id("" if target_hidden else card_id)
+			flip_texture = (
+				_texture_for_card_id("")
+				if target_hidden
+				else _public_motion_texture_for_card_id(card_id)
+			)
+		var target_attachment_type := str(target.get("attachment_type", ""))
+		var source_is_badge_proxy := (
+			existing_flyer != null
+			and bool(existing_flyer.get_meta("attachment_badge_proxy", false))
+		)
+		if source_is_badge_proxy and target_attachment_type.is_empty():
+			flip_texture = (
+				_texture_for_card_id("")
+				if target_hidden
+				else _public_motion_texture_for_card_id(card_id)
+			)
+		elif not source_is_badge_proxy and not target_attachment_type.is_empty():
+			var target_descriptor := AttachmentVisualDescriptor.resolve(
+				target_attachment_type,
+				card_id,
+				index,
+				catalog,
+			)
+			flip_texture = (
+				target_descriptor.icon
+				if target_descriptor.icon != null
+				else _neutral_public_card_texture()
+			)
 		if texture == null:
 			_dispose_snapshot_hand_source(existing_flyer)
 			continue
@@ -7175,6 +7425,14 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			index,
 			landing_nodes,
 		)
+		var landing_attachment_type := str(target.get("attachment_type", ""))
+		var landing_attachment_index := _landing_attachment_index_for_event(
+			target,
+			landing_view,
+			card_id,
+			index,
+			visible_count,
+		)
 		_spawn_flying_card(
 			texture,
 			start,
@@ -7190,13 +7448,13 @@ func _on_card_motion_requested(event: Dictionary, duration: float) -> void:
 			landing_view,
 			existing_flyer,
 			motion_event_id,
-			str(target.get("attachment_type", "")),
+			landing_attachment_type,
 			(
 				card_id
-				if not str(target.get("attachment_type", "")).is_empty()
+				if not landing_attachment_type.is_empty()
 				else ""
 			),
-			index,
+			landing_attachment_index,
 			flip_texture,
 			(
 				str(target.get("zone", "")) == "hand"
@@ -7459,7 +7717,7 @@ func _source_points_for_event(
 			var exact_source := source.duplicate(true)
 			if index < card_ids.size():
 				exact_source["attachment_card_id"] = str(card_ids[index])
-			exact_source["attachment_index"] = index
+			exact_source["index"] = _endpoint_attachment_index(source, index)
 			attachment_result.append(_snapshot_endpoint_center(
 				exact_source,
 				fallback_start,
@@ -7506,7 +7764,7 @@ func _target_points_for_event(
 			var exact_target := target.duplicate(true)
 			if index < card_ids.size():
 				exact_target["attachment_card_id"] = str(card_ids[index])
-			exact_target["attachment_index"] = index
+			exact_target["index"] = _endpoint_attachment_index(target, index)
 			result.append(resolve_endpoint_center(exact_target))
 		return result
 	for index in range(visible_count):
@@ -7642,7 +7900,7 @@ func _slot_component_endpoint(
 		if not str(pokemon_data.get("attached_tool_id", "")).is_empty():
 			energy_start += 1
 		var energy_index := component_index - energy_start
-		result["attachment_index"] = energy_index if energy_index >= 0 else 0
+		result["index"] = energy_index if energy_index >= 0 else 0
 	return result
 
 
@@ -7779,7 +8037,7 @@ func _snapshot_endpoint_center(endpoint: Dictionary, fallback: Vector2) -> Vecto
 					if not attachment_card_id.is_empty()
 					else attachment_type
 				)
-				var attachment_index := int(endpoint.get("attachment_index", -1))
+				var attachment_index := _endpoint_attachment_index(endpoint)
 				if attachment_index >= 0:
 					var indexed_key := (
 						"%s:%d:%s" % [attachment_type, attachment_index, attachment_card_id]
@@ -7875,12 +8133,16 @@ func _current_endpoint_size(endpoint: Dictionary, fallback: Vector2) -> Vector2:
 
 func _attachment_motion_size(slot_size: Vector2, fallback: Vector2) -> Vector2:
 	var reference := slot_size if slot_size != Vector2.ZERO else fallback
-	var height := clampf(
-		minf(reference.y * 0.48, PAPER_CARD_BASE_SIZE.y * 0.58),
-		32.0,
-		PAPER_CARD_BASE_SIZE.y * 0.58,
+	var diameter := clampf(
+		minf(reference.x * 0.22, reference.y * 0.18),
+		16.0,
+		26.0,
 	)
-	return Vector2(height * PAPER_CARD_BASE_SIZE.x / PAPER_CARD_BASE_SIZE.y, height)
+	# Attachments occupy badge geometry while they are on a Pokemon. Generic
+	# motion interpolates this square to/from the paper-card geometry of hand,
+	# discard and deck endpoints, producing a badge <-> card transformation
+	# instead of showing an already full-sized card on the Pokemon.
+	return Vector2(diameter, diameter)
 
 
 func _current_endpoint_rotation(endpoint: Dictionary, fallback: float) -> float:
@@ -8088,6 +8350,39 @@ func _texture_for_card_id(card_id: String) -> Texture2D:
 	return texture
 
 
+func _public_motion_texture_for_card_id(card_id: String) -> Texture2D:
+	# A card back communicates concealed identity. Public endpoints with absent
+	# catalog art instead use an unmistakably neutral placeholder.
+	if card_id.is_empty() or catalog == null:
+		return _neutral_public_card_texture()
+	var card: Dictionary = catalog.get_card(card_id)
+	var texture_path := str(card.get("image_path", ""))
+	if (
+		card.is_empty()
+		or texture_path.is_empty()
+		or not ResourceLoader.exists(texture_path, "Texture2D")
+	):
+		return _neutral_public_card_texture()
+	var texture := _texture_for_card_id(card_id)
+	return texture if texture != null else _neutral_public_card_texture()
+
+
+func _neutral_public_card_texture() -> Texture2D:
+	if _neutral_public_motion_texture != null:
+		return _neutral_public_motion_texture
+	var image := Image.create(64, 90, false, Image.FORMAT_RGBA8)
+	image.fill(Color("#172334"))
+	var border := Color("#6f8197")
+	for x in range(image.get_width()):
+		image.set_pixel(x, 0, border)
+		image.set_pixel(x, image.get_height() - 1, border)
+	for y in range(image.get_height()):
+		image.set_pixel(0, y, border)
+		image.set_pixel(image.get_width() - 1, y, border)
+	_neutral_public_motion_texture = ImageTexture.create_from_image(image)
+	return _neutral_public_motion_texture
+
+
 func _motion_card_hidden_from_view(
 	card_id: String,
 	source: Dictionary,
@@ -8115,7 +8410,9 @@ func _spawn_slot_transition(
 	duration: float,
 	motion_event_id: String = "",
 ) -> bool:
-	var event_type := str(event.get("event_type", ""))
+	var event_type := PresentationEvent.canonical_event_type(
+		str(event.get("event_type", "")),
+	)
 	if event_type not in ["retreat", "switched", "promoted"]:
 		return false
 	var data: Dictionary = event.get("data", {})
@@ -8139,9 +8436,26 @@ func _spawn_slot_transition(
 			"from": bench_slot,
 			"to": "active",
 		})
+	var remaining_queues_by_destination: Dictionary = {}
+	var current_event_id := str(event.get("event_id", ""))
+	for movement_value in movements:
+		var destination_slot := str(Dictionary(movement_value).get("to", ""))
+		var destination_key := "%d:%s" % [player, destination_slot]
+		var remaining_queue: Array = Array(
+			_presentation_slot_event_plans.get(
+				destination_key,
+				_presentation_slot_event_queues.get(destination_key, []),
+			),
+		).duplicate()
+		remaining_queue.erase(current_event_id)
+		remaining_queues_by_destination[destination_key] = remaining_queue
 	var spawned := false
-	var index := 0
-	for movement in movements:
+	var prepared_movements: Array[Dictionary] = []
+	# Claim every pre-event source before any destination handoff.  This matters
+	# when motion is disabled: retaining active -> bench immediately must not
+	# replace the original bench cover before bench -> active has claimed it.
+	for index in range(movements.size()):
+		var movement: Dictionary = movements[index]
 		var from_slot := str(movement["from"])
 		var to_slot := str(movement["to"])
 		var snapshot_row := _snapshot_slot_row(player, from_slot)
@@ -8151,90 +8465,497 @@ func _spawn_slot_transition(
 		var finish_view := get_slot_view(player, to_slot)
 		if finish_view == null:
 			continue
-		var finish := _effects_local(finish_view.global_center())
-		var start_size := _vector_or_default(
-			snapshot_row.get("size"),
-			finish_view.size,
+		var source_key := "%d:%s" % [player, from_slot]
+		var mover := _claim_slot_state_cover(source_key)
+		if mover == null:
+			var pokemon_data: Dictionary = snapshot_row.get("pokemon", {})
+			if not pokemon_data.is_empty():
+				mover = _spawn_slot_state_cover(
+					source_key,
+					snapshot_row,
+					PokemonState.from_dict(pokemon_data),
+				)
+		if mover == null:
+			continue
+		prepared_movements.append({
+			"index": index,
+			"from_slot": from_slot,
+			"to_slot": to_slot,
+			"snapshot_row": snapshot_row,
+			"mover": mover,
+			"finish_view": finish_view,
+		})
+	# Release only original staged covers that could not be consumed.  Doing this
+	# before destination insertion prevents cleanup from deleting a newly retained
+	# mover that happens to use the same slot key.
+	for key in _slot_visual_keys_for_event(event):
+		if _presentation_slot_covers.has(key):
+			_release_slot_state_cover(key)
+	var bidirectional_lane_offset := -1.0
+	if prepared_movements.size() == 2:
+		bidirectional_lane_offset = _slot_composite_bidirectional_lane_offset(
+			prepared_movements,
 		)
+	for prepared_value in prepared_movements:
+		var prepared: Dictionary = prepared_value
+		var index := int(prepared.get("index", 0))
+		var from_slot := str(prepared.get("from_slot", ""))
+		var to_slot := str(prepared.get("to_slot", ""))
+		var snapshot_row: Dictionary = prepared.get("snapshot_row", {})
+		var mover := prepared.get("mover") as CardView
+		var finish_view := prepared.get("finish_view") as CardView
+		if mover == null or finish_view == null:
+			continue
+		var finish := _effects_local(finish_view.global_center())
+		var start := _effects_local(mover.global_center())
+		var destination_key := "%d:%s" % [player, to_slot]
+		var destination_queue: Array = Array(
+			remaining_queues_by_destination.get(destination_key, []),
+		).duplicate()
 		var start_rotation := float(snapshot_row.get("rotation_degrees", 0.0))
 		var timing := _flying_card_timing(index, movements.size(), duration, false)
 		if not bool(timing.get("spawn", false)):
+			if destination_queue.is_empty():
+				_handoff_slot_composite_immediately(
+					mover,
+					finish_view,
+					motion_event_id,
+				)
+			else:
+				_retain_slot_composite_as_cover(
+					mover,
+					finish_view,
+					destination_key,
+					destination_queue,
+					motion_event_id,
+				)
 			_landing_burst(finish, event_type)
 			spawned = true
-			index += 1
 			continue
-		var texture := _texture_for_card_id(card_id)
-		if texture == null:
-			continue
-		_spawn_flying_card(
-			texture,
-			_vector_or_default(
-				snapshot_row.get("center"),
-				resolve_endpoint_center({"player": player, "slot": from_slot}),
-			),
+		_spawn_slot_composite_motion(
+			mover,
+			start,
 			finish,
 			float(timing.get("duration", 0.0)),
 			float(timing.get("delay", 0.0)),
 			event_type,
 			index,
-			start_size,
-			finish_view.size,
 			start_rotation,
-			finish_view.rotation_degrees,
-			null,
-			null,
+			finish_view,
 			motion_event_id,
+			from_slot,
+			to_slot,
+			destination_key,
+			destination_queue,
+			bidirectional_lane_offset,
 		)
-		var pokemon_data: Dictionary = snapshot_row.get("pokemon", {})
-		var attachment_rows: Array[Dictionary] = []
-		var energy_ids: Array = pokemon_data.get("energy_card_ids", [])
-		for energy_index in range(energy_ids.size()):
-			attachment_rows.append({
-				"type": "energy",
-				"card_id": str(energy_ids[energy_index]),
-				"index": energy_index,
-			})
-		var tool_id := str(pokemon_data.get("attached_tool_id", ""))
-		if not tool_id.is_empty():
-			attachment_rows.append({"type": "tool", "card_id": tool_id, "index": -1})
-		for attachment in attachment_rows:
-			if _active_flyers.size() >= _max_active_flyers():
-				break
-			var attachment_type := str(attachment.get("type", ""))
-			var attachment_id := str(attachment.get("card_id", ""))
-			var attachment_index := int(attachment.get("index", -1))
-			var attachment_texture := _texture_for_card_id(attachment_id)
-			if attachment_texture == null:
-				continue
-			var exact_source := {
-				"player": player,
-				"slot": from_slot,
-				"attachment_type": attachment_type,
-				"attachment_card_id": attachment_id,
-				"attachment_index": attachment_index,
-			}
-			var attachment_start := _snapshot_endpoint_center(exact_source, _vector_or_default(snapshot_row.get("center"), finish))
-			var attachment_finish := _effects_local(finish_view.attachment_anchor_global(attachment_type, attachment_id, attachment_index))
-			var attachment_size := _attachment_motion_size(start_size, PAPER_CARD_BASE_SIZE * 0.52)
-			_spawn_flying_card(
-				attachment_texture,
-				attachment_start,
-				attachment_finish,
-				float(timing.get("duration", 0.0)),
-				float(timing.get("delay", 0.0)) + 0.018 * float(attachment_index + 1),
-				event_type,
-				index + attachment_index + 1,
-				attachment_size,
-				attachment_size,
-				start_rotation,
-				finish_view.rotation_degrees,
-				null,
-				null,
-				motion_event_id,
-			)
 		spawned = true
-		index += 1
-	return spawned
+	if not spawned:
+		_complete_slot_transition_without_motion(event)
+	# Once recognized, slot transitions must never fall through to the generic
+	# empty-card motion path (which would manufacture a card-back flyer).
+	return true
+
+
+func _spawn_slot_composite_motion(
+	mover: CardView,
+	start: Vector2,
+	finish: Vector2,
+	duration: float,
+	delay: float,
+	event_type: String,
+	index: int,
+	start_rotation: float,
+	landing_view: CardView,
+	motion_event_id: String,
+	from_slot: String,
+	to_slot: String,
+	destination_key: String,
+	destination_queue: Array,
+	lane_offset_override: float = -1.0,
+) -> void:
+	if mover == null or not is_instance_valid(mover):
+		return
+	mover.name = "SlotCompositeMover_%s_%d" % [event_type, index]
+	mover.set_meta("battle_transient_kind", "SlotCompositeMover")
+	mover.set_meta("card_motion_entity", true)
+	mover.set_meta("slot_composite_motion", true)
+	mover.set_meta("slot_composite_from", from_slot)
+	mover.set_meta("slot_composite_to", to_slot)
+	mover.set_meta("motion_start", start)
+	mover.set_meta("motion_finish", finish)
+	mover.set_meta("motion_landing_view", landing_view)
+	mover.set_meta("slot_composite_start_rotation", start_rotation)
+	if not destination_queue.is_empty():
+		mover.set_meta("slot_composite_retain_key", destination_key)
+		mover.set_meta("slot_composite_remaining_queue", destination_queue.duplicate())
+		# The authoritative destination already contains later same-batch state.
+		# Keep its switch mask until the remapped cover has consumed that queue.
+		_remove_revealed_node_for_event(landing_view, motion_event_id)
+	var distance := start.distance_to(finish)
+	var lane_offset := (
+		lane_offset_override
+		if lane_offset_override > 0.0
+		else clampf(distance * 0.18, 38.0, 78.0)
+	)
+	mover.set_meta("slot_composite_lane_offset", lane_offset)
+	mover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mover.focus_mode = Control.FOCUS_NONE
+	mover.pivot_offset = mover.size * 0.5
+	mover.position = start - mover.size * 0.5
+	mover.rotation_degrees = start_rotation
+	mover.scale = Vector2.ONE
+	mover.modulate.a = 1.0
+	mover.z_index = 100 + index
+	mover.set_table_depth(_motion_depth_for_point((start + finish) * 0.5), true)
+	card_motion_layer.add(mover)
+
+	var tween := create_tween()
+	if delay > 0.0:
+		tween.tween_interval(delay)
+	card_motion_layer.bind_tween(mover, tween)
+	tween.tween_method(
+		_update_slot_composite_motion.bind(
+			mover,
+			start,
+			finish,
+			lane_offset,
+			start_rotation,
+		),
+		0.0,
+		1.0,
+		duration,
+	).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	if destination_queue.is_empty():
+		tween.tween_callback(_begin_slot_composite_handoff.bind(
+			mover,
+			landing_view,
+			motion_event_id,
+		))
+		tween.tween_method(
+			_update_slot_composite_handoff.bind(mover, landing_view, finish),
+			0.0,
+			1.0,
+			0.10,
+		).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tween.tween_callback(_finish_slot_composite.bind(
+			mover,
+			landing_view,
+			finish,
+			event_type,
+		))
+	else:
+		tween.tween_callback(_finish_retained_slot_composite.bind(
+			mover,
+			landing_view,
+			destination_key,
+			destination_queue,
+			finish,
+			event_type,
+		))
+	_register_event_motion(mover, motion_event_id, tween)
+
+
+func _update_slot_composite_motion(
+	progress: float,
+	mover_value: Variant,
+	start: Vector2,
+	fallback_finish: Vector2,
+	lane_offset: float,
+	start_rotation: float,
+) -> void:
+	var mover := _valid_card_view(mover_value)
+	if mover == null:
+		return
+	var dynamic_finish := _motion_entity_finish(mover, fallback_finish)
+	var control := _slot_composite_control_point(
+		start,
+		dynamic_finish,
+		lane_offset,
+	)
+	var inverse := 1.0 - progress
+	var point := (
+		start * inverse * inverse
+		+ control * 2.0 * inverse * progress
+		+ dynamic_finish * progress * progress
+	)
+	var landing_view := _valid_card_view(mover.get_meta("motion_landing_view", null))
+	var finish_rotation := (
+		landing_view.rotation_degrees if landing_view != null else start_rotation
+	)
+	var target_scale := _slot_composite_target_scale(mover, landing_view)
+	var lift := 1.0 + sin(progress * PI) * SLOT_COMPOSITE_LIFT_SCALE
+	mover.position = point - mover.size * 0.5
+	mover.rotation_degrees = (
+		lerpf(start_rotation, finish_rotation, progress)
+		+ sin(progress * PI) * 1.8
+	)
+	mover.scale = Vector2.ONE.lerp(target_scale, progress) * lift
+	mover.modulate.a = 1.0
+
+
+func _slot_composite_bidirectional_lane_offset(
+	prepared_movements: Array[Dictionary],
+) -> float:
+	if prepared_movements.size() != 2:
+		return -1.0
+	var first: Dictionary = prepared_movements[0]
+	var second: Dictionary = prepared_movements[1]
+	var first_mover := first.get("mover") as CardView
+	var second_mover := second.get("mover") as CardView
+	var first_landing := first.get("finish_view") as CardView
+	var second_landing := second.get("finish_view") as CardView
+	if (
+		first_mover == null
+		or second_mover == null
+		or first_landing == null
+		or second_landing == null
+	):
+		return -1.0
+	var first_start := _effects_local(first_mover.global_center())
+	var first_finish := _effects_local(first_landing.global_center())
+	var second_start := _effects_local(second_mover.global_center())
+	var second_finish := _effects_local(second_landing.global_center())
+	var first_chord := first_finish - first_start
+	var second_chord := second_finish - second_start
+	var distance := maxf(first_chord.length(), second_chord.length())
+	var base_offset := clampf(distance * 0.18, 38.0, 78.0)
+	if first_chord.length_squared() <= 0.01:
+		return base_offset
+	var first_normal := Vector2(-first_chord.y, first_chord.x).normalized()
+	var second_normal := (
+		Vector2(-second_chord.y, second_chord.x).normalized()
+		if second_chord.length_squared() > 0.01
+		else -first_normal
+	)
+	# At 50%, a quadratic Bezier contributes half of its control-point lane.
+	# Combining both directions gives the center-separation coefficient below;
+	# for an exact swap it is simply the chord normal with opposite sign.
+	var lane_separation := (second_normal - first_normal) * 0.5
+	var midpoint_delta := (
+		(second_start + second_finish - first_start - first_finish) * 0.5
+	)
+	var first_bounds := _slot_composite_midpoint_bounds_size(
+		first_mover,
+		first_landing,
+	)
+	var second_bounds := _slot_composite_midpoint_bounds_size(
+		second_mover,
+		second_landing,
+	)
+	var required_span := (first_bounds + second_bounds) * 0.5
+	required_span += Vector2.ONE * SLOT_COMPOSITE_CLEARANCE
+	var required_x := INF
+	if absf(lane_separation.x) > 0.001:
+		required_x = (
+			required_span.x + absf(midpoint_delta.x)
+		) / absf(lane_separation.x)
+	var required_y := INF
+	if absf(lane_separation.y) > 0.001:
+		required_y = (
+			required_span.y + absf(midpoint_delta.y)
+		) / absf(lane_separation.y)
+	var clearance_offset := minf(required_x, required_y)
+	if not is_finite(clearance_offset):
+		return base_offset
+	return maxf(base_offset, clearance_offset)
+
+
+func _slot_composite_midpoint_bounds_size(
+	mover: CardView,
+	landing_view: CardView,
+) -> Vector2:
+	var target_scale := _slot_composite_target_scale(mover, landing_view)
+	var midpoint_scale := (
+		Vector2.ONE.lerp(target_scale, 0.5)
+		* (1.0 + SLOT_COMPOSITE_LIFT_SCALE)
+	)
+	var visual_size := mover.size * midpoint_scale.abs()
+	var midpoint_rotation := deg_to_rad(
+		lerpf(mover.rotation_degrees, landing_view.rotation_degrees, 0.5)
+		+ 1.8
+	)
+	var cosine := absf(cos(midpoint_rotation))
+	var sine := absf(sin(midpoint_rotation))
+	return Vector2(
+		visual_size.x * cosine + visual_size.y * sine,
+		visual_size.x * sine + visual_size.y * cosine,
+	)
+
+
+func _slot_composite_control_point(
+	start: Vector2,
+	finish: Vector2,
+	lane_offset: float,
+) -> Vector2:
+	var chord := finish - start
+	if chord.length_squared() <= 0.01:
+		return (start + finish) * 0.5 + Vector2.UP * lane_offset
+	# Reversing the chord reverses this normal, so the two halves of a swap use
+	# opposite lanes without movement-order conditionals.
+	var normal := Vector2(-chord.y, chord.x).normalized()
+	return (start + finish) * 0.5 + normal * lane_offset
+
+
+func _slot_composite_target_scale(
+	mover: CardView,
+	landing_view: CardView,
+) -> Vector2:
+	if mover == null or landing_view == null:
+		return Vector2.ONE
+	return Vector2(
+		landing_view.size.x / maxf(1.0, mover.size.x),
+		landing_view.size.y / maxf(1.0, mover.size.y),
+	)
+
+
+func _begin_slot_composite_handoff(
+	mover_value: Variant,
+	landing_value: Variant,
+	event_id: String,
+) -> void:
+	var mover := _valid_card_view(mover_value)
+	var landing_view := _valid_card_view(landing_value)
+	if mover == null or landing_view == null:
+		return
+	_reveal_presentation_node(landing_view, false, 0.0)
+	landing_view.modulate.a = 0.0
+	_remove_revealed_node_for_event(landing_view, event_id)
+
+
+func _update_slot_composite_handoff(
+	progress: float,
+	mover_value: Variant,
+	landing_value: Variant,
+	fallback_finish: Vector2,
+) -> void:
+	var mover := _valid_card_view(mover_value)
+	var landing_view := _valid_card_view(landing_value)
+	if mover == null:
+		return
+	var finish := _motion_entity_finish(mover, fallback_finish)
+	mover.position = finish - mover.size * 0.5
+	if landing_view != null:
+		mover.rotation_degrees = landing_view.rotation_degrees
+		mover.scale = _slot_composite_target_scale(mover, landing_view)
+		landing_view.modulate.a = progress
+	mover.modulate.a = 1.0 - progress
+
+
+func _finish_slot_composite(
+	mover_value: Variant,
+	landing_value: Variant,
+	fallback_finish: Vector2,
+	event_type: String,
+) -> void:
+	var mover := _valid_card_view(mover_value)
+	if mover == null:
+		return
+	var landing_view := _valid_card_view(landing_value)
+	var finish := _motion_entity_finish(mover, fallback_finish)
+	_flyer_tweens.erase(mover.get_instance_id())
+	mover.set_meta("motion_completed", true)
+	mover.position = finish - mover.size * 0.5
+	mover.modulate.a = 0.0
+	mover.visible = false
+	if landing_view != null:
+		landing_view.modulate.a = 1.0
+	if not _play_card_landing_feedback(mover, finish):
+		_landing_burst(finish, event_type)
+
+
+func _finish_retained_slot_composite(
+	mover_value: Variant,
+	landing_value: Variant,
+	destination_key: String,
+	destination_queue: Array,
+	fallback_finish: Vector2,
+	event_type: String,
+) -> void:
+	var mover := _valid_card_view(mover_value)
+	var landing_view := _valid_card_view(landing_value)
+	if mover == null or landing_view == null:
+		return
+	var finish := _motion_entity_finish(mover, fallback_finish)
+	_retain_slot_composite_as_cover(
+		mover,
+		landing_view,
+		destination_key,
+		destination_queue,
+		str(mover.get_meta("motion_event_id", "")),
+	)
+	if not _play_card_landing_feedback(mover, finish):
+		_landing_burst(finish, event_type)
+
+
+func _retain_slot_composite_as_cover(
+	mover: CardView,
+	landing_view: CardView,
+	destination_key: String,
+	destination_queue: Array,
+	event_id: String,
+) -> void:
+	if (
+		mover == null
+		or landing_view == null
+		or not is_instance_valid(mover)
+		or destination_key.is_empty()
+	):
+		return
+	_active_flyers.erase(mover)
+	_flyer_tweens.erase(mover.get_instance_id())
+	card_motion_layer.forget(mover)
+	mover.remove_meta("card_motion_entity")
+	mover.set_meta("retained_slot_cover", true)
+	mover.set_meta("presentation_slot_key", destination_key)
+	mover.set_meta("slot_composite_remaining_queue", destination_queue.duplicate())
+	mover.name = "SlotStateCover_%s" % destination_key.replace(":", "_")
+	mover.set_meta("battle_transient_kind", "SlotStateCover")
+	mover.custom_minimum_size = landing_view.size
+	mover.size = landing_view.size
+	mover.pivot_offset = mover.size * 0.5
+	mover.scale = Vector2.ONE
+	mover.position = _effects_local(landing_view.global_center()) - mover.size * 0.5
+	mover.rotation_degrees = landing_view.rotation_degrees
+	mover.modulate.a = 1.0
+	mover.visible = true
+	mover.z_index = 94
+	mover.set_table_depth(
+		_motion_depth_for_point(mover.position + mover.size * 0.5),
+		true,
+	)
+	_presentation_slot_covers[destination_key] = mover
+	_presentation_slot_cover_states[destination_key] = mover.pokemon
+	_presentation_slot_event_queues[destination_key] = destination_queue.duplicate()
+	_remove_revealed_node_for_event(landing_view, event_id)
+
+
+func _handoff_slot_composite_immediately(
+	mover: CardView,
+	landing_view: CardView,
+	event_id: String,
+) -> void:
+	if landing_view != null:
+		_reveal_presentation_node(landing_view, false, 0.0)
+		landing_view.modulate.a = 1.0
+		_remove_revealed_node_for_event(landing_view, event_id)
+	if mover != null and is_instance_valid(mover):
+		mover.visible = false
+		mover.modulate.a = 0.0
+		mover.queue_free()
+
+
+func _complete_slot_transition_without_motion(event: Dictionary) -> void:
+	var event_id := str(event.get("event_id", ""))
+	for view_value in _switch_slot_views_for_event(event):
+		var view := _valid_card_view(view_value)
+		if view == null:
+			continue
+		_reveal_presentation_node(view, false, 0.0)
+		view.modulate.a = 1.0
+		_remove_revealed_node_for_event(view, event_id)
+	for key in _slot_visual_keys_for_event(event):
+		_release_slot_state_cover(key)
 
 
 func _bench_slot_from_event(event: Dictionary) -> String:
@@ -8412,6 +9133,66 @@ func _create_paper_card_token(
 	return card
 
 
+func _configure_attachment_badge_marker(
+	card: Control,
+	descriptor: AttachmentVisualDescriptor,
+) -> void:
+	if card == null or descriptor == null:
+		return
+	var marker_text := descriptor.marker
+	if marker_text.is_empty() and descriptor.icon == null:
+		marker_text = descriptor.fallback_label
+	card.set_meta("attachment_badge_marker_text", marker_text)
+	card.set_meta("attachment_badge_has_icon", descriptor.icon != null)
+	var marker := card.get_node_or_null("AttachmentBadgeMarker") as Label
+	if marker_text.is_empty():
+		if marker != null:
+			marker.visible = false
+		return
+	if marker == null:
+		marker = Label.new()
+		marker.name = "AttachmentBadgeMarker"
+		marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		marker.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		marker.add_theme_color_override("font_color", Color.WHITE)
+		marker.add_theme_color_override("font_outline_color", Color("#0b111b"))
+		marker.add_theme_constant_override("outline_size", 3)
+		marker.z_index = 4
+		card.add_child(marker)
+	marker.text = marker_text
+	marker.visible = true
+	_layout_attachment_badge_marker(card)
+
+
+func _layout_attachment_badge_marker(card: Control) -> void:
+	if card == null or not is_instance_valid(card):
+		return
+	var marker := card.get_node_or_null("AttachmentBadgeMarker") as Label
+	if marker == null:
+		return
+	var diameter := minf(card.size.x, card.size.y)
+	var has_icon := bool(card.get_meta("attachment_badge_has_icon", false))
+	if has_icon:
+		var marker_size := maxf(12.0, diameter * 0.48)
+		marker.size = Vector2(marker_size, marker_size)
+		marker.position = Vector2(
+			maxf(0.0, card.size.x - marker_size),
+			maxf(0.0, card.size.y - marker_size),
+		)
+		marker.add_theme_font_size_override(
+			"font_size",
+			maxi(9, roundi(marker_size * 0.48)),
+		)
+	else:
+		marker.position = Vector2.ZERO
+		marker.size = card.size
+		marker.add_theme_font_size_override(
+			"font_size",
+			maxi(11, roundi(diameter * 0.42)),
+		)
+
+
 func _resize_paper_card_token(card: Control, size_value: Vector2) -> void:
 	if card == null or not is_instance_valid(card):
 		return
@@ -8447,6 +9228,7 @@ func _resize_paper_card_token(card: Control, size_value: Vector2) -> void:
 			maxf(1.0, size_value.x - inset * 3.0),
 			maxf(3.0, size_value.y * 0.17),
 		)
+	_layout_attachment_badge_marker(card)
 
 
 func _max_active_flyers() -> int:
@@ -8918,12 +9700,30 @@ func _spawn_flying_card(
 			landing_attachment_card_id,
 		)
 		flying.set_meta("motion_landing_attachment_index", landing_attachment_index)
+	if not landing_attachment_type.is_empty():
+		var landing_descriptor := AttachmentVisualDescriptor.resolve(
+			landing_attachment_type,
+			landing_attachment_card_id,
+			landing_attachment_index,
+			catalog,
+		)
+		_configure_attachment_badge_marker(flying, landing_descriptor)
 	if flip_texture != null:
 		flying.set_meta("motion_flip_texture", flip_texture)
 		flying.set_meta("motion_flip_swapped", false)
+		flying.set_meta(
+			"motion_flip_to_attachment_badge",
+			not landing_attachment_type.is_empty(),
+		)
+		var attachment_marker := flying.get_node_or_null(
+			"AttachmentBadgeMarker",
+		) as Label
+		if attachment_marker != null and not landing_attachment_type.is_empty():
+			attachment_marker.visible = false
 	elif flying.has_meta("motion_flip_texture"):
 		flying.remove_meta("motion_flip_texture")
 		flying.remove_meta("motion_flip_swapped")
+		flying.remove_meta("motion_flip_to_attachment_badge")
 	if stage_opponent_hand_landing:
 		flying.set_meta("opponent_hand_staged_landing", true)
 		flying.set_meta(
@@ -9053,6 +9853,14 @@ func _update_flyer_flip(flying: Control, progress: float) -> float:
 		var paper_image := flying.get_node_or_null("PaperImage") as TextureRect
 		if paper_image != null:
 			paper_image.texture = flying.get_meta("motion_flip_texture") as Texture2D
+		var attachment_marker := flying.get_node_or_null(
+			"AttachmentBadgeMarker",
+		) as Label
+		if attachment_marker != null:
+			attachment_marker.visible = bool(flying.get_meta(
+				"motion_flip_to_attachment_badge",
+				false,
+			))
 		flying.set_meta("motion_flip_swapped", true)
 	return maxf(0.025, absf(cos(phase * PI)))
 
@@ -9082,6 +9890,14 @@ func _finish_flyer(
 		var paper_image := flying.get_node_or_null("PaperImage") as TextureRect
 		if paper_image != null:
 			paper_image.texture = flying.get_meta("motion_flip_texture") as Texture2D
+		var attachment_marker := flying.get_node_or_null(
+			"AttachmentBadgeMarker",
+		) as Label
+		if attachment_marker != null:
+			attachment_marker.visible = bool(flying.get_meta(
+				"motion_flip_to_attachment_badge",
+				false,
+			))
 	var handed_off_to_local_hand := false
 	if flying.has_meta("motion_landing_view"):
 		var landing_view := _valid_control(flying.get_meta("motion_landing_view"))
@@ -9135,6 +9951,14 @@ func _remove_revealed_node_from_events(node: Control) -> void:
 		if node in nodes:
 			nodes.erase(node)
 			_presentation_reveals[event_id] = nodes
+
+
+func _remove_revealed_node_for_event(node: Control, event_id: String) -> void:
+	if node == null or event_id.is_empty() or not _presentation_reveals.has(event_id):
+		return
+	var nodes: Array = _presentation_reveals.get(event_id, [])
+	nodes.erase(node)
+	_presentation_reveals[event_id] = nodes
 
 
 func _mask_and_reveal_drawn_cards(count: int, duration: float) -> void:

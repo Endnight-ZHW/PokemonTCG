@@ -31,6 +31,8 @@ const MODE_NETWORK := "network"
 const MODAL_SHADE_ALPHA := 0.72
 const MODAL_SHADE_OPAQUE_ALPHA := 1.0
 const TOAST_Z_INDEX := 350
+const DESIGN_CANVAS_SIZE := Vector2i(1600, 900)
+const MIN_RESPONSIVE_WINDOW_SIZE := Vector2i(640, 360)
 
 var catalog: CardCatalog = CardDatabase.catalog
 var engine := GameEngine.new(catalog)
@@ -107,10 +109,14 @@ var _pending_ai_resume_revision := -1
 var _pending_ai_runtime_unload := false
 var _startup_choreography_generation := 0
 var _startup_choreography_running := false
+var _responsive_canvas_window: Window
+var _original_content_scale_size := Vector2i.ZERO
+var _last_responsive_content_scale_size := Vector2i.ZERO
 
 
 func _ready() -> void:
 	set_process(false)
+	_configure_responsive_canvas()
 	var user_args := OS.get_cmdline_user_args()
 	if ExportSmokeRunner.PHASE_FOUR_FLAG in user_args:
 		_run_phase_four_export_smoke()
@@ -181,11 +187,13 @@ func _exit_tree() -> void:
 	_toast_tween = null
 	_stop_ai()
 	_stop_network()
+	_restore_responsive_canvas()
 
 
 func initialize_ui() -> void:
 	if ui_initialized:
 		return
+	_configure_responsive_canvas()
 	ui_initialized = true
 	click_stream = UISound.make_tone(620.0, 0.055, 0.12)
 	success_stream = UISound.make_tone(880.0, 0.11, 0.14)
@@ -247,6 +255,7 @@ func _build_shell() -> void:
 			modal_confirm,
 			modal_cancel,
 			modal_panel,
+			modal_scroll,
 		)
 	modal_layer.z_index = 400
 	loading_layer.z_index = 500
@@ -1919,22 +1928,22 @@ func _show_choice_overlay(request: ChoiceRequest) -> void:
 		if not _choice_option_card_id(option).is_empty():
 			has_card_preview = true
 			break
+	var choice_spec := ModalSpec.battle(
+		_choice_modal_size(has_card_preview, pure_empty_choice),
+		false,
+		(
+			ModalSpec.SizeMode.FIT_CONTENT
+			if pure_empty_choice
+			else ModalSpec.SizeMode.PREFERRED
+		),
+	)
 	_open_modal(
 		request.prompt,
 		_choice_confirm_cta(request, 0),
 		_choice_cancel_cta(request),
 		false,
-		ModalSpec.battle(_choice_modal_size(has_card_preview, pure_empty_choice)),
+		choice_spec,
 	)
-	if pure_empty_choice:
-		if modal_scroll:
-			var compact_scroll_minimum := modal_scroll.custom_minimum_size
-			compact_scroll_minimum.y = 150.0
-			modal_scroll.custom_minimum_size = compact_scroll_minimum
-		# ModalHost intentionally maintains a 480 px general-purpose floor. An
-		# empty result has no scrolling content, so override that floor only for
-		# this request; _open_modal restores the shared defaults next time.
-		modal_panel.custom_minimum_size = _choice_modal_size(false, true)
 	modal_title.text = _choice_title(request)
 	var metadata_text := _choice_metadata_text(request)
 	var panel := CHOICE_PANEL_SCENE.instantiate() as ChoicePanel
@@ -2310,7 +2319,11 @@ func _show_retreat_confirmation(action: GameAction) -> void:
 		"确认撤退",
 		"取消",
 		false,
-		ModalSpec.battle(Vector2(640, 420)),
+		ModalSpec.battle(
+			Vector2(640, 420),
+			false,
+			ModalSpec.SizeMode.FIT_CONTENT,
+		),
 	)
 	var lines := _retreat_confirmation_lines(action)
 	var body := Label.new()
@@ -2933,7 +2946,16 @@ func _show_pause_overlay() -> void:
 		ai_coordinator.cancel_request()
 		ai_thinking = false
 		_refresh_game()
-	_open_modal("对局菜单", "继续对局", "返回标题", true)
+	var pause_spec := ModalSpec.battle(
+		Vector2(720, 400),
+		true,
+		ModalSpec.SizeMode.FIT_CONTENT,
+	)
+	pause_spec.with_button_roles(
+		ModalSpec.ButtonRole.PRIMARY,
+		ModalSpec.ButtonRole.DANGER,
+	)
+	_open_modal("对局菜单", "继续对局", "返回标题", true, pause_spec)
 	var pause_panel := PAUSE_PANEL_SCENE.instantiate() as PausePanel
 	modal_body.add_child(pause_panel)
 	pause_panel.configure(
@@ -2974,7 +2996,14 @@ func _show_end_turn_confirmation(action: GameAction) -> void:
 		"结束回合",
 		"继续操作",
 		false,
-		ModalSpec.battle(Vector2(580, 380)),
+		ModalSpec.battle(
+			Vector2(580, 380),
+			false,
+			ModalSpec.SizeMode.FIT_CONTENT,
+		).with_button_roles(
+			ModalSpec.ButtonRole.DANGER,
+			ModalSpec.ButtonRole.SECONDARY,
+		),
 	)
 	var body := Label.new()
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -3328,9 +3357,10 @@ func _open_modal(
 	if current_screen == SCREEN_GAME and state:
 		_refresh_game()
 	if modal_scroll:
-		var default_scroll_minimum := modal_scroll.custom_minimum_size
-		default_scroll_minimum.y = 420.0
-		modal_scroll.custom_minimum_size = default_scroll_minimum
+		modal_scroll.custom_minimum_size = Vector2(
+			modal_scroll.custom_minimum_size.x,
+			0.0,
+		)
 	var viewport := get_viewport()
 	var text_owner := viewport.gui_get_focus_owner() if viewport else null
 	if text_owner is LineEdit:
@@ -3365,10 +3395,16 @@ func _open_modal(
 	modal_title.theme_type_variation = &"FrontModalTitle" if frontend_modal else &""
 	modal_confirm.text = confirm_text
 	modal_confirm.disabled = false
-	modal_confirm.theme_type_variation = &"FrontPrimaryButton" if frontend_modal else &""
+	modal_confirm.theme_type_variation = _modal_button_variation(
+		resolved_spec.surface,
+		resolved_spec.confirm_role,
+	)
 	modal_cancel.text = cancel_text
 	modal_cancel.visible = resolved_spec.cancellable and not cancel_text.is_empty()
-	modal_cancel.theme_type_variation = &"FrontSecondaryButton" if frontend_modal else &""
+	modal_cancel.theme_type_variation = _modal_button_variation(
+		resolved_spec.surface,
+		resolved_spec.cancel_role,
+	)
 	modal_shade.color.a = (
 		MODAL_SHADE_OPAQUE_ALPHA
 		if resolved_spec.opaque_shade
@@ -3385,6 +3421,22 @@ func _open_modal(
 	var open_duration := FrontendMotion.duration(0.16)
 	shell_animations.speed_scale = 0.16 / maxf(open_duration, 0.001)
 	shell_animations.play("modal_open")
+
+
+func _modal_button_variation(surface: int, role: int) -> StringName:
+	if role == ModalSpec.ButtonRole.DEFAULT:
+		return &""
+	if surface == ModalSpec.Surface.FRONTEND:
+		return {
+			ModalSpec.ButtonRole.PRIMARY: &"FrontPrimaryButton",
+			ModalSpec.ButtonRole.SECONDARY: &"FrontSecondaryButton",
+			ModalSpec.ButtonRole.DANGER: &"FrontDangerButton",
+		}.get(role, &"")
+	return {
+		ModalSpec.ButtonRole.PRIMARY: &"BattlePrimaryButton",
+		ModalSpec.ButtonRole.SECONDARY: &"BattleSecondaryButton",
+		ModalSpec.ButtonRole.DANGER: &"BattleDangerButton",
+	}.get(role, &"")
 
 
 func _close_modal(completion: Callable = Callable()) -> void:
@@ -4510,6 +4562,93 @@ func _safe_content_size() -> Vector2:
 	)
 
 
+func _configure_responsive_canvas() -> void:
+	var window := get_window()
+	if window == null:
+		return
+	if _responsive_canvas_window == null:
+		_responsive_canvas_window = window
+		_original_content_scale_size = window.content_scale_size
+	if not window.size_changed.is_connected(_on_responsive_window_size_changed):
+		window.size_changed.connect(_on_responsive_window_size_changed)
+	_apply_responsive_canvas()
+
+
+func _apply_responsive_canvas() -> void:
+	var window := get_window()
+	if window == null:
+		return
+	var target := _responsive_content_scale_size(
+		window.size,
+		DESIGN_CANVAS_SIZE,
+	)
+	if target.x <= 0 or target.y <= 0:
+		return
+	if window.content_scale_size != target:
+		window.content_scale_size = target
+	_last_responsive_content_scale_size = target
+
+
+func _restore_responsive_canvas() -> void:
+	if (
+		_responsive_canvas_window == null
+		or not is_instance_valid(_responsive_canvas_window)
+		or _original_content_scale_size.x <= 0
+		or _original_content_scale_size.y <= 0
+	):
+		return
+	# Tests and editor previews can mount Main transiently. Only restore a value
+	# still owned by this instance so another live shell cannot be overwritten.
+	if (
+		_last_responsive_content_scale_size != Vector2i.ZERO
+		and _responsive_canvas_window.content_scale_size
+		== _last_responsive_content_scale_size
+	):
+		_responsive_canvas_window.content_scale_size = _original_content_scale_size
+	if _responsive_canvas_window.size_changed.is_connected(
+		_on_responsive_window_size_changed
+	):
+		_responsive_canvas_window.size_changed.disconnect(
+			_on_responsive_window_size_changed
+		)
+	_responsive_canvas_window = null
+
+
+func _on_responsive_window_size_changed() -> void:
+	_apply_responsive_canvas()
+	# content_scale_size changes the logical Control tree in the same frame. Safe
+	# insets and modal budgets must be recomputed after that resize has propagated.
+	call_deferred("_apply_safe_area")
+
+
+func _responsive_content_scale_size(
+	window_size: Vector2i,
+	design_size: Vector2i = DESIGN_CANVAS_SIZE,
+) -> Vector2i:
+	if (
+		window_size.x <= 0
+		or window_size.y <= 0
+		or design_size.x <= 0
+		or design_size.y <= 0
+	):
+		return design_size
+	# Script-only headless contracts use a synthetic 64×64 root. It is not a
+	# supported display and must retain the design canvas so UI can be inspected.
+	if (
+		window_size.x < MIN_RESPONSIVE_WINDOW_SIZE.x
+		or window_size.y < MIN_RESPONSIVE_WINDOW_SIZE.y
+	):
+		return design_size
+	var fit_scale := minf(
+		float(window_size.x) / float(design_size.x),
+		float(window_size.y) / float(design_size.y),
+	)
+	# canvas_items is retained for ultrawide/large displays, but it must never
+	# downsample the UI below 1 physical pixel per logical pixel. Besides keeping
+	# 48 px targets touchable, this lets compact pages observe their real space.
+	return window_size if fit_scale < 1.0 else design_size
+
+
 func _apply_safe_area() -> void:
 	if safe_margin == null:
 		return
@@ -4818,6 +4957,7 @@ func _notification(what: int) -> void:
 		CardTextureCache.clear()
 		_show_toast("系统内存紧张，已释放卡图缓存。")
 	elif what == NOTIFICATION_WM_SIZE_CHANGED:
+		_apply_responsive_canvas()
 		_apply_safe_area()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if modal_layer and modal_layer.visible:
