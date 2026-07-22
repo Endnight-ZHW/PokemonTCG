@@ -1,7 +1,8 @@
 class_name AICoordinator
 extends RefCounted
 
-const DEFAULT_TIMEOUT_MSEC := 3000
+const DEFAULT_TIMEOUT_MSEC := 1100
+const HARD_TIMEOUT_MSEC := 1100
 const DEADLINE_GRACE_MSEC := 250
 const MIN_TIMEOUT_MSEC := 50
 const INVALID_TASK_ID := -1
@@ -21,6 +22,10 @@ var _deadline_msec := 0
 var _deadline_reported := false
 var _request_id := ""
 var _revision := -1
+## Keep one worker for the lifetime of the coordinator.  Challenge decisions
+## are serialized by this class, so the worker can safely retain a validated
+## turn plan and immutable catalog caches between atomic actions.
+var _worker := NativeChallengeAI.new()
 
 
 func is_running() -> bool:
@@ -191,8 +196,7 @@ func _decide(
 	cancel_check: Callable,
 	inference: Variant,
 ) -> Dictionary:
-	var worker := NativeChallengeAI.new()
-	return worker.decide(request, cancel_check, inference)
+	return _worker.decide(request, cancel_check, inference)
 
 
 func _is_cancelled(generation: int) -> bool:
@@ -208,11 +212,17 @@ func _is_cancelled(generation: int) -> bool:
 
 func _request_timeout_msec(request: Dictionary) -> int:
 	if request.has("coordinator_timeout_msec"):
-		return maxi(MIN_TIMEOUT_MSEC, int(request["coordinator_timeout_msec"]))
+		return mini(
+			HARD_TIMEOUT_MSEC,
+			maxi(MIN_TIMEOUT_MSEC, int(request["coordinator_timeout_msec"])),
+		)
 	if request.has("seconds"):
-		return maxi(
-			MIN_TIMEOUT_MSEC,
-			ceili(float(request["seconds"]) * 1000.0) + DEADLINE_GRACE_MSEC,
+		return mini(
+			HARD_TIMEOUT_MSEC,
+			maxi(
+				MIN_TIMEOUT_MSEC,
+				ceili(float(request["seconds"]) * 1000.0) + DEADLINE_GRACE_MSEC,
+			),
 		)
 	return DEFAULT_TIMEOUT_MSEC
 

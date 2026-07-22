@@ -52,6 +52,8 @@ var ai_deck_key := ""
 var ai_thinking := false
 var ai_request_sequence := 0
 var active_ai_request_id := ""
+var ai_match_generation := 0
+var ai_match_instance_id := ""
 var ai_coordinator := AICoordinator.new()
 var ai_inference: Variant
 var deep_runtime := DeepAIRuntime.new()
@@ -830,6 +832,12 @@ func start_ai_match_for_test(
 	)
 
 
+func _canonical_type_matchups_for_mode(mode: String, requested: bool) -> bool:
+	if mode in [MODE_CHALLENGE, MODE_DEEP]:
+		return false
+	return requested
+
+
 func _start_match(
 	first_key: String,
 	second_key: String,
@@ -842,11 +850,15 @@ func _start_match(
 	_stop_ai()
 	state = GameState.new()
 	state.public_deck_keys = [first_key, second_key]
-	state.set_type_matchups_enabled(apply_type_matchups)
+	state.set_type_matchups_enabled(
+		_canonical_type_matchups_for_mode(game_mode, apply_type_matchups)
+	)
 	var actual_seed := match_seed
 	if actual_seed < 0:
 		actual_seed = PortableRandomSource.fresh_seed()
 	last_match_seed = actual_seed
+	ai_match_generation += 1
+	ai_match_instance_id = "runtime:%d:%d" % [ai_match_generation, actual_seed]
 	rng = PortableRandomSource.new(actual_seed)
 	ai_request_sequence = 0
 	var result := engine.setup_game(
@@ -4040,6 +4052,8 @@ func _schedule_ai_action() -> void:
 		"request_id": active_ai_request_id,
 		"mode": game_mode,
 		"deck_key": ai_deck_key,
+		"match_seed": last_match_seed,
+		"match_instance_id": ai_match_instance_id,
 		"seed": AIDecisionSeed.derive(
 			last_match_seed,
 			state.revision,
@@ -4079,6 +4093,8 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 		"request_id": active_ai_request_id,
 		"mode": game_mode,
 		"deck_key": ai_deck_key,
+		"match_seed": last_match_seed,
+		"match_instance_id": ai_match_instance_id,
 		"seed": AIDecisionSeed.derive(
 			last_match_seed,
 			state.revision,
@@ -4104,12 +4120,21 @@ func _ai_state_snapshot(player_idx: int) -> Dictionary:
 	# Rollout-generated stacks are private to its cloned simulation thereafter.
 	snapshot.erase("resolution_stack")
 	var player_rows: Array = snapshot.get("players", [])
-	for row_value in player_rows:
-		var row: Dictionary = row_value
+	for row_index in range(player_rows.size()):
+		var row: Dictionary = player_rows[row_index]
 		var hidden_prizes: Array[String] = []
 		hidden_prizes.resize(Array(row.get("prizes", [])).size())
 		hidden_prizes.fill("__hidden_prize__")
 		row["prizes"] = hidden_prizes
+		var hidden_deck: Array[String] = []
+		hidden_deck.resize(Array(row.get("deck", [])).size())
+		hidden_deck.fill("__hidden_card__")
+		row["deck"] = hidden_deck
+		if player_idx in [0, 1] and row_index != player_idx:
+			var hidden_hand: Array[String] = []
+			hidden_hand.resize(Array(row.get("hand", [])).size())
+			hidden_hand.fill("__hidden_card__")
+			row["hand"] = hidden_hand
 	if (
 		str(snapshot.get("setup_stage", GameState.SETUP_COMPLETE))
 		!= GameState.SETUP_COMPLETE
@@ -4119,14 +4144,6 @@ func _ai_state_snapshot(player_idx: int) -> Dictionary:
 		var opponent: Dictionary = player_rows[1 - player_idx]
 		opponent["active"] = null
 		opponent["bench"] = []
-		var hidden_hand: Array[String] = []
-		hidden_hand.resize(Array(opponent.get("hand", [])).size())
-		hidden_hand.fill("__hidden_card__")
-		opponent["hand"] = hidden_hand
-		var hidden_deck: Array[String] = []
-		hidden_deck.resize(Array(opponent.get("deck", [])).size())
-		hidden_deck.fill("__hidden_card__")
-		opponent["deck"] = hidden_deck
 		var bonus_ids: Array = snapshot.get("setup_bonus_card_ids", [[], []])
 		if bonus_ids.size() == 2:
 			bonus_ids[1 - player_idx] = []

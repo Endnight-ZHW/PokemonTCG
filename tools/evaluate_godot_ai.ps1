@@ -18,7 +18,7 @@ param(
     [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
     [string]$MatchupMode = '',
     [int]$CrossSeedBlocksPerMatchup = -1,
-    [ValidateSet('', 'stability', 'strength', 'equivalence', 'nightly-equivalence', 'deep-practical', 'deep', 'auto')]
+    [ValidateSet('', 'stability', 'equivalence', 'nightly-equivalence', 'deep-practical', 'deep', 'auto')]
     [string]$ValidateGate = '',
     [string]$Baseline = '',
     [string[]]$MergeInput = @(),
@@ -27,7 +27,6 @@ param(
     [switch]$SkipValidate,
     [switch]$Profile,
     [switch]$DynamicAIBudget,
-    [switch]$CompareLegacyAI,
     [int]$ProgressEveryPairs = 1,
     [switch]$NoProgress,
     [switch]$DisableAICache,
@@ -163,17 +162,6 @@ foreach ($path in $mergeInputPaths) {
         throw "MergeInput file not found: $path"
     }
 }
-if (
-    -not $mergeOnly -and
-    $CompareLegacyAI -and
-    (
-        -not [string]::IsNullOrWhiteSpace($StrategyA) -or
-        -not [string]::IsNullOrWhiteSpace($StrategyB)
-    )
-) {
-    throw 'CompareLegacyAI cannot be combined with explicit StrategyA or StrategyB.'
-}
-
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $OutputDir = Join-Path $repoRoot ".test_tmp\ai_eval\$stamp"
@@ -204,65 +192,7 @@ function New-DynamicAIBudgetConfig {
     }
 }
 
-function New-PresetAIStrategy {
-    param(
-        [string]$Id,
-        [string]$Label,
-        [string]$HeuristicVariant,
-        [bool]$UseDynamicBudget
-    )
-    $strategy = [ordered]@{
-        id = $Id
-        label = $Label
-    }
-    if ($EvalPreset -eq 'Smoke') {
-        $strategy['simulation_budget'] = 1
-        $strategy['seconds'] = 0.01
-        $strategy['max_depth'] = 1
-        $strategy['deterministic'] = $true
-    }
-    elseif ($EvalPreset -eq 'Quick') {
-        $strategy['simulation_budget'] = 64
-        $strategy['seconds'] = 0.05
-        $strategy['max_depth'] = 8
-        $strategy['deterministic'] = $true
-    }
-    else {
-        $strategy['preset'] = 'strongest'
-    }
-    if (-not [string]::IsNullOrWhiteSpace($HeuristicVariant)) {
-        $strategy['heuristic_variant'] = $HeuristicVariant
-    }
-    if ($UseDynamicBudget) {
-        $strategy['dynamic_budget'] = New-DynamicAIBudgetConfig
-    }
-    return $strategy
-}
-
 if (
-    -not $mergeOnly -and
-    [string]::IsNullOrWhiteSpace($StrategyA) -and
-    [string]::IsNullOrWhiteSpace($StrategyB) -and
-    $CompareLegacyAI
-) {
-    $semanticStrategyPath = Join-Path $OutputDir 'strategy_semantic_v2.json'
-    $legacyStrategyPath = Join-Path $OutputDir 'strategy_legacy.json'
-    $semanticStrategy = New-PresetAIStrategy `
-        -Id 'semantic-v2' `
-        -Label 'Semantic v2 Challenge AI' `
-        -HeuristicVariant 'semantic_v2' `
-        -UseDynamicBudget ([bool]$DynamicAIBudget)
-    $legacyStrategy = New-PresetAIStrategy `
-        -Id 'legacy' `
-        -Label 'Legacy Challenge AI' `
-        -HeuristicVariant 'legacy' `
-        -UseDynamicBudget ([bool]$DynamicAIBudget)
-    $semanticStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $semanticStrategyPath -Encoding UTF8
-    $legacyStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $legacyStrategyPath -Encoding UTF8
-    $StrategyA = $semanticStrategyPath
-    $StrategyB = $legacyStrategyPath
-}
-elseif (
     -not $mergeOnly -and
     [string]::IsNullOrWhiteSpace($StrategyA) -and
     [string]::IsNullOrWhiteSpace($StrategyB) -and

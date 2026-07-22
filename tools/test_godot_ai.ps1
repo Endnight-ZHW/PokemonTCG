@@ -65,3 +65,20 @@ if ($RequireDeepRuntime) {
         throw 'Godot Deep AI runtime was skipped or failed during required release validation.'
     }
 }
+
+$architectureOutput = Invoke-GodotCapture -ArgumentList @(
+    '--headless',
+    '--path', (Join-Path $repoRoot 'godot'),
+    '--script', 'res://tests/traditional_ai_architecture_contract.gd'
+)
+$architectureOutput | ForEach-Object { Write-Host $_ }
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot traditional AI architecture contract failed with exit code $LASTEXITCODE"
+}
+$joinedArchitecture = $architectureOutput -join "`n"
+if ($joinedArchitecture -match $fatalGodotErrorPattern) {
+    throw 'Godot emitted errors during the traditional AI architecture contract.'
+}
+if ($joinedArchitecture -notmatch 'TRADITIONAL_AI_ARCHITECTURE_OK') {
+    throw 'Godot traditional AI architecture success marker was not emitted.'
+}

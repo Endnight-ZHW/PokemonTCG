@@ -328,7 +328,10 @@ func collect_pokemon_ko_triggers(
 	attack_actor: int,
 	candidates: Array[Dictionary],
 ) -> void:
-	if not from_attack or defeated_idx == attack_actor:
+	# Learning Device only reacts when its owner's Active Pokemon is Knocked Out.
+	# Bench KOs can share the same simultaneous KO batch, but must not register an
+	# additional trigger for the same Tool holder.
+	if source_slot != "active" or not from_attack or defeated_idx == attack_actor:
 		return
 	if not pokemon_has_basic_energy(knocked_out):
 		return

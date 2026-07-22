@@ -41,6 +41,12 @@ class VmCommandDescriptorTests(unittest.TestCase):
         )
         self.assertEqual(checked_in, first)
 
+    def test_conditional_damage_adds_to_the_printed_attack_damage(self):
+        descriptor = VM_COMMAND_DESCRIPTORS["conditional_damage"]
+
+        self.assertEqual(descriptor["attack_timing"], "damage")
+        self.assertIs(descriptor["replaces_base_damage"], False)
+
     def test_every_op_has_strict_schema_and_negative_contract_cases(self):
         supported = set(VM_COMMAND_DESCRIPTORS)
         required_cases = 0

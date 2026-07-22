@@ -86,6 +86,7 @@ Relay 仅验证并转发 Godot Protocol v6 消息，不承载 Python 客户端�
 
 - [发布说明](docs/RELEASE_NOTES.md)
 - [Godot 4.7 新手开发手册](docs/GODOT_DEVELOPMENT_GUIDE.md)
+- [Challenge 传统 AI 分层策略架构](docs/TRADITIONAL_AI_ARCHITECTURE.md)
 - [Deep AI v10 历史模型与迁移门禁](docs/deep_ai_v10_rollout.md)
 - [游戏规则](docs/RULES.md)
 

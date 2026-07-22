@@ -118,27 +118,19 @@ func request_board_target(
 		})
 	if options.is_empty():
 		return VMResult.ok("没有可选目标。")
+	var presentation := _target_choice_presentation(
+		state, data, operation, target_player)
 	if options.size() == 1:
 		stack.push_continuation(operation, data)
 		var synthetic := ChoiceRequest.new(
 			stack.next_request_id(state, chooser, operation), operation, chooser, prompt,
-			options, 1, 1, false, false, {
-				"domain": "effect",
-				"purpose": operation,
-				"revision": state.revision,
-				"target_player": target_player,
-			})
+			options, 1, 1, false, false, presentation)
 		stack.pending_request = synthetic
 		return VMResult.ok()
 	stack.push_continuation(operation, data)
 	stack.pending_request = ChoiceRequest.new(
 		stack.next_request_id(state, chooser, operation), operation, chooser, prompt,
-		options, 1, 1, false, false, {
-			"domain": "effect",
-			"purpose": operation,
-			"revision": state.revision,
-			"target_player": target_player,
-		})
+		options, 1, 1, false, false, presentation)
 	return VMResult.ok()
 
 
@@ -179,14 +171,39 @@ func request_bench_target(
 		actual_count,
 		false,
 		false,
-		{
-			"domain": "effect",
-			"purpose": operation,
-			"revision": state.revision,
-			"target_player": target_player,
-		},
+		_target_choice_presentation(state, data, operation, target_player),
 	)
 	return VMResult.ok()
+
+
+func _target_choice_presentation(
+	state: GameState,
+	data: Dictionary,
+	operation: String,
+	target_player: int,
+) -> Dictionary:
+	var presentation := {
+		"domain": "effect",
+		"purpose": operation,
+		"revision": state.revision,
+		"target_player": target_player,
+	}
+	for field in ["amount", "source_player", "source_slot", "source_card_id"]:
+		if data.has(field):
+			presentation[field] = data[field]
+	if not presentation.has("amount") and data.has("counters"):
+		presentation["amount"] = maxi(0, int(data.get("counters", 0))) * 10
+	var source_player := int(presentation.get("source_player", -1))
+	var source_slot := str(presentation.get("source_slot", ""))
+	if (
+		not presentation.has("source_card_id")
+		and source_player in [0, 1]
+		and not source_slot.is_empty()
+	):
+		var source := state.get_player(source_player).get_pokemon(source_slot)
+		if source != null:
+			presentation["source_card_id"] = source.card_id
+	return presentation
 
 
 func switch_request(

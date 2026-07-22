@@ -66,10 +66,11 @@ func cmd_choose_damage_target(
 	args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
-	_source_slot: String,
+	source_slot: String,
 	_events: Array[Dictionary],
 ) -> Dictionary:
-	return choice.choose_damage_target(state, stack, player_idx, args)
+	return choice.choose_damage_target(
+		state, stack, player_idx, source_slot, args)
 
 
 func cmd_choose_heal_damage(
@@ -155,10 +156,11 @@ func cmd_deal_bench_damage(
 	args: Dictionary,
 	_branches: Dictionary,
 	player_idx: int,
-	_source_slot: String,
+	source_slot: String,
 	events: Array[Dictionary],
 ) -> Dictionary:
-	return choice.bench_damage(state, stack, player_idx, args, events)
+	return choice.bench_damage(
+		state, stack, player_idx, source_slot, args, events)
 
 
 func cmd_deal_damage(

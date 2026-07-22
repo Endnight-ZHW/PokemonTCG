@@ -1326,7 +1326,7 @@
     "transaction_step_count": 32
   },
   "vm_descriptor_contract": {
-    "descriptor_digest": "ba6a09fa242b831e899d6636a40cb1d37d4a310b24b1a139fe766d587bb0297b",
+    "descriptor_digest": "00d92d0bb31f31f710cf0bc54aa4d8a01f3849732bd407bf3eef127be39c2a07",
     "descriptor_ops": [
       "apply_attack_lock_basic",
       "apply_dazzling_beam",

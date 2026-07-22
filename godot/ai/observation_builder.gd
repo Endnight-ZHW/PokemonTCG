@@ -73,6 +73,9 @@ static func _determinize_mutable(
 	determinize_seed: int,
 	catalog: CardCatalog,
 ) -> GameState:
+	# AI challenge never uses the optional global type matchup rule.  Keep
+	# determinized legacy/encoder states aligned with the authoritative AI mode.
+	state.set_type_matchups_enabled(false)
 	var rng := PortableRandomSource.new(determinize_seed)
 	var setup_board_hidden: bool = (
 		state.phase == "SETUP"
@@ -81,8 +84,12 @@ static func _determinize_mutable(
 	if setup_board_hidden:
 		_mask_setup_board_identity(state.get_player(1 - perspective))
 	var own := state.get_player(perspective)
-	var own_unknown: Array = own.deck.duplicate()
-	own_unknown.append_array(own.prizes)
+	var own_unknown := _deck_unknown_pool(
+		state, perspective, catalog, own.hand, own.deck + own.prizes)
+	var own_hidden_count := own.deck.size() + own.prizes.size()
+	while own_unknown.size() < own_hidden_count:
+		own_unknown.append("sv1-ener-1")
+	own_unknown.resize(own_hidden_count)
 	rng.shuffle(own_unknown)
 	var own_deck_count := own.deck.size()
 	own.deck.assign(own_unknown.slice(0, own_deck_count))
@@ -98,24 +105,13 @@ static func _determinize_mutable(
 		if opponent_idx < state.public_deck_keys.size()
 		else ""
 	)
-	var pool: Array[String] = catalog.expand_deck(deck_key)
-	if not pool.is_empty():
-		var visible_cards := opponent.discard.duplicate()
-		for row in opponent.get_all_pokemon():
-			var pokemon: PokemonState = row["pokemon"]
-			if pokemon == null:
-				continue
-			visible_cards.append(pokemon.card_id)
-			visible_cards.append_array(pokemon.evolution_stack_ids)
-			visible_cards.append_array(pokemon.energy_card_ids)
-			if not pokemon.attached_tool_id.is_empty():
-				visible_cards.append(pokemon.attached_tool_id)
-		for card_id in visible_cards:
-			var index := pool.find(card_id)
-			if index >= 0:
-				pool.remove_at(index)
-	elif not setup_board_hidden:
-		pool.assign(opponent.hand + opponent.deck + opponent.prizes)
+	var pool := _deck_unknown_pool(
+		state,
+		opponent_idx,
+		catalog,
+		[],
+		opponent.hand + opponent.deck + opponent.prizes,
+	)
 	while pool.size() < hidden_count:
 		pool.append("" if setup_board_hidden else "sv1-ener-1")
 	pool.resize(hidden_count)
@@ -126,6 +122,45 @@ static func _determinize_mutable(
 	opponent.deck.assign(pool.slice(hand_count, hand_count + deck_count))
 	opponent.prizes.assign(pool.slice(hand_count + deck_count))
 	return state
+
+
+static func _deck_unknown_pool(
+	state: GameState,
+	player_idx: int,
+	catalog: CardCatalog,
+	extra_visible_cards: Array,
+	fallback_hidden_cards: Array,
+) -> Array[String]:
+	var deck_key := (
+		state.public_deck_keys[player_idx]
+		if player_idx >= 0 and player_idx < state.public_deck_keys.size()
+		else ""
+	)
+	var pool: Array[String] = catalog.expand_deck(deck_key)
+	if pool.is_empty():
+		for value in fallback_hidden_cards:
+			var fallback_id := str(value)
+			if not fallback_id.begins_with("__hidden_"):
+				pool.append(fallback_id)
+		return pool
+	var player := state.get_player(player_idx)
+	var visible_cards: Array = player.discard.duplicate()
+	visible_cards.append_array(extra_visible_cards)
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null or pokemon.card_id.is_empty():
+			continue
+		visible_cards.append(pokemon.card_id)
+		visible_cards.append_array(pokemon.evolution_stack_ids)
+		visible_cards.append_array(pokemon.energy_card_ids)
+		if not pokemon.attached_tool_id.is_empty():
+			visible_cards.append(pokemon.attached_tool_id)
+	for value in visible_cards:
+		var card_id := str(value)
+		var index := pool.find(card_id)
+		if index >= 0:
+			pool.remove_at(index)
+	return pool
 
 
 static func _mask_setup_board_identity(player: PlayerState) -> void:

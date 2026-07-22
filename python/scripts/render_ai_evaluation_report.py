@@ -126,6 +126,12 @@ def _golden_failure_count(payload: dict[str, Any]) -> int:
     return int((golden or {}).get("failed") or 0) if isinstance(golden, dict) else 0
 
 
+def _golden_scope_count(payload: dict[str, Any], scope: str) -> int:
+    by_scope = (payload.get("golden_scenarios") or {}).get("by_scope") or {}
+    summary = by_scope.get(scope) or {}
+    return int(summary.get("total") or 0) if isinstance(summary, dict) else 0
+
+
 def _strategies_equal(payload: dict[str, Any]) -> bool:
     fingerprint = payload.get("strategy_fingerprint") or {}
     if isinstance(fingerprint, dict) and fingerprint.get("equal") is not None:
@@ -187,12 +193,14 @@ def _bar(value: float, *, invert: bool = False) -> str:
 
 def _kpi_cards(payload: dict[str, Any]) -> str:
     summary = payload.get("summary") or {}
+    performance = summary
     seat = payload.get("seat") or {}
     seat_counts = seat.get("seat_counts") or {}
     seat_gap = abs(int(seat_counts.get("a_player_0") or 0) - int(seat_counts.get("a_player_1") or 0))
     diagnostics = _diagnostic_count(summary)
     decision_diagnostics = _decision_diagnostic_count(payload)
     golden_failed = _golden_failure_count(payload)
+    role_crossover = (payload.get("role_crossover") or {}).get("overall") or {}
     cards = [
         ("总对局数", _int(summary.get("games")), "已完成的评测对局"),
         ("A 点数率", _pct(summary.get("point_rate")), "raw 胜场 + 0.5 * 平局"),
@@ -201,16 +209,54 @@ def _kpi_cards(payload: dict[str, Any]) -> str:
         ("A 更优概率", _pct(summary.get("probability_a_better")), "bootstrap 配对均值 > 0"),
         ("Clean 点数率", _pct(summary.get("clean_point_rate")), "只统计完整干净对局"),
         ("A 胜率", _pct(summary.get("win_rate")), "原始胜场占比"),
+        (
+            "角色交叉点数率",
+            _pct(role_crossover.get("role_crossover_adjusted_point_rate")),
+            "仅跨卡组；同种子四局块中 A/B 各用两套牌",
+        ),
+        (
+            "完整角色交叉块",
+            f"{_int(role_crossover.get('complete_blocks'))}/{_int(role_crossover.get('blocks'))}",
+            "每块两个卡组方向各换座一次，A/B 各先后手两局",
+        ),
         ("Elo 差值", _num(summary.get("elo_delta")), "由点数率估算"),
         ("完成率", _pct(summary.get("completion_rate")), "正常结束对局占比"),
-        ("平均决策", f"{_num(summary.get('average_decision_ms'))} ms", "动作与选择平均耗时"),
-        ("P95 决策", f"{_num(summary.get('decision_ms_p95'))} ms", "按对局平均耗时分位"),
+        (
+            "平均决策",
+            f"{_num(summary.get('average_decision_ms'))} ms",
+            "动作与选择平均耗时",
+        ),
+        (
+            "P95 决策",
+            f"{_num(performance.get('decision_ms_p95'))} ms",
+            "逐动作与选择的耗时分位",
+        ),
+        (
+            "缓存命中 P95",
+            f"{_num(performance.get('cache_hit_decision_ms_p95'))} ms",
+            f"基于 {_int(performance.get('cache_hit_decision_ms_sample_count'))} 次真实复用",
+        ),
+        (
+            "完整 AI 回合 P95",
+            f"{_num(performance.get('ai_turn_ms_p95'))} ms",
+            f"动作与选择累计，共 {_int(performance.get('ai_turn_ms_sample_count'))} 回合",
+        ),
         ("动态停止", _pct(summary.get("dynamic_budget_stop_rate")), "single_action + confidence 占动作决策比"),
         ("座位偏差", _int(seat_gap), "策略 A 的玩家编号不平衡"),
         ("动作截断", _int(summary.get("max_actions_exhaustions")), "达到动作上限的对局"),
         ("诊断问题", _int(diagnostics), "干净评测应为 0"),
         ("决策错因", _int(decision_diagnostics), "错因计数应为 0"),
-        ("金样例失败", _int(golden_failed), "关键局面回归失败数"),
+        (
+            "策略金标",
+            _int(_golden_scope_count(payload, "strategy_score")),
+            "策略层候选评分场景；不等同端到端执行",
+        ),
+        (
+            "运行时金标",
+            _int(_golden_scope_count(payload, "runtime_integration")),
+            "经真实 AI 决策入口执行的集成场景",
+        ),
+        ("验证用例失败", _int(golden_failed), "各层验证用例失败数"),
     ]
     return "\n".join(
         f"""
@@ -230,13 +276,31 @@ def _deck_rows(payload: dict[str, Any]) -> str:
     rows = []
     for deck_key in deck_keys:
         stats = per_deck.get(deck_key) or {}
-        point_rate = float(stats.get("point_rate") or 0.0)
+        raw_point_rate = float(stats.get("point_rate") or 0.0)
+        mirror_rows = [
+            row
+            for row in (payload.get("matches") or [])
+            if isinstance(row, dict)
+            and str(row.get("matchup_kind") or "") == "mirror"
+            and str(row.get("strategy_a_deck") or "") == str(deck_key)
+            and str(row.get("strategy_b_deck") or "") == str(deck_key)
+        ]
+        mirror_wins = sum(1 for row in mirror_rows if row.get("winner") == "A")
+        mirror_draws = sum(1 for row in mirror_rows if row.get("winner") == "draw")
+        mirror_losses = sum(1 for row in mirror_rows if row.get("winner") == "B")
+        mirror_point_rate = (
+            (mirror_wins + mirror_draws * 0.5) / len(mirror_rows)
+            if mirror_rows
+            else None
+        )
+        display_rate = mirror_point_rate if mirror_point_rate is not None else raw_point_rate
         rows.append(
             f"""
             <tr>
               <td><b>{escape(DECK_LABELS.get(str(deck_key), str(deck_key)))}</b><span>{escape(str(deck_key))}</span></td>
-              <td>{_bar(point_rate)}</td>
-              <td>{_pct(point_rate)}</td>
+              <td>{_bar(display_rate)}</td>
+              <td>{_pct(mirror_point_rate) if mirror_point_rate is not None else '—'}<span>{mirror_wins}/{mirror_draws}/{mirror_losses} · {len(mirror_rows)} 局</span></td>
+              <td>{_pct(raw_point_rate)}<span>含跨卡组，仅供实战参考</span></td>
               <td>{_pp(stats.get("paired_point_delta"))}</td>
               <td>{_int(stats.get("wins"))}/{_int(stats.get("draws"))}/{_int(stats.get("losses"))}</td>
               <td>{_num(stats.get("average_score"), 0)}</td>
@@ -270,6 +334,42 @@ def _matrix_rows(payload: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
+def _role_crossover_rows(payload: dict[str, Any]) -> str:
+    crossover = payload.get("role_crossover") or {}
+    per_matchup = crossover.get("per_unordered_matchup") or {}
+    if not per_matchup:
+        return '<tr><td colspan="7">无角色交叉汇总数据</td></tr>'
+    rows = []
+    for key, stats in sorted(per_matchup.items()):
+        deck_keys = str(key).split("_and_", 1)
+        deck_label = " ↔ ".join(
+            DECK_LABELS.get(deck, deck) for deck in deck_keys
+        )
+        roles = stats.get("strategy_roles") or {}
+        role_a = roles.get("A") or {}
+        role_b = roles.get("B") or {}
+        a_decks = role_a.get("deck_games") or {}
+        b_decks = role_b.get("deck_games") or {}
+        role_counts = "/".join(
+            f"{deck}:{_int(a_decks.get(deck))}|{_int(b_decks.get(deck))}"
+            for deck in deck_keys
+        )
+        rows.append(
+            f"""
+            <tr>
+              <td><b>{escape(deck_label)}</b><span>{escape(str(key))}</span></td>
+              <td>{_pct(stats.get('role_crossover_adjusted_point_rate'))}</td>
+              <td>{_int(stats.get('complete_blocks'))}/{_int(stats.get('blocks'))}</td>
+              <td>{_int(stats.get('clean_blocks'))}</td>
+              <td>{escape(role_counts)}</td>
+              <td>{_int(role_a.get('first_games'))}/{_int(role_a.get('second_games'))} · {_int(role_b.get('first_games'))}/{_int(role_b.get('second_games'))}</td>
+              <td>{'是' if stats.get('role_balanced') is True else '否'}</td>
+            </tr>
+            """
+        )
+    return "\n".join(rows)
+
+
 def _diagnostic_rows(payload: dict[str, Any]) -> str:
     labels = (payload.get("decision_diagnostics") or {}).get("labels") or {}
     if not labels:
@@ -283,7 +383,7 @@ def _diagnostic_rows(payload: dict[str, Any]) -> str:
 def _golden_rows(payload: dict[str, Any]) -> str:
     cases = (payload.get("golden_scenarios") or {}).get("cases") or []
     if not cases:
-        return '<tr><td colspan="4">无金样例数据</td></tr>'
+        return '<tr><td colspan="5">无验证用例数据</td></tr>'
     rows = []
     for row in cases:
         status = "通过" if row.get("passed") else "失败"
@@ -291,6 +391,7 @@ def _golden_rows(payload: dict[str, Any]) -> str:
             f"""
             <tr>
               <td>{escape(str(row.get("name", "")))}</td>
+              <td>{escape(str(row.get("scope", "unspecified")))}</td>
               <td>{escape(status)}</td>
               <td>{escape(str(row.get("expected", "")))}</td>
               <td>{escape(str(row.get("actual", "")))}</td>
@@ -443,8 +544,9 @@ def render_report(payload: dict[str, Any]) -> str:
     <section class="kpis">{_kpi_cards(payload)}</section>
     <section class="panel">
       <h2>牌组结果矩阵</h2>
+      <p>同卡组镜像点数率用于隔离决策差异；含跨卡组的原始点数率会受到卡组固有强弱影响，仅作实战表现参考。</p>
       <table>
-        <thead><tr><th>牌组</th><th>策略 A 点数率</th><th>比例</th><th>配对差值</th><th>胜/平/负</th><th>平均分差</th><th>平均决策</th></tr></thead>
+        <thead><tr><th>牌组</th><th>镜像表现</th><th>同卡组镜像率</th><th>全部原始率</th><th>配对差值</th><th>胜/平/负</th><th>平均分差</th><th>平均决策</th></tr></thead>
         <tbody>{_deck_rows(payload)}</tbody>
       </table>
     </section>
@@ -453,6 +555,15 @@ def render_report(payload: dict[str, Any]) -> str:
       <table>
         <thead><tr><th>策略 A 牌组</th><th>策略 B 牌组</th><th>A 点数率</th><th>胜/平/负</th><th>平均分差</th></tr></thead>
         <tbody>{_matrix_rows(payload)}</tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>同种子四局角色交叉审计</h2>
+      <p>每个无序卡组对与种子区块固定进行四局：A(X) 对 B(Y) 换座两局，再由 A(Y) 对 B(X) 用同一种子换座两局。这样 A/B 都各用两套牌，并各先手、后手两局。</p>
+      <p>若 X 天生无论先后手都无法战胜 Y，前两局会是 A 两负，交换卡组角色后的两局会是 A 两胜，闭合块仍为 2/4=50%；因此单向格子的 0% 或 100% 不会直接成为 AI 强度门槛。</p>
+      <table>
+        <thead><tr><th>无序卡组对</th><th>A 调整点数率</th><th>完整块/总块</th><th>干净块</th><th>每套牌 A|B 局数</th><th>A 先/后 · B 先/后</th><th>平衡</th></tr></thead>
+        <tbody>{_role_crossover_rows(payload)}</tbody>
       </table>
     </section>
     <section class="grid2">
@@ -480,9 +591,9 @@ def render_report(payload: dict[str, Any]) -> str:
         </table>
       </div>
       <div class="panel">
-        <h2>金样例</h2>
+        <h2>分层验证用例</h2>
         <table>
-          <thead><tr><th>场景</th><th>状态</th><th>期望</th><th>实际</th></tr></thead>
+          <thead><tr><th>场景</th><th>证据层</th><th>状态</th><th>期望</th><th>实际</th></tr></thead>
           <tbody>{_golden_rows(payload)}</tbody>
         </table>
       </div>

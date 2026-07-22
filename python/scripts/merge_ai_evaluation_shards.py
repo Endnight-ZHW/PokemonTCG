@@ -1,8 +1,9 @@
-"""Merge parallel Godot traditional-AI evaluation shards into one schema-v3 result."""
+"""Merge parallel Godot traditional-AI evaluation shards into one schema-v4 result."""
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import time
 import zlib
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 BOOTSTRAP_ITERATIONS = 400
 BOOTSTRAP_SEED = 90210
 DECK_ORDER = [
@@ -26,6 +27,12 @@ DECK_ORDER = [
     "steel",
     "water",
 ]
+STRATEGY_KEYS = ("A", "B")
+STRATEGY_LATENCY_FIELDS = (
+    "decision_ms_samples_by_strategy",
+    "turn_plan_cache_hit_samples_by_strategy",
+    "ai_turn_ms_samples_by_strategy",
+)
 
 
 class MergeError(ValueError):
@@ -44,6 +51,142 @@ def _int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _coerce_latency_samples(raw_samples: Any, key: str) -> list[float]:
+    if not isinstance(raw_samples, list):
+        raise MergeError(key)
+    samples: list[float] = []
+    for index, value in enumerate(raw_samples):
+        if isinstance(value, bool):
+            raise MergeError(f"{key}:{index}")
+        try:
+            sample_ms = float(value)
+        except (TypeError, ValueError) as exc:
+            raise MergeError(f"{key}:{index}") from exc
+        if not math.isfinite(sample_ms) or sample_ms < 0.0:
+            raise MergeError(f"{key}:{index}")
+        samples.append(sample_ms)
+    return samples
+
+
+def _latency_samples(row: dict[str, Any], key: str) -> list[float]:
+    return _coerce_latency_samples(row.get(key), key)
+
+
+def _strategy_latency_samples(
+    row: dict[str, Any],
+) -> dict[str, dict[str, list[Any]]] | None:
+    present = [key in row for key in STRATEGY_LATENCY_FIELDS]
+    if not any(present):
+        # Schema v4 predates per-strategy samples. Old artifacts remain mergeable
+        # and retain the original aggregate performance interpretation.
+        return None
+    if not all(present):
+        raise MergeError("strategy_latency_samples:incomplete")
+
+    raw_decisions = row.get("decision_ms_samples_by_strategy")
+    raw_cache_hits = row.get("turn_plan_cache_hit_samples_by_strategy")
+    raw_ai_turns = row.get("ai_turn_ms_samples_by_strategy")
+    if not isinstance(raw_decisions, dict):
+        raise MergeError("decision_ms_samples_by_strategy")
+    if not isinstance(raw_cache_hits, dict):
+        raise MergeError("turn_plan_cache_hit_samples_by_strategy")
+    if not isinstance(raw_ai_turns, dict):
+        raise MergeError("ai_turn_ms_samples_by_strategy")
+
+    result: dict[str, dict[str, list[Any]]] = {}
+    combined_decision_pairs: list[tuple[float, bool]] = []
+    combined_ai_turns: list[float] = []
+    for strategy_key in STRATEGY_KEYS:
+        decision_key = f"decision_ms_samples_by_strategy:{strategy_key}"
+        decisions = _coerce_latency_samples(raw_decisions.get(strategy_key), decision_key)
+        strategy_cache_hits = raw_cache_hits.get(strategy_key)
+        if not isinstance(strategy_cache_hits, list):
+            raise MergeError(f"turn_plan_cache_hit_samples_by_strategy:{strategy_key}")
+        if len(strategy_cache_hits) != len(decisions):
+            raise MergeError(
+                f"turn_plan_cache_hit_samples_by_strategy:{strategy_key}:length"
+            )
+        if any(not isinstance(value, bool) for value in strategy_cache_hits):
+            raise MergeError(
+                f"turn_plan_cache_hit_samples_by_strategy:{strategy_key}:type"
+            )
+        ai_turns = _coerce_latency_samples(
+            raw_ai_turns.get(strategy_key),
+            f"ai_turn_ms_samples_by_strategy:{strategy_key}",
+        )
+        result[strategy_key] = {
+            "decision_ms_samples": decisions,
+            "turn_plan_cache_hit_samples": list(strategy_cache_hits),
+            "ai_turn_ms_samples": ai_turns,
+        }
+        combined_decision_pairs.extend(zip(decisions, strategy_cache_hits))
+        combined_ai_turns.extend(ai_turns)
+
+    global_decisions = _latency_samples(row, "decision_ms_samples")
+    global_cache_hits = row.get("turn_plan_cache_hit_samples")
+    if not isinstance(global_cache_hits, list):
+        raise MergeError("turn_plan_cache_hit_samples")
+    if len(global_cache_hits) != len(global_decisions):
+        raise MergeError("turn_plan_cache_hit_samples:length")
+    if any(not isinstance(value, bool) for value in global_cache_hits):
+        raise MergeError("turn_plan_cache_hit_samples:type")
+    if sorted(combined_decision_pairs) != sorted(zip(global_decisions, global_cache_hits)):
+        raise MergeError("strategy_decision_latency_samples:mismatch")
+    if sorted(combined_ai_turns) != sorted(_latency_samples(row, "ai_turn_ms_samples")):
+        raise MergeError("strategy_ai_turn_latency_samples:mismatch")
+    return result
+
+
+def _summarize_performance_by_strategy(
+    matches: list[dict[str, Any]],
+) -> dict[str, Any]:
+    parsed = [_strategy_latency_samples(row) for row in matches]
+    available_rows = [row for row in parsed if row is not None]
+    if not available_rows:
+        return {"available": False}
+    if len(available_rows) != len(matches):
+        raise MergeError("strategy_latency_samples:coverage")
+
+    accumulated = {
+        strategy_key: {
+            "decision_ms_samples": [],
+            "cache_hit_decision_ms_samples": [],
+            "ai_turn_ms_samples": [],
+        }
+        for strategy_key in STRATEGY_KEYS
+    }
+    for row in available_rows:
+        assert row is not None
+        for strategy_key in STRATEGY_KEYS:
+            values = row[strategy_key]
+            decisions = values["decision_ms_samples"]
+            cache_hits = values["turn_plan_cache_hit_samples"]
+            target = accumulated[strategy_key]
+            target["decision_ms_samples"].extend(decisions)
+            target["cache_hit_decision_ms_samples"].extend(
+                sample
+                for sample, cache_hit in zip(decisions, cache_hits)
+                if cache_hit
+            )
+            target["ai_turn_ms_samples"].extend(values["ai_turn_ms_samples"])
+
+    result: dict[str, Any] = {"available": True}
+    for strategy_key in STRATEGY_KEYS:
+        values = accumulated[strategy_key]
+        decision_values = values["decision_ms_samples"]
+        cache_values = values["cache_hit_decision_ms_samples"]
+        ai_turn_values = values["ai_turn_ms_samples"]
+        result[strategy_key] = {
+            "decision_ms_sample_count": len(decision_values),
+            "decision_ms_p95": _round(_percentile(decision_values, 0.95), 3),
+            "cache_hit_decision_ms_sample_count": len(cache_values),
+            "cache_hit_decision_ms_p95": _round(_percentile(cache_values, 0.95), 3),
+            "ai_turn_ms_sample_count": len(ai_turn_values),
+            "ai_turn_ms_p95": _round(_percentile(ai_turn_values, 0.95), 3),
+        }
+    return result
 
 
 def _round(value: float, digits: int = 4) -> float:
@@ -102,7 +245,12 @@ def _empty_stats() -> dict[str, Any]:
         "decisions": 0,
         "choices": 0,
         "decision_ms_total": 0.0,
+        "decision_ms_sample_count": 0,
         "decision_ms_values": [],
+        "cache_hit_decision_ms_sample_count": 0,
+        "cache_hit_decision_ms_values": [],
+        "ai_turn_ms_sample_count": 0,
+        "ai_turn_ms_values": [],
         "invalid_actions": 0,
         "choice_failures": 0,
         "rule_exceptions": 0,
@@ -136,14 +284,31 @@ def _merge_match(stats: dict[str, Any], row: dict[str, Any]) -> None:
 
     decisions = _int(row.get("decisions"))
     choices = _int(row.get("choices"))
-    average_ms = _float(row.get("average_decision_ms"))
     stats["score_total"] += _float(row.get("score"))
     stats["actions"] += _int(row.get("actions"))
     stats["turns"] += _int(row.get("turns"))
     stats["decisions"] += decisions
     stats["choices"] += choices
-    stats["decision_ms_total"] += average_ms * max(1, decisions + choices)
-    stats["decision_ms_values"].append(average_ms)
+    decision_samples = _latency_samples(row, "decision_ms_samples")
+    if len(decision_samples) != decisions + choices:
+        raise MergeError("decision_ms_samples:count")
+    raw_cache_hits = row.get("turn_plan_cache_hit_samples")
+    if not isinstance(raw_cache_hits, list):
+        raise MergeError("turn_plan_cache_hit_samples")
+    if len(raw_cache_hits) != len(decision_samples):
+        raise MergeError("turn_plan_cache_hit_samples:length")
+    if any(not isinstance(value, bool) for value in raw_cache_hits):
+        raise MergeError("turn_plan_cache_hit_samples:type")
+    for sample_ms, cache_hit in zip(decision_samples, raw_cache_hits):
+        stats["decision_ms_total"] += sample_ms
+        stats["decision_ms_sample_count"] += 1
+        stats["decision_ms_values"].append(sample_ms)
+        if cache_hit:
+            stats["cache_hit_decision_ms_sample_count"] += 1
+            stats["cache_hit_decision_ms_values"].append(sample_ms)
+    for sample_ms in _latency_samples(row, "ai_turn_ms_samples"):
+        stats["ai_turn_ms_sample_count"] += 1
+        stats["ai_turn_ms_values"].append(sample_ms)
     stats["invalid_actions"] += _int(row.get("invalid_actions"))
     stats["choice_failures"] += _int(row.get("choice_failures"))
     stats["rule_exceptions"] += _int(row.get("rule_exceptions"))
@@ -168,6 +333,7 @@ def _elo_delta(point_rate: float) -> float:
 def _finalize_stats(stats: dict[str, Any]) -> dict[str, Any]:
     games = max(1, _int(stats.get("games")))
     decisions_and_choices = max(1, _int(stats.get("decisions")) + _int(stats.get("choices")))
+    decision_sample_count = max(1, _int(stats.get("decision_ms_sample_count")))
     decisions = max(1, _int(stats.get("decisions")))
     point_rate = (_float(stats.get("wins")) + _float(stats.get("draws")) * 0.5) / games
     clean_games = _int(stats.get("clean_games"))
@@ -186,9 +352,15 @@ def _finalize_stats(stats: dict[str, Any]) -> dict[str, Any]:
     result["average_score"] = _round(_float(stats.get("score_total")) / games, 3)
     result["average_actions"] = _round(_float(stats.get("actions")) / games, 3)
     result["average_turns"] = _round(_float(stats.get("turns")) / games, 3)
-    result["average_decision_ms"] = _round(_float(stats.get("decision_ms_total")) / decisions_and_choices, 3)
+    result["average_decision_ms"] = _round(_float(stats.get("decision_ms_total")) / decision_sample_count, 3)
     result["decision_ms_p50"] = _round(_percentile(list(stats.get("decision_ms_values") or []), 0.50), 3)
     result["decision_ms_p95"] = _round(_percentile(list(stats.get("decision_ms_values") or []), 0.95), 3)
+    result["cache_hit_decision_ms_p95"] = _round(
+        _percentile(list(stats.get("cache_hit_decision_ms_values") or []), 0.95), 3
+    )
+    result["ai_turn_ms_p95"] = _round(
+        _percentile(list(stats.get("ai_turn_ms_values") or []), 0.95), 3
+    )
     result["time_capped_decision_rate"] = _round(_float(stats.get("time_capped_decisions")) / decisions, 4)
     result["deep_fallback_rate"] = _round(_float(stats.get("deep_fallbacks")) / decisions_and_choices, 4)
     stop_reasons = dict(stats.get("dynamic_budget_stop_reasons") or {})
@@ -198,6 +370,8 @@ def _finalize_stats(stats: dict[str, Any]) -> dict[str, Any]:
     result["dynamic_budget_stop_rate"] = _round(dynamic_stops / decisions, 4)
     result["elo_delta"] = _round(_elo_delta(point_rate), 3)
     result.pop("decision_ms_values", None)
+    result.pop("cache_hit_decision_ms_values", None)
+    result.pop("ai_turn_ms_values", None)
     return result
 
 
@@ -467,10 +641,22 @@ def _merge_golden_scenarios(shards: list[dict[str, Any]]) -> dict[str, Any]:
                 cases_by_name[name] = dict(row)
     cases = [cases_by_name[name] for name in sorted(cases_by_name)]
     failed = sum(1 for row in cases if not bool(row.get("passed")))
+    by_scope: dict[str, dict[str, int]] = {}
+    for row in cases:
+        scope = str(row.get("scope") or "unspecified")
+        summary = by_scope.setdefault(
+            scope, {"total": 0, "passed": 0, "failed": 0}
+        )
+        summary["total"] += 1
+        if bool(row.get("passed")):
+            summary["passed"] += 1
+        else:
+            summary["failed"] += 1
     return {
         "total": len(cases),
         "passed": len(cases) - failed,
         "failed": failed,
+        "by_scope": by_scope,
         "cases": cases,
     }
 
@@ -560,6 +746,8 @@ def _validate_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
             raise MergeError(f"shard_{index}:schema_version")
         if payload.get("strategy_fingerprint") != reference.get("strategy_fingerprint"):
             raise MergeError(f"shard_{index}:strategy_fingerprint")
+        if payload.get("platform") != reference.get("platform"):
+            raise MergeError(f"shard_{index}:platform")
         if payload.get("deck_keys") != reference.get("deck_keys"):
             raise MergeError(f"shard_{index}:deck_keys")
         config = payload.get("config") or {}
@@ -574,6 +762,10 @@ def _validate_shards(shards: list[dict[str, Any]]) -> dict[str, Any]:
             "profile",
             "disable_ai_cache",
             "disable_native_math",
+            "rules_options",
+            "decision_latency_sampling",
+            "ai_turn_latency_sampling",
+            "platform",
         ):
             if config.get(key) != ref_config.get(key):
                 raise MergeError(f"shard_{index}:config:{key}")
@@ -622,7 +814,7 @@ def merge_payloads(shards: list[dict[str, Any]], *, workers: int = 1) -> dict[st
     config["parallel_workers"] = max(1, int(workers))
     config["shards"] = len(shards)
 
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "created_at_unix": int(time.time()),
         "self_check": bool(reference.get("self_check")),
@@ -637,11 +829,13 @@ def merge_payloads(shards: list[dict[str, Any]], *, workers: int = 1) -> dict[st
         "per_deck": _summarize_by_deck(matches, pair_rows),
         "per_matchup": _summarize_by_matchup(matches, pair_rows),
         "matrix": _summarize_matrix(matches),
+        "role_crossover": _summarize_role_crossover(matches),
         "paired": paired,
         "seat": _summarize_seats(matches),
         "decision_diagnostics": _summarize_decision_diagnostics(matches),
         "golden_scenarios": _merge_golden_scenarios(shards),
         "performance_profile": _merge_performance_profiles(shards),
+        "performance_by_strategy": _summarize_performance_by_strategy(matches),
         "terminal_reasons": dict(Counter(str(row.get("terminal_reason") or "") for row in matches)),
         "matches": matches,
         "shards": [
@@ -652,6 +846,122 @@ def merge_payloads(shards: list[dict[str, Any]], *, workers: int = 1) -> dict[st
             }
             for index, payload in enumerate(shards)
         ],
+    }
+    if reference.get("platform") is not None:
+        result["platform"] = reference.get("platform")
+    return result
+
+
+def _unordered_matchup_key(deck_a: str, deck_b: str) -> str:
+    lower, upper = sorted((deck_a, deck_b))
+    return f"{lower}_and_{upper}"
+
+
+def _role_crossover_block_key(row: dict[str, Any]) -> str:
+    explicit = str(row.get("role_crossover_block_key") or "")
+    if explicit:
+        return explicit
+    deck_a = str(row.get("strategy_a_deck") or row.get("deck") or "")
+    deck_b = str(row.get("strategy_b_deck") or row.get("deck") or "")
+    return (
+        f"{_unordered_matchup_key(deck_a, deck_b)}:"
+        f"{_int(row.get('seed_block'))}:{_int(row.get('seed'))}"
+    )
+
+
+def _role_crossover_block_complete(rows: list[dict[str, Any]]) -> bool:
+    if len(rows) != 4:
+        return False
+    directions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        directions[(
+            str(row.get("strategy_a_deck") or ""),
+            str(row.get("strategy_b_deck") or ""),
+        )].append(row)
+    return (
+        len({_int(row.get("seed")) for row in rows}) == 1
+        and len({_int(row.get("forced_first_player"), -1) for row in rows}) == 1
+        and len(directions) == 2
+        and all(
+            len(direction_rows) == 2
+            and {_int(row.get("seat"), -1) for row in direction_rows} == {0, 1}
+            for direction_rows in directions.values()
+        )
+    )
+
+
+def _role_crossover_scope_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    blocks: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    strategy_roles: dict[str, dict[str, Any]] = {
+        "A": {"first_games": 0, "second_games": 0, "deck_games": {}},
+        "B": {"first_games": 0, "second_games": 0, "deck_games": {}},
+    }
+    for row in rows:
+        blocks[_role_crossover_block_key(row)].append(row)
+        deck_a = str(row.get("strategy_a_deck") or row.get("deck") or "")
+        deck_b = str(row.get("strategy_b_deck") or row.get("deck") or "")
+        for strategy, deck in (("A", deck_a), ("B", deck_b)):
+            deck_games = strategy_roles[strategy]["deck_games"]
+            deck_games[deck] = int(deck_games.get(deck, 0)) + 1
+        if bool(row.get("strategy_a_first")):
+            strategy_roles["A"]["first_games"] += 1
+            strategy_roles["B"]["second_games"] += 1
+        else:
+            strategy_roles["A"]["second_games"] += 1
+            strategy_roles["B"]["first_games"] += 1
+
+    complete_blocks = sum(
+        1 for block_rows in blocks.values()
+        if _role_crossover_block_complete(block_rows)
+    )
+    clean_blocks = sum(
+        1 for block_rows in blocks.values()
+        if _role_crossover_block_complete(block_rows)
+        and all(_is_clean_match(row) for row in block_rows)
+    )
+    deck_keys = set(strategy_roles["A"]["deck_games"])
+    role_balanced = (
+        bool(rows)
+        and complete_blocks == len(blocks)
+        and strategy_roles["A"]["first_games"] == strategy_roles["A"]["second_games"]
+        and strategy_roles["B"]["first_games"] == strategy_roles["B"]["second_games"]
+        and all(
+            strategy_roles["A"]["deck_games"].get(deck, 0)
+            == strategy_roles["B"]["deck_games"].get(deck, 0)
+            for deck in deck_keys
+        )
+    )
+    point_rate = sum(_match_point(row) for row in rows) / max(1, len(rows))
+    return {
+        "games": len(rows),
+        "blocks": len(blocks),
+        "complete_blocks": complete_blocks,
+        "clean_blocks": clean_blocks,
+        "role_balanced": role_balanced,
+        "role_crossover_adjusted_point_rate": _round(point_rate, 4),
+        "role_crossover_adjusted_point_delta": _round(point_rate - 0.5, 4),
+        "strategy_roles": strategy_roles,
+    }
+
+
+def _summarize_role_crossover(matches: list[dict[str, Any]]) -> dict[str, Any]:
+    cross_rows = [
+        row for row in matches if str(row.get("matchup_kind") or "") == "cross"
+    ]
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in cross_rows:
+        grouped[_unordered_matchup_key(
+            str(row.get("strategy_a_deck") or row.get("deck") or ""),
+            str(row.get("strategy_b_deck") or row.get("deck") or ""),
+        )].append(row)
+    return {
+        "method": "same_seed_four_game_role_crossover_v1",
+        "scope": "cross_matchups_only",
+        "expected_games_per_block": 4,
+        "overall": _role_crossover_scope_summary(cross_rows),
+        "per_unordered_matchup": {
+            key: _role_crossover_scope_summary(grouped[key]) for key in sorted(grouped)
+        },
     }
 
 

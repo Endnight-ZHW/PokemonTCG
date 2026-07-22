@@ -1,4 +1,4 @@
-"""Compare two schema-v3 AI evaluation results for equivalence and profile deltas."""
+"""Compare two schema-v4 AI evaluation results for equivalence and profile deltas."""
 from __future__ import annotations
 
 import argparse

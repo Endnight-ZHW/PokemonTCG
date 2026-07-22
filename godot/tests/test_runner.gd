@@ -1105,6 +1105,7 @@ func _run_phase_two_tests() -> void:
 	_run_turn_state_regression_tests(catalog, engine)
 	_run_entry_rule_contract_tests(catalog, engine)
 	_run_card_effect_accuracy_tests(engine)
+	_run_conditional_damage_regression_tests(engine)
 
 	var stack := ResolutionStack.new()
 	stack.context = {"finish_attack": true, "actor": 0}
@@ -1831,6 +1832,14 @@ func _run_phase_two_tests() -> void:
 	_check(self_ko_step.pending_choice != null, "Self-KO ability did not request target")
 	if self_ko_step.pending_choice:
 		var self_ko_request := self_ko_step.pending_choice
+		_check(
+			int(self_ko_request.metadata.get("amount", 0)) == 20
+			and int(self_ko_request.metadata.get("source_player", -1)) == 0
+			and str(self_ko_request.metadata.get("source_slot", "")) == "active"
+			and str(self_ko_request.metadata.get("source_card_id", "")) == "sv2-starm"
+			and int(self_ko_request.metadata.get("target_player", -1)) == 1,
+			"Self-discard damage choice omitted its public amount/source metadata",
+		)
 		var self_ko_result := RulesTestHarness.apply_choice(engine,
 			self_ko_state,
 			self_ko_request,
@@ -3843,14 +3852,49 @@ func _run_phase_four_foundation_tests() -> void:
 		and Array(hidden_bonus_ids[0]).is_empty(),
 		"Challenge AI setup snapshot leaked hidden board, hand, deck, prize, or bonus identities",
 	)
+	var main_phase_ai_state := _battle_state()
+	main_phase_ai_state.players[0].hand = ["opponent-hand-secret"]
+	main_phase_ai_state.players[0].deck = ["opponent-deck-a", "opponent-deck-b"]
+	main_phase_ai_state.players[0].prizes = ["opponent-prize-secret"]
+	main_phase_ai_state.players[0].discard = ["opponent-public-discard"]
+	main_phase_ai_state.players[1].hand = ["own-visible-hand"]
+	main_phase_ai_state.players[1].deck = ["own-deck-a", "own-deck-b"]
+	main_phase_ai_state.players[1].prizes = ["own-prize-secret"]
+	main_phase_ai_state.players[1].discard = ["own-public-discard"]
+	ai_ui.state = main_phase_ai_state
+	var main_phase_snapshot: Dictionary = ai_ui._ai_state_snapshot(1)
+	var main_phase_players: Array = main_phase_snapshot.get("players", [])
+	_check(
+		main_phase_players.size() == 2
+		and Array(Dictionary(main_phase_players[0]).get("hand", [])) == ["__hidden_card__"]
+		and Array(Dictionary(main_phase_players[0]).get("deck", []))
+		== ["__hidden_card__", "__hidden_card__"]
+		and Array(Dictionary(main_phase_players[1]).get("hand", [])) == ["own-visible-hand"]
+		and Array(Dictionary(main_phase_players[1]).get("deck", []))
+		== ["__hidden_card__", "__hidden_card__"]
+		and Array(Dictionary(main_phase_players[0]).get("prizes", []))
+		== ["__hidden_prize__"]
+		and Array(Dictionary(main_phase_players[1]).get("prizes", []))
+		== ["__hidden_prize__"]
+		and Array(Dictionary(main_phase_players[0]).get("discard", []))
+		== ["opponent-public-discard"]
+		and Array(Dictionary(main_phase_players[1]).get("discard", []))
+		== ["own-public-discard"],
+		"Challenge AI MAIN snapshot leaked hidden zones or masked public discard/own hand",
+	)
 	_check(
 		ai_ui.find_child("AIDifficultyOption", true, false) == null,
 		"AI difficulty selector was still visible",
 	)
 	_check(
 		ai_ui.start_ai_match_for_test(
-			"challenge", "fire", "water", 0, 20260621),
+			"challenge", "fire", "water", 0, 20260621, false, true),
 		"Unable to start Challenge AI match",
+	)
+	_check(
+		not ai_ui.state.apply_type_matchups
+		and not bool(ai_ui.state.rules_options.get("apply_type_matchups", true)),
+		"Challenge AI did not force weakness/resistance matchups off",
 	)
 	_check(ai_ui.current_view_player == 0, "AI match exposed the AI player view")
 	_check(not ai_ui.modal_layer.visible,
@@ -3903,13 +3947,28 @@ func _run_phase_four_foundation_tests() -> void:
 	ai_ui._stop_ai()
 	_check(
 		ai_ui.start_ai_match_for_test(
-			"deep", "fire", "water", 0, 20260621),
+			"deep", "fire", "water", 0, 20260621, false, true),
 		"Unable to start Deep AI match",
+	)
+	_check(
+		not ai_ui.state.apply_type_matchups
+		and not bool(ai_ui.state.rules_options.get("apply_type_matchups", true)),
+		"Deep AI did not force weakness/resistance matchups off",
 	)
 	_check(ai_ui.current_view_player == 0, "Deep AI match exposed the AI player view")
 	_check(not ai_ui.modal_layer.visible,
 		"Deep AI match opened the local privacy overlay")
 	ai_ui._stop_ai()
+	_check(
+		ai_ui.start_local_match_for_test(
+			"fire", "water", 20260622, 0, false, true),
+		"Unable to start local match with weakness/resistance matchups enabled",
+	)
+	_check(
+		ai_ui.state.apply_type_matchups
+		and bool(ai_ui.state.rules_options.get("apply_type_matchups", false)),
+		"AI rule canonicalization changed local-match rules",
+	)
 	ai_ui.queue_free()
 
 
@@ -4153,12 +4212,32 @@ func _run_ai_strength_regression_tests(
 ) -> void:
 	var strongest_preset := NativeChallengeAI.strongest_preset()
 	_check(
-		float(strongest_preset.get("seconds", 0.0)) == 10.0
-		and int(strongest_preset.get("simulations", 0)) > 768
-		and int(strongest_preset.get("depth", 0)) > 16,
-		"Challenge AI strongest preset did not replace difficulty budgets",
+		float(strongest_preset.get("seconds", 0.0))
+		== NativeChallengeAI.GAMEPLAY_DEFAULT_SECONDS
+		and int(strongest_preset.get("simulations", 0))
+		== NativeChallengeAI.GAMEPLAY_DEFAULT_SIMULATIONS
+		and int(strongest_preset.get("depth", 0))
+		== NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH,
+		"Challenge AI compatibility preset escaped the bounded turn-planner budget",
 	)
 	_check(ClassDB.class_exists("ChallengeAIMath"), "ChallengeAIMath GDExtension class is unavailable")
+	_test_ai_damage_counter_scoring_uses_ten_hp_units(catalog)
+	_test_ai_optional_choice_selects_positive_options_to_max(catalog)
+	_test_fire_choice_search_follows_executable_evolution_chain()
+	_test_ai_planner_candidate_kind_diversity()
+	_test_ai_random_event_invalidates_plan_cache()
+	_test_ai_complete_leaf_beats_incomparable_partial()
+	_test_ai_cached_action_passes_post_plan_tactical_guard(catalog, _engine, worker)
+	_test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
+		catalog, _engine, worker)
+	_test_ai_self_ko_scoring_uses_counter_units_and_source_slot(catalog, worker)
+	_test_ai_mandatory_tactics_establishes_backup_before_ordinary_attack(
+		catalog, _engine)
+	_test_ai_mandatory_tactics_immediate_match_win_beats_backup(catalog, _engine)
+	_test_ai_adaptive_belief_samples_follow_random_semantics(catalog)
+	_test_ai_public_attack_profile_values_energy_and_readiness(catalog)
+	_test_ai_public_attack_profile_status_gates(catalog)
+	_test_ai_turn_replan_ledger_tiers_and_scope(catalog, worker)
 
 	var ko_state := GameState.new()
 	ko_state.phase = "MAIN"
@@ -4252,18 +4331,16 @@ func _run_ai_strength_regression_tests(
 	eval_state.players[1].hand = ["sv1-ener-3"]
 	eval_state.players[1].deck = ["sv1-ener-3", "sv1-ener-3"]
 	eval_state.players[1].prizes = ["sv1-ener-3", "sv1-ener-3", "sv1-ener-3", "sv1-ener-3"]
-	var native_math_previous_variant := worker._heuristic_variant
-	worker._heuristic_variant = NativeChallengeAI.HEURISTIC_VARIANT_LEGACY
 	var gdscript_eval := worker._evaluate_raw_gdscript(eval_state, 0, catalog)
 	var native_eval := worker._evaluate_raw(eval_state, 0, catalog)
-	worker._heuristic_variant = native_math_previous_variant
 	_check(
-		is_equal_approx(native_eval, gdscript_eval),
+		is_equal_approx(
+			native_eval - worker._strategic_evaluation_delta(eval_state, 0, catalog),
+			gdscript_eval,
+		),
 		"ChallengeAIMath native evaluation differs from GDScript fallback",
 	)
 
-	var previous_ai_variant := worker._heuristic_variant
-	worker._heuristic_variant = NativeChallengeAI.HEURISTIC_VARIANT_SEMANTIC_V2
 	var semantic_risk_state := GameState.new()
 	semantic_risk_state.phase = "MAIN"
 	semantic_risk_state.turn_number = 7
@@ -4295,7 +4372,6 @@ func _run_ai_strength_regression_tests(
 	var semantic_locked_score := worker._evaluate_raw(semantic_locked_state, 0, catalog)
 	var semantic_protected_score := worker._evaluate_raw(semantic_protected_state, 0, catalog)
 	var semantic_thin_deck_score := worker._evaluate_raw(semantic_thin_deck_state, 0, catalog)
-	worker._heuristic_variant = previous_ai_variant
 	_check(
 		semantic_safe_score > semantic_risk_score + 120.0,
 		"Semantic v2 evaluation did not penalize immediate next-turn KO risk",
@@ -4366,8 +4442,6 @@ func _run_ai_strength_regression_tests(
 			JSON.stringify(semantic_choice_response.to_dict() if semantic_choice_response != null else {})
 		],
 	)
-	var semantic_feature_variant := worker._heuristic_variant
-	worker._heuristic_variant = NativeChallengeAI.HEURISTIC_VARIANT_SEMANTIC_V2
 	var colorless_draw_plan_state := GameState.new()
 	colorless_draw_plan_state.public_deck_keys = ["colorless", "psychic"]
 	colorless_draw_plan_state.players[0].active = PokemonState.new("svi-ambi")
@@ -4435,6 +4509,23 @@ func _run_ai_strength_regression_tests(
 		fighting_line_focus_state, 0, "svf-luca", "fighting", catalog)
 	var kleavor_keep := worker._card_keep_value(
 		fighting_line_focus_state, 0, "svf-klea", "fighting", catalog)
+	var lone_kleavor_state := GameState.new()
+	lone_kleavor_state.public_deck_keys = ["fighting", "water"]
+	lone_kleavor_state.players[0].active = PokemonState.new("svf-klea")
+	lone_kleavor_state.players[0].deck = ["svf-rio", "svf-klea", "sv1-ener-6"]
+	var safe_backup_bonus := worker._lone_active_backup_search_bonus(
+		lone_kleavor_state, 0, catalog)
+	var threatened_kleavor_state := lone_kleavor_state.clone_state()
+	threatened_kleavor_state.players[1].active = PokemonState.new("svi-infr")
+	threatened_kleavor_state.players[1].active.energy_card_ids = [
+		"sv1-ener-2", "sv1-ener-2",
+	]
+	var threatened_backup_bonus := worker._lone_active_backup_search_bonus(
+		threatened_kleavor_state, 0, catalog)
+	var survival_riolu_keep := worker._card_keep_value(
+		threatened_kleavor_state, 0, "svf-rio", "fighting", catalog)
+	var stranded_kleavor_keep := worker._card_keep_value(
+		threatened_kleavor_state, 0, "svf-klea", "fighting", catalog)
 	var lucario_evolve_value := worker._development_action_value(
 		fighting_line_focus_state,
 		0,
@@ -4476,10 +4567,11 @@ func _run_ai_strength_regression_tests(
 		"steel",
 		catalog,
 	)
-	worker._heuristic_variant = semantic_feature_variant
 	_check(
 		duplicate_psychic_discard > draw_trainer_discard,
-		"Semantic v2 discard choice did not recognize duplicate Psychic Pokemon as discard-damage fuel",
+		"Semantic v2 discard choice did not recognize duplicate Psychic Pokemon as discard-damage fuel: %.3f <= %.3f" % [
+			duplicate_psychic_discard, draw_trainer_discard,
+		],
 	)
 	_check(
 		froakie_keep > naked_greninja_keep,
@@ -4502,6 +4594,18 @@ func _run_ai_strength_regression_tests(
 		"Semantic v2 fighting line focus allowed Kleavor to outrank Lucario while Riolu was available",
 	)
 	_check(
+		survival_riolu_keep > stranded_kleavor_keep + 200.0,
+		"Semantic v2 search failed to prioritize a Basic backup for a lone Active",
+	)
+	_check(
+		is_equal_approx(safe_backup_bonus, 80.0)
+		and is_equal_approx(
+			threatened_backup_bonus,
+			float(NativeChallengeAI.SCORE_WEIGHTS["lone_active_backup"]),
+		),
+		"Semantic v2 applied emergency lone-Active search weight without a public KO threat",
+	)
+	_check(
 		lucario_evolve_value > kleavor_active_evolve_value + 80.0,
 		"Semantic v2 active side-core evolve value still blocked the Lucario line",
 	)
@@ -4512,6 +4616,7 @@ func _run_ai_strength_regression_tests(
 
 	var safe_damage_state := GameState.new()
 	safe_damage_state.phase = "MAIN"
+	safe_damage_state.setup_stage = GameState.SETUP_COMPLETE
 	safe_damage_state.turn_number = 5
 	safe_damage_state.first_player_idx = 1
 	safe_damage_state.active_player_idx = 0
@@ -4521,24 +4626,51 @@ func _run_ai_strength_regression_tests(
 	safe_damage_state.players[0].active.energy_card_ids.assign(["sv1-ener-7", "sv1-ener-7"])
 	safe_damage_state.players[1].active = PokemonState.new("svl-pikaex")
 	safe_damage_state.players[1].active.placed_this_turn = false
-	var safe_damage_actions: Array[GameAction] = [
-		GameAction.new("END_TURN", {}, true, 0),
-		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
-	]
-	var damaging_fallback := worker._validated_or_fallback_action(
-		safe_damage_state,
-		0,
-		safe_damage_actions[0],
-		safe_damage_actions,
-		"darkness",
-		catalog,
-		_engine,
-		20260630,
-	)
+	var safe_damage_end: GameAction = null
+	var safe_damage_attack: GameAction = null
+	for legal_action in RulesTestHarness.legal_actions(
+		_engine, safe_damage_state, 0, false):
+		if legal_action.kind == "END_TURN":
+			safe_damage_end = legal_action
+		elif (
+			legal_action.kind == "DECLARE_ATTACK"
+			and int(legal_action.payload.get("attack_index", -1)) == 0
+		):
+			safe_damage_attack = legal_action
 	_check(
-		damaging_fallback != null and damaging_fallback.action == "DECLARE_ATTACK",
-		"AI fallback ended the turn instead of taking a safe damaging attack",
+		safe_damage_end != null and safe_damage_attack != null,
+		"Safe-damage fallback fixture did not expose strict v4 End/Attack actions",
 	)
+	if safe_damage_end != null and safe_damage_attack != null:
+		var safe_damage_actions: Array[GameAction] = [
+			safe_damage_end, safe_damage_attack,
+		]
+		var safe_damage_attack_loses := worker._action_immediately_loses_match(
+			safe_damage_state, 0, safe_damage_attack, "darkness", catalog, _engine, 20260631)
+		var safe_damage_attack_executes := worker._action_executes_successfully(
+			safe_damage_state, 0, safe_damage_attack, "darkness", catalog, _engine, 20260632)
+		var damaging_fallback := worker._validated_or_fallback_action(
+			safe_damage_state,
+			0,
+			safe_damage_end,
+			safe_damage_actions,
+			"darkness",
+			catalog,
+			_engine,
+			20260630,
+		)
+		_check(
+			damaging_fallback != null and damaging_fallback.action == "DECLARE_ATTACK",
+			(
+				"AI fallback ended the turn instead of taking a safe damaging attack; "
+				+ "immediate_loss=%s executes=%s selected=%s"
+			) % [
+				str(safe_damage_attack_loses),
+				str(safe_damage_attack_executes),
+				JSON.stringify(
+					damaging_fallback.to_dict() if damaging_fallback != null else null),
+			],
+		)
 
 	var energy_state := GameState.new()
 	energy_state.phase = "MAIN"
@@ -4552,16 +4684,28 @@ func _run_ai_strength_regression_tests(
 	energy_state.players[1].active.placed_this_turn = false
 	energy_state.players[1].active.energy_card_ids.assign(["sv1-ener-4"])
 	energy_state.players[1].hand = ["sv1-ener-4"]
+	var weak_attack_action := GameAction.new(
+		"DECLARE_ATTACK", {"attack_idx": 0}, true, 1)
+	var active_attach_action := GameAction.new(
+		"ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1)
+	_check(
+		worker._traditional_action_candidate_score(
+			energy_state, 1, active_attach_action, "lightning", catalog)
+		> worker._traditional_action_candidate_score(
+			energy_state, 1, weak_attack_action, "lightning", catalog),
+		"Traditional beam candidate scorer disagreed with the weak-attack tactical guard",
+	)
 	var energy_action := _ai_decision_for_actions(worker, energy_state, 1, "lightning", [
-		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 1),
-		GameAction.new("ATTACH_ENERGY", {"hand_idx": 0, "target_slot": "active"}, false, 1),
+		weak_attack_action,
+		active_attach_action,
 		GameAction.new("END_TURN", {}, true, 1),
 	], "weak-attack-before-energy")
 	_check(
 		energy_action != null
 		and energy_action.action == "ATTACH_ENERGY"
 		and str(energy_action.params.get("target_slot", "")) == "active",
-		"AI fallback did not delay a weak attack for obvious core energy",
+		"AI fallback did not delay a weak attack for obvious core energy; actual=%s"
+		% JSON.stringify(energy_action.to_dict() if energy_action != null else null),
 	)
 
 	var bench_energy_state := GameState.new()
@@ -4587,7 +4731,8 @@ func _run_ai_strength_regression_tests(
 		bench_energy_action != null
 		and bench_energy_action.action == "ATTACH_ENERGY"
 		and str(bench_energy_action.params.get("target_slot", "")) == "bench_0",
-		"AI energy plan attached to a low-value active instead of the core attacker",
+		"AI energy plan attached to a low-value active instead of the core attacker; actual=%s"
+		% JSON.stringify(bench_energy_action.to_dict() if bench_energy_action != null else null),
 	)
 
 	var draw_state := GameState.new()
@@ -4638,7 +4783,8 @@ func _run_ai_strength_regression_tests(
 	], "major-draw-before-energy")
 	_check(
 		major_draw_action != null and major_draw_action.action == "ATTACH_ENERGY",
-		"AI fallback did not spend obvious energy before a major hand refresh",
+		"AI fallback did not spend obvious energy before a major hand refresh; actual=%s"
+		% JSON.stringify(major_draw_action.to_dict() if major_draw_action != null else null),
 	)
 
 	var ability_state := GameState.new()
@@ -4667,7 +4813,8 @@ func _run_ai_strength_regression_tests(
 	], "ability-before-pass")
 	_check(
 		ability_action != null and ability_action.action == "USE_ABILITY",
-		"AI fallback did not use a productive ability before ending turn",
+		"AI fallback did not use a productive ability before ending turn; actual=%s"
+		% JSON.stringify(ability_action.to_dict() if ability_action != null else null),
 	)
 
 	var context_state := GameState.new()
@@ -4703,7 +4850,30 @@ func _run_ai_strength_regression_tests(
 	_check(
 		setup_lightning_action != null
 		and int(setup_lightning_action.params.get("hand_idx", -1)) != 0,
-		"AI setup chose lightning bench core Pikachu ex as active over setup pivots",
+		"AI setup chose lightning bench core Pikachu ex as active over setup pivots; actual=%s"
+		% JSON.stringify(setup_lightning_action.to_dict() if setup_lightning_action != null else null),
+	)
+
+	var setup_water := GameState.new()
+	setup_water.phase = "SETUP"
+	setup_water.active_player_idx = 0
+	# Tatsugiri's setup pivot is specifically a going-second route: its first
+	# attack can then convert the opening attachment into two more Energy.
+	setup_water.first_player_idx = 1
+	setup_water.setup_stage = GameState.SETUP_INITIAL_PLACEMENT
+	setup_water.setup_actor_idx = 0
+	setup_water.public_deck_keys = ["water", "steel"]
+	setup_water.players[0].hand = ["sv2-tatsu", "sv2-staryu", "sv2-38"]
+	var setup_water_action := _ai_decision_for_actions(worker, setup_water, 0, "water", [
+		GameAction.new("PLAY_BASIC", {"hand_idx": 0, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 1, "target": "active"}, false, 0),
+		GameAction.new("PLAY_BASIC", {"hand_idx": 2, "target": "active"}, false, 0),
+	], "setup-water-active")
+	_check(
+		setup_water_action != null
+		and int(setup_water_action.params.get("hand_idx", -1)) == 0,
+		"AI setup did not choose Tatsugiri over Staryu/Froakie; actual=%s"
+		% JSON.stringify(setup_water_action.to_dict() if setup_water_action != null else null),
 	)
 
 	var setup_fighting := GameState.new()
@@ -4722,7 +4892,8 @@ func _run_ai_strength_regression_tests(
 	_check(
 		setup_fighting_action != null
 		and int(setup_fighting_action.params.get("hand_idx", -1)) != 0,
-		"AI setup chose Riolu active when fighting setup pivots were available",
+		"AI setup chose Riolu active when fighting setup pivots were available; actual=%s"
+		% JSON.stringify(setup_fighting_action.to_dict() if setup_fighting_action != null else null),
 	)
 
 	var setup_psychic := GameState.new()
@@ -4933,6 +5104,9 @@ func _run_ai_strength_regression_tests(
 	)
 
 	var target_state := GameState.new()
+	target_state.phase = "MAIN"
+	target_state.setup_stage = GameState.SETUP_COMPLETE
+	target_state.active_player_idx = 1
 	target_state.public_deck_keys = ["lightning", "psychic"]
 	target_state.players[0].active = PokemonState.new("sv1-104")
 	target_state.players[0].bench[0] = PokemonState.new("sv1-107")
@@ -4990,30 +5164,11 @@ func _run_ai_strength_regression_tests(
 		"AI retreat helper allowed retreat into a target that current opponent active can KO",
 	)
 
-	var ucb_visits: Array[int] = [0, 0, 0]
-	var ucb_totals: Array[float] = [0.0, 0.0, 0.0]
-	var ucb_priors: Array[float] = [0.15, 0.80, 0.30]
 	_check(
-		worker._select_ucb(ucb_visits, ucb_totals, ucb_priors, 0) == 1,
-		"AI UCB did not explore the highest-prior unvisited action first",
-	)
-	var guarded_agree := worker._guarded_neural_priors(
-		[0.80, 0.10, 0.10],
-		[0.70, 0.20, 0.10],
-	)
-	_check(
-		guarded_agree.size() == 3 and guarded_agree[0] > 0.70,
-		"Deep prior guard did not allow a confident neural nudge that agrees with heuristics",
-	)
-	var guarded_disagree := worker._guarded_neural_priors(
-		[0.05, 0.85, 0.10],
-		[0.70, 0.20, 0.10],
-	)
-	_check(
-		guarded_disagree.size() == 3
-		and is_equal_approx(guarded_disagree[0], 0.70)
-		and is_equal_approx(guarded_disagree[1], 0.20),
-		"Deep prior guard did not preserve a clear heuristic action",
+		not worker.has_method("_select_ucb")
+		and not worker.has_method("_simulate")
+		and not worker.has_method("_neural_action_priors"),
+		"Retired UCB/rollout/neural decision paths remain in the release AI",
 	)
 
 	var cresselia_state := GameState.new()
@@ -5085,6 +5240,1095 @@ func _run_ai_strength_regression_tests(
 		worker._estimated_attack_damage(coin_fail_state, 0, 0, catalog) == 15,
 		"AI damage estimate did not halve coin-flip attack-fail damage",
 	)
+
+
+func _test_ai_damage_counter_scoring_uses_ten_hp_units(
+	catalog: CardCatalog,
+) -> void:
+	var healthy := PlayerState.new()
+	healthy.active = PokemonState.new("sv1-104")
+	var damaged := healthy.clone_state()
+	damaged.active.damage_counters = 3
+	var healthy_score := AITurnBeamPlanner._board_score(healthy, catalog)
+	var damaged_score := AITurnBeamPlanner._board_score(damaged, catalog)
+	_check(
+		is_equal_approx(healthy_score - damaged_score, 30.0 * 0.35 * 1.2),
+		"AI planner board score did not value each damage counter as 10 HP",
+	)
+
+
+func _test_ai_optional_choice_selects_positive_options_to_max(
+	catalog: CardCatalog,
+) -> void:
+	var request := ChoiceView.new(
+		"choice:optional-positive-to-max",
+		0,
+		"select_card",
+		0,
+		"Choose any useful cards.",
+		[
+			{"option_id": "benefit:high", "label": "high"},
+			{"option_id": "benefit:medium", "label": "medium"},
+			{"option_id": "benefit:low", "label": "low"},
+			{"option_id": "benefit:overflow", "label": "overflow"},
+			{"option_id": "cost", "label": "cost"},
+		],
+		0,
+		3,
+		false,
+		true,
+	)
+	var response := AIChoiceSelector.response_from_ranked_scores(
+		request,
+		[
+			{"index": 0, "score": 9.0},
+			{"index": 1, "score": 5.0},
+			{"index": 2, "score": 2.0},
+			{"index": 3, "score": 1.0},
+			{"index": 4, "score": -4.0},
+		],
+		catalog,
+	)
+	_check(
+		not response.cancelled
+		and response.option_ids == [
+			"benefit:high", "benefit:medium", "benefit:low",
+		],
+		"AI optional choice did not take the highest positive-value options up to max_select",
+	)
+
+
+func _test_fire_choice_search_follows_executable_evolution_chain() -> void:
+	var strategy := AIStrategyRegistry.new().strategy_for("fire")
+	var choice_view := {
+		"request_type": "search_deck",
+		"presentation": {"purpose": "search"},
+	}
+	var monferno_option := {"card_id": "svi-monf"}
+	var infernape_option := {"card_id": "svi-infr"}
+	var chimchar_only := {
+		"perspective": 0,
+		"own": {
+			"active": {"card_id": "svi-chim"},
+			"bench": [],
+			"hand": [],
+		},
+	}
+	var chimchar_monferno_score := strategy.choice_option_score(
+		chimchar_only, choice_view, monferno_option)
+	var chimchar_infernape_score := strategy.choice_option_score(
+		chimchar_only, choice_view, infernape_option)
+	_check(
+		chimchar_monferno_score > chimchar_infernape_score + 20.0,
+		"Fire search did not prefer executable Monferno over stranded Infernape from Chimchar",
+	)
+
+	var monferno_ready := {
+		"perspective": 0,
+		"own": {
+			"active": {"card_id": "svi-monf"},
+			"bench": [],
+			"hand": [],
+		},
+	}
+	var ready_infernape_score := strategy.choice_option_score(
+		monferno_ready, choice_view, infernape_option)
+	var ready_monferno_score := strategy.choice_option_score(
+		monferno_ready, choice_view, monferno_option)
+	_check(
+		ready_infernape_score > ready_monferno_score,
+		"Fire search did not prioritize Infernape when Monferno was already in play",
+	)
+	var duplicate_infernape := monferno_ready.duplicate(true)
+	duplicate_infernape["own"]["hand"] = ["svi-infr"]
+	_check(
+		strategy.choice_option_score(
+			duplicate_infernape, choice_view, infernape_option
+		) < ready_infernape_score,
+		"Fire search did not penalize retrieving an Infernape already held in hand",
+	)
+
+	var rare_candy_ready := chimchar_only.duplicate(true)
+	rare_candy_ready["own"]["hand"] = ["sv1-152"]
+	var candy_infernape_score := strategy.choice_option_score(
+		rare_candy_ready, choice_view, infernape_option)
+	var candy_monferno_score := strategy.choice_option_score(
+		rare_candy_ready, choice_view, monferno_option)
+	_check(
+		candy_infernape_score > candy_monferno_score,
+		"Fire search did not prioritize Infernape for an executable Rare Candy route",
+	)
+	var duplicate_monferno := chimchar_only.duplicate(true)
+	duplicate_monferno["own"]["hand"] = ["svi-monf"]
+	var held_monferno_score := strategy.choice_option_score(
+		duplicate_monferno, choice_view, monferno_option)
+	var held_infernape_score := strategy.choice_option_score(
+		duplicate_monferno, choice_view, infernape_option)
+	_check(
+		held_monferno_score < chimchar_monferno_score,
+		"Fire search did not penalize retrieving a Monferno already held in hand",
+	)
+	_check(
+		held_infernape_score > held_monferno_score,
+		"Fire search did not prioritize Infernape when Monferno was already in hand",
+	)
+
+
+func _test_ai_planner_candidate_kind_diversity() -> void:
+	var ranked: Array[Dictionary] = []
+	for index in range(6):
+		ranked.append({
+			"action": GameAction.create(
+				"DECLARE_ATTACK", {"attack_index": index}, 0),
+			"score": 1000.0 - float(index),
+			"index": index,
+		})
+	ranked.append({
+		"action": GameAction.create("EVOLVE", {}, 0),
+		"score": 100.0,
+		"index": 6,
+	})
+	ranked.append({
+		"action": GameAction.create("ATTACH_ENERGY", {}, 0),
+		"score": 90.0,
+		"index": 7,
+	})
+	var selected := AITurnBeamPlanner._diverse_top_actions(ranked, 3)
+	var kinds: Array[String] = []
+	for row_value in selected:
+		var row: Dictionary = row_value
+		var action: GameAction = row.get("action")
+		if action != null:
+			kinds.append(action.kind)
+	_check(
+		selected.size() == 3
+		and kinds.has("DECLARE_ATTACK")
+		and kinds.has("EVOLVE")
+		and kinds.has("ATTACH_ENERGY"),
+		"AI planner candidate cap starved evolution/resource action categories behind attacks",
+	)
+	var development_only: Array[Dictionary] = []
+	for kind in [
+		"USE_ABILITY", "PLAY_TRAINER", "EVOLVE", "ATTACH_ENERGY", "PLAY_BASIC", "RETREAT",
+	]:
+		development_only.append({
+			"action": GameAction.create(kind, {}, 0),
+			"score": 500.0 - float(development_only.size()),
+			"index": development_only.size(),
+		})
+	development_only.append({
+		"action": GameAction.create("END_TURN", {}, 0),
+		"score": -100.0,
+		"index": development_only.size(),
+	})
+	var terminal_candidates := AITurnBeamPlanner._diverse_top_actions(
+		development_only, 6)
+	var final_depth_candidates := AITurnBeamPlanner._terminal_candidates(
+		terminal_candidates)
+	var has_terminal_candidate := false
+	for terminal_row_value in terminal_candidates:
+		var terminal_row: Dictionary = terminal_row_value
+		var terminal_action: GameAction = terminal_row.get("action")
+		if terminal_action != null and terminal_action.terminal:
+			has_terminal_candidate = true
+			break
+	_check(
+		has_terminal_candidate,
+		"AI planner candidate cap omitted every turn-completing action",
+	)
+	var all_final_candidates_terminal := not final_depth_candidates.is_empty()
+	for final_row_value in final_depth_candidates:
+		var final_row: Dictionary = final_row_value
+		var final_action: GameAction = final_row.get("action")
+		if final_action == null or not final_action.terminal:
+			all_final_candidates_terminal = false
+			break
+	_check(
+		all_final_candidates_terminal,
+		"AI planner final depth retained a nonterminal action outside the scored turn horizon",
+	)
+
+
+func _test_ai_random_event_invalidates_plan_cache() -> void:
+	var action := GameAction.create("PLAY_TRAINER", {}, 0)
+	var deterministic_step := StepResult.new(true, "played")
+	var random_step := StepResult.new(
+		true, "flipped", null, [{"event_type": "coin_flip"}])
+	var random_trace := {
+		"had_choice": false,
+		"unpredictable": AITurnBeamPlanner._step_has_unpredictable_event(random_step),
+	}
+	_check(
+		AITurnBeamPlanner._action_allows_cache_continuation(
+			action, deterministic_step, {"had_choice": false, "unpredictable": false})
+		and bool(random_trace["unpredictable"])
+		and not AITurnBeamPlanner._action_allows_cache_continuation(
+			action, random_step, random_trace),
+		"AI planner kept a cached continuation open after a random event",
+	)
+
+
+func _test_ai_complete_leaf_beats_incomparable_partial() -> void:
+	var partial_best := {
+		"score": 240.0,
+		"ended": false,
+		"sequence": [GameAction.create("EVOLVE", {}, 0)],
+	}
+	var attack_leaf := {
+		"score": 180.0,
+		"ended": true,
+		"sequence": [GameAction.create(
+			"DECLARE_ATTACK", {"attack_index": 0}, 0)],
+	}
+	var selected := AITurnBeamPlanner._preferred_final_node(attack_leaf, partial_best)
+	var selected_sequence: Array = selected.get("sequence", [])
+	var selected_action: GameAction = (
+		selected_sequence[0] if not selected_sequence.is_empty() else null)
+	_check(
+		is_equal_approx(float(selected.get("score", -INF)), 180.0)
+		and selected_action != null
+		and selected_action.kind == "DECLARE_ATTACK",
+		"AI planner compared an unopposed partial state against a completed reply-scored leaf",
+	)
+
+
+func _test_ai_cached_action_passes_post_plan_tactical_guard(
+	catalog: CardCatalog,
+	engine: GameEngine,
+	worker: NativeChallengeAI,
+) -> void:
+	var state := _battle_state()
+	state.revision = 9
+	state.turn_number = 4
+	state.active_player_idx = 0
+	state.public_deck_keys = ["psychic", "water"]
+	state.set_type_matchups_enabled(false)
+	var legal_actions: Array[GameAction] = []
+	var end_turn: GameAction = null
+	var attach_energy: GameAction = null
+	for action_value in RulesTestHarness.legal_actions(engine, state, 0, false):
+		var action: GameAction = action_value
+		if action.kind == "END_TURN":
+			end_turn = action
+		elif action.kind == "ATTACH_ENERGY" and attach_energy == null:
+			attach_energy = action
+	if end_turn != null:
+		legal_actions.append(end_turn)
+	if attach_energy != null:
+		legal_actions.append(attach_energy)
+	_check(
+		end_turn != null and attach_energy != null,
+		"AI cache tactical-guard fixture did not expose end-turn and attachment actions",
+	)
+	if end_turn == null or attach_energy == null:
+		return
+	var match_seed := 2026072104
+	var information_set := AIInformationSet.capture(
+		state, 0, catalog, legal_actions, [], match_seed)
+	_check(
+		information_set.is_valid(),
+		"AI cache tactical-guard fixture could not capture an information set",
+	)
+	if not information_set.is_valid():
+		return
+	var action_rows: Array = []
+	for action in legal_actions:
+		action_rows.append(action.to_dict())
+	var request := {
+		"kind": "action",
+		"state": state.snapshot(),
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": "cached-post-plan-tactical-guard",
+		"mode": "challenge",
+		"deck_key": "psychic",
+		"seed": 20260721,
+		"match_seed": match_seed,
+		"match_instance_id": "cached-guard-match",
+		"simulation_budget": 16,
+		"max_depth": 2,
+		"deterministic": true,
+		"actions": action_rows,
+	}
+	var cache_key := worker._turn_plan_cache_key(
+		request, information_set, "psychic")
+	var cached_intent := worker._intent_with_precondition(
+		end_turn, information_set.cache_precondition())
+	worker._turn_plan_cache.clear()
+	worker._turn_plan_cache[cache_key] = {
+		"intents": [cached_intent],
+		"last_revision": state.revision - 1,
+	}
+	var result := worker.decide(request, func() -> bool: return false)
+	worker._turn_plan_cache.clear()
+	var selected: Dictionary = result.get("action", {})
+	_check(
+		bool(result.get("success", false))
+		and bool(result.get("turn_plan_cache_hit", false))
+		and str(selected.get("kind", "")) == "ATTACH_ENERGY"
+		and str(result.get("forced_tactic", "")) == "post_plan_tactical_guard",
+		"AI cache hit bypassed the post-plan tactical guard: %s" % JSON.stringify(result),
+	)
+
+
+func _test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
+	catalog: CardCatalog,
+	engine: GameEngine,
+	worker: NativeChallengeAI,
+) -> void:
+	var state := _battle_state()
+	state.revision = 19
+	state.turn_number = 5
+	state.first_player_idx = 0
+	state.active_player_idx = 0
+	state.public_deck_keys = ["water", "fire"]
+	state.set_type_matchups_enabled(false)
+	state.players[0].active = PokemonState.new("sv2-starm")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].bench[0] = PokemonState.new("svi-chim")
+	state.players[0].bench[0].placed_this_turn = false
+	state.players[0].hand.clear()
+	var legal_actions: Array[GameAction] = []
+	legal_actions.assign(RulesTestHarness.legal_actions(engine, state, 0, false))
+	var self_ko_ability: GameAction = null
+	var end_turn: GameAction = null
+	for action in legal_actions:
+		if (
+			action.kind == "USE_ABILITY"
+			and str(action.payload.get("ability_name", "")) == "神秘彗星"
+		):
+			self_ko_ability = action
+		elif action.kind == "END_TURN":
+			end_turn = action
+	_check(
+		self_ko_ability != null and end_turn != null,
+		"AI cached self-KO guard fixture did not expose ability and end-turn actions",
+	)
+	if self_ko_ability == null or end_turn == null:
+		return
+	var self_damage_source := PokemonState.new("svf-luca")
+	self_damage_source.placed_this_turn = false
+	state.players[0].bench[1] = self_damage_source
+	var self_damage_action := GameAction.create(
+		"USE_ABILITY",
+		{"slot": "bench_1", "ability_name": "旺盛斗气"},
+		0,
+		EntityRef.new("pokemon", 0, "", "bench_1", -1, "", "svf-luca"),
+	)
+	_check(
+		worker._cached_action_needs_tactical_guard(
+			state, 0, self_ko_ability, catalog)
+		and worker._cached_action_needs_tactical_guard(
+			state, 0, self_damage_action, catalog),
+		"AI cache guard did not classify self-KO/self-damage abilities as irreversible",
+	)
+
+	var match_seed := 2026072201
+	var information_set := AIInformationSet.capture(
+		state, 0, catalog, legal_actions, [], match_seed)
+	_check(
+		information_set.is_valid(),
+		"AI cached self-KO guard fixture could not capture an information set",
+	)
+	if not information_set.is_valid():
+		return
+	var action_rows: Array = []
+	for action in legal_actions:
+		action_rows.append(action.to_dict())
+	var request := {
+		"kind": "action",
+		"state": state.snapshot(),
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": "cached-self-ko-post-plan-tactical-guard",
+		"mode": "challenge",
+		"deck_key": "water",
+		"seed": 20260722,
+		"match_seed": match_seed,
+		"match_instance_id": "cached-self-ko-guard-match",
+		"simulation_budget": 16,
+		"max_depth": 2,
+		"deterministic": true,
+		"actions": action_rows,
+	}
+	var cache_key := worker._turn_plan_cache_key(
+		request, information_set, "water")
+	worker._turn_plan_cache.clear()
+	worker._turn_plan_cache[cache_key] = {
+		"intents": [worker._intent_with_precondition(
+			self_ko_ability, information_set.cache_precondition())],
+		"last_revision": state.revision - 1,
+	}
+	var result := worker.decide(request, func() -> bool: return false)
+	worker._turn_plan_cache.clear()
+	var selected: Dictionary = result.get("action", {})
+	_check(
+		bool(result.get("success", false))
+		and bool(result.get("turn_plan_cache_hit", false))
+		and str(selected.get("kind", "")) == "END_TURN"
+		and str(result.get("forced_tactic", "")) == "post_plan_tactical_guard",
+		"Cached self-KO ability bypassed the tactical guard: %s" % JSON.stringify(result),
+	)
+
+
+func _test_ai_self_ko_scoring_uses_counter_units_and_source_slot(
+	catalog: CardCatalog,
+	worker: NativeChallengeAI,
+) -> void:
+	var state := _battle_state()
+	state.players[0].active = PokemonState.new("svl-pikaex")
+	state.players[0].active.energy_card_ids.assign([
+		"sv1-ener-4", "sv1-ener-4", "sv1-ener-4",
+	])
+	state.players[0].bench[0] = PokemonState.new("sv2-starm")
+	state.players[0].bench[0].evolution_stack_ids.append("sv2-staryu")
+	var effect: Dictionary = Dictionary(
+		catalog.get_card("sv2-starm").get("abilities", [])[0]).get(
+			"effects", [])[0]
+	var damage := worker._effect_damage_estimate(state, 0, effect, catalog)
+	var source_cost := worker._self_ko_source_cost(
+		state, 0, "bench_0", catalog)
+	var value_before := worker._semantic_damage_effect_value(
+		state, 0, effect, "bench_0", catalog)
+	state.players[0].active = PokemonState.new("sv1-104")
+	var value_after_active_change := worker._semantic_damage_effect_value(
+		state, 0, effect, "bench_0", catalog)
+	state.players[0].bench[0].energy_card_ids.append("sv1-ener-3")
+	state.players[0].bench[0].attached_tool_id = "sv1-202"
+	var loaded_source_cost := worker._self_ko_source_cost(
+		state, 0, "bench_0", catalog)
+	var loaded_value := worker._semantic_damage_effect_value(
+		state, 0, effect, "bench_0", catalog)
+	_check(
+		damage == 20
+		and is_equal_approx(value_before, 20.0 * 1.15 - source_cost)
+		and is_equal_approx(value_after_active_change, value_before)
+		and loaded_source_cost > source_cost
+		and is_equal_approx(
+			value_before - loaded_value, loaded_source_cost - source_cost),
+		"AI self-KO scoring lost counter units or charged the Active instead of its source",
+	)
+
+
+func _test_ai_mandatory_tactics_establishes_backup_before_ordinary_attack(
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	var state := _ai_lone_active_backup_fixture("sv2-delib", 6)
+	var actions: Array[GameAction] = []
+	actions.assign(RulesTestHarness.legal_actions(engine, state, 0, false))
+	var has_attack := false
+	var has_basic := false
+	for action in actions:
+		has_attack = has_attack or action.kind == "DECLARE_ATTACK"
+		has_basic = has_basic or (
+			action.kind == "PLAY_BASIC"
+			and action.target != null
+			and action.target.slot.begins_with("bench_"))
+	var information_set := AIInformationSet.capture(
+		state, 0, catalog, actions, [], 2026072105)
+	var resolved := AIMandatoryTactics.new().resolve(
+		information_set,
+		state,
+		0,
+		actions,
+		engine,
+		null,
+		20260721,
+	)
+	var selected: GameAction = resolved.get("action")
+	_check(
+		has_attack
+		and has_basic
+		and bool(resolved.get("resolved", false))
+		and str(resolved.get("reason", "")) == "establish_only_backup"
+		and selected != null
+		and selected.kind == "PLAY_BASIC"
+		and selected.target != null
+		and selected.target.slot.begins_with("bench_"),
+		"AI mandatory tactics attacked before establishing its only backup: %s"
+		% JSON.stringify(resolved),
+	)
+	var diagnostics := NativeChallengeAI.new().diagnose_decision(
+		state,
+		0,
+		selected,
+		actions,
+		"lightning",
+		catalog,
+		engine,
+		2026072105,
+	)
+	_check(
+		int(diagnostics.get("missed_immediate_ko", 1)) == 0,
+		"AI diagnostics reported intentional only-backup development as a missed KO",
+	)
+
+	# The mandatory survival branch used to sort the serialized action signature,
+	# whose source hand index precedes card_id. That made the chosen backup depend
+	# on presentation order and bypassed both the trusted and deck-strategy scores.
+	var prefer_mareep := func(
+		_state: GameState,
+		_actor: int,
+		action: GameAction,
+	) -> float:
+		return (
+			500.0
+			if action.source != null and action.source.card_id == "svl-mare2"
+			else 0.0
+		)
+	var ordered_state := _ai_lone_active_backup_fixture("sv2-delib", 6)
+	ordered_state.players[0].hand.assign(["svl-pikaex", "svl-mare2"])
+	var ordered_actions: Array[GameAction] = []
+	ordered_actions.assign(
+		RulesTestHarness.legal_actions(engine, ordered_state, 0, false))
+	var ordered_info := AIInformationSet.capture(
+		ordered_state, 0, catalog, ordered_actions, [], 2026072107)
+	var ordered_result := AIMandatoryTactics.new().resolve(
+		ordered_info,
+		ordered_state,
+		0,
+		ordered_actions,
+		engine,
+		null,
+		2026072107,
+		Callable(),
+		0,
+		192,
+		Callable(),
+		prefer_mareep,
+	)
+	var ordered_backup: GameAction = ordered_result.get("action")
+
+	var reversed_state := ordered_state.clone_state()
+	reversed_state.players[0].hand.reverse()
+	var reversed_actions: Array[GameAction] = []
+	reversed_actions.assign(
+		RulesTestHarness.legal_actions(engine, reversed_state, 0, false))
+	var reversed_info := AIInformationSet.capture(
+		reversed_state, 0, catalog, reversed_actions, [], 2026072107)
+	var reversed_result := AIMandatoryTactics.new().resolve(
+		reversed_info,
+		reversed_state,
+		0,
+		reversed_actions,
+		engine,
+		null,
+		2026072107,
+		Callable(),
+		0,
+		192,
+		Callable(),
+		prefer_mareep,
+	)
+	var reversed_backup: GameAction = reversed_result.get("action")
+	var reversed_diagnostics := NativeChallengeAI.new().diagnose_decision(
+		reversed_state,
+		0,
+		reversed_backup,
+		reversed_actions,
+		"lightning",
+		catalog,
+		engine,
+		2026072107,
+	)
+	_check(
+		ordered_info.is_valid()
+		and reversed_info.is_valid()
+		and str(ordered_result.get("reason", "")) == "establish_only_backup"
+		and str(reversed_result.get("reason", "")) == "establish_only_backup"
+		and ordered_backup != null
+		and reversed_backup != null
+		and ordered_backup.source != null
+		and reversed_backup.source != null
+		and ordered_backup.source.card_id == "svl-mare2"
+		and reversed_backup.source.card_id == "svl-mare2"
+		and int(reversed_diagnostics.get("missed_immediate_ko", 1)) == 0,
+		"AI survival backup ignored trusted scoring or depended on hand order: %s / %s"
+		% [JSON.stringify(ordered_result), JSON.stringify(reversed_result)],
+	)
+
+	# Scores inside the explicit epsilon are one deterministic tie. Using
+	# is_equal_approx here used to leave a near-zero dead band whose winner
+	# depended on the supplied legal-action order.
+	var prefer_pikachu_by_sub_epsilon := func(
+		_state: GameState,
+		_actor: int,
+		action: GameAction,
+	) -> float:
+		return (
+			0.0005
+			if action.source != null and action.source.card_id == "svl-pikaex"
+			else 0.0
+		)
+	var reversed_action_order: Array[GameAction] = []
+	reversed_action_order.assign(ordered_actions)
+	reversed_action_order.reverse()
+	var near_tie_forward := AIMandatoryTactics.survival_backup_action(
+		ordered_state,
+		0,
+		ordered_actions,
+		null,
+		null,
+		null,
+		prefer_pikachu_by_sub_epsilon,
+	)
+	var near_tie_reversed := AIMandatoryTactics.survival_backup_action(
+		ordered_state,
+		0,
+		reversed_action_order,
+		null,
+		null,
+		null,
+		prefer_pikachu_by_sub_epsilon,
+	)
+	_check(
+		near_tie_forward != null
+		and near_tie_reversed != null
+		and near_tie_forward.source != null
+		and near_tie_reversed.source != null
+		and near_tie_forward.source.card_id == "svl-mare2"
+		and near_tie_reversed.source.card_id == "svl-mare2",
+		"AI survival backup near-tie depended on legal-action order: %s / %s"
+		% [
+			near_tie_forward.to_dict() if near_tie_forward != null else {},
+			near_tie_reversed.to_dict() if near_tie_reversed != null else {},
+		],
+	)
+
+	# Keep the deck hook independently covered: a flat trusted evaluator must not
+	# mask the read-only strategy adjustment used by survival ranking.
+	var flat_trusted_score := func(
+		_state: GameState,
+		_actor: int,
+		_action: GameAction,
+	) -> float:
+		return 0.0
+	var prefer_pikachu_strategy_score := func(
+		_info: Dictionary,
+		action_row: Dictionary,
+		_semantic_catalog: Dictionary,
+	) -> float:
+		var source_value: Variant = action_row.get("source")
+		var card_id := (
+			str(Dictionary(source_value).get("card_id", ""))
+			if source_value is Dictionary
+			else ""
+		)
+		return 25.0 if card_id == "svl-pikaex" else 0.0
+	var strategy_only := {"action_score": prefer_pikachu_strategy_score}
+	var strategy_ranked_forward := AIMandatoryTactics.survival_backup_action(
+		ordered_state,
+		0,
+		ordered_actions,
+		ordered_info,
+		strategy_only,
+		catalog,
+		flat_trusted_score,
+	)
+	var strategy_ranked_reversed := AIMandatoryTactics.survival_backup_action(
+		ordered_state,
+		0,
+		reversed_action_order,
+		ordered_info,
+		strategy_only,
+		catalog,
+		flat_trusted_score,
+	)
+	_check(
+		strategy_ranked_forward != null
+		and strategy_ranked_reversed != null
+		and strategy_ranked_forward.source != null
+		and strategy_ranked_reversed.source != null
+		and strategy_ranked_forward.source.card_id == "svl-pikaex"
+		and strategy_ranked_reversed.source.card_id == "svl-pikaex",
+		"AI survival backup ignored the deck strategy score: %s / %s"
+		% [
+			strategy_ranked_forward.to_dict()
+			if strategy_ranked_forward != null else {},
+			strategy_ranked_reversed.to_dict()
+			if strategy_ranked_reversed != null else {},
+		],
+	)
+
+
+func _test_ai_mandatory_tactics_immediate_match_win_beats_backup(
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	var state := _ai_lone_active_backup_fixture("sv2-delib", 1)
+	state.players[0].hand.assign(["svl-pikaex", "svl-mare2"])
+	var actions: Array[GameAction] = []
+	actions.assign(RulesTestHarness.legal_actions(engine, state, 0, false))
+	var information_set := AIInformationSet.capture(
+		state, 0, catalog, actions, [], 2026072106)
+	var prefer_mareep := func(
+		_state: GameState,
+		_actor: int,
+		action: GameAction,
+	) -> float:
+		return (
+			500.0
+			if action.source != null and action.source.card_id == "svl-mare2"
+			else 0.0
+		)
+	var resolved := AIMandatoryTactics.new().resolve(
+		information_set,
+		state,
+		0,
+		actions,
+		engine,
+		null,
+		20260722,
+		Callable(),
+		0,
+		192,
+		Callable(),
+		prefer_mareep,
+	)
+	var selected: GameAction = resolved.get("action")
+	_check(
+		bool(resolved.get("resolved", false))
+		and str(resolved.get("reason", "")) == "immediate_match_win"
+		and selected != null
+		and selected.kind == "DECLARE_ATTACK",
+		"AI mandatory tactics benched a Basic instead of taking a deterministic match win: %s"
+		% JSON.stringify(resolved),
+	)
+
+
+func _ai_lone_active_backup_fixture(
+	opponent_card_id: String,
+	own_prize_count: int,
+) -> GameState:
+	var state := GameState.new()
+	state.phase = "MAIN"
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.turn_number = 5
+	state.first_player_idx = 1
+	state.active_player_idx = 0
+	state.public_deck_keys = ["lightning", "water"]
+	state.set_type_matchups_enabled(false)
+	state.players[0].active = PokemonState.new("svl-zera")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].active.energy_card_ids.assign([
+		"sv1-ener-4", "sv1-ener-4",
+	])
+	state.players[0].hand = ["svl-mare2"]
+	state.players[0].deck = ["sv1-ener-4", "sv1-ener-4"]
+	state.players[0].prizes.clear()
+	for _index in range(own_prize_count):
+		state.players[0].prizes.append("sv1-ener-4")
+	state.players[1].active = PokemonState.new(opponent_card_id)
+	state.players[1].active.placed_this_turn = false
+	state.players[1].bench[0] = PokemonState.new("sv2-staryu")
+	state.players[1].bench[0].placed_this_turn = false
+	state.players[1].deck = ["sv1-ener-3", "sv1-ener-3"]
+	state.players[1].prizes.assign([
+		"sv1-ener-3", "sv1-ener-3", "sv1-ener-3",
+		"sv1-ener-3", "sv1-ener-3", "sv1-ener-3",
+	])
+	return state
+
+
+func _test_ai_adaptive_belief_samples_follow_random_semantics(
+	catalog: CardCatalog,
+) -> void:
+	var semantic_catalog := CardSemanticCatalog.new(catalog)
+	var deterministic_actions: Array[GameAction] = [
+		GameAction.create(
+			"DECLARE_ATTACK",
+			{"attack_index": 0},
+			0,
+			EntityRef.new("pokemon", 0, "field", "active", -1, "", "svl-zera"),
+		),
+		GameAction.create("END_TURN", {}, 0),
+	]
+	var random_attack_actions: Array[GameAction] = [
+		GameAction.create(
+			"DECLARE_ATTACK",
+			{"attack_index": 0},
+			0,
+			EntityRef.new("pokemon", 0, "field", "active", -1, "", "sv1-107"),
+		),
+	]
+	var hidden_top_attack_actions: Array[GameAction] = [
+		GameAction.create(
+			"DECLARE_ATTACK",
+			{"attack_index": 0},
+			0,
+			EntityRef.new("pokemon", 0, "field", "active", -1, "", "svi-infr"),
+		),
+	]
+	var random_trainer_actions: Array[GameAction] = [
+		GameAction.create(
+			"PLAY_TRAINER",
+			{},
+			0,
+			EntityRef.new("card", 0, "hand", "", 0, "", "sv2-catch"),
+		),
+	]
+	var hidden_top_trainer_actions: Array[GameAction] = [
+		GameAction.create(
+			"PLAY_TRAINER",
+			{},
+			0,
+			EntityRef.new("card", 0, "hand", "", 0, "", "svi-enst"),
+		),
+		GameAction.create(
+			"PLAY_TRAINER",
+			{},
+			0,
+			EntityRef.new("card", 0, "hand", "", 1, "", "svl-trks"),
+		),
+	]
+	var hidden_top_setup_attack_actions: Array[GameAction] = [
+		GameAction.create(
+			"DECLARE_ATTACK",
+			{"attack_index": 0},
+			0,
+			EntityRef.new("pokemon", 0, "field", "active", -1, "", "svm-smeargle"),
+		),
+	]
+	_check(
+		TraditionalTurnPlanner.recommended_belief_samples(
+			deterministic_actions, semantic_catalog) == 1,
+		"AI adaptive belief sampling split a deterministic action set",
+	)
+	_check(
+		TraditionalTurnPlanner.recommended_belief_samples(
+			random_attack_actions, semantic_catalog) == 3,
+		"AI adaptive belief sampling did not detect a real catalog coin-flip attack",
+	)
+	_check(
+		TraditionalTurnPlanner.recommended_belief_samples(
+			hidden_top_attack_actions, semantic_catalog) == 3,
+		"AI adaptive belief sampling did not detect hidden top-deck attack damage",
+	)
+	_check(
+		TraditionalTurnPlanner.recommended_belief_samples(
+			random_trainer_actions, semantic_catalog) == 3,
+		"AI adaptive belief sampling did not detect a real catalog coin-flip Trainer",
+	)
+	_check(
+		TraditionalTurnPlanner.recommended_belief_samples(
+			hidden_top_trainer_actions, semantic_catalog) == 3,
+		"AI adaptive belief sampling did not detect hidden top-deck Trainers",
+	)
+	_check(
+		TraditionalTurnPlanner.recommended_belief_samples(
+			hidden_top_setup_attack_actions, semantic_catalog) == 3,
+		"AI adaptive belief sampling did not detect a hidden top-deck setup attack",
+	)
+
+
+func _test_ai_public_attack_profile_values_energy_and_readiness(
+	catalog: CardCatalog,
+) -> void:
+	var typed_energy := PokemonState.new("sv1-107")
+	typed_energy.energy_card_ids = ["sv1-ener-5"]
+	var wrong_energy := PokemonState.new("sv1-107")
+	wrong_energy.energy_card_ids = ["sv1-ener-4"]
+	var no_energy := PokemonState.new("sv1-107")
+	var typed_profile := AITurnBeamPlanner._public_attack_profile(
+		typed_energy, catalog)
+	var wrong_profile := AITurnBeamPlanner._public_attack_profile(
+		wrong_energy, catalog)
+	var empty_profile := AITurnBeamPlanner._public_attack_profile(
+		no_energy, catalog)
+	var typed_player := PlayerState.new()
+	typed_player.active = typed_energy
+	var wrong_player := PlayerState.new()
+	wrong_player.active = wrong_energy
+	var empty_player := PlayerState.new()
+	empty_player.active = no_energy
+	var typed_score := AITurnBeamPlanner._board_score(typed_player, catalog)
+	var wrong_score := AITurnBeamPlanner._board_score(wrong_player, catalog)
+	var empty_score := AITurnBeamPlanner._board_score(empty_player, catalog)
+	_check(
+		int(typed_profile.get("useful_units", -1)) == 1
+		and int(typed_profile.get("minimum_missing", -1)) == 0
+		and int(wrong_profile.get("useful_units", -1)) == 0
+		and int(wrong_profile.get("stranded_units", -1)) == 1
+		and int(wrong_profile.get("minimum_missing", -1)) == 1
+		and typed_score > wrong_score,
+		"AI public attack profile did not value valid typed energy above wrong-type energy",
+	)
+	_check(
+		int(empty_profile.get("minimum_missing", -1)) == 1
+		and float(typed_profile.get("ready_ratio", -1.0))
+		> float(empty_profile.get("ready_ratio", -1.0))
+		and typed_score > empty_score,
+		"AI board readiness score was not ordered from zero to one missing energy",
+	)
+
+	var double_units := PokemonState.new("svd-maschiff")
+	double_units.energy_card_ids = ["svi-dtur"]
+	var single_unit := PokemonState.new("svd-maschiff")
+	single_unit.energy_card_ids = ["sv1-ener-5"]
+	var double_profile := AITurnBeamPlanner._public_attack_profile(
+		double_units, catalog)
+	var single_profile := AITurnBeamPlanner._public_attack_profile(
+		single_unit, catalog)
+	var double_player := PlayerState.new()
+	double_player.active = double_units
+	var single_player := PlayerState.new()
+	single_player.active = single_unit
+	_check(
+		int(double_profile.get("available_units", -1)) == 2
+		and int(double_profile.get("useful_units", -1)) == 2
+		and int(double_profile.get("minimum_missing", -1)) == 0
+		and int(single_profile.get("available_units", -1)) == 1
+		and int(single_profile.get("minimum_missing", -1)) == 1
+		and AITurnBeamPlanner._board_score(double_player, catalog)
+		> AITurnBeamPlanner._board_score(single_player, catalog),
+		"AI public attack profile did not count special double energy via available_energy",
+	)
+
+
+func _test_ai_public_attack_profile_status_gates(
+	catalog: CardCatalog,
+) -> void:
+	var normal := PokemonState.new("sv1-107")
+	normal.energy_card_ids = ["sv1-ener-5"]
+	var asleep := normal.clone_state()
+	asleep.status_conditions = ["ASLEEP"]
+	var paralyzed := normal.clone_state()
+	paralyzed.status_conditions = ["PARALYZED"]
+	var confused := normal.clone_state()
+	confused.status_conditions = ["CONFUSED"]
+	var normal_profile := AITurnBeamPlanner._public_attack_profile(normal, catalog)
+	var asleep_profile := AITurnBeamPlanner._public_attack_profile(asleep, catalog)
+	var paralyzed_profile := AITurnBeamPlanner._public_attack_profile(
+		paralyzed, catalog)
+	var confused_profile := AITurnBeamPlanner._public_attack_profile(
+		confused, catalog)
+	var normal_player := PlayerState.new()
+	normal_player.active = normal
+	var asleep_player := PlayerState.new()
+	asleep_player.active = asleep
+	var paralyzed_player := PlayerState.new()
+	paralyzed_player.active = paralyzed
+	var confused_player := PlayerState.new()
+	confused_player.active = confused
+	var normal_score := AITurnBeamPlanner._board_score(normal_player, catalog)
+	var asleep_score := AITurnBeamPlanner._board_score(asleep_player, catalog)
+	var paralyzed_score := AITurnBeamPlanner._board_score(paralyzed_player, catalog)
+	var confused_score := AITurnBeamPlanner._board_score(confused_player, catalog)
+	_check(
+		is_equal_approx(float(normal_profile.get("gate_probability", -1.0)), 1.0)
+		and is_equal_approx(float(asleep_profile.get("gate_probability", -1.0)), 0.0)
+		and is_equal_approx(float(
+			paralyzed_profile.get("gate_probability", -1.0)), 0.0)
+		and is_equal_approx(float(confused_profile.get(
+			"gate_probability", -1.0)), 0.5),
+		"AI public attack profile assigned incorrect status attack gates",
+	)
+	_check(
+		normal_score > confused_score
+		and confused_score > asleep_score
+		and is_equal_approx(asleep_score, paralyzed_score),
+		"AI board score did not apply ordered normal/confused/asleep/paralyzed gates",
+	)
+
+
+func _test_ai_turn_replan_ledger_tiers_and_scope(
+	catalog: CardCatalog,
+	worker: NativeChallengeAI,
+) -> void:
+	var state := _battle_state()
+	state.turn_number = 4
+	state.revision = 10
+	state.public_deck_keys = ["psychic", "water"]
+	state.set_type_matchups_enabled(false)
+	var information_set := AIInformationSet.capture(
+		state, 0, catalog, [], [], 2026072107)
+	var match_a_request := {"match_instance_id": "replan-ledger-match-a"}
+	var turn_key := worker._turn_plan_cache_key(
+		match_a_request, information_set, "psychic")
+	worker._turn_replan_ledger.clear()
+	var full := worker._reserve_turn_replan_tier(turn_key, 10, "replan:full")
+	var full_retry := worker._reserve_turn_replan_tier(
+		turn_key, 10, "replan:full-retry")
+	var entry_after_retry: Dictionary = Dictionary(
+		worker._turn_replan_ledger.get(turn_key, {})).duplicate(true)
+	var local_one := worker._reserve_turn_replan_tier(
+		turn_key, 11, "replan:local-1")
+	var local_two := worker._reserve_turn_replan_tier(
+		turn_key, 12, "replan:local-2")
+	var local_three := worker._reserve_turn_replan_tier(
+		turn_key, 13, "replan:local-3")
+	var local_four := worker._reserve_turn_replan_tier(
+		turn_key, 14, "replan:local-4")
+	var local_five := worker._reserve_turn_replan_tier(
+		turn_key, 15, "replan:local-5")
+	var exhausted := worker._reserve_turn_replan_tier(
+		turn_key, 16, "replan:exhausted")
+	_check(
+		str(full.get("tier", "")) == "full"
+		and int(full.get("ordinal", 0)) == 1
+		and full_retry == full
+		and int(entry_after_retry.get("full_replans", -1)) == 1
+		and int(entry_after_retry.get("local_replans", -1)) == 0
+		and str(local_one.get("tier", "")) == "local"
+		and int(local_one.get("ordinal", 0)) == 2
+		and str(local_two.get("tier", "")) == "local"
+		and int(local_two.get("ordinal", 0)) == 3
+		and str(local_three.get("tier", "")) == "local"
+		and int(local_three.get("ordinal", 0)) == 4
+		and str(local_four.get("tier", "")) == "local"
+		and int(local_four.get("ordinal", 0)) == 5
+		and str(local_five.get("tier", "")) == "local"
+		and int(local_five.get("ordinal", 0)) == 6
+		and str(exhausted.get("tier", "")) == "exhausted"
+		and int(exhausted.get("ordinal", 0)) == 7,
+		"AI turn replan ledger did not cover the six-action planning horizon",
+	)
+
+	var local_budget_start := 1_000_000
+	var local_budget := worker._bounded_traditional_planner_request(
+		{"node_budget": 192, "max_depth": 6, "time_budget_ms": 850},
+		local_budget_start,
+		{"tier": "local"},
+	)
+	_check(
+		NativeChallengeAI.TURN_REPLAN_FULL_LIMIT
+			+ NativeChallengeAI.TURN_REPLAN_LOCAL_LIMIT
+			== NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH
+		and int(local_budget.get("time_budget_ms", 0))
+			== NativeChallengeAI.TURN_REPLAN_LOCAL_SOFT_MSEC
+		and int(local_budget.get("soft_deadline_usec", 0))
+			== local_budget_start + NativeChallengeAI.TURN_REPLAN_LOCAL_SOFT_MSEC * 1000
+		and int(local_budget.get("hard_deadline_usec", 0))
+			== local_budget_start + NativeChallengeAI.TURN_REPLAN_LOCAL_HARD_MSEC * 1000,
+		"AI local replans escaped the bounded six-action turn budget",
+	)
+
+	var next_turn := GameState.from_dict(state.snapshot())
+	next_turn.turn_number = 5
+	next_turn.revision = 14
+	var next_turn_information := AIInformationSet.capture(
+		next_turn, 0, catalog, [], [], 2026072107)
+	var next_turn_key := worker._turn_plan_cache_key(
+		match_a_request, next_turn_information, "psychic")
+	var next_turn_tier := worker._reserve_turn_replan_tier(
+		next_turn_key, 14, "replan:new-turn")
+	var match_b_request := {"match_instance_id": "replan-ledger-match-b"}
+	var next_match_key := worker._turn_plan_cache_key(
+		match_b_request, information_set, "psychic")
+	var next_match_tier := worker._reserve_turn_replan_tier(
+		next_match_key, 20, "replan:new-match")
+	_check(
+		not turn_key.is_empty()
+		and next_turn_key != turn_key
+		and next_match_key != turn_key
+		and str(next_turn_tier.get("tier", "")) == "full"
+		and int(next_turn_tier.get("ordinal", 0)) == 1
+		and str(next_match_tier.get("tier", "")) == "full"
+		and int(next_match_tier.get("ordinal", 0)) == 1,
+		"AI turn replan ledger did not reset its scope for a new turn or match instance",
+	)
+	worker._turn_replan_ledger.clear()
 
 
 func _ai_decision_for_actions(
@@ -10342,6 +11586,72 @@ func _battle_state() -> GameState:
 	return state
 
 
+func _run_conditional_damage_regression_tests(engine: GameEngine) -> void:
+	var water_weak := false
+	for weakness_value in engine.catalog.get_card("svi-infr").get("weaknesses", []):
+		var weakness: Dictionary = weakness_value
+		if str(weakness.get("energy_type", "")) == "Water":
+			water_weak = true
+			break
+	_check(water_weak, "Greninja regression target must retain its Water weakness")
+
+	var cases: Array[Dictionary] = [
+		{"name": "full-health", "initial_counters": 0, "expected_damage": 120},
+		{"name": "already-damaged", "initial_counters": 1, "expected_damage": 240},
+	]
+	for case_value in cases:
+		var case: Dictionary = case_value
+		var state := _battle_state()
+		state.set_type_matchups_enabled(false)
+		state.players[0].active = PokemonState.new("sv2-grex")
+		state.players[0].active.placed_this_turn = false
+		_set_energy_cards(
+			state.players[0].active,
+			["sv1-ener-3", "sv1-ener-3"],
+		)
+		state.players[1].active = PokemonState.new("svi-infr")
+		state.players[1].active.placed_this_turn = false
+		state.players[1].active.damage_counters = int(
+			case.get("initial_counters", 0))
+		var defender := state.players[1].active
+		var step := _apply_test_action(
+			engine,
+			state,
+			GameAction.new("DECLARE_ATTACK", {"attack_idx": 1}, true, 0),
+			PortableRandomSource.new(61130 + int(case.get("initial_counters", 0))),
+		)
+		var damage_event_amount := -1
+		for event_value in step.events:
+			var event: Dictionary = event_value
+			var event_data: Dictionary = event.get("data", {})
+			if (
+				str(event.get("event_type", "")) == "damage_dealt"
+				and int(event_data.get("player", -1)) == 1
+				and str(event_data.get("slot", "")) == "active"
+			):
+				damage_event_amount = int(event.get(
+					"amount", event_data.get("amount", -1)))
+				break
+		var expected_damage := int(case.get("expected_damage", 0))
+		_check(
+			step.success
+			and not state.type_matchups_enabled()
+			and damage_event_amount == expected_damage
+			and defender.damage_counters
+			== int(case.get("initial_counters", 0)) + int(expected_damage / 10),
+			(
+				"Greninja conditional damage regression failed for %s: "
+				+ "expected %d damage with type matchups disabled, "
+				+ "got event=%d counters=%d"
+			) % [
+				str(case.get("name", "")),
+				expected_damage,
+				damage_event_amount,
+				defender.damage_counters,
+			],
+		)
+
+
 func _contains_basic(card_ids: Array[String], catalog: CardCatalog) -> bool:
 	for card_id in card_ids:
 		if catalog.is_basic_pokemon(card_id):
@@ -11656,6 +12966,53 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		non_attack_ko_candidates,
 	)
 	_check(non_attack_ko_candidates.is_empty(), "Native POKEMON_KO hook fired outside attack KO")
+
+	# Learning Device is authored for an Active Pokemon KO only.  A spread
+	# attack may Knock Out the Active and a Benched Pokemon in the same batch;
+	# the Bench KO must not enqueue the same Tool trigger a second time.
+	state = _battle_state()
+	state.players[0].active = PokemonState.new("svi-chim")
+	state.players[0].active.damage_counters = 99
+	_set_energy_cards(state.players[0].active, ["sv1-ener-2"])
+	state.players[0].bench[0] = PokemonState.new("sv2-delib")
+	state.players[0].bench[0].damage_counters = 99
+	_set_energy_cards(state.players[0].bench[0], ["sv1-ener-5"])
+	state.players[0].bench[1] = PokemonState.new("sv2-delib")
+	state.players[0].bench[1].attached_tool_id = "svg2-exps"
+	var simultaneous_exp_share_stack := ResolutionStack.new()
+	simultaneous_exp_share_stack.context["knockout_causes"] = {
+		"0:active": {
+			"source_kind": "attack_damage",
+			"cause_kind": "damage",
+			"source_player": 1,
+		},
+		"0:bench_0": {
+			"source_kind": "attack_damage",
+			"cause_kind": "damage",
+			"source_player": 1,
+		},
+	}
+	var simultaneous_exp_share_events: Array[Dictionary] = []
+	var simultaneous_exp_share_result := (
+		RulesTestHarness.knockout_settlement_for(engine).resolve_knockouts(
+			state,
+			1,
+			simultaneous_exp_share_events,
+			true,
+			simultaneous_exp_share_stack,
+			PortableRandomSource.new(2026062668),
+		)
+	)
+	var simultaneous_exp_share_choice: ChoiceRequest = simultaneous_exp_share_result.get(
+		"pending_choice", null)
+	_check(
+		bool(simultaneous_exp_share_result.get("success", false))
+		and simultaneous_exp_share_choice != null
+		and simultaneous_exp_share_choice.request_type == "confirm_trigger"
+		and simultaneous_exp_share_choice.options.size() == 1,
+		"Active/Bench simultaneous KOs duplicated the Learning Device trigger: %s"
+		% str(simultaneous_exp_share_result.get("message", "")),
+	)
 
 	state = _effect_state()
 	state.players[0].hand = []
@@ -15028,6 +16385,26 @@ func _run_card_effect_accuracy_tests(engine: GameEngine) -> void:
 	_check(
 		state.players[1].active.damage_counters == 8,
 		"Weakness/resistance was not applied before tool damage modifiers",
+	)
+
+	state = _battle_state()
+	state.set_type_matchups_enabled(false)
+	state.players[0].active = PokemonState.new("svl-pikaex")
+	state.players[0].active.placed_this_turn = false
+	state.players[0].active.attached_tool_id = "svl-vitb"
+	_set_energy_cards(state.players[0].active, ["sv1-ener-4"])
+	state.players[1].active = PokemonState.new("sv2-grex")
+	state.players[1].active.placed_this_turn = false
+	step = _apply_test_action(engine,
+		state,
+		GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0),
+		PortableRandomSource.new(6113),
+	)
+	_check(step.success, "Type-matchup-disabled damage-order attack failed: %s" % step.message)
+	_check(
+		state.players[1].active.damage_counters == 4,
+		"Authoritative attack settlement with type matchups disabled expected 4 counters, got %d"
+		% state.players[1].active.damage_counters,
 	)
 
 	state = _battle_state()

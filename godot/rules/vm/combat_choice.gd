@@ -55,6 +55,7 @@ func bench_damage(
 	state: GameState,
 	stack: ResolutionStack,
 	player_idx: int,
+	source_slot: String,
 	params: Dictionary,
 	events: Array[Dictionary],
 ) -> Dictionary:
@@ -77,6 +78,7 @@ func bench_damage(
 		{
 			"amount": int(params.get("amount", 0)),
 			"source_player": player_idx,
+			"source_slot": source_slot,
 			"target_player": target_idx,
 		},
 		"选择1只对手备战宝可梦作为伤害目标。",
@@ -87,6 +89,7 @@ func choose_damage_target(
 	state: GameState,
 	stack: ResolutionStack,
 	player_idx: int,
+	source_slot: String,
 	params: Dictionary,
 ) -> Dictionary:
 	var target_player_key := str(params.get("player", params.get("target_player", "opponent")))
@@ -96,6 +99,7 @@ func choose_damage_target(
 		{
 			"amount": int(params.get("amount", 0)),
 			"source_player": player_idx,
+			"source_slot": source_slot,
 			"target_player": target_idx,
 		},
 		"选择1只对手宝可梦作为伤害目标。")

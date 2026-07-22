@@ -23,6 +23,7 @@ from card_data.consistency import (
 )
 from data.card_models import Card
 from data.card_registry import CardRegistry
+from data.ai_strategy_definitions import build_ai_strategy_catalog
 from data.deck_definitions import (
     ALL_CARD_IDS,
     COLORLESS_DECK,
@@ -3182,6 +3183,7 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
     _write_json(data_root / "cards.json", cards)
     _write_json(data_root / "effects.json", _json_value(CARD_EFFECTS))
     _write_json(data_root / "decks.json", decks)
+    _write_json(data_root / "ai_strategies.json", build_ai_strategy_catalog(DECKS))
     _write_json(data_root / "card_images.json", image_paths)
     _write_json(data_root / "card_image_hashes.json", image_hashes)
     _write_json(
@@ -3233,6 +3235,7 @@ def main() -> None:
                 Path("data/cards.json"),
                 Path("data/effects.json"),
                 Path("data/decks.json"),
+                Path("data/ai_strategies.json"),
                 Path("data/card_images.json"),
                 Path("data/card_image_hashes.json"),
                 Path("data/card_buckets.json"),

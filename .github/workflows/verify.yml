@@ -32,6 +32,14 @@ jobs:
         shell: pwsh
         run: .\tools\test_fast.ps1 -Python python
 
+      - name: Run Challenge AI smoke suite
+        shell: pwsh
+        run: .\tools\test_godot_ai.ps1
+
+      - name: Run Challenge AI evaluator smoke
+        shell: pwsh
+        run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Smoke -SkipReport -SkipValidate -NoProgress -OutputDir .test_tmp\ci-ai-smoke
+
   legacy-model-contract:
     runs-on: windows-latest
     timeout-minutes: 10
@@ -78,10 +86,44 @@ jobs:
         shell: pwsh
         run: .\tools\package_release.ps1 -AndroidSigning test
 
-      - name: Run Challenge AI and legacy fallback regression
+      - name: Run Challenge AI and disabled-Deep fallback regression
         shell: pwsh
         run: .\tools\test_godot_ai.ps1
 
       - name: Verify Windows and Android release artifacts
         shell: pwsh
         run: .\tools\test_release.ps1
+
+  nightly-ai-evaluation:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    needs: [fast]
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.15'
+          cache: pip
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install Python runtime dependencies
+        shell: pwsh
+        run: python -m pip install -r .\python\requirements.txt
+
+      - name: Install pinned Godot toolchain
+        shell: pwsh
+        run: .\tools\setup_godot_toolchain.ps1
+
+      - name: Run 2,800-game traditional AI stability matrix
+        shell: pwsh
+        run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -Workers 2 -Profile -ProgressEveryPairs 25 -OutputDir .test_tmp\ai-eval-nightly
+
+      - name: Upload traditional AI evaluation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traditional-ai-nightly-${{ github.run_id }}
+          path: .test_tmp/ai-eval-nightly/
+          if-no-files-found: warn

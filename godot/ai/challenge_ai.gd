@@ -2,28 +2,43 @@ class_name NativeChallengeAI
 extends RefCounted
 
 const STRONGEST_DIFFICULTY := "strongest"
-const HEURISTIC_VARIANT_LEGACY := "legacy"
 const HEURISTIC_VARIANT_SEMANTIC_V2 := "semantic_v2"
 const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_SEMANTIC_V2
-const DEEP_DEFAULT_SIMULATIONS := 64
-const DEEP_FALLBACK_SIMULATIONS := 128
-const DEEP_DEFAULT_SECONDS := 2.0
-const DEEP_DEFAULT_DEPTH := 12
-const DEEP_NEURAL_PRIOR_BLEND := 0.15
-const DEEP_NEURAL_PRIOR_MIN_TOP_PROB := 0.45
-const DEEP_HEURISTIC_CLEAR_PRIOR_GAP := 0.12
-const GAMEPLAY_DEFAULT_SIMULATIONS := 64
-const GAMEPLAY_DEFAULT_SECONDS := 0.75
-const GAMEPLAY_DEFAULT_DEPTH := 8
+## Compatibility names retained for callers on the Actions 4 boundary.  In the
+## traditional planner a "simulation" is one expanded beam node.
+const DEEP_DEFAULT_SIMULATIONS := 192
+const DEEP_FALLBACK_SIMULATIONS := 192
+const DEEP_DEFAULT_SECONDS := 0.85
+const DEEP_DEFAULT_DEPTH := 6
+const GAMEPLAY_DEFAULT_SIMULATIONS := 192
+const GAMEPLAY_DEFAULT_SECONDS := 0.85
+const GAMEPLAY_DEFAULT_DEPTH := 6
 const GAMEPLAY_LOW_SIMULATIONS := 1
 const GAMEPLAY_LOW_SECONDS := 0.12
 const GAMEPLAY_LOW_DEPTH := 1
+const TRADITIONAL_HARD_DEADLINE_MSEC := 1100
+const TURN_REPLAN_FULL_LIMIT := 1
+const TURN_REPLAN_LOCAL_LIMIT := 5
+const TURN_REPLAN_LOCAL_NODES := 24
+const TURN_REPLAN_LOCAL_DEPTH := 2
+const TURN_REPLAN_LOCAL_SOFT_MSEC := 45
+const TURN_REPLAN_LOCAL_HARD_MSEC := 60
+const TURN_REPLAN_EXHAUSTED_SOFT_MSEC := 50
+const TURN_REPLAN_LEDGER_LIMIT := 16
+## The turn planner reasons over at most six atomic actions.  A repeatable
+## ability may otherwise be selected again after every local replan and bounce
+## resources forever, so carry the same bound across the authoritative turn.
+const MAX_REPEATABLE_ABILITY_USES_PER_TURN := 6
+const CACHE_GUARDED_ABILITY_EFFECT_TYPES := {
+	"damage_counter_self": true,
+	"place_counters_and_self_ko": true,
+}
 const DIFFICULTIES := {
-	"strongest": {"simulations": 12000, "seconds": 10.0, "depth": 24},
+	"strongest": {"simulations": 192, "seconds": 0.85, "depth": 6},
 	# Compatibility aliases for older saves/tests that still send a difficulty.
-	"fast": {"simulations": 12000, "seconds": 10.0, "depth": 24},
-	"standard": {"simulations": 12000, "seconds": 10.0, "depth": 24},
-	"hard": {"simulations": 12000, "seconds": 10.0, "depth": 24},
+	"fast": {"simulations": 192, "seconds": 0.85, "depth": 6},
+	"standard": {"simulations": 192, "seconds": 0.85, "depth": 6},
+	"hard": {"simulations": 192, "seconds": 0.85, "depth": 6},
 }
 const DIAGNOSTIC_LABELS := [
 	"missed_immediate_ko",
@@ -79,6 +94,8 @@ const SCORE_WEIGHTS := {
 	"discard_fuel": 76.0,
 	"evolution_line_plan": 86.0,
 	"thin_deck_draw": 96.0,
+	"lone_active_backup": 300.0,
+	"last_useful_energy": 230.0,
 }
 const EFFECT_VALUE_WEIGHTS := {
 	"draw_card": 27.0,
@@ -90,8 +107,6 @@ const EFFECT_VALUE_WEIGHTS := {
 	"status_base": 58.0,
 }
 const SEMANTIC_CHOICE_LOOKAHEAD_MAX_OPTIONS := 8
-const ROLLOUT_LOOKAHEAD_MAX_ACTIONS := 8
-const ROLLOUT_LOOKAHEAD_TOP_N := 2
 const MODIFY_DAMAGE_HOOK := "MODIFY_DAMAGE"
 const CHOICE_VIEW_FIELDS := [
 	"schema_version",
@@ -113,9 +128,19 @@ var _engine_cache: GameEngine = null
 var _native_math: Variant = null
 var _native_math_checked := false
 var _disable_native_math := false
-var _heuristic_variant := DEFAULT_HEURISTIC_VARIANT
 var _pre_evolution_ids_cache: Dictionary = {}
 var _core_evolution_line_cache: Dictionary = {}
+var _traditional_semantic_catalog: Variant = null
+var _traditional_strategy_registry: Variant = null
+## Cache semantic intents, never GameAction instances or mutable GameState.
+## Entries are keyed by match/actor/turn/deck and revalidated against the
+## authoritative legal action list on every atomic decision.
+var _turn_plan_cache: Dictionary = {}
+## A cache invalidation must not grant another full search in the same turn.
+## Each entry is scoped by an explicit match instance and advances only when a
+## cache miss actually needs a new plan.  Repeating the same revision reuses the
+## reservation, which makes coordinator timeout/cancellation retries idempotent.
+var _turn_replan_ledger: Dictionary = {}
 
 
 static func strongest_preset() -> Dictionary:
@@ -157,17 +182,11 @@ static func diagnostic_labels() -> Array:
 
 
 static func heuristic_variants() -> Array[String]:
-	return [HEURISTIC_VARIANT_LEGACY, HEURISTIC_VARIANT_SEMANTIC_V2]
-
-
-func _normalize_heuristic_variant(value: String) -> String:
-	if value == HEURISTIC_VARIANT_SEMANTIC_V2:
-		return HEURISTIC_VARIANT_SEMANTIC_V2
-	return HEURISTIC_VARIANT_LEGACY
+	return [HEURISTIC_VARIANT_SEMANTIC_V2]
 
 
 func _semantic_v2_enabled() -> bool:
-	return _heuristic_variant == HEURISTIC_VARIANT_SEMANTIC_V2
+	return true
 
 
 func _cached_catalog() -> CardCatalog:
@@ -248,15 +267,16 @@ func decide(
 	var started := Time.get_ticks_usec()
 	var profile := _new_decision_profile() if bool(request.get("profile", false)) else {}
 	var previous_disable_native_math := _disable_native_math
-	var previous_heuristic_variant := _heuristic_variant
 	_disable_native_math = bool(request.get("disable_native_math", false))
-	_heuristic_variant = _normalize_heuristic_variant(str(
-		request.get("heuristic_variant", DEFAULT_HEURISTIC_VARIANT)))
 	var context_started := _profile_start(profile)
 	var disable_cache := bool(request.get("disable_cache", false))
 	var catalog := CardCatalog.new(true) if disable_cache else _cached_catalog()
 	var engine := GameEngine.new(catalog) if disable_cache else _cached_engine(catalog)
 	var state := GameState.from_dict(request["state"])
+	# Challenge and its disabled-Deep fallback are a fixed no-matchup ruleset.
+	# Canonicalize again at the worker boundary so an internal/test caller cannot
+	# accidentally re-enable global Weakness or Resistance calculations.
+	state.set_type_matchups_enabled(false)
 	var actor := int(request["actor"])
 	_profile_add_elapsed(profile, "request_context_ms", context_started)
 	var result: Dictionary
@@ -279,8 +299,11 @@ func decide(
 				catalog,
 				engine,
 				int(request.get("seed", 17)),
+				int(request.get("match_seed", request.get("seed", 0))),
 				inference,
 				str(request.get("mode", "challenge")),
+				cancel_check,
+				started,
 			)
 		_profile_add_elapsed(profile, "choice_ms", choice_started)
 	else:
@@ -293,15 +316,15 @@ func decide(
 			cancel_check,
 			inference,
 			profile,
+			started,
 		)
 	result["revision"] = int(request["revision"])
 	result["request_id"] = str(request.get("request_id", ""))
 	result["elapsed_ms"] = (Time.get_ticks_usec() - started) / 1000.0
-	result["heuristic_variant"] = _heuristic_variant
+	result["heuristic_variant"] = HEURISTIC_VARIANT_SEMANTIC_V2
 	if _profile_enabled(profile):
 		result["profile"] = _public_decision_profile(profile)
 	_disable_native_math = previous_disable_native_math
-	_heuristic_variant = previous_heuristic_variant
 	return result
 
 
@@ -312,308 +335,858 @@ func _search_action(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	cancel_check: Callable,
-	inference: Variant,
+	_inference: Variant,
 	profile: Dictionary = {},
+	decision_started_usec: int = 0,
 ) -> Dictionary:
 	var decode_started := _profile_start(profile)
-	var actions: Array[GameAction] = []
+	state.set_type_matchups_enabled(false)
+	var query := engine.query_legal_action_groups(state, actor)
+	if not query.success:
+		return {"success": false, "error": "legal_query_failed:%s" % query.code}
+	var authoritative: Array[GameAction] = []
+	authoritative.assign(query.concrete_actions())
+	var supplied: Array[GameAction] = []
 	for row in request.get("actions", []):
-		actions.append(GameAction.from_dict(row))
-	if actions.is_empty():
-		var query := engine.query_legal_action_groups(state, actor)
-		if not query.success:
-			return {"success": false, "error": "legal_query_failed:%s" % query.code}
-		actions = query.concrete_actions()
+		if row is Dictionary:
+			supplied.append(GameAction.from_dict(row))
+	var actions := (
+		authoritative
+		if supplied.is_empty()
+		else _authoritative_action_intersection(supplied, authoritative)
+	)
 	_profile_add_elapsed(profile, "decode_actions_ms", decode_started)
 	if actions.is_empty():
-		return {"success": false, "error": "no_legal_action"}
+		return {"success": false, "error": "no_authoritative_legal_action"}
+	if cancel_check.is_valid() and bool(cancel_check.call()):
+		return {"success": false, "cancelled": true, "error": "cancelled"}
+	var deck_key := _deck_key_for_actor(
+		state, actor, str(request.get("deck_key", "")))
+	actions = _filter_exhausted_repeatable_abilities(
+		state, actor, actions, catalog)
+	if actions.is_empty():
+		return {"success": false, "error": "no_bounded_legal_action"}
 	_profile_count(profile, "root_action_count", actions.size())
-	var deck_key := _deck_key_for_actor(state, actor, str(request.get("deck_key", "")))
-	var mode := str(request.get("mode", "challenge"))
-	var preset := strongest_preset()
-	var simulation_budget := int(request.get(
-		"simulation_budget",
-		DEEP_DEFAULT_SIMULATIONS if mode == "deep" else preset["simulations"],
-	))
-	var budget_requested := simulation_budget
-	var seconds := float(request.get(
-		"seconds",
-		DEEP_DEFAULT_SECONDS if mode == "deep" else preset["seconds"],
-	))
-	var max_depth := int(request.get(
-		"max_depth",
-		DEEP_DEFAULT_DEPTH if mode == "deep" else preset["depth"],
-	))
-	var deterministic := bool(request.get("deterministic", false))
-	var deadline := Time.get_ticks_usec() + int(seconds * 1000000.0)
-	var request_seed := int(request.get("seed", 17))
-	var dynamic_budget := _dynamic_budget_config(request.get("dynamic_budget", {}))
-	if mode == "deep":
-		dynamic_budget["enabled"] = false
-	var dynamic_enabled := bool(dynamic_budget.get("enabled", false))
-	if dynamic_enabled and actions.size() == 1 and int(dynamic_budget["single_action_simulations"]) <= 0:
-		_profile_count(profile, "dynamic_budget_single_action_stops")
-		return {
-			"success": true,
-			"kind": "action",
-			"action": actions[0].to_dict(),
-			"simulations": 0,
-			"budget_requested": budget_requested,
-			"budget_stop_reason": "single_action",
-			"dynamic_budget_enabled": true,
-			"deep_fallback": false,
-			"fallback_reason": "",
-		}
-	if dynamic_enabled and actions.size() == 1:
-		simulation_budget = mini(simulation_budget, int(dynamic_budget["single_action_simulations"]))
-	var priors: Array[float] = []
-	var deep_error := ""
-	if mode == "deep" and inference != null:
-		var neural_started := _profile_start(profile)
-		var neural := _neural_action_priors(state, actor, actions, deck_key, catalog, inference)
-		_profile_add_elapsed(profile, "neural_priors_ms", neural_started)
-		if bool(neural.get("success", false)):
-			var heuristic_started := _profile_start(profile)
-			var heuristic_priors := _heuristic_priors(state, actor, actions, deck_key, catalog, profile)
-			_profile_add_elapsed(profile, "heuristic_priors_ms", heuristic_started)
-			priors = _guarded_neural_priors(neural["priors"], heuristic_priors)
-		else:
-			deep_error = str(neural.get("error", "inference_failed"))
-	elif mode == "deep":
-		deep_error = "runtime_unavailable"
-	if mode == "deep" and not deep_error.is_empty():
-		var fallback_preset := strongest_preset()
-		simulation_budget = int(request.get("simulation_budget", fallback_preset["simulations"]))
-		budget_requested = simulation_budget
-		seconds = float(request.get("seconds", fallback_preset["seconds"]))
-		max_depth = int(request.get("max_depth", fallback_preset["depth"]))
-		deadline = Time.get_ticks_usec() + int(seconds * 1000000.0)
-	if priors.size() != actions.size():
-		var priors_started := _profile_start(profile)
-		priors = _heuristic_priors(state, actor, actions, deck_key, catalog, profile)
-		_profile_add_elapsed(profile, "heuristic_priors_ms", priors_started)
 
-	var visits: Array[int] = []
-	var totals: Array[float] = []
-	visits.resize(actions.size())
-	totals.resize(actions.size())
-	visits.fill(0)
-	totals.fill(0.0)
-	var completed := 0
-	var stop_reason := "disabled"
-	var dynamic_ambiguous := _dynamic_budget_is_ambiguous(actions.size(), priors, dynamic_budget)
-	var dynamic_min_simulations := int(
-		dynamic_budget["ambiguous_min_simulations"]
-		if dynamic_ambiguous
-		else dynamic_budget["min_simulations"]
+	var information_set := AIInformationSet.capture(
+		state,
+		actor,
+		catalog,
+		actions,
+		Array(request.get("public_history", [])),
+		int(request.get("match_seed", request.get("seed", 0))),
 	)
-	var dynamic_stable_required := int(
-		dynamic_budget["ambiguous_stable_checks"]
-		if dynamic_ambiguous
-		else dynamic_budget["stable_checks"]
-	)
-	var dynamic_check_interval := int(dynamic_budget["check_interval"])
-	var dynamic_last_best := -1
-	var dynamic_stable_checks := 0
-	while completed < simulation_budget:
-		if cancel_check.call():
-			return {"success": false, "cancelled": true, "error": "cancelled"}
-		if not deterministic and Time.get_ticks_usec() >= deadline:
-			stop_reason = "deadline"
-			break
-		var selected := _select_ucb(visits, totals, priors, completed)
-		var determinize_started := _profile_start(profile)
-		var simulation := AIObservationBuilder.determinize_state(
-			state,
+	if not information_set.is_valid():
+		return {
+			"success": false,
+			"error": "invalid_information_set:%s" % information_set.validation_error(),
+		}
+	var strategy_registry: Variant = _traditional_strategy_registry_instance()
+	if strategy_registry == null or not strategy_registry.is_valid():
+		return {"success": false, "error": "invalid_strategy_registry"}
+	var strategy: Variant = strategy_registry.strategy_for(deck_key)
+	var effective_started_usec := (
+		decision_started_usec if decision_started_usec > 0 else Time.get_ticks_usec())
+	var cache_key := _turn_plan_cache_key(request, information_set, deck_key)
+	var preview_tier := _preview_turn_replan_tier(
+		cache_key, state.revision, deck_key)
+	var planner_request := _bounded_traditional_planner_request(
+		request, effective_started_usec, preview_tier)
+	# A zero-node request is the public deterministic tactical mode used by
+	# golden fixtures and emergency callers. It does not run the retired UCB
+	# search; it applies the proven rule-tactics scorer to a fair sampled state.
+	if request.has("simulation_budget") and int(request["simulation_budget"]) <= 0:
+		var tactical_state := information_set.sample_state(int(request.get("seed", 17)))
+		if tactical_state == null:
+			return {"success": false, "error": "tactical_determinization_failed"}
+		var tactical_action := _zero_budget_tactical_action(
+			tactical_state,
 			actor,
-			request_seed + completed * 7919,
-			catalog,
-		)
-		_profile_add_elapsed(profile, "determinize_ms", determinize_started)
-		var simulation_rng := PortableRandomSource.new(
-			request_seed + completed * 104729
-		)
-		var simulate_started := _profile_start(profile)
-		var value := _simulate(
-			simulation,
-			actor,
-			actions[selected],
+			actions,
 			deck_key,
 			catalog,
 			engine,
-			simulation_rng,
-			max_depth,
+			int(request.get("seed", 17)),
 			profile,
 		)
-		_profile_add_elapsed(profile, "simulate_total_ms", simulate_started)
-		visits[selected] += 1
-		totals[selected] += value
-		completed += 1
-		_profile_count(profile, "simulations")
-		if (
-			dynamic_enabled
-			and completed >= dynamic_min_simulations
-			and completed % dynamic_check_interval == 0
-		):
-			_profile_count(profile, "dynamic_budget_checks")
-			var confidence_best := _dynamic_budget_confident_index(
-				visits, totals, priors, completed, dynamic_budget, dynamic_ambiguous)
-			if confidence_best >= 0:
-				if confidence_best == dynamic_last_best:
-					dynamic_stable_checks += 1
-				else:
-					dynamic_last_best = confidence_best
-					dynamic_stable_checks = 1
-				if dynamic_stable_checks >= dynamic_stable_required:
-					stop_reason = "confidence"
-					_profile_count(profile, "dynamic_budget_confidence_stops")
-					break
-			else:
-				dynamic_last_best = -1
-				dynamic_stable_checks = 0
-	if completed == 0 and mode == "deep":
-		var fallback_request: Dictionary = request.duplicate(true)
-		fallback_request["mode"] = "challenge"
-		fallback_request["difficulty"] = STRONGEST_DIFFICULTY
-		fallback_request.erase("simulation_budget")
-		fallback_request.erase("seconds")
-		fallback_request.erase("max_depth")
-		fallback_request.erase("dynamic_budget")
-		var fallback := _search_action(
-			fallback_request,
-			state,
+		return _traditional_action_result(
+			request,
+			tactical_action,
+			strategy,
+			information_set,
+			0,
+			"forced_tactics",
+			false,
+			{
+				"score": _action_score(
+					tactical_state, actor, tactical_action, deck_key, catalog),
+				"forced_tactic": "deterministic_rule_tactics",
+				"turn_plan": [TraditionalTurnPlanner.action_intent(tactical_action)],
+				"turn_budget_tier": "tactical",
+				"turn_replan_ordinal": 0,
+			},
+		)
+	# Mandatory tactics always run before a cache lookup. A stale but still legal
+	# development intent must never hide a newly available immediate match win.
+	var trusted_choice_resolver := Callable(
+		self, "_traditional_simulated_choice_response").bind(
+			actor, deck_key, strategy, catalog)
+	var trusted_action_evaluator := Callable(
+		self, "_traditional_action_candidate_score").bind(deck_key, catalog)
+	var preflight_state := information_set.sample_state(int(planner_request["seed"]))
+	var preflight := {"resolved": false, "nodes_expanded": 0, "reason": "invalid_input"}
+	if preflight_state != null:
+		preflight = AIMandatoryTactics.new().resolve(
+			information_set,
+			preflight_state,
 			actor,
+			actions,
+			engine,
+			strategy,
+			int(planner_request["seed"]),
+			cancel_check,
+			int(planner_request["soft_deadline_usec"]),
+			int(planner_request["node_budget"]),
+			trusted_choice_resolver,
+			trusted_action_evaluator,
+		)
+	var preflight_nodes := mini(
+		int(planner_request["node_budget"]),
+		maxi(0, int(preflight.get("nodes_expanded", 0))),
+	)
+	if bool(preflight.get("resolved", false)):
+		var forced_action: GameAction = preflight.get("action")
+		return _traditional_action_result(
+			request,
+			forced_action,
+			strategy,
+			information_set,
+			preflight_nodes,
+			str(preflight.get("reason", "mandatory")),
+			false,
+			{
+				"forced_tactic": str(preflight.get("reason", "mandatory")),
+				"turn_plan": [_intent_with_precondition(
+					forced_action, information_set.cache_precondition())],
+				"turn_budget_tier": "mandatory",
+				"turn_replan_ordinal": 0,
+			},
+		)
+	if cancel_check.is_valid() and bool(cancel_check.call()):
+		return {"success": false, "cancelled": true, "error": "cancelled"}
+	var cached_action := _take_cached_turn_action(
+		cache_key, state.revision, actions, information_set)
+	if cached_action != null:
+		_profile_count(profile, "turn_plan_cache_hits")
+		var validated_cached := cached_action
+		# Turn-ending, board-position and irreversible self-cost actions need the
+		# comparatively expensive tactical pass.  A cached self-damage/self-KO
+		# ability can become losing after an intervening choice or public effect
+		# even when its structural cache precondition still matches.
+		if (
+			preflight_state != null
+			and _cached_action_needs_tactical_guard(
+				preflight_state, actor, cached_action, catalog)
+		):
+			validated_cached = _validated_or_fallback_action(
+				preflight_state,
+				actor,
+				cached_action,
+				actions,
+				deck_key,
+				catalog,
+				engine,
+				int(planner_request["seed"]) + 700001,
+				profile,
+			)
+		var cached_signature := str(TraditionalTurnPlanner.action_intent(
+			cached_action).get("signature", ""))
+		var validated_signature := str(TraditionalTurnPlanner.action_intent(
+			validated_cached).get("signature", ""))
+		if validated_cached != null and validated_signature != cached_signature:
+			# Consuming one cached intent before validation is harmless only while
+			# the plan remains tactically sound.  Once the guard changes the action,
+			# every remaining intent was derived from a branch we no longer follow.
+			_turn_plan_cache.erase(cache_key)
+			return _traditional_action_result(
+				request,
+				validated_cached,
+				strategy,
+				information_set,
+				preflight_nodes,
+				"plan_cache_guard",
+				true,
+				{
+					"forced_tactic": "post_plan_tactical_guard",
+					"turn_plan": [_intent_with_precondition(
+						validated_cached, information_set.cache_precondition())],
+					"turn_budget_tier": "cache",
+					"turn_replan_ordinal": 0,
+				},
+			)
+		return _traditional_action_result(
+			request,
+			cached_action,
+			strategy,
+			information_set,
+			preflight_nodes,
+			"plan_cache",
+			true,
+			{
+				"turn_budget_tier": "cache",
+				"turn_replan_ordinal": 0,
+			},
+		)
+	if not cache_key.is_empty():
+		_profile_count(profile, "turn_plan_cache_misses")
+
+	var reserved_tier := _reserve_turn_replan_tier(
+		cache_key,
+		state.revision,
+		str(request.get("request_id", "")),
+		deck_key,
+	)
+	planner_request = _bounded_traditional_planner_request(
+		request, effective_started_usec, reserved_tier)
+	if str(reserved_tier.get("tier", "full")) == "exhausted":
+		var exhausted_state := (
+			preflight_state
+			if preflight_state != null
+			else information_set.sample_state(int(planner_request["seed"]))
+		)
+		if exhausted_state == null:
+			return {"success": false, "error": "exhausted_determinization_failed"}
+		var exhausted_action := _exhausted_turn_action(
+			exhausted_state,
+			actor,
+			actions,
+			deck_key,
 			catalog,
 			engine,
-			cancel_check,
-			null,
+			int(planner_request["seed"]) + 900001,
 			profile,
 		)
-		fallback["deep_fallback"] = true
-		fallback["fallback_reason"] = "zero_valid_simulations"
-		return fallback
-	if dynamic_enabled:
-		if stop_reason == "disabled":
-			stop_reason = "budget_exhausted"
-			_profile_count(profile, "dynamic_budget_budget_exhausted")
-		elif stop_reason == "deadline":
-			_profile_count(profile, "dynamic_budget_deadline_stops")
-	var best := _best_search_index(visits, totals, priors)
-	var selected_action := _validated_or_fallback_action(
+		_turn_plan_cache.erase(cache_key)
+		return _traditional_action_result(
+			request,
+			exhausted_action,
+			strategy,
+			information_set,
+			preflight_nodes,
+			"turn_budget_exhausted",
+			false,
+			{
+				"forced_tactic": "turn_budget_terminal",
+				"turn_plan": [_intent_with_precondition(
+					exhausted_action, information_set.cache_precondition())],
+				"turn_budget_tier": "exhausted",
+				"turn_replan_ordinal": int(reserved_tier.get("ordinal", 0)),
+			},
+		)
+	planner_request["initial_nodes_used"] = mini(
+		int(planner_request["node_budget"]), preflight_nodes)
+	planner_request["skip_mandatory"] = true
+	var plan_started := _profile_start(profile)
+	var planned := TraditionalTurnPlanner.plan_action(
+		planner_request,
+		information_set,
+		actions,
+		strategy,
+		catalog,
+		engine,
+		cancel_check,
+		Callable(self, "_traditional_leaf_score"),
+		trusted_choice_resolver,
+		trusted_action_evaluator,
+	)
+	planned["turn_budget_tier"] = str(reserved_tier.get("tier", "full"))
+	planned["turn_replan_ordinal"] = int(reserved_tier.get("ordinal", 1))
+	_profile_add_elapsed(profile, "turn_planner_ms", plan_started)
+	if cancel_check.is_valid() and bool(cancel_check.call()):
+		return {"success": false, "cancelled": true, "error": "cancelled"}
+	if not bool(planned.get("success", false)):
+		return {
+			"success": false,
+			"error": str(planned.get("error", "turn_planner_failed")),
+			"simulations": int(planned.get("nodes_expanded", 0)),
+		}
+	var selected: GameAction = planned.get("action")
+	if selected == null:
+		return {"success": false, "error": "turn_planner_returned_no_action"}
+	var validated_selected: GameAction = selected
+	if preflight_state != null:
+		validated_selected = _validated_or_fallback_action(
+			preflight_state,
+			actor,
+			selected,
+			actions,
+			deck_key,
+			catalog,
+			engine,
+			int(planner_request["seed"]) + 700001,
+			profile,
+		)
+	if (
+		validated_selected != null
+		and str(TraditionalTurnPlanner.action_intent(
+			validated_selected).get("signature", ""))
+		!= str(TraditionalTurnPlanner.action_intent(selected).get("signature", ""))
+	):
+		selected = validated_selected
+		planned["action"] = selected
+		planned["action_dict"] = selected.to_dict()
+		planned["turn_plan"] = [_intent_with_precondition(
+			selected, information_set.cache_precondition())]
+		planned["forced_tactic"] = "post_plan_tactical_guard"
+	_store_turn_plan(cache_key, state.revision, planned.get("turn_plan", []), selected)
+	var nodes_expanded := int(planned.get("nodes_expanded", 0))
+	_profile_count(profile, "planner_nodes", nodes_expanded)
+	return _traditional_action_result(
+		request,
+		selected,
+		strategy,
+		information_set,
+		nodes_expanded,
+		str(planned.get("stop_reason", "complete")),
+		false,
+		planned,
+	)
+
+
+func _traditional_strategy_registry_instance() -> Variant:
+	if _traditional_strategy_registry == null:
+		_traditional_strategy_registry = AIStrategyRegistry.shared()
+	return _traditional_strategy_registry
+
+
+func _zero_budget_tactical_action(
+	state: GameState,
+	actor: int,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+	profile: Dictionary,
+) -> GameAction:
+	var best := actions[0]
+	var best_score := _action_score(state, actor, best, deck_key, catalog, profile)
+	for index in range(1, actions.size()):
+		var candidate := actions[index]
+		var candidate_score := _action_score(
+			state, actor, candidate, deck_key, catalog, profile)
+		if candidate_score > best_score:
+			best = candidate
+			best_score = candidate_score
+	return _validated_or_fallback_action(
 		state,
 		actor,
-		actions[best],
+		best,
 		actions,
 		deck_key,
 		catalog,
 		engine,
-		request_seed + completed * 15485863,
+		seed,
 		profile,
 	)
-	if _semantic_v2_enabled() and selected_action.action == "END_TURN":
-		var terminal_attack := _best_productive_attack(
-			state,
-			actor,
-			actions,
-			deck_key,
-			catalog,
-			engine,
-			request_seed + completed * 15485863 + 47,
-			profile,
-		)
-		if terminal_attack != null:
-			selected_action = terminal_attack
-	return {
-		"success": true,
-		"kind": "action",
-		"action": selected_action.to_dict(),
-		"simulations": completed,
-		"budget_requested": budget_requested,
-		"budget_stop_reason": stop_reason,
-		"dynamic_budget_enabled": dynamic_enabled,
-		"deep_fallback": not deep_error.is_empty(),
-		"fallback_reason": deep_error,
-	}
 
 
-func _simulate(
+func _exhausted_turn_action(
 	state: GameState,
-	perspective: int,
-	first_action: GameAction,
+	actor: int,
+	actions: Array[GameAction],
 	deck_key: String,
 	catalog: CardCatalog,
 	engine: GameEngine,
-	rng: PortableRandomSource,
-	max_depth: int,
-	profile: Dictionary = {},
+	seed: int,
+	profile: Dictionary,
+) -> GameAction:
+	## Once the deterministic replan allowance is spent, do not emit another
+	## development action that would create a fresh decision.  Mandatory phases
+	## are handled before this point; MAIN always supplies attack and/or end turn.
+	var terminal_actions: Array[GameAction] = []
+	for action in actions:
+		if action.terminal or action.kind in ["DECLARE_ATTACK", "END_TURN", "SETUP_DONE"]:
+			terminal_actions.append(action)
+	if terminal_actions.is_empty():
+		# Defensive compatibility for a future mandatory phase. Returning an
+		# authoritative action remains safer than manufacturing an illegal terminal.
+		terminal_actions.append(actions[0])
+	return _zero_budget_tactical_action(
+		state, actor, terminal_actions, deck_key, catalog, engine, seed, profile)
+
+
+func _traditional_semantics_instance(catalog: CardCatalog) -> CardSemanticCatalog:
+	if _traditional_semantic_catalog == null:
+		_traditional_semantic_catalog = CardSemanticCatalog.new(catalog)
+	return _traditional_semantic_catalog
+
+
+func _traditional_leaf_score(
+	state: GameState,
+	actor: int,
+	catalog: CardCatalog,
 ) -> float:
-	var apply_started := _profile_start(profile)
-	var step := engine.apply_action(state, first_action, rng)
-	_profile_add_elapsed(profile, "rollout_apply_action_ms", apply_started)
-	if not step.success:
-		return -1.0
-	var resolve_started := _profile_start(profile)
-	if not _resolve_choices(state, perspective, deck_key, catalog, engine, rng):
-		_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
-		return -1.0
-	_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
-	if state.is_terminal():
-		return 0.0 if state.result_status == GameState.RESULT_DRAW else (
-			1.0 if state.winner == perspective else -1.0)
-	var opponent_rollout_lookahead_used := false
-	for _depth in range(max_depth):
-		var actor := _current_actor(state)
-		var legal_started := _profile_start(profile)
-		var query := engine.query_legal_action_groups(state, actor)
-		_profile_add_elapsed(profile, "rollout_legal_actions_ms", legal_started)
-		if not query.success:
-			return -1.0
-		var actions := query.concrete_actions()
-		if actions.is_empty():
+	# This callback is internal to the trusted planner. Deck strategy hooks never
+	# receive GameState. Refuse any future caller that failed to canonicalize the
+	# Challenge/Deep no-matchup rules before evaluating a leaf.
+	if state == null or catalog == null or state.apply_type_matchups:
+		return NAN
+	return _strategic_evaluation_delta(state, actor, catalog)
+
+
+func _traditional_action_candidate_score(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	# Root/turn candidate ordering is a trusted rules-layer concern. Deck hooks
+	# still receive only AIInformationSet views; this bridge merely makes beam
+	# ordering agree with the post-plan tactical guard.
+	if state == null or action == null or catalog == null or state.apply_type_matchups:
+		return NAN
+	return _action_score(state, actor, action, deck_key, catalog)
+
+
+func _traditional_simulated_choice_response(
+	state: GameState,
+	request: ChoiceView,
+	match_seed: int,
+	cancel_check: Callable,
+	deadline_usec: int,
+	root_actor: int,
+	root_deck_key: String,
+	root_strategy: Variant,
+	catalog: CardCatalog,
+) -> ChoiceResponse:
+	## Trusted bridge used by mandatory tactics and the beam. Raw GameState stays
+	## inside NativeChallengeAI: deck hooks receive only the deeply read-only
+	## AIInformationSet view created by _traditional_choice_response.
+	if state == null or request == null or catalog == null:
+		return null
+	state.set_type_matchups_enabled(false)
+	var choice_actor := request.player if request.player in [0, 1] else root_actor
+	var information_set := AIInformationSet.capture(
+		state, choice_actor, catalog, [], [], match_seed)
+	if not information_set.is_valid():
+		return null
+	var deck_key := _deck_key_for_actor(
+		state,
+		choice_actor,
+		root_deck_key if choice_actor == root_actor else "",
+	)
+	var strategy: Variant = root_strategy if choice_actor == root_actor else null
+	if strategy == null:
+		var registry: Variant = _traditional_strategy_registry_instance()
+		if registry == null or not registry.is_valid():
+			return null
+		strategy = registry.strategy_for(deck_key)
+	return _traditional_choice_response(
+		state,
+		information_set,
+		request,
+		deck_key,
+		strategy,
+		catalog,
+		cancel_check,
+		deadline_usec,
+		deadline_usec,
+	)
+
+
+func _bounded_traditional_planner_request(
+	request: Dictionary,
+	decision_started_usec: int = 0,
+	tier: Dictionary = {},
+) -> Dictionary:
+	var requested_nodes := int(request.get(
+		"node_budget", request.get("simulation_budget", GAMEPLAY_DEFAULT_SIMULATIONS)))
+	if requested_nodes <= 0:
+		requested_nodes = GAMEPLAY_DEFAULT_SIMULATIONS
+	var requested_seconds := float(request.get("seconds", GAMEPLAY_DEFAULT_SECONDS))
+	var requested_time_ms := int(request.get(
+		"time_budget_ms", round(maxf(0.025, requested_seconds) * 1000.0)))
+	var time_budget_ms := clampi(requested_time_ms, 25, 850)
+	var node_budget := clampi(requested_nodes, 1, 192)
+	var max_depth := clampi(int(request.get(
+		"max_depth", GAMEPLAY_DEFAULT_DEPTH)), 1, 6)
+	var tier_name := str(tier.get("tier", "full"))
+	var hard_budget_msec := TRADITIONAL_HARD_DEADLINE_MSEC
+	if tier_name == "local":
+		node_budget = mini(node_budget, TURN_REPLAN_LOCAL_NODES)
+		max_depth = mini(max_depth, TURN_REPLAN_LOCAL_DEPTH)
+		time_budget_ms = mini(time_budget_ms, TURN_REPLAN_LOCAL_SOFT_MSEC)
+		hard_budget_msec = TURN_REPLAN_LOCAL_HARD_MSEC
+	elif tier_name == "exhausted":
+		node_budget = 1
+		max_depth = 1
+		time_budget_ms = TURN_REPLAN_EXHAUSTED_SOFT_MSEC
+		hard_budget_msec = TURN_REPLAN_EXHAUSTED_SOFT_MSEC
+	var started_usec := (
+		decision_started_usec if decision_started_usec > 0 else Time.get_ticks_usec())
+	var soft_deadline_usec := started_usec + time_budget_ms * 1000
+	var hard_deadline_usec := mini(
+		started_usec + hard_budget_msec * 1000,
+		soft_deadline_usec + 250000,
+	)
+	var result := {
+		"beam_width": 6,
+		"node_budget": node_budget,
+		"max_actions_per_node": 6,
+		"max_depth": max_depth,
+		"time_budget_ms": time_budget_ms,
+		"soft_deadline_usec": soft_deadline_usec,
+		"hard_deadline_usec": hard_deadline_usec,
+		"seed": int(request.get("seed", 17)),
+		"mode": str(request.get("mode", "challenge")),
+	}
+	if tier_name == "local":
+		result["belief_samples"] = 1
+	if request.get("belief_samples") is int or request.get("belief_samples") is float:
+		result["belief_samples"] = (
+			1 if tier_name == "local" else clampi(int(request["belief_samples"]), 1, 3))
+	return result
+
+
+func _turn_plan_cache_key(
+	request: Dictionary,
+	information_set: AIInformationSet,
+	deck_key: String,
+) -> String:
+	# Callers without a stable match instance remain correct, but deliberately do not
+	# reuse plans across requests or test cases.
+	if str(request.get("match_instance_id", "")).is_empty():
+		return ""
+	var view := information_set.read_only_view()
+	return "%s|%d|%d|%s" % [
+		str(request.get("match_instance_id", "")),
+		information_set.perspective_player(),
+		int(view.get("turn_number", 0)),
+		deck_key,
+	]
+
+
+func _preview_turn_replan_tier(
+	cache_key: String,
+	revision: int,
+	deck_key: String = "",
+) -> Dictionary:
+	if cache_key.is_empty() or not _turn_replan_ledger.has(cache_key):
+		return {"tier": "full", "ordinal": 1}
+	var entry: Dictionary = _turn_replan_ledger[cache_key]
+	if revision == int(entry.get("last_revision", -1)):
+		return {
+			"tier": str(entry.get("last_tier", "full")),
+			"ordinal": int(entry.get("last_ordinal", 1)),
+		}
+	return _next_turn_replan_tier(entry, deck_key)
+
+
+func _reserve_turn_replan_tier(
+	cache_key: String,
+	revision: int,
+	request_id: String,
+	deck_key: String = "",
+) -> Dictionary:
+	if cache_key.is_empty():
+		return {"tier": "full", "ordinal": 1}
+	var entry: Dictionary = _turn_replan_ledger.get(cache_key, {
+		"full_replans": 0,
+		"local_replans": 0,
+		"last_revision": -1,
+		"last_tier": "",
+		"last_ordinal": 0,
+		"pending_request_id": "",
+		"deck_key": deck_key,
+	})
+	if revision == int(entry.get("last_revision", -1)):
+		return {
+			"tier": str(entry.get("last_tier", "full")),
+			"ordinal": int(entry.get("last_ordinal", 1)),
+		}
+	if not deck_key.is_empty():
+		entry["deck_key"] = deck_key
+	var reserved := _next_turn_replan_tier(entry, deck_key)
+	match str(reserved["tier"]):
+		"full":
+			entry["full_replans"] = int(entry.get("full_replans", 0)) + 1
+		"local":
+			entry["local_replans"] = int(entry.get("local_replans", 0)) + 1
+	entry["last_revision"] = revision
+	entry["last_tier"] = reserved["tier"]
+	entry["last_ordinal"] = reserved["ordinal"]
+	entry["pending_request_id"] = request_id
+	_turn_replan_ledger[cache_key] = entry
+	while _turn_replan_ledger.size() > TURN_REPLAN_LEDGER_LIMIT:
+		_turn_replan_ledger.erase(_turn_replan_ledger.keys()[0])
+	return reserved
+
+
+func _next_turn_replan_tier(
+	entry: Dictionary,
+	deck_key: String = "",
+) -> Dictionary:
+	var full_replans := int(entry.get("full_replans", 0))
+	var local_replans := int(entry.get("local_replans", 0))
+	var ordinal := full_replans + local_replans + 1
+	if full_replans < TURN_REPLAN_FULL_LIMIT:
+		return {"tier": "full", "ordinal": ordinal}
+	if local_replans < TURN_REPLAN_LOCAL_LIMIT:
+		return {"tier": "local", "ordinal": ordinal}
+	return {"tier": "exhausted", "ordinal": ordinal}
+
+
+func _authoritative_action_intersection(
+	supplied: Array[GameAction],
+	authoritative: Array[GameAction],
+) -> Array[GameAction]:
+	var result: Array[GameAction] = []
+	var used: Dictionary = {}
+	for supplied_action in supplied:
+		var matched := TraditionalTurnPlanner.find_matching_action(
+			TraditionalTurnPlanner.action_intent(supplied_action), authoritative)
+		if matched == null:
+			continue
+		var signature := str(
+			TraditionalTurnPlanner.action_intent(matched).get("signature", ""))
+		if used.has(signature):
+			continue
+		used[signature] = true
+		result.append(matched)
+	return result
+
+
+func _filter_exhausted_repeatable_abilities(
+	state: GameState,
+	actor: int,
+	actions: Array[GameAction],
+	catalog: CardCatalog,
+) -> Array[GameAction]:
+	## This guard is derived exclusively from the public authoritative log, not
+	## mutable AI memory.  Identical snapshots therefore remain reproducible and
+	## evaluator workers can be safely reused across matches.
+	var result: Array[GameAction] = []
+	var terminal_fallbacks: Array[GameAction] = []
+	for action in actions:
+		if action.terminal:
+			terminal_fallbacks.append(action)
+		if action.kind != "USE_ABILITY":
+			result.append(action)
+			continue
+		var ability_name := str(action.payload.get("ability_name", ""))
+		if (
+			ability_name.is_empty()
+			or not _ability_is_repeatable(
+				state, actor, action, ability_name, catalog)
+			or _repeatable_ability_uses_this_turn(
+				state, action, ability_name, catalog)
+			< MAX_REPEATABLE_ABILITY_USES_PER_TURN
+		):
+			result.append(action)
+	if not result.is_empty():
+		return result
+	# MAIN normally always exposes END_TURN.  Retain any terminal authority action
+	# as a defensive legal escape hatch if a future rules phase changes that set.
+	return terminal_fallbacks if not terminal_fallbacks.is_empty() else actions
+
+
+func _cached_action_needs_tactical_guard(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	catalog: CardCatalog,
+) -> bool:
+	if action == null:
+		return false
+	if action.kind in ["DECLARE_ATTACK", "RETREAT", "END_TURN"]:
+		return true
+	if action.kind != "USE_ABILITY":
+		return false
+	var slot := str(action.payload.get("slot", "active"))
+	var source := state.get_player(actor).get_pokemon(slot)
+	if source == null:
+		# An unresolvable cached ability is stale; fail closed through validation.
+		return true
+	var ability_name := str(action.payload.get("ability_name", ""))
+	for ability_value in catalog.get_card(source.card_id).get("abilities", []):
+		var ability: Dictionary = ability_value
+		if str(ability.get("name", "")) != ability_name:
+			continue
+		for effect in _flatten_effects(ability.get("effects", [])):
+			if CACHE_GUARDED_ABILITY_EFFECT_TYPES.has(str(
+				effect.get("effect_type", ""))):
+				return true
+		return false
+	# Unknown ability metadata must not let an irreversible cached action bypass
+	# the authoritative tactical validation path.
+	return true
+
+
+func _repeatable_ability_uses_this_turn(
+	state: GameState,
+	action: GameAction,
+	ability_name: String,
+	catalog: CardCatalog,
+) -> int:
+	var source_card_id := action.source.card_id if action.source != null else ""
+	if source_card_id.is_empty() and action.source != null:
+		var source_pokemon := state.get_player(action.actor).get_pokemon(action.source.slot)
+		if source_pokemon != null:
+			source_card_id = source_pokemon.card_id
+	var card_name := catalog.card_name(source_card_id)
+	var exact_log_entry := "%s使用特性%s。" % [card_name, ability_name]
+	var generic_suffix := "使用特性%s。" % ability_name
+	var count := 0
+	for index in range(state.action_log.size() - 1, -1, -1):
+		var entry := str(state.action_log[index])
+		if entry.begins_with("—— "):
 			break
-		_profile_count(profile, "rollout_depth_steps")
-		_profile_count(profile, "rollout_action_count", actions.size())
-		var action_deck_key := _deck_key_for_actor(state, actor, deck_key)
-		var heuristic_started := _profile_start(profile)
-		var allow_opponent_lookahead := (
-			not opponent_rollout_lookahead_used
-			and actor != perspective
-			and state.phase == "MAIN"
-		)
-		var action := _rollout_policy_action(
-			state,
-			perspective,
-			actor,
-			actions,
-			action_deck_key,
-			catalog,
-			engine,
-			allow_opponent_lookahead,
-			profile,
-		)
-		if allow_opponent_lookahead:
-			opponent_rollout_lookahead_used = true
-		_profile_add_elapsed(profile, "rollout_heuristic_action_ms", heuristic_started)
-		apply_started = _profile_start(profile)
-		step = engine.apply_action(state, action, rng)
-		_profile_add_elapsed(profile, "rollout_apply_action_ms", apply_started)
-		if not step.success:
+		if (
+			(not card_name.is_empty() and entry == exact_log_entry)
+			or (card_name.is_empty() and entry.ends_with(generic_suffix))
+		):
+			count += 1
+	return count
+
+
+func _intent_with_precondition(
+	action: GameAction,
+	precondition: Dictionary,
+) -> Dictionary:
+	var result := TraditionalTurnPlanner.action_intent(action)
+	for key in ["expected_public_fingerprint", "expected_actor", "expected_phase"]:
+		if precondition.has(key):
+			result[key] = precondition[key]
+	return result
+
+
+func _take_cached_turn_action(
+	cache_key: String,
+	revision: int,
+	actions: Array[GameAction],
+	information_set: AIInformationSet,
+) -> GameAction:
+	if cache_key.is_empty() or not _turn_plan_cache.has(cache_key):
+		return null
+	var entry: Dictionary = _turn_plan_cache[cache_key]
+	if revision <= int(entry.get("last_revision", -1)):
+		_turn_plan_cache.erase(cache_key)
+		return null
+	var intents: Array = Array(entry.get("intents", [])).duplicate(true)
+	if intents.is_empty():
+		_turn_plan_cache.erase(cache_key)
+		return null
+	var next_intent: Dictionary = intents[0]
+	var actual_precondition := information_set.cache_precondition()
+	if (
+		str(next_intent.get("expected_public_fingerprint", "")).is_empty()
+		or str(next_intent.get("expected_public_fingerprint", ""))
+		!= str(actual_precondition.get("expected_public_fingerprint", ""))
+		or int(next_intent.get("expected_actor", -1))
+		!= int(actual_precondition.get("expected_actor", -1))
+		or str(next_intent.get("expected_phase", ""))
+		!= str(actual_precondition.get("expected_phase", ""))
+	):
+		_turn_plan_cache.erase(cache_key)
+		return null
+	var matched := TraditionalTurnPlanner.find_matching_action(
+		next_intent, actions, information_set)
+	if matched == null:
+		_turn_plan_cache.erase(cache_key)
+		return null
+	intents.pop_front()
+	if intents.is_empty():
+		_turn_plan_cache.erase(cache_key)
+	else:
+		entry["intents"] = intents
+		entry["last_revision"] = revision
+		_turn_plan_cache[cache_key] = entry
+	return matched
+
+
+func _store_turn_plan(
+	cache_key: String,
+	revision: int,
+	plan_value: Variant,
+	selected: GameAction,
+) -> void:
+	if cache_key.is_empty() or not plan_value is Array or selected == null:
+		return
+	var intents: Array = Array(plan_value).duplicate(true)
+	var selected_signature := str(
+		TraditionalTurnPlanner.action_intent(selected).get("signature", ""))
+	for index in range(intents.size()):
+		if str(Dictionary(intents[index]).get("signature", "")) == selected_signature:
+			intents.remove_at(index)
 			break
-		resolve_started = _profile_start(profile)
-		if not _resolve_choices(state, perspective, deck_key, catalog, engine, rng):
-			_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
-			break
-		_profile_add_elapsed(profile, "rollout_resolve_choices_ms", resolve_started)
-		if state.is_terminal():
-			return 0.0 if state.result_status == GameState.RESULT_DRAW else (
-				1.0 if state.winner == perspective else -1.0)
-		if state.active_player_idx == perspective and actor != perspective:
-			break
-	var evaluate_started := _profile_start(profile)
-	var evaluation := _evaluate(state, perspective, catalog)
-	_profile_add_elapsed(profile, "rollout_evaluate_ms", evaluate_started)
-	_profile_count(profile, "rollout_evaluations")
-	return evaluation
+	if intents.is_empty() or selected.terminal:
+		_turn_plan_cache.erase(cache_key)
+		return
+	_turn_plan_cache[cache_key] = {
+		"intents": intents,
+		"last_revision": revision,
+	}
+	while _turn_plan_cache.size() > 8:
+		_turn_plan_cache.erase(_turn_plan_cache.keys()[0])
+
+
+func _traditional_action_result(
+	request: Dictionary,
+	action: GameAction,
+	strategy: Variant,
+	information_set: AIInformationSet,
+	nodes_expanded: int,
+	stop_reason: String,
+	cache_hit: bool,
+	planner_result: Dictionary,
+) -> Dictionary:
+	var mode := str(request.get("mode", "challenge"))
+	var dynamic_config := _dynamic_budget_config(request.get("dynamic_budget", {}))
+	var goal: Dictionary = {}
+	var strategy_id := "generic_balanced_v1"
+	var strategy_version := 0
+	var strategy_hash := ""
+	var reported_stop_reason := (
+		"single_action" if stop_reason == "only_legal_action" else stop_reason)
+	if strategy != null:
+		if strategy.has_method("turn_goals"):
+			goal = strategy.turn_goals(information_set.read_only_view())
+		if strategy.has_method("strategy_id"):
+			strategy_id = str(strategy.strategy_id())
+		if strategy.has_method("version"):
+			strategy_version = int(strategy.version())
+		if strategy.has_method("content_hash"):
+			strategy_hash = str(strategy.content_hash())
+	return {
+		"success": true,
+		"kind": "action",
+		"action": action.to_dict(),
+		# Compatibility aliases: one simulation now means one expanded beam node.
+		"simulations": nodes_expanded,
+		"nodes_expanded": nodes_expanded,
+		"budget_requested": mini(192, maxi(1, int(request.get(
+			"simulation_budget", GAMEPLAY_DEFAULT_SIMULATIONS)))),
+		"budget_stop_reason": reported_stop_reason,
+		"dynamic_budget_enabled": bool(dynamic_config.get("enabled", false)),
+		"deep_fallback": mode == "deep",
+		"fallback_reason": "runtime_unavailable" if mode == "deep" else "",
+		"planner": "turn_beam_v1",
+		"planner_score": float(planner_result.get("score", 0.0)),
+		"belief_samples": int(planner_result.get("belief_samples", 0)),
+		"belief_consensus": int(planner_result.get("belief_consensus", 0)),
+		"forced_tactic": str(planner_result.get("forced_tactic", "")),
+		"turn_plan_size": Array(planner_result.get("turn_plan", [])).size(),
+		"turn_plan_cache_hit": cache_hit,
+		"turn_budget_tier": str(planner_result.get("turn_budget_tier", "untracked")),
+		"turn_replan_ordinal": int(planner_result.get("turn_replan_ordinal", 0)),
+		"strategy_id": strategy_id,
+		"strategy_version": strategy_version,
+		"strategy_hash": strategy_hash,
+		"turn_goal": goal,
+		"type_matchups": false,
+	}
 
 
 func _resolve_choices(
@@ -648,47 +1221,820 @@ func _choose_request(
 	actor: int,
 	deck_key: String,
 	catalog: CardCatalog,
-	engine: GameEngine,
+	_engine: GameEngine,
 	seed: int,
-	inference: Variant,
+	match_seed: int,
+	_inference: Variant,
 	mode: String,
+	cancel_check: Callable,
+	decision_started_usec: int,
 ) -> Dictionary:
-	var response: ChoiceResponse
-	var deep_error := ""
-	if mode == "deep":
-		# Attachment choices carry exact, revision-bound indices that were not
-		# part of the released choice-head training schema. Keep the model
-		# dimensions stable and resolve these choices with the shared heuristic.
-		if request.request_type in ["select_attachment", "select_retreat_payment"]:
-			deep_error = "attachment_choice_heuristic"
-		elif inference == null:
-			deep_error = "runtime_unavailable"
-		elif not inference.has_method("supports_choice_head") or not bool(inference.call("supports_choice_head")):
-			deep_error = "choice_head_disabled"
-		elif not request.options.is_empty():
-			var neural := _neural_choice(state, request, actor, deck_key, catalog, inference)
-			if bool(neural.get("success", false)):
-				response = neural["response"]
-			else:
-				deep_error = str(neural.get("error", "choice_inference_failed"))
-	if response == null:
-		response = _heuristic_choice(
-			state,
-			request,
-			_deck_key_for_actor(state, request.player, deck_key),
-			catalog,
-			engine,
-			seed,
-			true,
-		)
+	state.set_type_matchups_enabled(false)
+	if cancel_check.is_valid() and bool(cancel_check.call()):
+		return {"success": false, "kind": "choice", "cancelled": true, "error": "cancelled"}
+	var started_usec := (
+		decision_started_usec if decision_started_usec > 0 else Time.get_ticks_usec())
+	var soft_deadline_usec := started_usec + 850000
+	var hard_deadline_usec := started_usec + TRADITIONAL_HARD_DEADLINE_MSEC * 1000
+	var choice_actor := request.player if request.player in [0, 1] else actor
+	var information_set := AIInformationSet.capture(
+		state,
+		choice_actor,
+		catalog,
+		[],
+		[],
+		match_seed,
+	)
+	if not information_set.is_valid():
+		return {
+			"success": false,
+			"kind": "choice",
+			"error": "invalid_information_set:%s" % information_set.validation_error(),
+			"simulations": 0,
+		}
+	var sampled_state := information_set.sample_state(seed)
+	if sampled_state == null:
+		return {
+			"success": false,
+			"kind": "choice",
+			"error": "choice_determinization_failed",
+			"simulations": 0,
+		}
+	var resolved_deck_key := _deck_key_for_actor(sampled_state, choice_actor, deck_key)
+	var registry: Variant = _traditional_strategy_registry_instance()
+	var strategy: Variant = registry.strategy_for(resolved_deck_key)
+	var response := _traditional_choice_response(
+		sampled_state,
+		information_set,
+		request,
+		resolved_deck_key,
+		strategy,
+		catalog,
+		cancel_check,
+		soft_deadline_usec,
+		hard_deadline_usec,
+	)
+	if cancel_check.is_valid() and bool(cancel_check.call()):
+		return {"success": false, "kind": "choice", "cancelled": true, "error": "cancelled"}
+	if not AIChoiceSelector.response_is_shape_legal(
+		request, response.option_ids, catalog, response.cancelled):
+		return {
+			"success": false,
+			"kind": "choice",
+			"error": "choice_response_constraints_unsatisfied",
+			"simulations": 0,
+		}
 	return {
 		"success": true,
 		"kind": "choice",
 		"choice_response": response.to_dict(),
 		"simulations": 0,
-		"deep_fallback": not deep_error.is_empty(),
-		"fallback_reason": deep_error,
+		"deep_fallback": mode == "deep",
+		"fallback_reason": "runtime_unavailable" if mode == "deep" else "",
+		"strategy_id": str(strategy.strategy_id()),
+		"strategy_version": int(strategy.version()),
+		"strategy_hash": str(strategy.content_hash()),
+		"planner": "turn_beam_v1",
+		"type_matchups": false,
 	}
+
+
+func _traditional_choice_response(
+	state: GameState,
+	information_set: AIInformationSet,
+	request: ChoiceView,
+	deck_key: String,
+	strategy: Variant,
+	catalog: CardCatalog,
+	cancel_check: Callable = Callable(),
+	soft_deadline_usec: int = 0,
+	hard_deadline_usec: int = 0,
+) -> ChoiceResponse:
+	# These choices have a rule-shaped dominant policy and should not be diluted
+	# by deck tuning. They still operate on the sampled information-set state.
+	if request.request_type in [
+		"choose_turn_order",
+		"choose_mulligan_draw_count",
+		"select_prize",
+		"select_retreat_payment",
+		"confirm_trigger",
+		"confirm",
+		"arven",
+	] or _is_arven_choice(request, _choice_presentation(request)):
+		return _heuristic_choice(
+			state,
+			request,
+			deck_key,
+			catalog,
+			null,
+			17,
+			false,
+			cancel_check,
+			soft_deadline_usec,
+			hard_deadline_usec,
+		)
+	if request.options.is_empty():
+		return ChoiceResponse.new(
+			request.request_id, [], request.can_cancel and request.min_select <= 0)
+	var public_view := information_set.read_only_view()
+	var choice_row: Dictionary = _traditional_read_only_copy(request.to_dict())
+	var semantics := _traditional_semantics_instance(catalog)
+	var score_mode := _choice_score_mode(request, _choice_presentation(request))
+	var joint_discard := _sequential_discard_choice_response(
+		state,
+		information_set,
+		request,
+		deck_key,
+		strategy,
+		catalog,
+		score_mode,
+		cancel_check,
+		hard_deadline_usec,
+	)
+	if joint_discard != null:
+		return joint_discard
+	var ordered_distribution := _ordered_energy_distribution_response(
+		state,
+		request,
+		deck_key,
+		catalog,
+		cancel_check,
+		soft_deadline_usec,
+		hard_deadline_usec,
+	)
+	if ordered_distribution != null:
+		return ordered_distribution
+	var repeated_energy_target := (
+		score_mode == "energy"
+		and request.allow_duplicates
+		and bool(_choice_presentation(request).get("same_target", false))
+	)
+	var energy_prefix_plans: Dictionary = {}
+	var ranked: Array[Dictionary] = []
+	var scored: Dictionary = {}
+	for index in range(request.options.size()):
+		if _choice_work_should_stop(
+			cancel_check, soft_deadline_usec, hard_deadline_usec):
+			break
+		var option: Dictionary = request.options[index]
+		var card_id := _choice_option_card_id(option, catalog)
+		var semantic_context: Dictionary = {"cards": {}}
+		if not card_id.is_empty():
+			semantic_context["cards"][card_id] = semantics.semantics_for(card_id)
+		_traditional_deep_make_read_only(semantic_context)
+		var base_score := _option_score(
+			state, request, option, deck_key, catalog, score_mode)
+		if repeated_energy_target:
+			var prefix_plan := _energy_target_prefix_plan(
+				state, request, option, deck_key, catalog,
+				_choice_max_count(request))
+			energy_prefix_plans[index] = prefix_plan
+			if int(prefix_plan.get("count", 0)) <= 0:
+				base_score = -10000.0
+			else:
+				# Rank the target by the value of its complete Energy prefix.  This
+				# distinguishes a three-Energy attack route from a target whose first
+				# attachment is useful but whose remaining attachments are wasteful.
+				base_score += clampf(
+					float(prefix_plan.get("gain", 0.0)) * 0.35, 0.0, 180.0)
+		var strategy_score := 0.0
+		if strategy != null and strategy.has_method("choice_score"):
+			strategy_score = float(strategy.choice_score(
+				public_view,
+				choice_row,
+				_traditional_read_only_copy(option),
+				semantic_context,
+			))
+		ranked.append({
+			"index": index,
+			"score": base_score + strategy_score,
+		})
+		scored[index] = true
+	for index in range(request.options.size()):
+		if not scored.has(index):
+			ranked.append({"index": index, "score": 0.0})
+	ranked.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		if is_equal_approx(float(left["score"]), float(right["score"])):
+			return int(left["index"]) < int(right["index"])
+		return float(left["score"]) > float(right["score"])
+	)
+	var ranked_indices: Array[int] = []
+	for row in ranked:
+		ranked_indices.append(int(row["index"]))
+	var max_count := _choice_max_count(request)
+	var min_count := maxi(0, request.min_select)
+	if min_count <= 0:
+		var positive_indices: Array[int] = []
+		for row in ranked:
+			if float(row["score"]) <= 0.0:
+				continue
+			positive_indices.append(int(row["index"]))
+			if not request.allow_duplicates and positive_indices.size() >= max_count:
+				break
+		if positive_indices.is_empty() and request.can_cancel:
+			return ChoiceResponse.new(request.request_id, [], true)
+		var optional_count := max_count if request.allow_duplicates else positive_indices.size()
+		if score_mode == "energy" and not positive_indices.is_empty():
+			var selected_optional_plan: Dictionary = energy_prefix_plans.get(
+				positive_indices[0], {})
+			optional_count = mini(optional_count, int(selected_optional_plan.get(
+				"count",
+				_useful_energy_target_selection_count(
+					state, request, request.options[positive_indices[0]],
+					deck_key, catalog, max_count),
+			)))
+			if optional_count <= 0 and request.can_cancel:
+				return ChoiceResponse.new(request.request_id, [], true)
+		return ChoiceResponse.new(
+			request.request_id,
+			_ranked_choice_option_ids(
+				request, positive_indices, optional_count, catalog),
+		)
+	var count := maxi(min_count, max_count)
+	if score_mode == "energy" and not ranked_indices.is_empty():
+		var selected_required_plan: Dictionary = energy_prefix_plans.get(
+			ranked_indices[0], {})
+		count = maxi(min_count, mini(count, int(selected_required_plan.get(
+			"count",
+			_useful_energy_target_selection_count(
+				state, request, request.options[ranked_indices[0]],
+				deck_key, catalog, max_count),
+		))))
+	return ChoiceResponse.new(
+		request.request_id,
+		_ranked_choice_option_ids(request, ranked_indices, count, catalog),
+	)
+
+
+func _sequential_discard_choice_response(
+	state: GameState,
+	information_set: AIInformationSet,
+	request: ChoiceView,
+	deck_key: String,
+	strategy: Variant,
+	catalog: CardCatalog,
+	score_mode: String,
+	cancel_check: Callable = Callable(),
+	hard_deadline_usec: int = 0,
+) -> ChoiceResponse:
+	# Multi-card costs must value the final hand, not each card against the same
+	# untouched hand.  Otherwise two copies can each look disposable because the
+	# other copy appears to remain, and both are discarded together.
+	var maximum := _choice_max_count(request)
+	if (
+		score_mode != "discard"
+		or maximum <= 1
+		or request.allow_duplicates
+		or state == null
+	):
+		return null
+	var virtual_state := GameState.from_dict(state.snapshot())
+	virtual_state.set_type_matchups_enabled(false)
+	var selected_indices: Array[int] = []
+	var selected_ids: Array[String] = []
+	var semantics := _traditional_semantics_instance(catalog)
+	var choice_row: Dictionary = _traditional_read_only_copy(request.to_dict())
+	for selection_index in range(maximum):
+		if (
+			(cancel_check.is_valid() and bool(cancel_check.call()))
+			or (hard_deadline_usec > 0 and Time.get_ticks_usec() >= hard_deadline_usec)
+		):
+			return null
+		var virtual_info := AIInformationSet.capture(
+			virtual_state,
+			request.player,
+			catalog,
+			[],
+			[],
+			information_set.match_seed(),
+		)
+		if not virtual_info.is_valid():
+			return null
+		var public_view := virtual_info.read_only_view()
+		var best_index := -1
+		var best_score := -INF
+		var best_tiebreak := ""
+		for option_index in range(request.options.size()):
+			if option_index in selected_indices:
+				continue
+			var option: Dictionary = request.options[option_index]
+			var card_id := _choice_option_card_id(option, catalog)
+			var semantic_context: Dictionary = {"cards": {}}
+			if not card_id.is_empty():
+				semantic_context["cards"][card_id] = semantics.semantics_for(card_id)
+			_traditional_deep_make_read_only(semantic_context)
+			var score := _option_score(
+				virtual_state, request, option, deck_key, catalog, score_mode)
+			if strategy != null and strategy.has_method("choice_score"):
+				score += float(strategy.choice_score(
+					public_view,
+					choice_row,
+					_traditional_read_only_copy(option),
+					semantic_context,
+				))
+			var tiebreak := "%s|%s" % [
+				card_id, str(option.get("option_id", ""))]
+			if (
+				best_index < 0
+				or score > best_score + 0.001
+				or (is_equal_approx(score, best_score) and tiebreak < best_tiebreak)
+			):
+				best_index = option_index
+				best_score = score
+				best_tiebreak = tiebreak
+		if best_index < 0:
+			return null
+		if selection_index >= request.min_select and best_score <= 0.0:
+			break
+		var selected_option: Dictionary = request.options[best_index]
+		var selected_option_id := str(selected_option.get("option_id", ""))
+		if selected_option_id.is_empty():
+			return null
+		selected_indices.append(best_index)
+		selected_ids.append(selected_option_id)
+		if _choice_option_is_hand_card(selected_option):
+			var selected_card_id := _choice_option_card_id(selected_option, catalog)
+			var hand := virtual_state.get_player(request.player).hand
+			var hand_index := hand.find(selected_card_id)
+			if hand_index >= 0:
+				hand.remove_at(hand_index)
+	if selected_ids.size() < request.min_select:
+		return null
+	if not AIChoiceSelector.response_is_shape_legal(
+		request, selected_ids, catalog, false):
+		return null
+	return ChoiceResponse.new(request.request_id, selected_ids)
+
+
+func _useful_energy_target_selection_count(
+	state: GameState,
+	request: ChoiceView,
+	option: Dictionary,
+	deck_key: String,
+	catalog: CardCatalog,
+	max_count: int,
+) -> int:
+	return int(_energy_target_prefix_plan(
+		state, request, option, deck_key, catalog, max_count).get(
+			"count", max_count))
+
+
+func _energy_target_prefix_plan(
+	state: GameState,
+	request: ChoiceView,
+	option: Dictionary,
+	deck_key: String,
+	catalog: CardCatalog,
+	max_count: int,
+) -> Dictionary:
+	var presentation := _choice_presentation(request)
+	if (
+		not request.allow_duplicates
+		or not bool(presentation.get("same_target", false))
+	):
+		# Independent targets may each have a useful deficit; their normal ranked
+		# selection must not be capped by the first target's missing Energy.
+		return {"count": max_count, "gain": 0.0}
+	var target_player := _choice_option_player(option, request.player)
+	var pokemon := state.get_player(target_player).get_pokemon(
+		_choice_option_slot(option))
+	if pokemon == null or max_count <= 0:
+		return {"count": max_count, "gain": 0.0}
+	var energy_ids: Array[String] = []
+	for card_id_value in presentation.get("card_ids", []):
+		var listed_id := str(card_id_value)
+		if catalog.is_energy(listed_id):
+			energy_ids.append(listed_id)
+	var fallback_energy_id := _choice_energy_card_id(presentation, catalog)
+	if energy_ids.is_empty() and not fallback_energy_id.is_empty():
+		energy_ids.append(fallback_energy_id)
+	if energy_ids.is_empty():
+		return {"count": max_count, "gain": 0.0}
+
+	# Evaluate every complete prefix.  A temporarily flat second attachment can
+	# be the bridge to a valuable third attachment (for example Deoxys), so a
+	# greedy first-zero-marginal break is incorrect.
+	var baseline := _energy_attack_plan_utility(
+		state, target_player, pokemon, deck_key, catalog)
+	var best_utility := baseline
+	var best_count := 0
+	var appended := 0
+	for prefix_index in range(max_count):
+		var energy_card_id := str(energy_ids[mini(
+			prefix_index, energy_ids.size() - 1)])
+		if energy_card_id.is_empty() or not catalog.is_energy(energy_card_id):
+			break
+		pokemon.energy_card_ids.append(energy_card_id)
+		appended += 1
+		var prefix_count := prefix_index + 1
+		var utility := _energy_attack_plan_utility(
+			state, target_player, pokemon, deck_key, catalog
+		) - float(prefix_count) * 25.0
+		# Strict comparison intentionally keeps the smaller prefix on ties.
+		if utility > best_utility + 0.001:
+			best_utility = utility
+			best_count = prefix_count
+	for _index in range(appended):
+		pokemon.energy_card_ids.remove_at(pokemon.energy_card_ids.size() - 1)
+	return {
+		"count": best_count,
+		"gain": maxf(0.0, best_utility - baseline),
+	}
+
+
+func _ordered_energy_distribution_response(
+	state: GameState,
+	request: ChoiceView,
+	deck_key: String,
+	catalog: CardCatalog,
+	cancel_check: Callable = Callable(),
+	soft_deadline_usec: int = 0,
+	hard_deadline_usec: int = 0,
+) -> ChoiceResponse:
+	var presentation := _choice_presentation(request)
+	if (
+		request.request_type != "distribute_energy"
+		or not request.allow_duplicates
+		or bool(presentation.get("same_target", false))
+	):
+		return null
+	var maximum := _choice_max_count(request)
+	if maximum < 2 or maximum > 3:
+		return null
+	var raw_card_ids: Variant = presentation.get("card_ids", [])
+	if not raw_card_ids is Array or Array(raw_card_ids).size() < maximum:
+		return null
+	# ChoiceResponse.option_ids[k] targets presentation.card_ids[k].  Keep the
+	# public order exactly; filtering or sorting these ids silently retargets a
+	# different Energy in the authoritative continuation.
+	var energy_ids: Array[String] = []
+	for index in range(maximum):
+		var energy_id := str(Array(raw_card_ids)[index])
+		if not catalog.is_energy(energy_id):
+			return null
+		energy_ids.append(energy_id)
+
+	var player := state.get_player(request.player)
+	var targets: Array[Dictionary] = []
+	var seen_slots: Dictionary = {}
+	var seen_option_ids: Dictionary = {}
+	for option_index in range(request.options.size()):
+		var option: Dictionary = request.options[option_index]
+		var option_id := str(option.get("option_id", ""))
+		var slot := _choice_option_slot(option)
+		if (
+			option_id.is_empty()
+			or slot.is_empty()
+			or _choice_option_player(option, request.player) != request.player
+			or seen_slots.has(slot)
+			or seen_option_ids.has(option_id)
+		):
+			continue
+		var pokemon := player.get_pokemon(slot)
+		if pokemon == null:
+			continue
+		var public_card_id := _choice_option_card_id(option, catalog)
+		if not public_card_id.is_empty() and public_card_id != pokemon.card_id:
+			continue
+		seen_slots[slot] = true
+		seen_option_ids[option_id] = true
+		targets.append({
+			"option_index": option_index,
+			"option_id": option_id,
+			"slot": slot,
+		})
+	if targets.is_empty():
+		return null
+
+	var purpose := str(presentation.get("purpose", ""))
+	var is_relocation := purpose.begins_with("relocate_energy")
+	var minimum := maxi(0, request.min_select)
+	if is_relocation and minimum != maximum:
+		# The relocation continuation requires one target for every public
+		# attachment ref.  A malformed partial request is left to the normal
+		# fail-closed choice path instead of guessing at the private stack.
+		return null
+	var original_energy := _capture_public_field_energy(player)
+	var best_ids: Array[String] = []
+	var best_score := -INF
+	var found_best := false
+	var invalid_relocation := false
+	for count in range(minimum, maximum + 1):
+		var assignments: Array = [[]]
+		for _position in range(count):
+			var expanded: Array = []
+			for prefix_value in assignments:
+				var prefix: Array = prefix_value
+				for target_index in range(targets.size()):
+					var next_prefix := prefix.duplicate()
+					next_prefix.append(target_index)
+					expanded.append(next_prefix)
+			assignments = expanded
+		for assignment_value in assignments:
+			if _choice_work_should_stop(
+				cancel_check, soft_deadline_usec, hard_deadline_usec):
+				break
+			var assignment: Array = assignment_value
+			var option_ids: Array[String] = []
+			for target_index_value in assignment:
+				option_ids.append(str(targets[int(target_index_value)]["option_id"]))
+			if not AIChoiceSelector.response_is_shape_legal(
+				request, option_ids, catalog, false):
+				continue
+			_restore_public_field_energy(player, original_energy)
+			if is_relocation and not _remove_public_relocation_energy(
+				state, request, energy_ids, maximum):
+				invalid_relocation = true
+				break
+			for position in range(assignment.size()):
+				var target: Dictionary = targets[int(assignment[position])]
+				var target_pokemon := player.get_pokemon(str(target["slot"]))
+				if target_pokemon != null:
+					target_pokemon.energy_card_ids.append(energy_ids[position])
+			var score := _public_energy_distribution_board_utility(
+				state, request.player, deck_key, catalog)
+			_restore_public_field_energy(player, original_energy)
+			# Assignments are generated by count and option index.  Strict score
+			# comparison therefore gives deterministic smaller-prefix/lexicographic
+			# tie breaking without consulting hidden state or random data.
+			if not found_best or score > best_score + 0.001:
+				found_best = true
+				best_score = score
+				best_ids = option_ids
+		if invalid_relocation or _choice_work_should_stop(
+			cancel_check, soft_deadline_usec, hard_deadline_usec):
+			break
+	_restore_public_field_energy(player, original_energy)
+	if invalid_relocation or not found_best:
+		return null
+	return ChoiceResponse.new(
+		request.request_id,
+		best_ids,
+		best_ids.is_empty() and request.can_cancel,
+	)
+
+
+func _capture_public_field_energy(player: PlayerState) -> Dictionary:
+	var result: Dictionary = {}
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon != null:
+			result[str(row["slot"])] = pokemon.energy_card_ids.duplicate()
+	return result
+
+
+func _restore_public_field_energy(player: PlayerState, values: Dictionary) -> void:
+	for slot_value in values:
+		var pokemon := player.get_pokemon(str(slot_value))
+		if pokemon != null:
+			pokemon.energy_card_ids.assign(values[slot_value])
+
+
+func _remove_public_relocation_energy(
+	state: GameState,
+	request: ChoiceView,
+	energy_ids: Array[String],
+	count: int,
+) -> bool:
+	var presentation := _choice_presentation(request)
+	var source_player := int(presentation.get("source_player", request.player))
+	var source_slot := str(presentation.get("source_slot", ""))
+	if source_player != request.player or source_slot.is_empty():
+		return false
+	var source := state.get_player(source_player).get_pokemon(source_slot)
+	var refs_value: Variant = presentation.get("attachment_refs", [])
+	if source == null or not refs_value is Array or Array(refs_value).size() < count:
+		return false
+	var indices: Array[int] = []
+	var seen_indices: Dictionary = {}
+	for position in range(count):
+		var ref_value: Variant = Array(refs_value)[position]
+		if not ref_value is Dictionary:
+			return false
+		var ref: Dictionary = ref_value
+		var index := int(ref.get("index", -1))
+		if (
+			str(ref.get("kind", "")) != "attachment"
+			or int(ref.get("player", -1)) != source_player
+			or str(ref.get("slot", "")) != source_slot
+			or str(ref.get("attachment_type", "")) != "energy"
+			or index < 0
+			or index >= source.energy_card_ids.size()
+			or seen_indices.has(index)
+			or str(ref.get("card_id", "")) != energy_ids[position]
+			or str(source.energy_card_ids[index]) != energy_ids[position]
+		):
+			return false
+		seen_indices[index] = true
+		indices.append(index)
+	indices.sort()
+	indices.reverse()
+	for index in indices:
+		source.energy_card_ids.remove_at(index)
+	return true
+
+
+func _public_energy_distribution_board_utility(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var score := 0.0
+	var opponent := state.get_player(1 - actor)
+	var opponent_hp := (
+		opponent.active.current_hp(catalog) if opponent.active != null else 0)
+	var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
+	for row in state.get_player(actor).get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null:
+			continue
+		var best := -INF
+		for attack_value in catalog.get_card(pokemon.card_id).get("attacks", []):
+			var attack: Dictionary = attack_value
+			var missing := _missing_energy_count(
+				pokemon, attack.get("cost", []), catalog)
+			# Printed damage and Energy costs are public semantic data.  Deliberately
+			# avoid the full damage estimator here: some attacks inspect hidden deck
+			# contents, and type-matchup metadata is outside Challenge AI's ruleset.
+			var damage := int(attack.get("damage", 0))
+			var value := float(damage) - float(missing) * 55.0
+			if missing == 0 and damage > 0:
+				value += 80.0
+				if damage >= high_impact_floor:
+					value += 70.0
+				if opponent_hp > 0 and damage >= opponent_hp:
+					value += 200.0 + float(catalog.prize_value(
+						opponent.active.card_id)) * 100.0
+			elif missing == 1 and damage >= high_impact_floor:
+				value += 25.0
+			best = maxf(best, value)
+		if best > -INF:
+			score += best * (1.0 if str(row["slot"]) == "active" else 0.9)
+	return score
+
+
+func _energy_attack_plan_utility(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var opponent := state.get_player(1 - actor)
+	var opponent_hp := (
+		opponent.active.current_hp(catalog) if opponent.active != null else 0)
+	var opponent_prizes := (
+		catalog.prize_value(opponent.active.card_id)
+		if opponent.active != null else 0)
+	var best := _energy_attack_plan_for_card(
+		state, actor, pokemon, pokemon.card_id, opponent_hp,
+		opponent_prizes, catalog)
+	for descendant_id in _energy_plan_evolution_descendants(
+		state, actor, pokemon.card_id, deck_key, catalog):
+		best = maxf(best, _energy_attack_plan_for_card(
+			state, actor, pokemon, descendant_id, opponent_hp,
+			opponent_prizes, catalog) * 0.75)
+	return best
+
+
+func _energy_attack_plan_for_card(
+	state: GameState,
+	actor: int,
+	source: PokemonState,
+	card_id: String,
+	opponent_hp: int,
+	opponent_prizes: int,
+	catalog: CardCatalog,
+) -> float:
+	var attacks: Array = catalog.get_card(card_id).get("attacks", [])
+	if attacks.is_empty():
+		return -99.0
+	var probe := source
+	if card_id != source.card_id:
+		probe = source.clone_state()
+		probe.evolution_stack_ids.append(source.card_id)
+		probe.card_id = card_id
+	var best := -INF
+	for attack_index in range(attacks.size()):
+		var attack: Dictionary = attacks[attack_index]
+		var missing := _missing_energy_count(
+			probe, attack.get("cost", []), catalog)
+		var damage := (
+			_estimated_pokemon_attack_damage(
+				state, actor, probe, attack_index, catalog)
+			if probe == source
+			else _estimated_evolution_attack_damage(
+				state, actor, source, probe, attack_index, catalog)
+		)
+		var value := float(damage) - float(missing) * 50.0
+		if missing == 0 and damage > 0:
+			value += 80.0
+			if opponent_hp > 0 and damage >= opponent_hp:
+				value += 220.0 + float(opponent_prizes) * 100.0
+		best = maxf(best, value)
+	return best
+
+
+func _estimated_evolution_attack_damage(
+	state: GameState,
+	actor: int,
+	source: PokemonState,
+	probe: PokemonState,
+	attack_index: int,
+	catalog: CardCatalog,
+) -> int:
+	var player := state.get_player(actor)
+	if player.active == source:
+		player.active = probe
+		var active_damage := _estimated_pokemon_attack_damage(
+			state, actor, probe, attack_index, catalog)
+		player.active = source
+		return active_damage
+	var bench_index := player.bench.find(source)
+	if bench_index >= 0:
+		player.bench[bench_index] = probe
+		var bench_damage := _estimated_pokemon_attack_damage(
+			state, actor, probe, attack_index, catalog)
+		player.bench[bench_index] = source
+		return bench_damage
+	return _best_pokemon_damage(probe, catalog)
+
+
+func _energy_plan_evolution_descendants(
+	state: GameState,
+	actor: int,
+	source_card_id: String,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> Array[String]:
+	var result: Array[String] = []
+	if deck_key.is_empty() or source_card_id.is_empty():
+		return result
+	var deck_cards := catalog.expand_deck(deck_key)
+	var frontier: Array[String] = [source_card_id]
+	var seen := {source_card_id: true}
+	for _depth in range(2):
+		var next_frontier: Array[String] = []
+		for parent_id in frontier:
+			var parent_name := catalog.card_name(parent_id)
+			for candidate_id_value in deck_cards:
+				var candidate_id := str(candidate_id_value)
+				if seen.has(candidate_id) or not catalog.is_pokemon(candidate_id):
+					continue
+				if str(catalog.get_card(candidate_id).get(
+					"evolves_from", "")) != parent_name:
+					continue
+				seen[candidate_id] = true
+				if _deck_evolution_copy_publicly_available(
+					state, actor, candidate_id, deck_cards):
+					next_frontier.append(candidate_id)
+					var probe := PokemonState.new(candidate_id)
+					if (
+						AIDeckProfiles.contains(deck_key, "core", candidate_id)
+						or catalog.prize_value(candidate_id) >= 2
+						or _best_pokemon_damage(probe, catalog)
+							>= AIDeckProfiles.high_impact_damage_floor(deck_key)
+					):
+						result.append(candidate_id)
+		frontier = next_frontier
+		if frontier.is_empty():
+			break
+	return result
+
+
+func _deck_evolution_copy_publicly_available(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	deck_cards: Array[String],
+) -> bool:
+	var deck_copies := deck_cards.count(card_id)
+	if deck_copies <= 0:
+		return false
+	# Deliberately use only the fixed public deck list and the actor's public
+	# discard.  The real deck/prize ordering must never influence a choice.
+	return state.get_player(actor).discard.count(card_id) < deck_copies
+
+
+static func _traditional_read_only_copy(value: Variant) -> Variant:
+	var result: Variant = (
+		value.duplicate(true) if value is Dictionary or value is Array else value)
+	_traditional_deep_make_read_only(result)
+	return result
+
+
+static func _traditional_deep_make_read_only(value: Variant) -> void:
+	if value is Dictionary:
+		var dictionary: Dictionary = value
+		for nested in dictionary.values():
+			_traditional_deep_make_read_only(nested)
+		dictionary.make_read_only()
+	elif value is Array:
+		var array: Array = value
+		for nested in array:
+			_traditional_deep_make_read_only(nested)
+		array.make_read_only()
 
 
 func _heuristic_choice(
@@ -699,6 +2045,9 @@ func _heuristic_choice(
 	engine: GameEngine = null,
 	seed: int = 17,
 	enable_lookahead: bool = false,
+	cancel_check: Callable = Callable(),
+	soft_deadline_usec: int = 0,
+	hard_deadline_usec: int = 0,
 ) -> ChoiceResponse:
 	if request.options.is_empty():
 		return ChoiceResponse.new(
@@ -747,26 +2096,37 @@ func _heuristic_choice(
 			state, request, deck_key, catalog, engine, seed, mode)
 		if lookahead != null:
 			return lookahead
-	var ranked: Array[int] = []
+	var ranked_rows: Array[Dictionary] = []
+	var scored: Dictionary = {}
 	for index in range(request.options.size()):
-		ranked.append(index)
-	ranked.sort_custom(func(left: int, right: int) -> bool:
-		var left_score := _option_score(
-			state, request, request.options[left], deck_key, catalog, mode)
-		var right_score := _option_score(
-			state, request, request.options[right], deck_key, catalog, mode)
-		if is_equal_approx(left_score, right_score):
-			return left < right
-		return left_score > right_score
+		if _choice_work_should_stop(
+			cancel_check, soft_deadline_usec, hard_deadline_usec):
+			break
+		ranked_rows.append({
+			"index": index,
+			"score": _option_score(
+				state, request, request.options[index], deck_key, catalog, mode),
+		})
+		scored[index] = true
+	for index in range(request.options.size()):
+		if not scored.has(index):
+			ranked_rows.append({"index": index, "score": 0.0})
+	ranked_rows.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		if is_equal_approx(float(left["score"]), float(right["score"])):
+			return int(left["index"]) < int(right["index"])
+		return float(left["score"]) > float(right["score"])
 	)
+	var ranked: Array[int] = []
+	var scores_by_index: Dictionary = {}
+	for row in ranked_rows:
+		ranked.append(int(row["index"]))
+		scores_by_index[int(row["index"])] = float(row["score"])
 	var max_count: int = _choice_max_count(request)
 	var min_count: int = max(0, request.min_select)
 	if min_count <= 0:
 		var positive_ranked: Array[int] = []
 		for index in ranked:
-			if _option_score(
-				state, request, request.options[index], deck_key, catalog, mode
-			) <= 0.0:
+			if float(scores_by_index.get(index, 0.0)) <= 0.0:
 				continue
 			positive_ranked.append(index)
 			if not request.allow_duplicates and positive_ranked.size() >= max_count:
@@ -776,12 +2136,13 @@ func _heuristic_choice(
 		var optional_count: int = max_count if request.allow_duplicates else positive_ranked.size()
 		return ChoiceResponse.new(
 			request.request_id,
-			_ranked_choice_option_ids(request, positive_ranked, optional_count),
+			_ranked_choice_option_ids(
+				request, positive_ranked, optional_count, catalog),
 		)
 	var count: int = max(min_count, max_count)
 	return ChoiceResponse.new(
 		request.request_id,
-		_ranked_choice_option_ids(request, ranked, count),
+		_ranked_choice_option_ids(request, ranked, count, catalog),
 	)
 
 
@@ -902,7 +2263,8 @@ func _semantic_lookahead_choice(
 		for index in ranked:
 			if index != anchor:
 				candidate_ranked.append(index)
-		var option_ids := _ranked_choice_option_ids(request, candidate_ranked, count)
+		var option_ids := _ranked_choice_option_ids(
+			request, candidate_ranked, count, catalog)
 		if option_ids.is_empty() and min_count > 0:
 			continue
 		var response := ChoiceResponse.new(request.request_id, option_ids, false)
@@ -967,9 +2329,15 @@ func _choice_max_count(request: ChoiceView) -> int:
 func _choice_score_mode(request: ChoiceView, presentation: Dictionary) -> String:
 	var purpose := str(presentation.get("purpose", ""))
 	if request.request_type == "select_attachment":
+		if purpose == "discard_energy":
+			return (
+				"energy_source"
+				if int(presentation.get("source_player", request.player)) == request.player
+				else "target"
+			)
 		return (
 			"energy"
-			if str(request.presentation.get("purpose", "")).begins_with("relocate_energy")
+			if purpose.begins_with("relocate_energy")
 			else "discard"
 		)
 	if purpose in ["discard_then_draw", "discard_cards", "hand_bottom_draw", "houb", "zinnia"]:
@@ -999,6 +2367,8 @@ func _arven_choice_option_ids(
 	deck_key: String,
 	catalog: CardCatalog,
 ) -> Array[String]:
+	var opening_switch := _psychic_arven_opening_switch_option(
+		state, request, deck_key, catalog)
 	var best_item := -1
 	var best_item_score := -INF
 	var best_tool := -1
@@ -1013,6 +2383,11 @@ func _arven_choice_option_ids(
 		elif catalog.is_tool(card_id) and score > best_tool_score:
 			best_tool = index
 			best_tool_score = score
+	if opening_switch >= 0:
+		# Arven is resolved by this trusted category-aware selector rather than the
+		# deck hook.  Preserve the only public, executable Cresselia opening route
+		# here so generic keep-value cannot replace Switch with Ultra Ball.
+		best_item = opening_switch
 	var selected: Array[String] = []
 	if best_item >= 0:
 		selected.append(str(request.options[best_item]["option_id"]))
@@ -1031,52 +2406,78 @@ func _arven_choice_option_ids(
 	return selected
 
 
+func _psychic_arven_opening_switch_option(
+	state: GameState,
+	request: ChoiceView,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> int:
+	if (
+		deck_key != "psychic"
+		or state == null
+		or request.player not in [0, 1]
+		or state.phase != "MAIN"
+		or state.active_player_idx != request.player
+		or state.first_player_idx == request.player
+		or not state.is_player_first_turn(request.player)
+	):
+		return -1
+	var player := state.get_player(request.player)
+	if player.active == null or player.active.card_id == "sv1-113":
+		return -1
+	# An in-hand Switch or a legal direct retreat already completes the route;
+	# spending the once-per-turn Supporter on another copy is not dominant.
+	if "sv1-150" in player.hand:
+		return -1
+	var cresselia_bench_index := -1
+	for bench_index in range(player.bench.size()):
+		if (
+			player.bench[bench_index] != null
+			and player.bench[bench_index].card_id == "sv1-113"
+		):
+			cresselia_bench_index = bench_index
+			break
+	if cresselia_bench_index < 0:
+		return -1
+	var cresselia: PokemonState = player.bench[cresselia_bench_index]
+	var can_pay_attack := (
+		"sv1-ener-5" in cresselia.energy_card_ids
+		or (
+			not player.energy_attached_this_turn
+			and "sv1-ener-5" in player.hand
+		)
+	)
+	if not can_pay_attack:
+		return -1
+	if RulesValidator.new(catalog).can_start_retreat(
+		state, request.player, cresselia_bench_index).is_empty():
+		return -1
+	for index in range(request.options.size()):
+		if _choice_option_card_id(request.options[index], catalog) == "sv1-150":
+			return index
+	return -1
+
+
 func _ranked_choice_option_ids(
 	request: ChoiceView,
 	ranked: Array[int],
 	count: int,
+	catalog: CardCatalog = null,
 ) -> Array[String]:
-	var selected: Array[String] = []
-	if count <= 0 or ranked.is_empty():
-		return selected
-	if not request.allow_duplicates:
-		for index in ranked.slice(0, count):
-			selected.append(str(request.options[index]["option_id"]))
-		return selected
-	var max_per_target := int(request.presentation.get("max_per_target", 99))
-	if max_per_target >= count:
-		for _index in range(count):
-			selected.append(str(request.options[ranked[0]]["option_id"]))
-		return selected
-	var per_target: Dictionary = {}
-	for index in ranked:
-		if selected.size() >= count:
-			break
-		var option: Dictionary = request.options[index]
-		var target_key := _choice_target_key(option)
-		if not target_key.is_empty():
-			if int(per_target.get(target_key, 0)) >= max_per_target:
-				continue
-			per_target[target_key] = int(per_target.get(target_key, 0)) + 1
-		selected.append(str(option["option_id"]))
-	while selected.size() < count:
-		selected.append(str(request.options[ranked[0]]["option_id"]))
-	return selected
+	return AIChoiceSelector.select_ranked_option_ids(
+		request, ranked, count, catalog)
 
 
-func _choice_target_key(option: Dictionary) -> String:
-	var player := -1
-	var ref_variant: Variant = option.get("ref", {})
-	if ref_variant is Dictionary:
-		var ref: Dictionary = ref_variant
-		player = int(ref.get("player", -1))
-		var ref_slot := str(ref.get("slot", ""))
-		if not ref_slot.is_empty():
-			return "%d:%s" % [player, ref_slot]
-	var option_parts := str(option.get("option_id", "")).split(":")
-	if option_parts.size() >= 3 and option_parts[0] in ["pokemon", "attachment"]:
-		return "%s:%s" % [option_parts[1], option_parts[2]]
-	return ""
+func _choice_work_should_stop(
+	cancel_check: Callable,
+	soft_deadline_usec: int,
+	hard_deadline_usec: int,
+) -> bool:
+	return (
+		(cancel_check.is_valid() and bool(cancel_check.call()))
+		or (soft_deadline_usec > 0 and Time.get_ticks_usec() >= soft_deadline_usec)
+		or (hard_deadline_usec > 0 and Time.get_ticks_usec() >= hard_deadline_usec)
+	)
 
 
 func _option_score(
@@ -1089,7 +2490,9 @@ func _option_score(
 ) -> float:
 	var card_id := _choice_option_card_id(option, catalog)
 	if mode == "discard":
-		return _discard_choice_score(state, request.player, card_id, deck_key, catalog)
+		return _discard_choice_score(
+			state, request.player, card_id, deck_key, catalog,
+			_choice_option_is_hand_card(option))
 	var presentation := _choice_presentation(request)
 	if mode == "energy_source":
 		return _energy_source_choice_value(
@@ -1100,14 +2503,23 @@ func _option_score(
 			deck_key,
 			catalog,
 		)
-	var score := _card_keep_value(state, request.player, card_id, deck_key, catalog)
+	# Card-retention value is meaningful for search/discard choices, but it is
+	# not a board-target value.  Starting Energy/heal/switch/attack targets with
+	# it used to count a core Pokemon's search priority and HP a second time,
+	# overwhelming the marginal effect of the choice itself.
+	var score := (
+		_card_keep_value(state, request.player, card_id, deck_key, catalog)
+		if mode == "search"
+		else 0.0
+	)
 	var slot := _choice_option_slot(option)
 	var target_player := _choice_option_player(option, request.player)
 	var pokemon := state.get_player(target_player).get_pokemon(slot)
 	if pokemon:
 		var hp := pokemon.current_hp(catalog)
 		if mode == "target" or target_player != request.player:
-			score += _target_priority(pokemon, catalog)
+			score += _target_choice_value(
+				state, request, target_player, pokemon, slot, presentation, catalog)
 		elif mode == "heal":
 			score += pokemon.damage_counters * 30.0
 		elif mode == "energy":
@@ -1169,6 +2581,18 @@ func _choice_option_player(option: Dictionary, fallback: int) -> int:
 	return fallback
 
 
+func _choice_option_is_hand_card(option: Dictionary) -> bool:
+	var ref_variant: Variant = option.get("ref", {})
+	if ref_variant is Dictionary:
+		var ref: Dictionary = ref_variant
+		if ref.has("zone"):
+			return str(ref.get("zone", "")) == "hand"
+		if str(ref.get("kind", "")) == "attachment":
+			return false
+	# Older ChoiceView producers omitted zone for hand-card choices.
+	return true
+
+
 func _choice_energy_card_id(presentation: Dictionary, catalog: CardCatalog) -> String:
 	for value in presentation.get("card_ids", []):
 		var card_id := str(value)
@@ -1186,6 +2610,7 @@ func _card_keep_value(
 	card_id: String,
 	deck_key: String,
 	catalog: CardCatalog,
+	removing_one: bool = false,
 ) -> float:
 	if card_id.is_empty():
 		return 0.0
@@ -1193,11 +2618,33 @@ func _card_keep_value(
 	var value := _card_priority(card_id, deck_key, catalog)
 	if catalog.is_pokemon(card_id):
 		value += int(catalog.get_card(card_id).get("hp", 0)) * 0.25
+		# With no benched Pokemon, a legal Basic is immediate survival material:
+		# losing the lone Active would otherwise end the game before a stranded
+		# evolution card can matter.  Keep this in the trusted generic scorer so
+		# every deck strategy and simulated search choice agrees on the priority.
+		if (
+			catalog.is_basic_pokemon(card_id)
+			and player.active != null
+			and player.bench_count() == 0
+		):
+			value += _lone_active_backup_search_bonus(state, actor, catalog)
 		if _semantic_v2_enabled():
 			value += _core_evolution_line_card_bonus(
-				state, actor, card_id, deck_key, catalog)
-	if catalog.is_energy(card_id) and _has_energy_target_with_missing_cost(state, actor, catalog):
-		value += 50.0
+				state, actor, card_id, deck_key, catalog, removing_one)
+	if catalog.is_energy(card_id):
+		if _has_energy_target_with_missing_cost(state, actor, catalog):
+			value += 50.0
+		# Multi-card costs are evaluated against a virtually shrinking hand.  Once
+		# only one Energy that can advance a public attack remains, discarding it
+		# would often turn a playable attacker into a dead board (notably Ultra
+		# Ball with two Special Energy in the Colorless deck).
+		if (
+			removing_one
+			and _energy_card_improves_attack_readiness(
+				state, actor, card_id, catalog)
+			and _helpful_hand_energy_count(state, actor, catalog) <= 1
+		):
+			value += float(SCORE_WEIGHTS["last_useful_energy"])
 	if catalog.is_trainer(card_id):
 		value += 18.0
 		if _semantic_v2_enabled():
@@ -1206,9 +2653,48 @@ func _card_keep_value(
 	for hand_card_id in player.hand:
 		if hand_card_id == card_id:
 			duplicate_count += 1
-	if duplicate_count >= 2:
-		value -= min(90.0, float(duplicate_count - 1) * 35.0)
+	var remaining_duplicates := maxi(
+		0, duplicate_count - (1 if removing_one else 0))
+	if (
+		remaining_duplicates >= 1
+		and catalog.is_pokemon(card_id)
+		and (
+			AIDeckProfiles.contains(deck_key, "core", card_id)
+			or AIDeckProfiles.contains(deck_key, "evolution", card_id)
+		)
+	):
+		value -= min(120.0, float(remaining_duplicates) * 45.0)
+	elif removing_one and remaining_duplicates >= 1:
+		# A hand-discard decision values the marginal copy.  Once another copy
+		# remains public in hand, a secondary engine/basic must not retain the
+		# full one-of search premium (notably Psychic discard-damage fuel).
+		value -= min(90.0, float(remaining_duplicates) * 60.0)
+	elif remaining_duplicates >= 2:
+		value -= min(90.0, float(remaining_duplicates - 1) * 35.0)
 	return value
+
+
+func _lone_active_backup_search_bonus(
+	state: GameState,
+	actor: int,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	if player.active == null or player.bench_count() > 0:
+		return 0.0
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null:
+		return 80.0
+	var active_hp := player.active.current_hp(catalog)
+	var ready_damage := _best_available_damage(state, 1 - actor, catalog)
+	var next_attack_damage := _best_pokemon_damage(opponent.active, catalog)
+	var next_attack_missing := _best_missing_energy(opponent.active, catalog)
+	if (
+		ready_damage >= active_hp
+		or (next_attack_missing <= 1 and next_attack_damage >= active_hp)
+	):
+		return float(SCORE_WEIGHTS["lone_active_backup"])
+	return 80.0
 
 
 func _core_evolution_line_card_bonus(
@@ -1217,6 +2703,7 @@ func _core_evolution_line_card_bonus(
 	card_id: String,
 	deck_key: String,
 	catalog: CardCatalog,
+	removing_one: bool = false,
 ) -> float:
 	if deck_key.is_empty() or not catalog.is_pokemon(card_id):
 		return 0.0
@@ -1236,27 +2723,80 @@ func _core_evolution_line_card_bonus(
 		var has_core := _player_has_any_pokemon_id_in_play(player, [core_id])
 		var has_stage1 := _player_has_any_pokemon_id_in_play(player, stage1_ids)
 		var has_basic := _player_has_any_pokemon_id_in_play(player, basic_ids)
+		var has_rare_candy := "sv1-152" in player.hand
+		var stage1_count := _player_pokemon_id_count_in_play(player, stage1_ids)
+		var basic_count := _player_pokemon_id_count_in_play(player, basic_ids)
+		var core_receivers := (
+			stage1_count + (basic_count if has_rare_candy else 0)
+			if catalog.is_stage2(core_id)
+			else basic_count
+		)
+		var core_supply := maxi(
+			0,
+			player.hand.count(core_id) - (
+				1 if removing_one and card_id == core_id else 0),
+		)
 		var bonus := 0.0
 		if card_id == core_id:
-			if catalog.is_stage2(core_id):
+			# For an ordinary keep/search score the card currently being valued is
+			# still part of ``core_supply``; equality means it is the copy needed by
+			# the only receiver.  During an actual hand removal it has already been
+			# subtracted, so equality means the remaining copies cover every receiver.
+			var core_is_surplus := (
+				core_supply >= core_receivers
+				if removing_one
+				else core_supply > core_receivers
+			)
+			if core_is_surplus:
+				bonus = -180.0
+			elif catalog.is_stage2(core_id):
 				if has_stage1:
 					bonus = 170.0
-				elif has_basic:
+				elif has_basic and has_rare_candy:
 					bonus = 70.0
+				elif has_basic:
+					bonus = -35.0
 				elif not has_core:
 					bonus = -145.0
+				else:
+					bonus = -180.0
 			elif catalog.is_stage1(core_id):
 				if has_basic:
 					bonus = 130.0
 				elif not has_core:
 					bonus = -55.0
+				else:
+					bonus = -120.0
 		elif card_id in stage1_ids:
-			if has_basic:
+			var stage1_supply := maxi(
+				0,
+				player.hand.count(card_id) - (1 if removing_one else 0),
+			)
+			var stage1_is_surplus := (
+				stage1_supply >= basic_count
+				if removing_one
+				else stage1_supply > basic_count
+			)
+			if stage1_is_surplus:
+				bonus = -120.0
+			elif has_basic:
 				bonus = 145.0
 			elif not has_stage1 and not has_core:
 				bonus = 25.0
 		elif card_id in basic_ids:
-			if not has_basic and not has_stage1 and not has_core:
+			var basic_supply_after_removal := maxi(
+				0,
+				player.hand.count(card_id) - (1 if removing_one else 0),
+			)
+			if (
+				removing_one
+				and basic_supply_after_removal >= 1
+				and not has_basic
+				and not has_stage1
+				and not has_core
+			):
+				bonus = -80.0
+			elif not has_basic and not has_stage1 and not has_core:
 				bonus = 155.0
 			elif has_basic and not has_stage1 and not has_core:
 				bonus = 55.0
@@ -1276,20 +2816,27 @@ func _discard_choice_score(
 	card_id: String,
 	deck_key: String,
 	catalog: CardCatalog,
+	removing_from_hand: bool = true,
 ) -> float:
 	var player := state.get_player(actor)
-	var keep_value := _card_keep_value(state, actor, card_id, deck_key, catalog)
+	var keep_value := _card_keep_value(
+		state, actor, card_id, deck_key, catalog, removing_from_hand)
 	var score := -keep_value
-	var duplicate_count := 0
-	for hand_card_id in player.hand:
-		if hand_card_id == card_id:
-			duplicate_count += 1
-	if duplicate_count > 1:
-		score += min(120.0, float(duplicate_count - 1) * 55.0)
-	if catalog.is_energy(card_id) and player.energy_attached_this_turn:
-		score += 35.0
-	if catalog.is_trainer(card_id) and player.supporter_played_this_turn and catalog.is_supporter(card_id):
-		score += 30.0
+	if removing_from_hand:
+		var duplicate_count := 0
+		for hand_card_id in player.hand:
+			if hand_card_id == card_id:
+				duplicate_count += 1
+		if duplicate_count > 1:
+			score += min(120.0, float(duplicate_count - 1) * 55.0)
+		if catalog.is_energy(card_id) and player.energy_attached_this_turn:
+			score += 35.0
+		if (
+			catalog.is_trainer(card_id)
+			and player.supporter_played_this_turn
+			and catalog.is_supporter(card_id)
+		):
+			score += 30.0
 	if _semantic_v2_enabled() and _discard_fuels_damage_plan(state, actor, card_id, catalog):
 		score += float(SCORE_WEIGHTS["discard_fuel"])
 	return score
@@ -1353,6 +2900,20 @@ func _player_has_any_pokemon_id_in_play(player: PlayerState, card_ids: Array[Str
 		if pokemon != null and pokemon.card_id in card_ids:
 			return true
 	return false
+
+
+func _player_pokemon_id_count_in_play(
+	player: PlayerState,
+	card_ids: Array[String],
+) -> int:
+	var result := 0
+	if card_ids.is_empty():
+		return result
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon != null and pokemon.card_id in card_ids:
+			result += 1
+	return result
 
 
 func _player_has_any_pokemon_id_available(
@@ -1509,18 +3070,25 @@ func _energy_choice_target_value(
 		else before
 	)
 	var progress: int = max(0, before - after)
-	var power_before := _high_impact_missing_energy(pokemon, "", catalog)
+	var power_before := _high_impact_missing_energy(state, actor, pokemon, "", catalog)
 	var power_after := (
-		_high_impact_missing_energy(pokemon, energy_card_id, catalog)
+		_high_impact_missing_energy(state, actor, pokemon, energy_card_id, catalog)
 		if not energy_card_id.is_empty() and catalog.is_energy(energy_card_id)
 		else power_before
 	)
 	var power_progress: int = max(0, power_before - power_after)
-	var damage_ceiling := _best_pokemon_damage(pokemon, catalog)
+	var damage_ceiling := _best_pokemon_damage_for_state(
+		state, actor, pokemon, catalog)
+	var ready_damage_after := _best_ready_pokemon_damage_with_extra(
+		state, actor, pokemon, energy_card_id, catalog)
 	var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
 	var value := progress * 85.0
 	if before > 0 and after == 0:
-		value += 155.0 + damage_ceiling * 0.25
+		value += (
+			55.0
+			if ready_damage_after <= 0 and power_after > 0
+			else 155.0 + damage_ceiling * 0.25
+		)
 	elif before > 1 and after == 1:
 		value += 65.0
 	if damage_ceiling >= high_impact_floor and power_progress > 0:
@@ -1556,12 +3124,17 @@ func _energy_source_choice_value(
 		return -INF
 	var energy_id := str(pokemon.energy_card_ids[energy_index])
 	var before_missing := _best_missing_energy(pokemon, catalog)
-	var before_high_impact := _high_impact_missing_energy(pokemon, "", catalog)
+	var before_high_impact := _high_impact_missing_energy(
+		state, actor, pokemon, "", catalog)
 	var before_ready_damage := _best_ready_pokemon_damage(state, actor, pokemon, catalog)
-	var damage_ceiling := _best_pokemon_damage(pokemon, catalog)
+	var damage_ceiling := _best_pokemon_damage_for_state(
+		state, actor, pokemon, catalog)
 	pokemon.energy_card_ids.remove_at(energy_index)
 	var after_missing := _best_missing_energy(pokemon, catalog)
-	var after_high_impact := _high_impact_missing_energy(pokemon, "", catalog)
+	var after_high_impact := _high_impact_missing_energy(
+		state, actor, pokemon, "", catalog)
+	var after_ready_damage := _best_ready_pokemon_damage(
+		state, actor, pokemon, catalog)
 	pokemon.energy_card_ids.insert(energy_index, energy_id)
 
 	var cost := 0.0
@@ -1578,6 +3151,10 @@ func _energy_source_choice_value(
 		cost += 190.0 + damage_ceiling * 0.35
 	elif after_high_impact > before_high_impact:
 		cost += float(after_high_impact - before_high_impact) * 70.0
+	# Some attacks (notably Lucario's Continuous Aura Sphere) remain legally
+	# usable after moving an Energy but lose a full damage tier.  Missing-cost
+	# checks alone therefore cannot identify the attachment as valuable.
+	cost += float(maxi(0, before_ready_damage - after_ready_damage)) * 0.55
 	if slot == "active":
 		cost += 80.0
 		if before_ready_damage > 0:
@@ -1592,7 +3169,11 @@ func _energy_source_choice_value(
 		and not AIDeckProfiles.contains(deck_key, "core", pokemon.card_id)
 	):
 		cost -= 35.0
-	if _effective_energy_unit_count(pokemon, catalog) >= 3 and after_missing == 0:
+	if (
+		_effective_energy_unit_count(pokemon, catalog) >= 3
+		and after_missing == 0
+		and after_ready_damage >= before_ready_damage
+	):
 		cost -= 100.0
 	elif before_missing >= 2 and before_high_impact >= 2:
 		cost -= 45.0
@@ -1643,18 +3224,24 @@ func _energy_plan_target_bonus(
 		bonus += 22.0
 		if not pokemon.energy_card_ids.is_empty():
 			bonus -= 55.0 * pokemon.energy_card_ids.size()
-		if _best_pokemon_damage(pokemon, catalog) < AIDeckProfiles.high_impact_damage_floor(deck_key):
+		if (
+			_best_pokemon_damage_for_state(state, actor, pokemon, catalog)
+			< AIDeckProfiles.high_impact_damage_floor(deck_key)
+		):
 			bonus -= 25.0
 	if slot != "active" and AIDeckProfiles.contains(deck_key, "bench", pokemon.card_id):
 		bonus += 34.0
 	if "ex" in card.get("subtypes", []):
 		bonus += 45.0
-	var damage_ceiling := _best_pokemon_damage(pokemon, catalog)
+	var damage_ceiling := _best_pokemon_damage_for_state(
+		state, actor, pokemon, catalog)
 	bonus += min(120.0, damage_ceiling * 0.35)
 	var missing := _best_missing_energy(pokemon, catalog)
-	var high_impact_missing := _high_impact_missing_energy(pokemon, "", catalog)
+	var high_impact_missing := _high_impact_missing_energy(
+		state, actor, pokemon, "", catalog)
 	var high_impact_after := (
-		_high_impact_missing_energy(pokemon, energy_card_id, catalog)
+		_high_impact_missing_energy(
+			state, actor, pokemon, energy_card_id, catalog)
 		if not energy_card_id.is_empty() and catalog.is_energy(energy_card_id)
 		else high_impact_missing
 	)
@@ -1683,7 +3270,70 @@ func _energy_plan_target_bonus(
 		bonus -= 65.0
 	if not energy_card_id.is_empty() and _energy_matches_profile(energy_card_id, deck_key, catalog):
 		bonus += 18.0
+	if (
+		deck_key == "water"
+		and pokemon.card_id == "sv2-grex"
+		and _effective_energy_type_count(pokemon, "Water", catalog) >= 2
+		and missing == 0
+		and high_impact_progress == 0
+	):
+		# Both Greninja attacks are fully supplied at two Water Energy.  A third
+		# attachment has no printed payoff and routinely starved the next attacker.
+		bonus -= 480.0
+	if (
+		deck_key == "water"
+		and pokemon.card_id == "sv2-keldeo"
+		and state.get_player(actor).bench_count() >= 3
+	):
+		var keldeo_attacks: Array = card.get("attacks", [])
+		if keldeo_attacks.size() > 1:
+			var queue_cost: Array = Dictionary(keldeo_attacks[1]).get("cost", [])
+			var queue_before := _missing_energy_count(pokemon, queue_cost, catalog)
+			var queue_after := _missing_energy_count_with_extra(
+				pokemon, queue_cost, energy_card_id, catalog)
+			if queue_before == 1 and queue_after == 0:
+				# The generic best-attack deficit is already zero once Kick Away is
+				# usable.  Score Queue Power's exact W+C route instead (70/90/110
+				# damage at three/four/five public Bench Pokemon).
+				bonus += 190.0
+	if (
+		deck_key == "water"
+		and slot == "active"
+		and pokemon.card_id == "sv2-tatsu"
+		and state.get_player(actor).bench_count() > 0
+	):
+		var tatsugiri_attacks: Array = card.get("attacks", [])
+		if not tatsugiri_attacks.is_empty():
+			var prepare_cost: Array = Dictionary(tatsugiri_attacks[0]).get("cost", [])
+			var prepare_before := _missing_energy_count(
+				pokemon, prepare_cost, catalog)
+			var prepare_after := _missing_energy_count_with_extra(
+				pokemon, prepare_cost, energy_card_id, catalog)
+			if (
+				prepare_before == 1
+				and prepare_after == 0
+				and _has_public_tatsugiri_acceleration_target(
+					state, actor, catalog)
+			):
+				bonus += 280.0
 	return bonus
+
+
+func _has_public_tatsugiri_acceleration_target(
+	state: GameState,
+	actor: int,
+	catalog: CardCatalog,
+) -> bool:
+	var player := state.get_player(actor)
+	for pokemon_value in player.bench:
+		var pokemon: PokemonState = pokemon_value
+		if (
+			pokemon != null
+			and catalog.is_basic_pokemon(pokemon.card_id)
+			and _best_missing_energy(pokemon, catalog) > 0
+		):
+			return true
+	return false
 
 
 func _has_better_bench_energy_plan(
@@ -1700,14 +3350,18 @@ func _has_better_bench_energy_plan(
 	if (
 		AIDeckProfiles.contains(deck_key, "core", player.active.card_id)
 		and player.active.current_hp(catalog) > max(50, int(catalog.get_card(player.active.card_id).get("hp", 0)) * 0.35)
-		and _best_pokemon_damage(player.active, catalog) >= high_impact_floor
+		and _best_pokemon_damage_for_state(
+			state, actor, player.active, catalog) >= high_impact_floor
 	):
 		return false
 	var active_before := _best_missing_energy(player.active, catalog)
 	var active_after := _best_missing_energy_with_extra(player.active, energy_card_id, catalog)
-	var active_damage := _best_pokemon_damage(player.active, catalog)
-	var active_power_before := _high_impact_missing_energy(player.active, "", catalog)
-	var active_power_after := _high_impact_missing_energy(player.active, energy_card_id, catalog)
+	var active_damage := _best_pokemon_damage_for_state(
+		state, actor, player.active, catalog)
+	var active_power_before := _high_impact_missing_energy(
+		state, actor, player.active, "", catalog)
+	var active_power_after := _high_impact_missing_energy(
+		state, actor, player.active, energy_card_id, catalog)
 	var active_progresses := (
 		active_after < active_before
 		or (
@@ -1721,9 +3375,12 @@ func _has_better_bench_energy_plan(
 			continue
 		var before := _best_missing_energy(pokemon, catalog)
 		var after := _best_missing_energy_with_extra(pokemon, energy_card_id, catalog)
-		var bench_damage := _best_pokemon_damage(pokemon, catalog)
-		var bench_power_before := _high_impact_missing_energy(pokemon, "", catalog)
-		var bench_power_after := _high_impact_missing_energy(pokemon, energy_card_id, catalog)
+		var bench_damage := _best_pokemon_damage_for_state(
+			state, actor, pokemon, catalog)
+		var bench_power_before := _high_impact_missing_energy(
+			state, actor, pokemon, "", catalog)
+		var bench_power_after := _high_impact_missing_energy(
+			state, actor, pokemon, energy_card_id, catalog)
 		var progresses_bench := (
 			after < before
 			or (
@@ -1758,6 +3415,127 @@ func _target_priority(pokemon: PokemonState, catalog: CardCatalog) -> float:
 		+ _best_pokemon_damage(pokemon, catalog) * 0.35
 		- pokemon.current_hp(catalog) * 0.45
 	)
+
+
+func _target_choice_value(
+	state: GameState,
+	request: ChoiceView,
+	target_player: int,
+	pokemon: PokemonState,
+	slot: String,
+	presentation: Dictionary,
+	catalog: CardCatalog,
+) -> float:
+	if pokemon == null:
+		return -INF
+	var amount := maxi(0, int(presentation.get("amount", 0)))
+	var value := _target_priority(pokemon, catalog)
+	if (
+		request.request_type == "select_opponent_bench"
+		or str(presentation.get("purpose", "")) == "switch_opponent"
+	):
+		value += _switch_opponent_attack_route_bonus(
+			state, request.player, target_player, pokemon, slot, catalog)
+	if amount <= 0:
+		return value
+	var current_hp := pokemon.current_hp(catalog)
+	# An advertised damage amount is public rules information.  A direct Prize
+	# must dominate a merely high-value full-HP target (for example Greninja's
+	# 40-damage Shuriken choosing a 40-HP Bench target over a healthy ex).
+	value += float(mini(amount, current_hp)) * 2.5
+	if amount >= current_hp:
+		value += 900.0 + float(catalog.prize_value(pokemon.card_id)) * 420.0
+		value -= float(maxi(0, amount - current_hp)) * 0.4
+	if (
+		str(presentation.get("purpose", "")) == "place_counters_self_ko"
+		and str(presentation.get("source_card_id", "")) == "sv2-starm"
+		and int(presentation.get("source_player", request.player)) == request.player
+	):
+		value += _starmie_torrent_target_bonus(
+			state, request.player,
+			str(presentation.get("source_slot", "")),
+			target_player, slot, pokemon, amount, catalog)
+	return value
+
+
+func _switch_opponent_attack_route_bonus(
+	state: GameState,
+	actor: int,
+	target_player: int,
+	target: PokemonState,
+	target_slot: String,
+	catalog: CardCatalog,
+) -> float:
+	if target_player != 1 - actor or not target_slot.replace(":", "_").begins_with("bench_"):
+		return 0.0
+	var opponent := state.get_player(target_player)
+	var bench_index := opponent.bench.find(target)
+	if bench_index < 0 or opponent.active == null:
+		return 0.0
+	var original_active := opponent.active
+	opponent.active = target
+	opponent.bench[bench_index] = original_active
+	var attacker := state.get_player(actor).active
+	var damage := _best_ready_pokemon_damage(
+		state, actor, attacker, catalog) if attacker != null else 0
+	opponent.bench[bench_index] = target
+	opponent.active = original_active
+	if damage <= 0:
+		return 0.0
+	var hp := target.current_hp(catalog)
+	if damage >= hp:
+		return (
+			1100.0
+			+ float(catalog.prize_value(target.card_id)) * 430.0
+			- float(maxi(0, damage - hp)) * 0.25
+		)
+	return float(mini(damage, hp)) * 1.4
+
+
+func _starmie_torrent_target_bonus(
+	state: GameState,
+	actor: int,
+	source_slot: String,
+	target_player: int,
+	target_slot: String,
+	target: PokemonState,
+	amount: int,
+	catalog: CardCatalog,
+) -> float:
+	# The combo is same-turn only when Starmie is on the Bench and a ready Active
+	# Greninja remains in play after Starmie discards itself.
+	if target_player != 1 - actor or target_slot != "active":
+		return 0.0
+	var attacker: PokemonState = null
+	var player := state.get_player(actor)
+	if player.active != null and player.active.card_id == "sv2-grex":
+		attacker = player.active
+	elif source_slot == "active":
+		for bench_pokemon in player.bench:
+			if bench_pokemon != null and bench_pokemon.card_id == "sv2-grex":
+				attacker = bench_pokemon
+				break
+	if attacker == null:
+		return 0.0
+	var attacks: Array = catalog.get_card(attacker.card_id).get("attacks", [])
+	if attacks.size() <= 1 or _missing_energy_count(
+		attacker, Dictionary(attacks[1]).get("cost", []), catalog) > 0:
+		return 0.0
+	var before_damage := _estimated_pokemon_attack_damage(
+		state, actor, attacker, 1, catalog)
+	var before_hp := target.current_hp(catalog)
+	var added_counters := int(amount / 10)
+	if added_counters <= 0:
+		return 0.0
+	target.damage_counters += added_counters
+	var after_damage := _estimated_pokemon_attack_damage(
+		state, actor, attacker, 1, catalog)
+	var after_hp := target.current_hp(catalog)
+	target.damage_counters -= added_counters
+	var bonus := float(maxi(0, after_damage - before_damage)) * 3.0
+	if before_damage < before_hp and after_damage >= after_hp:
+		bonus += 1050.0 + float(catalog.prize_value(target.card_id)) * 360.0
+	return bonus
 
 
 func _confirm_choice(
@@ -1812,118 +3590,6 @@ func _should_keep_top_deck_card(
 	return _card_keep_value(state, actor, card_id, deck_key, catalog) >= 55.0
 
 
-func _heuristic_priors(
-	state: GameState,
-	actor: int,
-	actions: Array[GameAction],
-	deck_key: String,
-	catalog: CardCatalog,
-	profile: Dictionary = {},
-) -> Array[float]:
-	var scores: Array[float] = []
-	var maximum := -INF
-	for action in actions:
-		var score := _action_score(state, actor, action, deck_key, catalog, profile)
-		scores.append(score)
-		maximum = max(maximum, score)
-	var priors: Array[float] = []
-	var total := 0.0
-	for score in scores:
-		var value := exp(clampf((score - maximum) / 80.0, -30.0, 30.0))
-		priors.append(value)
-		total += value
-	for index in range(priors.size()):
-		priors[index] /= max(0.000001, total)
-	return priors
-
-
-func _best_heuristic_action(
-	state: GameState,
-	actor: int,
-	actions: Array[GameAction],
-	deck_key: String,
-	catalog: CardCatalog,
-	profile: Dictionary = {},
-) -> GameAction:
-	var best := actions[0]
-	var best_score := -INF
-	for action in actions:
-		var score := _action_score(state, actor, action, deck_key, catalog, profile)
-		if score > best_score:
-			best = action
-			best_score = score
-	return best
-
-
-func _rollout_policy_action(
-	state: GameState,
-	perspective: int,
-	actor: int,
-	actions: Array[GameAction],
-	deck_key: String,
-	catalog: CardCatalog,
-	engine: GameEngine,
-	allow_opponent_lookahead: bool,
-	profile: Dictionary = {},
-) -> GameAction:
-	if (
-		not _semantic_v2_enabled()
-		or not allow_opponent_lookahead
-		or actions.size() > ROLLOUT_LOOKAHEAD_MAX_ACTIONS
-	):
-		return _best_heuristic_action(state, actor, actions, deck_key, catalog, profile)
-	var ranked: Array[int] = []
-	for index in range(actions.size()):
-		ranked.append(index)
-	ranked.sort_custom(func(left: int, right: int) -> bool:
-		var left_score := _action_score(state, actor, actions[left], deck_key, catalog, profile)
-		var right_score := _action_score(state, actor, actions[right], deck_key, catalog, profile)
-		if is_equal_approx(left_score, right_score):
-			return left < right
-		return left_score > right_score
-	)
-	var base_perspective_score := _evaluate_raw(state, perspective, catalog)
-	var best_action := actions[ranked[0]]
-	var best_actor_score := -INF
-	var candidate_count: int = mini(ranked.size(), ROLLOUT_LOOKAHEAD_TOP_N)
-	for candidate_offset in range(candidate_count):
-		var action_index := ranked[candidate_offset]
-		var action := actions[action_index]
-		var sim_score := _simulated_action_score(
-			state,
-			actor,
-			action,
-			deck_key,
-			catalog,
-			engine,
-			state.revision + actor * 104729 + action_index * 7919,
-			profile,
-		)
-		if sim_score <= -INF / 2.0:
-			continue
-		var perspective_after := _simulated_action_score(
-			state,
-			perspective,
-			action,
-			deck_key,
-			catalog,
-			engine,
-			state.revision + perspective * 65537 + action_index * 3571,
-			profile,
-		)
-		if perspective_after <= -INF / 2.0:
-			perspective_after = base_perspective_score
-		var actor_value: float = (
-			sim_score
-			- max(0.0, perspective_after - base_perspective_score) * 0.35
-			+ _action_score(state, actor, action, deck_key, catalog, profile) * 0.03
-		)
-		if actor_value > best_actor_score:
-			best_actor_score = actor_value
-			best_action = action
-	return best_action
-
-
 func _validated_or_fallback_action(
 	state: GameState,
 	actor: int,
@@ -1935,6 +3601,56 @@ func _validated_or_fallback_action(
 	seed: int,
 	profile: Dictionary = {},
 ) -> GameAction:
+	if (
+		preferred != null
+		and preferred.action == "DECLARE_ATTACK"
+		and _action_immediately_loses_match(
+			state, actor, preferred, deck_key, catalog, engine, seed + 3)
+	):
+		# A losing attack does not imply that every attack is losing.  Prefer a
+		# deterministic safe attack before giving up tempo to development or END.
+		# This matters for attackers such as Thundurus whose high-damage attack can
+		# self-KO while their cheaper attack remains a safe prize-neutral line.
+		var safe_alternative_attack := _best_productive_attack(
+			state, actor, actions, deck_key, catalog, engine, seed + 4, profile)
+		if safe_alternative_attack != null:
+			return safe_alternative_attack
+		var escape := _best_immediate_loss_escape_action(
+			state,
+			actor,
+			actions,
+			deck_key,
+			catalog,
+			engine,
+			seed + 5,
+			preferred,
+			profile,
+		)
+		if escape != null:
+			return escape
+	if (
+		preferred != null
+		and preferred.action == "ATTACH_ENERGY"
+		and _switching_energy_regresses_current_attack(
+			state, actor, preferred, deck_key, catalog, engine, seed + 7)
+	):
+		var retained_attack := _best_productive_attack(
+			state, actor, actions, deck_key, catalog, engine, seed + 9, profile)
+		if retained_attack != null:
+			return retained_attack
+		var retained_development := _best_productive_nonterminal_action(
+			state,
+			actor,
+			actions,
+			deck_key,
+			catalog,
+			engine,
+			seed + 10,
+			preferred,
+			profile,
+		)
+		if retained_development != null:
+			return retained_development
 	var ko_attack := _best_immediate_ko_attack(
 		state, actor, actions, deck_key, catalog, engine, seed, profile)
 	if ko_attack != null and _should_override_with_ko(preferred, ko_attack, state, actor, catalog):
@@ -1944,9 +3660,15 @@ func _validated_or_fallback_action(
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, preferred, catalog)
 			or _attack_feeds_dangerous_retaliation(state, actor, preferred, catalog)
+			or _attack_squanders_only_fire_energy(
+				state, actor, preferred, deck_key, catalog)
 		):
+			var safe_attack := _best_productive_attack(
+				state, actor, actions, deck_key, catalog, engine, seed + 11, profile)
+			if safe_attack != null:
+				return safe_attack
 			var safe_development := _best_productive_nonterminal_action(
-				state, actor, actions, deck_key, catalog, engine, seed + 11, preferred, profile)
+				state, actor, actions, deck_key, catalog, engine, seed + 12, preferred, profile)
 			if safe_development != null:
 				return safe_development
 			var end_turn := _find_action(actions, "END_TURN")
@@ -1974,8 +3696,12 @@ func _validated_or_fallback_action(
 	if preferred.action == "RETREAT":
 		var retreat_idx := int(preferred.params.get("bench_idx", -1))
 		if not _retreat_has_good_target(state, actor, retreat_idx, deck_key, catalog):
+			var retained_attack := _best_productive_attack(
+				state, actor, actions, deck_key, catalog, engine, seed + 18, profile)
+			if retained_attack != null:
+				return retained_attack
 			var safe_development := _best_productive_nonterminal_action(
-				state, actor, actions, deck_key, catalog, engine, seed + 18, preferred, profile)
+				state, actor, actions, deck_key, catalog, engine, seed + 19, preferred, profile)
 			if safe_development != null:
 				return safe_development
 			var safe_end_turn := _find_action(actions, "END_TURN")
@@ -2039,11 +3765,10 @@ func _validated_or_fallback_action(
 			return active_end
 
 	if preferred.action == "END_TURN":
-		if _semantic_v2_enabled():
-			var direct_attack := _best_productive_attack_candidate(
-				state, actor, actions, deck_key, catalog)
-			if direct_attack != null:
-				return direct_attack
+		# Do not use the estimate-only fast candidate here: END_TURN is often a
+		# deliberate escape from a deterministic self-KO/reactive-thorns loss.
+		# The trusted helper below executes the action and applies the same
+		# immediate-loss guard used at the final boundary.
 		var productive_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 29, profile)
 		if productive_attack != null:
@@ -2071,26 +3796,53 @@ func diagnose_decision(
 	catalog: CardCatalog,
 	engine: GameEngine,
 	seed: int,
-	heuristic_variant: String = "",
+	_requested_variant: String = "",
 ) -> Dictionary:
-	var previous_heuristic_variant := _heuristic_variant
-	if not heuristic_variant.is_empty():
-		_heuristic_variant = _normalize_heuristic_variant(heuristic_variant)
 	var result := {}
 	for label in DIAGNOSTIC_LABELS:
 		result[label] = 0
 	if selected == null or actions.is_empty():
-		if not heuristic_variant.is_empty():
-			_heuristic_variant = previous_heuristic_variant
 		return result
 
 	var ko_attack := _best_immediate_ko_attack(
 		state, actor, actions, deck_key, catalog, engine, seed + 101)
+	# Any authoritative Basic placed onto an empty Bench is the intentional
+	# survival tactic. Do not compare against whichever one the current scorer
+	# ranks highest: diagnostics must remain correct after strategy/hand changes.
+	var safe_pre_knockout_development := (
+		AIMandatoryTactics.is_survival_backup_action(state, actor, selected)
+	)
+	if (
+		ko_attack != null
+		and not safe_pre_knockout_development
+		and selected.kind == "EVOLVE"
+		and selected.target != null
+		and selected.target.slot.begins_with("bench_")
+	):
+		var diagnostic_information := AIInformationSet.capture(
+			state, actor, catalog, actions, [], seed)
+		if diagnostic_information.is_valid():
+			var selected_candidates: Array[GameAction] = [selected]
+			var safe_row := AIMandatoryTactics.safe_pre_knockout_development_action(
+				diagnostic_information,
+				state,
+				actor,
+				selected_candidates,
+				ko_attack,
+				engine,
+				null,
+				seed + 103,
+				Callable(),
+				0,
+				2,
+			)
+			safe_pre_knockout_development = safe_row.get("action") != null
 	if (
 		ko_attack != null
 		and not _diagnostic_same_action(selected, ko_attack)
 		and not _selected_attack_takes_active_ko(
 			state, actor, selected, deck_key, catalog, engine, seed + 102)
+		and not safe_pre_knockout_development
 	):
 		result["missed_immediate_ko"] = 1
 
@@ -2126,8 +3878,6 @@ func diagnose_decision(
 	):
 		result["trainer_first_choice_cancelled"] = 1
 
-	if not heuristic_variant.is_empty():
-		_heuristic_variant = previous_heuristic_variant
 	return result
 
 
@@ -2170,22 +3920,47 @@ func _selected_attack_takes_active_ko(
 ) -> bool:
 	if selected == null or selected.action != "DECLARE_ATTACK":
 		return false
+	var source_card_id := selected.source.card_id if selected.source != null else ""
+	if source_card_id.is_empty() and state.get_player(actor).active != null:
+		source_card_id = state.get_player(actor).active.card_id
+	var attack_index := int(selected.params.get(
+		"attack_idx", selected.params.get("attack_index", -1)))
+	if bool(CardSemanticCatalog.new(catalog).attack_semantics(
+		source_card_id, attack_index).get("has_random_effect", false)):
+		return false
+	return _deterministic_attack_takes_prize(
+		state, actor, selected, deck_key, catalog, engine, seed)
+
+
+func _deterministic_attack_takes_prize(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+) -> bool:
+	if state == null or action == null or action.action != "DECLARE_ATTACK":
+		return false
 	var opponent := state.get_player(1 - actor)
 	if opponent.active == null:
 		return false
-	var estimated_damage := _estimated_attack_damage(
-		state, actor, int(selected.params.get("attack_idx", -1)), catalog)
-	if estimated_damage >= opponent.active.current_hp(catalog):
-		return true
+	var prizes_before := state.get_player(actor).prizes.size()
 	var simulation := state.clone_state()
-	var action := GameAction.from_dict(selected.to_dict())
-	action.actor = actor
+	simulation.set_type_matchups_enabled(false)
+	var simulated_action := GameAction.from_dict(action.to_dict())
+	simulated_action.actor = actor
 	var rng := PortableRandomSource.new(seed)
-	var step := engine.apply_action(simulation, action, rng)
+	var step := engine.apply_action(simulation, simulated_action, rng)
 	if not step.success:
 		return false
-	var simulated_opponent := simulation.get_player(1 - actor)
-	return simulated_opponent.active == null
+	if not _resolve_choices(simulation, actor, deck_key, catalog, engine, rng):
+		return false
+	return (
+		simulation.get_player(actor).prizes.size() < prizes_before
+		or (simulation.is_terminal() and simulation.winner == actor)
+	)
 
 
 func _best_immediate_ko_attack(
@@ -2203,15 +3978,53 @@ func _best_immediate_ko_attack(
 		return null
 	var best: GameAction = null
 	var best_value := -INF
+	var semantic_catalog := CardSemanticCatalog.new(catalog)
 	for action in actions:
 		if action.action != "DECLARE_ATTACK":
 			continue
-		var damage := _estimated_attack_damage(state, actor, int(action.params.get("attack_idx", -1)), catalog)
+		var source_card_id := (
+			action.source.card_id
+			if action.source != null
+			else ""
+		)
+		if (
+			source_card_id.is_empty()
+			and state.get_player(actor).active != null
+		):
+			source_card_id = state.get_player(actor).active.card_id
+		var attack_index := int(action.params.get(
+			"attack_idx", action.params.get("attack_index", -1)))
+		# Diagnostics must not inspect the authoritative hidden deck top and call
+		# a favourable reveal a provable missed KO.  Stochastic attacks are
+		# evaluated by the seeded belief planner, not this certainty label.
+		if bool(semantic_catalog.attack_semantics(
+			source_card_id, attack_index).get("has_random_effect", false)):
+			continue
+		var damage := _estimated_attack_damage(
+			state, actor, attack_index, catalog)
 		if damage < opponent.active.current_hp(catalog):
 			continue
-		var value := damage + catalog.prize_value(opponent.active.card_id) * 140.0
-		if value > best_value and _action_executes_successfully(
-			state, actor, action, deck_key, catalog, engine, seed + int(value), profile):
+		if _action_immediately_loses_match(
+			state,
+			actor,
+			action,
+			deck_key,
+			catalog,
+			engine,
+			seed + attack_index * 3571,
+		):
+			continue
+		var value := _immediate_ko_attack_value(
+			state, actor, action, catalog)
+		if value > best_value and _deterministic_attack_takes_prize(
+			state,
+			actor,
+			action,
+			deck_key,
+			catalog,
+			engine,
+			seed + int(action.params.get("attack_idx", 0)) * 7919,
+		):
 			best = action
 			best_value = value
 	return best
@@ -2233,9 +4046,54 @@ func _should_override_with_ko(
 	var opponent := state.get_player(1 - actor)
 	if opponent.active != null and preferred_damage < opponent.active.current_hp(catalog):
 		return true
-	var ko_damage := _estimated_attack_damage(
-		state, actor, int(ko_attack.params.get("attack_idx", -1)), catalog)
-	return ko_damage > preferred_damage
+	return _immediate_ko_attack_value(
+		state, actor, ko_attack, catalog
+	) > _immediate_ko_attack_value(state, actor, preferred, catalog) + 0.001
+
+
+func _immediate_ko_attack_value(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	catalog: CardCatalog,
+) -> float:
+	if action == null or action.action != "DECLARE_ATTACK":
+		return -INF
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null:
+		return -INF
+	var damage := _estimated_attack_damage(
+		state, actor, int(action.params.get("attack_idx", -1)), catalog)
+	var target_hp := opponent.active.current_hp(catalog)
+	if damage < target_hp:
+		return -INF
+	# Every candidate here takes the same public Active Prize.  Prefer the line
+	# that preserves Energy/HP and minimizes overkill instead of blindly taking
+	# the attack with the largest printed number.
+	return (
+		float(catalog.prize_value(opponent.active.card_id)) * 1000.0
+		- _attack_self_resource_cost(state, actor, action, catalog)
+		- float(maxi(0, damage - target_hp)) * 0.75
+	)
+
+
+func _attack_self_resource_cost(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	catalog: CardCatalog,
+) -> float:
+	if action == null or action.action != "DECLARE_ATTACK":
+		return 0.0
+	var source_slot := str(action.params.get("source_slot", "active"))
+	var effects := _attack_effects(
+		state, actor, int(action.params.get("attack_idx", -1)), catalog)
+	return (
+		_expected_self_energy_discard_cost(
+			state, actor, effects, source_slot, catalog)
+		+ _expected_self_damage_cost(
+			state, actor, effects, source_slot, catalog)
+	)
 
 
 func _best_pre_attack_development_action(
@@ -2256,12 +4114,99 @@ func _best_pre_attack_development_action(
 		state, actor, int(attack_action.params.get("attack_idx", -1)), catalog)
 	if opponent.active != null and damage >= opponent.active.current_hp(catalog):
 		return null
+	var monotonic_development := _best_monotonic_pre_attack_development_action(
+		state,
+		actor,
+		attack_action,
+		actions,
+		deck_key,
+		catalog,
+		engine,
+		seed + 500009,
+		profile,
+	)
+	if monotonic_development != null:
+		return monotonic_development
 	var active_missing := _best_missing_energy(state.get_player(actor).active, catalog)
 	var is_weak := damage < 80 or (opponent.active != null and damage < opponent.active.current_hp(catalog) * 0.45)
 	if not is_weak and active_missing <= 0:
 		return null
 	return _best_productive_nonterminal_action(
 		state, actor, actions, deck_key, catalog, engine, seed, attack_action, profile)
+
+
+func _best_monotonic_pre_attack_development_action(
+	state: GameState,
+	actor: int,
+	attack_action: GameAction,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+	profile: Dictionary = {},
+) -> GameAction:
+	var player := state.get_player(actor)
+	var best: GameAction = null
+	var best_value := -INF
+	for action_index in range(actions.size()):
+		var action := actions[action_index]
+		if action == null or action == attack_action:
+			continue
+		var card_id := _action_card_id(state, actor, action)
+		if action.action == "PLAY_BASIC":
+			if (
+				action.target == null
+				or not action.target.slot.begins_with("bench_")
+				or player.bench_count() >= PlayerState.MAX_BENCH_SIZE - 1
+				or not (
+					AIDeckProfiles.contains(deck_key, "setup", card_id)
+					or AIDeckProfiles.contains(deck_key, "bench", card_id)
+					or AIDeckProfiles.contains(deck_key, "core", card_id)
+				)
+			):
+				continue
+		elif action.action == "EVOLVE":
+			if (
+				action.target == null
+				or not action.target.slot.begins_with("bench_")
+				or AIMandatoryTactics._card_has_on_enter_play_effect(card_id, catalog)
+			):
+				continue
+		else:
+			continue
+		var simulation := state.clone_state()
+		simulation.set_type_matchups_enabled(false)
+		var rng := PortableRandomSource.new(seed + action_index * 7919)
+		var step := engine.apply_action(simulation, action, rng)
+		if (
+			not step.success
+			or simulation.is_terminal()
+			or AIMandatoryTactics._step_has_hidden_or_random_event(step)
+			or engine.query_pending_choice(simulation, 0) != null
+			or engine.query_pending_choice(simulation, 1) != null
+		):
+			continue
+		var followup_query := engine.query_legal_action_groups(simulation, actor)
+		if not followup_query.success:
+			continue
+		var attack_still_legal := false
+		for followup_action in followup_query.concrete_actions():
+			if _diagnostic_same_action(followup_action, attack_action):
+				attack_still_legal = true
+				break
+		if not attack_still_legal:
+			continue
+		var value := (
+			_development_action_value(state, actor, action, deck_key, catalog)
+			+ _action_score(state, actor, action, deck_key, catalog, profile) * 0.08
+		)
+		if action.action == "EVOLVE":
+			value += 35.0
+		if value > best_value:
+			best = action
+			best_value = value
+	return best
 
 
 func _best_productive_nonterminal_action(
@@ -2347,6 +4292,10 @@ func _best_productive_attack(
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, action, catalog)
 			or _attack_feeds_dangerous_retaliation(state, actor, action, catalog)
+			or _attack_squanders_only_fire_energy(
+				state, actor, action, deck_key, catalog)
+			or _action_immediately_loses_match(
+				state, actor, action, deck_key, catalog, engine, seed + 104729)
 		):
 			continue
 		var attack_idx := int(action.params.get("attack_idx", -1))
@@ -2378,6 +4327,8 @@ func _best_productive_attack_candidate(
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, action, catalog)
 			or _attack_feeds_dangerous_retaliation(state, actor, action, catalog)
+			or _attack_squanders_only_fire_energy(
+				state, actor, action, deck_key, catalog)
 		):
 			continue
 		var attack_idx := int(action.params.get("attack_idx", -1))
@@ -2412,6 +4363,10 @@ func _best_damaging_attack(
 		if (
 			_attack_draw_pressure_is_unsafe(state, actor, action, catalog)
 			or _attack_feeds_dangerous_retaliation(state, actor, action, catalog)
+			or _attack_squanders_only_fire_energy(
+				state, actor, action, deck_key, catalog)
+			or _action_immediately_loses_match(
+				state, actor, action, deck_key, catalog, engine, seed + 130363)
 		):
 			continue
 		var attack_idx := int(action.params.get("attack_idx", -1))
@@ -2510,6 +4465,17 @@ func _action_score(
 			score += 180.0
 			if str(action.params.get("target", "")) == "active":
 				score += 200.0
+				if deck_key == "water":
+					if card_id == "sv2-tatsu" and actor != state.first_player_idx:
+						# One attachment turns Prepare into two more Energy while
+						# preserving Froakie and Staryu as Bench development.
+						score += 240.0
+					elif (
+						card_id == "sv2-staryu"
+						and "sv2-tatsu" in player.hand
+						and actor != state.first_player_idx
+					):
+						score -= 180.0
 				if (
 					AIDeckProfiles.contains(deck_key, "bench", card_id)
 					and not AIDeckProfiles.contains(deck_key, "setup", card_id)
@@ -2629,13 +4595,22 @@ func _development_action_value(
 			var before := _best_missing_energy(target, catalog)
 			var after := _best_missing_energy_with_extra(target, card_id, catalog)
 			var progress: int = max(0, before - after)
-			var damage_ceiling := _best_pokemon_damage(target, catalog)
-			var power_before := _high_impact_missing_energy(target, "", catalog)
-			var power_after := _high_impact_missing_energy(target, card_id, catalog)
+			var damage_ceiling := _best_pokemon_damage_for_state(
+				state, actor, target, catalog)
+			var ready_damage_after := _best_ready_pokemon_damage_with_extra(
+				state, actor, target, card_id, catalog)
+			var power_before := _high_impact_missing_energy(
+				state, actor, target, "", catalog)
+			var power_after := _high_impact_missing_energy(
+				state, actor, target, card_id, catalog)
 			var power_progress: int = max(0, power_before - power_after)
 			var attach_value: float = progress * 95.0
 			if before > 0 and after == 0:
-				attach_value += 175.0 + damage_ceiling * 0.25
+				attach_value += (
+					65.0
+					if ready_damage_after <= 0 and power_after > 0
+					else 175.0 + damage_ceiling * 0.25
+				)
 			elif before > 1 and after == 1:
 				attach_value += 70.0
 			var high_impact_floor := AIDeckProfiles.high_impact_damage_floor(deck_key)
@@ -2663,6 +4638,22 @@ func _development_action_value(
 				attach_value -= 85.0
 				if not AIDeckProfiles.contains(deck_key, "core", target.card_id):
 					attach_value -= 45.0
+			if target_slot == "active":
+				var opponent_ready_damage := _best_deterministic_available_damage(
+					state, 1 - actor, catalog)
+				if opponent_ready_damage >= target.current_hp(catalog):
+					var units_before := _effective_energy_unit_count(target, catalog)
+					var energy_probe := target.clone_state()
+					energy_probe.energy_card_ids.append(card_id)
+					var units_after := _effective_energy_unit_count(
+						energy_probe, catalog)
+					var retreat_cost := int(catalog.get_card(
+						target.card_id).get("retreat_cost", 0))
+					var unlocks_attack := before > 0 and after == 0
+					var unlocks_retreat := (
+						units_before < retreat_cost and units_after >= retreat_cost)
+					if not unlocks_attack and not unlocks_retreat:
+						attach_value -= 520.0
 			return attach_value
 		"EVOLVE":
 			var evolve_slot := str(action.params.get("slot", ""))
@@ -2713,8 +4704,12 @@ func _development_action_value(
 			for ability_value in catalog.get_card(pokemon.card_id).get("abilities", []):
 				var ability: Dictionary = ability_value
 				if str(ability.get("name", "")) == ability_name:
-					return 65.0 + _effects_tactical_value(
+					var tactical_value := 65.0 + _effects_tactical_value(
 						state, actor, ability.get("effects", []), slot, catalog, deck_key)
+					if pokemon.card_id == "sv2-starm":
+						tactical_value += _starmie_torrent_followup_value(
+							state, actor, slot, catalog)
+					return tactical_value
 			return 0.0
 		"USE_STADIUM":
 			if state.stadium_card_id.is_empty():
@@ -2728,6 +4723,27 @@ func _development_action_value(
 				deck_key,
 			)
 	return 0.0
+
+
+func _starmie_torrent_followup_value(
+	state: GameState,
+	actor: int,
+	source_slot: String,
+	catalog: CardCatalog,
+) -> float:
+	var opponent := state.get_player(1 - actor)
+	if opponent.active == null:
+		return 0.0
+	return _starmie_torrent_target_bonus(
+		state,
+		actor,
+		source_slot,
+		1 - actor,
+		"active",
+		opponent.active,
+		20,
+		catalog,
+	)
 
 
 func _active_side_core_evolve_blocking_penalty(
@@ -2782,6 +4798,154 @@ func _active_side_core_evolve_blocking_penalty(
 	return min(430.0, penalty)
 
 
+func _expected_self_energy_discard_cost(
+	state: GameState,
+	actor: int,
+	effects: Array,
+	source_slot: String,
+	catalog: CardCatalog,
+	probability: float = 1.0,
+) -> float:
+	var total := 0.0
+	for effect_value in effects:
+		if not effect_value is Dictionary:
+			continue
+		var effect: Dictionary = effect_value
+		var params: Dictionary = effect.get("params", {})
+		if (
+			str(effect.get("effect_type", "")) == "energy_discard"
+			and str(params.get("from", "opponent")) == "self"
+		):
+			total += probability * _self_energy_discard_cost(
+				state, actor, source_slot, int(params.get("amount", 1)), catalog)
+		elif str(effect.get("effect_type", "")) == "discard_fighting_energy_damage":
+			total += probability * _self_fighting_energy_discard_cost(
+				state, actor, source_slot, catalog)
+		for branch_key in [
+			"on_heads", "on_tails", "on_success", "on_fail", "on_pay", "cost",
+		]:
+			var branch_value: Variant = params.get(branch_key, [])
+			var branch_effects: Array = []
+			if branch_value is Dictionary:
+				branch_effects = [branch_value]
+			elif branch_value is Array:
+				branch_effects = branch_value
+			if branch_effects.is_empty():
+				continue
+			var branch_probability := probability
+			if branch_key in ["on_heads", "on_tails", "on_success", "on_fail"]:
+				branch_probability *= 0.5
+			total += _expected_self_energy_discard_cost(
+				state, actor, branch_effects, source_slot, catalog, branch_probability)
+	return total
+
+
+func _self_energy_discard_cost(
+	state: GameState,
+	actor: int,
+	source_slot: String,
+	requested_amount: int,
+	catalog: CardCatalog,
+) -> float:
+	var source := state.get_player(actor).get_pokemon(source_slot)
+	if source == null or source.energy_card_ids.is_empty():
+		return 0.0
+	var discard_count := mini(
+		source.energy_card_ids.size(), maxi(0, requested_amount))
+	if discard_count <= 0:
+		return 0.0
+	var original_energy: Array[String] = source.energy_card_ids.duplicate()
+	var before_missing := _best_missing_energy(source, catalog)
+	var before_ready_damage := _best_ready_pokemon_damage(
+		state, actor, source, catalog)
+	var kept_energy: Array[String] = []
+	kept_energy.assign(original_energy.slice(
+		0, original_energy.size() - discard_count))
+	source.energy_card_ids.assign(kept_energy)
+	var after_missing := _best_missing_energy(source, catalog)
+	var after_ready_damage := _best_ready_pokemon_damage(
+		state, actor, source, catalog)
+	source.energy_card_ids.assign(original_energy)
+	var cost := float(discard_count) * 65.0
+	if discard_count >= original_energy.size():
+		cost += 60.0
+	cost += float(maxi(0, after_missing - before_missing)) * 55.0
+	cost += float(maxi(0, before_ready_damage - after_ready_damage)) * 0.45
+	return cost
+
+
+func _self_fighting_energy_discard_cost(
+	state: GameState,
+	actor: int,
+	source_slot: String,
+	catalog: CardCatalog,
+) -> float:
+	var source := state.get_player(actor).get_pokemon(source_slot)
+	if source == null or source.energy_card_ids.is_empty():
+		return 0.0
+	var original_energy: Array[String] = source.energy_card_ids.duplicate()
+	var kept_energy: Array[String] = []
+	var removed := 0
+	for index in range(original_energy.size()):
+		var units := EnergyView.units_for_card_at(
+			original_energy, index, catalog)
+		if "Fighting" in units or "Rainbow" in units:
+			removed += 1
+		else:
+			kept_energy.append(original_energy[index])
+	if removed <= 0:
+		return 0.0
+	var before_missing := _best_missing_energy(source, catalog)
+	var before_ready_damage := _best_ready_pokemon_damage(
+		state, actor, source, catalog)
+	source.energy_card_ids.assign(kept_energy)
+	var after_missing := _best_missing_energy(source, catalog)
+	var after_ready_damage := _best_ready_pokemon_damage(
+		state, actor, source, catalog)
+	source.energy_card_ids.assign(original_energy)
+	var cost := float(removed) * 65.0
+	# The per-card cost, readiness loss, and future-damage loss below already
+	# price an all-Energy discard.  A second blanket empty-board surcharge made
+	# ordinary two- and three-Energy Lucario attacks look unproductive.
+	cost += float(maxi(0, after_missing - before_missing)) * 55.0
+	cost += float(maxi(0, before_ready_damage - after_ready_damage)) * 0.45
+	return cost
+
+
+func _expected_self_damage_cost(
+	state: GameState,
+	actor: int,
+	effects: Array,
+	source_slot: String,
+	catalog: CardCatalog,
+	probability: float = 1.0,
+) -> float:
+	var source := state.get_player(actor).get_pokemon(source_slot)
+	var total := 0.0
+	for effect_value in effects:
+		if not effect_value is Dictionary:
+			continue
+		var effect: Dictionary = effect_value
+		var params: Dictionary = effect.get("params", {})
+		if str(effect.get("effect_type", "")) == "damage_counter_self":
+			var amount := maxi(0, int(params.get("amount", params.get("damage", 0))))
+			total += probability * float(amount) * 1.8
+			if source != null and amount >= source.current_hp(catalog):
+				total += probability * 1000.0
+		for branch_key in ["on_heads", "on_tails", "on_success", "on_fail"]:
+			var branch_value: Variant = params.get(branch_key, [])
+			var branch_effects: Array = []
+			if branch_value is Dictionary:
+				branch_effects = [branch_value]
+			elif branch_value is Array:
+				branch_effects = branch_value
+			if not branch_effects.is_empty():
+				total += _expected_self_damage_cost(
+					state, actor, branch_effects, source_slot, catalog,
+					probability * 0.5)
+	return total
+
+
 func _effects_tactical_value(
 	state: GameState,
 	actor: int,
@@ -2798,7 +4962,8 @@ func _effects_tactical_value(
 	var profile_key := deck_key
 	if profile_key.is_empty():
 		profile_key = _deck_key_for_actor(state, actor, "")
-	var value := 0.0
+	var value := -_expected_self_energy_discard_cost(
+		state, actor, effects, source_slot, catalog)
 	for effect in _flatten_effects(effects):
 		var effect_type := str(effect.get("effect_type", ""))
 		var params: Dictionary = effect.get("params", {})
@@ -2829,10 +4994,16 @@ func _effects_tactical_value(
 					value += refresh_value
 					if player.hand.size() <= 4:
 						value += 65.0
-			"search", "conditional_search_extra", "search_any_and_switch", "arven", "houb":
+			"search", "conditional_search_extra", "search_any_and_switch", "arven":
 				value += 125.0
 				if player.bench_count() < 2:
 					value += 35.0
+			"houb":
+				value += _semantic_houb_value(
+					state, actor, int(params.get("target_hand_size", 5)), profile_key, catalog)
+			"look_top_deck":
+				value += _semantic_look_top_deck_value(
+					state, actor, params, profile_key, catalog)
 			"clara":
 				value += _clara_recovery_value(state, actor, profile_key, catalog)
 			"energy_attach", "draw_and_attach_energy", "attach_from_discard", "look_top_attach_energy":
@@ -2848,7 +5019,8 @@ func _effects_tactical_value(
 			"switch_opponent":
 				value += 75.0 if opponent.bench_count() > 0 else -80.0
 			"energy_discard", "coin_flip_energy_discard":
-				value += 90.0 if opponent.active and not opponent.active.energy_card_ids.is_empty() else -35.0
+				if str(params.get("from", "opponent")) != "self":
+					value += 90.0 if opponent.active and not opponent.active.energy_card_ids.is_empty() else -35.0
 			"discard", "discard_hand_conditional_bonus":
 				value += 55.0
 			"prevent_damage", "prevent_all", "prevent_effects":
@@ -2875,7 +5047,8 @@ func _semantic_effects_tactical_value(
 	var profile_key := deck_key
 	if profile_key.is_empty():
 		profile_key = _deck_key_for_actor(state, actor, "")
-	var value := 0.0
+	var value := -_expected_self_energy_discard_cost(
+		state, actor, effects, source_slot, catalog)
 	for effect in _flatten_effects(effects):
 		var effect_type := str(effect.get("effect_type", ""))
 		var params: Dictionary = effect.get("params", {})
@@ -2886,8 +5059,14 @@ func _semantic_effects_tactical_value(
 			"discard_draw", "shuffle_draw", "judge", "hand_to_bottom_draw", "discard_then_draw":
 				value += _semantic_draw_value(
 					state, actor, int(params.get("draw", params.get("amount", 4))), true, profile_key, catalog)
-			"search", "conditional_search_extra", "search_any_and_switch", "arven", "houb":
+			"search", "conditional_search_extra", "search_any_and_switch", "arven":
 				value += _semantic_search_value(state, actor, params, profile_key, catalog)
+			"houb":
+				value += _semantic_houb_value(
+					state, actor, int(params.get("target_hand_size", 5)), profile_key, catalog)
+			"look_top_deck":
+				value += _semantic_look_top_deck_value(
+					state, actor, params, profile_key, catalog)
 			"clara":
 				value += _clara_recovery_value(state, actor, profile_key, catalog)
 			"energy_attach", "draw_and_attach_energy", "attach_from_discard", "look_top_attach_energy":
@@ -2901,7 +5080,8 @@ func _semantic_effects_tactical_value(
 			"switch_opponent":
 				value += _semantic_switch_opponent_value(state, actor, catalog)
 			"energy_discard", "coin_flip_energy_discard":
-				value += _semantic_energy_disruption_value(state, actor, catalog)
+				if str(params.get("from", "opponent")) != "self":
+					value += _semantic_energy_disruption_value(state, actor, catalog)
 			"discard", "discard_hand_conditional_bonus":
 				value += _semantic_hand_disruption_value(state, actor)
 			"prevent_damage", "prevent_all", "prevent_effects":
@@ -2909,11 +5089,13 @@ func _semantic_effects_tactical_value(
 			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "apply_outgoing_damage_reduction", "self_attack_lock":
 				value += _semantic_status_effect_value(state, actor, effect_type, params, catalog)
 			"damage", "any_pokemon_damage", "place_counters_and_self_ko", "bench_damage", "damage_and_self_heal":
-				value += _semantic_damage_effect_value(state, actor, effect, catalog)
+				value += _semantic_damage_effect_value(
+					state, actor, effect, source_slot, catalog)
 			"damage_counter_self":
 				value -= int(params.get("amount", params.get("damage", 20))) * 1.0
 			"attack_damage_formula", "conditional_damage_bonus", "discard_fighting_energy_damage", "discard_hand_conditional_bonus":
-				value += _semantic_damage_effect_value(state, actor, effect, catalog)
+				value += _semantic_damage_effect_value(
+					state, actor, effect, source_slot, catalog)
 			"shuffle_from_discard", "ability_discard_revive":
 				value += 60.0 + _resource_outs_value(state, actor, profile_key, catalog) * 0.35
 			"tool", "tool_exp_share":
@@ -2981,6 +5163,114 @@ func _semantic_draw_value(
 	if hand_plan > 0.0 and not refresh and draw_count <= 2 and projected_deck >= 3:
 		value += min(105.0, hand_plan * 0.9)
 	return value
+
+
+func _semantic_houb_value(
+	state: GameState,
+	actor: int,
+	target_hand_size: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	# Playing the Supporter and bottoming one additional card happen before the
+	# draw-to-five effect.  When five cards already remain, Houb is pure resource
+	# loss rather than a search card.
+	var hand_after_cost := maxi(0, player.hand.size() - 2)
+	var draw_count := maxi(0, target_hand_size - hand_after_cost)
+	if draw_count <= 0:
+		return -175.0 - float(maxi(0, hand_after_cost - target_hand_size)) * 28.0
+	if player.deck.size() <= draw_count:
+		return -280.0
+	var value := float(draw_count) * float(EFFECT_VALUE_WEIGHTS["draw_card"])
+	if player.hand.size() <= 3:
+		value += 115.0
+	elif player.hand.size() <= 5:
+		value += 45.0
+	value += min(55.0, _deck_outs_quality(state, actor, catalog) * 0.14)
+	# Approximate the cheapest public card that must be put on the bottom.  The
+	# subsequent Choice scorer still selects the exact card.
+	var cheapest_keep := INF
+	for card_id in player.hand:
+		var effects: Array = catalog.get_card(card_id).get("trainer_effects", [])
+		var is_houb := false
+		for effect in _flatten_effects(effects):
+			if str(effect.get("effect_type", "")) == "houb":
+				is_houb = true
+				break
+		if is_houb:
+			continue
+		cheapest_keep = minf(
+			cheapest_keep,
+			_card_keep_value(state, actor, card_id, deck_key, catalog),
+		)
+	if cheapest_keep < INF:
+		value -= maxf(0.0, cheapest_keep) * 0.22
+	return value
+
+
+func _semantic_look_top_deck_value(
+	state: GameState,
+	actor: int,
+	params: Dictionary,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> float:
+	var player := state.get_player(actor)
+	var top_count := mini(
+		maxi(0, int(params.get("count", 0))), player.deck.size())
+	if top_count <= 0:
+		return -160.0
+	var unseen_pool := _public_unseen_deck_pool(
+		state, actor, deck_key, catalog)
+	if unseen_pool.is_empty():
+		return -90.0
+	var filter_type := str(params.get("filter", "any"))
+	var hit_count := catalog.filter_cards(unseen_pool, filter_type).size()
+	var expected_hits := (
+		float(hit_count) * float(top_count) / float(unseen_pool.size()))
+	var value := expected_hits * 52.0
+	if expected_hits >= 3.0:
+		value += 55.0
+	elif expected_hits < 1.0:
+		value -= 85.0
+	if _has_energy_target_with_missing_cost(state, actor, catalog):
+		value += minf(65.0, expected_hits * 12.0)
+	if player.bench_count() < 2:
+		value += minf(55.0, expected_hits * 10.0)
+	if player.deck.size() <= 3:
+		value -= 210.0
+	return value
+
+
+func _public_unseen_deck_pool(
+	state: GameState,
+	actor: int,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> Array[String]:
+	# Use the fixed public release list minus zones the actor may legally see.
+	# Do not inspect the determinized deck/prize identities: exchanging a card
+	# between those hidden zones must leave the estimate unchanged.
+	var pool := catalog.expand_deck(deck_key)
+	var player := state.get_player(actor)
+	var public_cards: Array[String] = []
+	public_cards.append_array(player.hand)
+	public_cards.append_array(player.discard)
+	for row in player.get_all_pokemon():
+		var pokemon: PokemonState = row["pokemon"]
+		if pokemon == null:
+			continue
+		public_cards.append(pokemon.card_id)
+		public_cards.append_array(pokemon.evolution_stack_ids)
+		public_cards.append_array(pokemon.energy_card_ids)
+		if not pokemon.attached_tool_id.is_empty():
+			public_cards.append(pokemon.attached_tool_id)
+	for card_id in public_cards:
+		var index := pool.find(card_id)
+		if index >= 0:
+			pool.remove_at(index)
+	return pool
 
 
 func _semantic_search_value(
@@ -3164,6 +5454,7 @@ func _semantic_damage_effect_value(
 	state: GameState,
 	actor: int,
 	effect: Dictionary,
+	source_slot: String,
 	catalog: CardCatalog,
 ) -> float:
 	var opponent := state.get_player(1 - actor)
@@ -3174,9 +5465,29 @@ func _semantic_damage_effect_value(
 		value += 190.0 + catalog.prize_value(opponent.active.card_id) * 120.0
 	elif effect_type in ["bench_damage", "any_pokemon_damage"]:
 		value += _semantic_best_bench_damage_value(state, actor, damage, catalog)
-	if effect_type == "place_counters_and_self_ko" and state.get_player(actor).active != null:
-		value -= 120.0 + catalog.prize_value(state.get_player(actor).active.card_id) * 80.0
+	if effect_type == "place_counters_and_self_ko":
+		value -= _self_ko_source_cost(state, actor, source_slot, catalog)
 	return value
+
+
+func _self_ko_source_cost(
+	state: GameState,
+	actor: int,
+	source_slot: String,
+	catalog: CardCatalog,
+) -> float:
+	var source := state.get_player(actor).get_pokemon(source_slot)
+	if source == null:
+		return 320.0
+	var cost := 120.0 + catalog.prize_value(source.card_id) * 80.0
+	# The command discards the source and every attached/evolution card.  Price
+	# those public resources on the actual source slot, rather than accidentally
+	# charging whichever Pokemon currently occupies the Active Spot.
+	cost += _effective_energy_unit_count(source, catalog) * 45.0
+	cost += source.evolution_stack_ids.size() * 30.0
+	if not source.attached_tool_id.is_empty():
+		cost += 35.0
+	return cost
 
 
 func _semantic_best_bench_damage_value(
@@ -3553,8 +5864,10 @@ func _effect_damage_estimate(
 		"discard_fighting_energy_damage":
 			var fighting_count := 0
 			if active:
-				for energy_id in active.energy_card_ids:
-					if "Fighting" in catalog.provides_energy(energy_id):
+				for index in range(active.energy_card_ids.size()):
+					var units := EnergyView.units_for_card_at(
+						active.energy_card_ids, index, catalog)
+					if "Fighting" in units or "Rainbow" in units:
 						fighting_count += 1
 			return int(params.get("base", 10)) + fighting_count * int(params.get("per_energy", 60))
 		"damage_per_evolved":
@@ -3572,8 +5885,11 @@ func _effect_damage_estimate(
 			)
 		"damage_and_self_heal":
 			return int(params.get("damage", params.get("amount", 0)))
-		"any_pokemon_damage", "bench_damage", "place_counters_and_self_ko":
+		"any_pokemon_damage", "bench_damage":
 			return int(params.get("amount", params.get("damage", 0)))
+		"place_counters_and_self_ko":
+			return int(params.get(
+				"amount", params.get("damage", int(params.get("counters", 0)) * 10)))
 		"mill_and_damage_per_energy":
 			var energy_seen := 0
 			for card_id in player.deck.slice(max(0, player.deck.size() - int(params.get("mill_count", 5)))):
@@ -3838,6 +6154,137 @@ func _attack_draw_pressure_is_unsafe(
 	return draw_amount > 0 and state.get_player(actor).deck.size() <= draw_amount
 
 
+func _attack_squanders_only_fire_energy(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	deck_key: String,
+	catalog: CardCatalog,
+) -> bool:
+	if (
+		deck_key != "fire"
+		or action == null
+		or action.action != "DECLARE_ATTACK"
+		or state.get_player(actor).active == null
+	):
+		return false
+	var player := state.get_player(actor)
+	var active := player.active
+	# Chimchar's Spark is the release deck's only 30-damage attack that burns
+	# its sole attached Energy.  With no backup and no replacement Energy in the
+	# visible hand, passing preserves both the evolution route and next turn's
+	# attack; a non-KO Spark irreversibly loses that resource for negligible gain.
+	if (
+		active.card_id != "svi-chim"
+		or player.bench_count() != 0
+		or _effective_energy_unit_count(active, catalog) != 1
+		or _helpful_hand_energy_count(state, actor, catalog) > 0
+	):
+		return false
+	var attack_index := int(action.params.get(
+		"attack_idx", action.params.get("attack_index", -1)))
+	var has_self_discard := false
+	for effect_value in _flatten_effects(
+		_attack_effects(state, actor, attack_index, catalog)):
+		var effect: Dictionary = effect_value
+		if (
+			str(effect.get("effect_type", "")) == "energy_discard"
+			and str(Dictionary(effect.get("params", {})).get("from", "self"))
+			in ["", "self"]
+		):
+			has_self_discard = true
+			break
+	if not has_self_discard:
+		return false
+	var opponent := state.get_player(1 - actor)
+	return (
+		opponent.active != null
+		and _estimated_attack_damage(state, actor, attack_index, catalog)
+		< opponent.active.current_hp(catalog)
+	)
+
+
+func _switching_energy_regresses_current_attack(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+) -> bool:
+	if (
+		state == null
+		or action == null
+		or action.action != "ATTACH_ENERGY"
+		or action.target == null
+		or not action.target.slot.begins_with("bench_")
+	):
+		return false
+	var energy_card_id := _action_card_id(state, actor, action)
+	var forces_switch := false
+	for effect_value in catalog.get_card(energy_card_id).get("energy_effects", []):
+		var effect: Dictionary = effect_value
+		var nested_effect: Dictionary = Dictionary(effect.get("effect", {}))
+		if (
+			str(effect.get("hook", "")) == "ON_ATTACH"
+			and str(nested_effect.get("op", "")) == "switch_with_active"
+		):
+			forces_switch = true
+			break
+	if not forces_switch:
+		return false
+	var before_damage := _best_deterministic_available_damage(
+		state, actor, catalog)
+	if before_damage < 80:
+		return false
+	var player := state.get_player(actor)
+	var opponent_damage := _best_deterministic_available_damage(
+		state, 1 - actor, catalog)
+	var switch_avoids_public_knockout := (
+		player.active != null
+		and opponent_damage >= player.active.current_hp(catalog)
+	)
+	if switch_avoids_public_knockout:
+		return false
+	var simulation := state.clone_state()
+	simulation.set_type_matchups_enabled(false)
+	var rng := PortableRandomSource.new(seed)
+	var step := engine.apply_action(simulation, action, rng)
+	if not step.success:
+		return false
+	if not _resolve_choices(simulation, actor, deck_key, catalog, engine, rng):
+		return false
+	var after_damage := _best_deterministic_available_damage(
+		simulation, actor, catalog)
+	return after_damage + 40 <= before_damage
+
+
+func _best_deterministic_available_damage(
+	state: GameState,
+	actor: int,
+	catalog: CardCatalog,
+) -> int:
+	var player := state.get_player(actor)
+	if player.active == null or not player.active.status_conditions.is_empty():
+		return 0
+	var best := 0
+	var attacks: Array = catalog.get_card(player.active.card_id).get("attacks", [])
+	var semantic_catalog := CardSemanticCatalog.new(catalog)
+	for attack_index in range(attacks.size()):
+		var attack: Dictionary = attacks[attack_index]
+		if (
+			_missing_energy_count(player.active, attack.get("cost", []), catalog) <= 0
+			and not bool(semantic_catalog.attack_semantics(
+				player.active.card_id, attack_index).get("has_random_effect", false))
+		):
+			best = maxi(
+				best,
+				_estimated_attack_damage(state, actor, attack_index, catalog),
+			)
+	return best
+
+
 func _attack_feeds_dangerous_retaliation(
 	state: GameState,
 	actor: int,
@@ -3985,9 +6432,19 @@ func _promotion_value_for_state(
 ) -> float:
 	if pokemon == null:
 		return -INF
-	var value := _pokemon_strength(pokemon, catalog)
 	var missing := _best_missing_energy(pokemon, catalog)
 	var ready_damage := _best_ready_pokemon_damage(state, actor, pokemon, catalog)
+	# Promotion is an immediate board decision.  Printed maximum damage made a
+	# zero-Energy high-HP evolution outrank a one-prize attacker that could act
+	# now, so start from actual ready damage and keep future potential in the
+	# missing-Energy branches below.
+	var value := (
+		float(pokemon.current_hp(catalog))
+		+ float(ready_damage) * 2.0
+		+ float(_effective_energy_unit_count(pokemon, catalog)) * 35.0
+	)
+
+
 	var opponent := state.get_player(1 - actor)
 	var can_take_prize := opponent.active != null and ready_damage >= opponent.active.current_hp(catalog)
 	if missing == 0:
@@ -4039,14 +6496,129 @@ func _best_ready_pokemon_damage(
 		return 0
 	var player := state.get_player(actor)
 	var original_active := player.active
+	var bench_index := player.bench.find(pokemon)
 	var best := 0
+	if bench_index >= 0:
+		player.bench[bench_index] = original_active
 	player.active = pokemon
 	for attack_idx in range(catalog.get_card(pokemon.card_id).get("attacks", []).size()):
 		var attack: Dictionary = catalog.get_card(pokemon.card_id).get("attacks", [])[attack_idx]
 		if _missing_energy_count(pokemon, attack.get("cost", []), catalog) <= 0:
 			best = max(best, _estimated_attack_damage(state, actor, attack_idx, catalog))
 	player.active = original_active
+	if bench_index >= 0:
+		player.bench[bench_index] = pokemon
 	return best
+
+
+func _action_immediately_loses_match(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+) -> bool:
+	if state == null or action == null or actor not in [0, 1]:
+		return false
+	# A single determinization must not turn a hidden/coin-dependent attack into
+	# a hard veto.  The guard is reserved for publicly deterministic outcomes
+	# such as reactive thorns, self-KO and final-Prize resolution.
+	if action.action == "DECLARE_ATTACK":
+		var source_card_id := (
+			action.source.card_id if action.source != null else "")
+		if source_card_id.is_empty() and state.get_player(actor).active != null:
+			source_card_id = state.get_player(actor).active.card_id
+		var attack_index := int(action.params.get(
+			"attack_idx", action.params.get("attack_index", -1)))
+		if bool(CardSemanticCatalog.new(catalog).attack_semantics(
+			source_card_id, attack_index).get("has_random_effect", false)):
+			return false
+	var simulation := state.clone_state()
+	simulation.set_type_matchups_enabled(false)
+	var rng := PortableRandomSource.new(seed)
+	var step := engine.apply_action(simulation, action, rng)
+	if not step.success:
+		return false
+	if not _resolve_choices(simulation, actor, deck_key, catalog, engine, rng):
+		return false
+	return simulation.is_terminal() and simulation.winner == 1 - actor
+
+
+func _best_immediate_loss_escape_action(
+	state: GameState,
+	actor: int,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+	excluded: GameAction,
+	profile: Dictionary = {},
+) -> GameAction:
+	var best: GameAction = null
+	var best_value := -INF
+	for action_index in range(actions.size()):
+		var action := actions[action_index]
+		if (
+			action == null
+			or action == excluded
+			or action.action in ["DECLARE_ATTACK", "END_TURN"]
+		):
+			continue
+		var sim_score := _simulated_action_score(
+			state,
+			actor,
+			action,
+			deck_key,
+			catalog,
+			engine,
+			seed + action_index * 7919,
+			profile,
+		)
+		if sim_score <= -INF / 2.0:
+			continue
+		var value := sim_score + _development_action_value(
+			state, actor, action, deck_key, catalog)
+		if action.action == "EVOLVE":
+			value += 80.0
+		elif action.action == "RETREAT":
+			value += 60.0
+		elif action.action == "PLAY_BASIC":
+			value += 40.0
+		if value > best_value:
+			best = action
+			best_value = value
+	if best != null:
+		return best
+	var end_turn := _find_action(actions, "END_TURN")
+	if (
+		end_turn != null
+		and _action_executes_successfully(
+			state, actor, end_turn, deck_key, catalog, engine, seed + 100003, profile)
+	):
+		return end_turn
+	return null
+
+
+func _best_ready_pokemon_damage_with_extra(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	energy_card_id: String,
+	catalog: CardCatalog,
+) -> int:
+	if pokemon == null:
+		return 0
+	var appended := not energy_card_id.is_empty() and catalog.is_energy(energy_card_id)
+	if appended:
+		pokemon.energy_card_ids.append(energy_card_id)
+	var result := _best_ready_pokemon_damage(
+		state, actor, pokemon, catalog)
+	if appended:
+		pokemon.energy_card_ids.remove_at(pokemon.energy_card_ids.size() - 1)
+	return result
 
 
 func _best_available_damage(
@@ -4074,9 +6646,14 @@ func _best_available_damage_against_candidate(
 ) -> int:
 	var player := state.get_player(actor)
 	var original_active := player.active
+	var bench_index := player.bench.find(candidate)
+	if bench_index >= 0:
+		player.bench[bench_index] = original_active
 	player.active = candidate
 	var damage := _best_available_damage(state, 1 - actor, catalog)
 	player.active = original_active
+	if bench_index >= 0:
+		player.bench[bench_index] = candidate
 	return damage
 
 
@@ -4128,28 +6705,135 @@ func _best_missing_energy_with_extra(
 
 
 func _high_impact_missing_energy(
+	state: GameState,
+	actor: int,
 	pokemon: PokemonState,
 	energy_card_id: String,
 	catalog: CardCatalog,
 ) -> int:
+	return int(_high_impact_attack_plan(
+		state, actor, pokemon, energy_card_id, catalog).get("missing", 99))
+
+
+func _high_impact_attack_plan(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	energy_card_id: String,
+	catalog: CardCatalog,
+) -> Dictionary:
 	if pokemon == null:
-		return 99
+		return {"attack_index": -1, "damage": 0, "missing": 99}
 	var attacks: Array = catalog.get_card(pokemon.card_id).get("attacks", [])
 	if attacks.is_empty():
-		return 99
-	var best_damage := -1
+		return {"attack_index": -1, "damage": 0, "missing": 99}
+	var appended_energy := false
+	if not energy_card_id.is_empty() and catalog.is_energy(energy_card_id):
+		pokemon.energy_card_ids.append(energy_card_id)
+		appended_energy = true
+	var best_impact := -INF
+	var best_damage := 0
 	var best_missing := 99
-	for attack in attacks:
-		var damage := int(attack.get("damage", 0))
-		var missing := (
-			_missing_energy_count_with_extra(pokemon, attack.get("cost", []), energy_card_id, catalog)
-			if not energy_card_id.is_empty()
-			else _missing_energy_count(pokemon, attack.get("cost", []), catalog)
-		)
-		if damage > best_damage or (damage == best_damage and missing < best_missing):
+	var best_attack_index := -1
+	for attack_index in range(attacks.size()):
+		var attack: Dictionary = attacks[attack_index]
+		var missing := _missing_energy_count(
+			pokemon, attack.get("cost", []), catalog)
+		var damage := _pokemon_attack_damage_ceiling(
+			state, actor, pokemon, attack_index, catalog)
+		# Missing Energy is an opportunity cost.  Selecting solely by printed
+		# damage made Torterra chase its four-Energy 160 attack while its dynamic
+		# two-Energy attack was already worth 150-250 on the public board.  Damage
+		# and missing cost must come from this same attack route; combining the
+		# cheap setup attack's cost with another attack's ceiling over-valued
+		# Cresselia and Deoxys attachments.
+		var impact := float(damage) - float(missing) * 50.0
+		if (
+			impact > best_impact
+			or (
+				is_equal_approx(impact, best_impact)
+				and (missing < best_missing or (
+					missing == best_missing and damage > best_damage))
+			)
+		):
+			best_impact = impact
 			best_damage = damage
 			best_missing = missing
-	return best_missing
+			best_attack_index = attack_index
+	if appended_energy:
+		pokemon.energy_card_ids.remove_at(pokemon.energy_card_ids.size() - 1)
+	return {
+		"attack_index": best_attack_index,
+		"damage": best_damage,
+		"missing": best_missing,
+		"impact": best_impact,
+	}
+
+
+func _pokemon_attack_damage_ceiling(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	attack_index: int,
+	catalog: CardCatalog,
+) -> int:
+	var attacks: Array = catalog.get_card(pokemon.card_id).get("attacks", [])
+	if attack_index < 0 or attack_index >= attacks.size():
+		return 0
+	var attack: Dictionary = attacks[attack_index]
+	var potential := int(attack.get("damage", 0))
+	# Conditional printed bonuses describe the attack's reachable route.  They
+	# are included here for preparation scoring even when the public condition
+	# is not met yet; actual attack selection still uses the rules-accurate
+	# estimator below.
+	for effect in _flatten_effects(attack.get("effects", [])):
+		if str(effect.get("effect_type", "")) == "conditional_damage_bonus":
+			var params: Dictionary = effect.get("params", {})
+			potential += int(params.get("bonus", params.get("amount", 0)))
+	return maxi(
+		potential,
+		_estimated_pokemon_attack_damage(
+			state, actor, pokemon, attack_index, catalog),
+	)
+
+
+func _best_pokemon_damage_for_state(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	catalog: CardCatalog,
+) -> int:
+	if pokemon == null:
+		return 0
+	var attacks: Array = catalog.get_card(pokemon.card_id).get("attacks", [])
+	var best := 0
+	for attack_index in range(attacks.size()):
+		best = maxi(best, _pokemon_attack_damage_ceiling(
+			state, actor, pokemon, attack_index, catalog))
+	return best
+
+
+func _estimated_pokemon_attack_damage(
+	state: GameState,
+	actor: int,
+	pokemon: PokemonState,
+	attack_index: int,
+	catalog: CardCatalog,
+) -> int:
+	if state == null or actor not in [0, 1] or pokemon == null:
+		return 0
+	var player := state.get_player(actor)
+	var original_active := player.active
+	var bench_index := player.bench.find(pokemon)
+	if bench_index >= 0:
+		player.bench[bench_index] = original_active
+	player.active = pokemon
+	var damage := _estimated_attack_damage(
+		state, actor, attack_index, catalog)
+	player.active = original_active
+	if bench_index >= 0:
+		player.bench[bench_index] = pokemon
+	return damage
 
 
 func _missing_energy_count(pokemon: PokemonState, cost: Array, catalog: CardCatalog) -> int:
@@ -4213,8 +6897,17 @@ func _best_pokemon_damage(pokemon: PokemonState, catalog: CardCatalog) -> int:
 					)
 				"damage_plus_bench":
 					damage = max(damage, int(params.get("base", 0)) + int(params.get("per_bench", 0)) * 3)
+				"discard_fighting_energy_damage":
+					damage = max(
+						damage,
+						int(params.get("base", 0))
+						+ _effective_energy_type_count(
+							pokemon, "Fighting", catalog)
+						* int(params.get("per_energy", 0)),
+					)
 				"damage_self_penalty":
-					damage = max(damage, max(0, int(params.get("base", 0)) - pokemon.damage_counters * int(params.get("per_counter", 0))))
+					# The printed value is the undamaged maximum, not a floor.
+					damage = max(0, int(params.get("base", 0)) - pokemon.damage_counters * int(params.get("per_counter", 0)))
 				"conditional_damage_bonus":
 					damage += int(params.get("bonus", params.get("amount", 0)))
 				"attack_damage_formula":
@@ -4287,6 +6980,44 @@ func _has_energy_target_with_missing_cost(
 			if missing > 0 and missing <= 2:
 				return true
 	return false
+
+
+func _energy_card_improves_attack_readiness(
+	state: GameState,
+	actor: int,
+	card_id: String,
+	catalog: CardCatalog,
+) -> bool:
+	if state == null or not catalog.is_energy(card_id):
+		return false
+	for row in state.get_player(actor).get_all_pokemon():
+		var pokemon: PokemonState = row.get("pokemon")
+		if pokemon == null:
+			continue
+		for attack_value in catalog.get_card(pokemon.card_id).get("attacks", []):
+			var attack: Dictionary = attack_value
+			var cost: Array = attack.get("cost", [])
+			var before := _missing_energy_count(pokemon, cost, catalog)
+			if before <= 0:
+				continue
+			if _missing_energy_count_with_extra(
+				pokemon, cost, card_id, catalog) < before:
+				return true
+	return false
+
+
+func _helpful_hand_energy_count(
+	state: GameState,
+	actor: int,
+	catalog: CardCatalog,
+) -> int:
+	var result := 0
+	for card_id_value in state.get_player(actor).hand:
+		var card_id := str(card_id_value)
+		if _energy_card_improves_attack_readiness(
+			state, actor, card_id, catalog):
+			result += 1
+	return result
 
 
 func _energy_relocate_value(
@@ -4459,7 +7190,7 @@ func _pokemon_strength_feature_row(pokemon: PokemonState, catalog: CardCatalog) 
 						* int(params.get("per_energy", 0)),
 					)
 				"damage_self_penalty":
-					damage = max(damage, max(0, int(params.get("base", 0)) - pokemon.damage_counters * int(params.get("per_counter", 0))))
+					damage = max(0, int(params.get("base", 0)) - pokemon.damage_counters * int(params.get("per_counter", 0)))
 				"conditional_damage_bonus":
 					damage += int(params.get("bonus", params.get("amount", 0)))
 				"attack_damage_formula":
@@ -4549,12 +7280,17 @@ func _ready_attackers_value(
 		var pokemon: PokemonState = row["pokemon"]
 		if pokemon == null:
 			continue
+		var slot_multiplier := 1.0 if str(row.get("slot", "")) == "active" else 0.45
 		var missing := _best_missing_energy(pokemon, catalog)
 		var damage := _best_pokemon_damage(pokemon, catalog)
 		if missing == 0 and damage > 0:
-			value += float(SCORE_WEIGHTS["ready_attacker"]) + min(70.0, damage * 0.22)
+			value += (
+				float(SCORE_WEIGHTS["ready_attacker"]) + min(70.0, damage * 0.22)
+			) * slot_multiplier
 		elif missing == 1 and damage >= AIDeckProfiles.high_impact_damage_floor(deck_key):
-			value += float(SCORE_WEIGHTS["backup_attacker"]) + min(45.0, damage * 0.12)
+			value += (
+				float(SCORE_WEIGHTS["backup_attacker"]) + min(45.0, damage * 0.12)
+			) * slot_multiplier
 	return value
 
 
@@ -4807,10 +7543,6 @@ func _deck_pressure_penalty(player: PlayerState) -> float:
 	return 0.0
 
 
-func _evaluate(state: GameState, perspective: int, catalog: CardCatalog) -> float:
-	return clampf(_evaluate_raw(state, perspective, catalog) / 1800.0, -1.0, 1.0)
-
-
 func _evaluate_raw(state: GameState, perspective: int, catalog: CardCatalog) -> float:
 	if state.result_status == GameState.RESULT_DRAW:
 		return 0.0
@@ -4851,35 +7583,6 @@ func _evaluate_raw_gdscript(state: GameState, perspective: int, catalog: CardCat
 	for row in opponent.get_all_pokemon():
 		score -= _pokemon_strength_gdscript(row["pokemon"], catalog) if row["pokemon"] else 0.0
 	return score
-
-
-func _select_ucb(
-	visits: Array[int],
-	totals: Array[float],
-	priors: Array[float],
-	total_visits: int,
-) -> int:
-	var best_unvisited := -1
-	var best_unvisited_prior := -INF
-	for index in range(visits.size()):
-		if visits[index] == 0:
-			var prior := priors[index] if index < priors.size() else 0.0
-			if best_unvisited < 0 or prior > best_unvisited_prior:
-				best_unvisited = index
-				best_unvisited_prior = prior
-	if best_unvisited >= 0:
-		return best_unvisited
-	var best := 0
-	var best_score := -INF
-	for index in range(visits.size()):
-		var average := totals[index] / visits[index]
-		var exploration := (
-			1.4 * priors[index] * sqrt(float(total_visits + 1)) / (visits[index] + 1)
-		)
-		if average + exploration > best_score:
-			best_score = average + exploration
-			best = index
-	return best
 
 
 func _dynamic_budget_config(raw: Variant) -> Dictionary:
@@ -4926,297 +7629,9 @@ func _dynamic_budget_config(raw: Variant) -> Dictionary:
 	return config
 
 
-func _dynamic_budget_is_ambiguous(
-	action_count: int,
-	priors: Array[float],
-	config: Dictionary,
-) -> bool:
-	if action_count > int(config.get("max_root_actions_for_clear", 10)):
-		return true
-	if action_count < 2 or priors.size() < 2:
-		return false
-	var top := -INF
-	var second := -INF
-	for prior in priors:
-		var value := float(prior)
-		if value > top:
-			second = top
-			top = value
-		elif value > second:
-			second = value
-	return top - second < float(config.get("clear_prior_gap", 0.25))
-
-
-func _all_actions_visited(visits: Array[int]) -> bool:
-	for count in visits:
-		if count <= 0:
-			return false
-	return true
-
-
-func _best_search_index(
-	visits: Array[int],
-	totals: Array[float],
-	priors: Array[float],
-) -> int:
-	var best := 0
-	var best_visits := -1
-	var best_average := -INF
-	var best_prior := -INF
-	for index in range(visits.size()):
-		var count := int(visits[index])
-		var average := totals[index] / count if count > 0 else -INF
-		var prior := priors[index] if index < priors.size() else 0.0
-		if count > best_visits:
-			best = index
-			best_visits = count
-			best_average = average
-			best_prior = prior
-		elif count == best_visits:
-			# Zero simulations is the deterministic heuristic-only path used by
-			# setup and emergency fallback. There is no average to compare, so
-			# choose the strongest prior instead of preserving wire order.
-			if count == 0 and prior > best_prior:
-				best = index
-				best_prior = prior
-			elif count > 0 and average > best_average:
-				best = index
-				best_average = average
-				best_prior = prior
-			elif (
-				count > 0
-				and is_equal_approx(average, best_average)
-				and prior > best_prior
-			):
-				best = index
-				best_prior = prior
-	return best
-
-
-func _dynamic_budget_confident_index(
-	visits: Array[int],
-	totals: Array[float],
-	priors: Array[float],
-	completed: int,
-	config: Dictionary,
-	ambiguous: bool,
-) -> int:
-	if completed <= 0 or not _all_actions_visited(visits):
-		return -1
-	var best := _best_search_index(visits, totals, priors)
-	var best_visits := int(visits[best])
-	if best_visits < int(config.get("min_best_visits", 32)):
-		return -1
-	if float(best_visits) / float(completed) < float(config.get("min_best_visit_share", 0.35)):
-		return -1
-	var best_average := totals[best] / best_visits
-	var next_average := -INF
-	for index in range(visits.size()):
-		if index == best:
-			continue
-		var count := int(visits[index])
-		if count <= 0:
-			return -1
-		next_average = max(next_average, totals[index] / count)
-	var margin_required := float(
-		config.get("ambiguous_mean_gap", 0.14)
-		if ambiguous
-		else config.get("min_mean_gap", 0.10)
-	)
-	if best_average - next_average < margin_required:
-		return -1
-	return best
-
-
-func _current_actor(state: GameState) -> int:
-	if not state.pending_promotions.is_empty():
-		return int(state.pending_promotions[0])
-	if state.phase == "SETUP":
-		return (
-			state.setup_actor_idx
-			if state.setup_actor_idx in [0, 1]
-			else state.active_player_idx
-		)
-	return state.active_player_idx
-
-
 func _deck_key_for_actor(state: GameState, actor: int, fallback: String) -> String:
 	if actor >= 0 and actor < state.public_deck_keys.size():
 		var deck_key := str(state.public_deck_keys[actor])
 		if not deck_key.is_empty():
 			return deck_key
 	return fallback
-
-
-func _neural_action_priors(
-	state: GameState,
-	actor: int,
-	actions: Array[GameAction],
-	deck_key: String,
-	catalog: CardCatalog,
-	inference: Variant,
-) -> Dictionary:
-	var observation := AIObservationBuilder.build(state, actor)
-	var encoder := AIActionEncoder.new(catalog)
-	var encoded_state := encoder.encode_observation(observation, deck_key)
-	var action_numeric: Array[float] = []
-	var action_cards: Array[int] = []
-	for action in actions:
-		var encoded := encoder.encode_action(observation, action, deck_key)
-		if encoded.has("error"):
-			return {"success": false, "error": str(encoded["error"])}
-		action_numeric.append_array(encoded["numeric"])
-		action_cards.append(int(encoded["card_id"]))
-	var outputs: Dictionary = inference.call(
-		"infer",
-		PackedFloat32Array(encoded_state["numeric"]),
-		PackedInt64Array(encoded_state["card_ids"]),
-		PackedFloat32Array(action_numeric),
-		PackedInt64Array(action_cards),
-			PackedFloat32Array(_zero_numeric()),
-		PackedInt64Array([0]),
-	)
-	if not bool(outputs.get("success", false)):
-		return outputs
-	var logits: Array = outputs.get("action_logits", [])
-	if logits.size() != actions.size():
-		return {"success": false, "error": "action_output_size"}
-	return {"success": true, "priors": _softmax(logits)}
-
-
-func _neural_choice(
-	state: GameState,
-	request: ChoiceView,
-	actor: int,
-	deck_key: String,
-	catalog: CardCatalog,
-	inference: Variant,
-) -> Dictionary:
-	var observation := AIObservationBuilder.build(state, actor)
-	var encoder := AIActionEncoder.new(catalog)
-	var encoded_state := encoder.encode_observation(observation, deck_key)
-	var choice_numeric: Array[float] = []
-	var choice_cards: Array[int] = []
-	for index in range(request.options.size()):
-		var encoded := encoder.encode_choice(
-			observation, request, request.options[index], index)
-		if encoded.has("error"):
-			return {"success": false, "error": str(encoded["error"])}
-		choice_numeric.append_array(encoded["numeric"])
-		choice_cards.append(int(encoded["card_id"]))
-	var outputs: Dictionary = inference.call(
-		"infer",
-		PackedFloat32Array(encoded_state["numeric"]),
-		PackedInt64Array(encoded_state["card_ids"]),
-			PackedFloat32Array(_zero_numeric()),
-		PackedInt64Array([0]),
-		PackedFloat32Array(choice_numeric),
-		PackedInt64Array(choice_cards),
-	)
-	if not bool(outputs.get("success", false)):
-		return outputs
-	var logits: Array = outputs.get("choice_logits", [])
-	if logits.size() != request.options.size():
-		return {"success": false, "error": "choice_output_size"}
-	var ranked: Array[int] = []
-	for index in range(logits.size()):
-		ranked.append(index)
-	ranked.sort_custom(func(left: int, right: int) -> bool:
-		return float(logits[left]) > float(logits[right])
-	)
-	var count: int = maxi(request.min_select, request.max_select)
-	if not request.allow_duplicates:
-		count = mini(request.options.size(), count)
-	return {
-		"success": true,
-		"response": ChoiceResponse.new(
-			request.request_id,
-			_ranked_choice_option_ids(request, ranked, count),
-		),
-	}
-
-
-func _normalize_priors(priors: Array) -> Array[float]:
-	var values: Array[float] = []
-	var total := 0.0
-	for value in priors:
-		var prior: float = max(0.0, float(value))
-		values.append(prior)
-		total += prior
-	if values.is_empty():
-		return values
-	if total <= 0.000001:
-		var uniform: float = 1.0 / float(values.size())
-		for index in range(values.size()):
-			values[index] = uniform
-		return values
-	for index in range(values.size()):
-		values[index] /= total
-	return values
-
-
-func _top_prior_info(priors: Array[float]) -> Dictionary:
-	if priors.is_empty():
-		return {"index": -1, "top": 0.0, "second": 0.0}
-	var best_index := 0
-	var best_value := -INF
-	var second_value := -INF
-	for index in range(priors.size()):
-		var value := float(priors[index])
-		if value > best_value:
-			second_value = best_value
-			best_value = value
-			best_index = index
-		elif value > second_value:
-			second_value = value
-	if second_value <= -INF / 2.0:
-		second_value = 0.0
-	return {"index": best_index, "top": best_value, "second": second_value}
-
-
-func _guarded_neural_priors(neural_values: Array, heuristic_values: Array) -> Array[float]:
-	var heuristic := _normalize_priors(heuristic_values)
-	if neural_values.size() != heuristic.size() or heuristic.is_empty():
-		return heuristic
-	var neural := _normalize_priors(neural_values)
-	if neural.size() != heuristic.size():
-		return heuristic
-	var neural_info := _top_prior_info(neural)
-	var heuristic_info := _top_prior_info(heuristic)
-	if float(neural_info["top"]) < DEEP_NEURAL_PRIOR_MIN_TOP_PROB:
-		return heuristic
-	var heuristic_gap := float(heuristic_info["top"]) - float(heuristic_info["second"])
-	if (
-		int(neural_info["index"]) != int(heuristic_info["index"])
-		and heuristic_gap >= DEEP_HEURISTIC_CLEAR_PRIOR_GAP
-	):
-		return heuristic
-	var blend := DEEP_NEURAL_PRIOR_BLEND
-	if int(neural_info["index"]) != int(heuristic_info["index"]):
-		blend *= 0.5
-	var mixed: Array[float] = []
-	for index in range(heuristic.size()):
-		mixed.append((1.0 - blend) * heuristic[index] + blend * neural[index])
-	return _normalize_priors(mixed)
-
-
-func _softmax(logits: Array) -> Array[float]:
-	var maximum := -INF
-	for value in logits:
-		maximum = max(maximum, float(value))
-	var result: Array[float] = []
-	var total := 0.0
-	for value in logits:
-		var probability := exp(clampf(float(value) - maximum, -60.0, 60.0))
-		result.append(probability)
-		total += probability
-	for index in range(result.size()):
-		result[index] /= max(total, 0.000001)
-	return result
-
-
-func _zero_numeric() -> Array[float]:
-	var values: Array[float] = []
-	values.resize(AIActionEncoder.ACTION_NUMERIC_SIZE)
-	values.fill(0.0)
-	return values

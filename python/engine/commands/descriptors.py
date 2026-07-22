@@ -100,7 +100,7 @@ _DEFINITIONS: dict[str, dict[str, Any]] = {
     "choose_damage_target": _descriptor(args={"amount": NNI, "bench_skips_type_matchups": B, "piercing_on_bench": B, "player": PLAYER}, semantic_kind="any_pokemon_damage", preflight="opponent_pokemon", may_suspend=True),
     "choose_heal_damage": _descriptor(args={"amount": NNI, "player": PLAYER, "target_player": PLAYER}, semantic_kind="potion_heal", preflight="damaged_pokemon", may_suspend=True),
     "conditional": _descriptor(args={"condition": S}, branches=("cost", "on_pay"), semantic_kind="conditional", preflight="conditional", may_suspend=True, implementation_kind="control"),
-    "conditional_damage": _descriptor(args={"bonus": I, "condition": S}, semantic_kind="conditional_damage_bonus", preflight="opponent_active", contexts=("attack",), attack_timing="replace_damage", replaces_base_damage=True),
+    "conditional_damage": _descriptor(args={"bonus": I, "condition": S}, semantic_kind="conditional_damage_bonus", preflight="opponent_active", contexts=("attack",), attack_timing="damage", replaces_base_damage=False),
     "conditional_damage_then_heal": _descriptor(args={"base": NNI, "bonus": I}, semantic_kind="conditional_damage_heal", preflight="damage_or_heal", contexts=("attack",), attack_timing="replace_damage", replaces_base_damage=True),
     "conditional_search": _descriptor(args={"default_count": NNI, "filter": S, "max_count": NNI}, semantic_kind="conditional_search_extra", preflight="search", may_suspend=True),
     "conditional_status": _descriptor(args={"condition": S, "status": S, "target": S}, semantic_kind="conditional_status", preflight="opponent_active", contexts=("attack",), attack_timing="post_damage"),

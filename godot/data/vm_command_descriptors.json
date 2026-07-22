@@ -1,5 +1,5 @@
 {
-  "descriptor_digest": "ba6a09fa242b831e899d6636a40cb1d37d4a310b24b1a139fe766d587bb0297b",
+  "descriptor_digest": "00d92d0bb31f31f710cf0bc54aa4d8a01f3849732bd407bf3eef127be39c2a07",
   "descriptor_schema_version": 1,
   "descriptors": {
     "apply_attack_lock_basic": {
@@ -445,7 +445,7 @@
         "required": [],
         "type": "object"
       },
-      "attack_timing": "replace_damage",
+      "attack_timing": "damage",
       "branch_schema": {
         "additional_properties": false,
         "allowed_keys": [],
@@ -457,7 +457,7 @@
       "may_suspend": false,
       "op": "conditional_damage",
       "preflight_evaluator": "opponent_active",
-      "replaces_base_damage": true,
+      "replaces_base_damage": false,
       "requires_boolean_success": true,
       "semantic_kind": "conditional_damage_bonus"
     },

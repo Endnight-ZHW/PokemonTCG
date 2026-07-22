@@ -1,4 +1,4 @@
-"""Summarize schema-v3 AI evaluation performance profile data."""
+"""Summarize schema-v4 AI evaluation performance profile data."""
 from __future__ import annotations
 
 import argparse
