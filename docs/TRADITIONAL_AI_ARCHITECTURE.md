@@ -52,7 +52,7 @@ Challenge 与 Deep 回退在创建对局、AI 入口、信息集、信念状态�
 
 `tools/test_godot_ai.ps1` 执行信息边界、语义隔离、十卡组注册、不少于 100 个策略金标、合法动作、Choice、随机效果、取消、计划缓存和十套实局冒烟。`tools/test_python.ps1 -Tier core` 验证配置、hook 指纹、导出和评估报告。
 
-PR CI 运行上述 AI 冒烟及 evaluator smoke。定时 CI 使用 Balanced preset：10×50×2=1000 局同卡组镜像，加上 10×9×10×2=1800 局有方向交叉对局，共 2800 局。默认任务由同一新引擎换席自检，验证复现性、合法性、规则隔离和矩阵完整性；比较两份新策略配置时使用等价性门禁，不再加载固定旧 Challenge AI。主矩阵可以并行，但绝对性能只由另一个单进程 60 局探针判断：每套牌 1 个两局预热块和 2 个两局计时块，P95 仅使用后 40 局，并分别检查 A、B。
+PR CI 运行上述 AI 冒烟及 evaluator smoke。定时 CI 使用 Balanced preset：10×50×2=1000 局同卡组镜像，加上 10×9×10×2=1800 局有方向交叉对局，共 2800 局。默认任务由同一新引擎换席自检，验证复现性、合法性、规则隔离和矩阵完整性；比较两份新策略配置时使用等价性门禁，不再加载固定旧 Challenge AI。主矩阵可以并行；另运行单进程 60 局搜索深度探针，每套牌 1 个两局预热块和 2 个两局采样块，门禁只使用后 40 局。探针关闭 profiler，逐次记录全预算 beam 的请求深度、实际到达深度、停止原因和节点数，分别检查 A、B。
 
 跨卡组局按“同种子四局角色交叉块”组织。对每个无序卡组对 X/Y 和种子块，依次执行 A(X) 对 B(Y) 的两局换席，以及 A(Y) 对 B(X) 的两局换席；四局共用同一个对局种子和强制先手编号。这样 A、B 都分别使用 X/Y，各自先手、后手次数相同，同一卡组也分别经过玩家 0/1 的两条洗牌随机流。正式验证器强制检查 45 个无序卡组对×10 个种子块×4 局完整闭合，避免把单一卡组强度、起手质量或先后手优势误当作 AI 优势。
 
@@ -62,11 +62,11 @@ schema v5 有两项互不混合的主指标。镜像强度以同牌组、同 see
 
 Nightly 固定要求 seed 17、10 个发布牌组、500 个完整镜像对、450 个完整交叉块和 2800/2800 正常终局；缺局、重复局、错误 seat/seed/先手、非法动作、Choice/规则异常、动作上限耗尽、角色不平衡、来源冲突都会使门禁失败。`nightly-stability` 要求 A/B 策略指纹相同。`nightly-equivalence` 要求指纹不同，并要求两项主指标的 CI 下界均不低于 -2pp、每个牌组镜像差不低于 -4pp、每个无序交叉对局差不低于 -8pp。`deep-practical` 对两项 CI 使用 -4pp、单牌组使用 -8pp，并要求零 Deep fallback。Smoke/Quick 只报告覆盖或脏局警告，不输出强度结论。
 
-Godot runner 只生成 schema v5 原始 shard、金标、真实性能样本、行为计数和来源信息；单进程与多分片都必须经 `python/scripts/ai_evaluation_v5.py` 生成权威统计。分片携带规则、AI、卡牌数据和评测工具哈希，以及 release/toolchain、Git commit/dirty、Godot 与平台信息；来源不一致时拒绝合并。固定产物为 `results.json`、`validation.json`、`report.html`、`provenance.json`、`shards/` 和 `performance_probe/`。v5 工具拒绝 v4 输入。
+Godot runner 只生成 schema v5 原始 shard、金标、搜索深度/延迟样本、行为计数和来源信息；单进程与多分片都必须经 `python/scripts/ai_evaluation_v5.py` 生成权威统计。分片携带规则、AI、卡牌数据和评测工具哈希，以及 release/toolchain、Git commit/dirty、Godot 与平台信息；来源不一致时拒绝合并。固定产物为 `results.json`、`validation.json`、`report.html`、`provenance.json`、`shards/` 和 `search_depth_probe/`。分布式接口使用 `-SearchDepthProbeOnly` 与 `-SearchDepthProbeInput`，旧 PerformanceProbe 参数名仅作为 PowerShell alias。v5 工具拒绝 v4 输入。
 
 每次动作还按策略及其实际驾驶牌组记录已选动作类别和本次合法动作类别集合，Choice 记录请求类型。报告给出动作占比、合法机会归一化选择率、类别覆盖、归一化熵和 Choice 覆盖；这些行为画像只用于诊断，不参与门禁。离线 HTML 的公平调整热力图用于主指标，原始对局热力图只观察牌组克制关系，并明确不参与强度门禁。
 
-Windows 单进程探针门槛为普通决策 p95≤900ms、缓存复用 p95≤100ms、完整 AI 回合 p95≤1.5s；Android 分别为 1000ms、200ms 和 2s。三项均分别检查 A、B，不能用混合样本掩盖单侧退化。结果不得包含超时非法动作。跨卡组的单卡组原始胜率会混入卡组固有强弱，只作实战矩阵展示，不作为该套策略的独立门槛。
+搜索质量门禁与平台无关：A、B 的全预算请求深度下限均为 6，实际到达深度 P50 均不得低于 3、P95 均不得低于 5；`nightly-stability` 要求两侧 P50/P95 差不超过 0.5 层，等价性和 Deep 门禁要求候选 A 不得比对照 B 低超过 0.5 层。每个发布牌组在两侧都必须有全预算样本。墙钟延迟、缓存命中延迟和完整 AI 回合延迟继续按 A/B 展示，但仅作诊断，不参与通过/失败判断。结果不得包含超时非法动作。跨卡组的单卡组原始胜率会混入卡组固有强弱，只作实战矩阵展示，不作为该套策略的独立门槛。
 
 ## 当前接受状态
 

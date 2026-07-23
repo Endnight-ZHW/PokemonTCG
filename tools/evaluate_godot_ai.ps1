@@ -21,8 +21,10 @@ param(
     [ValidateSet('', 'smoke', 'quick', 'stability', 'nightly-stability', 'equivalence', 'nightly-equivalence', 'deep-practical', 'deep', 'auto')]
     [string]$ValidateGate = '',
     [string[]]$MergeInput = @(),
-    [string[]]$PerformanceProbeInput = @(),
-    [switch]$PerformanceProbeOnly,
+    [Alias('PerformanceProbeInput')]
+    [string[]]$SearchDepthProbeInput = @(),
+    [Alias('PerformanceProbeOnly')]
+    [switch]$SearchDepthProbeOnly,
     [switch]$ShardOnly,
     [switch]$SkipReport,
     [switch]$SkipValidate,
@@ -117,14 +119,14 @@ switch ($EvalPreset) {
     }
 }
 
-if ($SkipValidate -or $ShardOnly -or $PerformanceProbeOnly) {
+if ($SkipValidate -or $ShardOnly -or $SearchDepthProbeOnly) {
     $ValidateGate = ''
 }
-if ($ShardOnly -or $PerformanceProbeOnly) {
+if ($ShardOnly -or $SearchDepthProbeOnly) {
     $SkipReport = $true
 }
-if ($ShardOnly -and $PerformanceProbeOnly) {
-    throw 'ShardOnly and PerformanceProbeOnly cannot be combined.'
+if ($ShardOnly -and $SearchDepthProbeOnly) {
+    throw 'ShardOnly and SearchDepthProbeOnly cannot be combined.'
 }
 if ($Workers -lt 1) {
     throw 'Workers must be >= 1.'
@@ -151,11 +153,11 @@ if ($ShardCount -gt 0 -and ($ShardIndex -lt 0 -or $ShardIndex -ge $ShardCount)) 
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 
 $mergeInputPaths = @(Resolve-RepoPathList $MergeInput)
-$performanceProbeInputPaths = @(Resolve-RepoPathList $PerformanceProbeInput)
+$searchDepthProbeInputPaths = @(Resolve-RepoPathList $SearchDepthProbeInput)
 $mergeOnly = $mergeInputPaths.Count -gt 0
 
-if ($mergeOnly -and $PerformanceProbeOnly) {
-    throw 'MergeInput and PerformanceProbeOnly cannot be combined.'
+if ($mergeOnly -and $SearchDepthProbeOnly) {
+    throw 'MergeInput and SearchDepthProbeOnly cannot be combined.'
 }
 
 if (-not $mergeOnly -and -not (Test-Path -LiteralPath $godot)) {
@@ -178,9 +180,9 @@ foreach ($path in $mergeInputPaths) {
         throw "MergeInput file not found: $path"
     }
 }
-foreach ($path in $performanceProbeInputPaths) {
+foreach ($path in $searchDepthProbeInputPaths) {
     if (-not (Test-Path -LiteralPath $path)) {
-        throw "PerformanceProbeInput file not found: $path"
+        throw "SearchDepthProbeInput file not found: $path"
     }
 }
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -641,7 +643,7 @@ function Invoke-AIEvaluationMerge {
         $mergeArgs += @('--input', $path)
     }
     foreach ($path in $PerformanceInputPaths) {
-        $mergeArgs += @('--performance-input', $path)
+        $mergeArgs += @('--search-depth-input', $path)
     }
     $mergeOutput = & $python @mergeArgs 2>&1
     $mergeOutput | ForEach-Object { Write-Host $_ }
@@ -654,14 +656,16 @@ function Invoke-AIEvaluationMerge {
     }
 }
 
-function Invoke-PerformanceProbe {
-    $probeRoot = Join-Path $OutputDir 'performance_probe'
+function Invoke-SearchDepthProbe {
+    $probeRoot = Join-Path $OutputDir 'search_depth_probe'
     New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
     if (-not $NoProgress) {
         Reset-AIEvaluationProgress
     }
     $probeJson = Join-Path $probeRoot 'results.json'
-    $probeArgs = @($runnerArgs)
+    # Profiling overhead can itself reduce achieved depth. The probe keeps raw
+    # latency samples for diagnosis, but runs the release search path unprofiled.
+    $probeArgs = @($runnerArgs | Where-Object { $_ -ne '--profile' })
     # Later duplicate arguments intentionally override the main-matrix values.
     $probeArgs += @(
         '--eval-preset', 'Custom',
@@ -669,9 +673,8 @@ function Invoke-PerformanceProbe {
         '--cross-seed-blocks-per-matchup', '0',
         '--seed', '17',
         '--matchup-mode', 'Mirror',
-        '--run-role', 'performance_probe',
-        '--warmup-blocks-per-deck', '1',
-        '--profile'
+        '--run-role', 'search_depth_probe',
+        '--warmup-blocks-per-deck', '1'
     )
     Invoke-GodotShard `
         -BaseArgs $probeArgs `
@@ -689,9 +692,9 @@ function Invoke-PerformanceProbe {
     return $probeJson
 }
 
-if ($PerformanceProbeOnly) {
-    $probeOnlyPath = Invoke-PerformanceProbe
-    Write-Host "AI evaluation performance probe: $probeOnlyPath"
+if ($SearchDepthProbeOnly) {
+    $probeOnlyPath = Invoke-SearchDepthProbe
+    Write-Host "AI evaluation search-depth probe: $probeOnlyPath"
     Write-Host "AI evaluation provenance: $provenancePath"
     return
 }
@@ -796,9 +799,9 @@ if ($ShardOnly) {
     return
 }
 
-$effectiveProbePaths = @($performanceProbeInputPaths)
+$effectiveProbePaths = @($searchDepthProbeInputPaths)
 if (-not $mergeOnly -and $EvalPreset -eq 'Nightly' -and $effectiveProbePaths.Count -eq 0) {
-    $effectiveProbePaths += Invoke-PerformanceProbe
+    $effectiveProbePaths += Invoke-SearchDepthProbe
 }
 
 Invoke-AIEvaluationMerge `
@@ -860,7 +863,7 @@ if (-not $SkipReport) {
 Write-Host "AI evaluation JSON: $jsonPath"
 Write-Host "AI evaluation provenance: $provenancePath"
 foreach ($path in $effectiveProbePaths) {
-    Write-Host "AI evaluation performance probe: $path"
+    Write-Host "AI evaluation search-depth probe: $path"
 }
 if (Test-Path -LiteralPath $validationPath) {
     Write-Host "AI evaluation validation: $validationPath"

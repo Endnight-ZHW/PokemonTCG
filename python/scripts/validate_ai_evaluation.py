@@ -12,26 +12,23 @@ try:
         DECK_ORDER,
         SCHEMA_VERSION,
         summarize_performance,
+        summarize_search_depth,
     )
 except ModuleNotFoundError:  # Direct script execution.
     from ai_evaluation_v5 import (  # type: ignore[no-redef]
         DECK_ORDER,
         SCHEMA_VERSION,
         summarize_performance,
+        summarize_search_depth,
     )
 
 
-PERFORMANCE_THRESHOLDS_MS = {
-    "windows": {
-        "decision_ms_p95": 900.0,
-        "cache_hit_decision_ms_p95": 100.0,
-        "ai_turn_ms_p95": 1500.0,
-    },
-    "android": {
-        "decision_ms_p95": 1000.0,
-        "cache_hit_decision_ms_p95": 200.0,
-        "ai_turn_ms_p95": 2000.0,
-    },
+SUPPORTED_PLATFORMS = {"windows", "android"}
+SEARCH_DEPTH_THRESHOLDS = {
+    "full_tier_requested_depth_min": 6.0,
+    "full_tier_reached_depth_p50_min": 3.0,
+    "full_tier_reached_depth_p95_min": 5.0,
+    "a_vs_b_allowed_depth_deficit": 0.5,
 }
 
 
@@ -48,9 +45,12 @@ ERROR_MESSAGES = {
     "behavior_missing": "行为画像埋点不完整。",
     "golden_scenarios_missing": "金标场景集合不完整。",
     "golden_scenarios_failed": "至少一个金标场景失败。",
-    "performance_probe_missing": "缺少单进程性能探针。",
-    "performance_probe_coverage": "性能探针不是 20 局预热加 40 局计时的固定结构。",
-    "performance_probe_metrics": "性能探针样本或聚合指标无效。",
+    "search_depth_probe_missing": "缺少单进程搜索深度探针。",
+    "search_depth_probe_coverage": "搜索深度探针不是 20 局预热加 40 局采样的固定结构。",
+    "search_depth_probe_metrics": "搜索深度样本或聚合指标无效。",
+    "search_depth_requested_below_floor": "策略配置的全预算搜索深度低于发布下限。",
+    "search_depth_below_floor": "策略实际达到的搜索深度分位数低于发布下限。",
+    "search_depth_regression": "候选策略的搜索深度低于对照策略。",
     "strategy_relation": "策略指纹关系与所选门禁不符。",
     "mirror_ci_below_floor": "镜像强度 95% 区间下界低于允许值。",
     "cross_ci_below_floor": "角色交叉强度 95% 区间下界低于允许值。",
@@ -220,10 +220,16 @@ def _golden_valid(payload: dict[str, Any]) -> tuple[bool, bool]:
     return complete, _int(golden.get("failed")) == 0
 
 
-def _probe_validation(payload: dict[str, Any]) -> tuple[bool, bool, dict[str, Any]]:
+def _probe_validation(payload: dict[str, Any]) -> dict[str, Any]:
     performance = payload.get("performance") or {}
     if not isinstance(performance, dict) or not bool(performance.get("available")):
-        return False, False, {}
+        return {
+            "coverage_valid": False,
+            "latency_metrics_valid": False,
+            "search_depth_metrics_valid": False,
+            "latency": {},
+            "search_depth": {},
+        }
     config = performance.get("config") or {}
     coverage = performance.get("coverage") or {}
     coverage_valid = (
@@ -235,7 +241,8 @@ def _probe_validation(payload: dict[str, Any]) -> tuple[bool, bool, dict[str, An
         and _int(config.get("seed_blocks_per_deck")) == 3
         and _int(config.get("warmup_blocks_per_deck")) == 1
         and str(config.get("matchup_mode")) == "Mirror"
-        and str(config.get("run_role")) == "performance_probe"
+        and str(config.get("run_role")) == "search_depth_probe"
+        and not bool(config.get("profile"))
         and _int(coverage.get("complete_mirror_units")) == 30
         and _int(coverage.get("clean_mirror_units")) == 30
         and _int((performance.get("observed") or {}).get("clean_games")) == 60
@@ -247,30 +254,108 @@ def _probe_validation(payload: dict[str, Any]) -> tuple[bool, bool, dict[str, An
         and str(row.get("sample_phase") or "measurement") == "measurement"
     ]
     recomputed = summarize_performance(measured)
-    reported = performance.get("metrics") or {}
-    metrics_valid = (
+    reported_latency = performance.get("metrics") or {}
+    latency_metrics_valid = (
         bool(recomputed.get("available"))
-        and reported == recomputed
+        and reported_latency == recomputed
         and all(
-            _int((reported.get(strategy) or {}).get("decision_ms_sample_count")) > 0
-            and _int((reported.get(strategy) or {}).get("cache_hit_decision_ms_sample_count")) > 0
-            and _int((reported.get(strategy) or {}).get("ai_turn_ms_sample_count")) > 0
+            _int((reported_latency.get(strategy) or {}).get("decision_ms_sample_count")) > 0
+            and _int((reported_latency.get(strategy) or {}).get("ai_turn_ms_sample_count")) > 0
             for strategy in ("A", "B")
         )
     )
-    return coverage_valid, metrics_valid, reported
+    recomputed_depth = summarize_search_depth(measured, payload.get("deck_keys") or [])
+    reported_depth = performance.get("search_depth") or {}
+    search_depth_metrics_valid = (
+        bool(recomputed_depth.get("available"))
+        and reported_depth == recomputed_depth
+        and all(
+            _int(
+                (((reported_depth.get("by_strategy") or {}).get(strategy) or {}).get(
+                    "full_tier"
+                ) or {}).get("sample_count")
+            )
+            > 0
+            and all(
+                _int(
+                    ((((reported_depth.get("by_strategy") or {}).get(strategy) or {}).get(
+                        "per_deck"
+                    ) or {}).get(deck) or {}).get("full_tier", {}).get("sample_count")
+                )
+                > 0
+                for deck in DECK_ORDER
+            )
+            for strategy in ("A", "B")
+        )
+    )
+    return {
+        "coverage_valid": coverage_valid,
+        "latency_metrics_valid": latency_metrics_valid,
+        "search_depth_metrics_valid": search_depth_metrics_valid,
+        "latency": reported_latency,
+        "search_depth": reported_depth,
+    }
 
 
-def _performance_errors(
-    reported: dict[str, Any], thresholds: dict[str, float]
-) -> list[tuple[str, str, float, float]]:
-    errors: list[tuple[str, str, float, float]] = []
+def _search_depth_errors(
+    reported: dict[str, Any], gate: str
+) -> list[tuple[str, dict[str, Any]]]:
+    errors: list[tuple[str, dict[str, Any]]] = []
+    by_strategy = reported.get("by_strategy") or {}
     for strategy in ("A", "B"):
-        metrics = reported.get(strategy) or {}
-        for key, threshold in thresholds.items():
-            value = _float(metrics.get(key), None)
-            if value is None or value > threshold:
-                errors.append((strategy, key, -1.0 if value is None else value, threshold))
+        full = (by_strategy.get(strategy) or {}).get("full_tier") or {}
+        requested_min = _float(full.get("requested_depth_min"), None)
+        p50 = _float(full.get("reached_depth_p50"), None)
+        p95 = _float(full.get("reached_depth_p95"), None)
+        requested_floor = SEARCH_DEPTH_THRESHOLDS["full_tier_requested_depth_min"]
+        if requested_min is None or requested_min < requested_floor:
+            errors.append((
+                "search_depth_requested_below_floor",
+                {
+                    "strategy": strategy,
+                    "value": requested_min,
+                    "floor": requested_floor,
+                },
+            ))
+        for metric, value, threshold_key in (
+            ("reached_depth_p50", p50, "full_tier_reached_depth_p50_min"),
+            ("reached_depth_p95", p95, "full_tier_reached_depth_p95_min"),
+        ):
+            floor = SEARCH_DEPTH_THRESHOLDS[threshold_key]
+            if value is None or value < floor:
+                errors.append((
+                    "search_depth_below_floor",
+                    {
+                        "strategy": strategy,
+                        "metric": metric,
+                        "value": value,
+                        "floor": floor,
+                    },
+                ))
+
+    a_full = (by_strategy.get("A") or {}).get("full_tier") or {}
+    b_full = (by_strategy.get("B") or {}).get("full_tier") or {}
+    allowed = SEARCH_DEPTH_THRESHOLDS["a_vs_b_allowed_depth_deficit"]
+    for metric in ("reached_depth_p50", "reached_depth_p95"):
+        a_value = _float(a_full.get(metric), None)
+        b_value = _float(b_full.get(metric), None)
+        if a_value is None or b_value is None:
+            continue
+        regression = (
+            abs(a_value - b_value) > allowed
+            if gate == "nightly-stability"
+            else a_value < b_value - allowed
+        )
+        if regression:
+            errors.append((
+                "search_depth_regression",
+                {
+                    "metric": metric,
+                    "candidate_a": a_value,
+                    "control_b": b_value,
+                    "allowed_deficit": allowed,
+                },
+            ))
     return errors
 
 
@@ -388,54 +473,61 @@ def validate_evaluation_gate(
         _append_issue(errors, "golden_scenarios_failed", "golden")
 
     configured_platform = str(platform or payload.get("platform") or "").lower()
-    platform_supported = configured_platform in PERFORMANCE_THRESHOLDS_MS
-    _check(checks, "platform", "integrity", platform_supported, "受支持的性能平台")
+    platform_supported = configured_platform in SUPPORTED_PLATFORMS
+    _check(checks, "platform", "integrity", platform_supported, "受支持的来源平台")
     if not platform_supported:
         _append_issue(errors, "platform_unsupported", "integrity", platform=configured_platform)
         configured_platform = "windows"
-    thresholds = PERFORMANCE_THRESHOLDS_MS[configured_platform]
-    probe_coverage, probe_metrics_valid, probe_metrics = _probe_validation(payload)
+    probe = _probe_validation(payload)
+    probe_coverage = bool(probe.get("coverage_valid"))
+    depth_metrics_valid = bool(probe.get("search_depth_metrics_valid"))
+    latency_metrics_valid = bool(probe.get("latency_metrics_valid"))
     _check(
         checks,
-        "performance_probe_coverage",
-        "performance",
+        "search_depth_probe_coverage",
+        "search_depth",
         probe_coverage if strict else True,
-        "单进程 20+40 性能探针" if strict else "单进程性能探针（此门禁不要求）",
+        "单进程 20+40 搜索深度探针" if strict else "搜索深度探针（此门禁不要求）",
         available=probe_coverage,
     )
     _check(
         checks,
-        "performance_probe_metrics",
-        "performance",
-        probe_metrics_valid if strict else True,
-        "A/B 独立真实延迟样本" if strict else "A/B 延迟样本（此门禁不要求）",
-        available=probe_metrics_valid,
+        "search_depth_probe_metrics",
+        "search_depth",
+        depth_metrics_valid if strict else True,
+        "A/B 实际 beam 搜索深度" if strict else "搜索深度样本（此门禁不要求）",
+        available=depth_metrics_valid,
     )
-    if strict and not (payload.get("performance") or {}).get("available"):
-        _append_issue(errors, "performance_probe_missing", "performance")
-    elif strict and not probe_coverage:
-        _append_issue(errors, "performance_probe_coverage", "performance")
-    if strict and not probe_metrics_valid:
-        _append_issue(errors, "performance_probe_metrics", "performance")
-    performance_errors = _performance_errors(probe_metrics, thresholds) if probe_metrics_valid else []
-    if strict:
-        for strategy, metric, value, threshold in performance_errors:
-            _append_issue(
-                errors,
-                f"{strategy.lower()}_{metric}_latency",
-                "performance",
-                strategy=strategy,
-                metric=metric,
-                value=value,
-                threshold=threshold,
-            )
     _check(
         checks,
-        "performance_thresholds",
+        "latency_diagnostics",
         "performance",
-        (not performance_errors and probe_metrics_valid) if strict else True,
-        "A/B 平台延迟阈值" if strict else "A/B 平台延迟阈值（此门禁不要求）",
-        thresholds=thresholds,
+        True,
+        "A/B 延迟仅作诊断，不参与门禁",
+        available=latency_metrics_valid,
+        metrics=probe.get("latency") or {},
+    )
+    if strict and not (payload.get("performance") or {}).get("available"):
+        _append_issue(errors, "search_depth_probe_missing", "search_depth")
+    elif strict and not probe_coverage:
+        _append_issue(errors, "search_depth_probe_coverage", "search_depth")
+    if strict and not depth_metrics_valid:
+        _append_issue(errors, "search_depth_probe_metrics", "search_depth")
+    depth_errors = (
+        _search_depth_errors(probe.get("search_depth") or {}, normalized_gate)
+        if depth_metrics_valid
+        else []
+    )
+    if strict:
+        for code, details in depth_errors:
+            _append_issue(errors, code, "search_depth", **details)
+    _check(
+        checks,
+        "search_depth_thresholds",
+        "search_depth",
+        (not depth_errors and depth_metrics_valid) if strict else True,
+        "A/B 全预算搜索深度" if strict else "搜索深度阈值（此门禁不要求）",
+        thresholds=SEARCH_DEPTH_THRESHOLDS,
     )
 
     relation_valid = True
@@ -534,7 +626,7 @@ def validate_evaluation_gate(
         errors,
         warnings,
         checks,
-        thresholds,
+        SEARCH_DEPTH_THRESHOLDS,
     )
 
 
@@ -545,7 +637,7 @@ def _result(
     errors: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
     checks: list[dict[str, Any]],
-    thresholds: dict[str, float],
+    search_depth_thresholds: dict[str, float],
 ) -> dict[str, Any]:
     mirror = _strength_scope(payload, "mirror").get("overall") or {}
     cross = _strength_scope(payload, "cross_role").get("overall") or {}
@@ -560,7 +652,8 @@ def _result(
         "error_codes": [str(row.get("code")) for row in errors],
         "warning_codes": [str(row.get("code")) for row in warnings],
         "checks": checks,
-        "performance_thresholds_ms": thresholds,
+        "search_depth_thresholds": search_depth_thresholds,
+        "latency_gate_enabled": False,
         "metrics": {
             "games": _int((payload.get("observed") or {}).get("games")),
             "mirror_point_delta": mirror.get("point_delta"),
@@ -576,7 +669,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--platform", choices=sorted(PERFORMANCE_THRESHOLDS_MS))
+    parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS))
     parser.add_argument(
         "--gate",
         choices=[

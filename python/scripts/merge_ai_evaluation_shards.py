@@ -47,18 +47,18 @@ def merge_files(
     output_path: Path,
     *,
     workers: int = 1,
-    performance_input_paths: Sequence[Path] | None = None,
+    search_depth_input_paths: Sequence[Path] | None = None,
 ) -> dict[str, Any]:
     shards = [json.loads(path.read_text(encoding="utf-8-sig")) for path in input_paths]
-    performance_shards = (
-        [json.loads(path.read_text(encoding="utf-8-sig")) for path in performance_input_paths]
-        if performance_input_paths
+    search_depth_shards = (
+        [json.loads(path.read_text(encoding="utf-8-sig")) for path in search_depth_input_paths]
+        if search_depth_input_paths
         else None
     )
     payload = merge_payloads(
         shards,
         workers=max(1, int(workers)),
-        performance_shards=performance_shards,
+        search_depth_shards=search_depth_shards,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
@@ -92,7 +92,13 @@ def _write_error(path: Path | None, error: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", action="append", required=True, type=Path)
-    parser.add_argument("--performance-input", action="append", type=Path)
+    parser.add_argument(
+        "--search-depth-input",
+        "--performance-input",
+        dest="search_depth_input",
+        action="append",
+        type=Path,
+    )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--error-output", type=Path)
     parser.add_argument("--workers", type=int, default=1)
@@ -102,7 +108,7 @@ def main() -> int:
             args.input,
             args.output,
             workers=max(1, args.workers),
-            performance_input_paths=args.performance_input,
+            search_depth_input_paths=args.search_depth_input,
         )
     except (MergeError, OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
         error = str(exc)

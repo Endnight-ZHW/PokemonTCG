@@ -27,7 +27,7 @@ Godot 4.7 是唯一发布客户端。0.6.0 在 0.5.0 的严格动作信封和事
 - Challenge AI 已切换为“规则战术 → 十卡组独立策略 → 回合级浅层 beam”架构，并缓存经复核的语义动作计划。普通规划软时限 850ms、硬时限 1100ms。
 - AI 决策种子由比赛 seed、revision、actor、请求类型与请求 ID 稳定派生，不推进规则 RNG；Challenge 与 Deep 回退固定关闭全局弱点、抗性。
 - 旧 UCB/随机 rollout 传统 AI、离线验收适配器及双引擎开关已删除；未知评估引擎 fail-closed。Deep runtime 继续关闭，10 个历史模型仅保留为 Deep 模型元数据，本轮不重新训练。
-- 正式 AI 评测升级为 schema v5：Python 统一聚合两局镜像块与四局角色交叉块，Nightly 增加 60 局单进程性能探针、来源指纹、行为画像和可筛选离线仪表盘；v4 结果不再读取或验收。
+- 正式 AI 评测升级为 schema v5：Python 统一聚合两局镜像块与四局角色交叉块，Nightly 增加 60 局单进程搜索深度探针、来源指纹、行为画像和可筛选离线仪表盘；耗时仅作诊断，门禁依据实际 beam 深度，v4 结果不再读取或验收。
 - 产品 `0.6.0`，Android `versionCode=8`；Protocol 6、Godot Rules 6、Python Rules 5、VM IR 3、Snapshot 3、Encoder 5。
 - Godot Actions 4、Python Actions 3、Checkpoint 10、Planner 1、RNG 2 保持不变；AI Evaluation 为 5。
 

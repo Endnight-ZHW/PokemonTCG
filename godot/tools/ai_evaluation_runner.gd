@@ -236,7 +236,7 @@ func _matchup_mode(config: Dictionary) -> String:
 
 
 func _sample_phase(config: Dictionary, block_index: int) -> String:
-	if str(config.get("run_role", "main")) != "performance_probe":
+	if str(config.get("run_role", "main")) != "search_depth_probe":
 		return "main"
 	return (
 		"warmup"
@@ -1100,6 +1100,7 @@ func _play_match(
 		"A": _empty_behavior_counts(),
 		"B": _empty_behavior_counts(),
 	}
+	var search_depth_samples_by_strategy := {"A": [], "B": []}
 	var time_capped_decisions := 0
 	var dynamic_budget_stop_reasons := {}
 	var deep_fallbacks := 0
@@ -1231,6 +1232,17 @@ func _play_match(
 		if bool(decision.get("deep_fallback", false)):
 			deep_fallbacks += 1
 		decisions += 1
+		if bool(decision.get("search_depth_applicable", false)):
+			var strategy_depth_samples: Array = (
+				search_depth_samples_by_strategy[actor_strategy_label]
+			)
+			strategy_depth_samples.append({
+				"requested": int(decision.get("search_depth_requested", 0)),
+				"reached": int(decision.get("search_depth_reached", -1)),
+				"stop_reason": str(decision.get("search_depth_stop_reason", "unknown")),
+				"turn_budget_tier": str(decision.get("turn_budget_tier", "untracked")),
+				"nodes_expanded": int(decision.get("nodes_expanded", -1)),
+			})
 		_perf_count(performance_profile, "decisions")
 		var requested_budget := int(_strategy_params(actor_strategy, actor_deck_key).get("simulation_budget", 1))
 		var budget_stop_reason := str(decision.get("budget_stop_reason", ""))
@@ -1361,6 +1373,7 @@ func _play_match(
 		"decision_diagnostics": decision_diagnostics,
 		"decision_diagnostics_by_strategy": decision_diagnostics_by_strategy,
 		"behavior_by_strategy": behavior_by_strategy,
+		"search_depth_samples_by_strategy": search_depth_samples_by_strategy,
 		"invalid_actions": invalid_actions,
 		"choice_failures": choice_failures,
 		"rule_exceptions": rule_exceptions,
@@ -1551,6 +1564,7 @@ func _failed_match_row(
 			"A": _empty_behavior_counts(),
 			"B": _empty_behavior_counts(),
 		},
+		"search_depth_samples_by_strategy": {"A": [], "B": []},
 		"invalid_actions": 0,
 		"choice_failures": 0,
 		"rule_exceptions": 1,

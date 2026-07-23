@@ -1181,6 +1181,12 @@ func _traditional_action_result(
 		"turn_plan_cache_hit": cache_hit,
 		"turn_budget_tier": str(planner_result.get("turn_budget_tier", "untracked")),
 		"turn_replan_ordinal": int(planner_result.get("turn_replan_ordinal", 0)),
+		"search_depth_applicable": bool(
+			planner_result.get("search_depth_applicable", false)),
+		"search_depth_requested": int(planner_result.get("search_depth_requested", 0)),
+		"search_depth_reached": int(planner_result.get("search_depth_reached", 0)),
+		"search_depth_stop_reason": str(
+			planner_result.get("search_depth_stop_reason", "")),
 		"strategy_id": strategy_id,
 		"strategy_version": strategy_version,
 		"strategy_hash": strategy_hash,

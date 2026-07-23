@@ -612,6 +612,119 @@ def summarize_performance(matches: Sequence[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _search_depth_scope(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    requested = [max(1, _int(sample.get("requested"), 1)) for sample in samples]
+    reached = [max(0, _int(sample.get("reached"))) for sample in samples]
+    ratios = [
+        min(1.0, float(actual) / float(target))
+        for actual, target in zip(reached, requested)
+    ]
+    stop_reasons = Counter(
+        str(sample.get("stop_reason") or "unknown") for sample in samples
+    )
+    tier_counts = Counter(
+        str(sample.get("turn_budget_tier") or "untracked") for sample in samples
+    )
+    return {
+        "sample_count": len(samples),
+        "requested_depth_min": min(requested) if requested else None,
+        "requested_depth_p50": _round(_quantile(requested, 0.50)),
+        "requested_depth_max": max(requested) if requested else None,
+        "reached_depth_min": min(reached) if reached else None,
+        "reached_depth_p10": _round(_quantile(reached, 0.10)),
+        "reached_depth_p50": _round(_quantile(reached, 0.50)),
+        "reached_depth_p95": _round(_quantile(reached, 0.95)),
+        "reached_depth_max": max(reached) if reached else None,
+        "depth_ratio_p50": _round(_quantile(ratios, 0.50)),
+        "requested_depth_reached_rate": _round(
+            sum(actual >= target for actual, target in zip(reached, requested))
+            / len(samples)
+            if samples
+            else None
+        ),
+        "deadline_truncations": int(stop_reasons.get("deadline", 0)),
+        "node_budget_truncations": int(stop_reasons.get("node_budget", 0)),
+        "stop_reasons": dict(sorted(stop_reasons.items())),
+        "turn_budget_tiers": dict(sorted(tier_counts.items())),
+    }
+
+
+def summarize_search_depth(
+    matches: Sequence[dict[str, Any]], deck_keys: Sequence[str]
+) -> dict[str, Any]:
+    """Summarize actual beam depth; wall-clock latency remains diagnostic only."""
+    by_strategy: dict[str, list[dict[str, Any]]] = {
+        strategy: [] for strategy in STRATEGY_KEYS
+    }
+    by_strategy_deck: dict[str, dict[str, list[dict[str, Any]]]] = {
+        strategy: {deck: [] for deck in deck_keys} for strategy in STRATEGY_KEYS
+    }
+    for row in matches:
+        if not _is_clean_match(row):
+            continue
+        raw = row.get("search_depth_samples_by_strategy") or {}
+        if not isinstance(raw, dict):
+            continue
+        for strategy in STRATEGY_KEYS:
+            samples = raw.get(strategy)
+            if not isinstance(samples, list):
+                continue
+            deck = str(
+                (
+                    row.get("strategy_a_deck")
+                    if strategy == "A"
+                    else row.get("strategy_b_deck")
+                )
+                or ""
+            )
+            for sample in samples:
+                if not isinstance(sample, dict):
+                    continue
+                normalized = {
+                    "requested": max(1, _int(sample.get("requested"), 1)),
+                    "reached": max(0, _int(sample.get("reached"))),
+                    "stop_reason": str(sample.get("stop_reason") or "unknown"),
+                    "turn_budget_tier": str(
+                        sample.get("turn_budget_tier") or "untracked"
+                    ),
+                    "nodes_expanded": max(0, _int(sample.get("nodes_expanded"))),
+                }
+                by_strategy[strategy].append(normalized)
+                if deck in by_strategy_deck[strategy]:
+                    by_strategy_deck[strategy][deck].append(normalized)
+
+    result: dict[str, Any] = {
+        "available": all(bool(by_strategy[strategy]) for strategy in STRATEGY_KEYS),
+        "latency_is_diagnostic_only": True,
+        "by_strategy": {},
+    }
+    for strategy in STRATEGY_KEYS:
+        all_samples = by_strategy[strategy]
+        full_samples = [
+            sample
+            for sample in all_samples
+            if sample.get("turn_budget_tier") == "full"
+        ]
+        result["by_strategy"][strategy] = {
+            "overall": _search_depth_scope(all_samples),
+            "full_tier": _search_depth_scope(full_samples),
+            "per_deck": {
+                deck: {
+                    "overall": _search_depth_scope(
+                        by_strategy_deck[strategy][deck]
+                    ),
+                    "full_tier": _search_depth_scope([
+                        sample
+                        for sample in by_strategy_deck[strategy][deck]
+                        if sample.get("turn_budget_tier") == "full"
+                    ]),
+                }
+                for deck in deck_keys
+            },
+        }
+    return result
+
+
 def summarize_observed(matches: Sequence[dict[str, Any]]) -> dict[str, Any]:
     wins = sum(str(row.get("winner")) == "A" for row in matches)
     losses = sum(str(row.get("winner")) == "B" for row in matches)
@@ -1201,6 +1314,7 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                 "turn_plan_cache_hit_samples_by_strategy",
                 "ai_turn_ms_samples_by_strategy",
                 "behavior_by_strategy",
+                "search_depth_samples_by_strategy",
             ):
                 value = row.get(field)
                 if not isinstance(value, dict) or not all(
@@ -1234,6 +1348,25 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                     raise MergeError(
                         f"invalid_behavior_counts:{strategy}:{_identity_text(identity)}"
                     )
+                depth_samples = row["search_depth_samples_by_strategy"][strategy]
+                if not isinstance(depth_samples, list):
+                    raise MergeError(
+                        f"invalid_search_depth_samples:{strategy}:{_identity_text(identity)}"
+                    )
+                for sample in depth_samples:
+                    if (
+                        not isinstance(sample, dict)
+                        or _int(sample.get("requested"), 0) < 1
+                        or _int(sample.get("reached"), -1) < 0
+                        or _int(sample.get("reached"), -1)
+                        > _int(sample.get("requested"), 0)
+                        or not str(sample.get("stop_reason") or "")
+                        or not str(sample.get("turn_budget_tier") or "")
+                        or _int(sample.get("nodes_expanded"), -1) < 0
+                    ):
+                        raise MergeError(
+                            f"invalid_search_depth_sample:{strategy}:{_identity_text(identity)}"
+                        )
             seen.add(identity)
             row["source_shard_index"] = shard_index
             matches.append(row)
@@ -1248,24 +1381,26 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return matches
 
 
-def _merge_performance_probe(
+def _merge_search_depth_probe(
     main_reference: dict[str, Any],
-    performance_shards: Sequence[dict[str, Any]] | None,
+    search_depth_shards: Sequence[dict[str, Any]] | None,
 ) -> dict[str, Any]:
-    if not performance_shards:
+    if not search_depth_shards:
         return {
             "available": False,
-            "source": "single_process_probe",
-            "reason": "performance_probe_missing",
+            "source": "single_process_search_depth_probe",
+            "reason": "search_depth_probe_missing",
+            "gate_basis": "search_depth",
+            "latency_diagnostic_only": True,
         }
-    probe_reference = validate_shards(performance_shards)
+    probe_reference = validate_shards(search_depth_shards)
     if probe_reference.get("strategy_fingerprint") != main_reference.get("strategy_fingerprint"):
-        raise MergeError("performance_probe:strategy_fingerprint")
+        raise MergeError("search_depth_probe:strategy_fingerprint")
     if probe_reference.get("platform") != main_reference.get("platform"):
-        raise MergeError("performance_probe:platform")
+        raise MergeError("search_depth_probe:platform")
     if _provenance_fingerprint(probe_reference) != _provenance_fingerprint(main_reference):
-        raise MergeError("performance_probe:provenance")
-    probe_matches = _merge_matches(performance_shards)
+        raise MergeError("search_depth_probe:provenance")
+    probe_matches = _merge_matches(search_depth_shards)
     config = dict(probe_reference.get("config") or {})
     mirror_units, cross_units = experimental_units(probe_matches)
     coverage = summarize_coverage(
@@ -1280,18 +1415,24 @@ def _merge_performance_probe(
     ]
     warmup = [row for row in probe_matches if str(row.get("sample_phase") or "") == "warmup"]
     summary = summarize_performance(measured)
+    search_depth = summarize_search_depth(
+        measured, probe_reference.get("deck_keys") or []
+    )
     return {
-        "available": bool(summary.get("available")),
-        "source": "single_process_probe",
+        "available": bool(summary.get("available")) and bool(search_depth.get("available")),
+        "source": "single_process_search_depth_probe",
+        "gate_basis": "search_depth",
+        "latency_diagnostic_only": True,
         "config": config,
         "coverage": coverage,
         "games_total": len(probe_matches),
         "warmup_games": len(warmup),
         "measured_games": len(measured),
         "metrics": summary,
+        "search_depth": search_depth,
         "observed": summarize_observed(probe_matches),
         "matches": probe_matches,
-        "performance_profile": merge_performance_profiles(performance_shards),
+        "performance_profile": merge_performance_profiles(search_depth_shards),
     }
 
 
@@ -1299,7 +1440,7 @@ def merge_payloads(
     shards: Sequence[dict[str, Any]],
     *,
     workers: int = 1,
-    performance_shards: Sequence[dict[str, Any]] | None = None,
+    search_depth_shards: Sequence[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     reference = validate_shards(shards)
     matches = _merge_matches(shards)
@@ -1315,8 +1456,9 @@ def merge_payloads(
         matches, mirror_units, cross_units, deck_keys
     )
     behavior = summarize_behavior(matches, deck_keys)
+    search_depth = summarize_search_depth(matches, deck_keys)
     main_performance = summarize_performance(matches)
-    performance = _merge_performance_probe(reference, performance_shards)
+    performance = _merge_search_depth_probe(reference, search_depth_shards)
     raw_matrix = _raw_matrix(matches)
     fair_adjusted_matrix = _fair_adjusted_matrix(deck_keys, strength)
     config["parallel_workers"] = max(1, int(workers))
@@ -1342,12 +1484,17 @@ def merge_payloads(
             "bootstrap_seed": BOOTSTRAP_SEED,
             "strength_uses_complete_clean_units_only": True,
         },
+        "evaluation_policy": {
+            "search_quality_gate": "actual_beam_depth",
+            "latency": "diagnostic_only",
+        },
         "observed": observed,
         "summary": observed,
         "strength": strength,
         "coverage": coverage,
         "fairness": fairness,
         "behavior": behavior,
+        "search_depth": search_depth,
         "performance": performance,
         "main_performance": main_performance,
         "performance_by_strategy": main_performance,

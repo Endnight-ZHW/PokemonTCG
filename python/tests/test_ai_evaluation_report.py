@@ -17,6 +17,7 @@ from scripts.ai_evaluation_v5 import (
     summarize_behavior,
     summarize_observed,
     summarize_performance,
+    summarize_search_depth,
     summarize_strength,
 )
 from scripts.compare_ai_evaluation_profiles import compare_profiles
@@ -62,6 +63,7 @@ def _config(
     mode="Balanced",
     run_role="main",
     warmup=0,
+    profile=True,
 ):
     del decks
     return {
@@ -77,7 +79,7 @@ def _config(
         "max_actions": 1200,
         "eval_preset": "Custom",
         "matchup_mode": mode,
-        "profile": True,
+        "profile": profile,
         "disable_ai_cache": False,
         "disable_native_math": False,
         "rules_options": RULES,
@@ -129,6 +131,22 @@ def _row(identity, winner="draw", *, sample_phase="main"):
         "decision_diagnostics": {},
         "decision_diagnostics_by_strategy": {"A": {}, "B": {}},
         "behavior_by_strategy": _behavior(),
+        "search_depth_samples_by_strategy": {
+            "A": [{
+                "requested": 6,
+                "reached": 5,
+                "stop_reason": "node_budget",
+                "turn_budget_tier": "full",
+                "nodes_expanded": 192,
+            }],
+            "B": [{
+                "requested": 6,
+                "reached": 5,
+                "stop_reason": "node_budget",
+                "turn_budget_tier": "full",
+                "nodes_expanded": 192,
+            }],
+        },
         "invalid_actions": 0,
         "choice_failures": 0,
         "rule_exceptions": 0,
@@ -212,8 +230,9 @@ def _probe_rows(side_values=None):
         seed_blocks=3,
         cross_blocks=0,
         mode="Mirror",
-        run_role="performance_probe",
+        run_role="search_depth_probe",
         warmup=1,
+        profile=False,
     )
     rows = []
     values = side_values or {
@@ -250,9 +269,24 @@ def _performance_result(side_values=None):
         "warmup_games": 20,
         "measured_games": 40,
         "metrics": summarize_performance(measured),
+        "search_depth": summarize_search_depth(measured, DECK_ORDER),
         "observed": summarize_observed(rows),
         "matches": rows,
     }
+
+
+def _set_probe_depth(payload, strategy, *, requested=None, reached=None):
+    performance = payload["performance"]
+    for row in performance["matches"]:
+        for sample in row["search_depth_samples_by_strategy"][strategy]:
+            if requested is not None:
+                sample["requested"] = requested
+            if reached is not None:
+                sample["reached"] = min(sample["requested"], reached)
+    measured = [
+        row for row in performance["matches"] if row["sample_phase"] == "measurement"
+    ]
+    performance["search_depth"] = summarize_search_depth(measured, DECK_ORDER)
 
 
 def _nightly_result(*, distinct=True, side_values=None):
@@ -486,6 +520,29 @@ class MergeIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(MergeError, "invalid_latency_samples:A"):
             merge_payloads([shard])
 
+    def test_v5_match_schema_requires_valid_search_depth_samples(self):
+        shard = _shard()
+        del shard["matches"][0]["search_depth_samples_by_strategy"]
+        with self.assertRaisesRegex(MergeError, "invalid_search_depth_samples"):
+            merge_payloads([shard])
+        shard = _shard()
+        shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0]["reached"] = 7
+        with self.assertRaisesRegex(MergeError, "invalid_search_depth_sample"):
+            merge_payloads([shard])
+
+    def test_search_depth_is_aggregated_by_strategy_and_actual_deck(self):
+        result = merge_payloads([_shard()])
+        self.assertEqual(result["evaluation_policy"]["latency"], "diagnostic_only")
+        depth = result["search_depth"]
+        self.assertTrue(depth["available"])
+        self.assertEqual(
+            depth["by_strategy"]["A"]["full_tier"]["reached_depth_p50"], 5.0
+        )
+        self.assertGreater(
+            depth["by_strategy"]["B"]["per_deck"]["water"]["full_tier"]["sample_count"],
+            0,
+        )
+
     def test_single_and_multi_shard_authoritative_metrics_match(self):
         full = _shard()
         single = merge_payloads([full], workers=1)
@@ -501,6 +558,7 @@ class MergeIntegrityTests(unittest.TestCase):
             "strength",
             "fairness",
             "behavior",
+            "search_depth",
             "raw_matrix",
             "fair_adjusted_matrix",
         ):
@@ -518,7 +576,7 @@ class MergeIntegrityTests(unittest.TestCase):
         ):
             self.assertEqual(single["coverage"][key], multi["coverage"][key], key)
 
-    def test_performance_probe_provenance_mismatch_fails(self):
+    def test_search_depth_probe_provenance_mismatch_fails(self):
         config, rows = _probe_rows()
         probe = _shard(
             decks=DECK_ORDER,
@@ -529,8 +587,8 @@ class MergeIntegrityTests(unittest.TestCase):
             provenance={"schema_version": 5, "fingerprint": "other"},
         )
         probe["config"] = config
-        with self.assertRaisesRegex(MergeError, "performance_probe:provenance"):
-            merge_payloads([_shard()], performance_shards=[probe])
+        with self.assertRaisesRegex(MergeError, "search_depth_probe:provenance"):
+            merge_payloads([_shard()], search_depth_shards=[probe])
 
 
 class GateTests(unittest.TestCase):
@@ -581,25 +639,49 @@ class GateTests(unittest.TestCase):
         self.assertIn("dirty_games", result["warning_codes"])
         self.assertNotIn("mirror_ci_below_floor", result["error_codes"])
 
-    def test_performance_probe_checks_a_and_b_separately(self):
+    def test_latency_is_diagnostic_and_does_not_gate(self):
         values = {
-            "A": {"decision": 901.0, "cache": 100.0, "turn": 1500.0},
-            "B": {"decision": 900.0, "cache": 100.0, "turn": 1500.0},
+            "A": {"decision": 9001.0, "cache": 1000.0, "turn": 15000.0},
+            "B": {"decision": 9000.0, "cache": 1000.0, "turn": 15000.0},
         }
         result = validate_evaluation_gate(
             _nightly_result(distinct=False, side_values=values), gate="nightly-stability"
         )
-        self.assertIn("a_decision_ms_p95_latency", result["error_codes"])
-        self.assertNotIn("b_decision_ms_p95_latency", result["error_codes"])
+        self.assertTrue(result["valid"], result["error_codes"])
+        self.assertFalse(result["latency_gate_enabled"])
+        self.assertNotIn("latency", " ".join(result["error_codes"]))
+
+    def test_search_depth_probe_checks_a_and_b_separately(self):
+        payload = _nightly_result(distinct=False)
+        _set_probe_depth(payload, "A", reached=2)
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        shallow = [
+            error
+            for error in result["errors"]
+            if error["code"] == "search_depth_below_floor"
+        ]
+        self.assertTrue(any(error["details"]["strategy"] == "A" for error in shallow))
+        self.assertFalse(any(error["details"]["strategy"] == "B" for error in shallow))
+        self.assertIn("search_depth_regression", result["error_codes"])
+
+    def test_configured_search_depth_cannot_be_lowered(self):
+        payload = _nightly_result()
+        _set_probe_depth(payload, "A", requested=5, reached=5)
+        result = validate_evaluation_gate(payload, gate="nightly-equivalence")
+        self.assertIn("search_depth_requested_below_floor", result["error_codes"])
 
     def test_probe_requires_exact_20_warmup_and_40_measured(self):
         payload = _nightly_result(distinct=False)
         payload["performance"]["warmup_games"] = 18
         payload["performance"]["measured_games"] = 42
         result = validate_evaluation_gate(payload, gate="nightly-stability")
-        self.assertIn("performance_probe_coverage", result["error_codes"])
+        self.assertIn("search_depth_probe_coverage", result["error_codes"])
+        payload = _nightly_result(distinct=False)
+        payload["performance"]["config"]["profile"] = True
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        self.assertIn("search_depth_probe_coverage", result["error_codes"])
 
-    def test_android_thresholds_are_applied_per_side(self):
+    def test_android_latency_is_also_diagnostic_only(self):
         values = {
             "A": {"decision": 1000.0, "cache": 200.0, "turn": 2000.0},
             "B": {"decision": 1000.0, "cache": 200.0, "turn": 2000.0},
@@ -612,7 +694,7 @@ class GateTests(unittest.TestCase):
         values["B"]["turn"] = 2000.1
         payload["performance"] = _performance_result(values)
         result = validate_evaluation_gate(payload, gate="nightly-stability")
-        self.assertIn("b_ai_turn_ms_p95_latency", result["error_codes"])
+        self.assertTrue(result["valid"], result["error_codes"])
 
     def test_deep_practical_uses_v5_dual_metric_and_zero_fallback(self):
         payload = _nightly_result()
@@ -659,7 +741,8 @@ class ReportTests(unittest.TestCase):
             "原始对局视图（不参与强度门禁）",
             "A/B 行为画像",
             "Choice 请求覆盖",
-            "单侧性能对比",
+            "搜索深度门禁",
+            "延迟诊断（不参与门禁）",
             "全部对局明细",
             "const matches=",
             '"seed":299',
@@ -710,13 +793,16 @@ class InterfaceAndProfileTests(unittest.TestCase):
         self.assertIn("git_commit", first)
         self.assertIn("git_dirty", first)
 
-    def test_powershell_interface_removed_baseline_and_added_probe_modes(self):
+    def test_powershell_interface_uses_search_depth_probe_modes(self):
         script = (Path(__file__).parents[2] / "tools" / "evaluate_godot_ai.ps1").read_text(
             encoding="utf-8-sig"
         )
         self.assertNotIn("$Baseline", script)
-        self.assertIn("$PerformanceProbeOnly", script)
-        self.assertIn("$PerformanceProbeInput", script)
+        self.assertIn("$SearchDepthProbeOnly", script)
+        self.assertIn("$SearchDepthProbeInput", script)
+        self.assertIn("Alias('PerformanceProbeOnly')", script)
+        self.assertIn("Alias('PerformanceProbeInput')", script)
+        self.assertIn("Where-Object { $_ -ne '--profile' }", script)
         self.assertLess(script.index("validate_ai_evaluation.py"), script.index("render_ai_evaluation_report.py"))
 
     def test_runner_is_v5_raw_shard_with_behavior_and_provenance(self):
@@ -726,6 +812,7 @@ class InterfaceAndProfileTests(unittest.TestCase):
         self.assertIn("const SCHEMA_VERSION := 5", source)
         self.assertIn('"artifact_kind": "ai_evaluation_shard"', source)
         self.assertIn('"behavior_by_strategy"', source)
+        self.assertIn('"search_depth_samples_by_strategy"', source)
         self.assertIn('"provenance": provenance', source)
 
     def test_profile_helpers_use_schema_v5_observed_games(self):

@@ -3124,6 +3124,13 @@ func _check_planner_contract(
 		and int(plan_a.get("belief_consensus", 0)) >= 1,
 		"TraditionalTurnPlanner did not report bounded seeded belief sampling",
 	)
+	_check(
+		bool(plan_a.get("search_depth_applicable", false))
+		and int(plan_a.get("search_depth_requested", 0)) == 2
+		and int(plan_a.get("search_depth_reached", 0)) in [1, 2]
+		and not str(plan_a.get("search_depth_stop_reason", "")).is_empty(),
+		"TraditionalTurnPlanner did not expose requested and achieved search depth",
+	)
 	var invalid_supplied: Array[GameAction] = [
 		GameAction.new("END_TURN", {}, true, 1),
 	]

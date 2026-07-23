@@ -183,6 +183,11 @@ static func plan_action(
 		)
 		result["belief_samples"] = attempted_samples
 		result["belief_consensus"] = int(selected_row["count"])
+		result["search_depth_applicable"] = true
+		result["search_depth_requested"] = int(config.get("max_depth", 6))
+		result["search_depth_reached"] = int(selected_plan.get("depth_reached", 0))
+		result["search_depth_stop_reason"] = str(
+			selected_plan.get("stop_reason", "complete"))
 		return result
 	# The fallback comes from a fresh engine query intersected with the supplied
 	# roots, so even direct/internal callers cannot turn an invalid row into an
@@ -210,6 +215,11 @@ static func plan_action(
 	result["belief_samples"] = attempted_samples
 	result["belief_consensus"] = 0
 	result["error"] = str(last_planned.get("error", "planner_failed"))
+	result["search_depth_applicable"] = true
+	result["search_depth_requested"] = int(config.get("max_depth", 6))
+	result["search_depth_reached"] = int(last_planned.get("depth_reached", 0))
+	result["search_depth_stop_reason"] = str(
+		last_planned.get("stop_reason", fallback_reason))
 	return result
 
 

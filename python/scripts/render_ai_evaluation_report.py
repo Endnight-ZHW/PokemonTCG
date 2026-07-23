@@ -270,29 +270,58 @@ def _behavior_section(payload: dict[str, Any]) -> str:
     )
 
 
-def _performance_section(payload: dict[str, Any], validation: dict[str, Any] | None) -> str:
+def _search_depth_section(payload: dict[str, Any], validation: dict[str, Any] | None) -> str:
     performance = payload.get("performance") or {}
-    metrics = performance.get("metrics") or {}
-    thresholds = (validation or {}).get("performance_thresholds_ms") or {}
-    rows = []
-    labels = {
-        "decision_ms_p95": "单次决策 P95",
-        "cache_hit_decision_ms_p95": "缓存命中决策 P95",
-        "ai_turn_ms_p95": "AI 回合 P95",
-    }
-    for key, label in labels.items():
-        threshold = _float(thresholds.get(key))
-        cells = []
-        for side in ("A", "B"):
-            value = _float((metrics.get(side) or {}).get(key))
-            ratio = 0.0 if value is None or not threshold else min(1.3, value / threshold)
-            tone = "badbar" if threshold and value is not None and value > threshold else "goodbar"
-            cells.append(f"<td><b>{escape(_number(value, 1, ' ms'))}</b><div class='perf-track'><i class='{tone}' style='width:{ratio * 76.9:.1f}%'></i><em style='left:76.9%'></em></div></td>")
-        rows.append(f"<tr><td>{escape(label)}</td>{''.join(cells)}<td>{escape(_number(threshold, 0, ' ms'))}</td></tr>")
-    note = f"{performance.get('games_total', 0)} 局：{performance.get('warmup_games', 0)} 局预热，{performance.get('measured_games', 0)} 局计时；P95 仅使用计时局。"
+    latency = performance.get("metrics") or {}
+    search_depth = performance.get("search_depth") or {}
+    by_strategy = search_depth.get("by_strategy") or {}
+    thresholds = (validation or {}).get("search_depth_thresholds") or {}
+    depth_rows = []
+    depth_specs = (
+        ("requested_depth_min", "配置深度下限", "full_tier_requested_depth_min"),
+        ("reached_depth_p50", "实际达到深度 P50", "full_tier_reached_depth_p50_min"),
+        ("reached_depth_p95", "实际达到深度 P95", "full_tier_reached_depth_p95_min"),
+        ("sample_count", "全预算搜索样本", None),
+        ("deadline_truncations", "deadline 停止", None),
+        ("node_budget_truncations", "节点预算停止", None),
+    )
+    for key, label, threshold_key in depth_specs:
+        a_value = ((by_strategy.get("A") or {}).get("full_tier") or {}).get(key)
+        b_value = ((by_strategy.get("B") or {}).get("full_tier") or {}).get(key)
+        floor = thresholds.get(threshold_key) if threshold_key else None
+        depth_rows.append(
+            f"<tr><td>{escape(label)}</td><td>{escape(_number(a_value, 1))}</td>"
+            f"<td>{escape(_number(b_value, 1))}</td><td>{escape(_number(floor, 1) if floor is not None else '诊断')}</td></tr>"
+        )
+    deck_rows = []
+    for deck in payload.get("deck_keys") or []:
+        a_scope = ((((by_strategy.get("A") or {}).get("per_deck") or {}).get(deck) or {}).get("full_tier") or {})
+        b_scope = ((((by_strategy.get("B") or {}).get("per_deck") or {}).get(deck) or {}).get("full_tier") or {})
+        deck_rows.append(
+            f"<tr><td>{escape(DECK_LABELS.get(str(deck), str(deck)))}</td>"
+            f"<td>{escape(_number(a_scope.get('reached_depth_p50'), 1))}</td>"
+            f"<td>{escape(_number(b_scope.get('reached_depth_p50'), 1))}</td>"
+            f"<td>{escape(_integer(a_scope.get('sample_count')))} / {escape(_integer(b_scope.get('sample_count')))}</td></tr>"
+        )
+    latency_rows = []
+    for key, label in (
+        ("decision_ms_p95", "单次决策 P95"),
+        ("cache_hit_decision_ms_p95", "缓存命中决策 P95"),
+        ("ai_turn_ms_p95", "AI 回合 P95"),
+    ):
+        latency_rows.append(
+            f"<tr><td>{escape(label)}</td><td>{escape(_number((latency.get('A') or {}).get(key), 1, ' ms'))}</td>"
+            f"<td>{escape(_number((latency.get('B') or {}).get(key), 1, ' ms'))}</td><td>不参与门禁</td></tr>"
+        )
+    note = f"{performance.get('games_total', 0)} 局：{performance.get('warmup_games', 0)} 局预热，{performance.get('measured_games', 0)} 局采样；门禁只使用后 40 局的实际 beam 深度。"
     if not performance.get("available"):
-        note = "未提供单进程性能探针；并发主矩阵延迟不会用于绝对性能门禁。"
-    return f"<section><h2>单侧性能对比</h2><p class='muted'>{escape(note)}</p><div class='table-scroll'><table><thead><tr><th>指标</th><th>A</th><th>B</th><th>平台阈值线</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></section>"
+        note = "未提供单进程搜索深度探针；严格门禁会失败。"
+    return (
+        f"<section><h2>搜索深度门禁</h2><p class='muted'>{escape(note)}</p>"
+        f"<div class='table-scroll'><table><thead><tr><th>指标</th><th>A</th><th>B</th><th>下限/用途</th></tr></thead><tbody>{''.join(depth_rows)}</tbody></table></div>"
+        f"<h3>按实际驾驶牌组</h3><div class='table-scroll'><table><thead><tr><th>牌组</th><th>A 深度 P50</th><th>B 深度 P50</th><th>A/B 样本</th></tr></thead><tbody>{''.join(deck_rows)}</tbody></table></div>"
+        f"<h3>延迟诊断（不参与门禁）</h3><div class='table-scroll'><table><thead><tr><th>指标</th><th>A</th><th>B</th><th>用途</th></tr></thead><tbody>{''.join(latency_rows)}</tbody></table></div></section>"
+    )
 
 
 def _terminal_and_golden(payload: dict[str, Any]) -> str:
@@ -390,7 +419,7 @@ def render_report(
     coverage = payload.get("coverage") or {}
     games = int(observed.get("games") or 0)
     clean_rate = int(observed.get("clean_games") or 0) / games if games else None
-    performance_a = (((payload.get("performance") or {}).get("metrics") or {}).get("A") or {})
+    search_depth_a = (((((payload.get("performance") or {}).get("search_depth") or {}).get("by_strategy") or {}).get("A") or {}).get("full_tier") or {})
     gate_state = "未执行"
     gate_tone = "warn"
     if validation is not None:
@@ -401,7 +430,11 @@ def render_report(
         _metric_card("镜像强度差", _pp(mirror.get("point_delta")), f"95% CI {_ci(mirror.get('ci95'))}"),
         _metric_card("角色交叉差", _pp(cross.get("point_delta")), f"95% CI {_ci(cross.get('ci95'))}"),
         _metric_card("干净覆盖率", _pct(clean_rate), f"{_integer(observed.get('clean_games'))} / {_integer(games)} 局"),
-        _metric_card("候选 A 性能", _number(performance_a.get("ai_turn_ms_p95"), 1, " ms"), "单进程计时局 AI 回合 P95"),
+        _metric_card(
+            "候选 A 搜索深度",
+            _number(search_depth_a.get("reached_depth_p50"), 1),
+            f"全预算 P50；P95 {_number(search_depth_a.get('reached_depth_p95'), 1)}",
+        ),
     ])
     provenance = payload.get("provenance") or {}
     provenance_text = f"source {str(provenance.get('source_hash') or '')[:12]} · git {str(provenance.get('git_commit') or '')[:12]}{' dirty' if provenance.get('git_dirty') else ''} · Godot {provenance.get('godot_runtime_version') or '—'}"
@@ -414,7 +447,7 @@ def render_report(
 <header><h1>AI 策略评测 v5</h1><p>{escape(_strategy_label(payload,'A'))} <span class="muted">vs</span> {escape(_strategy_label(payload,'B'))}</p><p class="verdict">{escape(verdict)}</p><p class="muted provenance">{escape(provenance_text)}</p></header>
 <div class="metrics">{cards}</div>
 <section><h2>两项独立主指标</h2><p class="muted">两项指标不混合；仅完整、干净的实验单元进入固定 seed、10,000 次分层 cluster bootstrap。原始总点数率不生成主结论。</p>{_delta_bar(mirror.get('point_delta'),mirror.get('ci95'),'镜像强度：同牌组、同 seed 的两局换席块；十牌组等权')}{_delta_bar(cross.get('point_delta'),cross.get('ci95'),'角色交叉强度：同 seed 的四局牌组角色交叉块；无序对局等权')}</section>
-{_validation_section(validation)}{_fairness_table(payload,validation)}{_heatmap(payload,raw=False)}{_heatmap(payload,raw=True)}{_behavior_section(payload)}{_performance_section(payload,validation)}{_terminal_and_golden(payload)}{_details_section(payload)}
+{_validation_section(validation)}{_fairness_table(payload,validation)}{_heatmap(payload,raw=False)}{_heatmap(payload,raw=True)}{_behavior_section(payload)}{_search_depth_section(payload,validation)}{_terminal_and_golden(payload)}{_details_section(payload)}
 {_script(payload)}</main></body></html>"""
 
 

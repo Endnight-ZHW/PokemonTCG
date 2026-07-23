@@ -116,9 +116,9 @@ jobs:
         shell: pwsh
         run: .\tools\setup_godot_toolchain.ps1
 
-      - name: Run 2,800-game matrix plus 60-game single-process probe
+      - name: Run 2,800-game matrix plus 60-game search-depth probe
         shell: pwsh
-        run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -Workers 2 -Profile -ProgressEveryPairs 25 -OutputDir .test_tmp\ai-eval-nightly
+        run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -Workers 2 -ProgressEveryPairs 25 -OutputDir .test_tmp\ai-eval-nightly
 
       - name: Upload traditional AI evaluation
         if: always()
