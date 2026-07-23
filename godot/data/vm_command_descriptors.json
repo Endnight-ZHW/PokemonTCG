@@ -1,5 +1,5 @@
 {
-  "descriptor_digest": "00d92d0bb31f31f710cf0bc54aa4d8a01f3849732bd407bf3eef127be39c2a07",
+  "descriptor_digest": "73c834d4fc44cb495293aa0a3a54530cc8f8314a5cbbd2675f3524dc2d55afe0",
   "descriptor_schema_version": 1,
   "descriptors": {
     "apply_attack_lock_basic": {
@@ -1950,7 +1950,7 @@
       "requires_boolean_success": true,
       "semantic_kind": "mill_and_damage_per_energy"
     },
-    "place_counters_then_self_ko": {
+    "place_counters_then_self_discard": {
       "allowed_contexts": [
         "ability"
       ],
@@ -1985,11 +1985,11 @@
       "implementation_kind": "atomic",
       "internal": false,
       "may_suspend": true,
-      "op": "place_counters_then_self_ko",
+      "op": "place_counters_then_self_discard",
       "preflight_evaluator": "opponent_pokemon",
       "replaces_base_damage": false,
       "requires_boolean_success": true,
-      "semantic_kind": "place_counters_and_self_ko"
+      "semantic_kind": "place_counters_and_self_discard"
     },
     "place_damage_counters": {
       "allowed_contexts": [
@@ -3161,7 +3161,7 @@
     "look_top_attach_energy",
     "look_top_deck",
     "mill_then_damage",
-    "place_counters_then_self_ko",
+    "place_counters_then_self_discard",
     "place_damage_counters",
     "prevent_all",
     "prevent_damage",

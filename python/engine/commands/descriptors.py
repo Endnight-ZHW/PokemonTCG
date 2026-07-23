@@ -141,7 +141,7 @@ _DEFINITIONS: dict[str, dict[str, Any]] = {
     "look_top_attach_energy": _descriptor(args={"count": NNI, "filter": S, "shuffle_rest": B, "take": NNI, "target": S}, semantic_kind="look_top_attach_energy", preflight="look_top_attach", may_suspend=True, implementation_kind="native_composite"),
     "look_top_deck": _descriptor(args={"count": NNI, "destination": S, "filter": S, "min_select": NNI, "rest_bottom": B, "shuffle_rest": B, "take": NNI, "target_pokemon_type": S}, semantic_kind="look_top_deck", preflight="look_top", may_suspend=True, implementation_kind="native_composite"),
     "mill_then_damage": _descriptor(args={"damage_per": NNI, "mill_count": NNI}, semantic_kind="mill_and_damage_per_energy", preflight="opponent_active", contexts=("attack",), attack_timing="replace_damage", replaces_base_damage=True, implementation_kind="native_composite"),
-    "place_counters_then_self_ko": _descriptor(args={"counters": NNI, "target": S, "target_player": PLAYER}, semantic_kind="place_counters_and_self_ko", preflight="opponent_pokemon", contexts=("ability",), may_suspend=True),
+    "place_counters_then_self_discard": _descriptor(args={"counters": NNI, "target": S, "target_player": PLAYER}, semantic_kind="place_counters_and_self_discard", preflight="opponent_pokemon", contexts=("ability",), may_suspend=True),
     "place_damage_counters": _descriptor(args={"amount": NNI}, semantic_kind="damage_counter_self", preflight="self_survives_counter"),
     "prevent_all": _descriptor(semantic_kind="prevent_all", preflight="always", contexts=("attack",), attack_timing="post_damage"),
     "prevent_damage": _descriptor(semantic_kind="prevent_damage", preflight="always", contexts=("attack",), attack_timing="post_damage"),

@@ -464,7 +464,7 @@ class VmIrContractTests(unittest.TestCase):
             "MillThenDamage",
             "BenchDamage",
             "ChooseDamageTarget",
-            "PlaceCountersThenSelfKo",
+            "PlaceCountersThenSelfDiscard",
         ):
             with self.subTest(name=name):
                 self.assertIs(getattr(primitives, name), getattr(primitives_combat, name))
@@ -1158,7 +1158,7 @@ class VmIrContractTests(unittest.TestCase):
             "bench_damage_targets",
             "choose_damage_target",
             "evolve_skip_stage",
-            "place_counters_then_self_ko",
+            "place_counters_then_self_discard",
             "choose_heal_damage",
         }
         self.assertEqual(registry.supported_kinds, frozenset(expected))
@@ -1168,7 +1168,7 @@ class VmIrContractTests(unittest.TestCase):
             "_resolve_bench_damage_targets_continuation",
             "_resolve_choose_damage_target_continuation",
             "_resolve_evolve_skip_stage_continuation",
-            "_resolve_place_counters_then_self_ko_continuation",
+            "_resolve_place_counters_then_self_discard_continuation",
             "_resolve_choose_heal_damage_continuation",
         }
         self.assertFalse(any(hasattr(stack, name) for name in removed_stack_handlers))
@@ -1944,7 +1944,7 @@ class VmIrContractTests(unittest.TestCase):
             "mill_and_damage_per_energy",
             "any_pokemon_damage",
             "bench_damage",
-            "place_counters_and_self_ko",
+            "place_counters_and_self_discard",
             "status",
             "conditional_status",
             "draw",
@@ -5105,7 +5105,7 @@ class VmIrContractTests(unittest.TestCase):
         stack = ResolutionStack(state)
         stack.push(compile_command_spec({"op": "draw_cards", "args": {"amount": 1}}))
         stack.push(compile_command_spec({
-            "op": "place_counters_then_self_ko",
+            "op": "place_counters_then_self_discard",
             "args": {"counters": 2, "target_player": "opponent"},
             "branches": {},
         }))
@@ -5115,13 +5115,13 @@ class VmIrContractTests(unittest.TestCase):
         self.assertFalse(result.pending_choice._resolution_stack_had_callback)
         self.assertEqual(
             result.pending_choice.continuation.get("kind"),
-            "place_counters_then_self_ko",
+            "place_counters_then_self_discard",
         )
         engine = GameEngine()
         request = engine.choice_request(state, result.pending_choice)
         self.assertEqual(
             request.metadata.get("continuation", {}).get("kind"),
-            "place_counters_then_self_ko",
+            "place_counters_then_self_discard",
         )
         bench_zero = next(
             option.option_id

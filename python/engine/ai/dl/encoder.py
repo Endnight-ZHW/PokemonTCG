@@ -102,7 +102,7 @@ CHOICE_TYPE_ALIASES = {
     "zinnia": "select_card",
     "bench_damage_target": "select_pokemon",
     "damage_target": "select_pokemon",
-    "place_counters_self_ko": "select_pokemon",
+    "place_counters_self_discard": "select_pokemon",
     "select_bench": "select_pokemon",
     "select_bench_targets": "select_pokemon",
     "select_energy_source": "select_pokemon",

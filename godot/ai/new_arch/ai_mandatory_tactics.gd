@@ -689,9 +689,9 @@ static func _attack_commands_can_invalidate_base_damage(commands: Array) -> bool
 		var semantic_kind := str(command.get("semantic_kind", ""))
 		if (
 			bool(command.get("replaces_base_damage", false))
-			or op in ["mill_then_damage", "place_counters_then_self_ko"]
+			or op in ["mill_then_damage", "place_counters_then_self_discard"]
 			or semantic_kind in [
-				"mill_and_damage_per_energy", "place_counters_and_self_ko",
+				"mill_and_damage_per_energy", "place_counters_and_self_discard",
 			]
 		):
 			return true

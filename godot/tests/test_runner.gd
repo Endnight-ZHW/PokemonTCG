@@ -1806,20 +1806,20 @@ func _run_phase_two_tests() -> void:
 		"Terminal checkup prize resumed into promotion/turn draw instead of game_over",
 	)
 
-	var self_ko_state := _battle_state()
-	self_ko_state.turn_number = 3
-	self_ko_state.first_player_idx = 0
-	self_ko_state.players[0].active = PokemonState.new("sv2-starm")
-	self_ko_state.players[0].active.placed_this_turn = false
-	self_ko_state.players[0].bench[0] = PokemonState.new("svi-chim")
-	self_ko_state.players[0].bench[0].placed_this_turn = false
-	self_ko_state.players[0].hand.clear()
-	self_ko_state.players[1].prizes = ["sv1-ener-2"]
-	var self_ko_opponent_hand_before := self_ko_state.players[1].hand.duplicate()
+	var self_discard_state := _battle_state()
+	self_discard_state.turn_number = 3
+	self_discard_state.first_player_idx = 0
+	self_discard_state.players[0].active = PokemonState.new("sv2-starm")
+	self_discard_state.players[0].active.placed_this_turn = false
+	self_discard_state.players[0].bench[0] = PokemonState.new("svi-chim")
+	self_discard_state.players[0].bench[0].placed_this_turn = false
+	self_discard_state.players[0].hand.clear()
+	self_discard_state.players[1].prizes = ["sv1-ener-2"]
+	var self_discard_opponent_hand_before := self_discard_state.players[1].hand.duplicate()
 	var ability_name := str(
 		catalog.get_card("sv2-starm").get("abilities", [])[0].get("name", ""))
-	var self_ko_step := _apply_test_action(engine,
-		self_ko_state,
+	var self_discard_step := _apply_test_action(engine,
+		self_discard_state,
 		GameAction.new(
 			"USE_ABILITY",
 			{"slot": "active", "ability_name": ability_name},
@@ -1829,48 +1829,49 @@ func _run_phase_two_tests() -> void:
 		),
 		PortableRandomSource.new(18),
 	)
-	_check(self_ko_step.pending_choice != null, "Self-KO ability did not request target")
-	if self_ko_step.pending_choice:
-		var self_ko_request := self_ko_step.pending_choice
+	_check(self_discard_step.pending_choice != null,
+		"Self-discard ability did not request target")
+	if self_discard_step.pending_choice:
+		var self_discard_request := self_discard_step.pending_choice
 		_check(
-			int(self_ko_request.metadata.get("amount", 0)) == 20
-			and int(self_ko_request.metadata.get("source_player", -1)) == 0
-			and str(self_ko_request.metadata.get("source_slot", "")) == "active"
-			and str(self_ko_request.metadata.get("source_card_id", "")) == "sv2-starm"
-			and int(self_ko_request.metadata.get("target_player", -1)) == 1,
+			int(self_discard_request.metadata.get("amount", 0)) == 20
+			and int(self_discard_request.metadata.get("source_player", -1)) == 0
+			and str(self_discard_request.metadata.get("source_slot", "")) == "active"
+			and str(self_discard_request.metadata.get("source_card_id", "")) == "sv2-starm"
+			and int(self_discard_request.metadata.get("target_player", -1)) == 1,
 			"Self-discard damage choice omitted its public amount/source metadata",
 		)
-		var self_ko_result := RulesTestHarness.apply_choice(engine,
-			self_ko_state,
-			self_ko_request,
+		var self_discard_result := RulesTestHarness.apply_choice(engine,
+			self_discard_state,
+			self_discard_request,
 			ChoiceResponse.new(
-				self_ko_request.request_id,
-				[self_ko_request.options[0]["option_id"]],
+				self_discard_request.request_id,
+				[self_discard_request.options[0]["option_id"]],
 			),
 			PortableRandomSource.new(19),
 		)
-		_check(self_ko_result.success, "Self-KO ability choice failed")
-		_check(self_ko_state.players[0].active == null,
-			"Self-KO source remained in the active slot")
-		_check("sv2-starm" in self_ko_state.players[0].discard,
-			"Self-KO source was not discarded")
+		_check(self_discard_result.success, "Self-discard ability choice failed")
+		_check(self_discard_state.players[0].active == null,
+			"Self-discard source remained in the active slot")
+		_check("sv2-starm" in self_discard_state.players[0].discard,
+			"Self-discard source was not discarded")
 		_check(
-			self_ko_state.players[1].prizes == ["sv1-ener-2"]
-			and self_ko_state.players[1].hand == self_ko_opponent_hand_before,
+			self_discard_state.players[1].prizes == ["sv1-ener-2"]
+			and self_discard_state.players[1].hand == self_discard_opponent_hand_before,
 			"Opponent took a prize for Starmie's effect discard")
-		var self_ko_saw_prize_event := false
-		var self_ko_saw_ko_event := false
-		for event in self_ko_result.events:
+		var self_discard_saw_prize_event := false
+		var self_discard_saw_ko_event := false
+		for event in self_discard_result.events:
 			if str(event.get("event_type", "")) == "prize_taken":
-				self_ko_saw_prize_event = true
+				self_discard_saw_prize_event = true
 			if str(event.get("event_type", "")) == "pokemon_ko":
-				self_ko_saw_ko_event = true
-		_check(not self_ko_saw_prize_event,
+				self_discard_saw_ko_event = true
+		_check(not self_discard_saw_prize_event,
 			"Starmie's effect discard emitted a prize_taken event")
-		_check(not self_ko_saw_ko_event,
+		_check(not self_discard_saw_ko_event,
 			"Starmie's effect discard emitted a pokemon_ko event")
-		_check(0 in self_ko_state.pending_promotions,
-			"Self-KO did not enqueue promotion")
+		_check(0 in self_discard_state.pending_promotions,
+			"Self-discard did not enqueue promotion")
 
 	var setup_state := GameState.new()
 	var deck_keys: Array = catalog.decks.keys()
@@ -3995,7 +3996,7 @@ func _run_ai_runtime_v5_tests(
 		"evolve_skip_stage", "hand_bottom_draw", "houb", "look_top",
 		"look_top_attach_energy", "search_move", "select_card",
 		"shuffle_from_discard", "zinnia", "bench_damage_target",
-		"damage_target", "place_counters_self_ko", "select_bench",
+		"damage_target", "place_counters_self_discard", "select_bench",
 		"select_energy_source", "select_energy_target", "select_heal_target",
 		"select_opponent_bench", "select_attachment", "select_retreat_payment",
 		"distribute_energy", "confirm", "confirm_trigger", "select_prize",
@@ -4230,7 +4231,7 @@ func _run_ai_strength_regression_tests(
 	_test_ai_cached_action_passes_post_plan_tactical_guard(catalog, _engine, worker)
 	_test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
 		catalog, _engine, worker)
-	_test_ai_self_ko_scoring_uses_counter_units_and_source_slot(catalog, worker)
+	_test_ai_self_discard_scoring_uses_counter_units_and_source_slot(catalog, worker)
 	_test_ai_mandatory_tactics_establishes_backup_before_ordinary_attack(
 		catalog, _engine)
 	_test_ai_mandatory_tactics_immediate_match_win_beats_backup(catalog, _engine)
@@ -5590,21 +5591,21 @@ func _test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
 	state.players[0].hand.clear()
 	var legal_actions: Array[GameAction] = []
 	legal_actions.assign(RulesTestHarness.legal_actions(engine, state, 0, false))
-	var self_ko_ability: GameAction = null
+	var self_discard_ability: GameAction = null
 	var end_turn: GameAction = null
 	for action in legal_actions:
 		if (
 			action.kind == "USE_ABILITY"
 			and str(action.payload.get("ability_name", "")) == "神秘彗星"
 		):
-			self_ko_ability = action
+			self_discard_ability = action
 		elif action.kind == "END_TURN":
 			end_turn = action
 	_check(
-		self_ko_ability != null and end_turn != null,
-		"AI cached self-KO guard fixture did not expose ability and end-turn actions",
+		self_discard_ability != null and end_turn != null,
+		"AI cached self-discard guard fixture did not expose ability and end-turn actions",
 	)
-	if self_ko_ability == null or end_turn == null:
+	if self_discard_ability == null or end_turn == null:
 		return
 	var self_damage_source := PokemonState.new("svf-luca")
 	self_damage_source.placed_this_turn = false
@@ -5617,10 +5618,10 @@ func _test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
 	)
 	_check(
 		worker._cached_action_needs_tactical_guard(
-			state, 0, self_ko_ability, catalog)
+			state, 0, self_discard_ability, catalog)
 		and worker._cached_action_needs_tactical_guard(
 			state, 0, self_damage_action, catalog),
-		"AI cache guard did not classify self-KO/self-damage abilities as irreversible",
+		"AI cache guard did not classify self-discard/self-damage abilities as irreversible",
 	)
 
 	var match_seed := 2026072201
@@ -5628,7 +5629,7 @@ func _test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
 		state, 0, catalog, legal_actions, [], match_seed)
 	_check(
 		information_set.is_valid(),
-		"AI cached self-KO guard fixture could not capture an information set",
+		"AI cached self-discard guard fixture could not capture an information set",
 	)
 	if not information_set.is_valid():
 		return
@@ -5640,12 +5641,12 @@ func _test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
 		"state": state.snapshot(),
 		"actor": 0,
 		"revision": state.revision,
-		"request_id": "cached-self-ko-post-plan-tactical-guard",
+		"request_id": "cached-self-discard-post-plan-tactical-guard",
 		"mode": "challenge",
 		"deck_key": "water",
 		"seed": 20260722,
 		"match_seed": match_seed,
-		"match_instance_id": "cached-self-ko-guard-match",
+		"match_instance_id": "cached-self-discard-guard-match",
 		"simulation_budget": 16,
 		"max_depth": 2,
 		"deterministic": true,
@@ -5656,7 +5657,7 @@ func _test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
 	worker._turn_plan_cache.clear()
 	worker._turn_plan_cache[cache_key] = {
 		"intents": [worker._intent_with_precondition(
-			self_ko_ability, information_set.cache_precondition())],
+			self_discard_ability, information_set.cache_precondition())],
 		"last_revision": state.revision - 1,
 	}
 	var result := worker.decide(request, func() -> bool: return false)
@@ -5667,11 +5668,11 @@ func _test_ai_cached_self_cost_ability_passes_post_plan_tactical_guard(
 		and bool(result.get("turn_plan_cache_hit", false))
 		and str(selected.get("kind", "")) == "END_TURN"
 		and str(result.get("forced_tactic", "")) == "post_plan_tactical_guard",
-		"Cached self-KO ability bypassed the tactical guard: %s" % JSON.stringify(result),
+		"Cached self-discard ability bypassed the tactical guard: %s" % JSON.stringify(result),
 	)
 
 
-func _test_ai_self_ko_scoring_uses_counter_units_and_source_slot(
+func _test_ai_self_discard_scoring_uses_counter_units_and_source_slot(
 	catalog: CardCatalog,
 	worker: NativeChallengeAI,
 ) -> void:
@@ -5686,7 +5687,7 @@ func _test_ai_self_ko_scoring_uses_counter_units_and_source_slot(
 		catalog.get_card("sv2-starm").get("abilities", [])[0]).get(
 			"effects", [])[0]
 	var damage := worker._effect_damage_estimate(state, 0, effect, catalog)
-	var source_cost := worker._self_ko_source_cost(
+	var source_cost := worker._self_discard_source_cost(
 		state, 0, "bench_0", catalog)
 	var value_before := worker._semantic_damage_effect_value(
 		state, 0, effect, "bench_0", catalog)
@@ -5695,7 +5696,7 @@ func _test_ai_self_ko_scoring_uses_counter_units_and_source_slot(
 		state, 0, effect, "bench_0", catalog)
 	state.players[0].bench[0].energy_card_ids.append("sv1-ener-3")
 	state.players[0].bench[0].attached_tool_id = "sv1-202"
-	var loaded_source_cost := worker._self_ko_source_cost(
+	var loaded_source_cost := worker._self_discard_source_cost(
 		state, 0, "bench_0", catalog)
 	var loaded_value := worker._semantic_damage_effect_value(
 		state, 0, effect, "bench_0", catalog)
@@ -5706,7 +5707,7 @@ func _test_ai_self_ko_scoring_uses_counter_units_and_source_slot(
 		and loaded_source_cost > source_cost
 		and is_equal_approx(
 			value_before - loaded_value, loaded_source_cost - source_cost),
-		"AI self-KO scoring lost counter units or charged the Active instead of its source",
+		"AI self-discard scoring lost counter units or charged the Active instead of its source",
 	)
 
 
@@ -15304,13 +15305,13 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	stack = ResolutionStack.new()
 	stack.push_effect({"op": "draw_cards", "args": {"amount": 1}, "branches": {}}, 0, "active")
 	stack.push_effect({
-		"op": "place_counters_then_self_ko",
+		"op": "place_counters_then_self_discard",
 		"args": {"counters": 2, "target_player": "opponent"},
 		"branches": {},
 	}, 0, "active")
 	step = RulesTestHarness.effect_engine_for(engine).resolve(state, stack, PortableRandomSource.new(20260646))
 	_check(step.success and step.pending_choice != null,
-		"Native place_counters_then_self_ko command spec did not pause for choice")
+		"Native place_counters_then_self_discard command spec did not pause for choice")
 	var comet_option := _choice_id_for_slot(step.pending_choice, "bench_0")
 	step = RulesTestHarness.effect_engine_for(engine).apply_choice(
 		state,
@@ -15318,15 +15319,15 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		ChoiceResponse.new(step.pending_choice.request_id, [comet_option]),
 		PortableRandomSource.new(20260647),
 	)
-	_check(step.success, "Native place_counters_then_self_ko failed to resume: %s" % step.message)
+	_check(step.success, "Native place_counters_then_self_discard failed to resume: %s" % step.message)
 	_check(state.players[1].bench[0].damage_counters == 2,
-		"Native place_counters_then_self_ko did not place target counters")
+		"Native place_counters_then_self_discard did not place target counters")
 	_check(state.players[0].active == null and "sv2-starm" in state.players[0].discard,
-		"Native place_counters_then_self_ko did not discard source without KO")
+		"Native place_counters_then_self_discard did not discard source without KO")
 	_check(0 in state.pending_promotions,
-		"Native place_counters_then_self_ko did not enqueue promotion")
+		"Native place_counters_then_self_discard did not enqueue promotion")
 	_check(state.players[0].hand == ["sv1-ener-2"],
-		"Native place_counters_then_self_ko did not resume remaining command")
+		"Native place_counters_then_self_discard did not resume remaining command")
 
 
 func _run_compiled_runtime_dispatch_tests(engine: GameEngine) -> void:

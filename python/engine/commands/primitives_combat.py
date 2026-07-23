@@ -1003,7 +1003,7 @@ class ChooseDamageTarget:
 
 
 @dataclass
-class PlaceCountersThenSelfKo:
+class PlaceCountersThenSelfDiscard:
     """Place counters on one opposing Pokemon, then discard the source Pokemon."""
 
     counters: int = 2
@@ -1051,7 +1051,7 @@ class PlaceCountersThenSelfKo:
                 target_player=self.target_player,
                 card_list=[target.card for _slot_name, target in targets],
                 continuation={
-                    "kind": "place_counters_then_self_ko",
+                    "kind": "place_counters_then_self_discard",
                     "target_player_idx": target_player_idx,
                     "counters": int(self.counters or 0),
                 },
@@ -1081,5 +1081,5 @@ __all__ = [
     "MillThenDamage",
     "BenchDamage",
     "ChooseDamageTarget",
-    "PlaceCountersThenSelfKo",
+    "PlaceCountersThenSelfDiscard",
 ]

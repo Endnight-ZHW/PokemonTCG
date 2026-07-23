@@ -28,7 +28,7 @@ from engine.commands.primitives_combat import (
     MillThenDamage,
     BenchDamage,
     ChooseDamageTarget,
-    PlaceCountersThenSelfKo,
+    PlaceCountersThenSelfDiscard,
 )
 from engine.commands.primitives_status import ApplyStatus
 from engine.commands.primitives_draw import (
@@ -116,7 +116,7 @@ __all__ = [
     "MillThenDamage",
     "BenchDamage",
     "ChooseDamageTarget",
-    "PlaceCountersThenSelfKo",
+    "PlaceCountersThenSelfDiscard",
     "ApplyStatus",
     "DrawCards",
     "DrawUntil",

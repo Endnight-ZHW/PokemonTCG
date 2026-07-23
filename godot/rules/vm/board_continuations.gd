@@ -27,7 +27,7 @@ func register(interpreter: VMInterpreter) -> void:
 		"damage_target": Callable(self, "continue_damage_target"),
 		"evolve_skip_stage": Callable(self, "continue_evolve_skip_stage"),
 		"bench_damage_target": Callable(self, "continue_bench_damage_target"),
-		"place_counters_self_ko": Callable(self, "continue_place_counters_self_ko"),
+		"place_counters_self_discard": Callable(self, "continue_place_counters_self_discard"),
 		"heal_target": Callable(self, "continue_heal_target"),
 		"discard_attachment": Callable(self, "continue_discard_attachment"),
 	}
@@ -141,7 +141,7 @@ func continue_bench_damage_target(
 	)
 
 
-func continue_place_counters_self_ko(
+func continue_place_counters_self_discard(
 	state: GameState,
 	stack: ResolutionStack,
 	_rng: PortableRandomSource,

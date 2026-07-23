@@ -666,13 +666,13 @@
       "branches": {},
       "op": "mill_then_damage"
     },
-    "place_counters_and_self_ko": {
+    "place_counters_and_self_discard": {
       "args": {
         "counters": 2,
         "target": "opponent_any"
       },
       "branches": {},
-      "op": "place_counters_then_self_ko"
+      "op": "place_counters_then_self_discard"
     },
     "potion_heal": {
       "args": {
@@ -1258,8 +1258,8 @@
         "mill_count": 5
       }
     },
-    "place_counters_and_self_ko": {
-      "effect_type": "place_counters_and_self_ko",
+    "place_counters_and_self_discard": {
+      "effect_type": "place_counters_and_self_discard",
       "params": {
         "counters": 2,
         "target": "opponent_any"
@@ -1438,7 +1438,7 @@
     "look_top_attach_energy",
     "look_top_deck",
     "mill_and_damage_per_energy",
-    "place_counters_and_self_ko",
+    "place_counters_and_self_discard",
     "potion_heal",
     "prevent_all",
     "prevent_damage",

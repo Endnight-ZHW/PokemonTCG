@@ -451,7 +451,7 @@ func _choice_surface(choice_view: Dictionary) -> String:
 		return "switch_target"
 	if request_type in [
 		"select_opponent_bench", "bench_damage_target", "damage_target",
-		"place_counters_self_ko",
+		"place_counters_self_discard",
 	]:
 		return "opponent_target"
 	return "card"

@@ -31,7 +31,7 @@ const TURN_REPLAN_LEDGER_LIMIT := 16
 const MAX_REPEATABLE_ABILITY_USES_PER_TURN := 6
 const CACHE_GUARDED_ABILITY_EFFECT_TYPES := {
 	"damage_counter_self": true,
-	"place_counters_and_self_ko": true,
+	"place_counters_and_self_discard": true,
 }
 const DIFFICULTIES := {
 	"strongest": {"simulations": 192, "seconds": 0.85, "depth": 6},
@@ -2354,7 +2354,7 @@ func _choice_score_mode(request: ChoiceView, presentation: Dictionary) -> String
 		return "energy"
 	if request.request_type == "select_heal_target" or purpose == "heal":
 		return "heal"
-	if request.request_type in ["select_opponent_bench", "bench_damage_target", "damage_target", "place_counters_self_ko"]:
+	if request.request_type in ["select_opponent_bench", "bench_damage_target", "damage_target", "place_counters_self_discard"]:
 		return "target"
 	if request.request_type == "select_bench" and purpose == "switch":
 		return "self_switch"
@@ -3453,7 +3453,7 @@ func _target_choice_value(
 		value += 900.0 + float(catalog.prize_value(pokemon.card_id)) * 420.0
 		value -= float(maxi(0, amount - current_hp)) * 0.4
 	if (
-		str(presentation.get("purpose", "")) == "place_counters_self_ko"
+		str(presentation.get("purpose", "")) == "place_counters_self_discard"
 		and str(presentation.get("source_card_id", "")) == "sv2-starm"
 		and int(presentation.get("source_player", request.player)) == request.player
 	):
@@ -5033,7 +5033,7 @@ func _effects_tactical_value(
 				value += 80.0
 			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "apply_outgoing_damage_reduction", "self_attack_lock":
 				value += 45.0
-			"damage", "any_pokemon_damage", "place_counters_and_self_ko", "bench_damage", "damage_and_self_heal":
+			"damage", "any_pokemon_damage", "place_counters_and_self_discard", "bench_damage", "damage_and_self_heal":
 				value += int(params.get("amount", params.get("damage", 0))) * 1.2
 			"damage_counter_self":
 				value -= int(params.get("amount", params.get("damage", 20))) * 0.8
@@ -5094,7 +5094,7 @@ func _semantic_effects_tactical_value(
 				value += _semantic_protection_effect_value(state, actor, profile_key, catalog)
 			"status", "conditional_status", "dazzling_beam", "attack_lock_basic", "apply_outgoing_damage_reduction", "self_attack_lock":
 				value += _semantic_status_effect_value(state, actor, effect_type, params, catalog)
-			"damage", "any_pokemon_damage", "place_counters_and_self_ko", "bench_damage", "damage_and_self_heal":
+			"damage", "any_pokemon_damage", "place_counters_and_self_discard", "bench_damage", "damage_and_self_heal":
 				value += _semantic_damage_effect_value(
 					state, actor, effect, source_slot, catalog)
 			"damage_counter_self":
@@ -5471,12 +5471,12 @@ func _semantic_damage_effect_value(
 		value += 190.0 + catalog.prize_value(opponent.active.card_id) * 120.0
 	elif effect_type in ["bench_damage", "any_pokemon_damage"]:
 		value += _semantic_best_bench_damage_value(state, actor, damage, catalog)
-	if effect_type == "place_counters_and_self_ko":
-		value -= _self_ko_source_cost(state, actor, source_slot, catalog)
+	if effect_type == "place_counters_and_self_discard":
+		value -= _self_discard_source_cost(state, actor, source_slot, catalog)
 	return value
 
 
-func _self_ko_source_cost(
+func _self_discard_source_cost(
 	state: GameState,
 	actor: int,
 	source_slot: String,
@@ -5893,7 +5893,7 @@ func _effect_damage_estimate(
 			return int(params.get("damage", params.get("amount", 0)))
 		"any_pokemon_damage", "bench_damage":
 			return int(params.get("amount", params.get("damage", 0)))
-		"place_counters_and_self_ko":
+		"place_counters_and_self_discard":
 			return int(params.get(
 				"amount", params.get("damage", int(params.get("counters", 0)) * 10)))
 		"mill_and_damage_per_energy":

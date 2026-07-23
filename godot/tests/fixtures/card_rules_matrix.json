@@ -1262,11 +1262,11 @@
             {
               "choice_domains": [],
               "effect_types": [
-                "place_counters_and_self_ko"
+                "place_counters_and_self_discard"
               ],
               "kind": "vm",
               "ops": [
-                "place_counters_then_self_ko"
+                "place_counters_then_self_discard"
               ]
             }
           ],
@@ -1281,7 +1281,7 @@
       ],
       "supertype": "Pokémon",
       "used_vm_ops": [
-        "place_counters_then_self_ko"
+        "place_counters_then_self_discard"
       ]
     },
     "sv2-staryu": {
@@ -5150,7 +5150,7 @@
     "look_top_attach_energy",
     "look_top_deck",
     "mill_then_damage",
-    "place_counters_then_self_ko",
+    "place_counters_then_self_discard",
     "place_damage_counters",
     "prevent_all",
     "prevent_damage",
@@ -5232,7 +5232,7 @@
     "look_top_attach_energy",
     "look_top_deck",
     "mill_then_damage",
-    "place_counters_then_self_ko",
+    "place_counters_then_self_discard",
     "place_damage_counters",
     "prevent_all",
     "prevent_damage",

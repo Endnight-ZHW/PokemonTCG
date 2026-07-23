@@ -284,7 +284,7 @@ func _effects_have_legal_target_impl(
 				saw_checked_effect = true
 				if _player_has_attached_energy(opponent):
 					return true
-			"any_pokemon_damage", "place_counters_and_self_ko":
+			"any_pokemon_damage", "place_counters_and_self_discard":
 				saw_checked_effect = true
 				if _player_has_effect_target_pokemon(opponent):
 					return true

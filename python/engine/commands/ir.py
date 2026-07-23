@@ -106,7 +106,7 @@ OP_BY_EFFECT_TYPE: dict[str, str] = {
     "look_top_deck": "look_top_deck",
     "mill_and_damage_per_energy": "mill_then_damage",
     "attack_flags": "set_attack_flags",
-    "place_counters_and_self_ko": "place_counters_then_self_ko",
+    "place_counters_and_self_discard": "place_counters_then_self_discard",
     "potion_heal": "choose_heal_damage",
     "prevent_all": "prevent_all",
     "prevent_damage": "prevent_damage",

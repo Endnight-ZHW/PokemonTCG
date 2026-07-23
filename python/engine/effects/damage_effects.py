@@ -551,7 +551,7 @@ def _handle_damage_plus_bench(state, player, opponent, params):
     return ActionResult(False, "没有目标。")
 
 
-def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, source_slot):
+def _handle_place_counters_and_self_discard(state, player_idx, opponent, params, source_slot):
     """Place damage counters on any opponent's Pokemon, then discard this Pokemon."""
     counters = params.get("counters", 2)
     target = params.get("target", "opponent_any")
@@ -578,7 +578,7 @@ def _handle_place_counters_and_self_ko(state, player_idx, opponent, params, sour
         if state.phase == TurnPhase.GAME_OVER:
             return
 
-        # Then self KO: discard this Pokemon and all attachments
+        # Then discard this Pokemon and all attachments without causing a KO.
         source = _discard_pokemon_for_effect(state, player_idx, source_slot)
         if source:
             state._log(f"{source.card.name}被放置于弃牌区。")

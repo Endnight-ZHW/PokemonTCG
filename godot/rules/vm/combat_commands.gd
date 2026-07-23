@@ -52,7 +52,7 @@ func register(interpreter: VMInterpreter) -> void:
 		"heal_damage": Callable(self, "cmd_heal_damage"),
 		"mill_then_damage": Callable(self, "cmd_mill_then_damage"),
 		"place_damage_counters": Callable(self, "cmd_place_damage_counters"),
-		"place_counters_then_self_ko": Callable(self, "cmd_place_counters_then_self_ko"),
+		"place_counters_then_self_discard": Callable(self, "cmd_place_counters_then_self_discard"),
 		"set_attack_damage_formula": Callable(self, "cmd_set_attack_damage_formula"),
 	}
 	for op in registrations:
@@ -468,7 +468,7 @@ func cmd_place_damage_counters(
 	return VMResult.ok()
 
 
-func cmd_place_counters_then_self_ko(
+func cmd_place_counters_then_self_discard(
 	state: GameState,
 	stack: ResolutionStack,
 	_rng: PortableRandomSource,
@@ -478,7 +478,7 @@ func cmd_place_counters_then_self_ko(
 	source_slot: String,
 	_events: Array[Dictionary],
 ) -> Dictionary:
-	return choice.place_counters_then_self_ko(state, stack, player_idx, source_slot, args)
+	return choice.place_counters_then_self_discard(state, stack, player_idx, source_slot, args)
 
 
 func cmd_set_attack_damage_formula(

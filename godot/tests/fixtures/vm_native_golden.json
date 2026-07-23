@@ -39599,7 +39599,7 @@
       "portable_seed": 1751,
       "source_slot": "active"
     },
-    "place_counters_then_self_ko": {
+    "place_counters_then_self_discard": {
       "actor": 0,
       "choice_trace": [
         {
@@ -39886,7 +39886,7 @@
           "request": {
             "allow_duplicates": false,
             "can_cancel": false,
-            "continuation_kind": "place_counters_self_ko",
+            "continuation_kind": "place_counters_self_discard",
             "max_select": 1,
             "min_select": 1,
             "options": [
@@ -39910,7 +39910,7 @@
               }
             ],
             "player": 0,
-            "request_type": "place_counters_self_ko"
+            "request_type": "place_counters_self_discard"
           },
           "response": {
             "cancelled": false,
@@ -39931,7 +39931,7 @@
           "target": "opponent_any"
         },
         "branches": {},
-        "op": "place_counters_then_self_ko"
+        "op": "place_counters_then_self_discard"
       },
       "context_mode": "ability",
       "descriptor": {
@@ -39969,11 +39969,11 @@
         "implementation_kind": "atomic",
         "internal": false,
         "may_suspend": true,
-        "op": "place_counters_then_self_ko",
+        "op": "place_counters_then_self_discard",
         "preflight_evaluator": "opponent_pokemon",
         "replaces_base_damage": false,
         "requires_boolean_success": true,
-        "semantic_kind": "place_counters_and_self_ko"
+        "semantic_kind": "place_counters_and_self_discard"
       },
       "expected": {
         "context": {},
@@ -39983,7 +39983,7 @@
         "pending": {
           "allow_duplicates": false,
           "can_cancel": false,
-          "continuation_kind": "place_counters_self_ko",
+          "continuation_kind": "place_counters_self_discard",
           "max_select": 1,
           "min_select": 1,
           "options": [
@@ -40007,7 +40007,7 @@
             }
           ],
           "player": 0,
-          "request_type": "place_counters_self_ko"
+          "request_type": "place_counters_self_discard"
         },
         "revision": 0,
         "rng_state": 1752,
@@ -63217,7 +63217,7 @@
     "look_top_attach_energy",
     "look_top_deck",
     "mill_then_damage",
-    "place_counters_then_self_ko",
+    "place_counters_then_self_discard",
     "place_damage_counters",
     "prevent_all",
     "prevent_damage",
@@ -63307,7 +63307,7 @@
     "look_top_attach_energy",
     "look_top_deck",
     "mill_then_damage",
-    "place_counters_then_self_ko",
+    "place_counters_then_self_discard",
     "place_damage_counters",
     "prevent_all",
     "prevent_damage",

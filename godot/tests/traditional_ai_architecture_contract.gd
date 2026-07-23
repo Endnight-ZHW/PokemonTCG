@@ -1275,9 +1275,9 @@ func _check_trusted_dynamic_scoring(catalog: CardCatalog) -> void:
 	]
 	var combo_request := ChoiceView.new(
 		"choice:starmie-combo", combo_state.revision,
-		"place_counters_self_ko", 0, "", combo_options,
+		"place_counters_self_discard", 0, "", combo_options,
 		1, 1, false, false,
-		{"purpose": "place_counters_self_ko", "amount": 20,
+		{"purpose": "place_counters_self_discard", "amount": 20,
 		 "source_player": 0, "source_slot": "bench_0",
 		 "source_card_id": "sv2-starm", "target_player": 1},
 	)
@@ -1299,9 +1299,9 @@ func _check_trusted_dynamic_scoring(catalog: CardCatalog) -> void:
 	promoted_combo_state.players[0].bench[0] = promoted_greninja
 	var promoted_combo_request := ChoiceView.new(
 		"choice:starmie-promote-combo", promoted_combo_state.revision,
-		"place_counters_self_ko", 0, "", combo_options,
+		"place_counters_self_discard", 0, "", combo_options,
 		1, 1, false, false,
-		{"purpose": "place_counters_self_ko", "amount": 20,
+		{"purpose": "place_counters_self_discard", "amount": 20,
 		 "source_player": 0, "source_slot": "active",
 		 "source_card_id": "sv2-starm", "target_player": 1},
 	)

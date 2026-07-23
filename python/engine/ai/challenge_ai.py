@@ -1602,7 +1602,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     and not getattr(opponent.active, "all_prevented_next_turn", False)
                 ):
                     return True
-            elif etype in ("any_pokemon_damage", "place_counters_and_self_ko"):
+            elif etype in ("any_pokemon_damage", "place_counters_and_self_discard"):
                 saw_known_resource_effect = True
                 if any(
                     p is not None and not getattr(p, "all_prevented_next_turn", False)
@@ -2386,7 +2386,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
             for effect in attack_runtime_effects(attack):
                 etype = self._effect_type(effect)
                 params = self._effect_params(effect)
-                if etype in ("any_pokemon_damage", "place_counters_and_self_ko"):
+                if etype in ("any_pokemon_damage", "place_counters_and_self_discard"):
                     amount = int(params.get("amount", params.get("counters", 0) * 10) or 0)
                     best = max(low_bench, key=lambda p: self._target_priority(p))
                     pressure += amount * 0.9
@@ -2807,7 +2807,7 @@ class ChallengeAI(ExpertSequencingMixin, ExpertChoiceMixin, ExpertTacticsMixin, 
                     value -= 95
                 else:
                     value -= amount * 0.35
-            elif etype in ("any_pokemon_damage", "place_counters_and_self_ko"):
+            elif etype in ("any_pokemon_damage", "place_counters_and_self_discard"):
                 amount = int(params.get("amount", params.get("counters", 0) * 10) or 0)
                 low_targets = [
                     p for p in [opponent.active, *opponent.bench]

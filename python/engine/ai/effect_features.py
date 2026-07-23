@@ -43,7 +43,7 @@ OP_LEGACY_ALIASES.update({
     "hand_to_bottom_then_draw": "hand_to_bottom_draw",
     "heal_damage": "heal",
     "look_top_attach_energy": "look_top_attach_energy",
-    "place_counters_then_self_ko": "place_counters_and_self_ko",
+    "place_counters_then_self_discard": "place_counters_and_self_discard",
     "register_tool_modifier": "tool",
     "relocate_energy": "energy_relocate",
     "search_cards": "search",

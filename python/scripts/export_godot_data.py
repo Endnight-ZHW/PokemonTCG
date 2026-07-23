@@ -1577,7 +1577,7 @@ _VM_SEMANTIC_CHOICE_EVENT_TYPES: dict[tuple[str, int], list[str]] = {
         "deck_shuffled",
     ],
     ("look_top_deck", 0): ["cards_selected", "deck_shuffled"],
-    ("place_counters_then_self_ko", 0): [
+    ("place_counters_then_self_discard", 0): [
         "damage_counters_placed",
         "cards_discarded",
     ],
@@ -1765,7 +1765,7 @@ def _vm_pending_projection(state: GameState, op: str) -> dict[str, Any]:
         "hand_to_bottom_draw_until": "houb",
         "hand_to_bottom_then_draw": "hand_bottom_draw",
         "look_top_deck": "look_top",
-        "place_counters_then_self_ko": "place_counters_self_ko",
+        "place_counters_then_self_discard": "place_counters_self_discard",
         "recover_clara": "clara",
         "recover_from_discard_to_deck": "shuffle_from_discard",
         "search_any_and_switch": "search_any_switch",
@@ -1781,7 +1781,7 @@ def _vm_pending_projection(state: GameState, op: str) -> dict[str, Any]:
         "hand_bottom_draw": "hand_bottom_draw",
         "look_top_attach_energy": "look_top_attach_energy",
         "look_top": "look_top",
-        "place_counters_self_ko": "place_counters_self_ko",
+        "place_counters_self_discard": "place_counters_self_discard",
         "clara": "clara",
         "search_any_switch": "search_any_switch",
         "arven": "arven",

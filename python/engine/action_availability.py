@@ -58,7 +58,7 @@ class VMActionAvailability:
         "heal_all",
         "judge",
         "look_top_deck",
-        "place_counters_and_self_ko",
+        "place_counters_and_self_discard",
         "potion_heal",
         "reactive_thorns",
         "search",

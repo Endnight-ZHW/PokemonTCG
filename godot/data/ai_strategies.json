@@ -1,5 +1,5 @@
 {
-  "content_hash": "ef6bd145e0247ed76042bc4bd5120eec7635292021fa22347473270813b6df36",
+  "content_hash": "703535c35babe7046f55974057e4ef14feff68d48b4f613c4c467cfd5fc58b5a",
   "deck_archetypes": {
     "colorless": [
       "wide_board",
@@ -44,7 +44,7 @@
   },
   "fallback": {
     "card_roles": {},
-    "content_hash": "42246bd8d3acc4983c2f28aef67350da3125adec0d0af0d54511270c010f9098",
+    "content_hash": "caf0cd6739da80ae2e91a1438097253190e946add9a88de1faf8d1d2979c609a",
     "deck_key": "generic",
     "matchup_weights": {
       "ability_engine": 3.0,
@@ -59,7 +59,7 @@
       "target_control": 2.5,
       "wide_board": 2.0
     },
-    "runtime_hook_hash": "4d3ecdf815e94f5296b422ddf5c3c6ae030d334cc6daa7dd3373c86b515f969a",
+    "runtime_hook_hash": "ae5f60af949ac0fcb3c4c5bfbd7329873c37b2644c1c4a1caee843d81c19c99b",
     "schema": "ptcg.ai_deck_strategy",
     "stage_goals": [
       {
@@ -190,7 +190,7 @@
           "svi-jete"
         ]
       },
-      "content_hash": "59a59c169b5a501bf2750034a807aeba6ab716089936f507723d431221786b8e",
+      "content_hash": "9b24ccb51ef59b9a585010c017f74e6ffcaab69e8471250d2628c255a77aa4db",
       "deck_key": "colorless",
       "golden_scenarios": [
         {
@@ -799,7 +799,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "a7727f9185f344e668c576adffa33dbf3eb67bf1d9370bb9f72a362aefc5c8ca",
+      "runtime_hook_hash": "34e4d9ce07a0462c6d6909b1c87ae1233f7a352d7957493985aa9ef34bee46ca",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -943,7 +943,7 @@
           "sv1-204"
         ]
       },
-      "content_hash": "9bd3ace1edef49baae47e2cbfe3209f3cdc578d43e26bc7a765078727a0cb56e",
+      "content_hash": "74bd9cea7215e2871f5804e308bb346c3b678c8aefade13be1f520f9aa024ed6",
       "deck_key": "darkness",
       "golden_scenarios": [
         {
@@ -1492,7 +1492,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "ebc4ebc9bbd310c0e3d44ea3375c5b73dbe1464fcd09cc0e8f4c90e6aa1cdbed",
+      "runtime_hook_hash": "4d913c7ecc0b0f095cb2e75c366c12bb1021d82cc4aecfef0180d8198ebee02e",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -1630,7 +1630,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "7751db90d62ceb47530f28a05b726f5c48ad1e5dbb30574adc9e930e69842ef5",
+      "content_hash": "621d7b011e904b36c203306b834199cf5f1cc97629ceb9bd369eaa4e4e1d0c19",
       "deck_key": "dragon",
       "golden_scenarios": [
         {
@@ -2237,7 +2237,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "baa7f8b859a90a57d3a62cb9413cfab2688774c3f77f0a410e5e596a85579cbc",
+      "runtime_hook_hash": "e9e5f8ae6fa55a3ad5911fda09800d2b870122d5647ad8c279ff2eb7eb824efc",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -2375,7 +2375,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "a1e3fb1b7c58a675cc06c24114d5a09a9286d05f4806299fbb5203e1af3154fc",
+      "content_hash": "ff5aa6c678a12f720d8079f6d888f1a22a7cc598fce2cc048519118563deeb85",
       "deck_key": "fighting",
       "golden_scenarios": [
         {
@@ -2901,7 +2901,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "1edab010f64adf02f1893f69667a6b5642f428d581e2c5c408506b30f89e26ee",
+      "runtime_hook_hash": "3454d2ad1546a478826472cd86744e5dc3dd99881e10fcb5903819558d896192",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -3037,7 +3037,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "386fe5bf1f06a054c12626a050ca5722d8cca2d39f49c7a28540cf274fba76af",
+      "content_hash": "cb68d8cb3debbd745aed6d0f2b87f277d7a5d0d21bed8240841cb66ce9c1669d",
       "deck_key": "fire",
       "golden_scenarios": [
         {
@@ -3651,7 +3651,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "86f5b33c96ad9543c271dc4ca5c1fb0e6853dcd70d3ed86c207cfcbba8c868a6",
+      "runtime_hook_hash": "7c7dc70eded035bcee2fa3c38d699e86bfa2aa5e94b11ef29a590a799a2c2b94",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -3793,7 +3793,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "d46139271c01b6a8ccd4b7438304cebaff9bd3549321d93e2dad17f413058761",
+      "content_hash": "ad947fb5495bcb878ad5a92b092a0a3946177d482fd4bf81cea66dbb2b641c7c",
       "deck_key": "grass",
       "golden_scenarios": [
         {
@@ -4436,7 +4436,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "66ed9d04ed1628c3ebe0f3e1949f76080f7f80b276d2442db4cc1d942b19f1ab",
+      "runtime_hook_hash": "e7c15573619065e8459c5b3358191f8a58b80aa7606fda47072f8515aa6b01d0",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -4576,7 +4576,7 @@
           "svl-vitb"
         ]
       },
-      "content_hash": "40be5511ca8849252ef51160d511091295061a049c9c7e2f663e943907c33265",
+      "content_hash": "1e84c9397c59010d5f4bf908805b12ad3ec06875d830d5250c8ec2f23f8aa0a9",
       "deck_key": "lightning",
       "golden_scenarios": [
         {
@@ -5156,7 +5156,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "278f14e36ebba31ed84beb4af14723436d2bb2b044dbd7b7cf484e8aae9dd00a",
+      "runtime_hook_hash": "9f1efc95db4fab8b408b98c9eabdf60f888c5492d7e3d4d40130e82829cc6a39",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -5323,7 +5323,7 @@
           "sv1-108"
         ]
       },
-      "content_hash": "8ac1fdbd162f1f7b25fbcfe8bb9264f9ebf6ea2d7f3deb8621d790ca8249aa6c",
+      "content_hash": "bfe6063bb242d45010e9f7fe28457ace96540c146352bd4a8e1e81e06e7ebcb4",
       "deck_key": "psychic",
       "golden_scenarios": [
         {
@@ -5985,7 +5985,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "2fada2702273dae109027c12e4f5d76010f846c61c3bcd7701f88f33afc02f18",
+      "runtime_hook_hash": "550f9f7f37301c86d3a1b0c9e7a3de044e57ee4753e4966c5809af7e2d77d8b2",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -6136,7 +6136,7 @@
           "svl-vitb"
         ]
       },
-      "content_hash": "2623849c52d7b99b0ac96e2ced8b925390aac08b66346517443e6f17ac44f75e",
+      "content_hash": "594393b57ae91e9fc46d60f7961043eaf1f5ae2a5d0b8e442d5fc9ef34f32ca9",
       "deck_key": "steel",
       "golden_scenarios": [
         {
@@ -6723,7 +6723,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "38602547e816d7c46adf9badb6cc38335d1a9d13c19b9fe4263a6b18b715e9fe",
+      "runtime_hook_hash": "32aaba8c8912b507c180597c28bfe4238521c3469f334e7d61d782e7b0f6c6a7",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {
@@ -6858,7 +6858,7 @@
           "sv1-150"
         ]
       },
-      "content_hash": "dc4a65628a0750157ffce0ad5b5499b3da732083ed807cb85545901776600af6",
+      "content_hash": "c56f2659c7563cee2f274735e64eca2675f92a6c7408080f1c61b89c953a7daa",
       "deck_key": "water",
       "golden_scenarios": [
         {
@@ -7550,7 +7550,7 @@
         "target_control": 2.5,
         "wide_board": 2.0
       },
-      "runtime_hook_hash": "8f4e124eb627f76dece8770bf693ba83d567b318cef7c4dad28c0c7b065da8da",
+      "runtime_hook_hash": "244499d8711849695157343feedb836dba23f2531319c4e4f1fce731e70f8e1c",
       "schema": "ptcg.ai_deck_strategy",
       "stage_goals": [
         {

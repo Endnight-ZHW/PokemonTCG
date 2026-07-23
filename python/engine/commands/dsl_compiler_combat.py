@@ -54,10 +54,10 @@ def make_any_pokemon_damage(params: dict, **_kw):
     )
 
 
-def make_place_counters_self_ko(params: dict, **_kw):
-    from engine.commands.primitives_combat import PlaceCountersThenSelfKo
+def make_place_counters_self_discard(params: dict, **_kw):
+    from engine.commands.primitives_combat import PlaceCountersThenSelfDiscard
 
-    return PlaceCountersThenSelfKo(
+    return PlaceCountersThenSelfDiscard(
         counters=int(params.get("counters", 2) or 2),
         target_player=str(params.get("player", "opponent") or "opponent"),
     )
@@ -164,7 +164,7 @@ COMBAT_EFFECT_FACTORIES = {
     "damage": make_damage,
     "any_pokemon_damage": make_any_pokemon_damage,
     "bench_damage": make_bench_damage,
-    "place_counters_and_self_ko": make_place_counters_self_ko,
+    "place_counters_and_self_discard": make_place_counters_self_discard,
     "damage_counter_self": make_damage_counter_self,
     "damage_per_discard_psychic": make_damage_per_discard_psychic,
     "damage_per_energy": make_damage_per_energy,
@@ -189,7 +189,7 @@ COMBAT_COMMAND_FACTORIES = {
     "deal_damage": lambda args, _branches: make_damage(args),
     "deal_bench_damage": lambda args, _branches: make_bench_damage(args),
     "choose_damage_target": lambda args, _branches: make_any_pokemon_damage(args),
-    "place_counters_then_self_ko": lambda args, _branches: make_place_counters_self_ko(args),
+    "place_counters_then_self_discard": lambda args, _branches: make_place_counters_self_discard(args),
     "deal_damage_per_discard_psychic": _damage_formula("per_discard_psychic"),
     "deal_damage_per_energy": _damage_formula("per_energy"),
     "deal_damage_per_evolved": _damage_formula("per_evolved"),

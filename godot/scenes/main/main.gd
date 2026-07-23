@@ -3907,7 +3907,7 @@ func _choice_title(request: ChoiceRequest) -> String:
 		"select_heal_target": "选择回复目标",
 		"damage_target": "选择伤害目标",
 		"bench_damage_target": "选择备战区伤害目标",
-		"place_counters_self_ko": "选择伤害指示物目标",
+		"place_counters_self_discard": "选择伤害指示物目标",
 		"select_bench": "选择替换上场的宝可梦",
 		"select_opponent_bench": "选择对手替换上场的宝可梦",
 	}.get(
@@ -3981,7 +3981,7 @@ func _choice_count_unit(request: ChoiceRequest) -> String:
 		"select_heal_target",
 		"damage_target",
 		"bench_damage_target",
-		"place_counters_self_ko",
+		"place_counters_self_discard",
 		"select_bench",
 		"select_opponent_bench",
 	]:

@@ -105,7 +105,7 @@ func choose_damage_target(
 		"选择1只对手宝可梦作为伤害目标。")
 
 
-func place_counters_then_self_ko(
+func place_counters_then_self_discard(
 	state: GameState,
 	stack: ResolutionStack,
 	player_idx: int,
@@ -115,7 +115,7 @@ func place_counters_then_self_ko(
 	var target_player_key := str(params.get("player", params.get("target_player", "opponent")))
 	var target_idx := 1 - player_idx if target_player_key == "opponent" else player_idx
 	return board_commands.request_board_target(
-		state, stack, player_idx, target_idx, "place_counters_self_ko",
+		state, stack, player_idx, target_idx, "place_counters_self_discard",
 		{
 			"counters": int(params.get("counters", 0)),
 			"source_player": player_idx,

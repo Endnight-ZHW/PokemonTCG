@@ -31,9 +31,9 @@ def register_board_continuations(registry, stack) -> None:
             resolve_evolve_skip_stage(stack, cont, choice),
     )
     registry.register(
-        "place_counters_then_self_ko",
+        "place_counters_then_self_discard",
         lambda _req, cont, choice, player_idx, slot:
-            resolve_place_counters_then_self_ko(stack, cont, choice, player_idx, slot),
+            resolve_place_counters_then_self_discard(stack, cont, choice, player_idx, slot),
     )
     registry.register(
         "choose_heal_damage",
@@ -291,7 +291,7 @@ def resolve_evolve_skip_stage(stack, continuation: dict, choice):
     return ActionResult(True, f"Rare Candy: {old_name} -> {stage2.name}")
 
 
-def resolve_place_counters_then_self_ko(
+def resolve_place_counters_then_self_discard(
     stack,
     continuation: dict,
     choice,

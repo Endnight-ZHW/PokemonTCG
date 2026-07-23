@@ -35,7 +35,7 @@ EFFECTS = {'sv1-49': {'attacks': {'愤怒冷冻': {'effects': [{'effect_type': '
                                                              'ignore_resistance': True,
                                                              'ignore_defender_damage_effects': True}}]}}},
  'sv2-starm': {'abilities': {'神秘彗星': {'trigger': '',
-                                      'effects': [{'effect_type': 'place_counters_and_self_ko',
+                                      'effects': [{'effect_type': 'place_counters_and_self_discard',
                                                    'params': {'counters': 2, 'target': 'opponent_any'}}]}},
                'attacks': {'高速攻击': {'effects': []}}},
  'sv2-38': {'attacks': {'跳一下': {'effects': [{'effect_type': 'coin_flip',

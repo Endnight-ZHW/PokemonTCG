@@ -525,7 +525,7 @@
       "神秘彗星": {
         "effects": [
           {
-            "effect_type": "place_counters_and_self_ko",
+            "effect_type": "place_counters_and_self_discard",
             "params": {
               "counters": 2,
               "target": "opponent_any"

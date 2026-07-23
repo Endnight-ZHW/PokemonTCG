@@ -276,7 +276,7 @@ def effects_have_legal_target(
             saw_checked_effect = True
             if any(pokemon is not None and pokemon.energy_cards for _slot, pokemon in opponent.get_all_pokemon()):
                 return True
-        elif etype in {"any_pokemon_damage", "place_counters_and_self_ko"}:
+        elif etype in {"any_pokemon_damage", "place_counters_and_self_discard"}:
             saw_checked_effect = True
             if any(pokemon is not None for _slot, pokemon in opponent.get_all_pokemon()):
                 return True

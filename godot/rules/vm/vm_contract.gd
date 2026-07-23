@@ -65,7 +65,7 @@ const SUPPORTED_EFFECT_TYPES: Array[String] = [
 	"look_top_deck",
 	"look_top_attach_energy",
 	"mill_and_damage_per_energy",
-	"place_counters_and_self_ko",
+	"place_counters_and_self_discard",
 	"potion_heal",
 	"prevent_all",
 	"prevent_damage",

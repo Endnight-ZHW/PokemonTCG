@@ -117,7 +117,7 @@
       "look_top_attach_energy": "look_top_attach_energy",
       "look_top_deck": "look_top_deck",
       "mill_and_damage_per_energy": "mill_then_damage",
-      "place_counters_and_self_ko": "place_counters_then_self_ko",
+      "place_counters_and_self_discard": "place_counters_then_self_discard",
       "potion_heal": "choose_heal_damage",
       "prevent_all": "prevent_all",
       "prevent_damage": "prevent_damage",
@@ -211,7 +211,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_and_damage_per_energy",
-      "place_counters_and_self_ko",
+      "place_counters_and_self_discard",
       "potion_heal",
       "prevent_all",
       "prevent_damage",
@@ -283,7 +283,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_then_damage",
-      "place_counters_then_self_ko",
+      "place_counters_then_self_discard",
       "place_damage_counters",
       "prevent_all",
       "prevent_damage",
@@ -372,7 +372,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_and_damage_per_energy",
-      "place_counters_and_self_ko",
+      "place_counters_and_self_discard",
       "potion_heal",
       "prevent_all",
       "prevent_damage",
@@ -692,10 +692,10 @@
           "mill_and_damage_per_energy"
         ]
       },
-      "place_counters_then_self_ko": {
+      "place_counters_then_self_discard": {
         "classification": "effect_compiler",
         "effect_types": [
-          "place_counters_and_self_ko"
+          "place_counters_and_self_discard"
         ]
       },
       "place_damage_counters": {
@@ -1211,7 +1211,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_then_damage",
-      "place_counters_then_self_ko",
+      "place_counters_then_self_discard",
       "place_damage_counters",
       "prevent_all",
       "prevent_damage",
@@ -1309,7 +1309,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_and_damage_per_energy",
-      "place_counters_and_self_ko",
+      "place_counters_and_self_discard",
       "prevent_all",
       "reactive_thorns",
       "return_to_hand",
@@ -1326,7 +1326,7 @@
     "transaction_step_count": 32
   },
   "vm_descriptor_contract": {
-    "descriptor_digest": "00d92d0bb31f31f710cf0bc54aa4d8a01f3849732bd407bf3eef127be39c2a07",
+    "descriptor_digest": "73c834d4fc44cb495293aa0a3a54530cc8f8314a5cbbd2675f3524dc2d55afe0",
     "descriptor_ops": [
       "apply_attack_lock_basic",
       "apply_dazzling_beam",
@@ -1379,7 +1379,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_then_damage",
-      "place_counters_then_self_ko",
+      "place_counters_then_self_discard",
       "place_damage_counters",
       "prevent_all",
       "prevent_damage",
@@ -1462,7 +1462,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_then_damage",
-      "place_counters_then_self_ko",
+      "place_counters_then_self_discard",
       "place_damage_counters",
       "prevent_all",
       "prevent_damage",
@@ -1544,7 +1544,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_then_damage",
-      "place_counters_then_self_ko",
+      "place_counters_then_self_discard",
       "place_damage_counters",
       "prevent_all",
       "prevent_damage",
@@ -1626,7 +1626,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_then_damage",
-      "place_counters_then_self_ko",
+      "place_counters_then_self_discard",
       "place_damage_counters",
       "prevent_all",
       "prevent_damage",
@@ -1708,7 +1708,7 @@
       "look_top_attach_energy",
       "look_top_deck",
       "mill_then_damage",
-      "place_counters_then_self_ko",
+      "place_counters_then_self_discard",
       "place_damage_counters",
       "prevent_all",
       "prevent_damage",
