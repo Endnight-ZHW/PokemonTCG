@@ -15,7 +15,8 @@
     "snapshot": 3,
     "planner": 1,
     "vm_ir": 3,
-    "rng": 2
+    "rng": 2,
+    "ai_evaluation": 5
   },
   "rng": {
     "algorithm": "xorshift32",

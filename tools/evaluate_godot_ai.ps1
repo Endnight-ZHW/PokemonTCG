@@ -18,10 +18,11 @@ param(
     [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
     [string]$MatchupMode = '',
     [int]$CrossSeedBlocksPerMatchup = -1,
-    [ValidateSet('', 'stability', 'equivalence', 'nightly-equivalence', 'deep-practical', 'deep', 'auto')]
+    [ValidateSet('', 'smoke', 'quick', 'stability', 'nightly-stability', 'equivalence', 'nightly-equivalence', 'deep-practical', 'deep', 'auto')]
     [string]$ValidateGate = '',
-    [string]$Baseline = '',
     [string[]]$MergeInput = @(),
+    [string[]]$PerformanceProbeInput = @(),
+    [switch]$PerformanceProbeOnly,
     [switch]$ShardOnly,
     [switch]$SkipReport,
     [switch]$SkipValidate,
@@ -77,6 +78,9 @@ switch ($EvalPreset) {
         if (-not $PSBoundParameters.ContainsKey('MaxActions')) {
             $MaxActions = 80
         }
+        if (-not $PSBoundParameters.ContainsKey('ValidateGate')) {
+            $ValidateGate = 'smoke'
+        }
     }
     'Quick' {
         if (-not $PSBoundParameters.ContainsKey('SeedBlocksPerDeck')) {
@@ -84,6 +88,9 @@ switch ($EvalPreset) {
         }
         if (-not $PSBoundParameters.ContainsKey('MaxActions')) {
             $MaxActions = 800
+        }
+        if (-not $PSBoundParameters.ContainsKey('ValidateGate')) {
+            $ValidateGate = 'quick'
         }
     }
     'Nightly' {
@@ -103,13 +110,21 @@ switch ($EvalPreset) {
             $MaxActions = 1200
         }
     }
+    'Custom' {
+        if (-not $PSBoundParameters.ContainsKey('ValidateGate')) {
+            $ValidateGate = 'quick'
+        }
+    }
 }
 
-if ($SkipValidate -or $ShardOnly) {
+if ($SkipValidate -or $ShardOnly -or $PerformanceProbeOnly) {
     $ValidateGate = ''
 }
-if ($ShardOnly) {
+if ($ShardOnly -or $PerformanceProbeOnly) {
     $SkipReport = $true
+}
+if ($ShardOnly -and $PerformanceProbeOnly) {
+    throw 'ShardOnly and PerformanceProbeOnly cannot be combined.'
 }
 if ($Workers -lt 1) {
     throw 'Workers must be >= 1.'
@@ -136,7 +151,12 @@ if ($ShardCount -gt 0 -and ($ShardIndex -lt 0 -or $ShardIndex -ge $ShardCount)) 
 Set-PortableGodotEnvironment -ToolsRoot $toolsRoot
 
 $mergeInputPaths = @(Resolve-RepoPathList $MergeInput)
+$performanceProbeInputPaths = @(Resolve-RepoPathList $PerformanceProbeInput)
 $mergeOnly = $mergeInputPaths.Count -gt 0
+
+if ($mergeOnly -and $PerformanceProbeOnly) {
+    throw 'MergeInput and PerformanceProbeOnly cannot be combined.'
+}
 
 if (-not $mergeOnly -and -not (Test-Path -LiteralPath $godot)) {
     throw 'Godot 4.7 is not installed. Run tools/setup_godot_toolchain.ps1 first.'
@@ -147,19 +167,20 @@ if (-not (Test-Path -LiteralPath $python)) {
 
 $StrategyA = Resolve-RepoPathOrEmpty $StrategyA
 $StrategyB = Resolve-RepoPathOrEmpty $StrategyB
-$Baseline = Resolve-RepoPathOrEmpty $Baseline
 if (-not [string]::IsNullOrWhiteSpace($StrategyA) -and -not (Test-Path -LiteralPath $StrategyA)) {
     throw "StrategyA file not found: $StrategyA"
 }
 if (-not [string]::IsNullOrWhiteSpace($StrategyB) -and -not (Test-Path -LiteralPath $StrategyB)) {
     throw "StrategyB file not found: $StrategyB"
 }
-if (-not [string]::IsNullOrWhiteSpace($Baseline) -and -not (Test-Path -LiteralPath $Baseline)) {
-    throw "Baseline file not found: $Baseline"
-}
 foreach ($path in $mergeInputPaths) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "MergeInput file not found: $path"
+    }
+}
+foreach ($path in $performanceProbeInputPaths) {
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "PerformanceProbeInput file not found: $path"
     }
 }
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -172,7 +193,9 @@ elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $jsonPath = Join-Path $OutputDir 'results.json'
+$validationPath = Join-Path $OutputDir 'validation.json'
 $htmlPath = Join-Path $OutputDir 'report.html'
+$provenancePath = Join-Path $OutputDir 'provenance.json'
 
 function New-DynamicAIBudgetConfig {
     return [ordered]@{
@@ -241,6 +264,27 @@ elseif (
     $StrategyB = $presetStrategyPath
 }
 
+if (-not $mergeOnly) {
+    $provenanceArgs = @(
+        (Join-Path $repoRoot 'python\scripts\build_ai_evaluation_provenance.py'),
+        '--repo-root', $repoRoot,
+        '--godot-executable', $godot,
+        '--target-platform', 'windows',
+        '--output', $provenancePath
+    )
+    if (-not [string]::IsNullOrWhiteSpace($StrategyA)) {
+        $provenanceArgs += @('--strategy', $StrategyA)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($StrategyB)) {
+        $provenanceArgs += @('--strategy', $StrategyB)
+    }
+    $provenanceOutput = & $python @provenanceArgs 2>&1
+    $provenanceOutput | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $provenancePath)) {
+        throw 'Failed to create AI evaluation provenance.json.'
+    }
+}
+
 $runnerArgs = @(
     '--headless',
     '--path', (Join-Path $repoRoot 'godot'),
@@ -249,7 +293,10 @@ $runnerArgs = @(
     '--eval-preset', $EvalPreset,
     '--seed-blocks-per-deck', ([string][Math]::Max(1, $SeedBlocksPerDeck)),
     '--seed', ([string]$Seed),
-    '--max-actions', ([string][Math]::Max(1, $MaxActions))
+    '--max-actions', ([string][Math]::Max(1, $MaxActions)),
+    '--provenance', $provenancePath,
+    '--run-role', 'main',
+    '--warmup-blocks-per-deck', '0'
 )
 if (-not [string]::IsNullOrWhiteSpace($MatchupMode)) {
     $runnerArgs += @('--matchup-mode', $MatchupMode)
@@ -577,6 +624,7 @@ function Invoke-GodotShard {
 function Invoke-AIEvaluationMerge {
     param(
         [string[]]$InputPaths,
+        [string[]]$PerformanceInputPaths,
         [string]$OutputPath,
         [int]$WorkerCount
     )
@@ -586,10 +634,14 @@ function Invoke-AIEvaluationMerge {
     $mergeArgs = @(
         (Join-Path $repoRoot 'python\scripts\merge_ai_evaluation_shards.py'),
         '--output', $OutputPath,
+        '--error-output', (Join-Path $OutputDir 'merge_error.json'),
         '--workers', ([string][Math]::Max(1, $WorkerCount))
     )
     foreach ($path in $InputPaths) {
         $mergeArgs += @('--input', $path)
+    }
+    foreach ($path in $PerformanceInputPaths) {
+        $mergeArgs += @('--performance-input', $path)
     }
     $mergeOutput = & $python @mergeArgs 2>&1
     $mergeOutput | ForEach-Object { Write-Host $_ }
@@ -602,14 +654,54 @@ function Invoke-AIEvaluationMerge {
     }
 }
 
+function Invoke-PerformanceProbe {
+    $probeRoot = Join-Path $OutputDir 'performance_probe'
+    New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
+    if (-not $NoProgress) {
+        Reset-AIEvaluationProgress
+    }
+    $probeJson = Join-Path $probeRoot 'results.json'
+    $probeArgs = @($runnerArgs)
+    # Later duplicate arguments intentionally override the main-matrix values.
+    $probeArgs += @(
+        '--eval-preset', 'Custom',
+        '--seed-blocks-per-deck', '3',
+        '--cross-seed-blocks-per-matchup', '0',
+        '--seed', '17',
+        '--matchup-mode', 'Mirror',
+        '--run-role', 'performance_probe',
+        '--warmup-blocks-per-deck', '1',
+        '--profile'
+    )
+    Invoke-GodotShard `
+        -BaseArgs $probeArgs `
+        -ShardJsonPath $probeJson `
+        -SeedBlockStart 0 `
+        -SeedBlockCount 0 `
+        -TaskStart 0 `
+        -TaskCount 0 `
+        -TaskShardIndex 0 `
+        -TaskShardCount 1 `
+        -StdoutPath (Join-Path $probeRoot 'godot.stdout.log') `
+        -StderrPath (Join-Path $probeRoot 'godot.stderr.log') `
+        -SkipGolden $true `
+        -EnableProgress (-not $NoProgress)
+    return $probeJson
+}
+
+if ($PerformanceProbeOnly) {
+    $probeOnlyPath = Invoke-PerformanceProbe
+    Write-Host "AI evaluation performance probe: $probeOnlyPath"
+    Write-Host "AI evaluation provenance: $provenancePath"
+    return
+}
+
+$workerCount = [Math]::Max(1, $Workers)
+$shardJsonPaths = @()
 if ($mergeOnly) {
-    Invoke-AIEvaluationMerge `
-        -InputPaths $mergeInputPaths `
-        -OutputPath $jsonPath `
-        -WorkerCount ([Math]::Max($Workers, $mergeInputPaths.Count))
+    $shardJsonPaths = $mergeInputPaths
 }
 else {
-    $workerCount = [Math]::Max(1, $Workers)
     $outerShardCount = if ($ShardCount -gt 0) { $ShardCount } else { 1 }
     $taskShardCount = $outerShardCount * $workerCount
     $taskShardBaseIndex = if ($ShardCount -gt 0) { $ShardIndex * $workerCount } else { 0 }
@@ -617,28 +709,31 @@ else {
     if ($progressEnabled) {
         Reset-AIEvaluationProgress
     }
+    $shardsRoot = Join-Path $OutputDir 'shards'
+    New-Item -ItemType Directory -Force -Path $shardsRoot | Out-Null
 
     if ($workerCount -le 1) {
         $taskShardIndex = $taskShardBaseIndex
+        $shardDir = Join-Path $shardsRoot 'shard-000'
+        New-Item -ItemType Directory -Force -Path $shardDir | Out-Null
+        $shardJson = Join-Path $shardDir 'results.json'
         Invoke-GodotShard `
             -BaseArgs $runnerArgs `
-            -ShardJsonPath $jsonPath `
+            -ShardJsonPath $shardJson `
             -SeedBlockStart $SeedBlockStart `
             -SeedBlockCount $SeedBlockCount `
             -TaskStart $TaskStart `
             -TaskCount $TaskCount `
             -TaskShardIndex $taskShardIndex `
             -TaskShardCount $taskShardCount `
-            -StdoutPath (Join-Path $OutputDir 'godot.stdout.log') `
-            -StderrPath (Join-Path $OutputDir 'godot.stderr.log') `
+            -StdoutPath (Join-Path $shardDir 'stdout.log') `
+            -StderrPath (Join-Path $shardDir 'stderr.log') `
             -SkipGolden ($taskShardCount -gt 1 -and $taskShardIndex -ne 0) `
             -EnableProgress $progressEnabled
+        $shardJsonPaths += $shardJson
     }
     else {
-        $shardsRoot = Join-Path $OutputDir 'shards'
-        New-Item -ItemType Directory -Force -Path $shardsRoot | Out-Null
         $processes = @()
-        $shardJsonPaths = @()
         for ($workerIndex = 0; $workerIndex -lt $workerCount; $workerIndex++) {
             $taskShardIndex = $taskShardBaseIndex + $workerIndex
             $shardDir = Join-Path $shardsRoot ('shard-{0:D3}' -f $workerIndex)
@@ -689,18 +784,69 @@ else {
                 -ExitCode $item.Process.ExitCode `
                 -ReplayOutput (-not $progressEnabled)
         }
-        Invoke-AIEvaluationMerge `
-            -InputPaths $shardJsonPaths `
-            -OutputPath $jsonPath `
-            -WorkerCount $workerCount
+    }
+}
+
+if ($ShardOnly) {
+    foreach ($path in $shardJsonPaths) {
+        Write-Host "AI evaluation raw shard: $path"
+    }
+    Write-Host "AI evaluation provenance: $provenancePath"
+    Write-Host 'AI evaluation shard-only mode: aggregation, report and validation skipped.'
+    return
+}
+
+$effectiveProbePaths = @($performanceProbeInputPaths)
+if (-not $mergeOnly -and $EvalPreset -eq 'Nightly' -and $effectiveProbePaths.Count -eq 0) {
+    $effectiveProbePaths += Invoke-PerformanceProbe
+}
+
+Invoke-AIEvaluationMerge `
+    -InputPaths $shardJsonPaths `
+    -PerformanceInputPaths $effectiveProbePaths `
+    -OutputPath $jsonPath `
+    -WorkerCount ([Math]::Max($workerCount, $shardJsonPaths.Count))
+
+if ($mergeOnly) {
+    $mergedPayload = Get-Content -Raw -LiteralPath $jsonPath | ConvertFrom-Json
+    $mergedPayload.provenance | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $provenancePath -Encoding UTF8
+}
+
+$validateExit = 0
+if (-not [string]::IsNullOrWhiteSpace($ValidateGate)) {
+    $validateArgs = @(
+        (Join-Path $repoRoot 'python\scripts\validate_ai_evaluation.py'),
+        '--input', $jsonPath,
+        '--output', $validationPath,
+        '--gate', $ValidateGate
+    )
+    # A failed gate is expected evidence, not an orchestration failure: retain
+    # its exit code, render the full report, then fail the command at the end.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $validateOutput = & $python @validateArgs 2>&1
+        $validateExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    $validateOutput | ForEach-Object { Write-Host $_ }
+    if (-not (Test-Path -LiteralPath $validationPath)) {
+        throw 'AI evaluation validation did not write validation.json.'
     }
 }
 
 if (-not $SkipReport) {
-    $reportOutput = & $python `
-        (Join-Path $repoRoot 'python\scripts\render_ai_evaluation_report.py') `
-        --input $jsonPath `
-        --output $htmlPath 2>&1
+    $reportArgs = @(
+        (Join-Path $repoRoot 'python\scripts\render_ai_evaluation_report.py'),
+        '--input', $jsonPath,
+        '--output', $htmlPath
+    )
+    if (Test-Path -LiteralPath $validationPath) {
+        $reportArgs += @('--validation', $validationPath)
+    }
+    $reportOutput = & $python @reportArgs 2>&1
     $reportOutput | ForEach-Object { Write-Host $_ }
     $reportExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
     if ($reportExit -ne 0) {
@@ -711,27 +857,17 @@ if (-not $SkipReport) {
     }
 }
 
-if (-not [string]::IsNullOrWhiteSpace($ValidateGate)) {
-    $validateArgs = @(
-        (Join-Path $repoRoot 'python\scripts\validate_ai_evaluation.py'),
-        '--input', $jsonPath,
-        '--gate', $ValidateGate
-    )
-    if (-not [string]::IsNullOrWhiteSpace($Baseline)) {
-        $validateArgs += @('--baseline', $Baseline)
-    }
-    $validateOutput = & $python @validateArgs 2>&1
-    $validateOutput | ForEach-Object { Write-Host $_ }
-    $validateExit = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
-    if ($validateExit -ne 0) {
-        throw "AI evaluation gate failed with exit code $validateExit"
-    }
-}
-
 Write-Host "AI evaluation JSON: $jsonPath"
+Write-Host "AI evaluation provenance: $provenancePath"
+foreach ($path in $effectiveProbePaths) {
+    Write-Host "AI evaluation performance probe: $path"
+}
+if (Test-Path -LiteralPath $validationPath) {
+    Write-Host "AI evaluation validation: $validationPath"
+}
 if (-not $SkipReport) {
     Write-Host "AI evaluation report: $htmlPath"
 }
-if ($ShardOnly) {
-    Write-Host 'AI evaluation shard-only mode: report and validation skipped.'
+if ($validateExit -ne 0) {
+    throw "AI evaluation gate failed with exit code $validateExit; report and validation artifacts were preserved."
 }

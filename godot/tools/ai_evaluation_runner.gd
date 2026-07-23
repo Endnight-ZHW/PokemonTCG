@@ -12,7 +12,7 @@ const DEFAULT_DECK_KEYS := [
 	"steel",
 	"water",
 ]
-const SCHEMA_VERSION := 4
+const SCHEMA_VERSION := 5
 const DEFAULT_SEED_BLOCKS_PER_DECK := 50
 const DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP := 10
 const DEFAULT_SEED := 17
@@ -53,7 +53,7 @@ func _initialize() -> void:
 		return
 	print("AI_EVALUATION_OK ", JSON.stringify({
 		"output": output_path,
-		"games": int(payload.get("summary", {}).get("games", 0)),
+		"games": (payload.get("matches", []) as Array).size(),
 		"decks": payload.get("deck_keys", []),
 	}))
 	quit(0)
@@ -83,6 +83,9 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"distill_output": "",
 		"progress": false,
 		"progress_every_pairs": 1,
+		"provenance_path": "",
+		"run_role": "main",
+		"warmup_blocks_per_deck": 0,
 		"output": "",
 		"output_dir": "",
 	}
@@ -163,6 +166,15 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--progress-every-pairs":
 				config["progress_every_pairs"] = maxi(1, int(value))
 				index += 2
+			"--provenance":
+				config["provenance_path"] = value
+				index += 2
+			"--run-role":
+				config["run_role"] = value
+				index += 2
+			"--warmup-blocks-per-deck":
+				config["warmup_blocks_per_deck"] = maxi(0, int(value))
+				index += 2
 			"--output":
 				config["output"] = value
 				index += 2
@@ -223,12 +235,37 @@ func _matchup_mode(config: Dictionary) -> String:
 	return MATCHUP_MODE_MIRROR
 
 
+func _sample_phase(config: Dictionary, block_index: int) -> String:
+	if str(config.get("run_role", "main")) != "performance_probe":
+		return "main"
+	return (
+		"warmup"
+		if block_index < int(config.get("warmup_blocks_per_deck", 0))
+		else "measurement"
+	)
+
+
 func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	config["rules_options"] = _evaluation_rules_options()
 	config["decision_latency_sampling"] = "per_decision"
 	config["ai_turn_latency_sampling"] = "completed_turn_wall_clock"
 	config["platform"] = _evaluation_platform()
 	var selected_decks: Array = _selected_deck_keys(config)
+	var provenance_path := str(config.get("provenance_path", ""))
+	var provenance: Dictionary = {}
+	if provenance_path.is_empty():
+		push_error("Schema v5 evaluation requires --provenance.")
+		_had_error = true
+	else:
+		var loaded_provenance: Variant = _read_json(provenance_path)
+		if loaded_provenance is Dictionary:
+			provenance = loaded_provenance
+		if (
+			int(provenance.get("schema_version", 0)) != SCHEMA_VERSION
+			or str(provenance.get("fingerprint", "")).is_empty()
+		):
+			push_error("Evaluation provenance must be schema v5 with a fingerprint.")
+			_had_error = true
 	var strategy_a := _load_strategy(
 		str(config.get("strategy_a_path", "")),
 		"A",
@@ -240,11 +277,12 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		"Strategy B",
 	)
 	if _had_error:
-		var empty_summary := _summarize_matches([])
 		return {
 			"schema_version": SCHEMA_VERSION,
+			"artifact_kind": "ai_evaluation_shard",
 			"created_at_unix": int(Time.get_unix_time_from_system()),
 			"platform": _evaluation_platform(),
+			"provenance": provenance,
 			"self_check": false,
 			"eval_preset": str(config.get("eval_preset", "Custom")),
 			"mode": _matchup_mode(config).to_lower(),
@@ -258,17 +296,8 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 				"equal": false,
 				"rules_options": _evaluation_rules_options(),
 			},
-			"summary": empty_summary,
-			"per_deck": {},
-			"per_matchup": {},
-			"matrix": {},
-			"role_crossover": _summarize_role_crossover([]),
-			"paired": _summarize_pairs([]),
-			"seat": _summarize_seats([]),
-			"decision_diagnostics": _empty_diagnostics_summary(),
 			"golden_scenarios": _empty_golden_summary(),
 			"performance_profile": _finalize_performance_profile(_new_performance_profile(false)),
-			"terminal_reasons": {},
 			"matches": [],
 		}
 	var self_check := str(config.get("strategy_a_path", "")).is_empty() and str(config.get("strategy_b_path", "")).is_empty()
@@ -332,6 +361,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 				task_pairs_run += 1
 				var game_seed := _game_seed(base_seed, deck_index, block_index)
 				var forced_first := block_index % 2
+				var sample_phase := _sample_phase(config, block_index)
 				matches.append(_play_match(
 					catalog,
 					engine,
@@ -347,6 +377,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					forced_first,
 					max_actions,
 					"mirror",
+					sample_phase,
 					task_index,
 					task_shard_index,
 					task_shard_count,
@@ -370,6 +401,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					forced_first,
 					max_actions,
 					"mirror",
+					sample_phase,
 					task_index,
 					task_shard_index,
 					task_shard_count,
@@ -418,6 +450,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					var cross_seed := _cross_game_seed(
 						base_seed, deck_a_index, deck_b_index, block_index)
 					var forced_first := block_index % 2
+					var sample_phase := _sample_phase(config, block_index)
 					matches.append(_play_match(
 						catalog,
 						engine,
@@ -433,6 +466,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						forced_first,
 						max_actions,
 						"cross",
+						sample_phase,
 						task_index,
 						task_shard_index,
 						task_shard_count,
@@ -456,6 +490,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						forced_first,
 						max_actions,
 						"cross",
+						sample_phase,
 						task_index,
 						task_shard_index,
 						task_shard_count,
@@ -479,25 +514,18 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						_matchup_key(strategy_a_deck, strategy_b_deck),
 						progress_started_ms,
 					)
-	var summary := _summarize_matches(matches)
-	summary["point_rate_ci95"] = _bootstrap_point_rate_ci(matches, BOOTSTRAP_SEED)
-	var paired := _summarize_pairs(matches)
-	_apply_paired_summary(summary, paired)
-	var per_deck := _summarize_by_deck(matches)
-	_apply_per_deck_paired_summaries(per_deck, matches)
-	var per_matchup := _summarize_by_matchup(matches)
-	_apply_per_matchup_paired_summaries(per_matchup, matches)
-	var role_crossover := _summarize_role_crossover(matches)
 	var strategy_fingerprint := _strategy_fingerprint_summary(strategy_a, strategy_b, selected_decks)
-	var diagnostics := _summarize_decision_diagnostics(matches)
 	var golden_scenarios := _empty_golden_summary()
 	if not bool(config.get("skip_golden", false)):
 		golden_scenarios = _run_golden_scenarios(
 			catalog, engine, NativeChallengeAI.new())
 	return {
 		"schema_version": SCHEMA_VERSION,
+		"artifact_kind": "ai_evaluation_shard",
+		"authoritative_aggregation": false,
 		"created_at_unix": int(Time.get_unix_time_from_system()),
 		"platform": _evaluation_platform(),
+		"provenance": provenance,
 		"self_check": self_check,
 		"eval_preset": str(config.get("eval_preset", "Custom")),
 		"mode": matchup_mode.to_lower(),
@@ -526,6 +554,8 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"decision_latency_sampling": "per_decision",
 			"ai_turn_latency_sampling": "completed_turn_wall_clock",
 			"platform": _evaluation_platform(),
+			"run_role": str(config.get("run_role", "main")),
+			"warmup_blocks_per_deck": int(config.get("warmup_blocks_per_deck", 0)),
 			"progress": progress_enabled,
 			"progress_every_pairs": progress_every_pairs,
 		},
@@ -534,18 +564,8 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"B": _public_strategy(strategy_b),
 		},
 		"strategy_fingerprint": strategy_fingerprint,
-		"summary": summary,
-		"per_deck": per_deck,
-		"per_matchup": per_matchup,
-		"matrix": _summarize_matrix(matches),
-		"role_crossover": role_crossover,
-		"paired": paired,
-		"seat": _summarize_seats(matches),
-		"decision_diagnostics": diagnostics,
 		"golden_scenarios": golden_scenarios,
 		"performance_profile": _finalize_performance_profile(performance_profile),
-		"performance_by_strategy": _summarize_performance_by_strategy(matches),
-		"terminal_reasons": _count_by(matches, "terminal_reason"),
 		"matches": matches,
 	}
 
@@ -557,10 +577,15 @@ func _selected_deck_keys(config: Dictionary) -> Array:
 	var selected: Array[String] = []
 	for value in requested:
 		var deck_key := str(value)
-		if deck_key in DEFAULT_DECK_KEYS and deck_key not in selected:
-			selected.append(deck_key)
-	if selected.is_empty():
-		return DEFAULT_DECK_KEYS.duplicate()
+		if deck_key not in DEFAULT_DECK_KEYS:
+			push_error("Unknown evaluation deck: %s" % deck_key)
+			_had_error = true
+			continue
+		if deck_key in selected:
+			push_error("Duplicate evaluation deck: %s" % deck_key)
+			_had_error = true
+			continue
+		selected.append(deck_key)
 	selected.sort()
 	return selected
 
@@ -991,6 +1016,7 @@ func _play_match(
 	forced_first: int,
 	max_actions: int,
 	matchup_kind: String,
+	sample_phase: String,
 	task_index: int,
 	task_shard_index: int,
 	task_shard_count: int,
@@ -1031,6 +1057,7 @@ func _play_match(
 			strategy_a_player,
 			forced_first,
 			matchup_kind,
+			sample_phase,
 			task_index,
 			task_shard_index,
 			task_shard_count,
@@ -1069,6 +1096,10 @@ func _play_match(
 		"A": _empty_diagnostic_counts(),
 		"B": _empty_diagnostic_counts(),
 	}
+	var behavior_by_strategy := {
+		"A": _empty_behavior_counts(),
+		"B": _empty_behavior_counts(),
+	}
 	var time_capped_decisions := 0
 	var dynamic_budget_stop_reasons := {}
 	var deep_fallbacks := 0
@@ -1084,6 +1115,9 @@ func _play_match(
 		if pending:
 			var choice_actor := _choice_actor(state, pending)
 			var choice_strategy_label := "A" if choice_actor == strategy_a_player else "B"
+			var choice_behavior: Dictionary = behavior_by_strategy[choice_strategy_label]
+			_increment_counter(
+				choice_behavior["choice_request_counts"], str(pending.request_type))
 			_ensure_ai_turn_wall_started(
 				ai_turn_tracker, ai_turn_ms_samples, ai_turn_ms_samples_by_strategy,
 				state, choice_strategy_label)
@@ -1168,6 +1202,8 @@ func _play_match(
 			terminal_reason = "no_legal_action"
 			terminal_message = "No legal action for actor=%d phase=%s" % [actor, state.phase]
 			break
+		var actor_behavior: Dictionary = behavior_by_strategy[actor_strategy_label]
+		_record_legal_action_opportunities(actor_behavior, legal)
 		var actor_strategy := strategy_a if actor == strategy_a_player else strategy_b
 		var actor_worker: Variant = worker_a if actor == strategy_a_player else worker_b
 		var actor_deck_key := str(player_decks[actor])
@@ -1265,6 +1301,8 @@ func _play_match(
 			terminal_reason = "illegal_action"
 			terminal_message = step.message
 			break
+		var selected_counts: Dictionary = actor_behavior["selected_action_counts"]
+		_increment_counter(selected_counts, action.action)
 		_finalize_ai_turn_if_completed(
 			ai_turn_tracker, ai_turn_ms_samples, ai_turn_ms_samples_by_strategy, state)
 
@@ -1288,6 +1326,7 @@ func _play_match(
 		"player_decks": player_decks,
 		"matchup_key": matchup_key,
 		"matchup_kind": matchup_kind,
+		"sample_phase": sample_phase,
 		"task_index": task_index,
 		"task_shard_index": task_shard_index,
 		"task_shard_count": task_shard_count,
@@ -1321,6 +1360,7 @@ func _play_match(
 		"elapsed_ms": Time.get_ticks_msec() - started_ms,
 		"decision_diagnostics": decision_diagnostics,
 		"decision_diagnostics_by_strategy": decision_diagnostics_by_strategy,
+		"behavior_by_strategy": behavior_by_strategy,
 		"invalid_actions": invalid_actions,
 		"choice_failures": choice_failures,
 		"rule_exceptions": rule_exceptions,
@@ -1329,6 +1369,34 @@ func _play_match(
 		"deep_fallbacks": deep_fallbacks,
 		"max_actions_exhausted": terminal_reason == "max_actions",
 	}
+
+
+func _empty_behavior_counts() -> Dictionary:
+	return {
+		"selected_action_counts": {},
+		"legal_action_opportunity_counts": {},
+		"choice_request_counts": {},
+	}
+
+
+func _increment_counter(counter: Dictionary, key: String) -> void:
+	if key.is_empty():
+		key = "unknown"
+	counter[key] = int(counter.get(key, 0)) + 1
+
+
+func _record_legal_action_opportunities(
+	behavior: Dictionary,
+	legal: Array[GameAction],
+) -> void:
+	# A category is one opportunity per decision, even if multiple concrete
+	# actions of that category are legal at the same time.
+	var categories := {}
+	for action in legal:
+		categories[str(action.action)] = true
+	var opportunities: Dictionary = behavior["legal_action_opportunity_counts"]
+	for category in categories:
+		_increment_counter(opportunities, str(category))
 
 
 func _record_ai_turn_decision(
@@ -1425,6 +1493,7 @@ func _failed_match_row(
 	strategy_a_player: int,
 	forced_first: int,
 	matchup_kind: String,
+	sample_phase: String,
 	task_index: int,
 	task_shard_index: int,
 	task_shard_count: int,
@@ -1443,6 +1512,7 @@ func _failed_match_row(
 		"player_decks": player_decks,
 		"matchup_key": matchup_key,
 		"matchup_kind": matchup_kind,
+		"sample_phase": sample_phase,
 		"task_index": task_index,
 		"task_shard_index": task_shard_index,
 		"task_shard_count": task_shard_count,
@@ -1476,6 +1546,10 @@ func _failed_match_row(
 		"decision_diagnostics_by_strategy": {
 			"A": _empty_diagnostic_counts(),
 			"B": _empty_diagnostic_counts(),
+		},
+		"behavior_by_strategy": {
+			"A": _empty_behavior_counts(),
+			"B": _empty_behavior_counts(),
 		},
 		"invalid_actions": 0,
 		"choice_failures": 0,

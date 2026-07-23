@@ -69,6 +69,7 @@ class ReleaseManifestTests(unittest.TestCase):
             "planner": 1,
             "vm_ir": 3,
             "rng": 2,
+            "ai_evaluation": 5,
         }
         self.assertEqual(self.manifest["schemas"], expected_schemas)
 

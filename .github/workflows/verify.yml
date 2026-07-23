@@ -38,7 +38,7 @@ jobs:
 
       - name: Run Challenge AI evaluator smoke
         shell: pwsh
-        run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Smoke -SkipReport -SkipValidate -NoProgress -OutputDir .test_tmp\ci-ai-smoke
+        run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Smoke -NoProgress -OutputDir .test_tmp\ci-ai-smoke
 
   legacy-model-contract:
     runs-on: windows-latest
@@ -116,7 +116,7 @@ jobs:
         shell: pwsh
         run: .\tools\setup_godot_toolchain.ps1
 
-      - name: Run 2,800-game traditional AI stability matrix
+      - name: Run 2,800-game matrix plus 60-game single-process probe
         shell: pwsh
         run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -Workers 2 -Profile -ProgressEveryPairs 25 -OutputDir .test_tmp\ai-eval-nightly
 

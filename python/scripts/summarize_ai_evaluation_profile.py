@@ -1,4 +1,4 @@
-"""Summarize schema-v4 AI evaluation performance profile data."""
+"""Summarize authoritative schema-v5 AI evaluation performance profile data."""
 from __future__ import annotations
 
 import argparse
@@ -50,6 +50,13 @@ def _hint_for_segment(segment: str) -> str:
 
 
 def summarize_profile(payload: dict[str, Any], *, top: int = 12) -> dict[str, Any]:
+    if int(payload.get("schema_version") or 0) != 5:
+        return {
+            "enabled": False,
+            "error": "schema_v5_required",
+            "top_segments": [],
+            "counts": {},
+        }
     profile = payload.get("performance_profile") or {}
     if not profile.get("enabled"):
         return {
@@ -69,7 +76,7 @@ def summarize_profile(payload: dict[str, Any], *, top: int = 12) -> dict[str, An
     ordered = sorted(segments.items(), key=lambda item: (-item[1], item[0]))[: max(1, top)]
     return {
         "enabled": True,
-        "games": _int((payload.get("summary") or {}).get("games")),
+        "games": _int((payload.get("observed") or {}).get("games")),
         "decisions": counts.get("decisions", 0),
         "simulations": counts.get("ai_simulations", 0),
         "top_segments": [

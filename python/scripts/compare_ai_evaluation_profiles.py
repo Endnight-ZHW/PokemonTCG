@@ -1,4 +1,4 @@
-"""Compare two schema-v4 AI evaluation results for equivalence and profile deltas."""
+"""Compare two authoritative schema-v5 evaluation profiles."""
 from __future__ import annotations
 
 import argparse
@@ -34,6 +34,8 @@ def _ratio(candidate: float, baseline: float) -> float | None:
 
 
 def compare_profiles(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    if int(baseline.get("schema_version") or 0) != 5 or int(candidate.get("schema_version") or 0) != 5:
+        raise ValueError("schema v5 results are required")
     baseline_segments = (baseline.get("performance_profile") or {}).get("segments_ms") or {}
     candidate_segments = (candidate.get("performance_profile") or {}).get("segments_ms") or {}
     segment_keys = sorted(set(baseline_segments) | set(candidate_segments))
@@ -51,8 +53,8 @@ def compare_profiles(baseline: dict[str, Any], candidate: dict[str, Any]) -> dic
     candidate_elapsed = _float(candidate.get("elapsed_ms"))
     return {
         "same_match_results": _match_signature(baseline) == _match_signature(candidate),
-        "baseline_games": int((baseline.get("summary") or {}).get("games") or 0),
-        "candidate_games": int((candidate.get("summary") or {}).get("games") or 0),
+        "baseline_games": int((baseline.get("observed") or {}).get("games") or 0),
+        "candidate_games": int((candidate.get("observed") or {}).get("games") or 0),
         "elapsed_ms": {
             "baseline": round(baseline_elapsed, 3),
             "candidate": round(candidate_elapsed, 3),
