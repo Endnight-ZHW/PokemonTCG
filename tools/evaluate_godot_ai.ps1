@@ -18,7 +18,7 @@ param(
     [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
     [string]$MatchupMode = '',
     [int]$CrossSeedBlocksPerMatchup = -1,
-    [ValidateSet('', 'smoke', 'quick', 'stability', 'nightly-stability', 'equivalence', 'nightly-equivalence', 'deep-practical', 'deep', 'auto')]
+    [ValidateSet('', 'smoke', 'quick', 'stability', 'nightly-stability', 'equivalence', 'nightly-equivalence', 'superiority', 'nightly-superiority', 'deep-practical', 'deep', 'auto')]
     [string]$ValidateGate = '',
     [string[]]$MergeInput = @(),
     [Alias('PerformanceProbeInput')]
@@ -29,7 +29,6 @@ param(
     [switch]$SkipReport,
     [switch]$SkipValidate,
     [switch]$Profile,
-    [switch]$DynamicAIBudget,
     [int]$ProgressEveryPairs = 1,
     [switch]$NoProgress,
     [switch]$DisableAICache,
@@ -199,42 +198,7 @@ $validationPath = Join-Path $OutputDir 'validation.json'
 $htmlPath = Join-Path $OutputDir 'report.html'
 $provenancePath = Join-Path $OutputDir 'provenance.json'
 
-function New-DynamicAIBudgetConfig {
-    return [ordered]@{
-        enabled = $true
-        min_simulations = 128
-        ambiguous_min_simulations = 512
-        check_interval = 32
-        stable_checks = 3
-        ambiguous_stable_checks = 5
-        min_mean_gap = 0.10
-        ambiguous_mean_gap = 0.14
-        min_best_visits = 32
-        min_best_visit_share = 0.35
-        clear_prior_gap = 0.25
-        max_root_actions_for_clear = 10
-        single_action_simulations = 0
-    }
-}
-
 if (
-    -not $mergeOnly -and
-    [string]::IsNullOrWhiteSpace($StrategyA) -and
-    [string]::IsNullOrWhiteSpace($StrategyB) -and
-    $DynamicAIBudget
-) {
-    $presetStrategyPath = Join-Path $OutputDir 'preset_strategy.json'
-    $presetStrategy = [ordered]@{
-        id = 'dynamic-budget-strongest'
-        label = 'Dynamic Budget Strongest'
-        preset = 'strongest'
-        dynamic_budget = New-DynamicAIBudgetConfig
-    }
-    $presetStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $presetStrategyPath -Encoding UTF8
-    $StrategyA = $presetStrategyPath
-    $StrategyB = $presetStrategyPath
-}
-elseif (
     -not $mergeOnly -and
     [string]::IsNullOrWhiteSpace($StrategyA) -and
     [string]::IsNullOrWhiteSpace($StrategyB) -and
@@ -245,9 +209,8 @@ elseif (
         $presetStrategy = [ordered]@{
             id = 'smoke-preset'
             label = 'Smoke Preset'
-            simulation_budget = 1
-            seconds = 0.01
-            max_depth = 1
+            engine = 'turn_beam_v2'
+            internal_evaluation_smoke = $true
             deterministic = $true
         }
     }
@@ -255,15 +218,40 @@ elseif (
         $presetStrategy = [ordered]@{
             id = 'quick-preset'
             label = 'Quick Preset'
-            simulation_budget = 64
-            seconds = 0.05
-            max_depth = 8
+            engine = 'turn_beam_v2'
+            internal_evaluation_smoke = $true
             deterministic = $true
         }
     }
     $presetStrategy | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $presetStrategyPath -Encoding UTF8
     $StrategyA = $presetStrategyPath
     $StrategyB = $presetStrategyPath
+}
+elseif (
+    -not $mergeOnly -and
+    [string]::IsNullOrWhiteSpace($StrategyA) -and
+    [string]::IsNullOrWhiteSpace($StrategyB) -and
+    $EvalPreset -eq 'Nightly'
+) {
+    $candidatePath = Join-Path $OutputDir 'candidate_turn_beam_v2.json'
+    $baselinePath = Join-Path $OutputDir 'baseline_turn_beam_v1.json'
+    [ordered]@{
+        id = 'turn-beam-v2-candidate'
+        label = 'Fixed Depth 8 Candidate'
+        engine = 'turn_beam_v2'
+        deterministic = $true
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $candidatePath -Encoding UTF8
+    [ordered]@{
+        id = 'turn-beam-v1-baseline'
+        label = 'Frozen Time-Budget Baseline'
+        engine = 'turn_beam_v1'
+        simulation_budget = 192
+        seconds = 0.85
+        max_depth = 6
+        deterministic = $true
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $baselinePath -Encoding UTF8
+    $StrategyA = $candidatePath
+    $StrategyB = $baselinePath
 }
 
 if (-not $mergeOnly) {

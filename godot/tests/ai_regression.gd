@@ -118,14 +118,13 @@ func _budget_contract_failures(
 	main_actions.append(GameAction.new("END_TURN", {}, true, 0))
 	main_actions.append(GameAction.new("DECLARE_ATTACK", {"attack_idx": 0}, true, 0))
 	var main_budget := NativeChallengeAI.gameplay_action_budget(main_state, main_actions)
-	if int(main_budget.get("simulation_budget", -1)) != NativeChallengeAI.GAMEPLAY_DEFAULT_SIMULATIONS:
-		errors.append("gameplay main budget must use responsive simulations")
-	if not is_equal_approx(float(main_budget.get("seconds", -1.0)), NativeChallengeAI.GAMEPLAY_DEFAULT_SECONDS):
-		errors.append("gameplay main budget must use responsive seconds")
+	if str(main_budget.get("engine", "")) != NativeChallengeAI.TRADITIONAL_ENGINE_ID:
+		errors.append("gameplay must use turn_beam_v2")
 	if int(main_budget.get("max_depth", -1)) != NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH:
-		errors.append("gameplay main budget must use responsive depth")
-	if not bool(Dictionary(main_budget.get("dynamic_budget", {})).get("enabled", false)):
-		errors.append("gameplay main budget must enable dynamic budget")
+		errors.append("gameplay must use fixed depth eight")
+	for retired_key in ["simulation_budget", "seconds", "dynamic_budget", "time_budget_ms"]:
+		if main_budget.has(retired_key):
+			errors.append("gameplay profile must not expose %s" % retired_key)
 
 	var setup_state := GameState.new()
 	setup_state.phase = "SETUP"
@@ -133,10 +132,8 @@ func _budget_contract_failures(
 	setup_actions.append(GameAction.new("PLAY_BASIC", {}, false, 0))
 	setup_actions.append(GameAction.new("SETUP_DONE", {}, true, 0))
 	var setup_budget := NativeChallengeAI.gameplay_action_budget(setup_state, setup_actions)
-	if int(setup_budget.get("simulation_budget", -1)) != NativeChallengeAI.GAMEPLAY_LOW_SIMULATIONS:
-		errors.append("setup gameplay budget must use low simulations")
-	if int(setup_budget.get("max_depth", -1)) != NativeChallengeAI.GAMEPLAY_LOW_DEPTH:
-		errors.append("setup gameplay budget must use low depth")
+	if setup_budget != main_budget:
+		errors.append("mandatory phases must not silently select a weaker profile")
 
 	var state := GameState.new()
 	state.public_deck_keys = ["fire", "water"]
@@ -185,7 +182,6 @@ func _budget_contract_failures(
 	single_actions.append(legal[0])
 	var single_rows: Array = []
 	single_rows.append(legal[0].to_dict())
-	var single_budget := NativeChallengeAI.gameplay_action_budget(state, single_actions)
 	var single_decision := worker.decide({
 		"kind": "action",
 		"state": state.snapshot(),
@@ -195,10 +191,7 @@ func _budget_contract_failures(
 		"mode": "challenge",
 		"deck_key": str(state.public_deck_keys[actor]),
 		"seed": 424242,
-		"simulation_budget": int(single_budget["simulation_budget"]),
-		"seconds": float(single_budget["seconds"]),
-		"max_depth": int(single_budget["max_depth"]),
-		"dynamic_budget": single_budget["dynamic_budget"],
+		"internal_evaluation_smoke": true,
 		"deterministic": true,
 		"actions": single_rows,
 	}, func() -> bool: return false)
@@ -206,10 +199,10 @@ func _budget_contract_failures(
 		errors.append("single-action budget decision failed: %s" % single_decision.get("error", "unknown"))
 	elif int(single_decision.get("simulations", -1)) != 0:
 		errors.append("single-action budget decision must return zero simulations")
-	elif str(single_decision.get("budget_stop_reason", "")) != "single_action":
-		errors.append("single-action budget decision must report single_action stop")
-	elif not bool(single_decision.get("dynamic_budget_enabled", false)):
-		errors.append("single-action budget decision must enable dynamic budget")
+	elif str(single_decision.get("completion_reason", "")) != "forced_tactic":
+		errors.append("single-action decision must report forced_tactic completion")
+	elif str(single_decision.get("planner", "")) != "turn_beam_v2":
+		errors.append("single-action decision must report turn_beam_v2")
 	else:
 		var applied_state := state.clone_state()
 		var selected := GameAction.from_dict(single_decision["action"])
@@ -243,10 +236,7 @@ func _budget_contract_failures(
 		"mode": "challenge",
 		"deck_key": str(state.public_deck_keys[actor]),
 		"seed": 434343,
-		"simulation_budget": NativeChallengeAI.GAMEPLAY_DEFAULT_SIMULATIONS,
-		"seconds": NativeChallengeAI.GAMEPLAY_DEFAULT_SECONDS,
-		"max_depth": NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH,
-		"dynamic_budget": NativeChallengeAI.gameplay_dynamic_budget(),
+		"internal_evaluation_smoke": true,
 		"deterministic": true,
 	}, func() -> bool: return false)
 	if not bool(choice_result.get("success", false)):
@@ -497,8 +487,7 @@ func _play_game(
 					"mode": mode,
 					"deck_key": deck_key,
 					"seed": game_seed + actions_taken * 31,
-					"simulation_budget": 64,
-					"max_depth": 1,
+					"internal_evaluation_smoke": true,
 					"deterministic": true,
 				}, func() -> bool: return false, backend)
 				if not choice_result.get("success", false):
@@ -550,8 +539,7 @@ func _play_game(
 				"mode": mode,
 				"deck_key": deck_key,
 				"seed": game_seed + actions_taken * 7919,
-				"simulation_budget": 64,
-				"max_depth": 1,
+				"internal_evaluation_smoke": true,
 				"deterministic": true,
 				"actions": rows,
 			}, func() -> bool: return false, backend)

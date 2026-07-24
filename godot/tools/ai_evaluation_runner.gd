@@ -12,7 +12,7 @@ const DEFAULT_DECK_KEYS := [
 	"steel",
 	"water",
 ]
-const SCHEMA_VERSION := 5
+const SCHEMA_VERSION := 6
 const DEFAULT_SEED_BLOCKS_PER_DECK := 50
 const DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP := 10
 const DEFAULT_SEED := 17
@@ -23,7 +23,10 @@ const MATCHUP_MODE_MIRROR := "Mirror"
 const MATCHUP_MODE_BALANCED := "Balanced"
 const MATCHUP_MODE_MATRIX := "Matrix"
 const EVALUATION_APPLY_TYPE_MATCHUPS := false
-const ENGINE_TURN_BEAM := "turn_beam_v1"
+const ENGINE_TURN_BEAM_V1 := "turn_beam_v1"
+const ENGINE_TURN_BEAM_V2 := "turn_beam_v2"
+const DEFAULT_ENGINE := ENGINE_TURN_BEAM_V2
+const SUPPORTED_ENGINES := [ENGINE_TURN_BEAM_V1, ENGINE_TURN_BEAM_V2]
 
 var _had_error := false
 var _deep_runtime_cache: Dictionary = {}
@@ -264,7 +267,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			int(provenance.get("schema_version", 0)) != SCHEMA_VERSION
 			or str(provenance.get("fingerprint", "")).is_empty()
 		):
-			push_error("Evaluation provenance must be schema v5 with a fingerprint.")
+			push_error("Evaluation provenance must be schema v6 with a fingerprint.")
 			_had_error = true
 	var strategy_a := _load_strategy(
 		str(config.get("strategy_a_path", "")),
@@ -701,12 +704,12 @@ func _load_strategy(path: String, fallback_id: String, fallback_label: String) -
 		if per_deck_overrides[deck_key] is Dictionary:
 			var deck_override: Dictionary = per_deck_overrides[deck_key]
 			deck_override.erase("heuristic_variant")
-	var engine_id := str(payload.get("engine", ENGINE_TURN_BEAM))
-	if engine_id != ENGINE_TURN_BEAM:
+	var engine_id := str(payload.get("engine", DEFAULT_ENGINE))
+	if engine_id not in SUPPORTED_ENGINES:
 		push_error(
-			"Unsupported AI evaluation engine '%s'; only '%s' is available." % [
+			"Unsupported AI evaluation engine '%s'; supported engines are %s." % [
 				engine_id,
-				ENGINE_TURN_BEAM,
+				", ".join(SUPPORTED_ENGINES),
 			]
 		)
 		_had_error = true
@@ -716,6 +719,8 @@ func _load_strategy(path: String, fallback_id: String, fallback_label: String) -
 		"path": path,
 		"engine": engine_id,
 		"production_runtime": bool(payload.get("production_runtime", false)),
+		"internal_evaluation_smoke": bool(payload.get(
+			"internal_evaluation_smoke", false)),
 		"mode": str(payload.get("mode", "challenge")),
 		"preset": str(payload.get("preset", NativeChallengeAI.STRONGEST_DIFFICULTY)),
 		"simulation_budget": param_payload.get("simulation_budget", payload.get("simulation_budget", null)),
@@ -737,9 +742,11 @@ func _public_strategy(strategy: Dictionary) -> Dictionary:
 		"id": strategy.get("id", ""),
 		"label": strategy.get("label", ""),
 		"path": strategy.get("path", ""),
-		"engine": strategy.get("engine", ENGINE_TURN_BEAM),
+		"engine": strategy.get("engine", DEFAULT_ENGINE),
 		"engine_metadata": _strategy_engine_metadata(strategy),
 		"production_runtime": bool(strategy.get("production_runtime", false)),
+		"internal_evaluation_smoke": bool(strategy.get(
+			"internal_evaluation_smoke", false)),
 		"mode": strategy.get("mode", "challenge"),
 		"preset": strategy.get("preset", NativeChallengeAI.STRONGEST_DIFFICULTY),
 		"simulation_budget": strategy.get("simulation_budget", null),
@@ -753,7 +760,7 @@ func _public_strategy(strategy: Dictionary) -> Dictionary:
 
 
 func _evaluation_worker(strategy: Dictionary) -> Variant:
-	if str(strategy.get("engine", "")) != ENGINE_TURN_BEAM:
+	if str(strategy.get("engine", "")) not in SUPPORTED_ENGINES:
 		push_error("Refusing to construct an unsupported AI evaluation worker.")
 		_had_error = true
 		return null
@@ -768,10 +775,23 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 	var preset := NativeChallengeAI.strongest_preset()
 	if NativeChallengeAI.DIFFICULTIES.has(preset_name):
 		preset = Dictionary(NativeChallengeAI.DIFFICULTIES[preset_name]).duplicate(true)
+	var engine_id := str(strategy.get("engine", DEFAULT_ENGINE))
 	var params := {
-		"simulation_budget": int(preset.get("simulations", 1)),
-		"seconds": float(preset.get("seconds", 0.0)),
-		"max_depth": int(preset.get("depth", 1)),
+		"simulation_budget": (
+			int(preset.get("simulations", 192))
+			if engine_id == ENGINE_TURN_BEAM_V1
+			else 0
+		),
+		"seconds": (
+			float(preset.get("seconds", 0.85))
+			if engine_id == ENGINE_TURN_BEAM_V1
+			else 0.0
+		),
+		"max_depth": (
+			int(preset.get("depth", 6))
+			if engine_id == ENGINE_TURN_BEAM_V1
+			else NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH
+		),
 		"deterministic": false,
 		"dynamic_budget": {},
 	}
@@ -783,9 +803,15 @@ func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
 	var per_deck := Dictionary(strategy.get("per_deck_overrides", {}))
 	if per_deck.get(deck_key) is Dictionary:
 		_apply_strategy_overrides(params, Dictionary(per_deck[deck_key]))
-	params["simulation_budget"] = maxi(1, int(params["simulation_budget"]))
-	params["seconds"] = max(0.0, float(params["seconds"]))
-	params["max_depth"] = maxi(1, int(params["max_depth"]))
+	if engine_id == ENGINE_TURN_BEAM_V1:
+		params["simulation_budget"] = maxi(1, int(params["simulation_budget"]))
+		params["seconds"] = max(0.0, float(params["seconds"]))
+		params["max_depth"] = clampi(int(params["max_depth"]), 1, 6)
+	else:
+		params["simulation_budget"] = 0
+		params["seconds"] = 0.0
+		params["max_depth"] = NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH
+		params["dynamic_budget"] = {}
 	params["deterministic"] = bool(params["deterministic"])
 	params["dynamic_budget"] = _copy_dynamic_budget(params.get("dynamic_budget", {}))
 	params_cache[deck_key] = params.duplicate(true)
@@ -931,9 +957,15 @@ func _distill_action_row(
 		"target_index": target_index,
 		"elapsed_ms": float(decision.get("elapsed_ms", 0.0)),
 		"simulations": int(decision.get("simulations", 0)),
-		# Public planner telemetry makes a replay actionable without exposing either
-		# player's hidden cards.  In particular it distinguishes a deliberate
-		# whole-turn budget stop from a tactical END_TURN selection.
+		"engine_id": str(decision.get("engine_id", DEFAULT_ENGINE)),
+		"requested_depth": int(decision.get("requested_depth", 0)),
+		"completed_depth": int(decision.get("completed_depth", 0)),
+		"max_path_depth": int(decision.get("max_path_depth", 0)),
+		"reply_completed_depth": int(decision.get("reply_completed_depth", 0)),
+		"layers_completed": int(decision.get("layers_completed", 0)),
+		"completion_reason": str(decision.get("completion_reason", "")),
+		"trajectory_hash": str(decision.get("trajectory_hash", "")),
+		# Legacy fields are populated only by the evaluator-only v1 baseline.
 		"budget_stop_reason": str(decision.get("budget_stop_reason", "")),
 		"forced_tactic": str(decision.get("forced_tactic", "")),
 		"turn_budget_tier": str(decision.get("turn_budget_tier", "")),
@@ -1239,14 +1271,26 @@ func _play_match(
 			strategy_depth_samples.append({
 				"requested": int(decision.get("search_depth_requested", 0)),
 				"reached": int(decision.get("search_depth_reached", -1)),
+				"completed": int(decision.get("search_depth_completed", 0)),
+				"max_path_depth": int(decision.get("max_path_depth", -1)),
+				"reply_completed": int(decision.get("reply_completed_depth", 0)),
+				"layers_completed": int(decision.get("layers_completed", 0)),
+				"completion_reason": str(decision.get(
+					"completion_reason", "unknown")),
 				"stop_reason": str(decision.get("search_depth_stop_reason", "unknown")),
-				"turn_budget_tier": str(decision.get("turn_budget_tier", "untracked")),
+				"engine_id": str(decision.get(
+					"engine_id", actor_strategy.get("engine", DEFAULT_ENGINE))),
 				"nodes_expanded": int(decision.get("nodes_expanded", -1)),
+				"trajectory_hash": str(decision.get("trajectory_hash", "")),
 			})
 		_perf_count(performance_profile, "decisions")
 		var requested_budget := int(_strategy_params(actor_strategy, actor_deck_key).get("simulation_budget", 1))
 		var budget_stop_reason := str(decision.get("budget_stop_reason", ""))
-		if budget_stop_reason.is_empty() and int(decision.get("simulations", requested_budget)) < requested_budget:
+		if (
+			str(actor_strategy.get("engine", DEFAULT_ENGINE)) == ENGINE_TURN_BEAM_V1
+			and budget_stop_reason.is_empty()
+			and int(decision.get("simulations", requested_budget)) < requested_budget
+		):
 			budget_stop_reason = "deadline"
 		if not budget_stop_reason.is_empty():
 			dynamic_budget_stop_reasons[budget_stop_reason] = (
@@ -1597,6 +1641,7 @@ func _decide_action(
 	var request_id := "ai:%d:%d" % [state.revision, request_sequence]
 	var request := {
 		"kind": "action",
+		"engine": str(strategy.get("engine", DEFAULT_ENGINE)),
 		"state": _evaluation_state_snapshot(state, actor, strategy),
 		"actor": actor,
 		"revision": state.revision,
@@ -1607,15 +1652,19 @@ func _decide_action(
 		"match_instance_id": match_instance_id,
 		"seed": AIDecisionSeed.derive(
 			seed, state.revision, actor, "action", request_id),
-		"simulation_budget": int(params["simulation_budget"]),
-		"seconds": float(params["seconds"]),
-		"max_depth": int(params["max_depth"]),
-		"dynamic_budget": _copy_dynamic_budget(params.get("dynamic_budget", {})),
 		"profile": profile_enabled,
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,
 		"actions": rows,
 	}
+	if bool(strategy.get("internal_evaluation_smoke", false)):
+		request["internal_evaluation_smoke"] = true
+	if str(strategy.get("engine", DEFAULT_ENGINE)) == ENGINE_TURN_BEAM_V1:
+		request["simulation_budget"] = int(params["simulation_budget"])
+		request["seconds"] = float(params["seconds"])
+		request["max_depth"] = int(params["max_depth"])
+		request["dynamic_budget"] = _copy_dynamic_budget(
+			params.get("dynamic_budget", {}))
 	if not bool(strategy.get("production_runtime", false)):
 		request["deterministic"] = bool(params["deterministic"])
 	return worker.decide(
@@ -1643,6 +1692,7 @@ func _decide_choice(
 	var request_id := "ai-choice:%d:%d" % [state.revision, request_sequence]
 	return worker.decide({
 		"kind": "choice",
+		"engine": str(strategy.get("engine", DEFAULT_ENGINE)),
 		"state": _evaluation_state_snapshot(state, actor, strategy),
 		"choice": request.to_dict(),
 		"actor": actor,
@@ -2774,6 +2824,7 @@ func _run_golden_scenarios(catalog: CardCatalog, engine: GameEngine, worker: Nat
 	# produces acceptance evidence.  The three executable action fixtures below
 	# remain separate end-to-end smoke cases.
 	var cases: Array[Dictionary] = _run_strategy_golden_scenarios(catalog)
+	cases.append_array(_run_multistep_turn_golden_scenarios(catalog))
 
 	var ko_state := GameState.new()
 	ko_state.phase = "MAIN"
@@ -2903,6 +2954,7 @@ func _golden_decision_for_actions(
 		"mode": "challenge",
 		"deck_key": deck_key,
 		"seed": 20260702,
+		"internal_tactical_fixture": true,
 		"simulation_budget": 0,
 		"seconds": 0.0,
 		"max_depth": 1,
@@ -3036,12 +3088,118 @@ func _run_strategy_golden_scenarios(catalog: CardCatalog) -> Array[Dictionary]:
 	return cases
 
 
+func _run_multistep_turn_golden_scenarios(
+	catalog: CardCatalog,
+) -> Array[Dictionary]:
+	var cases: Array[Dictionary] = []
+	var registry := AIStrategyRegistry.new()
+	if not registry.is_valid():
+		return cases
+	var semantic_catalog := CardSemanticCatalog.new(catalog)
+	var semantic_cards: Dictionary = {}
+	var card_ids: Array = catalog.cards.keys()
+	card_ids.sort()
+	for card_id_value in card_ids:
+		var card_id := str(card_id_value)
+		semantic_cards[card_id] = semantic_catalog.semantics_for(card_id)
+	semantic_cards.make_read_only()
+	var semantic_context := {"cards": semantic_cards}
+	semantic_context.make_read_only()
+	var chains: Array[Dictionary] = [
+		{
+			"id": "development_before_attack",
+			"categories": ["evolution", "attack"],
+			"expected": "develop a line before accepting a weaker attack",
+		},
+		{
+			"id": "energy_plan_before_closeout",
+			"categories": ["resource_preservation", "prize_route"],
+			"expected": "preserve/route energy before the prize closeout",
+		},
+		{
+			"id": "position_before_threat",
+			"categories": ["switch", "loss_avoidance"],
+			"expected": "retreat or reposition before an opponent knockout threat",
+		},
+	]
+	for deck_key in DEFAULT_DECK_KEYS:
+		var strategy := registry.strategy_for(deck_key)
+		var scenarios: Array = strategy.profile().get("golden_scenarios", [])
+		var by_category: Dictionary = {}
+		for scenario_value in scenarios:
+			if scenario_value is Dictionary:
+				var scenario: Dictionary = scenario_value
+				var category := str(scenario.get("category", ""))
+				if not category.is_empty() and not by_category.has(category):
+					by_category[category] = scenario
+		for chain_value in chains:
+			var chain: Dictionary = chain_value
+			var step_ids: Array[String] = []
+			var step_details: Array[String] = []
+			var passed := true
+			for category_value in chain.get("categories", []):
+				var category := str(category_value)
+				var scenario_value: Variant = by_category.get(category)
+				if not scenario_value is Dictionary:
+					passed = false
+					step_details.append("%s:missing" % category)
+					continue
+				var scenario: Dictionary = scenario_value
+				step_ids.append(str(scenario.get("id", "")))
+				var info: Dictionary = scenario.get("context", {})
+				var actual_stage := strategy.plan_stage(info)
+				var expected_stage := str(scenario.get("stage", ""))
+				var preferred: Dictionary = scenario.get("preferred", {})
+				var over: Dictionary = scenario.get("over", {})
+				var preferred_score := 0.0
+				var over_score := 0.0
+				if str(scenario.get("surface", "")) == "choice":
+					var choice_context: Dictionary = scenario.get(
+						"choice_context", {})
+					preferred_score = strategy.choice_score(
+						info, choice_context, preferred, semantic_context)
+					over_score = strategy.choice_score(
+						info, choice_context, over, semantic_context)
+				else:
+					preferred_score = strategy.action_score(
+						info, preferred, semantic_context)
+					over_score = strategy.action_score(
+						info, over, semantic_context)
+				var step_passed := (
+					actual_stage == expected_stage
+					and str(scenario.get("expected", "")) == "higher"
+					and preferred_score > over_score
+				)
+				passed = passed and step_passed
+				step_details.append("%s:%s:%.3f>%.3f" % [
+					category,
+					"pass" if step_passed else "fail",
+					preferred_score,
+					over_score,
+				])
+			cases.append({
+				"name": "turn_sequence:%s:%s" % [
+					deck_key, str(chain.get("id", ""))],
+				"scope": "turn_sequence",
+				"deck_key": deck_key,
+				"passed": passed and step_ids.size() == 2,
+				"expected": str(chain.get("expected", "")),
+				"actual": "steps=%s %s" % [
+					JSON.stringify(step_ids), ";".join(step_details)],
+			})
+	return cases
+
+
 func _strategy_fingerprint(strategy: Dictionary, deck_keys: Array) -> String:
-	var registry := AIStrategyRegistry.shared()
+	var engine_id := str(strategy.get("engine", DEFAULT_ENGINE))
+	var registry: Variant = NativeChallengeAI.new()._traditional_strategy_registry_instance(
+		engine_id)
+	if registry == null or not registry.is_valid():
+		return "invalid:%s" % engine_id
 	var deck_strategies := {}
 	for deck_key_value in deck_keys:
 		var deck_key := str(deck_key_value)
-		var deck_strategy := registry.strategy_for(deck_key)
+		var deck_strategy: Variant = registry.strategy_for(deck_key)
 		deck_strategies[deck_key] = {
 			"strategy_id": deck_strategy.strategy_id(),
 			"version": deck_strategy.version(),
@@ -3056,7 +3214,7 @@ func _strategy_fingerprint(strategy: Dictionary, deck_keys: Array) -> String:
 		"per_deck": {},
 		"rules_options": _evaluation_rules_options(),
 		"traditional_ai": {
-			"planner": "turn_beam_v1",
+			"planner": str(strategy.get("engine", DEFAULT_ENGINE)),
 			"strategy_catalog_hash": registry.catalog_hash(),
 			"deck_strategies": deck_strategies,
 		},
@@ -3067,17 +3225,31 @@ func _strategy_fingerprint(strategy: Dictionary, deck_keys: Array) -> String:
 
 
 func _strategy_engine_metadata(strategy: Dictionary) -> Dictionary:
-	var engine_id := str(strategy.get("engine", ENGINE_TURN_BEAM))
-	if engine_id != ENGINE_TURN_BEAM:
+	var engine_id := str(strategy.get("engine", DEFAULT_ENGINE))
+	if engine_id not in SUPPORTED_ENGINES:
 		return {
 			"id": engine_id,
 			"supported": false,
 		}
+	var registry: Variant = NativeChallengeAI.new()._traditional_strategy_registry_instance(
+		engine_id)
 	return {
-		"id": ENGINE_TURN_BEAM,
-		"request_boundary": "current_production_snapshot_and_seed",
-		"budget_policy": "gameplay_action_budget_current",
-		"strategy_catalog_hash": AIStrategyRegistry.shared().catalog_hash(),
+		"id": engine_id,
+		"request_boundary": (
+			"current_production_snapshot_and_seed"
+			if engine_id == ENGINE_TURN_BEAM_V2
+			else "frozen_evaluation_snapshot_and_seed"
+		),
+		"budget_policy": (
+			"fixed_depth_8"
+			if engine_id == ENGINE_TURN_BEAM_V2
+			else "legacy_time_and_node_budget"
+		),
+		"strategy_catalog_hash": (
+			registry.catalog_hash()
+			if registry != null and registry.is_valid()
+			else ""
+		),
 	}
 
 

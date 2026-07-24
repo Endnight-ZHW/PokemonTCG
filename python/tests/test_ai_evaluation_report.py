@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from scripts.ai_evaluation_v5 import (
+from scripts.ai_evaluation_v6 import (
     BOOTSTRAP_ITERATIONS,
     DECK_ORDER,
     MergeError,
@@ -34,7 +34,7 @@ from tests.temp_utils import temp_dir
 
 RULES = {"apply_type_matchups": False}
 PROVENANCE = {
-    "schema_version": 5,
+    "schema_version": 6,
     "fingerprint": "source-fingerprint",
     "source_hash": "abc123",
 }
@@ -133,18 +133,30 @@ def _row(identity, winner="draw", *, sample_phase="main"):
         "behavior_by_strategy": _behavior(),
         "search_depth_samples_by_strategy": {
             "A": [{
-                "requested": 6,
-                "reached": 5,
-                "stop_reason": "node_budget",
-                "turn_budget_tier": "full",
-                "nodes_expanded": 192,
+                "requested": 8,
+                "reached": 8,
+                "completed": 8,
+                "max_path_depth": 8,
+                "reply_completed": 3,
+                "layers_completed": 8,
+                "completion_reason": "depth_complete",
+                "stop_reason": "depth_complete",
+                "engine_id": "turn_beam_v2",
+                "nodes_expanded": 1192,
+                "trajectory_hash": "a" * 64,
             }],
             "B": [{
-                "requested": 6,
-                "reached": 5,
-                "stop_reason": "node_budget",
-                "turn_budget_tier": "full",
-                "nodes_expanded": 192,
+                "requested": 8,
+                "reached": 8,
+                "completed": 8,
+                "max_path_depth": 8,
+                "reply_completed": 3,
+                "layers_completed": 8,
+                "completion_reason": "depth_complete",
+                "stop_reason": "depth_complete",
+                "engine_id": "turn_beam_v2",
+                "nodes_expanded": 1192,
+                "trajectory_hash": "b" * 64,
             }],
         },
         "invalid_actions": 0,
@@ -194,7 +206,7 @@ def _shard(
         row["task_shard_index"] = task_shard_index
         row["task_shard_count"] = task_shard_count
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "artifact_kind": "ai_evaluation_shard",
         "platform": "windows",
         "provenance": copy.deepcopy(provenance or PROVENANCE),
@@ -281,8 +293,13 @@ def _set_probe_depth(payload, strategy, *, requested=None, reached=None):
         for sample in row["search_depth_samples_by_strategy"][strategy]:
             if requested is not None:
                 sample["requested"] = requested
+                sample["completed"] = min(sample["completed"], requested)
             if reached is not None:
                 sample["reached"] = min(sample["requested"], reached)
+                sample["completed"] = min(sample["requested"], reached)
+                if sample["completed"] < sample["requested"]:
+                    sample["completion_reason"] = "cancelled"
+                    sample["stop_reason"] = "cancelled"
     measured = [
         row for row in performance["matches"] if row["sample_phase"] == "measurement"
     ]
@@ -297,7 +314,7 @@ def _nightly_result(*, distinct=True, side_values=None):
     ]
     fingerprint_b = "strategy-b" if distinct else "strategy-a"
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "artifact_kind": "ai_evaluation_result",
         "platform": "windows",
         "provenance": copy.deepcopy(PROVENANCE),
@@ -349,13 +366,14 @@ def _nightly_result(*, distinct=True, side_values=None):
         },
         "behavior": {"available": True, "overall": {}, "per_deck": {}},
         "golden_scenarios": {
-            "total": 93,
-            "passed": 93,
+            "total": 152,
+            "passed": 152,
             "failed": 0,
             "by_scope": {
                 "coverage_contract": {"total": 10},
                 "runtime_integration": {"total": 3},
-                "strategy_score": {"total": 80},
+                "strategy_score": {"total": 109},
+                "turn_sequence": {"total": 30},
             },
             "cases": [],
         },
@@ -366,7 +384,7 @@ def _nightly_result(*, distinct=True, side_values=None):
                     "ci95": {"lower": -0.02, "upper": 0.02, "iterations": 10000},
                 },
                 "per_deck": {
-                    deck: {"overall": {"point_delta": -0.04}}
+                    deck: {"point_delta": -0.04}
                     for deck in DECK_ORDER
                 },
             },
@@ -376,7 +394,7 @@ def _nightly_result(*, distinct=True, side_values=None):
                     "ci95": {"lower": -0.02, "upper": 0.02, "iterations": 10000},
                 },
                 "per_unordered_matchup": {
-                    key: {"overall": {"point_delta": -0.08}}
+                    key: {"point_delta": -0.08}
                     for key in pair_keys
                 },
             },
@@ -385,8 +403,8 @@ def _nightly_result(*, distinct=True, side_values=None):
         "decision_diagnostics": {
             "total": 0,
             "by_strategy": {
-                "A": {"total": 0},
-                "B": {"total": 0},
+                "A": {"total": 0, "decisions": 100, "rates": {}},
+                "B": {"total": 0, "decisions": 100, "rates": {}},
                 "delta": {"total": 0},
             },
         },
@@ -504,29 +522,35 @@ class MergeIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(MergeError, "config:seed"):
             merge_payloads([left, right])
 
-    def test_unknown_deck_and_v4_are_rejected(self):
+    def test_unknown_deck_and_pre_v6_results_are_rejected(self):
         unknown = _shard()
         unknown["deck_keys"] = ["missing"]
         with self.assertRaisesRegex(MergeError, "deck_keys"):
             merge_payloads([unknown])
         old = _shard()
-        old["schema_version"] = 4
+        old["schema_version"] = 5
         with self.assertRaisesRegex(MergeError, "schema_version"):
             merge_payloads([old])
 
-    def test_v5_match_schema_rejects_unaligned_latency_samples(self):
+    def test_v6_match_schema_rejects_unaligned_latency_samples(self):
         shard = _shard()
         shard["matches"][0]["turn_plan_cache_hit_samples_by_strategy"]["A"] = []
         with self.assertRaisesRegex(MergeError, "invalid_latency_samples:A"):
             merge_payloads([shard])
 
-    def test_v5_match_schema_requires_valid_search_depth_samples(self):
+    def test_v6_match_schema_requires_valid_search_depth_samples(self):
         shard = _shard()
         del shard["matches"][0]["search_depth_samples_by_strategy"]
         with self.assertRaisesRegex(MergeError, "invalid_search_depth_samples"):
             merge_payloads([shard])
         shard = _shard()
-        shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0]["reached"] = 7
+        shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0]["reached"] = 9
+        with self.assertRaisesRegex(MergeError, "invalid_search_depth_sample"):
+            merge_payloads([shard])
+        shard = _shard()
+        shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0][
+            "layers_completed"
+        ] = 7
         with self.assertRaisesRegex(MergeError, "invalid_search_depth_sample"):
             merge_payloads([shard])
 
@@ -536,7 +560,7 @@ class MergeIntegrityTests(unittest.TestCase):
         depth = result["search_depth"]
         self.assertTrue(depth["available"])
         self.assertEqual(
-            depth["by_strategy"]["A"]["full_tier"]["reached_depth_p50"], 5.0
+            depth["by_strategy"]["A"]["full_tier"]["completed_depth_p50"], 8.0
         )
         self.assertGreater(
             depth["by_strategy"]["B"]["per_deck"]["water"]["full_tier"]["sample_count"],
@@ -584,7 +608,7 @@ class MergeIntegrityTests(unittest.TestCase):
             cross_blocks=0,
             mode="Mirror",
             rows=rows,
-            provenance={"schema_version": 5, "fingerprint": "other"},
+            provenance={"schema_version": 6, "fingerprint": "other"},
         )
         probe["config"] = config
         with self.assertRaisesRegex(MergeError, "search_depth_probe:provenance"):
@@ -596,12 +620,44 @@ class GateTests(unittest.TestCase):
         result = validate_evaluation_gate(_nightly_result(), gate="nightly-equivalence")
         self.assertTrue(result["valid"], result["error_codes"])
 
+    def test_superiority_requires_both_ci_lowers_above_zero_and_diagnostic_reduction(self):
+        payload = _nightly_result()
+        payload["strength"]["mirror"]["overall"]["ci95"]["lower"] = 0.001
+        payload["strength"]["cross_role"]["overall"]["ci95"]["lower"] = 0.001
+        payload["decision_diagnostics"]["by_strategy"]["A"]["rates"] = {
+            "weak_attack_before_development": 0.005,
+        }
+        payload["decision_diagnostics"]["by_strategy"]["B"]["rates"] = {
+            "weak_attack_before_development": 0.01,
+        }
+        result = validate_evaluation_gate(payload, gate="nightly-superiority")
+        self.assertTrue(result["valid"], result["error_codes"])
+        payload["strength"]["cross_role"]["overall"]["ci95"]["lower"] = 0.0
+        result = validate_evaluation_gate(payload, gate="nightly-superiority")
+        self.assertIn("cross_ci_below_floor", result["error_codes"])
+
+    def test_superiority_depth_gate_requires_v2_engine_evidence(self):
+        payload = _nightly_result()
+        for row in payload["performance"]["matches"]:
+            for sample in row["search_depth_samples_by_strategy"]["A"]:
+                sample["engine_id"] = "turn_beam_v1"
+        measured = [
+            row
+            for row in payload["performance"]["matches"]
+            if row["sample_phase"] == "measurement"
+        ]
+        payload["performance"]["search_depth"] = summarize_search_depth(
+            measured, DECK_ORDER
+        )
+        result = validate_evaluation_gate(payload, gate="nightly-superiority")
+        self.assertIn("search_depth_engine_mismatch", result["error_codes"])
+
     def test_dual_ci_and_group_floors_fail_independently(self):
         cases = [
             ("mirror_ci_below_floor", lambda p: p["strength"]["mirror"]["overall"]["ci95"].update(lower=-0.0201)),
             ("cross_ci_below_floor", lambda p: p["strength"]["cross_role"]["overall"]["ci95"].update(lower=-0.0201)),
-            ("mirror_deck_fire_below_floor", lambda p: p["strength"]["mirror"]["per_deck"]["fire"]["overall"].update(point_delta=-0.0401)),
-            ("cross_matchup_colorless_and_darkness_below_floor", lambda p: p["strength"]["cross_role"]["per_unordered_matchup"]["colorless_and_darkness"]["overall"].update(point_delta=-0.0801)),
+            ("mirror_deck_fire_below_floor", lambda p: p["strength"]["mirror"]["per_deck"]["fire"].update(point_delta=-0.0401)),
+            ("cross_matchup_colorless_and_darkness_below_floor", lambda p: p["strength"]["cross_role"]["per_unordered_matchup"]["colorless_and_darkness"].update(point_delta=-0.0801)),
         ]
         for expected, mutate in cases:
             with self.subTest(expected=expected):
@@ -658,11 +714,10 @@ class GateTests(unittest.TestCase):
         shallow = [
             error
             for error in result["errors"]
-            if error["code"] == "search_depth_below_floor"
+            if error["code"] == "search_depth_incomplete"
         ]
         self.assertTrue(any(error["details"]["strategy"] == "A" for error in shallow))
         self.assertFalse(any(error["details"]["strategy"] == "B" for error in shallow))
-        self.assertIn("search_depth_regression", result["error_codes"])
 
     def test_configured_search_depth_cannot_be_lowered(self):
         payload = _nightly_result()
@@ -703,7 +758,7 @@ class GateTests(unittest.TestCase):
         payload["strength"]["mirror"]["overall"]["ci95"]["lower"] = -0.04
         payload["strength"]["cross_role"]["overall"]["ci95"]["lower"] = -0.04
         for row in payload["strength"]["mirror"]["per_deck"].values():
-            row["overall"]["point_delta"] = -0.08
+            row["point_delta"] = -0.08
         self.assertTrue(validate_evaluation_gate(payload, gate="deep-practical")["valid"])
         payload["observed"]["deep_fallback_rate"] = 0.001
         self.assertIn(
@@ -760,7 +815,7 @@ class ReportTests(unittest.TestCase):
 
     def test_report_and_validator_reject_v4(self):
         old = {"schema_version": 4, "artifact_kind": "ai_evaluation_result"}
-        with self.assertRaisesRegex(ValueError, "schema v5"):
+        with self.assertRaisesRegex(ValueError, "schema v6"):
             render_report(old)
         validation = validate_evaluation_gate(old, gate="quick")
         self.assertIn("schema_version", validation["error_codes"])
@@ -776,7 +831,7 @@ class ReportTests(unittest.TestCase):
             gate.write_text(json.dumps(validation), encoding="utf-8")
             render_file(source, output, gate)
             self.assertTrue(output.is_file())
-            self.assertIn("AI 策略评测 v5", output.read_text(encoding="utf-8"))
+            self.assertIn("AI 策略评测 v6", output.read_text(encoding="utf-8"))
 
 
 class InterfaceAndProfileTests(unittest.TestCase):
@@ -785,9 +840,9 @@ class InterfaceAndProfileTests(unittest.TestCase):
         first = build_provenance(repo_root, [], target_platform="windows")
         second = build_provenance(repo_root, [], target_platform="windows")
         self.assertEqual(first["fingerprint"], second["fingerprint"])
-        self.assertEqual(first["schema_version"], 5)
+        self.assertEqual(first["schema_version"], 6)
         self.assertEqual(first["product_version"], "0.6.0")
-        self.assertEqual(first["release_ai_evaluation_schema"], 5)
+        self.assertEqual(first["release_ai_evaluation_schema"], 6)
         for component in ("rules", "ai", "card_data", "evaluation_tool"):
             self.assertEqual(len(first["component_hashes"][component]), 64)
         self.assertIn("git_commit", first)
@@ -809,13 +864,13 @@ class InterfaceAndProfileTests(unittest.TestCase):
         source = (Path(__file__).parents[2] / "godot" / "tools" / "ai_evaluation_runner.gd").read_text(
             encoding="utf-8"
         )
-        self.assertIn("const SCHEMA_VERSION := 5", source)
+        self.assertIn("const SCHEMA_VERSION := 6", source)
         self.assertIn('"artifact_kind": "ai_evaluation_shard"', source)
         self.assertIn('"behavior_by_strategy"', source)
         self.assertIn('"search_depth_samples_by_strategy"', source)
         self.assertIn('"provenance": provenance', source)
 
-    def test_profile_helpers_use_schema_v5_observed_games(self):
+    def test_profile_helpers_use_schema_v6_observed_games(self):
         payload = _nightly_result()
         summary = summarize_profile(payload)
         self.assertTrue(summary["enabled"])

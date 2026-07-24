@@ -1,4 +1,4 @@
-"""Build deterministic provenance for a schema-v5 Godot AI evaluation run."""
+"""Build deterministic provenance for a schema-v6 Godot AI evaluation run."""
 from __future__ import annotations
 
 import argparse
@@ -10,9 +10,9 @@ import time
 from pathlib import Path
 
 try:
-    from scripts.ai_evaluation_v5 import SCHEMA_VERSION, source_fingerprint
+    from scripts.ai_evaluation_v6 import SCHEMA_VERSION, source_fingerprint
 except ModuleNotFoundError:  # Direct script execution.
-    from ai_evaluation_v5 import SCHEMA_VERSION, source_fingerprint
+    from ai_evaluation_v6 import SCHEMA_VERSION, source_fingerprint
 
 
 def _git(repo_root: Path, *args: str) -> str:
@@ -38,14 +38,19 @@ def _source_paths(repo_root: Path) -> list[Path]:
         repo_root / "tools" / "evaluate_godot_ai.ps1",
         repo_root / "godot" / "project.godot",
         repo_root / "godot" / "tools" / "ai_evaluation_runner.gd",
-        repo_root / "python" / "scripts" / "ai_evaluation_v5.py",
+        repo_root / "python" / "scripts" / "ai_evaluation_v6.py",
         repo_root / "python" / "scripts" / "merge_ai_evaluation_shards.py",
         repo_root / "python" / "scripts" / "validate_ai_evaluation.py",
         repo_root / "python" / "scripts" / "render_ai_evaluation_report.py",
         repo_root / "python" / "scripts" / "build_ai_evaluation_provenance.py",
     )
     paths.update(path for path in fixed if path.is_file())
-    for relative in ("godot/ai", "godot/core", "godot/rules"):
+    for relative in (
+        "godot/ai",
+        "godot/core",
+        "godot/rules",
+        "godot/tools/ai_baseline",
+    ):
         root = repo_root / relative
         if root.is_dir():
             paths.update(path for path in root.rglob("*.gd") if path.is_file())

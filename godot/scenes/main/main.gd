@@ -4034,18 +4034,9 @@ func _schedule_ai_action() -> void:
 		rows.append(action.to_dict())
 	ai_request_sequence += 1
 	active_ai_request_id = "ai:%d:%d" % [state.revision, ai_request_sequence]
-	var gameplay_budget := NativeChallengeAI.gameplay_action_budget(state, actions)
-	var simulation_budget := int(gameplay_budget["simulation_budget"])
-	var seconds := float(gameplay_budget["seconds"])
-	var max_depth := int(gameplay_budget["max_depth"])
-	var dynamic_budget: Variant = gameplay_budget.get("dynamic_budget", {})
-	if game_mode == MODE_DEEP:
-		simulation_budget = NativeChallengeAI.DEEP_DEFAULT_SIMULATIONS
-		seconds = NativeChallengeAI.DEEP_DEFAULT_SECONDS
-		max_depth = NativeChallengeAI.DEEP_DEFAULT_DEPTH
-		dynamic_budget = {}
 	var request := {
 		"kind": "action",
+		"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
 		"state": _ai_state_snapshot(1),
 		"actor": 1,
 		"revision": state.revision,
@@ -4061,10 +4052,6 @@ func _schedule_ai_action() -> void:
 			"action",
 			active_ai_request_id,
 		),
-		"simulation_budget": simulation_budget,
-		"seconds": seconds,
-		"max_depth": max_depth,
-		"dynamic_budget": dynamic_budget,
 		"actions": rows,
 	}
 	ai_thinking = ai_coordinator.start_request(request, ai_inference)
@@ -4086,6 +4073,7 @@ func _schedule_ai_choice(request: ChoiceRequest) -> void:
 	active_ai_request_id = "ai-choice:%d:%d" % [state.revision, ai_request_sequence]
 	var payload := {
 		"kind": "choice",
+		"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
 		"state": _ai_state_snapshot(1),
 		"choice": request.to_dict(),
 		"actor": 1,
@@ -4268,27 +4256,8 @@ func _apply_ai_fallback_action(reason: String) -> void:
 
 
 func _ordered_ai_fallback_actions(actions: Array[GameAction]) -> Array[GameAction]:
-	var ordered: Array[GameAction] = []
-	for action_name in [
-		"PROMOTE",
-		"SETUP_DONE",
-		"DECLARE_ATTACK",
-		"END_TURN",
-		"PLAY_BASIC",
-		"ATTACH_ENERGY",
-		"EVOLVE",
-		"PLAY_TRAINER",
-		"USE_ABILITY",
-		"USE_STADIUM",
-		"RETREAT",
-	]:
-		for action in actions:
-			if action.action == action_name and action not in ordered:
-				ordered.append(action)
-	for action in actions:
-		if action not in ordered:
-			ordered.append(action)
-	return ordered
+	return NativeChallengeAI.ordered_tactical_fallback_actions(
+		state, 1, actions, ai_deck_key, catalog)
 
 
 func _apply_ai_fallback_choice(request: ChoiceRequest, reason: String) -> void:

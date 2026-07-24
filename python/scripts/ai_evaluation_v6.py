@@ -1,4 +1,4 @@
-"""Authoritative schema-v5 aggregation for Godot traditional-AI evaluation.
+"""Authoritative schema-v6 aggregation for Godot traditional-AI evaluation.
 
 The Godot runner deliberately emits shard evidence.  This module is the only
 place that turns that evidence into acceptance metrics, so one-worker and
@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 from typing import Any, Iterable, Sequence
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 BOOTSTRAP_ITERATIONS = 10_000
 BOOTSTRAP_SEED = 90_210
 DECK_ORDER = [
@@ -615,15 +615,38 @@ def summarize_performance(matches: Sequence[dict[str, Any]]) -> dict[str, Any]:
 def _search_depth_scope(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
     requested = [max(1, _int(sample.get("requested"), 1)) for sample in samples]
     reached = [max(0, _int(sample.get("reached"))) for sample in samples]
+    completed = [max(0, _int(sample.get("completed"))) for sample in samples]
     ratios = [
         min(1.0, float(actual) / float(target))
-        for actual, target in zip(reached, requested)
+        for actual, target in zip(completed, requested)
+    ]
+    completion_reasons = Counter(
+        str(sample.get("completion_reason") or sample.get("stop_reason") or "unknown")
+        for sample in samples
+    )
+    completed_or_exhausted = [
+        (
+            (reason == "depth_complete" and actual >= target)
+            or reason == "frontier_exhausted"
+        )
+        for actual, target, reason in zip(
+            completed,
+            requested,
+            (
+                str(
+                    sample.get("completion_reason")
+                    or sample.get("stop_reason")
+                    or "unknown"
+                )
+                for sample in samples
+            ),
+        )
     ]
     stop_reasons = Counter(
         str(sample.get("stop_reason") or "unknown") for sample in samples
     )
-    tier_counts = Counter(
-        str(sample.get("turn_budget_tier") or "untracked") for sample in samples
+    engine_counts = Counter(
+        str(sample.get("engine_id") or "unknown") for sample in samples
     )
     return {
         "sample_count": len(samples),
@@ -635,17 +658,32 @@ def _search_depth_scope(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "reached_depth_p50": _round(_quantile(reached, 0.50)),
         "reached_depth_p95": _round(_quantile(reached, 0.95)),
         "reached_depth_max": max(reached) if reached else None,
+        "completed_depth_min": min(completed) if completed else None,
+        "completed_depth_p50": _round(_quantile(completed, 0.50)),
+        "completed_depth_p95": _round(_quantile(completed, 0.95)),
+        "completed_depth_max": max(completed) if completed else None,
         "depth_ratio_p50": _round(_quantile(ratios, 0.50)),
-        "requested_depth_reached_rate": _round(
-            sum(actual >= target for actual, target in zip(reached, requested))
+        "requested_depth_completed_rate": _round(
+            sum(actual >= target for actual, target in zip(completed, requested))
             / len(samples)
             if samples
             else None
         ),
-        "deadline_truncations": int(stop_reasons.get("deadline", 0)),
-        "node_budget_truncations": int(stop_reasons.get("node_budget", 0)),
+        "complete_or_frontier_exhausted_rate": _round(
+            sum(completed_or_exhausted) / len(samples) if samples else None
+        ),
+        "incomplete_searches": sum(not value for value in completed_or_exhausted),
+        "deadline_truncations": int(max(
+            stop_reasons.get("deadline", 0),
+            completion_reasons.get("deadline", 0),
+        )),
+        "node_budget_truncations": int(max(
+            stop_reasons.get("node_budget", 0),
+            completion_reasons.get("node_budget", 0),
+        )),
         "stop_reasons": dict(sorted(stop_reasons.items())),
-        "turn_budget_tiers": dict(sorted(tier_counts.items())),
+        "completion_reasons": dict(sorted(completion_reasons.items())),
+        "engines": dict(sorted(engine_counts.items())),
     }
 
 
@@ -683,11 +721,19 @@ def summarize_search_depth(
                 normalized = {
                     "requested": max(1, _int(sample.get("requested"), 1)),
                     "reached": max(0, _int(sample.get("reached"))),
-                    "stop_reason": str(sample.get("stop_reason") or "unknown"),
-                    "turn_budget_tier": str(
-                        sample.get("turn_budget_tier") or "untracked"
+                    "completed": max(0, _int(sample.get("completed"))),
+                    "max_path_depth": max(0, _int(sample.get("max_path_depth"))),
+                    "reply_completed": max(0, _int(sample.get("reply_completed"))),
+                    "layers_completed": max(0, _int(sample.get("layers_completed"))),
+                    "completion_reason": str(
+                        sample.get("completion_reason")
+                        or sample.get("stop_reason")
+                        or "unknown"
                     ),
+                    "stop_reason": str(sample.get("stop_reason") or "unknown"),
+                    "engine_id": str(sample.get("engine_id") or "unknown"),
                     "nodes_expanded": max(0, _int(sample.get("nodes_expanded"))),
+                    "trajectory_hash": str(sample.get("trajectory_hash") or ""),
                 }
                 by_strategy[strategy].append(normalized)
                 if deck in by_strategy_deck[strategy]:
@@ -700,24 +746,19 @@ def summarize_search_depth(
     }
     for strategy in STRATEGY_KEYS:
         all_samples = by_strategy[strategy]
-        full_samples = [
-            sample
-            for sample in all_samples
-            if sample.get("turn_budget_tier") == "full"
-        ]
         result["by_strategy"][strategy] = {
             "overall": _search_depth_scope(all_samples),
-            "full_tier": _search_depth_scope(full_samples),
+            # Compatibility name retained for existing report layouts. Schema
+            # v6 has no local/exhausted quality tier.
+            "full_tier": _search_depth_scope(all_samples),
             "per_deck": {
                 deck: {
                     "overall": _search_depth_scope(
                         by_strategy_deck[strategy][deck]
                     ),
-                    "full_tier": _search_depth_scope([
-                        sample
-                        for sample in by_strategy_deck[strategy][deck]
-                        if sample.get("turn_budget_tier") == "full"
-                    ]),
+                    "full_tier": _search_depth_scope(
+                        by_strategy_deck[strategy][deck]
+                    ),
                 }
                 for deck in deck_keys
             },
@@ -1051,8 +1092,15 @@ def summarize_coverage(
 def summarize_decision_diagnostics(matches: Sequence[dict[str, Any]]) -> dict[str, Any]:
     labels: Counter[str] = Counter()
     by_strategy = {strategy: Counter() for strategy in STRATEGY_KEYS}
+    decisions_by_strategy = {strategy: 0 for strategy in STRATEGY_KEYS}
     per_deck: dict[str, Counter[str]] = defaultdict(Counter)
     for row in matches:
+        latency_samples = row.get("decision_ms_samples_by_strategy")
+        if isinstance(latency_samples, dict):
+            for strategy in STRATEGY_KEYS:
+                samples = latency_samples.get(strategy)
+                if isinstance(samples, list):
+                    decisions_by_strategy[strategy] += len(samples)
         raw = row.get("decision_diagnostics")
         if isinstance(raw, dict):
             for key, value in raw.items():
@@ -1074,6 +1122,17 @@ def summarize_decision_diagnostics(matches: Sequence[dict[str, Any]]) -> dict[st
     delta = Counter()
     for key in set(by_strategy["A"]) | set(by_strategy["B"]):
         delta[key] = by_strategy["A"][key] - by_strategy["B"][key]
+    rates = {
+        strategy: {
+            key: _round(
+                value / decisions_by_strategy[strategy]
+                if decisions_by_strategy[strategy]
+                else None
+            )
+            for key, value in sorted(by_strategy[strategy].items())
+        }
+        for strategy in STRATEGY_KEYS
+    }
     return {
         "total": sum(labels.values()),
         "labels": dict(sorted(labels.items())),
@@ -1081,8 +1140,18 @@ def summarize_decision_diagnostics(matches: Sequence[dict[str, Any]]) -> dict[st
             key: dict(sorted(value.items())) for key, value in sorted(per_deck.items())
         },
         "by_strategy": {
-            "A": {"total": sum(by_strategy["A"].values()), "labels": dict(sorted(by_strategy["A"].items()))},
-            "B": {"total": sum(by_strategy["B"].values()), "labels": dict(sorted(by_strategy["B"].items()))},
+            "A": {
+                "total": sum(by_strategy["A"].values()),
+                "decisions": decisions_by_strategy["A"],
+                "labels": dict(sorted(by_strategy["A"].items())),
+                "rates": rates["A"],
+            },
+            "B": {
+                "total": sum(by_strategy["B"].values()),
+                "decisions": decisions_by_strategy["B"],
+                "labels": dict(sorted(by_strategy["B"].items())),
+                "rates": rates["B"],
+            },
             "delta": {"total": sum(delta.values()), "labels": dict(sorted(delta.items()))},
         },
     }
@@ -1354,15 +1423,47 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                         f"invalid_search_depth_samples:{strategy}:{_identity_text(identity)}"
                     )
                 for sample in depth_samples:
+                    if not isinstance(sample, dict):
+                        raise MergeError(
+                            f"invalid_search_depth_sample:{strategy}:{_identity_text(identity)}"
+                        )
+                    engine_id = str(sample.get("engine_id") or "")
+                    requested = _int(sample.get("requested"), 0)
+                    completed = _int(sample.get("completed"), -1)
+                    layers = _int(sample.get("layers_completed"), -1)
+                    reason = str(sample.get("completion_reason") or "")
                     if (
-                        not isinstance(sample, dict)
-                        or _int(sample.get("requested"), 0) < 1
+                        requested < 1
                         or _int(sample.get("reached"), -1) < 0
                         or _int(sample.get("reached"), -1)
-                        > _int(sample.get("requested"), 0)
+                        > requested
+                        or completed < 0
+                        or completed > requested
+                        or layers < 0
+                        or layers > requested
+                        or _int(sample.get("max_path_depth"), -1) < completed
+                        or _int(sample.get("reply_completed"), -1) < 0
                         or not str(sample.get("stop_reason") or "")
-                        or not str(sample.get("turn_budget_tier") or "")
+                        or not reason
+                        or engine_id not in ("turn_beam_v1", "turn_beam_v2")
                         or _int(sample.get("nodes_expanded"), -1) < 0
+                        or len(str(sample.get("trajectory_hash") or "")) != 64
+                        or (
+                            engine_id == "turn_beam_v2"
+                            and (
+                                layers != completed
+                                or reason
+                                not in ("depth_complete", "frontier_exhausted")
+                                or (
+                                    reason == "depth_complete"
+                                    and completed != requested
+                                )
+                                or (
+                                    reason == "frontier_exhausted"
+                                    and completed < 1
+                                )
+                            )
+                        )
                     ):
                         raise MergeError(
                             f"invalid_search_depth_sample:{strategy}:{_identity_text(identity)}"
@@ -1485,7 +1586,8 @@ def merge_payloads(
             "strength_uses_complete_clean_units_only": True,
         },
         "evaluation_policy": {
-            "search_quality_gate": "actual_beam_depth",
+            "search_quality_gate": "complete_fixed_depth_layers",
+            "production_engine": "turn_beam_v2",
             "latency": "diagnostic_only",
         },
         "observed": observed,

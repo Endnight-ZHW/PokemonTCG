@@ -1,4 +1,4 @@
-"""Validate schema-v5 Godot traditional-AI evaluation evidence."""
+"""Validate schema-v6 Godot traditional-AI evaluation evidence."""
 from __future__ import annotations
 
 import argparse
@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.ai_evaluation_v5 import (
+    from scripts.ai_evaluation_v6 import (
         DECK_ORDER,
         SCHEMA_VERSION,
         summarize_performance,
         summarize_search_depth,
     )
 except ModuleNotFoundError:  # Direct script execution.
-    from ai_evaluation_v5 import (  # type: ignore[no-redef]
+    from ai_evaluation_v6 import (  # type: ignore[no-redef]
         DECK_ORDER,
         SCHEMA_VERSION,
         summarize_performance,
@@ -25,15 +25,15 @@ except ModuleNotFoundError:  # Direct script execution.
 
 SUPPORTED_PLATFORMS = {"windows", "android"}
 SEARCH_DEPTH_THRESHOLDS = {
-    "full_tier_requested_depth_min": 6.0,
-    "full_tier_reached_depth_p50_min": 3.0,
-    "full_tier_reached_depth_p95_min": 5.0,
-    "a_vs_b_allowed_depth_deficit": 0.5,
+    "requested_depth_min": 8.0,
+    "complete_or_frontier_exhausted_rate_min": 1.0,
+    "deadline_truncations_max": 0.0,
+    "node_budget_truncations_max": 0.0,
 }
 
 
 ERROR_MESSAGES = {
-    "schema_version": "结果不是 AI 评测 schema v5。",
+    "schema_version": "结果不是 AI 评测 schema v6。",
     "artifact_kind": "输入不是已聚合的 AI 评测结果。",
     "provenance_missing": "缺少可复现来源指纹。",
     "platform_unsupported": "评测平台不是受支持的 Windows 或 Android。",
@@ -50,11 +50,16 @@ ERROR_MESSAGES = {
     "search_depth_probe_metrics": "搜索深度样本或聚合指标无效。",
     "search_depth_requested_below_floor": "策略配置的全预算搜索深度低于发布下限。",
     "search_depth_below_floor": "策略实际达到的搜索深度分位数低于发布下限。",
+    "search_depth_incomplete": "存在未完整达到固定深度且未耗尽搜索空间的 v2 搜索。",
+    "search_depth_time_or_node_stop": "v2 搜索仍被时间或节点预算截断。",
+    "search_depth_engine_mismatch": "搜索深度门禁样本不是 turn_beam_v2。",
     "search_depth_regression": "候选策略的搜索深度低于对照策略。",
     "strategy_relation": "策略指纹关系与所选门禁不符。",
     "mirror_ci_below_floor": "镜像强度 95% 区间下界低于允许值。",
     "cross_ci_below_floor": "角色交叉强度 95% 区间下界低于允许值。",
     "decision_diagnostics_regression": "候选策略的决策错因多于对照策略。",
+    "weak_attack_not_reduced": "候选策略的过早弱攻击发生率未至少下降 50%。",
+    "diagnostic_rate_regression": "候选策略至少一项决策诊断发生率上升超过 0.1 个百分点。",
     "decision_diagnostics_unbalanced": "同策略稳定性评测的 A/B 决策错因计数不平衡。",
     "deep_fallback_rate": "Deep 评测发生了回退。",
 }
@@ -88,12 +93,17 @@ def _normalized_gate(payload: dict[str, Any], gate: str) -> str:
     aliases = {
         "stability": "nightly-stability",
         "equivalence": "nightly-equivalence",
+        "superiority": "nightly-superiority",
         "nightly": "nightly-stability",
         "deep": "deep-practical",
     }
     normalized = aliases.get(normalized, normalized)
     if normalized == "auto":
-        return "nightly-stability" if _strategies_equal(payload) else "nightly-equivalence"
+        return (
+            "nightly-stability"
+            if _strategies_equal(payload)
+            else "nightly-superiority"
+        )
     return normalized
 
 
@@ -210,12 +220,15 @@ def _golden_valid(payload: dict[str, Any]) -> tuple[bool, bool]:
     coverage_count = _int((by_scope.get("coverage_contract") or {}).get("total"))
     runtime_count = _int((by_scope.get("runtime_integration") or {}).get("total"))
     strategy_count = _int((by_scope.get("strategy_score") or {}).get("total"))
+    turn_sequence_count = _int((by_scope.get("turn_sequence") or {}).get("total"))
     complete = (
         decks > 0
         and coverage_count == decks
         and runtime_count == 3
         and decks * 8 <= strategy_count <= decks * 12
-        and _int(golden.get("total")) == coverage_count + runtime_count + strategy_count
+        and turn_sequence_count == decks * 3
+        and _int(golden.get("total"))
+        == coverage_count + runtime_count + strategy_count + turn_sequence_count
     )
     return complete, _int(golden.get("failed")) == 0
 
@@ -302,60 +315,74 @@ def _search_depth_errors(
 ) -> list[tuple[str, dict[str, Any]]]:
     errors: list[tuple[str, dict[str, Any]]] = []
     by_strategy = reported.get("by_strategy") or {}
-    for strategy in ("A", "B"):
-        full = (by_strategy.get(strategy) or {}).get("full_tier") or {}
-        requested_min = _float(full.get("requested_depth_min"), None)
-        p50 = _float(full.get("reached_depth_p50"), None)
-        p95 = _float(full.get("reached_depth_p95"), None)
-        requested_floor = SEARCH_DEPTH_THRESHOLDS["full_tier_requested_depth_min"]
-        if requested_min is None or requested_min < requested_floor:
-            errors.append((
-                "search_depth_requested_below_floor",
-                {
-                    "strategy": strategy,
-                    "value": requested_min,
-                    "floor": requested_floor,
-                },
-            ))
-        for metric, value, threshold_key in (
-            ("reached_depth_p50", p50, "full_tier_reached_depth_p50_min"),
-            ("reached_depth_p95", p95, "full_tier_reached_depth_p95_min"),
-        ):
-            floor = SEARCH_DEPTH_THRESHOLDS[threshold_key]
-            if value is None or value < floor:
+    strategies = ("A", "B") if gate == "nightly-stability" else ("A",)
+    for strategy in strategies:
+        strategy_rows = by_strategy.get(strategy) or {}
+        scopes: list[tuple[str, dict[str, Any]]] = [
+            ("overall", strategy_rows.get("overall") or {})
+        ]
+        scopes.extend(
+            (f"deck:{deck}", (row or {}).get("overall") or {})
+            for deck, row in (strategy_rows.get("per_deck") or {}).items()
+        )
+        for scope, metrics in scopes:
+            if _int(metrics.get("sample_count")) <= 0:
+                continue
+            engines = metrics.get("engines") or {}
+            if (
+                not isinstance(engines, dict)
+                or set(engines) != {"turn_beam_v2"}
+                or _int(engines.get("turn_beam_v2"))
+                != _int(metrics.get("sample_count"))
+            ):
                 errors.append((
-                    "search_depth_below_floor",
+                    "search_depth_engine_mismatch",
                     {
                         "strategy": strategy,
-                        "metric": metric,
-                        "value": value,
-                        "floor": floor,
+                        "scope": scope,
+                        "engines": engines,
                     },
                 ))
-
-    a_full = (by_strategy.get("A") or {}).get("full_tier") or {}
-    b_full = (by_strategy.get("B") or {}).get("full_tier") or {}
-    allowed = SEARCH_DEPTH_THRESHOLDS["a_vs_b_allowed_depth_deficit"]
-    for metric in ("reached_depth_p50", "reached_depth_p95"):
-        a_value = _float(a_full.get(metric), None)
-        b_value = _float(b_full.get(metric), None)
-        if a_value is None or b_value is None:
-            continue
-        regression = (
-            abs(a_value - b_value) > allowed
-            if gate == "nightly-stability"
-            else a_value < b_value - allowed
-        )
-        if regression:
-            errors.append((
-                "search_depth_regression",
-                {
-                    "metric": metric,
-                    "candidate_a": a_value,
-                    "control_b": b_value,
-                    "allowed_deficit": allowed,
-                },
-            ))
+            requested_min = _float(metrics.get("requested_depth_min"), None)
+            requested_floor = SEARCH_DEPTH_THRESHOLDS["requested_depth_min"]
+            if requested_min is None or requested_min < requested_floor:
+                errors.append((
+                    "search_depth_requested_below_floor",
+                    {
+                        "strategy": strategy,
+                        "scope": scope,
+                        "value": requested_min,
+                        "floor": requested_floor,
+                    },
+                ))
+            complete_rate = _float(
+                metrics.get("complete_or_frontier_exhausted_rate"), None
+            )
+            complete_floor = SEARCH_DEPTH_THRESHOLDS[
+                "complete_or_frontier_exhausted_rate_min"
+            ]
+            if complete_rate is None or complete_rate < complete_floor - 1e-12:
+                errors.append((
+                    "search_depth_incomplete",
+                    {
+                        "strategy": strategy,
+                        "scope": scope,
+                        "value": complete_rate,
+                        "floor": complete_floor,
+                    },
+                ))
+            deadline = _int(metrics.get("deadline_truncations"))
+            node_budget = _int(metrics.get("node_budget_truncations"))
+            if deadline > 0 or node_budget > 0:
+                errors.append((
+                    "search_depth_time_or_node_stop",
+                    {
+                        "strategy": strategy,
+                        "scope": scope,
+                        "deadline": deadline,
+                        "node_budget": node_budget,
+                    },
+                ))
     return errors
 
 
@@ -372,6 +399,7 @@ def validate_evaluation_gate(
     strict = normalized_gate in {
         "nightly-stability",
         "nightly-equivalence",
+        "nightly-superiority",
         "deep-practical",
     }
 
@@ -533,7 +561,11 @@ def validate_evaluation_gate(
     relation_valid = True
     if normalized_gate == "nightly-stability":
         relation_valid = _strategies_equal(payload)
-    elif normalized_gate in {"nightly-equivalence", "deep-practical"}:
+    elif normalized_gate in {
+        "nightly-equivalence",
+        "nightly-superiority",
+        "deep-practical",
+    }:
         relation_valid = not _strategies_equal(payload)
     _check(checks, "strategy_relation", "strength", relation_valid, "策略指纹关系")
     if not relation_valid:
@@ -562,12 +594,34 @@ def validate_evaluation_gate(
 
     mirror = _strength_scope(payload, "mirror")
     cross = _strength_scope(payload, "cross_role")
-    if normalized_gate in {"nightly-equivalence", "deep-practical"}:
-        ci_floor = -0.02 if normalized_gate == "nightly-equivalence" else -0.04
+    if normalized_gate in {
+        "nightly-equivalence",
+        "nightly-superiority",
+        "deep-practical",
+    }:
+        ci_floor = (
+            0.0
+            if normalized_gate == "nightly-superiority"
+            else (-0.02 if normalized_gate == "nightly-equivalence" else -0.04)
+        )
         mirror_lower = _ci_lower(mirror)
         cross_lower = _ci_lower(cross)
-        mirror_ok = mirror_lower is not None and mirror_lower >= ci_floor - 1e-12
-        cross_ok = cross_lower is not None and cross_lower >= ci_floor - 1e-12
+        mirror_ok = (
+            mirror_lower is not None
+            and (
+                mirror_lower > 0.0
+                if normalized_gate == "nightly-superiority"
+                else mirror_lower >= ci_floor - 1e-12
+            )
+        )
+        cross_ok = (
+            cross_lower is not None
+            and (
+                cross_lower > 0.0
+                if normalized_gate == "nightly-superiority"
+                else cross_lower >= ci_floor - 1e-12
+            )
+        )
         _check(checks, "mirror_equivalence", "strength", mirror_ok, "镜像 CI 下界", lower=mirror_lower, floor=ci_floor)
         _check(checks, "cross_equivalence", "strength", cross_ok, "交叉 CI 下界", lower=cross_lower, floor=ci_floor)
         if not mirror_ok:
@@ -575,9 +629,16 @@ def validate_evaluation_gate(
         if not cross_ok:
             _append_issue(errors, "cross_ci_below_floor", "strength", lower=cross_lower, floor=ci_floor)
 
-        deck_floor = -0.04 if normalized_gate == "nightly-equivalence" else -0.08
+        deck_floor = (
+            -0.04
+            if normalized_gate in {
+                "nightly-equivalence",
+                "nightly-superiority",
+            }
+            else -0.08
+        )
         for deck, stats in (mirror.get("per_deck") or {}).items():
-            delta = _float((stats.get("overall") or {}).get("point_delta"), None)
+            delta = _float(stats.get("point_delta"), None)
             if delta is None or delta < deck_floor - 1e-12:
                 _append_issue(
                     errors,
@@ -587,9 +648,12 @@ def validate_evaluation_gate(
                     delta=delta,
                     floor=deck_floor,
                 )
-        if normalized_gate == "nightly-equivalence":
+        if normalized_gate in {
+            "nightly-equivalence",
+            "nightly-superiority",
+        }:
             for matchup, stats in (cross.get("per_unordered_matchup") or {}).items():
-                delta = _float((stats.get("overall") or {}).get("point_delta"), None)
+                delta = _float(stats.get("point_delta"), None)
                 if delta is None or delta < -0.08 - 1e-12:
                     _append_issue(
                         errors,
@@ -600,10 +664,52 @@ def validate_evaluation_gate(
                         floor=-0.08,
                     )
 
-        diagnostic_ok = diagnostic_delta <= 0
-        _check(checks, "decision_diagnostics", "diagnostics", diagnostic_ok, "候选错因不多于对照", delta=diagnostic_delta)
-        if not diagnostic_ok:
-            _append_issue(errors, "decision_diagnostics_regression", "diagnostics", delta=diagnostic_delta)
+        diagnostics = payload.get("decision_diagnostics") or {}
+        diagnostic_by_strategy = diagnostics.get("by_strategy") or {}
+        if normalized_gate == "nightly-superiority":
+            a_rates = (diagnostic_by_strategy.get("A") or {}).get("rates") or {}
+            b_rates = (diagnostic_by_strategy.get("B") or {}).get("rates") or {}
+            weak_label = "weak_attack_before_development"
+            weak_a = _float(a_rates.get(weak_label), 0.0) or 0.0
+            weak_b = _float(b_rates.get(weak_label), 0.0) or 0.0
+            weak_ok = weak_a <= weak_b * 0.5 + 1e-12
+            _check(
+                checks,
+                "weak_attack_reduction",
+                "diagnostics",
+                weak_ok,
+                "过早弱攻击发生率至少下降 50%",
+                candidate=weak_a,
+                baseline=weak_b,
+            )
+            if not weak_ok:
+                _append_issue(
+                    errors,
+                    "weak_attack_not_reduced",
+                    "diagnostics",
+                    candidate=weak_a,
+                    baseline=weak_b,
+                )
+            for label in sorted(set(a_rates) | set(b_rates)):
+                if label == weak_label:
+                    continue
+                candidate_rate = _float(a_rates.get(label), 0.0) or 0.0
+                baseline_rate = _float(b_rates.get(label), 0.0) or 0.0
+                if candidate_rate > baseline_rate + 0.001 + 1e-12:
+                    _append_issue(
+                        errors,
+                        "diagnostic_rate_regression",
+                        "diagnostics",
+                        label=label,
+                        candidate=candidate_rate,
+                        baseline=baseline_rate,
+                        allowed_increase=0.001,
+                    )
+        else:
+            diagnostic_ok = diagnostic_delta <= 0
+            _check(checks, "decision_diagnostics", "diagnostics", diagnostic_ok, "候选错因不多于对照", delta=diagnostic_delta)
+            if not diagnostic_ok:
+                _append_issue(errors, "decision_diagnostics_regression", "diagnostics", delta=diagnostic_delta)
 
     if normalized_gate == "deep-practical":
         fallback_rate = _float((payload.get("observed") or {}).get("deep_fallback_rate"), 0.0) or 0.0
@@ -614,6 +720,7 @@ def validate_evaluation_gate(
     elif normalized_gate not in {
         "nightly-stability",
         "nightly-equivalence",
+        "nightly-superiority",
         "quick",
         "smoke",
     }:
@@ -678,9 +785,11 @@ def main() -> int:
             "nightly",
             "nightly-stability",
             "nightly-equivalence",
+            "nightly-superiority",
             "deep-practical",
             "stability",
             "equivalence",
+            "superiority",
             "deep",
             "auto",
         ],

@@ -4170,22 +4170,23 @@ func _run_ai_runtime_v5_tests(
 	request["request_id"] = "generation:2"
 	_check(coordinator.start_request(request), "AI coordinator did not start a new generation")
 	OS.delay_msec(55)
-	var deadline_started := Time.get_ticks_msec()
-	var deadline_result := coordinator.poll_result()
+	var in_flight_result := coordinator.poll_result()
 	_check(
-		str(deadline_result.get("error", "")) == "deadline_exceeded"
-		and str(deadline_result.get("request_id", "")) == "generation:2"
-		and Time.get_ticks_msec() - deadline_started < 50,
-		"AI coordinator deadline did not fail fast with request correlation",
+		in_flight_result.is_empty() and coordinator.needs_poll(),
+		"AI coordinator imposed a device-dependent deadline on an active search",
 	)
 	reap_deadline = Time.get_ticks_msec() + 1000
-	while coordinator.needs_poll() and Time.get_ticks_msec() < reap_deadline:
-		coordinator.poll_result()
+	var completed_result: Dictionary = {}
+	while completed_result.is_empty() and Time.get_ticks_msec() < reap_deadline:
+		completed_result = coordinator.poll_result()
 		OS.delay_msec(1)
 	_check(
 		not coordinator.needs_poll()
+		and completed_result.get("success", false)
+		and str(completed_result.get("request_id", "")) == "generation:2"
+		and not completed_result.has("error")
 		and rules_rng.get_state() == rules_rng_state,
-		"Timed-out AI worker was not reaped or changed the rules RNG",
+		"AI coordinator did not return and reap a fixed-work search safely",
 	)
 	var terminating_coordinator := TerminatingAICoordinator.new()
 	request["request_id"] = "generation:terminated"
@@ -4213,13 +4214,12 @@ func _run_ai_strength_regression_tests(
 ) -> void:
 	var strongest_preset := NativeChallengeAI.strongest_preset()
 	_check(
-		float(strongest_preset.get("seconds", 0.0))
-		== NativeChallengeAI.GAMEPLAY_DEFAULT_SECONDS
-		and int(strongest_preset.get("simulations", 0))
-		== NativeChallengeAI.GAMEPLAY_DEFAULT_SIMULATIONS
-		and int(strongest_preset.get("depth", 0))
-		== NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH,
-		"Challenge AI compatibility preset escaped the bounded turn-planner budget",
+		int(strongest_preset.get("depth", 0))
+		== NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH
+		and not strongest_preset.has("seconds")
+		and not strongest_preset.has("simulations")
+		and not strongest_preset.has("dynamic_budget"),
+		"Challenge AI preset exposed a time or simulation strength control",
 	)
 	_check(ClassDB.class_exists("ChallengeAIMath"), "ChallengeAIMath GDExtension class is unavailable")
 	_test_ai_damage_counter_scoring_uses_ten_hp_units(catalog)
@@ -4238,7 +4238,7 @@ func _run_ai_strength_regression_tests(
 	_test_ai_adaptive_belief_samples_follow_random_semantics(catalog)
 	_test_ai_public_attack_profile_values_energy_and_readiness(catalog)
 	_test_ai_public_attack_profile_status_gates(catalog)
-	_test_ai_turn_replan_ledger_tiers_and_scope(catalog, worker)
+	_test_ai_fixed_replan_profile_and_scope(catalog, worker)
 
 	var ko_state := GameState.new()
 	ko_state.phase = "MAIN"
@@ -6121,6 +6121,18 @@ func _test_ai_adaptive_belief_samples_follow_random_semantics(
 			hidden_top_setup_attack_actions, semantic_catalog) == 3,
 		"AI adaptive belief sampling did not detect a hidden top-deck setup attack",
 	)
+	var hidden_state := _battle_state()
+	var hidden_information := AIInformationSet.capture(
+		hidden_state, 0, catalog, deterministic_actions, [], 2026072301)
+	_check(
+		hidden_information.is_valid()
+		and TraditionalTurnPlanner.recommended_belief_samples(
+			deterministic_actions,
+			semantic_catalog,
+			hidden_information,
+		) == 3,
+		"AI did not use three shared seeds when hidden zones affected a deterministic action set",
+	)
 
 
 func _test_ai_public_attack_profile_values_energy_and_readiness(
@@ -6233,7 +6245,7 @@ func _test_ai_public_attack_profile_status_gates(
 	)
 
 
-func _test_ai_turn_replan_ledger_tiers_and_scope(
+func _test_ai_fixed_replan_profile_and_scope(
 	catalog: CardCatalog,
 	worker: NativeChallengeAI,
 ) -> void:
@@ -6247,62 +6259,26 @@ func _test_ai_turn_replan_ledger_tiers_and_scope(
 	var match_a_request := {"match_instance_id": "replan-ledger-match-a"}
 	var turn_key := worker._turn_plan_cache_key(
 		match_a_request, information_set, "psychic")
-	worker._turn_replan_ledger.clear()
-	var full := worker._reserve_turn_replan_tier(turn_key, 10, "replan:full")
-	var full_retry := worker._reserve_turn_replan_tier(
-		turn_key, 10, "replan:full-retry")
-	var entry_after_retry: Dictionary = Dictionary(
-		worker._turn_replan_ledger.get(turn_key, {})).duplicate(true)
-	var local_one := worker._reserve_turn_replan_tier(
-		turn_key, 11, "replan:local-1")
-	var local_two := worker._reserve_turn_replan_tier(
-		turn_key, 12, "replan:local-2")
-	var local_three := worker._reserve_turn_replan_tier(
-		turn_key, 13, "replan:local-3")
-	var local_four := worker._reserve_turn_replan_tier(
-		turn_key, 14, "replan:local-4")
-	var local_five := worker._reserve_turn_replan_tier(
-		turn_key, 15, "replan:local-5")
-	var exhausted := worker._reserve_turn_replan_tier(
-		turn_key, 16, "replan:exhausted")
+	var fixed := worker._fixed_traditional_planner_request({
+		"seed": 123,
+		"seconds": 0.001,
+		"time_budget_ms": 1,
+		"node_budget": 1,
+		"max_depth": 1,
+		"belief_samples": 1,
+	})
 	_check(
-		str(full.get("tier", "")) == "full"
-		and int(full.get("ordinal", 0)) == 1
-		and full_retry == full
-		and int(entry_after_retry.get("full_replans", -1)) == 1
-		and int(entry_after_retry.get("local_replans", -1)) == 0
-		and str(local_one.get("tier", "")) == "local"
-		and int(local_one.get("ordinal", 0)) == 2
-		and str(local_two.get("tier", "")) == "local"
-		and int(local_two.get("ordinal", 0)) == 3
-		and str(local_three.get("tier", "")) == "local"
-		and int(local_three.get("ordinal", 0)) == 4
-		and str(local_four.get("tier", "")) == "local"
-		and int(local_four.get("ordinal", 0)) == 5
-		and str(local_five.get("tier", "")) == "local"
-		and int(local_five.get("ordinal", 0)) == 6
-		and str(exhausted.get("tier", "")) == "exhausted"
-		and int(exhausted.get("ordinal", 0)) == 7,
-		"AI turn replan ledger did not cover the six-action planning horizon",
-	)
-
-	var local_budget_start := 1_000_000
-	var local_budget := worker._bounded_traditional_planner_request(
-		{"node_budget": 192, "max_depth": 6, "time_budget_ms": 850},
-		local_budget_start,
-		{"tier": "local"},
-	)
-	_check(
-		NativeChallengeAI.TURN_REPLAN_FULL_LIMIT
-			+ NativeChallengeAI.TURN_REPLAN_LOCAL_LIMIT
-			== NativeChallengeAI.GAMEPLAY_DEFAULT_DEPTH
-		and int(local_budget.get("time_budget_ms", 0))
-			== NativeChallengeAI.TURN_REPLAN_LOCAL_SOFT_MSEC
-		and int(local_budget.get("soft_deadline_usec", 0))
-			== local_budget_start + NativeChallengeAI.TURN_REPLAN_LOCAL_SOFT_MSEC * 1000
-		and int(local_budget.get("hard_deadline_usec", 0))
-			== local_budget_start + NativeChallengeAI.TURN_REPLAN_LOCAL_HARD_MSEC * 1000,
-		"AI local replans escaped the bounded six-action turn budget",
+		str(fixed.get("engine", "")) == "turn_beam_v2"
+		and int(fixed.get("max_depth", 0)) == 8
+		and int(fixed.get("root_actions", 0)) == 8
+		and int(fixed.get("per_root_beam_width", 0)) == 2
+		and int(fixed.get("max_actions_per_node", 0)) == 8
+		and int(fixed.get("reply_depth", 0)) == 3
+		and not fixed.has("seconds")
+		and not fixed.has("time_budget_ms")
+		and not fixed.has("node_budget")
+		and not fixed.has("belief_samples"),
+		"AI cache miss did not retain the fixed depth-eight work profile",
 	)
 
 	var next_turn := GameState.from_dict(state.snapshot())
@@ -6312,24 +6288,15 @@ func _test_ai_turn_replan_ledger_tiers_and_scope(
 		next_turn, 0, catalog, [], [], 2026072107)
 	var next_turn_key := worker._turn_plan_cache_key(
 		match_a_request, next_turn_information, "psychic")
-	var next_turn_tier := worker._reserve_turn_replan_tier(
-		next_turn_key, 14, "replan:new-turn")
 	var match_b_request := {"match_instance_id": "replan-ledger-match-b"}
 	var next_match_key := worker._turn_plan_cache_key(
 		match_b_request, information_set, "psychic")
-	var next_match_tier := worker._reserve_turn_replan_tier(
-		next_match_key, 20, "replan:new-match")
 	_check(
 		not turn_key.is_empty()
 		and next_turn_key != turn_key
-		and next_match_key != turn_key
-		and str(next_turn_tier.get("tier", "")) == "full"
-		and int(next_turn_tier.get("ordinal", 0)) == 1
-		and str(next_match_tier.get("tier", "")) == "full"
-		and int(next_match_tier.get("ordinal", 0)) == 1,
-		"AI turn replan ledger did not reset its scope for a new turn or match instance",
+		and next_match_key != turn_key,
+		"AI turn plan cache did not scope fixed-work plans by turn and match",
 	)
-	worker._turn_replan_ledger.clear()
 
 
 func _ai_decision_for_actions(
@@ -6377,6 +6344,7 @@ func _ai_decision_result_for_actions(
 		"mode": "challenge",
 		"deck_key": deck_key,
 		"seed": 20260626,
+		"internal_tactical_fixture": true,
 		"simulation_budget": 0,
 		"seconds": 0.0,
 		"max_depth": 1,

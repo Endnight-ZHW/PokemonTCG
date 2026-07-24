@@ -1,4 +1,4 @@
-"""Compare two authoritative schema-v5 evaluation profiles."""
+"""Compare two authoritative schema-v6 evaluation profiles."""
 from __future__ import annotations
 
 import argparse
@@ -34,8 +34,8 @@ def _ratio(candidate: float, baseline: float) -> float | None:
 
 
 def compare_profiles(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
-    if int(baseline.get("schema_version") or 0) != 5 or int(candidate.get("schema_version") or 0) != 5:
-        raise ValueError("schema v5 results are required")
+    if int(baseline.get("schema_version") or 0) != 6 or int(candidate.get("schema_version") or 0) != 6:
+        raise ValueError("schema v6 results are required")
     baseline_segments = (baseline.get("performance_profile") or {}).get("segments_ms") or {}
     candidate_segments = (candidate.get("performance_profile") or {}).get("segments_ms") or {}
     segment_keys = sorted(set(baseline_segments) | set(candidate_segments))

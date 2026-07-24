@@ -66,10 +66,10 @@ class ReleaseManifestTests(unittest.TestCase):
             "snapshot": 3,
             "encoder": 5,
             "checkpoint": 10,
-            "planner": 1,
+            "planner": 2,
             "vm_ir": 3,
             "rng": 2,
-            "ai_evaluation": 5,
+            "ai_evaluation": 6,
         }
         self.assertEqual(self.manifest["schemas"], expected_schemas)
 
@@ -225,6 +225,22 @@ class ReleaseManifestTests(unittest.TestCase):
             ).strip('"')
             self.assertNotIn("data/ai_models/*.onnx", include_filter)
             self.assertIn("data/ai_models/*.onnx", exclude_filter)
+            self.assertIn("tools/*", exclude_filter)
+
+        baseline = REPO_ROOT / "godot" / "tools" / "ai_baseline"
+        self.assertTrue((baseline / "ai_turn_beam_planner_v1.gd").is_file())
+        self.assertTrue((baseline / "traditional_turn_planner_v1.gd").is_file())
+        frozen_strategy = json.loads(
+            (baseline / "ai_strategies_v1.json").read_text(encoding="utf-8")
+        )
+        production_strategy = json.loads(
+            (REPO_ROOT / "godot" / "data" / "ai_strategies.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            frozen_strategy["content_hash"], production_strategy["content_hash"]
+        )
 
     def test_release_pipeline_keeps_legacy_models_out_of_packages(self):
         package_script = (

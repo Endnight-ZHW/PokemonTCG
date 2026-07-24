@@ -24,12 +24,15 @@ Godot 4.7 是唯一发布客户端。0.6.0 在 0.5.0 的严格动作信封和事
 
 ## AI 与发布合同
 
-- Challenge AI 已切换为“规则战术 → 十卡组独立策略 → 回合级浅层 beam”架构，并缓存经复核的语义动作计划。普通规划软时限 850ms、硬时限 1100ms。
+- Challenge AI 升级为 `turn_beam_v2` 固定深度搜索：我方深度 8、8 个根动作×2 条线路、每节点 8 个候选，对手回应深度 3/宽度 4；隐藏或随机状态使用 3 个共同种子。
+- 生产搜索移除毫秒期限、节点预算、动态预算和低配局部重规划。协调器保留异步执行、代际校验和离场取消；耗时仅作诊断。
+- 新增统一整数位置评估器、分层语义候选、跨样本公平根动作比较、实际对手牌组策略回应，以及固定质量的语义计划缓存重规划。
 - AI 决策种子由比赛 seed、revision、actor、请求类型与请求 ID 稳定派生，不推进规则 RNG；Challenge 与 Deep 回退固定关闭全局弱点、抗性。
-- 旧 UCB/随机 rollout 传统 AI、离线验收适配器及双引擎开关已删除；未知评估引擎 fail-closed。Deep runtime 继续关闭，10 个历史模型仅保留为 Deep 模型元数据，本轮不重新训练。
-- 正式 AI 评测升级为 schema v5：Python 统一聚合两局镜像块与四局角色交叉块，Nightly 增加 60 局单进程搜索深度探针、来源指纹、行为画像和可筛选离线仪表盘；耗时仅作诊断，门禁依据实际 beam 深度，v4 结果不再读取或验收。
+- 旧实现及当时策略数据冻结为导出排除目录中的评测基线 `turn_beam_v1`，正式包只包含 v2；未知评估引擎 fail-closed。Deep runtime 继续关闭。
+- AI 评测升级为 schema v6：Nightly 固定执行 2800 局 v2 对 v1 配对评测，强制完整深度 8/搜索空间耗尽、零时间/节点截断、双强度 CI 下界大于 0、逐牌组/对局下限和决策诊断门禁；v5 结果拒绝验收。
+- 保留 109 个策略金标，并增加十套牌各 3 条多步意图链金标。延迟 P50/P95 继续展示，但不参与通过判定。
 - 产品 `0.6.0`，Android `versionCode=8`；Protocol 6、Godot Rules 6、Python Rules 5、VM IR 3、Snapshot 3、Encoder 5。
-- Godot Actions 4、Python Actions 3、Checkpoint 10、Planner 1、RNG 2 保持不变；AI Evaluation 为 5。
+- Godot Actions 4、Python Actions 3、Checkpoint 10、RNG 2 保持不变；Planner 为 2，AI Evaluation 为 6。
 
 ## 验证顺序
 

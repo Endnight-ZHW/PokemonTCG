@@ -13,10 +13,10 @@
     "encoder": 5,
     "checkpoint": 10,
     "snapshot": 3,
-    "planner": 1,
+    "planner": 2,
     "vm_ir": 3,
     "rng": 2,
-    "ai_evaluation": 5
+    "ai_evaluation": 6
   },
   "rng": {
     "algorithm": "xorshift32",

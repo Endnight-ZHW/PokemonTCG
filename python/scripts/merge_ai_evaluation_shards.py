@@ -1,4 +1,4 @@
-"""Merge Godot AI-evaluation shards into one authoritative schema-v5 result."""
+"""Merge Godot AI-evaluation shards into one authoritative schema-v6 result."""
 from __future__ import annotations
 
 import argparse
@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 try:
-    from scripts.ai_evaluation_v5 import (
+    from scripts.ai_evaluation_v6 import (
         MergeError,
         SCHEMA_VERSION,
         experimental_units,
@@ -15,7 +15,7 @@ try:
         summarize_strength,
     )
 except ModuleNotFoundError:  # Direct ``python python/scripts/...`` execution.
-    from ai_evaluation_v5 import (  # type: ignore[no-redef]
+    from ai_evaluation_v6 import (  # type: ignore[no-redef]
         MergeError,
         SCHEMA_VERSION,
         experimental_units,

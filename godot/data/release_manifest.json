@@ -31,12 +31,12 @@
     "fallback_seed": 1831565813
   },
   "schemas": {
-    "ai_evaluation": 5,
+    "ai_evaluation": 6,
     "checkpoint": 10,
     "encoder": 5,
     "godot_actions": 4,
     "godot_rules": 6,
-    "planner": 1,
+    "planner": 2,
     "protocol": 6,
     "python_actions": 3,
     "python_rules": 5,

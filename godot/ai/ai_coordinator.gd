@@ -1,10 +1,6 @@
 class_name AICoordinator
 extends RefCounted
 
-const DEFAULT_TIMEOUT_MSEC := 1100
-const HARD_TIMEOUT_MSEC := 1100
-const DEADLINE_GRACE_MSEC := 250
-const MIN_TIMEOUT_MSEC := 50
 const INVALID_TASK_ID := -1
 
 var last_start_error := ""
@@ -15,11 +11,8 @@ var _next_generation := 0
 var _active_generation := 0
 var _task_generation := 0
 var _task_completed := false
-var _task_completed_msec := 0
 var _task_result: Dictionary = {}
 var _cancel_requested := false
-var _deadline_msec := 0
-var _deadline_reported := false
 var _request_id := ""
 var _revision := -1
 ## Keep one worker for the lifetime of the coordinator.  Challenge decisions
@@ -40,8 +33,8 @@ func is_running() -> bool:
 	return running
 
 
-## A pooled task can outlive its logical request after cancellation or a
-## deadline. Main keeps polling until the global pool reports it complete.
+## A pooled task can outlive its logical request after explicit cancellation.
+## Main keeps polling until the global pool reports it complete.
 func needs_poll() -> bool:
 	_mutex.lock()
 	var pending := _task_id != INVALID_TASK_ID
@@ -64,13 +57,10 @@ func start_request(request: Dictionary, inference: Variant = null) -> bool:
 	_active_generation = _next_generation
 	_task_generation = _active_generation
 	_task_completed = false
-	_task_completed_msec = 0
 	_task_result = {}
 	_cancel_requested = false
-	_deadline_reported = false
 	_request_id = str(request.get("request_id", ""))
 	_revision = int(request.get("revision", -1))
-	_deadline_msec = Time.get_ticks_msec() + _request_timeout_msec(request)
 	last_start_error = ""
 	var generation := _active_generation
 	_mutex.unlock()
@@ -96,29 +86,6 @@ func start_request(request: Dictionary, inference: Variant = null) -> bool:
 
 
 func poll_result() -> Dictionary:
-	var deadline_result: Dictionary = {}
-	_mutex.lock()
-	if (
-		_active_generation > 0
-		and _task_id != INVALID_TASK_ID
-		and not _deadline_reported
-		and Time.get_ticks_msec() >= _deadline_msec
-		and (not _task_completed or _task_completed_msec > _deadline_msec)
-	):
-		_deadline_reported = true
-		_cancel_requested = true
-		_active_generation = 0
-		deadline_result = {
-			"success": false,
-			"cancelled": false,
-			"error": "deadline_exceeded",
-			"request_id": _request_id,
-			"revision": _revision,
-		}
-	_mutex.unlock()
-	if not deadline_result.is_empty():
-		return deadline_result
-
 	var task_id := INVALID_TASK_ID
 	var generation := 0
 	_mutex.lock()
@@ -136,7 +103,6 @@ func poll_result() -> Dictionary:
 		_active_generation > 0
 		and generation == _active_generation
 		and not _cancel_requested
-		and not _deadline_reported
 	)
 	if accepted:
 		if completed_marker:
@@ -186,7 +152,6 @@ func _worker_main(
 		"request_id": str(request.get("request_id", "")),
 		"revision": int(request.get("revision", -1)),
 	}
-	_task_completed_msec = Time.get_ticks_msec()
 	_task_completed = true
 	_mutex.unlock()
 
@@ -210,23 +175,6 @@ func _is_cancelled(generation: int) -> bool:
 	return value
 
 
-func _request_timeout_msec(request: Dictionary) -> int:
-	if request.has("coordinator_timeout_msec"):
-		return mini(
-			HARD_TIMEOUT_MSEC,
-			maxi(MIN_TIMEOUT_MSEC, int(request["coordinator_timeout_msec"])),
-		)
-	if request.has("seconds"):
-		return mini(
-			HARD_TIMEOUT_MSEC,
-			maxi(
-				MIN_TIMEOUT_MSEC,
-				ceili(float(request["seconds"]) * 1000.0) + DEADLINE_GRACE_MSEC,
-			),
-		)
-	return DEFAULT_TIMEOUT_MSEC
-
-
 func _reap_finished_task() -> void:
 	_mutex.lock()
 	var task_id := _task_id
@@ -244,11 +192,8 @@ func _reap_finished_task() -> void:
 		_task_id = INVALID_TASK_ID
 		_task_generation = 0
 		_task_completed = false
-		_task_completed_msec = 0
 		_task_result = {}
 		_cancel_requested = false
-		_deadline_msec = 0
-		_deadline_reported = false
 		_request_id = ""
 		_revision = -1
 		_active_generation = 0

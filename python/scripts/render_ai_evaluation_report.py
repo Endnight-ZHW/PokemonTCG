@@ -1,4 +1,4 @@
-"""Render the self-contained schema-v5 Godot AI evaluation dashboard."""
+"""Render the self-contained schema-v6 Godot AI evaluation dashboard."""
 from __future__ import annotations
 
 import argparse
@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.ai_evaluation_v5 import DECK_ORDER, SCHEMA_VERSION
+    from scripts.ai_evaluation_v6 import DECK_ORDER, SCHEMA_VERSION
 except ModuleNotFoundError:  # Direct script execution.
-    from ai_evaluation_v5 import DECK_ORDER, SCHEMA_VERSION
+    from ai_evaluation_v6 import DECK_ORDER, SCHEMA_VERSION
 
 
 DECK_LABELS = {
@@ -123,6 +123,8 @@ def evaluation_verdict(
     if gate == "nightly-equivalence":
         suffix = "；且两项主指标均显示 A 统计上显著更强。" if _significant_a(payload) else "；这不等同于统计上显著更强。"
         return "通过等价性门禁" + suffix
+    if gate == "nightly-superiority":
+        return "通过保守优势门禁；镜像与角色交叉指标的 95% CI 下界均大于 0。"
     if gate == "nightly-stability":
         return "通过同策略稳定性门禁；该门禁不产生强度结论。"
     if gate == "deep-practical":
@@ -278,10 +280,15 @@ def _search_depth_section(payload: dict[str, Any], validation: dict[str, Any] | 
     thresholds = (validation or {}).get("search_depth_thresholds") or {}
     depth_rows = []
     depth_specs = (
-        ("requested_depth_min", "配置深度下限", "full_tier_requested_depth_min"),
-        ("reached_depth_p50", "实际达到深度 P50", "full_tier_reached_depth_p50_min"),
-        ("reached_depth_p95", "实际达到深度 P95", "full_tier_reached_depth_p95_min"),
-        ("sample_count", "全预算搜索样本", None),
+        ("requested_depth_min", "固定请求深度", "requested_depth_min"),
+        ("completed_depth_p50", "完整层深度 P50", None),
+        ("completed_depth_p95", "完整层深度 P95", None),
+        (
+            "complete_or_frontier_exhausted_rate",
+            "完整深度或空间耗尽率",
+            "complete_or_frontier_exhausted_rate_min",
+        ),
+        ("sample_count", "固定工作量搜索样本", None),
         ("deadline_truncations", "deadline 停止", None),
         ("node_budget_truncations", "节点预算停止", None),
     )
@@ -299,8 +306,8 @@ def _search_depth_section(payload: dict[str, Any], validation: dict[str, Any] | 
         b_scope = ((((by_strategy.get("B") or {}).get("per_deck") or {}).get(deck) or {}).get("full_tier") or {})
         deck_rows.append(
             f"<tr><td>{escape(DECK_LABELS.get(str(deck), str(deck)))}</td>"
-            f"<td>{escape(_number(a_scope.get('reached_depth_p50'), 1))}</td>"
-            f"<td>{escape(_number(b_scope.get('reached_depth_p50'), 1))}</td>"
+            f"<td>{escape(_number(a_scope.get('completed_depth_p50'), 1))}</td>"
+            f"<td>{escape(_number(b_scope.get('completed_depth_p50'), 1))}</td>"
             f"<td>{escape(_integer(a_scope.get('sample_count')))} / {escape(_integer(b_scope.get('sample_count')))}</td></tr>"
         )
     latency_rows = []
@@ -432,8 +439,8 @@ def render_report(
         _metric_card("干净覆盖率", _pct(clean_rate), f"{_integer(observed.get('clean_games'))} / {_integer(games)} 局"),
         _metric_card(
             "候选 A 搜索深度",
-            _number(search_depth_a.get("reached_depth_p50"), 1),
-            f"全预算 P50；P95 {_number(search_depth_a.get('reached_depth_p95'), 1)}",
+            _number(search_depth_a.get("completed_depth_p50"), 1),
+            f"完整层 P50；P95 {_number(search_depth_a.get('completed_depth_p95'), 1)}",
         ),
     ])
     provenance = payload.get("provenance") or {}
@@ -443,8 +450,8 @@ def render_report(
 <style>
 :root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2e;--line:#23344c;--text:#e7eef8;--muted:#91a4bd;--blue:#38bdf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#143258 0,transparent 34%),var(--bg);color:var(--text);font:14px/1.55 Inter,"Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1580px;margin:auto;padding:28px}header{padding:26px;border:1px solid var(--line);border-radius:18px;background:rgba(13,27,46,.9)}h1{margin:0 0 6px;font-size:28px}h2{margin:0 0 12px;font-size:19px}h3{margin-top:24px}.muted,small{color:var(--muted)}.verdict{font-size:16px;padding:13px 16px;border-left:4px solid var(--blue);background:#10243b;border-radius:8px}.metrics{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px;margin:16px 0}.metric,section{border:1px solid var(--line);background:rgba(13,27,46,.94);border-radius:14px}.metric{padding:15px}.metric span,.metric small{display:block}.metric strong{font-size:22px;display:block;margin:6px 0}.metric.ok{border-color:#236b45}.metric.bad{border-color:#8e3035}.metric.warn{border-color:#88641d}section{padding:20px;margin:16px 0}.delta-row{margin:15px 0}.delta-row>div:first-child{display:flex;justify-content:space-between}.delta-track{height:13px;position:relative;border-radius:8px;background:linear-gradient(90deg,rgba(239,68,68,.55),#23344c 50%,rgba(34,197,94,.55))}.zero{position:absolute;left:50%;height:18px;top:-3px;border-left:1px solid #fff}.marker{position:absolute;top:-3px;width:4px;height:19px;background:#fff;border-radius:2px;box-shadow:0 0 8px #fff}.axis-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:11px}.table-scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;white-space:nowrap}th{color:#b9cae0;background:#101f33;position:sticky;top:0}.heat th,.heat td{text-align:center;min-width:86px}.split{display:grid;grid-template-columns:1fr 1fr;gap:20px}.pill{padding:3px 8px;border-radius:999px;background:#24364d}.pill.ok{background:#124d33;color:#86efac}.pill.bad{background:#5b2028;color:#fca5a5}.section-title{display:flex;align-items:end;justify-content:space-between}.mini-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.mini-cards>div{display:flex;gap:18px;padding:10px;background:#101f33;border-radius:8px}.tag-list{display:flex;flex-wrap:wrap;gap:8px}.tag{padding:6px 10px;background:#162840;border:1px solid var(--line);border-radius:999px}.perf-track{height:8px;margin-top:6px;background:#1d2e45;position:relative;max-width:260px}.perf-track i{display:block;height:100%}.perf-track .goodbar{background:var(--green)}.perf-track .badbar{background:var(--red)}.perf-track em{position:absolute;top:-3px;height:14px;border-left:2px solid var(--amber)}select,input,button{color:var(--text);background:#101f33;border:1px solid #334962;border-radius:7px;padding:7px 9px}.filters{display:flex;flex-wrap:wrap;gap:10px}.filters label,.section-title label{display:flex;flex-direction:column;gap:4px;color:var(--muted)}.pager{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:14px}code{color:#bae6fd;white-space:normal}.provenance{word-break:break-all}@media(max-width:1000px){main{padding:12px}.metrics{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}}@media(max-width:600px){.metrics{grid-template-columns:1fr}.delta-row>div:first-child{display:block}}
 </style>"""
-    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 策略评测 v5</title>{style}</head><body><main>
-<header><h1>AI 策略评测 v5</h1><p>{escape(_strategy_label(payload,'A'))} <span class="muted">vs</span> {escape(_strategy_label(payload,'B'))}</p><p class="verdict">{escape(verdict)}</p><p class="muted provenance">{escape(provenance_text)}</p></header>
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 策略评测 v6</title>{style}</head><body><main>
+<header><h1>AI 策略评测 v6</h1><p>{escape(_strategy_label(payload,'A'))} <span class="muted">vs</span> {escape(_strategy_label(payload,'B'))}</p><p class="verdict">{escape(verdict)}</p><p class="muted provenance">{escape(provenance_text)}</p></header>
 <div class="metrics">{cards}</div>
 <section><h2>两项独立主指标</h2><p class="muted">两项指标不混合；仅完整、干净的实验单元进入固定 seed、10,000 次分层 cluster bootstrap。原始总点数率不生成主结论。</p>{_delta_bar(mirror.get('point_delta'),mirror.get('ci95'),'镜像强度：同牌组、同 seed 的两局换席块；十牌组等权')}{_delta_bar(cross.get('point_delta'),cross.get('ci95'),'角色交叉强度：同 seed 的四局牌组角色交叉块；无序对局等权')}</section>
 {_validation_section(validation)}{_fairness_table(payload,validation)}{_heatmap(payload,raw=False)}{_heatmap(payload,raw=True)}{_behavior_section(payload)}{_search_depth_section(payload,validation)}{_terminal_and_golden(payload)}{_details_section(payload)}

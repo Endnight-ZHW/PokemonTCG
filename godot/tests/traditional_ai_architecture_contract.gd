@@ -34,8 +34,12 @@ func _initialize() -> void:
 	_check_lightning_strategy_regressions(registry)
 	var tactical_golden_count := _check_tactical_goldens(registry, catalog)
 	_check_trusted_choice_bridge(state, registry, catalog)
+	_check_cancel_prediction_uses_live_choice_policy(registry, catalog, engine)
 	_check_trusted_dynamic_scoring(catalog)
 	_check_post_plan_tactical_guards(catalog, engine)
+	_check_no_progress_action_cycle_guard(catalog)
+	_check_target_variant_candidate_coverage()
+	_check_retreat_tempo_evaluation(catalog)
 	_check_mandatory_knockout(registry, catalog, engine)
 	_check_repeatable_ability_turn_guard(catalog)
 	_check_planner_contract(state, information_set, registry, catalog, engine)
@@ -1650,6 +1654,193 @@ func _check_trusted_dynamic_scoring(catalog: CardCatalog) -> void:
 	)
 
 
+func _check_no_progress_action_cycle_guard(_catalog: CardCatalog) -> void:
+	var worker := NativeChallengeAI.new()
+	var state := _planner_state()
+	state.phase = "MAIN"
+	state.active_player_idx = 0
+	state.turn_number = 19
+	state.revision = 41
+	var trainer := GameAction.create(
+		"PLAY_TRAINER",
+		{},
+		0,
+		EntityRef.new("card", 0, "hand", "", 0, "", "svi-cait"),
+	)
+	var end_turn := GameAction.create("END_TURN", {}, 0)
+	var actions: Array[GameAction] = [trainer, end_turn]
+	var request := {
+		"engine": NativeChallengeAI.TRADITIONAL_ENGINE_ID,
+		"match_instance_id": "cycle-guard-contract",
+		"revision": state.revision,
+	}
+	worker._record_action_cycle_selection(
+		request,
+		state,
+		0,
+		{"success": true, "action": trainer.to_dict()},
+	)
+	var identical_retry := worker._filter_no_progress_action_cycles(
+		request, state, 0, actions)
+	state.revision += 1
+	request["revision"] = state.revision
+	var after_no_progress := worker._filter_no_progress_action_cycles(
+		request, state, 0, actions)
+	_check(
+		identical_retry.size() == 2
+		and after_no_progress.size() == 1
+		and after_no_progress[0].kind == "END_TURN",
+		"AI did not blacklist an action after a newer revision returned to the same state",
+	)
+
+
+func _check_cancel_prediction_uses_live_choice_policy(
+	registry: AIStrategyRegistry,
+	catalog: CardCatalog,
+	engine: GameEngine,
+) -> void:
+	var worker := NativeChallengeAI.new()
+	var state := _planner_state()
+	state.phase = "MAIN"
+	state.setup_stage = GameState.SETUP_COMPLETE
+	state.setup_ready = [true, true]
+	state.setup_actor_idx = -1
+	state.active_player_idx = 0
+	state.turn_number = 8
+	state.public_deck_keys = ["lightning", "water"]
+	state.players[0].supporter_played_this_turn = false
+	state.players[0].hand = ["svi-cait", "svl-lant"]
+	state.players[0].deck = [
+		"svl-pikaex", "svl-flaa2", "svl-thun", "sv1-ener-4",
+	]
+	var query := engine.query_legal_action_groups(state, 0)
+	var caitlin: GameAction = null
+	if query.success:
+		for action in query.concrete_actions():
+			if (
+				action.kind == "PLAY_TRAINER"
+				and action.source != null
+				and action.source.card_id == "svi-cait"
+			):
+				caitlin = action
+				break
+	var simulation := state.clone_state()
+	var step: StepResult = null
+	var live_response: ChoiceResponse = null
+	if caitlin != null:
+		step = engine.apply_action(
+			simulation, caitlin, PortableRandomSource.new(TEST_SEED + 901))
+	if step != null and step.success and step.pending_choice != null:
+		var information := AIInformationSet.capture(
+			simulation, 0, catalog, [], [], TEST_SEED + 901)
+		if information.is_valid():
+			live_response = worker._traditional_choice_response(
+				simulation,
+				information,
+				step.pending_choice,
+				"lightning",
+				registry.strategy_for("lightning"),
+				catalog,
+			)
+	var predicted_cancel := (
+		worker._action_first_choice_cancelled(
+			state,
+			0,
+			caitlin,
+			"lightning",
+			catalog,
+			engine,
+			TEST_SEED + 901,
+		)
+		if caitlin != null
+		else false
+	)
+	_check(
+		query.success
+		and caitlin != null
+		and live_response != null
+		and live_response.cancelled
+		and predicted_cancel == live_response.cancelled,
+		"Post-plan Trainer cancellation predictor diverged from the live choice policy",
+	)
+
+
+func _check_target_variant_candidate_coverage() -> void:
+	var evolve_left := GameAction.create(
+		"EVOLVE",
+		{},
+		0,
+		EntityRef.new("card", 0, "hand", "", 0, "", "svl-lant"),
+		EntityRef.new("pokemon", 0, "", "bench_0", -1, "", "svl-chin"),
+	)
+	var evolve_right := GameAction.create(
+		"EVOLVE",
+		{},
+		0,
+		EntityRef.new("card", 0, "hand", "", 1, "", "svl-lant"),
+		EntityRef.new("pokemon", 0, "", "bench_1", -1, "", "svl-chin"),
+	)
+	var actions: Array[GameAction] = [
+		GameAction.create("DECLARE_ATTACK", {"attack_index": 0}, 0),
+		evolve_left,
+		evolve_right,
+		GameAction.create("ATTACH_ENERGY", {}, 0),
+		GameAction.create("PLAY_BASIC", {}, 0),
+		GameAction.create("USE_ABILITY", {"ability_name": "test"}, 0),
+		GameAction.create("PLAY_TRAINER", {}, 0),
+		GameAction.create("RETREAT", {}, 0),
+		GameAction.create("USE_STADIUM", {}, 0),
+		GameAction.create("END_TURN", {}, 0),
+	]
+	var ranked: Array[Dictionary] = []
+	for index in range(actions.size()):
+		ranked.append({
+			"action": actions[index],
+			"score": 1000.0 - float(index) * 100.0,
+			"index": index,
+		})
+	var selected := AITurnBeamPlanner._diverse_top_actions(ranked, 8)
+	var evolve_targets: Dictionary = {}
+	var has_attack := false
+	var has_end := false
+	for row in selected:
+		var action: GameAction = row.get("action")
+		if action == null:
+			continue
+		if action.kind == "EVOLVE" and action.target != null:
+			evolve_targets[action.target.slot] = true
+		elif action.kind == "DECLARE_ATTACK":
+			has_attack = true
+		elif action.kind == "END_TURN":
+			has_end = true
+	_check(
+		selected.size() == 8
+		and evolve_targets.size() == 2
+		and has_attack
+		and has_end,
+		"Semantic candidate cap dropped alternate evolution targets",
+	)
+
+
+func _check_retreat_tempo_evaluation(catalog: CardCatalog) -> void:
+	var state := _planner_state()
+	state.set_type_matchups_enabled(false)
+	state.players[0].retreated_this_turn = false
+	var semantics := CardSemanticCatalog.new(catalog)
+	var before := AIPositionEvaluator.state_score_milli(
+		state, 0, null, semantics, catalog, TEST_SEED)
+	state.players[0].retreated_this_turn = true
+	var after := AIPositionEvaluator.state_score_milli(
+		state, 0, null, semantics, catalog, TEST_SEED)
+	_check(
+		before - after
+		== roundi(
+			AIPositionEvaluator.RETREAT_TEMPO_COST
+			* AIPositionEvaluator.SCORE_SCALE),
+		"Position evaluator did not charge the deterministic retreat tempo cost",
+	)
+
+
 func _check_post_plan_tactical_guards(
 	catalog: CardCatalog,
 	engine: GameEngine,
@@ -1760,6 +1951,35 @@ func _check_post_plan_tactical_guards(
 		and setup_selection.source != null
 		and setup_selection.source.card_id == "svi-tand",
 		"AI attacked before a proof-safe, role-relevant Basic Bench development",
+	)
+	var rejected_retreat: GameAction = null
+	for setup_action in setup_actions:
+		if setup_action.kind != "RETREAT" or setup_action.target == null:
+			continue
+		var bench_idx := int(setup_action.target.slot.trim_prefix("bench_"))
+		if not worker._retreat_has_good_target(
+			setup_state, 0, bench_idx, "colorless", catalog):
+			rejected_retreat = setup_action
+			break
+	var retreat_replacement: GameAction = null
+	if rejected_retreat != null:
+		retreat_replacement = worker._validated_or_fallback_action(
+			setup_state,
+			0,
+			rejected_retreat,
+			setup_actions,
+			"colorless",
+			catalog,
+			engine,
+			TEST_SEED + 11,
+		)
+	_check(
+		rejected_retreat != null
+		and retreat_replacement != null
+		and retreat_replacement.kind == "PLAY_BASIC"
+		and retreat_replacement.source != null
+		and retreat_replacement.source.card_id == "svi-tand",
+		"Rejected retreat fallback attacked without re-running development validation",
 	)
 
 	var jet_state := GameState.from_dict(setup_state.snapshot())
@@ -1960,7 +2180,7 @@ func _check_trusted_choice_bridge(
 	var strategy := registry.strategy_for("fire")
 	var resolver := Callable(
 		worker, "_traditional_simulated_choice_response").bind(
-			0, "fire", strategy, catalog)
+			0, "fire", strategy, catalog, registry)
 	var card_options: Array[Dictionary] = [
 		{
 			"option_id": "card:0:svi-chim",
@@ -3049,11 +3269,7 @@ func _check_planner_contract(
 	var request := {
 		"mode": "challenge",
 		"seed": TEST_SEED,
-		"beam_width": 4,
-		"node_budget": 16,
-		"max_depth": 2,
-		"max_actions_per_node": 8,
-		"time_budget_ms": 5000,
+		"belief_samples": 1,
 		"state": {
 			"sentinel": "request.state must never be read",
 			"apply_type_matchups": true,
@@ -3084,6 +3300,17 @@ func _check_planner_contract(
 		engine,
 		func() -> bool: return false,
 	)
+	var paced_plan := TraditionalTurnPlanner.plan_action(
+		request,
+		information_set,
+		legal,
+		strategy,
+		catalog,
+		engine,
+		func() -> bool:
+			OS.delay_usec(50)
+			return false,
+	)
 	_check(
 		bool(plan_a.get("success", false))
 		and bool(plan_b.get("success", false)),
@@ -3096,8 +3323,11 @@ func _check_planner_contract(
 	var selected_b: GameAction = plan_b.get("action")
 	_check(_is_supplied_legal_action(selected_a, legal),
 		"TraditionalTurnPlanner returned an action outside the legal root set")
-	_check(int(plan_a.get("nodes_expanded", 0)) <= 16,
-		"TraditionalTurnPlanner exceeded the shared tactical/search node budget")
+	_check(
+		int(plan_a.get("nodes_expanded", 0)) > 0
+		and int(plan_a.get("nodes_expanded", 0))
+			== int(plan_b.get("nodes_expanded", -1)),
+		"TraditionalTurnPlanner fixed work was missing or not reproducible")
 	var cached_steps: Array = plan_a.get("turn_plan", [])
 	var steps_have_preconditions := not cached_steps.is_empty()
 	for step_value in cached_steps:
@@ -3120,16 +3350,88 @@ func _check_planner_contract(
 		"TraditionalTurnPlanner read or was influenced by bait request.state",
 	)
 	_check(
+		bool(paced_plan.get("success", false))
+		and _intent_signature(selected_a)
+			== _intent_signature(paced_plan.get("action"))
+		and int(plan_a.get("nodes_expanded", -1))
+			== int(paced_plan.get("nodes_expanded", -2))
+		and int(plan_a.get("completed_depth", -1))
+			== int(paced_plan.get("completed_depth", -2))
+		and str(plan_a.get("completion_reason", ""))
+			== str(paced_plan.get("completion_reason", ""))
+		and str(plan_a.get("trajectory_hash", "")).length() == 64
+		and str(plan_a.get("trajectory_hash", ""))
+			== str(paced_plan.get("trajectory_hash", "")),
+		"Injected execution pacing changed fixed-work search quality or result",
+	)
+	_check(
 		int(plan_a.get("belief_samples", 0)) in [1, 2, 3]
 		and int(plan_a.get("belief_consensus", 0)) >= 1,
 		"TraditionalTurnPlanner did not report bounded seeded belief sampling",
 	)
+	var fair_request := request.duplicate(true)
+	fair_request["belief_samples"] = 3
+	fair_request["internal_evaluation_smoke"] = true
+	fair_request["skip_mandatory"] = true
+	var fair_plan := TraditionalTurnPlanner.plan_action(
+		fair_request,
+		information_set,
+		legal,
+		strategy,
+		catalog,
+		engine,
+		func() -> bool: return false,
+	)
+	var fair_counts: Dictionary = fair_plan.get("root_sample_counts", {})
+	var every_root_saw_every_seed := not fair_counts.is_empty()
+	for count_value in fair_counts.values():
+		if int(count_value) != 3:
+			every_root_saw_every_seed = false
+			break
+	_check(
+		bool(fair_plan.get("success", false))
+		and int(fair_plan.get("belief_samples", 0)) == 3
+		and every_root_saw_every_seed
+		and str(fair_plan.get("belief_seed_hash", "")).length() == 64,
+		"TraditionalTurnPlanner did not compare every root on the same three belief seeds",
+	)
+	var shallow_high := {"depth": 2, "score_milli": 999999, "sequence": []}
+	var deep_low := {"depth": 3, "score_milli": -999999, "sequence": []}
+	_check(
+		AITurnBeamPlanner._better_partial_node(
+			shallow_high, deep_low) == deep_low,
+		"TraditionalTurnPlanner selected an earlier partial layer over the last complete layer",
+	)
+	_check(
+		TraditionalTurnPlanner._belief_row_descending(
+			{
+				"count": 3,
+				"score_total_milli": 300,
+				"worst_score_milli": 50,
+				"signature": "b",
+			},
+			{
+				"count": 3,
+				"score_total_milli": 300,
+				"worst_score_milli": 40,
+				"signature": "a",
+			},
+		),
+		"Belief aggregation did not use worst-sample score after an integer mean tie",
+	)
 	_check(
 		bool(plan_a.get("search_depth_applicable", false))
-		and int(plan_a.get("search_depth_requested", 0)) == 2
-		and int(plan_a.get("search_depth_reached", 0)) in [1, 2]
-		and not str(plan_a.get("search_depth_stop_reason", "")).is_empty(),
-		"TraditionalTurnPlanner did not expose requested and achieved search depth",
+		and int(plan_a.get("requested_depth", 0)) == 8
+		and int(plan_a.get("completed_depth", 0)) >= 1
+		and str(plan_a.get("completion_reason", ""))
+			in ["depth_complete", "frontier_exhausted"],
+		"TraditionalTurnPlanner did not expose completed fixed search layers",
+	)
+	_check(
+		not bool(plan_a.get("reply_depth_applicable", false))
+		or str(plan_a.get("opponent_strategy_id", ""))
+			== str(registry.strategy_for("water").strategy_id()),
+		"Opponent reply search did not use the opponent deck's actual strategy",
 	)
 	var invalid_supplied: Array[GameAction] = [
 		GameAction.new("END_TURN", {}, true, 1),
@@ -3148,10 +3450,12 @@ func _check_planner_contract(
 		and str(rejected.get("error", "")) == "no_authoritative_legal_action",
 		"TraditionalTurnPlanner trusted a caller-supplied action outside the authoritative legal set",
 	)
-	var deadline_request := request.duplicate(true)
-	deadline_request["time_budget_ms"] = 1
-	var deadline_plan := TraditionalTurnPlanner.plan_action(
-		deadline_request,
+	var legacy_time_bait := request.duplicate(true)
+	legacy_time_bait["time_budget_ms"] = 1
+	legacy_time_bait["seconds"] = 0.000001
+	legacy_time_bait["node_budget"] = 1
+	var time_independent_plan := TraditionalTurnPlanner.plan_action(
+		legacy_time_bait,
 		information_set,
 		legal,
 		strategy,
@@ -3160,10 +3464,54 @@ func _check_planner_contract(
 		func() -> bool: return false,
 	)
 	_check(
-		bool(deadline_plan.get("success", false))
-		and _is_supplied_legal_action(deadline_plan.get("action"), legal)
-		and int(deadline_plan.get("nodes_expanded", 0)) <= 16,
-		"TraditionalTurnPlanner deadline fallback was not a validated legal action",
+		bool(time_independent_plan.get("success", false))
+		and _intent_signature(time_independent_plan.get("action"))
+			== _intent_signature(plan_a.get("action"))
+		and int(time_independent_plan.get("nodes_expanded", -1))
+			== int(plan_a.get("nodes_expanded", 0))
+		and int(time_independent_plan.get("completed_depth", -1))
+			== int(plan_a.get("completed_depth", 0))
+		and str(time_independent_plan.get("completion_reason", ""))
+			== str(plan_a.get("completion_reason", ""))
+		and str(time_independent_plan.get("trajectory_hash", ""))
+			== str(plan_a.get("trajectory_hash", "")),
+		"Legacy time/node bait changed the fixed-work planner result",
+	)
+	var action_rows: Array = []
+	for action in legal:
+		action_rows.append(action.to_dict())
+	var native_request := {
+		"kind": "action",
+		"engine": "turn_beam_v2",
+		"state": state.snapshot(),
+		"actor": 0,
+		"revision": state.revision,
+		"request_id": "native-determinism",
+		"mode": "challenge",
+		"deck_key": "fire",
+		"match_seed": TEST_SEED,
+		"seed": TEST_SEED,
+		"actions": action_rows,
+	}
+	var native_decision := NativeChallengeAI.new().decide(
+		native_request, func() -> bool: return false)
+	var script_request := native_request.duplicate(true)
+	script_request["disable_native_math"] = true
+	var script_decision := NativeChallengeAI.new().decide(
+		script_request, func() -> bool: return false)
+	_check(
+		bool(native_decision.get("success", false))
+		and bool(script_decision.get("success", false))
+		and _intent_signature(GameAction.from_dict(native_decision["action"]))
+			== _intent_signature(GameAction.from_dict(script_decision["action"]))
+		and int(native_decision.get("nodes_expanded", -1))
+			== int(script_decision.get("nodes_expanded", -2))
+		and int(native_decision.get("completed_depth", -1))
+			== int(script_decision.get("completed_depth", -2))
+		and str(native_decision.get("trajectory_hash", "")).length() == 64
+		and str(native_decision.get("trajectory_hash", ""))
+			== str(script_decision.get("trajectory_hash", "")),
+		"Native-math availability changed the fixed-work search trace",
 	)
 
 	var hidden_state := state.clone_state()

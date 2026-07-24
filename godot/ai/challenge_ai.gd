@@ -4,27 +4,39 @@ extends RefCounted
 const STRONGEST_DIFFICULTY := "strongest"
 const HEURISTIC_VARIANT_SEMANTIC_V2 := "semantic_v2"
 const DEFAULT_HEURISTIC_VARIANT := HEURISTIC_VARIANT_SEMANTIC_V2
-## Compatibility names retained for callers on the Actions 4 boundary.  In the
-## traditional planner a "simulation" is one expanded beam node.
+const TRADITIONAL_ENGINE_ID := "turn_beam_v2"
+const LEGACY_EVALUATION_ENGINE_ID := "turn_beam_v1"
+const LEGACY_STRATEGY_DATA_PATH := (
+	"res://tools/ai_baseline/ai_strategies_v1.json"
+)
+const GAMEPLAY_DEFAULT_DEPTH := 8
+const GAMEPLAY_ROOT_ACTIONS := 8
+const GAMEPLAY_PER_ROOT_BEAM_WIDTH := 2
+const GAMEPLAY_ACTIONS_PER_NODE := 8
+const GAMEPLAY_REPLY_DEPTH := 3
+const GAMEPLAY_REPLY_BEAM_WIDTH := 4
+const GAMEPLAY_REPLY_ACTIONS_PER_NODE := 4
+const ACTION_CYCLE_LEDGER_LIMIT := 64
+const LEGACY_FULL_REPLAN_LIMIT := 1
+const LEGACY_LOCAL_REPLAN_LIMIT := 5
+const LEGACY_LOCAL_NODES := 24
+const LEGACY_LOCAL_DEPTH := 2
+const LEGACY_LOCAL_SOFT_MSEC := 45
+const LEGACY_LOCAL_HARD_MSEC := 60
+const LEGACY_EXHAUSTED_SOFT_MSEC := 50
+const LEGACY_HARD_DEADLINE_MSEC := 1100
+const LEGACY_REPLAN_LEDGER_LIMIT := 16
+## Compatibility constants for old settings and saved evaluator configs. They
+## are no longer consumed by the production planner.
 const DEEP_DEFAULT_SIMULATIONS := 192
 const DEEP_FALLBACK_SIMULATIONS := 192
 const DEEP_DEFAULT_SECONDS := 0.85
-const DEEP_DEFAULT_DEPTH := 6
+const DEEP_DEFAULT_DEPTH := GAMEPLAY_DEFAULT_DEPTH
 const GAMEPLAY_DEFAULT_SIMULATIONS := 192
 const GAMEPLAY_DEFAULT_SECONDS := 0.85
-const GAMEPLAY_DEFAULT_DEPTH := 6
 const GAMEPLAY_LOW_SIMULATIONS := 1
 const GAMEPLAY_LOW_SECONDS := 0.12
 const GAMEPLAY_LOW_DEPTH := 1
-const TRADITIONAL_HARD_DEADLINE_MSEC := 1100
-const TURN_REPLAN_FULL_LIMIT := 1
-const TURN_REPLAN_LOCAL_LIMIT := 5
-const TURN_REPLAN_LOCAL_NODES := 24
-const TURN_REPLAN_LOCAL_DEPTH := 2
-const TURN_REPLAN_LOCAL_SOFT_MSEC := 45
-const TURN_REPLAN_LOCAL_HARD_MSEC := 60
-const TURN_REPLAN_EXHAUSTED_SOFT_MSEC := 50
-const TURN_REPLAN_LEDGER_LIMIT := 16
 ## The turn planner reasons over at most six atomic actions.  A repeatable
 ## ability may otherwise be selected again after every local replan and bounce
 ## resources forever, so carry the same bound across the authoritative turn.
@@ -34,11 +46,11 @@ const CACHE_GUARDED_ABILITY_EFFECT_TYPES := {
 	"place_counters_and_self_discard": true,
 }
 const DIFFICULTIES := {
-	"strongest": {"simulations": 192, "seconds": 0.85, "depth": 6},
+	"strongest": {"depth": GAMEPLAY_DEFAULT_DEPTH},
 	# Compatibility aliases for older saves/tests that still send a difficulty.
-	"fast": {"simulations": 192, "seconds": 0.85, "depth": 6},
-	"standard": {"simulations": 192, "seconds": 0.85, "depth": 6},
-	"hard": {"simulations": 192, "seconds": 0.85, "depth": 6},
+	"fast": {"depth": GAMEPLAY_DEFAULT_DEPTH},
+	"standard": {"depth": GAMEPLAY_DEFAULT_DEPTH},
+	"hard": {"depth": GAMEPLAY_DEFAULT_DEPTH},
 }
 const DIAGNOSTIC_LABELS := [
 	"missed_immediate_ko",
@@ -66,19 +78,7 @@ const DYNAMIC_BUDGET_DEFAULTS := {
 	"single_action_simulations": 0,
 }
 const GAMEPLAY_DYNAMIC_BUDGET := {
-	"enabled": true,
-	"min_simulations": 32,
-	"ambiguous_min_simulations": 64,
-	"check_interval": 16,
-	"stable_checks": 2,
-	"ambiguous_stable_checks": 3,
-	"min_mean_gap": 0.10,
-	"ambiguous_mean_gap": 0.14,
-	"min_best_visits": 8,
-	"min_best_visit_share": 0.30,
-	"clear_prior_gap": 0.25,
-	"max_root_actions_for_clear": 10,
-	"single_action_simulations": 0,
+	"enabled": false,
 }
 const SCORE_WEIGHTS := {
 	"prize_race": 42.0,
@@ -132,19 +132,68 @@ var _pre_evolution_ids_cache: Dictionary = {}
 var _core_evolution_line_cache: Dictionary = {}
 var _traditional_semantic_catalog: Variant = null
 var _traditional_strategy_registry: Variant = null
+var _legacy_strategy_registry: Variant = null
 ## Cache semantic intents, never GameAction instances or mutable GameState.
 ## Entries are keyed by match/actor/turn/deck and revalidated against the
 ## authoritative legal action list on every atomic decision.
 var _turn_plan_cache: Dictionary = {}
-## A cache invalidation must not grant another full search in the same turn.
-## Each entry is scoped by an explicit match instance and advances only when a
-## cache miss actually needs a new plan.  Repeating the same revision reuses the
-## reservation, which makes coordinator timeout/cancellation retries idempotent.
-var _turn_replan_ledger: Dictionary = {}
+## Production-only structural guard for authoritative actions which return to
+## the same semantic state (most commonly a cancellable Trainer choice).  The
+## previous action is excluded only after a later revision proves that it made
+## no progress, so retrying an identical request remains deterministic.
+var _no_progress_action_ledger: Dictionary = {}
+## Used only by the evaluator-only turn_beam_v1 baseline.
+var _legacy_replan_ledger: Dictionary = {}
 
 
 static func strongest_preset() -> Dictionary:
 	return Dictionary(DIFFICULTIES[STRONGEST_DIFFICULTY]).duplicate(true)
+
+
+static func ordered_tactical_fallback_actions(
+	state: GameState,
+	actor: int,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+) -> Array[GameAction]:
+	var result: Array[GameAction] = []
+	if state == null or actor not in [0, 1] or actions.is_empty():
+		result.assign(actions)
+		return result
+	var safe_catalog := catalog if catalog != null else CardCatalog.shared()
+	var information_set := AIInformationSet.capture(
+		state, actor, safe_catalog, actions, [], 0)
+	var registry := AIStrategyRegistry.shared()
+	var strategy: Variant = (
+		registry.strategy_for(deck_key)
+		if registry != null and registry.is_valid()
+		else null
+	)
+	var survival := AIMandatoryTactics.survival_backup_action(
+		state,
+		actor,
+		actions,
+		information_set,
+		strategy,
+		safe_catalog,
+	)
+	if survival != null:
+		result.append(survival)
+	var ranked := AIPositionEvaluator.ranked_actions(
+		state,
+		actor,
+		actions,
+		strategy,
+		CardSemanticCatalog.new(safe_catalog),
+		safe_catalog,
+		0,
+	)
+	for row_value in ranked:
+		var action: GameAction = Dictionary(row_value).get("action")
+		if action != null and action not in result:
+			result.append(action)
+	return result
 
 
 static func gameplay_dynamic_budget() -> Dictionary:
@@ -152,29 +201,19 @@ static func gameplay_dynamic_budget() -> Dictionary:
 
 
 static func gameplay_action_budget(
-	state: GameState,
-	actions: Array[GameAction],
+	_state: GameState,
+	_actions: Array[GameAction],
 ) -> Dictionary:
-	var params := {
-		"simulation_budget": GAMEPLAY_DEFAULT_SIMULATIONS,
-		"seconds": GAMEPLAY_DEFAULT_SECONDS,
+	return {
+		"engine": TRADITIONAL_ENGINE_ID,
 		"max_depth": GAMEPLAY_DEFAULT_DEPTH,
-		"dynamic_budget": gameplay_dynamic_budget(),
+		"root_actions": GAMEPLAY_ROOT_ACTIONS,
+		"per_root_beam_width": GAMEPLAY_PER_ROOT_BEAM_WIDTH,
+		"max_actions_per_node": GAMEPLAY_ACTIONS_PER_NODE,
+		"reply_depth": GAMEPLAY_REPLY_DEPTH,
+		"reply_beam_width": GAMEPLAY_REPLY_BEAM_WIDTH,
+		"reply_actions_per_node": GAMEPLAY_REPLY_ACTIONS_PER_NODE,
 	}
-	if state == null:
-		return params
-	if (
-		actions.size() > 1
-		and (
-			state.phase == "SETUP"
-			or state.phase == "ATTACK"
-			or not state.pending_promotions.is_empty()
-		)
-	):
-		params["simulation_budget"] = GAMEPLAY_LOW_SIMULATIONS
-		params["seconds"] = GAMEPLAY_LOW_SECONDS
-		params["max_depth"] = GAMEPLAY_LOW_DEPTH
-	return params
 
 
 static func diagnostic_labels() -> Array:
@@ -302,6 +341,7 @@ func decide(
 				int(request.get("match_seed", request.get("seed", 0))),
 				inference,
 				str(request.get("mode", "challenge")),
+				str(request.get("engine", TRADITIONAL_ENGINE_ID)),
 				cancel_check,
 				started,
 			)
@@ -318,6 +358,7 @@ func decide(
 			profile,
 			started,
 		)
+		_record_action_cycle_selection(request, state, actor, result)
 	result["revision"] = int(request["revision"])
 	result["request_id"] = str(request.get("request_id", ""))
 	result["elapsed_ms"] = (Time.get_ticks_usec() - started) / 1000.0
@@ -362,8 +403,20 @@ func _search_action(
 		return {"success": false, "cancelled": true, "error": "cancelled"}
 	var deck_key := _deck_key_for_actor(
 		state, actor, str(request.get("deck_key", "")))
+	var engine_id := str(request.get("engine", TRADITIONAL_ENGINE_ID))
+	if engine_id not in [TRADITIONAL_ENGINE_ID, LEGACY_EVALUATION_ENGINE_ID]:
+		return {"success": false, "error": "unsupported_traditional_engine:%s" % engine_id}
 	actions = _filter_exhausted_repeatable_abilities(
 		state, actor, actions, catalog)
+	if engine_id == TRADITIONAL_ENGINE_ID:
+		var unguarded_action_count := actions.size()
+		actions = _filter_no_progress_action_cycles(
+			request, state, actor, actions)
+		_profile_count(
+			profile,
+			"no_progress_actions_blocked",
+			unguarded_action_count - actions.size(),
+		)
 	if actions.is_empty():
 		return {"success": false, "error": "no_bounded_legal_action"}
 	_profile_count(profile, "root_action_count", actions.size())
@@ -381,21 +434,25 @@ func _search_action(
 			"success": false,
 			"error": "invalid_information_set:%s" % information_set.validation_error(),
 		}
-	var strategy_registry: Variant = _traditional_strategy_registry_instance()
+	var strategy_registry: Variant = _traditional_strategy_registry_instance(engine_id)
 	if strategy_registry == null or not strategy_registry.is_valid():
 		return {"success": false, "error": "invalid_strategy_registry"}
 	var strategy: Variant = strategy_registry.strategy_for(deck_key)
-	var effective_started_usec := (
-		decision_started_usec if decision_started_usec > 0 else Time.get_ticks_usec())
 	var cache_key := _turn_plan_cache_key(request, information_set, deck_key)
-	var preview_tier := _preview_turn_replan_tier(
-		cache_key, state.revision, deck_key)
-	var planner_request := _bounded_traditional_planner_request(
-		request, effective_started_usec, preview_tier)
+	var legacy_preview := (
+		_legacy_preview_replan_tier(cache_key, state.revision, deck_key)
+		if engine_id == LEGACY_EVALUATION_ENGINE_ID
+		else {}
+	)
+	var planner_request := (
+		_legacy_planner_request(request, decision_started_usec, legacy_preview)
+		if engine_id == LEGACY_EVALUATION_ENGINE_ID
+		else _fixed_traditional_planner_request(request)
+	)
 	# A zero-node request is the public deterministic tactical mode used by
 	# golden fixtures and emergency callers. It does not run the retired UCB
 	# search; it applies the proven rule-tactics scorer to a fair sampled state.
-	if request.has("simulation_budget") and int(request["simulation_budget"]) <= 0:
+	if bool(request.get("internal_tactical_fixture", false)):
 		var tactical_state := information_set.sample_state(int(request.get("seed", 17)))
 		if tactical_state == null:
 			return {"success": false, "error": "tactical_determinization_failed"}
@@ -422,15 +479,14 @@ func _search_action(
 					tactical_state, actor, tactical_action, deck_key, catalog),
 				"forced_tactic": "deterministic_rule_tactics",
 				"turn_plan": [TraditionalTurnPlanner.action_intent(tactical_action)],
-				"turn_budget_tier": "tactical",
-				"turn_replan_ordinal": 0,
+				"completion_reason": "forced_tactic",
 			},
 		)
 	# Mandatory tactics always run before a cache lookup. A stale but still legal
 	# development intent must never hide a newly available immediate match win.
 	var trusted_choice_resolver := Callable(
 		self, "_traditional_simulated_choice_response").bind(
-			actor, deck_key, strategy, catalog)
+			actor, deck_key, strategy, catalog, strategy_registry)
 	var trusted_action_evaluator := Callable(
 		self, "_traditional_action_candidate_score").bind(deck_key, catalog)
 	var preflight_state := information_set.sample_state(int(planner_request["seed"]))
@@ -445,15 +501,18 @@ func _search_action(
 			strategy,
 			int(planner_request["seed"]),
 			cancel_check,
-			int(planner_request["soft_deadline_usec"]),
-			int(planner_request["node_budget"]),
+			int(planner_request.get("soft_deadline_usec", 0)),
+			int(planner_request.get(
+				"node_budget",
+				TraditionalTurnPlanner.MANDATORY_TACTIC_NODE_GUARD,
+			)),
 			trusted_choice_resolver,
 			trusted_action_evaluator,
 		)
-	var preflight_nodes := mini(
-		int(planner_request["node_budget"]),
-		maxi(0, int(preflight.get("nodes_expanded", 0))),
-	)
+	var preflight_nodes := maxi(0, int(preflight.get("nodes_expanded", 0)))
+	if planner_request.has("node_budget"):
+		preflight_nodes = mini(
+			int(planner_request["node_budget"]), preflight_nodes)
 	if bool(preflight.get("resolved", false)):
 		var forced_action: GameAction = preflight.get("action")
 		return _traditional_action_result(
@@ -468,8 +527,7 @@ func _search_action(
 				"forced_tactic": str(preflight.get("reason", "mandatory")),
 				"turn_plan": [_intent_with_precondition(
 					forced_action, information_set.cache_precondition())],
-				"turn_budget_tier": "mandatory",
-				"turn_replan_ordinal": 0,
+				"completion_reason": "forced_tactic",
 			},
 		)
 	if cancel_check.is_valid() and bool(cancel_check.call()):
@@ -498,6 +556,7 @@ func _search_action(
 				engine,
 				int(planner_request["seed"]) + 700001,
 				profile,
+				engine_id,
 			)
 		var cached_signature := str(TraditionalTurnPlanner.action_intent(
 			cached_action).get("signature", ""))
@@ -520,8 +579,7 @@ func _search_action(
 					"forced_tactic": "post_plan_tactical_guard",
 					"turn_plan": [_intent_with_precondition(
 						validated_cached, information_set.cache_precondition())],
-					"turn_budget_tier": "cache",
-					"turn_replan_ordinal": 0,
+					"completion_reason": "cache_hit",
 				},
 			)
 		return _traditional_action_result(
@@ -533,74 +591,94 @@ func _search_action(
 			"plan_cache",
 			true,
 			{
-				"turn_budget_tier": "cache",
-				"turn_replan_ordinal": 0,
+				"completion_reason": "cache_hit",
 			},
 		)
 	if not cache_key.is_empty():
 		_profile_count(profile, "turn_plan_cache_misses")
 
-	var reserved_tier := _reserve_turn_replan_tier(
-		cache_key,
-		state.revision,
-		str(request.get("request_id", "")),
-		deck_key,
-	)
-	planner_request = _bounded_traditional_planner_request(
-		request, effective_started_usec, reserved_tier)
-	if str(reserved_tier.get("tier", "full")) == "exhausted":
-		var exhausted_state := (
-			preflight_state
-			if preflight_state != null
-			else information_set.sample_state(int(planner_request["seed"]))
-		)
-		if exhausted_state == null:
-			return {"success": false, "error": "exhausted_determinization_failed"}
-		var exhausted_action := _exhausted_turn_action(
-			exhausted_state,
-			actor,
-			actions,
+	var legacy_tier: Dictionary = {}
+	if engine_id == LEGACY_EVALUATION_ENGINE_ID:
+		legacy_tier = _legacy_reserve_replan_tier(
+			cache_key,
+			state.revision,
+			str(request.get("request_id", "")),
 			deck_key,
-			catalog,
-			engine,
-			int(planner_request["seed"]) + 900001,
-			profile,
 		)
-		_turn_plan_cache.erase(cache_key)
-		return _traditional_action_result(
-			request,
-			exhausted_action,
-			strategy,
-			information_set,
-			preflight_nodes,
-			"turn_budget_exhausted",
-			false,
-			{
-				"forced_tactic": "turn_budget_terminal",
-				"turn_plan": [_intent_with_precondition(
-					exhausted_action, information_set.cache_precondition())],
-				"turn_budget_tier": "exhausted",
-				"turn_replan_ordinal": int(reserved_tier.get("ordinal", 0)),
-			},
-		)
-	planner_request["initial_nodes_used"] = mini(
-		int(planner_request["node_budget"]), preflight_nodes)
+		planner_request = _legacy_planner_request(
+			request, decision_started_usec, legacy_tier)
+		if str(legacy_tier.get("tier", "full")) == "exhausted":
+			var exhausted_state := (
+				preflight_state
+				if preflight_state != null
+				else information_set.sample_state(int(planner_request["seed"]))
+			)
+			if exhausted_state == null:
+				return {"success": false, "error": "exhausted_determinization_failed"}
+			var exhausted_action := _legacy_exhausted_turn_action(
+				exhausted_state,
+				actor,
+				actions,
+				deck_key,
+				catalog,
+				engine,
+				int(planner_request["seed"]) + 900001,
+				profile,
+			)
+			_turn_plan_cache.erase(cache_key)
+			return _traditional_action_result(
+				request,
+				exhausted_action,
+				strategy,
+				information_set,
+				preflight_nodes,
+				"turn_budget_exhausted",
+				false,
+				{
+					"forced_tactic": "turn_budget_terminal",
+					"turn_plan": [_intent_with_precondition(
+						exhausted_action, information_set.cache_precondition())],
+					"turn_budget_tier": "exhausted",
+					"turn_replan_ordinal": int(legacy_tier.get("ordinal", 0)),
+				},
+			)
+		planner_request["initial_nodes_used"] = mini(
+			int(planner_request["node_budget"]), preflight_nodes)
 	planner_request["skip_mandatory"] = true
 	var plan_started := _profile_start(profile)
-	var planned := TraditionalTurnPlanner.plan_action(
-		planner_request,
-		information_set,
-		actions,
-		strategy,
-		catalog,
-		engine,
-		cancel_check,
-		Callable(self, "_traditional_leaf_score"),
-		trusted_choice_resolver,
-		trusted_action_evaluator,
-	)
-	planned["turn_budget_tier"] = str(reserved_tier.get("tier", "full"))
-	planned["turn_replan_ordinal"] = int(reserved_tier.get("ordinal", 1))
+	var planned: Dictionary
+	if engine_id == LEGACY_EVALUATION_ENGINE_ID:
+		var legacy_script: Variant = load(
+			"res://tools/ai_baseline/traditional_turn_planner_v1.gd")
+		if legacy_script == null:
+			return {"success": false, "error": "legacy_planner_unavailable"}
+		planned = legacy_script.plan_action(
+			planner_request,
+			information_set,
+			actions,
+			strategy,
+			catalog,
+			engine,
+			cancel_check,
+			Callable(self, "_traditional_leaf_score"),
+			trusted_choice_resolver,
+			trusted_action_evaluator,
+		)
+		planned["turn_budget_tier"] = str(legacy_tier.get("tier", "full"))
+		planned["turn_replan_ordinal"] = int(legacy_tier.get("ordinal", 1))
+	else:
+		planned = TraditionalTurnPlanner.plan_action(
+			planner_request,
+			information_set,
+			actions,
+			strategy,
+			catalog,
+			engine,
+			cancel_check,
+			Callable(self, "_traditional_leaf_score"),
+			trusted_choice_resolver,
+			trusted_action_evaluator,
+		)
 	_profile_add_elapsed(profile, "turn_planner_ms", plan_started)
 	if cancel_check.is_valid() and bool(cancel_check.call()):
 		return {"success": false, "cancelled": true, "error": "cancelled"}
@@ -625,6 +703,7 @@ func _search_action(
 			engine,
 			int(planner_request["seed"]) + 700001,
 			profile,
+			engine_id,
 		)
 	if (
 		validated_selected != null
@@ -653,7 +732,19 @@ func _search_action(
 	)
 
 
-func _traditional_strategy_registry_instance() -> Variant:
+func _traditional_strategy_registry_instance(
+	engine_id: String = TRADITIONAL_ENGINE_ID,
+) -> Variant:
+	if engine_id == LEGACY_EVALUATION_ENGINE_ID:
+		if _legacy_strategy_registry == null:
+			if not FileAccess.file_exists(LEGACY_STRATEGY_DATA_PATH):
+				return null
+			var parsed: Variant = JSON.parse_string(
+				FileAccess.get_file_as_string(LEGACY_STRATEGY_DATA_PATH))
+			if not parsed is Dictionary:
+				return null
+			_legacy_strategy_registry = AIStrategyRegistry.new(parsed)
+		return _legacy_strategy_registry
 	if _traditional_strategy_registry == null:
 		_traditional_strategy_registry = AIStrategyRegistry.shared()
 	return _traditional_strategy_registry
@@ -689,31 +780,6 @@ func _zero_budget_tactical_action(
 		seed,
 		profile,
 	)
-
-
-func _exhausted_turn_action(
-	state: GameState,
-	actor: int,
-	actions: Array[GameAction],
-	deck_key: String,
-	catalog: CardCatalog,
-	engine: GameEngine,
-	seed: int,
-	profile: Dictionary,
-) -> GameAction:
-	## Once the deterministic replan allowance is spent, do not emit another
-	## development action that would create a fresh decision.  Mandatory phases
-	## are handled before this point; MAIN always supplies attack and/or end turn.
-	var terminal_actions: Array[GameAction] = []
-	for action in actions:
-		if action.terminal or action.kind in ["DECLARE_ATTACK", "END_TURN", "SETUP_DONE"]:
-			terminal_actions.append(action)
-	if terminal_actions.is_empty():
-		# Defensive compatibility for a future mandatory phase. Returning an
-		# authoritative action remains safer than manufacturing an illegal terminal.
-		terminal_actions.append(actions[0])
-	return _zero_budget_tactical_action(
-		state, actor, terminal_actions, deck_key, catalog, engine, seed, profile)
 
 
 func _traditional_semantics_instance(catalog: CardCatalog) -> CardSemanticCatalog:
@@ -760,6 +826,7 @@ func _traditional_simulated_choice_response(
 	root_deck_key: String,
 	root_strategy: Variant,
 	catalog: CardCatalog,
+	strategy_registry: Variant,
 ) -> ChoiceResponse:
 	## Trusted bridge used by mandatory tactics and the beam. Raw GameState stays
 	## inside NativeChallengeAI: deck hooks receive only the deeply read-only
@@ -779,7 +846,7 @@ func _traditional_simulated_choice_response(
 	)
 	var strategy: Variant = root_strategy if choice_actor == root_actor else null
 	if strategy == null:
-		var registry: Variant = _traditional_strategy_registry_instance()
+		var registry: Variant = strategy_registry
 		if registry == null or not registry.is_valid():
 			return null
 		strategy = registry.strategy_for(deck_key)
@@ -796,36 +863,56 @@ func _traditional_simulated_choice_response(
 	)
 
 
-func _bounded_traditional_planner_request(
+func _fixed_traditional_planner_request(request: Dictionary) -> Dictionary:
+	var result := {
+		"engine": TRADITIONAL_ENGINE_ID,
+		"root_actions": GAMEPLAY_ROOT_ACTIONS,
+		"per_root_beam_width": GAMEPLAY_PER_ROOT_BEAM_WIDTH,
+		"max_actions_per_node": GAMEPLAY_ACTIONS_PER_NODE,
+		"max_depth": GAMEPLAY_DEFAULT_DEPTH,
+		"reply_depth": GAMEPLAY_REPLY_DEPTH,
+		"reply_beam_width": GAMEPLAY_REPLY_BEAM_WIDTH,
+		"reply_actions_per_node": GAMEPLAY_REPLY_ACTIONS_PER_NODE,
+		"seed": int(request.get("seed", 17)),
+		"mode": str(request.get("mode", "challenge")),
+	}
+	if bool(request.get("internal_evaluation_smoke", false)):
+		result["internal_evaluation_smoke"] = true
+	return result
+
+
+func _legacy_planner_request(
 	request: Dictionary,
-	decision_started_usec: int = 0,
-	tier: Dictionary = {},
+	decision_started_usec: int,
+	tier: Dictionary,
 ) -> Dictionary:
 	var requested_nodes := int(request.get(
-		"node_budget", request.get("simulation_budget", GAMEPLAY_DEFAULT_SIMULATIONS)))
+		"node_budget", request.get("simulation_budget", 192)))
 	if requested_nodes <= 0:
-		requested_nodes = GAMEPLAY_DEFAULT_SIMULATIONS
-	var requested_seconds := float(request.get("seconds", GAMEPLAY_DEFAULT_SECONDS))
+		requested_nodes = 192
+	var requested_seconds := float(request.get("seconds", 0.85))
 	var requested_time_ms := int(request.get(
 		"time_budget_ms", round(maxf(0.025, requested_seconds) * 1000.0)))
 	var time_budget_ms := clampi(requested_time_ms, 25, 850)
 	var node_budget := clampi(requested_nodes, 1, 192)
-	var max_depth := clampi(int(request.get(
-		"max_depth", GAMEPLAY_DEFAULT_DEPTH)), 1, 6)
+	var max_depth := clampi(int(request.get("max_depth", 6)), 1, 6)
 	var tier_name := str(tier.get("tier", "full"))
-	var hard_budget_msec := TRADITIONAL_HARD_DEADLINE_MSEC
+	var hard_budget_msec := LEGACY_HARD_DEADLINE_MSEC
 	if tier_name == "local":
-		node_budget = mini(node_budget, TURN_REPLAN_LOCAL_NODES)
-		max_depth = mini(max_depth, TURN_REPLAN_LOCAL_DEPTH)
-		time_budget_ms = mini(time_budget_ms, TURN_REPLAN_LOCAL_SOFT_MSEC)
-		hard_budget_msec = TURN_REPLAN_LOCAL_HARD_MSEC
+		node_budget = mini(node_budget, LEGACY_LOCAL_NODES)
+		max_depth = mini(max_depth, LEGACY_LOCAL_DEPTH)
+		time_budget_ms = mini(time_budget_ms, LEGACY_LOCAL_SOFT_MSEC)
+		hard_budget_msec = LEGACY_LOCAL_HARD_MSEC
 	elif tier_name == "exhausted":
 		node_budget = 1
 		max_depth = 1
-		time_budget_ms = TURN_REPLAN_EXHAUSTED_SOFT_MSEC
-		hard_budget_msec = TURN_REPLAN_EXHAUSTED_SOFT_MSEC
+		time_budget_ms = LEGACY_EXHAUSTED_SOFT_MSEC
+		hard_budget_msec = LEGACY_EXHAUSTED_SOFT_MSEC
 	var started_usec := (
-		decision_started_usec if decision_started_usec > 0 else Time.get_ticks_usec())
+		decision_started_usec
+		if decision_started_usec > 0
+		else Time.get_ticks_usec()
+	)
 	var soft_deadline_usec := started_usec + time_budget_ms * 1000
 	var hard_deadline_usec := mini(
 		started_usec + hard_budget_msec * 1000,
@@ -844,10 +931,107 @@ func _bounded_traditional_planner_request(
 	}
 	if tier_name == "local":
 		result["belief_samples"] = 1
-	if request.get("belief_samples") is int or request.get("belief_samples") is float:
-		result["belief_samples"] = (
-			1 if tier_name == "local" else clampi(int(request["belief_samples"]), 1, 3))
+	elif request.get("belief_samples") is int or request.get("belief_samples") is float:
+		result["belief_samples"] = clampi(int(request["belief_samples"]), 1, 3)
 	return result
+
+
+func _legacy_preview_replan_tier(
+	cache_key: String,
+	revision: int,
+	deck_key: String = "",
+) -> Dictionary:
+	if cache_key.is_empty() or not _legacy_replan_ledger.has(cache_key):
+		return {"tier": "full", "ordinal": 1}
+	var entry: Dictionary = _legacy_replan_ledger[cache_key]
+	if revision == int(entry.get("last_revision", -1)):
+		return {
+			"tier": str(entry.get("last_tier", "full")),
+			"ordinal": int(entry.get("last_ordinal", 1)),
+		}
+	return _legacy_next_replan_tier(entry, deck_key)
+
+
+func _legacy_reserve_replan_tier(
+	cache_key: String,
+	revision: int,
+	request_id: String,
+	deck_key: String = "",
+) -> Dictionary:
+	if cache_key.is_empty():
+		return {"tier": "full", "ordinal": 1}
+	var entry: Dictionary = _legacy_replan_ledger.get(cache_key, {
+		"full_replans": 0,
+		"local_replans": 0,
+		"last_revision": -1,
+		"last_tier": "",
+		"last_ordinal": 0,
+		"pending_request_id": "",
+		"deck_key": deck_key,
+	})
+	if revision == int(entry.get("last_revision", -1)):
+		return {
+			"tier": str(entry.get("last_tier", "full")),
+			"ordinal": int(entry.get("last_ordinal", 1)),
+		}
+	var reserved := _legacy_next_replan_tier(entry, deck_key)
+	match str(reserved["tier"]):
+		"full":
+			entry["full_replans"] = int(entry.get("full_replans", 0)) + 1
+		"local":
+			entry["local_replans"] = int(entry.get("local_replans", 0)) + 1
+	entry["last_revision"] = revision
+	entry["last_tier"] = reserved["tier"]
+	entry["last_ordinal"] = reserved["ordinal"]
+	entry["pending_request_id"] = request_id
+	entry["deck_key"] = deck_key
+	_legacy_replan_ledger[cache_key] = entry
+	while _legacy_replan_ledger.size() > LEGACY_REPLAN_LEDGER_LIMIT:
+		_legacy_replan_ledger.erase(_legacy_replan_ledger.keys()[0])
+	return reserved
+
+
+func _legacy_next_replan_tier(
+	entry: Dictionary,
+	_deck_key: String = "",
+) -> Dictionary:
+	var full_replans := int(entry.get("full_replans", 0))
+	var local_replans := int(entry.get("local_replans", 0))
+	var ordinal := full_replans + local_replans + 1
+	if full_replans < LEGACY_FULL_REPLAN_LIMIT:
+		return {"tier": "full", "ordinal": ordinal}
+	if local_replans < LEGACY_LOCAL_REPLAN_LIMIT:
+		return {"tier": "local", "ordinal": ordinal}
+	return {"tier": "exhausted", "ordinal": ordinal}
+
+
+func _legacy_exhausted_turn_action(
+	state: GameState,
+	actor: int,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+	profile: Dictionary,
+) -> GameAction:
+	var terminal_actions: Array[GameAction] = []
+	for action in actions:
+		if action.terminal or action.kind in [
+			"DECLARE_ATTACK", "END_TURN", "SETUP_DONE"]:
+			terminal_actions.append(action)
+	if terminal_actions.is_empty():
+		terminal_actions.append(actions[0])
+	return _zero_budget_tactical_action(
+		state,
+		actor,
+		terminal_actions,
+		deck_key,
+		catalog,
+		engine,
+		seed,
+		profile,
+	)
 
 
 func _turn_plan_cache_key(
@@ -866,76 +1050,6 @@ func _turn_plan_cache_key(
 		int(view.get("turn_number", 0)),
 		deck_key,
 	]
-
-
-func _preview_turn_replan_tier(
-	cache_key: String,
-	revision: int,
-	deck_key: String = "",
-) -> Dictionary:
-	if cache_key.is_empty() or not _turn_replan_ledger.has(cache_key):
-		return {"tier": "full", "ordinal": 1}
-	var entry: Dictionary = _turn_replan_ledger[cache_key]
-	if revision == int(entry.get("last_revision", -1)):
-		return {
-			"tier": str(entry.get("last_tier", "full")),
-			"ordinal": int(entry.get("last_ordinal", 1)),
-		}
-	return _next_turn_replan_tier(entry, deck_key)
-
-
-func _reserve_turn_replan_tier(
-	cache_key: String,
-	revision: int,
-	request_id: String,
-	deck_key: String = "",
-) -> Dictionary:
-	if cache_key.is_empty():
-		return {"tier": "full", "ordinal": 1}
-	var entry: Dictionary = _turn_replan_ledger.get(cache_key, {
-		"full_replans": 0,
-		"local_replans": 0,
-		"last_revision": -1,
-		"last_tier": "",
-		"last_ordinal": 0,
-		"pending_request_id": "",
-		"deck_key": deck_key,
-	})
-	if revision == int(entry.get("last_revision", -1)):
-		return {
-			"tier": str(entry.get("last_tier", "full")),
-			"ordinal": int(entry.get("last_ordinal", 1)),
-		}
-	if not deck_key.is_empty():
-		entry["deck_key"] = deck_key
-	var reserved := _next_turn_replan_tier(entry, deck_key)
-	match str(reserved["tier"]):
-		"full":
-			entry["full_replans"] = int(entry.get("full_replans", 0)) + 1
-		"local":
-			entry["local_replans"] = int(entry.get("local_replans", 0)) + 1
-	entry["last_revision"] = revision
-	entry["last_tier"] = reserved["tier"]
-	entry["last_ordinal"] = reserved["ordinal"]
-	entry["pending_request_id"] = request_id
-	_turn_replan_ledger[cache_key] = entry
-	while _turn_replan_ledger.size() > TURN_REPLAN_LEDGER_LIMIT:
-		_turn_replan_ledger.erase(_turn_replan_ledger.keys()[0])
-	return reserved
-
-
-func _next_turn_replan_tier(
-	entry: Dictionary,
-	deck_key: String = "",
-) -> Dictionary:
-	var full_replans := int(entry.get("full_replans", 0))
-	var local_replans := int(entry.get("local_replans", 0))
-	var ordinal := full_replans + local_replans + 1
-	if full_replans < TURN_REPLAN_FULL_LIMIT:
-		return {"tier": "full", "ordinal": ordinal}
-	if local_replans < TURN_REPLAN_LOCAL_LIMIT:
-		return {"tier": "local", "ordinal": ordinal}
-	return {"tier": "exhausted", "ordinal": ordinal}
 
 
 func _authoritative_action_intersection(
@@ -990,6 +1104,111 @@ func _filter_exhausted_repeatable_abilities(
 	# MAIN normally always exposes END_TURN.  Retain any terminal authority action
 	# as a defensive legal escape hatch if a future rules phase changes that set.
 	return terminal_fallbacks if not terminal_fallbacks.is_empty() else actions
+
+
+func _filter_no_progress_action_cycles(
+	request: Dictionary,
+	state: GameState,
+	actor: int,
+	actions: Array[GameAction],
+) -> Array[GameAction]:
+	var result: Array[GameAction] = []
+	result.assign(actions)
+	var ledger_key := _action_cycle_ledger_key(request, state, actor)
+	if ledger_key.is_empty() or not _no_progress_action_ledger.has(ledger_key):
+		return result
+	var entry: Dictionary = _no_progress_action_ledger[ledger_key]
+	var fingerprint := _action_cycle_state_fingerprint(state)
+	var revision := int(request.get("revision", state.revision))
+	var blocked_by_state: Dictionary = entry.get("blocked_by_state", {})
+	if (
+		str(entry.get("last_state_fingerprint", "")) == fingerprint
+		and revision > int(entry.get("last_revision", -1))
+	):
+		var previous_signature := str(entry.get("last_action_signature", ""))
+		if not previous_signature.is_empty():
+			var blocked: Dictionary = blocked_by_state.get(fingerprint, {})
+			blocked[previous_signature] = true
+			blocked_by_state[fingerprint] = blocked
+			entry["blocked_by_state"] = blocked_by_state
+			_no_progress_action_ledger[ledger_key] = entry
+	var blocked: Dictionary = blocked_by_state.get(fingerprint, {})
+	if blocked.is_empty():
+		return result
+	result.clear()
+	var terminal_fallbacks: Array[GameAction] = []
+	for action in actions:
+		if action.terminal:
+			terminal_fallbacks.append(action)
+		var signature := AIPositionEvaluator.action_signature(action)
+		if not blocked.has(signature):
+			result.append(action)
+	if not result.is_empty():
+		return result
+	# A structural guard must never manufacture a no-action state.  MAIN exposes
+	# attack/END and mandatory phases expose a terminal authority action, so keep
+	# those legal escapes if every progress action was already proven cyclic.
+	return terminal_fallbacks if not terminal_fallbacks.is_empty() else actions
+
+
+func _record_action_cycle_selection(
+	request: Dictionary,
+	state: GameState,
+	actor: int,
+	result: Dictionary,
+) -> void:
+	if (
+		str(request.get("engine", TRADITIONAL_ENGINE_ID))
+		!= TRADITIONAL_ENGINE_ID
+		or not bool(result.get("success", false))
+	):
+		return
+	var ledger_key := _action_cycle_ledger_key(request, state, actor)
+	if ledger_key.is_empty():
+		return
+	var action_value: Variant = result.get("action")
+	var action: GameAction = null
+	if action_value is GameAction:
+		action = action_value
+	elif action_value is Dictionary:
+		action = GameAction.from_dict(action_value)
+	if action == null:
+		return
+	var entry: Dictionary = _no_progress_action_ledger.get(ledger_key, {})
+	entry["last_state_fingerprint"] = _action_cycle_state_fingerprint(state)
+	entry["last_action_signature"] = AIPositionEvaluator.action_signature(action)
+	entry["last_revision"] = int(request.get("revision", state.revision))
+	if not entry.has("blocked_by_state"):
+		entry["blocked_by_state"] = {}
+	_no_progress_action_ledger[ledger_key] = entry
+	while _no_progress_action_ledger.size() > ACTION_CYCLE_LEDGER_LIMIT:
+		var keys := _no_progress_action_ledger.keys()
+		if keys.is_empty():
+			break
+		_no_progress_action_ledger.erase(keys[0])
+
+
+func _action_cycle_ledger_key(
+	request: Dictionary,
+	state: GameState,
+	actor: int,
+) -> String:
+	var match_instance_id := str(request.get("match_instance_id", ""))
+	if match_instance_id.is_empty() or state == null:
+		return ""
+	return "%s|%d|%d" % [match_instance_id, actor, state.turn_number]
+
+
+static func _action_cycle_state_fingerprint(state: GameState) -> String:
+	if state == null:
+		return ""
+	var payload := state.to_dict()
+	payload.erase("action_log")
+	payload.erase("processed_action_ids")
+	payload.erase("revision")
+	payload.erase("choice_sequence")
+	payload["resolution_stack"] = {}
+	return AIPositionEvaluator.stable_variant_signature(payload).sha256_text()
 
 
 func _cached_action_needs_tactical_guard(
@@ -1143,13 +1362,22 @@ func _traditional_action_result(
 	planner_result: Dictionary,
 ) -> Dictionary:
 	var mode := str(request.get("mode", "challenge"))
-	var dynamic_config := _dynamic_budget_config(request.get("dynamic_budget", {}))
 	var goal: Dictionary = {}
 	var strategy_id := "generic_balanced_v1"
 	var strategy_version := 0
 	var strategy_hash := ""
-	var reported_stop_reason := (
-		"single_action" if stop_reason == "only_legal_action" else stop_reason)
+	var engine_id := str(request.get("engine", TRADITIONAL_ENGINE_ID))
+	var completion_reason := str(planner_result.get(
+		"completion_reason",
+		"forced_tactic" if stop_reason == "only_legal_action" else stop_reason,
+	))
+	var trajectory_hash := str(planner_result.get("trajectory_hash", ""))
+	if trajectory_hash.is_empty():
+		trajectory_hash = ("%s|%s|%s" % [
+			engine_id,
+			completion_reason,
+			AIPositionEvaluator.action_signature(action),
+		]).sha256_text()
 	if strategy != null:
 		if strategy.has_method("turn_goals"):
 			goal = strategy.turn_goals(information_set.read_only_view())
@@ -1159,40 +1387,67 @@ func _traditional_action_result(
 			strategy_version = int(strategy.version())
 		if strategy.has_method("content_hash"):
 			strategy_hash = str(strategy.content_hash())
-	return {
+	var result := {
 		"success": true,
 		"kind": "action",
 		"action": action.to_dict(),
-		# Compatibility aliases: one simulation now means one expanded beam node.
+		"engine_id": engine_id,
 		"simulations": nodes_expanded,
 		"nodes_expanded": nodes_expanded,
-		"budget_requested": mini(192, maxi(1, int(request.get(
-			"simulation_budget", GAMEPLAY_DEFAULT_SIMULATIONS)))),
-		"budget_stop_reason": reported_stop_reason,
-		"dynamic_budget_enabled": bool(dynamic_config.get("enabled", false)),
+		"trajectory_hash": trajectory_hash,
 		"deep_fallback": mode == "deep",
 		"fallback_reason": "runtime_unavailable" if mode == "deep" else "",
-		"planner": "turn_beam_v1",
+		"planner": engine_id,
 		"planner_score": float(planner_result.get("score", 0.0)),
+		"planner_score_milli": int(planner_result.get("score_milli", 0)),
 		"belief_samples": int(planner_result.get("belief_samples", 0)),
 		"belief_consensus": int(planner_result.get("belief_consensus", 0)),
 		"forced_tactic": str(planner_result.get("forced_tactic", "")),
 		"turn_plan_size": Array(planner_result.get("turn_plan", [])).size(),
 		"turn_plan_cache_hit": cache_hit,
-		"turn_budget_tier": str(planner_result.get("turn_budget_tier", "untracked")),
-		"turn_replan_ordinal": int(planner_result.get("turn_replan_ordinal", 0)),
+		"requested_depth": int(planner_result.get(
+			"requested_depth", GAMEPLAY_DEFAULT_DEPTH)),
+		"completed_depth": int(planner_result.get("completed_depth", 0)),
+		"max_path_depth": int(planner_result.get("max_path_depth", 0)),
+		"reply_completed_depth": int(planner_result.get(
+			"reply_completed_depth", 0)),
+		"reply_depth_applicable": bool(planner_result.get(
+			"reply_depth_applicable", false)),
+		"opponent_strategy_id": str(planner_result.get(
+			"opponent_strategy_id", "")),
+		"layers_completed": int(planner_result.get("layers_completed", 0)),
+		"completion_reason": completion_reason,
 		"search_depth_applicable": bool(
 			planner_result.get("search_depth_applicable", false)),
-		"search_depth_requested": int(planner_result.get("search_depth_requested", 0)),
-		"search_depth_reached": int(planner_result.get("search_depth_reached", 0)),
+		"search_depth_requested": int(planner_result.get(
+			"search_depth_requested",
+			planner_result.get("requested_depth", GAMEPLAY_DEFAULT_DEPTH),
+		)),
+		"search_depth_reached": int(planner_result.get(
+			"search_depth_reached", planner_result.get("max_path_depth", 0))),
+		"search_depth_completed": int(planner_result.get(
+			"search_depth_completed", planner_result.get("completed_depth", 0))),
 		"search_depth_stop_reason": str(
-			planner_result.get("search_depth_stop_reason", "")),
+			planner_result.get("search_depth_stop_reason", completion_reason)),
 		"strategy_id": strategy_id,
 		"strategy_version": strategy_version,
 		"strategy_hash": strategy_hash,
 		"turn_goal": goal,
 		"type_matchups": false,
 	}
+	if engine_id == LEGACY_EVALUATION_ENGINE_ID:
+		result["budget_requested"] = mini(192, maxi(1, int(request.get(
+			"simulation_budget", 192))))
+		result["budget_stop_reason"] = (
+			"single_action" if stop_reason == "only_legal_action" else stop_reason)
+		result["dynamic_budget_enabled"] = bool(
+			_dynamic_budget_config(request.get("dynamic_budget", {})).get(
+				"enabled", false))
+		result["turn_budget_tier"] = str(
+			planner_result.get("turn_budget_tier", "untracked"))
+		result["turn_replan_ordinal"] = int(
+			planner_result.get("turn_replan_ordinal", 0))
+	return result
 
 
 func _resolve_choices(
@@ -1209,16 +1464,51 @@ func _resolve_choices(
 			request = engine.query_pending_choice(state, 1)
 		if request == null:
 			return true
-		var response := _heuristic_choice(
+		var response := _trusted_choice_response_for_state(
 			state,
 			request,
 			_deck_key_for_actor(state, request.player, deck_key),
 			catalog,
+			state.revision,
 		)
+		if response == null:
+			return false
 		var step := engine.apply_choice_response(state, response, rng)
 		if not step.success:
 			return false
 	return false
+
+
+func _trusted_choice_response_for_state(
+	state: GameState,
+	request: ChoiceView,
+	deck_key: String,
+	catalog: CardCatalog,
+	match_seed: int,
+) -> ChoiceResponse:
+	if state == null or request == null or catalog == null:
+		return null
+	var choice_actor := request.player
+	if choice_actor not in [0, 1]:
+		return null
+	var information_set := AIInformationSet.capture(
+		state, choice_actor, catalog, [], [], match_seed)
+	if not information_set.is_valid():
+		return null
+	var resolved_deck_key := _deck_key_for_actor(
+		state, choice_actor, deck_key)
+	var registry: Variant = _traditional_strategy_registry_instance(
+		TRADITIONAL_ENGINE_ID)
+	if registry == null or not registry.is_valid():
+		return null
+	return _traditional_choice_response(
+		state,
+		information_set,
+		request,
+		resolved_deck_key,
+		registry.strategy_for(resolved_deck_key),
+		catalog,
+	)
 
 
 func _choose_request(
@@ -1232,6 +1522,7 @@ func _choose_request(
 	match_seed: int,
 	_inference: Variant,
 	mode: String,
+	engine_id: String,
 	cancel_check: Callable,
 	decision_started_usec: int,
 ) -> Dictionary:
@@ -1239,9 +1530,20 @@ func _choose_request(
 	if cancel_check.is_valid() and bool(cancel_check.call()):
 		return {"success": false, "kind": "choice", "cancelled": true, "error": "cancelled"}
 	var started_usec := (
-		decision_started_usec if decision_started_usec > 0 else Time.get_ticks_usec())
-	var soft_deadline_usec := started_usec + 850000
-	var hard_deadline_usec := started_usec + TRADITIONAL_HARD_DEADLINE_MSEC * 1000
+		decision_started_usec
+		if decision_started_usec > 0
+		else Time.get_ticks_usec()
+	)
+	var soft_deadline_usec := (
+		started_usec + 850000
+		if engine_id == LEGACY_EVALUATION_ENGINE_ID
+		else 0
+	)
+	var hard_deadline_usec := (
+		started_usec + LEGACY_HARD_DEADLINE_MSEC * 1000
+		if engine_id == LEGACY_EVALUATION_ENGINE_ID
+		else 0
+	)
 	var choice_actor := request.player if request.player in [0, 1] else actor
 	var information_set := AIInformationSet.capture(
 		state,
@@ -1267,7 +1569,14 @@ func _choose_request(
 			"simulations": 0,
 		}
 	var resolved_deck_key := _deck_key_for_actor(sampled_state, choice_actor, deck_key)
-	var registry: Variant = _traditional_strategy_registry_instance()
+	var registry: Variant = _traditional_strategy_registry_instance(engine_id)
+	if registry == null or not registry.is_valid():
+		return {
+			"success": false,
+			"kind": "choice",
+			"error": "invalid_strategy_registry",
+			"simulations": 0,
+		}
 	var strategy: Variant = registry.strategy_for(resolved_deck_key)
 	var response := _traditional_choice_response(
 		sampled_state,
@@ -1300,7 +1609,9 @@ func _choose_request(
 		"strategy_id": str(strategy.strategy_id()),
 		"strategy_version": int(strategy.version()),
 		"strategy_hash": str(strategy.content_hash()),
-		"planner": "turn_beam_v1",
+		"engine_id": engine_id,
+		"planner": engine_id,
+		"completion_reason": "forced_tactic",
 		"type_matchups": false,
 	}
 
@@ -1503,7 +1814,10 @@ func _sequential_discard_choice_response(
 	for selection_index in range(maximum):
 		if (
 			(cancel_check.is_valid() and bool(cancel_check.call()))
-			or (hard_deadline_usec > 0 and Time.get_ticks_usec() >= hard_deadline_usec)
+			or (
+				hard_deadline_usec > 0
+				and Time.get_ticks_usec() >= hard_deadline_usec
+			)
 		):
 			return null
 		var virtual_info := AIInformationSet.capture(
@@ -2481,8 +2795,14 @@ func _choice_work_should_stop(
 ) -> bool:
 	return (
 		(cancel_check.is_valid() and bool(cancel_check.call()))
-		or (soft_deadline_usec > 0 and Time.get_ticks_usec() >= soft_deadline_usec)
-		or (hard_deadline_usec > 0 and Time.get_ticks_usec() >= hard_deadline_usec)
+		or (
+			soft_deadline_usec > 0
+			and Time.get_ticks_usec() >= soft_deadline_usec
+		)
+		or (
+			hard_deadline_usec > 0
+			and Time.get_ticks_usec() >= hard_deadline_usec
+		)
 	)
 
 
@@ -3606,6 +3926,7 @@ func _validated_or_fallback_action(
 	engine: GameEngine,
 	seed: int,
 	profile: Dictionary = {},
+	engine_id: String = TRADITIONAL_ENGINE_ID,
 ) -> GameAction:
 	if (
 		preferred != null
@@ -3620,7 +3941,9 @@ func _validated_or_fallback_action(
 		var safe_alternative_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 4, profile)
 		if safe_alternative_attack != null:
-			return safe_alternative_attack
+			return _replacement_with_pre_attack_validation(
+				state, actor, safe_alternative_attack, preferred, actions,
+				deck_key, catalog, engine, seed + 400, profile, engine_id)
 		var escape := _best_immediate_loss_escape_action(
 			state,
 			actor,
@@ -3643,7 +3966,9 @@ func _validated_or_fallback_action(
 		var retained_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 9, profile)
 		if retained_attack != null:
-			return retained_attack
+			return _replacement_with_pre_attack_validation(
+				state, actor, retained_attack, preferred, actions,
+				deck_key, catalog, engine, seed + 900, profile, engine_id)
 		var retained_development := _best_productive_nonterminal_action(
 			state,
 			actor,
@@ -3660,7 +3985,9 @@ func _validated_or_fallback_action(
 	var ko_attack := _best_immediate_ko_attack(
 		state, actor, actions, deck_key, catalog, engine, seed, profile)
 	if ko_attack != null and _should_override_with_ko(preferred, ko_attack, state, actor, catalog):
-		return ko_attack
+		return _replacement_with_pre_attack_validation(
+			state, actor, ko_attack, preferred, actions,
+			deck_key, catalog, engine, seed + 1000, profile, engine_id)
 
 	if preferred.action == "DECLARE_ATTACK":
 		if (
@@ -3672,7 +3999,9 @@ func _validated_or_fallback_action(
 			var safe_attack := _best_productive_attack(
 				state, actor, actions, deck_key, catalog, engine, seed + 11, profile)
 			if safe_attack != null:
-				return safe_attack
+				return _replacement_with_pre_attack_validation(
+					state, actor, safe_attack, preferred, actions,
+					deck_key, catalog, engine, seed + 1100, profile, engine_id)
 			var safe_development := _best_productive_nonterminal_action(
 				state, actor, actions, deck_key, catalog, engine, seed + 12, preferred, profile)
 			if safe_development != null:
@@ -3690,7 +4019,9 @@ func _validated_or_fallback_action(
 		var follow_up_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 14, profile)
 		if follow_up_attack != null:
-			return follow_up_attack
+			return _replacement_with_pre_attack_validation(
+				state, actor, follow_up_attack, preferred, actions,
+				deck_key, catalog, engine, seed + 1400, profile, engine_id)
 		var follow_up_development := _best_productive_nonterminal_action(
 			state, actor, actions, deck_key, catalog, engine, seed + 15, preferred, profile)
 		if follow_up_development != null:
@@ -3705,7 +4036,9 @@ func _validated_or_fallback_action(
 			var retained_attack := _best_productive_attack(
 				state, actor, actions, deck_key, catalog, engine, seed + 18, profile)
 			if retained_attack != null:
-				return retained_attack
+				return _replacement_with_pre_attack_validation(
+					state, actor, retained_attack, preferred, actions,
+					deck_key, catalog, engine, seed + 1800, profile, engine_id)
 			var safe_development := _best_productive_nonterminal_action(
 				state, actor, actions, deck_key, catalog, engine, seed + 19, preferred, profile)
 			if safe_development != null:
@@ -3735,11 +4068,15 @@ func _validated_or_fallback_action(
 		var cancelled_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 25, profile)
 		if cancelled_attack != null:
-			return cancelled_attack
+			return _replacement_with_pre_attack_validation(
+				state, actor, cancelled_attack, preferred, actions,
+				deck_key, catalog, engine, seed + 2500, profile, engine_id)
 		var cancelled_damage := _best_damaging_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 26, profile)
 		if cancelled_damage != null:
-			return cancelled_damage
+			return _replacement_with_pre_attack_validation(
+				state, actor, cancelled_damage, preferred, actions,
+				deck_key, catalog, engine, seed + 2600, profile, engine_id)
 		var cancelled_development := _best_productive_nonterminal_action(
 			state, actor, actions, deck_key, catalog, engine, seed + 27, preferred, profile)
 		if cancelled_development != null:
@@ -3756,11 +4093,15 @@ func _validated_or_fallback_action(
 		var active_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 25, profile)
 		if active_attack != null:
-			return active_attack
+			return _replacement_with_pre_attack_validation(
+				state, actor, active_attack, preferred, actions,
+				deck_key, catalog, engine, seed + 3500, profile, engine_id)
 		var active_damage := _best_damaging_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 26, profile)
 		if active_damage != null:
-			return active_damage
+			return _replacement_with_pre_attack_validation(
+				state, actor, active_damage, preferred, actions,
+				deck_key, catalog, engine, seed + 3600, profile, engine_id)
 		var active_development := _best_productive_nonterminal_action(
 			state, actor, actions, deck_key, catalog, engine, seed + 27, preferred, profile)
 		if active_development != null:
@@ -3778,19 +4119,63 @@ func _validated_or_fallback_action(
 		var productive_attack := _best_productive_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 29, profile)
 		if productive_attack != null:
-			return productive_attack
+			return _replacement_with_pre_attack_validation(
+				state, actor, productive_attack, preferred, actions,
+				deck_key, catalog, engine, seed + 3900, profile, engine_id)
 		var damaging_attack := _best_damaging_attack(
 			state, actor, actions, deck_key, catalog, engine, seed + 31, profile)
 		if damaging_attack != null:
-			return damaging_attack
+			return _replacement_with_pre_attack_validation(
+				state, actor, damaging_attack, preferred, actions,
+				deck_key, catalog, engine, seed + 4100, profile, engine_id)
 
 	if _action_executes_successfully(state, actor, preferred, deck_key, catalog, engine, seed + 33, profile):
 		return preferred
-	for action in actions:
+	for action in ordered_tactical_fallback_actions(
+		state, actor, actions, deck_key, catalog):
 		if _action_executes_successfully(state, actor, action, deck_key, catalog, engine, seed + 39, profile):
-			return action
+			return _replacement_with_pre_attack_validation(
+				state, actor, action, preferred, actions,
+				deck_key, catalog, engine, seed + 4900, profile, engine_id)
 	var fallback_end := _find_action(actions, "END_TURN")
 	return fallback_end if fallback_end != null else actions[0]
+
+
+func _replacement_with_pre_attack_validation(
+	state: GameState,
+	actor: int,
+	replacement: GameAction,
+	rejected: GameAction,
+	actions: Array[GameAction],
+	deck_key: String,
+	catalog: CardCatalog,
+	engine: GameEngine,
+	seed: int,
+	profile: Dictionary,
+	engine_id: String,
+) -> GameAction:
+	if (
+		replacement == null
+		or replacement.action != "DECLARE_ATTACK"
+		or engine_id == LEGACY_EVALUATION_ENGINE_ID
+	):
+		return replacement
+	# Every replacement attack must cross the same development-before-attack
+	# boundary as a planner-selected attack.  Exclude the action which the guard
+	# just rejected so ATTACH->attack->same ATTACH cannot form a validation cycle.
+	var development := _best_pre_attack_development_action(
+		state,
+		actor,
+		replacement,
+		actions,
+		deck_key,
+		catalog,
+		engine,
+		seed,
+		profile,
+		rejected,
+	)
+	return development if development != null else replacement
 
 
 func diagnose_decision(
@@ -4112,6 +4497,7 @@ func _best_pre_attack_development_action(
 	engine: GameEngine,
 	seed: int,
 	profile: Dictionary = {},
+	additional_excluded: GameAction = null,
 ) -> GameAction:
 	if attack_action.action != "DECLARE_ATTACK":
 		return null
@@ -4130,6 +4516,7 @@ func _best_pre_attack_development_action(
 		engine,
 		seed + 500009,
 		profile,
+		additional_excluded,
 	)
 	if monotonic_development != null:
 		return monotonic_development
@@ -4138,7 +4525,8 @@ func _best_pre_attack_development_action(
 	if not is_weak and active_missing <= 0:
 		return null
 	return _best_productive_nonterminal_action(
-		state, actor, actions, deck_key, catalog, engine, seed, attack_action, profile)
+		state, actor, actions, deck_key, catalog, engine, seed,
+		attack_action, profile, additional_excluded)
 
 
 func _best_monotonic_pre_attack_development_action(
@@ -4151,13 +4539,18 @@ func _best_monotonic_pre_attack_development_action(
 	engine: GameEngine,
 	seed: int,
 	profile: Dictionary = {},
+	additional_excluded: GameAction = null,
 ) -> GameAction:
 	var player := state.get_player(actor)
 	var best: GameAction = null
 	var best_value := -INF
 	for action_index in range(actions.size()):
 		var action := actions[action_index]
-		if action == null or action == attack_action:
+		if (
+			action == null
+			or action == attack_action
+			or action == additional_excluded
+		):
 			continue
 		var card_id := _action_card_id(state, actor, action)
 		if action.action == "PLAY_BASIC":
@@ -4225,6 +4618,7 @@ func _best_productive_nonterminal_action(
 	seed: int,
 	excluded: GameAction = null,
 	profile: Dictionary = {},
+	additional_excluded: GameAction = null,
 ) -> GameAction:
 	var productive_types := {
 		"ATTACH_ENERGY": true,
@@ -4239,7 +4633,11 @@ func _best_productive_nonterminal_action(
 	var best_value := -INF
 	for action_index in range(actions.size()):
 		var action := actions[action_index]
-		if action == excluded or not productive_types.has(action.action):
+		if (
+			action == excluded
+			or action == additional_excluded
+			or not productive_types.has(action.action)
+		):
 			continue
 		if _should_avoid_repeating_ability(state, actor, action, catalog):
 			continue
@@ -4257,8 +4655,13 @@ func _best_productive_nonterminal_action(
 		if sim_score <= -INF / 2.0:
 			continue
 		var delta := sim_score - base_score
-		var value := development_value + delta * 0.45 + _action_score(
-			state, actor, action, deck_key, catalog, profile) * 0.04
+		var value := (
+			development_value
+			+ delta * 0.45
+			+ float(_canonical_action_score_milli(
+				state, actor, action, deck_key, catalog, seed))
+			/ float(AIPositionEvaluator.SCORE_SCALE) * 0.04
+		)
 		if action.action == "PLAY_BASIC" and state.get_player(actor).bench_count() < 2:
 			value += 45.0
 		if action.action == "EVOLVE":
@@ -4309,9 +4712,23 @@ func _best_productive_attack(
 		var effects := _attack_effects(state, actor, attack_idx, catalog)
 		var value := damage * 1.2 + _effects_tactical_value(
 			state, actor, effects, "active", catalog, deck_key)
+		value += float(_canonical_action_score_milli(
+			state, actor, action, deck_key, catalog, seed)
+		) / float(AIPositionEvaluator.SCORE_SCALE) * 0.05
 		if value <= 0.0:
 			continue
-		if value > best_value and _action_executes_successfully(
+		var deterministic_better := (
+			value > best_value
+			or (
+				is_equal_approx(value, best_value)
+				and (
+					best == null
+					or AIPositionEvaluator.action_signature(action)
+					< AIPositionEvaluator.action_signature(best)
+				)
+			)
+		)
+		if deterministic_better and _action_executes_successfully(
 			state, actor, action, deck_key, catalog, engine, seed + attack_idx, profile):
 			best = action
 			best_value = value
@@ -4449,8 +4866,37 @@ func _action_first_choice_cancelled(
 	var request := step.pending_choice
 	if request == null or request.player != actor:
 		return false
-	var response := _heuristic_choice(simulation, request, deck_key, catalog)
-	return response.cancelled
+	var response := _trusted_choice_response_for_state(
+		simulation, request, deck_key, catalog, seed)
+	return response != null and response.cancelled
+
+
+func _canonical_action_score_milli(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	deck_key: String,
+	catalog: CardCatalog,
+	match_seed: int,
+) -> int:
+	var registry: Variant = _traditional_strategy_registry_instance(
+		TRADITIONAL_ENGINE_ID)
+	var strategy: Variant = (
+		registry.strategy_for(deck_key)
+		if registry != null and registry.is_valid()
+		else null
+	)
+	return AIPositionEvaluator.action_score_milli(
+		state,
+		actor,
+		action,
+		strategy,
+		_traditional_semantics_instance(catalog),
+		catalog,
+		match_seed,
+		Callable(self, "_traditional_action_candidate_score").bind(
+			deck_key, catalog),
+	)
 
 
 func _action_score(
@@ -6593,7 +7039,17 @@ func _best_immediate_loss_escape_action(
 			value += 60.0
 		elif action.action == "PLAY_BASIC":
 			value += 40.0
-		if value > best_value:
+		if (
+			value > best_value
+			or (
+				is_equal_approx(value, best_value)
+				and (
+					best == null
+					or AIPositionEvaluator.action_signature(action)
+					< AIPositionEvaluator.action_signature(best)
+				)
+			)
+		):
 			best = action
 			best_value = value
 	if best != null:
