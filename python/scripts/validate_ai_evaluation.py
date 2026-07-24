@@ -1,4 +1,4 @@
-"""Validate schema-v6 Godot traditional-AI evaluation evidence."""
+"""Validate schema-v7 Godot traditional-AI evaluation evidence."""
 from __future__ import annotations
 
 import argparse
@@ -8,34 +8,77 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.ai_evaluation_v6 import (
+    from scripts.ai_evaluation_v7 import (
         DECK_ORDER,
+        PROTOCOL_ID,
+        REPLY_SEARCH_DEPTH,
         SCHEMA_VERSION,
+        V2_SEARCH_DEPTH,
+        complete_evidence_unit_ids,
+        evidence_unit_ids_sha256,
+        experimental_units,
+        match_decision_contract_error,
+        simulation_fingerprint_from_provenance,
         summarize_performance,
+        summarize_coverage,
         summarize_search_depth,
+        task_manifest_id,
     )
 except ModuleNotFoundError:  # Direct script execution.
-    from ai_evaluation_v6 import (  # type: ignore[no-redef]
+    from ai_evaluation_v7 import (  # type: ignore[no-redef]
         DECK_ORDER,
+        PROTOCOL_ID,
+        REPLY_SEARCH_DEPTH,
         SCHEMA_VERSION,
+        V2_SEARCH_DEPTH,
+        complete_evidence_unit_ids,
+        evidence_unit_ids_sha256,
+        experimental_units,
+        match_decision_contract_error,
+        simulation_fingerprint_from_provenance,
         summarize_performance,
+        summarize_coverage,
         summarize_search_depth,
+        task_manifest_id,
+    )
+
+try:
+    from scripts.build_ai_evaluation_provenance import (
+        current_analysis_fingerprint,
+    )
+except ModuleNotFoundError:  # Direct script execution.
+    from build_ai_evaluation_provenance import (  # type: ignore[no-redef]
+        current_analysis_fingerprint,
     )
 
 
 SUPPORTED_PLATFORMS = {"windows", "android"}
 SEARCH_DEPTH_THRESHOLDS = {
-    "requested_depth_min": 8.0,
+    "requested_depth": float(V2_SEARCH_DEPTH),
+    "requested_depth_min": float(V2_SEARCH_DEPTH),
     "complete_or_frontier_exhausted_rate_min": 1.0,
     "deadline_truncations_max": 0.0,
     "node_budget_truncations_max": 0.0,
+    "reply_requested_depth": float(REPLY_SEARCH_DEPTH),
+    "reply_complete_or_frontier_exhausted_rate_min": 1.0,
 }
 
 
 ERROR_MESSAGES = {
-    "schema_version": "结果不是 AI 评测 schema v6。",
+    "schema_version": "结果不是 AI 评测 schema v7。",
+    "protocol_id": "结果不是传统 AI v7 固定深度评测协议。",
     "artifact_kind": "输入不是已聚合的 AI 评测结果。",
     "provenance_missing": "缺少可复现来源指纹。",
+    "simulation_fingerprint_mismatch": "模拟指纹与来源稳定字段重算结果不一致。",
+    "simulation_config": "模拟来源配置不完整，或与赛程及执行配置不一致。",
+    "godot_executable_hash": "来源记录缺少合法的 Godot 可执行文件 SHA-256。",
+    "legacy_provenance_compatibility": "旧证据缺少部分 v7 来源字段；仅允许非最终 Nightly 使用。",
+    "analysis_fingerprint_stale": "结果不是由当前聚合、校验与报告代码生成的。",
+    "task_manifest": "任务清单标识与固定赛程不一致。",
+    "execution_config": "缺少评测执行配置。",
+    "checkpoint_summary": "检查点摘要缺失、结构无效或未覆盖完整 Nightly 证据单元。",
+    "wall_clock_metadata": "墙钟耗时与 wall_clock_scope 的字段配对无效。",
+    "gate_depth_source": "搜索深度门禁没有使用主评测矩阵。",
     "platform_unsupported": "评测平台不是受支持的 Windows 或 Android。",
     "nightly_config": "Nightly 配置不是固定的 10 牌组、seed 17、50/10 区块。",
     "coverage_incomplete": "比赛覆盖不完整或包含意外比赛。",
@@ -45,14 +88,18 @@ ERROR_MESSAGES = {
     "behavior_missing": "行为画像埋点不完整。",
     "golden_scenarios_missing": "金标场景集合不完整。",
     "golden_scenarios_failed": "至少一个金标场景失败。",
-    "search_depth_probe_missing": "缺少单进程搜索深度探针。",
-    "search_depth_probe_coverage": "搜索深度探针不是 20 局预热加 40 局采样的固定结构。",
-    "search_depth_probe_metrics": "搜索深度样本或聚合指标无效。",
+    "search_depth_metrics": "主评测矩阵的搜索深度样本或聚合指标无效。",
+    "performance_benchmark_invalid": "可选性能基准不完整；不影响强度门禁。",
     "search_depth_requested_below_floor": "策略配置的全预算搜索深度低于发布下限。",
+    "search_depth_requested_mismatch": "v2 搜索没有使用固定深度 8。",
     "search_depth_below_floor": "策略实际达到的搜索深度分位数低于发布下限。",
     "search_depth_incomplete": "存在未完整达到固定深度且未耗尽搜索空间的 v2 搜索。",
     "search_depth_time_or_node_stop": "v2 搜索仍被时间或节点预算截断。",
     "search_depth_engine_mismatch": "搜索深度门禁样本不是 turn_beam_v2。",
+    "search_depth_decision_accounting": "动作决策与搜索深度样本没有完整守恒。",
+    "reply_depth_evidence_missing": "缺少适用的对手回应搜索深度证据。",
+    "reply_depth_requested_mismatch": "对手回应搜索没有使用固定深度 3。",
+    "reply_depth_incomplete": "对手回应搜索未完整达到深度 3，也未提前耗尽搜索空间。",
     "search_depth_regression": "候选策略的搜索深度低于对照策略。",
     "strategy_relation": "策略指纹关系与所选门禁不符。",
     "mirror_ci_below_floor": "镜像强度 95% 区间下界低于允许值。",
@@ -78,6 +125,17 @@ def _float(value: Any, default: float | None = 0.0) -> float | None:
     except (TypeError, ValueError, OverflowError):
         return default
     return result if math.isfinite(result) else default
+
+
+def _valid_sha256(value: Any) -> bool:
+    normalized = str(value or "")
+    return len(normalized) == 64 and all(
+        character in "0123456789abcdef" for character in normalized
+    )
+
+
+def _is_nonnegative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _strategies_equal(payload: dict[str, Any]) -> bool:
@@ -175,24 +233,419 @@ def _nightly_config_valid(payload: dict[str, Any]) -> bool:
     )
 
 
+SIMULATION_CONFIG_FIELDS = (
+    "protocol_id",
+    "eval_preset",
+    "deck_keys",
+    "seed",
+    "seed_blocks_per_deck",
+    "cross_seed_blocks_per_matchup",
+    "matchup_mode",
+    "max_actions",
+    "rules_options",
+    "workers",
+    "external_shard_count",
+    "global_parallel_workers",
+    "evidence_shard_count",
+    "profile",
+    "disable_ai_cache",
+    "disable_native_math",
+    "task_manifest_id",
+    "execution_profile_id",
+)
+
+
+def _typed_equal(left: Any, right: Any) -> bool:
+    return type(left) is type(right) and left == right
+
+
+def _simulation_config_binding(
+    payload: dict[str, Any],
+    config: Any,
+    execution_config: Any,
+    simulation_config: Any,
+    manifest_id: str,
+) -> tuple[str, list[str]]:
+    """Return ``valid``, ``legacy`` or ``invalid`` plus affected fields."""
+    if not isinstance(simulation_config, dict) or not simulation_config:
+        return "legacy", ["provenance.simulation_config"]
+    if not isinstance(config, dict) or not isinstance(execution_config, dict):
+        return "invalid", ["config", "execution_config"]
+
+    missing: list[str] = []
+    mismatched: list[str] = []
+    for field in SIMULATION_CONFIG_FIELDS:
+        if field not in simulation_config:
+            missing.append(f"provenance.simulation_config.{field}")
+        if field not in execution_config:
+            missing.append(f"execution_config.{field}")
+
+    expected_from_result = {
+        "protocol_id": payload.get("protocol_id"),
+        "eval_preset": payload.get("eval_preset"),
+        "deck_keys": payload.get("deck_keys"),
+        "seed": config.get("seed"),
+        "seed_blocks_per_deck": config.get("seed_blocks_per_deck"),
+        "cross_seed_blocks_per_matchup": config.get(
+            "cross_seed_blocks_per_matchup"
+        ),
+        "matchup_mode": config.get("matchup_mode"),
+        "max_actions": config.get("max_actions"),
+        "rules_options": config.get("rules_options"),
+        "profile": config.get("profile"),
+        "disable_ai_cache": config.get("disable_ai_cache"),
+        "disable_native_math": config.get("disable_native_math"),
+        "task_manifest_id": manifest_id,
+        "execution_profile_id": payload.get("execution_profile_id"),
+    }
+    for field, expected in expected_from_result.items():
+        if field in simulation_config and not _typed_equal(
+            simulation_config[field], expected
+        ):
+            mismatched.append(f"provenance.simulation_config.{field}")
+        if field in execution_config and not _typed_equal(
+            execution_config[field], expected
+        ):
+            mismatched.append(f"execution_config.{field}")
+
+    for field in SIMULATION_CONFIG_FIELDS:
+        if (
+            field in simulation_config
+            and field in execution_config
+            and not _typed_equal(
+                simulation_config[field],
+                execution_config[field],
+            )
+        ):
+            mismatched.append(f"execution_config.{field}")
+
+    integer_rules = {
+        "seed": lambda value: value >= 0,
+        "seed_blocks_per_deck": lambda value: value > 0,
+        "cross_seed_blocks_per_matchup": lambda value: value >= 0,
+        "max_actions": lambda value: value > 0,
+        "workers": lambda value: value > 0,
+        "external_shard_count": lambda value: value > 0,
+        "global_parallel_workers": lambda value: value > 0,
+        "evidence_shard_count": lambda value: value > 0,
+    }
+    for field, predicate in integer_rules.items():
+        if field not in simulation_config:
+            continue
+        value = simulation_config[field]
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not predicate(value)
+        ):
+            mismatched.append(f"provenance.simulation_config.{field}")
+    for field in ("profile", "disable_ai_cache", "disable_native_math"):
+        if field in simulation_config and not isinstance(
+            simulation_config[field], bool
+        ):
+            mismatched.append(f"provenance.simulation_config.{field}")
+    if (
+        "deck_keys" in simulation_config
+        and (
+            not isinstance(simulation_config["deck_keys"], list)
+            or not simulation_config["deck_keys"]
+            or any(
+                not isinstance(deck, str) or not deck
+                for deck in simulation_config["deck_keys"]
+            )
+        )
+    ):
+        mismatched.append("provenance.simulation_config.deck_keys")
+    if (
+        "rules_options" in simulation_config
+        and not isinstance(simulation_config["rules_options"], dict)
+    ):
+        mismatched.append("provenance.simulation_config.rules_options")
+    for field in (
+        "protocol_id",
+        "eval_preset",
+        "matchup_mode",
+        "task_manifest_id",
+        "execution_profile_id",
+    ):
+        if field in simulation_config and (
+            not isinstance(simulation_config[field], str)
+            or not simulation_config[field]
+        ):
+            mismatched.append(f"provenance.simulation_config.{field}")
+
+    workers = simulation_config.get("workers")
+    external_shards = simulation_config.get("external_shard_count")
+    global_workers = simulation_config.get("global_parallel_workers")
+    if (
+        isinstance(workers, int)
+        and not isinstance(workers, bool)
+        and isinstance(external_shards, int)
+        and not isinstance(external_shards, bool)
+        and isinstance(global_workers, int)
+        and not isinstance(global_workers, bool)
+        and global_workers != workers * external_shards
+    ):
+        mismatched.append(
+            "provenance.simulation_config.global_parallel_workers"
+        )
+
+    result_bindings = {
+        "workers": config.get("parallel_workers"),
+        "evidence_shard_count": config.get("evidence_shard_count"),
+        "profile": config.get("profile"),
+        "disable_ai_cache": config.get("disable_ai_cache"),
+        "disable_native_math": config.get("disable_native_math"),
+        "execution_profile_id": config.get("execution_profile_id"),
+    }
+    for field, expected in result_bindings.items():
+        if expected is None:
+            missing.append(f"config.{field}")
+        elif field in simulation_config and not _typed_equal(
+            simulation_config[field], expected
+        ):
+            mismatched.append(f"config.{field}")
+    if "parallel_workers" not in execution_config:
+        missing.append("execution_config.parallel_workers")
+    elif "workers" in simulation_config and not _typed_equal(
+        execution_config["parallel_workers"],
+        simulation_config["workers"],
+    ):
+        mismatched.append("execution_config.parallel_workers")
+    if "platform" not in execution_config:
+        missing.append("execution_config.platform")
+    elif not _typed_equal(
+        execution_config["platform"],
+        payload.get("platform"),
+    ):
+        mismatched.append("execution_config.platform")
+
+    if mismatched:
+        return "invalid", sorted(set(mismatched))
+    if missing:
+        return "legacy", sorted(set(missing))
+    return "valid", []
+
+
+def _checkpoint_summary_validation(
+    payload: dict[str, Any],
+    *,
+    canonical_nightly: bool,
+) -> tuple[bool, list[str]]:
+    summary = payload.get("checkpoint_summary")
+    if not isinstance(summary, dict):
+        return False, ["checkpoint_summary"]
+    errors: list[str] = []
+    enabled = summary.get("enabled")
+    if not isinstance(enabled, bool):
+        errors.append("enabled")
+    count_fields = (
+        "restored_units",
+        "written_units",
+        "pending_units",
+    )
+    counts: dict[str, int] = {}
+    for field in count_fields:
+        value = summary.get(field)
+        if not _is_nonnegative_int(value):
+            errors.append(field)
+        else:
+            counts[field] = int(value)
+
+    has_shards_enabled = "shards_enabled" in summary
+    has_shards_total = "shards_total" in summary
+    shards_enabled = summary.get("shards_enabled")
+    shards_total = summary.get("shards_total")
+    if has_shards_enabled != has_shards_total:
+        errors.append("shard_summary_pair")
+    elif has_shards_enabled:
+        if (
+            not _is_nonnegative_int(shards_enabled)
+            or not _is_nonnegative_int(shards_total)
+            or int(shards_total) <= 0
+            or int(shards_enabled) > int(shards_total)
+        ):
+            errors.append("shard_summary_counts")
+    elif canonical_nightly:
+        errors.append("shard_summary_missing")
+
+    if (
+        isinstance(enabled, bool)
+        and has_shards_enabled
+        and _is_nonnegative_int(shards_enabled)
+    ):
+        if enabled and int(shards_enabled) <= 0:
+            errors.append("enabled_without_shards")
+        if not enabled and int(shards_enabled) != 0:
+            errors.append("disabled_with_shards")
+    if (
+        enabled is False
+        and counts
+        and any(counts.get(field, 0) != 0 for field in count_fields)
+    ):
+        errors.append("disabled_with_units")
+
+    identity_fields = (
+        "completed_units",
+        "completed_unit_ids",
+        "completed_unit_ids_sha256",
+    )
+    present_identity_fields = [
+        field for field in identity_fields if field in summary
+    ]
+    completed_unit_ids: list[str] = []
+    match_unit_ids: list[str] = []
+    if present_identity_fields and len(present_identity_fields) != len(
+        identity_fields
+    ):
+        errors.append("unit_identity_summary_pair")
+    elif len(present_identity_fields) == len(identity_fields):
+        raw_unit_ids = summary.get("completed_unit_ids")
+        completed_units = summary.get("completed_units")
+        if (
+            not _is_nonnegative_int(completed_units)
+            or not isinstance(raw_unit_ids, list)
+            or any(
+                not isinstance(unit_id, str) or not unit_id
+                for unit_id in raw_unit_ids
+            )
+            or len(set(raw_unit_ids)) != len(raw_unit_ids)
+            or list(raw_unit_ids) != sorted(raw_unit_ids)
+        ):
+            errors.append("unit_identity_manifest")
+        else:
+            completed_unit_ids = list(raw_unit_ids)
+            if int(completed_units) != len(completed_unit_ids):
+                errors.append("unit_identity_count")
+            if (
+                counts
+                and int(completed_units)
+                != counts.get("restored_units", 0)
+                + counts.get("written_units", 0)
+            ):
+                errors.append("unit_identity_accounting")
+            if (
+                not _valid_sha256(
+                    summary.get("completed_unit_ids_sha256")
+                )
+                or str(summary.get("completed_unit_ids_sha256"))
+                != evidence_unit_ids_sha256(completed_unit_ids)
+            ):
+                errors.append("unit_identity_hash")
+            matches = payload.get("matches")
+            if (
+                not isinstance(matches, list)
+                or any(not isinstance(row, dict) for row in matches)
+            ):
+                errors.append("unit_identity_matches")
+            else:
+                match_unit_ids = complete_evidence_unit_ids(matches)
+                if not set(completed_unit_ids).issubset(match_unit_ids):
+                    errors.append("unit_identity_match_mismatch")
+    elif canonical_nightly:
+        errors.append("unit_identity_summary_missing")
+
+    if canonical_nightly and not errors:
+        if enabled is not True:
+            errors.append("nightly_checkpoint_disabled")
+        if int(shards_enabled) != 50 or int(shards_total) != 50:
+            errors.append("nightly_shard_coverage")
+        if (
+            counts["restored_units"] + counts["written_units"]
+            != 950
+        ):
+            errors.append("nightly_unit_coverage")
+        if counts["pending_units"] != 0:
+            errors.append("nightly_pending_units")
+        if (
+            len(completed_unit_ids) != 950
+            or len(match_unit_ids) != 950
+            or completed_unit_ids != match_unit_ids
+        ):
+            errors.append("nightly_unit_identity_coverage")
+    return not errors, errors
+
+
+def _wall_clock_metadata_validation(
+    payload: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    scope = payload.get("wall_clock_scope")
+    has_wall_clock = "wall_clock_ms" in payload
+    if scope not in {
+        "not_recorded",
+        "full_evidence_stage",
+        "current_attempt_only",
+    }:
+        return False, ["wall_clock_scope"]
+    if scope == "not_recorded":
+        return (
+            (not has_wall_clock),
+            [] if not has_wall_clock else ["wall_clock_ms_unexpected"],
+        )
+    if not has_wall_clock:
+        return False, ["wall_clock_ms_missing"]
+    value = payload.get("wall_clock_ms")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0.0
+    ):
+        return False, ["wall_clock_ms"]
+    return True, []
+
+
+def _recomputed_main_coverage(payload: dict[str, Any]) -> dict[str, Any] | None:
+    matches = payload.get("matches")
+    deck_keys = payload.get("deck_keys")
+    config = payload.get("config")
+    if (
+        not isinstance(matches, list)
+        or not matches
+        or any(not isinstance(row, dict) for row in matches)
+        or not isinstance(deck_keys, list)
+        or not isinstance(config, dict)
+    ):
+        return None
+    try:
+        mirror_units, cross_units = experimental_units(matches)
+        return summarize_coverage(
+            matches,
+            deck_keys,
+            config,
+            mirror_units,
+            cross_units,
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _coverage_valid(payload: dict[str, Any], *, canonical_nightly: bool) -> bool:
     coverage = payload.get("coverage") or {}
-    if not isinstance(coverage, dict) or not bool(coverage.get("complete")):
+    recomputed = _recomputed_main_coverage(payload)
+    if (
+        not isinstance(coverage, dict)
+        or recomputed is None
+        or coverage != recomputed
+        or not bool(recomputed.get("complete"))
+    ):
         return False
-    if _int(coverage.get("missing_match_count")) != 0:
+    if _int(recomputed.get("missing_match_count")) != 0:
         return False
-    if _int(coverage.get("unexpected_match_count")) != 0:
+    if _int(recomputed.get("unexpected_match_count")) != 0:
         return False
-    if coverage.get("structural_errors"):
+    if recomputed.get("structural_errors"):
         return False
     if canonical_nightly:
         return (
-            _int(coverage.get("expected_games")) == 2800
-            and _int(coverage.get("actual_games")) == 2800
-            and _int(coverage.get("expected_mirror_units")) == 500
-            and _int(coverage.get("complete_mirror_units")) == 500
-            and _int(coverage.get("expected_cross_units")) == 450
-            and _int(coverage.get("complete_cross_units")) == 450
+            _int(recomputed.get("expected_games")) == 2800
+            and _int(recomputed.get("actual_games")) == 2800
+            and _int(recomputed.get("expected_mirror_units")) == 500
+            and _int(recomputed.get("actual_mirror_units")) == 500
+            and _int(recomputed.get("complete_mirror_units")) == 500
+            and _int(recomputed.get("expected_cross_units")) == 450
+            and _int(recomputed.get("actual_cross_units")) == 450
+            and _int(recomputed.get("complete_cross_units")) == 450
         )
     return True
 
@@ -233,8 +686,12 @@ def _golden_valid(payload: dict[str, Any]) -> tuple[bool, bool]:
     return complete, _int(golden.get("failed")) == 0
 
 
-def _probe_validation(payload: dict[str, Any]) -> dict[str, Any]:
-    performance = payload.get("performance") or {}
+def _performance_benchmark_validation(payload: dict[str, Any]) -> dict[str, Any]:
+    performance = (
+        payload.get("performance_benchmark")
+        or payload.get("performance")
+        or {}
+    )
     if not isinstance(performance, dict) or not bool(performance.get("available")):
         return {
             "coverage_valid": False,
@@ -254,7 +711,10 @@ def _probe_validation(payload: dict[str, Any]) -> dict[str, Any]:
         and _int(config.get("seed_blocks_per_deck")) == 3
         and _int(config.get("warmup_blocks_per_deck")) == 1
         and str(config.get("matchup_mode")) == "Mirror"
-        and str(config.get("run_role")) == "search_depth_probe"
+        and str(config.get("run_role")) in {
+            "search_depth_probe",
+            "performance_benchmark",
+        }
         and not bool(config.get("profile"))
         and _int(coverage.get("complete_mirror_units")) == 30
         and _int(coverage.get("clean_mirror_units")) == 30
@@ -310,6 +770,88 @@ def _probe_validation(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _main_depth_contract_valid(
+    payload: dict[str, Any],
+    *,
+    strict_v2_depth: bool = True,
+) -> bool:
+    matches = payload.get("matches")
+    strategies = payload.get("strategies")
+    if not isinstance(matches, list) or not isinstance(strategies, dict):
+        return False
+    configured_engines: dict[str, str] = {}
+    for strategy in ("A", "B"):
+        descriptor = strategies.get(strategy)
+        if not isinstance(descriptor, dict):
+            return False
+        engine = str(descriptor.get("engine") or "")
+        if engine not in {"turn_beam_v1", "turn_beam_v2"}:
+            return False
+        configured_engines[strategy] = engine
+    return all(
+        match_decision_contract_error(
+            row,
+            configured_engines,
+            strict_v2_depth=strict_v2_depth,
+        )
+        is None
+        for row in matches
+    )
+
+
+def _main_depth_validation(
+    payload: dict[str, Any],
+    *,
+    strict_v2_depth: bool,
+) -> dict[str, Any]:
+    matches = payload.get("matches")
+    deck_keys = payload.get("deck_keys") or []
+    if not isinstance(matches, list) or not isinstance(deck_keys, list):
+        return {
+            "metrics_valid": False,
+            "contract_valid": False,
+            "reported": {},
+            "recomputed": {},
+        }
+    recomputed = summarize_search_depth(matches, deck_keys)
+    reported = payload.get("search_depth") or {}
+    contract_valid = _main_depth_contract_valid(
+        payload,
+        strict_v2_depth=strict_v2_depth,
+    )
+    metrics_valid = (
+        payload.get("gate_depth_source") == "main_matches"
+        and isinstance(reported, dict)
+        and bool(recomputed.get("available"))
+        and reported == recomputed
+        and contract_valid
+        and all(
+            _int(
+                (((reported.get("by_strategy") or {}).get(strategy) or {}).get(
+                    "overall"
+                ) or {}).get("sample_count")
+            )
+            > 0
+            and all(
+                _int(
+                    ((((reported.get("by_strategy") or {}).get(strategy) or {}).get(
+                        "per_deck"
+                    ) or {}).get(deck) or {}).get("overall", {}).get("sample_count")
+                )
+                > 0
+                for deck in deck_keys
+            )
+            for strategy in ("A", "B")
+        )
+    )
+    return {
+        "metrics_valid": metrics_valid,
+        "contract_valid": contract_valid,
+        "reported": reported,
+        "recomputed": recomputed,
+    }
+
+
 def _search_depth_errors(
     reported: dict[str, Any], gate: str
 ) -> list[tuple[str, dict[str, Any]]]:
@@ -344,6 +886,7 @@ def _search_depth_errors(
                     },
                 ))
             requested_min = _float(metrics.get("requested_depth_min"), None)
+            requested_max = _float(metrics.get("requested_depth_max"), None)
             requested_floor = SEARCH_DEPTH_THRESHOLDS["requested_depth_min"]
             if requested_min is None or requested_min < requested_floor:
                 errors.append((
@@ -353,6 +896,23 @@ def _search_depth_errors(
                         "scope": scope,
                         "value": requested_min,
                         "floor": requested_floor,
+                    },
+                ))
+            requested_target = SEARCH_DEPTH_THRESHOLDS["requested_depth"]
+            if (
+                requested_min is None
+                or requested_max is None
+                or requested_min != requested_target
+                or requested_max != requested_target
+            ):
+                errors.append((
+                    "search_depth_requested_mismatch",
+                    {
+                        "strategy": strategy,
+                        "scope": scope,
+                        "minimum": requested_min,
+                        "maximum": requested_max,
+                        "required": requested_target,
                     },
                 ))
             complete_rate = _float(
@@ -383,6 +943,66 @@ def _search_depth_errors(
                         "node_budget": node_budget,
                     },
                 ))
+            reply_applicable = _int(
+                metrics.get("reply_applicable_count")
+            )
+            if reply_applicable <= 0:
+                errors.append((
+                    "reply_depth_evidence_missing",
+                    {
+                        "strategy": strategy,
+                        "scope": scope,
+                    },
+                ))
+                continue
+            reply_requested_min = _float(
+                metrics.get("reply_requested_depth_min"), None
+            )
+            reply_requested_max = _float(
+                metrics.get("reply_requested_depth_max"), None
+            )
+            reply_target = SEARCH_DEPTH_THRESHOLDS[
+                "reply_requested_depth"
+            ]
+            if (
+                reply_requested_min is None
+                or reply_requested_max is None
+                or reply_requested_min != reply_target
+                or reply_requested_max != reply_target
+            ):
+                errors.append((
+                    "reply_depth_requested_mismatch",
+                    {
+                        "strategy": strategy,
+                        "scope": scope,
+                        "minimum": reply_requested_min,
+                        "maximum": reply_requested_max,
+                        "required": reply_target,
+                    },
+                ))
+            reply_complete_rate = _float(
+                metrics.get(
+                    "reply_complete_or_frontier_exhausted_rate"
+                ),
+                None,
+            )
+            reply_complete_floor = SEARCH_DEPTH_THRESHOLDS[
+                "reply_complete_or_frontier_exhausted_rate_min"
+            ]
+            if (
+                reply_complete_rate is None
+                or reply_complete_rate
+                < reply_complete_floor - 1e-12
+            ):
+                errors.append((
+                    "reply_depth_incomplete",
+                    {
+                        "strategy": strategy,
+                        "scope": scope,
+                        "value": reply_complete_rate,
+                        "floor": reply_complete_floor,
+                    },
+                ))
     return errors
 
 
@@ -402,11 +1022,21 @@ def validate_evaluation_gate(
         "nightly-superiority",
         "deep-practical",
     }
+    canonical_nightly = normalized_gate.startswith("nightly-")
 
     schema_valid = _int(payload.get("schema_version")) == SCHEMA_VERSION
     _check(checks, "schema", "integrity", schema_valid, f"schema v{SCHEMA_VERSION}")
     if not schema_valid:
         _append_issue(errors, "schema_version", "integrity", actual=payload.get("schema_version"))
+    protocol_valid = str(payload.get("protocol_id") or "") == PROTOCOL_ID
+    _check(checks, "protocol", "integrity", protocol_valid, PROTOCOL_ID)
+    if not protocol_valid:
+        _append_issue(
+            errors,
+            "protocol_id",
+            "integrity",
+            actual=payload.get("protocol_id"),
+        )
     artifact_valid = payload.get("artifact_kind") == "ai_evaluation_result"
     _check(checks, "artifact", "integrity", artifact_valid, "权威聚合结果")
     if not artifact_valid:
@@ -415,13 +1045,42 @@ def validate_evaluation_gate(
     provenance_valid = (
         isinstance(provenance, dict)
         and _int(provenance.get("schema_version")) == SCHEMA_VERSION
-        and bool(provenance.get("fingerprint"))
+        and str(provenance.get("protocol_id") or "") == PROTOCOL_ID
+        and _valid_sha256(provenance.get("simulation_fingerprint"))
+        and _valid_sha256(provenance.get("analysis_fingerprint"))
+        and payload.get("simulation_fingerprint")
+        == provenance.get("simulation_fingerprint")
+        and payload.get("analysis_fingerprint")
+        == provenance.get("analysis_fingerprint")
     )
     _check(checks, "provenance", "integrity", provenance_valid, "来源指纹")
     if not provenance_valid:
         _append_issue(errors, "provenance_missing", "integrity")
+    expected_analysis_fingerprint = current_analysis_fingerprint(
+        Path(__file__).resolve().parents[2]
+    )
+    analysis_fingerprint_current = (
+        provenance_valid
+        and str(payload.get("analysis_fingerprint") or "")
+        == expected_analysis_fingerprint
+    )
+    _check(
+        checks,
+        "analysis_fingerprint",
+        "integrity",
+        analysis_fingerprint_current,
+        "当前分析代码指纹",
+    )
+    if provenance_valid and not analysis_fingerprint_current:
+        _append_issue(
+            errors,
+            "analysis_fingerprint_stale",
+            "integrity",
+            expected=expected_analysis_fingerprint,
+            actual=payload.get("analysis_fingerprint"),
+        )
 
-    if not schema_valid or not artifact_valid:
+    if not schema_valid or not protocol_valid or not artifact_valid:
         return _result(
             payload,
             normalized_gate,
@@ -432,7 +1091,217 @@ def validate_evaluation_gate(
             {},
         )
 
-    canonical_nightly = normalized_gate.startswith("nightly-")
+    config = payload.get("config") or {}
+    execution_config = payload.get("execution_config")
+    manifest_id = str(payload.get("task_manifest_id") or "")
+    canonical_manifest = ""
+    if isinstance(config, dict):
+        try:
+            canonical_manifest = task_manifest_id(
+                payload.get("deck_keys") or [],
+                config,
+            )
+        except (TypeError, ValueError):
+            canonical_manifest = ""
+    provenance_simulation_config = (
+        provenance.get("simulation_config")
+        if isinstance(provenance, dict)
+        else None
+    )
+    simulation_config_state, simulation_config_fields = (
+        _simulation_config_binding(
+            payload,
+            config,
+            execution_config,
+            provenance_simulation_config,
+            manifest_id,
+        )
+    )
+    simulation_config_valid = simulation_config_state == "valid"
+    _check(
+        checks,
+        "simulation_config",
+        "integrity",
+        simulation_config_valid,
+        "来源指纹绑定完整赛程与执行配置",
+        state=simulation_config_state,
+        fields=simulation_config_fields,
+    )
+    if simulation_config_state == "invalid" or (
+        canonical_nightly and not simulation_config_valid
+    ):
+        _append_issue(
+            errors,
+            "simulation_config",
+            "integrity",
+            fields=simulation_config_fields,
+        )
+
+    godot_hash = (
+        provenance.get("godot_executable_sha256")
+        if isinstance(provenance, dict)
+        else None
+    )
+    godot_hash_valid = _valid_sha256(godot_hash)
+    godot_hash_missing = godot_hash in (None, "")
+    _check(
+        checks,
+        "godot_executable_hash",
+        "integrity",
+        godot_hash_valid,
+        "Godot 可执行文件 SHA-256",
+    )
+    if (not godot_hash_valid) and (
+        canonical_nightly or not godot_hash_missing
+    ):
+        _append_issue(
+            errors,
+            "godot_executable_hash",
+            "integrity",
+            actual=godot_hash,
+        )
+    legacy_provenance_fields: list[str] = []
+    if simulation_config_state == "legacy":
+        legacy_provenance_fields.extend(simulation_config_fields)
+    if godot_hash_missing:
+        legacy_provenance_fields.append(
+            "provenance.godot_executable_sha256"
+        )
+    if legacy_provenance_fields and not canonical_nightly:
+        _append_issue(
+            warnings,
+            "legacy_provenance_compatibility",
+            "integrity",
+            fields=sorted(set(legacy_provenance_fields)),
+        )
+    try:
+        recomputed_simulation_fingerprint = (
+            simulation_fingerprint_from_provenance(provenance)
+            if isinstance(provenance, dict)
+            else ""
+        )
+    except (TypeError, ValueError):
+        recomputed_simulation_fingerprint = ""
+    simulation_fingerprint_recomputed = (
+        provenance_valid
+        and recomputed_simulation_fingerprint
+        == str(provenance.get("simulation_fingerprint") or "")
+    )
+    simulation_fingerprint_accepted = (
+        simulation_fingerprint_recomputed
+        or bool(legacy_provenance_fields)
+        and not canonical_nightly
+    )
+    _check(
+        checks,
+        "simulation_fingerprint",
+        "integrity",
+        simulation_fingerprint_accepted,
+        "来源稳定字段重算模拟指纹",
+    )
+    if not simulation_fingerprint_accepted:
+        _append_issue(
+            errors,
+            "simulation_fingerprint_mismatch",
+            "integrity",
+            expected=recomputed_simulation_fingerprint,
+            actual=(
+                provenance.get("simulation_fingerprint")
+                if isinstance(provenance, dict)
+                else None
+            ),
+        )
+
+    provenance_manifest = (
+        str(provenance_simulation_config.get("task_manifest_id") or "")
+        if isinstance(provenance_simulation_config, dict)
+        else ""
+    )
+    provenance_manifest_valid = (
+        provenance_manifest == manifest_id
+        if simulation_config_state != "legacy" or canonical_nightly
+        else True
+    )
+    manifest_valid = (
+        _valid_sha256(manifest_id)
+        and isinstance(config, dict)
+        and str(config.get("task_manifest_id") or "") == manifest_id
+        and canonical_manifest == manifest_id
+        and isinstance(execution_config, dict)
+        and str(execution_config.get("task_manifest_id") or "")
+        == manifest_id
+        and provenance_manifest_valid
+    )
+    _check(checks, "task_manifest", "integrity", manifest_valid, "固定任务清单")
+    if not manifest_valid:
+        _append_issue(errors, "task_manifest", "integrity")
+    execution_config_valid = (
+        isinstance(execution_config, dict)
+        and _int(execution_config.get("parallel_workers")) > 0
+        and str(execution_config.get("platform") or "")
+        == str(payload.get("platform") or "")
+        and str(execution_config.get("task_manifest_id") or "")
+        == manifest_id
+    )
+    _check(
+        checks,
+        "execution_config",
+        "integrity",
+        execution_config_valid,
+        "执行配置",
+    )
+    if not execution_config_valid:
+        _append_issue(errors, "execution_config", "integrity")
+    checkpoint_valid, checkpoint_errors = (
+        _checkpoint_summary_validation(
+            payload,
+            canonical_nightly=canonical_nightly,
+        )
+    )
+    _check(
+        checks,
+        "checkpoint_summary",
+        "integrity",
+        checkpoint_valid,
+        "检查点证据单元与分片摘要",
+        errors=checkpoint_errors,
+    )
+    if not checkpoint_valid:
+        _append_issue(
+            errors,
+            "checkpoint_summary",
+            "integrity",
+            errors=checkpoint_errors,
+        )
+    wall_clock_valid, wall_clock_errors = (
+        _wall_clock_metadata_validation(payload)
+    )
+    _check(
+        checks,
+        "wall_clock_metadata",
+        "integrity",
+        wall_clock_valid,
+        "墙钟耗时范围与数值配对",
+        errors=wall_clock_errors,
+    )
+    if not wall_clock_valid:
+        _append_issue(
+            errors,
+            "wall_clock_metadata",
+            "integrity",
+            errors=wall_clock_errors,
+        )
+    depth_source_valid = payload.get("gate_depth_source") == "main_matches"
+    _check(
+        checks,
+        "gate_depth_source",
+        "search_depth",
+        depth_source_valid,
+        "主评测矩阵作为深度门禁来源",
+    )
+    if not depth_source_valid:
+        _append_issue(errors, "gate_depth_source", "search_depth")
+
     config_valid = not canonical_nightly or _nightly_config_valid(payload)
     _check(checks, "nightly_config", "coverage", config_valid, "固定 Nightly 赛程")
     if not config_valid:
@@ -506,44 +1375,43 @@ def validate_evaluation_gate(
     if not platform_supported:
         _append_issue(errors, "platform_unsupported", "integrity", platform=configured_platform)
         configured_platform = "windows"
-    probe = _probe_validation(payload)
-    probe_coverage = bool(probe.get("coverage_valid"))
-    depth_metrics_valid = bool(probe.get("search_depth_metrics_valid"))
-    latency_metrics_valid = bool(probe.get("latency_metrics_valid"))
-    _check(
-        checks,
-        "search_depth_probe_coverage",
-        "search_depth",
-        probe_coverage if strict else True,
-        "单进程 20+40 搜索深度探针" if strict else "搜索深度探针（此门禁不要求）",
-        available=probe_coverage,
+    main_depth = _main_depth_validation(
+        payload,
+        strict_v2_depth=strict,
     )
+    depth_contract_valid = bool(main_depth.get("contract_valid"))
     _check(
         checks,
-        "search_depth_probe_metrics",
+        "search_depth_decision_accounting",
+        "search_depth",
+        depth_contract_valid,
+        "动作决策与搜索深度样本守恒",
+    )
+    if not depth_contract_valid:
+        _append_issue(
+            errors,
+            "search_depth_decision_accounting",
+            "search_depth",
+        )
+    depth_metrics_valid = bool(main_depth.get("metrics_valid"))
+    _check(
+        checks,
+        "search_depth_main_matrix",
         "search_depth",
         depth_metrics_valid if strict else True,
-        "A/B 实际 beam 搜索深度" if strict else "搜索深度样本（此门禁不要求）",
+        "主矩阵 A/B 实际 beam 搜索深度"
+        if strict
+        else "主矩阵搜索深度样本（此门禁不要求）",
         available=depth_metrics_valid,
     )
-    _check(
-        checks,
-        "latency_diagnostics",
-        "performance",
-        True,
-        "A/B 延迟仅作诊断，不参与门禁",
-        available=latency_metrics_valid,
-        metrics=probe.get("latency") or {},
-    )
-    if strict and not (payload.get("performance") or {}).get("available"):
-        _append_issue(errors, "search_depth_probe_missing", "search_depth")
-    elif strict and not probe_coverage:
-        _append_issue(errors, "search_depth_probe_coverage", "search_depth")
     if strict and not depth_metrics_valid:
-        _append_issue(errors, "search_depth_probe_metrics", "search_depth")
+        _append_issue(errors, "search_depth_metrics", "search_depth")
     depth_errors = (
-        _search_depth_errors(probe.get("search_depth") or {}, normalized_gate)
-        if depth_metrics_valid
+        _search_depth_errors(
+            main_depth.get("recomputed") or {},
+            normalized_gate,
+        )
+        if bool((main_depth.get("recomputed") or {}).get("available"))
         else []
     )
     if strict:
@@ -554,9 +1422,43 @@ def validate_evaluation_gate(
         "search_depth_thresholds",
         "search_depth",
         (not depth_errors and depth_metrics_valid) if strict else True,
-        "A/B 全预算搜索深度" if strict else "搜索深度阈值（此门禁不要求）",
+        "候选侧全预算搜索深度"
+        if strict
+        else "搜索深度阈值（此门禁不要求）",
         thresholds=SEARCH_DEPTH_THRESHOLDS,
     )
+
+    benchmark = _performance_benchmark_validation(payload)
+    benchmark_payload = (
+        payload.get("performance_benchmark")
+        or payload.get("performance")
+        or {}
+    )
+    benchmark_available = bool(
+        isinstance(benchmark_payload, dict)
+        and benchmark_payload.get("available")
+    )
+    benchmark_valid = bool(
+        benchmark.get("coverage_valid")
+        and benchmark.get("latency_metrics_valid")
+        and benchmark.get("search_depth_metrics_valid")
+    )
+    _check(
+        checks,
+        "latency_diagnostics",
+        "performance",
+        True,
+        "可选性能基准仅作诊断，不参与门禁",
+        available=benchmark_available,
+        valid=benchmark_valid if benchmark_available else None,
+        metrics=benchmark.get("latency") or {},
+    )
+    if benchmark_available and not benchmark_valid:
+        _append_issue(
+            warnings,
+            "performance_benchmark_invalid",
+            "performance",
+        )
 
     relation_valid = True
     if normalized_gate == "nightly-stability":
@@ -750,6 +1652,7 @@ def _result(
     cross = _strength_scope(payload, "cross_role").get("overall") or {}
     return {
         "schema_version": SCHEMA_VERSION,
+        "protocol_id": PROTOCOL_ID,
         "artifact_kind": "ai_evaluation_validation",
         "valid": not errors,
         "gate": gate,

@@ -42,9 +42,9 @@ Challenge 与 Deep 回退固定 `apply_type_matchups=false`。策略语义目录
 
 ## v1 回归基线
 
-旧时间预算实现冻结为评测专用 `turn_beam_v1`，代码和当时的策略数据快照位于 `godot/tools/ai_baseline/`。Godot 导出配置排除 `tools/*`，所以正式包只包含 v2。v1 保留一个发布周期，仅供 schema v6 的配对强度回归；缺少基线资源时必须显式失败。
+旧时间预算实现冻结为评测专用 `turn_beam_v1`，代码和当时的策略数据快照位于 `godot/tools/ai_baseline/`。Godot 导出配置排除 `tools/*`，所以正式包只包含 v2。v1 保留一个发布周期，仅供 schema v7 的配对强度回归；缺少基线资源时必须显式失败。
 
-## schema v6 评测与门禁
+## schema v7 评测与门禁
 
 `tools/evaluate_godot_ai.ps1 -EvalPreset Nightly` 默认生成 v2（A）对冻结 v1（B）的固定配对评测：
 
@@ -54,17 +54,21 @@ Challenge 与 Deep 回退固定 `apply_type_matchups=false`。策略语义目录
 
 镜像和跨牌组结果分别以两局/四局闭合块做分层 cluster bootstrap。`nightly-superiority` 要求两组 95% 置信区间下界都严格大于 0；任一牌组镜像点差不得低于 −4pp，任一无序跨牌组点差不得低于 −8pp。证据不足直接失败，不追加有利种子。
 
-所有适用 v2 样本必须来自 `turn_beam_v2`，请求深度至少为 8，并满足 `depth_complete && completed_depth >= requested_depth` 或 `frontier_exhausted`。`deadline`、`node_budget` 和其他部分搜索必须为零。单进程 20 局预热 + 40 局测量探针用于验证深度；决策耗时和完整 AI 回合 P50/P95 只展示。
+所有适用 v2 样本必须来自 `turn_beam_v2`，请求深度严格等于 8，且 `reached_depth == max_path_depth`。`depth_complete` 必须满足 `completed_depth == requested_depth`；`frontier_exhausted` 必须在最后一个完整层后确实不存在可扩展节点，不能用部分展开层充数。适用的对手回应同样必须完整达到深度 3 或明确耗尽搜索空间。动作决策总数、适用搜索、强制战术与缓存命中按侧守恒，规划器异常回退不能被记作非适用决策。`deadline`、`node_budget` 和其他部分搜索必须为零。深度门禁直接从主矩阵的全部适用决策重新聚合，并按候选侧和牌组核对覆盖；不再追加重复的串行深度探针。决策耗时和完整 AI 回合 P50/P95 只展示。
 
 非法动作、规则异常、Choice 失败、非正常终局和动作上限耗尽必须为零。`weak_attack_before_development` 发生率必须较 v1 至少下降 50%，其他诊断发生率不得上升超过 0.1pp。
 
-schema v6 明确记录 A/B 引擎并拒绝 schema v5 或更早结果。权威聚合器是 `python/scripts/ai_evaluation_v6.py`；固定产物为 `results.json`、`validation.json`、`report.html`、`provenance.json`、`shards/` 和 `search_depth_probe/`。
+schema v7 使用固定 `protocol_id`，明确记录 A/B 引擎，并拒绝把 schema v6 或更早结果用于新门禁。`simulation_fingerprint` 绑定 AI、冻结 v1、规则、卡牌、策略、Godot 可执行文件精确哈希、赛程和执行配置；`analysis_fingerprint` 只绑定聚合、校验和报告代码，所以分析代码变化只需重新聚合。Nightly 固定分为 500 个两局镜像单元和 450 个四局跨牌组单元；每个单元原子写入不可变 checkpoint，重启及 CI workflow 重试只补齐缺失或校验失败单元，`-NoResume` 会同时禁止读取和写入 checkpoint。镜像记录必须恰好包含席位 0/1，跨牌组记录必须恰好包含两个相反方向各自的席位 0/1，重复席位或缺失方向均按损坏记录处理。调度前的内容检查器会复核模拟指纹、任务/分片身份、证据单元身份、干净终局和规范化比赛 SHA-256；损坏或过期记录按缺失处理并允许重新生成，但同一证据单元若出现内容不同且各自校验有效的冲突记录，整次运行立即 fail-closed，绝不选择其中任一份继续。聚合结果保留排序后的完整证据单元清单及其 SHA-256；最终 Nightly 校验器会将这 950 个身份逐一与主矩阵中重新构建的完整单元交叉核对，因此仅伪造正确计数不能通过。50 个逻辑分片始终保持证据单元完整，本机使用固定代表性前缀估算成本，再按实际缺失单元做确定性 LPT 分配；正式本机配置最多 12 个 worker，CI 使用 25 个 job、每个 job 2 个 worker。
+
+本机完整 Nightly 会先运行固定 280 局结构预检；预检只能因非法动作、规则异常、Choice 失败、动作上限或金标失败，不能根据胜率或置信区间提前通过或拒绝。其 checkpoint 会由随后的完整矩阵直接复用。CI 的每个 runner 在正式分片前并发运行两份固定的两局 v1 工作量校准，以模拟正式的双 worker 负载；任一结果低于冻结工作量下限都会拒绝该 runner，避免时间门禁型基线因资源争抢被削弱。
+
+权威聚合器是 `python/scripts/ai_evaluation_v7.py`；固定产物为 `results.json`、`validation.json`、`report.html`、`provenance.json`、`task_manifest.json`、`simulation_config.json`、`shards/` 和 `checkpoints/`。结果同时记录 `gate_depth_source=main_matches`、checkpoint 汇总、执行配置和墙钟统计作用域；CI 未记录统一分布式墙钟时明确写 `not_recorded`。本机计时从 280 局预检之前开始，同次预检生成再由主矩阵读取的 checkpoint 仍属于 `full_evidence_stage`；只有启动前已存在可恢复记录时才标为 `current_attempt_only`。只有 `full_evidence_stage` 的同机证据可以进入性能对比。需要观察单进程延迟时可显式增加 `-PerformanceBenchmark`；它运行 20 局预热和 40 局测量，只写入诊断字段，不参与强度或深度门禁。
 
 ## 测试
 
 `tools/test_godot_ai.ps1` 覆盖信息隔离、整数确定性、完整层、搜索空间耗尽、共同样本公平性、语义候选、实际对手策略、规范化平局、缓存失效、取消和十套牌实局冒烟。相同快照与种子在注入执行延迟以及启用/禁用原生数学路径时，动作、计划、完成深度和节点数必须一致。
 
-原有 109 个策略金标继续保留；schema v6 另外要求每套牌 3 条多步意图链，共 30 条，覆盖发展早于弱攻击、资源/能量路线和换位避险。Android 设备可用时，应以相同种子运行冒烟并比较轨迹哈希。
+原有 109 个策略金标继续保留；schema v7 另外要求每套牌 3 条多步意图链，共 30 条，覆盖发展早于弱攻击、资源/能量路线和换位避险。Android 设备可用时，应以相同种子运行冒烟并比较轨迹哈希。
 
 常用验证命令：
 
@@ -73,6 +77,13 @@ schema v6 明确记录 A/B 引擎并拒绝 schema v5 或更早结果。权威聚
 .\tools\test_godot.ps1
 .\tools\test_python.ps1 -Tier core
 .\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly
+.\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -PerformanceBenchmark
 ```
 
 完整 2800 局是发布门禁，不应以本地小样本替代。
+
+本次热路径优化可用固定 280 局 v2 对 v2 语料做等价与性能验收；它必须逐局、逐决策保持规范化结果和 v2 轨迹完全一致，并在同一主机、相同 worker 数下同时达到节点单位规划耗时中位数下降 25% 和完整证据阶段墙钟下降 20%。该语料只验证实现等价和性能，不代替下一次正常 Nightly 的 2800 局强度门禁。
+
+本次最终固定 280 验收在同机 12 workers 下完成：逐决策 `planner_ms / nodes_expanded` 中位数从 6.278976208 降至 4.603160570（−26.6893%），`full_evidence_stage` 墙钟从 7,796,930.654ms 降至 5,791,977.788ms（−25.7146%），均超过 25%/20% 门槛。280 局共包含 13,668 个 v2 搜索样本，规范化比赛结果和 trace-v0 与基线全量一致，且结构性错误为零。
+
+由于旧固定 280 产物生成时尚未记录 `decision_semantic_hash`，本次仅允许使用 `traditional_ai_v7_decision_semantics_migration_v1` 一次性迁移证明：从固定 280 中抽取覆盖全部十套牌的 20 局、988 个搜索样本，逐决策验证完整计划、根顺序、样本数、深度、节点数、缓存前置条件、belief hash 和 trace-v1；其余 12,680 个旧样本只由全量规范化结果及 trace-v0 一致性间接约束。最终候选的全部 280 局仍须独立满足严格 schema v7 合同，生产验证器不得接受迁移产物代替正常 v7 证据。

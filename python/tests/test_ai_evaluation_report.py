@@ -1,27 +1,37 @@
 import copy
 import json
 import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from scripts.ai_evaluation_v6 import (
+from scripts.ai_evaluation_v7 import (
     BOOTSTRAP_ITERATIONS,
     DECK_ORDER,
     MergeError,
+    PROTOCOL_ID,
+    complete_evidence_unit_ids,
+    evidence_unit_ids_sha256,
     expected_match_identities,
     experimental_units,
     merge_payloads,
     summarize_behavior,
+    summarize_coverage,
     summarize_observed,
     summarize_performance,
     summarize_search_depth,
     summarize_strength,
+    task_manifest_id,
 )
-from scripts.compare_ai_evaluation_profiles import compare_profiles
-from scripts.build_ai_evaluation_provenance import build_provenance
+from scripts.compare_ai_evaluation_profiles import compare_profiles, evaluate_gates
+from scripts.build_ai_evaluation_provenance import (
+    build_provenance,
+    current_analysis_fingerprint,
+)
+from scripts.ai_evaluation_v7 import simulation_fingerprint_from_provenance
 from scripts.render_ai_evaluation_report import (
     evaluation_verdict,
     render_file,
@@ -33,11 +43,30 @@ from tests.temp_utils import temp_dir
 
 
 RULES = {"apply_type_matchups": False}
+REPO_ROOT = Path(__file__).parents[2]
+CURRENT_ANALYSIS_FINGERPRINT = current_analysis_fingerprint(REPO_ROOT)
 PROVENANCE = {
-    "schema_version": 6,
-    "fingerprint": "source-fingerprint",
+    "schema_version": 7,
+    "protocol_id": PROTOCOL_ID,
+    "fingerprint": "c" * 64,
+    "analysis_fingerprint": CURRENT_ANALYSIS_FINGERPRINT,
+    "godot_executable_sha256": "f" * 64,
+    "simulation_source_hash": "1" * 64,
+    "release_manifest_sha256": "2" * 64,
+    "toolchain_lock_sha256": "3" * 64,
+    "strategy_file_sha256": {},
+    "product_version": "0.6.0",
+    "release_ai_evaluation_schema": 7,
+    "release_godot_version": "4.7",
+    "toolchain_godot_version": "4.7",
+    "godot_runtime_version": "4.7.stable.official.test",
+    "target_platform": "windows",
+    "simulation_config": {},
     "source_hash": "abc123",
 }
+PROVENANCE["simulation_fingerprint"] = (
+    simulation_fingerprint_from_provenance(PROVENANCE)
+)
 
 
 def _behavior(a_kind="PLAY_BASIC", b_kind="END_TURN"):
@@ -125,9 +154,22 @@ def _row(identity, winner="draw", *, sample_phase="main"):
         "decisions": 2,
         "choices": 1,
         "elapsed_ms": 30,
-        "decision_ms_samples_by_strategy": {"A": [10.0], "B": [11.0]},
-        "turn_plan_cache_hit_samples_by_strategy": {"A": [True], "B": [True]},
+        "decision_ms_samples": [10.0, 12.0, 11.0],
+        "decision_ms_samples_by_strategy": {
+            "A": [10.0, 12.0],
+            "B": [11.0],
+        },
+        "turn_plan_cache_hit_samples": [True, False, True],
+        "turn_plan_cache_hit_samples_by_strategy": {
+            "A": [True, False],
+            "B": [True],
+        },
         "ai_turn_ms_samples_by_strategy": {"A": [20.0], "B": [21.0]},
+        "action_decisions_by_strategy": {"A": 1, "B": 1},
+        "search_depth_decision_counts_by_strategy": {
+            "A": {"applicable": 1, "not_applicable": 0, "reasons": {}},
+            "B": {"applicable": 1, "not_applicable": 0, "reasons": {}},
+        },
         "decision_diagnostics": {},
         "decision_diagnostics_by_strategy": {"A": {}, "B": {}},
         "behavior_by_strategy": _behavior(),
@@ -137,26 +179,36 @@ def _row(identity, winner="draw", *, sample_phase="main"):
                 "reached": 8,
                 "completed": 8,
                 "max_path_depth": 8,
+                "reply_requested": 3,
                 "reply_completed": 3,
+                "reply_applicable": True,
+                "reply_completion_reason": "depth_complete",
                 "layers_completed": 8,
                 "completion_reason": "depth_complete",
                 "stop_reason": "depth_complete",
                 "engine_id": "turn_beam_v2",
                 "nodes_expanded": 1192,
+                "planner_ms": 119.2,
                 "trajectory_hash": "a" * 64,
+                "decision_semantic_hash": "c" * 64,
             }],
             "B": [{
                 "requested": 8,
                 "reached": 8,
                 "completed": 8,
                 "max_path_depth": 8,
+                "reply_requested": 3,
                 "reply_completed": 3,
+                "reply_applicable": True,
+                "reply_completion_reason": "depth_complete",
                 "layers_completed": 8,
                 "completion_reason": "depth_complete",
                 "stop_reason": "depth_complete",
                 "engine_id": "turn_beam_v2",
                 "nodes_expanded": 1192,
+                "planner_ms": 119.2,
                 "trajectory_hash": "b" * 64,
+                "decision_semantic_hash": "d" * 64,
             }],
         },
         "invalid_actions": 0,
@@ -199,6 +251,9 @@ def _shard(
     )
     config["task_shard_index"] = task_shard_index
     config["task_shard_count"] = task_shard_count
+    manifest_id = task_manifest_id(decks, config)
+    config["task_manifest_id"] = manifest_id
+    config["execution_profile_id"] = "test-execution"
     if rows is None:
         rows = [_row(identity) for identity in sorted(expected_match_identities(decks, config))]
     rows = copy.deepcopy(rows)
@@ -206,10 +261,20 @@ def _shard(
         row["task_shard_index"] = task_shard_index
         row["task_shard_count"] = task_shard_count
     return {
-        "schema_version": 6,
+        "schema_version": 7,
+        "protocol_id": PROTOCOL_ID,
         "artifact_kind": "ai_evaluation_shard",
+        "gate_depth_source": "main_matches",
         "platform": "windows",
         "provenance": copy.deepcopy(provenance or PROVENANCE),
+        "simulation_fingerprint": (provenance or PROVENANCE)[
+            "simulation_fingerprint"
+        ],
+        "analysis_fingerprint": (provenance or PROVENANCE)[
+            "analysis_fingerprint"
+        ],
+        "task_manifest_id": manifest_id,
+        "execution_profile_id": "test-execution",
         "self_check": fingerprint_a == fingerprint_b,
         "eval_preset": "Custom",
         "mode": mode.lower(),
@@ -217,8 +282,16 @@ def _shard(
         "deck_keys": decks,
         "config": config,
         "strategies": {
-            "A": {"id": fingerprint_a, "label": "Candidate A"},
-            "B": {"id": fingerprint_b, "label": "Control B"},
+            "A": {
+                "id": fingerprint_a,
+                "label": "Candidate A",
+                "engine": "turn_beam_v2",
+            },
+            "B": {
+                "id": fingerprint_b,
+                "label": "Control B",
+                "engine": "turn_beam_v2",
+            },
         },
         "strategy_fingerprint": {
             "A": fingerprint_a,
@@ -231,6 +304,13 @@ def _shard(
             "enabled": True,
             "segments_ms": {"runner_legal_actions_ms": 12.0},
             "counts": {"decisions": len(rows) * 2, "ai_simulations": 50},
+        },
+        "checkpoint_summary": {
+            "enabled": False,
+            "restored_units": 0,
+            "written_units": 0,
+            "pending_units": 0,
+            "completed_unit_ids": [],
         },
         "matches": rows,
     }
@@ -246,6 +326,8 @@ def _probe_rows(side_values=None):
         warmup=1,
         profile=False,
     )
+    config["task_manifest_id"] = "test-performance-manifest"
+    config["execution_profile_id"] = "test-performance"
     rows = []
     values = side_values or {
         "A": {"decision": 900.0, "cache": 100.0, "turn": 1500.0},
@@ -270,7 +352,8 @@ def _performance_result(side_values=None):
     measured = [row for row in rows if row["sample_phase"] == "measurement"]
     return {
         "available": True,
-        "source": "single_process_probe",
+        "source": "optional_performance_benchmark",
+        "gate_basis": "diagnostic_only",
         "config": config,
         "coverage": {
             "complete": True,
@@ -287,9 +370,8 @@ def _performance_result(side_values=None):
     }
 
 
-def _set_probe_depth(payload, strategy, *, requested=None, reached=None):
-    performance = payload["performance"]
-    for row in performance["matches"]:
+def _set_main_depth(payload, strategy, *, requested=None, reached=None):
+    for row in payload["matches"]:
         for sample in row["search_depth_samples_by_strategy"][strategy]:
             if requested is not None:
                 sample["requested"] = requested
@@ -300,10 +382,10 @@ def _set_probe_depth(payload, strategy, *, requested=None, reached=None):
                 if sample["completed"] < sample["requested"]:
                     sample["completion_reason"] = "cancelled"
                     sample["stop_reason"] = "cancelled"
-    measured = [
-        row for row in performance["matches"] if row["sample_phase"] == "measurement"
-    ]
-    performance["search_depth"] = summarize_search_depth(measured, DECK_ORDER)
+    payload["search_depth"] = summarize_search_depth(
+        payload["matches"],
+        DECK_ORDER,
+    )
 
 
 def _nightly_result(*, distinct=True, side_values=None):
@@ -313,21 +395,91 @@ def _nightly_result(*, distinct=True, side_values=None):
         for right in DECK_ORDER[index + 1 :]
     ]
     fingerprint_b = "strategy-b" if distinct else "strategy-a"
+    config = {
+        **_config(DECK_ORDER, seed_blocks=50, cross_blocks=10, mode="Balanced"),
+        "eval_preset": "Nightly",
+        "seed_block_count": 50,
+    }
+    manifest_id = task_manifest_id(DECK_ORDER, config)
+    config["task_manifest_id"] = manifest_id
+    config["execution_profile_id"] = "test-nightly"
+    config["parallel_workers"] = 12
+    config["evidence_shard_count"] = 50
+    simulation_config = {
+        "protocol_id": PROTOCOL_ID,
+        "eval_preset": "Nightly",
+        "deck_keys": list(DECK_ORDER),
+        "seed": config["seed"],
+        "seed_blocks_per_deck": config["seed_blocks_per_deck"],
+        "cross_seed_blocks_per_matchup": config[
+            "cross_seed_blocks_per_matchup"
+        ],
+        "matchup_mode": config["matchup_mode"],
+        "max_actions": config["max_actions"],
+        "rules_options": copy.deepcopy(config["rules_options"]),
+        "workers": 12,
+        "external_shard_count": 1,
+        "global_parallel_workers": 12,
+        "evidence_shard_count": 50,
+        "profile": config["profile"],
+        "disable_ai_cache": config["disable_ai_cache"],
+        "disable_native_math": config["disable_native_math"],
+        "task_manifest_id": manifest_id,
+        "execution_profile_id": "test-nightly",
+    }
+    provenance = copy.deepcopy(PROVENANCE)
+    provenance["simulation_config"] = copy.deepcopy(simulation_config)
+    provenance["simulation_fingerprint"] = (
+        simulation_fingerprint_from_provenance(provenance)
+    )
+    depth_rows = [
+        _row(identity)
+        for identity in sorted(expected_match_identities(DECK_ORDER, config))
+    ]
+    if distinct:
+        for row in depth_rows:
+            for sample in row["search_depth_samples_by_strategy"]["B"]:
+                sample["engine_id"] = "turn_beam_v1"
+    mirror_units, cross_units = experimental_units(depth_rows)
+    completed_unit_ids = complete_evidence_unit_ids(depth_rows)
+    coverage = summarize_coverage(
+        depth_rows,
+        DECK_ORDER,
+        config,
+        mirror_units,
+        cross_units,
+    )
+    performance_benchmark = _performance_result(side_values)
     return {
-        "schema_version": 6,
+        "schema_version": 7,
+        "protocol_id": PROTOCOL_ID,
         "artifact_kind": "ai_evaluation_result",
         "platform": "windows",
-        "provenance": copy.deepcopy(PROVENANCE),
+        "provenance": provenance,
+        "simulation_fingerprint": provenance["simulation_fingerprint"],
+        "analysis_fingerprint": PROVENANCE["analysis_fingerprint"],
+        "task_manifest_id": manifest_id,
+        "execution_config": {
+            **copy.deepcopy(simulation_config),
+            "parallel_workers": 12,
+            "platform": "windows",
+        },
+        "execution_profile_id": "test-nightly",
+        "gate_depth_source": "main_matches",
         "self_check": not distinct,
         "eval_preset": "Nightly",
         "matchup_mode": "Balanced",
         "deck_keys": list(DECK_ORDER),
-        "config": {
-            **_config(DECK_ORDER, seed_blocks=50, cross_blocks=10, mode="Balanced"),
-            "eval_preset": "Nightly",
-            "seed_block_count": 50,
+        "config": config,
+        "strategies": {
+            "A": {"id": "strategy-a", "engine": "turn_beam_v2"},
+            "B": {
+                "id": fingerprint_b,
+                "engine": (
+                    "turn_beam_v1" if distinct else "turn_beam_v2"
+                ),
+            },
         },
-        "strategies": {"A": {"id": "strategy-a"}, "B": {"id": fingerprint_b}},
         "strategy_fingerprint": {
             "A": "strategy-a",
             "B": fingerprint_b,
@@ -342,22 +494,7 @@ def _nightly_result(*, distinct=True, side_values=None):
             "max_actions_exhaustions": 0,
             "deep_fallback_rate": 0.0,
         },
-        "coverage": {
-            "complete": True,
-            "expected_games": 2800,
-            "actual_games": 2800,
-            "expected_mirror_units": 500,
-            "complete_mirror_units": 500,
-            "clean_mirror_units": 500,
-            "expected_cross_units": 450,
-            "complete_cross_units": 450,
-            "clean_cross_units": 450,
-            "missing_match_count": 0,
-            "unexpected_match_count": 0,
-            "structural_errors": [],
-            "source_task_shard_indices": [0, 1],
-            "source_task_shard_counts": [2],
-        },
+        "coverage": coverage,
         "fairness": {
             "assignment_balanced": True,
             "per_strategy_deck_balanced": True,
@@ -399,7 +536,9 @@ def _nightly_result(*, distinct=True, side_values=None):
                 },
             },
         },
-        "performance": _performance_result(side_values),
+        "search_depth": summarize_search_depth(depth_rows, DECK_ORDER),
+        "performance_benchmark": performance_benchmark,
+        "performance": performance_benchmark,
         "decision_diagnostics": {
             "total": 0,
             "by_strategy": {
@@ -410,12 +549,26 @@ def _nightly_result(*, distinct=True, side_values=None):
         },
         "terminal_reasons": {"game_over": 2800},
         "raw_matrix": {},
-        "matches": [],
+        "matches": depth_rows,
         "performance_profile": {
             "enabled": True,
             "segments_ms": {"runner_legal_actions_ms": 20.0},
             "counts": {"decisions": 100, "ai_simulations": 200},
         },
+        "checkpoint_summary": {
+            "enabled": True,
+            "shards_enabled": 50,
+            "shards_total": 50,
+            "restored_units": 0,
+            "written_units": 950,
+            "pending_units": 0,
+            "completed_units": len(completed_unit_ids),
+            "completed_unit_ids": completed_unit_ids,
+            "completed_unit_ids_sha256": evidence_unit_ids_sha256(
+                completed_unit_ids
+            ),
+        },
+        "wall_clock_scope": "not_recorded",
     }
 
 
@@ -482,6 +635,85 @@ class BehaviorTests(unittest.TestCase):
 
 
 class MergeIntegrityTests(unittest.TestCase):
+    def test_wall_clock_is_optional_diagnostic_metadata(self):
+        without_timing = merge_payloads([_shard()])
+        self.assertNotIn("wall_clock_ms", without_timing)
+        self.assertEqual(
+            without_timing["wall_clock_scope"], "not_recorded"
+        )
+        with_timing = merge_payloads([_shard()], wall_clock_ms=1234.56789)
+        self.assertEqual(with_timing["wall_clock_ms"], 1234.5679)
+        self.assertEqual(
+            with_timing["wall_clock_scope"], "full_evidence_stage"
+        )
+        resumed_shard = _shard()
+        resumed_shard["checkpoint_summary"] = {
+            "enabled": True,
+            "restored_units": 1,
+            "written_units": 0,
+            "pending_units": 0,
+            "completed_unit_ids": complete_evidence_unit_ids(
+                resumed_shard["matches"]
+            )[:1],
+        }
+        resumed = merge_payloads([resumed_shard], wall_clock_ms=12.0)
+        self.assertEqual(
+            resumed["wall_clock_scope"], "current_attempt_only"
+        )
+        explicit = merge_payloads(
+            [resumed_shard],
+            wall_clock_ms=12.0,
+            wall_clock_scope="full_evidence_stage",
+        )
+        self.assertEqual(
+            explicit["wall_clock_scope"], "full_evidence_stage"
+        )
+        with self.assertRaisesRegex(MergeError, "wall_clock_ms"):
+            merge_payloads([_shard()], wall_clock_ms=0.0)
+        with self.assertRaisesRegex(MergeError, "wall_clock_scope"):
+            merge_payloads(
+                [_shard()],
+                wall_clock_scope="full_evidence_stage",
+            )
+        with self.assertRaisesRegex(MergeError, "wall_clock_scope"):
+            merge_payloads(
+                [_shard()],
+                wall_clock_ms=12.0,
+                wall_clock_scope="not_recorded",
+            )
+
+    def test_each_v7_shard_requires_checkpoint_summary(self):
+        shard = _shard()
+        shard.pop("checkpoint_summary")
+        with self.assertRaisesRegex(
+            MergeError,
+            "invalid_checkpoint_summary:0:missing",
+        ):
+            merge_payloads([shard])
+        inconsistent = _shard()
+        inconsistent["checkpoint_summary"]["written_units"] = 1
+        with self.assertRaisesRegex(
+            MergeError,
+            "invalid_checkpoint_summary:0",
+        ):
+            merge_payloads([inconsistent])
+
+    def test_checkpoint_unit_manifest_is_bound_to_shard_matches(self):
+        shard = _shard()
+        shard["checkpoint_summary"] = {
+            "enabled": True,
+            "restored_units": 1,
+            "written_units": 0,
+            "pending_units": 0,
+            "completed_unit_ids": ["mirror|steel|999|999"],
+        }
+
+        with self.assertRaisesRegex(
+            MergeError,
+            "invalid_checkpoint_summary:0:match_identity",
+        ):
+            merge_payloads([shard])
+
     def test_missing_shard_is_visible_not_normalized_to_complete(self):
         shard = _shard()
         shard["matches"].pop()
@@ -514,31 +746,74 @@ class MergeIntegrityTests(unittest.TestCase):
         right_rows = full["matches"][1::2]
         left = _shard(rows=left_rows, task_shard_index=0, task_shard_count=2)
         right = _shard(rows=right_rows, task_shard_index=1, task_shard_count=2)
-        right["provenance"]["fingerprint"] = "different"
-        with self.assertRaisesRegex(MergeError, "provenance"):
+        right["provenance"]["simulation_fingerprint"] = "d" * 64
+        right["simulation_fingerprint"] = "d" * 64
+        with self.assertRaisesRegex(MergeError, "simulation_fingerprint"):
             merge_payloads([left, right])
         right["provenance"] = copy.deepcopy(PROVENANCE)
+        right["simulation_fingerprint"] = PROVENANCE["simulation_fingerprint"]
+        right["analysis_fingerprint"] = PROVENANCE["analysis_fingerprint"]
         right["config"]["seed"] = 18
         with self.assertRaisesRegex(MergeError, "config:seed"):
             merge_payloads([left, right])
 
-    def test_unknown_deck_and_pre_v6_results_are_rejected(self):
+    def test_shard_merge_recomputes_simulation_fingerprint(self):
+        tampered = _shard()
+        tampered["provenance"]["product_version"] = "tampered"
+        tampered["provenance"]["simulation_fingerprint"] = "d" * 64
+        tampered["simulation_fingerprint"] = "d" * 64
+        with self.assertRaisesRegex(MergeError, "simulation_fingerprint"):
+            merge_payloads([tampered])
+
+    def test_analysis_changes_reuse_identical_simulation_shards(self):
+        full = _shard()
+        left = _shard(
+            rows=full["matches"][::2],
+            task_shard_index=0,
+            task_shard_count=2,
+        )
+        right = _shard(
+            rows=full["matches"][1::2],
+            task_shard_index=1,
+            task_shard_count=2,
+        )
+        right["provenance"]["analysis_fingerprint"] = "d" * 64
+        right["analysis_fingerprint"] = "d" * 64
+        result = merge_payloads(
+            [left, right],
+            analysis_fingerprint="e" * 64,
+        )
+        self.assertEqual(
+            result["simulation_fingerprint"],
+            PROVENANCE["simulation_fingerprint"],
+        )
+        self.assertEqual(result["analysis_fingerprint"], "e" * 64)
+        self.assertEqual(
+            result["provenance"]["analysis_fingerprint"],
+            "e" * 64,
+        )
+
+    def test_unknown_deck_and_pre_v7_results_are_rejected(self):
         unknown = _shard()
         unknown["deck_keys"] = ["missing"]
         with self.assertRaisesRegex(MergeError, "deck_keys"):
             merge_payloads([unknown])
         old = _shard()
-        old["schema_version"] = 5
+        old["schema_version"] = 6
         with self.assertRaisesRegex(MergeError, "schema_version"):
             merge_payloads([old])
+        wrong_protocol = _shard()
+        wrong_protocol["protocol_id"] = "traditional_ai_evaluation_v6"
+        with self.assertRaisesRegex(MergeError, "protocol_id"):
+            merge_payloads([wrong_protocol])
 
-    def test_v6_match_schema_rejects_unaligned_latency_samples(self):
+    def test_v7_match_schema_rejects_unaligned_latency_samples(self):
         shard = _shard()
         shard["matches"][0]["turn_plan_cache_hit_samples_by_strategy"]["A"] = []
         with self.assertRaisesRegex(MergeError, "invalid_latency_samples:A"):
             merge_payloads([shard])
 
-    def test_v6_match_schema_requires_valid_search_depth_samples(self):
+    def test_v7_match_schema_requires_valid_search_depth_samples(self):
         shard = _shard()
         del shard["matches"][0]["search_depth_samples_by_strategy"]
         with self.assertRaisesRegex(MergeError, "invalid_search_depth_samples"):
@@ -549,10 +824,74 @@ class MergeIntegrityTests(unittest.TestCase):
             merge_payloads([shard])
         shard = _shard()
         shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0][
+            "max_path_depth"
+        ] = 7
+        with self.assertRaisesRegex(MergeError, "invalid_search_depth_sample"):
+            merge_payloads([shard])
+        shard = _shard()
+        shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0][
             "layers_completed"
         ] = 7
         with self.assertRaisesRegex(MergeError, "invalid_search_depth_sample"):
             merge_payloads([shard])
+
+        shard = _shard()
+        del shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0][
+            "reply_requested"
+        ]
+        with self.assertRaisesRegex(MergeError, "invalid_search_depth_sample"):
+            merge_payloads([shard])
+
+        shard = _shard()
+        sample = shard["matches"][0]["search_depth_samples_by_strategy"]["A"][0]
+        sample["reply_requested"] = 3
+        sample["reply_completed"] = 1
+        sample["reply_completion_reason"] = "depth_complete"
+        with self.assertRaisesRegex(MergeError, "invalid_search_depth_sample"):
+            merge_payloads([shard])
+
+    def test_v7_search_decision_accounting_is_conserved(self):
+        shard = _shard()
+        shard["matches"][0]["search_depth_decision_counts_by_strategy"]["A"][
+            "applicable"
+        ] = 0
+        with self.assertRaisesRegex(
+            MergeError, "invalid_search_depth_decision_counts:A"
+        ):
+            merge_payloads([shard])
+
+        shard = _shard()
+        row = shard["matches"][0]
+        row["search_depth_samples_by_strategy"]["A"] = []
+        row["search_depth_decision_counts_by_strategy"]["A"] = {
+            "applicable": 0,
+            "not_applicable": 1,
+            "reasons": {"error": 1},
+        }
+        with self.assertRaisesRegex(
+            MergeError, "invalid_search_depth_decision_counts:A"
+        ):
+            merge_payloads([shard])
+
+    def test_merge_allows_non_gate_smoke_reply_depth_one(self):
+        shard = _shard()
+        for row in shard["matches"]:
+            for strategy in ("A", "B"):
+                for sample in row["search_depth_samples_by_strategy"][strategy]:
+                    sample["requested"] = 1
+                    sample["reached"] = 1
+                    sample["completed"] = 1
+                    sample["max_path_depth"] = 1
+                    sample["layers_completed"] = 1
+                    sample["reply_requested"] = 1
+                    sample["reply_completed"] = 1
+        result = merge_payloads([shard])
+        self.assertEqual(
+            result["search_depth"]["by_strategy"]["A"]["overall"][
+                "reply_requested_depth_min"
+            ],
+            1,
+        )
 
     def test_search_depth_is_aggregated_by_strategy_and_actual_deck(self):
         result = merge_payloads([_shard()])
@@ -600,18 +939,28 @@ class MergeIntegrityTests(unittest.TestCase):
         ):
             self.assertEqual(single["coverage"][key], multi["coverage"][key], key)
 
-    def test_search_depth_probe_provenance_mismatch_fails(self):
+    def test_performance_benchmark_provenance_mismatch_fails(self):
         config, rows = _probe_rows()
+        probe_provenance = copy.deepcopy(PROVENANCE)
+        probe_provenance["product_version"] = "other"
+        probe_provenance["simulation_fingerprint"] = (
+            simulation_fingerprint_from_provenance(probe_provenance)
+        )
         probe = _shard(
             decks=DECK_ORDER,
             seed_blocks=3,
             cross_blocks=0,
             mode="Mirror",
             rows=rows,
-            provenance={"schema_version": 6, "fingerprint": "other"},
+            provenance=probe_provenance,
         )
         probe["config"] = config
-        with self.assertRaisesRegex(MergeError, "search_depth_probe:provenance"):
+        probe["task_manifest_id"] = config["task_manifest_id"]
+        probe["execution_profile_id"] = config["execution_profile_id"]
+        with self.assertRaisesRegex(
+            MergeError,
+            "performance_benchmark:simulation_fingerprint",
+        ):
             merge_payloads([_shard()], search_depth_shards=[probe])
 
 
@@ -638,16 +987,11 @@ class GateTests(unittest.TestCase):
 
     def test_superiority_depth_gate_requires_v2_engine_evidence(self):
         payload = _nightly_result()
-        for row in payload["performance"]["matches"]:
+        for row in payload["matches"]:
             for sample in row["search_depth_samples_by_strategy"]["A"]:
                 sample["engine_id"] = "turn_beam_v1"
-        measured = [
-            row
-            for row in payload["performance"]["matches"]
-            if row["sample_phase"] == "measurement"
-        ]
-        payload["performance"]["search_depth"] = summarize_search_depth(
-            measured, DECK_ORDER
+        payload["search_depth"] = summarize_search_depth(
+            payload["matches"], DECK_ORDER
         )
         result = validate_evaluation_gate(payload, gate="nightly-superiority")
         self.assertIn("search_depth_engine_mismatch", result["error_codes"])
@@ -707,9 +1051,9 @@ class GateTests(unittest.TestCase):
         self.assertFalse(result["latency_gate_enabled"])
         self.assertNotIn("latency", " ".join(result["error_codes"]))
 
-    def test_search_depth_probe_checks_a_and_b_separately(self):
+    def test_main_search_depth_checks_a_and_b_separately(self):
         payload = _nightly_result(distinct=False)
-        _set_probe_depth(payload, "A", reached=2)
+        _set_main_depth(payload, "A", reached=2)
         result = validate_evaluation_gate(payload, gate="nightly-stability")
         shallow = [
             error
@@ -721,20 +1065,340 @@ class GateTests(unittest.TestCase):
 
     def test_configured_search_depth_cannot_be_lowered(self):
         payload = _nightly_result()
-        _set_probe_depth(payload, "A", requested=5, reached=5)
+        _set_main_depth(payload, "A", requested=5, reached=5)
         result = validate_evaluation_gate(payload, gate="nightly-equivalence")
         self.assertIn("search_depth_requested_below_floor", result["error_codes"])
 
-    def test_probe_requires_exact_20_warmup_and_40_measured(self):
+    def test_strict_gate_requires_reply_depth_three_or_exhaustion(self):
+        payload = _nightly_result()
+        for row in payload["matches"]:
+            for sample in row["search_depth_samples_by_strategy"]["A"]:
+                sample["reply_requested"] = 1
+                sample["reply_completed"] = 1
+        payload["search_depth"] = summarize_search_depth(
+            payload["matches"], DECK_ORDER
+        )
+        result = validate_evaluation_gate(
+            payload, gate="nightly-equivalence"
+        )
+        self.assertIn(
+            "reply_depth_requested_mismatch", result["error_codes"]
+        )
+
+        exhausted = _nightly_result()
+        for row in exhausted["matches"]:
+            for sample in row["search_depth_samples_by_strategy"]["A"]:
+                sample["reply_completed"] = 1
+                sample["reply_completion_reason"] = "frontier_exhausted"
+        exhausted["search_depth"] = summarize_search_depth(
+            exhausted["matches"], DECK_ORDER
+        )
+        result = validate_evaluation_gate(
+            exhausted, gate="nightly-equivalence"
+        )
+        self.assertNotIn("reply_depth_incomplete", result["error_codes"])
+        self.assertNotIn(
+            "reply_depth_requested_mismatch", result["error_codes"]
+        )
+
+    def test_reply_applicability_and_decision_accounting_tampering_fail(self):
+        payload = _nightly_result(distinct=False)
+        for row in payload["matches"]:
+            for sample in row["search_depth_samples_by_strategy"]["A"]:
+                sample["reply_applicable"] = False
+                sample["reply_completed"] = 0
+                sample["reply_completion_reason"] = "not_applicable"
+        payload["search_depth"] = summarize_search_depth(
+            payload["matches"], DECK_ORDER
+        )
+        result = validate_evaluation_gate(
+            payload, gate="nightly-stability"
+        )
+        self.assertIn("reply_depth_evidence_missing", result["error_codes"])
+
+        payload = _nightly_result(distinct=False)
+        payload["matches"][0][
+            "search_depth_decision_counts_by_strategy"
+        ]["A"]["applicable"] = 0
+        payload["search_depth"] = summarize_search_depth(
+            payload["matches"], DECK_ORDER
+        )
+        result = validate_evaluation_gate(
+            payload, gate="nightly-stability"
+        )
+        self.assertIn(
+            "search_depth_decision_accounting", result["error_codes"]
+        )
+
+    def test_validator_rejects_stale_analysis_fingerprint(self):
+        payload = _nightly_result(distinct=False)
+        payload["analysis_fingerprint"] = "d" * 64
+        payload["provenance"]["analysis_fingerprint"] = "d" * 64
+        result = validate_evaluation_gate(
+            payload, gate="nightly-stability"
+        )
+        self.assertIn("analysis_fingerprint_stale", result["error_codes"])
+
+    def test_validator_recomputes_simulation_fingerprint(self):
+        payload = _nightly_result(distinct=False)
+        payload["provenance"]["product_version"] = "tampered"
+        payload["provenance"]["simulation_fingerprint"] = "d" * 64
+        payload["simulation_fingerprint"] = "d" * 64
+        result = validate_evaluation_gate(
+            payload, gate="nightly-stability"
+        )
+        self.assertIn(
+            "simulation_fingerprint_mismatch",
+            result["error_codes"],
+        )
+
+    def test_final_nightly_requires_complete_simulation_provenance(self):
+        missing_config = _nightly_result(distinct=False)
+        missing_config["provenance"].pop("simulation_config")
+        result = validate_evaluation_gate(
+            missing_config,
+            gate="nightly-stability",
+        )
+        self.assertIn("simulation_config", result["error_codes"])
+        self.assertIn("task_manifest", result["error_codes"])
+
+        missing_field = _nightly_result(distinct=False)
+        missing_field["provenance"]["simulation_config"].pop("profile")
+        result = validate_evaluation_gate(
+            missing_field,
+            gate="nightly-stability",
+        )
+        self.assertIn("simulation_config", result["error_codes"])
+
+        missing_godot_hash = _nightly_result(distinct=False)
+        missing_godot_hash["provenance"].pop(
+            "godot_executable_sha256"
+        )
+        result = validate_evaluation_gate(
+            missing_godot_hash,
+            gate="nightly-stability",
+        )
+        self.assertIn("godot_executable_hash", result["error_codes"])
+
+    def test_simulation_provenance_tampering_is_rejected(self):
+        schedule_tamper = _nightly_result(distinct=False)
+        schedule_tamper["provenance"]["simulation_config"]["seed"] += 1
+        result = validate_evaluation_gate(
+            schedule_tamper,
+            gate="nightly-stability",
+        )
+        self.assertIn("simulation_config", result["error_codes"])
+
+        execution_tamper = _nightly_result(distinct=False)
+        execution_tamper["execution_config"][
+            "global_parallel_workers"
+        ] += 1
+        result = validate_evaluation_gate(
+            execution_tamper,
+            gate="nightly-stability",
+        )
+        self.assertIn("simulation_config", result["error_codes"])
+
+        malformed_godot_hash = _nightly_result(distinct=False)
+        malformed_godot_hash["provenance"][
+            "godot_executable_sha256"
+        ] = "not-a-sha256"
+        result = validate_evaluation_gate(
+            malformed_godot_hash,
+            gate="nightly-stability",
+        )
+        self.assertIn("godot_executable_hash", result["error_codes"])
+
+    def test_legacy_provenance_compatibility_is_non_nightly_only(self):
+        payload = _nightly_result()
+        payload["provenance"]["simulation_config"].pop("profile")
+        payload["provenance"].pop("godot_executable_sha256")
+        result = validate_evaluation_gate(
+            payload,
+            gate="deep-practical",
+        )
+        self.assertTrue(result["valid"], result["error_codes"])
+        self.assertIn(
+            "legacy_provenance_compatibility",
+            result["warning_codes"],
+        )
+
+        tampered = _nightly_result()
+        tampered["provenance"]["simulation_config"]["workers"] += 1
+        result = validate_evaluation_gate(
+            tampered,
+            gate="deep-practical",
+        )
+        self.assertIn("simulation_config", result["error_codes"])
+
+    def test_final_nightly_requires_complete_checkpoint_evidence(self):
+        mutations = {}
+
+        missing = _nightly_result(distinct=False)
+        missing.pop("checkpoint_summary")
+        mutations["missing"] = missing
+
+        disabled = _nightly_result(distinct=False)
+        disabled["checkpoint_summary"]["enabled"] = False
+        mutations["disabled"] = disabled
+
+        missing_shard = _nightly_result(distinct=False)
+        missing_shard["checkpoint_summary"]["shards_enabled"] = 49
+        mutations["missing_shard"] = missing_shard
+
+        missing_unit = _nightly_result(distinct=False)
+        missing_unit["checkpoint_summary"]["written_units"] = 949
+        mutations["missing_unit"] = missing_unit
+
+        pending = _nightly_result(distinct=False)
+        pending["checkpoint_summary"]["pending_units"] = 1
+        mutations["pending"] = pending
+
+        wrong_unit_identity = _nightly_result(distinct=False)
+        unit_ids = list(
+            wrong_unit_identity["checkpoint_summary"][
+                "completed_unit_ids"
+            ]
+        )
+        unit_ids[0] = "mirror|colorless|999|999"
+        unit_ids.sort()
+        wrong_unit_identity["checkpoint_summary"][
+            "completed_unit_ids"
+        ] = unit_ids
+        wrong_unit_identity["checkpoint_summary"][
+            "completed_unit_ids_sha256"
+        ] = evidence_unit_ids_sha256(unit_ids)
+        mutations["unit_identity_mismatch"] = wrong_unit_identity
+
+        wrong_unit_hash = _nightly_result(distinct=False)
+        wrong_unit_hash["checkpoint_summary"][
+            "completed_unit_ids_sha256"
+        ] = "0" * 64
+        mutations["unit_identity_hash"] = wrong_unit_hash
+
+        for label, payload in mutations.items():
+            with self.subTest(label=label):
+                result = validate_evaluation_gate(
+                    payload,
+                    gate="nightly-stability",
+                )
+                self.assertIn(
+                    "checkpoint_summary",
+                    result["error_codes"],
+                )
+
+        compatible = _nightly_result()
+        compatible["checkpoint_summary"] = {
+            "enabled": False,
+            "restored_units": 0,
+            "written_units": 0,
+            "pending_units": 0,
+        }
+        result = validate_evaluation_gate(
+            compatible,
+            gate="deep-practical",
+        )
+        self.assertNotIn(
+            "checkpoint_summary",
+            result["error_codes"],
+        )
+
+    def test_wall_clock_scope_and_value_must_be_paired(self):
+        missing_scope = _nightly_result(distinct=False)
+        missing_scope.pop("wall_clock_scope")
+
+        unexpected_time = _nightly_result(distinct=False)
+        unexpected_time["wall_clock_ms"] = 100.0
+
+        missing_time = _nightly_result(distinct=False)
+        missing_time["wall_clock_scope"] = "full_evidence_stage"
+
+        invalid_time = _nightly_result(distinct=False)
+        invalid_time["wall_clock_scope"] = "current_attempt_only"
+        invalid_time["wall_clock_ms"] = -1.0
+
+        for label, payload in {
+            "missing_scope": missing_scope,
+            "unexpected_time": unexpected_time,
+            "missing_time": missing_time,
+            "invalid_time": invalid_time,
+        }.items():
+            with self.subTest(label=label):
+                result = validate_evaluation_gate(
+                    payload,
+                    gate="nightly-stability",
+                )
+                self.assertIn(
+                    "wall_clock_metadata",
+                    result["error_codes"],
+                )
+
+        recorded = _nightly_result(distinct=False)
+        recorded["wall_clock_scope"] = "full_evidence_stage"
+        recorded["wall_clock_ms"] = 1234.5
+        result = validate_evaluation_gate(
+            recorded,
+            gate="nightly-stability",
+        )
+        self.assertNotIn(
+            "wall_clock_metadata",
+            result["error_codes"],
+        )
+
+    def test_optional_benchmark_does_not_gate(self):
         payload = _nightly_result(distinct=False)
         payload["performance"]["warmup_games"] = 18
         payload["performance"]["measured_games"] = 42
         result = validate_evaluation_gate(payload, gate="nightly-stability")
-        self.assertIn("search_depth_probe_coverage", result["error_codes"])
+        self.assertTrue(result["valid"], result["error_codes"])
+        self.assertIn("performance_benchmark_invalid", result["warning_codes"])
         payload = _nightly_result(distinct=False)
-        payload["performance"]["config"]["profile"] = True
+        payload["performance_benchmark"] = {
+            "available": False,
+            "reason": "performance_benchmark_not_requested",
+        }
+        payload["performance"] = payload["performance_benchmark"]
         result = validate_evaluation_gate(payload, gate="nightly-stability")
-        self.assertIn("search_depth_probe_coverage", result["error_codes"])
+        self.assertTrue(result["valid"], result["error_codes"])
+
+    def test_main_depth_summary_is_recomputed_and_gate_source_is_locked(self):
+        payload = _nightly_result(distinct=False)
+        payload["search_depth"]["by_strategy"]["A"]["overall"][
+            "completed_depth_p50"
+        ] = 7.0
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        self.assertIn("search_depth_metrics", result["error_codes"])
+
+        payload = _nightly_result(distinct=False)
+        payload["gate_depth_source"] = "performance_benchmark"
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        self.assertIn("gate_depth_source", result["error_codes"])
+
+    def test_task_manifest_must_match_merged_config(self):
+        payload = _nightly_result(distinct=False)
+        payload.pop("task_manifest_id")
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        self.assertIn("task_manifest", result["error_codes"])
+
+        payload = _nightly_result(distinct=False)
+        payload["execution_config"].pop("task_manifest_id")
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        self.assertIn("task_manifest", result["error_codes"])
+
+        payload = _nightly_result(distinct=False)
+        payload["task_manifest_id"] = "different"
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        self.assertIn("task_manifest", result["error_codes"])
+
+        payload = _nightly_result(distinct=False)
+        payload["task_manifest_id"] = "d" * 64
+        payload["config"]["task_manifest_id"] = "d" * 64
+        payload["provenance"]["simulation_config"] = {
+            "task_manifest_id": "d" * 64
+        }
+        payload["execution_config"]["task_manifest_id"] = "d" * 64
+        result = validate_evaluation_gate(payload, gate="nightly-stability")
+        self.assertIn("task_manifest", result["error_codes"])
 
     def test_android_latency_is_also_diagnostic_only(self):
         values = {
@@ -744,10 +1408,12 @@ class GateTests(unittest.TestCase):
         payload = _nightly_result(distinct=False, side_values=values)
         payload["platform"] = "android"
         payload["config"]["platform"] = "android"
+        payload["execution_config"]["platform"] = "android"
         result = validate_evaluation_gate(payload, gate="nightly-stability")
         self.assertTrue(result["valid"], result["error_codes"])
         values["B"]["turn"] = 2000.1
-        payload["performance"] = _performance_result(values)
+        payload["performance_benchmark"] = _performance_result(values)
+        payload["performance"] = payload["performance_benchmark"]
         result = validate_evaluation_gate(payload, gate="nightly-stability")
         self.assertTrue(result["valid"], result["error_codes"])
 
@@ -755,6 +1421,14 @@ class GateTests(unittest.TestCase):
         payload = _nightly_result()
         payload["eval_preset"] = "Custom"
         payload["config"]["eval_preset"] = "Custom"
+        payload["provenance"]["simulation_config"]["eval_preset"] = "Custom"
+        payload["execution_config"]["eval_preset"] = "Custom"
+        payload["provenance"]["simulation_fingerprint"] = (
+            simulation_fingerprint_from_provenance(payload["provenance"])
+        )
+        payload["simulation_fingerprint"] = payload["provenance"][
+            "simulation_fingerprint"
+        ]
         payload["strength"]["mirror"]["overall"]["ci95"]["lower"] = -0.04
         payload["strength"]["cross_role"]["overall"]["ci95"]["lower"] = -0.04
         for row in payload["strength"]["mirror"]["per_deck"].values():
@@ -770,6 +1444,7 @@ class GateTests(unittest.TestCase):
 class ReportTests(unittest.TestCase):
     def test_report_has_structured_gate_dual_heatmaps_behavior_and_all_matches(self):
         payload = _nightly_result()
+        validation = validate_evaluation_gate(payload, gate="nightly-equivalence")
         payload["matches"] = [
             {
                 "matchup_kind": "mirror",
@@ -787,7 +1462,6 @@ class ReportTests(unittest.TestCase):
             }
             for index in range(300)
         ]
-        validation = validate_evaluation_gate(payload, gate="nightly-equivalence")
         html = render_report(payload, validation)
         for text in (
             "通过等价性门禁",
@@ -798,6 +1472,15 @@ class ReportTests(unittest.TestCase):
             "Choice 请求覆盖",
             "搜索深度门禁",
             "延迟诊断（不参与门禁）",
+            "协议、执行与恢复",
+            PROTOCOL_ID,
+            "main_matches",
+            payload["task_manifest_id"][:16],
+            "test-nightly",
+            "evidence shards 50",
+            "restored 0",
+            "written 950",
+            "not_recorded",
             "全部对局明细",
             "const matches=",
             '"seed":299',
@@ -813,9 +1496,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("mirror_ci_below_floor", html)
         self.assertIn("门禁未通过", evaluation_verdict(payload, validation))
 
-    def test_report_and_validator_reject_v4(self):
-        old = {"schema_version": 4, "artifact_kind": "ai_evaluation_result"}
-        with self.assertRaisesRegex(ValueError, "schema v6"):
+    def test_report_and_validator_reject_v6(self):
+        old = {"schema_version": 6, "artifact_kind": "ai_evaluation_result"}
+        with self.assertRaisesRegex(ValueError, "schema v7"):
             render_report(old)
         validation = validate_evaluation_gate(old, gate="quick")
         self.assertIn("schema_version", validation["error_codes"])
@@ -831,7 +1514,7 @@ class ReportTests(unittest.TestCase):
             gate.write_text(json.dumps(validation), encoding="utf-8")
             render_file(source, output, gate)
             self.assertTrue(output.is_file())
-            self.assertIn("AI 策略评测 v6", output.read_text(encoding="utf-8"))
+            self.assertIn("AI 策略评测 v7", output.read_text(encoding="utf-8"))
 
 
 class InterfaceAndProfileTests(unittest.TestCase):
@@ -840,37 +1523,74 @@ class InterfaceAndProfileTests(unittest.TestCase):
         first = build_provenance(repo_root, [], target_platform="windows")
         second = build_provenance(repo_root, [], target_platform="windows")
         self.assertEqual(first["fingerprint"], second["fingerprint"])
-        self.assertEqual(first["schema_version"], 6)
+        self.assertEqual(first["schema_version"], 7)
+        self.assertEqual(first["protocol_id"], PROTOCOL_ID)
+        self.assertEqual(len(first["simulation_fingerprint"]), 64)
+        self.assertEqual(len(first["analysis_fingerprint"]), 64)
         self.assertEqual(first["product_version"], "0.6.0")
-        self.assertEqual(first["release_ai_evaluation_schema"], 6)
-        for component in ("rules", "ai", "card_data", "evaluation_tool"):
+        self.assertEqual(first["release_ai_evaluation_schema"], 7)
+        for component in (
+            "rules",
+            "ai",
+            "card_data",
+            "evaluation_tool",
+            "analysis_tool",
+        ):
             self.assertEqual(len(first["component_hashes"][component]), 64)
         self.assertIn("git_commit", first)
         self.assertIn("git_dirty", first)
+        changed_execution = build_provenance(
+            repo_root,
+            [],
+            target_platform="windows",
+            simulation_config={"workers": 12},
+        )
+        self.assertNotEqual(
+            first["simulation_fingerprint"],
+            changed_execution["simulation_fingerprint"],
+        )
+        self.assertEqual(
+            first["analysis_fingerprint"],
+            changed_execution["analysis_fingerprint"],
+        )
+        self.assertEqual(
+            first["simulation_fingerprint"],
+            simulation_fingerprint_from_provenance(first),
+        )
+        irrelevant = copy.deepcopy(first)
+        irrelevant["created_at_unix"] += 1
+        self.assertEqual(
+            first["simulation_fingerprint"],
+            simulation_fingerprint_from_provenance(irrelevant),
+        )
 
-    def test_powershell_interface_uses_search_depth_probe_modes(self):
+    def test_powershell_interface_uses_optional_performance_benchmark(self):
         script = (Path(__file__).parents[2] / "tools" / "evaluate_godot_ai.ps1").read_text(
             encoding="utf-8-sig"
         )
         self.assertNotIn("$Baseline", script)
-        self.assertIn("$SearchDepthProbeOnly", script)
-        self.assertIn("$SearchDepthProbeInput", script)
-        self.assertIn("Alias('PerformanceProbeOnly')", script)
-        self.assertIn("Alias('PerformanceProbeInput')", script)
+        self.assertIn("$PerformanceBenchmarkOnly", script)
+        self.assertIn("$PerformanceBenchmarkInput", script)
+        self.assertIn("Alias('SearchDepthProbeOnly', 'PerformanceProbeOnly')", script)
+        self.assertIn("Alias('SearchDepthProbeInput', 'PerformanceProbeInput')", script)
+        self.assertIn("$PerformanceBenchmark", script)
         self.assertIn("Where-Object { $_ -ne '--profile' }", script)
         self.assertLess(script.index("validate_ai_evaluation.py"), script.index("render_ai_evaluation_report.py"))
 
-    def test_runner_is_v5_raw_shard_with_behavior_and_provenance(self):
+    def test_runner_is_v7_raw_shard_with_behavior_and_provenance(self):
         source = (Path(__file__).parents[2] / "godot" / "tools" / "ai_evaluation_runner.gd").read_text(
             encoding="utf-8"
         )
-        self.assertIn("const SCHEMA_VERSION := 6", source)
+        self.assertIn("const SCHEMA_VERSION := 7", source)
+        self.assertIn('const PROTOCOL_ID := "traditional_ai_evaluation_v7"', source)
         self.assertIn('"artifact_kind": "ai_evaluation_shard"', source)
         self.assertIn('"behavior_by_strategy"', source)
         self.assertIn('"search_depth_samples_by_strategy"', source)
+        self.assertIn('"decision_semantic_hash"', source)
+        self.assertIn('"completed_unit_ids"', source)
         self.assertIn('"provenance": provenance', source)
 
-    def test_profile_helpers_use_schema_v6_observed_games(self):
+    def test_profile_helpers_use_schema_v7_observed_games(self):
         payload = _nightly_result()
         summary = summarize_profile(payload)
         self.assertTrue(summary["enabled"])
@@ -882,6 +1602,119 @@ class InterfaceAndProfileTests(unittest.TestCase):
         self.assertEqual(
             comparison["segments"]["runner_legal_actions_ms"]["ratio"], 0.5
         )
+
+    def test_profile_comparison_ignores_timing_and_shard_provenance(self):
+        baseline = _nightly_result()
+        candidate = copy.deepcopy(baseline)
+        baseline["elapsed_ms"] = 1000
+        candidate["elapsed_ms"] = 800
+        for index, row in enumerate(candidate["matches"]):
+            row["elapsed_ms"] += 9000
+            row["average_decision_ms"] = 987.0
+            row["task_index"] = 1000 + index
+            row["task_shard_index"] = 19
+            row["task_shard_count"] = 50
+            row["source_shard_index"] = 9
+            row["evidence_shard_index"] = 49
+            row["evidence_shard_count"] = 50
+            for samples in row["search_depth_samples_by_strategy"].values():
+                for sample in samples:
+                    sample["planner_ms"] *= 0.75
+        comparison = compare_profiles(baseline, candidate)
+        self.assertTrue(comparison["same_match_results"])
+        self.assertTrue(comparison["same_v2_search_traces"])
+        self.assertTrue(comparison["equivalent"])
+        self.assertAlmostEqual(
+            comparison["planner_ms_per_node"]["reduction"], 0.25
+        )
+        self.assertAlmostEqual(comparison["wall_clock_ms"]["reduction"], 0.2)
+        self.assertTrue(
+            evaluate_gates(
+                comparison,
+                require_planner_reduction=0.25,
+                require_wall_reduction=0.20,
+            )["passed"]
+        )
+
+    def test_profile_comparison_fails_closed_on_result_or_trace_change(self):
+        baseline = _nightly_result()
+        changed_result = copy.deepcopy(baseline)
+        changed_result["matches"][0]["winner"] = "A"
+        comparison = compare_profiles(baseline, changed_result)
+        self.assertFalse(comparison["same_match_results"])
+        self.assertFalse(evaluate_gates(comparison)["passed"])
+
+        changed_trace = copy.deepcopy(baseline)
+        changed_trace["matches"][0]["search_depth_samples_by_strategy"]["A"][0][
+            "nodes_expanded"
+        ] += 1
+        comparison = compare_profiles(baseline, changed_trace)
+        self.assertTrue(comparison["same_match_results"])
+        self.assertFalse(comparison["same_v2_search_traces"])
+        self.assertFalse(evaluate_gates(comparison)["passed"])
+
+    def test_profile_performance_gate_rejects_missing_planner_ms(self):
+        baseline = _nightly_result()
+        candidate = copy.deepcopy(baseline)
+        baseline["elapsed_ms"] = 1000
+        candidate["elapsed_ms"] = 700
+        for row in baseline["matches"]:
+            for samples in row["search_depth_samples_by_strategy"].values():
+                for sample in samples:
+                    sample.pop("planner_ms", None)
+        comparison = compare_profiles(baseline, candidate)
+        self.assertTrue(comparison["equivalent"])
+        self.assertFalse(comparison["planner_ms_per_node"]["available"])
+        gate = evaluate_gates(
+            comparison,
+            require_planner_reduction=0.25,
+            require_wall_reduction=0.20,
+        )
+        self.assertFalse(gate["passed"])
+        self.assertIn(
+            "planner_metric_unavailable",
+            [error["code"] for error in gate["errors"]],
+        )
+
+    def test_profile_comparison_cli_enforces_optional_reduction_gates(self):
+        baseline = _nightly_result()
+        candidate = copy.deepcopy(baseline)
+        baseline["elapsed_ms"] = 1000
+        candidate["elapsed_ms"] = 800
+        for row in candidate["matches"]:
+            for samples in row["search_depth_samples_by_strategy"].values():
+                for sample in samples:
+                    sample["planner_ms"] *= 0.75
+        script = (
+            Path(__file__).parents[1]
+            / "scripts"
+            / "compare_ai_evaluation_profiles.py"
+        )
+        with temp_dir() as directory:
+            baseline_path = Path(directory) / "baseline.json"
+            candidate_path = Path(directory) / "candidate.json"
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+            candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--baseline",
+                    str(baseline_path),
+                    "--candidate",
+                    str(candidate_path),
+                    "--require-planner-reduction",
+                    "0.25",
+                    "--require-wall-reduction",
+                    "0.20",
+                    "--json",
+                ],
+                capture_output=True,
+                check=False,
+                encoding="utf-8",
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue(json.loads(completed.stdout)["gate"]["passed"])
 
 
 if __name__ == "__main__":

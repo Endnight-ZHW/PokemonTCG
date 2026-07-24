@@ -25,20 +25,44 @@ static func action_score_milli(
 ) -> int:
 	if state == null or action == null:
 		return -WIN_SCORE_MILLI
+	var information := AIInformationSet.capture_view_only(
+		state, actor, catalog, [action], [], match_seed)
+	var public_view := (
+		information.shared_read_only_view() if information.is_valid() else {})
+	return _action_score_milli_with_public_view(
+		state,
+		actor,
+		action,
+		strategy,
+		semantic_catalog,
+		public_view,
+		trusted_action_evaluator,
+	)
+
+
+static func _action_score_milli_with_public_view(
+	state: GameState,
+	actor: int,
+	action: GameAction,
+	strategy: Variant,
+	semantic_catalog: CardSemanticCatalog,
+	public_view: Dictionary,
+	trusted_action_evaluator: Callable = Callable(),
+) -> int:
+	if state == null or action == null:
+		return -WIN_SCORE_MILLI
 	var score_milli := _quantize(_default_action_priority(action, semantic_catalog))
 	if trusted_action_evaluator.is_valid():
 		var trusted_value: Variant = trusted_action_evaluator.call(state, actor, action)
 		if _is_finite_number(trusted_value):
 			score_milli = _quantize(float(trusted_value))
-	var information := AIInformationSet.capture(
-		state, actor, catalog, [action], [], match_seed)
-	if information.is_valid():
+	if not public_view.is_empty():
 		var strategy_value: Variant = _strategy_call(
 			strategy,
 			"action_score",
 			[
-				information.read_only_view(),
-				_read_only_copy(action.to_dict()),
+				public_view,
+				_read_only_action(action),
 				semantic_context_for_action(action, semantic_catalog),
 			],
 			0.0,
@@ -83,10 +107,10 @@ static func state_score_milli(
 				-TRUSTED_STATE_LIMIT_MILLI,
 				TRUSTED_STATE_LIMIT_MILLI,
 			)
-	var information := AIInformationSet.capture(
+	var information := AIInformationSet.capture_view_only(
 		state, actor, catalog, [], [], match_seed)
 	if information.is_valid():
-		var public_view := information.read_only_view()
+		var public_view := information.shared_read_only_view()
 		var strategy_value: Variant = _strategy_call(
 			strategy,
 			"state_score",
@@ -114,20 +138,26 @@ static func ranked_actions(
 	trusted_action_evaluator: Callable = Callable(),
 ) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
+	var shared_information := AIInformationSet.capture_view_only(
+		state, actor, catalog, [], [], match_seed)
 	for index in range(actions.size()):
 		if _is_cancelled(cancel_check):
 			break
 		var action := actions[index]
+		var public_view := (
+			shared_information.read_only_view_for_legal_actions([action])
+			if shared_information.is_valid()
+			else {}
+		)
 		result.append({
 			"action": action,
-			"score_milli": action_score_milli(
+			"score_milli": _action_score_milli_with_public_view(
 				state,
 				actor,
 				action,
 				strategy,
 				semantic_catalog,
-				catalog,
-				match_seed,
+				public_view,
 				trusted_action_evaluator,
 			),
 			"signature": action_signature(action),
@@ -168,15 +198,14 @@ static func diverse_top_actions(
 	for row_value in ranked:
 		var row: Dictionary = row_value
 		var action: GameAction = row.get("action")
-		var purpose := str(row.get(
-			"purpose_bucket", action_purpose_bucket(action)))
+		var purpose := _row_purpose(row, action)
 		var signature := str(row.get("signature", ""))
 		if purpose.is_empty() or used_purposes.has(purpose) or used_signatures.has(signature):
 			continue
 		result.append(row)
 		used_purposes[purpose] = true
 		used_signatures[signature] = true
-		used_buckets[str(row.get("bucket", semantic_bucket(action)))] = true
+		used_buckets[_row_bucket(row, action)] = true
 		if result.size() >= limit:
 			break
 	# Then admit semantically different source/card/attack/target/fee variants.
@@ -185,15 +214,14 @@ static func diverse_top_actions(
 			break
 		var row: Dictionary = row_value
 		var action: GameAction = row.get("action")
-		var bucket := str(row.get("bucket", semantic_bucket(action)))
+		var bucket := _row_bucket(row, action)
 		var signature := str(row.get("signature", ""))
 		if bucket.is_empty() or used_buckets.has(bucket) or used_signatures.has(signature):
 			continue
 		result.append(row)
 		used_buckets[bucket] = true
 		used_signatures[signature] = true
-		used_purposes[str(row.get(
-			"purpose_bucket", action_purpose_bucket(action)))] = true
+		used_purposes[_row_purpose(row, action)] = true
 	for row_value in ranked:
 		if result.size() >= limit:
 			break
@@ -269,7 +297,7 @@ static func action_signature(action: GameAction) -> String:
 		"payload": action.payload.duplicate(true),
 	}
 	var wire := stable_variant_signature(stable)
-	return "action:%s" % wire.sha256_text()
+	return "action:" + wire.sha256_text()
 
 
 static func semantic_bucket(action: GameAction) -> String:
@@ -315,11 +343,11 @@ static func action_purpose_bucket(action: GameAction) -> String:
 		"USE_STADIUM":
 			return "effect:stadium"
 		_:
-			return "other:%s" % action.kind
+			return "other:" + action.kind
 
 
 static func sequence_signature(sequence_value: Variant) -> String:
-	var parts: Array[String] = []
+	var parts := PackedStringArray()
 	for action_value in sequence_value:
 		if action_value is GameAction:
 			parts.append(action_signature(action_value))
@@ -486,19 +514,20 @@ static func semantic_context_for_view(
 static func stable_variant_signature(value: Variant) -> String:
 	if value is Dictionary:
 		var dictionary: Dictionary = value
-		var keys: Array[String] = []
+		var keys := PackedStringArray()
 		for key_value in dictionary:
 			keys.append(str(key_value))
 		keys.sort()
-		var parts: Array[String] = []
+		var parts := PackedStringArray()
 		for key in keys:
-			parts.append("%s=%s" % [key, stable_variant_signature(dictionary[key])])
-		return "{%s}" % ",".join(parts)
+			parts.append(
+				key + "=" + stable_variant_signature(dictionary[key]))
+		return "{" + ",".join(parts) + "}"
 	if value is Array:
-		var parts: Array[String] = []
+		var parts := PackedStringArray()
 		for item in value:
 			parts.append(stable_variant_signature(item))
-		return "[%s]" % ",".join(parts)
+		return "[" + ",".join(parts) + "]"
 	return JSON.stringify(value)
 
 
@@ -574,14 +603,12 @@ static func _protected_replacement_index(rows: Array[Dictionary]) -> int:
 	var purpose_counts: Dictionary = {}
 	for row in rows:
 		var action: GameAction = row.get("action")
-		var purpose := str(row.get(
-			"purpose_bucket", action_purpose_bucket(action)))
+		var purpose := _row_purpose(row, action)
 		purpose_counts[purpose] = int(purpose_counts.get(purpose, 0)) + 1
 	for index in range(rows.size() - 1, -1, -1):
 		var row: Dictionary = rows[index]
 		var action: GameAction = row.get("action")
-		var purpose := str(row.get(
-			"purpose_bucket", action_purpose_bucket(action)))
+		var purpose := _row_purpose(row, action)
 		if int(purpose_counts.get(purpose, 0)) > 1:
 			return index
 	for index in range(rows.size() - 1, -1, -1):
@@ -607,10 +634,9 @@ static func _best_unrepresented_target_variant(
 	var selected_buckets_by_purpose: Dictionary = {}
 	for row in selected:
 		var action: GameAction = row.get("action")
-		var signature := str(row.get("signature", action_signature(action)))
-		var purpose := str(row.get(
-			"purpose_bucket", action_purpose_bucket(action)))
-		var bucket := str(row.get("bucket", semantic_bucket(action)))
+		var signature := _row_signature(row, action)
+		var purpose := _row_purpose(row, action)
+		var bucket := _row_bucket(row, action)
 		selected_signatures[signature] = true
 		var buckets: Dictionary = selected_buckets_by_purpose.get(purpose, {})
 		buckets[bucket] = true
@@ -618,14 +644,13 @@ static func _best_unrepresented_target_variant(
 	for row_value in ranked:
 		var row: Dictionary = row_value
 		var action: GameAction = row.get("action")
-		var purpose := str(row.get(
-			"purpose_bucket", action_purpose_bucket(action)))
+		var purpose := _row_purpose(row, action)
 		if not target_sensitive_purposes.has(purpose):
 			continue
-		var signature := str(row.get("signature", action_signature(action)))
+		var signature := _row_signature(row, action)
 		if selected_signatures.has(signature):
 			continue
-		var bucket := str(row.get("bucket", semantic_bucket(action)))
+		var bucket := _row_bucket(row, action)
 		var represented: Dictionary = selected_buckets_by_purpose.get(
 			purpose, {})
 		if not represented.is_empty() and not represented.has(bucket):
@@ -646,13 +671,11 @@ static func _target_variant_replacement_index(
 		if (
 			action == null
 			or action.terminal
-			or str(row.get(
-				"purpose_bucket", action_purpose_bucket(action)))
-			== protected_purpose
+			or _row_purpose(row, action) == protected_purpose
 		):
 			continue
 		var score := int(row.get("score_milli", -WIN_SCORE_MILLI))
-		var signature := str(row.get("signature", action_signature(action)))
+		var signature := _row_signature(row, action)
 		if (
 			result < 0
 			or score < lowest_score
@@ -664,6 +687,30 @@ static func _target_variant_replacement_index(
 	return result
 
 
+static func _row_signature(row: Dictionary, action: GameAction) -> String:
+	return (
+		str(row["signature"])
+		if row.has("signature")
+		else action_signature(action)
+	)
+
+
+static func _row_bucket(row: Dictionary, action: GameAction) -> String:
+	return (
+		str(row["bucket"])
+		if row.has("bucket")
+		else semantic_bucket(action)
+	)
+
+
+static func _row_purpose(row: Dictionary, action: GameAction) -> String:
+	return (
+		str(row["purpose_bucket"])
+		if row.has("purpose_bucket")
+		else action_purpose_bucket(action)
+	)
+
+
 static func _semantic_context(
 	card_ids: Array[String],
 	semantic_catalog: CardSemanticCatalog,
@@ -671,8 +718,11 @@ static func _semantic_context(
 	var cards: Dictionary = {}
 	for card_id in card_ids:
 		cards[card_id] = semantic_catalog.semantics_for(card_id)
+	# CardSemanticCatalog values are already deeply immutable. Freeze only the
+	# two newly allocated wrapper dictionaries instead of walking every card tree.
+	cards.make_read_only()
 	var result := {"cards": cards}
-	_deep_make_read_only(result)
+	result.make_read_only()
 	return result
 
 
@@ -706,8 +756,8 @@ static func _strategy_call(
 	return fallback
 
 
-static func _read_only_copy(value: Variant) -> Variant:
-	var result: Variant = value.duplicate(true) if value is Dictionary or value is Array else value
+static func _read_only_action(action: GameAction) -> Dictionary:
+	var result := action.to_dict()
 	_deep_make_read_only(result)
 	return result
 

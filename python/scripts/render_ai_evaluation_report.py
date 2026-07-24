@@ -1,4 +1,4 @@
-"""Render the self-contained schema-v6 Godot AI evaluation dashboard."""
+"""Render the self-contained schema-v7 Godot AI evaluation dashboard."""
 from __future__ import annotations
 
 import argparse
@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.ai_evaluation_v6 import DECK_ORDER, SCHEMA_VERSION
+    from scripts.ai_evaluation_v7 import DECK_ORDER, PROTOCOL_ID, SCHEMA_VERSION
 except ModuleNotFoundError:  # Direct script execution.
-    from ai_evaluation_v6 import DECK_ORDER, SCHEMA_VERSION
+    from ai_evaluation_v7 import DECK_ORDER, PROTOCOL_ID, SCHEMA_VERSION
 
 
 DECK_LABELS = {
@@ -106,6 +106,8 @@ def evaluation_verdict(
 ) -> str:
     if int(payload.get("schema_version") or 0) != SCHEMA_VERSION:
         raise ValueError(f"Only AI evaluation schema v{SCHEMA_VERSION} is supported.")
+    if payload.get("protocol_id") != PROTOCOL_ID:
+        raise ValueError(f"Only AI evaluation protocol {PROTOCOL_ID} is supported.")
     if validation is None:
         return "未执行门禁：以下强度区间与诊断信息仅供查看。"
     gate = str(validation.get("gate") or "")
@@ -272,10 +274,80 @@ def _behavior_section(payload: dict[str, Any]) -> str:
     )
 
 
+def _protocol_execution_section(payload: dict[str, Any]) -> str:
+    execution = payload.get("execution_config") or {}
+    checkpoint = payload.get("checkpoint_summary") or {}
+    manifest = str(payload.get("task_manifest_id") or "")
+    wall_scope = str(payload.get("wall_clock_scope") or "not_recorded")
+    wall_time = (
+        _number(payload.get("wall_clock_ms"), 1, " ms")
+        if "wall_clock_ms" in payload
+        else "未记录"
+    )
+    workers = execution.get(
+        "workers",
+        execution.get("parallel_workers"),
+    )
+    execution_rows = (
+        ("协议", payload.get("protocol_id") or "—"),
+        ("深度门禁来源", payload.get("gate_depth_source") or "—"),
+        (
+            "任务清单",
+            f"{manifest[:16]}…" if len(manifest) > 16 else manifest or "—",
+        ),
+        (
+            "执行配置",
+            (
+                f"{execution.get('execution_profile_id') or '—'} · "
+                f"workers {workers if workers is not None else '—'} / "
+                f"global {execution.get('global_parallel_workers', '—')} · "
+                f"external shards "
+                f"{execution.get('external_shard_count', '—')} · "
+                f"evidence shards "
+                f"{execution.get('evidence_shard_count', '—')}"
+            ),
+        ),
+        (
+            "检查点",
+            (
+                f"{'启用' if checkpoint.get('enabled') else '停用'} · "
+                f"shards {checkpoint.get('shards_enabled', '—')} / "
+                f"{checkpoint.get('shards_total', '—')} · "
+                f"restored {checkpoint.get('restored_units', '—')} · "
+                f"written {checkpoint.get('written_units', '—')} · "
+                f"pending {checkpoint.get('pending_units', '—')}"
+            ),
+        ),
+        ("墙钟范围", f"{wall_scope} · {wall_time}"),
+        (
+            "来源指纹",
+            (
+                f"simulation "
+                f"{str(payload.get('simulation_fingerprint') or '')[:12]} · "
+                f"analysis "
+                f"{str(payload.get('analysis_fingerprint') or '')[:12]}"
+            ),
+        ),
+    )
+    rows = "".join(
+        f"<tr><th>{escape(label)}</th><td><code>{escape(str(value))}</code></td></tr>"
+        for label, value in execution_rows
+    )
+    return (
+        "<section><h2>协议、执行与恢复</h2>"
+        "<div class='table-scroll'><table><tbody>"
+        f"{rows}</tbody></table></div></section>"
+    )
+
+
 def _search_depth_section(payload: dict[str, Any], validation: dict[str, Any] | None) -> str:
-    performance = payload.get("performance") or {}
+    performance = (
+        payload.get("performance_benchmark")
+        or payload.get("performance")
+        or {}
+    )
     latency = performance.get("metrics") or {}
-    search_depth = performance.get("search_depth") or {}
+    search_depth = payload.get("search_depth") or {}
     by_strategy = search_depth.get("by_strategy") or {}
     thresholds = (validation or {}).get("search_depth_thresholds") or {}
     depth_rows = []
@@ -320,14 +392,20 @@ def _search_depth_section(payload: dict[str, Any], validation: dict[str, Any] | 
             f"<tr><td>{escape(label)}</td><td>{escape(_number((latency.get('A') or {}).get(key), 1, ' ms'))}</td>"
             f"<td>{escape(_number((latency.get('B') or {}).get(key), 1, ' ms'))}</td><td>不参与门禁</td></tr>"
         )
-    note = f"{performance.get('games_total', 0)} 局：{performance.get('warmup_games', 0)} 局预热，{performance.get('measured_games', 0)} 局采样；门禁只使用后 40 局的实际 beam 深度。"
-    if not performance.get("available"):
-        note = "未提供单进程搜索深度探针；严格门禁会失败。"
+    main_games = int((payload.get("observed") or {}).get("games") or 0)
+    note = f"深度门禁由主评测矩阵全部 {main_games} 局重新聚合；延迟不参与通过判定。"
+    latency_note = (
+        f"可选基准 {performance.get('games_total', 0)} 局："
+        f"{performance.get('warmup_games', 0)} 局预热，"
+        f"{performance.get('measured_games', 0)} 局采样。"
+        if performance.get("available")
+        else "本次未运行可选性能基准。"
+    )
     return (
         f"<section><h2>搜索深度门禁</h2><p class='muted'>{escape(note)}</p>"
         f"<div class='table-scroll'><table><thead><tr><th>指标</th><th>A</th><th>B</th><th>下限/用途</th></tr></thead><tbody>{''.join(depth_rows)}</tbody></table></div>"
         f"<h3>按实际驾驶牌组</h3><div class='table-scroll'><table><thead><tr><th>牌组</th><th>A 深度 P50</th><th>B 深度 P50</th><th>A/B 样本</th></tr></thead><tbody>{''.join(deck_rows)}</tbody></table></div>"
-        f"<h3>延迟诊断（不参与门禁）</h3><div class='table-scroll'><table><thead><tr><th>指标</th><th>A</th><th>B</th><th>用途</th></tr></thead><tbody>{''.join(latency_rows)}</tbody></table></div></section>"
+        f"<h3>延迟诊断（不参与门禁）</h3><p class='muted'>{escape(latency_note)}</p><div class='table-scroll'><table><thead><tr><th>指标</th><th>A</th><th>B</th><th>用途</th></tr></thead><tbody>{''.join(latency_rows)}</tbody></table></div></section>"
     )
 
 
@@ -418,6 +496,8 @@ def render_report(
 ) -> str:
     if int(payload.get("schema_version") or 0) != SCHEMA_VERSION:
         raise ValueError(f"Only AI evaluation schema v{SCHEMA_VERSION} is supported.")
+    if payload.get("protocol_id") != PROTOCOL_ID:
+        raise ValueError(f"Only AI evaluation protocol {PROTOCOL_ID} is supported.")
     if payload.get("artifact_kind") != "ai_evaluation_result":
         raise ValueError("Report input must be an authoritative ai_evaluation_result.")
     mirror = _strength(payload, "mirror").get("overall") or {}
@@ -426,7 +506,7 @@ def render_report(
     coverage = payload.get("coverage") or {}
     games = int(observed.get("games") or 0)
     clean_rate = int(observed.get("clean_games") or 0) / games if games else None
-    search_depth_a = (((((payload.get("performance") or {}).get("search_depth") or {}).get("by_strategy") or {}).get("A") or {}).get("full_tier") or {})
+    search_depth_a = (((payload.get("search_depth") or {}).get("by_strategy") or {}).get("A") or {}).get("full_tier") or {}
     gate_state = "未执行"
     gate_tone = "warn"
     if validation is not None:
@@ -444,15 +524,22 @@ def render_report(
         ),
     ])
     provenance = payload.get("provenance") or {}
-    provenance_text = f"source {str(provenance.get('source_hash') or '')[:12]} · git {str(provenance.get('git_commit') or '')[:12]}{' dirty' if provenance.get('git_dirty') else ''} · Godot {provenance.get('godot_runtime_version') or '—'}"
+    provenance_text = (
+        f"simulation {str(payload.get('simulation_fingerprint') or '')[:12]} · "
+        f"analysis {str(payload.get('analysis_fingerprint') or '')[:12]} · "
+        f"git {str(provenance.get('git_commit') or '')[:12]}"
+        f"{' dirty' if provenance.get('git_dirty') else ''} · "
+        f"Godot {provenance.get('godot_runtime_version') or '—'}"
+    )
     verdict = evaluation_verdict(payload, validation)
     style = """
 <style>
 :root{color-scheme:dark;--bg:#07111f;--panel:#0d1b2e;--line:#23344c;--text:#e7eef8;--muted:#91a4bd;--blue:#38bdf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#143258 0,transparent 34%),var(--bg);color:var(--text);font:14px/1.55 Inter,"Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1580px;margin:auto;padding:28px}header{padding:26px;border:1px solid var(--line);border-radius:18px;background:rgba(13,27,46,.9)}h1{margin:0 0 6px;font-size:28px}h2{margin:0 0 12px;font-size:19px}h3{margin-top:24px}.muted,small{color:var(--muted)}.verdict{font-size:16px;padding:13px 16px;border-left:4px solid var(--blue);background:#10243b;border-radius:8px}.metrics{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px;margin:16px 0}.metric,section{border:1px solid var(--line);background:rgba(13,27,46,.94);border-radius:14px}.metric{padding:15px}.metric span,.metric small{display:block}.metric strong{font-size:22px;display:block;margin:6px 0}.metric.ok{border-color:#236b45}.metric.bad{border-color:#8e3035}.metric.warn{border-color:#88641d}section{padding:20px;margin:16px 0}.delta-row{margin:15px 0}.delta-row>div:first-child{display:flex;justify-content:space-between}.delta-track{height:13px;position:relative;border-radius:8px;background:linear-gradient(90deg,rgba(239,68,68,.55),#23344c 50%,rgba(34,197,94,.55))}.zero{position:absolute;left:50%;height:18px;top:-3px;border-left:1px solid #fff}.marker{position:absolute;top:-3px;width:4px;height:19px;background:#fff;border-radius:2px;box-shadow:0 0 8px #fff}.axis-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:11px}.table-scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;white-space:nowrap}th{color:#b9cae0;background:#101f33;position:sticky;top:0}.heat th,.heat td{text-align:center;min-width:86px}.split{display:grid;grid-template-columns:1fr 1fr;gap:20px}.pill{padding:3px 8px;border-radius:999px;background:#24364d}.pill.ok{background:#124d33;color:#86efac}.pill.bad{background:#5b2028;color:#fca5a5}.section-title{display:flex;align-items:end;justify-content:space-between}.mini-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.mini-cards>div{display:flex;gap:18px;padding:10px;background:#101f33;border-radius:8px}.tag-list{display:flex;flex-wrap:wrap;gap:8px}.tag{padding:6px 10px;background:#162840;border:1px solid var(--line);border-radius:999px}.perf-track{height:8px;margin-top:6px;background:#1d2e45;position:relative;max-width:260px}.perf-track i{display:block;height:100%}.perf-track .goodbar{background:var(--green)}.perf-track .badbar{background:var(--red)}.perf-track em{position:absolute;top:-3px;height:14px;border-left:2px solid var(--amber)}select,input,button{color:var(--text);background:#101f33;border:1px solid #334962;border-radius:7px;padding:7px 9px}.filters{display:flex;flex-wrap:wrap;gap:10px}.filters label,.section-title label{display:flex;flex-direction:column;gap:4px;color:var(--muted)}.pager{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:14px}code{color:#bae6fd;white-space:normal}.provenance{word-break:break-all}@media(max-width:1000px){main{padding:12px}.metrics{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}}@media(max-width:600px){.metrics{grid-template-columns:1fr}.delta-row>div:first-child{display:block}}
 </style>"""
-    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 策略评测 v6</title>{style}</head><body><main>
-<header><h1>AI 策略评测 v6</h1><p>{escape(_strategy_label(payload,'A'))} <span class="muted">vs</span> {escape(_strategy_label(payload,'B'))}</p><p class="verdict">{escape(verdict)}</p><p class="muted provenance">{escape(provenance_text)}</p></header>
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 策略评测 v7</title>{style}</head><body><main>
+<header><h1>AI 策略评测 v7</h1><p>{escape(_strategy_label(payload,'A'))} <span class="muted">vs</span> {escape(_strategy_label(payload,'B'))}</p><p class="verdict">{escape(verdict)}</p><p class="muted provenance">{escape(provenance_text)}</p></header>
 <div class="metrics">{cards}</div>
+{_protocol_execution_section(payload)}
 <section><h2>两项独立主指标</h2><p class="muted">两项指标不混合；仅完整、干净的实验单元进入固定 seed、10,000 次分层 cluster bootstrap。原始总点数率不生成主结论。</p>{_delta_bar(mirror.get('point_delta'),mirror.get('ci95'),'镜像强度：同牌组、同 seed 的两局换席块；十牌组等权')}{_delta_bar(cross.get('point_delta'),cross.get('ci95'),'角色交叉强度：同 seed 的四局牌组角色交叉块；无序对局等权')}</section>
 {_validation_section(validation)}{_fairness_table(payload,validation)}{_heatmap(payload,raw=False)}{_heatmap(payload,raw=True)}{_behavior_section(payload)}{_search_depth_section(payload,validation)}{_terminal_and_golden(payload)}{_details_section(payload)}
 {_script(payload)}</main></body></html>"""

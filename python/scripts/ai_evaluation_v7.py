@@ -1,4 +1,4 @@
-"""Authoritative schema-v6 aggregation for Godot traditional-AI evaluation.
+"""Authoritative schema-v7 aggregation for Godot traditional-AI evaluation.
 
 The Godot runner deliberately emits shard evidence.  This module is the only
 place that turns that evidence into acceptance metrics, so one-worker and
@@ -7,15 +7,18 @@ multi-worker runs cannot silently use different statistics.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import random
 import time
 import zlib
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from typing import Any, Iterable, Sequence
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+PROTOCOL_ID = "traditional_ai_evaluation_v7"
 BOOTSTRAP_ITERATIONS = 10_000
 BOOTSTRAP_SEED = 90_210
 DECK_ORDER = [
@@ -46,10 +49,73 @@ PUBLIC_ACTION_KINDS = [
 MATCHUP_MIRROR = "mirror"
 MATCHUP_CROSS = "cross"
 STRATEGY_KEYS = ("A", "B")
+V2_SEARCH_DEPTH = 8
+REPLY_SEARCH_DEPTH = 3
+SIMULATION_FINGERPRINT_FIELDS = (
+    "schema_version",
+    "protocol_id",
+    "simulation_source_hash",
+    "release_manifest_sha256",
+    "toolchain_lock_sha256",
+    "strategy_file_sha256",
+    "product_version",
+    "release_ai_evaluation_schema",
+    "release_godot_version",
+    "toolchain_godot_version",
+    "godot_runtime_version",
+    "godot_executable_sha256",
+    "target_platform",
+    "simulation_config",
+)
+V2_SUCCESS_SEARCH_REASONS = frozenset({
+    "depth_complete",
+    "frontier_exhausted",
+})
+V2_NON_APPLICABLE_SEARCH_REASONS = frozenset({
+    "forced_tactic",
+    "cache_hit",
+})
 
 
 class MergeError(ValueError):
     """Raised when shard evidence is mutually incompatible or ambiguous."""
+
+
+def simulation_fingerprint_stable_fields(
+    provenance: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the exact provenance fields bound by a simulation fingerprint."""
+    if not isinstance(provenance, Mapping):
+        raise TypeError("simulation provenance must be an object")
+    missing = [
+        field
+        for field in SIMULATION_FINGERPRINT_FIELDS
+        if field not in provenance
+    ]
+    if missing:
+        raise ValueError(
+            "missing stable simulation provenance fields: "
+            + ",".join(missing)
+        )
+    return {
+        field: provenance[field]
+        for field in SIMULATION_FINGERPRINT_FIELDS
+    }
+
+
+def simulation_fingerprint_from_provenance(
+    provenance: Mapping[str, Any],
+) -> str:
+    """Recompute the stable schema-v7 simulation fingerprint."""
+    stable = simulation_fingerprint_stable_fields(provenance)
+    return hashlib.sha256(
+        json.dumps(
+            stable,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _int(value: Any, default: int = 0) -> int:
@@ -59,12 +125,268 @@ def _int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _is_nonnegative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def _float(value: Any, default: float = 0.0) -> float:
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError):
         return default
     return result if math.isfinite(result) else default
+
+
+def _valid_sha256(value: Any) -> bool:
+    normalized = str(value or "")
+    return len(normalized) == 64 and all(
+        character in "0123456789abcdef" for character in normalized
+    )
+
+
+def performance_host_fingerprint(
+    host: dict[str, Any],
+    *,
+    godot_runtime_version: str,
+    target_platform: str,
+) -> str:
+    """Hash non-secret host/runtime class fields used by timing comparisons."""
+
+    def normalized(value: Any) -> str:
+        return " ".join(str(value or "").strip().casefold().split())
+
+    stable = {
+        key: normalized(host.get(key))
+        for key in (
+            "system",
+            "release",
+            "machine",
+            "processor",
+            "python",
+        )
+    }
+    stable.update({
+        "godot_runtime_version": normalized(godot_runtime_version),
+        "target_platform": normalized(target_platform),
+    })
+    return hashlib.sha256(
+        json.dumps(
+            stable,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def search_depth_sample_error(
+    sample: Any,
+    configured_engine: str,
+    *,
+    strict_v2_depth: bool = False,
+) -> str | None:
+    """Return the first schema-v7 search-sample contract violation."""
+    if not isinstance(sample, dict):
+        return "sample_not_object"
+    engine_id = str(sample.get("engine_id") or "")
+    if engine_id not in {"turn_beam_v1", "turn_beam_v2"}:
+        return "engine_id"
+    if configured_engine and engine_id != configured_engine:
+        return "engine_mismatch"
+
+    integer_fields = (
+        "requested",
+        "reached",
+        "completed",
+        "max_path_depth",
+        "reply_requested",
+        "reply_completed",
+        "layers_completed",
+        "nodes_expanded",
+    )
+    if any(
+        not _is_nonnegative_int(sample.get(field))
+        for field in integer_fields
+    ):
+        return "integer_field"
+    requested = int(sample["requested"])
+    reached = int(sample["reached"])
+    completed = int(sample["completed"])
+    max_path_depth = int(sample["max_path_depth"])
+    reply_requested = int(sample["reply_requested"])
+    reply_completed = int(sample["reply_completed"])
+    layers_completed = int(sample["layers_completed"])
+    nodes_expanded = int(sample["nodes_expanded"])
+    completion_reason = str(sample.get("completion_reason") or "")
+    stop_reason = str(sample.get("stop_reason") or "")
+    reply_reason = str(sample.get("reply_completion_reason") or "")
+    reply_applicable = sample.get("reply_applicable")
+
+    if requested < 1:
+        return "requested_depth"
+    if reached > requested or completed > reached:
+        return "reached_depth"
+    if reached != max_path_depth:
+        return "max_path_depth"
+    if layers_completed > requested or max_path_depth < completed:
+        return "completed_depth"
+    if not completion_reason or not stop_reason:
+        return "completion_reason"
+    if not isinstance(reply_applicable, bool):
+        return "reply_applicable"
+    if (
+        reply_completed > reply_requested
+        or not reply_reason
+        or (reply_applicable and reply_requested < 1)
+        or (not reply_applicable and reply_completed != 0)
+        or (not reply_applicable and reply_reason != "not_applicable")
+    ):
+        return "reply_depth"
+    if not _valid_sha256(sample.get("trajectory_hash")):
+        return "trajectory_hash"
+
+    if engine_id != "turn_beam_v2":
+        return None
+    if not _valid_sha256(sample.get("decision_semantic_hash")):
+        return "decision_semantic_hash"
+    if strict_v2_depth and requested != V2_SEARCH_DEPTH:
+        return "v2_requested_depth"
+    if strict_v2_depth and reply_requested != REPLY_SEARCH_DEPTH:
+        return "v2_reply_requested_depth"
+    if nodes_expanded <= 0:
+        return "v2_nodes_expanded"
+    if max_path_depth > requested or layers_completed != completed:
+        return "v2_completed_layer"
+    if completion_reason not in V2_SUCCESS_SEARCH_REASONS:
+        return "v2_completion_reason"
+    if stop_reason != completion_reason:
+        return "v2_stop_reason"
+    if (
+        completion_reason == "depth_complete"
+        and completed != requested
+    ):
+        return "v2_depth_incomplete"
+    if (
+        completion_reason == "frontier_exhausted"
+        and (completed < 1 or completed >= requested)
+    ):
+        return "v2_frontier_depth"
+    if reply_applicable:
+        if reply_reason not in V2_SUCCESS_SEARCH_REASONS:
+            return "v2_reply_completion_reason"
+        if (
+            reply_reason == "depth_complete"
+            and reply_completed != reply_requested
+        ):
+            return "v2_reply_depth_incomplete"
+        if (
+            reply_reason == "frontier_exhausted"
+            and reply_completed >= reply_requested
+        ):
+            return "v2_reply_frontier_depth"
+    return None
+
+
+def match_decision_contract_error(
+    row: Any,
+    configured_engines: dict[str, str],
+    *,
+    strict_v2_depth: bool = False,
+) -> str | None:
+    """Validate decision conservation and every applicable search sample."""
+    if not isinstance(row, dict):
+        return "row_not_object"
+    if set(configured_engines) != set(STRATEGY_KEYS) or any(
+        configured_engines[strategy] not in {"turn_beam_v1", "turn_beam_v2"}
+        for strategy in STRATEGY_KEYS
+    ):
+        return "configured_engines"
+
+    decisions = row.get("decisions")
+    choices = row.get("choices")
+    decision_samples = row.get("decision_ms_samples")
+    timings_by_strategy = row.get("decision_ms_samples_by_strategy")
+    actions_by_strategy = row.get("action_decisions_by_strategy")
+    counts_by_strategy = row.get(
+        "search_depth_decision_counts_by_strategy"
+    )
+    samples_by_strategy = row.get("search_depth_samples_by_strategy")
+    if (
+        not _is_nonnegative_int(decisions)
+        or not _is_nonnegative_int(choices)
+        or not isinstance(decision_samples, list)
+        or not isinstance(timings_by_strategy, dict)
+        or not isinstance(actions_by_strategy, dict)
+        or not isinstance(counts_by_strategy, dict)
+        or not isinstance(samples_by_strategy, dict)
+    ):
+        return "decision_fields"
+
+    timing_count = 0
+    action_count = 0
+    for strategy in STRATEGY_KEYS:
+        timings = timings_by_strategy.get(strategy)
+        action_decisions = actions_by_strategy.get(strategy)
+        counts = counts_by_strategy.get(strategy)
+        samples = samples_by_strategy.get(strategy)
+        if (
+            not isinstance(timings, list)
+            or any(_float(value, -1.0) < 0.0 for value in timings)
+            or not _is_nonnegative_int(action_decisions)
+            or action_decisions > len(timings)
+            or not isinstance(counts, dict)
+            or not isinstance(samples, list)
+        ):
+            return f"{strategy}:decision_fields"
+        timing_count += len(timings)
+        action_count += action_decisions
+
+        applicable = counts.get("applicable")
+        not_applicable = counts.get("not_applicable")
+        reasons = counts.get("reasons")
+        if (
+            not _is_nonnegative_int(applicable)
+            or not _is_nonnegative_int(not_applicable)
+            or not isinstance(reasons, dict)
+            or any(
+                not isinstance(reason, str)
+                or not reason
+                or not _is_nonnegative_int(count)
+                for reason, count in reasons.items()
+            )
+            or sum(reasons.values()) != not_applicable
+            or applicable + not_applicable != action_decisions
+            or len(samples) != applicable
+        ):
+            return f"{strategy}:search_counts"
+        configured_engine = configured_engines[strategy]
+        if (
+            configured_engine == "turn_beam_v2"
+            and any(
+                reason not in V2_NON_APPLICABLE_SEARCH_REASONS
+                for reason in reasons
+            )
+        ):
+            return f"{strategy}:not_applicable_reason"
+        for sample in samples:
+            error = search_depth_sample_error(
+                sample,
+                configured_engine,
+                strict_v2_depth=strict_v2_depth,
+            )
+            if error:
+                return f"{strategy}:{error}"
+
+    if action_count != decisions:
+        return "action_decision_total"
+    if (
+        len(decision_samples) != decisions + choices
+        or timing_count != len(decision_samples)
+    ):
+        return "timing_choice_total"
+    if any(_float(value, -1.0) < 0.0 for value in decision_samples):
+        return "decision_timing"
+    return None
 
 
 def _round(value: float | None, digits: int = 4) -> float | None:
@@ -159,6 +481,91 @@ def _match_identity(row: dict[str, Any]) -> tuple[str, str, str, int, int, int]:
         _int(row.get("seed")),
         _int(row.get("seat"), -1),
     )
+
+
+def evidence_unit_id_from_match(row: dict[str, Any]) -> str:
+    """Return the canonical checkpoint unit containing a match row."""
+    kind, deck_a, deck_b, seed_block, seed, _seat = _match_identity(row)
+    if kind == MATCHUP_CROSS:
+        lower, upper = sorted((deck_a, deck_b))
+        return f"cross|{lower}|{upper}|{seed_block}|{seed}"
+    if kind == MATCHUP_MIRROR:
+        return f"mirror|{deck_a}|{seed_block}|{seed}"
+    return ""
+
+
+def expected_evidence_unit_identities(
+    unit_id: str,
+) -> set[tuple[str, str, str, int, int, int]]:
+    """Expand a canonical unit ID to its exact seat/direction identities."""
+    parts = str(unit_id).split("|")
+    if parts[0:1] == [MATCHUP_MIRROR] and len(parts) == 4:
+        deck = parts[1]
+        numeric_parts = parts[2:]
+        directions = ((deck, deck),)
+        kind = MATCHUP_MIRROR
+    elif parts[0:1] == [MATCHUP_CROSS] and len(parts) == 5:
+        lower, upper = parts[1], parts[2]
+        if not lower or not upper or lower >= upper:
+            return set()
+        numeric_parts = parts[3:]
+        directions = ((lower, upper), (upper, lower))
+        kind = MATCHUP_CROSS
+    else:
+        return set()
+    if not parts[1] or any(not value for value in numeric_parts):
+        return set()
+    try:
+        seed_block, seed = (int(value, 10) for value in numeric_parts)
+    except ValueError:
+        return set()
+    if (
+        seed_block < 0
+        or seed < 0
+        or numeric_parts != [str(seed_block), str(seed)]
+    ):
+        return set()
+    return {
+        (kind, deck_a, deck_b, seed_block, seed, seat)
+        for deck_a, deck_b in directions
+        for seat in (0, 1)
+    }
+
+
+def complete_evidence_unit_ids(
+    matches: Sequence[dict[str, Any]],
+) -> list[str]:
+    """Return units whose rows form the exact required identity set once."""
+    rows_by_unit: defaultdict[
+        str,
+        list[tuple[str, str, str, int, int, int]],
+    ] = defaultdict(list)
+    for row in matches:
+        unit_id = evidence_unit_id_from_match(row)
+        if unit_id:
+            rows_by_unit[unit_id].append(_match_identity(row))
+    completed: list[str] = []
+    for unit_id, identities in rows_by_unit.items():
+        expected = expected_evidence_unit_identities(unit_id)
+        if (
+            expected
+            and len(identities) == len(expected)
+            and len(set(identities)) == len(identities)
+            and set(identities) == expected
+        ):
+            completed.append(unit_id)
+    return sorted(completed)
+
+
+def evidence_unit_ids_sha256(unit_ids: Sequence[str]) -> str:
+    """Hash a sorted, unique evidence-unit identity manifest."""
+    normalized = sorted(str(unit_id) for unit_id in unit_ids)
+    encoded = json.dumps(
+        normalized,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _identity_text(identity: Sequence[Any]) -> str:
@@ -648,6 +1055,35 @@ def _search_depth_scope(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
     engine_counts = Counter(
         str(sample.get("engine_id") or "unknown") for sample in samples
     )
+    reply_samples = [
+        sample for sample in samples if bool(sample.get("reply_applicable"))
+    ]
+    reply_requested = [
+        max(1, _int(sample.get("reply_requested"), 1))
+        for sample in reply_samples
+    ]
+    reply_completed = [
+        max(0, _int(sample.get("reply_completed")))
+        for sample in reply_samples
+    ]
+    reply_completion_reasons = Counter(
+        str(sample.get("reply_completion_reason") or "unknown")
+        for sample in reply_samples
+    )
+    reply_completed_or_exhausted = [
+        (
+            (reason == "depth_complete" and actual >= target)
+            or reason == "frontier_exhausted"
+        )
+        for actual, target, reason in zip(
+            reply_completed,
+            reply_requested,
+            (
+                str(sample.get("reply_completion_reason") or "unknown")
+                for sample in reply_samples
+            ),
+        )
+    ]
     return {
         "sample_count": len(samples),
         "requested_depth_min": min(requested) if requested else None,
@@ -684,6 +1120,34 @@ def _search_depth_scope(samples: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "stop_reasons": dict(sorted(stop_reasons.items())),
         "completion_reasons": dict(sorted(completion_reasons.items())),
         "engines": dict(sorted(engine_counts.items())),
+        "reply_applicable_count": len(reply_samples),
+        "reply_not_applicable_count": len(samples) - len(reply_samples),
+        "reply_requested_depth_min": (
+            min(reply_requested) if reply_requested else None
+        ),
+        "reply_requested_depth_max": (
+            max(reply_requested) if reply_requested else None
+        ),
+        "reply_completed_depth_min": (
+            min(reply_completed) if reply_completed else None
+        ),
+        "reply_completed_depth_p50": _round(
+            _quantile(reply_completed, 0.50)
+        ),
+        "reply_completed_depth_max": (
+            max(reply_completed) if reply_completed else None
+        ),
+        "reply_complete_or_frontier_exhausted_rate": _round(
+            sum(reply_completed_or_exhausted) / len(reply_samples)
+            if reply_samples
+            else None
+        ),
+        "reply_incomplete_searches": sum(
+            not value for value in reply_completed_or_exhausted
+        ),
+        "reply_completion_reasons": dict(
+            sorted(reply_completion_reasons.items())
+        ),
     }
 
 
@@ -723,7 +1187,14 @@ def summarize_search_depth(
                     "reached": max(0, _int(sample.get("reached"))),
                     "completed": max(0, _int(sample.get("completed"))),
                     "max_path_depth": max(0, _int(sample.get("max_path_depth"))),
+                    "reply_requested": max(
+                        0, _int(sample.get("reply_requested"))
+                    ),
                     "reply_completed": max(0, _int(sample.get("reply_completed"))),
+                    "reply_applicable": bool(sample.get("reply_applicable")),
+                    "reply_completion_reason": str(
+                        sample.get("reply_completion_reason") or "unknown"
+                    ),
                     "layers_completed": max(0, _int(sample.get("layers_completed"))),
                     "completion_reason": str(
                         sample.get("completion_reason")
@@ -741,6 +1212,7 @@ def summarize_search_depth(
 
     result: dict[str, Any] = {
         "available": all(bool(by_strategy[strategy]) for strategy in STRATEGY_KEYS),
+        "source": "main_matches",
         "latency_is_diagnostic_only": True,
         "by_strategy": {},
     }
@@ -749,7 +1221,7 @@ def summarize_search_depth(
         result["by_strategy"][strategy] = {
             "overall": _search_depth_scope(all_samples),
             # Compatibility name retained for existing report layouts. Schema
-            # v6 has no local/exhausted quality tier.
+            # v7 has no local/exhausted quality tier.
             "full_tier": _search_depth_scope(all_samples),
             "per_deck": {
                 deck: {
@@ -1032,12 +1504,22 @@ def summarize_coverage(
     unexpected = sorted(observed - expected)
     expected_mirror_games = sum(identity[0] == MATCHUP_MIRROR for identity in expected)
     expected_cross_games = sum(identity[0] == MATCHUP_CROSS for identity in expected)
-    source_indices = sorted({
+    legacy_source_indices = sorted({
         _int(row.get("task_shard_index"), 0) for row in matches
     })
-    source_counts = sorted({
+    legacy_source_counts = sorted({
         max(1, _int(row.get("task_shard_count"), 1)) for row in matches
     })
+    has_evidence_shards = all(
+        "evidence_shard_index" in row and "evidence_shard_count" in row
+        for row in matches
+    )
+    source_indices = sorted({
+        _int(row.get("evidence_shard_index"), 0) for row in matches
+    }) if has_evidence_shards else legacy_source_indices
+    source_counts = sorted({
+        max(1, _int(row.get("evidence_shard_count"), 1)) for row in matches
+    }) if has_evidence_shards else legacy_source_counts
     shard_coverage_complete = (
         len(source_counts) == 1
         and source_indices == list(range(source_counts[0]))
@@ -1079,6 +1561,15 @@ def summarize_coverage(
         "structural_errors": structural_errors,
         "source_task_shard_indices": source_indices,
         "source_task_shard_counts": source_counts,
+        "source_evidence_shard_indices": (
+            source_indices if has_evidence_shards else []
+        ),
+        "source_evidence_shard_counts": (
+            source_counts if has_evidence_shards else []
+        ),
+        "shard_coverage_basis": (
+            "evidence_shards" if has_evidence_shards else "legacy_task_shards"
+        ),
         "shard_coverage_complete": shard_coverage_complete,
         "complete": (
             not missing
@@ -1257,11 +1748,44 @@ def _provenance_fingerprint(payload: dict[str, Any]) -> str:
     provenance = payload.get("provenance")
     if not isinstance(provenance, dict):
         return ""
-    explicit = str(provenance.get("fingerprint") or "")
-    if explicit:
-        return explicit
-    canonical = repr(sorted((str(key), repr(value)) for key, value in provenance.items()))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return str(provenance.get("simulation_fingerprint") or "")
+
+
+def _recomputed_simulation_fingerprint(payload: dict[str, Any]) -> str:
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        return ""
+    try:
+        return simulation_fingerprint_from_provenance(provenance)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _analysis_fingerprint(payload: dict[str, Any]) -> str:
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        return ""
+    return str(provenance.get("analysis_fingerprint") or "")
+
+
+def _valid_fingerprint(value: Any) -> bool:
+    normalized = str(value or "")
+    return len(normalized) == 64 and all(
+        character in "0123456789abcdef" for character in normalized
+    )
+
+
+def task_manifest_id(
+    deck_keys: Sequence[str], config: dict[str, Any]
+) -> str:
+    """Identify the exact deterministic match schedule independently of sharding."""
+    identities = sorted(expected_match_identities(deck_keys, config))
+    encoded = json.dumps(
+        identities,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def validate_shards(shards: Sequence[dict[str, Any]]) -> dict[str, Any]:
@@ -1270,8 +1794,12 @@ def validate_shards(shards: Sequence[dict[str, Any]]) -> dict[str, Any]:
     reference = shards[0]
     if _int(reference.get("schema_version")) != SCHEMA_VERSION:
         raise MergeError("schema_version")
+    if str(reference.get("protocol_id") or "") != PROTOCOL_ID:
+        raise MergeError("protocol_id")
     if reference.get("artifact_kind") != "ai_evaluation_shard":
         raise MergeError("artifact_kind")
+    if str(reference.get("gate_depth_source") or "") != "main_matches":
+        raise MergeError("gate_depth_source")
     reference_decks = [str(value) for value in reference.get("deck_keys") or []]
     if (
         not reference_decks
@@ -1282,10 +1810,26 @@ def validate_shards(shards: Sequence[dict[str, Any]]) -> dict[str, Any]:
     reference_config = reference.get("config") or {}
     if str(reference_config.get("platform") or "") != str(reference.get("platform") or ""):
         raise MergeError("config:platform")
+    reference_manifest_id = str(
+        reference.get("task_manifest_id")
+        or reference_config.get("task_manifest_id")
+        or ""
+    )
+    if not reference_manifest_id:
+        raise MergeError("task_manifest_id")
+    if str(reference_config.get("task_manifest_id") or "") != reference_manifest_id:
+        raise MergeError("config:task_manifest_id")
+    if (
+        str(reference_config.get("run_role") or "") == "main"
+        and reference_manifest_id
+        != task_manifest_id(reference_decks, reference_config)
+    ):
+        raise MergeError("task_manifest_id")
     reference_provenance_object = reference.get("provenance") or {}
     if (
         not isinstance(reference_provenance_object, dict)
         or _int(reference_provenance_object.get("schema_version")) != SCHEMA_VERSION
+        or str(reference_provenance_object.get("protocol_id") or "") != PROTOCOL_ID
     ):
         raise MergeError("provenance_schema")
     provenance_platform = str(reference_provenance_object.get("target_platform") or "")
@@ -1297,27 +1841,73 @@ def validate_shards(shards: Sequence[dict[str, Any]]) -> dict[str, Any]:
     ):
         raise MergeError("strategy_fingerprint")
     reference_provenance = _provenance_fingerprint(reference)
-    if not reference_provenance:
-        raise MergeError("provenance")
+    reference_analysis = _analysis_fingerprint(reference)
+    if not _valid_fingerprint(reference_provenance):
+        raise MergeError("simulation_fingerprint")
+    if _recomputed_simulation_fingerprint(reference) != reference_provenance:
+        raise MergeError("simulation_fingerprint")
+    if not _valid_fingerprint(reference_analysis):
+        raise MergeError("analysis_fingerprint")
+    if str(reference.get("simulation_fingerprint") or "") != reference_provenance:
+        raise MergeError("simulation_fingerprint")
+    if str(reference.get("analysis_fingerprint") or "") != reference_analysis:
+        raise MergeError("analysis_fingerprint")
+    provenance_simulation_config = reference_provenance_object.get(
+        "simulation_config"
+    )
+    if (
+        str(reference_config.get("run_role") or "") == "main"
+        and isinstance(provenance_simulation_config, dict)
+    ):
+        configured_manifest = str(
+            provenance_simulation_config.get("task_manifest_id") or ""
+        )
+        if configured_manifest and configured_manifest != reference_manifest_id:
+            raise MergeError("provenance:task_manifest_id")
+        configured_execution = str(
+            provenance_simulation_config.get("execution_profile_id") or ""
+        )
+        if (
+            configured_execution
+            and configured_execution
+            != str(reference_config.get("execution_profile_id") or "")
+        ):
+            raise MergeError("provenance:execution_profile_id")
     for index, payload in enumerate(shards):
         if _int(payload.get("schema_version")) != SCHEMA_VERSION:
             raise MergeError(f"shard_{index}:schema_version")
+        if str(payload.get("protocol_id") or "") != PROTOCOL_ID:
+            raise MergeError(f"shard_{index}:protocol_id")
         if payload.get("artifact_kind") != "ai_evaluation_shard":
             raise MergeError(f"shard_{index}:artifact_kind")
+        if str(payload.get("gate_depth_source") or "") != "main_matches":
+            raise MergeError(f"shard_{index}:gate_depth_source")
         if payload.get("strategy_fingerprint") != reference.get("strategy_fingerprint"):
             raise MergeError(f"shard_{index}:strategy_fingerprint")
         if payload.get("platform") != reference.get("platform"):
             raise MergeError(f"shard_{index}:platform")
         if payload.get("deck_keys") != reference.get("deck_keys"):
             raise MergeError(f"shard_{index}:deck_keys")
+        if str(payload.get("task_manifest_id") or "") != reference_manifest_id:
+            raise MergeError(f"shard_{index}:task_manifest_id")
         payload_provenance = payload.get("provenance") or {}
         if (
             not isinstance(payload_provenance, dict)
             or _int(payload_provenance.get("schema_version")) != SCHEMA_VERSION
+            or str(payload_provenance.get("protocol_id") or "") != PROTOCOL_ID
         ):
             raise MergeError(f"shard_{index}:provenance_schema")
         if _provenance_fingerprint(payload) != reference_provenance:
-            raise MergeError(f"shard_{index}:provenance")
+            raise MergeError(f"shard_{index}:simulation_fingerprint")
+        if _recomputed_simulation_fingerprint(payload) != reference_provenance:
+            raise MergeError(f"shard_{index}:simulation_fingerprint")
+        if str(payload.get("simulation_fingerprint") or "") != reference_provenance:
+            raise MergeError(f"shard_{index}:simulation_fingerprint")
+        payload_analysis = _analysis_fingerprint(payload)
+        if not _valid_fingerprint(payload_analysis):
+            raise MergeError(f"shard_{index}:analysis_fingerprint")
+        if str(payload.get("analysis_fingerprint") or "") != payload_analysis:
+            raise MergeError(f"shard_{index}:analysis_fingerprint")
         config = payload.get("config") or {}
         for key in (
             "seed",
@@ -1340,6 +1930,9 @@ def validate_shards(shards: Sequence[dict[str, Any]]) -> dict[str, Any]:
             "platform",
             "run_role",
             "warmup_blocks_per_deck",
+            "evidence_shard_count",
+            "task_manifest_id",
+            "execution_profile_id",
         ):
             if config.get(key) != reference_config.get(key):
                 raise MergeError(f"shard_{index}:config:{key}")
@@ -1350,6 +1943,13 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     matches: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, int, int, int]] = set()
     for shard_index, payload in enumerate(shards):
+        strategy_descriptors = payload.get("strategies") or {}
+        configured_engines = {
+            strategy: str(
+                (strategy_descriptors.get(strategy) or {}).get("engine") or ""
+            )
+            for strategy in STRATEGY_KEYS
+        }
         raw_matches = payload.get("matches")
         if not isinstance(raw_matches, list):
             raise MergeError(f"shard_{shard_index}:matches")
@@ -1384,6 +1984,8 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                 "ai_turn_ms_samples_by_strategy",
                 "behavior_by_strategy",
                 "search_depth_samples_by_strategy",
+                "action_decisions_by_strategy",
+                "search_depth_decision_counts_by_strategy",
             ):
                 value = row.get(field)
                 if not isinstance(value, dict) or not all(
@@ -1405,6 +2007,58 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                     raise MergeError(
                         f"invalid_latency_samples:{strategy}:{_identity_text(identity)}"
                     )
+                action_decisions = row["action_decisions_by_strategy"][strategy]
+                depth_counts = row[
+                    "search_depth_decision_counts_by_strategy"
+                ][strategy]
+                if (
+                    not _is_nonnegative_int(action_decisions)
+                    or action_decisions > len(decisions)
+                    or not isinstance(depth_counts, dict)
+                ):
+                    raise MergeError(
+                        f"invalid_search_depth_decision_counts:"
+                        f"{strategy}:{_identity_text(identity)}"
+                    )
+                applicable = depth_counts.get("applicable")
+                not_applicable = depth_counts.get("not_applicable")
+                reasons = depth_counts.get("reasons")
+                if (
+                    not _is_nonnegative_int(applicable)
+                    or not _is_nonnegative_int(not_applicable)
+                    or not isinstance(reasons, dict)
+                    or any(
+                        not isinstance(reason_key, str)
+                        or not reason_key
+                        or not _is_nonnegative_int(reason_count)
+                        for reason_key, reason_count in reasons.items()
+                    )
+                    or sum(reasons.values()) != not_applicable
+                    or applicable + not_applicable != action_decisions
+                ):
+                    raise MergeError(
+                        f"invalid_search_depth_decision_counts:"
+                        f"{strategy}:{_identity_text(identity)}"
+                    )
+                strategy_descriptor = (
+                    (payload.get("strategies") or {}).get(strategy) or {}
+                )
+                configured_engine = (
+                    str(strategy_descriptor.get("engine") or "")
+                    if isinstance(strategy_descriptor, dict)
+                    else ""
+                )
+                if (
+                    configured_engine == "turn_beam_v2"
+                    and any(
+                        reason not in V2_NON_APPLICABLE_SEARCH_REASONS
+                        for reason in reasons
+                    )
+                ):
+                    raise MergeError(
+                        f"invalid_search_depth_decision_counts:"
+                        f"{strategy}:{_identity_text(identity)}"
+                    )
                 behavior = row["behavior_by_strategy"][strategy]
                 if not isinstance(behavior, dict) or not all(
                     isinstance(behavior.get(field), dict)
@@ -1418,7 +2072,10 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                         f"invalid_behavior_counts:{strategy}:{_identity_text(identity)}"
                     )
                 depth_samples = row["search_depth_samples_by_strategy"][strategy]
-                if not isinstance(depth_samples, list):
+                if (
+                    not isinstance(depth_samples, list)
+                    or len(depth_samples) != applicable
+                ):
                     raise MergeError(
                         f"invalid_search_depth_samples:{strategy}:{_identity_text(identity)}"
                     )
@@ -1432,20 +2089,44 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                     completed = _int(sample.get("completed"), -1)
                     layers = _int(sample.get("layers_completed"), -1)
                     reason = str(sample.get("completion_reason") or "")
+                    reply_requested = _int(sample.get("reply_requested"), -1)
+                    reply_completed = _int(sample.get("reply_completed"), -1)
+                    reply_applicable = sample.get("reply_applicable")
+                    reply_reason = str(
+                        sample.get("reply_completion_reason") or ""
+                    )
                     if (
                         requested < 1
                         or _int(sample.get("reached"), -1) < 0
                         or _int(sample.get("reached"), -1)
                         > requested
+                        or _int(sample.get("reached"), -1)
+                        != _int(sample.get("max_path_depth"), -2)
                         or completed < 0
                         or completed > requested
                         or layers < 0
                         or layers > requested
                         or _int(sample.get("max_path_depth"), -1) < completed
-                        or _int(sample.get("reply_completed"), -1) < 0
+                        or reply_requested < 0
+                        or reply_completed < 0
+                        or reply_completed > reply_requested
+                        or not isinstance(reply_applicable, bool)
+                        or not reply_reason
+                        or (
+                            reply_applicable
+                            and reply_requested < 1
+                        )
+                        or (
+                            not reply_applicable
+                            and reply_completed != 0
+                        )
                         or not str(sample.get("stop_reason") or "")
                         or not reason
                         or engine_id not in ("turn_beam_v1", "turn_beam_v2")
+                        or (
+                            configured_engine
+                            and engine_id != configured_engine
+                        )
                         or _int(sample.get("nodes_expanded"), -1) < 0
                         or len(str(sample.get("trajectory_hash") or "")) != 64
                         or (
@@ -1462,14 +2143,54 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                                     reason == "frontier_exhausted"
                                     and completed < 1
                                 )
+                                or (
+                                    reply_applicable
+                                    and (
+                                        reply_reason not in (
+                                            "depth_complete",
+                                            "frontier_exhausted",
+                                        )
+                                        or (
+                                            reply_reason == "depth_complete"
+                                            and reply_completed
+                                            != reply_requested
+                                        )
+                                        or (
+                                            reply_reason
+                                            == "frontier_exhausted"
+                                            and reply_completed
+                                            >= reply_requested
+                                        )
+                                    )
+                                )
                             )
                         )
                     ):
                         raise MergeError(
                             f"invalid_search_depth_sample:{strategy}:{_identity_text(identity)}"
                         )
+            decision_contract_error = match_decision_contract_error(
+                row,
+                configured_engines,
+            )
+            if decision_contract_error:
+                raise MergeError(
+                    "invalid_decision_contract:"
+                    f"{decision_contract_error}:{_identity_text(identity)}"
+                )
             seen.add(identity)
             row["source_shard_index"] = shard_index
+            shard_config = payload.get("config") or {}
+            if (
+                isinstance(shard_config, dict)
+                and _int(shard_config.get("evidence_shard_count")) > 0
+            ):
+                row["evidence_shard_index"] = _int(
+                    shard_config.get("evidence_shard_index")
+                )
+                row["evidence_shard_count"] = _int(
+                    shard_config.get("evidence_shard_count")
+                )
             matches.append(row)
     matches.sort(key=lambda row: (
         0 if str(row.get("matchup_kind")) == MATCHUP_MIRROR else 1,
@@ -1482,26 +2203,29 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return matches
 
 
-def _merge_search_depth_probe(
+def _merge_performance_benchmark(
     main_reference: dict[str, Any],
     search_depth_shards: Sequence[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     if not search_depth_shards:
         return {
             "available": False,
-            "source": "single_process_search_depth_probe",
-            "reason": "search_depth_probe_missing",
-            "gate_basis": "search_depth",
+            "source": "optional_performance_benchmark",
+            "reason": "performance_benchmark_not_requested",
+            "gate_basis": "diagnostic_only",
             "latency_diagnostic_only": True,
         }
     probe_reference = validate_shards(search_depth_shards)
     if probe_reference.get("strategy_fingerprint") != main_reference.get("strategy_fingerprint"):
-        raise MergeError("search_depth_probe:strategy_fingerprint")
+        raise MergeError("performance_benchmark:strategy_fingerprint")
     if probe_reference.get("platform") != main_reference.get("platform"):
-        raise MergeError("search_depth_probe:platform")
+        raise MergeError("performance_benchmark:platform")
     if _provenance_fingerprint(probe_reference) != _provenance_fingerprint(main_reference):
-        raise MergeError("search_depth_probe:provenance")
+        raise MergeError("performance_benchmark:simulation_fingerprint")
     probe_matches = _merge_matches(search_depth_shards)
+    checkpoint_summary = merge_checkpoint_summaries(
+        search_depth_shards
+    )
     config = dict(probe_reference.get("config") or {})
     mirror_units, cross_units = experimental_units(probe_matches)
     coverage = summarize_coverage(
@@ -1521,8 +2245,8 @@ def _merge_search_depth_probe(
     )
     return {
         "available": bool(summary.get("available")) and bool(search_depth.get("available")),
-        "source": "single_process_search_depth_probe",
-        "gate_basis": "search_depth",
+        "source": "optional_performance_benchmark",
+        "gate_basis": "diagnostic_only",
         "latency_diagnostic_only": True,
         "config": config,
         "coverage": coverage,
@@ -1534,6 +2258,94 @@ def _merge_search_depth_probe(
         "observed": summarize_observed(probe_matches),
         "matches": probe_matches,
         "performance_profile": merge_performance_profiles(search_depth_shards),
+        "checkpoint_summary": checkpoint_summary,
+    }
+
+
+def merge_checkpoint_summaries(
+    shards: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    enabled = False
+    restored_units = 0
+    written_units = 0
+    pending_units = 0
+    shards_enabled = 0
+    completed_unit_ids: list[str] = []
+    seen_unit_ids: set[str] = set()
+    for index, payload in enumerate(shards):
+        summary = payload.get("checkpoint_summary")
+        if summary is None:
+            raise MergeError(f"invalid_checkpoint_summary:{index}:missing")
+        if not isinstance(summary, dict) or not isinstance(
+            summary.get("enabled"), bool
+        ):
+            raise MergeError(f"invalid_checkpoint_summary:{index}")
+        values = {
+            key: summary.get(key)
+            for key in (
+                "restored_units",
+                "written_units",
+                "pending_units",
+            )
+        }
+        if any(not _is_nonnegative_int(value) for value in values.values()):
+            raise MergeError(f"invalid_checkpoint_summary:{index}")
+        raw_unit_ids = summary.get("completed_unit_ids")
+        if (
+            not isinstance(raw_unit_ids, list)
+            or any(
+                not isinstance(unit_id, str)
+                or not expected_evidence_unit_identities(unit_id)
+                for unit_id in raw_unit_ids
+            )
+            or len(set(raw_unit_ids)) != len(raw_unit_ids)
+            or len(raw_unit_ids)
+            != int(values["restored_units"]) + int(values["written_units"])
+        ):
+            raise MergeError(f"invalid_checkpoint_summary:{index}")
+        shard_enabled = bool(summary["enabled"])
+        if not shard_enabled and (
+            any(int(value) != 0 for value in values.values())
+            or raw_unit_ids
+        ):
+            raise MergeError(f"invalid_checkpoint_summary:{index}")
+        payload_matches = payload.get("matches")
+        if isinstance(payload_matches, list) and all(
+            isinstance(row, dict) for row in payload_matches
+        ):
+            complete_match_units = set(
+                complete_evidence_unit_ids(payload_matches)
+            )
+            if not set(raw_unit_ids).issubset(complete_match_units):
+                raise MergeError(
+                    f"invalid_checkpoint_summary:{index}:match_identity"
+                )
+        duplicate_ids = seen_unit_ids.intersection(raw_unit_ids)
+        if duplicate_ids:
+            raise MergeError(
+                "invalid_checkpoint_summary:"
+                f"{index}:duplicate_unit:{sorted(duplicate_ids)[0]}"
+            )
+        seen_unit_ids.update(raw_unit_ids)
+        completed_unit_ids.extend(raw_unit_ids)
+        enabled = enabled or shard_enabled
+        shards_enabled += int(shard_enabled)
+        restored_units += int(values["restored_units"])
+        written_units += int(values["written_units"])
+        pending_units += int(values["pending_units"])
+    completed_unit_ids.sort()
+    return {
+        "enabled": enabled,
+        "shards_enabled": shards_enabled,
+        "shards_total": len(shards),
+        "restored_units": restored_units,
+        "written_units": written_units,
+        "pending_units": pending_units,
+        "completed_units": len(completed_unit_ids),
+        "completed_unit_ids": completed_unit_ids,
+        "completed_unit_ids_sha256": evidence_unit_ids_sha256(
+            completed_unit_ids
+        ),
     }
 
 
@@ -1542,6 +2354,10 @@ def merge_payloads(
     *,
     workers: int = 1,
     search_depth_shards: Sequence[dict[str, Any]] | None = None,
+    analysis_fingerprint: str | None = None,
+    analysis_provenance: dict[str, Any] | None = None,
+    wall_clock_ms: float | None = None,
+    wall_clock_scope: str | None = None,
 ) -> dict[str, Any]:
     reference = validate_shards(shards)
     matches = _merge_matches(shards)
@@ -1559,18 +2375,108 @@ def merge_payloads(
     behavior = summarize_behavior(matches, deck_keys)
     search_depth = summarize_search_depth(matches, deck_keys)
     main_performance = summarize_performance(matches)
-    performance = _merge_search_depth_probe(reference, search_depth_shards)
+    performance_benchmark = _merge_performance_benchmark(
+        reference, search_depth_shards
+    )
     raw_matrix = _raw_matrix(matches)
     fair_adjusted_matrix = _fair_adjusted_matrix(deck_keys, strength)
     config["parallel_workers"] = max(1, int(workers))
     config["source_task_shard_indices"] = coverage["source_task_shard_indices"]
     config["source_task_shard_counts"] = coverage["source_task_shard_counts"]
+    config["source_evidence_shard_indices"] = coverage[
+        "source_evidence_shard_indices"
+    ]
+    config["source_evidence_shard_counts"] = coverage[
+        "source_evidence_shard_counts"
+    ]
+    provenance = dict(reference.get("provenance") or {})
+    effective_analysis_fingerprint = str(
+        (analysis_provenance or {}).get("analysis_fingerprint")
+        or analysis_fingerprint
+        or provenance.get("analysis_fingerprint")
+        or ""
+    )
+    if not _valid_fingerprint(effective_analysis_fingerprint):
+        raise MergeError("analysis_fingerprint")
+    if analysis_provenance is not None:
+        if (
+            _int(analysis_provenance.get("schema_version")) != SCHEMA_VERSION
+            or str(analysis_provenance.get("protocol_id") or "") != PROTOCOL_ID
+        ):
+            raise MergeError("analysis_provenance")
+        provenance.update({
+            "analysis_source_hash": str(
+                analysis_provenance.get("analysis_source_hash") or ""
+            ),
+            "analysis_fingerprint": effective_analysis_fingerprint,
+        })
+    else:
+        provenance["analysis_fingerprint"] = effective_analysis_fingerprint
+    simulation_fingerprint = _provenance_fingerprint(reference)
+    provenance["fingerprint"] = hashlib.sha256(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "protocol_id": PROTOCOL_ID,
+                "simulation_fingerprint": simulation_fingerprint,
+                "analysis_fingerprint": effective_analysis_fingerprint,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    manifest_id = str(
+        reference.get("task_manifest_id")
+        or config.get("task_manifest_id")
+        or ""
+    )
+    if not manifest_id:
+        raise MergeError("task_manifest_id")
+    simulation_config = provenance.get("simulation_config")
+    execution_config = (
+        dict(simulation_config)
+        if isinstance(simulation_config, dict)
+        else {}
+    )
+    execution_config.update({
+        "parallel_workers": max(
+            1,
+            _int(execution_config.get("workers"), int(workers)),
+        ),
+        "platform": str(reference.get("platform") or ""),
+        "profile": bool(config.get("profile")),
+        "disable_ai_cache": bool(config.get("disable_ai_cache")),
+        "disable_native_math": bool(config.get("disable_native_math")),
+        "decision_latency_sampling": config.get("decision_latency_sampling"),
+        "ai_turn_latency_sampling": config.get("ai_turn_latency_sampling"),
+        "evidence_shard_count": max(
+            [1]
+            + [
+                _int(value, 1)
+                for value in coverage.get("source_evidence_shard_counts") or []
+            ]
+        ),
+        "execution_profile_id": str(
+            config.get("execution_profile_id") or ""
+        ),
+    })
+    checkpoint_summary = merge_checkpoint_summaries(shards)
     result = {
         "schema_version": SCHEMA_VERSION,
+        "protocol_id": PROTOCOL_ID,
         "artifact_kind": "ai_evaluation_result",
         "created_at_unix": int(time.time()),
         "platform": reference.get("platform"),
-        "provenance": reference.get("provenance") or {},
+        "provenance": provenance,
+        "simulation_fingerprint": simulation_fingerprint,
+        "analysis_fingerprint": effective_analysis_fingerprint,
+        "task_manifest_id": manifest_id,
+        "execution_profile_id": str(
+            config.get("execution_profile_id") or ""
+        ),
+        "execution_config": execution_config,
+        "gate_depth_source": "main_matches",
         "self_check": bool(reference.get("self_check")),
         "eval_preset": reference.get("eval_preset"),
         "mode": str(reference.get("mode") or "mirror"),
@@ -1597,7 +2503,9 @@ def merge_payloads(
         "fairness": fairness,
         "behavior": behavior,
         "search_depth": search_depth,
-        "performance": performance,
+        "performance_benchmark": performance_benchmark,
+        # Compatibility alias for report consumers. It is never a gate source.
+        "performance": performance_benchmark,
         "main_performance": main_performance,
         "performance_by_strategy": main_performance,
         "raw_matrix": raw_matrix,
@@ -1606,6 +2514,8 @@ def merge_payloads(
         "decision_diagnostics": summarize_decision_diagnostics(matches),
         "golden_scenarios": merge_golden_scenarios(shards),
         "performance_profile": merge_performance_profiles(shards),
+        "checkpoint_summary": checkpoint_summary,
+        "wall_clock_scope": "not_recorded",
         "terminal_reasons": dict(sorted(Counter(
             str(row.get("terminal_reason") or "") for row in matches
         ).items())),
@@ -1620,6 +2530,31 @@ def merge_payloads(
             for index, payload in enumerate(shards)
         ],
     }
+    if wall_clock_ms is None:
+        if wall_clock_scope is not None:
+            raise MergeError("wall_clock_scope")
+    else:
+        measured_wall_clock_ms = float(wall_clock_ms)
+        if not math.isfinite(measured_wall_clock_ms) or measured_wall_clock_ms <= 0.0:
+            raise MergeError("wall_clock_ms")
+        rounded_wall_clock_ms = _round(measured_wall_clock_ms)
+        if rounded_wall_clock_ms is None or rounded_wall_clock_ms <= 0.0:
+            raise MergeError("wall_clock_ms")
+        if wall_clock_scope is None:
+            effective_wall_clock_scope = (
+                "full_evidence_stage"
+                if int(checkpoint_summary.get("restored_units") or 0) == 0
+                else "current_attempt_only"
+            )
+        elif wall_clock_scope in {
+            "full_evidence_stage",
+            "current_attempt_only",
+        }:
+            effective_wall_clock_scope = wall_clock_scope
+        else:
+            raise MergeError("wall_clock_scope")
+        result["wall_clock_ms"] = rounded_wall_clock_ms
+        result["wall_clock_scope"] = effective_wall_clock_scope
     return result
 
 

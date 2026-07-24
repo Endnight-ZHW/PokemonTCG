@@ -82,3 +82,20 @@ if ($joinedArchitecture -match $fatalGodotErrorPattern) {
 if ($joinedArchitecture -notmatch 'TRADITIONAL_AI_ARCHITECTURE_OK') {
     throw 'Godot traditional AI architecture success marker was not emitted.'
 }
+
+$checkpointOutput = Invoke-GodotCapture -ArgumentList @(
+    '--headless',
+    '--path', (Join-Path $repoRoot 'godot'),
+    '--script', 'res://tests/ai_evaluation_checkpoint_contract.gd'
+)
+$checkpointOutput | ForEach-Object { Write-Host $_ }
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot AI evaluation checkpoint contract failed with exit code $LASTEXITCODE"
+}
+$joinedCheckpoint = $checkpointOutput -join "`n"
+if ($joinedCheckpoint -match $fatalGodotErrorPattern) {
+    throw 'Godot emitted errors during the AI evaluation checkpoint contract.'
+}
+if ($joinedCheckpoint -notmatch 'AI_EVALUATION_CHECKPOINT_CONTRACT_OK') {
+    throw 'Godot AI evaluation checkpoint contract success marker was not emitted.'
+}

@@ -16,7 +16,7 @@
     "planner": 2,
     "vm_ir": 3,
     "rng": 2,
-    "ai_evaluation": 6
+    "ai_evaluation": 7
   },
   "rng": {
     "algorithm": "xorshift32",

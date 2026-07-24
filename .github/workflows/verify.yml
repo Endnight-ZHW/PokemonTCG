@@ -6,6 +6,12 @@ on:
   schedule:
     - cron: '20 18 * * *'
   workflow_dispatch:
+    inputs:
+      continue_ai_evaluation_on_failure:
+        description: Continue all AI-evaluation shards after a structural failure
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   fast:
@@ -94,9 +100,39 @@ jobs:
         shell: pwsh
         run: .\tools\test_release.ps1
 
-  nightly-ai-evaluation:
+  nightly-ai-evaluation-shards:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [fast]
+    strategy:
+      fail-fast: ${{ github.event_name != 'workflow_dispatch' || inputs.continue_ai_evaluation_on_failure != true }}
+      max-parallel: 25
+      matrix:
+        shard-index:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+          - 7
+          - 8
+          - 9
+          - 10
+          - 11
+          - 12
+          - 13
+          - 14
+          - 15
+          - 16
+          - 17
+          - 18
+          - 19
+          - 20
+          - 21
+          - 22
+          - 23
+          - 24
     runs-on: windows-latest
     timeout-minutes: 360
     steps:
@@ -116,14 +152,163 @@ jobs:
         shell: pwsh
         run: .\tools\setup_godot_toolchain.ps1
 
-      - name: Run 2,800-game matrix plus 60-game search-depth probe
-        shell: pwsh
-        run: .\tools\evaluate_godot_ai.ps1 -EvalPreset Nightly -Workers 2 -ProgressEveryPairs 25 -OutputDir .test_tmp\ai-eval-nightly
+      - name: Restore immutable checkpoints from earlier workflow attempts
+        if: ${{ github.run_attempt > 1 }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: traditional-ai-nightly-shards-${{ github.run_id }}-*-${{ matrix.shard-index }}
+          path: .test_tmp/ai-eval-nightly-shard-${{ matrix.shard-index }}
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.run_id }}
 
-      - name: Upload traditional AI evaluation
+      - name: Calibrate the frozen v1 baseline under two-worker runner load
+        shell: pwsh
+        run: |
+          $repoRoot = (Get-Location).Path
+          $jobs = @(
+            foreach ($calibrationIndex in 0..1) {
+              $outputDir = (
+                '.test_tmp\ai-eval-nightly-shard-${{ matrix.shard-index }}\' +
+                "v1-calibration-$calibrationIndex"
+              )
+              Start-Job -ArgumentList $repoRoot, $outputDir -ScriptBlock {
+                param($root, $destination)
+                Set-Location -LiteralPath $root
+                .\tools\evaluate_godot_ai.ps1 `
+                  -V1CalibrationOnly `
+                  -OutputDir $destination
+              }
+            }
+          )
+          try {
+            $jobs | Wait-Job | Out-Null
+            foreach ($job in $jobs) {
+              Receive-Job -Job $job -ErrorAction Stop
+              if ($job.State -ne 'Completed') {
+                throw "Concurrent v1 calibration job failed: $($job.State)"
+              }
+            }
+          }
+          finally {
+            $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Run two of 50 evidence-complete logical shards
+        shell: pwsh
+        run: |
+          $arguments = @{
+            EvalPreset = 'Nightly'
+            Workers = 2
+            LogicalShardCount = 50
+            ShardIndex = ${{ matrix.shard-index }}
+            ShardCount = 25
+            ProgressEveryPairs = 5
+            ShardOnly = $true
+            OutputDir = '.test_tmp\ai-eval-nightly-shard-${{ matrix.shard-index }}'
+          }
+          if ('${{ inputs.continue_ai_evaluation_on_failure }}' -eq 'true') {
+            $arguments.ContinueOnStructuralFailure = $true
+          }
+          .\tools\evaluate_godot_ai.ps1 @arguments
+
+      - name: Upload traditional AI evaluation shards
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: traditional-ai-nightly-${{ github.run_id }}
+          name: traditional-ai-nightly-shards-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard-index }}
+          path: |
+            .test_tmp/ai-eval-nightly-shard-${{ matrix.shard-index }}/shards/
+            .test_tmp/ai-eval-nightly-shard-${{ matrix.shard-index }}/checkpoints/
+            .test_tmp/ai-eval-nightly-shard-${{ matrix.shard-index }}/simulation_config.json
+            .test_tmp/ai-eval-nightly-shard-${{ matrix.shard-index }}/task_manifest.json
+            .test_tmp/ai-eval-nightly-shard-${{ matrix.shard-index }}/v1-calibration-*/v1_calibration.json
+          if-no-files-found: error
+
+  nightly-ai-evaluation:
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && needs.fast.result == 'success'
+    needs: [fast, nightly-ai-evaluation-shards]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.15'
+          cache: pip
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install Python runtime dependencies
+        shell: pwsh
+        run: python -m pip install -r .\python\requirements.txt
+
+      - name: Download all traditional AI evidence shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: traditional-ai-nightly-shards-${{ github.run_id }}-*-*
+          path: .test_tmp/downloaded-ai-evaluation
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.run_id }}
+
+      - name: Merge, validate, and report the 2,800-game matrix
+        shell: pwsh
+        run: |
+          $candidates = @(
+            Get-ChildItem -LiteralPath .test_tmp\downloaded-ai-evaluation `
+              -Recurse `
+              -Filter results.json |
+              Where-Object { $_.FullName -match '[\\/]shards[\\/]' }
+          )
+          $latestByEvidenceShard = @{}
+          foreach ($candidate in $candidates) {
+            $payload = Get-Content -Raw -LiteralPath $candidate.FullName |
+              ConvertFrom-Json
+            $evidenceShard = [int]$payload.config.evidence_shard_index
+            $relativePath = $candidate.FullName.Substring(
+              (Resolve-Path .test_tmp\downloaded-ai-evaluation).Path.Length
+            ).TrimStart([char[]]@('\', '/'))
+            $artifactDirectory = ($relativePath -split '[\\/]')[0]
+            $attempt = 0
+            if (
+              $artifactDirectory -match
+                '^traditional-ai-nightly-shards-\d+-(\d+)-\d+$'
+            ) {
+              $attempt = [int]$Matches[1]
+            }
+            $current = $latestByEvidenceShard[$evidenceShard]
+            if ($null -eq $current -or $attempt -gt [int]$current.Attempt) {
+              $latestByEvidenceShard[$evidenceShard] = [pscustomobject]@{
+                Attempt = $attempt
+                Path = $candidate.FullName
+              }
+            }
+          }
+          $inputs = @(
+            $latestByEvidenceShard.GetEnumerator() |
+              Sort-Object { [int]$_.Key } |
+              ForEach-Object { $_.Value.Path }
+          )
+          if ($inputs.Count -ne 50) {
+            throw (
+              'Expected exactly 50 latest logical shard results across all ' +
+              "workflow attempts, found $($inputs.Count)."
+            )
+          }
+          .\tools\evaluate_godot_ai.ps1 `
+            -EvalPreset Nightly `
+            -Workers 2 `
+            -LogicalShardCount 50 `
+            -MergeInput $inputs `
+            -NoProgress `
+            -OutputDir .test_tmp\ai-eval-nightly
+
+      - name: Upload merged traditional AI evaluation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traditional-ai-nightly-${{ github.run_id }}-${{ github.run_attempt }}
           path: .test_tmp/ai-eval-nightly/
           if-no-files-found: warn

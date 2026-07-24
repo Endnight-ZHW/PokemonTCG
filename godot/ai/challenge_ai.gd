@@ -645,7 +645,10 @@ func _search_action(
 		planner_request["initial_nodes_used"] = mini(
 			int(planner_request["node_budget"]), preflight_nodes)
 	planner_request["skip_mandatory"] = true
-	var plan_started := _profile_start(profile)
+	# Planner latency is lightweight result telemetry, not a search gate. Record
+	# it even when detailed profiling is disabled so resumable performance runs
+	# can use checkpoints without changing the searched work.
+	var plan_started := Time.get_ticks_usec()
 	var planned: Dictionary
 	if engine_id == LEGACY_EVALUATION_ENGINE_ID:
 		var legacy_script: Variant = load(
@@ -679,7 +682,10 @@ func _search_action(
 			trusted_choice_resolver,
 			trusted_action_evaluator,
 		)
-	_profile_add_elapsed(profile, "turn_planner_ms", plan_started)
+	var planner_elapsed_ms := maxf(
+		0.0, float(Time.get_ticks_usec() - plan_started) / 1000.0)
+	_profile_add_ms(profile, "turn_planner_ms", planner_elapsed_ms)
+	planned["planner_ms"] = planner_elapsed_ms
 	if cancel_check.is_valid() and bool(cancel_check.call()):
 		return {"success": false, "cancelled": true, "error": "cancelled"}
 	if not bool(planned.get("success", false)):
@@ -1351,6 +1357,75 @@ func _store_turn_plan(
 		_turn_plan_cache.erase(_turn_plan_cache.keys()[0])
 
 
+func _traditional_decision_semantic_hash(
+	action: GameAction,
+	engine_id: String,
+	planner_result: Dictionary,
+	trajectory_hash: String,
+) -> String:
+	var turn_plan: Array = Array(
+		planner_result.get("turn_plan", [])).duplicate(true)
+	var root_sample_counts: Dictionary = Dictionary(
+		planner_result.get("root_sample_counts", {})).duplicate(true)
+	var root_signatures_attempted: Array = Array(
+		planner_result.get("root_signatures_attempted", [])).duplicate()
+	if root_signatures_attempted.is_empty() and not root_sample_counts.is_empty():
+		# Dictionary insertion order is the fixed ranked-root order produced by
+		# TraditionalTurnPlanner; persist it as an array before canonicalization.
+		root_signatures_attempted = root_sample_counts.keys()
+	var cache_preconditions: Array = Array(
+		planner_result.get("cache_preconditions", [])).duplicate(true)
+	if cache_preconditions.is_empty():
+		for step_value in turn_plan:
+			if not step_value is Dictionary:
+				continue
+			var step: Dictionary = step_value
+			var precondition := {}
+			for key in [
+				"expected_public_fingerprint",
+				"expected_actor",
+				"expected_phase",
+			]:
+				if step.has(key):
+					precondition[key] = step[key]
+			cache_preconditions.append(precondition)
+	var payload := {
+		"contract": "traditional_ai_decision_semantics_v1",
+		"engine_id": engine_id,
+		"selected_action": action.to_dict() if action != null else {},
+		"selected_action_signature": (
+			AIPositionEvaluator.action_signature(action)
+			if action != null
+			else ""
+		),
+		"turn_plan": turn_plan,
+		"plan_steps": turn_plan.duplicate(true),
+		"root_signatures_attempted": root_signatures_attempted,
+		"root_order": root_signatures_attempted.duplicate(),
+		"root_sample_counts": root_sample_counts,
+		"belief_seed_hash": str(
+			planner_result.get("belief_seed_hash", "")),
+		"cache_preconditions": cache_preconditions,
+		"trajectory_hash": trajectory_hash,
+		"nodes_expanded": int(planner_result.get("nodes_expanded", 0)),
+		"score_milli": int(planner_result.get("score_milli", 0)),
+		"requested_depth": int(planner_result.get(
+			"requested_depth", GAMEPLAY_DEFAULT_DEPTH)),
+		"completed_depth": int(planner_result.get("completed_depth", 0)),
+		"max_path_depth": int(planner_result.get("max_path_depth", 0)),
+		"reply_requested_depth": int(planner_result.get(
+			"reply_requested_depth", AITurnBeamPlanner.DEFAULT_REPLY_DEPTH)),
+		"reply_completed_depth": int(planner_result.get(
+			"reply_completed_depth", 0)),
+		"layers_completed": int(planner_result.get("layers_completed", 0)),
+		"completion_reason": str(planner_result.get(
+			"completion_reason", "")),
+		"opponent_strategy_id": str(planner_result.get(
+			"opponent_strategy_id", "")),
+	}
+	return AIPositionEvaluator.stable_variant_signature(payload).sha256_text()
+
+
 func _traditional_action_result(
 	request: Dictionary,
 	action: GameAction,
@@ -1378,6 +1453,12 @@ func _traditional_action_result(
 			completion_reason,
 			AIPositionEvaluator.action_signature(action),
 		]).sha256_text()
+	var decision_semantic_hash := _traditional_decision_semantic_hash(
+		action,
+		engine_id,
+		planner_result,
+		trajectory_hash,
+	)
 	if strategy != null:
 		if strategy.has_method("turn_goals"):
 			goal = strategy.turn_goals(information_set.read_only_view())
@@ -1394,7 +1475,9 @@ func _traditional_action_result(
 		"engine_id": engine_id,
 		"simulations": nodes_expanded,
 		"nodes_expanded": nodes_expanded,
+		"planner_ms": maxf(0.0, float(planner_result.get("planner_ms", 0.0))),
 		"trajectory_hash": trajectory_hash,
+		"decision_semantic_hash": decision_semantic_hash,
 		"deep_fallback": mode == "deep",
 		"fallback_reason": "runtime_unavailable" if mode == "deep" else "",
 		"planner": engine_id,
@@ -1413,6 +1496,14 @@ func _traditional_action_result(
 			"reply_completed_depth", 0)),
 		"reply_depth_applicable": bool(planner_result.get(
 			"reply_depth_applicable", false)),
+		"reply_requested_depth": int(planner_result.get(
+			"reply_requested_depth", AITurnBeamPlanner.DEFAULT_REPLY_DEPTH)),
+		"reply_completion_reason": str(planner_result.get(
+			"reply_completion_reason",
+			"not_applicable"
+			if not bool(planner_result.get("reply_depth_applicable", false))
+			else completion_reason,
+		)),
 		"opponent_strategy_id": str(planner_result.get(
 			"opponent_strategy_id", "")),
 		"layers_completed": int(planner_result.get("layers_completed", 0)),
@@ -1429,6 +1520,7 @@ func _traditional_action_result(
 			"search_depth_completed", planner_result.get("completed_depth", 0))),
 		"search_depth_stop_reason": str(
 			planner_result.get("search_depth_stop_reason", completion_reason)),
+		"planner_error": str(planner_result.get("error", "")),
 		"strategy_id": strategy_id,
 		"strategy_version": strategy_version,
 		"strategy_hash": strategy_hash,

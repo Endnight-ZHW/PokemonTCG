@@ -24,6 +24,7 @@ var _remaining_pools: Array = [[], []]
 var _catalog: CardCatalog
 var _validation_error := "not_captured"
 var _fallback_card_id := "sv1-ener-1"
+var _sampling_available := false
 
 
 static func capture(
@@ -36,7 +37,25 @@ static func capture(
 ) -> AIInformationSet:
 	var result := AIInformationSet.new()
 	result._capture_state(
-		state, perspective, catalog, legal_actions, public_history, match_seed)
+		state, perspective, catalog, legal_actions, public_history, match_seed,
+		true)
+	return result
+
+
+static func capture_view_only(
+	state: GameState,
+	perspective: int,
+	catalog: CardCatalog = null,
+	legal_actions: Array = [],
+	public_history: Array = [],
+	match_seed: int = 0,
+) -> AIInformationSet:
+	## Build the exact public projection used by capture(), without reconstructing
+	## hidden-card pools that position/action strategy hooks cannot observe.
+	var result := AIInformationSet.new()
+	result._capture_state(
+		state, perspective, catalog, legal_actions, public_history, match_seed,
+		false)
 	return result
 
 
@@ -54,7 +73,7 @@ static func from_snapshot(
 		return result
 	result._capture_state(
 		GameState.from_dict(snapshot), perspective, catalog, legal_actions,
-		public_history, match_seed)
+		public_history, match_seed, true)
 	return result
 
 
@@ -81,6 +100,27 @@ func read_only_view() -> Dictionary:
 	return result
 
 
+func shared_read_only_view() -> Dictionary:
+	## Internal hot-path view. The captured tree is already deeply immutable, so
+	## strategy hooks can safely share it without another full snapshot copy.
+	return _public_snapshot if is_valid() else {}
+
+
+func read_only_view_for_legal_actions(legal_actions: Array) -> Dictionary:
+	## Derive an action-specific strategy view from one sanitized state capture.
+	## Every other field remains byte-for-byte equivalent to capture(...).
+	if not is_valid():
+		return {}
+	# Nested branches are already deeply read-only and may be shared safely. Only
+	# the top-level observation and the action list differ between candidates.
+	var result := _public_snapshot.duplicate(false)
+	var action_rows := _public_action_rows(legal_actions)
+	_deep_make_read_only(action_rows)
+	result["legal_actions"] = action_rows
+	result.make_read_only()
+	return result
+
+
 func export_mutable() -> Dictionary:
 	## Return an independent mutable public snapshot for feature builders.
 	return _public_snapshot.duplicate(true)
@@ -90,7 +130,9 @@ func cache_precondition() -> Dictionary:
 	## Stable public-state identity used to guard a cached semantic turn intent.
 	if not is_valid():
 		return {}
-	var payload := _public_snapshot.duplicate(true)
+	# Nested branches are immutable and only top-level observation annotations
+	# are removed, so a shallow container copy preserves the canonical wire.
+	var payload := _public_snapshot.duplicate(false)
 	# These are observation annotations, not game state. The legal set is checked
 	# separately by the caller and history may be supplied at different lengths.
 	payload.erase("legal_actions")
@@ -140,7 +182,7 @@ func inferred_hidden_pool_for_player(player_idx: int) -> Array[String]:
 
 func sample_state(seed: int) -> GameState:
 	## Produce one legal-identity determinization without type matchups.
-	if not is_valid():
+	if not is_valid() or not _sampling_available:
 		return null
 	var payload := export_mutable()
 	var player_rows: Array = payload.get("players", [])
@@ -196,8 +238,10 @@ func _capture_state(
 	legal_actions: Array,
 	public_history: Array,
 	match_seed: int,
+	rebuild_hidden_pools: bool,
 ) -> void:
 	_validation_error = ""
+	_sampling_available = false
 	if state == null:
 		_validation_error = "null_state"
 		return
@@ -210,12 +254,18 @@ func _capture_state(
 	_perspective = perspective
 	_match_seed = match_seed
 	_catalog = catalog if catalog != null else CardCatalog.shared()
-	_fallback_card_id = _find_fallback_card(_catalog)
-	_public_snapshot = state.snapshot()
-	_sanitize_public_snapshot()
+	if rebuild_hidden_pools:
+		_fallback_card_id = _find_fallback_card(_catalog)
+	if rebuild_hidden_pools:
+		_public_snapshot = state.snapshot()
+		_sanitize_public_snapshot()
+	else:
+		_public_snapshot = _build_public_snapshot(state)
 	_public_snapshot["match_seed"] = _match_seed
 	_install_public_context(legal_actions, public_history)
-	_rebuild_remaining_pools()
+	if rebuild_hidden_pools:
+		_rebuild_remaining_pools()
+		_sampling_available = true
 	_deep_make_read_only(_public_snapshot)
 	for pool_value in _remaining_pools:
 		if pool_value is Array:
@@ -223,12 +273,98 @@ func _capture_state(
 	_remaining_pools.make_read_only()
 
 
+func _build_public_snapshot(state: GameState) -> Dictionary:
+	## Directly construct the same sanitized GameState snapshot used by capture().
+	## Hidden-zone identities, action logs and resolution frames are never copied.
+	var setup_board_hidden: bool = (
+		state.phase == "SETUP"
+		and state.setup_stage != GameState.SETUP_COMPLETE
+	)
+	var player_rows: Array[Dictionary] = []
+	for player_idx in [0, 1]:
+		var player: PlayerState = state.players[player_idx]
+		var hide_board: bool = (
+			setup_board_hidden and player_idx != _perspective)
+		var bench_payload: Array = []
+		if hide_board:
+			bench_payload = [null, null, null, null, null]
+		else:
+			for pokemon_value in player.bench:
+				bench_payload.append(
+					pokemon_value.to_dict()
+					if pokemon_value is PokemonState
+					else null
+				)
+		player_rows.append({
+			"name": player.name,
+			"deck": _hidden_cards(player.deck.size(), HIDDEN_CARD),
+			"hand": (
+				player.hand.duplicate()
+				if player_idx == _perspective
+				else _hidden_cards(player.hand.size(), HIDDEN_CARD)
+			),
+			"discard": player.discard.duplicate(),
+			"prizes": _hidden_cards(player.prizes.size(), HIDDEN_PRIZE),
+			"active": (
+				player.active.to_dict()
+				if player.active != null and not hide_board
+				else null
+			),
+			"bench": bench_payload,
+			"supporter_played_this_turn": player.supporter_played_this_turn,
+			"energy_attached_this_turn": player.energy_attached_this_turn,
+			"retreated_this_turn": player.retreated_this_turn,
+			"stadium_played_this_turn": player.stadium_played_this_turn,
+			"stadium_used_this_turn": player.stadium_used_this_turn,
+			"healed_this_turn": player.healed_this_turn,
+			"vstar_power_used": player.vstar_power_used,
+			"was_ko_by_attack": player.was_ko_by_attack,
+		})
+	var options := state.rules_options.duplicate(true)
+	options["apply_type_matchups"] = false
+	var bonus_ids := state.setup_bonus_card_ids.duplicate(true)
+	while bonus_ids.size() < 2:
+		bonus_ids.append([])
+	bonus_ids[1 - _perspective] = []
+	return {
+		"players": player_rows,
+		"active_player_idx": state.active_player_idx,
+		"phase": state.phase,
+		"turn_number": state.turn_number,
+		"first_player_idx": state.first_player_idx,
+		"stadium_card_id": state.stadium_card_id,
+		"stadium_owner_idx": state.stadium_owner_idx,
+		"winner": state.winner,
+		"result_status": state.result_status,
+		"result_reason": state.result_reason,
+		"result_conditions": state.result_conditions.duplicate(true),
+		"revision": state.revision,
+		"choice_sequence": state.choice_sequence,
+		"public_deck_keys": state.public_deck_keys.duplicate(),
+		"apply_type_matchups": false,
+		"rules_profile_id": state.rules_profile_id,
+		"rules_options": options,
+		"action_log": [],
+		"mulligan_count": state.mulligan_count.duplicate(),
+		"extra_draws": state.extra_draws.duplicate(),
+		"setup_ready": state.setup_ready.duplicate(),
+		"setup_stage": state.setup_stage,
+		"setup_actor_idx": state.setup_actor_idx,
+		"opening_coin_winner_idx": state.opening_coin_winner_idx,
+		"mulligan_bonus_max": state.mulligan_bonus_max,
+		"setup_bonus_card_ids": bonus_ids,
+		"pending_promotions": state.pending_promotions.duplicate(),
+		"processed_action_ids": [],
+		"resolution_stack": EMPTY_RESOLUTION_STACK.duplicate(true),
+		"turn_fact_book": state.turn_fact_book.duplicate(true),
+		"snapshot_version": GameState.SNAPSHOT_SCHEMA_VERSION,
+		"perspective": _perspective,
+		"actor": _decision_actor_from_state(state),
+	}
+
+
 func _install_public_context(legal_actions: Array, public_history: Array) -> void:
-	var action_rows: Array[Dictionary] = []
-	for action_value in legal_actions:
-		if action_value is GameAction:
-			action_rows.append(_public_action_summary(action_value))
-	_public_snapshot["legal_actions"] = action_rows
+	_public_snapshot["legal_actions"] = _public_action_rows(legal_actions)
 	var history_rows: Array[Dictionary] = []
 	for row_value in public_history.slice(maxi(0, public_history.size() - 24)):
 		if row_value is Dictionary:
@@ -236,6 +372,14 @@ func _install_public_context(legal_actions: Array, public_history: Array) -> voi
 			if not projected.is_empty():
 				history_rows.append(projected)
 	_public_snapshot["public_history"] = history_rows
+
+
+func _public_action_rows(legal_actions: Array) -> Array[Dictionary]:
+	var action_rows: Array[Dictionary] = []
+	for action_value in legal_actions:
+		if action_value is GameAction:
+			action_rows.append(_public_action_summary(action_value))
+	return action_rows
 
 
 func _sanitize_public_snapshot() -> void:
@@ -355,6 +499,17 @@ static func _decision_actor(payload: Dictionary) -> int:
 		if setup_actor in [0, 1]:
 			return setup_actor
 	return int(payload.get("active_player_idx", -1))
+
+
+static func _decision_actor_from_state(state: GameState) -> int:
+	if (
+		not state.pending_promotions.is_empty()
+		and int(state.pending_promotions[0]) in [0, 1]
+	):
+		return int(state.pending_promotions[0])
+	if state.phase == "SETUP" and state.setup_actor_idx in [0, 1]:
+		return state.setup_actor_idx
+	return state.active_player_idx
 
 
 func _public_action_summary(action: GameAction) -> Dictionary:

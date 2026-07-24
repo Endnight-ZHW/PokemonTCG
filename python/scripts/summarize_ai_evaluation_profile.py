@@ -1,10 +1,15 @@
-"""Summarize authoritative schema-v6 AI evaluation performance profile data."""
+"""Summarize authoritative schema-v7 AI evaluation performance profile data."""
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
 from typing import Any
+
+try:
+    from scripts.ai_evaluation_v7 import PROTOCOL_ID, SCHEMA_VERSION
+except ModuleNotFoundError:
+    from ai_evaluation_v7 import PROTOCOL_ID, SCHEMA_VERSION
 
 
 SEGMENT_HINTS = {
@@ -50,10 +55,13 @@ def _hint_for_segment(segment: str) -> str:
 
 
 def summarize_profile(payload: dict[str, Any], *, top: int = 12) -> dict[str, Any]:
-    if int(payload.get("schema_version") or 0) != 6:
+    if (
+        int(payload.get("schema_version") or 0) != SCHEMA_VERSION
+        or payload.get("protocol_id") != PROTOCOL_ID
+    ):
         return {
             "enabled": False,
-            "error": "schema_v6_required",
+            "error": "schema_v7_required",
             "top_segments": [],
             "counts": {},
         }

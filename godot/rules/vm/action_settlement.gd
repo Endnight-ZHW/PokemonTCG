@@ -19,12 +19,31 @@ func apply_action(
 	actor: int,
 	rng: PortableRandomSource,
 	dispatch_action: Callable,
+	disposable_state: bool = false,
 ) -> StepResult:
-	var checkpoint := transaction_manager.capture_transaction(state, rng)
+	# Beam-search children are private clones that are discarded immediately when
+	# settlement fails.  They do not need a full rollback snapshot unless the
+	# successful action may expose a cancellable continuation whose later Choice
+	# must restore the pre-action state.
+	var needs_cancel_checkpoint := action.action in ["PLAY_TRAINER", "RETREAT"]
+	var checkpoint := (
+		transaction_manager.capture_transaction(state, rng)
+		if not disposable_state or needs_cancel_checkpoint
+		else {}
+	)
+	var pre_action_phase := state.phase
+	var pre_action_winner := state.winner
+	var pre_action_terminal := state.is_terminal()
 	state.revision += 1
 	var result: StepResult = dispatch_action.call(state, action, actor, rng)
 	if not result.success:
-		return transaction_manager.rollback_failed_step(state, rng, checkpoint, result)
+		return (
+			transaction_manager.rollback_failed_step(
+				state, rng, checkpoint, result)
+			if not checkpoint.is_empty()
+			else _discardable_failed_step(
+				result, pre_action_winner, pre_action_terminal)
+		)
 	if result.pending_choice != null and action.action == "DECLARE_ATTACK":
 		var attack_stack := ResolutionStack.from_dict(state.resolution_stack)
 		_mark_attack_pending_choice(result.pending_choice, attack_stack, actor)
@@ -34,25 +53,27 @@ func apply_action(
 	if (
 		result.pending_choice == null
 		and action.action not in ["DECLARE_ATTACK", "END_TURN"]
-		and str(checkpoint.get("state", {}).get("phase", "SETUP")) != "SETUP"
+		and pre_action_phase != "SETUP"
 	):
 		var ko_stack := ResolutionStack.from_dict(state.resolution_stack)
 		var ko_result := knockout_settlement.resolve_knockouts(
 			state, actor, result.events, false, ko_stack, rng)
 		if not bool(ko_result.get("success", false)):
-			return transaction_manager.rollback_failed_step(
-				state,
-				rng,
-				checkpoint,
-				StepResult.new(
-					false,
-					str(ko_result.get("message", "触发命令结算失败。")),
-					null,
-					result.events,
-					state.winner,
-					false,
-					str(ko_result.get("error_code", "trigger_command_failed")),
-				),
+			var failed_step := StepResult.new(
+				false,
+				str(ko_result.get("message", "触发命令结算失败。")),
+				null,
+				result.events,
+				state.winner,
+				false,
+				str(ko_result.get("error_code", "trigger_command_failed")),
+			)
+			return (
+				transaction_manager.rollback_failed_step(
+					state, rng, checkpoint, failed_step)
+				if not checkpoint.is_empty()
+				else _discardable_failed_step(
+					failed_step, pre_action_winner, pre_action_terminal)
 			)
 		var prize_request: Variant = ko_result.get("pending_choice", null)
 		if prize_request is ChoiceRequest:
@@ -88,6 +109,21 @@ func apply_action(
 	result.winner = state.winner
 	result.terminal = state.is_terminal()
 	return result
+
+
+static func _discardable_failed_step(
+	step: StepResult,
+	pre_action_winner: int,
+	pre_action_terminal: bool,
+) -> StepResult:
+	# Match rollback_failed_step's public result exactly. The mutated search child
+	# and its local RNG are intentionally left alone because the caller discards
+	# both as soon as this failed StepResult is observed.
+	step.pending_choice = null
+	step.events = []
+	step.winner = pre_action_winner
+	step.terminal = pre_action_terminal
+	return step
 
 
 func _mark_attack_pending_choice(

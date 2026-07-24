@@ -12,7 +12,8 @@ const DEFAULT_DECK_KEYS := [
 	"steel",
 	"water",
 ]
-const SCHEMA_VERSION := 6
+const SCHEMA_VERSION := 7
+const PROTOCOL_ID := "traditional_ai_evaluation_v7"
 const DEFAULT_SEED_BLOCKS_PER_DECK := 50
 const DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP := 10
 const DEFAULT_SEED := 17
@@ -58,8 +59,9 @@ func _initialize() -> void:
 		"output": output_path,
 		"games": (payload.get("matches", []) as Array).size(),
 		"decks": payload.get("deck_keys", []),
+		"fatal_stop": bool(payload.get("fatal_stop", false)),
 	}))
-	quit(0)
+	quit(2 if bool(payload.get("fatal_stop", false)) else 0)
 
 
 func _parse_args(args: Array[String]) -> Dictionary:
@@ -75,6 +77,8 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"task_count": 0,
 		"task_shard_index": 0,
 		"task_shard_count": 1,
+		"evidence_shard_index": 0,
+		"evidence_shard_count": 0,
 		"seed": DEFAULT_SEED,
 		"max_actions": DEFAULT_MAX_ACTIONS,
 		"eval_preset": "Custom",
@@ -89,6 +93,12 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"provenance_path": "",
 		"run_role": "main",
 		"warmup_blocks_per_deck": 0,
+		"checkpoint_dir": "",
+		"resume_checkpoints": false,
+		"task_manifest_id": "",
+		"execution_profile_id": "",
+		"fail_fast_fatal": false,
+		"evidence_prefix_only": false,
 		"output": "",
 		"output_dir": "",
 	}
@@ -136,6 +146,12 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--task-shard-count":
 				config["task_shard_count"] = maxi(1, int(value))
 				index += 2
+			"--evidence-shard-index":
+				config["evidence_shard_index"] = maxi(0, int(value))
+				index += 2
+			"--evidence-shard-count":
+				config["evidence_shard_count"] = maxi(1, int(value))
+				index += 2
 			"--seed":
 				config["seed"] = int(value)
 				index += 2
@@ -178,6 +194,24 @@ func _parse_args(args: Array[String]) -> Dictionary:
 			"--warmup-blocks-per-deck":
 				config["warmup_blocks_per_deck"] = maxi(0, int(value))
 				index += 2
+			"--checkpoint-dir":
+				config["checkpoint_dir"] = value
+				index += 2
+			"--resume-checkpoints":
+				config["resume_checkpoints"] = true
+				index += 1
+			"--task-manifest-id":
+				config["task_manifest_id"] = value
+				index += 2
+			"--execution-profile-id":
+				config["execution_profile_id"] = value
+				index += 2
+			"--fail-fast-fatal":
+				config["fail_fast_fatal"] = true
+				index += 1
+			"--evidence-prefix-only":
+				config["evidence_prefix_only"] = true
+				index += 1
 			"--output":
 				config["output"] = value
 				index += 2
@@ -239,7 +273,10 @@ func _matchup_mode(config: Dictionary) -> String:
 
 
 func _sample_phase(config: Dictionary, block_index: int) -> String:
-	if str(config.get("run_role", "main")) != "search_depth_probe":
+	if str(config.get("run_role", "main")) not in [
+		"search_depth_probe",
+		"performance_benchmark",
+	]:
 		return "main"
 	return (
 		"warmup"
@@ -257,7 +294,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var provenance_path := str(config.get("provenance_path", ""))
 	var provenance: Dictionary = {}
 	if provenance_path.is_empty():
-		push_error("Schema v5 evaluation requires --provenance.")
+		push_error("Schema v7 evaluation requires --provenance.")
 		_had_error = true
 	else:
 		var loaded_provenance: Variant = _read_json(provenance_path)
@@ -265,10 +302,24 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			provenance = loaded_provenance
 		if (
 			int(provenance.get("schema_version", 0)) != SCHEMA_VERSION
-			or str(provenance.get("fingerprint", "")).is_empty()
+			or str(provenance.get("simulation_fingerprint", "")).is_empty()
+			or str(provenance.get("analysis_fingerprint", "")).is_empty()
 		):
-			push_error("Evaluation provenance must be schema v6 with a fingerprint.")
+			push_error(
+				"Evaluation provenance must be schema v7 with simulation and analysis fingerprints.")
 			_had_error = true
+	if str(config.get("task_manifest_id", "")).is_empty():
+		push_error("Schema v7 evaluation requires --task-manifest-id.")
+		_had_error = true
+	var configured_seed_blocks := maxi(
+		1,
+		int(config.get(
+			"seed_blocks_per_deck", DEFAULT_SEED_BLOCKS_PER_DECK)),
+	)
+	if int(config.get("seed_block_start", 0)) >= configured_seed_blocks:
+		push_error(
+			"seed_block_start must be less than seed_blocks_per_deck.")
+		_had_error = true
 	var strategy_a := _load_strategy(
 		str(config.get("strategy_a_path", "")),
 		"A",
@@ -282,10 +333,15 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	if _had_error:
 		return {
 			"schema_version": SCHEMA_VERSION,
+			"protocol_id": PROTOCOL_ID,
 			"artifact_kind": "ai_evaluation_shard",
 			"created_at_unix": int(Time.get_unix_time_from_system()),
 			"platform": _evaluation_platform(),
 			"provenance": provenance,
+			"simulation_fingerprint": str(provenance.get(
+				"simulation_fingerprint", "")),
+			"analysis_fingerprint": str(provenance.get(
+				"analysis_fingerprint", "")),
 			"self_check": false,
 			"eval_preset": str(config.get("eval_preset", "Custom")),
 			"mode": _matchup_mode(config).to_lower(),
@@ -314,7 +370,7 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var seed_blocks := maxi(1, int(config.get("seed_blocks_per_deck", DEFAULT_SEED_BLOCKS_PER_DECK)))
 	var cross_seed_blocks := maxi(0, int(config.get(
 		"cross_seed_blocks_per_matchup", DEFAULT_CROSS_SEED_BLOCKS_PER_MATCHUP)))
-	var seed_block_start := clampi(int(config.get("seed_block_start", 0)), 0, seed_blocks - 1)
+	var seed_block_start := maxi(0, int(config.get("seed_block_start", 0)))
 	var requested_seed_block_count := int(config.get("seed_block_count", 0))
 	var seed_block_count := seed_blocks - seed_block_start
 	if requested_seed_block_count > 0:
@@ -328,11 +384,47 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 	var task_count := maxi(0, int(config.get("task_count", 0)))
 	var task_shard_count := maxi(1, int(config.get("task_shard_count", 1)))
 	var task_shard_index := clampi(int(config.get("task_shard_index", 0)), 0, task_shard_count - 1)
+	var evidence_shard_count := maxi(0, int(config.get("evidence_shard_count", 0)))
+	var evidence_shard_index := (
+		clampi(int(config.get("evidence_shard_index", 0)), 0, evidence_shard_count - 1)
+		if evidence_shard_count > 0
+		else 0
+	)
+	var effective_shard_count := (
+		evidence_shard_count if evidence_shard_count > 0 else task_shard_count)
+	var effective_shard_index := (
+		evidence_shard_index if evidence_shard_count > 0 else task_shard_index)
+	var execution_profile_id := str(config.get("execution_profile_id", ""))
+	var task_manifest_id := str(config.get("task_manifest_id", ""))
+	var checkpoint_dir := str(config.get("checkpoint_dir", ""))
+	var resume_checkpoints := bool(config.get("resume_checkpoints", false))
+	var fail_fast_fatal := bool(config.get("fail_fast_fatal", false))
+	var evidence_prefix_only := bool(config.get("evidence_prefix_only", false))
+	if (
+		not checkpoint_dir.is_empty()
+		and (
+			bool(config.get("profile", false))
+			or not str(config.get("distill_output", "")).is_empty()
+		)
+	):
+		push_error("Evaluation checkpoints cannot be combined with profile or distill output.")
+		_had_error = true
+	var checkpoint_records: Dictionary = {}
+	if resume_checkpoints and not checkpoint_dir.is_empty() and not _had_error:
+		checkpoint_records = _load_evaluation_checkpoints(
+			checkpoint_dir,
+			str(provenance.get("simulation_fingerprint", "")),
+			task_manifest_id,
+			effective_shard_index,
+			effective_shard_count,
+		)
+	var pending_checkpoint_rows: Dictionary = {}
 	var progress_enabled := bool(config.get("progress", false))
 	var progress_every_pairs := maxi(1, int(config.get("progress_every_pairs", 1)))
 	var progress_started_ms := Time.get_ticks_msec()
 	var total_task_pairs := _count_task_pairs(
 		selected_decks,
+		seed_blocks,
 		cross_seed_blocks,
 		seed_block_start,
 		seed_block_count,
@@ -341,12 +433,20 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		task_count,
 		task_shard_index,
 		task_shard_count,
+		evidence_shard_index,
+		evidence_shard_count,
+		evidence_prefix_only,
 	)
 	var completed_task_pairs := 0
 	var completed_games := 0
 	var total_games := total_task_pairs * 2
 	var task_candidates := 0
 	var task_pairs_run := 0
+	var checkpoint_units_restored := 0
+	var checkpoint_units_written := 0
+	var checkpoint_completed_unit_ids: Dictionary = {}
+	var fatal_stop := false
+	var fatal_stop_details: Dictionary = {}
 	for selected_deck_index in range(selected_decks.size()):
 		var deck_key := str(selected_decks[selected_deck_index])
 		var deck_index := DEFAULT_DECK_KEYS.find(deck_key)
@@ -357,62 +457,96 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 				var block_index := seed_block_start + block_offset
 				var task_index := task_candidates
 				task_candidates += 1
+				var evidence_unit_index := (
+					selected_deck_index * seed_blocks + block_index)
+				if evidence_prefix_only and block_index >= 5:
+					continue
 				if not _task_belongs_to_range(task_index, task_start, task_count):
 					continue
-				if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+				if not _evaluation_task_belongs_to_shard(
+					task_index,
+					evidence_unit_index,
+					task_shard_index,
+					task_shard_count,
+					evidence_shard_index,
+					evidence_shard_count,
+				):
 					continue
 				task_pairs_run += 1
 				var game_seed := _game_seed(base_seed, deck_index, block_index)
 				var forced_first := block_index % 2
 				var sample_phase := _sample_phase(config, block_index)
-				matches.append(_play_match(
-					catalog,
-					engine,
-					worker_a,
-					worker_b,
-					deck_key,
-					deck_key,
-					strategy_a,
-					strategy_b,
-					game_seed,
-					block_index,
-					0,
-					forced_first,
-					max_actions,
-					"mirror",
-					sample_phase,
-					task_index,
-					task_shard_index,
-					task_shard_count,
-					performance_profile,
-					disable_ai_cache,
-					disable_native_math,
-					str(config.get("distill_output", "")),
-				))
-				matches.append(_play_match(
-					catalog,
-					engine,
-					worker_a,
-					worker_b,
-					deck_key,
-					deck_key,
-					strategy_a,
-					strategy_b,
-					game_seed,
-					block_index,
-					1,
-					forced_first,
-					max_actions,
-					"mirror",
-					sample_phase,
-					task_index,
-					task_shard_index,
-					task_shard_count,
-					performance_profile,
-					disable_ai_cache,
-					disable_native_math,
-					str(config.get("distill_output", "")),
-				))
+				var unit_id := _evidence_unit_id(
+					"mirror", deck_key, deck_key, block_index, game_seed)
+				var pair_rows := _checkpoint_rows_for_pair(
+					checkpoint_records, unit_id, deck_key, deck_key)
+				var restored := pair_rows.size() == 2
+				if restored:
+					checkpoint_units_restored += 1
+					checkpoint_completed_unit_ids[unit_id] = true
+				else:
+					pair_rows = [
+						_play_match(
+							catalog,
+							engine,
+							worker_a,
+							worker_b,
+							deck_key,
+							deck_key,
+							strategy_a,
+							strategy_b,
+							game_seed,
+							block_index,
+							0,
+							forced_first,
+							max_actions,
+							"mirror",
+							sample_phase,
+							task_index,
+							effective_shard_index,
+							effective_shard_count,
+							performance_profile,
+							disable_ai_cache,
+							disable_native_math,
+							str(config.get("distill_output", "")),
+						),
+						_play_match(
+							catalog,
+							engine,
+							worker_a,
+							worker_b,
+							deck_key,
+							deck_key,
+							strategy_a,
+							strategy_b,
+							game_seed,
+							block_index,
+							1,
+							forced_first,
+							max_actions,
+							"mirror",
+							sample_phase,
+							task_index,
+							effective_shard_index,
+							effective_shard_count,
+							performance_profile,
+							disable_ai_cache,
+							disable_native_math,
+							str(config.get("distill_output", "")),
+						),
+					]
+					if _write_evaluation_checkpoint(
+						checkpoint_dir,
+						str(provenance.get("simulation_fingerprint", "")),
+						task_manifest_id,
+						effective_shard_index,
+						effective_shard_count,
+						unit_id,
+						pair_rows,
+					):
+						checkpoint_units_written += 1
+						checkpoint_completed_unit_ids[unit_id] = true
+				matches.append_array(pair_rows)
 				completed_task_pairs += 1
 				completed_games += 2
 				_maybe_emit_progress(
@@ -422,13 +556,22 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 					total_task_pairs,
 					completed_games,
 					total_games,
-					task_shard_index,
-					task_shard_count,
+					effective_shard_index,
+					effective_shard_count,
 					deck_key,
 					_matchup_key(deck_key, deck_key),
 					progress_started_ms,
 				)
-	if run_cross and cross_seed_blocks > 0:
+				if fail_fast_fatal and _matches_have_fatal_error(pair_rows):
+					fatal_stop = true
+					fatal_stop_details = {
+						"unit_id": unit_id,
+						"task_index": task_index,
+					}
+					break
+		if fatal_stop:
+			break
+	if not fatal_stop and run_cross and cross_seed_blocks > 0:
 		var cross_end := mini(cross_seed_blocks, seed_block_start + seed_block_count)
 		for strategy_a_deck_index in range(selected_decks.size()):
 			var strategy_a_deck := str(selected_decks[strategy_a_deck_index])
@@ -445,63 +588,118 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 				for block_index in range(seed_block_start, cross_end):
 					var task_index := task_candidates
 					task_candidates += 1
+					if evidence_prefix_only and block_index != 0:
+						continue
+					var evidence_unit_index := _cross_evidence_unit_index(
+						selected_decks.size(),
+						seed_blocks,
+						cross_seed_blocks,
+						strategy_a_deck_index,
+						strategy_b_deck_index,
+						block_index,
+					)
 					if not _task_belongs_to_range(task_index, task_start, task_count):
 						continue
-					if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+					if not _evaluation_task_belongs_to_shard(
+						task_index,
+						evidence_unit_index,
+						task_shard_index,
+						task_shard_count,
+						evidence_shard_index,
+						evidence_shard_count,
+					):
 						continue
 					task_pairs_run += 1
 					var cross_seed := _cross_game_seed(
 						base_seed, deck_a_index, deck_b_index, block_index)
 					var forced_first := block_index % 2
 					var sample_phase := _sample_phase(config, block_index)
-					matches.append(_play_match(
-						catalog,
-						engine,
-						worker_a,
-						worker_b,
+					var unit_id := _evidence_unit_id(
+						"cross",
 						strategy_a_deck,
 						strategy_b_deck,
-						strategy_a,
-						strategy_b,
-						cross_seed,
 						block_index,
-						0,
-						forced_first,
-						max_actions,
-						"cross",
-						sample_phase,
-						task_index,
-						task_shard_index,
-						task_shard_count,
-						performance_profile,
-						disable_ai_cache,
-						disable_native_math,
-						str(config.get("distill_output", "")),
-					))
-					matches.append(_play_match(
-						catalog,
-						engine,
-						worker_a,
-						worker_b,
+						cross_seed,
+					)
+					var pair_rows := _checkpoint_rows_for_pair(
+						checkpoint_records,
+						unit_id,
 						strategy_a_deck,
 						strategy_b_deck,
-						strategy_a,
-						strategy_b,
-						cross_seed,
-						block_index,
-						1,
-						forced_first,
-						max_actions,
-						"cross",
-						sample_phase,
-						task_index,
-						task_shard_index,
-						task_shard_count,
-						performance_profile,
-						disable_ai_cache,
-						disable_native_math,
-						str(config.get("distill_output", "")),
-					))
+					)
+					var restored := pair_rows.size() == 2
+					if restored:
+						if strategy_a_deck_index < strategy_b_deck_index:
+							checkpoint_units_restored += 1
+							checkpoint_completed_unit_ids[unit_id] = true
+					else:
+						pair_rows = [
+							_play_match(
+								catalog,
+								engine,
+								worker_a,
+								worker_b,
+								strategy_a_deck,
+								strategy_b_deck,
+								strategy_a,
+								strategy_b,
+								cross_seed,
+								block_index,
+								0,
+								forced_first,
+								max_actions,
+								"cross",
+								sample_phase,
+								task_index,
+								effective_shard_index,
+								effective_shard_count,
+								performance_profile,
+								disable_ai_cache,
+								disable_native_math,
+								str(config.get("distill_output", "")),
+							),
+							_play_match(
+								catalog,
+								engine,
+								worker_a,
+								worker_b,
+								strategy_a_deck,
+								strategy_b_deck,
+								strategy_a,
+								strategy_b,
+								cross_seed,
+								block_index,
+								1,
+								forced_first,
+								max_actions,
+								"cross",
+								sample_phase,
+								task_index,
+								effective_shard_index,
+								effective_shard_count,
+								performance_profile,
+								disable_ai_cache,
+								disable_native_math,
+								str(config.get("distill_output", "")),
+							),
+						]
+						var unit_rows: Array = pending_checkpoint_rows.get(unit_id, [])
+						unit_rows.append_array(pair_rows)
+						pending_checkpoint_rows[unit_id] = unit_rows
+						if unit_rows.size() == 4:
+							if _write_evaluation_checkpoint(
+								checkpoint_dir,
+								str(provenance.get("simulation_fingerprint", "")),
+								task_manifest_id,
+								effective_shard_index,
+								effective_shard_count,
+								unit_id,
+								unit_rows,
+							):
+								checkpoint_units_written += 1
+								checkpoint_completed_unit_ids[unit_id] = true
+							pending_checkpoint_rows.erase(unit_id)
+					matches.append_array(pair_rows)
 					completed_task_pairs += 1
 					completed_games += 2
 					_maybe_emit_progress(
@@ -511,24 +709,43 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 						total_task_pairs,
 						completed_games,
 						total_games,
-						task_shard_index,
-						task_shard_count,
+						effective_shard_index,
+						effective_shard_count,
 						strategy_a_deck,
 						_matchup_key(strategy_a_deck, strategy_b_deck),
 						progress_started_ms,
 					)
+					if fail_fast_fatal and _matches_have_fatal_error(pair_rows):
+						fatal_stop = true
+						fatal_stop_details = {
+							"unit_id": unit_id,
+							"task_index": task_index,
+						}
+						break
+				if fatal_stop:
+					break
+			if fatal_stop:
+				break
 	var strategy_fingerprint := _strategy_fingerprint_summary(strategy_a, strategy_b, selected_decks)
 	var golden_scenarios := _empty_golden_summary()
-	if not bool(config.get("skip_golden", false)):
+	if not fatal_stop and not bool(config.get("skip_golden", false)):
 		golden_scenarios = _run_golden_scenarios(
 			catalog, engine, NativeChallengeAI.new())
+	var completed_unit_ids: Array = checkpoint_completed_unit_ids.keys()
+	completed_unit_ids.sort()
 	return {
 		"schema_version": SCHEMA_VERSION,
+		"protocol_id": PROTOCOL_ID,
 		"artifact_kind": "ai_evaluation_shard",
 		"authoritative_aggregation": false,
 		"created_at_unix": int(Time.get_unix_time_from_system()),
 		"platform": _evaluation_platform(),
 		"provenance": provenance,
+		"simulation_fingerprint": str(provenance.get(
+			"simulation_fingerprint", "")),
+		"analysis_fingerprint": str(provenance.get(
+			"analysis_fingerprint", "")),
+		"gate_depth_source": "main_matches",
 		"self_check": self_check,
 		"eval_preset": str(config.get("eval_preset", "Custom")),
 		"mode": matchup_mode.to_lower(),
@@ -544,6 +761,16 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 			"task_count": task_count,
 			"task_shard_index": task_shard_index,
 			"task_shard_count": task_shard_count,
+			"evidence_shard_index": evidence_shard_index,
+			"evidence_shard_count": evidence_shard_count,
+			"effective_shard_index": effective_shard_index,
+			"effective_shard_count": effective_shard_count,
+			"task_manifest_id": task_manifest_id,
+			"execution_profile_id": execution_profile_id,
+			"checkpoint_enabled": not checkpoint_dir.is_empty(),
+			"resume_checkpoints": resume_checkpoints,
+			"fail_fast_fatal": fail_fast_fatal,
+			"evidence_prefix_only": evidence_prefix_only,
 			"task_candidates": task_candidates,
 			"task_pairs_run": task_pairs_run,
 			"max_actions": max_actions,
@@ -569,6 +796,17 @@ func _run_evaluation(catalog: CardCatalog, config: Dictionary) -> Dictionary:
 		"strategy_fingerprint": strategy_fingerprint,
 		"golden_scenarios": golden_scenarios,
 		"performance_profile": _finalize_performance_profile(performance_profile),
+		"task_manifest_id": task_manifest_id,
+		"execution_profile_id": execution_profile_id,
+		"checkpoint_summary": {
+			"enabled": not checkpoint_dir.is_empty(),
+			"restored_units": checkpoint_units_restored,
+			"written_units": checkpoint_units_written,
+			"pending_units": pending_checkpoint_rows.size(),
+			"completed_unit_ids": completed_unit_ids,
+		},
+		"fatal_stop": fatal_stop,
+		"fatal_stop_details": fatal_stop_details,
 		"matches": matches,
 	}
 
@@ -595,6 +833,7 @@ func _selected_deck_keys(config: Dictionary) -> Array:
 
 func _count_task_pairs(
 	selected_decks: Array,
+	seed_blocks: int,
 	cross_seed_blocks: int,
 	seed_block_start: int,
 	seed_block_count: int,
@@ -603,33 +842,64 @@ func _count_task_pairs(
 	task_count: int,
 	task_shard_index: int,
 	task_shard_count: int,
+	evidence_shard_index: int,
+	evidence_shard_count: int,
+	evidence_prefix_only: bool,
 ) -> int:
 	var run_mirror := matchup_mode in [MATCHUP_MODE_MIRROR, MATCHUP_MODE_BALANCED]
 	var run_cross := matchup_mode in [MATCHUP_MODE_BALANCED, MATCHUP_MODE_MATRIX]
 	var task_candidates := 0
 	var task_pairs := 0
 	if run_mirror:
-		for _deck_key in selected_decks:
+		for deck_index in range(selected_decks.size()):
 			for _block_offset in range(seed_block_count):
 				var task_index := task_candidates
 				task_candidates += 1
+				var block_index := seed_block_start + _block_offset
+				if evidence_prefix_only and block_index >= 5:
+					continue
+				var evidence_unit_index := deck_index * seed_blocks + block_index
 				if not _task_belongs_to_range(task_index, task_start, task_count):
 					continue
-				if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+				if not _evaluation_task_belongs_to_shard(
+					task_index,
+					evidence_unit_index,
+					task_shard_index,
+					task_shard_count,
+					evidence_shard_index,
+					evidence_shard_count,
+				):
 					continue
 				task_pairs += 1
 	if run_cross and cross_seed_blocks > 0:
 		var cross_end := mini(cross_seed_blocks, seed_block_start + seed_block_count)
-		for strategy_a_deck in selected_decks:
-			for strategy_b_deck in selected_decks:
-				if str(strategy_b_deck) == str(strategy_a_deck):
+		for strategy_a_deck_index in range(selected_decks.size()):
+			for strategy_b_deck_index in range(selected_decks.size()):
+				if strategy_b_deck_index == strategy_a_deck_index:
 					continue
-				for _block_index in range(seed_block_start, cross_end):
+				for block_index in range(seed_block_start, cross_end):
 					var task_index := task_candidates
 					task_candidates += 1
+					if evidence_prefix_only and block_index != 0:
+						continue
+					var evidence_unit_index := _cross_evidence_unit_index(
+						selected_decks.size(),
+						seed_blocks,
+						cross_seed_blocks,
+						strategy_a_deck_index,
+						strategy_b_deck_index,
+						block_index,
+					)
 					if not _task_belongs_to_range(task_index, task_start, task_count):
 						continue
-					if not _task_belongs_to_shard(task_index, task_shard_index, task_shard_count):
+					if not _evaluation_task_belongs_to_shard(
+						task_index,
+						evidence_unit_index,
+						task_shard_index,
+						task_shard_count,
+						evidence_shard_index,
+						evidence_shard_count,
+					):
 						continue
 					task_pairs += 1
 	return task_pairs
@@ -962,8 +1232,15 @@ func _distill_action_row(
 		"completed_depth": int(decision.get("completed_depth", 0)),
 		"max_path_depth": int(decision.get("max_path_depth", 0)),
 		"reply_completed_depth": int(decision.get("reply_completed_depth", 0)),
+		"reply_requested_depth": int(decision.get(
+			"reply_requested_depth", AITurnBeamPlanner.DEFAULT_REPLY_DEPTH)),
+		"reply_depth_applicable": bool(decision.get(
+			"reply_depth_applicable", false)),
+		"reply_completion_reason": str(decision.get(
+			"reply_completion_reason", "not_applicable")),
 		"layers_completed": int(decision.get("layers_completed", 0)),
 		"completion_reason": str(decision.get("completion_reason", "")),
+		"planner_error": str(decision.get("planner_error", "")),
 		"trajectory_hash": str(decision.get("trajectory_hash", "")),
 		# Legacy fields are populated only by the evaluator-only v1 baseline.
 		"budget_stop_reason": str(decision.get("budget_stop_reason", "")),
@@ -1116,6 +1393,7 @@ func _play_match(
 	var turn_plan_cache_hit_samples_by_strategy := {"A": [], "B": []}
 	var ai_turn_ms_samples: Array[float] = []
 	var ai_turn_ms_samples_by_strategy := {"A": [], "B": []}
+	var simulation_samples_by_strategy := {"A": [], "B": []}
 	var ai_turn_tracker := {
 		"turn_number": -1,
 		"player": -1,
@@ -1131,6 +1409,11 @@ func _play_match(
 	var behavior_by_strategy := {
 		"A": _empty_behavior_counts(),
 		"B": _empty_behavior_counts(),
+	}
+	var action_decisions_by_strategy := {"A": 0, "B": 0}
+	var search_depth_decision_counts_by_strategy := {
+		"A": {"applicable": 0, "not_applicable": 0, "reasons": {}},
+		"B": {"applicable": 0, "not_applicable": 0, "reasons": {}},
 	}
 	var search_depth_samples_by_strategy := {"A": [], "B": []}
 	var time_capped_decisions := 0
@@ -1184,26 +1467,27 @@ func _play_match(
 				terminal_reason = "choice_failed"
 				terminal_message = str(choice_result.get("error", "choice_failed"))
 				break
-			var choice_distill_row := _distill_choice_row(
-				state,
-				pending,
-				choice_actor,
-				choice_deck_key,
-				choice_result,
-				catalog,
-				choice_strategy,
-			)
-			_add_distill_context(
-				choice_distill_row,
-				seed,
-				seed_block,
-				seat,
-				matchup_key,
-				matchup_kind,
-				strategy_a_deck,
-				strategy_b_deck,
-			)
-			_append_jsonl(distill_output, choice_distill_row)
+			if not distill_output.is_empty():
+				var choice_distill_row := _distill_choice_row(
+					state,
+					pending,
+					choice_actor,
+					choice_deck_key,
+					choice_result,
+					catalog,
+					choice_strategy,
+				)
+				_add_distill_context(
+					choice_distill_row,
+					seed,
+					seed_block,
+					seat,
+					matchup_key,
+					matchup_kind,
+					strategy_a_deck,
+					strategy_b_deck,
+				)
+				_append_jsonl(distill_output, choice_distill_row)
 			var response := ChoiceResponse.from_dict(choice_result["choice_response"])
 			_perf_count(performance_profile, "choices")
 			var choice_apply_started := _perf_start(performance_profile)
@@ -1247,6 +1531,20 @@ func _play_match(
 			_perf_enabled(performance_profile), disable_ai_cache, disable_native_math)
 		_perf_add_elapsed(performance_profile, "runner_decide_action_wall_ms", decide_started)
 		_merge_decision_profile(performance_profile, decision.get("profile", {}))
+		action_decisions_by_strategy[actor_strategy_label] = (
+			int(action_decisions_by_strategy[actor_strategy_label]) + 1)
+		var strategy_depth_counts: Dictionary = (
+			search_depth_decision_counts_by_strategy[actor_strategy_label])
+		if bool(decision.get("search_depth_applicable", false)):
+			strategy_depth_counts["applicable"] = (
+				int(strategy_depth_counts["applicable"]) + 1)
+		else:
+			strategy_depth_counts["not_applicable"] = (
+				int(strategy_depth_counts["not_applicable"]) + 1)
+			_increment_counter(
+				strategy_depth_counts["reasons"],
+				str(decision.get("completion_reason", "unknown")),
+			)
 		var decision_elapsed_ms := maxf(0.0, float(decision.get("elapsed_ms", 0.0)))
 		total_decision_ms += decision_elapsed_ms
 		decision_ms_samples.append(decision_elapsed_ms)
@@ -1254,6 +1552,10 @@ func _play_match(
 		turn_plan_cache_hit_samples.append(decision_cache_hit)
 		var actor_strategy_decisions: Array = decision_ms_samples_by_strategy[actor_strategy_label]
 		actor_strategy_decisions.append(decision_elapsed_ms)
+		if str(actor_strategy.get("engine", DEFAULT_ENGINE)) == ENGINE_TURN_BEAM_V1:
+			var actor_simulation_samples: Array = (
+				simulation_samples_by_strategy[actor_strategy_label])
+			actor_simulation_samples.append(int(decision.get("simulations", 0)))
 		var actor_strategy_cache_hits: Array = (
 			turn_plan_cache_hit_samples_by_strategy[actor_strategy_label]
 		)
@@ -1268,12 +1570,30 @@ func _play_match(
 			var strategy_depth_samples: Array = (
 				search_depth_samples_by_strategy[actor_strategy_label]
 			)
+			var decision_profile: Dictionary = (
+				decision.get("profile", {})
+				if decision.get("profile", {}) is Dictionary
+				else {}
+			)
+			var decision_profile_segments: Dictionary = (
+				decision_profile.get("segments_ms", {})
+				if decision_profile.get("segments_ms", {}) is Dictionary
+				else {}
+			)
 			strategy_depth_samples.append({
 				"requested": int(decision.get("search_depth_requested", 0)),
 				"reached": int(decision.get("search_depth_reached", -1)),
 				"completed": int(decision.get("search_depth_completed", 0)),
 				"max_path_depth": int(decision.get("max_path_depth", -1)),
 				"reply_completed": int(decision.get("reply_completed_depth", 0)),
+				"reply_requested": int(decision.get(
+					"reply_requested_depth",
+					AITurnBeamPlanner.DEFAULT_REPLY_DEPTH,
+				)),
+				"reply_applicable": bool(decision.get(
+					"reply_depth_applicable", false)),
+				"reply_completion_reason": str(decision.get(
+					"reply_completion_reason", "not_applicable")),
 				"layers_completed": int(decision.get("layers_completed", 0)),
 				"completion_reason": str(decision.get(
 					"completion_reason", "unknown")),
@@ -1281,7 +1601,16 @@ func _play_match(
 				"engine_id": str(decision.get(
 					"engine_id", actor_strategy.get("engine", DEFAULT_ENGINE))),
 				"nodes_expanded": int(decision.get("nodes_expanded", -1)),
+				"planner_ms": maxf(
+					0.0,
+					float(decision.get(
+						"planner_ms",
+						decision_profile_segments.get("turn_planner_ms", 0.0),
+					)),
+				),
 				"trajectory_hash": str(decision.get("trajectory_hash", "")),
+				"decision_semantic_hash": str(
+					decision.get("decision_semantic_hash", "")),
 			})
 		_perf_count(performance_profile, "decisions")
 		var requested_budget := int(_strategy_params(actor_strategy, actor_deck_key).get("simulation_budget", 1))
@@ -1298,31 +1627,41 @@ func _play_match(
 			)
 		if budget_stop_reason == "deadline":
 			time_capped_decisions += 1
-		if not bool(decision.get("success", false)):
+		var planner_error := str(decision.get("planner_error", ""))
+		if not bool(decision.get("success", false)) or not planner_error.is_empty():
 			rule_exceptions += 1
-			terminal_reason = "decision_failed"
-			terminal_message = str(decision.get("error", "decision_failed"))
+			terminal_reason = (
+				"planner_failed"
+				if not planner_error.is_empty()
+				else "decision_failed"
+			)
+			terminal_message = (
+				planner_error
+				if not planner_error.is_empty()
+				else str(decision.get("error", "decision_failed"))
+			)
 			break
-		var action_distill_row := _distill_action_row(
-			state,
-			actor,
-			actor_deck_key,
-			legal,
-			decision,
-			catalog,
-			actor_strategy,
-		)
-		_add_distill_context(
-			action_distill_row,
-			seed,
-			seed_block,
-			seat,
-			matchup_key,
-			matchup_kind,
-			strategy_a_deck,
-			strategy_b_deck,
-		)
-		_append_jsonl(distill_output, action_distill_row)
+		if not distill_output.is_empty():
+			var action_distill_row := _distill_action_row(
+				state,
+				actor,
+				actor_deck_key,
+				legal,
+				decision,
+				catalog,
+				actor_strategy,
+			)
+			_add_distill_context(
+				action_distill_row,
+				seed,
+				seed_block,
+				seat,
+				matchup_key,
+				matchup_kind,
+				strategy_a_deck,
+				strategy_b_deck,
+			)
+			_append_jsonl(distill_output, action_distill_row)
 		var action := GameAction.from_dict(decision["action"])
 		var diagnose_started := _perf_start(performance_profile)
 		var diagnostics: Dictionary = actor_worker.diagnose_decision(
@@ -1412,11 +1751,15 @@ func _play_match(
 		"turn_plan_cache_hit_samples_by_strategy": turn_plan_cache_hit_samples_by_strategy,
 		"ai_turn_ms_samples": ai_turn_ms_samples,
 		"ai_turn_ms_samples_by_strategy": ai_turn_ms_samples_by_strategy,
+		"simulation_samples_by_strategy": simulation_samples_by_strategy,
 		"rules_options": _evaluation_rules_options(),
 		"elapsed_ms": Time.get_ticks_msec() - started_ms,
 		"decision_diagnostics": decision_diagnostics,
 		"decision_diagnostics_by_strategy": decision_diagnostics_by_strategy,
 		"behavior_by_strategy": behavior_by_strategy,
+		"action_decisions_by_strategy": action_decisions_by_strategy,
+		"search_depth_decision_counts_by_strategy":
+			search_depth_decision_counts_by_strategy,
 		"search_depth_samples_by_strategy": search_depth_samples_by_strategy,
 		"invalid_actions": invalid_actions,
 		"choice_failures": choice_failures,
@@ -1607,6 +1950,11 @@ func _failed_match_row(
 		"behavior_by_strategy": {
 			"A": _empty_behavior_counts(),
 			"B": _empty_behavior_counts(),
+		},
+		"action_decisions_by_strategy": {"A": 0, "B": 0},
+		"search_depth_decision_counts_by_strategy": {
+			"A": {"applicable": 0, "not_applicable": 0, "reasons": {}},
+			"B": {"applicable": 0, "not_applicable": 0, "reasons": {}},
 		},
 		"search_depth_samples_by_strategy": {"A": [], "B": []},
 		"invalid_actions": 0,
@@ -1903,6 +2251,51 @@ func _task_belongs_to_range(task_index: int, task_start: int, task_count: int) -
 
 func _task_belongs_to_shard(task_index: int, task_shard_index: int, task_shard_count: int) -> bool:
 	return task_shard_count <= 1 or task_index % task_shard_count == task_shard_index
+
+
+func _evaluation_task_belongs_to_shard(
+	task_index: int,
+	evidence_unit_index: int,
+	task_shard_index: int,
+	task_shard_count: int,
+	evidence_shard_index: int,
+	evidence_shard_count: int,
+) -> bool:
+	if evidence_shard_count > 0:
+		return (
+			evidence_unit_index >= 0
+			and evidence_unit_index % evidence_shard_count == evidence_shard_index
+		)
+	return _task_belongs_to_shard(
+		task_index, task_shard_index, task_shard_count)
+
+
+func _cross_evidence_unit_index(
+	deck_count: int,
+	seed_blocks: int,
+	cross_seed_blocks: int,
+	deck_a_index: int,
+	deck_b_index: int,
+	block_index: int,
+) -> int:
+	var lower := mini(deck_a_index, deck_b_index)
+	var upper := maxi(deck_a_index, deck_b_index)
+	if (
+		lower < 0
+		or upper >= deck_count
+		or lower == upper
+		or cross_seed_blocks <= 0
+	):
+		return -1
+	var pair_ordinal := 0
+	for first in range(lower):
+		pair_ordinal += deck_count - first - 1
+	pair_ordinal += upper - lower - 1
+	return (
+		deck_count * seed_blocks
+		+ pair_ordinal * cross_seed_blocks
+		+ block_index
+	)
 
 
 func _empty_diagnostic_counts() -> Dictionary:
@@ -3284,6 +3677,333 @@ func _join_strings(parts: Array[String], separator: String) -> String:
 			result += separator
 		result += parts[index]
 	return result
+
+
+func _evidence_unit_id(
+	matchup_kind: String,
+	deck_a: String,
+	deck_b: String,
+	seed_block: int,
+	seed: int,
+) -> String:
+	if matchup_kind == "cross":
+		var decks := [deck_a, deck_b]
+		decks.sort()
+		return "cross|%s|%s|%d|%d" % [
+			str(decks[0]), str(decks[1]), seed_block, seed]
+	return "mirror|%s|%d|%d" % [deck_a, seed_block, seed]
+
+
+func _evidence_unit_id_from_match(row: Dictionary) -> String:
+	return _evidence_unit_id(
+		str(row.get("matchup_kind", "")),
+		str(row.get("strategy_a_deck", row.get("deck", ""))),
+		str(row.get("strategy_b_deck", row.get("deck", ""))),
+		int(row.get("seed_block", -1)),
+		int(row.get("seed", 0)),
+	)
+
+
+func _expected_unit_games(unit_id: String) -> int:
+	return 4 if unit_id.begins_with("cross|") else 2
+
+
+func _checkpoint_rows_have_exact_unit_identities(
+	unit_id: String,
+	rows: Array,
+) -> bool:
+	var expected_kind := ""
+	if unit_id.begins_with("mirror|"):
+		expected_kind = "mirror"
+	elif unit_id.begins_with("cross|"):
+		expected_kind = "cross"
+	else:
+		return false
+	if rows.size() != _expected_unit_games(unit_id):
+		return false
+	var direction_seats: Dictionary = {}
+	var identity_signatures: Dictionary = {}
+	for row_value in rows:
+		if not row_value is Dictionary:
+			return false
+		var row: Dictionary = row_value
+		var kind := str(row.get("matchup_kind", ""))
+		var deck_a := str(row.get(
+			"strategy_a_deck", row.get("deck", "")))
+		var deck_b := str(row.get(
+			"strategy_b_deck", row.get("deck", "")))
+		var seat := int(row.get("seat", -1))
+		if (
+			kind != expected_kind
+			or deck_a.is_empty()
+			or deck_b.is_empty()
+			or seat not in [0, 1]
+			or _evidence_unit_id_from_match(row) != unit_id
+			or (kind == "mirror" and deck_a != deck_b)
+			or (kind == "cross" and deck_a == deck_b)
+		):
+			return false
+		var direction_key := "%s\u001f%s" % [deck_a, deck_b]
+		var identity_key := "%s\u001f%d" % [direction_key, seat]
+		if identity_signatures.has(identity_key):
+			return false
+		identity_signatures[identity_key] = true
+		var seats: Dictionary = direction_seats.get(direction_key, {})
+		seats[seat] = true
+		direction_seats[direction_key] = seats
+	if expected_kind == "mirror":
+		if direction_seats.size() != 1:
+			return false
+	else:
+		if direction_seats.size() != 2:
+			return false
+		for direction_value in direction_seats.keys():
+			var parts := str(direction_value).split("\u001f", false, 1)
+			if (
+				parts.size() != 2
+				or not direction_seats.has(
+					"%s\u001f%s" % [str(parts[1]), str(parts[0])])
+			):
+				return false
+	for seats_value in direction_seats.values():
+		var seats: Dictionary = seats_value
+		if seats.size() != 2 or not seats.has(0) or not seats.has(1):
+			return false
+	return true
+
+
+func _match_has_fatal_error(row: Dictionary) -> bool:
+	return (
+		str(row.get("terminal_reason", "")) != "game_over"
+		or int(row.get("invalid_actions", 0)) > 0
+		or int(row.get("choice_failures", 0)) > 0
+		or int(row.get("rule_exceptions", 0)) > 0
+		or bool(row.get("max_actions_exhausted", false))
+	)
+
+
+func _matches_have_fatal_error(rows: Array) -> bool:
+	for row_value in rows:
+		if row_value is Dictionary and _match_has_fatal_error(row_value):
+			return true
+	return false
+
+
+func _read_json_quiet(path: String) -> Variant:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return null
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	return parsed
+
+
+func _checkpoint_normalized(value: Variant) -> Variant:
+	if value is Dictionary:
+		var result: Dictionary = {}
+		for key in value.keys():
+			result[str(key)] = _checkpoint_normalized(value[key])
+		return result
+	if value is Array:
+		var result: Array = []
+		for item in value:
+			result.append(_checkpoint_normalized(item))
+		return result
+	if value is float and is_equal_approx(value, roundf(value)):
+		return int(roundf(value))
+	return value
+
+
+func _checkpoint_matches_sha256(rows: Array) -> String:
+	return _canonical_json(_checkpoint_normalized(rows)).sha256_text()
+
+
+func _checkpoint_record_is_valid(
+	record: Dictionary,
+	simulation_fingerprint: String,
+	task_manifest_id: String,
+	shard_index: int,
+	shard_count: int,
+) -> bool:
+	if (
+		int(record.get("schema_version", 0)) != SCHEMA_VERSION
+		or str(record.get("protocol_id", "")) != PROTOCOL_ID
+		or str(record.get("artifact_kind", "")) != "ai_evaluation_checkpoint_unit"
+		or str(record.get("simulation_fingerprint", "")) != simulation_fingerprint
+		or str(record.get("task_manifest_id", "")) != task_manifest_id
+		or int(record.get("evidence_shard_index", -1)) != shard_index
+		or int(record.get("evidence_shard_count", 0)) != shard_count
+	):
+		return false
+	var unit_id := str(record.get("unit_id", ""))
+	var rows: Array = record.get("matches", [])
+	if unit_id.is_empty() or rows.size() != _expected_unit_games(unit_id):
+		return false
+	if not _checkpoint_rows_have_exact_unit_identities(unit_id, rows):
+		return false
+	if str(record.get("matches_sha256", "")) != _checkpoint_matches_sha256(rows):
+		return false
+	for row_value in rows:
+		if (
+			not row_value is Dictionary
+			or _evidence_unit_id_from_match(row_value) != unit_id
+			or _match_has_fatal_error(row_value)
+		):
+			return false
+	return true
+
+
+func _load_evaluation_checkpoints(
+	path: String,
+	simulation_fingerprint: String,
+	task_manifest_id: String,
+	shard_index: int,
+	shard_count: int,
+) -> Dictionary:
+	var result: Dictionary = {}
+	var resolved := _absolute_path(path)
+	var directory := DirAccess.open(resolved)
+	if directory == null:
+		return result
+	directory.list_dir_begin()
+	while true:
+		var file_name := directory.get_next()
+		if file_name.is_empty():
+			break
+		if directory.current_is_dir() or not file_name.ends_with(".json"):
+			continue
+		var parsed: Variant = _read_json_quiet(resolved.path_join(file_name))
+		if not parsed is Dictionary:
+			continue
+		var record: Dictionary = parsed
+		if not _checkpoint_record_is_valid(
+			record,
+			simulation_fingerprint,
+			task_manifest_id,
+			shard_index,
+			shard_count,
+		):
+			continue
+		var unit_id := str(record.get("unit_id", ""))
+		if result.has(unit_id):
+			var existing: Dictionary = result[unit_id]
+			if (
+				str(existing.get("matches_sha256", ""))
+				!= str(record.get("matches_sha256", ""))
+			):
+				push_error("Conflicting evaluation checkpoints for %s." % unit_id)
+				_had_error = true
+				continue
+		result[unit_id] = record
+	directory.list_dir_end()
+	return result
+
+
+func _checkpoint_rows_for_pair(
+	checkpoint_records: Dictionary,
+	unit_id: String,
+	deck_a: String,
+	deck_b: String,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if not checkpoint_records.has(unit_id):
+		return result
+	var record: Dictionary = checkpoint_records[unit_id]
+	for row_value in record.get("matches", []):
+		if not row_value is Dictionary:
+			continue
+		var row: Dictionary = row_value
+		if (
+			str(row.get("strategy_a_deck", "")) == deck_a
+			and str(row.get("strategy_b_deck", "")) == deck_b
+		):
+			result.append(row.duplicate(true))
+	result.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		return int(left.get("seat", -1)) < int(right.get("seat", -1)))
+	return result
+
+
+func _write_evaluation_checkpoint(
+	path: String,
+	simulation_fingerprint: String,
+	task_manifest_id: String,
+	shard_index: int,
+	shard_count: int,
+	unit_id: String,
+	rows: Array,
+) -> bool:
+	if (
+		path.is_empty()
+		or rows.size() != _expected_unit_games(unit_id)
+		or not _checkpoint_rows_have_exact_unit_identities(unit_id, rows)
+		or _matches_have_fatal_error(rows)
+	):
+		return false
+	var resolved := _absolute_path(path)
+	var directory_error := DirAccess.make_dir_recursive_absolute(resolved)
+	if directory_error != OK:
+		push_error("Unable to create evaluation checkpoint directory: %s" % resolved)
+		return false
+	var frozen_rows: Array = rows.duplicate(true)
+	var matches_sha256 := _checkpoint_matches_sha256(frozen_rows)
+	var record := {
+		"schema_version": SCHEMA_VERSION,
+		"protocol_id": PROTOCOL_ID,
+		"artifact_kind": "ai_evaluation_checkpoint_unit",
+		"simulation_fingerprint": simulation_fingerprint,
+		"task_manifest_id": task_manifest_id,
+		"evidence_shard_index": shard_index,
+		"evidence_shard_count": shard_count,
+		"unit_id": unit_id,
+		"expected_games": _expected_unit_games(unit_id),
+		"matches_sha256": matches_sha256,
+		"matches": frozen_rows,
+	}
+	var file_stem := "%s-%s" % [
+		unit_id.sha256_text(), matches_sha256.substr(0, 16)]
+	var repair_ordinal := 0
+	var final_path := resolved.path_join("%s.json" % file_stem)
+	while FileAccess.file_exists(final_path):
+		var existing_value: Variant = _read_json_quiet(final_path)
+		if (
+			existing_value is Dictionary
+			and _checkpoint_record_is_valid(
+				existing_value,
+				simulation_fingerprint,
+				task_manifest_id,
+				shard_index,
+				shard_count,
+			)
+			and str(existing_value.get("unit_id", "")) == unit_id
+			and str(existing_value.get("matches_sha256", "")) == matches_sha256
+		):
+			return true
+		# Checkpoints are immutable. Preserve a corrupt record for diagnosis and
+		# publish the recomputed unit under a deterministic repair suffix.
+		repair_ordinal += 1
+		if repair_ordinal > 1024:
+			push_error("Too many corrupt evaluation checkpoint repairs for %s." % unit_id)
+			return false
+		final_path = resolved.path_join(
+			"%s.repair-%04d.json" % [file_stem, repair_ordinal])
+	var temporary_path := "%s.tmp.%d" % [final_path, OS.get_process_id()]
+	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null:
+		push_error("Unable to write evaluation checkpoint: %s" % temporary_path)
+		return false
+	file.store_string(JSON.stringify(record, "\t"))
+	file.store_string("\n")
+	file.flush()
+	file.close()
+	var rename_error := DirAccess.rename_absolute(temporary_path, final_path)
+	if rename_error != OK:
+		if FileAccess.file_exists(final_path):
+			DirAccess.remove_absolute(temporary_path)
+			return true
+		push_error("Unable to publish evaluation checkpoint: %s" % final_path)
+		DirAccess.remove_absolute(temporary_path)
+		return false
+	return true
 
 
 func _count_by(matches: Array[Dictionary], key: String) -> Dictionary:

@@ -2,10 +2,14 @@ class_name GameEngine
 extends RefCounted
 
 const MAX_ACTION_QUERY_CACHE_ENTRIES := 64
+const MAX_SEARCH_PREFLIGHT_PROOFS := 4096
 
 var catalog: CardCatalog
 var _runtime: RulesRuntime
 var _action_group_cache: Dictionary = {}
+var _search_preflight_epoch := 0
+var _search_preflight_proofs: Dictionary = {}
+var _search_preflight_proof_count := 0
 
 
 func _init(p_catalog: CardCatalog = null) -> void:
@@ -103,6 +107,36 @@ func query_legal_action_groups(
 	state: GameState,
 	actor: int,
 ) -> LegalActionQueryResult:
+	return _query_legal_action_groups(state, actor, true)
+
+
+func query_legal_action_groups_ephemeral(
+	state: GameState,
+	actor: int,
+) -> LegalActionQueryResult:
+	## Search clones advance once and are then discarded. Avoid retaining their
+	## one-use legal-action results in the shared engine cache.
+	var result := _query_legal_action_groups(state, actor, false)
+	if result.success and _search_preflight_epoch > 0:
+		_register_search_preflight_proofs(state, actor, result)
+	return result
+
+
+func begin_search_decision() -> void:
+	## Proofs are intentionally scoped to one synchronous beam decision. Starting
+	## another sample/decision invalidates every unused proof from the prior one.
+	_search_preflight_epoch += 1
+	if _search_preflight_epoch <= 0:
+		_search_preflight_epoch = 1
+	_search_preflight_proofs.clear()
+	_search_preflight_proof_count = 0
+
+
+func _query_legal_action_groups(
+	state: GameState,
+	actor: int,
+	use_cache: bool,
+) -> LegalActionQueryResult:
 	if state == null or actor not in [0, 1]:
 		return LegalActionQueryResult.failure(
 			state.revision if state != null else -1,
@@ -118,7 +152,7 @@ func query_legal_action_groups(
 	var cache_key := "%d:%d:%d:%s" % [
 		state.get_instance_id(), state.revision, actor, pending_id,
 	]
-	if _action_group_cache.has(cache_key):
+	if use_cache and _action_group_cache.has(cache_key):
 		var cached_result: LegalActionQueryResult = _action_group_cache[cache_key]
 		return cached_result.immutable_copy()
 	var grouped: Dictionary = {}
@@ -171,17 +205,15 @@ func query_legal_action_groups(
 		var group: LegalActionGroup = grouped[group_id]
 		result.append(group)
 	var query_result := LegalActionQueryResult.ok(state.revision, result)
-	if _action_group_cache.size() >= MAX_ACTION_QUERY_CACHE_ENTRIES:
-		# Cold-revision queries naturally fill this small cache. Building the full
-		# Dictionary.keys() array merely to evict one arbitrary entry made every
-		# subsequent query pay an allocation proportional to the cache size. A
-		# bounded wholesale reset has the same correctness semantics (cache entries
-		# are optional and revision-keyed) and keeps the cold path constant-time.
-		_action_group_cache.clear()
-	# Keep an isolated immutable-by-convention copy in the cache.  Returning the
-	# freshly built result avoids two full dictionary serialization round trips
-	# on every cold-revision query, while cache hits still receive their own copy.
-	_action_group_cache[cache_key] = query_result.immutable_copy()
+	if use_cache:
+		if _action_group_cache.size() >= MAX_ACTION_QUERY_CACHE_ENTRIES:
+			# Cold-revision queries naturally fill this small cache. Building the
+			# full Dictionary.keys() array merely to evict one arbitrary entry made
+			# every subsequent query pay an allocation proportional to cache size.
+			_action_group_cache.clear()
+		# Keep an isolated immutable-by-convention copy in the cache. Returning the
+		# freshly built result avoids two full serialization round trips on a miss.
+		_action_group_cache[cache_key] = query_result.immutable_copy()
 	return query_result
 
 
@@ -193,10 +225,117 @@ func apply_action(
 	return _publicize_result(state, _apply_action_internal(state, action, rng))
 
 
+func apply_search_action_ephemeral(
+	parent_state: GameState,
+	action: GameAction,
+	rng: PortableRandomSource,
+) -> Dictionary:
+	## Internal fixed-search path. The engine owns the clone so a caller cannot
+	## pair a proof from one queried parent with a different same-revision state.
+	## Missing/stale proofs merely disable the optimization; legality then follows
+	## the complete public preflight path.
+	if parent_state == null:
+		return {"state": null, "step": null}
+	var state := parent_state.clone_state()
+	state.set_type_matchups_enabled(false)
+	var step := _apply_action_internal(
+		state,
+		action,
+		rng,
+		true,
+		false,
+		parent_state,
+	)
+	return {
+		"state": state,
+		"step": _publicize_result(state, step),
+	}
+
+
+func _register_search_preflight_proofs(
+	state: GameState,
+	actor: int,
+	result: LegalActionQueryResult,
+) -> void:
+	if state == null or result == null or not result.success:
+		return
+	var actions: Array[GameAction] = []
+	actions.assign(result.concrete_actions())
+	if _search_preflight_proof_count + actions.size() > MAX_SEARCH_PREFLIGHT_PROOFS:
+		_search_preflight_proofs.clear()
+		_search_preflight_proof_count = 0
+	var parent_key := _search_preflight_parent_key(state, actor)
+	var parent_proofs: Dictionary = _search_preflight_proofs.get(parent_key, {})
+	for action in actions:
+		if action == null or action.actor != actor:
+			continue
+		var action_key := LegalActionGroup.group_id_for_action(action)
+		var wires: Array = parent_proofs.get(action_key, [])
+		wires.append(action.to_dict())
+		parent_proofs[action_key] = wires
+		_search_preflight_proof_count += 1
+	_search_preflight_proofs[parent_key] = parent_proofs
+
+
+func _consume_search_preflight_proof(
+	parent_state: GameState,
+	action: GameAction,
+) -> bool:
+	if (
+		_search_preflight_epoch <= 0
+		or parent_state == null
+		or action == null
+	):
+		return false
+	var parent_key := _search_preflight_parent_key(parent_state, action.actor)
+	var parent_value: Variant = _search_preflight_proofs.get(parent_key)
+	if not parent_value is Dictionary:
+		return false
+	var parent_proofs: Dictionary = parent_value
+	var action_key := LegalActionGroup.group_id_for_action(action)
+	var wire_values: Variant = parent_proofs.get(action_key)
+	if not wire_values is Array:
+		return false
+	var wires: Array = wire_values
+	var submitted_wire := action.to_dict()
+	for index in range(wires.size()):
+		if wires[index] != submitted_wire:
+			continue
+		wires.remove_at(index)
+		_search_preflight_proof_count = maxi(
+			0, _search_preflight_proof_count - 1)
+		if wires.is_empty():
+			parent_proofs.erase(action_key)
+		else:
+			parent_proofs[action_key] = wires
+		if parent_proofs.is_empty():
+			_search_preflight_proofs.erase(parent_key)
+		else:
+			_search_preflight_proofs[parent_key] = parent_proofs
+		return true
+	return false
+
+
+static func _search_preflight_parent_key(
+	parent_state: GameState,
+	actor: int,
+) -> String:
+	if parent_state == null or actor not in [0, 1]:
+		return ""
+	return "%d:%d:%d" % [
+		parent_state.get_instance_id(),
+		parent_state.revision,
+		actor,
+	]
+
+
 func _apply_action_internal(
 	state: GameState,
 	action: GameAction,
 	rng: PortableRandomSource,
+	disposable_state: bool = false,
+	invalidate_shared_cache: bool = true,
+	preflight_proof_parent: GameState = null,
 ) -> StepResult:
 	if action == null or action.is_legacy_constructed():
 		return _error(
@@ -207,6 +346,7 @@ func _apply_action_internal(
 	var actor := action.actor
 	if actor not in [0, 1]:
 		return _error("动作玩家无效。", "unauthorized_actor", state)
+	# Shape validation is never bypassed, even for an engine-issued proof.
 	var schema_result := _runtime._action_registry.validate_action(action, true)
 	if not bool(schema_result.get("ok", false)):
 		return _error(
@@ -220,16 +360,26 @@ func _apply_action_internal(
 		return _error("动作基于过期局面。", "stale_revision", state)
 	if state.resolution_stack.get("pending_request") is Dictionary:
 		return _error("必须先完成当前选择。", "pending_choice", state)
-	var preflight := _runtime._action_registry.preflight(state, action, actor)
-	if not bool(preflight.get("ok", false)):
-		return _error(
-			str(preflight.get("message", "动作当前不合法。")),
-			str(preflight.get("code", "illegal_action")),
-			state,
-		)
+	var skip_preflight_with_proof := _consume_search_preflight_proof(
+		preflight_proof_parent, action)
+	if not skip_preflight_with_proof:
+		var preflight := _runtime._action_registry.preflight(state, action, actor)
+		if not bool(preflight.get("ok", false)):
+			return _error(
+				str(preflight.get("message", "动作当前不合法。")),
+				str(preflight.get("code", "illegal_action")),
+				state,
+			)
 	var result := _runtime._action_settlement.apply_action(
-		state, action, actor, rng, Callable(_runtime._action_registry, "execute"))
-	_invalidate_action_cache()
+		state,
+		action,
+		actor,
+		rng,
+		Callable(_runtime._action_registry, "execute"),
+		disposable_state,
+	)
+	if invalidate_shared_cache:
+		_invalidate_action_cache()
 	return result
 
 

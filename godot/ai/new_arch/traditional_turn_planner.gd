@@ -22,6 +22,7 @@ static func plan_action(
 	trusted_leaf_evaluator: Callable = Callable(),
 	trusted_choice_resolver: Callable = Callable(),
 	trusted_action_evaluator: Callable = Callable(),
+	reuse_sample_zero: bool = true,
 ) -> Dictionary:
 	if information_set == null or not information_set.is_valid():
 		return _failure(
@@ -128,6 +129,7 @@ static func plan_action(
 	var reply_completed_depth := int(config.get(
 		"reply_depth", AITurnBeamPlanner.DEFAULT_REPLY_DEPTH))
 	var reply_depth_applicable := false
+	var reply_completion_reasons: Dictionary = {}
 	var layers_completed := requested_depth
 	var completion_reasons: Dictionary = {}
 	var belief_seeds: Array[int] = []
@@ -138,6 +140,28 @@ static func plan_action(
 		var sample_config := config.duplicate(true)
 		sample_config["seed"] = seed + sample_index * 1000003
 		belief_seeds.append(int(sample_config["seed"]))
+		var precomputed_sample_zero := {}
+		if reuse_sample_zero and sample_index == 0:
+			precomputed_sample_zero = {
+				"seed": seed,
+				"actor": actor,
+				"state_revision": tactical_state.revision,
+				"catalog_source_id": int(safe_catalog.get_instance_id()),
+				"information_binding":
+					AITurnBeamPlanner._information_binding(root_precondition),
+				"match_seed": information_set.match_seed(),
+				"root_actions_binding":
+					AITurnBeamPlanner._root_actions_binding(legal_actions),
+				"strategy_binding":
+					AITurnBeamPlanner._variant_binding(strategy),
+				"trusted_action_evaluator_binding":
+					AITurnBeamPlanner._variant_binding(
+						trusted_action_evaluator),
+				"ranked_roots_binding":
+					AITurnBeamPlanner._ranked_roots_binding(ranked_roots),
+				"root_state": tactical_state,
+				"ranked_roots": ranked_roots,
+			}
 		var planned := planner.plan(
 			information_set,
 			actor,
@@ -149,6 +173,7 @@ static func plan_action(
 			trusted_leaf_evaluator,
 			trusted_choice_resolver,
 			trusted_action_evaluator,
+			precomputed_sample_zero,
 		)
 		nodes_used += maxi(0, int(planned.get("nodes_expanded", 0)))
 		trajectory_hash = ("%s|sample=%d|seed=%d|trace=%s|nodes=%d|reason=%s" % [
@@ -185,6 +210,9 @@ static func plan_action(
 				reply_completed_depth,
 				int(planned.get("reply_completed_depth", 0)),
 			)
+			for reply_reason_value in planned.get(
+				"reply_completion_reasons", []):
+				reply_completion_reasons[str(reply_reason_value)] = true
 		layers_completed = mini(
 			layers_completed, int(planned.get("layers_completed", 0)))
 		var reason := str(planned.get("completion_reason", "error"))
@@ -252,6 +280,16 @@ static func plan_action(
 	)
 	if not reply_depth_applicable:
 		reply_completed_depth = 0
+	var reply_completion_reason := "not_applicable"
+	if reply_depth_applicable:
+		reply_completion_reason = (
+			"depth_complete"
+			if (
+				reply_completion_reasons.size() == 1
+				and reply_completion_reasons.has("depth_complete")
+			)
+			else "frontier_exhausted"
+		)
 	var result := _success_result(
 		selected_action,
 		sequence,
@@ -267,6 +305,7 @@ static func plan_action(
 	for signature_value in fixed_root_signatures:
 		var row: Dictionary = aggregate.get(signature_value, {})
 		root_sample_counts[signature_value] = int(row.get("count", 0))
+	result["root_signatures_attempted"] = fixed_root_signatures.duplicate()
 	result["root_sample_counts"] = root_sample_counts
 	result["belief_seed_hash"] = AIPositionEvaluator.stable_variant_signature(
 		belief_seeds).sha256_text()
@@ -279,6 +318,9 @@ static func plan_action(
 	result["max_path_depth"] = max_path_depth
 	result["reply_completed_depth"] = reply_completed_depth
 	result["reply_depth_applicable"] = reply_depth_applicable
+	result["reply_requested_depth"] = int(config.get(
+		"reply_depth", AITurnBeamPlanner.DEFAULT_REPLY_DEPTH))
+	result["reply_completion_reason"] = reply_completion_reason
 	result["layers_completed"] = layers_completed
 	result["completion_reason"] = completion_reason
 	result["search_depth_requested"] = requested_depth
@@ -493,7 +535,14 @@ static func _fallback_result(
 		[_plan_step(fallback, root_precondition)],
 	)
 	result["error"] = error
-	result["search_depth_applicable"] = false
+	# The production runtime may still return a legal tactical fallback, but an
+	# evaluation must retain the failed search as applicable evidence so the
+	# fixed-depth gate fails closed.
+	result["search_depth_applicable"] = true
+	result["search_depth_requested"] = SEARCH_DEPTH
+	result["search_depth_reached"] = 0
+	result["search_depth_completed"] = 0
+	result["search_depth_stop_reason"] = "error"
 	result["completion_reason"] = "error"
 	result["trajectory_hash"] = (
 		"fallback|%s|%s" % [

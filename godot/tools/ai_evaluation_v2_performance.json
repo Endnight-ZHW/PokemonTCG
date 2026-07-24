@@ -1,0 +1,6 @@
+{
+  "id": "turn-beam-v2-candidate",
+  "label": "Fixed Depth 8 Candidate",
+  "engine": "turn_beam_v2",
+  "deterministic": true
+}

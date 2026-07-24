@@ -1,4 +1,4 @@
-"""Merge Godot AI-evaluation shards into one authoritative schema-v6 result."""
+"""Merge Godot AI-evaluation shards into one authoritative schema-v7 result."""
 from __future__ import annotations
 
 import argparse
@@ -7,16 +7,23 @@ from pathlib import Path
 from typing import Any, Sequence
 
 try:
-    from scripts.ai_evaluation_v6 import (
+    from scripts.build_ai_evaluation_provenance import current_analysis_provenance
+except ModuleNotFoundError:  # Direct ``python python/scripts/...`` execution.
+    from build_ai_evaluation_provenance import current_analysis_provenance
+
+try:
+    from scripts.ai_evaluation_v7 import (
         MergeError,
+        PROTOCOL_ID,
         SCHEMA_VERSION,
         experimental_units,
         merge_payloads,
         summarize_strength,
     )
 except ModuleNotFoundError:  # Direct ``python python/scripts/...`` execution.
-    from ai_evaluation_v6 import (  # type: ignore[no-redef]
+    from ai_evaluation_v7 import (  # type: ignore[no-redef]
         MergeError,
+        PROTOCOL_ID,
         SCHEMA_VERSION,
         experimental_units,
         merge_payloads,
@@ -25,7 +32,7 @@ except ModuleNotFoundError:  # Direct ``python python/scripts/...`` execution.
 
 
 def _summarize_role_crossover(matches: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compatibility helper for focused tests; v5's canonical field is strength."""
+    """Compatibility helper for focused tests; v7's canonical field is strength."""
     _, cross_units = experimental_units(matches)
     strength = summarize_strength([], cross_units)["cross_role"]
     return {
@@ -48,6 +55,8 @@ def merge_files(
     *,
     workers: int = 1,
     search_depth_input_paths: Sequence[Path] | None = None,
+    wall_clock_ms: float | None = None,
+    wall_clock_scope: str | None = None,
 ) -> dict[str, Any]:
     shards = [json.loads(path.read_text(encoding="utf-8-sig")) for path in input_paths]
     search_depth_shards = (
@@ -59,6 +68,11 @@ def merge_files(
         shards,
         workers=max(1, int(workers)),
         search_depth_shards=search_depth_shards,
+        analysis_provenance=current_analysis_provenance(
+            Path(__file__).resolve().parents[2]
+        ),
+        wall_clock_ms=wall_clock_ms,
+        wall_clock_scope=wall_clock_scope,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
@@ -76,6 +90,7 @@ def _write_error(path: Path | None, error: str) -> None:
         json.dumps(
             {
                 "schema_version": SCHEMA_VERSION,
+                "protocol_id": PROTOCOL_ID,
                 "artifact_kind": "ai_evaluation_merge_error",
                 "valid": False,
                 "error": error,
@@ -102,6 +117,19 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--error-output", type=Path)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--wall-clock-ms",
+        type=float,
+        help="Measured wall time of the main evidence stage (diagnostic only).",
+    )
+    parser.add_argument(
+        "--wall-clock-scope",
+        choices=("full_evidence_stage", "current_attempt_only"),
+        help=(
+            "Explicit scope for --wall-clock-ms. If omitted, the merge "
+            "infers a safe scope from checkpoint restoration."
+        ),
+    )
     args = parser.parse_args()
     try:
         payload = merge_files(
@@ -109,6 +137,8 @@ def main() -> int:
             args.output,
             workers=max(1, args.workers),
             search_depth_input_paths=args.search_depth_input,
+            wall_clock_ms=args.wall_clock_ms,
+            wall_clock_scope=args.wall_clock_scope,
         )
     except (MergeError, OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
         error = str(exc)

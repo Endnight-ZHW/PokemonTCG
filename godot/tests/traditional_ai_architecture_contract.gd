@@ -27,6 +27,11 @@ func _initialize() -> void:
 	var semantic_count := _check_semantic_catalog(catalog)
 	_check_choice_constraints(catalog)
 	_check_information_context_and_cache(state, catalog, engine)
+	_check_search_hot_path_contract(state, catalog)
+	_check_hot_path_string_wire_equivalence()
+	_check_trace_format_wire_equivalence()
+	_check_stable_variant_signature_wire_equivalence()
+	_check_search_action_apply_equivalence(catalog)
 	var registry := _check_strategy_registry(information_set)
 	_check_dragon_strategy_regressions(registry)
 	_check_shared_strategy_scoring_regressions(registry)
@@ -341,6 +346,784 @@ func _check_information_context_and_cache(
 		cache_key, state.revision, legal, changed_information)
 	_check(stale == null,
 		"Turn-plan cache survived a mismatched public-state fingerprint/phase")
+
+
+func _check_search_hot_path_contract(
+	state: GameState,
+	catalog: CardCatalog,
+) -> void:
+	var engine := GameEngine.new(catalog)
+	var ephemeral := engine.query_legal_action_groups_ephemeral(state, 0)
+	_check(
+		ephemeral.success
+		and engine._action_group_cache.is_empty(),
+		"Ephemeral legal-action query populated the shared engine cache",
+	)
+	var cached := engine.query_legal_action_groups(state, 0)
+	_check(
+		cached.success
+		and ephemeral.to_dict() == cached.to_dict(),
+		"Ephemeral legal-action query changed action content or ordering",
+	)
+	if not ephemeral.success:
+		return
+	var legal: Array[GameAction] = []
+	legal.assign(ephemeral.concrete_actions())
+	if legal.is_empty():
+		_check(false, "Search hot-path fixture has no legal actions")
+		return
+	var history := [{
+		"turn_number": state.turn_number,
+		"revision": state.revision,
+		"actor": 1,
+		"kind": "END_TURN",
+		"event_type": "turn_ended",
+	}]
+	var full := AIInformationSet.capture(
+		state, 0, catalog, [legal[0]], history, TEST_SEED)
+	var view_only := AIInformationSet.capture_view_only(
+		state, 0, catalog, [], history, TEST_SEED)
+	var derived_view := view_only.read_only_view_for_legal_actions([legal[0]])
+	var shared_view := view_only.shared_read_only_view()
+	_check(
+		full.is_valid()
+		and view_only.is_valid()
+		and derived_view == full.read_only_view()
+		and shared_view == view_only.read_only_view()
+		and shared_view.is_read_only()
+		and Array(shared_view.get("players", [])).is_read_only()
+		and derived_view.is_read_only()
+		and Array(derived_view.get("legal_actions", [])).is_read_only()
+		and view_only.sample_state(TEST_SEED) == null,
+		"View-only projection diverged from the full information-set public view",
+	)
+	var setup_state := state.clone_state()
+	setup_state.phase = "SETUP"
+	setup_state.setup_stage = GameState.SETUP_INITIAL_PLACEMENT
+	setup_state.setup_actor_idx = 1
+	setup_state.setup_bonus_card_ids = [
+		["sv1-ener-2"],
+		["sv1-ener-3"],
+	]
+	var setup_before := setup_state.snapshot()
+	var setup_views_match := true
+	for perspective in [0, 1]:
+		var setup_full := AIInformationSet.capture(
+			setup_state, perspective, catalog, [legal[0]], history, TEST_SEED)
+		var setup_view_only := AIInformationSet.capture_view_only(
+			setup_state, perspective, catalog, [legal[0]], history, TEST_SEED)
+		setup_views_match = (
+			setup_views_match
+			and setup_full.is_valid()
+			and setup_view_only.is_valid()
+			and setup_full.read_only_view() == setup_view_only.read_only_view()
+		)
+	_check(
+		setup_views_match and setup_state.snapshot() == setup_before,
+		"View-only setup projection diverged by perspective or mutated its source",
+	)
+	var action_count := mini(3, legal.size())
+	var actions: Array[GameAction] = []
+	actions.assign(legal.slice(0, action_count))
+	var observed_kinds: Array[String] = []
+	var views_were_read_only := true
+	var strategy := {
+		"action_score": func(
+			view: Dictionary,
+			_action: Dictionary,
+			_semantics: Dictionary,
+		) -> float:
+			var rows: Array = view.get("legal_actions", [])
+			if (
+				not view.is_read_only()
+				or not rows.is_read_only()
+				or rows.size() != 1
+			):
+				views_were_read_only = false
+			observed_kinds.append(
+				str(Dictionary(rows[0]).get("kind", ""))
+				if rows.size() == 1
+				else ""
+			)
+			return 0.0,
+	}
+	var ranked := AIPositionEvaluator.ranked_actions(
+		state,
+		0,
+		actions,
+		strategy,
+		CardSemanticCatalog.new(catalog),
+		catalog,
+		TEST_SEED,
+	)
+	var expected_kinds: Array[String] = []
+	for action in actions:
+		expected_kinds.append(action.kind)
+	_check(
+		ranked.size() == actions.size()
+		and views_were_read_only
+		and observed_kinds == expected_kinds,
+		"Batch action scoring did not preserve one-action read-only strategy views",
+	)
+	var seen: Dictionary = {}
+	var best_complete: Dictionary = {}
+	var best_partial: Dictionary = {}
+	var retained_state := state.clone_state()
+	var accepted := AITurnBeamPlanner._record_node(
+		{
+			"state": retained_state,
+			"root_signature": "root",
+			"state_fingerprint": "state",
+			"sequence_signature": "action:a",
+			"score_milli": 1,
+			"depth": 1,
+			"ended": false,
+		},
+		best_complete,
+		best_partial,
+		seen,
+	)
+	var seen_summary: Dictionary = seen.get("root|state", {})
+	_check(
+		accepted
+		and not seen_summary.has("state")
+		and seen_summary.get("sequence_signature") == "action:a",
+		"Beam de-duplication retained a discarded full search state",
+	)
+	var fingerprint_state := state.clone_state()
+	fingerprint_state.action_log.assign(["ignored-log"])
+	fingerprint_state.processed_action_ids.assign(["ignored-action"])
+	fingerprint_state.revision = 91
+	fingerprint_state.choice_sequence = 37
+	fingerprint_state.resolution_stack = {
+		"schema_version": 3,
+		"frames": [{"private": "ignored"}],
+		"pending_request": {"request_id": "ignored"},
+		"sequence": 9,
+		"context": {"ignored": true},
+	}
+	var legacy_payload := fingerprint_state.to_dict()
+	legacy_payload.erase("action_log")
+	legacy_payload.erase("processed_action_ids")
+	legacy_payload.erase("revision")
+	legacy_payload.erase("choice_sequence")
+	legacy_payload["resolution_stack"] = {}
+	var legacy_state_wire := _legacy_stable_variant_signature(legacy_payload)
+	var optimized_state_wire := AIPositionEvaluator.stable_variant_signature(
+		legacy_payload)
+	_check(
+		optimized_state_wire == legacy_state_wire,
+		"Optimized recursive state signature changed the frozen canonical wire",
+	)
+	var legacy_fingerprint := legacy_state_wire.sha256_text()
+	_check(
+		AITurnBeamPlanner._state_fingerprint(fingerprint_state)
+			== legacy_fingerprint,
+		"Direct beam-state fingerprint diverged from the frozen canonical wire",
+	)
+
+
+func _check_hot_path_string_wire_equivalence() -> void:
+	var values: Array[String] = [
+		"",
+		"plain-ascii",
+		"percent:%s|pipe",
+		"first line\nsecond line",
+		"宝可梦-é-Δ",
+		"escaped-nul:" + "\\u0000" + ":tail",
+	]
+	for left in values:
+		for right in values:
+			var legacy_signature_wire := "%s|%s" % [left, right]
+			var direct_signature_wire := left + "|" + right
+			_check(
+				direct_signature_wire == legacy_signature_wire,
+				"Typed sequence/seen signature concatenation changed the frozen wire",
+			)
+
+	for previous_hash in values:
+		for event in values:
+			var trajectory := {
+				"hash": previous_hash,
+				"events": 0,
+			}
+			var legacy_trace_wire := "%s\n%s" % [previous_hash, event]
+			AITurnBeamPlanner._trace_event(trajectory, event)
+			_check(
+				str(trajectory.get("hash", ""))
+					== legacy_trace_wire.sha256_text()
+				and int(trajectory.get("events", -1)) == 1,
+				"Typed trace concatenation changed the frozen trace wire",
+			)
+
+	var rolling_hash := "turn_beam_v2:trajectory:v1".sha256_text()
+	var rolling_trajectory := {
+		"hash": rolling_hash,
+		"events": 0,
+	}
+	for event_index in range(values.size()):
+		var event := values[event_index]
+		rolling_hash = ("%s\n%s" % [rolling_hash, event]).sha256_text()
+		AITurnBeamPlanner._trace_event(rolling_trajectory, event)
+		_check(
+			str(rolling_trajectory.get("hash", "")) == rolling_hash
+			and int(rolling_trajectory.get("events", -1)) == event_index + 1,
+			"Typed trace concatenation changed the rolling trajectory hash",
+		)
+
+
+func _check_trace_format_wire_equivalence() -> void:
+	var numbers: Array[int] = [
+		-2147483648,
+		-1,
+		0,
+		1,
+		8,
+		2147483647,
+	]
+	var flags: Array[bool] = [false, true]
+	var values: Array[String] = [
+		"",
+		"plain-ascii",
+		"percent:%s|pipe",
+		"first line\nsecond line",
+		"宝可梦-é-Δ",
+	]
+	for number in numbers:
+		for flag in flags:
+			var flag_text := str(flag)
+			for value in values:
+				var action_hash := value.sha256_text()
+				var wires: Array[Dictionary] = [
+					{
+						"legacy": "seed=%d|roots=%s" % [number, value],
+						"direct": "seed=" + str(number) + "|roots=" + value,
+					},
+					{
+						"legacy": "root=%d|%s|failed" % [number, value],
+						"direct":
+							"root=" + str(number) + "|" + value + "|failed",
+					},
+					{
+						"legacy": (
+							"root=%d|%s|state=%s|ended=%s|score=%d" % [
+								number,
+								value,
+								value,
+								flag_text,
+								number,
+							]
+						),
+						"direct": (
+							"root=" + str(number)
+							+ "|" + value
+							+ "|state=" + value
+							+ "|ended=" + flag_text
+							+ "|score=" + str(number)
+						),
+					},
+					{
+						"legacy": (
+							"depth=%d|root=%s|parent=%s|action=%s|failed" % [
+								number,
+								value,
+								value,
+								value,
+							]
+						),
+						"direct": (
+							"depth=" + str(number)
+							+ "|root=" + value
+							+ "|parent=" + value
+							+ "|action=" + value
+							+ "|failed"
+						),
+					},
+					{
+						"legacy": (
+							"depth=%d|root=%s|parent=%s|action=%s|state=%s|ended=%s|score=%d" % [
+								number,
+								value,
+								value,
+								value,
+								value,
+								flag_text,
+								number,
+							]
+						),
+						"direct": (
+							"depth=" + str(number)
+							+ "|root=" + value
+							+ "|parent=" + value
+							+ "|action=" + value
+							+ "|state=" + value
+							+ "|ended=" + flag_text
+							+ "|score=" + str(number)
+						),
+					},
+					{
+						"legacy": "reply_yield|state=%s" % value,
+						"direct": "reply_yield|state=" + value,
+					},
+					{
+						"legacy": (
+							"reply_depth=%d|deck=%s|action=%s|failed" % [
+								number,
+								value,
+								value,
+							]
+						),
+						"direct": (
+							"reply_depth=" + str(number)
+							+ "|deck=" + value
+							+ "|action=" + value
+							+ "|failed"
+						),
+					},
+					{
+						"legacy": (
+							"reply_depth=%d|deck=%s|action=%s|state=%s|ended=%s|score=%d" % [
+								number,
+								value,
+								value,
+								value,
+								flag_text,
+								number,
+							]
+						),
+						"direct": (
+							"reply_depth=" + str(number)
+							+ "|deck=" + value
+							+ "|action=" + value
+							+ "|state=" + value
+							+ "|ended=" + flag_text
+							+ "|score=" + str(number)
+						),
+					},
+					{
+						"legacy": "action:%s" % action_hash,
+						"direct": "action:" + action_hash,
+					},
+					{
+						"legacy": "other:%s" % value,
+						"direct": "other:" + value,
+					},
+				]
+				for wire_value in wires:
+					var wire: Dictionary = wire_value
+					var legacy_wire := str(wire.get("legacy", ""))
+					var direct_wire := str(wire.get("direct", ""))
+					_check(
+						direct_wire.to_utf8_buffer()
+							== legacy_wire.to_utf8_buffer(),
+						"Typed trace/action prefix changed the frozen UTF-8 wire",
+					)
+
+
+func _check_stable_variant_signature_wire_equivalence() -> void:
+	var signature_sequence: Array = [
+		GameAction.create(
+			"PLAY_TRAINER",
+			{"note": "宝可梦\n%s|pipe"},
+			0,
+			null,
+			null,
+			"action|一",
+			17,
+		),
+		"ignored non-action",
+		GameAction.create(
+			"END_TURN",
+			{"flag": true, "score": -17},
+			1,
+			null,
+			null,
+			"action\n%二",
+			23,
+		),
+	]
+	var legacy_sequence_wire := _legacy_sequence_signature(signature_sequence)
+	var packed_sequence_wire := AIPositionEvaluator.sequence_signature(
+		signature_sequence)
+	_check(
+		packed_sequence_wire.to_utf8_buffer()
+			== legacy_sequence_wire.to_utf8_buffer(),
+		"Packed sequence signature changed the frozen UTF-8 wire",
+	)
+	var values: Array = [
+		null,
+		false,
+		true,
+		0,
+		-17,
+		1.25,
+		"",
+		"plain-ascii",
+		"percent:%s|pipe",
+		"first line\nsecond line",
+		"宝可梦-é-Δ",
+		"escaped-nul:" + "\\u0000" + ":tail",
+		[],
+		[null, false, 7, "nested\narray", ["deep", "%s", "\\u0000"]],
+		{},
+		{
+			"z-last": [3, 2, 1],
+			"a-first": {
+				"equals=comma,braces{}[]": "宝可梦\n" + "\\u0000",
+				"percent": "%s",
+			},
+			"键\n%s": ["line\nbreak", true, -17],
+		},
+	]
+	for value in values:
+		var legacy_wire := _legacy_stable_variant_signature(value)
+		var optimized_wire := AIPositionEvaluator.stable_variant_signature(value)
+		_check(
+			optimized_wire == legacy_wire,
+			"Optimized recursive variant signature changed the frozen wire",
+		)
+
+
+func _legacy_sequence_signature(sequence_value: Variant) -> String:
+	var parts: Array[String] = []
+	for action_value in sequence_value:
+		if action_value is GameAction:
+			parts.append(AIPositionEvaluator.action_signature(action_value))
+	return "|".join(parts)
+
+
+func _legacy_stable_variant_signature(value: Variant) -> String:
+	if value is Dictionary:
+		var dictionary: Dictionary = value
+		var keys: Array[String] = []
+		for key_value in dictionary:
+			keys.append(str(key_value))
+		keys.sort()
+		var parts: Array[String] = []
+		for key in keys:
+			parts.append("%s=%s" % [
+				key,
+				_legacy_stable_variant_signature(dictionary[key]),
+			])
+		return "{%s}" % ",".join(parts)
+	if value is Array:
+		var parts: Array[String] = []
+		for item in value:
+			parts.append(_legacy_stable_variant_signature(item))
+		return "[%s]" % ",".join(parts)
+	return JSON.stringify(value)
+
+
+func _check_search_action_apply_equivalence(catalog: CardCatalog) -> void:
+	var deterministic_state := _planner_state()
+	deterministic_state.set_type_matchups_enabled(false)
+	var deterministic_query := GameEngine.new(
+		catalog).query_legal_action_groups_ephemeral(deterministic_state, 0)
+	var deterministic_action: GameAction = null
+	if deterministic_query.success:
+		for candidate in deterministic_query.concrete_actions():
+			if candidate.kind not in ["PLAY_TRAINER", "RETREAT"]:
+				deterministic_action = candidate
+				break
+	_check(
+		deterministic_action != null
+		and _search_apply_paths_match(
+			deterministic_state,
+			deterministic_action,
+			catalog,
+			TEST_SEED + 3101,
+			true,
+		).get("equal", false),
+		"Search-only action apply changed a deterministic legal transition",
+	)
+
+	# A stale envelope exercises the disposable failure result. It still takes
+	# the full validation path and must be indistinguishable from public apply.
+	if deterministic_action != null:
+		var stale_action := GameAction.from_dict(deterministic_action.to_dict())
+		stale_action.base_revision += 1
+		var failed_pair := _search_apply_paths_match(
+			deterministic_state,
+			stale_action,
+			catalog,
+			TEST_SEED + 3102,
+			false,
+		)
+		_check(
+			bool(failed_pair.get("equal", false))
+			and not bool(Dictionary(failed_pair.get(
+				"normal_step", {})).get("success", true)),
+			"Disposable search failure changed rollback-visible StepResult state",
+		)
+
+	# Coin outcomes and the local RNG state must remain byte-for-byte equal.
+	var random_state := _planner_state()
+	random_state.set_type_matchups_enabled(false)
+	random_state.public_deck_keys = ["water", "fire"]
+	random_state.players[0].active = PokemonState.new("sv2-38")
+	random_state.players[0].active.placed_this_turn = false
+	random_state.players[0].active.energy_card_ids.assign(["sv1-ener-3"])
+	random_state.players[0].hand.clear()
+	random_state.players[1].active = PokemonState.new("svi-ente")
+	random_state.players[1].active.placed_this_turn = false
+	var random_action := _first_action_of_kind(
+		GameEngine.new(catalog), random_state, 0, "DECLARE_ATTACK", 0)
+	var random_pair := _search_apply_paths_match(
+		random_state, random_action, catalog, TEST_SEED + 3103, true)
+	_check(
+		random_action != null
+		and bool(random_pair.get("equal", false))
+		and JSON.stringify(Dictionary(random_pair.get(
+			"normal_step", {}))).contains("coin"),
+		"Search-only action apply changed a seeded random transition",
+	)
+
+	# A guaranteed KO covers knockout settlement and a pending Prize continuation.
+	var knockout_state := _colorless_pre_knockout_state(6, "sv2-38", 1)
+	knockout_state.revision = 41
+	knockout_state.players[1].active.damage_counters = 6
+	var knockout_action := _first_action_of_kind(
+		GameEngine.new(catalog), knockout_state, 0, "DECLARE_ATTACK", 1)
+	var knockout_pair := _search_apply_paths_match(
+		knockout_state, knockout_action, catalog, TEST_SEED + 3104, true)
+	_check(
+		knockout_action != null
+		and bool(knockout_pair.get("equal", false)),
+		"Search-only action apply changed KO/Prize continuation settlement",
+	)
+
+	# Trainer actions keep the full pre-action checkpoint. Cancelling their first
+	# Choice must therefore restore exactly the same state, events and RNG.
+	var trainer_state := _planner_state()
+	trainer_state.set_type_matchups_enabled(false)
+	trainer_state.turn_number = 8
+	trainer_state.public_deck_keys = ["lightning", "water"]
+	trainer_state.players[0].supporter_played_this_turn = false
+	trainer_state.players[0].hand = ["svi-cait", "svl-lant"]
+	trainer_state.players[0].deck = [
+		"svl-pikaex", "svl-flaa2", "svl-thun", "sv1-ener-4",
+	]
+	var trainer_engine := GameEngine.new(catalog)
+	trainer_engine.begin_search_decision()
+	var trainer_action: GameAction = null
+	var trainer_query := trainer_engine.query_legal_action_groups_ephemeral(
+		trainer_state, 0)
+	if trainer_query.success:
+		for candidate in trainer_query.concrete_actions():
+			if (
+				candidate.kind == "PLAY_TRAINER"
+				and candidate.source != null
+				and candidate.source.card_id == "svi-cait"
+			):
+				trainer_action = candidate
+				break
+	var normal_trainer_state := trainer_state.clone_state()
+	var search_trainer_state: GameState = null
+	var normal_trainer_rng := PortableRandomSource.new(TEST_SEED + 3105)
+	var search_trainer_rng := PortableRandomSource.new(TEST_SEED + 3105)
+	var normal_trainer_step: StepResult = null
+	var search_trainer_step: StepResult = null
+	if trainer_action != null:
+		normal_trainer_step = trainer_engine.apply_action(
+			normal_trainer_state, trainer_action, normal_trainer_rng)
+		var search_applied := trainer_engine.apply_search_action_ephemeral(
+			trainer_state, trainer_action, search_trainer_rng)
+		search_trainer_state = search_applied.get("state")
+		search_trainer_step = search_applied.get("step")
+	var trainer_started_equal := _steps_and_states_match(
+		normal_trainer_step,
+		search_trainer_step,
+		normal_trainer_state,
+		search_trainer_state,
+		normal_trainer_rng,
+		search_trainer_rng,
+	)
+	var trainer_cancelled_equal := false
+	if (
+		trainer_started_equal
+		and normal_trainer_step.pending_choice != null
+		and search_trainer_step.pending_choice != null
+	):
+		var normal_cancelled := trainer_engine.apply_choice_response(
+			normal_trainer_state,
+			ChoiceResponse.new(
+				normal_trainer_step.pending_choice.request_id, [], true),
+			normal_trainer_rng,
+		)
+		var search_cancelled := trainer_engine.apply_choice_response(
+			search_trainer_state,
+			ChoiceResponse.new(
+				search_trainer_step.pending_choice.request_id, [], true),
+			search_trainer_rng,
+		)
+		trainer_cancelled_equal = _steps_and_states_match(
+			normal_cancelled,
+			search_cancelled,
+			normal_trainer_state,
+			search_trainer_state,
+			normal_trainer_rng,
+			search_trainer_rng,
+		)
+	_check(
+		trainer_action != null
+		and trainer_started_equal
+		and trainer_cancelled_equal,
+		"Search-only action apply lost Trainer Choice cancellation rollback",
+	)
+
+	# A caller cannot claim that an arbitrary same-revision action was returned
+	# by the legal query. The engine-issued proof binds the exact queried wire.
+	var setup_state := _planner_state()
+	setup_state.phase = "SETUP"
+	setup_state.setup_stage = GameState.SETUP_INITIAL_PLACEMENT
+	setup_state.setup_actor_idx = 0
+	setup_state.setup_ready = [false, false]
+	var proof_engine := GameEngine.new(catalog)
+	proof_engine.begin_search_decision()
+	var setup_query := proof_engine.query_legal_action_groups_ephemeral(
+		setup_state, 0)
+	var forged_end := GameAction.create(
+		"END_TURN",
+		{},
+		0,
+		null,
+		null,
+		"forged-setup-end-turn",
+		setup_state.revision,
+	)
+	var setup_proof_count := proof_engine._search_preflight_proof_count
+	var forged_result := proof_engine.apply_search_action_ephemeral(
+		setup_state,
+		forged_end,
+		PortableRandomSource.new(TEST_SEED + 3106),
+	)
+	var forged_step: StepResult = forged_result.get("step")
+	_check(
+		setup_query.success
+		and forged_end.terminal
+		and setup_proof_count > 0
+		and proof_engine._search_preflight_proof_count == setup_proof_count
+		and forged_step != null
+		and not forged_step.success,
+		"Forged same-revision SETUP END_TURN bypassed search preflight proof",
+	)
+	var malformed_choice_state := _planner_state()
+	malformed_choice_state.resolution_stack["pending_request"] = {
+		"request_id": "malformed-player",
+		"player": 7,
+	}
+	_check(
+		not AITurnBeamPlanner._resolve_choices(
+			malformed_choice_state,
+			0,
+			GameEngine.new(catalog),
+			null,
+			CardSemanticCatalog.new(catalog),
+			PortableRandomSource.new(TEST_SEED + 3107),
+			Callable(),
+			TEST_SEED,
+		),
+		"Malformed pending Choice player was treated as an empty Choice stack",
+	)
+
+
+func _search_apply_paths_match(
+	source_state: GameState,
+	action: GameAction,
+	catalog: CardCatalog,
+	seed: int,
+	use_query_proof: bool,
+) -> Dictionary:
+	if source_state == null or action == null:
+		return {"equal": false, "normal_step": {}}
+	var engine := GameEngine.new(catalog)
+	var normal_state := source_state.clone_state()
+	var normal_rng := PortableRandomSource.new(seed)
+	var search_rng := PortableRandomSource.new(seed)
+	var normal_step := engine.apply_action(normal_state, action, normal_rng)
+	var cache_query := engine.query_legal_action_groups(source_state, action.actor)
+	var cache_size_before := engine._action_group_cache.size()
+	engine.begin_search_decision()
+	var proof_query: LegalActionQueryResult = null
+	if use_query_proof:
+		proof_query = engine.query_legal_action_groups_ephemeral(
+			source_state, action.actor)
+	var proof_count_before := engine._search_preflight_proof_count
+	var search_applied := engine.apply_search_action_ephemeral(
+		source_state, action, search_rng)
+	var search_state: GameState = search_applied.get("state")
+	var search_step: StepResult = search_applied.get("step")
+	var cache_preserved := (
+		not cache_query.success
+		or (
+			cache_size_before > 0
+			and engine._action_group_cache.size() == cache_size_before
+		)
+	)
+	return {
+		"equal": (
+			cache_preserved
+			and (
+				not use_query_proof
+				or (
+					proof_query != null
+					and proof_query.success
+					and proof_count_before > 0
+					and engine._search_preflight_proof_count
+						== proof_count_before - 1
+				)
+			)
+			and _steps_and_states_match(
+				normal_step,
+				search_step,
+				normal_state,
+				search_state,
+				normal_rng,
+				search_rng,
+			)
+		),
+		"normal_step": normal_step.to_dict() if normal_step != null else {},
+	}
+
+
+func _steps_and_states_match(
+	normal_step: StepResult,
+	search_step: StepResult,
+	normal_state: GameState,
+	search_state: GameState,
+	normal_rng: PortableRandomSource,
+	search_rng: PortableRandomSource,
+) -> bool:
+	return (
+		normal_step != null
+		and search_step != null
+		and normal_step.to_dict() == search_step.to_dict()
+		and normal_state.snapshot() == search_state.snapshot()
+		and normal_state.event_stream._events == search_state.event_stream._events
+		and normal_rng.get_state() == search_rng.get_state()
+	)
+
+
+func _first_action_of_kind(
+	engine: GameEngine,
+	state: GameState,
+	actor: int,
+	kind: String,
+	attack_index: int = -1,
+) -> GameAction:
+	var query := engine.query_legal_action_groups_ephemeral(state, actor)
+	if not query.success:
+		return null
+	for action in query.concrete_actions():
+		if action.kind != kind:
+			continue
+		if (
+			attack_index >= 0
+			and int(action.payload.get("attack_index", -1)) != attack_index
+		):
+			continue
+		return action
+	return null
 
 
 func _check_strategy_registry(
@@ -3276,6 +4059,8 @@ func _check_planner_contract(
 		},
 	}
 	var strategy := registry.strategy_for("fire")
+	_check_sample_zero_reuse_equivalence(
+		information_set, legal, strategy, catalog)
 	var plan_a := TraditionalTurnPlanner.plan_action(
 		request,
 		information_set,
@@ -3429,9 +4214,40 @@ func _check_planner_contract(
 	)
 	_check(
 		not bool(plan_a.get("reply_depth_applicable", false))
-		or str(plan_a.get("opponent_strategy_id", ""))
-			== str(registry.strategy_for("water").strategy_id()),
+		or (
+			str(plan_a.get("opponent_strategy_id", ""))
+				== str(registry.strategy_for("water").strategy_id())
+			and int(plan_a.get("reply_requested_depth", 0)) == 3
+			and str(plan_a.get("reply_completion_reason", ""))
+				in ["depth_complete", "frontier_exhausted"]
+			and (
+				str(plan_a.get("reply_completion_reason", ""))
+					== "frontier_exhausted"
+				or int(plan_a.get("reply_completed_depth", 0)) == 3
+			)
+		),
 		"Opponent reply search did not use the opponent deck's actual strategy",
+	)
+	var failed_search_fallback := TraditionalTurnPlanner._fallback_result(
+		state,
+		0,
+		legal,
+		information_set,
+		strategy,
+		catalog,
+		Callable(),
+		7,
+		"injected_planner_failure",
+		information_set.cache_precondition(),
+	)
+	_check(
+		bool(failed_search_fallback.get("success", false))
+		and bool(failed_search_fallback.get("search_depth_applicable", false))
+		and int(failed_search_fallback.get("search_depth_completed", -1)) == 0
+		and str(failed_search_fallback.get("completion_reason", "")) == "error"
+		and str(failed_search_fallback.get("error", ""))
+			== "injected_planner_failure",
+		"A legal planner-error fallback could bypass fixed-depth evidence",
 	)
 	var invalid_supplied: Array[GameAction] = [
 		GameAction.new("END_TURN", {}, true, 1),
@@ -3594,6 +4410,230 @@ func _check_planner_contract(
 		and _intent_signature(attachment) == _intent_signature(revised_attachment),
 		"TraditionalTurnPlanner turn intent did not survive revision/reindexing",
 	)
+
+
+func _check_sample_zero_reuse_equivalence(
+	information_set: AIInformationSet,
+	supplied_actions: Array[GameAction],
+	strategy: Variant,
+	catalog: CardCatalog,
+) -> void:
+	var actor := information_set.perspective_player()
+	var seed := TEST_SEED + 509
+	var root_state := information_set.sample_state(seed)
+	if root_state == null:
+		_check(false, "Sample-0 reuse fixture could not determinize its root")
+		return
+	root_state.set_type_matchups_enabled(false)
+	var legal_actions := TraditionalTurnPlanner._validated_legal_actions(
+		root_state,
+		actor,
+		supplied_actions,
+		GameEngine.new(catalog),
+		information_set,
+	)
+	if legal_actions.is_empty():
+		_check(false, "Sample-0 reuse fixture had no validated roots")
+		return
+	var config := TraditionalTurnPlanner._planner_config_from_request({
+		"seed": seed,
+		"belief_samples": 1,
+		"skip_mandatory": true,
+	})
+	var ranked_roots := AIPositionEvaluator.ranked_actions(
+		root_state,
+		actor,
+		legal_actions,
+		strategy,
+		CardSemanticCatalog.new(catalog),
+		catalog,
+		information_set.match_seed(),
+	)
+	var fixed_roots := AIPositionEvaluator.diverse_top_actions(
+		ranked_roots,
+		int(config.get(
+			"root_actions", AITurnBeamPlanner.DEFAULT_ROOT_ACTIONS)),
+	)
+	var fixed_root_signatures: Array[String] = []
+	for root_value in fixed_roots:
+		var root: Dictionary = root_value
+		var signature := str(root.get("signature", ""))
+		if not signature.is_empty():
+			fixed_root_signatures.append(signature)
+	config["fixed_root_signatures"] = fixed_root_signatures
+	var rank_calls := {"cold": 0, "reused": 0}
+	var cold_evaluator := func(
+		_state: GameState,
+		_actor: int,
+		_action: GameAction,
+	) -> Variant:
+		rank_calls["cold"] = int(rank_calls["cold"]) + 1
+		return null
+	var reused_evaluator := func(
+		_state: GameState,
+		_actor: int,
+		_action: GameAction,
+	) -> Variant:
+		rank_calls["reused"] = int(rank_calls["reused"]) + 1
+		return null
+	var reuse_context := {
+		"seed": seed,
+		"actor": actor,
+		"state_revision": root_state.revision,
+		"catalog_source_id": int(catalog.get_instance_id()),
+		"information_binding": AITurnBeamPlanner._information_binding(
+			information_set.cache_precondition()),
+		"match_seed": information_set.match_seed(),
+		"root_actions_binding": AITurnBeamPlanner._root_actions_binding(
+			legal_actions),
+		"strategy_binding": AITurnBeamPlanner._variant_binding(strategy),
+		"trusted_action_evaluator_binding":
+			AITurnBeamPlanner._variant_binding(reused_evaluator),
+		"ranked_roots_binding":
+			AITurnBeamPlanner._ranked_roots_binding(ranked_roots),
+		"root_state": root_state,
+		"ranked_roots": ranked_roots,
+	}
+	var cold_beam := AITurnBeamPlanner.new().plan(
+		information_set,
+		actor,
+		legal_actions,
+		GameEngine.new(catalog),
+		strategy,
+		config,
+		Callable(),
+		Callable(),
+		Callable(),
+		cold_evaluator,
+		{},
+	)
+	var reused_beam := AITurnBeamPlanner.new().plan(
+		information_set,
+		actor,
+		legal_actions,
+		GameEngine.new(catalog),
+		strategy,
+		config,
+		Callable(),
+		Callable(),
+		Callable(),
+		reused_evaluator,
+		reuse_context,
+	)
+	_check(
+		bool(cold_beam.get("success", false))
+		and bool(reused_beam.get("success", false))
+		and int(rank_calls["cold"])
+			== int(rank_calls["reused"]) + legal_actions.size()
+		and _search_result_wire(cold_beam) == _search_result_wire(reused_beam),
+		(
+			(
+				"Sample-0 reused beam changed action, full root plans/order, "
+				+ "depth/layers/nodes, completion reasons or trajectory hash "
+				+ "(rank calls cold=%d reused=%d roots=%d, result_equal=%s)"
+			) % [
+				int(rank_calls["cold"]),
+				int(rank_calls["reused"]),
+				legal_actions.size(),
+				str(_search_result_wire(cold_beam)
+					== _search_result_wire(reused_beam)),
+			]
+		),
+	)
+	var stale_evaluator := func(
+		_state: GameState,
+		_actor: int,
+		_action: GameAction,
+	) -> Variant:
+		rank_calls["stale"] = int(rank_calls.get("stale", 0)) + 1
+		return null
+	var stale_context := reuse_context.duplicate(true)
+	stale_context["match_seed"] = information_set.match_seed() + 1
+	stale_context["trusted_action_evaluator_binding"] = (
+		AITurnBeamPlanner._variant_binding(stale_evaluator))
+	var stale_beam := AITurnBeamPlanner.new().plan(
+		information_set,
+		actor,
+		legal_actions,
+		GameEngine.new(catalog),
+		strategy,
+		config,
+		Callable(),
+		Callable(),
+		Callable(),
+		stale_evaluator,
+		stale_context,
+	)
+	_check(
+		_search_result_wire(stale_beam) == _search_result_wire(cold_beam)
+		and int(rank_calls.get("stale", 0)) == int(rank_calls["cold"]),
+		"Stale sample-0 handoff did not automatically use the cold path",
+	)
+	_check(
+		AITurnBeamPlanner._variant_binding({
+			"action_score": cold_evaluator,
+		}) != AITurnBeamPlanner._variant_binding({
+			"action_score": reused_evaluator,
+		}),
+		"Dictionary strategies with different hooks shared a handoff binding",
+	)
+
+	# Exercise the facade as well so belief aggregation and its seed hash are
+	# covered in addition to the beam's complete per-root result.
+	var facade_request := {
+		"seed": seed,
+		"belief_samples": 3,
+		"internal_evaluation_smoke": true,
+	}
+	var reused_facade := TraditionalTurnPlanner.plan_action(
+		facade_request,
+		information_set,
+		supplied_actions,
+		strategy,
+		catalog,
+		GameEngine.new(catalog),
+	)
+	var cold_facade := TraditionalTurnPlanner.plan_action(
+		facade_request,
+		information_set,
+		supplied_actions,
+		strategy,
+		catalog,
+		GameEngine.new(catalog),
+		Callable(),
+		Callable(),
+		Callable(),
+		Callable(),
+		false,
+	)
+	_check(
+		bool(cold_facade.get("success", false))
+		and bool(reused_facade.get("success", false))
+		and bool(cold_facade.get("search_depth_applicable", false))
+		and bool(reused_facade.get("search_depth_applicable", false))
+		and _search_result_wire(cold_facade)
+			== _search_result_wire(reused_facade),
+		(
+			"Sample-0 reuse changed the complete facade result, including "
+			+ "belief counts/seed hash or trajectory hash"
+		),
+	)
+
+
+func _search_result_wire(value: Variant) -> Variant:
+	if value is GameAction:
+		return value.to_dict()
+	if value is Dictionary:
+		var result := {}
+		for key in Dictionary(value).keys():
+			result[key] = _search_result_wire(Dictionary(value)[key])
+		return result
+	if value is Array:
+		var result: Array = []
+		for item in Array(value):
+			result.append(_search_result_wire(item))
+		return result
+	return value
 
 
 func _planner_state() -> GameState:

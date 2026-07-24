@@ -31,7 +31,7 @@
     "fallback_seed": 1831565813
   },
   "schemas": {
-    "ai_evaluation": 6,
+    "ai_evaluation": 7,
     "checkpoint": 10,
     "encoder": 5,
     "godot_actions": 4,

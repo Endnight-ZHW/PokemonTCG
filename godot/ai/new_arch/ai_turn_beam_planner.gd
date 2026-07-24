@@ -16,6 +16,9 @@ const DEFAULT_REPLY_BEAM_WIDTH := 4
 const DEFAULT_REPLY_ACTIONS_PER_NODE := 4
 const MAX_CHOICE_STEPS := 32
 
+var _semantic_catalog_cache: CardSemanticCatalog
+var _semantic_catalog_source_id := 0
+
 
 func plan(
 	information_set: AIInformationSet,
@@ -28,6 +31,7 @@ func plan(
 	trusted_leaf_evaluator: Callable = Callable(),
 	trusted_choice_resolver: Callable = Callable(),
 	trusted_action_evaluator: Callable = Callable(),
+	precomputed_sample_zero: Dictionary = {},
 ) -> Dictionary:
 	if information_set == null or not information_set.is_valid():
 		return _failure("invalid_information_set", 0, "error")
@@ -35,6 +39,7 @@ func plan(
 		return _failure("actor_must_match_perspective", 0, "error")
 	if engine == null or root_actions.is_empty():
 		return _failure("no_legal_actions", 0, "error")
+	engine.begin_search_decision()
 	var root_limit := clampi(
 		int(config.get("root_actions", DEFAULT_ROOT_ACTIONS)),
 		1,
@@ -67,22 +72,71 @@ func plan(
 	)
 	var seed := int(config.get("seed", 1))
 	var match_seed := information_set.match_seed()
-	var root_state := information_set.sample_state(seed)
+	var root_precondition := information_set.cache_precondition()
+	# This decision-local handoff is accepted only for the exact sample seed and
+	# fully bound evaluation context. TraditionalTurnPlanner never retains it
+	# beyond the synchronous call.
+	var precomputed_root_value: Variant = precomputed_sample_zero.get("root_state")
+	var precomputed_ranked_value: Variant = precomputed_sample_zero.get(
+		"ranked_roots")
+	var can_reuse_sample_zero := (
+		not precomputed_sample_zero.is_empty()
+		and int(precomputed_sample_zero.get("seed", -1)) == seed
+		and int(precomputed_sample_zero.get("actor", -1)) == actor
+		and precomputed_root_value is GameState
+		and precomputed_ranked_value is Array
+	)
+	if can_reuse_sample_zero:
+		var candidate_root: GameState = precomputed_root_value
+		can_reuse_sample_zero = (
+			int(precomputed_sample_zero.get("state_revision", -1))
+				== candidate_root.revision
+			and int(precomputed_sample_zero.get("catalog_source_id", 0))
+				== int(engine.catalog.get_instance_id())
+			and str(precomputed_sample_zero.get("information_binding", ""))
+				== _information_binding(root_precondition)
+			and int(precomputed_sample_zero.get("match_seed", -1)) == match_seed
+			and str(precomputed_sample_zero.get("root_actions_binding", ""))
+				== _root_actions_binding(root_actions)
+			and str(precomputed_sample_zero.get("strategy_binding", ""))
+				== _variant_binding(strategy)
+			and str(precomputed_sample_zero.get(
+				"trusted_action_evaluator_binding", ""))
+				== _variant_binding(trusted_action_evaluator)
+			and str(precomputed_sample_zero.get("ranked_roots_binding", ""))
+				== _ranked_roots_binding(Array(precomputed_ranked_value))
+		)
+	var root_state: GameState = null
+	if can_reuse_sample_zero:
+		root_state = precomputed_root_value
+	else:
+		root_state = information_set.sample_state(seed)
 	if root_state == null:
 		return _failure("determinization_failed", 0, "error")
 	root_state.set_type_matchups_enabled(false)
-	var semantic_catalog := CardSemanticCatalog.new(engine.catalog)
-	var ranked_roots := AIPositionEvaluator.ranked_actions(
-		root_state,
-		actor,
-		root_actions,
-		strategy,
-		semantic_catalog,
-		engine.catalog,
-		match_seed,
-		cancel_check,
-		trusted_action_evaluator,
-	)
+	var catalog_source_id := int(engine.catalog.get_instance_id())
+	if (
+		_semantic_catalog_cache == null
+		or _semantic_catalog_source_id != catalog_source_id
+	):
+		_semantic_catalog_cache = CardSemanticCatalog.new(engine.catalog)
+		_semantic_catalog_source_id = catalog_source_id
+	var semantic_catalog := _semantic_catalog_cache
+	var ranked_roots: Array[Dictionary] = []
+	if can_reuse_sample_zero:
+		ranked_roots.assign(precomputed_sample_zero.get("ranked_roots", []))
+	else:
+		ranked_roots = AIPositionEvaluator.ranked_actions(
+			root_state,
+			actor,
+			root_actions,
+			strategy,
+			semantic_catalog,
+			engine.catalog,
+			match_seed,
+			cancel_check,
+			trusted_action_evaluator,
+		)
 	var fixed_root_values: Variant = config.get("fixed_root_signatures", [])
 	if fixed_root_values is Array and not Array(fixed_root_values).is_empty():
 		var fixed_root_signatures: Dictionary = {}
@@ -107,8 +161,10 @@ func plan(
 	for row_value in root_candidates:
 		var row: Dictionary = row_value
 		root_candidate_signatures.append(str(row.get("signature", "")))
-	_trace_event(trajectory, "seed=%d|roots=%s" % [
-		seed, ",".join(root_candidate_signatures)])
+	_trace_event(
+		trajectory,
+		"seed=" + str(seed) + "|roots=" + ",".join(root_candidate_signatures),
+	)
 
 	var nodes_expanded := 0
 	var completed_depth := 0
@@ -120,7 +176,6 @@ func plan(
 	var seen: Dictionary = {}
 	var root_order: Array[String] = []
 	var root_fingerprint := _state_fingerprint(root_state)
-	var root_precondition := information_set.cache_precondition()
 
 	for root_index in range(root_candidates.size()):
 		if _is_cancelled(cancel_check):
@@ -129,8 +184,9 @@ func plan(
 		var action: GameAction = row.get("action")
 		if action == null:
 			continue
-		var root_signature := str(row.get(
-			"signature", AIPositionEvaluator.action_signature(action)))
+		var root_signature := str(row.get("signature", ""))
+		if root_signature.is_empty():
+			root_signature = AIPositionEvaluator.action_signature(action)
 		if root_signature not in root_order:
 			root_order.append(root_signature)
 		var branch_seed := _branch_seed(
@@ -149,8 +205,10 @@ func plan(
 		)
 		nodes_expanded += 1
 		if not bool(expanded.get("success", false)):
-			_trace_event(trajectory, "root=%d|%s|failed" % [
-				root_index, root_signature])
+			_trace_event(
+				trajectory,
+				"root=" + str(root_index) + "|" + root_signature + "|failed",
+			)
 			if bool(expanded.get("cancelled", false)):
 				return _failure("cancelled", nodes_expanded, "cancelled")
 			continue
@@ -168,13 +226,16 @@ func plan(
 			match_seed,
 			trusted_leaf_evaluator,
 		)
-		_trace_event(trajectory, "root=%d|%s|state=%s|ended=%s|score=%d" % [
-			root_index,
-			root_signature,
-			child_fingerprint,
-			str(ended),
-			score_milli,
-		])
+		_trace_event(
+			trajectory,
+			(
+				"root=" + str(root_index)
+				+ "|" + root_signature
+				+ "|state=" + child_fingerprint
+				+ "|ended=" + str(ended)
+				+ "|score=" + str(score_milli)
+			),
+		)
 		var sequence: Array[GameAction] = [action]
 		var cache_open := _action_allows_cache_continuation(
 			action, expanded.get("step"), expanded.get("trace", {}))
@@ -187,13 +248,14 @@ func plan(
 			cache_open,
 			root_signature,
 			action,
+			child_fingerprint,
+			root_signature,
 		)
 		_record_node(
 			node,
 			best_complete_by_root,
 			best_partial_by_root,
 			seen,
-			child_fingerprint,
 		)
 		if not ended and max_depth > 1:
 			frontier.append(node)
@@ -215,7 +277,8 @@ func plan(
 			var parent_state: GameState = parent.get("state")
 			if parent_state == null or _decision_actor(parent_state) != actor:
 				continue
-			var query := engine.query_legal_action_groups(parent_state, actor)
+			var query := engine.query_legal_action_groups_ephemeral(
+				parent_state, actor)
 			if not query.success:
 				continue
 			var ranked := AIPositionEvaluator.ranked_actions(
@@ -231,17 +294,33 @@ func plan(
 			)
 			var candidates := AIPositionEvaluator.diverse_top_actions(
 				ranked, actions_per_node)
-			var parent_fingerprint := _state_fingerprint(parent_state)
+			var parent_fingerprint := str(parent.get("state_fingerprint", ""))
+			if parent_fingerprint.is_empty():
+				parent_fingerprint = _state_fingerprint(parent_state)
 			var parent_sequence: Array[GameAction] = []
 			parent_sequence.assign(parent.get("sequence", []))
-			var parent_sequence_signature := AIPositionEvaluator.sequence_signature(
-				parent_sequence)
+			var parent_sequence_signature := str(parent.get(
+				"sequence_signature", ""))
+			if parent_sequence_signature.is_empty():
+				parent_sequence_signature = AIPositionEvaluator.sequence_signature(
+					parent_sequence)
+			var parent_cache_open := bool(parent.get("cache_open", false))
+			var parent_cache_precondition: Dictionary = {}
+			if parent_cache_open:
+				var pre_information := AIInformationSet.capture_view_only(
+					parent_state, actor, engine.catalog, [], [], match_seed)
+				if pre_information.is_valid():
+					parent_cache_precondition = pre_information.cache_precondition()
 			for action_index in range(candidates.size()):
 				if _is_cancelled(cancel_check):
 					return _failure("cancelled", nodes_expanded, "cancelled")
-				var action: GameAction = candidates[action_index].get("action")
+				var candidate_row: Dictionary = candidates[action_index]
+				var action: GameAction = candidate_row.get("action")
 				if action == null:
 					continue
+				var action_signature := str(candidate_row.get("signature", ""))
+				if action_signature.is_empty():
+					action_signature = AIPositionEvaluator.action_signature(action)
 				var root_signature := str(parent.get("root_signature", ""))
 				var branch_seed := _branch_seed(
 					seed,
@@ -266,12 +345,13 @@ func plan(
 				if not bool(expanded.get("success", false)):
 					_trace_event(
 						trajectory,
-						"depth=%d|root=%s|parent=%s|action=%s|failed" % [
-							depth,
-							root_signature,
-							parent_sequence_signature,
-							AIPositionEvaluator.action_signature(action),
-						],
+						(
+							"depth=" + str(depth)
+							+ "|root=" + root_signature
+							+ "|parent=" + parent_sequence_signature
+							+ "|action=" + action_signature
+							+ "|failed"
+						),
 					)
 					if bool(expanded.get("cancelled", false)):
 						return _failure("cancelled", nodes_expanded, "cancelled")
@@ -286,13 +366,9 @@ func plan(
 				sequence.append(action)
 				var cache_preconditions: Array[Dictionary] = []
 				cache_preconditions.assign(parent.get("cache_preconditions", []))
-				var parent_cache_open := bool(parent.get("cache_open", false))
-				if parent_cache_open:
-					var pre_information := AIInformationSet.capture(
-						parent_state, actor, engine.catalog, [], [], match_seed)
-					if pre_information.is_valid():
-						cache_preconditions.append(
-							pre_information.cache_precondition())
+				if not parent_cache_precondition.is_empty():
+					cache_preconditions.append(
+						parent_cache_precondition.duplicate(true))
 				var cache_open := (
 					parent_cache_open
 					and _action_allows_cache_continuation(
@@ -309,15 +385,15 @@ func plan(
 				)
 				_trace_event(
 					trajectory,
-					"depth=%d|root=%s|parent=%s|action=%s|state=%s|ended=%s|score=%d" % [
-						depth,
-						root_signature,
-						parent_sequence_signature,
-						AIPositionEvaluator.action_signature(action),
-						child_fingerprint,
-						str(ended),
-						score_milli,
-					],
+					(
+						"depth=" + str(depth)
+						+ "|root=" + root_signature
+						+ "|parent=" + parent_sequence_signature
+						+ "|action=" + action_signature
+						+ "|state=" + child_fingerprint
+						+ "|ended=" + str(ended)
+						+ "|score=" + str(score_milli)
+					),
 				)
 				var node := _node(
 					child,
@@ -328,13 +404,14 @@ func plan(
 					cache_open,
 					root_signature,
 					parent.get("root_action"),
+					child_fingerprint,
+					parent_sequence_signature + "|" + action_signature,
 				)
 				var accepted := _record_node(
 					node,
 					best_complete_by_root,
 					best_partial_by_root,
 					seen,
-					child_fingerprint,
 				)
 				if accepted and not ended and depth < max_depth:
 					next_frontier.append(node)
@@ -464,10 +541,13 @@ static func _apply_planned_action(
 ) -> Dictionary:
 	if _is_cancelled(cancel_check):
 		return {"success": false, "cancelled": true}
-	var child := parent_state.clone_state()
-	child.set_type_matchups_enabled(false)
 	var rng := PortableRandomSource.new(seed)
-	var step := engine.apply_action(child, action, rng)
+	var applied := engine.apply_search_action_ephemeral(
+		parent_state, action, rng)
+	var child: GameState = applied.get("state")
+	var step: StepResult = applied.get("step")
+	if child == null or step == null:
+		return {"success": false, "cancelled": false}
 	if not step.success:
 		return {"success": false, "cancelled": false}
 	var trace := {
@@ -566,8 +646,10 @@ static func _score_opponent_response(
 				"reply_completion_reason": "frontier_exhausted",
 			}
 		reply_root = yielded["state"]
-		_trace_event(trajectory, "reply_yield|state=%s" % _state_fingerprint(
-			reply_root))
+		_trace_event(
+			trajectory,
+			"reply_yield|state=" + _state_fingerprint(reply_root),
+		)
 	if reply_root.is_terminal() or _decision_actor(reply_root) != opponent:
 		return {
 			"score_milli": AIPositionEvaluator.state_score_milli(
@@ -626,7 +708,8 @@ static func _score_opponent_response(
 			if parent_state == null or _decision_actor(parent_state) != opponent:
 				worst_complete = _worse_node(worst_complete, parent)
 				continue
-			var query := engine.query_legal_action_groups(parent_state, opponent)
+			var query := engine.query_legal_action_groups_ephemeral(
+				parent_state, opponent)
 			if not query.success:
 				worst_complete = _worse_node(worst_complete, parent)
 				continue
@@ -639,17 +722,22 @@ static func _score_opponent_response(
 				engine.catalog,
 				match_seed,
 				cancel_check,
+				Callable(),
 			)
 			var candidates := AIPositionEvaluator.diverse_top_actions(
 				ranked, actions_per_node)
 			for action_index in range(candidates.size()):
-				var action: GameAction = candidates[action_index].get("action")
+				var candidate_row: Dictionary = candidates[action_index]
+				var action: GameAction = candidate_row.get("action")
 				if action == null:
 					continue
-				var signature := "%s|%s" % [
-					str(parent.get("sequence_signature", "")),
-					AIPositionEvaluator.action_signature(action),
-				]
+				var action_signature := str(candidate_row.get("signature", ""))
+				if action_signature.is_empty():
+					action_signature = AIPositionEvaluator.action_signature(action)
+				var parent_sequence_signature := str(
+					parent.get("sequence_signature", ""))
+				var signature := (
+					parent_sequence_signature + "|" + action_signature)
 				var expanded := _apply_planned_action(
 					parent_state,
 					opponent,
@@ -666,11 +754,12 @@ static func _score_opponent_response(
 				if not bool(expanded.get("success", false)):
 					_trace_event(
 						trajectory,
-						"reply_depth=%d|deck=%s|action=%s|failed" % [
-							depth,
-							deck_key,
-							AIPositionEvaluator.action_signature(action),
-						],
+						(
+							"reply_depth=" + str(depth)
+							+ "|deck=" + deck_key
+							+ "|action=" + action_signature
+							+ "|failed"
+						),
 					)
 					if bool(expanded.get("cancelled", false)):
 						return {
@@ -692,23 +781,26 @@ static func _score_opponent_response(
 					match_seed,
 					trusted_leaf_evaluator,
 				)
+				var child_fingerprint := _state_fingerprint(child)
+				var ended := _turn_has_ended(child, opponent, action)
 				var node := {
 					"state": child,
 					"score_milli": child_score,
 					"sequence_signature": signature,
+					"state_fingerprint": child_fingerprint,
 				}
 				_trace_event(
 					trajectory,
-					"reply_depth=%d|deck=%s|action=%s|state=%s|ended=%s|score=%d" % [
-						depth,
-						deck_key,
-						AIPositionEvaluator.action_signature(action),
-						_state_fingerprint(child),
-						str(_turn_has_ended(child, opponent, action)),
-						child_score,
-					],
+					(
+						"reply_depth=" + str(depth)
+						+ "|deck=" + deck_key
+						+ "|action=" + action_signature
+						+ "|state=" + child_fingerprint
+						+ "|ended=" + str(ended)
+						+ "|score=" + str(child_score)
+					),
 				)
-				if _turn_has_ended(child, opponent, action):
+				if ended:
 					worst_complete = _worse_node(worst_complete, node)
 				elif depth < max_depth:
 					next_frontier.append(node)
@@ -751,9 +843,19 @@ static func _resolve_choices(
 	for _guard in range(MAX_CHOICE_STEPS):
 		if _is_cancelled(cancel_check):
 			return false
-		var request := engine.query_pending_choice(state, 0)
-		if request == null:
-			request = engine.query_pending_choice(state, 1)
+		# The overwhelmingly common search step has no Choice. Avoid constructing
+		# ResolutionStack twice merely to discover its pending request is empty;
+		# when one exists, its authoritative player selects the single public view
+		# that the previous viewer-0/viewer-1 probe would have returned.
+		var pending_value: Variant = state.resolution_stack.get("pending_request")
+		if pending_value == null:
+			return true
+		if not pending_value is Dictionary:
+			return false
+		var pending_player := int(Dictionary(pending_value).get("player", -1))
+		if pending_player not in [0, 1]:
+			return false
+		var request := engine.query_pending_choice(state, pending_player)
 		if request == null:
 			return true
 		var choice_actor := request.player if request.player in [0, 1] else actor
@@ -797,10 +899,10 @@ static func _choice_response(
 	match_seed: int,
 	cancel_check: Callable,
 ) -> ChoiceResponse:
-	var information := AIInformationSet.capture(
+	var information := AIInformationSet.capture_view_only(
 		state, actor, catalog, [], [], match_seed)
 	var public_view := (
-		information.read_only_view() if information.is_valid() else {})
+		information.shared_read_only_view() if information.is_valid() else {})
 	var choice_row: Dictionary = request.to_dict().duplicate(true)
 	choice_row.make_read_only()
 	var semantic_context := AIPositionEvaluator.semantic_context_for_choice(
@@ -843,6 +945,8 @@ static func _node(
 	cache_open: bool,
 	root_signature: String,
 	root_action: GameAction,
+	state_fingerprint: String,
+	sequence_signature: String,
 ) -> Dictionary:
 	return {
 		"state": state,
@@ -854,6 +958,8 @@ static func _node(
 		"cache_open": cache_open,
 		"root_signature": root_signature,
 		"root_action": root_action,
+		"state_fingerprint": state_fingerprint,
+		"sequence_signature": sequence_signature,
 	}
 
 
@@ -862,14 +968,18 @@ static func _record_node(
 	best_complete_by_root: Dictionary,
 	best_partial_by_root: Dictionary,
 	seen: Dictionary,
-	state_fingerprint: String,
 ) -> bool:
 	var root_signature := str(node.get("root_signature", ""))
-	var seen_key := "%s|%s" % [root_signature, state_fingerprint]
+	var state_fingerprint := str(node.get("state_fingerprint", ""))
+	var seen_key := root_signature + "|" + state_fingerprint
 	var previous: Dictionary = seen.get(seen_key, {})
 	if not previous.is_empty() and not _node_is_better(node, previous):
 		return false
-	seen[seen_key] = node
+	seen[seen_key] = {
+		"score_milli": int(node.get(
+			"score_milli", -AIPositionEvaluator.WIN_SCORE_MILLI)),
+		"sequence_signature": str(node.get("sequence_signature", "")),
+	}
 	if bool(node.get("ended", false)):
 		best_complete_by_root[root_signature] = _better_node(
 			Dictionary(best_complete_by_root.get(root_signature, {})), node)
@@ -917,9 +1027,15 @@ static func _node_is_better(left: Dictionary, right: Dictionary) -> bool:
 		"score_milli", -AIPositionEvaluator.WIN_SCORE_MILLI))
 	if left_score != right_score:
 		return left_score > right_score
-	return AIPositionEvaluator.sequence_signature(
-		left.get("sequence", [])) < AIPositionEvaluator.sequence_signature(
+	var left_signature := str(left.get("sequence_signature", ""))
+	var right_signature := str(right.get("sequence_signature", ""))
+	if left_signature.is_empty() and left.has("sequence"):
+		left_signature = AIPositionEvaluator.sequence_signature(
+			left.get("sequence", []))
+	if right_signature.is_empty() and right.has("sequence"):
+		right_signature = AIPositionEvaluator.sequence_signature(
 			right.get("sequence", []))
+	return left_signature < right_signature
 
 
 static func _preferred_final_node(
@@ -1001,7 +1117,7 @@ static func _find_turn_yield_action(
 	actor: int,
 	engine: GameEngine,
 ) -> GameAction:
-	var query := engine.query_legal_action_groups(state, actor)
+	var query := engine.query_legal_action_groups_ephemeral(state, actor)
 	if not query.success:
 		return null
 	var setup_done: GameAction = null
@@ -1026,12 +1142,40 @@ static func _decision_actor(state: GameState) -> int:
 
 
 static func _state_fingerprint(state: GameState) -> String:
-	var payload := state.to_dict()
-	payload.erase("action_log")
-	payload.erase("processed_action_ids")
-	payload.erase("revision")
-	payload.erase("choice_sequence")
-	payload["resolution_stack"] = {}
+	# Match the historical to_dict()+erase wire exactly, while avoiding copies of
+	# logs, processed ids and resolution frames that are immediately discarded.
+	var payload := {
+		"players": [
+			state.players[0].to_dict(),
+			state.players[1].to_dict(),
+		],
+		"active_player_idx": state.active_player_idx,
+		"phase": state.phase,
+		"turn_number": state.turn_number,
+		"first_player_idx": state.first_player_idx,
+		"stadium_card_id": state.stadium_card_id,
+		"stadium_owner_idx": state.stadium_owner_idx,
+		"winner": state.winner,
+		"result_status": state.result_status,
+		"result_reason": state.result_reason,
+		"result_conditions": state.result_conditions,
+		"public_deck_keys": state.public_deck_keys,
+		"apply_type_matchups": state.apply_type_matchups,
+		"rules_profile_id": state.rules_profile_id,
+		"rules_options": state.rules_options.merged(
+			{"apply_type_matchups": state.apply_type_matchups}, true),
+		"mulligan_count": state.mulligan_count,
+		"extra_draws": state.extra_draws,
+		"setup_ready": state.setup_ready,
+		"setup_stage": state.setup_stage,
+		"setup_actor_idx": state.setup_actor_idx,
+		"opening_coin_winner_idx": state.opening_coin_winner_idx,
+		"mulligan_bonus_max": state.mulligan_bonus_max,
+		"setup_bonus_card_ids": state.setup_bonus_card_ids,
+		"pending_promotions": state.pending_promotions,
+		"resolution_stack": {},
+		"turn_fact_book": state.turn_fact_book,
+	}
 	return AIPositionEvaluator.stable_variant_signature(payload).sha256_text()
 
 
@@ -1085,13 +1229,83 @@ static func _is_cancelled(cancel_check: Callable) -> bool:
 	return cancel_check.is_valid() and bool(cancel_check.call())
 
 
+static func _information_binding(cache_precondition: Dictionary) -> String:
+	return AIPositionEvaluator.stable_variant_signature(
+		cache_precondition).sha256_text()
+
+
+static func _root_actions_binding(actions: Array[GameAction]) -> String:
+	var signatures: Array[String] = []
+	for action in actions:
+		signatures.append(AIPositionEvaluator.action_signature(action))
+	signatures.sort()
+	return AIPositionEvaluator.stable_variant_signature(
+		signatures).sha256_text()
+
+
+static func _ranked_roots_binding(ranked_roots: Array) -> String:
+	return AIPositionEvaluator.stable_variant_signature(
+		_binding_wire(ranked_roots)).sha256_text()
+
+
+static func _variant_binding(value: Variant) -> String:
+	return AIPositionEvaluator.stable_variant_signature(
+		_binding_wire(value)).sha256_text()
+
+
+static func _binding_wire(value: Variant) -> Variant:
+	if value is GameAction:
+		return {
+			"binding_kind": "game_action",
+			"wire": value.to_dict(),
+		}
+	if value is Callable:
+		var callable_value: Callable = value
+		return {
+			"binding_kind": "callable",
+			"valid": callable_value.is_valid(),
+			"hash": int(callable_value.hash()),
+			"object_id": int(callable_value.get_object_id()),
+			"method": str(callable_value.get_method()),
+		}
+	if value is Object:
+		var object_value: Object = value
+		return {
+			"binding_kind": "object",
+			"valid": is_instance_valid(object_value),
+			"instance_id": (
+				int(object_value.get_instance_id())
+				if is_instance_valid(object_value)
+				else 0
+			),
+		}
+	if value is Dictionary:
+		var entries: Array[Dictionary] = []
+		for key in Dictionary(value).keys():
+			entries.append({
+				"key": _binding_wire(key),
+				"key_order": AIPositionEvaluator.stable_variant_signature(key),
+				"value": _binding_wire(Dictionary(value)[key]),
+			})
+		entries.sort_custom(_binding_entry_less)
+		return {"binding_kind": "dictionary", "entries": entries}
+	if value is Array:
+		var items: Array = []
+		for item in Array(value):
+			items.append(_binding_wire(item))
+		return {"binding_kind": "array", "items": items}
+	return value
+
+
+static func _binding_entry_less(left: Dictionary, right: Dictionary) -> bool:
+	return str(left.get("key_order", "")) < str(right.get("key_order", ""))
+
+
 static func _trace_event(trajectory: Dictionary, event: String) -> void:
 	if trajectory == null:
 		return
-	trajectory["hash"] = ("%s\n%s" % [
-		str(trajectory.get("hash", "")),
-		event,
-	]).sha256_text()
+	var previous_hash := str(trajectory.get("hash", ""))
+	trajectory["hash"] = (previous_hash + "\n" + event).sha256_text()
 	trajectory["events"] = int(trajectory.get("events", 0)) + 1
 
 
