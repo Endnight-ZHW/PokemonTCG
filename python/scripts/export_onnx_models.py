@@ -26,6 +26,11 @@ import onnxruntime as ort
 import torch
 from torch import nn
 
+from data.ai_card_vocab import (
+    CARD_VOCAB_VERSION,
+    card_vocab_sha256,
+    card_vocab_size,
+)
 from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
     CARD_BUCKET_COUNT,
@@ -36,6 +41,11 @@ from engine.ai.dl.encoder import (
 )
 from engine.ai.dl.model import CHECKPOINT_VERSION, load_checkpoint
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
+from engine.ai.dl.production_contract import (
+    DEEP_PLANNER_SCHEMA_VERSION,
+    TRAINER_HYBRID_POPULATION,
+    deep_planner_manifest,
+)
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 
 DECK_KEYS = tuple(str(key) for key in RELEASE_MANIFEST["release_decks"])
@@ -53,6 +63,9 @@ INPUT_NAMES = (
     "choice_cards",
 )
 OUTPUT_NAMES = ("action_logits", "state_value", "choice_logits")
+V5_BASELINE_MEDIAN_MS = 0.32
+MAX_V6_MEDIAN_MS = V5_BASELINE_MEDIAN_MS * 2.0
+MAX_V6_P95_MS = 2.0
 
 
 def _assert_export_environment() -> None:
@@ -243,8 +256,59 @@ def _verify_one(
     return maxima
 
 
+def _benchmark_one(
+    output: Path,
+    *,
+    iterations: int = 300,
+    enforce: bool = True,
+) -> dict[str, float | int]:
+    """Benchmark the fixed 32-Action/16-Choice production workload."""
+
+    session = ort.InferenceSession(
+        str(output),
+        providers=["CPUExecutionProvider"],
+    )
+    tensors = _inputs(93017, 32, 16)
+    feed = {
+        name: tensor.detach().cpu().numpy()
+        for name, tensor in zip(INPUT_NAMES, tensors)
+    }
+    for _ in range(30):
+        session.run(list(OUTPUT_NAMES), feed)
+    samples: list[float] = []
+    for _ in range(max(1, int(iterations))):
+        started = time.perf_counter()
+        session.run(list(OUTPUT_NAMES), feed)
+        samples.append((time.perf_counter() - started) * 1000.0)
+    median = float(np.median(samples))
+    p95 = float(np.percentile(samples, 95))
+    metrics: dict[str, float | int] = {
+        "actions": 32,
+        "choices": 16,
+        "iterations": len(samples),
+        "median_ms": round(median, 6),
+        "p95_ms": round(p95, 6),
+        "max_ms": round(max(samples), 6),
+        "median_limit_ms": MAX_V6_MEDIAN_MS,
+        "p95_limit_ms": MAX_V6_P95_MS,
+        "passed": (
+            median <= MAX_V6_MEDIAN_MS
+            and p95 <= MAX_V6_P95_MS
+        ),
+    }
+    if enforce and not bool(metrics["passed"]):
+        raise RuntimeError(
+            f"{output.name} latency gate failed: "
+            f"median={median:.6f}ms (limit {MAX_V6_MEDIAN_MS:.3f}), "
+            f"p95={p95:.6f}ms (limit {MAX_V6_P95_MS:.3f})"
+        )
+    return metrics
+
+
 def _preflight_release_checkpoints(
     checkpoint_root: Path,
+    *,
+    candidate: bool = False,
 ) -> dict[str, tuple[nn.Module, dict[str, Any]]]:
     """Load and validate the complete release set before writing ONNX files."""
     loaded: dict[str, tuple[nn.Module, dict[str, Any]]] = {}
@@ -267,20 +331,34 @@ def _preflight_release_checkpoints(
             "rules_version": RULES_SCHEMA_VERSION,
             "action_version": ACTION_SCHEMA_VERSION,
             "encoder_version": ENCODER_SCHEMA_VERSION,
+            "card_vocab_version": CARD_VOCAB_VERSION,
         }
         for key, expected in expected_schema.items():
             if int(schema.get(key) or 0) != int(expected):
                 deck_errors.append(f"{key}={int(schema.get(key) or 0)}")
         if str(metadata.get("deck") or "") != deck_key:
             deck_errors.append(f"deck={metadata.get('deck')!r}")
-        if not bool(metadata.get("accepted")):
-            deck_errors.append("not_accepted")
-        if not bool(metadata.get("verified")):
-            deck_errors.append("not_verified")
-        if int(metadata.get("planner_version") or 0) != PLANNER_SCHEMA_VERSION:
+        encoder_config = dict(payload.get("encoder_config") or {})
+        if int(encoder_config.get("card_vocab_size") or 0) != card_vocab_size():
             deck_errors.append(
-                f"planner_version={int(metadata.get('planner_version') or 0)}"
+                f"card_vocab_size={int(encoder_config.get('card_vocab_size') or 0)}"
             )
+        if str(encoder_config.get("card_vocab_sha256") or "") != card_vocab_sha256():
+            deck_errors.append("card_vocab_sha256_mismatch")
+        if candidate:
+            if str(metadata.get("trainer") or "") != TRAINER_HYBRID_POPULATION:
+                deck_errors.append(f"trainer={metadata.get('trainer')!r}")
+            if bool(metadata.get("accepted")) or bool(metadata.get("verified")):
+                deck_errors.append("candidate_prematurely_verified")
+        else:
+            if not bool(metadata.get("accepted")):
+                deck_errors.append("not_accepted")
+            if not bool(metadata.get("verified")):
+                deck_errors.append("not_verified")
+            if int(metadata.get("planner_version") or 0) != PLANNER_SCHEMA_VERSION:
+                deck_errors.append(
+                    f"planner_version={int(metadata.get('planner_version') or 0)}"
+                )
         if deck_errors:
             errors.append(f"{deck_key}:" + ",".join(deck_errors))
         else:
@@ -295,6 +373,8 @@ def export_all(
     *,
     checkpoint_root: Path,
     tolerance: float = 1e-4,
+    candidate: bool = False,
+    evidence_sha256: str = "",
 ) -> dict[str, Any]:
     started = time.perf_counter()
     missing_checkpoints = [
@@ -305,7 +385,26 @@ def export_all(
     if missing_checkpoints:
         missing = ", ".join(str(path) for path in missing_checkpoints)
         raise FileNotFoundError(f"Missing release checkpoint(s): {missing}")
-    loaded_checkpoints = _preflight_release_checkpoints(checkpoint_root)
+    loaded_checkpoints = _preflight_release_checkpoints(
+        checkpoint_root, candidate=candidate
+    )
+    if candidate and not evidence_sha256:
+        checkpoint_hashes = {
+            deck_key: _sha256(checkpoint_root / f"{deck_key}.pt")
+            for deck_key in DECK_KEYS
+        }
+        evidence_sha256 = hashlib.sha256(
+            json.dumps(
+                {
+                    "kind": "candidate_bundle_v1",
+                    "checkpoints": checkpoint_hashes,
+                    "deep_planner": deep_planner_manifest(),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    evidence_sha256 = str(evidence_sha256 or "").lower()
     output_root.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix=".onnx_export-",
@@ -324,6 +423,7 @@ def export_all(
                 loaded=loaded_checkpoints[deck_key],
             )
             maxima = _verify_one(wrapper, onnx_path, tolerance=tolerance)
+            performance = _benchmark_one(onnx_path)
             schema = dict(payload.get("schema") or {})
             model_rows[deck_key] = {
                 "deck_key": deck_key,
@@ -342,9 +442,28 @@ def export_all(
                 "rules_version": int(schema.get("rules_version") or 0),
                 "action_version": int(schema.get("action_version") or 0),
                 "encoder_version": int(schema.get("encoder_version") or 0),
+                "card_vocab_version": int(
+                    schema.get("card_vocab_version") or 0
+                ),
+                "card_vocab_size": card_vocab_size(),
+                "card_vocab_sha256": card_vocab_sha256(),
+                "model_config": dict(payload.get("model_config") or {}),
                 "planner_version": PLANNER_SCHEMA_VERSION,
+                "deep_planner_version": DEEP_PLANNER_SCHEMA_VERSION,
+                "evidence_sha256": evidence_sha256,
                 "parity_max_abs_error": maxima,
+                "performance_32_action_16_choice": performance,
+                "parity_scenarios": [
+                    "ordinary_1x1",
+                    "ordinary_3x5",
+                    "ordinary_17x11",
+                    "empty_state_slots_1x1",
+                ],
             }
+            if candidate:
+                model_rows[deck_key]["onnx_path"] = str(
+                    (output_root / f"{deck_key}.onnx").resolve()
+                )
         manifest = {
             "format_version": 2,
             "inference_format": "onnx-fp32",
@@ -357,6 +476,10 @@ def export_all(
             "state_card_slots": STATE_CARD_SLOTS,
             "action_numeric_size": ACTION_NUMERIC_SIZE,
             "card_bucket_count": CARD_BUCKET_COUNT,
+            "card_identity_mode": "vocab_v1",
+            "card_vocab_version": CARD_VOCAB_VERSION,
+            "card_vocab_size": card_vocab_size(),
+            "card_vocab_sha256": card_vocab_sha256(),
             "semantic_feature_sizes": {
                 "known_card": CARD_SEMANTIC_SIZE,
                 "missing_card": CARD_SEMANTIC_SIZE,
@@ -375,6 +498,8 @@ def export_all(
                     RELEASE_MANIFEST["schemas"]["godot_actions"]
                 ),
             },
+            "deep_planner": deep_planner_manifest(evidence_sha256),
+            "candidate_evaluation": bool(candidate),
             "models": model_rows,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
         }
@@ -449,6 +574,16 @@ def main() -> int:
         default=PYTHON_ROOT / "data" / "ai_models",
     )
     parser.add_argument("--tolerance", type=float, default=1e-4)
+    parser.add_argument(
+        "--candidate",
+        action="store_true",
+        help="Export an unverified hybrid_population_rl bundle for isolated Godot evaluation.",
+    )
+    parser.add_argument(
+        "--evidence-sha256",
+        default="",
+        help="Candidate/final evidence hash embedded in the independent Deep planner manifest.",
+    )
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     try:
@@ -463,6 +598,8 @@ def main() -> int:
                     temp_root / "ai_models",
                     checkpoint_root=args.checkpoint_root,
                     tolerance=args.tolerance,
+                    candidate=bool(args.candidate),
+                    evidence_sha256=args.evidence_sha256,
                 )
             except (OSError, RuntimeError, ValueError) as exc:
                 raise SystemExit(str(exc)) from None
@@ -486,6 +623,8 @@ def main() -> int:
             args.output_root,
             checkpoint_root=args.checkpoint_root,
             tolerance=args.tolerance,
+            candidate=bool(args.candidate),
+            evidence_sha256=args.evidence_sha256,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise SystemExit(str(exc)) from None

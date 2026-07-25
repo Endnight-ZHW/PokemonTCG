@@ -10,10 +10,12 @@
     "godot_actions": 4,
     "python_rules": 5,
     "python_actions": 3,
-    "encoder": 5,
-    "checkpoint": 10,
+    "encoder": 6,
+    "checkpoint": 11,
+    "card_vocab": 1,
     "snapshot": 3,
     "planner": 2,
+    "deep_planner": 1,
     "vm_ir": 3,
     "rng": 2,
     "ai_evaluation": 7
@@ -37,6 +39,57 @@
   "model_count": 10,
   "deep_runtime_enabled": false,
   "deep_fallback": "challenge",
+  "deep_encoder": {
+    "state_numeric_size": 960,
+    "state_card_slots": 128,
+    "action_numeric_size": 178,
+    "card_semantic_size": 53,
+    "card_identity_mode": "vocab_v1",
+    "card_vocab_version": 1,
+    "card_vocab_size": 139,
+    "card_vocab_sha256": "b6f3a3faa78dfbf0fb706fdfea26f6b92359dcc3fd937c61849ea359eb0dd0d9"
+  },
+  "deep_model": {
+    "status": "research_selection_pending",
+    "allowed_variants": [
+      "v6_pooled",
+      "v6_cross_attention"
+    ],
+    "invariants": {
+      "state_numeric_size": 960,
+      "state_card_slots": 128,
+      "action_numeric_size": 178,
+      "card_bucket_count": 139,
+      "card_embed_dim": 32,
+      "hidden_size": 384,
+      "choice_head_enabled": true,
+      "use_attention": true,
+      "attention_heads": 4,
+      "use_slot_embeddings": true,
+      "use_token_type_embeddings": true,
+      "candidate_cross_attention_heads": 4,
+      "state_norm": "layer",
+      "deck_embed_dim": 0,
+      "num_decks": 10,
+      "card_identity_mode": "vocab_v1"
+    }
+  },
+  "deep_planner": {
+    "schema_version": 1,
+    "planner_id": "deep_root_ismcts_v1",
+    "root_inference_calls": 1,
+    "neural_prior_weight": 0.75,
+    "challenge_prior_weight": 0.25,
+    "simulations": 64,
+    "c_puct": 1.4,
+    "max_depth": 16,
+    "opponent_branch_limit": 6,
+    "watchdog_seconds": 2.0,
+    "value_head_mode": "diagnostic_only",
+    "leaf_evaluator": "challenge",
+    "visit_tiebreak": "visits_prior_signature",
+    "evidence_sha256": ""
+  },
   "compatible_model_count": 0,
   "legacy_model_count": 10,
   "onnx": {

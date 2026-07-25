@@ -1440,6 +1440,43 @@ class GateTests(unittest.TestCase):
             validate_evaluation_gate(payload, gate="deep-practical")["error_codes"],
         )
 
+    def test_deep_release_enforces_noninferiority_runtime_and_timeout(self):
+        payload = _nightly_result()
+        payload["strategies"]["A"].update(
+            {"mode": "deep", "production_runtime": True}
+        )
+        payload["strategies"]["B"].update(
+            {"mode": "challenge", "production_runtime": True}
+        )
+        payload["observed"]["deep_fallbacks"] = 0
+        for row in payload["matches"]:
+            action_counts = row["action_decisions_by_strategy"]
+            row["decision_engine_counts_by_strategy"] = {
+                "A": (
+                    {"deep_root_ismcts_v1": action_counts["A"]}
+                    if action_counts["A"]
+                    else {}
+                ),
+                "B": (
+                    {"turn_beam_v2": action_counts["B"]}
+                    if action_counts["B"]
+                    else {}
+                ),
+            }
+        result = validate_evaluation_gate(payload, gate="deep-release")
+        self.assertTrue(result["valid"], result["error_codes"])
+
+        payload["matches"][0]["decision_ms_samples_by_strategy"]["A"][0] = 2000.1
+        payload["matches"][0]["decision_ms_samples"][0] = 2000.1
+        result = validate_evaluation_gate(payload, gate="deep-release")
+        self.assertIn("deep_decision_timeout", result["error_codes"])
+
+        payload["matches"][0]["decision_ms_samples_by_strategy"]["A"][0] = 10.0
+        payload["matches"][0]["decision_ms_samples"][0] = 10.0
+        payload["strength"]["mirror"]["overall"]["ci95"]["lower"] = -0.0201
+        result = validate_evaluation_gate(payload, gate="deep-release")
+        self.assertIn("mirror_ci_below_floor", result["error_codes"])
+
 
 class ReportTests(unittest.TestCase):
     def test_report_has_structured_gate_dual_heatmaps_behavior_and_all_matches(self):

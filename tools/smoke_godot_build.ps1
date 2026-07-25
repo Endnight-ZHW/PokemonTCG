@@ -19,6 +19,7 @@ $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $compatibleModelCount = [int]$release.compatible_model_count
 $legacyModelCount = [int]$release.legacy_model_count
+$deepState = if ([bool]$release.deep_runtime_enabled) { 'enabled' } else { 'disabled' }
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 Set-PortableGodotEnvironment -ToolsRoot (Join-Path $repoRoot '.tools')
@@ -73,13 +74,13 @@ $aiSmokeText = $aiSmoke -join "`n"
 if (
     $LASTEXITCODE -ne 0 -or
     -not $aiSmokeText.Contains('PHASE4_EXPORT_AI_OK') -or
-    -not $aiSmokeText.Contains('deep=disabled') -or
+    -not $aiSmokeText.Contains("deep=$deepState") -or
     -not $aiSmokeText.Contains('fallback=challenge') -or
-    -not $aiSmokeText.Contains('onnx_assets=0')
+    -not $aiSmokeText.Contains("onnx_assets=$compatibleModelCount")
 ) {
-    throw "Exported Windows AI fallback smoke test failed.`n$aiSmokeText"
+    throw "Exported Windows AI runtime smoke test failed.`n$aiSmokeText"
 }
-Write-Host 'WINDOWS_AI_FALLBACK_OK deep=disabled fallback=challenge onnx_assets=0'
+Write-Host "WINDOWS_AI_RUNTIME_OK deep=$deepState fallback=challenge onnx_assets=$compatibleModelCount"
 
 $networkSmoke = & $windowsConsole -- --phase5-network-smoke 2>&1
 $networkSmokeText = $networkSmoke -join "`n"
@@ -98,11 +99,11 @@ if (
     -not $releaseSmokeText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
     -not $releaseSmokeText.Contains("compatible_models=$compatibleModelCount") -or
     -not $releaseSmokeText.Contains("legacy_models=$legacyModelCount") -or
-    -not $releaseSmokeText.Contains('onnx_assets=0')
+    -not $releaseSmokeText.Contains("onnx_assets=$compatibleModelCount")
 ) {
     throw "Exported Windows release model smoke test failed.`n$releaseSmokeText"
 }
-Write-Host "WINDOWS_RELEASE_AI_OK compatible_models=$compatibleModelCount legacy_models=$legacyModelCount onnx_assets=0"
+Write-Host "WINDOWS_RELEASE_AI_OK compatible_models=$compatibleModelCount legacy_models=$legacyModelCount onnx_assets=$compatibleModelCount"
 
 $jar = Join-Path $jdkRoot 'bin\jar.exe'
 $apkEntries = & $jar tf $androidApk

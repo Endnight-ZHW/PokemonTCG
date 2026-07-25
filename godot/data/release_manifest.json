@@ -1,7 +1,58 @@
 {
   "android_version_code": 8,
   "compatible_model_count": 0,
+  "deep_encoder": {
+    "action_numeric_size": 178,
+    "card_identity_mode": "vocab_v1",
+    "card_semantic_size": 53,
+    "card_vocab_sha256": "b6f3a3faa78dfbf0fb706fdfea26f6b92359dcc3fd937c61849ea359eb0dd0d9",
+    "card_vocab_size": 139,
+    "card_vocab_version": 1,
+    "state_card_slots": 128,
+    "state_numeric_size": 960
+  },
   "deep_fallback": "challenge",
+  "deep_model": {
+    "allowed_variants": [
+      "v6_pooled",
+      "v6_cross_attention"
+    ],
+    "invariants": {
+      "action_numeric_size": 178,
+      "attention_heads": 4,
+      "candidate_cross_attention_heads": 4,
+      "card_bucket_count": 139,
+      "card_embed_dim": 32,
+      "card_identity_mode": "vocab_v1",
+      "choice_head_enabled": true,
+      "deck_embed_dim": 0,
+      "hidden_size": 384,
+      "num_decks": 10,
+      "state_card_slots": 128,
+      "state_norm": "layer",
+      "state_numeric_size": 960,
+      "use_attention": true,
+      "use_slot_embeddings": true,
+      "use_token_type_embeddings": true
+    },
+    "status": "research_selection_pending"
+  },
+  "deep_planner": {
+    "c_puct": 1.4,
+    "challenge_prior_weight": 0.25,
+    "evidence_sha256": "",
+    "leaf_evaluator": "challenge",
+    "max_depth": 16,
+    "neural_prior_weight": 0.75,
+    "opponent_branch_limit": 6,
+    "planner_id": "deep_root_ismcts_v1",
+    "root_inference_calls": 1,
+    "schema_version": 1,
+    "simulations": 64,
+    "value_head_mode": "diagnostic_only",
+    "visit_tiebreak": "visits_prior_signature",
+    "watchdog_seconds": 2.0
+  },
   "deep_runtime_enabled": false,
   "format_version": 2,
   "godot_version": "4.7.stable",
@@ -32,8 +83,10 @@
   },
   "schemas": {
     "ai_evaluation": 7,
-    "checkpoint": 10,
-    "encoder": 5,
+    "card_vocab": 1,
+    "checkpoint": 11,
+    "deep_planner": 1,
+    "encoder": 6,
     "godot_actions": 4,
     "godot_rules": 6,
     "planner": 2,

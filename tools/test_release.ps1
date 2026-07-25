@@ -97,10 +97,10 @@ try {
     if (
         [int]$buildInfo.onnx_models -ne $compatibleModelCount -or
         [int]$buildInfo.legacy_models -ne [int]$release.legacy_model_count -or
-        [bool]$buildInfo.deep_runtime_enabled -or
+        [bool]$buildInfo.deep_runtime_enabled -ne [bool]$release.deep_runtime_enabled -or
         [string]$buildInfo.deep_fallback -ne 'challenge'
     ) {
-        throw 'Windows ZIP BUILD_INFO.json does not match the disabled Deep runtime contract.'
+        throw 'Windows ZIP BUILD_INFO.json does not match the Deep runtime contract.'
     }
 }
 finally {

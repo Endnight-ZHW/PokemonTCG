@@ -23,6 +23,14 @@ from card_data.consistency import (
 )
 from data.card_models import Card
 from data.card_registry import CardRegistry
+from data.ai_card_vocab import (
+    CARD_VOCAB_VERSION,
+    card_vocab_index,
+    card_vocab_sha256,
+    card_vocab_size,
+    load_card_vocab,
+    validate_release_card_vocab,
+)
 from data.ai_strategy_definitions import build_ai_strategy_catalog
 from data.deck_definitions import (
     ALL_CARD_IDS,
@@ -375,6 +383,7 @@ def _card_payload(image_paths: dict[str, str]) -> dict[str, dict[str, Any]]:
         payload.update(
             {
                 "card_bucket": card_bucket(card_id),
+                "ai_card_index": card_vocab_index(card_id),
                 "ai_semantic_features": encoder._card_semantic_features(card),
                 "image_path": image_paths.get(card_id, ""),
                 "prize_value": card.prize_value,
@@ -468,6 +477,10 @@ def _model_manifest() -> dict[str, Any]:
         "state_card_slots": STATE_CARD_SLOTS,
         "action_numeric_size": ACTION_NUMERIC_SIZE,
         "card_bucket_count": CARD_BUCKET_COUNT,
+        "card_identity_mode": "vocab_v1",
+        "card_vocab_version": CARD_VOCAB_VERSION,
+        "card_vocab_size": card_vocab_size(),
+        "card_vocab_sha256": card_vocab_sha256(),
         "models": models,
     }
 
@@ -565,6 +578,21 @@ def _golden_contract(cards: dict[str, Any], decks: dict[str, Any]) -> dict[str, 
                 "sv1-153",
                 "svg2-tort",
             )
+        },
+        "ai_card_index_samples": {
+            card_id: cards[card_id]["ai_card_index"]
+            for card_id in (
+                "svi-chim",
+                "sv2-grex",
+                "sv1-ener-2",
+                "sv1-153",
+                "svg2-tort",
+            )
+        },
+        "card_vocab": {
+            "format_version": CARD_VOCAB_VERSION,
+            "size": card_vocab_size(),
+            "sha256": card_vocab_sha256(),
         },
         "portable_rng": {
             "schema_version": RNG_SCHEMA_VERSION,
@@ -3146,6 +3174,9 @@ def _rules_coverage(
 
 
 def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
+    # Unknown release IDs are a schema change, never an implicit export-time
+    # mutation.  Assign them first via update_ai_card_vocab.py.
+    validate_release_card_vocab(tuple(ALL_CARD_IDS))
     image_mapping = _load_image_mapping()
     image_paths = (
         _export_images(output, image_mapping)
@@ -3190,6 +3221,7 @@ def export(output: Path, *, copy_images: bool = True) -> dict[str, Any]:
         data_root / "card_buckets.json",
         {card_id: cards[card_id]["card_bucket"] for card_id in sorted(cards)},
     )
+    _write_json(data_root / "ai_card_vocab.json", load_card_vocab())
     _write_json(data_root / "ai_models.json", _model_manifest())
     _write_json(data_root / "release_manifest.json", _release_manifest())
     _write_json(data_root / "vm_command_descriptors.json", descriptor_payload)
@@ -3239,6 +3271,7 @@ def main() -> None:
                 Path("data/card_images.json"),
                 Path("data/card_image_hashes.json"),
                 Path("data/card_buckets.json"),
+                Path("data/ai_card_vocab.json"),
                 Path("data/ai_models.json"),
                 Path("data/release_manifest.json"),
                 Path("data/vm_command_descriptors.json"),

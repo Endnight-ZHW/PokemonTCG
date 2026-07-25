@@ -1,6 +1,10 @@
 {
   "action_numeric_size": 178,
-  "card_bucket_count": 4096,
+  "card_bucket_count": 139,
+  "card_identity_mode": "vocab_v1",
+  "card_vocab_sha256": "b6f3a3faa78dfbf0fb706fdfea26f6b92359dcc3fd937c61849ea359eb0dd0d9",
+  "card_vocab_size": 139,
+  "card_vocab_version": 1,
   "format_version": 1,
   "inference_format": "onnx-fp32",
   "models": {
@@ -146,6 +150,6 @@
     }
   },
   "search_simulations": 64,
-  "state_card_slots": 96,
+  "state_card_slots": 128,
   "state_numeric_size": 960
 }

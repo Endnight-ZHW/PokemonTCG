@@ -1,6 +1,7 @@
 {
   "sv1-104": {
     "abilities": [],
+    "ai_card_index": 2,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -130,6 +131,7 @@
   },
   "sv1-106": {
     "abilities": [],
+    "ai_card_index": 3,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -286,6 +288,7 @@
   },
   "sv1-107": {
     "abilities": [],
+    "ai_card_index": 4,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -464,6 +467,7 @@
         "trigger": ""
       }
     ],
+    "ai_card_index": 5,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -582,6 +586,7 @@
   },
   "sv1-109": {
     "abilities": [],
+    "ai_card_index": 6,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -790,6 +795,7 @@
         "trigger": "passive"
       }
     ],
+    "ai_card_index": 7,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -908,6 +914,7 @@
   },
   "sv1-111": {
     "abilities": [],
+    "ai_card_index": 8,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -1057,6 +1064,7 @@
   },
   "sv1-112": {
     "abilities": [],
+    "ai_card_index": 9,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -1204,6 +1212,7 @@
   },
   "sv1-113": {
     "abilities": [],
+    "ai_card_index": 10,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -1373,6 +1382,7 @@
   },
   "sv1-114": {
     "abilities": [],
+    "ai_card_index": 11,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -1538,6 +1548,7 @@
   },
   "sv1-150": {
     "abilities": [],
+    "ai_card_index": 12,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -1644,6 +1655,7 @@
   },
   "sv1-151": {
     "abilities": [],
+    "ai_card_index": 13,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -1760,6 +1772,7 @@
   },
   "sv1-152": {
     "abilities": [],
+    "ai_card_index": 14,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -1868,6 +1881,7 @@
   },
   "sv1-153": {
     "abilities": [],
+    "ai_card_index": 15,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2014,6 +2028,7 @@
   },
   "sv1-170": {
     "abilities": [],
+    "ai_card_index": 16,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2134,6 +2149,7 @@
   },
   "sv1-171": {
     "abilities": [],
+    "ai_card_index": 17,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2252,6 +2268,7 @@
   },
   "sv1-176": {
     "abilities": [],
+    "ai_card_index": 18,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2360,6 +2377,7 @@
   },
   "sv1-180": {
     "abilities": [],
+    "ai_card_index": 19,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2470,6 +2488,7 @@
   },
   "sv1-189": {
     "abilities": [],
+    "ai_card_index": 20,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2580,6 +2599,7 @@
   },
   "sv1-201": {
     "abilities": [],
+    "ai_card_index": 21,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2688,6 +2708,7 @@
   },
   "sv1-202": {
     "abilities": [],
+    "ai_card_index": 22,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2796,6 +2817,7 @@
   },
   "sv1-203": {
     "abilities": [],
+    "ai_card_index": 23,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -2906,6 +2928,7 @@
   },
   "sv1-204": {
     "abilities": [],
+    "ai_card_index": 24,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -3010,6 +3033,7 @@
   },
   "sv1-49": {
     "abilities": [],
+    "ai_card_index": 25,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -3142,6 +3166,7 @@
   },
   "sv1-ener-1": {
     "abilities": [],
+    "ai_card_index": 26,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3235,6 +3260,7 @@
   },
   "sv1-ener-2": {
     "abilities": [],
+    "ai_card_index": 27,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3328,6 +3354,7 @@
   },
   "sv1-ener-3": {
     "abilities": [],
+    "ai_card_index": 28,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3421,6 +3448,7 @@
   },
   "sv1-ener-4": {
     "abilities": [],
+    "ai_card_index": 29,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3514,6 +3542,7 @@
   },
   "sv1-ener-5": {
     "abilities": [],
+    "ai_card_index": 30,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3607,6 +3636,7 @@
   },
   "sv1-ener-6": {
     "abilities": [],
+    "ai_card_index": 31,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3700,6 +3730,7 @@
   },
   "sv1-ener-7": {
     "abilities": [],
+    "ai_card_index": 32,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3793,6 +3824,7 @@
   },
   "sv1-ener-8": {
     "abilities": [],
+    "ai_card_index": 33,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -3886,6 +3918,7 @@
   },
   "sv2-38": {
     "abilities": [],
+    "ai_card_index": 34,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -4024,6 +4057,7 @@
   },
   "sv2-39": {
     "abilities": [],
+    "ai_card_index": 35,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -4152,6 +4186,7 @@
   },
   "sv2-cand": {
     "abilities": [],
+    "ai_card_index": 36,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -4268,6 +4303,7 @@
   },
   "sv2-catch": {
     "abilities": [],
+    "ai_card_index": 37,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -4393,6 +4429,7 @@
   },
   "sv2-delib": {
     "abilities": [],
+    "ai_card_index": 38,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -4532,6 +4569,7 @@
   },
   "sv2-glast": {
     "abilities": [],
+    "ai_card_index": 39,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -4688,6 +4726,7 @@
   },
   "sv2-grex": {
     "abilities": [],
+    "ai_card_index": 40,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -4851,6 +4890,7 @@
   },
   "sv2-keldeo": {
     "abilities": [],
+    "ai_card_index": 41,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -5037,6 +5077,7 @@
         "trigger": ""
       }
     ],
+    "ai_card_index": 42,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -5149,6 +5190,7 @@
   },
   "sv2-staryu": {
     "abilities": [],
+    "ai_card_index": 43,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -5280,6 +5322,7 @@
   },
   "sv2-tatsu": {
     "abilities": [],
+    "ai_card_index": 44,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -5437,6 +5480,7 @@
   },
   "sv2-young": {
     "abilities": [],
+    "ai_card_index": 45,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -5549,6 +5593,7 @@
   },
   "sv3-134": {
     "abilities": [],
+    "ai_card_index": 46,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -5659,6 +5704,7 @@
   },
   "svd-absol": {
     "abilities": [],
+    "ai_card_index": 47,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -5836,6 +5882,7 @@
   },
   "svd-dark-patch": {
     "abilities": [],
+    "ai_card_index": 48,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -5950,6 +5997,7 @@
   },
   "svd-darkrai": {
     "abilities": [],
+    "ai_card_index": 49,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -6144,6 +6192,7 @@
         "trigger": "on_turn"
       }
     ],
+    "ai_card_index": 50,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -6285,6 +6334,7 @@
   },
   "svd-doduo": {
     "abilities": [],
+    "ai_card_index": 51,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -6408,6 +6458,7 @@
   },
   "svd-hard-belt": {
     "abilities": [],
+    "ai_card_index": 52,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -6518,6 +6569,7 @@
   },
   "svd-mabosstiff-ex": {
     "abilities": [],
+    "ai_card_index": 53,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -6694,6 +6746,7 @@
   },
   "svd-maschiff": {
     "abilities": [],
+    "ai_card_index": 54,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -6817,6 +6870,7 @@
   },
   "svd-morpeko": {
     "abilities": [],
+    "ai_card_index": 55,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -6995,6 +7049,7 @@
   },
   "svd-seviper": {
     "abilities": [],
+    "ai_card_index": 56,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -7151,6 +7206,7 @@
   },
   "svf-ensw2": {
     "abilities": [],
+    "ai_card_index": 57,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -7261,6 +7317,7 @@
   },
   "svf-farf": {
     "abilities": [],
+    "ai_card_index": 58,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -7406,6 +7463,7 @@
   },
   "svf-hawl": {
     "abilities": [],
+    "ai_card_index": 59,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -7576,6 +7634,7 @@
   },
   "svf-houb": {
     "abilities": [],
+    "ai_card_index": 60,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -7685,6 +7744,7 @@
   },
   "svf-klea": {
     "abilities": [],
+    "ai_card_index": 61,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -7879,6 +7939,7 @@
         "trigger": ""
       }
     ],
+    "ai_card_index": 62,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -8008,6 +8069,7 @@
   },
   "svf-pass": {
     "abilities": [],
+    "ai_card_index": 63,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -8137,6 +8199,7 @@
   },
   "svf-potion": {
     "abilities": [],
+    "ai_card_index": 64,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -8245,6 +8308,7 @@
   },
   "svf-rio": {
     "abilities": [],
+    "ai_card_index": 65,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -8384,6 +8448,7 @@
   },
   "svf-scyt": {
     "abilities": [],
+    "ai_card_index": 66,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -8495,6 +8560,7 @@
   },
   "svf-terr": {
     "abilities": [],
+    "ai_card_index": 67,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -8656,6 +8722,7 @@
         "trigger": "on_turn"
       }
     ],
+    "ai_card_index": 68,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -8777,6 +8844,7 @@
   },
   "svg-beri": {
     "abilities": [],
+    "ai_card_index": 69,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -8881,6 +8949,7 @@
   },
   "svg-cast": {
     "abilities": [],
+    "ai_card_index": 70,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -9043,6 +9112,7 @@
   },
   "svg-ceti": {
     "abilities": [],
+    "ai_card_index": 71,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -9202,6 +9272,7 @@
   },
   "svg-ceto": {
     "abilities": [],
+    "ai_card_index": 72,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -9314,6 +9385,7 @@
   },
   "svg-chef": {
     "abilities": [],
+    "ai_card_index": 73,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -9424,6 +9496,7 @@
   },
   "svg-dram": {
     "abilities": [],
+    "ai_card_index": 74,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -9571,6 +9644,7 @@
   },
   "svg-milt": {
     "abilities": [],
+    "ai_card_index": 75,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -9700,6 +9774,7 @@
   },
   "svg-swa": {
     "abilities": [],
+    "ai_card_index": 76,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -9831,6 +9906,7 @@
   },
   "svg-tatsu": {
     "abilities": [],
+    "ai_card_index": 77,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -9976,6 +10052,7 @@
   },
   "svg2-brel": {
     "abilities": [],
+    "ai_card_index": 78,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -10111,6 +10188,7 @@
         "trigger": "on_turn"
       }
     ],
+    "ai_card_index": 79,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -10239,6 +10317,7 @@
   },
   "svg2-exps": {
     "abilities": [],
+    "ai_card_index": 80,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -10343,6 +10422,7 @@
   },
   "svg2-gard": {
     "abilities": [],
+    "ai_card_index": 81,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -10487,6 +10567,7 @@
         "trigger": "on_turn"
       }
     ],
+    "ai_card_index": 82,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -10600,6 +10681,7 @@
   },
   "svg2-hamm": {
     "abilities": [],
+    "ai_card_index": 83,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -10704,6 +10786,7 @@
   },
   "svg2-lume": {
     "abilities": [],
+    "ai_card_index": 84,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -10808,6 +10891,7 @@
   },
   "svg2-shro": {
     "abilities": [],
+    "ai_card_index": 85,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -10936,6 +11020,7 @@
   },
   "svg2-tort": {
     "abilities": [],
+    "ai_card_index": 86,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -11089,6 +11174,7 @@
   },
   "svg2-turt": {
     "abilities": [],
+    "ai_card_index": 87,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -11213,6 +11299,7 @@
   },
   "svg2-zaru": {
     "abilities": [],
+    "ai_card_index": 88,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -11394,6 +11481,7 @@
   },
   "svi-aipo": {
     "abilities": [],
+    "ai_card_index": 89,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -11535,6 +11623,7 @@
   },
   "svi-ambi": {
     "abilities": [],
+    "ai_card_index": 90,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -11703,6 +11792,7 @@
   },
   "svi-cait": {
     "abilities": [],
+    "ai_card_index": 91,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -11807,6 +11897,7 @@
   },
   "svi-chim": {
     "abilities": [],
+    "ai_card_index": 92,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -11937,6 +12028,7 @@
   },
   "svi-chiy": {
     "abilities": [],
+    "ai_card_index": 93,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -12099,6 +12191,7 @@
   },
   "svi-dtur": {
     "abilities": [],
+    "ai_card_index": 94,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -12213,6 +12306,7 @@
   },
   "svi-enst": {
     "abilities": [],
+    "ai_card_index": 95,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -12353,6 +12447,7 @@
         "trigger": "passive"
       }
     ],
+    "ai_card_index": 96,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -12503,6 +12598,7 @@
   },
   "svi-erec": {
     "abilities": [],
+    "ai_card_index": 97,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -12613,6 +12709,7 @@
   },
   "svi-flam": {
     "abilities": [],
+    "ai_card_index": 98,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -12758,6 +12855,7 @@
   },
   "svi-gree": {
     "abilities": [],
+    "ai_card_index": 99,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -12918,6 +13016,7 @@
   },
   "svi-hrot": {
     "abilities": [],
+    "ai_card_index": 100,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -13045,6 +13144,7 @@
   },
   "svi-inde": {
     "abilities": [],
+    "ai_card_index": 101,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -13212,6 +13312,7 @@
   },
   "svi-infr": {
     "abilities": [],
+    "ai_card_index": 102,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -13372,6 +13473,7 @@
   },
   "svi-jete": {
     "abilities": [],
+    "ai_card_index": 103,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -13521,6 +13623,7 @@
         "trigger": "on_damaged"
       }
     ],
+    "ai_card_index": 104,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -13653,6 +13756,7 @@
   },
   "svi-mela": {
     "abilities": [],
+    "ai_card_index": 105,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -13798,6 +13902,7 @@
   },
   "svi-mirc": {
     "abilities": [],
+    "ai_card_index": 106,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -13914,6 +14019,7 @@
   },
   "svi-monf": {
     "abilities": [],
+    "ai_card_index": 107,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -14057,6 +14163,7 @@
   },
   "svi-nemb": {
     "abilities": [],
+    "ai_card_index": 108,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -14177,6 +14284,7 @@
   },
   "svi-popp": {
     "abilities": [],
+    "ai_card_index": 109,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -14289,6 +14397,7 @@
   },
   "svi-skwv": {
     "abilities": [],
+    "ai_card_index": 110,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -14400,6 +14509,7 @@
   },
   "svi-sqwk": {
     "abilities": [],
+    "ai_card_index": 111,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -14593,6 +14703,7 @@
   },
   "svi-stan": {
     "abilities": [],
+    "ai_card_index": 112,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -14756,6 +14867,7 @@
   },
   "svi-tand": {
     "abilities": [],
+    "ai_card_index": 113,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -14880,6 +14992,7 @@
   },
   "svi-trea": {
     "abilities": [],
+    "ai_card_index": 114,
     "ai_semantic_features": [
       0.0,
       0.0,
@@ -15006,6 +15119,7 @@
   },
   "svl-chat": {
     "abilities": [],
+    "ai_card_index": 115,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -15151,6 +15265,7 @@
   },
   "svl-chin": {
     "abilities": [],
+    "ai_card_index": 116,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -15262,6 +15377,7 @@
   },
   "svl-emol": {
     "abilities": [],
+    "ai_card_index": 117,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -15406,6 +15522,7 @@
   },
   "svl-ensw": {
     "abilities": [],
+    "ai_card_index": 118,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -15550,6 +15667,7 @@
         "trigger": ""
       }
     ],
+    "ai_card_index": 119,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -15663,6 +15781,7 @@
   },
   "svl-lant": {
     "abilities": [],
+    "ai_card_index": 120,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -15804,6 +15923,7 @@
   },
   "svl-mare2": {
     "abilities": [],
+    "ai_card_index": 121,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -15928,6 +16048,7 @@
   },
   "svl-pikaex": {
     "abilities": [],
+    "ai_card_index": 122,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -16091,6 +16212,7 @@
   },
   "svl-thun": {
     "abilities": [],
+    "ai_card_index": 123,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -16254,6 +16376,7 @@
   },
   "svl-trks": {
     "abilities": [],
+    "ai_card_index": 124,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -16358,6 +16481,7 @@
   },
   "svl-vitb": {
     "abilities": [],
+    "ai_card_index": 125,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -16466,6 +16590,7 @@
   },
   "svl-zera": {
     "abilities": [],
+    "ai_card_index": 126,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -16593,6 +16718,7 @@
   },
   "svl-zinn": {
     "abilities": [],
+    "ai_card_index": 127,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -16724,6 +16850,7 @@
         "trigger": "repeatable"
       }
     ],
+    "ai_card_index": 128,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -16832,6 +16959,7 @@
   },
   "svm-bronzor": {
     "abilities": [],
+    "ai_card_index": 129,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -17000,6 +17128,7 @@
         "trigger": "passive"
       }
     ],
+    "ai_card_index": 130,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -17134,6 +17263,7 @@
   },
   "svm-dialga": {
     "abilities": [],
+    "ai_card_index": 131,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -17314,6 +17444,7 @@
   },
   "svm-klefki": {
     "abilities": [],
+    "ai_card_index": 132,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -17437,6 +17568,7 @@
   },
   "svm-marnie-pride": {
     "abilities": [],
+    "ai_card_index": 133,
     "ai_semantic_features": [
       0.0,
       1.0,
@@ -17579,6 +17711,7 @@
         "trigger": "passive"
       }
     ],
+    "ai_card_index": 134,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -17709,6 +17842,7 @@
   },
   "svm-skarmory": {
     "abilities": [],
+    "ai_card_index": 135,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -17844,6 +17978,7 @@
   },
   "svm-smeargle": {
     "abilities": [],
+    "ai_card_index": 136,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -17986,6 +18121,7 @@
   },
   "svm-zacian": {
     "abilities": [],
+    "ai_card_index": 137,
     "ai_semantic_features": [
       1.0,
       0.0,
@@ -18172,6 +18308,7 @@
         "trigger": "passive"
       }
     ],
+    "ai_card_index": 138,
     "ai_semantic_features": [
       1.0,
       0.0,

@@ -66,6 +66,7 @@ var _compact := false
 var _compact_detail_visible := false
 var _gallery_scroll_position := 0.0
 var _configured := false
+var _deep_unavailable_reason := ""
 
 
 func _ready() -> void:
@@ -320,7 +321,88 @@ func _populate_ai_mode_options() -> void:
 	ai_mode_option.add_item("Challenge AI")
 	ai_mode_option.set_item_metadata(0, MODE_CHALLENGE)
 	ai_mode_option.select(0)
-	ai_mode_option.disabled = true
+	_deep_unavailable_reason = ""
+	if mode == MODE_LOCAL:
+		ai_mode_option.disabled = true
+		return
+	_deep_unavailable_reason = _deep_model_set_unavailable_reason()
+	if _deep_unavailable_reason.is_empty():
+		ai_mode_option.add_item("Deep AI")
+		ai_mode_option.set_item_metadata(1, MODE_DEEP)
+		# A complete, promoted model set makes Deep the default. The user can
+		# still explicitly select deterministic Challenge.
+		ai_mode_option.select(1)
+		mode = MODE_DEEP
+		ai_mode_option.disabled = false
+		ai_mode_option.tooltip_text = (
+			"Deep AI 已通过完整模型与证据清单校验；可切换 Challenge AI。")
+	else:
+		mode = MODE_CHALLENGE
+		ai_mode_option.disabled = true
+		ai_mode_option.tooltip_text = (
+			"Deep AI 不可用：%s" % _deep_unavailable_reason)
+
+
+func _deep_model_set_unavailable_reason() -> String:
+	var release_file := FileAccess.open(
+		DeepAIRuntime.RELEASE_MANIFEST_PATH, FileAccess.READ)
+	if release_file == null:
+		return "release_manifest_missing"
+	var release_value: Variant = JSON.parse_string(
+		release_file.get_as_text())
+	if not release_value is Dictionary:
+		return "release_manifest_invalid"
+	var release: Dictionary = release_value
+	if release.is_empty():
+		return "release_manifest_missing"
+	if not bool(release.get("deep_runtime_enabled", false)):
+		return "deep_runtime_disabled"
+	var model_count := int(release.get("model_count", 0))
+	if (
+		model_count <= 0
+		or int(release.get("compatible_model_count", -1)) != model_count
+		or int(release.get("legacy_model_count", -1)) != 0
+	):
+		return "compatible_model_set_incomplete"
+	var schemas: Dictionary = release.get("schemas", {})
+	if int(schemas.get("deep_planner", 0)) != DeepRootISMCTS.SCHEMA_VERSION:
+		return "deep_planner_schema_mismatch"
+	var release_planner: Dictionary = release.get("deep_planner", {})
+	var evidence_sha := str(
+		release_planner.get("evidence_sha256", "")).to_lower()
+	if evidence_sha.is_empty():
+		return "evaluation_evidence_missing"
+	var file := FileAccess.open(
+		DeepAIRuntime.MANIFEST_PATH, FileAccess.READ)
+	if file == null:
+		return "runtime_manifest_missing"
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	if not parsed is Dictionary:
+		return "runtime_manifest_invalid"
+	var runtime: Dictionary = parsed
+	if runtime.get("deep_planner", {}) != release_planner:
+		return "deep_planner_manifest_mismatch"
+	var models_value: Variant = runtime.get("models", {})
+	if not models_value is Dictionary:
+		return "model_manifest_invalid"
+	var models: Dictionary = models_value
+	var decks: Array = release.get("release_decks", [])
+	if models.size() != model_count or decks.size() != model_count:
+		return "model_manifest_incomplete"
+	for deck_value in decks:
+		var deck_key := str(deck_value)
+		var row_value: Variant = models.get(deck_key)
+		if not row_value is Dictionary:
+			return "model_missing:%s" % deck_key
+		var row: Dictionary = row_value
+		if str(row.get("evidence_sha256", "")).to_lower() != evidence_sha:
+			return "model_evidence_mismatch:%s" % deck_key
+		var path := str(row.get("onnx_path", ""))
+		if path.is_empty() or not FileAccess.file_exists(path):
+			return "onnx_missing:%s" % deck_key
+	if not ClassDB.class_exists("OnnxInference"):
+		return "onnx_extension_unavailable"
+	return ""
 
 
 func _on_ai_mode_selected(index: int) -> void:
@@ -351,6 +433,9 @@ func _refresh_mode_copy() -> void:
 			mode_description.text = (
 				"玩家固定为玩家 1，Challenge AI 为玩家 2；双方都只通过公开规则接口行动。"
 			)
+			if not _deep_unavailable_reason.is_empty():
+				mode_description.text += (
+					"\nDeep AI 当前不可用：%s" % _deep_unavailable_reason)
 	player_two_slot_button.accessibility_name = "%s 牌组" % _second_slot_name()
 
 

@@ -109,6 +109,9 @@ ERROR_MESSAGES = {
     "diagnostic_rate_regression": "候选策略至少一项决策诊断发生率上升超过 0.1 个百分点。",
     "decision_diagnostics_unbalanced": "同策略稳定性评测的 A/B 决策错因计数不平衡。",
     "deep_fallback_rate": "Deep 评测发生了回退。",
+    "deep_runtime_contract": "候选评测没有完整使用正式 Deep 运行时与隐藏信息快照。",
+    "deep_planner_coverage": "候选动作决策没有全部由 deep_root_ismcts_v1 完成。",
+    "deep_decision_timeout": "至少一个适用的 Deep 决策超过 2 秒。",
 }
 
 
@@ -154,6 +157,8 @@ def _normalized_gate(payload: dict[str, Any], gate: str) -> str:
         "superiority": "nightly-superiority",
         "nightly": "nightly-stability",
         "deep": "deep-practical",
+        "deep-noninferiority": "deep-release",
+        "hybrid-release": "deep-release",
     }
     normalized = aliases.get(normalized, normalized)
     if normalized == "auto":
@@ -666,6 +671,132 @@ def _dirty_game_count(payload: dict[str, Any]) -> int:
     return max(games - clean, explicit)
 
 
+def _deep_release_runtime_validation(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    strategies = payload.get("strategies") or {}
+    strategy_a = strategies.get("A") or {}
+    strategy_b = strategies.get("B") or {}
+    runtime_contract = (
+        isinstance(strategy_a, dict)
+        and isinstance(strategy_b, dict)
+        and str(strategy_a.get("mode") or "") == "deep"
+        and bool(strategy_a.get("production_runtime"))
+        and str(strategy_b.get("mode") or "challenge") == "challenge"
+        and bool(strategy_b.get("production_runtime"))
+    )
+    planner_id = "deep_root_ismcts_v1"
+    planner_coverage = True
+    latency_coverage = True
+    decision_accounting = True
+    deep_action_decisions = 0
+    deep_latency_samples = 0
+    maximum_decision_ms = 0.0
+    malformed_rows: list[int] = []
+    engine_mismatch_rows: list[int] = []
+    latency_mismatch_rows: list[int] = []
+    matches = payload.get("matches")
+    if not isinstance(matches, list) or not matches:
+        planner_coverage = False
+        latency_coverage = False
+        matches = []
+    for row_index, row in enumerate(matches):
+        if not isinstance(row, dict):
+            malformed_rows.append(row_index)
+            planner_coverage = False
+            latency_coverage = False
+            decision_accounting = False
+            continue
+        decisions = row.get("decisions")
+        choices = row.get("choices")
+        all_samples = row.get("decision_ms_samples")
+        decisions_by_strategy = row.get("action_decisions_by_strategy")
+        engine_counts_by_strategy = row.get(
+            "decision_engine_counts_by_strategy"
+        )
+        timings_by_strategy = row.get("decision_ms_samples_by_strategy")
+        if (
+            not _is_nonnegative_int(decisions)
+            or not _is_nonnegative_int(choices)
+            or not isinstance(all_samples, list)
+            or not isinstance(decisions_by_strategy, dict)
+            or not isinstance(timings_by_strategy, dict)
+            or any(
+                not isinstance(timings_by_strategy.get(label), list)
+                for label in ("A", "B")
+            )
+            or sum(
+                _int(decisions_by_strategy.get(label))
+                for label in ("A", "B")
+            )
+            != _int(decisions)
+            or len(all_samples) != _int(decisions) + _int(choices)
+            or sum(
+                len(timings_by_strategy.get(label) or [])
+                for label in ("A", "B")
+            )
+            != len(all_samples)
+            or any(_float(value, None) is None for value in all_samples)
+        ):
+            decision_accounting = False
+            malformed_rows.append(row_index)
+        if not isinstance(decisions_by_strategy, dict) or not isinstance(
+            engine_counts_by_strategy, dict
+        ):
+            planner_coverage = False
+            malformed_rows.append(row_index)
+        else:
+            expected = _int(decisions_by_strategy.get("A"))
+            raw_counts = engine_counts_by_strategy.get("A")
+            counts = (
+                {
+                    str(key): _int(value)
+                    for key, value in raw_counts.items()
+                    if _int(value) > 0
+                }
+                if isinstance(raw_counts, dict)
+                else {}
+            )
+            expected_counts = {planner_id: expected} if expected > 0 else {}
+            if counts != expected_counts:
+                planner_coverage = False
+                engine_mismatch_rows.append(row_index)
+            deep_action_decisions += expected
+        by_strategy = timings_by_strategy
+        samples = by_strategy.get("A") if isinstance(by_strategy, dict) else None
+        if not isinstance(samples, list):
+            latency_coverage = False
+            latency_mismatch_rows.append(row_index)
+            continue
+        for sample in samples:
+            elapsed = _float(sample, None)
+            if elapsed is None or elapsed < 0.0:
+                latency_coverage = False
+                latency_mismatch_rows.append(row_index)
+                continue
+            maximum_decision_ms = max(maximum_decision_ms, elapsed)
+            deep_latency_samples += 1
+    if deep_action_decisions <= 0 or deep_latency_samples <= 0:
+        planner_coverage = False
+        latency_coverage = False
+    timeout_free = (
+        latency_coverage and maximum_decision_ms <= 2000.0 + 1e-12
+    )
+    return {
+        "runtime_contract": runtime_contract,
+        "decision_accounting": decision_accounting,
+        "planner_coverage": planner_coverage,
+        "timeout_free": timeout_free,
+        "planner_id": planner_id,
+        "deep_action_decisions": deep_action_decisions,
+        "deep_latency_samples": deep_latency_samples,
+        "maximum_decision_ms": maximum_decision_ms,
+        "malformed_rows": malformed_rows[:20],
+        "engine_mismatch_rows": engine_mismatch_rows[:20],
+        "latency_mismatch_rows": latency_mismatch_rows[:20],
+    }
+
+
 def _golden_valid(payload: dict[str, Any]) -> tuple[bool, bool]:
     golden = payload.get("golden_scenarios") or {}
     by_scope = golden.get("by_scope") or {}
@@ -780,6 +911,7 @@ def _main_depth_contract_valid(
     if not isinstance(matches, list) or not isinstance(strategies, dict):
         return False
     configured_engines: dict[str, str] = {}
+    configured_modes: dict[str, str] = {}
     for strategy in ("A", "B"):
         descriptor = strategies.get(strategy)
         if not isinstance(descriptor, dict):
@@ -788,10 +920,12 @@ def _main_depth_contract_valid(
         if engine not in {"turn_beam_v1", "turn_beam_v2"}:
             return False
         configured_engines[strategy] = engine
+        configured_modes[strategy] = str(descriptor.get("mode") or "")
     return all(
         match_decision_contract_error(
             row,
             configured_engines,
+            configured_modes=configured_modes,
             strict_v2_depth=strict_v2_depth,
         )
         is None
@@ -1021,8 +1155,12 @@ def validate_evaluation_gate(
         "nightly-equivalence",
         "nightly-superiority",
         "deep-practical",
+        "deep-release",
     }
-    canonical_nightly = normalized_gate.startswith("nightly-")
+    canonical_nightly = (
+        normalized_gate.startswith("nightly-")
+        or normalized_gate == "deep-release"
+    )
 
     schema_valid = _int(payload.get("schema_version")) == SCHEMA_VERSION
     _check(checks, "schema", "integrity", schema_valid, f"schema v{SCHEMA_VERSION}")
@@ -1375,11 +1513,21 @@ def validate_evaluation_gate(
     if not platform_supported:
         _append_issue(errors, "platform_unsupported", "integrity", platform=configured_platform)
         configured_platform = "windows"
+    deep_release = normalized_gate == "deep-release"
+    deep_runtime = (
+        _deep_release_runtime_validation(payload)
+        if deep_release
+        else {}
+    )
     main_depth = _main_depth_validation(
         payload,
-        strict_v2_depth=strict,
+        strict_v2_depth=strict and not deep_release,
     )
-    depth_contract_valid = bool(main_depth.get("contract_valid"))
+    depth_contract_valid = (
+        bool(deep_runtime.get("decision_accounting"))
+        if deep_release
+        else bool(main_depth.get("contract_valid"))
+    )
     _check(
         checks,
         "search_depth_decision_accounting",
@@ -1398,13 +1546,13 @@ def validate_evaluation_gate(
         checks,
         "search_depth_main_matrix",
         "search_depth",
-        depth_metrics_valid if strict else True,
+        depth_metrics_valid if strict and not deep_release else True,
         "主矩阵 A/B 实际 beam 搜索深度"
         if strict
         else "主矩阵搜索深度样本（此门禁不要求）",
         available=depth_metrics_valid,
     )
-    if strict and not depth_metrics_valid:
+    if strict and not deep_release and not depth_metrics_valid:
         _append_issue(errors, "search_depth_metrics", "search_depth")
     depth_errors = (
         _search_depth_errors(
@@ -1414,14 +1562,18 @@ def validate_evaluation_gate(
         if bool((main_depth.get("recomputed") or {}).get("available"))
         else []
     )
-    if strict:
+    if strict and not deep_release:
         for code, details in depth_errors:
             _append_issue(errors, code, "search_depth", **details)
     _check(
         checks,
         "search_depth_thresholds",
         "search_depth",
-        (not depth_errors and depth_metrics_valid) if strict else True,
+        (
+            not depth_errors and depth_metrics_valid
+            if strict and not deep_release
+            else True
+        ),
         "候选侧全预算搜索深度"
         if strict
         else "搜索深度阈值（此门禁不要求）",
@@ -1467,6 +1619,7 @@ def validate_evaluation_gate(
         "nightly-equivalence",
         "nightly-superiority",
         "deep-practical",
+        "deep-release",
     }:
         relation_valid = not _strategies_equal(payload)
     _check(checks, "strategy_relation", "strength", relation_valid, "策略指纹关系")
@@ -1500,11 +1653,19 @@ def validate_evaluation_gate(
         "nightly-equivalence",
         "nightly-superiority",
         "deep-practical",
+        "deep-release",
     }:
         ci_floor = (
             0.0
             if normalized_gate == "nightly-superiority"
-            else (-0.02 if normalized_gate == "nightly-equivalence" else -0.04)
+            else (
+                -0.02
+                if normalized_gate in {
+                    "nightly-equivalence",
+                    "deep-release",
+                }
+                else -0.04
+            )
         )
         mirror_lower = _ci_lower(mirror)
         cross_lower = _ci_lower(cross)
@@ -1536,6 +1697,7 @@ def validate_evaluation_gate(
             if normalized_gate in {
                 "nightly-equivalence",
                 "nightly-superiority",
+                "deep-release",
             }
             else -0.08
         )
@@ -1553,6 +1715,7 @@ def validate_evaluation_gate(
         if normalized_gate in {
             "nightly-equivalence",
             "nightly-superiority",
+            "deep-release",
         }:
             for matchup, stats in (cross.get("per_unordered_matchup") or {}).items():
                 delta = _float(stats.get("point_delta"), None)
@@ -1613,16 +1776,72 @@ def validate_evaluation_gate(
             if not diagnostic_ok:
                 _append_issue(errors, "decision_diagnostics_regression", "diagnostics", delta=diagnostic_delta)
 
-    if normalized_gate == "deep-practical":
-        fallback_rate = _float((payload.get("observed") or {}).get("deep_fallback_rate"), 0.0) or 0.0
-        fallback_ok = fallback_rate == 0.0
+    if normalized_gate == "deep-release":
+        runtime_ok = bool(deep_runtime.get("runtime_contract"))
+        _check(
+            checks,
+            "deep_runtime_contract",
+            "runtime",
+            runtime_ok,
+            "Deep A 对 Challenge B 且双方使用正式隐藏信息快照",
+        )
+        if not runtime_ok:
+            _append_issue(errors, "deep_runtime_contract", "runtime")
+        planner_ok = bool(deep_runtime.get("planner_coverage"))
+        _check(
+            checks,
+            "deep_planner_coverage",
+            "runtime",
+            planner_ok,
+            "A 侧动作全部由 deep_root_ismcts_v1 完成",
+            **deep_runtime,
+        )
+        if not planner_ok:
+            _append_issue(
+                errors,
+                "deep_planner_coverage",
+                "runtime",
+                **deep_runtime,
+            )
+        timeout_ok = bool(deep_runtime.get("timeout_free"))
+        _check(
+            checks,
+            "deep_decision_timeout",
+            "performance",
+            timeout_ok,
+            "全部适用 Deep 决策不超过 2000ms",
+            maximum_decision_ms=deep_runtime.get("maximum_decision_ms"),
+            samples=deep_runtime.get("deep_latency_samples"),
+        )
+        if not timeout_ok:
+            _append_issue(
+                errors,
+                "deep_decision_timeout",
+                "performance",
+                maximum_decision_ms=deep_runtime.get(
+                    "maximum_decision_ms"
+                ),
+            )
+
+    if normalized_gate in {"deep-practical", "deep-release"}:
+        observed = payload.get("observed") or {}
+        fallback_rate = _float(observed.get("deep_fallback_rate"), 0.0) or 0.0
+        fallback_count = _int(observed.get("deep_fallbacks"))
+        fallback_ok = fallback_rate == 0.0 and fallback_count == 0
         _check(checks, "deep_fallback", "reliability", fallback_ok, "Deep 零回退", rate=fallback_rate)
         if not fallback_ok:
-            _append_issue(errors, "deep_fallback_rate", "reliability", rate=fallback_rate)
+            _append_issue(
+                errors,
+                "deep_fallback_rate",
+                "reliability",
+                rate=fallback_rate,
+                count=fallback_count,
+            )
     elif normalized_gate not in {
         "nightly-stability",
         "nightly-equivalence",
         "nightly-superiority",
+        "deep-release",
         "quick",
         "smoke",
     }:
@@ -1690,6 +1909,9 @@ def main() -> int:
             "nightly-equivalence",
             "nightly-superiority",
             "deep-practical",
+            "deep-release",
+            "deep-noninferiority",
+            "hybrid-release",
             "stability",
             "equivalence",
             "superiority",

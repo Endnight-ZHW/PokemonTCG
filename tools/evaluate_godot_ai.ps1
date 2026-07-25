@@ -18,8 +18,10 @@ param(
     [ValidateSet('', 'Mirror', 'Balanced', 'Matrix')]
     [string]$MatchupMode = '',
     [int]$CrossSeedBlocksPerMatchup = -1,
-    [ValidateSet('', 'smoke', 'quick', 'stability', 'nightly-stability', 'equivalence', 'nightly-equivalence', 'superiority', 'nightly-superiority', 'deep-practical', 'deep', 'auto')]
+    [ValidateSet('', 'smoke', 'quick', 'stability', 'nightly-stability', 'equivalence', 'nightly-equivalence', 'superiority', 'nightly-superiority', 'deep-practical', 'deep-release', 'deep-noninferiority', 'deep', 'auto')]
     [string]$ValidateGate = '',
+    [string]$DeepRuntimeManifest = '',
+    [string]$DeepReleaseManifest = '',
     [string[]]$MergeInput = @(),
     [Alias('SearchDepthProbeInput', 'PerformanceProbeInput')]
     [string[]]$PerformanceBenchmarkInput = @(),
@@ -530,6 +532,18 @@ if (-not [string]::IsNullOrWhiteSpace($StrategyA)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($StrategyB)) {
     $runnerArgs += @('--strategy-b', $StrategyB)
+}
+if (-not [string]::IsNullOrWhiteSpace($DeepRuntimeManifest)) {
+    $runnerArgs += @(
+        '--deep-runtime-manifest',
+        (Resolve-RepoPathOrEmpty $DeepRuntimeManifest)
+    )
+}
+if (-not [string]::IsNullOrWhiteSpace($DeepReleaseManifest)) {
+    $runnerArgs += @(
+        '--deep-release-manifest',
+        (Resolve-RepoPathOrEmpty $DeepReleaseManifest)
+    )
 }
 foreach ($deckKey in $Deck) {
     if (-not [string]::IsNullOrWhiteSpace($deckKey)) {

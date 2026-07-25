@@ -408,23 +408,29 @@ DARKNESS_DECK = [
     ("sv1-ener-7", 15),        # 基本恶能量
 ]
 
-# Collect all unique card IDs needed for all decks
-ALL_CARD_IDS = list(set(
+# One authoritative release-deck mapping.  AI observation sampling, training,
+# export, and evaluation must consume this mapping instead of maintaining
+# parallel subsets that can silently omit a deck.
+DECK_SPECS = {
+    "fire": FIRE_DECK,
+    "water": WATER_DECK,
+    "psychic": PSYCHIC_DECK_NATU,
+    "lightning": LIGHTNING_DECK,
+    "fighting": FIGHTING_DECK,
+    "colorless": COLORLESS_DECK,
+    "dragon": DRAGON_DECK,
+    "grass": GRASS_DECK,
+    "steel": STEEL_DECK,
+    "darkness": DARKNESS_DECK,
+}
+
+# Collect all unique card IDs needed for all decks.  Sorting makes generated
+# data and the initial append-only AI vocabulary reproducible.
+ALL_CARD_IDS = sorted({
     card_id
-    for deck in [
-        FIRE_DECK,
-        WATER_DECK,
-        PSYCHIC_DECK_NATU,
-        LIGHTNING_DECK,
-        FIGHTING_DECK,
-        COLORLESS_DECK,
-        DRAGON_DECK,
-        GRASS_DECK,
-        STEEL_DECK,
-        DARKNESS_DECK,
-    ]
+    for deck in DECK_SPECS.values()
     for card_id, _ in deck
-))
+})
 
 
 def expand_deck(deck_spec: list[tuple[str, int]]) -> list[str]:

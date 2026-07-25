@@ -382,11 +382,8 @@ def load_synergy_embeddings_into_model(
 ) -> None:
     """Load pre-trained synergy embeddings into a DeepActionModel.
 
-    Maps card api_ids through the encoder's card_bucket() hash to set
-    the model's card_embedding weights appropriately.
-
-    Since card_bucket uses a hash, direct mapping isn't 1:1. Instead,
-    we average embeddings that map to the same bucket.
+    Encoder-v6 models use the append-only collision-free vocabulary. Legacy
+    hash checkpoints retain their historical bucket averaging behavior.
     """
     try:
         import torch
@@ -396,10 +393,13 @@ def load_synergy_embeddings_into_model(
     if not synergy_embeddings:
         return
 
-    card_bucket = encoder.card_bucket if hasattr(encoder, "card_bucket") else None
-    if card_bucket is None:
-        from engine.ai.dl.encoder import card_bucket as _card_bucket
-        card_bucket = _card_bucket
+    from engine.ai.dl.encoder import card_bucket, card_index
+
+    identity_index = (
+        card_index
+        if str(getattr(model, "card_identity_mode", "")) == "vocab_v1"
+        else card_bucket
+    )
 
     embedding_dim = len(next(iter(synergy_embeddings.values())))
     bucket_count = getattr(model, "card_bucket_count", 4096)
@@ -409,7 +409,7 @@ def load_synergy_embeddings_into_model(
     bucket_counts: dict[int, int] = defaultdict(int)
 
     for cid, emb in synergy_embeddings.items():
-        bucket = card_bucket(cid)
+        bucket = identity_index(cid)
         if 0 <= bucket < bucket_count:
             bucket_counts[bucket] += 1
             current = bucket_sums[bucket]

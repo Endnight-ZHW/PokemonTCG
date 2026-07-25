@@ -4,6 +4,8 @@ extends RefCounted
 const PHASE_FOUR_FLAG := "--phase4-ai-smoke"
 const PHASE_FIVE_FLAG := "--phase5-network-smoke"
 const PHASE_SIX_FLAG := "--phase6-release-smoke"
+const CANDIDATE_RUNTIME_FLAG := "--candidate-runtime-smoke"
+const CANDIDATE_MANIFEST_PATH := "res://data/candidate_manifest.json"
 
 
 func run_if_requested(
@@ -17,6 +19,8 @@ func run_if_requested(
 		return _run_phase_five()
 	if PHASE_SIX_FLAG in args:
 		return _run_phase_six(deep_runtime, services)
+	if CANDIDATE_RUNTIME_FLAG in args:
+		return _run_candidate_runtime()
 	return {"handled": false}
 
 
@@ -24,11 +28,34 @@ func _run_phase_four(deep_runtime: DeepAIRuntime) -> Dictionary:
 	var fallback := str(deep_runtime.release_manifest.get("deep_fallback", ""))
 	var release_decks: Array[String] = []
 	release_decks.assign(deep_runtime.release_manifest.get("release_decks", []))
+	if fallback != "challenge" or release_decks.is_empty():
+		deep_runtime.unload()
+		return _failure(2, "PHASE4_EXPORT_AI_FAILED deep_fallback_contract")
+	if deep_runtime.runtime_enabled:
+		var deep_check := _deep_models_load_and_infer(
+			deep_runtime, release_decks)
+		deep_runtime.unload()
+		if not bool(deep_check.get("passed", false)):
+			return _failure(
+				2,
+				"PHASE4_EXPORT_AI_FAILED %s"
+				% deep_check.get("error", "deep_runtime"),
+			)
+		return _success(
+			(
+				"PHASE4_EXPORT_AI_OK deep=enabled fallback=challenge "
+				+ "compatible_models=%d legacy_models=0 onnx_assets=%d "
+				+ "inferred_models=%d scenarios=%d"
+			)
+			% [
+				release_decks.size(),
+				release_decks.size(),
+				int(deep_check.get("inferred_models", 0)),
+				int(deep_check.get("scenarios", 0)),
+			]
+		)
 	if (
-		deep_runtime.runtime_enabled
-		or fallback != "challenge"
-		or release_decks.is_empty()
-		or not _legacy_onnx_assets_absent(release_decks)
+		not _legacy_onnx_assets_absent(release_decks)
 		or deep_runtime.load_for_deck("fire")
 		or deep_runtime.last_error != "deep_runtime_disabled"
 		or deep_runtime.get_backend() != null
@@ -59,19 +86,35 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 	var release_decks: Array[String] = []
 	var release_manifest: Dictionary = services.get("release_manifest", {})
 	release_decks.assign(release_manifest.get("release_decks", []))
-	var deep_fallback_ok := (
-		not release_decks.is_empty()
-		and not bool(release_manifest.get("deep_runtime_enabled", true))
-		and str(release_manifest.get("deep_fallback", "")) == "challenge"
-		and int(release_manifest.get("compatible_model_count", -1)) == 0
-		and int(release_manifest.get("legacy_model_count", -1))
-		== int(release_manifest.get("model_count", -2))
-		and int(release_manifest.get("legacy_model_count", -1)) == release_decks.size()
-		and _legacy_onnx_assets_absent(release_decks)
-		and not deep_runtime.runtime_enabled
-		and not deep_runtime.load_for_deck("fire")
-		and deep_runtime.last_error == "deep_runtime_disabled"
-	)
+	var deep_enabled := bool(release_manifest.get(
+		"deep_runtime_enabled", false))
+	var deep_fallback_ok := false
+	var deep_check := {}
+	if deep_enabled:
+		deep_check = _deep_models_load_and_infer(
+			deep_runtime, release_decks)
+		deep_fallback_ok = (
+			not release_decks.is_empty()
+			and str(release_manifest.get("deep_fallback", "")) == "challenge"
+			and int(release_manifest.get("compatible_model_count", -1))
+			== release_decks.size()
+			and int(release_manifest.get("legacy_model_count", -1)) == 0
+			and bool(deep_check.get("passed", false))
+		)
+	else:
+		deep_fallback_ok = (
+			not release_decks.is_empty()
+			and str(release_manifest.get("deep_fallback", "")) == "challenge"
+			and int(release_manifest.get("compatible_model_count", -1)) == 0
+			and int(release_manifest.get("legacy_model_count", -1))
+			== int(release_manifest.get("model_count", -2))
+			and int(release_manifest.get("legacy_model_count", -1))
+			== release_decks.size()
+			and _legacy_onnx_assets_absent(release_decks)
+			and not deep_runtime.runtime_enabled
+			and not deep_runtime.load_for_deck("fire")
+			and deep_runtime.last_error == "deep_runtime_disabled"
+		)
 	deep_runtime.unload()
 	if (
 		not settings_ok
@@ -81,6 +124,22 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 		or not deep_fallback_ok
 	):
 		return _failure(4, "PHASE6_EXPORT_RELEASE_FAILED")
+	if deep_enabled:
+		return _success(
+			(
+				"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
+				+ "licenses=1 ui_resources=1 deep=enabled fallback=challenge "
+				+ "compatible_models=%d legacy_models=0 onnx_assets=%d "
+				+ "inferred_models=%d scenarios=%d"
+			)
+			% [
+				str(services.get("app_version", "")),
+				release_decks.size(),
+				release_decks.size(),
+				int(deep_check.get("inferred_models", 0)),
+				int(deep_check.get("scenarios", 0)),
+			]
+		)
 	return _success(
 		(
 			"PHASE6_EXPORT_RELEASE_OK version=%s settings=1 cache=1 "
@@ -89,6 +148,136 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 		)
 		% [str(services.get("app_version", "")), release_decks.size()]
 	)
+
+
+func _run_candidate_runtime() -> Dictionary:
+	var payload := CandidateRuntimeVerifier.new().verify(
+		DeepAIRuntime.MANIFEST_PATH,
+		DeepAIRuntime.RELEASE_MANIFEST_PATH,
+		CANDIDATE_MANIFEST_PATH,
+	)
+	return {
+		"handled": true,
+		"success": bool(payload.get("passed", false)),
+		"exit_code": 0 if bool(payload.get("passed", false)) else 5,
+		"message": (
+			"CANDIDATE_RUNTIME_SMOKE passed=%d platform=%s "
+			+ "architecture=%s models=%d"
+		)
+		% [
+			1 if bool(payload.get("passed", false)) else 0,
+			str(payload.get("platform", "")),
+			str(payload.get("architecture", "")),
+			int(payload.get("model_count", 0)),
+		],
+		"evidence_payload": payload,
+	}
+
+
+func _deep_models_load_and_infer(
+	deep_runtime: DeepAIRuntime,
+	release_decks: Array[String],
+) -> Dictionary:
+	var models_value: Variant = deep_runtime.manifest.get("models", {})
+	if (
+		not deep_runtime.runtime_enabled
+		or not deep_runtime.is_available()
+		or not models_value is Dictionary
+		or Dictionary(models_value).size() != release_decks.size()
+	):
+		return {
+			"passed": false,
+			"error": "deep_runtime_contract:%s" % deep_runtime.last_error,
+		}
+	var inferred_models := 0
+	var scenarios := 0
+	for deck_key in release_decks:
+		var row_value: Variant = Dictionary(models_value).get(deck_key, {})
+		if not row_value is Dictionary:
+			return {"passed": false, "error": "%s:model_manifest" % deck_key}
+		var row: Dictionary = row_value
+		var model_path := str(row.get("onnx_path", ""))
+		if (
+			model_path.is_empty()
+			or not FileAccess.file_exists(model_path)
+			or FileAccess.get_sha256(model_path)
+			!= str(row.get("onnx_sha256", ""))
+		):
+			return {"passed": false, "error": "%s:model_hash" % deck_key}
+		if not deep_runtime.load_for_deck(deck_key):
+			return {
+				"passed": false,
+				"error": "%s:%s" % [deck_key, deep_runtime.last_error],
+			}
+		var backend: Variant = deep_runtime.get_backend()
+		for empty_slots in [false, true]:
+			var inference := _infer_loaded_backend(
+				backend, deep_runtime.manifest, empty_slots)
+			scenarios += 1
+			if not bool(inference.get("passed", false)):
+				return {
+					"passed": false,
+					"error": "%s:%s" % [
+						deck_key,
+						inference.get("error", "inference"),
+					],
+				}
+		inferred_models += 1
+	return {
+		"passed": true,
+		"inferred_models": inferred_models,
+		"scenarios": scenarios,
+	}
+
+
+func _infer_loaded_backend(
+	backend: Variant,
+	manifest: Dictionary,
+	empty_slots: bool,
+) -> Dictionary:
+	if backend == null:
+		return {"passed": false, "error": "backend_unavailable"}
+	var state_numeric := PackedFloat32Array()
+	state_numeric.resize(int(manifest.get("state_numeric_size", 0)))
+	var state_cards := PackedInt64Array()
+	state_cards.resize(int(manifest.get("state_card_slots", 0)))
+	if not empty_slots:
+		for index in range(state_cards.size()):
+			state_cards[index] = 1 + index % 31
+	var candidate_size := int(manifest.get("action_numeric_size", 0))
+	var action_numeric := PackedFloat32Array()
+	action_numeric.resize(candidate_size * 2)
+	var choice_numeric := PackedFloat32Array()
+	choice_numeric.resize(candidate_size * 2)
+	var inferred: Dictionary = backend.call(
+		"infer",
+		state_numeric,
+		state_cards,
+		action_numeric,
+		PackedInt64Array([1, 2]),
+		choice_numeric,
+		PackedInt64Array([3, 4]),
+	)
+	var finite: bool = is_finite(float(inferred.get("value", NAN)))
+	for output_name in ["action_logits", "choice_logits"]:
+		for value in inferred.get(output_name, []):
+			finite = finite and is_finite(float(value))
+	var passed: bool = (
+		bool(inferred.get("success", false))
+		and inferred.get("action_logits", []).size() == 2
+		and inferred.get("choice_logits", []).size() == 2
+		and finite
+		and str(backend.call("get_execution_provider"))
+		== "CPUExecutionProvider"
+	)
+	return {
+		"passed": passed,
+		"error": (
+			""
+			if passed
+			else str(inferred.get("error", "non_finite_or_shape"))
+		),
+	}
 
 
 func _legacy_onnx_assets_absent(release_decks: Array[String]) -> bool:

@@ -1,0 +1,9 @@
+{
+  "engine": "turn_beam_v2",
+  "id": "challenge_turn_beam_v2_production",
+  "internal_evaluation_smoke": false,
+  "label": "Challenge production",
+  "mode": "challenge",
+  "preset": "strongest",
+  "production_runtime": true
+}

@@ -20,7 +20,7 @@ class OnnxInference : public RefCounted {
 
 private:
     static constexpr int64_t STATE_NUMERIC_SIZE = 960;
-    static constexpr int64_t STATE_CARD_SLOTS = 96;
+    static constexpr int64_t STATE_CARD_SLOTS = 128;
     static constexpr int64_t ACTION_NUMERIC_SIZE = 178;
 
     mutable std::mutex mutex_;

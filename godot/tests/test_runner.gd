@@ -97,6 +97,13 @@ class RuntimeVersionMismatchBackend:
 		return ""
 
 
+class UnloadedDeepInference:
+	extends RefCounted
+
+	func is_loaded() -> bool:
+		return false
+
+
 class NonCooperativeAICoordinator:
 	extends AICoordinator
 
@@ -245,7 +252,11 @@ func _run_phase_one_tests() -> void:
 		"Expected Deep AI model manifest rows for all release decks",
 	)
 	_check(models.get("state_numeric_size", 0) == 960, "Deep AI state size mismatch")
-	_check(models.get("state_card_slots", 0) == 96, "Deep AI card slot count mismatch")
+	_check(
+		models.get("state_card_slots", 0)
+		== AIActionEncoder.STATE_CARD_SLOTS,
+		"Deep AI card slot count mismatch",
+	)
 	_check(models.get("action_numeric_size", 0) == 178, "Deep AI action size mismatch")
 	_check_release_effects_have_compiled_ir(cards)
 	_check_card_rules_matrix(cards)
@@ -3528,18 +3539,36 @@ func _run_phase_four_foundation_tests() -> void:
 		choice_numeric.append_array(row["numeric"])
 		choice_cards.append(int(row["card_id"]))
 	var runtime := DeepAIRuntime.new()
+	var release_deep_enabled := bool(
+		runtime.release_manifest.get("deep_runtime_enabled", false))
+	if release_deep_enabled:
+		_check(
+			runtime.runtime_enabled
+			and runtime.is_available()
+			and int(runtime.release_manifest.get(
+				"compatible_model_count", -1))
+			== int(runtime.release_manifest.get("model_count", -2))
+			and int(runtime.release_manifest.get(
+				"legacy_model_count", -1)) == 0,
+			"Promoted Deep runtime is not complete",
+		)
+	else:
+		_check(
+			not runtime.runtime_enabled
+			and not runtime.is_available()
+			and not runtime.load_for_deck("fire")
+			and runtime.last_error == "deep_runtime_disabled",
+			"Legacy Deep runtime was not disabled deterministically",
+		)
+		_check(
+			int(runtime.release_manifest.get(
+				"compatible_model_count", -1)) == 0
+			and int(runtime.release_manifest.get("legacy_model_count", -1))
+			== int(runtime.release_manifest.get("model_count", -2)),
+			"Disabled Deep release model counts are invalid",
+		)
 	_check(
-		not runtime.runtime_enabled
-		and not runtime.is_available()
-		and not runtime.load_for_deck("fire")
-		and runtime.last_error == "deep_runtime_disabled",
-		"Legacy Deep runtime was not disabled deterministically",
-	)
-	_check(
-		str(runtime.release_manifest.get("deep_fallback", "")) == "challenge"
-		and int(runtime.release_manifest.get("compatible_model_count", -1)) == 0
-		and int(runtime.release_manifest.get("legacy_model_count", -1))
-		== int(runtime.release_manifest.get("model_count", -2)),
+		str(runtime.release_manifest.get("deep_fallback", "")) == "challenge",
 		"Deep release metadata does not require Challenge fallback",
 	)
 	var release_schemas: Dictionary = runtime.release_manifest.get("schemas", {})
@@ -3730,16 +3759,19 @@ func _run_phase_four_foundation_tests() -> void:
 	if runtime.is_available() and runtime_manifest_current and runtime.load_for_deck("psychic"):
 		var deep_request: Dictionary = ai_request.duplicate(true)
 		deep_request["mode"] = "deep"
-		deep_request["max_depth"] = 1
-		var deep_result := worker.decide(
+		deep_request["match_seed"] = 77
+		var deep_result := DeepRootISMCTS.new().decide(
 			deep_request,
 			func() -> bool: return false,
 			runtime.get_backend(),
 		)
 		_check(deep_result.get("success", false), "Deep AI did not return an action")
 		_check(
-			int(deep_result.get("simulations", 0)) == int(ai_request["simulation_budget"]),
-			"Deep AI did not use the requested simulation budget",
+			str(deep_result.get("engine_id", ""))
+			== DeepRootISMCTS.PLANNER_ID
+			and int(deep_result.get("simulations", -1))
+			in [0, DeepRootISMCTS.SIMULATIONS],
+			"Deep AI did not use the production root-search contract",
 		)
 		_check(
 			not deep_result.get("deep_fallback", true),
@@ -4204,6 +4236,79 @@ func _run_ai_runtime_v5_tests(
 		== "worker_terminated_without_result"
 		and not terminating_coordinator.needs_poll(),
 		"AI coordinator did not reap a task that exited without a result",
+	)
+	_run_deep_root_contract_tests(catalog)
+
+
+func _run_deep_root_contract_tests(catalog: CardCatalog) -> void:
+	_check(
+		DeepRootISMCTS.PLANNER_ID == "deep_root_ismcts_v1"
+		and DeepRootISMCTS.SCHEMA_VERSION == 1
+		and DeepRootISMCTS.SIMULATIONS == 64
+		and is_equal_approx(DeepRootISMCTS.C_PUCT, 1.4)
+		and DeepRootISMCTS.MAX_DEPTH == 16
+		and DeepRootISMCTS.OPPONENT_BRANCH_LIMIT == 6
+		and is_equal_approx(DeepRootISMCTS.NEURAL_PRIOR_WEIGHT, 0.75)
+		and is_equal_approx(DeepRootISMCTS.CHALLENGE_PRIOR_WEIGHT, 0.25)
+		and DeepRootISMCTS.WATCHDOG_USEC == 2000000,
+		"Deep root planner constants differ from the release contract",
+	)
+	_check(
+		DeepRootISMCTS.new()._derive_seed(17, 42, 1, 7)
+		== 1639819819,
+		"Godot/Python Deep simulation seed derivation diverged",
+	)
+	var optional := ChoiceView.new(
+		"deep-choice",
+		0,
+		"select_card",
+		0,
+		"Choose up to two.",
+		[
+			{"option_id": "first", "label": "first"},
+			{"option_id": "second", "label": "second"},
+			{"option_id": "cost", "label": "cost"},
+		],
+		0,
+		2,
+		false,
+		true,
+	)
+	var choice := DeepRootISMCTS.new()._highest_scoring_legal_choice(
+		optional,
+		PackedFloat32Array([3.0, 2.0, -9.0]),
+		catalog,
+	)
+	_check(
+		choice.option_ids == ["first", "second"]
+		and not choice.cancelled
+		and AIChoiceSelector.response_is_shape_legal(
+			optional, choice.option_ids, catalog, choice.cancelled),
+		"Deep Choice head did not select the highest-scoring legal combination",
+	)
+	var state := GameState.new()
+	state.public_deck_keys = ["fire", "water"]
+	var fallback := AICoordinator.new().decide_sync_for_evaluation(
+		{
+			"kind": "action",
+			"mode": "deep",
+			"engine": "turn_beam_v2",
+			"state": state.to_dict(),
+			"actor": 0,
+			"revision": 0,
+			"request_id": "deep-fallback-contract",
+			"deck_key": "fire",
+			"actions": [],
+		},
+		UnloadedDeepInference.new(),
+	)
+	_check(
+		bool(fallback.get("deep_fallback", false))
+		and str(fallback.get("fallback_reason", ""))
+		== "runtime_unavailable"
+		and str(Dictionary(fallback.get("deep_failure", {})).get(
+			"planner", "")) == DeepRootISMCTS.PLANNER_ID,
+		"Deep runtime failure did not produce the structured Challenge fallback",
 	)
 
 

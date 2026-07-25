@@ -1,8 +1,8 @@
 """Feature encoders for the optional deep-learning AI.
 
 The model scores legal candidate actions rather than predicting a fixed action
-ID.  This keeps the rules engine authoritative and lets future card/deck
-additions work through card metadata plus hashed card identity features.
+ID.  Encoder v6 uses an append-only card vocabulary and a fixed, perspective-
+relative token layout so slot meaning never shifts with attachment counts.
 """
 from __future__ import annotations
 
@@ -12,19 +12,16 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
-from data.deck_definitions import (
-    COLORLESS_DECK,
-    DARKNESS_DECK,
-    DRAGON_DECK,
-    FIGHTING_DECK,
-    FIRE_DECK,
-    GRASS_DECK,
-    LIGHTNING_DECK,
-    PSYCHIC_DECK_NATU,
-    STEEL_DECK,
-    WATER_DECK,
+from data.ai_card_vocab import (
+    CARD_OOV_INDEX,
+    CARD_PAD_INDEX,
+    CARD_VOCAB_VERSION,
+    card_vocab_index,
+    card_vocab_sha256,
+    card_vocab_size,
 )
 from data.card_registry import CardRegistry
+from data.deck_definitions import DECK_SPECS
 from engine.actions import (
     AttachmentRef,
     CardRef,
@@ -49,12 +46,42 @@ from engine.effects.runtime_effects import (
 from engine.energy_view import EnergyView
 
 
-CARD_BUCKET_COUNT = 4096
+CARD_IDENTITY_MODE = "vocab_v1"
+CARD_BUCKET_COUNT = card_vocab_size()  # Legacy public name used by model/config code.
+CARD_VOCAB_SIZE = CARD_BUCKET_COUNT
+CARD_VOCAB_SHA256 = card_vocab_sha256()
+LEGACY_CARD_BUCKET_COUNT = 4096
 STATE_NUMERIC_SIZE = 960  # +32 for tactical situation features (v8)
-STATE_CARD_SLOTS = 96
+STATE_CARD_SLOTS = 128
 ACTION_NUMERIC_SIZE = 178  # +16 for action feasibility/context features (v8)
 CARD_SEMANTIC_SIZE = 53
-ENCODER_SCHEMA_VERSION = 5
+ENCODER_SCHEMA_VERSION = 6
+
+BOARD_POKEMON_SLOTS = 12
+TOKENS_PER_POKEMON = 6
+BOARD_CARD_TOKEN_COUNT = BOARD_POKEMON_SLOTS * TOKENS_PER_POKEMON
+OWN_HAND_TOKEN_START = 72
+OWN_HAND_TOKEN_COUNT = 16
+OWN_DISCARD_TOKEN_START = 88
+DISCARD_TOKEN_COUNT = 12
+OPPONENT_DISCARD_TOKEN_START = 100
+STADIUM_TOKEN_INDEX = 112
+RESERVED_TOKEN_START = 113
+
+TOKEN_TYPE_PADDING = 0
+TOKEN_TYPE_POKEMON = 1
+TOKEN_TYPE_ENERGY = 2
+TOKEN_TYPE_TOOL = 3
+TOKEN_TYPE_HAND = 4
+TOKEN_TYPE_OWN_DISCARD = 5
+TOKEN_TYPE_OPPONENT_DISCARD = 6
+TOKEN_TYPE_STADIUM = 7
+TOKEN_TYPE_COUNT = 8
+
+TOKEN_OWNER_OWN = 0
+TOKEN_OWNER_OPPONENT = 1
+TOKEN_OWNER_NEUTRAL = 2
+TOKEN_OWNER_COUNT = 3
 
 ACTION_TYPES = [
     PlayerAction.PLAY_BASIC.name,
@@ -157,18 +184,40 @@ EFFECT_TYPES = [
     "evolve",
 ]
 
-PUBLIC_DECK_SPECS = {
-    "fire": FIRE_DECK,
-    "water": WATER_DECK,
-    "psychic": PSYCHIC_DECK_NATU,
-    "lightning": LIGHTNING_DECK,
-    "fighting": FIGHTING_DECK,
-    "colorless": COLORLESS_DECK,
-    "dragon": DRAGON_DECK,
-    "grass": GRASS_DECK,
-    "steel": STEEL_DECK,
-    "darkness": DARKNESS_DECK,
-}
+PUBLIC_DECK_SPECS = DECK_SPECS
+
+
+def _state_token_layout() -> tuple[tuple[int, ...], tuple[int, ...]]:
+    token_types: list[int] = []
+    token_owners: list[int] = []
+    for owner in (TOKEN_OWNER_OWN, TOKEN_OWNER_OPPONENT):
+        for _slot in TARGET_SLOTS:
+            token_types.extend([
+                TOKEN_TYPE_POKEMON,
+                TOKEN_TYPE_ENERGY,
+                TOKEN_TYPE_ENERGY,
+                TOKEN_TYPE_ENERGY,
+                TOKEN_TYPE_ENERGY,
+                TOKEN_TYPE_TOOL,
+            ])
+            token_owners.extend([owner] * TOKENS_PER_POKEMON)
+    token_types.extend([TOKEN_TYPE_HAND] * OWN_HAND_TOKEN_COUNT)
+    token_owners.extend([TOKEN_OWNER_OWN] * OWN_HAND_TOKEN_COUNT)
+    token_types.extend([TOKEN_TYPE_OWN_DISCARD] * DISCARD_TOKEN_COUNT)
+    token_owners.extend([TOKEN_OWNER_OWN] * DISCARD_TOKEN_COUNT)
+    token_types.extend([TOKEN_TYPE_OPPONENT_DISCARD] * DISCARD_TOKEN_COUNT)
+    token_owners.extend([TOKEN_OWNER_OPPONENT] * DISCARD_TOKEN_COUNT)
+    token_types.append(TOKEN_TYPE_STADIUM)
+    token_owners.append(TOKEN_OWNER_NEUTRAL)
+    reserved = STATE_CARD_SLOTS - len(token_types)
+    token_types.extend([TOKEN_TYPE_PADDING] * reserved)
+    token_owners.extend([TOKEN_OWNER_NEUTRAL] * reserved)
+    if len(token_types) != STATE_CARD_SLOTS:
+        raise RuntimeError("Deep AI state token layout width mismatch")
+    return tuple(token_types), tuple(token_owners)
+
+
+STATE_TOKEN_TYPES, STATE_TOKEN_OWNERS = _state_token_layout()
 
 
 @dataclass(frozen=True)
@@ -184,27 +233,43 @@ class EncodedAction:
 
 
 def _pad(values: list[float], size: int) -> list[float]:
-    if len(values) >= size:
-        return values[:size]
+    if len(values) > size:
+        raise ValueError(
+            f"encoder_numeric_overflow:{len(values)}>{size}"
+        )
+    if len(values) == size:
+        return values
     return values + [0.0] * (size - len(values))
 
 
 def _pad_ids(values: list[int], size: int) -> list[int]:
-    if len(values) >= size:
-        return values[:size]
+    if len(values) > size:
+        raise ValueError(
+            f"encoder_card_slot_overflow:{len(values)}>{size}"
+        )
+    if len(values) == size:
+        return values
     return values + [0] * (size - len(values))
 
 
 def card_bucket(card_or_id: Any) -> int:
-    """Stable bucket ID for card identity embeddings; 0 is reserved for pad."""
+    """Historical v5 hash bucket, retained only for old data/model tooling."""
     if card_or_id is None:
         return 0
-    cid = getattr(card_or_id, "api_id", card_or_id)
-    if not cid:
+    card_id = getattr(card_or_id, "api_id", card_or_id)
+    if not card_id:
         return 0
-    digest = hashlib.blake2b(str(cid).encode("utf-8"), digest_size=4).digest()
+    digest = hashlib.blake2b(
+        str(card_id).encode("utf-8"),
+        digest_size=4,
+    ).digest()
     value = int.from_bytes(digest, "big")
-    return 1 + value % (CARD_BUCKET_COUNT - 1)
+    return 1 + value % (LEGACY_CARD_BUCKET_COUNT - 1)
+
+
+def card_index(card_or_id: Any) -> int:
+    """Collision-free append-only identity used by encoder v6."""
+    return card_vocab_index(card_or_id)
 
 
 def _bool(value: Any) -> float:
@@ -450,6 +515,40 @@ class ActionStateEncoder:
         "colorless", "dragon", "grass", "steel", "darkness",
     )
 
+    @staticmethod
+    def _ordered_board(
+        observation: Observation,
+    ) -> list[tuple[Any, ...]]:
+        """Return twelve fixed rows: own active/bench, then opponent."""
+        rows = {
+            (int(row[0]), str(row[1])): tuple(row)
+            for row in observation.board
+        }
+        ordered: list[tuple[Any, ...]] = []
+        for player_idx in (
+            observation.perspective,
+            1 - observation.perspective,
+        ):
+            for slot in TARGET_SLOTS:
+                ordered.append(
+                    rows.get(
+                        (player_idx, slot),
+                        (player_idx, slot, "", 0, (), (), ""),
+                    )
+                )
+        return ordered
+
+    @staticmethod
+    def _fixed_zone_ids(
+        card_ids: tuple[str, ...] | list[str],
+        width: int,
+        *,
+        take_last: bool = False,
+    ) -> list[int]:
+        selected = list(card_ids[-width:] if take_last else card_ids[:width])
+        encoded = [card_index(card_id) for card_id in selected]
+        return encoded + [CARD_PAD_INDEX] * (width - len(encoded))
+
     def encode_state(self, state, player_idx: int, deck_key: str | None = None) -> EncodedState:
         """Compatibility adapter. New code should pass Observation directly."""
         return self.encode_observation(
@@ -513,9 +612,25 @@ class ActionStateEncoder:
             _norm(observation.opponent_prize_count, 6.0),
         ])
         numeric.extend(self._deck_key_features(deck_key))
+        numeric.extend([
+            _norm(max(0, len(observation.own_hand) - OWN_HAND_TOKEN_COUNT), 20.0),
+            _norm(max(0, len(observation.own_discard) - DISCARD_TOKEN_COUNT), 60.0),
+            _norm(
+                max(0, len(observation.opponent_discard) - DISCARD_TOKEN_COUNT),
+                60.0,
+            ),
+        ])
 
         card_ids: list[int] = []
-        for player_idx, slot, card_id, damage, energy_ids, statuses, tool_id in observation.board:
+        for (
+            player_idx,
+            slot,
+            card_id,
+            damage,
+            energy_ids,
+            statuses,
+            tool_id,
+        ) in self._ordered_board(observation):
             card = CardRegistry.get(card_id) if card_id else None
             numeric.extend([
                 _bool(bool(card_id)),
@@ -527,17 +642,47 @@ class ActionStateEncoder:
                 _bool(bool(tool_id)),
             ])
             numeric.extend(self._card_semantic_features(card))
-            card_ids.append(card_bucket(card_id))
-            card_ids.extend(card_bucket(energy_id) for energy_id in energy_ids[:4])
-            card_ids.append(card_bucket(tool_id))
+            card_ids.append(card_index(card_id))
+            encoded_energy = [
+                card_index(energy_id) for energy_id in energy_ids[:4]
+            ]
+            card_ids.extend(
+                encoded_energy
+                + [CARD_PAD_INDEX] * (4 - len(encoded_energy))
+            )
+            card_ids.append(card_index(tool_id))
 
-        card_ids.extend(card_bucket(card_id) for card_id in observation.own_hand[:16])
-        card_ids.extend(card_bucket(card_id) for card_id in observation.own_discard[-12:])
-        card_ids.extend(card_bucket(card_id) for card_id in observation.opponent_discard[-12:])
-        card_ids.append(card_bucket(observation.stadium_id))
+        card_ids.extend(
+            self._fixed_zone_ids(
+                observation.own_hand,
+                OWN_HAND_TOKEN_COUNT,
+            )
+        )
+        card_ids.extend(
+            self._fixed_zone_ids(
+                observation.own_discard,
+                DISCARD_TOKEN_COUNT,
+                take_last=True,
+            )
+        )
+        card_ids.extend(
+            self._fixed_zone_ids(
+                observation.opponent_discard,
+                DISCARD_TOKEN_COUNT,
+                take_last=True,
+            )
+        )
+        card_ids.append(card_index(observation.stadium_id))
+        if len(card_ids) != RESERVED_TOKEN_START:
+            raise RuntimeError(
+                f"encoder_v6_card_layout:{len(card_ids)}"
+            )
+        card_ids.extend(
+            [CARD_PAD_INDEX] * (STATE_CARD_SLOTS - len(card_ids))
+        )
         return EncodedState(
             numeric=_pad(numeric, STATE_NUMERIC_SIZE),
-            card_ids=_pad_ids(card_ids, STATE_CARD_SLOTS),
+            card_ids=card_ids,
         )
 
     def encode_game_action(
@@ -617,7 +762,7 @@ class ActionStateEncoder:
             )
         return EncodedAction(
             numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
-            card_id=card_bucket(card_id),
+            card_id=card_index(card_id),
         )
 
     def encode_choice_option(
@@ -652,7 +797,7 @@ class ActionStateEncoder:
         numeric.append(_stable_string_feature(option.option_id))
         return EncodedAction(
             numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
-            card_id=card_bucket(card_id),
+            card_id=card_index(card_id),
         )
 
     def _encode_state_legacy(self, state, player_idx: int, deck_key: str | None = None) -> EncodedState:
@@ -690,14 +835,14 @@ class ActionStateEncoder:
             numeric.extend(self._pokemon_features(pokemon))
 
         card_ids = []
-        card_ids.extend(card_bucket(p.card) if p else 0 for _, p in player.get_all_pokemon())
-        card_ids.extend(card_bucket(p.card) if p else 0 for _, p in opponent.get_all_pokemon())
-        card_ids.extend(card_bucket(getattr(p, "attached_tool", None)) if p else 0 for _, p in player.get_all_pokemon())
-        card_ids.extend(card_bucket(getattr(p, "attached_tool", None)) if p else 0 for _, p in opponent.get_all_pokemon())
-        card_ids.extend(card_bucket(card) for card in list(player.hand)[:16])
-        card_ids.extend(card_bucket(card) for card in list(player.discard)[-12:])
-        card_ids.extend(card_bucket(card) for card in list(opponent.discard)[-12:])
-        card_ids.append(card_bucket(getattr(state, "stadium_card", None)))
+        card_ids.extend(card_index(p.card) if p else 0 for _, p in player.get_all_pokemon())
+        card_ids.extend(card_index(p.card) if p else 0 for _, p in opponent.get_all_pokemon())
+        card_ids.extend(card_index(getattr(p, "attached_tool", None)) if p else 0 for _, p in player.get_all_pokemon())
+        card_ids.extend(card_index(getattr(p, "attached_tool", None)) if p else 0 for _, p in opponent.get_all_pokemon())
+        card_ids.extend(card_index(card) for card in list(player.hand)[:16])
+        card_ids.extend(card_index(card) for card in list(player.discard)[-12:])
+        card_ids.extend(card_index(card) for card in list(opponent.discard)[-12:])
+        card_ids.append(card_index(getattr(state, "stadium_card", None)))
 
         return EncodedState(
             numeric=_pad(numeric, STATE_NUMERIC_SIZE),
@@ -735,7 +880,7 @@ class ActionStateEncoder:
 
         return EncodedAction(
             numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
-            card_id=card_bucket(card),
+            card_id=card_index(card),
         )
 
     def _encode_choice_legacy(self, state, player_idx: int, request_type: str, candidate: Any, index: int = 0) -> EncodedAction:
@@ -761,7 +906,7 @@ class ActionStateEncoder:
         numeric.extend(self._card_semantic_features(card))
         return EncodedAction(
             numeric=_pad(numeric, ACTION_NUMERIC_SIZE),
-            card_id=card_bucket(card),
+            card_id=card_index(card),
         )
 
     def _primary_action_card(self, state, player_idx: int, action):

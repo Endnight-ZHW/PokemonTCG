@@ -11,6 +11,12 @@ from typing import Any
 from engine.ai.challenge_ai import AIAction, AIChoice, AIConfig, ChallengeAI, create_challenge_ai
 from engine.ai.dl.encoder import ActionStateEncoder
 from engine.ai.dl.encoder import ENCODER_SCHEMA_VERSION
+from engine.ai.dl.encoder import (
+    CARD_IDENTITY_MODE,
+    CARD_VOCAB_SHA256,
+    CARD_VOCAB_SIZE,
+    CARD_VOCAB_VERSION,
+)
 from engine.ai.observation import Observation
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.ai.dl.model import TORCH_AVAILABLE, load_checkpoint, torch
@@ -159,6 +165,13 @@ def _schema_is_current(metadata: dict[str, Any]) -> bool:
         int(metadata.get("rules_version") or 0) == RULES_SCHEMA_VERSION
         and int(metadata.get("action_version") or 0) == ACTION_SCHEMA_VERSION
         and int(metadata.get("encoder_version") or 0) == ENCODER_SCHEMA_VERSION
+        and int(metadata.get("card_vocab_version") or 0)
+        == CARD_VOCAB_VERSION
+        and int(metadata.get("card_vocab_size") or 0) == CARD_VOCAB_SIZE
+        and str(metadata.get("card_vocab_sha256") or "")
+        == CARD_VOCAB_SHA256
+        and str(metadata.get("card_identity_mode") or "")
+        == CARD_IDENTITY_MODE
         and int(metadata.get("planner_version") or 0) == PLANNER_SCHEMA_VERSION
         and isinstance(metadata.get("seed"), int)
     )

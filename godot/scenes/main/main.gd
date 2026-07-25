@@ -129,6 +129,9 @@ func _ready() -> void:
 	elif ExportSmokeRunner.PHASE_SIX_FLAG in user_args:
 		_run_phase_six_export_smoke()
 		return
+	elif ExportSmokeRunner.CANDIDATE_RUNTIME_FLAG in user_args:
+		_run_export_smoke(ExportSmokeRunner.CANDIDATE_RUNTIME_FLAG)
+		return
 	initialize_ui()
 
 
@@ -164,6 +167,22 @@ func _export_smoke_services() -> Dictionary:
 
 
 func _finish_export_smoke(result: Dictionary) -> void:
+	var evidence_value: Variant = result.get("evidence_payload", null)
+	if evidence_value is Dictionary:
+		var encoded := Marshalls.utf8_to_base64(
+			JSON.stringify(evidence_value))
+		var chunk_size := 1800
+		var chunk_count := maxi(1, ceili(
+			float(encoded.length()) / float(chunk_size)))
+		for index in range(chunk_count):
+			print(
+				"CANDIDATE_RUNTIME_EVIDENCE_CHUNK %d/%d %s"
+				% [
+					index + 1,
+					chunk_count,
+					encoded.substr(index * chunk_size, chunk_size),
+				]
+			)
 	var message := str(result.get("message", "EXPORT_SMOKE_FAILED"))
 	if bool(result.get("success", false)):
 		print(message)

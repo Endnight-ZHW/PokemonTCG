@@ -148,29 +148,9 @@ def fair_search_clone(state, perspective: int, seed: int = 0):
 def _deck_prior(deck_key: str | None):
     if not deck_key:
         return []
-    from data.deck_definitions import (
-        COLORLESS_DECK,
-        DRAGON_DECK,
-        FIGHTING_DECK,
-        FIRE_DECK,
-        GRASS_DECK,
-        LIGHTNING_DECK,
-        PSYCHIC_DECK_NATU,
-        WATER_DECK,
-        expand_deck,
-    )
+    from data.deck_definitions import DECK_SPECS, expand_deck
 
-    specs = {
-        "fire": FIRE_DECK,
-        "water": WATER_DECK,
-        "psychic": PSYCHIC_DECK_NATU,
-        "lightning": LIGHTNING_DECK,
-        "fighting": FIGHTING_DECK,
-        "colorless": COLORLESS_DECK,
-        "dragon": DRAGON_DECK,
-        "grass": GRASS_DECK,
-    }
-    spec = specs.get(str(deck_key))
+    spec = DECK_SPECS.get(str(deck_key))
     if spec is None:
         return []
     return [

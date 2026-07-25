@@ -32,10 +32,16 @@ const SUPPORTED_ENGINES := [ENGINE_TURN_BEAM_V1, ENGINE_TURN_BEAM_V2]
 var _had_error := false
 var _deep_runtime_cache: Dictionary = {}
 var _deep_unavailable: Dictionary = {}
+var _deep_runtime_manifest_path := DeepAIRuntime.MANIFEST_PATH
+var _deep_release_manifest_path := DeepAIRuntime.RELEASE_MANIFEST_PATH
 
 
 func _initialize() -> void:
 	var config := _parse_args(OS.get_cmdline_user_args())
+	_deep_runtime_manifest_path = str(config.get(
+		"deep_runtime_manifest", DeepAIRuntime.MANIFEST_PATH))
+	_deep_release_manifest_path = str(config.get(
+		"deep_release_manifest", DeepAIRuntime.RELEASE_MANIFEST_PATH))
 	var started_ms := Time.get_ticks_msec()
 	var catalog := CardCatalog.new()
 	var validation_errors := _validation_errors(catalog)
@@ -101,6 +107,8 @@ func _parse_args(args: Array[String]) -> Dictionary:
 		"evidence_prefix_only": false,
 		"output": "",
 		"output_dir": "",
+		"deep_runtime_manifest": DeepAIRuntime.MANIFEST_PATH,
+		"deep_release_manifest": DeepAIRuntime.RELEASE_MANIFEST_PATH,
 	}
 	var index := 0
 	while index < args.size():
@@ -217,6 +225,12 @@ func _parse_args(args: Array[String]) -> Dictionary:
 				index += 2
 			"--output-dir":
 				config["output_dir"] = value
+				index += 2
+			"--deep-runtime-manifest":
+				config["deep_runtime_manifest"] = value
+				index += 2
+			"--deep-release-manifest":
+				config["deep_release_manifest"] = value
 				index += 2
 			_:
 				index += 1
@@ -1034,7 +1048,10 @@ func _evaluation_worker(strategy: Dictionary) -> Variant:
 		push_error("Refusing to construct an unsupported AI evaluation worker.")
 		_had_error = true
 		return null
-	return NativeChallengeAI.new()
+	# AICoordinator owns both planners and is the formal production fallback
+	# boundary.  Its synchronous adapter makes headless evidence use the same
+	# branch without involving WorkerThreadPool orchestration.
+	return AICoordinator.new()
 
 
 func _strategy_params(strategy: Dictionary, deck_key: String) -> Dictionary:
@@ -1124,7 +1141,10 @@ func _deep_inference_for_deck(deck_key: String) -> Variant:
 	if _deep_runtime_cache.has(deck_key):
 		var cached: DeepAIRuntime = _deep_runtime_cache[deck_key]
 		return cached.get_backend()
-	var runtime := DeepAIRuntime.new()
+	var runtime := DeepAIRuntime.new(
+		_deep_runtime_manifest_path,
+		_deep_release_manifest_path,
+	)
 	if not runtime.load_for_deck(deck_key):
 		_deep_unavailable[deck_key] = runtime.last_error
 		return null
@@ -1411,6 +1431,7 @@ func _play_match(
 		"B": _empty_behavior_counts(),
 	}
 	var action_decisions_by_strategy := {"A": 0, "B": 0}
+	var decision_engine_counts_by_strategy := {"A": {}, "B": {}}
 	var search_depth_decision_counts_by_strategy := {
 		"A": {"applicable": 0, "not_applicable": 0, "reasons": {}},
 		"B": {"applicable": 0, "not_applicable": 0, "reasons": {}},
@@ -1533,6 +1554,15 @@ func _play_match(
 		_merge_decision_profile(performance_profile, decision.get("profile", {}))
 		action_decisions_by_strategy[actor_strategy_label] = (
 			int(action_decisions_by_strategy[actor_strategy_label]) + 1)
+		var strategy_engine_counts: Dictionary = (
+			decision_engine_counts_by_strategy[actor_strategy_label])
+		_increment_counter(
+			strategy_engine_counts,
+			str(decision.get(
+				"engine_id",
+				actor_strategy.get("engine", DEFAULT_ENGINE),
+			)),
+		)
 		var strategy_depth_counts: Dictionary = (
 			search_depth_decision_counts_by_strategy[actor_strategy_label])
 		if bool(decision.get("search_depth_applicable", false)):
@@ -1758,6 +1788,7 @@ func _play_match(
 		"decision_diagnostics_by_strategy": decision_diagnostics_by_strategy,
 		"behavior_by_strategy": behavior_by_strategy,
 		"action_decisions_by_strategy": action_decisions_by_strategy,
+		"decision_engine_counts_by_strategy": decision_engine_counts_by_strategy,
 		"search_depth_decision_counts_by_strategy":
 			search_depth_decision_counts_by_strategy,
 		"search_depth_samples_by_strategy": search_depth_samples_by_strategy,
@@ -2015,9 +2046,8 @@ func _decide_action(
 			params.get("dynamic_budget", {}))
 	if not bool(strategy.get("production_runtime", false)):
 		request["deterministic"] = bool(params["deterministic"])
-	return worker.decide(
+	return worker.decide_sync_for_evaluation(
 		request,
-		Callable(self, "_not_cancelled"),
 		_strategy_inference(strategy, deck_key),
 	)
 
@@ -2038,7 +2068,7 @@ func _decide_choice(
 ) -> Dictionary:
 	var request_sequence := choice_index + 1
 	var request_id := "ai-choice:%d:%d" % [state.revision, request_sequence]
-	return worker.decide({
+	return worker.decide_sync_for_evaluation({
 		"kind": "choice",
 		"engine": str(strategy.get("engine", DEFAULT_ENGINE)),
 		"state": _evaluation_state_snapshot(state, actor, strategy),
@@ -2055,7 +2085,7 @@ func _decide_choice(
 		"profile": profile_enabled,
 		"disable_cache": disable_ai_cache,
 		"disable_native_math": disable_native_math,
-	}, Callable(self, "_not_cancelled"), _strategy_inference(strategy, deck_key))
+	}, _strategy_inference(strategy, deck_key))
 
 
 func _evaluation_action_params(

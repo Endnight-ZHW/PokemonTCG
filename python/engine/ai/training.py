@@ -13,16 +13,7 @@ from typing import Any, Callable
 from data.card_registry import CardRegistry
 from data.deck_definitions import (
     ALL_CARD_IDS,
-    COLORLESS_DECK,
-    DARKNESS_DECK,
-    DRAGON_DECK,
-    FIGHTING_DECK,
-    FIRE_DECK,
-    GRASS_DECK,
-    LIGHTNING_DECK,
-    PSYCHIC_DECK_NATU,
-    STEEL_DECK,
-    WATER_DECK,
+    DECK_SPECS,
     expand_deck,
 )
 from engine.ai.challenge_ai import AIConfig, create_challenge_ai
@@ -40,20 +31,6 @@ from engine.game_engine import DEFAULT_GAME_ENGINE
 from engine.random_source import RandomSource
 from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
 from engine.turn_manager import TurnManager
-
-
-DECK_SPECS = {
-    "fire": FIRE_DECK,
-    "water": WATER_DECK,
-    "psychic": PSYCHIC_DECK_NATU,
-    "lightning": LIGHTNING_DECK,
-    "fighting": FIGHTING_DECK,
-    "colorless": COLORLESS_DECK,
-    "dragon": DRAGON_DECK,
-    "grass": GRASS_DECK,
-    "steel": STEEL_DECK,
-    "darkness": DARKNESS_DECK,
-}
 
 TRAINABLE_KEYS = [
     "core_in_play",
@@ -619,10 +596,14 @@ def _play_match_impl(
                 seat,
             )
         return logical_winner, score
-    soft_winner = _determine_soft_winner(state)
-    state.winner = soft_winner
-    logical_winner = 0 if soft_winner == deck_a_player_idx else 1
-    score = terminal_training_score(state, deck_a_player_idx)
+    score = float(
+        ais[deck_a_player_idx].evaluate_state(
+            state,
+            deck_a_player_idx,
+        )
+    )
+    state.set_result("DRAW", reason="MAX_STEPS")
+    logical_winner = None
     if return_diagnostics:
         return MatchDiagnostics(
             logical_winner,

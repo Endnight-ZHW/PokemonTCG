@@ -20,7 +20,7 @@ from scripts.export_godot_data import (
     export,
 )
 from engine.actions import ChoiceOption
-from engine.ai.dl.encoder import ActionStateEncoder, card_bucket
+from engine.ai.dl.encoder import ActionStateEncoder, card_bucket, card_index
 from engine.ai.observation import Observation
 from engine.game_state import GameState
 from engine.commands.descriptors import descriptor_export_payload
@@ -92,7 +92,7 @@ class GodotDataExportTests(unittest.TestCase):
 
         self.assertEqual(private_value.card_id, 0)
         self.assertEqual(malformed_ref.card_id, 0)
-        self.assertEqual(option_id_fallback.card_id, card_bucket("sv2-cand"))
+        self.assertEqual(option_id_fallback.card_id, card_index("sv2-cand"))
 
     def test_state_adapter_covers_rules_v4_and_snapshot_v2_fields(self):
         state = GameState()
@@ -489,6 +489,7 @@ class GodotDataExportTests(unittest.TestCase):
             self.assertEqual(first_cards, second_cards)
             self.assertEqual(len(first_cards), 137)
             self.assertEqual(first_cards["svi-chim"]["card_bucket"], 3624)
+            self.assertEqual(first_cards["svi-chim"]["ai_card_index"], 92)
             self.assertIn("compiled_effects", first_cards["svi-chim"]["attacks"][0])
             compiled_dump = json.dumps(first_cards, sort_keys=True)
             legacy_formula_ops = (
@@ -555,7 +556,7 @@ class GodotDataExportTests(unittest.TestCase):
                 }
                 self.assertEqual(set(ref), expected_ref_fields[ref["kind"]])
             self.assertEqual(len(encoder_fixture["expected"]["state_numeric"]), 960)
-            self.assertEqual(len(encoder_fixture["expected"]["state_cards"]), 96)
+            self.assertEqual(len(encoder_fixture["expected"]["state_cards"]), 128)
             self.assertTrue(
                 all(
                     len(row["numeric"]) == 178
@@ -574,7 +575,9 @@ class GodotDataExportTests(unittest.TestCase):
             manifest = json.loads((output / "data" / "ai_models.json").read_text(encoding="utf-8"))
 
             self.assertEqual(manifest["state_numeric_size"], 960)
-            self.assertEqual(manifest["state_card_slots"], 96)
+            self.assertEqual(manifest["state_card_slots"], 128)
+            self.assertEqual(manifest["card_vocab_version"], 1)
+            self.assertEqual(manifest["card_vocab_size"], 139)
             self.assertEqual(manifest["action_numeric_size"], 178)
             self.assertEqual(manifest["search_simulations"], 64)
             self.assertEqual(

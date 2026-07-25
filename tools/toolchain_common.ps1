@@ -50,17 +50,32 @@ function Assert-ReleaseDeepFallbackContract {
     $modelCount = [int]$Manifest.model_count
     $compatibleModelCount = [int]$Manifest.compatible_model_count
     $legacyModelCount = [int]$Manifest.legacy_model_count
-    if ([bool]$Manifest.deep_runtime_enabled) {
-        throw 'Release manifest must keep the Deep runtime disabled for this rules release.'
-    }
     if ([string]$Manifest.deep_fallback -ne 'challenge') {
         throw 'Release manifest Deep fallback must be challenge.'
     }
-    if ($compatibleModelCount -ne 0) {
-        throw 'Release manifest compatible_model_count must be zero while Deep is disabled.'
+    if ($modelCount -ne $decks.Count) {
+        throw 'Release manifest model_count must match release_decks.'
     }
-    if ($legacyModelCount -ne $modelCount -or $legacyModelCount -ne $decks.Count) {
-        throw 'Release manifest legacy_model_count must match model_count and release_decks.'
+    if ([bool]$Manifest.deep_runtime_enabled) {
+        $planner = $Manifest.deep_planner
+        $evidence = [string]$planner.evidence_sha256
+        if (
+            $compatibleModelCount -ne $modelCount -or
+            $legacyModelCount -ne 0 -or
+            [bool]$Manifest.candidate_evaluation -or
+            [int]$Manifest.schemas.deep_planner -ne 1 -or
+            [int]$planner.schema_version -ne 1 -or
+            [string]$planner.planner_id -ne 'deep_root_ismcts_v1' -or
+            $evidence -notmatch '^[0-9a-f]{64}$'
+        ) {
+            throw 'Enabled Deep release manifest is incomplete or incompatible.'
+        }
+    }
+    elseif (
+        $compatibleModelCount -ne 0 -or
+        $legacyModelCount -ne $modelCount
+    ) {
+        throw 'Disabled Deep release manifest has inconsistent model counts.'
     }
 }
 

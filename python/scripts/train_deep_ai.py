@@ -14,6 +14,11 @@ INVOCATION_CWD = os.getcwd()
 sys.path.insert(0, PYTHON_ROOT)
 
 from engine.ai.dl.training import DeepTrainingConfig, is_torch_available, run_deep_training
+from engine.ai.dl.hybrid_population import (
+    HybridPopulationConfig,
+    prepare_hybrid_run,
+    run_hybrid_population_training,
+)
 from engine.ai.dl.release_gate import DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE
 from engine.ai.training import DECK_SPECS
 
@@ -156,10 +161,38 @@ def _load_challenge_baseline_progress(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Train optional deep-learning AI. teacher_dagger_rl is the production pipeline; alpha_zero_rl is experimental."
+        description=(
+            "Train optional deep-learning AI. hybrid_population_rl is the "
+            "transactional production pipeline; legacy Teacher/DAgger and "
+            "AlphaZero modes remain available for compatibility."
+        )
     )
-    parser.add_argument("--trainer", default="teacher_dagger_rl", choices=["alpha_zero_rl", "teacher_dagger_rl"],
-                        help="Training pipeline (default: teacher_dagger_rl).")
+    parser.add_argument(
+        "--trainer",
+        default="teacher_dagger_rl",
+        choices=[
+            "hybrid_population_rl",
+            "alpha_zero_rl",
+            "teacher_dagger_rl",
+        ],
+        help="Training pipeline (hybrid_population_rl is the production trainer).",
+    )
+    parser.add_argument(
+        "--population-preset",
+        choices=["smoke", "release"],
+        default="smoke",
+        help="Fixed preset used by hybrid_population_rl (default: smoke).",
+    )
+    parser.add_argument(
+        "--run-id",
+        default="",
+        help="Run directory ID for hybrid_population_rl.",
+    )
+    parser.add_argument(
+        "--runs-root",
+        default=os.path.join(REPO_ROOT, "build", "ai_training", "runs"),
+        help="Run root for hybrid_population_rl.",
+    )
     parser.add_argument("--deck", default="fire", choices=["all", *DECK_SPECS.keys()])
     parser.add_argument("--games", type=int, default=0,
                         help="RL fine-tune self-play games per deck (default: 0 for production teacher/DAgger).")
@@ -263,6 +296,27 @@ def main() -> int:
         return 2
 
     trainer = args.trainer
+    if trainer == "hybrid_population_rl":
+        run_id = str(args.run_id or time.strftime("run-%Y%m%d-%H%M%S"))
+        runs_root = os.path.abspath(args.runs_root)
+        run_dir = os.path.join(runs_root, run_id)
+        if not os.path.isdir(run_dir):
+            smoke_deck = args.deck if args.deck != "all" else "fire"
+            population_config = HybridPopulationConfig.from_preset(
+                args.population_preset,
+                seed=args.seed,
+                smoke_deck=smoke_deck,
+            )
+            prepare_hybrid_run(
+                REPO_ROOT,
+                runs_root,
+                run_id,
+                population_config,
+            )
+        payload = run_hybrid_population_training(REPO_ROOT, run_dir)
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return 0
+
     bootstrap_games = (
         args.bootstrap_games
         if args.bootstrap_games is not None

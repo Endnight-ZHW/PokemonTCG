@@ -29,7 +29,11 @@ from engine.ai import (
 from engine.ai.challenge_ai import AIAction, create_challenge_ai
 from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
+    CARD_IDENTITY_MODE,
     CARD_SEMANTIC_SIZE,
+    CARD_VOCAB_SHA256,
+    CARD_VOCAB_SIZE,
+    CARD_VOCAB_VERSION,
     ENCODER_SCHEMA_VERSION,
     STATE_CARD_SLOTS,
     STATE_NUMERIC_SIZE,
@@ -39,6 +43,14 @@ from engine.enums import PlayerAction, TurnPhase
 from engine.game_state import GameState
 from engine.player_state import PokemonInPlay
 from tests.temp_utils import supports_file_delete, temp_dir
+
+
+V6_CARD_METADATA = {
+    "card_vocab_version": CARD_VOCAB_VERSION,
+    "card_vocab_size": CARD_VOCAB_SIZE,
+    "card_vocab_sha256": CARD_VOCAB_SHA256,
+    "card_identity_mode": CARD_IDENTITY_MODE,
+}
 
 
 class DeepAITests(unittest.TestCase):
@@ -229,7 +241,7 @@ class DeepAITests(unittest.TestCase):
             apply_type_matchups=False,
         )
         encoded = encoder.encode_observation(observation, "water")
-        known_start = len(TurnPhase) + 13 + len(encoder.deck_keys)
+        known_start = len(TurnPhase) + 13 + len(encoder.deck_keys) + 3
         known_start += 7 + CARD_SEMANTIC_SIZE + 7
         self.assertEqual(
             encoded.numeric[known_start:known_start + CARD_SEMANTIC_SIZE],
@@ -903,6 +915,7 @@ class DeepAITests(unittest.TestCase):
                         "rules_version": RULES_SCHEMA_VERSION,
                         "action_version": ACTION_SCHEMA_VERSION,
                         "encoder_version": ENCODER_SCHEMA_VERSION,
+                        **V6_CARD_METADATA,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -924,6 +937,7 @@ class DeepAITests(unittest.TestCase):
                         "rules_version": RULES_SCHEMA_VERSION,
                         "action_version": ACTION_SCHEMA_VERSION,
                         "encoder_version": ENCODER_SCHEMA_VERSION,
+                        **V6_CARD_METADATA,
                         "planner_version": 1,
                         "seed": 17,
                         "summary": {"fire": {"eval": {"games": 600, "wins": 299, "draws": 0, "invalid_action_rate": 0.0, "no_target_action_rate": 0.0}}},
@@ -960,6 +974,7 @@ class DeepAITests(unittest.TestCase):
                         "rules_version": RULES_SCHEMA_VERSION,
                         "action_version": ACTION_SCHEMA_VERSION,
                         "encoder_version": ENCODER_SCHEMA_VERSION,
+                        **V6_CARD_METADATA,
                         "planner_version": 1,
                         "seed": 17,
                         "summary": {"fire": {"eval": {
@@ -990,6 +1005,7 @@ class DeepAITests(unittest.TestCase):
                         "rules_version": RULES_SCHEMA_VERSION,
                         "action_version": ACTION_SCHEMA_VERSION,
                         "encoder_version": ENCODER_SCHEMA_VERSION,
+                        **V6_CARD_METADATA,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -1203,6 +1219,15 @@ class DeepAITests(unittest.TestCase):
                 mock.patch.object(export_onnx_models, "_preflight_release_checkpoints", return_value=loaded),
                 mock.patch.object(export_onnx_models, "_export_one", side_effect=fake_export),
                 mock.patch.object(export_onnx_models, "_verify_one", side_effect=fake_verify),
+                mock.patch.object(
+                    export_onnx_models,
+                    "_benchmark_one",
+                    return_value={
+                        "passed": True,
+                        "median_ms": 0.1,
+                        "p95_ms": 0.2,
+                    },
+                ),
             ):
                 with self.assertRaisesRegex(RuntimeError, "simulated parity failure"):
                     export_onnx_models.export_all(output_root, checkpoint_root=checkpoints)
@@ -1318,6 +1343,7 @@ class DeepAITests(unittest.TestCase):
                         "rules_version": RULES_SCHEMA_VERSION,
                         "action_version": ACTION_SCHEMA_VERSION,
                         "encoder_version": ENCODER_SCHEMA_VERSION,
+                        **V6_CARD_METADATA,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -1408,6 +1434,7 @@ class DeepAITests(unittest.TestCase):
                         "rules_version": RULES_SCHEMA_VERSION,
                         "action_version": ACTION_SCHEMA_VERSION,
                         "encoder_version": ENCODER_SCHEMA_VERSION,
+                        **V6_CARD_METADATA,
                         "planner_version": 1,
                         "seed": 17,
                         "choice_head_enabled": True,
@@ -2720,8 +2747,15 @@ class DeepAITests(unittest.TestCase):
         self.assertEqual(ai.model_metadata.get("encoder_version"), 2)
 
     @unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
-    def test_v10_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
-        from engine.ai.dl.model import checkpoint_payload, create_model, load_checkpoint, save_checkpoint, torch
+    def test_v11_checkpoint_saves_and_legacy_v5_restores_choice_head(self):
+        from engine.ai.dl.model import (
+            CHECKPOINT_VERSION,
+            checkpoint_payload,
+            create_model,
+            load_checkpoint,
+            save_checkpoint,
+            torch,
+        )
 
         with temp_dir() as tmpdir:
             path = os.path.join(tmpdir, "model_v10.pt")
@@ -2742,7 +2776,7 @@ class DeepAITests(unittest.TestCase):
             torch.save(legacy_payload, legacy_path)
             legacy_restored, legacy_loaded = load_checkpoint(legacy_path, "cpu")
 
-        self.assertEqual(payload.get("version"), 10)
+        self.assertEqual(payload.get("version"), CHECKPOINT_VERSION)
         self.assertTrue(payload.get("model_config", {}).get("choice_head_enabled"))
         self.assertEqual(payload.get("model_config", {}).get("state_norm"), "layer")
         self.assertEqual(payload.get("model_config", {}).get("state_numeric_size"), STATE_NUMERIC_SIZE)

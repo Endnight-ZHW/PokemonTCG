@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import random
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
@@ -11,6 +12,10 @@ from engine.ai.observation import Observation, fair_search_clone
 from engine.enums import PlayerAction, TurnPhase
 from engine.game_engine import DEFAULT_GAME_ENGINE, GameEngine
 from engine.random_source import SamplingRandomSource
+from engine.ai.dl.production_contract import (
+    derive_deep_decision_seed,
+    derive_training_decision_seed,
+)
 
 
 PLANNER_SCHEMA_VERSION = 1
@@ -41,6 +46,12 @@ class PlannerConfig:
     c_puct: float = 1.4
     opponent_branch_limit: int = 6
     random_seed: int = 17
+    match_seed: int = 0
+    deep_seed_contract: bool = False
+    root_dirichlet_alpha: float = 0.0
+    root_dirichlet_epsilon: float = 0.0
+    root_noise_until_turn: int = 12
+    decision_ordinal: int = 0
 
 
 @dataclass
@@ -62,6 +73,9 @@ class PlannerResult:
     elapsed_seconds: float
     values: dict[tuple, float]
     visits: dict[tuple, int]
+    raw_priors: dict[tuple, float]
+    noisy_priors: dict[tuple, float]
+    root_noise_seed: int | None
 
 
 class HeuristicBackend:
@@ -176,6 +190,115 @@ class NeuralBackend(HeuristicBackend):
         return self.fallback.value(state, perspective)
 
 
+class DeepRootBackend(NeuralBackend):
+    """Production Deep v1 backend: one neural root call, heuristic leaves.
+
+    ``AnytimePlanner`` asks for root priors before starting simulations.  Every
+    later prior request comes from a simulated node and is intentionally
+    delegated to Challenge heuristics.  This mirrors ``deep_root_ismcts_v1`` in
+    Godot and keeps the value head diagnostic-only for the first release.
+    """
+
+    def __init__(
+        self,
+        model,
+        encoder,
+        device: str,
+        fallback: HeuristicBackend,
+        deck_key: str | None,
+        *,
+        neural_weight: float = 0.75,
+    ):
+        super().__init__(model, encoder, device, fallback, deck_key)
+        self.neural_weight = max(0.0, min(1.0, float(neural_weight)))
+        self._root_pending = True
+        self.root_inference_calls = 0
+        self.diagnostic_root_value: float | None = None
+
+    def set_perspective(self, perspective: int) -> None:
+        super().set_perspective(perspective)
+        self._root_pending = True
+        self.root_inference_calls = 0
+        self.diagnostic_root_value = None
+
+    def priors(self, state, actor: int, actions: list[GameAction]) -> list[float]:
+        heuristic = self.fallback.priors(state, actor, actions)
+        if (
+            not self._root_pending
+            or self.search_perspective is None
+            or actor != self.search_perspective
+        ):
+            return heuristic
+        self._root_pending = False
+        try:
+            from engine.ai.dl.model import TORCH_AVAILABLE, torch
+            if not TORCH_AVAILABLE or torch is None or self.model is None or not actions:
+                return heuristic
+            observation = Observation.from_state(state, actor)
+            encoded_state = self.encoder.encode_observation(observation, self.deck_key)
+            encoded_actions = [
+                self.encoder.encode_game_action(observation, action)
+                for action in actions
+            ]
+            state_numeric_size = int(
+                getattr(self.model, "state_numeric_size", len(encoded_state.numeric))
+            )
+            state_card_slots = int(
+                getattr(self.model, "state_card_slots", len(encoded_state.card_ids))
+            )
+            action_numeric_size = int(
+                getattr(self.model, "action_numeric_size", len(encoded_actions[0].numeric))
+            )
+            with torch.no_grad():
+                state_numeric = torch.tensor(
+                    [_fit(encoded_state.numeric, state_numeric_size, 0.0)],
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                state_cards = torch.tensor(
+                    [_fit(encoded_state.card_ids, state_card_slots, 0)],
+                    dtype=torch.long,
+                    device=self.device,
+                )
+                action_numeric = torch.tensor(
+                    [[
+                        _fit(item.numeric, action_numeric_size, 0.0)
+                        for item in encoded_actions
+                    ]],
+                    dtype=torch.float32,
+                    device=self.device,
+                )
+                action_cards = torch.tensor(
+                    [[item.card_id for item in encoded_actions]],
+                    dtype=torch.long,
+                    device=self.device,
+                )
+                logits, model_value = self.model(
+                    state_numeric,
+                    state_cards,
+                    action_numeric,
+                    action_cards,
+                )
+                self.root_inference_calls += 1
+                value = float(model_value.reshape(-1)[0].detach().cpu().item())
+                if math.isfinite(value):
+                    self.diagnostic_root_value = value
+                neural = _normalize_priors(
+                    torch.softmax(logits[0].float(), dim=0).detach().cpu().tolist()
+                )
+            if len(neural) != len(heuristic) or not all(
+                math.isfinite(float(item)) for item in neural
+            ):
+                return heuristic
+            heuristic_weight = 1.0 - self.neural_weight
+            return _normalize_priors([
+                self.neural_weight * neural_value + heuristic_weight * heuristic_value
+                for neural_value, heuristic_value in zip(neural, heuristic)
+            ])
+        except Exception:
+            return heuristic
+
+
 class AnytimePlanner:
     """Root-ISMCTS planner with sampled chance outcomes and full-turn rollouts."""
 
@@ -220,9 +343,39 @@ class AnytimePlanner:
         priors = self.backend.priors(state, player_idx, root_actions)
         if len(priors) != len(root_actions):
             priors = [1.0 / len(root_actions)] * len(root_actions)
+        raw_priors = _normalize_priors([float(value) for value in priors])
+        noisy_priors = list(raw_priors)
+        root_noise_seed: int | None = None
+        epsilon = max(
+            0.0,
+            min(1.0, float(self.config.root_dirichlet_epsilon)),
+        )
+        alpha = float(self.config.root_dirichlet_alpha)
+        turn_number = int(getattr(state, "turn_number", 0))
+        if (
+            epsilon > 0.0
+            and alpha > 0.0
+            and 1 <= turn_number <= int(self.config.root_noise_until_turn)
+        ):
+            root_noise_seed = derive_training_decision_seed(
+                self.config.match_seed,
+                int(getattr(state, "revision", 0)),
+                player_idx,
+                self.config.decision_ordinal,
+                "root-dirichlet",
+            )
+            noise = _dirichlet(
+                len(root_actions),
+                alpha,
+                random.Random(root_noise_seed),
+            )
+            noisy_priors = _normalize_priors([
+                (1.0 - epsilon) * prior + epsilon * noise_value
+                for prior, noise_value in zip(raw_priors, noise)
+            ])
         stats = [
             _RootStat(action, max(1e-8, float(prior)))
-            for action, prior in zip(root_actions, priors)
+            for action, prior in zip(root_actions, noisy_priors)
         ]
 
         simulations = 0
@@ -237,12 +390,33 @@ class AnytimePlanner:
                 key=lambda item: item.q + self.config.c_puct * item.prior
                 * math.sqrt(total_visits + 1) / (1 + item.visits),
             )
+            if self.config.deep_seed_contract:
+                revision = int(getattr(state, "revision", 0))
+                simulation_seed = derive_deep_decision_seed(
+                    self.config.match_seed,
+                    revision,
+                    player_idx,
+                    simulations + 1,
+                )
+                rollout_seed = derive_deep_decision_seed(
+                    self.config.match_seed,
+                    revision,
+                    player_idx,
+                    simulations + 1000,
+                )
+            else:
+                simulation_seed = (
+                    self.config.random_seed + simulations * 7919
+                )
+                rollout_seed = (
+                    self.config.random_seed + simulations * 104729
+                )
             simulation = fair_search_clone(
                 state,
                 player_idx,
-                self.config.random_seed + simulations * 7919,
+                simulation_seed,
             )
-            rng = SamplingRandomSource(self.config.random_seed + simulations * 104729)
+            rng = SamplingRandomSource(rollout_seed)
             value = self._simulate(
                 simulation,
                 player_idx,
@@ -254,10 +428,20 @@ class AnytimePlanner:
             selected.total_value += value
             simulations += 1
 
-        chosen = max(
-            stats,
-            key=lambda item: (item.visits, item.q, item.prior),
-        ).action
+        if isinstance(self.backend, DeepRootBackend):
+            chosen = min(
+                stats,
+                key=lambda item: (
+                    -item.visits,
+                    -item.prior,
+                    str(item.action.signature),
+                ),
+            ).action
+        else:
+            chosen = max(
+                stats,
+                key=lambda item: (item.visits, item.q, item.prior),
+            ).action
         elapsed = time.perf_counter() - started
         self.last_result = PlannerResult(
             chosen,
@@ -265,6 +449,15 @@ class AnytimePlanner:
             elapsed,
             {item.action.signature: item.q for item in stats},
             {item.action.signature: item.visits for item in stats},
+            {
+                action.signature: float(prior)
+                for action, prior in zip(root_actions, raw_priors)
+            },
+            {
+                action.signature: float(prior)
+                for action, prior in zip(root_actions, noisy_priors)
+            },
+            root_noise_seed,
         )
         return chosen
 
@@ -389,6 +582,25 @@ def _normalize_priors(priors: list[float]) -> list[float]:
     total = sum(values)
     if total <= 1e-12:
         return [1.0 / len(values)] * len(values)
+    return [value / total for value in values]
+
+
+def _dirichlet(
+    count: int,
+    alpha: float,
+    rng: random.Random,
+) -> list[float]:
+    """Sample a Dirichlet vector entirely from a caller-owned local RNG."""
+
+    if count <= 0:
+        return []
+    values = [
+        max(0.0, float(rng.gammavariate(float(alpha), 1.0)))
+        for _ in range(count)
+    ]
+    total = sum(values)
+    if total <= 1e-30:
+        return [1.0 / count] * count
     return [value / total for value in values]
 
 

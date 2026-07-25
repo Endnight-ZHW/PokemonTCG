@@ -47,15 +47,29 @@ class ReleaseManifestTests(unittest.TestCase):
             sorted(decks),
         )
 
-    def test_release_060_metadata_and_deep_fallback_are_explicit(self):
+    def test_release_060_metadata_and_deep_contract_are_explicit(self):
         self.assertEqual(self.manifest["format_version"], 2)
         self.assertEqual(self.manifest["version"], "0.6.0")
         self.assertEqual(self.manifest["android_version_code"], 8)
-        self.assertFalse(self.manifest["deep_runtime_enabled"])
         self.assertEqual(self.manifest["deep_fallback"], "challenge")
-        self.assertEqual(self.manifest["compatible_model_count"], 0)
-        self.assertEqual(self.manifest["legacy_model_count"], 10)
         self.assertEqual(self.manifest["model_count"], 10)
+        deep_planner = self.manifest["deep_planner"]
+        self.assertEqual(deep_planner["schema_version"], 1)
+        self.assertEqual(
+            deep_planner["planner_id"], "deep_root_ismcts_v1"
+        )
+        self.assertEqual(deep_planner["simulations"], 64)
+        self.assertEqual(deep_planner["watchdog_seconds"], 2.0)
+        if self.manifest["deep_runtime_enabled"]:
+            self.assertEqual(self.manifest["compatible_model_count"], 10)
+            self.assertEqual(self.manifest["legacy_model_count"], 0)
+            self.assertRegex(
+                deep_planner["evidence_sha256"], r"^[0-9a-f]{64}$"
+            )
+        else:
+            self.assertEqual(self.manifest["compatible_model_count"], 0)
+            self.assertEqual(self.manifest["legacy_model_count"], 10)
+            self.assertEqual(deep_planner["evidence_sha256"], "")
 
         expected_schemas = {
             "protocol": 6,
@@ -64,16 +78,18 @@ class ReleaseManifestTests(unittest.TestCase):
             "python_rules": 5,
             "python_actions": 3,
             "snapshot": 3,
-            "encoder": 5,
-            "checkpoint": 10,
+            "encoder": 6,
+            "checkpoint": 11,
+            "card_vocab": 1,
             "planner": 2,
+            "deep_planner": 1,
             "vm_ir": 3,
             "rng": 2,
             "ai_evaluation": 7,
         }
         self.assertEqual(self.manifest["schemas"], expected_schemas)
 
-    def test_legacy_deep_models_are_not_relabelled_for_new_rules(self):
+    def test_deep_model_catalog_matches_committed_release_state(self):
         runtime = json.loads(
             (REPO_ROOT / "godot" / "data" / "ai_models_runtime.json").read_text(
                 encoding="utf-8"
@@ -85,22 +101,23 @@ class ReleaseManifestTests(unittest.TestCase):
             )
         )
         bridge = runtime["compatibility_bridge"]
+        deep_enabled = bool(self.manifest["deep_runtime_enabled"])
         self.assertEqual(
-            bridge,
-            {
-                "version": 1,
-                "python_rules_version": 2,
-                "python_action_version": 2,
-                "python_encoder_version": 3,
-                "godot_rules_version": 3,
-                "godot_action_version": 3,
-            },
+            (
+                bridge["python_rules_version"],
+                bridge["python_action_version"],
+                bridge["python_encoder_version"],
+            ),
+            (
+                self.manifest["schemas"]["python_rules"],
+                self.manifest["schemas"]["python_actions"],
+                self.manifest["schemas"]["encoder"],
+            ),
         )
         release_decks = set(self.manifest["release_decks"])
         self.assertEqual(set(runtime["models"]), release_decks)
         self.assertEqual(set(exported["models"]), release_decks)
-        self.assertEqual(len(runtime["models"]), self.manifest["legacy_model_count"])
-        self.assertEqual(self.manifest["compatible_model_count"], 0)
+        self.assertEqual(len(runtime["models"]), self.manifest["model_count"])
 
         current_schema = (
             self.manifest["schemas"]["python_rules"],
@@ -115,18 +132,26 @@ class ReleaseManifestTests(unittest.TestCase):
                     metadata["action_version"],
                     metadata["encoder_version"],
                 )
-                self.assertEqual(legacy_schema, (2, 2, 3))
-                self.assertNotEqual(legacy_schema, current_schema)
+                if deep_enabled:
+                    self.assertEqual(legacy_schema, current_schema)
+                else:
+                    self.assertEqual(legacy_schema, (2, 2, 3))
+                    self.assertNotEqual(legacy_schema, current_schema)
+                if deep_enabled:
+                    self.assertEqual(
+                        legacy_schema,
+                        (
+                            bridge["python_rules_version"],
+                            bridge["python_action_version"],
+                            bridge["python_encoder_version"],
+                        ),
+                    )
                 self.assertEqual(
-                    legacy_schema,
-                    (
-                        bridge["python_rules_version"],
-                        bridge["python_action_version"],
-                        bridge["python_encoder_version"],
-                    ),
+                    bool(exported_metadata["accepted"]), deep_enabled
                 )
-                self.assertFalse(exported_metadata["accepted"])
-                self.assertFalse(exported_metadata["verified"])
+                self.assertEqual(
+                    bool(exported_metadata["verified"]), deep_enabled
+                )
                 self.assertEqual(
                     (
                         exported_metadata["rules_version"],
@@ -217,6 +242,9 @@ class ReleaseManifestTests(unittest.TestCase):
             for section in parsed_presets.sections()
             if re.fullmatch(r"preset\.\d+", section)
         ):
+            preset_name = parsed_presets.get(
+                preset, "name", fallback=""
+            ).strip('"')
             include_filter = parsed_presets.get(
                 preset, "include_filter", fallback=""
             ).strip('"')
@@ -224,7 +252,12 @@ class ReleaseManifestTests(unittest.TestCase):
                 preset, "exclude_filter", fallback=""
             ).strip('"')
             self.assertNotIn("data/ai_models/*.onnx", include_filter)
-            self.assertIn("data/ai_models/*.onnx", exclude_filter)
+            if "Deep" in preset_name:
+                self.assertNotIn(
+                    "data/ai_models/*.onnx", exclude_filter
+                )
+            else:
+                self.assertIn("data/ai_models/*.onnx", exclude_filter)
             self.assertIn("tools/*", exclude_filter)
 
         baseline = REPO_ROOT / "godot" / "tools" / "ai_baseline"

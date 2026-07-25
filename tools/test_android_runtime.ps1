@@ -22,6 +22,7 @@ $release = Get-ReleaseManifest -RepoRoot $repoRoot
 Assert-ReleaseDeepFallbackContract -Manifest $release
 $releaseDecks = @($release.release_decks | ForEach-Object { [string]$_ })
 $compatibleModelCount = [int]$release.compatible_model_count
+$deepState = if ([bool]$release.deep_runtime_enabled) { 'enabled' } else { 'disabled' }
 $buildToolsVersion = ($lock.android.build_tools -split ';')[-1]
 $aapt = Join-Path $sdkRoot "build-tools\$buildToolsVersion\aapt.exe"
 $apksigner = Join-Path $sdkRoot "build-tools\$buildToolsVersion\apksigner.bat"
@@ -388,7 +389,8 @@ do {
     if (
         $logText.Contains('PHASE6_EXPORT_RELEASE_OK') -and
         $logText.Contains("compatible_models=$ExpectedModels") -and
-        $logText.Contains('onnx_assets=0')
+        $logText.Contains("deep=$deepState") -and
+        $logText.Contains("onnx_assets=$ExpectedModels")
     ) {
         break
     }
@@ -406,12 +408,13 @@ do {
 if (
     -not $logText.Contains('PHASE6_EXPORT_RELEASE_OK') -or
     -not $logText.Contains("compatible_models=$ExpectedModels") -or
-    -not $logText.Contains('onnx_assets=0')
+    -not $logText.Contains("deep=$deepState") -or
+    -not $logText.Contains("onnx_assets=$ExpectedModels")
 ) {
     $tail = (($logText -split "`n") | Select-Object -Last 120) -join "`n"
     throw "Android release model smoke timed out after $TimeoutSeconds seconds.`n$tail"
 }
-Write-Host "ANDROID_RELEASE_AI_OK serial=$serial compatible_models=$ExpectedModels onnx_assets=0"
+Write-Host "ANDROID_RELEASE_AI_OK serial=$serial deep=$deepState compatible_models=$ExpectedModels onnx_assets=$ExpectedModels"
 
 # The phase6 command intentionally exits. Relaunch normally and verify that the
 # packaged application also remains alive after startup.

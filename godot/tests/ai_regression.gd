@@ -96,11 +96,23 @@ func _load_release_deck_keys() -> Dictionary:
 		return {"ok": false, "error": "Release manifest has no release decks"}
 	if deck_keys.size() != int(manifest.get("model_count", -1)):
 		return {"ok": false, "error": "Release manifest model_count does not match release_decks"}
+	var deep_enabled := bool(manifest.get("deep_runtime_enabled", false))
+	var model_counts_valid := (
+		(
+			int(manifest.get("compatible_model_count", -1))
+			== deck_keys.size()
+			and int(manifest.get("legacy_model_count", -1)) == 0
+		)
+		if deep_enabled
+		else (
+			int(manifest.get("compatible_model_count", -1)) == 0
+			and int(manifest.get("legacy_model_count", -1))
+			== deck_keys.size()
+		)
+	)
 	if (
-		bool(manifest.get("deep_runtime_enabled", true))
-		or str(manifest.get("deep_fallback", "")) != "challenge"
-		or int(manifest.get("compatible_model_count", -1)) != 0
-		or int(manifest.get("legacy_model_count", -1)) != deck_keys.size()
+		str(manifest.get("deep_fallback", "")) != "challenge"
+		or not model_counts_valid
 	):
 		return {"ok": false, "error": "Release manifest Deep fallback contract is invalid"}
 	return {"ok": true, "value": deck_keys}

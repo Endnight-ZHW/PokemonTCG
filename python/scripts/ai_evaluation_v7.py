@@ -75,6 +75,17 @@ V2_NON_APPLICABLE_SEARCH_REASONS = frozenset({
     "forced_tactic",
     "cache_hit",
 })
+DEEP_ENGINE_ID = "deep_root_ismcts_v1"
+DEEP_NON_APPLICABLE_SEARCH_REASONS = frozenset({
+    "search_complete",
+    "only_legal_action",
+    "immediate_match_win",
+    "establish_only_backup",
+    "safe_development_before_knockout",
+    "immediate_knockout",
+    "seek_only_backup_out",
+    "strategy_mandatory",
+})
 
 
 class MergeError(ValueError):
@@ -291,6 +302,7 @@ def match_decision_contract_error(
     row: Any,
     configured_engines: dict[str, str],
     *,
+    configured_modes: dict[str, str] | None = None,
     strict_v2_depth: bool = False,
 ) -> str | None:
     """Validate decision conservation and every applicable search sample."""
@@ -311,6 +323,9 @@ def match_decision_contract_error(
         "search_depth_decision_counts_by_strategy"
     )
     samples_by_strategy = row.get("search_depth_samples_by_strategy")
+    engine_counts_by_strategy = row.get(
+        "decision_engine_counts_by_strategy"
+    )
     if (
         not _is_nonnegative_int(decisions)
         or not _is_nonnegative_int(choices)
@@ -360,10 +375,40 @@ def match_decision_contract_error(
         ):
             return f"{strategy}:search_counts"
         configured_engine = configured_engines[strategy]
+        strategy_mode = str((configured_modes or {}).get(strategy) or "")
+        if strategy_mode == "deep":
+            if not isinstance(engine_counts_by_strategy, dict):
+                return f"{strategy}:decision_engine_counts"
+            raw_engine_counts = engine_counts_by_strategy.get(strategy)
+            if (
+                not isinstance(raw_engine_counts, dict)
+                or any(
+                    not isinstance(engine_id, str)
+                    or not engine_id
+                    or not _is_nonnegative_int(count)
+                    for engine_id, count in raw_engine_counts.items()
+                )
+                or any(
+                    engine_id not in {DEEP_ENGINE_ID, configured_engine}
+                    for engine_id in raw_engine_counts
+                )
+                or sum(raw_engine_counts.values()) != action_decisions
+            ):
+                return f"{strategy}:decision_engine_counts"
+            allowed_reasons = (
+                DEEP_NON_APPLICABLE_SEARCH_REASONS
+                | V2_NON_APPLICABLE_SEARCH_REASONS
+            )
+        else:
+            allowed_reasons = (
+                V2_NON_APPLICABLE_SEARCH_REASONS
+                if configured_engine == "turn_beam_v2"
+                else None
+            )
         if (
-            configured_engine == "turn_beam_v2"
+            allowed_reasons is not None
             and any(
-                reason not in V2_NON_APPLICABLE_SEARCH_REASONS
+                reason not in allowed_reasons
                 for reason in reasons
             )
         ):
@@ -1950,6 +1995,12 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
             )
             for strategy in STRATEGY_KEYS
         }
+        configured_modes = {
+            strategy: str(
+                (strategy_descriptors.get(strategy) or {}).get("mode") or ""
+            )
+            for strategy in STRATEGY_KEYS
+        }
         raw_matches = payload.get("matches")
         if not isinstance(raw_matches, list):
             raise MergeError(f"shard_{shard_index}:matches")
@@ -2048,10 +2099,50 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                     if isinstance(strategy_descriptor, dict)
                     else ""
                 )
+                strategy_mode = (
+                    str(strategy_descriptor.get("mode") or "")
+                    if isinstance(strategy_descriptor, dict)
+                    else ""
+                )
+                if strategy_mode == "deep":
+                    raw_engine_counts = (
+                        row.get("decision_engine_counts_by_strategy") or {}
+                    ).get(strategy)
+                    if (
+                        not isinstance(raw_engine_counts, dict)
+                        or any(
+                            not isinstance(engine_id, str)
+                            or not engine_id
+                            or not _is_nonnegative_int(count)
+                            for engine_id, count in raw_engine_counts.items()
+                        )
+                        or any(
+                            engine_id not in {
+                                DEEP_ENGINE_ID,
+                                configured_engine,
+                            }
+                            for engine_id in raw_engine_counts
+                        )
+                        or sum(raw_engine_counts.values()) != action_decisions
+                    ):
+                        raise MergeError(
+                            "invalid_decision_engine_counts:"
+                            f"{strategy}:{_identity_text(identity)}"
+                        )
+                    allowed_reasons = (
+                        DEEP_NON_APPLICABLE_SEARCH_REASONS
+                        | V2_NON_APPLICABLE_SEARCH_REASONS
+                    )
+                else:
+                    allowed_reasons = (
+                        V2_NON_APPLICABLE_SEARCH_REASONS
+                        if configured_engine == "turn_beam_v2"
+                        else None
+                    )
                 if (
-                    configured_engine == "turn_beam_v2"
+                    allowed_reasons is not None
                     and any(
-                        reason not in V2_NON_APPLICABLE_SEARCH_REASONS
+                        reason not in allowed_reasons
                         for reason in reasons
                     )
                 ):
@@ -2172,6 +2263,7 @@ def _merge_matches(shards: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
             decision_contract_error = match_decision_contract_error(
                 row,
                 configured_engines,
+                configured_modes=configured_modes,
             )
             if decision_contract_error:
                 raise MergeError(
@@ -2492,8 +2584,28 @@ def merge_payloads(
             "strength_uses_complete_clean_units_only": True,
         },
         "evaluation_policy": {
-            "search_quality_gate": "complete_fixed_depth_layers",
-            "production_engine": "turn_beam_v2",
+            "search_quality_gate": (
+                "deep_root_fixed_simulations"
+                if any(
+                    str((descriptor or {}).get("mode") or "") == "deep"
+                    for descriptor in (
+                        reference.get("strategies") or {}
+                    ).values()
+                    if isinstance(descriptor, dict)
+                )
+                else "complete_fixed_depth_layers"
+            ),
+            "production_engine": (
+                DEEP_ENGINE_ID
+                if any(
+                    str((descriptor or {}).get("mode") or "") == "deep"
+                    for descriptor in (
+                        reference.get("strategies") or {}
+                    ).values()
+                    if isinstance(descriptor, dict)
+                )
+                else "turn_beam_v2"
+            ),
             "latency": "diagnostic_only",
         },
         "observed": observed,

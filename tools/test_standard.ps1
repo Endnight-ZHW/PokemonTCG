@@ -25,8 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Godot core tests failed.' }
 & (Join-Path $PSScriptRoot 'test_godot_network.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'Godot network tests failed.' }
 
-# Deep v10 checkpoints intentionally retain their old rules sidecars.  The
-# full Python/Godot suites assert they are rejected and fall back to Challenge;
-# they must not be re-exported or re-stamped as current release models here.
+# Model export and promotion are explicit training-pipeline operations. Standard
+# verification only validates the currently committed release state.
 
 Write-Host 'STANDARD_VERIFICATION_OK'

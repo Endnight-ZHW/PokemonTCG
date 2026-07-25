@@ -29,6 +29,10 @@ from engine.ai.dl.encoder import (
     ACTION_NUMERIC_SIZE,
     ACTION_TYPES,
     CARD_SEMANTIC_SIZE,
+    CARD_IDENTITY_MODE,
+    CARD_VOCAB_SHA256,
+    CARD_VOCAB_SIZE,
+    CARD_VOCAB_VERSION,
     ENCODER_SCHEMA_VERSION,
     STATE_CARD_SLOTS,
     STATE_NUMERIC_SIZE,
@@ -56,7 +60,7 @@ from engine.ai.dl.opponent_pool import OpponentPool, save_opponent_pool, load_op
 from engine.ai.planner import PLANNER_SCHEMA_VERSION
 from engine.ai.dl.replay import ReplayBuffer
 
-from engine.ai.training import DECK_SPECS, _determine_soft_winner, finish_setup, force_end_turn, terminal_training_score
+from engine.ai.training import DECK_SPECS, finish_setup, force_end_turn, terminal_training_score
 from engine.enums import PlayerAction, TurnPhase
 from engine.effects.runtime_effects import trainer_runtime_effects
 from engine.game_engine import DEFAULT_GAME_ENGINE
@@ -68,6 +72,7 @@ from engine.turn_manager import TurnManager
 DEFAULT_MODEL_DIR = os.path.join("data", "ai_models")
 TRAINER_ALPHA_ZERO = "alpha_zero_rl"
 TRAINER_LEGACY = "teacher_dagger_rl"
+TRAINER_HYBRID_POPULATION = "hybrid_population_rl"
 ALPHA_ZERO_METADATA_TRAINER = "alpha_zero_rl_v1"
 LEGACY_METADATA_TRAINER = "teacher_dagger_rl_v4"
 PRODUCTION_MCTS_DECISION_SECONDS = 2.0
@@ -346,6 +351,10 @@ def _worker_init() -> None:
             torch.set_num_threads(1)
         except Exception:
             pass
+        try:
+            torch.set_num_interop_threads(1)
+        except Exception:
+            pass
 
 
 def _normalized_workers(workers: int | None) -> int:
@@ -366,6 +375,8 @@ def _normalized_trainer(trainer: str | None) -> str:
         "legacy": TRAINER_LEGACY,
         "teacher_dagger": TRAINER_LEGACY,
         "teacher_dagger_rl_v4": TRAINER_LEGACY,
+        "hybrid_population": TRAINER_HYBRID_POPULATION,
+        "population": TRAINER_HYBRID_POPULATION,
     }
     return aliases.get(value, value)
 
@@ -755,6 +766,7 @@ def _choice_training_example(
     *,
     source: str,
     phase_tag: str,
+    split_key: str = "",
 ) -> ChoiceTrainingExample | None:
     player_idx = req.player if req.player in (0, 1) else state.active_player_idx
     candidate_info = _choice_candidates_and_target(state, req, choice)
@@ -774,6 +786,7 @@ def _choice_training_example(
         teacher_target_index=target_index,
         source=source,
         phase_tag=phase_tag,
+        split_key=str(split_key),
     )
 
 
@@ -871,12 +884,22 @@ def _model_payload_for_worker(model) -> tuple[dict[str, Any], dict[str, Any]]:
         "choice_head_enabled": bool(getattr(model, "choice_head_enabled", True)),
         "use_attention": bool(getattr(model, "use_attention", True)),
         "use_slot_embeddings": bool(getattr(model, "use_slot_embeddings", False)),
+        "use_token_type_embeddings": bool(
+            getattr(model, "use_token_type_embeddings", False)
+        ),
+        "candidate_cross_attention": bool(
+            getattr(model, "candidate_cross_attention", False)
+        ),
+        "attention_heads": int(getattr(model, "attention_heads", 4)),
+        "candidate_cross_attention_heads": int(
+            getattr(model, "candidate_cross_attention_heads", 4)
+        ),
+        "card_identity_mode": str(
+            getattr(model, "card_identity_mode", "vocab_v1")
+        ),
         "state_norm": getattr(model, "state_norm", "layer"),
         "deck_embed_dim": int(getattr(model, "deck_embed_dim", 0)),
-        "num_decks": (
-            int(getattr(getattr(model, "deck_embedding", None), "num_embeddings", 8))
-            if getattr(model, "deck_embedding", None) is not None else 8
-        ),
+        "num_decks": int(getattr(model, "num_decks", 10)),
     }
     return state, config
 
@@ -1718,54 +1741,62 @@ def _snapshot_metrics(state, player_idx: int, evaluator=None) -> dict[str, float
     }
 
 
-def _step_reward(before: dict[str, float], after: dict[str, float], *, invalid: bool = False) -> float:
+def _step_reward_components(
+    before: dict[str, float],
+    after: dict[str, float],
+    *,
+    invalid: bool = False,
+) -> dict[str, float]:
     """Dense reward with intermediate signals: prizes, KOs, damage, energy."""
-    reward = 0.0
-
-    # Prize delta (boosted from 0.4 to 0.5)
     prize_delta = after.get("prizes_taken", 0.0) - before.get("prizes_taken", 0.0)
     opp_prize_delta = after.get("opp_prizes_taken", 0.0) - before.get("opp_prizes_taken", 0.0)
-    reward += prize_delta * 0.5
-    reward -= opp_prize_delta * 0.5
-
-    # KO reward — pokemon-in-play count decrease means a KO happened
     opp_ko = max(0.0, before.get("opp_pokemon_count", 0.0) - after.get("opp_pokemon_count", 0.0))
     own_ko = max(0.0, before.get("own_pokemon_count", 0.0) - after.get("own_pokemon_count", 0.0))
-    reward += opp_ko * 0.3
-    reward -= own_ko * 0.3
-
-    # Damage dealt to opponent active (damage counters increased)
     opp_damage_delta = after.get("opp_active_damage", 0.0) - before.get("opp_active_damage", 0.0)
-    if opp_damage_delta > 0:
-        reward += min(0.15, opp_damage_delta * 0.02)
-
-    # Energy attached to own pokemon
     energy_delta = after.get("own_total_energy", 0.0) - before.get("own_total_energy", 0.0)
-    if energy_delta > 0:
-        reward += min(0.1, energy_delta * 0.05)
-
-    # Teacher evaluation score delta
     score_delta = after.get("eval_score", 0.0) - before.get("eval_score", 0.0)
-    reward += max(-0.25, min(0.25, score_delta / 2500.0))
-
-    # Bench / hand deltas
     bench_delta = after.get("bench_count", 0.0) - before.get("bench_count", 0.0)
     hand_delta = after.get("hand_count", 0.0) - before.get("hand_count", 0.0)
-    reward += max(-0.05, min(0.05, bench_delta * 0.03))
-    reward += max(-0.04, min(0.04, hand_delta * 0.01))
+    components = {
+        "prize": prize_delta * 0.5 - opp_prize_delta * 0.5,
+        "ko": opp_ko * 0.3 - own_ko * 0.3,
+        "damage": (
+            min(0.15, opp_damage_delta * 0.02)
+            if opp_damage_delta > 0
+            else 0.0
+        ),
+        "energy": (
+            min(0.1, energy_delta * 0.05)
+            if energy_delta > 0
+            else 0.0
+        ),
+        "challenge_score": max(
+            -0.25,
+            min(0.25, score_delta / 2500.0),
+        ),
+        "bench": max(-0.05, min(0.05, bench_delta * 0.03)),
+        "hand": max(-0.04, min(0.04, hand_delta * 0.01)),
+        "invalid": -0.15 if invalid else 0.0,
+    }
+    components["total"] = max(
+        -1.0,
+        min(1.0, float(sum(components.values()))),
+    )
+    return components
 
-    if invalid:
-        reward -= 0.15
-    return max(-1.0, min(1.0, float(reward)))
+
+def _step_reward(before: dict[str, float], after: dict[str, float], *, invalid: bool = False) -> float:
+    return _step_reward_components(
+        before,
+        after,
+        invalid=invalid,
+    )["total"]
 
 
 def _terminal_reward(logical_winner: int | None, score: float) -> float:
-    terminal_reward = max(-1.0, min(1.0, float(score) / 1_000_000.0))
-    if logical_winner == 0:
-        return max(terminal_reward, 1.0)
-    if logical_winner == 1:
-        return min(terminal_reward, -1.0)
-    return terminal_reward
+    # v6 deliberately keeps terminal supervision bounded so the policy and
+    # step shaping signals are not drowned out by an invented ±1 winner.
+    return max(-0.25, min(0.25, float(score) / 1_000_000.0))
 
 
 def _finalize_episode_examples(
@@ -2058,6 +2089,7 @@ def _play_model_game(
         "decision_seconds": 0.0,
         "max_step_exhaustions": 0,
         "seat": seat,
+        "reward_components": {},
     }
     target_ai = ais[target_player_idx]
     original_choice_resolver = None
@@ -2074,6 +2106,11 @@ def _play_model_game(
             device=device,
             add_dirichlet_noise=True,
             dirichlet_epsilon=0.25,
+            dirichlet_alpha=0.3,
+            root_only_neural=True,
+            neural_prior_weight=0.75,
+            max_depth=16,
+            match_seed=seed,
         )
 
     try:
@@ -2092,6 +2129,7 @@ def _play_model_game(
                         deck_key,
                         source="teacher",
                         phase_tag=phase_tag,
+                        split_key=f"{phase_tag}:{deck_key}:{seed}",
                     )
                     if choice_example is not None:
                         choice_examples.append(choice_example)
@@ -2146,52 +2184,39 @@ def _play_model_game(
                         player_idx,
                         deck_key,
                         actions=actions,
+                        exploration=temperature > 0.05,
                         deadline=(
                             decision_started + PRODUCTION_MCTS_DECISION_SECONDS
                             if temperature <= 0.05 else None
                         ),
                     )
+                    if int(search_result.simulations) != max(
+                        1,
+                        int(mcts_simulations),
+                    ):
+                        diagnostics["decision_timeouts"] += 1
+                        raise RuntimeError(
+                            "training_search_incomplete:"
+                            f"{search_result.simulations}/"
+                            f"{max(1, int(mcts_simulations))}"
+                        )
                     if temperature <= 0.05:
-                        candidate_indices = sorted(
-                            range(len(actions)),
-                            key=lambda idx: search_result.action_probs.get(idx, 0.0),
-                            reverse=True,
-                        )
+                        action_idx = int(search_result.best_action_idx)
                     else:
-                        roll = random.random()
-                        cumulative = 0.0
-                        action_idx = search_result.best_action_idx
-                        for idx in range(len(actions)):
-                            cumulative += float(search_result.action_probs.get(idx, 0.0))
-                            if roll <= cumulative:
-                                action_idx = idx
-                                break
-                        candidate_indices = [action_idx] + sorted(
-                            (idx for idx in range(len(actions)) if idx != action_idx),
-                            key=lambda idx: search_result.action_probs.get(idx, 0.0),
-                            reverse=True,
-                        )
-                    action_idx = max(0, min(candidate_indices[0], len(actions) - 1))
-                    for candidate_idx in candidate_indices:
-                        if _action_executes_on_clone(
-                            target_ai,
-                            state,
-                            player_idx,
-                            actions[candidate_idx],
-                        ):
-                            action_idx = candidate_idx
-                            break
-                    original_action_idx = int(action_idx)
-                    action = _postprocess_preferred_action(
+                        action_idx = int(search_result.selected_action_idx)
+                    action_idx = max(0, min(action_idx, len(actions) - 1))
+                    action = actions[action_idx]
+                    if not _action_executes_on_clone(
                         target_ai,
                         state,
                         player_idx,
-                        actions[action_idx],
-                        actions,
-                    )
-                    corrected_idx = _find_action_index(actions, action)
-                    if corrected_idx is not None:
-                        action_idx = int(corrected_idx)
+                        action,
+                    ):
+                        diagnostics["invalid_actions"] += 1
+                        raise RuntimeError(
+                            "training_sampled_illegal_action:"
+                            f"{action.signature}"
+                        )
                     encoded_state = encoder.encode_state(state, player_idx, deck_key)
                     encoded_actions = [encoder.encode_action(state, player_idx, a) for a in actions]
                     if actions:
@@ -2202,11 +2227,6 @@ def _play_model_game(
                             float(search_result.action_probs.get(idx, 0.0))
                             for idx in range(len(actions))
                         ]
-                        if corrected_idx is not None and int(corrected_idx) != original_action_idx:
-                            policy_target = [
-                                1.0 if idx == int(corrected_idx) else 0.0
-                                for idx in range(len(actions))
-                            ]
                         example = TrainingExample(
                             encoded_state, encoded_actions, action_idx,
                             source="self_play",
@@ -2253,7 +2273,22 @@ def _play_model_game(
 
             if record and example is not None and before_metrics is not None:
                 after_metrics = _snapshot_metrics(state, target_player_idx, target_ai)
-                step_r = _step_reward(before_metrics, after_metrics, invalid=invalid)
+                reward_components = _step_reward_components(
+                    before_metrics,
+                    after_metrics,
+                    invalid=invalid,
+                )
+                step_r = reward_components["total"]
+                for component, value in reward_components.items():
+                    diagnostics["reward_components"][component] = (
+                        float(
+                            diagnostics["reward_components"].get(
+                                component,
+                                0.0,
+                            )
+                        )
+                        + float(value)
+                    )
 
                 # Add curiosity bonus if tracker is active
                 if curiosity_tracker is not None:
@@ -2272,10 +2307,9 @@ def _play_model_game(
             score = terminal_training_score(state, target_player_idx)
         else:
             diagnostics["max_step_exhaustions"] = 1
-            soft_winner = _determine_soft_winner(state)
-            state.winner = soft_winner
-            logical_winner = 0 if soft_winner == target_player_idx else 1
-            score = terminal_training_score(state, target_player_idx)
+            logical_winner = None
+            score = float(target_ai.evaluate_state(state, target_player_idx))
+            state.set_result("DRAW", reason="MAX_STEPS")
         _finalize_episode_examples(examples, _terminal_reward(logical_winner, score))
         return logical_winner, score, examples, choice_examples, diagnostics
     finally:
@@ -2370,10 +2404,14 @@ def _play_challenge_baseline_game(
             score = terminal_training_score(state, target_player_idx)
         else:
             diagnostics["max_step_exhaustions"] = 1
-            soft_winner = _determine_soft_winner(state)
-            state.winner = soft_winner
-            logical_winner = 0 if soft_winner == target_player_idx else 1
-            score = terminal_training_score(state, target_player_idx)
+            logical_winner = None
+            score = float(
+                ais[target_player_idx].evaluate_state(
+                    state,
+                    target_player_idx,
+                )
+            )
+            state.set_result("DRAW", reason="MAX_STEPS")
         return logical_winner, score, [], [], diagnostics
     finally:
         _restore_rng(rng_state)
@@ -2900,6 +2938,10 @@ def _verification_metadata(eval_games: int, accepted: bool) -> dict[str, Any]:
         "rules_version": RULES_SCHEMA_VERSION,
         "action_version": ACTION_SCHEMA_VERSION,
         "encoder_version": ENCODER_SCHEMA_VERSION,
+        "card_vocab_version": CARD_VOCAB_VERSION,
+        "card_vocab_size": CARD_VOCAB_SIZE,
+        "card_vocab_sha256": CARD_VOCAB_SHA256,
+        "card_identity_mode": CARD_IDENTITY_MODE,
     }
     if int(eval_games or 0) <= 0:
         return {

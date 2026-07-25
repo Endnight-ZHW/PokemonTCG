@@ -19,6 +19,7 @@ var _revision := -1
 ## are serialized by this class, so the worker can safely retain a validated
 ## turn plan and immutable catalog caches between atomic actions.
 var _worker := NativeChallengeAI.new()
+var _deep_worker := DeepRootISMCTS.new()
 
 
 func is_running() -> bool:
@@ -135,6 +136,17 @@ func cancel_and_wait() -> void:
 	cancel_request()
 
 
+## The authoritative evaluation runner is synchronous, but must exercise the
+## exact same Deep/fallback branch as the asynchronous gameplay boundary.
+## Keeping this thin adapter here prevents candidate evidence from silently
+## bypassing deep_root_ismcts_v1.
+func decide_sync_for_evaluation(
+	request: Dictionary,
+	inference: Variant = null,
+) -> Dictionary:
+	return _decide(request, Callable(), inference)
+
+
 func _worker_main(
 	request: Dictionary,
 	inference: Variant,
@@ -161,6 +173,36 @@ func _decide(
 	cancel_check: Callable,
 	inference: Variant,
 ) -> Dictionary:
+	if str(request.get("mode", "challenge")) == "deep" and inference == null:
+		var unavailable_fallback := _worker.decide(
+			request, cancel_check, null)
+		unavailable_fallback["deep_fallback"] = true
+		unavailable_fallback["fallback_reason"] = "runtime_unavailable"
+		unavailable_fallback["deep_failure"] = {
+			"planner": DeepRootISMCTS.PLANNER_ID,
+			"reason": "runtime_unavailable",
+			"elapsed_ms": 0.0,
+		}
+		return unavailable_fallback
+	if str(request.get("mode", "challenge")) == "deep":
+		var deep_result := _deep_worker.decide(
+			request, cancel_check, inference)
+		if bool(deep_result.get("success", false)) or bool(
+			deep_result.get("cancelled", false)):
+			return deep_result
+		var reason := str(deep_result.get(
+			"deep_failure_reason",
+			deep_result.get("error", "deep_unknown_failure"),
+		))
+		var fallback := _worker.decide(request, cancel_check, null)
+		fallback["deep_fallback"] = true
+		fallback["fallback_reason"] = reason
+		fallback["deep_failure"] = {
+			"planner": DeepRootISMCTS.PLANNER_ID,
+			"reason": reason,
+			"elapsed_ms": float(deep_result.get("elapsed_ms", 0.0)),
+		}
+		return fallback
 	return _worker.decide(request, cancel_check, inference)
 
 

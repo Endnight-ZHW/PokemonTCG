@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from scripts.ai_evaluation_v7 import (
     DECK_ORDER,
     PROTOCOL_ID,
+    _merge_matches,
     expected_match_identities,
     experimental_units,
     match_decision_contract_error,
@@ -64,6 +65,49 @@ def _decision_row() -> dict:
             "B": [{**_search_sample(), "trajectory_hash": "b" * 64}],
         },
     }
+
+
+def _deep_decision_row() -> dict:
+    row = _decision_row()
+    row.update({
+        "matchup_kind": "mirror",
+        "strategy_a_deck": "fire",
+        "strategy_b_deck": "fire",
+        "seed_block": 0,
+        "seed": 17,
+        "seat": 0,
+        "strategy_a_player": 0,
+        "forced_first_player": 0,
+        "sample_phase": "main",
+        "winner": "draw",
+        "turn_plan_cache_hit_samples_by_strategy": {
+            "A": [False, False],
+            "B": [False],
+        },
+        "ai_turn_ms_samples_by_strategy": {
+            "A": [3.0],
+            "B": [3.0],
+        },
+        "behavior_by_strategy": {
+            strategy: {
+                "selected_action_counts": {},
+                "legal_action_opportunity_counts": {},
+                "choice_request_counts": {},
+            }
+            for strategy in ("A", "B")
+        },
+        "decision_engine_counts_by_strategy": {
+            "A": {"deep_root_ismcts_v1": 1},
+            "B": {"turn_beam_v2": 1},
+        },
+    })
+    row["search_depth_decision_counts_by_strategy"]["A"] = {
+        "applicable": 0,
+        "not_applicable": 1,
+        "reasons": {"search_complete": 1},
+    }
+    row["search_depth_samples_by_strategy"]["A"] = []
+    return row
 
 
 def _nightly_config() -> dict:
@@ -422,6 +466,58 @@ class DecisionAndDepthContractTests(unittest.TestCase):
                 "B": {"engine": "turn_beam_v2"},
             },
         }))
+
+    def test_deep_root_decisions_are_not_misclassified_as_beam_depth(self):
+        row = _deep_decision_row()
+        modes = {"A": "deep", "B": "challenge"}
+        self.assertIsNone(match_decision_contract_error(
+            row,
+            self.engines,
+            configured_modes=modes,
+            strict_v2_depth=True,
+        ))
+        self.assertTrue(_main_depth_contract_valid({
+            "matches": [row],
+            "strategies": {
+                "A": {"engine": "turn_beam_v2", "mode": "deep"},
+                "B": {"engine": "turn_beam_v2", "mode": "challenge"},
+            },
+        }))
+        merged = _merge_matches([{
+            "strategies": {
+                "A": {"engine": "turn_beam_v2", "mode": "deep"},
+                "B": {"engine": "turn_beam_v2", "mode": "challenge"},
+            },
+            "matches": [row],
+            "config": {},
+        }])
+        self.assertEqual(len(merged), 1)
+
+        invalid_engine = copy.deepcopy(row)
+        invalid_engine["decision_engine_counts_by_strategy"]["A"] = {
+            "turn_beam_v1": 1,
+        }
+        self.assertEqual(
+            match_decision_contract_error(
+                invalid_engine,
+                self.engines,
+                configured_modes=modes,
+            ),
+            "A:decision_engine_counts",
+        )
+
+        invalid_reason = copy.deepcopy(row)
+        invalid_reason["search_depth_decision_counts_by_strategy"]["A"][
+            "reasons"
+        ] = {"unknown": 1}
+        self.assertEqual(
+            match_decision_contract_error(
+                invalid_reason,
+                self.engines,
+                configured_modes=modes,
+            ),
+            "A:not_applicable_reason",
+        )
 
     def test_v2_reply_depth_non_applicable_and_node_contracts(self):
         wrong_reply_depth = _decision_row()

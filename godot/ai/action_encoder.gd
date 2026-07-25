@@ -2,10 +2,14 @@ class_name AIActionEncoder
 extends RefCounted
 
 const STATE_NUMERIC_SIZE := 960
-const STATE_CARD_SLOTS := 96
+const STATE_CARD_SLOTS := 128
 const ACTION_NUMERIC_SIZE := 178
 const CARD_SEMANTIC_SIZE := 53
-const ENCODER_SCHEMA_VERSION := 5
+const ENCODER_SCHEMA_VERSION := 6
+const OWN_HAND_TOKEN_COUNT := 16
+const DISCARD_TOKEN_COUNT := 12
+const STADIUM_TOKEN_INDEX := 112
+const RESERVED_TOKEN_START := 113
 const PHASES := ["SETUP", "DRAW", "MAIN", "ATTACK", "POKEMON_CHECKUP", "GAME_OVER"]
 const DECK_KEYS := [
 	"fire", "water", "psychic", "lightning",
@@ -95,9 +99,26 @@ func encode_observation(observation: Dictionary, deck_key: String) -> Dictionary
 		_norm(float(observation["opponent_prize_count"]), 6.0),
 	])
 	numeric.append_array(_one_hot(DECK_KEYS.find(deck_key), DECK_KEYS.size()))
+	numeric.append_array([
+		_norm(
+			maxi(0, observation["own_hand"].size() - OWN_HAND_TOKEN_COUNT),
+			20.0,
+		),
+		_norm(
+			maxi(0, observation["own_discard"].size() - DISCARD_TOKEN_COUNT),
+			60.0,
+		),
+		_norm(
+			maxi(
+				0,
+				observation["opponent_discard"].size() - DISCARD_TOKEN_COUNT,
+			),
+			60.0,
+		),
+	])
 
 	var card_ids: Array[int] = []
-	for row_value in observation["board"]:
+	for row_value in _ordered_board(observation):
 		var row: Array = row_value
 		var card_id := str(row[2])
 		var energy_ids: Array = row[4]
@@ -114,20 +135,65 @@ func encode_observation(observation: Dictionary, deck_key: String) -> Dictionary
 		])
 		numeric.append_array(_semantic(card_id))
 		card_ids.append(_bucket(card_id))
-		for energy_id in energy_ids.slice(0, 4):
-			card_ids.append(_bucket(str(energy_id)))
+		for energy_index in range(4):
+			card_ids.append(
+				_bucket(str(energy_ids[energy_index]))
+				if energy_index < energy_ids.size()
+				else 0
+			)
 		card_ids.append(_bucket(tool_id))
-	for card_id in observation["own_hand"].slice(0, 16):
-		card_ids.append(_bucket(str(card_id)))
-	for card_id in observation["own_discard"].slice(-12):
-		card_ids.append(_bucket(str(card_id)))
-	for card_id in observation["opponent_discard"].slice(-12):
-		card_ids.append(_bucket(str(card_id)))
+	card_ids.append_array(_fixed_zone_indices(
+		observation["own_hand"],
+		OWN_HAND_TOKEN_COUNT,
+		false,
+	))
+	card_ids.append_array(_fixed_zone_indices(
+		observation["own_discard"],
+		DISCARD_TOKEN_COUNT,
+		true,
+	))
+	card_ids.append_array(_fixed_zone_indices(
+		observation["opponent_discard"],
+		DISCARD_TOKEN_COUNT,
+		true,
+	))
 	card_ids.append(_bucket(str(observation["stadium_id"])))
+	if card_ids.size() != RESERVED_TOKEN_START:
+		return {"error": "encoder_v6_card_layout:%d" % card_ids.size()}
 	return {
 		"numeric": _pad_float(numeric, STATE_NUMERIC_SIZE),
 		"card_ids": _pad_int(card_ids, STATE_CARD_SLOTS),
 	}
+
+
+func _ordered_board(observation: Dictionary) -> Array:
+	var rows_by_key := {}
+	for row_value in observation["board"]:
+		var row: Array = row_value
+		rows_by_key["%d:%s" % [int(row[0]), str(row[1])]] = row
+	var ordered: Array = []
+	var perspective := int(observation["perspective"])
+	for player_idx in [perspective, 1 - perspective]:
+		for slot in TARGET_SLOTS:
+			var key := "%d:%s" % [player_idx, slot]
+			ordered.append(rows_by_key.get(
+				key,
+				[player_idx, slot, "", 0, [], [], ""],
+			))
+	return ordered
+
+
+func _fixed_zone_indices(
+	values: Array,
+	width: int,
+	take_last: bool,
+) -> Array[int]:
+	var result: Array[int] = []
+	var start := maxi(0, values.size() - width) if take_last else 0
+	var stop := mini(values.size(), start + width)
+	for index in range(start, stop):
+		result.append(_bucket(str(values[index])))
+	return _pad_int(result, width)
 
 
 func encode_action(
@@ -321,7 +387,7 @@ func _semantic(card_id: String) -> Array[float]:
 func _bucket(card_id: String) -> int:
 	if card_id.is_empty():
 		return 0
-	return int(catalog.get_card(card_id).get("card_bucket", 0))
+	return int(catalog.get_card(card_id).get("ai_card_index", 1))
 
 
 static func _bool(value: bool) -> float:
@@ -351,7 +417,10 @@ static func _choice_type_index(request_type: String) -> int:
 
 
 static func _pad_float(values: Array[float], size: int) -> Array[float]:
-	var result := values.slice(0, size)
+	if values.size() > size:
+		push_error("encoder_numeric_overflow:%d>%d" % [values.size(), size])
+		return []
+	var result := values.duplicate()
 	result.resize(size)
 	for index in range(values.size(), size):
 		result[index] = 0.0
@@ -359,7 +428,10 @@ static func _pad_float(values: Array[float], size: int) -> Array[float]:
 
 
 static func _pad_int(values: Array[int], size: int) -> Array[int]:
-	var result := values.slice(0, size)
+	if values.size() > size:
+		push_error("encoder_card_slot_overflow:%d>%d" % [values.size(), size])
+		return []
+	var result := values.duplicate()
 	result.resize(size)
 	for index in range(values.size(), size):
 		result[index] = 0

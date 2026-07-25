@@ -51,7 +51,61 @@ python -m pip install -r .\python\requirements-ai.txt
 正式部署模型位于 `data/ai_models/`。训练产生的 candidate、rejected、
 进度日志和临时检查点默认不提交 Git。
 
-Deep AI 当前默认生产训练器是 `teacher_dagger_rl`。它会重新训练 v10/v3
+## Hybrid Population RL 生产闭环
+
+新的生产训练器是 `hybrid_population_rl`。它从 Python rules v5、encoder v6、
+checkpoint v11 和 append-only card-vocab v1 重新训练十套独立模型。旧 v10
+checkpoint 只能只读检查，不能写回为 v11，也不能通过 v6 runtime 门禁。
+最方便的观察入口是本机面板：
+
+```powershell
+.\tools\start_ai_training_dashboard.ps1
+```
+
+面板只监听 `127.0.0.1:8767`，可以实时查看 SSE 训练事件并在批次边界暂停、恢复
+或取消。所有运行都写入
+`build\ai_training\runs\<run_id>\`；服务重启后会校验配置、规则、编码器、源码和
+检查点哈希，再决定重挂接或允许恢复。
+
+Release 会自动附加一个低优先级、CPU-only 的强度观察器。它在 Teacher/DAgger
+每 100 局及每代人口训练结束时，以固定种子做 12 局当前原始策略网络对
+Challenge-fast 的配对快评，并在面板绘制点率差、约 95% 置信区间和相对首个探针
+的变化。结果原子写入 `evaluation\strength_history.json`，不会写训练事件流，也
+不会改变训练 RNG、回放顺序或优化器状态。该曲线仅用于观察方向；样本较小，不能
+替代最终 2800 局 Godot 配对门禁。
+
+v6 固定研究流程必须逐级执行，后一级会验证并记录前一级 evidence SHA，不能跳过
+消融或把 research run 当成可晋升候选：
+
+```powershell
+# 两个一牌组 Smoke（不可晋升）
+conda run -n DL python -B .\python\scripts\run_hybrid_population_training.py `
+  --run-id v6-pooled-smoke --preset smoke --seed 17 `
+  --model-variant v6_pooled
+conda run -n DL python -B .\python\scripts\run_hybrid_population_training.py `
+  --run-id v6-cross-smoke --preset smoke --seed 17 `
+  --model-variant v6_cross_attention
+
+# Steel/Darkness 同种子研究训练 + 280 局 Python 消融
+.\tools\run_v6_research2_ablation.ps1 `
+  -PooledRunId v6-pooled-r2 -CrossRunId v6-cross-r2
+
+# 只训练消融胜者，并执行十牌组固定 280 局 Godot 快速门禁
+.\tools\run_v6_research10.ps1 `
+  -AblationEvidence .\build\ai_training\research_evidence\v6_ablation_v6-pooled-r2_vs_v6-cross-r2.json `
+  -RunId v6-research10
+
+# 全新 25,500 局 run + 2800 局/Windows/ARM64 Android 最终门禁
+.\tools\run_v6_release_candidate.ps1 `
+  -ResearchRunId v6-research10 -ReleaseRunId v6-release-candidate
+```
+
+最后一个命令只封存 `verified_candidate`、evidence SHA 和隔离 candidate bundle；
+不会调用晋升工具，不会修改正式 PT/ONNX/清单，也不会启用 Deep。正式晋升仍需要
+另一条明确授权。普通数据导出遇到词表外 release card 会失败；新增卡只能先运行
+`python\scripts\update_ai_card_vocab.py` 显式追加索引，再重新导出 Godot 数据。
+
+`teacher_dagger_rl` 和 `alpha_zero_rl` 继续保留为兼容与实验入口。旧路线会训练 v10/v3
 checkpoint，并要求最终评估满足 release gate；旧 v9/v2 checkpoint 不再作为
 warm start 来源。v10/v3 的强度 gate 会优先比较同卡组、同 seeds、同先后手分布的
 Challenge AI paired baseline；新 metadata 会记录每局 `game_points`，优先要求

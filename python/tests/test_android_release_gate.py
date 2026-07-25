@@ -59,31 +59,42 @@ class AndroidReleaseGateTests(unittest.TestCase):
         self.assertIn("ANDROID_SMOKE_PAYLOAD_MATCH", source)
         self.assertIn("ANDROID_RELEASE_AI_OK", source)
         self.assertIn("compatible_models=$ExpectedModels", source)
-        self.assertIn("onnx_assets=0", source)
+        self.assertIn("onnx_assets=$ExpectedModels", source)
+        self.assertIn("deep=$deepState", source)
         self.assertIn("Assert-ReleaseDeepFallbackContract", source)
         self.assertIn("ExpectedModels does not match release_manifest", source)
         self.assertNotIn("ExpectedModels must be positive", source)
         self.assertNotIn("--esa command_line_params", source)
 
-    def test_disabled_deep_release_excludes_onnx_from_every_export(self):
+    def test_export_presets_separate_disabled_and_promoted_model_sets(self):
         parser = configparser.ConfigParser(interpolation=None)
         parser.optionxform = str
         parser.read(REPO_ROOT / "godot" / "export_presets.cfg", encoding="utf-8")
-        presets = [
-            section
+        by_name = {
+            parser.get(section, "name").strip('"'): section
             for section in parser.sections()
             if section.startswith("preset.") and not section.endswith(".options")
-        ]
-        self.assertGreaterEqual(len(presets), 3)
-        for preset in presets:
-            with self.subTest(preset=parser.get(preset, "name")):
-                self.assertNotIn(
-                    "data/ai_models/*.onnx",
-                    parser.get(preset, "include_filter").strip('"'),
-                )
+        }
+        for name in (
+            "Windows Desktop",
+            "Android ARM64",
+            "Android ARM64 Release Smoke",
+        ):
+            with self.subTest(preset=name):
                 self.assertIn(
                     "data/ai_models/*.onnx",
-                    parser.get(preset, "exclude_filter").strip('"'),
+                    parser.get(by_name[name], "exclude_filter").strip('"'),
+                )
+        for name in (
+            "Windows Desktop Deep",
+            "Android ARM64 Deep",
+            "Android ARM64 Deep Release Smoke",
+            "Android ARM64 Deep Candidate Smoke",
+        ):
+            with self.subTest(preset=name):
+                self.assertNotIn(
+                    "data/ai_models/*.onnx",
+                    parser.get(by_name[name], "exclude_filter").strip('"'),
                 )
 
         smoke_runner = (
@@ -105,6 +116,7 @@ class AndroidReleaseGateTests(unittest.TestCase):
         )
         self.assertIn("[bool]$IncludeAndroidRuntimeSmoke = $true", build)
         self.assertIn("Android ARM64 Release Smoke", build)
+        self.assertIn("Android ARM64 Deep Release Smoke", build)
         self.assertIn("-IncludeAndroidRuntimeSmoke:", package)
         self.assertIn("PokemonTCG-smoke.apk", release_test)
         self.assertIn("-SmokeApkPath $smokeApkPath", release_test)
@@ -117,6 +129,14 @@ class AndroidReleaseGateTests(unittest.TestCase):
         self.assertIn("deep_runtime_enabled", package)
         self.assertIn("deep_fallback", package)
         self.assertIn("Windows release staging contains legacy ONNX", package)
+
+        candidate_android = (
+            REPO_ROOT / "tools" / "test_hybrid_candidate_android.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Android ARM64 Deep Candidate Smoke", candidate_android)
+        self.assertIn("ro.product.cpu.abi", candidate_android)
+        self.assertIn("CANDIDATE_RUNTIME_EVIDENCE_CHUNK", candidate_android)
+        self.assertIn("android_runtime.json", candidate_android)
 
     def test_nightly_ci_builds_then_verifies_the_release_pair(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "verify.yml").read_text(
