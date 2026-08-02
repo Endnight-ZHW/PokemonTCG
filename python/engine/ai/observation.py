@@ -111,9 +111,13 @@ def fair_search_clone(state, perspective: int, seed: int = 0):
         # or which cards are prized. Shuffling this union hides both.
         own_pool = list(own.deck) + list(own.prizes)
     own_pool = _fit_hidden_pool(own_pool, own_unknown_count)
-    rng.shuffle(own_pool)
-    own.deck = own_pool[:own_deck_count]
-    own.prizes = own_pool[own_deck_count:own_unknown_count]
+    own.deck, own.prizes = _sample_own_hidden_zones(
+        own_pool,
+        own_deck_count,
+        own_prize_count,
+        _pending_choice_hidden_pins(cloned, perspective),
+        rng,
+    )
 
     opponent_idx = 1 - perspective
     opponent = cloned.get_player(opponent_idx)
@@ -143,6 +147,145 @@ def fair_search_clone(state, perspective: int, seed: int = 0):
         hand_count + deck_count:hand_count + deck_count + prize_count
     ]
     return cloned
+
+
+def _pending_choice_hidden_pins(
+    state,
+    perspective: int,
+) -> dict[tuple[str, int], str]:
+    """Return hidden positions revealed by the actor's active choice.
+
+    Pending search choices use revision-scoped physical card references.  A
+    determinization may randomize every other unknown card, but changing those
+    referenced positions would make the serialized continuation impossible to
+    resume.  The option identities and look-top window are already information
+    visible to the choosing player; face-down prize choices deliberately carry
+    no CardRef and therefore create no pins here.
+    """
+    stack = getattr(state, "resolution_stack", None)
+    pending = (
+        stack.get("pending_request")
+        if isinstance(stack, dict)
+        else None
+    )
+    if (
+        not isinstance(pending, dict)
+        or pending.get("player") != perspective
+    ):
+        return {}
+
+    player = state.get_player(perspective)
+    pins: dict[tuple[str, int], str] = {}
+
+    def add_pin(zone: str, index: int, card_id: str) -> None:
+        normalized = "prizes" if zone in {"prize", "prizes"} else zone
+        if normalized not in {"deck", "prizes"}:
+            return
+        cards = getattr(player, normalized, None)
+        if (
+            not isinstance(cards, list)
+            or type(index) is not int
+            or index < 0
+            or index >= len(cards)
+            or not isinstance(card_id, str)
+            or not card_id
+        ):
+            raise ValueError("pending choice contains an invalid hidden card pin")
+        if getattr(cards[index], "api_id", "") != card_id:
+            raise ValueError("pending choice hidden card pin no longer matches state")
+        key = (normalized, index)
+        previous = pins.get(key)
+        if previous is not None and previous != card_id:
+            raise ValueError("pending choice contains conflicting hidden card pins")
+        pins[key] = card_id
+
+    options = pending.get("options", [])
+    if not isinstance(options, list):
+        raise ValueError("pending choice options are not a list")
+    for option in options:
+        ref = option.get("ref") if isinstance(option, dict) else None
+        if (
+            not isinstance(ref, dict)
+            or ref.get("kind") != "card"
+            or ref.get("player") != perspective
+        ):
+            continue
+        add_pin(
+            str(ref.get("zone", "")),
+            ref.get("index", -1),
+            ref.get("card_id", ""),
+        )
+
+    metadata = pending.get("metadata", {})
+    continuation = (
+        metadata.get("continuation", {})
+        if isinstance(metadata, dict)
+        else {}
+    )
+    top_card_ids = (
+        continuation.get("top_card_ids", [])
+        if isinstance(continuation, dict)
+        else []
+    )
+    if top_card_ids:
+        if (
+            not isinstance(top_card_ids, list)
+            or len(top_card_ids) > len(player.deck)
+            or any(
+                not isinstance(card_id, str) or not card_id
+                for card_id in top_card_ids
+            )
+        ):
+            raise ValueError("pending choice top-deck window is invalid")
+        for position, card_id in enumerate(top_card_ids):
+            add_pin("deck", len(player.deck) - 1 - position, card_id)
+    return pins
+
+
+def _sample_own_hidden_zones(
+    pool: list,
+    deck_count: int,
+    prize_count: int,
+    pins: dict[tuple[str, int], str],
+    rng: random.Random,
+) -> tuple[list, list]:
+    remaining = list(pool)
+    pinned_cards: dict[tuple[str, int], Any] = {}
+    for key, card_id in sorted(pins.items()):
+        match = next(
+            (
+                index
+                for index, card in enumerate(remaining)
+                if getattr(card, "api_id", "") == card_id
+            ),
+            -1,
+        )
+        if match < 0:
+            raise ValueError(
+                "pending choice hidden card is absent from determinization pool"
+            )
+        pinned_cards[key] = remaining.pop(match)
+
+    rng.shuffle(remaining)
+    deck: list[Any | None] = [None] * deck_count
+    prizes: list[Any | None] = [None] * prize_count
+    for (zone, index), card in pinned_cards.items():
+        target = deck if zone == "deck" else prizes
+        if index < 0 or index >= len(target) or target[index] is not None:
+            raise ValueError("pending choice hidden card pin is not unique")
+        target[index] = card
+
+    remaining_iter = iter(remaining)
+    for target in (deck, prizes):
+        for index, card in enumerate(target):
+            if card is None:
+                try:
+                    target[index] = next(remaining_iter)
+                except StopIteration as exc:
+                    raise ValueError(
+                        "determinization pool is shorter than hidden zones"
+                    ) from exc
+    return list(deck), list(prizes)
 
 
 def _deck_prior(deck_key: str | None):

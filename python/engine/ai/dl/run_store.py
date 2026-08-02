@@ -20,9 +20,11 @@ from engine.ai.dl.encoder import (
     CARD_VOCAB_SHA256,
     CARD_VOCAB_SIZE,
     CARD_VOCAB_VERSION,
+)
+from engine.ai.dl.v2_contract import (
+    CHECKPOINT_VERSION,
     ENCODER_SCHEMA_VERSION,
 )
-from engine.ai.dl.model import CHECKPOINT_VERSION
 from engine.ai.dl.production_contract import (
     CHECKPOINT_FORMAT_VERSION,
     DEEP_PLANNER_SCHEMA_VERSION,

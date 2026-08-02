@@ -1,6 +1,7 @@
 #include "register_types.hpp"
 
 #include "challenge_ai_math.hpp"
+#include "native_deep_search.hpp"
 #include "onnx_inference.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
@@ -14,6 +15,7 @@ void initialize_onnx_ai_module(ModuleInitializationLevel level) {
     }
     GDREGISTER_CLASS(ChallengeAIMath);
     GDREGISTER_CLASS(OnnxInference);
+    GDREGISTER_CLASS(NativeDeepSearch);
 }
 
 void uninitialize_onnx_ai_module(ModuleInitializationLevel level) {

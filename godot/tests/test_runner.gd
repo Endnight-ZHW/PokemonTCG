@@ -3564,7 +3564,8 @@ func _run_phase_four_foundation_tests() -> void:
 			int(runtime.release_manifest.get(
 				"compatible_model_count", -1)) == 0
 			and int(runtime.release_manifest.get("legacy_model_count", -1))
-			== int(runtime.release_manifest.get("model_count", -2)),
+			== int(runtime.release_manifest.get(
+				"release_decks", []).size()),
 			"Disabled Deep release model counts are invalid",
 		)
 	_check(
@@ -3574,24 +3575,21 @@ func _run_phase_four_foundation_tests() -> void:
 	var release_schemas: Dictionary = runtime.release_manifest.get("schemas", {})
 	var release_onnx: Dictionary = runtime.release_manifest.get("onnx", {})
 	_check(
-		runtime.expected_python_rules_version
-		== int(release_schemas.get("python_rules", 0))
-		and runtime.expected_python_action_version
-		== int(release_schemas.get("python_actions", 0))
-		and runtime.expected_python_encoder_version
-		== int(release_schemas.get("encoder", 0))
-		and runtime.expected_python_encoder_version
-		== AIActionEncoder.ENCODER_SCHEMA_VERSION
-		and runtime.expected_onnx_opset == int(release_onnx.get("opset", 0))
-		and runtime.expected_onnx_runtime_version
-		== str(release_onnx.get("runtime_version", "")),
+		int(release_schemas.get("encoder", 0))
+		== DeepAIRuntime.ENCODER_VERSION
+		and int(release_schemas.get("checkpoint", 0))
+		== DeepAIRuntime.CHECKPOINT_VERSION
+		and int(release_schemas.get("deep_planner", 0))
+		== DeepAIRuntime.PLANNER_VERSION
+		and int(release_onnx.get("opset", 0)) == 17
+		and str(release_onnx.get("runtime_version", "")) == "1.26.0",
 		"Deep AI release expectations do not come from the release manifest",
 	)
 	var runtime_manifest_encoder := int(
 		Dictionary(runtime.manifest.get("compatibility_bridge", {})).get("python_encoder_version", 0)
 	)
-	var runtime_manifest_current := (
-		runtime_manifest_encoder == runtime.expected_python_encoder_version
+	var runtime_manifest_current: bool = (
+		runtime_manifest_encoder == DeepAIRuntime.ENCODER_VERSION
 	)
 	if runtime.is_available():
 		var mismatched_native_runtime := DeepAIRuntime.new()
@@ -3603,10 +3601,10 @@ func _run_phase_four_foundation_tests() -> void:
 			"Deep AI accepted a native ONNX Runtime outside the release contract",
 		)
 		var original_opset := int(runtime.manifest.get("opset", 0))
-		runtime.manifest["opset"] = runtime.expected_onnx_opset + 1
+		runtime.manifest["opset"] = int(release_onnx.get("opset", 0)) + 1
 		_check(
 			not runtime.load_for_deck("fire")
-			and runtime.last_error == "runtime_release_manifest_mismatch",
+			and runtime.last_error == "runtime_onnx_contract_mismatch",
 			"Deep AI accepted an ONNX runtime manifest outside the release contract",
 		)
 		runtime.manifest["opset"] = original_opset
@@ -3621,95 +3619,21 @@ func _run_phase_four_foundation_tests() -> void:
 			var release_decks: Array[String] = []
 			release_decks.assign(release_manifest.get("release_decks", []))
 			var runtime_models: Dictionary = runtime.manifest.get("models", {})
+			var runtime_routes: Dictionary = runtime.manifest.get(
+				"deck_routes", {})
 			_check(
-				release_decks.size() == int(release_manifest.get("model_count", 0))
-				and runtime_models.size() == release_decks.size(),
+				int(release_manifest.get("model_count", 0)) == 1
+				and runtime_models.size() == 1
+				and runtime_models.has("universal")
+				and runtime_routes.size() == release_decks.size(),
 				"Release and ONNX runtime manifests disagree on the model count",
 			)
 			for deck_key in release_decks:
-				_check(runtime_models.has(deck_key), (
-					"ONNX runtime manifest is missing release deck %s" % deck_key))
+				_check(str(runtime_routes.get(deck_key, "")) == "universal", (
+					"ONNX runtime manifest is missing release route %s" % deck_key))
 				_check(runtime.load_for_deck(deck_key), (
 					"Unable to load %s ONNX model: %s" % [deck_key, runtime.last_error]))
-				var backend: Variant = runtime.get_backend()
-				if backend == null:
-					continue
-				var inference: Dictionary = backend.call(
-					"infer",
-					PackedFloat32Array(fixture["expected"]["state_numeric"]),
-					PackedInt64Array(fixture["expected"]["state_cards"]),
-					PackedFloat32Array(action_numeric),
-					PackedInt64Array(action_cards),
-					PackedFloat32Array(choice_numeric),
-					PackedInt64Array(choice_cards),
-				)
-				_check(inference.get("success", false), (
-					"Native ONNX inference failed for %s: %s" % [
-						deck_key, inference.get("error", "")]))
-				_check(
-					inference.get("action_logits", []).size() == fixture["actions"].size(),
-					"Native ONNX action output size mismatch",
-				)
-				_check(
-					inference.get("choice_logits", []).size() == request.options.size(),
-					"Native ONNX choice output size mismatch",
-				)
-				var outputs_are_finite := is_finite(float(inference.get("value", NAN)))
-				for output_name in ["action_logits", "choice_logits"]:
-					for output_value in inference.get(output_name, []):
-						outputs_are_finite = (
-							outputs_are_finite and is_finite(float(output_value)))
-				_check(
-					outputs_are_finite,
-					"Native ONNX inference returned NaN or Inf for %s" % deck_key,
-				)
-				if deck_key == release_decks[0]:
-					var poisoned_state := PackedFloat32Array(
-						fixture["expected"]["state_numeric"])
-					poisoned_state[0] = NAN
-					var rejected_output: Dictionary = backend.call(
-						"infer",
-						poisoned_state,
-						PackedInt64Array(fixture["expected"]["state_cards"]),
-						PackedFloat32Array(action_numeric),
-						PackedInt64Array(action_cards),
-						PackedFloat32Array(choice_numeric),
-						PackedInt64Array(choice_cards),
-					)
-					_check(
-						not rejected_output.get("success", false)
-						and str(rejected_output.get("error", "")).begins_with(
-							"non_finite_model_output:"),
-						"Native ONNX inference silently accepted a non-finite model output",
-					)
-				_check(
-					str(backend.call("get_execution_provider")) == "CPUExecutionProvider",
-					"Native ONNX provider mismatch",
-				)
 				runtime.unload()
-		var invalid_backend: Variant = ClassDB.instantiate("OnnxInference")
-		var fire_model: Dictionary = Dictionary(
-			Dictionary(runtime.manifest.get("models", {})).get("fire", {}))
-		var replacement_manifest := {
-			"opset": int(runtime.manifest.get("opset", 0)),
-			"state_numeric_size": int(runtime.manifest.get("state_numeric_size", 0)),
-			"state_card_slots": int(runtime.manifest.get("state_card_slots", 0)),
-			"action_numeric_size": int(runtime.manifest.get("action_numeric_size", 0)),
-			"choice_head_enabled": bool(fire_model.get("choice_head_enabled", false)),
-			"onnx_sha256": str(fire_model.get("onnx_sha256", "")),
-		}
-		_check(
-			invalid_backend.call(
-				"load_model", str(fire_model.get("onnx_path", "")), replacement_manifest),
-			"Native ONNX replacement test could not load its initial model",
-		)
-		replacement_manifest["onnx_sha256"] = "invalid"
-		_check(
-			not invalid_backend.call(
-				"load_model", str(fire_model.get("onnx_path", "")), replacement_manifest)
-			and not invalid_backend.call("is_loaded"),
-			"Failed native ONNX replacement left a stale model loaded",
-		)
 
 	var state := _battle_state()
 	state.active_player_idx = 0
@@ -3767,11 +3691,11 @@ func _run_phase_four_foundation_tests() -> void:
 		)
 		_check(deep_result.get("success", false), "Deep AI did not return an action")
 		_check(
-			str(deep_result.get("engine_id", ""))
+			str(deep_result.get("planner", ""))
 			== DeepRootISMCTS.PLANNER_ID
 			and int(deep_result.get("simulations", -1))
-			in [0, DeepRootISMCTS.SIMULATIONS],
-			"Deep AI did not use the production root-search contract",
+			>= DeepRootISMCTS.WINDOWS_MIN_SIMULATIONS,
+			"Deep AI did not use the production information-set search contract",
 		)
 		_check(
 			not deep_result.get("deep_fallback", true),
@@ -4030,7 +3954,8 @@ func _run_ai_runtime_v5_tests(
 		"shuffle_from_discard", "zinnia", "bench_damage_target",
 		"damage_target", "place_counters_self_discard", "select_bench",
 		"select_energy_source", "select_energy_target", "select_heal_target",
-		"select_opponent_bench", "select_attachment", "select_retreat_payment",
+		"select_opponent_bench", "select_prize_energy_target",
+		"select_attachment", "select_retreat_payment",
 		"distribute_energy", "confirm", "confirm_trigger", "select_prize",
 		"choose_mulligan_draw_count", "choose_turn_order", "coin_flip",
 		"choose_trigger_order",
@@ -4240,51 +4165,21 @@ func _run_ai_runtime_v5_tests(
 	_run_deep_root_contract_tests(catalog)
 
 
-func _run_deep_root_contract_tests(catalog: CardCatalog) -> void:
+func _run_deep_root_contract_tests(_catalog: CardCatalog) -> void:
 	_check(
-		DeepRootISMCTS.PLANNER_ID == "deep_root_ismcts_v1"
-		and DeepRootISMCTS.SCHEMA_VERSION == 1
-		and DeepRootISMCTS.SIMULATIONS == 64
+		DeepRootISMCTS.PLANNER_ID == "infoset_puct_v2"
+		and DeepRootISMCTS.SCHEMA_VERSION == 2
 		and is_equal_approx(DeepRootISMCTS.C_PUCT, 1.4)
-		and DeepRootISMCTS.MAX_DEPTH == 16
-		and DeepRootISMCTS.OPPONENT_BRANCH_LIMIT == 6
-		and is_equal_approx(DeepRootISMCTS.NEURAL_PRIOR_WEIGHT, 0.75)
-		and is_equal_approx(DeepRootISMCTS.CHALLENGE_PRIOR_WEIGHT, 0.25)
+		and DeepRootISMCTS.WINDOWS_MIN_SIMULATIONS == 32
+		and DeepRootISMCTS.WINDOWS_TARGET_SIMULATIONS == 128
+		and DeepRootISMCTS.WINDOWS_MAX_SIMULATIONS == 256
+		and DeepRootISMCTS.WINDOWS_LEAF_BATCH_SIZE == 8
+		and DeepRootISMCTS.ANDROID_MIN_SIMULATIONS == 16
+		and DeepRootISMCTS.ANDROID_TARGET_SIMULATIONS == 64
+		and DeepRootISMCTS.ANDROID_MAX_SIMULATIONS == 128
+		and DeepRootISMCTS.ANDROID_LEAF_BATCH_SIZE == 4
 		and DeepRootISMCTS.WATCHDOG_USEC == 2000000,
-		"Deep root planner constants differ from the release contract",
-	)
-	_check(
-		DeepRootISMCTS.new()._derive_seed(17, 42, 1, 7)
-		== 1639819819,
-		"Godot/Python Deep simulation seed derivation diverged",
-	)
-	var optional := ChoiceView.new(
-		"deep-choice",
-		0,
-		"select_card",
-		0,
-		"Choose up to two.",
-		[
-			{"option_id": "first", "label": "first"},
-			{"option_id": "second", "label": "second"},
-			{"option_id": "cost", "label": "cost"},
-		],
-		0,
-		2,
-		false,
-		true,
-	)
-	var choice := DeepRootISMCTS.new()._highest_scoring_legal_choice(
-		optional,
-		PackedFloat32Array([3.0, 2.0, -9.0]),
-		catalog,
-	)
-	_check(
-		choice.option_ids == ["first", "second"]
-		and not choice.cancelled
-		and AIChoiceSelector.response_is_shape_legal(
-			optional, choice.option_ids, catalog, choice.cancelled),
-		"Deep Choice head did not select the highest-scoring legal combination",
+		"Information-set PUCT constants differ from the release contract",
 	)
 	var state := GameState.new()
 	state.public_deck_keys = ["fire", "water"]
@@ -4300,7 +4195,7 @@ func _run_deep_root_contract_tests(catalog: CardCatalog) -> void:
 			"deck_key": "fire",
 			"actions": [],
 		},
-		UnloadedDeepInference.new(),
+		null,
 	)
 	_check(
 		bool(fallback.get("deep_fallback", false))
@@ -13519,6 +13414,55 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	)
 
 	state = _effect_state()
+	state.players[0].deck = ["svi-chim", "svi-chim", "sv1-ener-2"]
+	for bench_index in range(4):
+		state.players[0].bench[bench_index] = PokemonState.new("sv2-delib")
+	state.players[0].bench[4] = null
+	stack = ResolutionStack.new()
+	stack.push_effect({
+		"op": "search_cards",
+		"args": {
+			"from_zone": "deck",
+			"filter": "basic_pokemon",
+			"destination": "bench",
+			"count": 2,
+			"min_select": 0,
+		},
+		"branches": {},
+	}, 0, "active")
+	step = RulesTestHarness.effect_engine_for(engine).resolve(
+		state, stack, PortableRandomSource.new(202606312))
+	_check(
+		step.success
+		and step.pending_choice != null
+		and step.pending_choice.max_select == 1
+		and step.pending_choice.options.size() == 2,
+		"Bench search did not cap duplicate choices to the one open slot",
+	)
+	step = RulesTestHarness.effect_engine_for(engine).apply_choice(
+		state,
+		ResolutionStack.from_dict(state.resolution_stack),
+		ChoiceResponse.new(
+			step.pending_choice.request_id,
+			[str(step.pending_choice.options[1]["option_id"])],
+		),
+		PortableRandomSource.new(202606313),
+	)
+	var remaining_chim := state.players[0].deck.count("svi-chim")
+	var benched_chim := 0
+	for pokemon in state.players[0].bench:
+		if pokemon != null and pokemon.card_id == "svi-chim":
+			benched_chim += 1
+	_check(
+		step.success
+		and state.players[0].bench[4] != null
+		and state.players[0].bench[4].card_id == "svi-chim"
+		and remaining_chim == 1
+		and remaining_chim + benched_chim == 2,
+		"Bench search lost a duplicate card when only one slot was open",
+	)
+
+	state = _effect_state()
 	state.players[0].hand = []
 	state.players[0].discard = ["sv1-ener-1", "svf-potion"]
 	state.players[0].deck = ["sv1-ener-2"]
@@ -14105,8 +14049,12 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		"Native attach_energy bench distribution did not expose optional distribution",
 	)
 	var bench_distribution_ids: Array[String] = []
-	for option in step.pending_choice.options:
-		bench_distribution_ids.append(str(option["option_id"]))
+	for energy_index in range(2):
+		bench_distribution_ids.append(_choice_id_for_slot_and_energy(
+			step.pending_choice,
+			"bench_%d" % energy_index,
+			energy_index,
+		))
 	step = RulesTestHarness.effect_engine_for(engine).apply_choice(
 		state,
 		ResolutionStack.from_dict(state.resolution_stack),
@@ -14140,16 +14088,15 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		and step.pending_choice.max_select == 3,
 		"Native attach_energy going-second bonus did not expose three attachments",
 	)
-	var active_attach_id := ""
+	var active_attach_ids: Array[String] = []
 	for option_value in step.pending_choice.options:
 		var option: Dictionary = option_value
 		if str(option.get("value", {}).get("slot", "")) == "active":
-			active_attach_id = str(option.get("option_id", ""))
-			break
+			active_attach_ids.append(str(option.get("option_id", "")))
 	step = RulesTestHarness.effect_engine_for(engine).apply_choice(
 		state,
 		ResolutionStack.from_dict(state.resolution_stack),
-		ChoiceResponse.new(step.pending_choice.request_id, [active_attach_id, active_attach_id, active_attach_id]),
+		ChoiceResponse.new(step.pending_choice.request_id, active_attach_ids),
 		PortableRandomSource.new(2026063283),
 	)
 	_check(step.success, "Native attach_energy going-second choice failed: %s" % step.message)
@@ -14173,8 +14120,9 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 	step = RulesTestHarness.effect_engine_for(engine).resolve(state, stack, PortableRandomSource.new(2026063284))
 	_check(
 		step.success and step.pending_choice != null
-		and step.pending_choice.options.size() == 1
-		and str(step.pending_choice.options[0].get("value", {}).get("slot", "")) == "bench_0",
+		and step.pending_choice.options.size() == 2
+		and step.pending_choice.options.all(func(option: Dictionary) -> bool:
+			return str(option.get("value", {}).get("slot", "")) == "bench_0"),
 		"Native attach_energy self_basic did not restrict targets to Basic Pokemon",
 	)
 	step = RulesTestHarness.effect_engine_for(engine).apply_choice(
@@ -14182,7 +14130,7 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		ResolutionStack.from_dict(state.resolution_stack),
 		ChoiceResponse.new(step.pending_choice.request_id, [
 			str(step.pending_choice.options[0]["option_id"]),
-			str(step.pending_choice.options[0]["option_id"]),
+			str(step.pending_choice.options[1]["option_id"]),
 		]),
 		PortableRandomSource.new(2026063285),
 	)
@@ -14268,8 +14216,12 @@ func _run_native_command_spec_tests(engine: GameEngine) -> void:
 		"Native attach_energy_from_discard distribution did not expose optional distribution",
 	)
 	var discard_distribution_ids: Array[String] = []
-	for option in step.pending_choice.options:
-		discard_distribution_ids.append(str(option["option_id"]))
+	for energy_index in range(2):
+		discard_distribution_ids.append(_choice_id_for_slot_and_energy(
+			step.pending_choice,
+			"bench_%d" % energy_index,
+			energy_index,
+		))
 	step = RulesTestHarness.effect_engine_for(engine).apply_choice(
 		state,
 		ResolutionStack.from_dict(state.resolution_stack),
@@ -17322,6 +17274,12 @@ func _canonical_golden_pending_option(option: Dictionary, player: int) -> Dictio
 		if kind == "attachment":
 			result["attachment_type"] = str(ref.get("attachment_type", ""))
 			result["index"] = int(ref.get("index", -1))
+		var stable_option_id := str(option.get("option_id", ""))
+		if (
+			stable_option_id.begins_with("energy:")
+			or stable_option_id.begins_with("rare_candy:")
+		):
+			result["option_id"] = stable_option_id
 		return result
 	var value: Dictionary = Dictionary(option.get("value", {}))
 	if not str(value.get("slot", "")).is_empty():
@@ -18314,8 +18272,10 @@ func _run_steel_rules_tests(
 	_check(step.success and step.pending_choice != null,
 		"Cobalion Follow-Up did not proceed from source selection to distribution")
 	var follow_up_target_request: ChoiceRequest = step.pending_choice
-	var follow_up_first := _choice_id_for_slot(follow_up_target_request, "bench_0")
-	var follow_up_second := _choice_id_for_slot(follow_up_target_request, "bench_1")
+	var follow_up_first := _choice_id_for_slot_and_energy(
+		follow_up_target_request, "bench_0", 0)
+	var follow_up_second := _choice_id_for_slot_and_energy(
+		follow_up_target_request, "bench_1", 1)
 	var duplicate_step := RulesTestHarness.apply_choice(engine,
 		follow_up_state,
 		follow_up_target_request,
@@ -18730,6 +18690,38 @@ func _choice_id_for_slot(
 			return str(option.get("option_id", ""))
 	if report_missing:
 		_check(false, "Choice request %s did not include slot %s" % [request.request_type, slot])
+	return ""
+
+
+func _choice_id_for_slot_and_energy(
+	request: ChoiceRequest,
+	slot: String,
+	energy_index: int,
+) -> String:
+	for option_value in request.options:
+		var option: Dictionary = option_value
+		var value: Dictionary = option.get("value", {})
+		var option_id := str(option.get("option_id", ""))
+		var encoded_energy_index := -1
+		var parts := option_id.split(":", false, 2)
+		if parts.size() >= 2 and parts[0] == "energy" and parts[1].is_valid_int():
+			encoded_energy_index = int(parts[1])
+		var ref: Dictionary = option.get("ref", {})
+		if (
+			(
+				str(value.get("slot", "")) == slot
+				or str(ref.get("slot", "")) == slot
+			)
+			and int(value.get("energy_index", encoded_energy_index))
+				== energy_index
+		):
+			return option_id
+	_check(false, "Choice request %s did not include slot %s for energy %d: %s" % [
+		request.request_type,
+		slot,
+		energy_index,
+		JSON.stringify(request.options),
+	])
 	return ""
 
 

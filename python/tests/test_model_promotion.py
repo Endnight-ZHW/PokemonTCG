@@ -443,45 +443,32 @@ class ModelPromotionTransactionTests(unittest.TestCase):
             self.assertEqual(outside.read_bytes(), b"must-not-overwrite")
 
     def test_pipeline_stages_onnx_and_commits_only_after_runtime_tests(self):
-        source = (REPO_ROOT / "tools" / "train_deep_ai_v10.ps1").read_text(
+        trainer = (
+            REPO_ROOT / "python" / "engine" / "ai" / "dl" / "alphazero_v2.py"
+        ).read_text(
             encoding="utf-8"
         )
-        self.assertIn("'--output-root', $runtimeStageRoot", source)
-        self.assertIn(
-            "Assert-PathUnderRoot -Root $buildRoot -Path $outputRootPath",
-            source,
-        )
-        self.assertIn("'--runtime-source', $runtimeStageRoot", source)
-        self.assertIn("'--defer-commit'", source)
-        self.assertIn("'--commit', '--transaction-root'", source)
-        self.assertIn("build_godot.ps1", source)
-        self.assertIn("-Target all -Configuration debug", source)
-        self.assertIn("smoke_godot_build.ps1", source)
-        self.assertIn("-RequireAndroidDevice:$Promote", source)
-        self.assertIn(
-            "& (Join-Path $PSScriptRoot 'smoke_godot_build.ps1')",
-            source,
-        )
-        self.assertGreaterEqual(
-            source.count("'--rollback', '--transaction-root'"),
-            2,
-        )
-        self.assertLess(
-            source.index("'--defer-commit'"),
-            source.index("'--commit', '--transaction-root'"),
-        )
-        self.assertLess(
-            source.index("test_godot_ai.ps1"),
-            source.index("'--commit', '--transaction-root'"),
-        )
-        self.assertLess(
-            source.index("build_godot.ps1"),
-            source.index("'--commit', '--transaction-root'"),
-        )
-        self.assertLess(
-            source.index("smoke_godot_build.ps1"),
-            source.index("'--commit', '--transaction-root'"),
-        )
+        self.assertIn("release_staging", trainer)
+        self.assertIn("export_universal(", trainer)
+        self.assertIn("release-evidence.json", trainer)
+
+        promotion = (
+            REPO_ROOT / "python" / "scripts" / "promote_alphazero_v2.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("validate_release_evidence_file", promotion)
+        self.assertIn("release_evidence_not_passed", promotion)
+        self.assertIn('"state": "prepared"', promotion)
+        self.assertIn('journal["state"] = "committed"', promotion)
+        self.assertIn('journal["state"] = "rolled_back"', promotion)
+        self.assertIn("os.replace(temporary, target)", promotion)
+
+        finalizer = (
+            REPO_ROOT
+            / "python"
+            / "scripts"
+            / "finalize_alphazero_v2_evidence.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("finalize_release_evidence", finalizer)
 
 
 if __name__ == "__main__":

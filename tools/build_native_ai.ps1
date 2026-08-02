@@ -3,7 +3,9 @@ param(
     [ValidateSet('windows', 'android', 'all')]
     [string]$Target = 'all',
     [ValidateSet('debug', 'release', 'all')]
-    [string]$Configuration = 'all'
+    [string]$Configuration = 'all',
+    [ValidateRange(1, 64)]
+    [int]$Jobs = 4
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,6 +42,7 @@ foreach ($platform in $targets) {
         $godotTarget = if ($config -eq 'release') { 'template_release' } else { 'template_debug' }
         $common = @(
             '-m', 'SCons',
+            "-j$Jobs",
             "--directory=$sourceRoot",
             "godot_cpp_dir=$godotCpp",
             "ort_root=$ortRoot",
@@ -73,6 +76,40 @@ foreach ($platform in $targets) {
         if ($LASTEXITCODE -ne 0) {
             throw "Native AI build failed for $platform $config."
         }
+    }
+}
+
+$buildPythonBinding = (
+    $targets -contains 'windows' -and
+    ($configs -contains 'release')
+)
+if ($buildPythonBinding) {
+    $pybindInclude = & $python -c `
+        'import pybind11; print(pybind11.get_include())'
+    if (-not $pybindInclude -or -not (Test-Path -LiteralPath $pybindInclude)) {
+        throw 'pybind11 is missing from the pinned AI Python toolchain.'
+    }
+    $pythonBindingRoot = Join-Path $sourceRoot 'python'
+    $quotedBindingArgs = @(
+        '-m', 'SCons',
+        "-j$Jobs",
+        "--directory=$pythonBindingRoot",
+        "python_root=$(Split-Path -Parent $python)",
+        "pybind11_root=$pybindInclude",
+        "output_root=$(Join-Path $repoRoot 'python')"
+    ) | ForEach-Object {
+        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+    }
+    if (-not (Test-Path -LiteralPath $vsDevCmd)) {
+        throw 'Visual C++ Build Tools are missing.'
+    }
+    $bindingCommand = (
+        "`"$vsDevCmd`" -arch=x64 -host_arch=x64 && " +
+        "`"$python`" $($quotedBindingArgs -join ' ')"
+    )
+    & cmd.exe /d /s /c $bindingCommand
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Native AlphaZero Python binding build failed.'
     }
 }
 

@@ -1453,7 +1453,7 @@ class GateTests(unittest.TestCase):
             action_counts = row["action_decisions_by_strategy"]
             row["decision_engine_counts_by_strategy"] = {
                 "A": (
-                    {"deep_root_ismcts_v1": action_counts["A"]}
+                    {"infoset_puct_v2": action_counts["A"]}
                     if action_counts["A"]
                     else {}
                 ),
@@ -1564,7 +1564,7 @@ class InterfaceAndProfileTests(unittest.TestCase):
         self.assertEqual(first["protocol_id"], PROTOCOL_ID)
         self.assertEqual(len(first["simulation_fingerprint"]), 64)
         self.assertEqual(len(first["analysis_fingerprint"]), 64)
-        self.assertEqual(first["product_version"], "0.6.0")
+        self.assertEqual(first["product_version"], "0.7.0")
         self.assertEqual(first["release_ai_evaluation_schema"], 7)
         for component in (
             "rules",

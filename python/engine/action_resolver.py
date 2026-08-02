@@ -327,7 +327,11 @@ class ActionResolver:
         result = ActionResult(True, msg)
         if trainer_effects:
             effect_result = self._execute_effects(
-                trainer_effects, player_idx, "active"
+                trainer_effects,
+                player_idx,
+                params.get("target_slot", "active")
+                if card.is_trainer_tool
+                else "active",
             )
             if not effect_result.success:
                 # Effect failed — return card to hand

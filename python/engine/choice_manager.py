@@ -31,6 +31,7 @@ class VMChoiceManager:
         min_select = max(0, int(request.min_select))
         max_select = max(0, int(request.max_select))
         allow_duplicates = bool(request.allow_duplicates)
+        continuation = dict(getattr(request, "continuation", {}) or {})
         if request.request_type == "coin_flip":
             # Coin outcomes were consumed by the command under the bound
             # transaction RNG.  This request is an animation/display
@@ -42,7 +43,12 @@ class VMChoiceManager:
                 min_select = max_select = 1
             else:
                 amount = max(0, len(request.card_list))
-                if amount > 1 and request.min_select == 1 and request.max_select == 1:
+                if (
+                    amount > 1
+                    and request.min_select == 1
+                    and request.max_select == 1
+                    and not bool(continuation.get("explicit_bounds"))
+                ):
                     # Backward compatibility for older handlers that meant
                     # "assign every listed energy" but did not set bounds.
                     min_select = max_select = amount
@@ -67,7 +73,6 @@ class VMChoiceManager:
             if request.request_type == "coin_flip"
             else min_select <= 0 or bool(getattr(request, "can_cancel", False))
         )
-        continuation = dict(getattr(request, "continuation", {}) or {})
         card_list_ids = [
             str(getattr(card, "api_id", card) or "")
             for card in request.card_list
@@ -508,6 +513,19 @@ class VMChoiceManager:
             ]
         if request.request_type in {"select_attachment", "select_retreat_payment"}:
             return [option.ref for option in selected if isinstance(option.ref, AttachmentRef)]
+        if str((request.continuation or {}).get("kind", "")) in {
+            "look_top_deck",
+            "look_top_attach_energy",
+        }:
+            # Top-deck windows may expose multiple copies of the same card
+            # object. Preserve their revision-scoped physical CardRefs so the
+            # continuation does not collapse a later duplicate onto the first
+            # identical candidate by object/API-ID equality.
+            return [
+                option.ref
+                for option in selected
+                if isinstance(option.ref, CardRef)
+            ]
         pokemon_refs = [option.ref for option in selected if isinstance(option.ref, PokemonRef)]
         if pokemon_refs:
             return pokemon_refs
@@ -784,6 +802,32 @@ class VMChoiceManager:
 
     def _board_card_refs(self, state: GameState, request: ActionRequest):
         candidate_ids = [getattr(card, "api_id", "") for card in request.card_list]
+        continuation = request.continuation or {}
+        target_slots = continuation.get("target_slots", [])
+        if (
+            isinstance(target_slots, list)
+            and len(target_slots) == len(request.card_list)
+            and all(isinstance(slot, str) and slot for slot in target_slots)
+        ):
+            player_idx = self._choice_target_player_idx(state, request)
+            precise_refs = []
+            for slot, expected_id, card in zip(
+                target_slots,
+                candidate_ids,
+                request.card_list,
+            ):
+                pokemon = state.get_player(player_idx).get_pokemon(slot)
+                if (
+                    pokemon is None
+                    or pokemon.card.api_id != expected_id
+                ):
+                    raise ValueError(
+                        "board choice no longer matches its target slot"
+                    )
+                precise_refs.append(
+                    (PokemonRef(player_idx, slot, expected_id), card)
+                )
+            return precise_refs
         refs = []
         player_order = [self._choice_target_player_idx(state, request)]
         if request.target_player == "" and request.from_zone == "board":

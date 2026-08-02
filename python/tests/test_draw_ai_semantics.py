@@ -1,6 +1,5 @@
 import unittest
 
-from engine.ai.dl.training import _terminal_reward
 from engine.ai.planner import terminal_outcome_value
 from engine.ai.training import (
     _finalize_stats,
@@ -25,7 +24,6 @@ class DrawAISemanticsTests(unittest.TestCase):
         self.assertEqual(terminal_outcome_value(self.state, 1), 0.0)
         self.assertEqual(terminal_training_score(self.state, 0), 0.0)
         self.assertEqual(terminal_training_score(self.state, 1), 0.0)
-        self.assertEqual(_terminal_reward(None, 0.0), 0.0)
 
     def test_draw_is_half_a_point_without_score_penalty(self):
         score, stats = _score_game(-1, 0.0)

@@ -290,6 +290,9 @@ class ChooseHealDamage:
                     "kind": "choose_heal_damage",
                     "target_player_idx": player_idx,
                     "amount": int(self.amount or 0),
+                    "target_slots": [
+                        slot_name for slot_name, _pokemon in injured
+                    ],
                 },
             ),
         )

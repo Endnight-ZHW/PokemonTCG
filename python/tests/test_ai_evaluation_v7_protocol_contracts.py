@@ -97,7 +97,7 @@ def _deep_decision_row() -> dict:
             for strategy in ("A", "B")
         },
         "decision_engine_counts_by_strategy": {
-            "A": {"deep_root_ismcts_v1": 1},
+            "A": {"infoset_puct_v2": 1},
             "B": {"turn_beam_v2": 1},
         },
     })

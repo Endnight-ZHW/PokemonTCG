@@ -1,6 +1,7 @@
 extends SceneTree
 
 const FIXTURE_PATH := "res://tests/fixtures/vm_native_golden.json"
+const CARDS_PATH := "res://data/cards.json"
 
 var failures: Array[String] = []
 
@@ -22,6 +23,15 @@ func _run_tests() -> void:
 	var catalog := CardCatalog.new(true)
 	var game_engine := GameEngine.new(catalog)
 	var effect_engine := RulesTestHarness.effect_engine_for(game_engine)
+	_check(
+		ClassDB.class_exists("NativeDeepSearch"),
+		"NativeDeepSearch GDExtension class is unavailable",
+	)
+	if not ClassDB.class_exists("NativeDeepSearch"):
+		return
+	var native_kernel: Variant = ClassDB.instantiate("NativeDeepSearch")
+	native_kernel.vm_set_cards(_read_json(CARDS_PATH))
+	var native_contract: Dictionary = native_kernel.vm_contract()
 	var runtime_ops: Array = effect_engine.native_command_ops()
 	runtime_ops.sort()
 	var registered_ops: Array = fixture.get("registered_ops", [])
@@ -48,16 +58,33 @@ func _run_tests() -> void:
 		and _deep_equal(runtime_ops, fixture.get("executed_ops", [])),
 		"native VM golden op inventory differs from the frozen Godot registry",
 	)
+	_check(
+		bool(native_contract.get("complete", false))
+		and int(native_contract.get("card_count", 0)) == 137
+		and int(native_contract.get("implemented_op_count", 0)) == 80
+		and int(native_contract.get("required_op_count", 0)) == 80,
+		"C++ native VM kernel is incomplete or has the wrong card catalog",
+	)
 	for op_value in runtime_ops:
 		var op := str(op_value)
 		_check(effect_engine.supports_command_handler(op),
 			"native VM golden op has no executable Godot handler: %s" % op)
 		_check(cases.has(op), "native VM golden case is missing: %s" % op)
 		if cases.has(op):
-			_run_case(op, Dictionary(cases[op]), game_engine)
+			_run_case(
+				op,
+				Dictionary(cases[op]),
+				game_engine,
+				native_kernel,
+			)
 
 
-func _run_case(op: String, row: Dictionary, game_engine: GameEngine) -> void:
+func _run_case(
+	op: String,
+	row: Dictionary,
+	game_engine: GameEngine,
+	native_kernel: Variant,
+) -> void:
 	var effect_engine := RulesTestHarness.effect_engine_for(game_engine)
 	var descriptor: Dictionary = row.get("descriptor", {})
 	var spec: Dictionary = row.get("command_spec", {})
@@ -188,6 +215,125 @@ func _run_case(op: String, row: Dictionary, game_engine: GameEngine) -> void:
 					_display_value(choice_actual.get(field)),
 				]
 			)
+	_run_cpp_native_case(op, row, native_kernel)
+
+
+func _run_cpp_native_case(
+	op: String,
+	row: Dictionary,
+	native_kernel: Variant,
+) -> void:
+	var result: Dictionary = native_kernel.vm_execute(
+		Dictionary(row.get("initial_state", {})),
+		Dictionary(row.get("command_spec", {})),
+		int(row.get("actor", 0)),
+		str(row.get("source_slot", "active")),
+		int(row.get("portable_seed", 0)),
+		str(row.get("context_mode", "ability")),
+	)
+	_compare_cpp_native_result(
+		op,
+		-1,
+		Dictionary(row.get("expected", {})),
+		result,
+	)
+	var choice_trace: Array = row.get("choice_trace", [])
+	for choice_index in range(choice_trace.size()):
+		var choice_row: Dictionary = choice_trace[choice_index]
+		var expected_request: Dictionary = choice_row.get("request", {})
+		if not _deep_equal(result.get("pending", {}), expected_request):
+			failures.append(
+				"C++ native VM request mismatch %s[%d] paths=%s" % [
+					op,
+					choice_index,
+					JSON.stringify(_diff_paths(
+						expected_request,
+						result.get("pending", {}),
+					)),
+				]
+			)
+			return
+		var response: Dictionary = choice_row.get("response", {})
+		result = native_kernel.vm_resume(
+			Dictionary(result.get("state", {})),
+			Dictionary(result.get("context", {})),
+			Dictionary(result.get("continuation", {})),
+			Array(response.get("selected_options", [])),
+			bool(response.get("cancelled", false)),
+			int(result.get("rng_state", 0)),
+		)
+		_compare_cpp_native_result(
+			op,
+			choice_index,
+			Dictionary(choice_row.get("expected", {})),
+			result,
+		)
+
+
+func _compare_cpp_native_result(
+	op: String,
+	choice_index: int,
+	expected: Dictionary,
+	result: Dictionary,
+) -> void:
+	var state: Dictionary = result.get("state", {})
+	var actual := {
+		"success": bool(result.get("success", false)),
+		"error_code": str(result.get("error_code", "")),
+		"revision": int(state.get("revision", 0)),
+		"rng_state": int(result.get("rng_state", 0)),
+		"event_types": result.get("event_types", []),
+		"pending": result.get("pending", {}),
+		"state": _native_state_projection(state),
+		"context": result.get("context", {}),
+		"modifier": result.get("modifier", {}),
+	}
+	for field in expected:
+		if _deep_equal(actual.get(field), expected[field]):
+			continue
+		var location := (
+			"%s[%d].%s" % [op, choice_index, str(field)]
+			if choice_index >= 0
+			else "%s.%s" % [op, str(field)]
+		)
+		failures.append(
+			"C++ native VM semantic mismatch %s paths=%s\nexpected=%s\nactual=%s" % [
+				location,
+				JSON.stringify(_diff_paths(expected[field], actual.get(field))),
+				_display_value(expected[field]),
+				_display_value(actual.get(field)),
+			]
+		)
+
+
+func _native_state_projection(source: Dictionary) -> Dictionary:
+	var payload: Dictionary = source.duplicate(true)
+	payload.erase("action_log")
+	payload.erase("resolution_stack")
+	payload.erase("setup_ready")
+	payload.erase("processed_action_ids")
+	for player_value in payload.get("players", []):
+		var player: Dictionary = player_value
+		var rows: Array = [player.get("active")]
+		rows.append_array(player.get("bench", []))
+		for pokemon_value in rows:
+			if pokemon_value is Dictionary:
+				var pokemon: Dictionary = pokemon_value
+				pokemon.erase("modifiers")
+				for legacy_key in [
+					"damage_prevented",
+					"all_prevented",
+					"outgoing_damage_reduction",
+					"attack_locked",
+					"attack_locked_names",
+					"dazzled",
+				]:
+					pokemon.erase(legacy_key)
+				if pokemon.get("used_abilities") is Dictionary:
+					var used: Array = Dictionary(pokemon["used_abilities"]).keys()
+					used.sort()
+					pokemon["used_abilities"] = used
+	return payload
 
 
 func _selected_option_ids(
@@ -208,8 +354,17 @@ func _selected_option_ids(
 				continue
 			if not request.allow_duplicates and used.has(option_id):
 				continue
+			var canonical := _canonical_pending_option(
+				option,
+				request.player,
+			)
+			# Older trace steps describe the selected entity only. Stable
+			# option IDs are asserted by the pending envelope above; omit that
+			# new discriminator here when binding an entity-only trace.
+			if not semantic.has("option_id"):
+				canonical.erase("option_id")
 			if _deep_equal(
-				_canonical_pending_option(option, request.player),
+				canonical,
 				semantic,
 			):
 				matched_id = option_id
@@ -316,12 +471,6 @@ func _pending_projection(stack: ResolutionStack, op: String) -> Dictionary:
 			request_type = "search_any_switch"
 	if op == "draw_and_attach_energy":
 		continuation_kind = "draw_attach_distribution"
-		allow_duplicates = true
-		var unique_options: Array = []
-		for option in options:
-			if not unique_options.has(option):
-				unique_options.append(option)
-		options = unique_options
 	return {
 		"request_type": request_type,
 		"player": request.player,
@@ -388,6 +537,12 @@ func _canonical_pending_option(option: Dictionary, player: int) -> Dictionary:
 		if kind == "attachment":
 			result["attachment_type"] = str(ref.get("attachment_type", ""))
 			result["index"] = int(ref.get("index", -1))
+		var stable_option_id := str(option.get("option_id", ""))
+		if (
+			stable_option_id.begins_with("energy:")
+			or stable_option_id.begins_with("rare_candy:")
+		):
+			result["option_id"] = stable_option_id
 		return result
 	var value_variant: Variant = option.get("value")
 	if value_variant is Dictionary and not str(value_variant.get("slot", "")).is_empty():

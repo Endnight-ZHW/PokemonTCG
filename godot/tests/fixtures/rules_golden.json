@@ -8959,24 +8959,28 @@
             {
               "card_id": "svm-zacian",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "svm-zacian",
               "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "svm-zamazenta",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
               "player": 0,
               "slot": "bench_1"
             },
             {
               "card_id": "svm-zamazenta",
               "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
               "player": 0,
               "slot": "bench_1"
             }
@@ -9199,24 +9203,28 @@
               {
                 "card_id": "svm-zacian",
                 "kind": "pokemon",
+                "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
                 "player": 0,
                 "slot": "bench_0"
               },
               {
                 "card_id": "svm-zacian",
                 "kind": "pokemon",
+                "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
                 "player": 0,
                 "slot": "bench_0"
               },
               {
                 "card_id": "svm-zamazenta",
                 "kind": "pokemon",
+                "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
                 "player": 0,
                 "slot": "bench_1"
               },
               {
                 "card_id": "svm-zamazenta",
                 "kind": "pokemon",
+                "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
                 "player": 0,
                 "slot": "bench_1"
               }
@@ -9438,6 +9446,7 @@
           {
             "card_id": "svm-zamazenta",
             "kind": "pokemon",
+            "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
             "player": 0,
             "slot": "bench_1"
           }
@@ -9989,24 +9998,28 @@
             {
               "card_id": "svm-zacian",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "svm-zacian",
               "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "svm-zamazenta",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
               "player": 0,
               "slot": "bench_1"
             },
             {
               "card_id": "svm-zamazenta",
               "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
               "player": 0,
               "slot": "bench_1"
             }
@@ -10229,24 +10242,28 @@
               {
                 "card_id": "svm-zacian",
                 "kind": "pokemon",
+                "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
                 "player": 0,
                 "slot": "bench_0"
               },
               {
                 "card_id": "svm-zacian",
                 "kind": "pokemon",
+                "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_0:svm-zacian",
                 "player": 0,
                 "slot": "bench_0"
               },
               {
                 "card_id": "svm-zamazenta",
                 "kind": "pokemon",
+                "option_id": "energy:0:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
                 "player": 0,
                 "slot": "bench_1"
               },
               {
                 "card_id": "svm-zamazenta",
                 "kind": "pokemon",
+                "option_id": "energy:1:sv1-ener-8->pokemon:0:bench_1:svm-zamazenta",
                 "player": 0,
                 "slot": "bench_1"
               }

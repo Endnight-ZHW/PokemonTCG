@@ -2,66 +2,53 @@
   "android_version_code": 8,
   "compatible_model_count": 0,
   "deep_encoder": {
-    "action_numeric_size": 178,
-    "card_identity_mode": "vocab_v1",
-    "card_semantic_size": 53,
-    "card_vocab_sha256": "b6f3a3faa78dfbf0fb706fdfea26f6b92359dcc3fd937c61849ea359eb0dd0d9",
-    "card_vocab_size": 139,
-    "card_vocab_version": 1,
-    "state_card_slots": 128,
-    "state_numeric_size": 960
+    "candidate_numeric_size": 32,
+    "candidate_ref_fields": 4,
+    "entity_numeric_size": 16,
+    "entity_slots": 128,
+    "entity_type_fields": 4,
+    "state_global_size": 128,
+    "wdl_size": 3
   },
   "deep_fallback": "challenge",
   "deep_model": {
-    "allowed_variants": [
-      "v6_pooled",
-      "v6_cross_attention"
-    ],
-    "invariants": {
-      "action_numeric_size": 178,
-      "attention_heads": 4,
-      "candidate_cross_attention_heads": 4,
-      "card_bucket_count": 139,
-      "card_embed_dim": 32,
-      "card_identity_mode": "vocab_v1",
-      "choice_head_enabled": true,
-      "deck_embed_dim": 0,
-      "hidden_size": 384,
-      "num_decks": 10,
-      "state_card_slots": 128,
-      "state_norm": "layer",
-      "state_numeric_size": 960,
-      "use_attention": true,
-      "use_slot_embeddings": true,
-      "use_token_type_embeddings": true
+    "config": {
+      "dropout": 0.0,
+      "ffn_dimension": 512,
+      "heads": 8,
+      "layers": 4,
+      "model_dimension": 128,
+      "num_decks": 10
     },
-    "status": "research_selection_pending"
+    "status": "alphazero_v2_candidate_required",
+    "universal": true,
+    "variant": "universal_infoset_transformer_v2"
   },
   "deep_planner": {
     "c_puct": 1.4,
-    "challenge_prior_weight": 0.25,
+    "challenge_prior_weight": 0.0,
     "evidence_sha256": "",
-    "leaf_evaluator": "challenge",
-    "max_depth": 16,
-    "neural_prior_weight": 0.75,
-    "opponent_branch_limit": 6,
-    "planner_id": "deep_root_ismcts_v1",
-    "root_inference_calls": 1,
-    "schema_version": 1,
-    "simulations": 64,
-    "value_head_mode": "diagnostic_only",
-    "visit_tiebreak": "visits_prior_signature",
-    "watchdog_seconds": 2.0
+    "full_turn_rollout": false,
+    "leaf_evaluator": "neural_wdl",
+    "planner_id": "infoset_puct_v2",
+    "schema_version": 2,
+    "training_simulations": 128,
+    "value_head_mode": "search_backup"
   },
   "deep_runtime_enabled": false,
-  "format_version": 2,
+  "format_version": 3,
   "godot_version": "4.7.stable",
   "legacy_model_count": 10,
-  "model_count": 10,
+  "model_count": 0,
+  "native_ai": {
+    "abi_version": 1,
+    "production_ready": false,
+    "python_binding": "ptcg_ai_core",
+    "shared_core": "ptcg_ai_core"
+  },
   "onnx": {
     "opset": 17,
     "runtime_version": "1.26.0",
-    "search_simulations": 64,
     "watchdog_seconds": 2.0
   },
   "product_name": "PokemonTCG",
@@ -84,9 +71,9 @@
   "schemas": {
     "ai_evaluation": 7,
     "card_vocab": 1,
-    "checkpoint": 11,
-    "deep_planner": 1,
-    "encoder": 6,
+    "checkpoint": 12,
+    "deep_planner": 2,
+    "encoder": 7,
     "godot_actions": 4,
     "godot_rules": 6,
     "planner": 2,
@@ -97,5 +84,5 @@
     "snapshot": 3,
     "vm_ir": 3
   },
-  "version": "0.6.0"
+  "version": "0.7.0"
 }

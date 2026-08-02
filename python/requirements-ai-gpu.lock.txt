@@ -24,6 +24,7 @@ onnxruntime==1.26.0
 packaging==26.2
 Pillow==11.3.0
 protobuf==7.35.1
+pybind11==2.13.6
 pygame==2.6.1
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0

@@ -22,7 +22,7 @@ RELEASE_MANIFEST = json.loads(
 )
 DECK_KEYS = tuple(str(key) for key in RELEASE_MANIFEST["release_decks"])
 if (
-    len(DECK_KEYS) != int(RELEASE_MANIFEST["model_count"])
+    int(RELEASE_MANIFEST["model_count"]) not in {0, 1, len(DECK_KEYS)}
     or len(set(DECK_KEYS)) != len(DECK_KEYS)
 ):
     raise RuntimeError("release_manifest.json has an invalid release model set")

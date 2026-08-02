@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from card_data.effects import CARD_EFFECTS
 from data.card_registry import CardRegistry
-from data.deck_definitions import ALL_CARD_IDS
+from data.deck_definitions import ALL_CARD_IDS, DECK_SPECS, expand_deck
 from engine.commands.dsl_compiler import (
     compile_command_spec,
     compile_effect,
@@ -80,6 +80,252 @@ class VmIrContractTests(unittest.TestCase):
             with self.subTest(effect_type=effect.get("effect_type", "")):
                 command = compile_effect(effect)
                 self.assertNativeCommandModule(command)
+
+    def test_optional_same_target_energy_distribution_is_protocol_bounded(self):
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("sv2-tatsu"))
+        for index in range(len(state.p1.bench)):
+            state.p1.bench[index] = PokemonInPlay(
+                CardRegistry.get("sv2-tatsu")
+            )
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.deck = [
+            CardRegistry.get("sv1-ener-3")
+            for _index in range(20)
+        ]
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "attach_energy",
+            "args": {
+                "amount": 2,
+                "filter": "water",
+                "from_zone": "deck",
+                "min_select": 0,
+                "to": "self_basic",
+            },
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_choice)
+        request = GameEngine().choice_request(state, result.pending_choice)
+        self.assertEqual(request.min_select, 0)
+        self.assertEqual(request.max_select, 2)
+        self.assertEqual(len(request.options), 12)
+        active_options = [
+            option
+            for option in request.options
+            if isinstance(option.value, dict)
+            and option.value.get("slot") == "active"
+        ]
+        self.assertEqual(len(active_options), 2)
+        step = GameEngine().apply_choice(
+            state,
+            request,
+            ChoiceResponse(
+                request.request_id,
+                tuple(option.option_id for option in active_options),
+            ),
+            ScriptedRandomSource(seed=17),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(len(state.p1.active.energy_cards), 2)
+        self.assertEqual(len(state.p1.deck), 18)
+
+    def test_chi_yu_discard_distribution_is_protocol_bounded(self):
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-chiy"))
+        for index in range(len(state.p1.bench)):
+            state.p1.bench[index] = PokemonInPlay(
+                CardRegistry.get("svi-chim")
+            )
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.discard = [
+            CardRegistry.get("sv1-ener-2")
+            for _index in range(20)
+        ]
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "attach_energy_from_discard",
+            "args": {
+                "amount": 2,
+                "energy_type": "fire",
+                "min_select": 0,
+                "target": "self_or_bench",
+            },
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_choice)
+        request = GameEngine().choice_request(state, result.pending_choice)
+        self.assertEqual(request.min_select, 0)
+        self.assertEqual(request.max_select, 2)
+        self.assertEqual(len(request.options), 12)
+        active_options = [
+            option
+            for option in request.options
+            if isinstance(option.value, dict)
+            and option.value.get("slot") == "active"
+        ]
+        self.assertEqual(len(active_options), 2)
+        step = GameEngine().apply_choice(
+            state,
+            request,
+            ChoiceResponse(
+                request.request_id,
+                tuple(option.option_id for option in active_options),
+            ),
+            ScriptedRandomSource(seed=17),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(len(state.p1.active.energy_cards), 2)
+        self.assertEqual(len(state.p1.discard), 18)
+
+    def test_non_source_select_hand_attach_fixes_first_matching_energy(self):
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svl-thun"))
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svl-thun"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.hand = [
+            CardRegistry.get("sv1-ener-4")
+            for _index in range(20)
+        ]
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "attach_energy",
+            "args": {
+                "amount": 1,
+                "filter": "lightning",
+                "from_zone": "hand",
+                "optional": True,
+                "to": "bench",
+            },
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_choice)
+        request = GameEngine().choice_request(state, result.pending_choice)
+        self.assertEqual(request.min_select, 0)
+        self.assertEqual(request.max_select, 1)
+        self.assertEqual(len(request.options), 1)
+
+    def test_source_select_deck_attach_deduplicates_physical_copies(self):
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svm-cobalion"))
+        for index in range(len(state.p1.bench)):
+            state.p1.bench[index] = PokemonInPlay(
+                CardRegistry.get("svm-zacian")
+            )
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        state.p1.deck = [
+            CardRegistry.get("sv1-ener-8")
+            for _index in range(20)
+        ]
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "attach_energy",
+            "args": {
+                "amount": 2,
+                "filter": "basic_energy",
+                "from_zone": "deck",
+                "max_per_target": 1,
+                "min_select": 0,
+                "select_source": True,
+                "to": "bench",
+            },
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        self.assertTrue(result.success)
+        self.assertIsNotNone(result.pending_choice)
+        request = GameEngine().choice_request(state, result.pending_choice)
+        self.assertEqual(request.min_select, 0)
+        self.assertEqual(request.max_select, 2)
+        self.assertEqual(len(request.options), 10)
+
+    def test_release_energy_effect_option_upper_bounds_fit_protocol(self):
+        cards_path = (
+            Path(__file__).resolve().parents[2]
+            / "godot"
+            / "data"
+            / "cards.json"
+        )
+        exported_cards = json.loads(cards_path.read_text(encoding="utf-8"))
+        for deck_key, deck_spec in DECK_SPECS.items():
+            deck_ids = expand_deck(deck_spec)
+            deck_card_ids = set(deck_ids)
+            energy_counts = {
+                card_id: deck_ids.count(card_id)
+                for card_id in deck_card_ids
+                if CardRegistry.get(card_id).is_energy
+            }
+            for card_id in deck_card_ids:
+                card = exported_cards[card_id]
+                effect_rows = [
+                    effect
+                    for item in [
+                        *card.get("attacks", []),
+                        *card.get("abilities", []),
+                    ]
+                    for effect in item.get("compiled_effects", [])
+                    if effect.get("op") in {
+                        "attach_energy",
+                        "attach_energy_from_discard",
+                    }
+                ]
+                for effect in effect_rows:
+                    args = dict(effect.get("args") or {})
+                    amount = max(0, int(args.get("amount", 1)))
+                    filter_type = str(
+                        args.get("filter", args.get("energy_type", "any"))
+                    ).lower()
+                    matching_counts = []
+                    for energy_id, count in energy_counts.items():
+                        energy = CardRegistry.get(energy_id)
+                        provides = {
+                            str(value).lower()
+                            for value in energy.provides_energy
+                        }
+                        matches = (
+                            filter_type in {"any", "energy"}
+                            or (
+                                filter_type in {"basic", "basic_energy"}
+                                and energy.is_basic_energy
+                            )
+                            or filter_type in provides
+                        )
+                        if (
+                            effect["op"] == "attach_energy_from_discard"
+                            and not energy.is_basic_energy
+                        ):
+                            matches = False
+                        if matches:
+                            matching_counts.append(count)
+                    if bool(args.get("select_source", False)):
+                        exposed_sources = sum(
+                            min(amount, count) for count in matching_counts
+                        )
+                    else:
+                        exposed_sources = min(amount, sum(matching_counts))
+                    target_kind = str(
+                        args.get("to", args.get("target", "self"))
+                    )
+                    target_count = (
+                        1 if target_kind == "self"
+                        else 5 if target_kind == "bench"
+                        else 6
+                    )
+                    with self.subTest(
+                        deck=deck_key,
+                        card=card_id,
+                        op=effect["op"],
+                    ):
+                        self.assertLessEqual(
+                            exposed_sources * target_count,
+                            60,
+                        )
 
     def test_attack_state_bridge_fields_are_not_used_by_production_code(self):
         forbidden = (
@@ -2553,6 +2799,31 @@ class VmIrContractTests(unittest.TestCase):
         self.assertEqual([card.api_id for card in state.p1.deck], ["sv1-ener-1"])
 
         state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svm-cobalion"))
+        state.p1.deck = [CardRegistry.get("sv1-ener-8")]
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "attach_energy",
+            "args": {
+                "amount": 2,
+                "from_zone": "deck",
+                "filter": "basic_energy",
+                "to": "bench",
+                "min_select": 0,
+                "select_source": True,
+            },
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        self.assertTrue(result.success)
+        self.assertIsNone(result.pending_choice)
+        self.assertEqual(
+            [card.api_id for card in state.p1.deck],
+            ["sv1-ener-8"],
+        )
+
+        state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
         state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv2-delib"))
         state.p1.bench[1] = PokemonInPlay(CardRegistry.get("svf-rio"))
@@ -3118,6 +3389,58 @@ class VmIrContractTests(unittest.TestCase):
         self.assertIsNotNone(state.p1.bench[0])
         self.assertEqual(state.p1.bench[0].card.api_id, "sv1-104")
         self.assertCountEqual([card.api_id for card in state.p1.deck], ["sv1-ener-1", "sv1-ener-2"])
+
+        state = GameState()
+        state.p1.active = PokemonInPlay(CardRegistry.get("svi-sqwk"))
+        state.p2.active = PokemonInPlay(CardRegistry.get("sv2-delib"))
+        for bench_index in range(4):
+            state.p1.bench[bench_index] = PokemonInPlay(
+                CardRegistry.get("sv2-delib")
+            )
+        state.p1.deck = [
+            CardRegistry.get("svi-chim"),
+            CardRegistry.get("svi-chim"),
+            CardRegistry.get("sv1-ener-1"),
+        ]
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "search_cards",
+            "args": {
+                "from_zone": "deck",
+                "filter": "basic_pokemon",
+                "destination": "bench",
+                "count": 2,
+                "min_select": 0,
+            },
+            "branches": {},
+        }))
+        result = stack.resolve_all(0, "active")
+        self.assertTrue(result.success)
+        request = engine.choice_request(state, result.pending_choice)
+        self.assertEqual(request.max_select, 1)
+        self.assertEqual(len(request.options), 2)
+        step = engine.apply_choice(
+            state,
+            request,
+            ChoiceResponse(request.request_id, (request.options[1].option_id,)),
+        )
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p1.bench_count(), 5)
+        self.assertEqual(state.p1.bench[4].card.api_id, "svi-chim")
+        self.assertEqual(
+            [card.api_id for card in state.p1.deck].count("svi-chim"),
+            1,
+        )
+        self.assertEqual(
+            sum(
+                card.api_id == "svi-chim"
+                for card in state.p1.deck
+            ) + sum(
+                pokemon is not None and pokemon.card.api_id == "svi-chim"
+                for pokemon in state.p1.bench
+            ),
+            2,
+        )
 
         state = GameState()
         state.p1.active = PokemonInPlay(CardRegistry.get("svi-chim"))
@@ -3764,6 +4087,26 @@ class VmIrContractTests(unittest.TestCase):
         bench_option = next(
             option for option in request.options
             if option.value.get("slot") == "bench_0"
+        )
+        cloned_state = clone_state(state)
+        cloned_request = engine.pending_choice_request(cloned_state)
+        self.assertIsNotNone(cloned_request)
+        cloned_bench_option = next(
+            option for option in cloned_request.options
+            if isinstance(option.value, dict)
+            and option.value.get("slot") == "bench_0"
+        )
+        cloned_step = engine.apply_choice(
+            cloned_state,
+            ChoiceResponse(
+                cloned_request.request_id,
+                (cloned_bench_option.option_id,),
+            ),
+        )
+        self.assertTrue(cloned_step.success, cloned_step.message)
+        self.assertEqual(
+            cloned_state.p1.bench[0].card.api_id,
+            "svg2-tort",
         )
         step = engine.apply_choice(
             state,

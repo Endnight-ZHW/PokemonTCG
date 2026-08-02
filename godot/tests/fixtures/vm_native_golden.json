@@ -3873,36 +3873,42 @@
             {
               "card_id": "sv2-38",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-1->pokemon:0:bench_0:sv2-38",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "sv2-38",
               "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-5->pokemon:0:bench_0:sv2-38",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "sv2-38",
               "kind": "pokemon",
+              "option_id": "energy:2:sv1-ener-6->pokemon:0:bench_0:sv2-38",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "sv1-106",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-1->pokemon:0:bench_1:sv1-106",
               "player": 0,
               "slot": "bench_1"
             },
             {
               "card_id": "sv1-106",
               "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-5->pokemon:0:bench_1:sv1-106",
               "player": 0,
               "slot": "bench_1"
             },
             {
               "card_id": "sv1-106",
               "kind": "pokemon",
+              "option_id": "energy:2:sv1-ener-6->pokemon:0:bench_1:sv1-106",
               "player": 0,
               "slot": "bench_1"
             }
@@ -23339,7 +23345,7 @@
             "success": true
           },
           "request": {
-            "allow_duplicates": true,
+            "allow_duplicates": false,
             "can_cancel": true,
             "continuation_kind": "draw_attach_distribution",
             "max_select": 2,
@@ -23348,12 +23354,28 @@
               {
                 "card_id": "sv2-38",
                 "kind": "pokemon",
+                "option_id": "energy:0:sv1-ener-1->pokemon:0:bench_0:sv2-38",
+                "player": 0,
+                "slot": "bench_0"
+              },
+              {
+                "card_id": "sv2-38",
+                "kind": "pokemon",
+                "option_id": "energy:1:sv1-ener-1->pokemon:0:bench_0:sv2-38",
                 "player": 0,
                 "slot": "bench_0"
               },
               {
                 "card_id": "sv1-106",
                 "kind": "pokemon",
+                "option_id": "energy:0:sv1-ener-1->pokemon:0:bench_1:sv1-106",
+                "player": 0,
+                "slot": "bench_1"
+              },
+              {
+                "card_id": "sv1-106",
+                "kind": "pokemon",
+                "option_id": "energy:1:sv1-ener-1->pokemon:0:bench_1:sv1-106",
                 "player": 0,
                 "slot": "bench_1"
               }
@@ -23367,12 +23389,14 @@
               {
                 "card_id": "sv2-38",
                 "kind": "pokemon",
+                "option_id": "energy:0:sv1-ener-1->pokemon:0:bench_0:sv2-38",
                 "player": 0,
                 "slot": "bench_0"
               },
               {
                 "card_id": "sv2-38",
                 "kind": "pokemon",
+                "option_id": "energy:1:sv1-ener-1->pokemon:0:bench_0:sv2-38",
                 "player": 0,
                 "slot": "bench_0"
               }
@@ -23439,7 +23463,7 @@
         ],
         "modifier": {},
         "pending": {
-          "allow_duplicates": true,
+          "allow_duplicates": false,
           "can_cancel": true,
           "continuation_kind": "draw_attach_distribution",
           "max_select": 2,
@@ -23448,12 +23472,28 @@
             {
               "card_id": "sv2-38",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-1->pokemon:0:bench_0:sv2-38",
+              "player": 0,
+              "slot": "bench_0"
+            },
+            {
+              "card_id": "sv2-38",
+              "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-1->pokemon:0:bench_0:sv2-38",
               "player": 0,
               "slot": "bench_0"
             },
             {
               "card_id": "sv1-106",
               "kind": "pokemon",
+              "option_id": "energy:0:sv1-ener-1->pokemon:0:bench_1:sv1-106",
+              "player": 0,
+              "slot": "bench_1"
+            },
+            {
+              "card_id": "sv1-106",
+              "kind": "pokemon",
+              "option_id": "energy:1:sv1-ener-1->pokemon:0:bench_1:sv1-106",
               "player": 0,
               "slot": "bench_1"
             }
@@ -26222,6 +26262,7 @@
                 "card_id": "sv2-grex",
                 "index": 7,
                 "kind": "card",
+                "option_id": "rare_candy:bench_0:7:sv2-grex",
                 "player": 0,
                 "zone": "hand"
               }
@@ -26236,6 +26277,7 @@
                 "card_id": "sv2-grex",
                 "index": 7,
                 "kind": "card",
+                "option_id": "rare_candy:bench_0:7:sv2-grex",
                 "player": 0,
                 "zone": "hand"
               }
@@ -26300,6 +26342,7 @@
               "card_id": "sv2-grex",
               "index": 7,
               "kind": "card",
+              "option_id": "rare_candy:bench_0:7:sv2-grex",
               "player": 0,
               "zone": "hand"
             }

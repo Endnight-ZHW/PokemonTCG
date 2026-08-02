@@ -359,8 +359,8 @@ func _deep_model_set_unavailable_reason() -> String:
 		return "deep_runtime_disabled"
 	var model_count := int(release.get("model_count", 0))
 	if (
-		model_count <= 0
-		or int(release.get("compatible_model_count", -1)) != model_count
+		model_count != 1
+		or int(release.get("compatible_model_count", -1)) != 1
 		or int(release.get("legacy_model_count", -1)) != 0
 	):
 		return "compatible_model_set_incomplete"
@@ -387,19 +387,24 @@ func _deep_model_set_unavailable_reason() -> String:
 		return "model_manifest_invalid"
 	var models: Dictionary = models_value
 	var decks: Array = release.get("release_decks", [])
-	if models.size() != model_count or decks.size() != model_count:
+	var routes_value: Variant = runtime.get("deck_routes", {})
+	if (
+		models.size() != 1
+		or not models.has("universal")
+		or not routes_value is Dictionary
+		or Dictionary(routes_value).size() != decks.size()
+	):
 		return "model_manifest_incomplete"
+	var universal: Dictionary = models["universal"]
+	if str(universal.get("onnx_path", "")).is_empty():
+		return "universal_model_missing"
 	for deck_value in decks:
 		var deck_key := str(deck_value)
-		var row_value: Variant = models.get(deck_key)
-		if not row_value is Dictionary:
+		if str(Dictionary(routes_value).get(deck_key, "")) != "universal":
 			return "model_missing:%s" % deck_key
-		var row: Dictionary = row_value
-		if str(row.get("evidence_sha256", "")).to_lower() != evidence_sha:
-			return "model_evidence_mismatch:%s" % deck_key
-		var path := str(row.get("onnx_path", ""))
-		if path.is_empty() or not FileAccess.file_exists(path):
-			return "onnx_missing:%s" % deck_key
+	var path := str(universal.get("onnx_path", ""))
+	if path.is_empty() or not FileAccess.file_exists(path):
+		return "onnx_missing:universal"
 	if not ClassDB.class_exists("OnnxInference"):
 		return "onnx_extension_unavailable"
 	return ""

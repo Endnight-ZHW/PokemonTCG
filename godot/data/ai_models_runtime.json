@@ -1,252 +1,112 @@
 {
-  "action_numeric_size": 178,
-  "card_bucket_count": 139,
-  "card_identity_mode": "vocab_v1",
   "card_vocab_sha256": "b6f3a3faa78dfbf0fb706fdfea26f6b92359dcc3fd937c61849ea359eb0dd0d9",
   "card_vocab_size": 139,
   "card_vocab_version": 1,
-  "candidate_evaluation": false,
   "compatibility_bridge": {
-    "godot_action_version": 4,
-    "godot_rules_version": 6,
     "python_action_version": 3,
-    "python_encoder_version": 6,
+    "python_encoder_version": 7,
     "python_rules_version": 5,
-    "version": 1
+    "version": 2
   },
+  "contract": {
+    "checkpoint_version": 12,
+    "deep_planner_version": 2,
+    "encoder_version": 7,
+    "inputs": {
+      "actor_deck_id": [
+        "int64"
+      ],
+      "candidate_card_ids": [
+        "int64",
+        "A"
+      ],
+      "candidate_mask": [
+        "bool",
+        "A"
+      ],
+      "candidate_numeric": [
+        "float32",
+        "A",
+        32
+      ],
+      "candidate_refs": [
+        "int64",
+        "A",
+        4
+      ],
+      "candidate_type_ids": [
+        "int64",
+        "A"
+      ],
+      "entity_card_ids": [
+        "int64",
+        128
+      ],
+      "entity_numeric": [
+        "float32",
+        128,
+        16
+      ],
+      "entity_type_ids": [
+        "int64",
+        128,
+        4
+      ],
+      "opponent_deck_id": [
+        "int64"
+      ],
+      "state_global": [
+        "float32",
+        128
+      ]
+    },
+    "model_variant": "universal_infoset_transformer_v2",
+    "native_abi_version": 1,
+    "outputs": {
+      "policy_logits": [
+        "float32",
+        "A"
+      ],
+      "wdl_logits": [
+        "float32",
+        3
+      ]
+    },
+    "runtime_manifest_format": 3,
+    "trainer": "infoset_alphazero_v2"
+  },
+  "deck_routes": {},
   "deep_planner": {
     "c_puct": 1.4,
-    "challenge_prior_weight": 0.25,
+    "challenge_prior_weight": 0.0,
     "evidence_sha256": "",
-    "leaf_evaluator": "challenge",
-    "max_depth": 16,
-    "neural_prior_weight": 0.75,
-    "opponent_branch_limit": 6,
-    "planner_id": "deep_root_ismcts_v1",
-    "root_inference_calls": 1,
-    "schema_version": 1,
-    "simulations": 64,
-    "value_head_mode": "diagnostic_only",
-    "visit_tiebreak": "visits_prior_signature",
-    "watchdog_seconds": 2.0
+    "full_turn_rollout": false,
+    "leaf_evaluator": "neural_wdl",
+    "planner_id": "infoset_puct_v2",
+    "schema_version": 2,
+    "training_simulations": 128,
+    "value_head_mode": "search_backup"
   },
-  "elapsed_seconds": 2.375,
-  "execution_provider": "CPUExecutionProvider",
-  "format_version": 2,
+  "format_version": 3,
   "inference_format": "onnx-fp32",
   "input_names": [
-    "state_numeric",
-    "state_cards",
-    "action_numeric",
-    "action_cards",
-    "choice_numeric",
-    "choice_cards"
+    "state_global",
+    "entity_numeric",
+    "entity_card_ids",
+    "entity_type_ids",
+    "candidate_numeric",
+    "candidate_card_ids",
+    "candidate_type_ids",
+    "candidate_refs",
+    "candidate_mask",
+    "actor_deck_id",
+    "opponent_deck_id"
   ],
-  "models": {
-    "colorless": {
-      "action_version": 2,
-      "checkpoint_sha256": "dc285218ebd79b69182e57cf590e7a1d2cfbf919ec9dd1b87b25d0785380a13b",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "colorless",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/colorless.onnx",
-      "onnx_sha256": "a4245b4707af87d7eb2c606c34f55d597cc0d0eaff249ca74b5dfb34d6944935",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 5.7220458984375e-06,
-        "choice_logits": 1.9073486328125e-05,
-        "state_value": 8.381903171539307e-09
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "darkness": {
-      "action_version": 2,
-      "checkpoint_sha256": "9f3fed9f69b4f6fcedd474e1e5e83f89f35b31b6c58356d23db2ef68d54806d3",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "darkness",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/darkness.onnx",
-      "onnx_sha256": "cc41de6bf2f0e3b9b52fbb7b88375902a7ec308b15331c91e859fb1c68cc51b5",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 7.62939453125e-06,
-        "choice_logits": 1.52587890625e-05,
-        "state_value": 1.1175870895385742e-08
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "dragon": {
-      "action_version": 2,
-      "checkpoint_sha256": "52b2db71e684d6955152e20ff7e4deea13130b9c8781e14e1646ac299c15d3b2",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "dragon",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/dragon.onnx",
-      "onnx_sha256": "46bd0a6194ee8fe6ff36f39c97f6547f3b639ce6994f406a8a03a2fa1c92de26",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 8.58306884765625e-06,
-        "choice_logits": 3.814697265625e-06,
-        "state_value": 7.450580596923828e-09
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "fighting": {
-      "action_version": 2,
-      "checkpoint_sha256": "257962c6fba11e29460046e0c24efa1dc5eafaebc6e951e2c5836919cd3afcce",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "fighting",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/fighting.onnx",
-      "onnx_sha256": "39119941ba5eb3b8a02f6ac130e1fa3bb70095dce600c305ed9931aaeee771b7",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 2.47955322265625e-05,
-        "choice_logits": 5.960464477539063e-08,
-        "state_value": 6.05359673500061e-09
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "fire": {
-      "action_version": 2,
-      "checkpoint_sha256": "4610e0dd4144da070622c18fce5820668f7145394764e28508de7734e2971e50",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "fire",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/fire.onnx",
-      "onnx_sha256": "6431c1e6ec02cb49b4bc4a72c27397f4bb403096b3c839bc87dc1f61b6ebd708",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 2.09808349609375e-05,
-        "choice_logits": 5.587935447692871e-08,
-        "state_value": 1.6763806343078613e-08
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "grass": {
-      "action_version": 2,
-      "checkpoint_sha256": "397e4f3fcd5d1c27c80ff5b963045a15a48bda2e22702193b8082c8dccecb95c",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "grass",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/grass.onnx",
-      "onnx_sha256": "ca591fe9ce9d4f1bc60fbf0f9062cd76049777ceab27f1a91956a2cd3e3f90a8",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 1.52587890625e-05,
-        "choice_logits": 1.2293457984924316e-07,
-        "state_value": 1.3969838619232178e-08
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "lightning": {
-      "action_version": 2,
-      "checkpoint_sha256": "2031cbb34f289b7937b514fb1180829ab97301016551a88c3fb65e17b0a15681",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "lightning",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/lightning.onnx",
-      "onnx_sha256": "a8b19e0803656eb39ef498682e21d07a6dc8aa366bf405f5d8d38a23d9fed912",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 7.62939453125e-06,
-        "choice_logits": 1.9073486328125e-05,
-        "state_value": 7.916241884231567e-09
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "psychic": {
-      "action_version": 2,
-      "checkpoint_sha256": "a0588507222ab9473b25315ba0c3b892573efcf19b7f18da4623f4dcc43acb30",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "psychic",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/psychic.onnx",
-      "onnx_sha256": "80d6f2aef359b99804528c2140789038f6c8a872591168a84f32874b5310e424",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 1.52587890625e-05,
-        "choice_logits": 7.078051567077637e-08,
-        "state_value": 2.1420419216156006e-08
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "steel": {
-      "action_version": 2,
-      "checkpoint_sha256": "8d88cbd302f6d3a1f8131d14d0a3a1d2b90d13761abab965adba5148234386c0",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "steel",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/steel.onnx",
-      "onnx_sha256": "4affcdc6e83dd60558a267629f1967ccadf5945b60c13a6ed1a43ef9c70f0e9a",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 7.62939453125e-06,
-        "choice_logits": 5.7220458984375e-06,
-        "state_value": 9.313225746154785e-09
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    },
-    "water": {
-      "action_version": 2,
-      "checkpoint_sha256": "cf76708c4aa1a44b263e5190458141ad523224fad4d3fff8aee36c0f798b924c",
-      "checkpoint_version": 10,
-      "choice_head_enabled": true,
-      "deck_key": "water",
-      "encoder_version": 3,
-      "onnx_path": "res://data/ai_models/water.onnx",
-      "onnx_sha256": "7a4a9e693e6ff508def2a8c91ac834c40a3831fba59b38099fe79f7f68d814d4",
-      "onnx_size": 5510145,
-      "opset": 17,
-      "parity_max_abs_error": {
-        "action_logits": 1.1444091796875e-05,
-        "choice_logits": 9.685754776000977e-08,
-        "state_value": 6.51925802230835e-09
-      },
-      "planner_version": 1,
-      "rules_version": 2
-    }
-  },
+  "models": {},
   "onnx_runtime_version": "1.26.0",
   "opset": 17,
   "output_names": [
-    "action_logits",
-    "state_value",
-    "choice_logits"
-  ],
-  "search_simulations": 64,
-  "semantic_feature_sizes": {
-    "known_card": 53,
-    "missing_card": 53
-  },
-  "state_card_slots": 128,
-  "state_numeric_size": 960,
-  "watchdog_seconds": 2.0
+    "policy_logits",
+    "wdl_logits"
+  ]
 }

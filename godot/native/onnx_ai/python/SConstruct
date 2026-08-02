@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import sysconfig
+
+from SCons.Script import ARGUMENTS, Default, Environment
+
+
+def _path_argument(name, default):
+    return os.path.abspath(ARGUMENTS.pop(name, default))
+
+
+python_root = _path_argument("python_root", sys.prefix)
+try:
+    import pybind11
+
+    default_pybind11_root = pybind11.get_include()
+except ImportError:
+    default_pybind11_root = os.path.join(
+        python_root,
+        "Lib" if sys.platform == "win32" else "lib",
+        "site-packages",
+        "pybind11",
+        "include",
+    )
+pybind11_root = _path_argument("pybind11_root", default_pybind11_root)
+output_root = _path_argument("output_root", "../../../../python")
+
+env = Environment(ENV=os.environ)
+env.Append(
+    CPPPATH=[
+        "../src",
+        sysconfig.get_paths()["include"],
+        pybind11_root,
+    ],
+)
+if sys.platform == "win32":
+    env.Append(
+        LIBPATH=[os.path.join(python_root, "libs")],
+        LIBS=[f"python{sys.version_info.major}{sys.version_info.minor}"],
+        CXXFLAGS=["/EHsc", "/std:c++17", "/O2"],
+    )
+    extension_suffix = ".pyd"
+else:
+    env.Append(
+        CXXFLAGS=["-std=c++17", "-O3", "-fPIC", "-pthread"],
+        LINKFLAGS=["-pthread"],
+    )
+    extension_suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
+
+library = env.SharedLibrary(
+    os.path.join(output_root, "ptcg_ai_core"),
+    source=[
+        "ptcg_ai_core_module.cpp",
+        "../src/ptcg_ai_core.cpp",
+        "../src/ptcg_determinizer.cpp",
+        "../src/ptcg_encoder.cpp",
+        "../src/ptcg_game.cpp",
+        "../src/ptcg_infoset.cpp",
+        "../src/ptcg_rules.cpp",
+        "../src/ptcg_search.cpp",
+    ],
+    SHLIBPREFIX="",
+    SHLIBSUFFIX=extension_suffix,
+)
+env.NoCache(library)
+Default(library)

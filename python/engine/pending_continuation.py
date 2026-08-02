@@ -265,9 +265,29 @@ def _legacy_request_from_payload(
             if index >= 0
         ]
 
-    card_list = []
     card_list_ids = metadata.get("card_list_ids", [])
-    if isinstance(card_list_ids, list):
+    exact_card_values = [
+        option.value
+        for option in options
+        if (
+            isinstance(option.ref, CardRef)
+            and option.value is not None
+            and hasattr(option.value, "api_id")
+        )
+    ]
+    if (
+        isinstance(card_list_ids, list)
+        and exact_card_values
+        and len(exact_card_values) == len(card_list_ids)
+    ):
+        # Serialized CardRefs are revision-scoped physical identities.  Keep
+        # them when rebuilding filtered/top-deck requests so duplicate card
+        # IDs still select the exact displayed copy instead of the first card
+        # with the same API ID.
+        card_list = exact_card_values
+    else:
+        card_list = []
+    if not card_list and isinstance(card_list_ids, list):
         for card_id in card_list_ids:
             card = _lookup_card_for_choice(state, player, "", -1, str(card_id or ""))
             if card is not None:
@@ -321,7 +341,16 @@ def _choice_option_from_dict(state: GameState, payload: Any) -> ChoiceOption:
         )
     ref = _entity_ref_from_dict(payload.get("ref"))
     value = copy.deepcopy(payload.get("value"))
-    if isinstance(ref, CardRef):
+    is_rare_candy_target = (
+        isinstance(value, dict)
+        and {
+            "slot",
+            "hand_index",
+            "card_id",
+            "base_card_id",
+        }.issubset(value)
+    )
+    if isinstance(ref, CardRef) and not is_rare_candy_target:
         value = _resolve_exact_card_ref_for_choice(state, ref)
     return ChoiceOption(
         option_id=option_id,

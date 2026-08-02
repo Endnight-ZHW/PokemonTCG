@@ -4,7 +4,8 @@ param(
     [string]$Target = 'all',
     [ValidateSet('debug', 'release')]
     [string]$Configuration = 'debug',
-    [bool]$IncludeAndroidRuntimeSmoke = $true
+    [bool]$IncludeAndroidRuntimeSmoke = $true,
+    [bool]$IncludeAndroidCandidateSmoke = $false
 )
 
 $ErrorActionPreference = 'Stop'
@@ -214,5 +215,18 @@ if ($Target -in @('android', 'all')) {
         Invoke-GodotExport `
             -Preset $androidSmokePreset `
             -Output $androidSmokeOutput
+    }
+    if ($IncludeAndroidCandidateSmoke) {
+        if (-not $deepRuntimeEnabled) {
+            throw 'Android candidate smoke requires an isolated deep-enabled manifest.'
+        }
+        $androidCandidateOutput = if ($Configuration -eq 'release') {
+            'dist/release/android/PokemonTCG-candidate-smoke.apk'
+        } else {
+            'dist/android/PokemonTCG-candidate-smoke.apk'
+        }
+        Invoke-GodotExport `
+            -Preset 'Android ARM64 Deep Candidate Smoke' `
+            -Output $androidCandidateOutput
     }
 }

@@ -132,16 +132,37 @@ class EnergyAttach:
             if max_select <= 0:
                 return CommandResult.ok(f"{zone_name}中无匹配的能量。")
 
+            # Match the Godot reference VM: unless ``select_source`` is set,
+            # the first ``amount`` matching source cards are fixed by the
+            # effect and the player chooses only the targets/count.  Exposing
+            # every physical source entity created an unintended source x
+            # target product (and could exceed the 60-option protocol) for
+            # optional hand/deck attachments.  Explicit source-selection
+            # effects still expose every matching card.
+            if select_source:
+                # Source selection distinguishes card identities and counts,
+                # not interchangeable physical copies.  At most
+                # ``max_select`` copies of one ID can participate in any
+                # response, so publishing more only creates duplicate policy
+                # edges and can overflow the source x target protocol.
+                exposed_energy_cards = []
+                exposed_by_id: dict[str, int] = {}
+                for card in energy_cards:
+                    card_id = str(getattr(card, "api_id", "") or "")
+                    if exposed_by_id.get(card_id, 0) >= max_select:
+                        continue
+                    exposed_energy_cards.append(card)
+                    exposed_by_id[card_id] = exposed_by_id.get(card_id, 0) + 1
+            else:
+                exposed_energy_cards = list(energy_cards[:max_select])
+
             return CommandResult.ok(
                 f"选择最多{max_select}个能量附着。",
                 pending_choice=ActionRequest(
                     request_type="distribute_energy",
                     player=ctx.player_idx,
                     prompt=f"分配能量 — {zone_name}",
-                    # Expose every legal source entity.  ``max_select`` limits
-                    # how many may be attached; truncating this list silently
-                    # chose the first matching cards for the player.
-                    card_list=list(energy_cards),
+                    card_list=exposed_energy_cards,
                     target_info=targets_info,
                     distribute_mode="distribute",
                     min_select=min_select,
@@ -183,7 +204,11 @@ class EnergyAttach:
         if to_target == "bench":
             bench_slots = [(index, pokemon) for index, pokemon in enumerate(player.bench) if pokemon is not None]
             if not bench_slots:
-                return CommandResult.ok("备战区无宝可梦。") if optional else CommandResult.fail("备战区没有宝可梦可附着能量。")
+                return (
+                    CommandResult.ok("备战区无宝可梦。")
+                    if optional_count
+                    else CommandResult.fail("备战区没有宝可梦可附着能量。")
+                )
             if len(bench_slots) == 1:
                 target_slot = f"bench_{bench_slots[0][0]}"
                 target = player.get_pokemon(target_slot)
@@ -258,7 +283,11 @@ class EnergyAttach:
                 candidates.append((slot_name, pokemon))
             if not candidates:
                 message = "没有基础宝可梦可附着能量。" if to_target == "self_basic" else "场上没有宝可梦可附着能量。"
-                return CommandResult.ok(message) if optional else CommandResult.fail(message)
+                return (
+                    CommandResult.ok(message)
+                    if optional_count
+                    else CommandResult.fail(message)
+                )
             if len(candidates) == 1:
                 return attach_to_target(candidates[0][1], amount)
             if optional_count or select_source:
@@ -421,13 +450,33 @@ class AttachEnergyFromDiscard:
             if max_select <= 0:
                 return CommandResult.ok("弃牌区没有符合条件的能量。")
 
+            # The Godot reference VM fixes the source cards to the first
+            # ``amount`` matching discard entries unless the effect asks the
+            # player to select a source explicitly.  Exposing every physical
+            # copy here created a source x target product larger than the
+            # ChoiceRequest protocol permits (Chi-Yu with a full board and a
+            # large Fire Energy discard).  Preserve explicit source-selection
+            # effects, while matching the reference semantics for effects
+            # that only ask where/how many of the fixed cards to attach.
+            if select_source:
+                exposed_energy_cards = []
+                exposed_by_id: dict[str, int] = {}
+                for card in energy_cards:
+                    card_id = str(getattr(card, "api_id", "") or "")
+                    if exposed_by_id.get(card_id, 0) >= max_select:
+                        continue
+                    exposed_energy_cards.append(card)
+                    exposed_by_id[card_id] = exposed_by_id.get(card_id, 0) + 1
+            else:
+                exposed_energy_cards = list(energy_cards[:max_select])
+
             return CommandResult.ok(
                 f"选择最多{max_select}个能量附着。",
                 pending_choice=ActionRequest(
                     request_type="distribute_energy",
                     player=ctx.player_idx,
                     prompt="分配能量 — 弃牌区",
-                    card_list=list(energy_cards),
+                    card_list=exposed_energy_cards,
                     target_info=targets_info,
                     distribute_mode="distribute",
                     min_select=min_select,
@@ -439,6 +488,7 @@ class AttachEnergyFromDiscard:
                         "player_idx": ctx.player_idx,
                         "max_per_target": max_per_target,
                         "same_target": same_target,
+                        "explicit_bounds": True,
                     },
                 ),
             )

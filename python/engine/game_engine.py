@@ -749,6 +749,8 @@ class GameEngine:
             max_per_target = int(request.metadata.get("max_per_target", 99))
         except (TypeError, ValueError, OverflowError):
             return "分配目标上限无效。"
+        if bool(request.metadata.get("same_target", False)):
+            max_per_target = max(max_per_target, request.max_select)
         counts: dict[str, int] = {}
         seen_energy_indices: set[int] = set()
         for option in selected:

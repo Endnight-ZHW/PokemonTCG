@@ -1,0 +1,87 @@
+{
+  "schema": "native_parallel_search_benchmark/1",
+  "games": 64,
+  "simulations_per_game": 64,
+  "max_depth": 32,
+  "cpu_slots": 16,
+  "max_inflight_leaves": 1,
+  "whole_search_cap": {
+    "samples": [
+      {
+        "elapsed_seconds": 4.0387088999996195,
+        "simulations_per_second": 1014.1854987370806,
+        "inference_batches": 260,
+        "inference_requests": 4096,
+        "average_batch": 15.753846153846155,
+        "max_batch": 16,
+        "limiter_capacity": 0,
+        "limiter_max_active": 0
+      },
+      {
+        "elapsed_seconds": 4.1466159999981755,
+        "simulations_per_second": 987.7934199843444,
+        "inference_batches": 257,
+        "inference_requests": 4096,
+        "average_batch": 15.937743190661479,
+        "max_batch": 16,
+        "limiter_capacity": 0,
+        "limiter_max_active": 0
+      },
+      {
+        "elapsed_seconds": 4.086426199995913,
+        "simulations_per_second": 1002.3428295374812,
+        "inference_batches": 258,
+        "inference_requests": 4096,
+        "average_batch": 15.875968992248062,
+        "max_batch": 16,
+        "limiter_capacity": 0,
+        "limiter_max_active": 0
+      }
+    ],
+    "median_elapsed_seconds": 4.086426199995913,
+    "median_simulations_per_second": 1002.3428295374812,
+    "median_average_batch": 15.875968992248062,
+    "max_observed_batch": 16,
+    "max_active_simulations": 0
+  },
+  "cooperative_limiter": {
+    "samples": [
+      {
+        "elapsed_seconds": 0.8406283999938751,
+        "simulations_per_second": 4872.545348253573,
+        "inference_batches": 82,
+        "inference_requests": 4096,
+        "average_batch": 49.951219512195124,
+        "max_batch": 64,
+        "limiter_capacity": 16,
+        "limiter_max_active": 16
+      },
+      {
+        "elapsed_seconds": 0.8761320000048727,
+        "simulations_per_second": 4675.09462041932,
+        "inference_batches": 77,
+        "inference_requests": 4096,
+        "average_batch": 53.1948051948052,
+        "max_batch": 64,
+        "limiter_capacity": 16,
+        "limiter_max_active": 16
+      },
+      {
+        "elapsed_seconds": 0.8227214999933494,
+        "simulations_per_second": 4978.598468659335,
+        "inference_batches": 82,
+        "inference_requests": 4096,
+        "average_batch": 49.951219512195124,
+        "max_batch": 64,
+        "limiter_capacity": 16,
+        "limiter_max_active": 16
+      }
+    ],
+    "median_elapsed_seconds": 0.8406283999938751,
+    "median_simulations_per_second": 4872.545348253573,
+    "median_average_batch": 49.951219512195124,
+    "max_observed_batch": 64,
+    "max_active_simulations": 16
+  },
+  "throughput_speedup": 4.861156487248928
+}

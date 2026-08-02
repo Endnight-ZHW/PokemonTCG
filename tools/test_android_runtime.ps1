@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory)]
     [string]$ApkPath,
     [string]$SmokeApkPath = '',
+    [string]$CandidateSmokeApkPath = '',
+    [string]$AndroidEvidenceOutput = '',
     [Parameter(Mandatory)]
     [int]$ExpectedModels,
     [string]$PackageName = 'com.pokemontcg.game',
@@ -48,6 +50,7 @@ function Install-AndroidPackage {
     param(
         [Parameter(Mandatory)] [string]$Serial,
         [Parameter(Mandatory)] [string]$Path,
+        [string]$TargetPackage = $PackageName,
         [switch]$PermitCleanInstall
     )
     $installRows = @(& $adb -s $Serial install -r $Path 2>&1)
@@ -59,10 +62,10 @@ function Install-AndroidPackage {
         $PermitCleanInstall -and
         $installText.Contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')
     ) {
-        Write-Host "ANDROID_CLEAN_INSTALL package=$PackageName reason=signature_mismatch"
-        & $adb -s $Serial uninstall $PackageName | Out-Host
+        Write-Host "ANDROID_CLEAN_INSTALL package=$TargetPackage reason=signature_mismatch"
+        & $adb -s $Serial uninstall $TargetPackage | Out-Host
         if ($LASTEXITCODE -ne 0) {
-            throw "Unable to remove the incompatible test package $PackageName from device $Serial."
+            throw "Unable to remove the incompatible test package $TargetPackage from device $Serial."
         }
         & $adb -s $Serial install $Path | Out-Host
         if ($LASTEXITCODE -ne 0) {
@@ -261,8 +264,11 @@ $apkModelKeys = @(
         ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } |
         Sort-Object
 )
-if ($ExpectedModels -gt 0 -and (Compare-Object @($releaseDecks | Sort-Object) $apkModelKeys)) {
-    throw 'Android runtime payload model set does not match release_manifest release decks.'
+if (
+    $ExpectedModels -gt 0 -and
+    (Compare-Object @('universal') $apkModelKeys)
+) {
+    throw 'Android runtime payload does not contain exactly universal.onnx.'
 }
 foreach ($requiredRuntimeInput in @(
     'assets/data/ai_models.json',
@@ -319,6 +325,44 @@ if (-not $smokeCommandLine.Contains('--phase6-release-smoke')) {
 }
 Write-Host "ANDROID_SMOKE_PAYLOAD_MATCH models=$ExpectedModels runtime_files=$($releaseKeys.Count)"
 
+$candidateIdentity = $null
+$candidatePayloadHashes = $null
+if (-not [string]::IsNullOrWhiteSpace($CandidateSmokeApkPath)) {
+    if (-not (Test-Path -LiteralPath $CandidateSmokeApkPath -PathType Leaf)) {
+        throw "Android candidate smoke APK is missing: $CandidateSmokeApkPath"
+    }
+    $candidateIdentity = Get-ApkIdentity -Path $CandidateSmokeApkPath
+    if (
+        $candidateIdentity.PackageName -ne 'com.pokemontcg.ai.candidate' -or
+        $candidateIdentity.VersionCode -ne [string]$release.android_version_code -or
+        $candidateIdentity.VersionName -ne [string]$release.version
+    ) {
+        throw 'Android candidate smoke APK identity does not match the release manifest.'
+    }
+    $candidateSigners = @(Get-ApkSignerDigests -Path $CandidateSmokeApkPath)
+    if (($releaseSigners -join "`n") -ne ($candidateSigners -join "`n")) {
+        throw 'Release and candidate smoke APK signer certificates do not match.'
+    }
+    $candidatePayloadHashes = Get-ApkRuntimeHashes -Path $CandidateSmokeApkPath
+    $candidateKeys = @($candidatePayloadHashes.Keys | Sort-Object)
+    if (($releaseKeys -join "`n") -ne ($candidateKeys -join "`n")) {
+        throw 'Release and candidate smoke APK runtime payloads contain different files.'
+    }
+    foreach ($name in $releaseKeys) {
+        if ($releaseHashes[$name] -ne $candidatePayloadHashes[$name]) {
+            throw "Release and candidate smoke APK runtime payload differs: $name"
+        }
+    }
+    $candidateCommandLine = Get-ApkCommandLineText -Path $CandidateSmokeApkPath
+    if (-not $candidateCommandLine.Contains('--candidate-runtime-smoke')) {
+        throw 'Android candidate smoke APK does not contain the candidate runtime flag.'
+    }
+    Write-Host (
+        "ANDROID_CANDIDATE_PAYLOAD_MATCH models=$ExpectedModels " +
+        "runtime_files=$($candidateKeys.Count)"
+    )
+}
+
 function Invoke-AndroidDeviceSmoke {
 $deviceRows = & $adb devices
 if ($LASTEXITCODE -ne 0) {
@@ -335,17 +379,19 @@ if ($connectedDevices.Count -eq 0) {
         throw 'Android ARM64 runtime smoke requires a connected ADB device.'
     }
     Write-Host 'ANDROID_DEVICE_SKIPPED no connected ADB device; ARM64 inference not claimed'
-    return
+    return $null
 }
 
 $nativeArm64Devices = @()
 $deviceDescriptions = @()
+$deviceNativeBridges = @{}
 foreach ($candidate in $connectedDevices) {
     $abi = Get-AndroidProperty -Serial $candidate -Name 'ro.product.cpu.abi'
     $nativeBridge = Get-AndroidProperty `
         -Serial $candidate `
         -Name 'ro.dalvik.vm.native.bridge'
     $deviceDescriptions += "$candidate(abi=$abi,bridge=$nativeBridge)"
+    $deviceNativeBridges[$candidate] = $nativeBridge
     if ($abi -eq 'arm64-v8a' -and $nativeBridge -in @('', '0')) {
         $nativeArm64Devices += $candidate
     }
@@ -356,10 +402,11 @@ if ($nativeArm64Devices.Count -eq 0) {
         throw "Android ARM64 runtime smoke requires a native arm64-v8a device; connected: $details"
     }
     Write-Host "ANDROID_DEVICE_SKIPPED no native arm64-v8a device; connected=$details; ARM64 inference not claimed"
-    return
+    return $null
 }
 
 $serial = [string]$nativeArm64Devices[0]
+$selectedNativeBridge = [string]$deviceNativeBridges[$serial]
 Write-Host "ANDROID_DEVICE_SELECTED serial=$serial abi=arm64-v8a native=1"
 Install-AndroidPackage `
     -Serial $serial `
@@ -430,6 +477,168 @@ if (-not $pidValue) {
     throw 'Android application did not stay running after normal launch.'
 }
 Write-Host "ANDROID_STARTUP_OK serial=$serial pid=$pidValue"
+
+if ($null -ne $candidateIdentity) {
+    $candidatePackage = [string]$candidateIdentity.PackageName
+    Install-AndroidPackage `
+        -Serial $serial `
+        -Path $CandidateSmokeApkPath `
+        -TargetPackage $candidatePackage `
+        -PermitCleanInstall:$AllowCleanInstall
+    & $adb -s $serial logcat -c
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Unable to clear Android logcat before candidate runtime smoke.'
+    }
+    & $adb -s $serial shell am force-stop $candidatePackage
+    & $adb -s $serial shell monkey -p $candidatePackage 1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Unable to launch Android candidate runtime smoke.'
+    }
+
+    $candidateDeadline = [DateTime]::UtcNow.AddSeconds(
+        [Math]::Max(10, $TimeoutSeconds)
+    )
+    $candidateLogRows = @()
+    $candidateChunks = @{}
+    $candidateChunkCount = 0
+    $candidateSucceeded = $false
+    do {
+        Start-Sleep -Seconds 2
+        $candidateLogRows = @(
+            & $adb -s $serial logcat -d -v brief `
+                'godot:V' 'GodotActivity:V' 'AndroidRuntime:E' '*:S'
+        )
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read Android candidate runtime logcat.'
+        }
+        $candidateLogText = $candidateLogRows -join "`n"
+        foreach ($line in $candidateLogRows) {
+            $chunkMatch = [regex]::Match(
+                [string]$line,
+                'CANDIDATE_RUNTIME_EVIDENCE_CHUNK\s+(\d+)/(\d+)\s+([A-Za-z0-9+/=]+)'
+            )
+            if (-not $chunkMatch.Success) {
+                continue
+            }
+            $chunkIndex = [int]$chunkMatch.Groups[1].Value
+            $reportedCount = [int]$chunkMatch.Groups[2].Value
+            if ($candidateChunkCount -notin @(0, $reportedCount)) {
+                throw 'Android candidate evidence reported inconsistent chunk counts.'
+            }
+            $candidateChunkCount = $reportedCount
+            $candidateChunks[$chunkIndex] = $chunkMatch.Groups[3].Value
+        }
+        $candidateSucceeded = (
+            $candidateLogText.Contains('CANDIDATE_RUNTIME_SMOKE passed=1') -and
+            $candidateChunkCount -gt 0 -and
+            $candidateChunks.Count -eq $candidateChunkCount
+        )
+        if ($candidateSucceeded) {
+            break
+        }
+        if (
+            $candidateLogText -match (
+                'FATAL EXCEPTION|Fatal signal|SIGABRT|native crash|' +
+                'CANDIDATE_RUNTIME_SMOKE passed=0|Error loading extension'
+            )
+        ) {
+            $tail = ($candidateLogRows | Select-Object -Last 160) -join "`n"
+            throw "Android failed during candidate runtime smoke.`n$tail"
+        }
+    } while ([DateTime]::UtcNow -lt $candidateDeadline)
+    if (-not $candidateSucceeded) {
+        $tail = ($candidateLogRows | Select-Object -Last 160) -join "`n"
+        throw "Android candidate runtime smoke timed out after $TimeoutSeconds seconds.`n$tail"
+    }
+
+    $encodedEvidence = (
+        1..$candidateChunkCount |
+            ForEach-Object {
+                if (-not $candidateChunks.ContainsKey($_)) {
+                    throw "Android candidate evidence chunk $_ is missing."
+                }
+                [string]$candidateChunks[$_]
+            }
+    ) -join ''
+    try {
+        $candidateJson = [Text.Encoding]::UTF8.GetString(
+            [Convert]::FromBase64String($encodedEvidence)
+        )
+        $candidatePayload = $candidateJson | ConvertFrom-Json
+    }
+    catch {
+        throw "Unable to decode Android candidate runtime evidence: $($_.Exception.Message)"
+    }
+    $modelRows = @($candidatePayload.models.psobject.Properties.Value)
+    $onnxLoadPassed = (
+        [int]$candidatePayload.model_count -eq 1 -and
+        [int]$candidatePayload.route_count -eq 10 -and
+        @($modelRows | Where-Object {
+            -not [bool]$_.loaded -or -not [bool]$_.hash_matches
+        }).Count -eq 0
+    )
+    $inferencePassed = (
+        @($modelRows | Where-Object {
+            $failedScenarios = @($_.scenarios | Where-Object {
+                -not [bool]$_.passed -or
+                [string]$_.execution_provider -ne 'CPUExecutionProvider'
+            })
+            @($_.scenarios).Count -lt 2 -or $failedScenarios.Count -gt 0
+        }).Count -eq 0
+    )
+    $androidEvidence = [ordered]@{
+        schema = 'alphazero_v2_android_runtime/1'
+        passed = (
+            [bool]$candidatePayload.passed -and
+            $onnxLoadPassed -and
+            $inferencePassed -and
+            [bool]$candidatePayload.search_deadline_passed -and
+            [bool]$candidatePayload.minimum_simulations_passed -and
+            [bool]$candidatePayload.fallback_path_passed -and
+            [int]$candidatePayload.illegal_actions -eq 0 -and
+            [int]$candidatePayload.timeouts -eq 0 -and
+            [int]$candidatePayload.degraded -eq 0 -and
+            [int]$candidatePayload.fallbacks -eq 0
+        )
+        physical_device = $true
+        device_serial = $serial
+        abi = 'arm64-v8a'
+        native_bridge = $selectedNativeBridge
+        model_count = [int]$candidatePayload.model_count
+        onnx_load_passed = $onnxLoadPassed
+        inference_passed = $inferencePassed
+        search_deadline_passed = [bool]$candidatePayload.search_deadline_passed
+        minimum_simulations_passed = [bool]$candidatePayload.minimum_simulations_passed
+        fallback_path_passed = [bool]$candidatePayload.fallback_path_passed
+        illegal_actions = [int]$candidatePayload.illegal_actions
+        timeouts = [int]$candidatePayload.timeouts
+        degraded = [int]$candidatePayload.degraded
+        fallbacks = [int]$candidatePayload.fallbacks
+        crashes = 0
+        candidate_runtime = $candidatePayload
+    }
+    if (-not [bool]$androidEvidence.passed) {
+        throw 'Android candidate runtime evidence did not pass every release field.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($AndroidEvidenceOutput)) {
+        $resolvedEvidence = [IO.Path]::GetFullPath($AndroidEvidenceOutput)
+        New-Item -ItemType Directory -Force `
+            -Path (Split-Path -Parent $resolvedEvidence) | Out-Null
+        [IO.File]::WriteAllText(
+            $resolvedEvidence,
+            ($androidEvidence | ConvertTo-Json -Depth 100) + "`n",
+            [Text.UTF8Encoding]::new($false)
+        )
+        Write-Host "ANDROID_RUNTIME_EVIDENCE_OK output=$resolvedEvidence"
+    }
+    Write-Host (
+        "ANDROID_CANDIDATE_RUNTIME_OK serial=$serial " +
+        "simulations=$($candidatePayload.search.action.simulations) " +
+        "choice_simulations=$($candidatePayload.search.choice.simulations)"
+    )
+    return $androidEvidence
+}
+return $null
 }
 
-Invoke-AndroidDeviceSmoke
+$null = Invoke-AndroidDeviceSmoke

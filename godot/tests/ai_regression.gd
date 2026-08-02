@@ -94,18 +94,18 @@ func _load_release_deck_keys() -> Dictionary:
 		deck_keys.append(deck_key)
 	if deck_keys.is_empty():
 		return {"ok": false, "error": "Release manifest has no release decks"}
-	if deck_keys.size() != int(manifest.get("model_count", -1)):
-		return {"ok": false, "error": "Release manifest model_count does not match release_decks"}
 	var deep_enabled := bool(manifest.get("deep_runtime_enabled", false))
+	var model_count := int(manifest.get("model_count", -1))
 	var model_counts_valid := (
 		(
-			int(manifest.get("compatible_model_count", -1))
-			== deck_keys.size()
+			model_count == 1
+			and int(manifest.get("compatible_model_count", -1)) == 1
 			and int(manifest.get("legacy_model_count", -1)) == 0
 		)
 		if deep_enabled
 		else (
-			int(manifest.get("compatible_model_count", -1)) == 0
+			model_count == 0
+			and int(manifest.get("compatible_model_count", -1)) == 0
 			and int(manifest.get("legacy_model_count", -1))
 			== deck_keys.size()
 		)

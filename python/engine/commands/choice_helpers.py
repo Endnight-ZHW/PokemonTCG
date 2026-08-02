@@ -7,14 +7,28 @@ def selected_top_positions_from_request(
     continuation: dict,
     choice,
     limit: int,
+    *,
+    deck_size: int,
 ) -> list[int]:
     display_positions = [
         int(index)
         for index in continuation.get("display_top_positions", []) or []
     ]
+    selected_items = list(choice or [])[: max(0, int(limit or 0))]
+    if selected_items and all(
+        getattr(item, "zone", "") == "deck"
+        and type(getattr(item, "index", None)) is int
+        for item in selected_items
+    ):
+        selected_positions = []
+        for item in selected_items:
+            top_position = int(deck_size) - 1 - int(item.index)
+            if top_position in display_positions:
+                selected_positions.append(top_position)
+        return selected_positions
     request_indices = selected_card_indices_from_request(
         list(getattr(req, "card_list", []) or []),
-        choice,
+        selected_items,
         limit,
     )
     selected_positions = []

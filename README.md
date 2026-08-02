@@ -9,14 +9,15 @@
 
 | 目录 | 定位 | 状态 |
 |---|---|---|
-| [`godot/`](godot/) | 当前发布客户端 | Godot 4.7，版本 0.6.0 |
+| [`godot/`](godot/) | 当前发布客户端 | Godot 4.7，版本 0.7.0 |
 | [`python/`](python/) | Pygame 本地调试、规则对照、AI 训练与数据/卡图导出 | 开发工具，不发布、不提供客户端联机 |
 | [`tools/`](tools/) | 测试、模型导出、Godot 构建和发布脚本 | 由根目录 manifest 驱动 |
 | [`docs/`](docs/) | 规则、开发手册、发布说明和 AI rollout | 项目文档 |
 
 Godot 版本已经具备本地双人、Challenge AI、ENet LAN 和
-WebSocket Relay。旧 Deep v10 模型仍作为历史产物保留，但不兼容本轮规则，发布 UI 已停用
-Deep 并稳定回退 Challenge。联机双方可选择相同或不同牌组；每名玩家拥有独立的牌库、
+WebSocket Relay。Deep AI 已切换到信息集 AlphaZero v2 代码路径，但本轮五代训练没有
+产生可晋升模型；该实现目前只作为原生搜索与训练基础设施基线保留。发布 UI 仍停用
+Deep 并稳定回退 Challenge，旧 v10 模型只读保留。联机双方可选择相同或不同牌组；每名玩家拥有独立的牌库、
 手牌和洗牌随机流。前台采用鼠标与触控导航；网络文本框点击后仍可输入文字，
 Android 系统返回按钮或手势继续有效。
 
@@ -87,7 +88,8 @@ Relay 仅验证并转发 Godot Protocol v6 消息，不承载 Python 客户端�
 - [发布说明](docs/RELEASE_NOTES.md)
 - [Godot 4.7 新手开发手册](docs/GODOT_DEVELOPMENT_GUIDE.md)
 - [Challenge 传统 AI 分层策略架构](docs/TRADITIONAL_AI_ARCHITECTURE.md)
-- [Deep AI v10 历史模型与迁移门禁](docs/deep_ai_v10_rollout.md)
+- [Deep AI 信息集 AlphaZero v2](docs/deep_ai_alphazero_v2.md)
+- [Deep AI v10 历史模型（只读）](docs/deep_ai_v10_rollout.md)
 - [游戏规则](docs/RULES.md)
 
 卡牌名称、规则和图片仅供学习交流。游戏规则基于宝可梦集换式卡牌游戏官方规则。

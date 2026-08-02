@@ -183,120 +183,9 @@ class NeuralBackend(HeuristicBackend):
             return heuristic_priors
 
     def value(self, state, perspective: int) -> float:
-        # Godot's production Deep AI uses neural priors inside the shared
-        # planner but keeps the mature heuristic evaluator for leaf values.
-        # Mirror that path here; the learned value head is still trained for
-        # future use, but is not yet strong enough to gate release models.
+        # This backend belongs to the legacy generic AnytimePlanner used by
+        # non-v2 experiments. AlphaZero v2 uses puct_v2 and its WDL head.
         return self.fallback.value(state, perspective)
-
-
-class DeepRootBackend(NeuralBackend):
-    """Production Deep v1 backend: one neural root call, heuristic leaves.
-
-    ``AnytimePlanner`` asks for root priors before starting simulations.  Every
-    later prior request comes from a simulated node and is intentionally
-    delegated to Challenge heuristics.  This mirrors ``deep_root_ismcts_v1`` in
-    Godot and keeps the value head diagnostic-only for the first release.
-    """
-
-    def __init__(
-        self,
-        model,
-        encoder,
-        device: str,
-        fallback: HeuristicBackend,
-        deck_key: str | None,
-        *,
-        neural_weight: float = 0.75,
-    ):
-        super().__init__(model, encoder, device, fallback, deck_key)
-        self.neural_weight = max(0.0, min(1.0, float(neural_weight)))
-        self._root_pending = True
-        self.root_inference_calls = 0
-        self.diagnostic_root_value: float | None = None
-
-    def set_perspective(self, perspective: int) -> None:
-        super().set_perspective(perspective)
-        self._root_pending = True
-        self.root_inference_calls = 0
-        self.diagnostic_root_value = None
-
-    def priors(self, state, actor: int, actions: list[GameAction]) -> list[float]:
-        heuristic = self.fallback.priors(state, actor, actions)
-        if (
-            not self._root_pending
-            or self.search_perspective is None
-            or actor != self.search_perspective
-        ):
-            return heuristic
-        self._root_pending = False
-        try:
-            from engine.ai.dl.model import TORCH_AVAILABLE, torch
-            if not TORCH_AVAILABLE or torch is None or self.model is None or not actions:
-                return heuristic
-            observation = Observation.from_state(state, actor)
-            encoded_state = self.encoder.encode_observation(observation, self.deck_key)
-            encoded_actions = [
-                self.encoder.encode_game_action(observation, action)
-                for action in actions
-            ]
-            state_numeric_size = int(
-                getattr(self.model, "state_numeric_size", len(encoded_state.numeric))
-            )
-            state_card_slots = int(
-                getattr(self.model, "state_card_slots", len(encoded_state.card_ids))
-            )
-            action_numeric_size = int(
-                getattr(self.model, "action_numeric_size", len(encoded_actions[0].numeric))
-            )
-            with torch.no_grad():
-                state_numeric = torch.tensor(
-                    [_fit(encoded_state.numeric, state_numeric_size, 0.0)],
-                    dtype=torch.float32,
-                    device=self.device,
-                )
-                state_cards = torch.tensor(
-                    [_fit(encoded_state.card_ids, state_card_slots, 0)],
-                    dtype=torch.long,
-                    device=self.device,
-                )
-                action_numeric = torch.tensor(
-                    [[
-                        _fit(item.numeric, action_numeric_size, 0.0)
-                        for item in encoded_actions
-                    ]],
-                    dtype=torch.float32,
-                    device=self.device,
-                )
-                action_cards = torch.tensor(
-                    [[item.card_id for item in encoded_actions]],
-                    dtype=torch.long,
-                    device=self.device,
-                )
-                logits, model_value = self.model(
-                    state_numeric,
-                    state_cards,
-                    action_numeric,
-                    action_cards,
-                )
-                self.root_inference_calls += 1
-                value = float(model_value.reshape(-1)[0].detach().cpu().item())
-                if math.isfinite(value):
-                    self.diagnostic_root_value = value
-                neural = _normalize_priors(
-                    torch.softmax(logits[0].float(), dim=0).detach().cpu().tolist()
-                )
-            if len(neural) != len(heuristic) or not all(
-                math.isfinite(float(item)) for item in neural
-            ):
-                return heuristic
-            heuristic_weight = 1.0 - self.neural_weight
-            return _normalize_priors([
-                self.neural_weight * neural_value + heuristic_weight * heuristic_value
-                for neural_value, heuristic_value in zip(neural, heuristic)
-            ])
-        except Exception:
-            return heuristic
 
 
 class AnytimePlanner:
@@ -428,20 +317,10 @@ class AnytimePlanner:
             selected.total_value += value
             simulations += 1
 
-        if isinstance(self.backend, DeepRootBackend):
-            chosen = min(
-                stats,
-                key=lambda item: (
-                    -item.visits,
-                    -item.prior,
-                    str(item.action.signature),
-                ),
-            ).action
-        else:
-            chosen = max(
-                stats,
-                key=lambda item: (item.visits, item.q, item.prior),
-            ).action
+        chosen = max(
+            stats,
+            key=lambda item: (item.visits, item.q, item.prior),
+        ).action
         elapsed = time.perf_counter() - started
         self.last_result = PlannerResult(
             chosen,

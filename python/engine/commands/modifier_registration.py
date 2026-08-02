@@ -60,6 +60,7 @@ def register_pokemon_modifiers(pokemon: PokemonInPlay, player_idx: int,
         if sc.is_special_energy:
             _register_special_energy_modifier(
                 sc,
+                pokemon,
                 player_idx,
                 f"{source_prefix}:attachment:{energy_index}",
                 event_bus,
@@ -279,8 +280,13 @@ def register_effect_modifier(
     return False
 
 
-def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
-                                       event_bus):
+def _register_special_energy_modifier(
+    sc,
+    attached_pokemon,
+    player_idx: int,
+    source_prefix: str,
+    event_bus,
+):
     """Register special energy card effects as event listeners."""
     source = f"{source_prefix}:energy:{sc.api_id}"
 
@@ -308,7 +314,10 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                         return None
                 else:
                     holder = data.get("attacker")
-                if holder is not None and sc in getattr(holder, "energy_cards", []):
+                if (
+                    holder is attached_pokemon
+                    and sc in getattr(holder, "energy_cards", [])
+                ):
                     return {
                         "delta": delta,
                         "source": sc.name,
@@ -352,7 +361,11 @@ def _register_special_energy_modifier(sc, player_idx: int, source_prefix: str,
                 else:
                     holder = data.get("defender")
                 state = data.get("state")
-                if not holder or not state or sc not in getattr(holder, "energy_cards", []):
+                if (
+                    holder is not attached_pokemon
+                    or not state
+                    or sc not in getattr(holder, "energy_cards", [])
+                ):
                     return None
                 from engine.commands.trigger_commands import trigger_draw_cards_spec
 

@@ -48,8 +48,8 @@ func _run_phase_four(deep_runtime: DeepAIRuntime) -> Dictionary:
 				+ "inferred_models=%d scenarios=%d"
 			)
 			% [
-				release_decks.size(),
-				release_decks.size(),
+				1,
+				1,
 				int(deep_check.get("inferred_models", 0)),
 				int(deep_check.get("scenarios", 0)),
 			]
@@ -97,7 +97,7 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 			not release_decks.is_empty()
 			and str(release_manifest.get("deep_fallback", "")) == "challenge"
 			and int(release_manifest.get("compatible_model_count", -1))
-			== release_decks.size()
+			== 1
 			and int(release_manifest.get("legacy_model_count", -1)) == 0
 			and bool(deep_check.get("passed", false))
 		)
@@ -106,8 +106,6 @@ func _run_phase_six(deep_runtime: DeepAIRuntime, services: Dictionary) -> Dictio
 			not release_decks.is_empty()
 			and str(release_manifest.get("deep_fallback", "")) == "challenge"
 			and int(release_manifest.get("compatible_model_count", -1)) == 0
-			and int(release_manifest.get("legacy_model_count", -1))
-			== int(release_manifest.get("model_count", -2))
 			and int(release_manifest.get("legacy_model_count", -1))
 			== release_decks.size()
 			and _legacy_onnx_assets_absent(release_decks)
@@ -183,7 +181,8 @@ func _deep_models_load_and_infer(
 		not deep_runtime.runtime_enabled
 		or not deep_runtime.is_available()
 		or not models_value is Dictionary
-		or Dictionary(models_value).size() != release_decks.size()
+		or Dictionary(models_value).size() != 1
+		or not Dictionary(models_value).has("universal")
 	):
 		return {
 			"passed": false,
@@ -191,8 +190,10 @@ func _deep_models_load_and_infer(
 		}
 	var inferred_models := 0
 	var scenarios := 0
+	var routes: Dictionary = deep_runtime.manifest.get("deck_routes", {})
 	for deck_key in release_decks:
-		var row_value: Variant = Dictionary(models_value).get(deck_key, {})
+		var route := str(routes.get(deck_key, ""))
+		var row_value: Variant = Dictionary(models_value).get(route, {})
 		if not row_value is Dictionary:
 			return {"passed": false, "error": "%s:model_manifest" % deck_key}
 		var row: Dictionary = row_value
@@ -232,40 +233,50 @@ func _deep_models_load_and_infer(
 
 func _infer_loaded_backend(
 	backend: Variant,
-	manifest: Dictionary,
+	_manifest: Dictionary,
 	empty_slots: bool,
 ) -> Dictionary:
 	if backend == null:
 		return {"passed": false, "error": "backend_unavailable"}
-	var state_numeric := PackedFloat32Array()
-	state_numeric.resize(int(manifest.get("state_numeric_size", 0)))
-	var state_cards := PackedInt64Array()
-	state_cards.resize(int(manifest.get("state_card_slots", 0)))
+	var state_global := PackedFloat32Array()
+	state_global.resize(128)
+	var entity_numeric := PackedFloat32Array()
+	entity_numeric.resize(128 * 16)
+	var entity_cards := PackedInt64Array()
+	entity_cards.resize(128)
+	var entity_types := PackedInt64Array()
+	entity_types.resize(128 * 4)
 	if not empty_slots:
-		for index in range(state_cards.size()):
-			state_cards[index] = 1 + index % 31
-	var candidate_size := int(manifest.get("action_numeric_size", 0))
-	var action_numeric := PackedFloat32Array()
-	action_numeric.resize(candidate_size * 2)
-	var choice_numeric := PackedFloat32Array()
-	choice_numeric.resize(candidate_size * 2)
+		for index in range(entity_cards.size()):
+			entity_cards[index] = 1 + index % 31
+	var candidate_numeric := PackedFloat32Array()
+	candidate_numeric.resize(2 * 32)
+	var candidate_refs := PackedInt64Array()
+	candidate_refs.resize(2 * 4)
 	var inferred: Dictionary = backend.call(
-		"infer",
-		state_numeric,
-		state_cards,
-		action_numeric,
+		"infer_v2",
+		state_global,
+		entity_numeric,
+		entity_cards,
+		entity_types,
+		candidate_numeric,
 		PackedInt64Array([1, 2]),
-		choice_numeric,
-		PackedInt64Array([3, 4]),
+		PackedInt64Array([1, 2]),
+		candidate_refs,
+		PackedByteArray([1, 1]),
+		PackedInt64Array([0]),
+		PackedInt64Array([1]),
+		1,
+		2,
 	)
-	var finite: bool = is_finite(float(inferred.get("value", NAN)))
-	for output_name in ["action_logits", "choice_logits"]:
+	var finite := true
+	for output_name in ["policy_logits", "wdl_logits"]:
 		for value in inferred.get(output_name, []):
 			finite = finite and is_finite(float(value))
 	var passed: bool = (
 		bool(inferred.get("success", false))
-		and inferred.get("action_logits", []).size() == 2
-		and inferred.get("choice_logits", []).size() == 2
+		and inferred.get("policy_logits", []).size() == 2
+		and inferred.get("wdl_logits", []).size() == 3
 		and finite
 		and str(backend.call("get_execution_provider"))
 		== "CPUExecutionProvider"

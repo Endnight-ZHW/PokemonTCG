@@ -1,0 +1,229 @@
+{
+  "schema": "native_vs_python_infoset_puct_benchmark/1",
+  "baseline": "retired_deeproot_ismcts_v1",
+  "candidate": "cpp_native_infoset_puct_v2",
+  "same_seed_and_simulation_count": true,
+  "same_root_state": true,
+  "simulations_per_search": 64,
+  "max_depth": 16,
+  "historical": {
+    "actor": 0,
+    "compatibility_patch": "pending_promotion_player alias mapped to pending_promotions[0]",
+    "decks": {
+      "psychic": [
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "svd-dodrio"
+      ],
+      "water": [
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-ener-5",
+        "sv1-104"
+      ]
+    },
+    "fixture_name": "rules_golden:ability_damage_draw",
+    "historical_commit": "b0f12b5",
+    "median_seconds": 0.688414,
+    "planner_id": "deep_root_ismcts_v1",
+    "repeats": 3,
+    "samples_seconds": [
+      0.443089,
+      0.688414,
+      0.807638
+    ],
+    "schema": "retired_deeproot_ismcts_v1_measurement/1",
+    "seed": 3907,
+    "simulations_per_search": 64,
+    "simulations_per_second": 92.9673132736987,
+    "state": {
+      "action_log": [],
+      "active_player_idx": 0,
+      "apply_type_matchups": false,
+      "choice_sequence": 0,
+      "extra_draws": [
+        0,
+        0
+      ],
+      "first_player_idx": 1,
+      "mulligan_bonus_max": 0,
+      "mulligan_count": [
+        0,
+        0
+      ],
+      "opening_coin_winner_idx": -1,
+      "pending_promotions": [],
+      "phase": "MAIN",
+      "players": [
+        {
+          "active": {
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "svd-dodrio",
+            "damage_counters": 0,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          "bench": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "deck": [
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5"
+          ],
+          "discard": [],
+          "energy_attached_this_turn": false,
+          "hand": [],
+          "healed_this_turn": false,
+          "name": "玩家1",
+          "prizes": [
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5"
+          ],
+          "retreated_this_turn": false,
+          "stadium_played_this_turn": false,
+          "stadium_used_this_turn": false,
+          "supporter_played_this_turn": false,
+          "vstar_power_used": false,
+          "was_ko_by_attack": false
+        },
+        {
+          "active": {
+            "attached_tool_id": "",
+            "can_evolve_this_turn": true,
+            "card_id": "sv1-104",
+            "damage_counters": 0,
+            "energy_card_ids": [],
+            "evolution_stack_ids": [],
+            "healed_this_turn": false,
+            "paralyzed_since_turn": 0,
+            "placed_this_turn": false,
+            "status_conditions": [],
+            "used_abilities": []
+          },
+          "bench": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "deck": [
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5"
+          ],
+          "discard": [],
+          "energy_attached_this_turn": false,
+          "hand": [],
+          "healed_this_turn": false,
+          "name": "玩家2",
+          "prizes": [
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5",
+            "sv1-ener-5"
+          ],
+          "retreated_this_turn": false,
+          "stadium_played_this_turn": false,
+          "stadium_used_this_turn": false,
+          "supporter_played_this_turn": false,
+          "vstar_power_used": false,
+          "was_ko_by_attack": false
+        }
+      ],
+      "processed_action_ids": [],
+      "public_deck_keys": [
+        "psychic",
+        "water"
+      ],
+      "resolution_stack": {
+        "context": {},
+        "frames": [],
+        "pending_request": null,
+        "sequence": 0.0
+      },
+      "result_conditions": [
+        [],
+        []
+      ],
+      "result_reason": "NONE",
+      "result_status": "ONGOING",
+      "revision": 0,
+      "rules_options": {
+        "apply_type_matchups": false
+      },
+      "rules_profile_id": "CN_MAINLAND_3_1_0",
+      "setup_actor_idx": -1,
+      "setup_bonus_card_ids": [
+        [],
+        []
+      ],
+      "setup_ready": [
+        false,
+        false
+      ],
+      "setup_stage": "TURN_ORDER",
+      "snapshot_version": 3,
+      "stadium_card_id": "",
+      "stadium_owner_idx": -1,
+      "turn_fact_book": {
+        "current_turn": {
+          "knockouts": []
+        },
+        "previous_turn": {
+          "knockouts": []
+        }
+      },
+      "turn_number": 3,
+      "winner": -1
+    },
+    "source_sha256": "8a0320a81810dbe75e33f000598652a7d115ec767f8ae89fb9e8df618e836dc1"
+  },
+  "native": {
+    "repeats": 3,
+    "samples_seconds": [
+      0.02921280002919957,
+      0.02867650002008304,
+      0.02938010002253577
+    ],
+    "median_seconds": 0.02921280002919957,
+    "simulations_per_second": 2190.8204600732893
+  },
+  "throughput_speedup": 23.565491815638957,
+  "release_baseline_complete": true,
+  "release_baseline_note": "Retired DeepRootISMCTS v1 was executed from detached commit b0f12b5 on the same machine with the same root state, seeds, and 64 simulations."
+}

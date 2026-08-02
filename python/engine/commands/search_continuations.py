@@ -84,6 +84,11 @@ def resolve_search_cards(stack, continuation: dict, choice):
     destination = str(continuation.get("destination", "hand") or "hand")
     count = int(continuation.get("count", 1) or 1)
     player = stack.state.get_player(player_idx)
+    if destination == "bench":
+        count = min(
+            count,
+            sum(1 for pokemon in player.bench if pokemon is None),
+        )
     selected = take_selected_cards_from_zone(
         player,
         from_zone,
@@ -238,6 +243,7 @@ def resolve_look_top_deck(stack, req, continuation: dict, choice):
         continuation,
         choice,
         take,
+        deck_size=len(player.deck),
     )
 
     if destination == "bench_energy":
@@ -403,6 +409,7 @@ def resolve_look_top_attach_energy(stack, req, continuation: dict, choice):
         continuation,
         choice,
         take,
+        deck_size=len(player.deck),
     )
     targets = [
         (slot, pokemon)

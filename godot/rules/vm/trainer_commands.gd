@@ -388,10 +388,16 @@ func search_request(
 				state, rng, player_idx, str(params.get("destination", "hand")), events)
 		return VMResult.ok("没有符合条件的卡。")
 	var requested_count := int(params.get("count", 1))
+	var destination := str(params.get("destination", "hand"))
+	if destination == "bench":
+		requested_count = min(
+			requested_count,
+			player.bench.size() - player.bench_count(),
+		)
 	if requested_count <= 0:
 		if zone == "deck":
 			complete_empty_deck_search(
-				state, rng, player_idx, str(params.get("destination", "hand")), events)
+				state, rng, player_idx, destination, events)
 		return VMResult.ok("未选择卡牌。")
 	var min_select: int = min(
 		int(params.get("min_select", min(1, requested_count))),
@@ -403,7 +409,7 @@ func search_request(
 		{
 			"player_idx": player_idx,
 			"source_zone": zone,
-			"destination": str(params.get("destination", "hand")),
+			"destination": destination,
 			"shuffle": zone == "deck",
 		},
 		min_select,

@@ -12,7 +12,15 @@ from data.card_models import AbilityDef, Card, EffectDef
 from data.card_registry import CardRegistry
 from data.deck_definitions import ALL_CARD_IDS
 from engine.action_codec import deserialize_game_action, serialize_game_action
-from engine.actions import CardRef, ChoiceResponse, GameAction, PokemonRef, StepResult
+from engine.actions import (
+    CardRef,
+    ChoiceOption,
+    ChoiceRequest,
+    ChoiceResponse,
+    GameAction,
+    PokemonRef,
+    StepResult,
+)
 from engine.action_availability import VMActionAvailability
 from engine.ai.observation import Observation, fair_search_clone
 from engine.ai.planner import AnytimePlanner, HeuristicBackend, PlannerConfig
@@ -621,6 +629,41 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertEqual(result.error_code, "choice_target_limit")
         self.assertEqual(callback_payloads, [])
         self.assertIsNotNone(state.resolution_stack["pending_request"])
+
+    def test_same_target_energy_distribution_allows_declared_grouping(self):
+        state = self._main_state()
+        engine = GameEngine()
+        callback_payloads = []
+        structured = engine.choice_request(
+            state,
+            ActionRequest(
+                "distribute_energy",
+                0,
+                "distribute",
+                min_select=2,
+                max_select=2,
+                card_list=[state.p1.deck[0], state.p1.deck[1]],
+                target_info=[{"slot": "active", "name": "active"}],
+                max_per_target=1,
+                continuation={
+                    "kind": "attach_discard_energy_distribution",
+                    "same_target": True,
+                    "max_per_target": 1,
+                },
+                callback=lambda payload: callback_payloads.append(payload),
+            ),
+        )
+        result = engine.apply_choice(
+            state,
+            structured,
+            ChoiceResponse(
+                structured.request_id,
+                tuple(option.option_id for option in structured.options),
+            ),
+        )
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(len(callback_payloads), 1)
+        self.assertEqual(len(callback_payloads[0]), 2)
 
     def test_malformed_public_requests_fail_without_raising(self):
         state = self._main_state()
@@ -1833,6 +1876,102 @@ class GameEngineRefactorTests(unittest.TestCase):
         self.assertEqual(state.resolution_stack["context"]["finish_attack_after_promotions"], 0)
         self.assertEqual(state.event_stream._events[0].data["value"], 3)
         self.assertEqual(state.action_log, ["preexisting log"])
+
+    def test_fair_search_clone_pins_revealed_pending_deck_cards(self):
+        state = self._main_state()
+        state.public_deck_keys = (None, None)
+        state.p1.deck = [
+            CardRegistry.get(card_id)
+            for card_id in (
+                "sv1-ener-1",
+                "sv1-ener-2",
+                "sv1-ener-3",
+                "sv1-ener-4",
+                "sv1-ener-5",
+                "sv1-ener-6",
+                "sv1-ener-8",
+                "sv2-young",
+            )
+        ]
+        state.p1.prizes = [
+            CardRegistry.get(card_id)
+            for card_id in (
+                "sv1-150",
+                "sv1-151",
+                "sv1-152",
+                "sv1-153",
+                "sv1-176",
+                "sv1-180",
+            )
+        ]
+        pinned_indices = (2, 6)
+        options = tuple(
+            ChoiceOption(
+                f"card:0:deck:{index}:{state.p1.deck[index].api_id}",
+                state.p1.deck[index].name,
+                CardRef(0, "deck", index, state.p1.deck[index].api_id),
+                state.p1.deck[index],
+            )
+            for index in pinned_indices
+        )
+        top_card_ids = [
+            state.p1.deck[-1 - position].api_id
+            for position in range(3)
+        ]
+        VMTransactionManager().persist_pending_choice(
+            state,
+            ChoiceRequest(
+                request_id="choice:search:revealed",
+                request_type="search_deck",
+                player=0,
+                prompt="选择卡牌",
+                options=options,
+                metadata={
+                    "continuation": {
+                        "kind": "search_cards",
+                        "player_idx": 0,
+                        "from_zone": "deck",
+                        "destination": "hand",
+                        "count": 1,
+                        "top_card_ids": top_card_ids,
+                    }
+                },
+            ),
+        )
+
+        worlds = [
+            fair_search_clone(state, 0, seed)
+            for seed in (11, 12, 13)
+        ]
+
+        for world in worlds:
+            rebuilt = GameEngine().pending_choice_request(world)
+            self.assertIsNotNone(rebuilt)
+            self.assertEqual(
+                tuple(option.option_id for option in rebuilt.options),
+                tuple(option.option_id for option in options),
+            )
+            for index in pinned_indices:
+                self.assertEqual(
+                    world.p1.deck[index].api_id,
+                    state.p1.deck[index].api_id,
+                )
+            self.assertEqual(
+                [
+                    world.p1.deck[-1 - position].api_id
+                    for position in range(3)
+                ],
+                top_card_ids,
+            )
+        self.assertGreater(
+            len(
+                {
+                    tuple(card.api_id for card in world.p1.deck)
+                    for world in worlds
+                }
+            ),
+            1,
+        )
 
     def test_snapshot_manager_undo_redo_preserves_stack_and_event_stream(self):
         state = self._main_state()

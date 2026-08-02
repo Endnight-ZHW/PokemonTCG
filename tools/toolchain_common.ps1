@@ -35,8 +35,9 @@ function Get-ReleaseManifest {
     }
     $manifest = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
     $decks = @($manifest.release_decks)
-    if ($decks.Count -eq 0 -or $decks.Count -ne [int]$manifest.model_count) {
-        throw 'Release manifest model_count does not match release_decks.'
+    $modelCount = [int]$manifest.model_count
+    if ($decks.Count -eq 0 -or $modelCount -notin @(0, 1, $decks.Count)) {
+        throw 'Release manifest has an invalid universal or legacy model count.'
     }
     if (@($decks | Sort-Object -Unique).Count -ne $decks.Count) {
         throw 'Release manifest contains duplicate release deck keys.'
@@ -53,19 +54,20 @@ function Assert-ReleaseDeepFallbackContract {
     if ([string]$Manifest.deep_fallback -ne 'challenge') {
         throw 'Release manifest Deep fallback must be challenge.'
     }
-    if ($modelCount -ne $decks.Count) {
-        throw 'Release manifest model_count must match release_decks.'
-    }
     if ([bool]$Manifest.deep_runtime_enabled) {
         $planner = $Manifest.deep_planner
         $evidence = [string]$planner.evidence_sha256
         if (
-            $compatibleModelCount -ne $modelCount -or
+            $modelCount -ne 1 -or
+            $compatibleModelCount -ne 1 -or
             $legacyModelCount -ne 0 -or
-            [bool]$Manifest.candidate_evaluation -or
-            [int]$Manifest.schemas.deep_planner -ne 1 -or
-            [int]$planner.schema_version -ne 1 -or
-            [string]$planner.planner_id -ne 'deep_root_ismcts_v1' -or
+            [int]$Manifest.format_version -ne 3 -or
+            [int]$Manifest.schemas.deep_planner -ne 2 -or
+            [int]$planner.schema_version -ne 2 -or
+            [string]$planner.planner_id -ne 'infoset_puct_v2' -or
+            [string]$Manifest.deep_model.variant -ne 'universal_infoset_transformer_v2' -or
+            -not [bool]$Manifest.deep_model.universal -or
+            -not [bool]$Manifest.native_ai.production_ready -or
             $evidence -notmatch '^[0-9a-f]{64}$'
         ) {
             throw 'Enabled Deep release manifest is incomplete or incompatible.'
@@ -73,7 +75,8 @@ function Assert-ReleaseDeepFallbackContract {
     }
     elseif (
         $compatibleModelCount -ne 0 -or
-        $legacyModelCount -ne $modelCount
+        $modelCount -ne 0 -or
+        $legacyModelCount -ne $decks.Count
     ) {
         throw 'Disabled Deep release manifest has inconsistent model counts.'
     }

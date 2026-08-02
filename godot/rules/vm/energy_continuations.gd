@@ -136,9 +136,19 @@ func continue_energy_attach_distribution(
 	if bool(data.get("same_target", false)) and not selected.is_empty():
 		forced_slot = str(selected[0].get("value", {}).get("slot", ""))
 	var per_target: Dictionary = {}
+	var used_energy_indices: Dictionary = {}
 	var plan: Array[Dictionary] = []
 	for index in range(selected.size()):
-		var ref: Dictionary = refs[index]
+		var energy_index := int(
+			selected[index].get("value", {}).get("energy_index", index))
+		if (
+			energy_index < 0
+			or energy_index >= refs.size()
+			or used_energy_indices.has(energy_index)
+		):
+			return VMResult.fail("同一张能量不能重复附着。", "invalid_choice")
+		used_energy_indices[energy_index] = true
+		var ref: Dictionary = refs[energy_index]
 		var energy_id := str(ref.get("card_id", ""))
 		var source_index := int(ref.get("index", -1))
 		var target_slot := str(selected[index].get("value", {}).get("slot", ""))

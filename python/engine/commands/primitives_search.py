@@ -32,6 +32,15 @@ class SearchCards:
             return CommandResult.ok(f"No valid cards found in {from_zone}.")
 
         max_select = min(count, len(valid_cards))
+        if destination == "bench":
+            max_select = min(
+                max_select,
+                sum(1 for pokemon in player.bench if pokemon is None),
+            )
+        if max_select <= 0:
+            if from_zone == "deck":
+                player.shuffle_deck()
+            return CommandResult.ok("No open Bench slots.")
         return CommandResult.ok(
             f"Search {from_zone} for {filter_type}.",
             pending_choice=ActionRequest(

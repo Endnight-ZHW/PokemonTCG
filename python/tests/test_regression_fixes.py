@@ -1071,6 +1071,32 @@ class TestCardEffectAccuracy(unittest.TestCase):
         self.assertTrue(step.success, step.message)
         self.assertEqual(state.p2.active.damage_counters, 4)
 
+    def test_special_energy_modifier_is_scoped_to_its_attached_pokemon(self):
+        engine = GameEngine()
+        state = self._battle_state(active_card_id="svi-inde")
+        state.p1.hand = [
+            CardRegistry.get("sv1-150"),
+            CardRegistry.get("sv1-151"),
+            CardRegistry.get("svi-popp"),
+        ]
+        state.p1.active.energy_cards = [CardRegistry.get("svi-dtur")]
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("svi-tand"))
+        state.p1.bench[0].energy_cards = [CardRegistry.get("svi-dtur")]
+        self._register_board(state)
+
+        step = engine.apply_action(
+            state,
+            GameAction(
+                PlayerAction.DECLARE_ATTACK,
+                {"attack_idx": 1},
+                actor=0,
+            ),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p2.active.damage_counters, 1)
+
     def test_conditional_bonus_prevention_is_one_damage_packet(self):
         state = self._battle_state(active_card_id="sv1-113")
         state.p1.active.energy_cards = [CardRegistry.get("sv1-ener-5")] * 5
@@ -1102,6 +1128,40 @@ class TestCardEffectAccuracy(unittest.TestCase):
 
         self.assertTrue(step.success, step.message)
         self.assertEqual(state.p2.active.damage_counters, 8)
+
+    def test_tool_modifier_is_registered_on_selected_bench_target(self):
+        state = self._battle_state()
+        state.p1.bench[0] = PokemonInPlay(CardRegistry.get("sv1-107"))
+        state.p1.hand = [CardRegistry.get("sv1-202")]
+
+        step = GameEngine().apply_action(
+            state,
+            GameAction(
+                PlayerAction.PLAY_TRAINER,
+                {"hand_idx": 0, "target_slot": "bench_0"},
+                actor=0,
+            ),
+            auto_resolve=True,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertEqual(state.p1.active.modifiers, [])
+        self.assertEqual(
+            state.p1.bench[0].modifiers[0]["operation"],
+            {"kind": "hp_delta", "amount": 50},
+        )
+        self.assertEqual(
+            state.p1.bench[0].modifiers[0]["condition"],
+            {"target_basic": True},
+        )
+        self.assertEqual(
+            state.p1.bench[0].modifiers[0]["source_ref"]["slot"],
+            "bench_0",
+        )
+        self.assertIs(
+            state.p1.bench[0].attached_tool,
+            CardRegistry.get("sv1-202"),
+        )
 
     def test_piercing_marker_ignores_defender_prevention(self):
         state = self._battle_state(active_card_id="sv2-staryu")
@@ -1648,6 +1708,50 @@ class TestSnapshotAndResources(unittest.TestCase):
 
 
 # ── 8. USE_STADIUM Dispatch ──────────────────────────────────────────────
+
+class TestAlphaZeroEnvironmentActor(unittest.TestCase):
+
+    def test_pending_promotion_player_owns_the_decision(self):
+        from engine.ai.dl.puct_v2 import PythonGameEnvironment
+
+        state = _make_state_with_pokemon()
+        state.active_player_idx = 1
+        state.pending_promotion_player = 0
+
+        self.assertEqual(PythonGameEnvironment().actor(state), 0)
+
+
+class TestPreciseBoardChoiceRefs(unittest.TestCase):
+
+    def test_potion_keeps_duplicate_card_ids_bound_to_injured_slots(self):
+        state = _make_state_with_pokemon(active_card_id="svf-scyt")
+        state.p1.active.damage_counters = 0
+        state.p1.bench[2] = PokemonInPlay(CardRegistry.get("svf-scyt"))
+        state.p1.bench[2].damage_counters = 1
+        state.p1.bench[4] = PokemonInPlay(CardRegistry.get("svf-luca"))
+        state.p1.bench[4].damage_counters = 1
+        state.p1.hand = [CardRegistry.get("svf-potion")]
+
+        step = GameEngine().apply_action(
+            state,
+            GameAction(
+                PlayerAction.PLAY_TRAINER,
+                {"hand_idx": 0},
+                actor=0,
+            ),
+            auto_resolve=False,
+        )
+
+        self.assertTrue(step.success, step.message)
+        self.assertIsNotNone(step.pending_choice)
+        self.assertEqual(
+            [
+                getattr(option.ref, "slot", "")
+                for option in step.pending_choice.options
+            ],
+            ["bench_2", "bench_4"],
+        )
+
 
 class TestUseStadiumDispatch(unittest.TestCase):
 

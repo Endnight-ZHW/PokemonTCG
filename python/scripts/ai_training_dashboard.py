@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.parse
 import webbrowser
+from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,14 +23,13 @@ REPO_ROOT = PYTHON_ROOT.parent
 STATIC_ROOT = REPO_ROOT / "tools" / "ai_training_dashboard"
 sys.path.insert(0, str(PYTHON_ROOT))
 
-from engine.ai.dl.hybrid_population import (  # noqa: E402
-    HybridPopulationConfig,
-    prepare_hybrid_run,
-)
+from engine.ai.dl.alphazero_v2 import AlphaZeroV2Config  # noqa: E402
 from engine.ai.dl.run_store import (  # noqa: E402
     ACTIVE_STATUSES,
     TERMINAL_STATUSES,
     atomic_write_bytes,
+    atomic_write_json,
+    create_run_layout,
     process_is_alive,
     read_events,
     read_json,
@@ -111,7 +111,7 @@ class DashboardState:
                 continue
             if (
                 str(journal.get("kind", ""))
-                == "hybrid_model_promotion_transaction_v1"
+                == "alphazero_v2_promotion_transaction_v1"
                 and str(journal.get("run_id", "")) == run_id
                 and str(journal.get("state", "")) == "committed"
                 and str(journal.get("evidence_sha256", "")).lower()
@@ -193,71 +193,10 @@ class DashboardState:
                 continue
 
     def _launch_strength_monitor(self, run_id: str) -> None:
-        run = self._read_run(run_id)
-        if str(run.get("preset", "")).lower() != "release":
-            return
-        tracked = self.observers.get(run_id)
-        if tracked is not None and tracked.poll() is None:
-            return
-        lock_path = self._run_dir(run_id) / "logs" / "strength_probe.lock.json"
-        if lock_path.is_file():
-            try:
-                owner = read_json(lock_path)
-                if process_is_alive(int(owner.get("pid", 0) or 0)):
-                    return
-            except (OSError, ValueError, json.JSONDecodeError):
-                pass
-        # Prevent a malformed environment from causing a rapid spawn loop on
-        # every dashboard poll while still allowing automatic recovery.
-        launched = self.observer_last_launch.get(run_id, 0.0)
-        if time.monotonic() - launched < 60.0:
-            return
-
-        logs = self._run_dir(run_id) / "logs"
-        logs.mkdir(exist_ok=True)
-        stdout = (logs / "strength_probe.stdout.log").open(
-            "a", encoding="utf-8", buffering=1
-        )
-        stderr = (logs / "strength_probe.stderr.log").open(
-            "a", encoding="utf-8", buffering=1
-        )
-        command = [
-            sys.executable,
-            str(PYTHON_ROOT / "scripts" / "monitor_hybrid_strength.py"),
-            "--run-id",
-            run_id,
-            "--runs-root",
-            str(self.runs_root),
-        ]
-        creationflags = (
-            getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            if os.name == "nt"
-            else 0
-        )
-        try:
-            child = subprocess.Popen(
-                command,
-                cwd=self.repo_root,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout,
-                stderr=stderr,
-                creationflags=creationflags,
-            )
-        except Exception:
-            stdout.close()
-            stderr.close()
-            raise
-        self.observers[run_id] = child
-        self.observer_log_handles[run_id] = (stdout, stderr)
-        self.observer_last_launch[run_id] = time.monotonic()
-        update_run(
-            self._run_dir(run_id),
-            strength_monitor={
-                "status": "running",
-                "pid": child.pid,
-                "launched_at": utc_now(),
-            },
-        )
+        # AlphaZero v2 performs its candidate arena and final Challenge league
+        # inside the trainer.  There is deliberately no second observer
+        # process competing for CPU/GPU resources.
+        del run_id
 
     def reconcile(self) -> None:
         with self.lock:
@@ -349,17 +288,43 @@ class DashboardState:
                 raise ValueError(
                     "unsupported run fields: " + ", ".join(unknown)
                 )
-            config = HybridPopulationConfig.from_preset(
-                preset,
-                seed=seed,
-                smoke_deck=smoke_deck,
-            )
             run_id = self._new_run_id(preset)
-            run_dir = prepare_hybrid_run(
-                self.repo_root,
+            bootstrap_cache = (
+                self.repo_root
+                / "python"
+                / "data"
+                / "ai_training"
+                / "bootstrap-v2.pt"
+            )
+            factory = (
+                AlphaZeroV2Config.release
+                if preset == "release"
+                else AlphaZeroV2Config.smoke
+            )
+            run_dir = create_run_layout(
                 self.runs_root,
                 run_id,
-                config,
+                run_payload={
+                    "trainer": "information_set_alphazero_v2",
+                    "preset": preset,
+                    "seed": seed,
+                    "smoke_deck": smoke_deck,
+                    "status": "created",
+                    "pid": 0,
+                    "resumable": False,
+                    "promotable": preset == "release",
+                    "config": asdict(
+                        factory(
+                            str(self.runs_root / run_id),
+                            str(bootstrap_cache),
+                            seed=seed,
+                        )
+                    ),
+                },
+            )
+            atomic_write_json(
+                run_dir / "config.json",
+                dict(read_json(run_dir / "run.json")["config"]),
             )
             self._launch_training(run_id, preset)
             return read_json(run_dir / "run.json")
@@ -376,15 +341,23 @@ class DashboardState:
         )
         command = [
             sys.executable,
-            str(PYTHON_ROOT / "scripts" / "run_hybrid_population_training.py"),
-            "--run-id",
-            run_id,
+            str(PYTHON_ROOT / "scripts" / "train_deep_ai.py"),
+            "train",
             "--preset",
             preset,
-            "--runs-root",
-            str(self.runs_root),
-            "--resume",
+            "--output-dir",
+            str(run_dir),
+            "--bootstrap-cache",
+            str(
+                self.repo_root
+                / "python"
+                / "data"
+                / "ai_training"
+                / "bootstrap-v2.pt"
+            ),
         ]
+        run = self._read_run(run_id)
+        command.extend(["--seed", str(int(run.get("seed", 17)))])
         creationflags = (
             getattr(subprocess, "CREATE_NO_WINDOW", 0)
             if os.name == "nt"
@@ -491,7 +464,7 @@ class DashboardState:
             ).open("a", encoding="utf-8", buffering=1)
             command = [
                 sys.executable,
-                str(PYTHON_ROOT / "scripts" / "promote_hybrid_candidate.py"),
+                str(PYTHON_ROOT / "scripts" / "promote_alphazero_v2.py"),
                 "--run-dir",
                 str(self._run_dir(run_id)),
                 "--evidence-sha256",

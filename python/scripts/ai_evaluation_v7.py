@@ -75,7 +75,7 @@ V2_NON_APPLICABLE_SEARCH_REASONS = frozenset({
     "forced_tactic",
     "cache_hit",
 })
-DEEP_ENGINE_ID = "deep_root_ismcts_v1"
+DEEP_ENGINE_ID = "infoset_puct_v2"
 DEEP_NON_APPLICABLE_SEARCH_REASONS = frozenset({
     "search_complete",
     "only_legal_action",

@@ -214,7 +214,8 @@ class TitleScreen(Screen):
             or not release_decks
             or not all(isinstance(key, str) and key for key in release_decks)
             or len(release_decks) != len(set(release_decks))
-            or int(manifest.get("model_count") or 0) != len(release_decks)
+            or int(manifest.get("model_count") or 0)
+            not in {0, 1, len(release_decks)}
             or set(release_decks) != set(deck_definitions)
         ):
             raise RuntimeError("release_manifest.json has an invalid release deck set")

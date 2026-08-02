@@ -383,14 +383,28 @@ func request_energy_target(
 	for slot in target_slots:
 		var pokemon := state.get_player(player_idx).get_pokemon(slot)
 		if pokemon:
-			options.append({
-				"option_id": "pokemon:%d:%s:%s" % [player_idx, slot, pokemon.card_id],
-				"label": catalog.card_name(pokemon.card_id),
-				"ref": EntityRef.new(
-					"pokemon", player_idx, "field", slot, -1, "", pokemon.card_id
-				).to_dict(),
-				"value": {"slot": slot, "card_id": pokemon.card_id},
-			})
+			var target_ref := EntityRef.new(
+				"pokemon", player_idx, "field", slot, -1, "", pokemon.card_id
+			)
+			var target_option_id := "pokemon:%d:%s:%s" % [
+				player_idx, slot, pokemon.card_id]
+			for energy_index in range(capped_card_ids.size()):
+				var energy_card_id := str(capped_card_ids[energy_index])
+				options.append({
+					"option_id": "energy:%d:%s->%s" % [
+						energy_index, energy_card_id, target_option_id],
+					"label": "%s → %s" % [
+						catalog.card_name(energy_card_id),
+						catalog.card_name(pokemon.card_id),
+					],
+					"ref": target_ref.to_dict(),
+					"value": {
+						"slot": slot,
+						"card_id": pokemon.card_id,
+						"energy_index": energy_index,
+						"energy_card_id": energy_card_id,
+					},
+				})
 	var operation := (
 		"energy_attach_distribution"
 		if capped_card_ids.size() > 1
@@ -417,7 +431,7 @@ func request_energy_target(
 		options,
 		request_min,
 		request_max,
-		capped_card_ids.size() > 1,
+		false,
 		request_min <= 0,
 		{
 			"domain": _choice_domain(stack),

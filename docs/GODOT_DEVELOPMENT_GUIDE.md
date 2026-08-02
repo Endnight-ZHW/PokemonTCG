@@ -1000,8 +1000,9 @@ Windows 与 Android 调试构建：
 - 开发调试包：用于自己测试，输出到 `godot/dist/windows/` 和 `godot/dist/android/`。
 - 正式发布包：用于分发，输出到 `godot/dist/release/`，并生成 ZIP、APK 和 SHA-256 清单。
 
-0.6.0 发布版以 Godot 客户端和 Challenge AI 为运行基线。10 个旧 Deep AI 模型仍保留在仓库
-作为 rules v2 历史产物，manifest 明确标记兼容模型数为 0；构建冒烟不再要求旧模型推理成功。
+0.7.0 以 Godot 客户端和 Challenge AI 为运行基线。Deep AI 已重构为信息集
+AlphaZero v2，但在原生规则、安全、性能、强度和设备门槛全部完成前，
+manifest 仍将 `deep_runtime_enabled` 设为 false。旧模型只读保留。
 发布包不会包含 Python 运行时、PyTorch、训练脚本、测试脚本或工具链目录。
 
 ### 第一次发布前准备
@@ -1037,9 +1038,8 @@ Windows 原生 AI 还需要本机安装 Visual Studio C++ Build Tools。脚本�
 .\.tools\python311\python.exe -B .\python\scripts\export_godot_data.py --check --skip-images
 ```
 
-未来重新训练 Deep AI 时，GPU 训练使用精确锁定的 `DL` Conda 环境；ONNX 导出/校验使用
-`python/environment-export.yml` 或 `tools/setup_ai_toolchain.ps1` 创建的 CPU 环境。
-两种环境都固定禁用用户目录包：
+训练 Deep AI 时使用精确锁定的 `DL` Conda 环境；ONNX 导出与校验沿用同一
+固定依赖合约。环境固定禁用用户目录包：
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
@@ -1047,46 +1047,24 @@ conda run -n DL python -c "import torch; assert torch.cuda.is_available(); print
 conda run -n DL python -c "import onnx, onnxruntime; print(onnx.__version__, onnxruntime.__version__)"
 ```
 
-当前 `alpha_zero_rl` 训练器可以训练任一已导出的卡组；正式 league gate 需要同卡组
-已有 verified checkpoint 作为对手。它从已有 checkpoint warm start，使用神经网络与
-MCTS 自对弈生成 policy target，并用终局结果训练 value；不会加载 distill 数据，
-也不会进入 teacher bootstrap 或 DAgger。长跑示例：
+唯一训练入口是 universal 信息集 AlphaZero v2。先校验冻结教师缓存，再执行正式长跑：
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
-conda run -n DL python -B .\python\scripts\train_deep_ai.py `
-  --trainer alpha_zero_rl `
-  --deck fire `
-  --games 800 `
-  --device cuda `
-  --league-dir data\ai_league `
-  --league-eval-games 600 `
-  --min-score-rate 0.53 `
-  --min-elo-delta 25 `
-  --progress-jsonl build\ai_training\fire_alpha_zero.jsonl
+conda run -n DL python -B .\python\scripts\train_deep_ai.py verify-cache `
+  --cache .\python\data\ai_training\bootstrap-v2.pt
+.\tools\train_deep_ai_v2.ps1 -Preset release
 ```
 
-默认只有自对弈训练使用 MCTS；league eval 评估部署时的 raw model policy。
-需要慢速分析 MCTS 决策时再加 `--league-use-mcts`。
-
-只做 smoke 时把局数压到最小，并输出到 `build/`，不要提交生成的 `.pt` 或 `.onnx`：
+只做 smoke 时允许 Python 规则回退，输出到 `build/`：
 
 ```powershell
 $env:PYTHONNOUSERSITE = '1'
-conda run -n DL python -B .\python\scripts\train_deep_ai.py `
-  --trainer alpha_zero_rl `
-  --deck fire `
-  --games 1 `
-  --league-eval-games 0 `
-  --rollout-batch-games 1 `
-  --updates-per-rollout 1 `
-  --mcts-simulations 1 `
-  --max-steps 40 `
-  --device cuda `
-  --output build\ai_training\fire_alpha_zero_smoke.pt
-
-.\tools\export_onnx_models.ps1 -Check
+.\tools\train_deep_ai_v2.ps1 -Preset smoke -AllowPythonFallback
 ```
+
+训练器会把 checkpoint、证据、ONNX 和 runtime manifest 写入候选目录，不直接
+覆盖在线模型。详见 `deep_ai_alphazero_v2.md`。
 
 ### 生成开发调试包
 

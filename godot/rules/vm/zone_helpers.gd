@@ -49,9 +49,14 @@ static func move_selected_cards(
 	var player_idx := int(data["player_idx"])
 	var player := state.get_player(player_idx)
 	var source_zone := str(data["source_zone"])
+	var destination := str(data["destination"])
+	if (
+		destination == "bench"
+		and selected.size() > player.bench.size() - player.bench_count()
+	):
+		return VMResult.fail("备战区空位不足。")
 	var source_indices := selected_source_indices(selected)
 	var moved := remove_selected_from_zone(player, source_zone, selected, false)
-	var destination := str(data["destination"])
 	var movement_events: Array[Dictionary] = []
 	match destination:
 		"hand":
@@ -77,19 +82,7 @@ static func move_selected_cards(
 						{"player": player_idx, "slot": "bench_%d" % slot},
 					))
 				else:
-					var target_index := player.hand.size()
-					player.hand.append(card_id)
-					movement_events.append(card_moved_event(
-						player_idx,
-						[card_id],
-						source,
-						{
-							"player": player_idx,
-							"zone": "hand",
-							"index": target_index,
-						},
-						"owner",
-					))
+					return VMResult.fail("备战区空位不足。")
 		_:
 			player.hand.append_array(moved)
 	# A generic `zone = bench` endpoint has no visual anchor and used to resolve

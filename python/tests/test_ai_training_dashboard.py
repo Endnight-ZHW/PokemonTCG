@@ -9,7 +9,6 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
-from unittest import mock
 
 from engine.ai.dl.run_store import (
     TrainingEventWriter,
@@ -144,7 +143,7 @@ class DashboardReconcileTests(unittest.TestCase):
                 / "attempt"
                 / "journal.json",
                 {
-                    "kind": "hybrid_model_promotion_transaction_v1",
+                    "kind": "alphazero_v2_promotion_transaction_v1",
                     "run_id": "promoted-run",
                     "state": "committed",
                     "evidence_sha256": "a" * 64,
@@ -194,7 +193,7 @@ class DashboardReconcileTests(unittest.TestCase):
 
 
 class DashboardStrengthMonitorTests(unittest.TestCase):
-    def test_release_observer_is_launched_and_reaped_independently(self):
+    def test_v2_does_not_launch_a_competing_strength_observer(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             release = create_run_layout(
@@ -218,29 +217,10 @@ class DashboardStrengthMonitorTests(unittest.TestCase):
                 },
             )
             state = DashboardState(Path.cwd(), root)
-            child = mock.Mock(pid=43_210)
-            child.poll.return_value = None
-            with mock.patch(
-                "scripts.ai_training_dashboard.subprocess.Popen",
-                return_value=child,
-            ) as popen:
-                state._launch_strength_monitor("release-run")
-                state._launch_strength_monitor("smoke-run")
-
-            popen.assert_called_once()
-            command = popen.call_args.args[0]
-            self.assertIn("monitor_hybrid_strength.py", command[1])
-            self.assertEqual(
-                read_json(release / "run.json")["strength_monitor"]["status"],
-                "running",
-            )
-
-            child.poll.return_value = 0
-            state._poll_observers()
-            self.assertEqual(
-                read_json(release / "run.json")["strength_monitor"]["status"],
-                "stopped",
-            )
+            state._launch_strength_monitor("release-run")
+            state._launch_strength_monitor("smoke-run")
+            self.assertEqual(state.observers, {})
+            self.assertNotIn("strength_monitor", read_json(release / "run.json"))
 
 
 if __name__ == "__main__":

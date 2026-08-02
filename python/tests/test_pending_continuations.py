@@ -219,6 +219,54 @@ class PendingContinuationTests(unittest.TestCase):
         self.assertEqual(len(restored.p1.hand), 2)
         self.assertEqual(len(restored.p1.deck), 1)
 
+    def test_restored_top_deck_choice_preserves_duplicate_physical_index(self):
+        duplicate = CardRegistry.get("svi-trea")
+        non_energy = CardRegistry.get("sv1-151")
+        bottom = CardRegistry.get("sv1-ener-3")
+        state = GameState()
+        state.p1.deck = [bottom, duplicate, non_energy, duplicate]
+        stack = ResolutionStack(state)
+        stack.push(compile_command_spec({
+            "op": "look_top_deck",
+            "args": {
+                "count": 3,
+                "filter": "energy",
+                "take": 1,
+                "rest_bottom": False,
+                "shuffle_rest": False,
+            },
+            "branches": {},
+        }))
+        pending = stack.resolve_all(0, "active").pending_choice
+        engine = GameEngine()
+        request = engine.choice_request(state, pending)
+        restored = state_from_snapshot(snapshot_state(state))
+        rebuilt = engine.pending_choice_request(restored)
+        lower_duplicate = next(
+            option
+            for option in rebuilt.options
+            if option.ref is not None and option.ref.index == 1
+        )
+
+        result = engine.apply_choice(
+            restored,
+            rebuilt,
+            ChoiceResponse(
+                rebuilt.request_id,
+                (lower_duplicate.option_id,),
+            ),
+        )
+
+        self.assertTrue(result.success, result.message)
+        self.assertEqual(
+            [card.api_id for card in restored.p1.hand],
+            ["svi-trea"],
+        )
+        self.assertEqual(
+            [card.api_id for card in restored.p1.deck],
+            ["sv1-ener-3", "sv1-151", "svi-trea"],
+        )
+
     def test_snapshot_rejects_incomplete_vm_resume_frames(self):
         class UntaggedCommand:
             def execute(self, _ctx):

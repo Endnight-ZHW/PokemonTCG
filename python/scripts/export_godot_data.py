@@ -156,8 +156,11 @@ def _release_manifest() -> dict[str, Any]:
         raise RuntimeError("release_manifest.json has an invalid release_decks list")
     if len(release_decks) != len(set(release_decks)):
         raise RuntimeError("release_manifest.json contains duplicate release deck keys")
-    if int(payload.get("model_count") or 0) != len(release_decks):
-        raise RuntimeError("release_manifest.json model_count does not match release_decks")
+    model_count = int(payload.get("model_count") or 0)
+    if model_count not in {0, 1, len(release_decks)}:
+        raise RuntimeError(
+            "release_manifest.json model_count is not a valid universal or legacy count"
+        )
     if set(release_decks) != set(DECKS):
         raise RuntimeError("release_manifest.json release_decks do not match Python deck data")
     return payload
@@ -1007,6 +1010,12 @@ def _canonical_pending_option(option: dict[str, Any]) -> dict[str, Any]:
         if kind == "attachment":
             result["attachment_type"] = str(ref.get("attachment_type", ""))
             result["index"] = int(ref.get("index", -1))
+        stable_option_id = str(option.get("option_id", ""))
+        if (
+            stable_option_id.startswith("energy:")
+            or stable_option_id.startswith("rare_candy:")
+        ):
+            result["option_id"] = stable_option_id
         return result
 
     value = option.get("value")
@@ -1827,12 +1836,6 @@ def _vm_pending_projection(state: GameState, op: str) -> dict[str, Any]:
         allow_duplicates = False
     if op == "draw_and_attach_energy":
         continuation_kind = "draw_attach_distribution"
-        allow_duplicates = True
-        unique_options: list[dict[str, Any]] = []
-        for option in options:
-            if option not in unique_options:
-                unique_options.append(option)
-        options = unique_options
     return {
         "request_type": request_type,
         "player": int(pending.get("player", -1)),

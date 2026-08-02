@@ -1,559 +1,269 @@
-"""Runtime controller for the optional deep-learning AI."""
+"""Runtime controller for the universal AlphaZero v2 model."""
 from __future__ import annotations
 
-import os
-import random
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import Any
 
-from engine.ai.challenge_ai import AIAction, AIChoice, AIConfig, ChallengeAI, create_challenge_ai
-from engine.ai.dl.encoder import ActionStateEncoder
-from engine.ai.dl.encoder import ENCODER_SCHEMA_VERSION
-from engine.ai.dl.encoder import (
-    CARD_IDENTITY_MODE,
-    CARD_VOCAB_SHA256,
-    CARD_VOCAB_SIZE,
-    CARD_VOCAB_VERSION,
+from engine.actions import ChoiceResponse, GameAction
+from engine.ai.challenge_ai import AIConfig, ChallengeAI, create_challenge_ai
+from engine.ai.dl.inference_v2 import BatchedTorchEvaluator
+from engine.ai.dl.model_v2 import (
+    TORCH_AVAILABLE,
+    load_checkpoint,
 )
-from engine.ai.observation import Observation
-from engine.ai.planner import PLANNER_SCHEMA_VERSION
-from engine.ai.dl.model import TORCH_AVAILABLE, load_checkpoint, torch
-from engine.ai.dl.release_gate import (
-    DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
-    DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
-    DEFAULT_MIN_ACCEPTED_EVAL_GAMES,
-    DEFAULT_MIN_ACCEPTED_POINT_RATE,
-    has_strength_and_reliability_floor,
-)
-from engine.actions import ACTION_SCHEMA_VERSION, RULES_SCHEMA_VERSION
-from engine.enums import PlayerAction, TurnPhase
-from engine.snapshot import snapshot_state, state_from_snapshot
+from engine.ai.dl.puct_v2 import InformationSetPUCT, PythonGameEnvironment
+from engine.enums import PlayerAction
+from engine.snapshot import clone_state
 from utils.logger import get_logger
 
+from .v2_contract import (
+    CHECKPOINT_VERSION,
+    DEEP_PLANNER_VERSION,
+    ENCODER_SCHEMA_VERSION,
+    MODEL_VARIANT,
+    RELEASE_DECKS,
+)
+
+
 _logger = get_logger(__name__)
-
-
 DEFAULT_MODEL_DIR = os.path.join("data", "ai_models")
-def _fit_sequence(values: list, size: int, pad):
-    if len(values) >= size:
-        return values[:size]
-    return values + [pad] * (size - len(values))
 
 
 @dataclass(frozen=True)
 class DeepLearningAIConfig:
     model_path: str | None = None
     device: str = "cpu"
-    temperature: float = 0.35
+    temperature: float = 0.0
     deterministic: bool = True
     fallback_enabled: bool = True
     random_seed: int = 17
     fallback_config: AIConfig | None = None
-    choice_confidence_threshold: float = 0.30
-    # Shared planner settings; field names are retained for checkpoint/CLI compatibility.
-    use_mcts: bool = True
-    mcts_simulations: int = 64
+    mcts_simulations: int = 128
     mcts_c_puct: float = 1.4
-    mcts_chance_nodes: bool = False
-    mcts_dirichlet_noise: bool = False  # False for inference, True for training
     max_thinking_time_seconds: float = 2.0
 
 
-def _metadata_eval_summary(metadata: dict[str, Any], deck_key: str) -> dict[str, Any] | None:
-    summary = metadata.get("summary")
-    if isinstance(summary, dict):
-        deck_summary = summary.get(deck_key)
-        if not isinstance(deck_summary, dict) and len(summary) == 1:
-            only_summary = next(iter(summary.values()))
-            deck_summary = only_summary if isinstance(only_summary, dict) else None
-        if isinstance(deck_summary, dict):
-            eval_summary = deck_summary.get("eval")
-            if isinstance(eval_summary, dict):
-                return eval_summary
-    return None
+def _universal_paths(model_dir: str) -> tuple[str, str]:
+    checkpoint = os.path.join(model_dir, "universal.pt")
+    return checkpoint, os.path.splitext(checkpoint)[0] + ".json"
 
 
-def _metadata_challenge_baseline_summary(metadata: dict[str, Any], deck_key: str) -> dict[str, Any] | None:
-    summary = metadata.get("summary")
-    if isinstance(summary, dict):
-        deck_summary = summary.get(deck_key)
-        if not isinstance(deck_summary, dict) and len(summary) == 1:
-            only_summary = next(iter(summary.values()))
-            deck_summary = only_summary if isinstance(only_summary, dict) else None
-        if isinstance(deck_summary, dict):
-            baseline = deck_summary.get("challenge_baseline_eval") or deck_summary.get("release_baseline_eval")
-            if isinstance(baseline, dict):
-                return baseline
-    return None
-
-
-def _metadata_eval_games(metadata: dict[str, Any], deck_key: str) -> int:
-    eval_summary = _metadata_eval_summary(metadata, deck_key)
-    if eval_summary is not None:
-        games = eval_summary.get("games")
-        if isinstance(games, (int, float)):
-            return int(games)
-    raw_eval_games = metadata.get("eval_games")
-    if isinstance(raw_eval_games, (int, float)):
-        return int(raw_eval_games)
-    return 0
-
-
-def _metadata_eval_has_no_bad_actions(metadata: dict[str, Any], deck_key: str) -> bool:
-    eval_summary = _metadata_eval_summary(metadata, deck_key)
-    if eval_summary is None:
+def _release_gate_is_satisfied(metadata: dict[str, Any]) -> bool:
+    final = metadata.get("final_league")
+    if not isinstance(final, dict):
+        final = (metadata.get("summary") or {}).get("final_league")
+    if not isinstance(final, dict):
         return False
-    invalid_rate = eval_summary.get("invalid_action_rate")
-    no_target_rate = eval_summary.get("no_target_action_rate")
-    rule_exception_rate = eval_summary.get("rule_exception_rate")
-    timeout_rate = eval_summary.get("decision_timeout_rate")
-    if isinstance(invalid_rate, (int, float)) and isinstance(no_target_rate, (int, float)):
-        return (
-            float(invalid_rate) <= 0.0
-            and float(no_target_rate) <= 0.0
-            and float(rule_exception_rate or 0.0) <= 0.0
-            and float(timeout_rate or 0.0) <= 0.0
-        )
-    invalid_actions = eval_summary.get("invalid_actions")
-    no_target_actions = eval_summary.get("no_target_actions")
-    if isinstance(invalid_actions, (int, float)) and isinstance(no_target_actions, (int, float)):
-        return int(invalid_actions) <= 0 and int(no_target_actions) <= 0
-    return False
-
-
-def _metadata_eval_meets_strength_floor(
-    metadata: dict[str, Any],
-    deck_key: str,
-    *,
-    min_point_rate: float,
-    min_delta_point_rate: float,
-    max_step_exhaustion_rate: float,
-) -> bool:
-    eval_summary = _metadata_eval_summary(metadata, deck_key)
-    if eval_summary is None:
-        return False
-    baseline = _metadata_challenge_baseline_summary(metadata, deck_key)
-    return has_strength_and_reliability_floor(
-        eval_summary,
-        min_point_rate=min_point_rate,
-        paired_baseline=baseline,
-        min_delta_point_rate=min_delta_point_rate,
-        max_step_exhaustion_rate_limit=max_step_exhaustion_rate,
-    )
-
-
-def _metadata_choice_head_is_safe(metadata: dict[str, Any], deck_key: str) -> bool:
-    if not bool(metadata.get("choice_head_enabled")):
-        return True
-    summary = metadata.get("summary")
-    deck_summary = summary.get(deck_key) if isinstance(summary, dict) else None
-    if not isinstance(deck_summary, dict) and isinstance(summary, dict) and len(summary) == 1:
-        only_summary = next(iter(summary.values()))
-        deck_summary = only_summary if isinstance(only_summary, dict) else None
-    if not isinstance(deck_summary, dict):
-        return False
-    choice_examples = int((deck_summary.get("choice") or {}).get("choice_examples") or 0)
-    choice_examples += int((deck_summary.get("distill_choice") or {}).get("choice_examples") or 0)
-    choice_examples += int(deck_summary.get("loaded_choice_examples") or 0)
-    return choice_examples > 0
-
-
-def _schema_is_current(metadata: dict[str, Any]) -> bool:
+    deck_rates = final.get("deck_score_rates")
     return (
-        int(metadata.get("rules_version") or 0) == RULES_SCHEMA_VERSION
-        and int(metadata.get("action_version") or 0) == ACTION_SCHEMA_VERSION
-        and int(metadata.get("encoder_version") or 0) == ENCODER_SCHEMA_VERSION
-        and int(metadata.get("card_vocab_version") or 0)
-        == CARD_VOCAB_VERSION
-        and int(metadata.get("card_vocab_size") or 0) == CARD_VOCAB_SIZE
-        and str(metadata.get("card_vocab_sha256") or "")
-        == CARD_VOCAB_SHA256
-        and str(metadata.get("card_identity_mode") or "")
-        == CARD_IDENTITY_MODE
-        and int(metadata.get("planner_version") or 0) == PLANNER_SCHEMA_VERSION
-        and isinstance(metadata.get("seed"), int)
+        bool(metadata.get("accepted"))
+        and metadata.get("verification_status") == "verified_accepted"
+        and str(metadata.get("model_variant")) == MODEL_VARIANT
+        and int(metadata.get("encoder_version") or 0)
+        == ENCODER_SCHEMA_VERSION
+        and int(metadata.get("checkpoint_version") or 0)
+        == CHECKPOINT_VERSION
+        and int(metadata.get("planner_version") or 0)
+        == DEEP_PLANNER_VERSION
+        and float(final.get("overall_score_rate") or 0.0) >= 0.53
+        and isinstance(deck_rates, dict)
+        and all(
+            float(deck_rates.get(deck) or 0.0) >= 0.50
+            for deck in RELEASE_DECKS
+        )
+        and int(final.get("structural_errors") or 0) == 0
     )
 
 
 def is_deep_model_accepted(
     deck_key: str | None,
     model_dir: str = DEFAULT_MODEL_DIR,
-    min_eval_games: int = DEFAULT_MIN_ACCEPTED_EVAL_GAMES,
-    min_point_rate: float = DEFAULT_MIN_ACCEPTED_POINT_RATE,
-    min_delta_point_rate: float = DEFAULT_MIN_ACCEPTED_DELTA_POINT_RATE,
-    max_step_exhaustion_rate: float = DEFAULT_MAX_ACCEPTED_STEP_EXHAUSTION_RATE,
+    **_legacy_thresholds: Any,
 ) -> bool:
-    """Return True only for deployed, verified, accepted Deep AI checkpoints."""
-    if not deck_key:
+    if deck_key not in RELEASE_DECKS:
         return False
-    model_path = os.path.join(model_dir, f"{deck_key}.pt")
-    sidecar_path = os.path.splitext(model_path)[0] + ".json"
-    if not os.path.exists(model_path):
+    checkpoint, sidecar = _universal_paths(model_dir)
+    if not os.path.isfile(checkpoint) or os.path.getsize(checkpoint) <= 0:
         return False
     try:
-        if os.path.getsize(model_path) <= 0:
-            return False
-    except OSError:
+        with open(sidecar, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError, TypeError):
         return False
-    try:
-        with open(sidecar_path, "r", encoding="utf-8") as fh:
-            payload = json.load(fh)
-    except (OSError, json.JSONDecodeError, TypeError, ValueError):
-        return False
-    metadata = payload.get("metadata") if isinstance(payload, dict) else {}
-    if not isinstance(metadata, dict):
-        return False
-    accepted = bool(metadata.get("accepted"))
-    verified = bool(metadata.get("verified")) or metadata.get("verification_status") == "verified_accepted"
-    has_enough_eval = _metadata_eval_games(metadata, deck_key) >= max(0, int(min_eval_games))
-    return (
-        accepted
-        and verified
-        and has_enough_eval
-        and _metadata_eval_has_no_bad_actions(metadata, deck_key)
-        and _metadata_eval_meets_strength_floor(
-            metadata,
-            deck_key,
-            min_point_rate=min_point_rate,
-            min_delta_point_rate=min_delta_point_rate,
-            max_step_exhaustion_rate=max_step_exhaustion_rate,
-        )
-        and _metadata_choice_head_is_safe(metadata, deck_key)
-        and _schema_is_current(metadata)
-    )
+    metadata = payload.get("metadata") if isinstance(payload, dict) else None
+    return isinstance(metadata, dict) and _release_gate_is_satisfied(metadata)
 
 
 class DeepLearningAI:
-    """Legal-action scorer backed by a torch model with ChallengeAI fallback."""
+    """AlphaZero v2 search with a structured Challenge fallback."""
 
-    def __init__(self, deck_key: str | None = None, config: DeepLearningAIConfig | None = None):
+    def __init__(
+        self,
+        deck_key: str | None = None,
+        config: DeepLearningAIConfig | None = None,
+    ) -> None:
         self.deck_key = deck_key
         self.config = config or DeepLearningAIConfig()
         fallback_config = self.config.fallback_config or AIConfig(
             deck_key=deck_key or "",
-            thinking_time_seconds=4.0,
-            beam_width=18,
-            max_sequence_depth=8,
-            max_turn_actions=36,
-            minimax_max_depth=3,
-            minimax_determinizations=2,
-            search_node_budget=1600,
+            random_seed=self.config.random_seed,
             use_unified_planner=True,
         )
-        self.fallback: ChallengeAI = create_challenge_ai(deck_key or "", fallback_config)
-        self.encoder = ActionStateEncoder()
-        self.random = random.Random(self.config.random_seed)
+        self.fallback: ChallengeAI = create_challenge_ai(
+            deck_key or "",
+            fallback_config,
+        )
         self.model = None
         self.model_metadata: dict[str, Any] = {}
-        self._active_searcher = None
+        self._evaluator: BatchedTorchEvaluator | None = None
+        self._active_search: InformationSetPUCT | None = None
         self._load_model()
 
     @property
     def model_available(self) -> bool:
-        return self.model is not None and TORCH_AVAILABLE
+        return (
+            TORCH_AVAILABLE
+            and self.model is not None
+            and self._evaluator is not None
+        )
 
-    def choose_action(self, state, player_idx: int) -> AIAction:
+    def choose_action(self, state: Any, player_idx: int) -> GameAction:
         if not self.model_available:
             return self._fallback_action(state, player_idx)
-
-        actions = self.fallback.legal_actions(state, player_idx)
-        if not actions:
-            return AIAction(PlayerAction.END_TURN, {}, terminal=True)
-        if state.phase not in (TurnPhase.SETUP, TurnPhase.MAIN, TurnPhase.ATTACK):
-            return self._fallback_action(state, player_idx)
-
+        authoritative = list(self.fallback.legal_actions(state, player_idx))
+        if not authoritative:
+            return GameAction(
+                PlayerAction.END_TURN,
+                {},
+                True,
+                player_idx,
+            )
+        environment = PythonGameEnvironment()
+        search = InformationSetPUCT(
+            self._evaluator,
+            environment,
+            simulations=max(1, int(self.config.mcts_simulations)),
+            c_puct=float(self.config.mcts_c_puct),
+            training=not self.config.deterministic,
+            seed=self.config.random_seed + int(getattr(state, "revision", 0)),
+        )
+        self._active_search = search
         try:
-            if self.config.use_mcts:
-                return self._choose_with_mcts(state, player_idx, actions)
-            return self._choose_with_model(state, player_idx, actions)
+            deadline = time.perf_counter() + max(
+                0.05,
+                float(self.config.max_thinking_time_seconds) - 0.05,
+            )
+            result = search.search(
+                state,
+                player_idx,
+                deadline=deadline,
+                min_simulations=1,
+                temperature=(
+                    0.0
+                    if self.config.deterministic
+                    else self.config.temperature
+                ),
+            )
         except Exception as exc:
-            _logger.debug("deep-learning action selection failed, falling back: %s", exc)
+            _logger.debug("AlphaZero v2 search fallback: %s", exc)
             return self._fallback_action(state, player_idx)
+        finally:
+            self._active_search = None
+        selected = result.selected.payload
+        if not isinstance(selected, GameAction):
+            return self._fallback_action(state, player_idx)
+        action = next(
+            (
+                candidate
+                for candidate in authoritative
+                if candidate.signature == selected.signature
+            ),
+            None,
+        )
+        if action is None or not self._executes_on_clone(
+            state,
+            player_idx,
+            action,
+        ):
+            return self._fallback_action(state, player_idx)
+        return action
 
-    def resolve_pending_action(self, state, action_request):
-        if self.model_available and bool(getattr(self.model, "choice_head_enabled", False)):
-            try:
-                choice = self._choose_pending_with_model(state, action_request)
-                if choice is not None:
-                    return choice
-            except Exception as exc:
-                _logger.debug("deep-learning pending choice failed, falling back: %s", exc)
+    def resolve_pending_action(self, state: Any, action_request: Any):
+        # Python's legacy UI consumes AIChoice, while the v2 tree operates on
+        # ChoiceResponse. Keep the authoritative Challenge codec at this UI
+        # boundary; self-play and Godot runtime search choices natively.
         return self.fallback.resolve_pending_action(state, action_request)
 
-    def apply_choice(self, state, action_request, choice=None):
+    def apply_choice(self, state: Any, action_request: Any, choice: Any = None):
         return self.fallback.apply_choice(state, action_request, choice)
 
-    def legal_actions(self, state, player_idx: int) -> list[AIAction]:
+    def legal_actions(self, state: Any, player_idx: int):
         return self.fallback.legal_actions(state, player_idx)
 
     def cancel_search(self) -> None:
         self.fallback.cancel_search()
-        searcher = self._active_searcher
-        if searcher is not None:
-            cancel = getattr(searcher, "cancel", None)
-            if callable(cancel):
-                cancel()
+        if self._active_search is not None:
+            self._active_search.cancel()
 
-    def _fallback_action(self, state, player_idx: int) -> AIAction:
+    def close(self) -> None:
+        if self._evaluator is not None:
+            self._evaluator.close()
+            self._evaluator = None
+
+    def _fallback_action(self, state: Any, player_idx: int) -> GameAction:
         if self.config.fallback_enabled:
             return self.fallback.choose_action(state, player_idx)
-        return AIAction(PlayerAction.END_TURN, {}, terminal=True)
+        return GameAction(PlayerAction.END_TURN, {}, True, player_idx)
 
-    def _choose_with_model(self, state, player_idx: int, actions: list[AIAction]) -> AIAction:
-        assert torch is not None
-        observation = Observation.from_state(state, player_idx)
-        encoded_state = self.encoder.encode_observation(observation, self.deck_key)
-        encoded_actions = [
-            self.encoder.encode_game_action(observation, action)
-            for action in actions
-        ]
-
-        device = self.config.device
-        state_numeric_size = int(getattr(self.model, "state_numeric_size", len(encoded_state.numeric)))
-        state_card_slots = int(getattr(self.model, "state_card_slots", len(encoded_state.card_ids)))
-        action_numeric_size = int(getattr(self.model, "action_numeric_size", len(encoded_actions[0].numeric)))
-        with torch.no_grad():
-            state_numeric = torch.tensor(
-                [_fit_sequence(encoded_state.numeric, state_numeric_size, 0.0)],
-                dtype=torch.float32,
-                device=device,
-            )
-            state_cards = torch.tensor(
-                [_fit_sequence(encoded_state.card_ids, state_card_slots, 0)],
-                dtype=torch.long,
-                device=device,
-            )
-            action_numeric = torch.tensor(
-                [[_fit_sequence(a.numeric, action_numeric_size, 0.0) for a in encoded_actions]],
-                dtype=torch.float32,
-                device=device,
-            )
-            action_cards = torch.tensor([[a.card_id for a in encoded_actions]], dtype=torch.long, device=device)
-            logits, _ = self.model(state_numeric, state_cards, action_numeric, action_cards)
-            logits = logits[0]
-            temperature = max(0.05, float(self.config.temperature))
-            if self.config.deterministic:
-                ranked = torch.argsort(logits, descending=True).detach().cpu().tolist()
-            else:
-                probs = torch.softmax(logits / temperature, dim=0)
-                ranked = torch.multinomial(
-                    probs,
-                    num_samples=len(actions),
-                    replacement=False,
-                ).detach().cpu().tolist()
-        for idx in ranked:
-            if self._action_executes_on_clone(state, player_idx, actions[idx]):
-                selected = self._postprocess_preferred_action(
-                    state,
-                    player_idx,
-                    actions[idx],
-                    actions,
-                )
-                if self._action_executes_on_clone(state, player_idx, selected):
-                    return selected
-                return actions[idx]
-        return self._fallback_action(state, player_idx)
-
-    def _choose_with_mcts(self, state, player_idx: int, actions: list[AIAction]) -> AIAction:
-        """Select an action with the shared planner and neural priors/value."""
-        from engine.ai.dl.mcts import MCTSGuidedSearch
-
-        searcher = MCTSGuidedSearch(
-            self.model,
-            self.encoder,
-            self.fallback,
-            num_simulations=int(self.config.mcts_simulations),
-            c_puct=float(self.config.mcts_c_puct),
-            temperature=float(self.config.temperature),
-            use_chance_nodes=bool(self.config.mcts_chance_nodes),
-            device=self.config.device,
-            add_dirichlet_noise=bool(self.config.mcts_dirichlet_noise),
-        )
-        max_time = max(0.0, float(self.config.max_thinking_time_seconds))
-        deadline = time.perf_counter() + max_time if max_time > 0.0 else None
-        self._active_searcher = searcher
-        try:
-            selected = searcher.select_action(
-                state,
-                player_idx,
-                self.deck_key,
-                actions=actions,
-                deterministic=self.config.deterministic,
-                deadline=deadline,
-            )
-        finally:
-            self._active_searcher = None
-        selected = self._postprocess_preferred_action(state, player_idx, selected, actions)
-        if self._action_executes_on_clone(state, player_idx, selected):
-            return selected
-        return self._choose_with_model(state, player_idx, actions)
-
-    def _postprocess_preferred_action(
+    def _executes_on_clone(
         self,
-        state,
+        state: Any,
         player_idx: int,
-        preferred: AIAction,
-        actions: list[AIAction],
-    ) -> AIAction:
-        postprocess = getattr(self.fallback, "_validated_or_fallback_action", None)
-        if not callable(postprocess):
-            return preferred
+        action: GameAction,
+    ) -> bool:
         try:
-            selected = postprocess(state, player_idx, preferred, actions)
-            return selected if selected is not None else preferred
-        except Exception:
-            return preferred
-
-    def _action_executes_on_clone(self, state, player_idx: int, action: AIAction) -> bool:
-        if action.action not in {
-            PlayerAction.PLAY_TRAINER,
-            PlayerAction.USE_ABILITY,
-            PlayerAction.USE_STADIUM,
-            PlayerAction.RETREAT,
-            PlayerAction.DECLARE_ATTACK,
-        }:
-            return True
-        rng_state = random.getstate()
-        try:
-            cloned = state_from_snapshot(snapshot_state(state), rebuild_event_bus=True)
-            result = self.fallback._apply_action_for_sim(cloned, player_idx, action)
+            cloned = clone_state(state)
+            result = self.fallback._apply_action_for_sim(
+                cloned,
+                player_idx,
+                action,
+            )
             return result is not None and bool(result.success)
         except Exception:
             return False
-        finally:
-            random.setstate(rng_state)
-
-    @property
-    def mcts_search(self):
-        """Create a fresh shared-planner adapter for external training code."""
-        from engine.ai.dl.mcts import MCTSGuidedSearch
-
-        return MCTSGuidedSearch(
-            self.model,
-            self.encoder,
-            self.fallback,
-            num_simulations=int(self.config.mcts_simulations),
-            c_puct=float(self.config.mcts_c_puct),
-            temperature=float(self.config.temperature),
-            use_chance_nodes=bool(self.config.mcts_chance_nodes),
-            device=self.config.device,
-            add_dirichlet_noise=bool(self.config.mcts_dirichlet_noise),
-        )
-
-    def _pending_choice_candidates(self, state, req) -> tuple[list[Any], str] | None:
-        request_type = getattr(req, "request_type", "")
-        player_idx = req.player if req.player in (0, 1) else state.active_player_idx
-        if request_type in ("search_deck", "select_hand_to_discard"):
-            candidates = list(getattr(req, "card_list", []) or [])
-            return (candidates, request_type) if candidates else None
-        if request_type in ("select_bench", "select_opponent_bench", "select_own_bench_energy"):
-            target_player = state.get_player(1 - player_idx) if request_type == "select_opponent_bench" else state.get_player(player_idx)
-            candidates = [
-                idx for idx in range(len(target_player.bench))
-                if target_player.bench[idx] is not None
-            ]
-            return (candidates, request_type) if candidates else None
-        if request_type == "select_bench_targets":
-            target_player = state.get_player(1 - player_idx) if getattr(req, "target_player", "") == "opponent" else state.get_player(player_idx)
-            candidates = [
-                idx for idx in (getattr(req, "bench_indices", None) or range(len(target_player.bench)))
-                if 0 <= idx < len(target_player.bench) and target_player.bench[idx] is not None
-            ]
-            return (candidates, request_type) if candidates else None
-        if request_type == "confirm":
-            return [True, False], request_type
-        return None
-
-    def _choose_pending_with_model(self, state, req) -> AIChoice | None:
-        assert torch is not None
-        candidate_info = self._pending_choice_candidates(state, req)
-        if candidate_info is None:
-            return None
-        candidates, request_type = candidate_info
-        player_idx = req.player if req.player in (0, 1) else state.active_player_idx
-        encoded_state = self.encoder.encode_state(state, player_idx, self.deck_key)
-        encoded_choices = [
-            self.encoder.encode_choice(state, player_idx, request_type, candidate, idx)
-            for idx, candidate in enumerate(candidates)
-        ]
-        if not encoded_choices:
-            return None
-
-        device = self.config.device
-        state_numeric_size = int(getattr(self.model, "state_numeric_size", len(encoded_state.numeric)))
-        state_card_slots = int(getattr(self.model, "state_card_slots", len(encoded_state.card_ids)))
-        action_numeric_size = int(getattr(self.model, "action_numeric_size", len(encoded_choices[0].numeric)))
-        with torch.no_grad():
-            state_numeric = torch.tensor(
-                [_fit_sequence(encoded_state.numeric, state_numeric_size, 0.0)],
-                dtype=torch.float32,
-                device=device,
-            )
-            state_cards = torch.tensor(
-                [_fit_sequence(encoded_state.card_ids, state_card_slots, 0)],
-                dtype=torch.long,
-                device=device,
-            )
-            choice_numeric = torch.tensor(
-                [[_fit_sequence(a.numeric, action_numeric_size, 0.0) for a in encoded_choices]],
-                dtype=torch.float32,
-                device=device,
-            )
-            choice_cards = torch.tensor([[a.card_id for a in encoded_choices]], dtype=torch.long, device=device)
-            if hasattr(self.model, "score_choices"):
-                logits = self.model.score_choices(state_numeric, state_cards, choice_numeric, choice_cards)
-            else:
-                logits, _ = self.model(state_numeric, state_cards, choice_numeric, choice_cards)
-            probs = torch.softmax(logits[0] / max(0.05, float(self.config.temperature)), dim=0)
-            ranked = torch.argsort(probs, descending=True).detach().cpu().tolist()
-            confidence = float(probs[ranked[0]].detach().cpu().item()) if ranked else 0.0
-        if confidence < float(self.config.choice_confidence_threshold):
-            return None
-
-        if request_type in ("search_deck", "select_hand_to_discard"):
-            count = max(req.min_select, min(req.max_select, len(candidates)))
-            return AIChoice(selected_cards=[candidates[idx] for idx in ranked[:count]])
-        if request_type in ("select_bench", "select_opponent_bench", "select_own_bench_energy"):
-            return AIChoice(selected_bench_slot=int(candidates[ranked[0]]))
-        if request_type == "select_bench_targets":
-            count = max(req.min_select, min(req.max_select, len(candidates)))
-            return AIChoice(selected_bench_targets=[int(candidates[idx]) for idx in ranked[:count]])
-        if request_type == "confirm":
-            return AIChoice(confirmed=bool(candidates[ranked[0]]))
-        return None
 
     def _load_model(self) -> None:
         if not TORCH_AVAILABLE:
             return
-        path = self.config.model_path or self._default_model_path()
-        if not path or not os.path.exists(path):
-            return
-        try:
-            model, payload = load_checkpoint(path, self.config.device)
-            metadata = dict(payload.get("metadata") or {})
-            schema = dict(payload.get("schema") or {})
-            merged_schema = dict(schema)
-            merged_schema.update(metadata)
-            if not _schema_is_current(merged_schema):
-                _logger.warning(
-                    "deep-learning model schema mismatch for %s; using Rules AI fallback",
-                    path,
-                )
-                self.model = None
-                self.model_metadata = metadata
+        path = self.config.model_path
+        if path is None:
+            if not is_deep_model_accepted(
+                self.deck_key,
+                DEFAULT_MODEL_DIR,
+            ):
                 return
-            self.model = model
-            self.model_metadata = metadata
+            path = _universal_paths(DEFAULT_MODEL_DIR)[0]
+        try:
+            self.model, payload = load_checkpoint(
+                path,
+                self.config.device,
+            )
+            self.model_metadata = dict(payload.get("metadata") or {})
+            self._evaluator = BatchedTorchEvaluator(
+                self.model,
+                device=self.config.device,
+                target_batch_size=8,
+                max_batch_size=8,
+                coalesce_ms=1.0,
+            )
         except Exception as exc:
-            _logger.warning("failed to load deep-learning AI model %s: %s", path, exc)
+            _logger.warning(
+                "Unable to load universal AlphaZero v2 model: %s",
+                exc,
+            )
             self.model = None
             self.model_metadata = {}
-
-    def _default_model_path(self) -> str:
-        if self.deck_key:
-            deck_path = os.path.join(DEFAULT_MODEL_DIR, f"{self.deck_key}.pt")
-            if os.path.exists(deck_path):
-                return deck_path
-        return os.path.join(DEFAULT_MODEL_DIR, "default.pt")
+            self._evaluator = None

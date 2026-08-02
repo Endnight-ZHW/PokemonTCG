@@ -38,30 +38,25 @@ class ReleaseManifestTests(unittest.TestCase):
         )
         self.assertEqual(generated, self.manifest)
         decks = self.manifest["release_decks"]
-        self.assertEqual(len(decks), self.manifest["model_count"])
         self.assertEqual(len(decks), len(set(decks)))
         self.assertEqual(set(decks), set(DECKS))
-        model_root = REPO_ROOT / "godot" / "data" / "ai_models"
-        self.assertEqual(
-            sorted(path.stem for path in model_root.glob("*.onnx")),
-            sorted(decks),
-        )
 
-    def test_release_060_metadata_and_deep_contract_are_explicit(self):
-        self.assertEqual(self.manifest["format_version"], 2)
-        self.assertEqual(self.manifest["version"], "0.6.0")
+    def test_release_070_metadata_and_deep_contract_are_explicit(self):
+        self.assertEqual(self.manifest["format_version"], 3)
+        self.assertEqual(self.manifest["version"], "0.7.0")
         self.assertEqual(self.manifest["android_version_code"], 8)
         self.assertEqual(self.manifest["deep_fallback"], "challenge")
-        self.assertEqual(self.manifest["model_count"], 10)
+        self.assertEqual(self.manifest["model_count"], 0)
         deep_planner = self.manifest["deep_planner"]
-        self.assertEqual(deep_planner["schema_version"], 1)
+        self.assertEqual(deep_planner["schema_version"], 2)
         self.assertEqual(
-            deep_planner["planner_id"], "deep_root_ismcts_v1"
+            deep_planner["planner_id"], "infoset_puct_v2"
         )
-        self.assertEqual(deep_planner["simulations"], 64)
-        self.assertEqual(deep_planner["watchdog_seconds"], 2.0)
+        self.assertEqual(deep_planner["training_simulations"], 128)
+        self.assertEqual(deep_planner["leaf_evaluator"], "neural_wdl")
+        self.assertFalse(deep_planner["full_turn_rollout"])
         if self.manifest["deep_runtime_enabled"]:
-            self.assertEqual(self.manifest["compatible_model_count"], 10)
+            self.assertEqual(self.manifest["compatible_model_count"], 1)
             self.assertEqual(self.manifest["legacy_model_count"], 0)
             self.assertRegex(
                 deep_planner["evidence_sha256"], r"^[0-9a-f]{64}$"
@@ -78,11 +73,11 @@ class ReleaseManifestTests(unittest.TestCase):
             "python_rules": 5,
             "python_actions": 3,
             "snapshot": 3,
-            "encoder": 6,
-            "checkpoint": 11,
+            "encoder": 7,
+            "checkpoint": 12,
             "card_vocab": 1,
             "planner": 2,
-            "deep_planner": 1,
+            "deep_planner": 2,
             "vm_ir": 3,
             "rng": 2,
             "ai_evaluation": 7,
@@ -92,11 +87,6 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_deep_model_catalog_matches_committed_release_state(self):
         runtime = json.loads(
             (REPO_ROOT / "godot" / "data" / "ai_models_runtime.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        exported = json.loads(
-            (REPO_ROOT / "godot" / "data" / "ai_models.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -114,78 +104,22 @@ class ReleaseManifestTests(unittest.TestCase):
                 self.manifest["schemas"]["encoder"],
             ),
         )
-        release_decks = set(self.manifest["release_decks"])
-        self.assertEqual(set(runtime["models"]), release_decks)
-        self.assertEqual(set(exported["models"]), release_decks)
+        self.assertEqual(runtime["format_version"], 3)
         self.assertEqual(len(runtime["models"]), self.manifest["model_count"])
-
-        current_schema = (
-            self.manifest["schemas"]["python_rules"],
-            self.manifest["schemas"]["python_actions"],
-            self.manifest["schemas"]["encoder"],
+        self.assertEqual(
+            runtime["contract"]["model_variant"],
+            "universal_infoset_transformer_v2",
         )
-        for deck_key, metadata in runtime["models"].items():
-            with self.subTest(deck=deck_key):
-                exported_metadata = exported["models"][deck_key]
-                legacy_schema = (
-                    metadata["rules_version"],
-                    metadata["action_version"],
-                    metadata["encoder_version"],
-                )
-                if deep_enabled:
-                    self.assertEqual(legacy_schema, current_schema)
-                else:
-                    self.assertEqual(legacy_schema, (2, 2, 3))
-                    self.assertNotEqual(legacy_schema, current_schema)
-                if deep_enabled:
-                    self.assertEqual(
-                        legacy_schema,
-                        (
-                            bridge["python_rules_version"],
-                            bridge["python_action_version"],
-                            bridge["python_encoder_version"],
-                        ),
-                    )
-                self.assertEqual(
-                    bool(exported_metadata["accepted"]), deep_enabled
-                )
-                self.assertEqual(
-                    bool(exported_metadata["verified"]), deep_enabled
-                )
-                self.assertEqual(
-                    (
-                        exported_metadata["rules_version"],
-                        exported_metadata["action_version"],
-                        exported_metadata["encoder_version"],
-                    ),
-                    legacy_schema,
-                )
-
-                expected_onnx_path = f"res://data/ai_models/{deck_key}.onnx"
-                self.assertEqual(metadata["onnx_path"], expected_onnx_path)
-                self.assertEqual(exported_metadata["onnx_path"], expected_onnx_path)
-                onnx_path = (
-                    REPO_ROOT / "godot" / "data" / "ai_models" / f"{deck_key}.onnx"
-                )
-                self.assertTrue(onnx_path.is_file())
-                self.assertEqual(onnx_path.stat().st_size, metadata["onnx_size"])
-                self.assertEqual(_sha256(onnx_path), metadata["onnx_sha256"])
-
-                expected_checkpoint = f"python/data/ai_models/{deck_key}.pt"
-                self.assertEqual(
-                    exported_metadata["source_checkpoint"], expected_checkpoint
-                )
-                checkpoint_path = REPO_ROOT / expected_checkpoint
-                self.assertTrue(checkpoint_path.is_file())
-                self.assertEqual(
-                    checkpoint_path.stat().st_size,
-                    exported_metadata["checkpoint_size"],
-                )
-                checkpoint_sha256 = _sha256(checkpoint_path)
-                self.assertEqual(
-                    checkpoint_sha256, exported_metadata["checkpoint_sha256"]
-                )
-                self.assertEqual(checkpoint_sha256, metadata["checkpoint_sha256"])
+        if deep_enabled:
+            self.assertEqual(set(runtime["models"]), {"universal"})
+            self.assertEqual(
+                set(runtime["deck_routes"]),
+                set(self.manifest["release_decks"]),
+            )
+            self.assertEqual(set(runtime["deck_routes"].values()), {"universal"})
+        else:
+            self.assertEqual(runtime["models"], {})
+            self.assertEqual(runtime["deck_routes"], {})
 
     def test_schema_and_android_metadata_match_runtime(self):
         schemas = self.manifest["schemas"]
@@ -385,14 +319,11 @@ class ReleaseManifestTests(unittest.TestCase):
 
     def test_deep_ai_pipeline_reads_release_decks_from_manifest(self):
         source = (
-            REPO_ROOT / "tools" / "train_deep_ai_v10.ps1"
+            REPO_ROOT / "tools" / "train_deep_ai_v2.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn("Get-ReleaseManifest -RepoRoot $repoRoot", source)
-        self.assertIn("$release.release_decks", source)
-        self.assertNotRegex(
-            source,
-            r"\$releaseDecks\s*=\s*@\(\s*['\"]fire['\"]",
-        )
+        self.assertIn("train_deep_ai.py", source)
+        self.assertIn("verify-cache", source)
+        self.assertIn("--bootstrap-cache", source)
 
     def test_release_schema_consumers_do_not_redeclare_manifest_versions(self):
         deep_runtime = (
@@ -402,8 +333,8 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertIn('schemas.get("python_rules", 0)', deep_runtime)
         self.assertIn('schemas.get("python_actions", 0)', deep_runtime)
         self.assertIn('schemas.get("encoder", 0)', deep_runtime)
-        self.assertIn('onnx.get("opset", 0)', deep_runtime)
-        self.assertIn('onnx.get("runtime_version", "")', deep_runtime)
+        self.assertIn('manifest.get("opset", 0)', deep_runtime)
+        self.assertIn('manifest.get("onnx_runtime_version", "")', deep_runtime)
         self.assertNotIn("EXPECTED_PYTHON_ENCODER_VERSION", deep_runtime)
         self.assertNotRegex(
             deep_runtime,
@@ -411,18 +342,11 @@ class ReleaseManifestTests(unittest.TestCase):
         )
 
         train = (
-            REPO_ROOT / "tools" / "train_deep_ai_v10.ps1"
+            REPO_ROOT / "tools" / "train_deep_ai_v2.ps1"
         ).read_text(encoding="utf-8")
-        for field in (
-            "python_rules",
-            "python_actions",
-            "encoder",
-            "planner",
-        ):
-            self.assertIn(f"$release.schemas.{field}", train)
-        self.assertIn("[string]$metadata.deck -ceq $DeckKey", train)
-        self.assertIn("-DeckKey $deck", train)
-        self.assertNotRegex(train, r"metadata\.encoder_version\s+-eq\s+3\b")
+        self.assertIn("'train'", train)
+        self.assertIn("'release'", train)
+        self.assertNotIn("--trainer", train)
 
         onnx_export = (
             REPO_ROOT / "python" / "scripts" / "export_onnx_models.py"

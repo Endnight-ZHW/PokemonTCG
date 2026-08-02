@@ -57,9 +57,25 @@ def _handle_search(state, player_idx, params):
     if not valid_cards:
         return ActionResult(True, f"No valid cards found in {from_zone}.")
 
+    max_select = min(count, len(valid_cards))
+    if destination == "bench":
+        max_select = min(
+            max_select,
+            sum(1 for pokemon in player.bench if pokemon is None),
+        )
+    if max_select <= 0:
+        if from_zone == "deck":
+            player.shuffle_deck()
+        return ActionResult(True, "No open Bench slots.")
+
     # Build callback that moves selected cards to destination
     def search_callback(selected_cards):
         for card in selected_cards:
+            slot = None
+            if destination == "bench":
+                slot = player.find_empty_bench_slot()
+                if slot is None:
+                    continue
             if from_zone == "deck" and card in player.deck:
                 player.deck.remove(card)
             elif from_zone == "discard" and card in player.discard:
@@ -70,10 +86,8 @@ def _handle_search(state, player_idx, params):
             if destination == "hand":
                 player.hand.append(card)
             elif destination == "bench":
-                slot = player.find_empty_bench_slot()
-                if slot is not None:
-                    pokemon = player.place_bench(card, slot)
-                    pokemon.placed_this_turn = True
+                pokemon = player.place_bench(card, slot)
+                pokemon.placed_this_turn = True
 
         if from_zone == "deck":
             player.shuffle_deck()
@@ -86,8 +100,8 @@ def _handle_search(state, player_idx, params):
                             player=player_idx,
                             prompt=f"从{from_zone}选择{count}张卡（{filter_type}）",
                             filter_fn=matches,
-                            min_select=min(min_select, min(count, len(valid_cards))),
-                            max_select=count,
+                            min_select=min(min_select, max_select),
+                            max_select=max_select,
                             from_zone=from_zone,
                             card_list=valid_cards,
                             can_cancel=min_select <= 0,
